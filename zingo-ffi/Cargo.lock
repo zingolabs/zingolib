@@ -1563,6 +1563,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustios"
+version = "1.0.0"
+dependencies = [
+ "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rustlib 1.0.0",
+]
+
+[[package]]
 name = "rustlib"
 version = "1.0.0"
 dependencies = [

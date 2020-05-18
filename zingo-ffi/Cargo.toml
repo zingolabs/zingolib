@@ -1,7 +1,8 @@
 [workspace]
 members = [
     "lib",
-    "android"
+    "android",
+    "ios"
 ]
 
 [profile.release]
