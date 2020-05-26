@@ -14,9 +14,9 @@ use zecwalletlitelib::{commands, lightclient::{LightClient, LightClientConfig}};
 lazy_static! {
     static ref LIGHTCLIENT: Mutex<RefCell<Option<Arc<LightClient>>>> = Mutex::new(RefCell::new(None));
 }
-pub fn init_new(server_uri: String) -> String {
+pub fn init_new(server_uri: String, sapling_output_b64: String, sapling_spend_b64: String) -> String {
     let server = LightClientConfig::get_server_or_default(Some(server_uri));
-    let (config, latest_block_height) = match LightClientConfig::create(server, false) {
+    let (config, latest_block_height) = match LightClientConfig::create(server) {
         Ok((c, h)) => (c, h),
         Err(e) => {
             return format!("Error: {}", e);
@@ -24,7 +24,12 @@ pub fn init_new(server_uri: String) -> String {
     };
 
     let lightclient = match LightClient::new(&config, latest_block_height) {
-        Ok(l) => l,
+        Ok(mut l) => {
+            match l.set_sapling_params(&decode(&sapling_output_b64).unwrap(), &decode(&sapling_spend_b64).unwrap()) {
+                Ok(_) => l,
+                Err(e) => return format!("Error: {}", e)
+            }
+        },
         Err(e) => {
             return format!("Error: {}", e);
         }
@@ -42,9 +47,9 @@ pub fn init_new(server_uri: String) -> String {
     seed
 }
 
-pub fn init_from_seed(server_uri: String, seed: String, birthday: u64) -> String {
+pub fn init_from_seed(server_uri: String, seed: String, birthday: u64, sapling_output_b64: String, sapling_spend_b64: String) -> String {
     let server = LightClientConfig::get_server_or_default(Some(server_uri));
-    let (config, _latest_block_height) = match LightClientConfig::create(server, false) {
+    let (config, _latest_block_height) = match LightClientConfig::create(server) {
         Ok((c, h)) => (c, h),
         Err(e) => {
             return format!("Error: {}", e);
@@ -52,7 +57,12 @@ pub fn init_from_seed(server_uri: String, seed: String, birthday: u64) -> String
     };
 
     let lightclient = match LightClient::new_from_phrase(seed, &config, birthday, false) {
-        Ok(l) => l,
+        Ok(mut l) => {
+            match l.set_sapling_params(&decode(&sapling_output_b64).unwrap(), &decode(&sapling_spend_b64).unwrap()) {
+                Ok(_) => l,
+                Err(e) => return format!("Error: {}", e)
+            }
+        },
         Err(e) => {
             return format!("Error: {}", e);
         }
@@ -70,9 +80,9 @@ pub fn init_from_seed(server_uri: String, seed: String, birthday: u64) -> String
     seed
 }
 
-pub fn init_from_b64(server_uri: String, base64_data: String) -> String {
+pub fn init_from_b64(server_uri: String, base64_data: String, sapling_output_b64: String, sapling_spend_b64: String) -> String {
     let server = LightClientConfig::get_server_or_default(Some(server_uri));
-    let (config, _latest_block_height) = match LightClientConfig::create(server, false) {
+    let (config, _latest_block_height) = match LightClientConfig::create(server) {
         Ok((c, h)) => (c, h),
         Err(e) => {
             return format!("Error: {}", e);
@@ -82,7 +92,12 @@ pub fn init_from_b64(server_uri: String, base64_data: String) -> String {
     let decoded_bytes = decode(&base64_data).unwrap();
 
     let lightclient = match LightClient::read_from_buffer(&config, &decoded_bytes[..]) {
-        Ok(l) => l,
+        Ok(mut l) => {
+            match l.set_sapling_params(&decode(&sapling_output_b64).unwrap(), &decode(&sapling_spend_b64).unwrap()) {
+                Ok(_) => l,
+                Err(e) => return format!("Error: {}", e)
+            }
+        },
         Err(e) => {
             return format!("Error: {}", e);
         }
