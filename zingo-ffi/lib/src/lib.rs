@@ -89,7 +89,10 @@ pub fn init_from_b64(server_uri: String, base64_data: String, sapling_output_b64
         }
     };
 
-    let decoded_bytes = decode(&base64_data).unwrap();
+    let decoded_bytes = match decode(&base64_data) {
+        Ok(b) => b,
+        Err(e) => { return format!("Error: Decoding Base64: {}", e); }
+    };
 
     let lightclient = match LightClient::read_from_buffer(&config, &decoded_bytes[..]) {
         Ok(mut l) => {
