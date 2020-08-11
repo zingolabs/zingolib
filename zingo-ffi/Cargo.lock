@@ -1552,7 +1552,7 @@ dependencies = [
  "jni 0.10.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
- "zecwalletlitelib 0.1.0 (git+https://github.com/adityapk00/zecwallet-light-cli?rev=2a88501a4ca80d9818f11cc947a0417d6874e0e6)",
+ "zecwalletlitelib 0.1.0 (git+https://github.com/adityapk00/zecwallet-light-cli?rev=6c0a672d6643b82b336160da5d3c05cbd2167967)",
 ]
 
 [[package]]
@@ -1836,6 +1836,14 @@ version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "threadpool"
+version = "1.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "num_cpus 1.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -2457,7 +2465,7 @@ dependencies = [
 [[package]]
 name = "zecwalletlitelib"
 version = "0.1.0"
-source = "git+https://github.com/adityapk00/zecwallet-light-cli?rev=2a88501a4ca80d9818f11cc947a0417d6874e0e6#2a88501a4ca80d9818f11cc947a0417d6874e0e6"
+source = "git+https://github.com/adityapk00/zecwallet-light-cli?rev=6c0a672d6643b82b336160da5d3c05cbd2167967#6c0a672d6643b82b336160da5d3c05cbd2167967"
 dependencies = [
  "base58 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "bellman 0.6.0 (git+https://github.com/adityapk00/librustzcash.git?rev=ff0ffc3d1b8bc36a0ad4b6b0f06aa3ca5900d3e4)",
@@ -2472,6 +2480,7 @@ dependencies = [
  "libflate 0.1.27 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "log4rs 0.8.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "num_cpus 1.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "pairing 0.16.0 (git+https://github.com/adityapk00/librustzcash.git?rev=ff0ffc3d1b8bc36a0ad4b6b0f06aa3ca5900d3e4)",
  "prost 0.6.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "prost-types 0.6.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2483,6 +2492,8 @@ dependencies = [
  "secp256k1 0.15.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "sha2 0.8.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "sodiumoxide 0.2.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "subtle 2.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "threadpool 1.8.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "tiny-bip39 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio 0.2.21 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio-rustls 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2714,6 +2725,7 @@ dependencies = [
 "checksum tempfile 3.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "7a6e24d9338a0a5be79593e2fa15a648add6138caa803e2d5bc782c371732ca9"
 "checksum thread-id 3.3.0 (registry+https://github.com/rust-lang/crates.io-index)" = "c7fbf4c9d56b320106cd64fd024dadfa0be7cb4706725fc44a7d7ce952d820c1"
 "checksum thread_local 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)" = "d40c6d1b69745a6ec6fb1ca717914848da4b44ae29d9b3080cbee91d72a69b14"
+"checksum threadpool 1.8.1 (registry+https://github.com/rust-lang/crates.io-index)" = "d050e60b33d41c19108b32cea32164033a9013fe3b46cbd4457559bfbf77afaa"
 "checksum time 0.1.43 (registry+https://github.com/rust-lang/crates.io-index)" = "ca8a50ef2360fbd1eeb0ecd46795a87a19024eb4b53c5dc916ca1fd95fe62438"
 "checksum tiny-bip39 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)" = "c1c5676413eaeb1ea35300a0224416f57abc3bd251657e0fafc12c47ff98c060"
 "checksum tokio 0.2.21 (registry+https://github.com/rust-lang/crates.io-index)" = "d099fa27b9702bed751524694adbe393e18b36b204da91eb1cbbbbb4a5ee2d58"
@@ -2776,4 +2788,4 @@ dependencies = [
 "checksum zcash_client_backend 0.2.0 (git+https://github.com/adityapk00/librustzcash.git?rev=ff0ffc3d1b8bc36a0ad4b6b0f06aa3ca5900d3e4)" = "<none>"
 "checksum zcash_primitives 0.2.0 (git+https://github.com/adityapk00/librustzcash.git?rev=ff0ffc3d1b8bc36a0ad4b6b0f06aa3ca5900d3e4)" = "<none>"
 "checksum zcash_proofs 0.2.0 (git+https://github.com/adityapk00/librustzcash.git?rev=ff0ffc3d1b8bc36a0ad4b6b0f06aa3ca5900d3e4)" = "<none>"
-"checksum zecwalletlitelib 0.1.0 (git+https://github.com/adityapk00/zecwallet-light-cli?rev=2a88501a4ca80d9818f11cc947a0417d6874e0e6)" = "<none>"
+"checksum zecwalletlitelib 0.1.0 (git+https://github.com/adityapk00/zecwallet-light-cli?rev=6c0a672d6643b82b336160da5d3c05cbd2167967)" = "<none>"
