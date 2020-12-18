@@ -445,9 +445,9 @@ dependencies = [
 
 [[package]]
 name = "const_fn"
-version = "0.4.3"
+version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c478836e029dcef17fb47c89023448c64f781a046e0300e257ad8225ae59afab"
+checksum = "cd51eab21ab4fd6a3bf889e2d0958c0a6e3a61ad04260325e919e652a2a62826"
 
 [[package]]
 name = "constant_time_eq"
@@ -517,7 +517,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dca26ee1f8d361640700bde38b2c37d8c22b3ce2d360e1fc1c74ea4b0aa7d775"
 dependencies = [
  "cfg-if 1.0.0",
- "crossbeam-utils 0.8.0",
+ "crossbeam-utils 0.8.1",
 ]
 
 [[package]]
@@ -538,8 +538,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94af6efb46fef72616855b036a624cf27ba656ffc9be1b9a3c931cfc7749a9a9"
 dependencies = [
  "cfg-if 1.0.0",
- "crossbeam-epoch 0.9.0",
- "crossbeam-utils 0.8.0",
+ "crossbeam-epoch 0.9.1",
+ "crossbeam-utils 0.8.1",
 ]
 
 [[package]]
@@ -553,21 +553,21 @@ dependencies = [
  "crossbeam-utils 0.7.2",
  "lazy_static",
  "maybe-uninit",
- "memoffset",
+ "memoffset 0.5.6",
  "scopeguard 1.1.0",
 ]
 
 [[package]]
 name = "crossbeam-epoch"
-version = "0.9.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec0f606a85340376eef0d6d8fec399e6d4a544d648386c6645eb6d0653b27d9f"
+checksum = "a1aaa739f95311c2c7887a76863f500026092fb1dce0161dab577e559ef3569d"
 dependencies = [
  "cfg-if 1.0.0",
  "const_fn",
- "crossbeam-utils 0.8.0",
+ "crossbeam-utils 0.8.1",
  "lazy_static",
- "memoffset",
+ "memoffset 0.6.1",
  "scopeguard 1.1.0",
 ]
 
@@ -605,13 +605,12 @@ dependencies = [
 
 [[package]]
 name = "crossbeam-utils"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec91540d98355f690a86367e566ecad2e9e579f230230eb7c21398372be73ea5"
+checksum = "02d96d1e189ef58269ebe5b97953da3274d83a93af647c2ddd6f9dab28cedb8d"
 dependencies = [
  "autocfg 1.0.1",
  "cfg-if 1.0.0",
- "const_fn",
  "lazy_static",
 ]
 
@@ -713,7 +712,7 @@ dependencies = [
 [[package]]
 name = "equihash"
 version = "0.1.0"
-source = "git+https://github.com/adityapk00/librustzcash?rev=e12b463b7f7ac4f915a530f46f2dc4d0f9a24cbf#e12b463b7f7ac4f915a530f46f2dc4d0f9a24cbf"
+source = "git+https://github.com/adityapk00/librustzcash?rev=b4f790a46710f0b7200a9f768e4653d5dacd35c7#b4f790a46710f0b7200a9f768e4653d5dacd35c7"
 dependencies = [
  "blake2b_simd",
  "byteorder",
@@ -1285,6 +1284,15 @@ name = "memoffset"
 version = "0.5.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "043175f069eda7b85febe4a74abbaeff828d9f8b448515d3151a14a3542811aa"
+dependencies = [
+ "autocfg 1.0.1",
+]
+
+[[package]]
+name = "memoffset"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "157b4208e3059a8f9e78d559edc658e13df41410cb3ae03979c83130067fdd87"
 dependencies = [
  "autocfg 1.0.1",
 ]
@@ -1862,7 +1870,7 @@ checksum = "9ab346ac5921dc62ffa9f89b7a773907511cdfa5490c572ae9be1be33e8afa4a"
 dependencies = [
  "crossbeam-channel 0.5.0",
  "crossbeam-deque 0.8.0",
- "crossbeam-utils 0.8.0",
+ "crossbeam-utils 0.8.1",
  "lazy_static",
  "num_cpus",
 ]
@@ -3080,7 +3088,7 @@ dependencies = [
 [[package]]
 name = "zcash_client_backend"
 version = "0.4.0"
-source = "git+https://github.com/adityapk00/librustzcash?rev=e12b463b7f7ac4f915a530f46f2dc4d0f9a24cbf#e12b463b7f7ac4f915a530f46f2dc4d0f9a24cbf"
+source = "git+https://github.com/adityapk00/librustzcash?rev=b4f790a46710f0b7200a9f768e4653d5dacd35c7#b4f790a46710f0b7200a9f768e4653d5dacd35c7"
 dependencies = [
  "base64 0.12.3",
  "bech32",
@@ -3101,7 +3109,7 @@ dependencies = [
 [[package]]
 name = "zcash_primitives"
 version = "0.4.0"
-source = "git+https://github.com/adityapk00/librustzcash?rev=e12b463b7f7ac4f915a530f46f2dc4d0f9a24cbf#e12b463b7f7ac4f915a530f46f2dc4d0f9a24cbf"
+source = "git+https://github.com/adityapk00/librustzcash?rev=b4f790a46710f0b7200a9f768e4653d5dacd35c7#b4f790a46710f0b7200a9f768e4653d5dacd35c7"
 dependencies = [
  "aes",
  "bitvec",
@@ -3129,7 +3137,7 @@ dependencies = [
 [[package]]
 name = "zcash_proofs"
 version = "0.4.0"
-source = "git+https://github.com/adityapk00/librustzcash?rev=e12b463b7f7ac4f915a530f46f2dc4d0f9a24cbf#e12b463b7f7ac4f915a530f46f2dc4d0f9a24cbf"
+source = "git+https://github.com/adityapk00/librustzcash?rev=b4f790a46710f0b7200a9f768e4653d5dacd35c7#b4f790a46710f0b7200a9f768e4653d5dacd35c7"
 dependencies = [
  "bellman",
  "blake2b_simd",
@@ -3147,7 +3155,7 @@ dependencies = [
 [[package]]
 name = "zecwalletlitelib"
 version = "0.1.0"
-source = "git+https://github.com/adityapk00/zecwallet-light-cli?rev=b611753453140dbc8f748ec82f5b2cca54676b8e#b611753453140dbc8f748ec82f5b2cca54676b8e"
+source = "git+https://github.com/adityapk00/zecwallet-light-cli?rev=0c14287ec9ded76e9865730aa498bc289b1525ff#0c14287ec9ded76e9865730aa498bc289b1525ff"
 dependencies = [
  "base58",
  "base64 0.12.3",
