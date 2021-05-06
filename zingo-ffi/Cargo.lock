@@ -692,7 +692,7 @@ dependencies = [
 [[package]]
 name = "equihash"
 version = "0.1.0"
-source = "git+https://github.com/adityapk00/librustzcash?rev=c31a04a4dbfa5a2ac013139db229f41cd421754d#c31a04a4dbfa5a2ac013139db229f41cd421754d"
+source = "git+https://github.com/adityapk00/librustzcash?rev=28df48aecdaaea1a01ab7e526fb36ff5e6708851#28df48aecdaaea1a01ab7e526fb36ff5e6708851"
 dependencies = [
  "blake2b_simd",
  "byteorder",
@@ -3092,7 +3092,7 @@ dependencies = [
 [[package]]
 name = "zcash_client_backend"
 version = "0.4.0"
-source = "git+https://github.com/adityapk00/librustzcash?rev=c31a04a4dbfa5a2ac013139db229f41cd421754d#c31a04a4dbfa5a2ac013139db229f41cd421754d"
+source = "git+https://github.com/adityapk00/librustzcash?rev=28df48aecdaaea1a01ab7e526fb36ff5e6708851#28df48aecdaaea1a01ab7e526fb36ff5e6708851"
 dependencies = [
  "base64 0.12.3",
  "bech32",
@@ -3113,7 +3113,7 @@ dependencies = [
 [[package]]
 name = "zcash_primitives"
 version = "0.4.0"
-source = "git+https://github.com/adityapk00/librustzcash?rev=c31a04a4dbfa5a2ac013139db229f41cd421754d#c31a04a4dbfa5a2ac013139db229f41cd421754d"
+source = "git+https://github.com/adityapk00/librustzcash?rev=28df48aecdaaea1a01ab7e526fb36ff5e6708851#28df48aecdaaea1a01ab7e526fb36ff5e6708851"
 dependencies = [
  "aes",
  "bitvec",
@@ -3141,7 +3141,7 @@ dependencies = [
 [[package]]
 name = "zcash_proofs"
 version = "0.4.0"
-source = "git+https://github.com/adityapk00/librustzcash?rev=c31a04a4dbfa5a2ac013139db229f41cd421754d#c31a04a4dbfa5a2ac013139db229f41cd421754d"
+source = "git+https://github.com/adityapk00/librustzcash?rev=28df48aecdaaea1a01ab7e526fb36ff5e6708851#28df48aecdaaea1a01ab7e526fb36ff5e6708851"
 dependencies = [
  "bellman",
  "blake2b_simd",
@@ -3159,7 +3159,7 @@ dependencies = [
 [[package]]
 name = "zecwalletlitelib"
 version = "0.1.0"
-source = "git+https://github.com/adityapk00/zecwallet-light-cli?rev=11e0ea2034faa5a5fa8018629ab25d2f021146c4#11e0ea2034faa5a5fa8018629ab25d2f021146c4"
+source = "git+https://github.com/adityapk00/zecwallet-light-cli?rev=0547a129d261e5c10762a57f4e15798387bef7fa#0547a129d261e5c10762a57f4e15798387bef7fa"
 dependencies = [
  "base58",
  "base64 0.12.3",
