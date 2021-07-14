@@ -29,7 +29,7 @@ pub fn init_new(
         }
     };
 
-    let lightclient = match LightClient::new(&config, latest_block_height) {
+    let lightclient = match LightClient::new(&config, latest_block_height.saturating_sub(100)) {
         Ok(mut l) => {
             match l.set_sapling_params(
                 &decode(&sapling_output_b64).unwrap(),
