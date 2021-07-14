@@ -51,10 +51,10 @@ pub fn init_new(
         }
     };
 
-    LIGHTCLIENT
-        .lock()
-        .unwrap()
-        .replace(Some(Arc::new(lightclient)));
+    let lc = Arc::new(lightclient);
+    LightClient::start_mempool_monitor(lc.clone());
+
+    LIGHTCLIENT.lock().unwrap().replace(Some(lc));
 
     seed
 }
@@ -96,10 +96,10 @@ pub fn init_from_seed(
         }
     };
 
-    LIGHTCLIENT
-        .lock()
-        .unwrap()
-        .replace(Some(Arc::new(lightclient)));
+    let lc = Arc::new(lightclient);
+    LightClient::start_mempool_monitor(lc.clone());
+
+    LIGHTCLIENT.lock().unwrap().replace(Some(lc));
 
     seed
 }
@@ -147,10 +147,10 @@ pub fn init_from_b64(
         }
     };
 
-    LIGHTCLIENT
-        .lock()
-        .unwrap()
-        .replace(Some(Arc::new(lightclient)));
+    let lc = Arc::new(lightclient);
+    LightClient::start_mempool_monitor(lc.clone());
+
+    LIGHTCLIENT.lock().unwrap().replace(Some(lc));
 
     seed
 }
