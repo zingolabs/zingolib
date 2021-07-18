@@ -20,14 +20,17 @@ pub fn init_new(
     server_uri: String,
     sapling_output_b64: String,
     sapling_spend_b64: String,
+    data_dir: String,
 ) -> String {
     let server = LightClientConfig::get_server_or_default(Some(server_uri));
-    let (config, latest_block_height) = match LightClientConfig::create(server) {
+    let (mut config, latest_block_height) = match LightClientConfig::create(server) {
         Ok((c, h)) => (c, h),
         Err(e) => {
             return format!("Error: {}", e);
         }
     };
+
+    config.set_data_dir(data_dir);
 
     let lightclient = match LightClient::new(&config, latest_block_height.saturating_sub(100)) {
         Ok(mut l) => {
@@ -65,14 +68,17 @@ pub fn init_from_seed(
     birthday: u64,
     sapling_output_b64: String,
     sapling_spend_b64: String,
+    data_dir: String,
 ) -> String {
     let server = LightClientConfig::get_server_or_default(Some(server_uri));
-    let (config, _latest_block_height) = match LightClientConfig::create(server) {
+    let (mut config, _latest_block_height) = match LightClientConfig::create(server) {
         Ok((c, h)) => (c, h),
         Err(e) => {
             return format!("Error: {}", e);
         }
     };
+
+    config.set_data_dir(data_dir);
 
     let lightclient = match LightClient::new_from_phrase(seed, &config, birthday, false) {
         Ok(mut l) => {
@@ -109,14 +115,17 @@ pub fn init_from_b64(
     base64_data: String,
     sapling_output_b64: String,
     sapling_spend_b64: String,
+    data_dir: String,
 ) -> String {
     let server = LightClientConfig::get_server_or_default(Some(server_uri));
-    let (config, _latest_block_height) = match LightClientConfig::create(server) {
+    let (mut config, _latest_block_height) = match LightClientConfig::create(server) {
         Ok((c, h)) => (c, h),
         Err(e) => {
             return format!("Error: {}", e);
         }
     };
+
+    config.set_data_dir(data_dir);
 
     let decoded_bytes = match decode(&base64_data) {
         Ok(b) => b,
