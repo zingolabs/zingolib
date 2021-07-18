@@ -66,10 +66,6 @@ pub struct LightClient {
 
     mempool_monitor: std::sync::RwLock<Option<std::thread::JoinHandle<()>>>,
 
-    // zcash-params
-    pub sapling_output: Vec<u8>,
-    pub sapling_spend: Vec<u8>,
-
     sync_lock: Mutex<()>,
 
     bsync_data: Arc<RwLock<BlazeSyncData>>,
@@ -86,20 +82,15 @@ impl LightClient {
             ));
         }
 
-        let mut l = LightClient {
+        let l = LightClient {
             wallet: LightWallet::new(config.clone(), seed_phrase, height)?,
             config: config.clone(),
-            sapling_output: vec![],
-            sapling_spend: vec![],
             mempool_monitor: std::sync::RwLock::new(None),
             bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
             sync_lock: Mutex::new(()),
         };
 
         l.set_wallet_initial_state(height).await;
-
-        #[cfg(feature = "embed_params")]
-        l.read_sapling_params();
 
         info!("Created new wallet!");
         info!("Created LightClient to {}", &config.server);
@@ -118,13 +109,35 @@ impl LightClient {
     }
 
     #[cfg(feature = "embed_params")]
-    fn read_sapling_params(&mut self) {
+    fn read_sapling_params(&self) -> Result<(Vec<u8>, Vec<u8>), String> {
         // Read Sapling Params
         use crate::SaplingParams;
-        self.sapling_output
-            .extend_from_slice(SaplingParams::get("sapling-output.params").unwrap().as_ref());
-        self.sapling_spend
-            .extend_from_slice(SaplingParams::get("sapling-spend.params").unwrap().as_ref());
+        let mut sapling_output = vec![];
+        sapling_output.extend_from_slice(SaplingParams::get("sapling-output.params").unwrap().as_ref());
+
+        let mut sapling_spend = vec![];
+        sapling_spend.extend_from_slice(SaplingParams::get("sapling-spend.params").unwrap().as_ref());
+
+        Ok((sapling_output, sapling_spend))
+    }
+
+    #[cfg(not(feature = "embed_params"))]
+    fn read_sapling_params(&self) -> Result<(Vec<u8>, Vec<u8>), String> {
+        let path = self.config.get_zcash_params_path().map_err(|e| e.to_string())?;
+
+        let mut path_buf = path.to_path_buf();
+        path_buf.push("sapling-output.params");
+        let mut file = File::open(path_buf).map_err(|e| e.to_string())?;
+        let mut sapling_output = vec![];
+        file.read_to_end(&mut sapling_output).map_err(|e| e.to_string())?;
+
+        let mut path_buf = path.to_path_buf();
+        path_buf.push("sapling-spend.params");
+        let mut file = File::open(path_buf).map_err(|e| e.to_string())?;
+        let mut sapling_spend = vec![];
+        file.read_to_end(&mut sapling_spend).map_err(|e| e.to_string())?;
+
+        Ok((sapling_output, sapling_spend))
     }
 
     pub fn set_sapling_params(&mut self, sapling_output: &[u8], sapling_spend: &[u8]) -> Result<(), String> {
@@ -134,58 +147,45 @@ impl LightClient {
         const SAPLING_OUTPUT_HASH: &str = "2f0ebbcbb9bb0bcffe95a397e7eba89c29eb4dde6191c339db88570e3f3fb0e4";
         const SAPLING_SPEND_HASH: &str = "8e48ffd23abb3a5fd9c5589204f32d9c31285a04b78096ba40a79b75677efc13";
 
-        if SAPLING_OUTPUT_HASH.to_string() != hex::encode(Sha256::digest(&sapling_output)) {
-            return Err(format!(
-                "sapling-output hash didn't match. expected {}, found {}",
-                SAPLING_OUTPUT_HASH,
-                hex::encode(Sha256::digest(&sapling_output))
-            ));
-        }
-        if SAPLING_SPEND_HASH.to_string() != hex::encode(Sha256::digest(&sapling_spend)) {
-            return Err(format!(
-                "sapling-spend hash didn't match. expected {}, found {}",
-                SAPLING_SPEND_HASH,
-                hex::encode(Sha256::digest(&sapling_spend))
-            ));
+        if sapling_output.len() > 0 {
+            if SAPLING_OUTPUT_HASH.to_string() != hex::encode(Sha256::digest(&sapling_output)) {
+                return Err(format!(
+                    "sapling-output hash didn't match. expected {}, found {}",
+                    SAPLING_OUTPUT_HASH,
+                    hex::encode(Sha256::digest(&sapling_output))
+                ));
+            }
         }
 
-        // Will not overwrite previous params
-        if self.sapling_output.is_empty() {
-            self.sapling_output.extend_from_slice(sapling_output);
-        }
-
-        if self.sapling_spend.is_empty() {
-            self.sapling_spend.extend_from_slice(sapling_spend);
+        if sapling_spend.len() > 0 {
+            if SAPLING_SPEND_HASH.to_string() != hex::encode(Sha256::digest(&sapling_spend)) {
+                return Err(format!(
+                    "sapling-spend hash didn't match. expected {}, found {}",
+                    SAPLING_SPEND_HASH,
+                    hex::encode(Sha256::digest(&sapling_spend))
+                ));
+            }
         }
 
         // Ensure that the sapling params are stored on disk properly as well. Only on desktop
-        if cfg!(all(not(target_os = "ios"), not(target_os = "android"))) {
-            match self.config.get_zcash_params_path() {
-                Ok(zcash_params_dir) => {
-                    // Create the sapling output and spend params files
-                    match LightClient::write_file_if_not_exists(
-                        &zcash_params_dir,
-                        "sapling-output.params",
-                        &self.sapling_output,
-                    ) {
-                        Ok(_) => {}
-                        Err(e) => eprintln!("Warning: Couldn't write the output params!\n{}", e),
-                    };
+        match self.config.get_zcash_params_path() {
+            Ok(zcash_params_dir) => {
+                // Create the sapling output and spend params files
+                match LightClient::write_file_if_not_exists(&zcash_params_dir, "sapling-output.params", &sapling_output)
+                {
+                    Ok(_) => {}
+                    Err(e) => return Err(format!("Warning: Couldn't write the output params!\n{}", e)),
+                };
 
-                    match LightClient::write_file_if_not_exists(
-                        &zcash_params_dir,
-                        "sapling-spend.params",
-                        &self.sapling_spend,
-                    ) {
-                        Ok(_) => {}
-                        Err(e) => eprintln!("Warning: Couldn't write the output params!\n{}", e),
-                    }
+                match LightClient::write_file_if_not_exists(&zcash_params_dir, "sapling-spend.params", &sapling_spend) {
+                    Ok(_) => {}
+                    Err(e) => return Err(format!("Warning: Couldn't write the spend params!\n{}", e)),
                 }
-                Err(e) => {
-                    eprintln!("{}", e);
-                }
-            };
-        }
+            }
+            Err(e) => {
+                return Err(format!("{}", e));
+            }
+        };
 
         Ok(())
     }
@@ -217,20 +217,15 @@ impl LightClient {
             }
         }
         let l = Runtime::new().unwrap().block_on(async move {
-            let mut l = LightClient {
+            let l = LightClient {
                 wallet: LightWallet::new(config.clone(), None, latest_block)?,
                 config: config.clone(),
-                sapling_output: vec![],
-                sapling_spend: vec![],
                 mempool_monitor: std::sync::RwLock::new(None),
                 sync_lock: Mutex::new(()),
                 bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
             };
 
             l.set_wallet_initial_state(latest_block).await;
-
-            #[cfg(feature = "embed_params")]
-            l.read_sapling_params();
 
             info!("Created new wallet with a new seed!");
             info!("Created LightClient to {}", &config.server);
@@ -261,11 +256,9 @@ impl LightClient {
             }
         }
         let l = Runtime::new().unwrap().block_on(async move {
-            let mut l = LightClient {
+            let l = LightClient {
                 wallet: LightWallet::new(config.clone(), Some(seed_phrase), birthday)?,
                 config: config.clone(),
-                sapling_output: vec![],
-                sapling_spend: vec![],
                 mempool_monitor: std::sync::RwLock::new(None),
                 sync_lock: Mutex::new(()),
                 bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
@@ -273,9 +266,6 @@ impl LightClient {
 
             println!("Setting birthday to {}", birthday);
             l.set_wallet_initial_state(birthday).await;
-
-            #[cfg(feature = "embed_params")]
-            l.read_sapling_params();
 
             info!("Created new wallet!");
             info!("Created LightClient to {}", &config.server);
@@ -292,18 +282,13 @@ impl LightClient {
         let l = Runtime::new().unwrap().block_on(async move {
             let wallet = LightWallet::read(&mut reader, config).await?;
 
-            let mut lc = LightClient {
+            let lc = LightClient {
                 wallet: wallet,
                 config: config.clone(),
-                sapling_output: vec![],
-                sapling_spend: vec![],
                 mempool_monitor: std::sync::RwLock::new(None),
                 sync_lock: Mutex::new(()),
                 bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
             };
-
-            #[cfg(feature = "embed_params")]
-            lc.read_sapling_params();
 
             info!("Read wallet with birthday {}", lc.wallet.get_birthday().await);
             info!("Created LightClient to {}", &config.server);
@@ -329,18 +314,13 @@ impl LightClient {
 
             let wallet = LightWallet::read(&mut file_buffer, config).await?;
 
-            let mut lc = LightClient {
+            let lc = LightClient {
                 wallet: wallet,
                 config: config.clone(),
-                sapling_output: vec![],
-                sapling_spend: vec![],
                 mempool_monitor: std::sync::RwLock::new(None),
                 sync_lock: Mutex::new(()),
                 bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
             };
-
-            #[cfg(feature = "embed_params")]
-            lc.read_sapling_params();
 
             info!("Read wallet with birthday {}", lc.wallet.get_birthday().await);
             info!("Created LightClient to {}", &config.server);
@@ -1616,7 +1596,9 @@ impl LightClient {
 
         let result = {
             let _lock = self.sync_lock.lock().await;
-            let prover = LocalTxProver::from_bytes(&self.sapling_spend, &self.sapling_output);
+            let (sapling_spend, sapling_output) = self.read_sapling_params()?;
+
+            let prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
 
             self.wallet
                 .send_to_address(branch_id, prover, true, vec![(&addr, tbal - fee, None)], |txbytes| {
@@ -1643,7 +1625,9 @@ impl LightClient {
 
         let result = {
             let _lock = self.sync_lock.lock().await;
-            let prover = LocalTxProver::from_bytes(&self.sapling_spend, &self.sapling_output);
+            let (sapling_output, sapling_spend) = self.read_sapling_params()?;
+
+            let prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
 
             self.wallet
                 .send_to_address(branch_id, prover, false, addrs, |txbytes| {
