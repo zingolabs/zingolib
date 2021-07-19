@@ -1337,6 +1337,76 @@ async fn mempool_clearing() {
     h1.await.unwrap();
 }
 
+#[tokio::test]
+async fn mempool_and_balance() {
+    let (data, config, ready_rx, stop_tx, h1) = create_test_server().await;
+
+    ready_rx.await.unwrap();
+
+    let lc = LightClient::test_new(&config, None, 0).await.unwrap();
+    let mut fcbl = FakeCompactBlockList::new(0);
+
+    // 1. Mine 10 blocks
+    mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
+    assert_eq!(lc.wallet.last_scanned_height().await, 10);
+
+    // 2. Send an incoming tx to fill the wallet
+    let extfvk1 = lc.wallet.keys().read().await.get_all_extfvks()[0].clone();
+    let value = 100_000;
+    let (_tx, _height, _) = fcbl.add_tx_paying(&extfvk1, value);
+    mine_pending_blocks(&mut fcbl, &data, &lc).await;
+
+    let bal = lc.do_balance().await;
+    assert_eq!(bal["zbalance"].as_u64().unwrap(), value);
+    assert_eq!(bal["verified_zbalance"].as_u64().unwrap(), 0);
+    assert_eq!(bal["unverified_zbalance"].as_u64().unwrap(), value);
+
+    // 3. Mine 10 blocks
+    mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
+    let bal = lc.do_balance().await;
+    assert_eq!(bal["zbalance"].as_u64().unwrap(), value);
+    assert_eq!(bal["verified_zbalance"].as_u64().unwrap(), value);
+    assert_eq!(bal["unverified_zbalance"].as_u64().unwrap(), 0);
+
+    // 4. Spend the funds
+    let sent_value = 2000;
+    let outgoing_memo = "Outgoing Memo".to_string();
+
+    let _sent_txid = lc
+        .test_do_send(vec![(EXT_ZADDR, sent_value, Some(outgoing_memo.clone()))])
+        .await
+        .unwrap();
+
+    let bal = lc.do_balance().await;
+
+    // Even though the tx is not mined (in the mempool) the balances should be updated to reflect the spent funds
+    let new_bal = value - (sent_value + u64::from(DEFAULT_FEE));
+    assert_eq!(bal["zbalance"].as_u64().unwrap(), new_bal);
+    assert_eq!(bal["verified_zbalance"].as_u64().unwrap(), 0);
+    assert_eq!(bal["unverified_zbalance"].as_u64().unwrap(), new_bal);
+
+    // 5. Mine the pending block, but the balances should remain the same.
+    fcbl.add_pending_sends(&data).await;
+    mine_pending_blocks(&mut fcbl, &data, &lc).await;
+
+    let bal = lc.do_balance().await;
+    assert_eq!(bal["zbalance"].as_u64().unwrap(), new_bal);
+    assert_eq!(bal["verified_zbalance"].as_u64().unwrap(), 0);
+    assert_eq!(bal["unverified_zbalance"].as_u64().unwrap(), new_bal);
+
+    // 6. Mine 10 more blocks, making the funds verified and spendable.
+    mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
+    let bal = lc.do_balance().await;
+
+    assert_eq!(bal["zbalance"].as_u64().unwrap(), new_bal);
+    assert_eq!(bal["verified_zbalance"].as_u64().unwrap(), new_bal);
+    assert_eq!(bal["unverified_zbalance"].as_u64().unwrap(), 0);
+
+    // Shutdown everything cleanly
+    stop_tx.send(true).unwrap();
+    h1.await.unwrap();
+}
+
 const EXT_TADDR: &str = "t1NoS6ZgaUTpmjkge2cVpXGcySasdYDrXqh";
 const EXT_ZADDR: &str = "zs1va5902apnzlhdu0pw9r9q7ca8s4vnsrp2alr6xndt69jnepn2v2qrj9vg3wfcnjyks5pg65g9dc";
 const EXT_ZADDR2: &str = "zs1fxgluwznkzm52ux7jkf4st5znwzqay8zyz4cydnyegt2rh9uhr9458z0nk62fdsssx0cqhy6lyv";

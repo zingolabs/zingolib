@@ -594,16 +594,22 @@ impl LightWallet {
             .map(|tx| {
                 tx.notes
                     .iter()
-                    .filter(|nd| match addr.clone() {
+                    .filter(|nd| match addr.as_ref() {
                         Some(a) => {
-                            a == encode_payment_address(
+                            *a == encode_payment_address(
                                 self.config.hrp_sapling_address(),
                                 &nd.extfvk.fvk.vk.to_payment_address(nd.diversifier).unwrap(),
                             )
                         }
                         None => true,
                     })
-                    .map(|nd| if nd.spent.is_none() { nd.note.value } else { 0 })
+                    .map(|nd| {
+                        if nd.spent.is_none() && nd.unconfirmed_spent.is_none() {
+                            nd.note.value
+                        } else {
+                            0
+                        }
+                    })
                     .sum::<u64>()
             })
             .sum::<u64>()
@@ -625,8 +631,8 @@ impl LightWallet {
         self.get_utxos()
             .await
             .iter()
-            .filter(|utxo| match addr.clone() {
-                Some(a) => utxo.address == a,
+            .filter(|utxo| match addr.as_ref() {
+                Some(a) => utxo.address == *a,
                 None => true,
             })
             .map(|utxo| utxo.value)
@@ -693,9 +699,9 @@ impl LightWallet {
                     tx.notes
                         .iter()
                         .filter(|nd| nd.spent.is_none() && nd.unconfirmed_spent.is_none())
-                        .filter(|nd| match addr.clone() {
+                        .filter(|nd| match addr.as_ref() {
                             Some(a) => {
-                                a == encode_payment_address(
+                                *a == encode_payment_address(
                                     self.config.hrp_sapling_address(),
                                     &nd.extfvk.fvk.vk.to_payment_address(nd.diversifier).unwrap(),
                                 )
@@ -730,9 +736,9 @@ impl LightWallet {
                             // Check to see if we have this note's spending key and witnesses
                             keys.have_spending_key(&nd.extfvk) && nd.witnesses.len() > 0
                         })
-                        .filter(|nd| match addr.clone() {
+                        .filter(|nd| match addr.as_ref() {
                             Some(a) => {
-                                a == encode_payment_address(
+                                *a == encode_payment_address(
                                     self.config.hrp_sapling_address(),
                                     &nd.extfvk.fvk.vk.to_payment_address(nd.diversifier).unwrap(),
                                 )
