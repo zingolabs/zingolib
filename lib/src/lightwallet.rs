@@ -15,11 +15,7 @@ use std::{
     collections::HashMap,
     convert::TryFrom,
     io::{self, Error, ErrorKind, Read, Write},
-    sync::{
-        atomic::{AtomicBool, AtomicU64},
-        mpsc::channel,
-        Arc,
-    },
+    sync::{atomic::AtomicU64, mpsc::channel, Arc},
     time::SystemTime,
 };
 use tokio::sync::RwLock;
@@ -32,7 +28,6 @@ use zcash_primitives::{
     consensus::{BlockHeight, BranchId, MAIN_NETWORK},
     legacy::Script,
     memo::Memo,
-    merkle_tree::CommitmentTree,
     prover::TxProver,
     serialize::Vector,
     transaction::{
@@ -110,9 +105,6 @@ pub struct LightWallet {
     // Non-serialized fields
     config: LightClientConfig,
 
-    // If this wallet's initial block was verified
-    sapling_tree_verified: AtomicBool,
-
     // Heighest verified block
     pub(crate) verified_tree: Arc<RwLock<Option<TreeState>>>,
 
@@ -125,7 +117,7 @@ pub struct LightWallet {
 
 impl LightWallet {
     pub fn serialized_version() -> u64 {
-        return 22;
+        return 23;
     }
 
     pub fn new(config: LightClientConfig, seed_phrase: Option<String>, height: u64) -> io::Result<Self> {
@@ -137,7 +129,6 @@ impl LightWallet {
             blocks: Arc::new(RwLock::new(vec![])),
             config,
             birthday: AtomicU64::new(height),
-            sapling_tree_verified: AtomicBool::new(false),
             verified_tree: Arc::new(RwLock::new(None)),
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(WalletZecPriceInfo::new())),
@@ -189,7 +180,9 @@ impl LightWallet {
 
         let birthday = reader.read_u64::<LittleEndian>()?;
 
-        let sapling_tree_verified = if version <= 12 { true } else { reader.read_u8()? == 1 };
+        if version <= 22 {
+            let _sapling_tree_verified = if version <= 12 { true } else { reader.read_u8()? == 1 };
+        }
 
         let verified_tree = if version <= 21 {
             None
@@ -227,7 +220,6 @@ impl LightWallet {
             blocks: Arc::new(RwLock::new(blocks)),
             config: config.clone(),
             birthday: AtomicU64::new(birthday),
-            sapling_tree_verified: AtomicBool::new(sapling_tree_verified),
             verified_tree: Arc::new(RwLock::new(verified_tree)),
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(price)),
@@ -270,9 +262,6 @@ impl LightWallet {
         // in case of rescans etc...
         writer.write_u64::<LittleEndian>(self.get_birthday().await)?;
 
-        // If the sapling tree was verified
-        writer.write_u8(if self.is_sapling_tree_verified() { 1 } else { 0 })?;
-
         Optional::write(&mut writer, &self.verified_tree.read().await.as_ref(), |w, t| {
             use prost::Message;
             let mut buf = vec![];
@@ -303,40 +292,6 @@ impl LightWallet {
 
     pub fn txns(&self) -> Arc<RwLock<WalletTxns>> {
         self.txns.clone()
-    }
-
-    pub fn is_sapling_tree_verified(&self) -> bool {
-        self.sapling_tree_verified.load(std::sync::atomic::Ordering::SeqCst)
-    }
-
-    pub fn set_sapling_tree_verified(&self) {
-        self.sapling_tree_verified
-            .store(true, std::sync::atomic::Ordering::SeqCst)
-    }
-
-    // Get the latest sapling commitment tree. It will return the height and the hex-encoded sapling commitment tree at that height
-    pub async fn get_wallet_sapling_tree(&self, block_pos: NodePosition) -> Result<(u64, String, String), String> {
-        let blocks = self.blocks.read().await;
-
-        let block = match block_pos {
-            NodePosition::Highest => blocks.first(),
-            NodePosition::Oldest => blocks.last(),
-        };
-
-        if block.is_none() {
-            return Err("Couldn't get a block height!".to_string());
-        }
-
-        let block = block.unwrap();
-        let mut write_buf = vec![];
-        block
-            .tree()
-            .as_ref()
-            .map(|t| t.write(&mut write_buf))
-            .ok_or(format!("No Commitment tree"))?
-            .map_err(|e| format!("Error writing commitment tree {}", e))?;
-
-        Ok((block.height, block.hash().clone(), hex::encode(write_buf)))
     }
 
     pub async fn set_blocks(&self, new_blocks: Vec<BlockData>) {
@@ -537,31 +492,15 @@ impl LightWallet {
         self.txns.write().await.clear();
     }
 
-    pub async fn set_initial_block(&self, height: u64, hash: &str, sapling_tree: &str) -> bool {
+    pub async fn set_initial_block(&self, height: u64, hash: &str, _sapling_tree: &str) -> bool {
         let mut blocks = self.blocks.write().await;
         if !blocks.is_empty() {
             return false;
         }
 
-        let sapling_tree = match hex::decode(sapling_tree) {
-            Ok(tree) => tree,
-            Err(e) => {
-                eprintln!("{}", e);
-                return false;
-            }
-        };
+        blocks.push(BlockData::new_with(height, hash));
 
-        // Reset the verification status
-        info!("Reset the sapling tree verified to false");
-        self.sapling_tree_verified
-            .store(false, std::sync::atomic::Ordering::SeqCst);
-
-        if let Ok(tree) = CommitmentTree::read(&sapling_tree[..]) {
-            blocks.push(BlockData::new_with(height, hash, Some(tree)));
-            true
-        } else {
-            false
-        }
+        true
     }
 
     pub async fn last_scanned_height(&self) -> u64 {

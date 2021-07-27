@@ -950,10 +950,6 @@ async fn recover_at_checkpoint() {
         ckpt_height + 110
     );
 
-    assert_eq!(lc.wallet.is_sapling_tree_verified(), false);
-    assert_eq!(lc.do_verify_from_last_checkpoint().await.unwrap(), true);
-    assert_eq!(lc.wallet.is_sapling_tree_verified(), true);
-
     lc.do_sync(true).await.unwrap();
 
     // Check the trees
@@ -973,10 +969,6 @@ async fn recover_at_checkpoint() {
             .unwrap(),
         ckpt_height + 110
     );
-
-    assert_eq!(lc.wallet.is_sapling_tree_verified(), false);
-    assert_eq!(lc.do_verify_from_last_checkpoint().await.unwrap(), true);
-    assert_eq!(lc.wallet.is_sapling_tree_verified(), true);
 
     lc.do_sync(true).await.unwrap();
 

@@ -452,13 +452,9 @@ impl BlockAndWitnessData {
         let prev_height = { u64::from(height) - 1 };
 
         let (cb, mut tree) = {
-            // Prev height could be in the existing blocks, too, so check those before checking the current blocks.
-            let existing_blocks = self.existing_blocks.read().await;
             let tree = {
                 let maybe_tree = if prev_height < self.sapling_activation_height {
                     Some(CommitmentTree::empty())
-                } else if !existing_blocks.is_empty() && existing_blocks.first().unwrap().height == prev_height {
-                    existing_blocks.first().unwrap().tree().clone()
                 } else {
                     None
                 };
@@ -484,7 +480,6 @@ impl BlockAndWitnessData {
 
                     let pos = blocks.first().unwrap().height - height;
                     let bd = blocks.get_mut(pos as usize).unwrap();
-                    bd.set_tree(tree.clone());
 
                     bd.cb()
                 }

@@ -8,7 +8,7 @@ use crate::{
     compact_formats::RawTransaction,
     grpc_connector::GrpcConnector,
     lightclient::lightclient_config::MAX_REORG,
-    lightwallet::{self, message::Message, now, LightWallet, NodePosition},
+    lightwallet::{self, message::Message, now, LightWallet},
 };
 use futures::future::{join_all, AbortHandle, Abortable};
 use json::{array, object, JsonValue};
@@ -34,8 +34,6 @@ use zcash_primitives::{
     block::BlockHash,
     consensus::{BlockHeight, BranchId, MAIN_NETWORK},
     memo::{Memo, MemoBytes},
-    merkle_tree::CommitmentTree,
-    sapling::Node,
     transaction::{components::amount::DEFAULT_FEE, Transaction, TxId},
 };
 use zcash_proofs::prover::LocalTxProver;
@@ -1003,127 +1001,6 @@ impl LightClient {
         response
     }
 
-    pub async fn do_verify_from_last_checkpoint(&self) -> Result<bool, String> {
-        // If there are no blocks in the wallet, then we are starting from scratch, so no need to verify anything.
-        let last_height = self.wallet.last_scanned_height().await;
-        if last_height == self.config.sapling_activation_height - 1 {
-            info!(
-                "Reset the sapling tree verified to true. (Block height is at the begining ({}))",
-                last_height
-            );
-            self.wallet.set_sapling_tree_verified();
-
-            return Ok(true);
-        }
-
-        // Get the oldest block's details, and make sure we can compute it from the last checkpoint
-        // Note that we get the oldest block in the wallet (Not the latest one). This is expected to be tip - 100 blocks.
-        // We use this block to prevent any reorg risk.
-        let (end_height, _, end_tree) = match self.wallet.get_wallet_sapling_tree(NodePosition::Oldest).await {
-            Ok(r) => r,
-            Err(e) => return Err(format!("No wallet block found: {}", e)),
-        };
-
-        // Get the last checkpoint
-        let (start_height, _, start_tree) =
-            match checkpoints::get_closest_checkpoint(&self.config.chain_name, end_height as u64) {
-                Some(r) => r,
-                None => return Err(format!("No checkpoint found")),
-            };
-
-        // If the height is the same as the checkpoint, then just compare directly
-        if end_height as u64 == start_height {
-            let verified = end_tree == start_tree;
-
-            if verified {
-                info!("Reset the sapling tree verified to true");
-                self.wallet.set_sapling_tree_verified();
-            } else {
-                warn!("Sapling tree verification failed!");
-                let e = format!(
-                    "Verification Results:\nCalculated\n{}\nExpected\n{}\n",
-                    start_tree, end_tree
-                );
-                warn!("{}", e);
-                return Err(e);
-            }
-
-            return Ok(verified);
-        }
-
-        let sapling_tree = hex::decode(start_tree).unwrap();
-
-        // The comupted commitment tree will be here.
-        let commit_tree_computed = Arc::new(RwLock::new(
-            CommitmentTree::read(&sapling_tree[..]).map_err(|e| format!("{}", e))?,
-        ));
-
-        let uri = self.get_server_uri();
-        let (tx, mut rx) = unbounded_channel();
-
-        let h1 = tokio::spawn(async move {
-            let grpc_conn = GrpcConnector::new(uri);
-            // Since both start and end block are inclusive, do start_height+1 to end_height
-            grpc_conn.get_block_range(start_height + 1, end_height, tx).await
-        });
-
-        let commit_tree = commit_tree_computed.clone();
-        let h2 = tokio::spawn(async move {
-            while let Some(cb) = rx.recv().await {
-                // Go over all tx, all outputs. No need to do any processing, just update the commitment tree
-                for tx in cb.vtx.iter() {
-                    for so in tx.outputs.iter() {
-                        let node = Node::new(so.cmu().ok().unwrap().into());
-                        commit_tree.write().await.append(node).unwrap();
-                    }
-                }
-
-                // Write updates every now and then.
-                if cb.height % 10000 == 0 {
-                    info!("Verification at block {}", cb.height);
-                }
-            }
-        });
-
-        let (r1, r2) = join!(h1, h2);
-        r1.map_err(|e| format!("{}", e))??;
-        r2.map_err(|e| format!("{}", e))?;
-
-        // Get the string version of the tree
-        let mut write_buf = vec![];
-        commit_tree_computed
-            .write()
-            .await
-            .write(&mut write_buf)
-            .map_err(|e| format!("{}", e))?;
-        let computed_tree = hex::encode(write_buf);
-
-        let verified = computed_tree == end_tree;
-        if verified {
-            info!("Reset the sapling tree verified to true");
-            self.wallet.set_sapling_tree_verified();
-        } else {
-            warn!("Sapling tree verification failed!");
-            let e = format!(
-                "Verification Results:\nComputed@{}-{}\n{}\nExpected@{}\n{}\n",
-                start_height + 1,
-                end_height,
-                computed_tree,
-                end_height,
-                end_tree
-            );
-            warn!("{}", e);
-            return Err(e);
-        }
-
-        return Ok(verified);
-    }
-
-    /// Return the syncing status of the wallet
-    // pub fn do_scan_status(&self) -> WalletStatus {
-    //     self.sync_status.read().unwrap().clone()
-    // }
-
     async fn update_current_price(&self) {
         // Get the zec price from the server
         match GrpcConnector::get_current_zec_price(self.get_server_uri()).await {
@@ -1344,24 +1221,6 @@ impl LightClient {
         // We can only do one sync at a time because we sync blocks in serial order
         // If we allow multiple syncs, they'll all get jumbled up.
         let _lock = self.sync_lock.lock().await;
-
-        // See if we need to verify first
-        if !self.wallet.is_sapling_tree_verified() {
-            match self.do_verify_from_last_checkpoint().await {
-                Err(e) => {
-                    return Err(format!(
-                        "Checkpoint failed to verify with eror:{}.\nYou should rescan.",
-                        e
-                    ))
-                }
-                Ok(false) => {
-                    return Err(format!(
-                        "Checkpoint failed to verify: Verification returned false.\nYou should rescan."
-                    ))
-                }
-                _ => {}
-            }
-        }
 
         // The top of the wallet
         let last_scanned_height = self.wallet.last_scanned_height().await;

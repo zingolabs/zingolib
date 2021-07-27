@@ -22,7 +22,6 @@ use zcash_primitives::{
 pub struct BlockData {
     pub(crate) ecb: Vec<u8>,
     pub height: u64,
-    tree: Option<CommitmentTree<Node>>,
 }
 
 impl BlockData {
@@ -30,14 +29,14 @@ impl BlockData {
         return 20;
     }
 
-    pub(crate) fn new_with(height: u64, hash: &str, tree: Option<CommitmentTree<Node>>) -> Self {
+    pub(crate) fn new_with(height: u64, hash: &str) -> Self {
         let mut cb = CompactBlock::default();
         cb.hash = hex::decode(hash).unwrap().into_iter().rev().collect::<Vec<_>>();
 
         let mut ecb = vec![];
         cb.encode(&mut ecb).unwrap();
 
-        Self { ecb, height, tree }
+        Self { ecb, height }
     }
 
     pub(crate) fn new(mut cb: CompactBlock) -> Self {
@@ -54,19 +53,7 @@ impl BlockData {
         let mut ecb = vec![];
         cb.encode(&mut ecb).unwrap();
 
-        Self {
-            ecb,
-            height,
-            tree: None,
-        }
-    }
-
-    pub(crate) fn tree(&self) -> Option<CommitmentTree<Node>> {
-        self.tree.clone()
-    }
-
-    pub(crate) fn set_tree(&mut self, tree: CommitmentTree<Node>) {
-        self.tree = Some(tree);
+        Self { ecb, height }
     }
 
     pub(crate) fn cb(&self) -> CompactBlock {
@@ -86,8 +73,10 @@ impl BlockData {
         hash_bytes.reverse();
         let hash = hex::encode(hash_bytes);
 
+        // We don't need this, but because of a quirk, the version is stored later, so we can't actually
+        // detect the version here. So we write an empty tree and read it back here
         let tree = CommitmentTree::<Node>::read(&mut reader)?;
-        let tree = if tree.size() == 0 { None } else { Some(tree) };
+        let _tree = if tree.size() == 0 { None } else { Some(tree) };
 
         let version = reader.read_u64::<LittleEndian>()?;
 
@@ -98,9 +87,9 @@ impl BlockData {
         };
 
         if ecb.is_empty() {
-            Ok(BlockData::new_with(height, hash.as_str(), tree))
+            Ok(BlockData::new_with(height, hash.as_str()))
         } else {
-            Ok(BlockData { ecb, height, tree })
+            Ok(BlockData { ecb, height })
         }
     }
 
@@ -110,12 +99,7 @@ impl BlockData {
         let hash_bytes: Vec<_> = hex::decode(self.hash()).unwrap().into_iter().rev().collect();
         writer.write_all(&hash_bytes[..])?;
 
-        if self.tree.is_some() {
-            self.tree.as_ref().unwrap().write(&mut writer)?;
-        } else {
-            CommitmentTree::<Node>::empty().write(&mut writer)?;
-        }
-
+        CommitmentTree::<Node>::empty().write(&mut writer)?;
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
         // Write the ecb as well
