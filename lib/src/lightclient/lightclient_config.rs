@@ -42,7 +42,6 @@ pub struct LightClientConfig {
 
 impl LightClientConfig {
     // Create an unconnected (to any server) config to test for local wallet etc...
-    #[cfg(test)]
     pub fn create_unconnected(chain_name: String, dir: Option<String>) -> LightClientConfig {
         LightClientConfig {
             server: http::Uri::default(),
