@@ -1,13 +1,17 @@
 use crate::{
     compact_formats::{CompactBlock, CompactTx, TreeState},
     grpc_connector::GrpcConnector,
-    lightclient::lightclient_config::{LightClientConfig, MAX_REORG},
+    lightclient::{
+        checkpoints::get_all_main_checkpoints,
+        lightclient_config::{LightClientConfig, MAX_REORG},
+    },
     lightwallet::{
         data::{BlockData, WalletTx, WitnessCache},
         wallet_txns::WalletTxns,
     },
 };
 
+use futures::future::join_all;
 use http::Uri;
 use std::{sync::Arc, time::Duration};
 use tokio::{
@@ -42,6 +46,9 @@ pub struct BlockAndWitnessData {
     // How many blocks to process at a time.
     batch_size: u64,
 
+    // Heighest verified tree
+    verified_tree: Option<TreeState>,
+
     // Link to the syncstatus where we can update progress
     sync_status: Arc<RwLock<SyncStatus>>,
 
@@ -55,6 +62,7 @@ impl BlockAndWitnessData {
             existing_blocks: Arc::new(RwLock::new(vec![])),
             verification_list: Arc::new(RwLock::new(vec![])),
             batch_size: 25_000,
+            verified_tree: None,
             sync_status,
             sapling_activation_height: config.sapling_activation_height,
         }
@@ -68,13 +76,14 @@ impl BlockAndWitnessData {
         s
     }
 
-    pub async fn setup_sync(&mut self, existing_blocks: Vec<BlockData>) {
+    pub async fn setup_sync(&mut self, existing_blocks: Vec<BlockData>, verified_tree: Option<TreeState>) {
         if !existing_blocks.is_empty() {
             if existing_blocks.first().unwrap().height < existing_blocks.last().unwrap().height {
                 panic!("Blocks are in wrong order");
             }
         }
         self.verification_list.write().await.clear();
+        self.verified_tree = verified_tree;
 
         self.blocks.write().await.clear();
 
@@ -116,6 +125,147 @@ impl BlockAndWitnessData {
         }
 
         panic!("Tx not found");
+    }
+
+    // Verify all the downloaded tree states
+    pub async fn verify_sapling_tree(&self) -> (bool, Option<TreeState>) {
+        // Verify only on the last batch
+        {
+            let sync_status = self.sync_status.read().await;
+            if sync_status.batch_num + 1 != sync_status.batch_total {
+                return (true, None);
+            }
+        }
+
+        // If there's nothing to verify, return
+        if self.verification_list.read().await.is_empty() {
+            return (true, None);
+        }
+
+        let mut start_trees = vec![];
+
+        // Collect all the checkpoints
+        start_trees.extend(get_all_main_checkpoints().into_iter().map(|(h, hash, tree)| {
+            let mut tree_state = TreeState::default();
+            tree_state.height = h;
+            tree_state.hash = hash.to_string();
+            tree_state.tree = tree.to_string();
+
+            tree_state
+        }));
+
+        // Add all the verification trees as verified, so they can be used as starting points. If any of them fails to verify, then we will
+        // fail the whole thing anyway.
+        start_trees.extend(self.verification_list.read().await.iter().map(|t| t.clone()));
+
+        // Also add the wallet's heighest tree
+        if self.verified_tree.is_some() {
+            start_trees.push(self.verified_tree.as_ref().unwrap().clone());
+        }
+
+        // If there are no available start trees, there is nothing to verify.
+        if start_trees.is_empty() {
+            return (true, None);
+        }
+
+        // sort
+        start_trees.sort_by_cached_key(|ts| ts.height);
+
+        // Now, for each tree state that we need to verify, find the closest one
+        let tree_pairs = self
+            .verification_list
+            .read()
+            .await
+            .iter()
+            .filter_map(|vt| {
+                let height = vt.height;
+                let closest_tree = start_trees
+                    .iter()
+                    .fold(None, |ct, st| if st.height < height { Some(st) } else { ct });
+
+                if closest_tree.is_some() {
+                    Some((vt.clone(), closest_tree.unwrap().clone()))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        // Verify each tree pair
+        let blocks = self.blocks.clone();
+        let handles: Vec<JoinHandle<bool>> = tree_pairs
+            .into_iter()
+            .map(|(vt, ct)| {
+                let blocks = blocks.clone();
+                tokio::spawn(async move {
+                    assert!(ct.height <= vt.height);
+
+                    if ct.height == vt.height {
+                        return true;
+                    }
+                    let mut tree = CommitmentTree::<Node>::read(&hex::decode(ct.tree).unwrap()[..]).unwrap();
+
+                    let blocks = blocks.read().await;
+
+                    let top_block = blocks.first().unwrap().height;
+                    let start_pos = (top_block - ct.height - 1) as usize;
+                    let end_pos = (top_block - vt.height) as usize;
+
+                    if start_pos >= blocks.len() || end_pos >= blocks.len() {
+                        // Blocks are not in the current sync, which means this has already been verified
+                        return true;
+                    }
+
+                    for i in (end_pos..start_pos + 1).rev() {
+                        let cb = &blocks.get(i as usize).unwrap().cb();
+                        for ctx in &cb.vtx {
+                            for co in &ctx.outputs {
+                                let node = Node::new(co.cmu().unwrap().into());
+                                tree.append(node).unwrap();
+                            }
+                        }
+                    }
+
+                    // Verify that the verification_tree can be calculated from the start tree
+                    let mut buf = vec![];
+                    tree.write(&mut buf).unwrap();
+
+                    // Return if verified
+                    hex::encode(buf) == vt.tree
+                })
+            })
+            .collect();
+
+        let results = join_all(handles).await.into_iter().collect::<Result<Vec<_>, _>>();
+        // If errored out, return false
+        if results.is_err() {
+            return (false, None);
+        }
+
+        // If any one was false, return false
+        if results.unwrap().into_iter().find(|r| *r == false).is_some() {
+            return (false, None);
+        }
+
+        let heighest_tree = self
+            .verification_list
+            .read()
+            .await
+            .iter()
+            .fold(None, |p, t| {
+                if p.is_none() {
+                    Some(t)
+                } else {
+                    if t.height > p.as_ref().unwrap().height {
+                        Some(t)
+                    } else {
+                        p
+                    }
+                }
+            })
+            .map(|t| t.clone());
+
+        return (true, heighest_tree);
     }
 
     // Invalidate the block (and wallet txns associated with it) at the given block height
@@ -489,7 +639,7 @@ mod test {
         let cb = FakeCompactBlock::new(1, BlockHash([0u8; 32])).into_cb();
         let blks = vec![BlockData::new(cb)];
 
-        nw.setup_sync(blks.clone()).await;
+        nw.setup_sync(blks.clone(), None).await;
         let finished_blks = nw.finish_get_blocks(1).await;
 
         assert_eq!(blks[0].hash(), finished_blks[0].hash());
@@ -504,7 +654,7 @@ mod test {
         );
 
         let existing_blocks = FakeCompactBlockList::new(200).into_blockdatas();
-        nw.setup_sync(existing_blocks.clone()).await;
+        nw.setup_sync(existing_blocks.clone(), None).await;
         let finished_blks = nw.finish_get_blocks(100).await;
 
         assert_eq!(finished_blks.len(), 100);
@@ -530,7 +680,7 @@ mod test {
 
         let sync_status = Arc::new(RwLock::new(SyncStatus::default()));
         let mut nw = BlockAndWitnessData::new(&config, sync_status);
-        nw.setup_sync(vec![]).await;
+        nw.setup_sync(vec![], None).await;
 
         let (reorg_tx, mut reorg_rx) = unbounded_channel();
 
@@ -582,7 +732,7 @@ mod test {
         let end_block = blocks.last().unwrap().height;
 
         let mut nw = BlockAndWitnessData::new_with_batchsize(&config, 25);
-        nw.setup_sync(existing_blocks).await;
+        nw.setup_sync(existing_blocks, None).await;
 
         let (reorg_tx, mut reorg_rx) = unbounded_channel();
 
@@ -679,7 +829,7 @@ mod test {
 
         let sync_status = Arc::new(RwLock::new(SyncStatus::default()));
         let mut nw = BlockAndWitnessData::new(&config, sync_status);
-        nw.setup_sync(existing_blocks).await;
+        nw.setup_sync(existing_blocks, None).await;
 
         let (reorg_tx, mut reorg_rx) = unbounded_channel();
 
@@ -741,219 +891,4 @@ mod test {
             assert_eq!(finished_blks[i].hash(), finished_blks[i].cb().hash().to_string());
         }
     }
-    /*
-    async fn setup_for_witness_tests(
-        num_blocks: u64,
-        uri_fetcher: UnboundedSender<(u64, Sender<Result<TreeState, String>>)>,
-    ) -> (
-        JoinHandle<Result<(), String>>,
-        Vec<BlockData>,
-        u64,
-        u64,
-        BlockAndWitnessData,
-    ) {
-        let mut config = LightClientConfig::create_unconnected("main".to_string(), None);
-        config.sapling_activation_height = 1;
-
-        let blocks = FakeCompactBlockList::new(num_blocks).into_blockdatas();
-
-        let start_block = blocks.first().unwrap().height;
-        let end_block = blocks.last().unwrap().height;
-
-        let sync_status = Arc::new(RwLock::new(SyncStatus::default()));
-        let mut nw = BlockAndWitnessData::new(&config, sync_status);
-        nw.setup_sync(vec![]).await;
-
-        let (reorg_tx, mut reorg_rx) = unbounded_channel();
-
-        let (h0, cb_sender) = nw
-            .start(
-                start_block,
-                end_block,
-                Arc::new(RwLock::new(WalletTxns::new())),
-                reorg_tx,
-            )
-            .await;
-
-        let send_blocks = blocks.clone();
-        let send_h: JoinHandle<Result<(), String>> = tokio::spawn(async move {
-            for block in send_blocks {
-                cb_sender
-                    .send(block.cb())
-                    .map_err(|e| format!("Couldn't send block: {}", e))?;
-            }
-            if let Some(Some(_h)) = reorg_rx.recv().await {
-                return Err(format!("Should not have requested a reorg!"));
-            }
-            Ok(())
-        });
-
-        let h = tokio::spawn(async move {
-            let (r1, r2) = join!(h0, send_h);
-            r1.map_err(|e| format!("{}", e))??;
-            r2.map_err(|e| format!("{}", e))??;
-            Ok(())
-        });
-
-        (h, blocks, start_block, end_block, nw)
-    }
-     */
-
-    /*
-    #[tokio::test]
-    async fn note_witness() {
-        let (uri_fetcher, mut uri_fetcher_rx) = unbounded_channel();
-        let uri_h: JoinHandle<Result<(), String>> = tokio::spawn(async move {
-            if let Some(_req) = uri_fetcher_rx.recv().await {
-                return Err(format!("Should not have requested a TreeState from the URI fetcher!"));
-            }
-
-            Ok(())
-        });
-
-        let (send_h, blocks, _, _, nw) = setup_for_witness_tests(10, uri_fetcher).await;
-
-        // Get note witness from the very first block
-        let test_h = tokio::spawn(async move {
-            // Calculate the Witnesses manually, but do it reversed, because they have to be calculated from lowest height to tallest height
-            let calc_witnesses: Vec<_> = blocks
-                .iter()
-                .rev()
-                .scan(CommitmentTree::empty(), |witness, b| {
-                    for node in list_all_witness_nodes(&b.cb()) {
-                        witness.append(node).unwrap();
-                    }
-
-                    Some((witness.clone(), b.height))
-                })
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-                .collect();
-
-            // Test data is a triple of (block_height, tx_num and output_num). Note that block_height is the actual height
-            // of the block, not the index in the blocks vec. tx_num and output_num are 0-indexed
-            let test_data = vec![(1, 1, 1), (1, 0, 0), (10, 1, 1), (10, 0, 0), (5, 0, 1), (5, 1, 0)];
-
-            for (block_height, tx_num, output_num) in test_data {
-                let cb = blocks.iter().find(|b| b.height == block_height).unwrap().cb();
-
-                // Get the previous block's tree or empty
-                let prev_block_tree = calc_witnesses
-                    .iter()
-                    .find_map(|(w, h)| if *h == block_height - 1 { Some(w.clone()) } else { None })
-                    .unwrap_or(CommitmentTree::empty());
-
-                let expected_witness = list_all_witness_nodes(&cb)
-                    .into_iter()
-                    .take((tx_num) * 2 + output_num + 1)
-                    .fold(prev_block_tree, |mut w, n| {
-                        w.append(n).unwrap();
-                        w
-                    });
-
-                assert_eq!(
-                    incw_to_string(&IncrementalWitness::from_tree(&expected_witness)),
-                    incw_to_string(
-                        &nw.get_note_witness(BlockHeight::from_u32(block_height as u32), tx_num, output_num)
-                            .await
-                            .unwrap()
-                    )
-                );
-            }
-
-            Ok(())
-        });
-
-        join_all(vec![uri_h, send_h, test_h])
-            .await
-            .into_iter()
-            .collect::<Result<Result<(), String>, _>>()
-            .unwrap()
-            .unwrap();
-    }
-
-    #[tokio::test]
-    async fn note_witness_updates() {
-        let (uri_fetcher, mut uri_fetcher_rx) = unbounded_channel();
-        let uri_h: JoinHandle<Result<(), String>> = tokio::spawn(async move {
-            if let Some(_req) = uri_fetcher_rx.recv().await {
-                return Err(format!("Should not have requested a TreeState from the URI fetcher!"));
-            }
-
-            Ok(())
-        });
-
-        let (send_h, blocks, _, _, nw) = setup_for_witness_tests(10, uri_fetcher).await;
-
-        let test_h = tokio::spawn(async move {
-            let test_data = vec![(1, 1, 1), (1, 0, 0), (10, 1, 1), (10, 0, 0), (3, 0, 1), (5, 1, 0)];
-
-            for (block_height, tx_num, output_num) in test_data {
-                println!("Testing {}, {}, {}", block_height, tx_num, output_num);
-                let cb = blocks.iter().find(|b| b.height == block_height).unwrap().cb();
-
-                // Get the Incremental witness for the note
-                let witness = nw
-                    .get_note_witness(BlockHeight::from_u32(block_height as u32), tx_num, output_num)
-                    .await;
-
-                // Update till end of block
-                let final_witness_1 = list_all_witness_nodes(&cb)
-                    .into_iter()
-                    .skip((tx_num) * 2 + output_num + 1)
-                    .fold(witness.clone(), |mut w, n| {
-                        w.append(n).unwrap();
-                        w
-                    });
-
-                // Update all subsequent blocks
-                let final_witness = blocks
-                    .iter()
-                    .rev()
-                    .skip_while(|b| b.height <= block_height)
-                    .flat_map(|b| list_all_witness_nodes(&b.cb()))
-                    .fold(final_witness_1, |mut w, n| {
-                        w.append(n).unwrap();
-                        w
-                    });
-
-                let txid = cb
-                    .vtx
-                    .iter()
-                    .enumerate()
-                    .skip_while(|(i, _)| *i < tx_num)
-                    .take(1)
-                    .next()
-                    .unwrap()
-                    .1
-                    .hash
-                    .clone();
-
-                let actual_final_witness = nw
-                    .update_witness_after_pos(
-                        &BlockHeight::from_u32(block_height as u32),
-                        &WalletTx::new_txid(&txid),
-                        output_num as u32,
-                        WitnessCache::new(vec![witness], block_height),
-                    )
-                    .await
-                    .last()
-                    .unwrap()
-                    .clone();
-
-                assert_eq!(incw_to_string(&actual_final_witness), incw_to_string(&final_witness));
-            }
-
-            Ok(())
-        });
-
-        join_all(vec![uri_h, send_h, test_h])
-            .await
-            .into_iter()
-            .collect::<Result<Result<(), String>, _>>()
-            .unwrap()
-            .unwrap();
-    }
-    */
 }

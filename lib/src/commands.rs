@@ -93,7 +93,6 @@ impl Command for SyncStatusCommand {
                     "last_error" => status.last_error,
                     "start_block" => status.start_block,
                     "end_block" => status.end_block,
-                    "witness_blocks" => status.blocks_tree_done,
                     "synced_blocks" => status.blocks_done,
                     "trial_decryptions_blocks" => status.trial_dec_done,
                     "txn_scan_blocks" => status.txn_scan_done,

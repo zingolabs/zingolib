@@ -11,7 +11,6 @@ pub struct SyncStatus {
     pub end_block: u64,
 
     pub blocks_done: u64,
-    pub blocks_tree_done: u64,
     pub trial_dec_done: u64,
     pub txn_scan_done: u64,
 
@@ -27,7 +26,6 @@ impl SyncStatus {
         self.last_error = None;
         self.in_progress = true;
         self.blocks_done = 0;
-        self.blocks_tree_done = 0;
         self.trial_dec_done = 0;
         self.blocks_total = 0;
         self.txn_scan_done = 0;
@@ -43,7 +41,6 @@ impl SyncStatus {
         self.start_block = start_block;
         self.end_block = end_block;
         self.blocks_done = 0;
-        self.blocks_tree_done = 0;
         self.trial_dec_done = 0;
         self.blocks_total = 0;
         self.txn_scan_done = 0;
@@ -77,11 +74,10 @@ impl fmt::Display for SyncStatus {
         if self.blocks_total > 0 && self.in_progress {
             write!(
                 f,
-                "id: {}, blocks: {}%, decryptions: {}%, witnesses: {}%, tx_scan: {}%",
+                "id: {}, blocks: {}%, decryptions: {}%, tx_scan: {}%",
                 self.sync_id,
                 self.perct(self.blocks_done),
                 self.perct(self.trial_dec_done),
-                self.perct(self.blocks_tree_done),
                 self.perct(self.txn_scan_done),
             )
         } else {

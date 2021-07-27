@@ -1,3 +1,12 @@
+use crate::compact_formats::TreeState;
+use crate::{
+    blaze::fetch_full_tx::FetchFullTxns,
+    lightclient::lightclient_config::LightClientConfig,
+    lightwallet::{
+        data::SpendableNote,
+        walletzkey::{WalletZKey, WalletZKeyType},
+    },
+};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::Future;
 use log::{error, info, warn};
@@ -18,6 +27,7 @@ use zcash_client_backend::{
     address,
     encoding::{decode_extended_full_viewing_key, decode_extended_spending_key, encode_payment_address},
 };
+use zcash_primitives::serialize::Optional;
 use zcash_primitives::{
     consensus::{BlockHeight, BranchId, MAIN_NETWORK},
     legacy::Script,
@@ -30,15 +40,6 @@ use zcash_primitives::{
         components::{amount::DEFAULT_FEE, Amount, OutPoint, TxOut},
     },
     zip32::ExtendedFullViewingKey,
-};
-
-use crate::{
-    blaze::fetch_full_tx::FetchFullTxns,
-    lightclient::lightclient_config::LightClientConfig,
-    lightwallet::{
-        data::SpendableNote,
-        walletzkey::{WalletZKey, WalletZKeyType},
-    },
 };
 
 use self::{
@@ -112,6 +113,9 @@ pub struct LightWallet {
     // If this wallet's initial block was verified
     sapling_tree_verified: AtomicBool,
 
+    // Heighest verified block
+    pub(crate) verified_tree: Arc<RwLock<Option<TreeState>>>,
+
     // Progress of an outgoing tx
     send_progress: Arc<RwLock<SendProgress>>,
 
@@ -121,7 +125,7 @@ pub struct LightWallet {
 
 impl LightWallet {
     pub fn serialized_version() -> u64 {
-        return 21;
+        return 22;
     }
 
     pub fn new(config: LightClientConfig, seed_phrase: Option<String>, height: u64) -> io::Result<Self> {
@@ -134,6 +138,7 @@ impl LightWallet {
             config,
             birthday: AtomicU64::new(height),
             sapling_tree_verified: AtomicBool::new(false),
+            verified_tree: Arc::new(RwLock::new(None)),
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(WalletZecPriceInfo::new())),
         })
@@ -186,6 +191,18 @@ impl LightWallet {
 
         let sapling_tree_verified = if version <= 12 { true } else { reader.read_u8()? == 1 };
 
+        let verified_tree = if version <= 21 {
+            None
+        } else {
+            Optional::read(&mut reader, |r| {
+                use prost::Message;
+
+                let buf = Vector::read(r, |r| r.read_u8())?;
+                TreeState::decode(&buf[..])
+                    .map_err(|e| io::Error::new(ErrorKind::InvalidData, format!("Read Error: {}", e.to_string())))
+            })?
+        };
+
         // If version <= 8, adjust the "is_spendable" status of each note data
         if version <= 8 {
             // Collect all spendable keys
@@ -211,6 +228,7 @@ impl LightWallet {
             config: config.clone(),
             birthday: AtomicU64::new(birthday),
             sapling_tree_verified: AtomicBool::new(sapling_tree_verified),
+            verified_tree: Arc::new(RwLock::new(verified_tree)),
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(price)),
         };
@@ -254,6 +272,14 @@ impl LightWallet {
 
         // If the sapling tree was verified
         writer.write_u8(if self.is_sapling_tree_verified() { 1 } else { 0 })?;
+
+        Optional::write(&mut writer, &self.verified_tree.read().await.as_ref(), |w, t| {
+            use prost::Message;
+            let mut buf = vec![];
+
+            t.encode(&mut buf)?;
+            Vector::write(w, &buf, |w, b| w.write_u8(*b))
+        })?;
 
         // Price info
         self.price.read().await.write(&mut writer)?;

@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use tokio::sync::RwLock;
 
-use crate::{lightclient::lightclient_config::LightClientConfig, lightwallet::data::BlockData};
-
 use super::{block_witness_data::BlockAndWitnessData, sync_status::SyncStatus};
+use crate::compact_formats::TreeState;
+use crate::{lightclient::lightclient_config::LightClientConfig, lightwallet::data::BlockData};
 
 pub struct BlazeSyncData {
     pub(crate) sync_status: Arc<RwLock<SyncStatus>>,
@@ -28,6 +28,7 @@ impl BlazeSyncData {
         end_block: u64,
         batch_num: usize,
         existing_blocks: Vec<BlockData>,
+        verified_tree: Option<TreeState>,
     ) {
         if start_block < end_block {
             panic!("Blocks should be backwards");
@@ -39,7 +40,7 @@ impl BlazeSyncData {
             .await
             .new_sync_batch(start_block, end_block, batch_num);
 
-        self.block_data.setup_sync(existing_blocks).await;
+        self.block_data.setup_sync(existing_blocks, verified_tree).await;
     }
 
     // Finish up the sync

@@ -1,3 +1,4 @@
+use self::lightclient_config::LightClientConfig;
 use crate::{
     blaze::{
         block_witness_data::BlockAndWitnessData, fetch_compact_blocks::FetchCompactBlocks,
@@ -38,8 +39,6 @@ use zcash_primitives::{
     transaction::{components::amount::DEFAULT_FEE, Transaction, TxId},
 };
 use zcash_proofs::prover::LocalTxProver;
-
-use self::lightclient_config::LightClientConfig;
 
 pub(crate) mod checkpoints;
 pub mod lightclient_config;
@@ -1456,7 +1455,13 @@ impl LightClient {
         bsync_data
             .write()
             .await
-            .setup_for_sync(start_block, end_block, batch_num, self.wallet.get_blocks().await)
+            .setup_for_sync(
+                start_block,
+                end_block,
+                batch_num,
+                self.wallet.get_blocks().await,
+                self.wallet.verified_tree.read().await.clone(),
+            )
             .await;
 
         // 2. Update the current price
@@ -1527,6 +1532,10 @@ impl LightClient {
         // 2. Notify the notes updater that the blocks are done updating
         blocks_done_tx.send(earliest_block).unwrap();
 
+        // 3. Verify all the downloaded data
+        let block_data = bsync_data.clone();
+        let verify_handle = tokio::spawn(async move { block_data.read().await.block_data.verify_sapling_tree().await });
+
         // Wait for everything to finish
 
         // Await all the futures
@@ -1550,6 +1559,12 @@ impl LightClient {
         .map(|r| r.map_err(|e| format!("{}", e))?)
         .collect::<Result<(), String>>()?;
 
+        let (verified, heighest_tree) = verify_handle.await.map_err(|e| e.to_string())?;
+        info!("Sapling tree verification {}", verified);
+        if !verified {
+            return Err("Sapling Tree Verification Failed".to_string());
+        }
+
         info!("Sync finished, doing post-processing");
 
         // Post sync, we have to do a bunch of stuff
@@ -1569,6 +1584,11 @@ impl LightClient {
 
         // 5. Remove expired mempool transactions, if any
         self.wallet.txns().write().await.clear_expired_mempool(latest_block);
+
+        // 6. Set the heighest verified tree
+        if heighest_tree.is_some() {
+            *self.wallet.verified_tree.write().await = heighest_tree;
+        }
 
         Ok(object! {
             "result" => "success",
