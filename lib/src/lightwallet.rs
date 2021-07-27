@@ -1450,4 +1450,72 @@ mod test {
         stop_tx.send(true).unwrap();
         h1.await.unwrap();
     }
+
+    #[tokio::test]
+    async fn multi_z_note_selection() {
+        let (data, config, ready_rx, stop_tx, h1) = create_test_server().await;
+        ready_rx.await.unwrap();
+
+        let mut lc = LightClient::test_new(&config, None, 0).await.unwrap();
+
+        let mut fcbl = FakeCompactBlockList::new(0);
+
+        // 1. Mine 10 blocks
+        mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
+        assert_eq!(lc.wallet.last_scanned_height().await, 10);
+
+        // 2. Send an incoming tx to fill the wallet
+        let extfvk1 = lc.wallet.keys().read().await.get_all_extfvks()[0].clone();
+        let value1 = 100_000;
+        let (tx, _height, _) = fcbl.add_tx_paying(&extfvk1, value1);
+        mine_pending_blocks(&mut fcbl, &data, &lc).await;
+
+        assert_eq!(lc.wallet.last_scanned_height().await, 11);
+
+        // 3. With one confirmation, we should be able to select the note
+        let amt = Amount::from_u64(10_000).unwrap();
+        // Reset the anchor offsets
+        lc.wallet.config.anchor_offset = [9, 4, 2, 1, 0];
+        let (notes, utxos, selected) = lc.wallet.select_notes_and_utxos(amt, false, false).await;
+        assert!(selected >= amt);
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].note.value, value1);
+        assert_eq!(utxos.len(), 0);
+        assert_eq!(
+            incw_to_string(&notes[0].witness),
+            incw_to_string(
+                lc.wallet.txns.read().await.current.get(&tx.txid()).unwrap().notes[0]
+                    .witnesses
+                    .last()
+                    .unwrap()
+            )
+        );
+
+        // Mine 5 blocks
+        mine_random_blocks(&mut fcbl, &data, &lc, 5).await;
+
+        // 4. Send another incoming tx.
+        let value2 = 200_000;
+        let (_tx, _height, _) = fcbl.add_tx_paying(&extfvk1, value2);
+        mine_pending_blocks(&mut fcbl, &data, &lc).await;
+
+        // Now, try to select a small amount, it should prefer the older note
+        let amt = Amount::from_u64(10_000).unwrap();
+        let (notes, utxos, selected) = lc.wallet.select_notes_and_utxos(amt, false, false).await;
+        assert!(selected >= amt);
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].note.value, value1);
+        assert_eq!(utxos.len(), 0);
+
+        // Selecting a bigger amount should select both notes
+        let amt = Amount::from_u64(value1 + value2).unwrap();
+        let (notes, utxos, selected) = lc.wallet.select_notes_and_utxos(amt, false, false).await;
+        assert!(selected == amt);
+        assert_eq!(notes.len(), 2);
+        assert_eq!(utxos.len(), 0);
+
+        // Shutdown everything cleanly
+        stop_tx.send(true).unwrap();
+        h1.await.unwrap();
+    }
 }
