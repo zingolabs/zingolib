@@ -41,6 +41,7 @@ cd ..
 cargo build --release 
 
 #macOS
+codesign -f -s "Apple Distribution: Concision Systems LLC (5N76B7JDDT)" target/release/zecwallet-cli --deep
 rm -rf target/macOS-zecwallet-cli-v$APP_VERSION
 mkdir -p target/macOS-zecwallet-cli-v$APP_VERSION
 cp target/release/zecwallet-cli target/macOS-zecwallet-cli-v$APP_VERSION/
