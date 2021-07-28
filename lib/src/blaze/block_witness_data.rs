@@ -142,6 +142,14 @@ impl BlockAndWitnessData {
             return (true, None);
         }
 
+        // Sort and de-dup the verification list
+        let mut verification_list = self.verification_list.write().await.split_off(0);
+        verification_list.sort_by_cached_key(|ts| ts.height);
+        verification_list.dedup_by_key(|ts| ts.height);
+
+        // Remember the highest tree that will be verified, and return that.
+        let heighest_tree = verification_list.last().map(|ts| ts.clone());
+
         let mut start_trees = vec![];
 
         // Collect all the checkpoints
@@ -156,7 +164,7 @@ impl BlockAndWitnessData {
 
         // Add all the verification trees as verified, so they can be used as starting points. If any of them fails to verify, then we will
         // fail the whole thing anyway.
-        start_trees.extend(self.verification_list.read().await.iter().map(|t| t.clone()));
+        start_trees.extend(verification_list.iter().map(|t| t.clone()));
 
         // Also add the wallet's heighest tree
         if self.verified_tree.is_some() {
@@ -172,11 +180,8 @@ impl BlockAndWitnessData {
         start_trees.sort_by_cached_key(|ts| ts.height);
 
         // Now, for each tree state that we need to verify, find the closest one
-        let tree_pairs = self
-            .verification_list
-            .read()
-            .await
-            .iter()
+        let tree_pairs = verification_list
+            .into_iter()
             .filter_map(|vt| {
                 let height = vt.height;
                 let closest_tree = start_trees
@@ -184,7 +189,7 @@ impl BlockAndWitnessData {
                     .fold(None, |ct, st| if st.height < height { Some(st) } else { ct });
 
                 if closest_tree.is_some() {
-                    Some((vt.clone(), closest_tree.unwrap().clone()))
+                    Some((vt, closest_tree.unwrap().clone()))
                 } else {
                     None
                 }
@@ -205,27 +210,28 @@ impl BlockAndWitnessData {
                     }
                     let mut tree = CommitmentTree::<Node>::read(&hex::decode(ct.tree).unwrap()[..]).unwrap();
 
-                    let blocks = blocks.read().await;
+                    {
+                        let blocks = blocks.read().await;
 
-                    let top_block = blocks.first().unwrap().height;
-                    let start_pos = (top_block - ct.height - 1) as usize;
-                    let end_pos = (top_block - vt.height) as usize;
+                        let top_block = blocks.first().unwrap().height;
+                        let start_pos = (top_block - ct.height - 1) as usize;
+                        let end_pos = (top_block - vt.height) as usize;
 
-                    if start_pos >= blocks.len() || end_pos >= blocks.len() {
-                        // Blocks are not in the current sync, which means this has already been verified
-                        return true;
-                    }
+                        if start_pos >= blocks.len() || end_pos >= blocks.len() {
+                            // Blocks are not in the current sync, which means this has already been verified
+                            return true;
+                        }
 
-                    for i in (end_pos..start_pos + 1).rev() {
-                        let cb = &blocks.get(i as usize).unwrap().cb();
-                        for ctx in &cb.vtx {
-                            for co in &ctx.outputs {
-                                let node = Node::new(co.cmu().unwrap().into());
-                                tree.append(node).unwrap();
+                        for i in (end_pos..start_pos + 1).rev() {
+                            let cb = &blocks.get(i as usize).unwrap().cb();
+                            for ctx in &cb.vtx {
+                                for co in &ctx.outputs {
+                                    let node = Node::new(co.cmu().unwrap().into());
+                                    tree.append(node).unwrap();
+                                }
                             }
                         }
                     }
-
                     // Verify that the verification_tree can be calculated from the start tree
                     let mut buf = vec![];
                     tree.write(&mut buf).unwrap();
@@ -246,24 +252,6 @@ impl BlockAndWitnessData {
         if results.unwrap().into_iter().find(|r| *r == false).is_some() {
             return (false, None);
         }
-
-        let heighest_tree = self
-            .verification_list
-            .read()
-            .await
-            .iter()
-            .fold(None, |p, t| {
-                if p.is_none() {
-                    Some(t)
-                } else {
-                    if t.height > p.as_ref().unwrap().height {
-                        Some(t)
-                    } else {
-                        p
-                    }
-                }
-            })
-            .map(|t| t.clone());
 
         return (true, heighest_tree);
     }
