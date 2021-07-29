@@ -8,7 +8,7 @@ use crate::{
     compact_formats::RawTransaction,
     grpc_connector::GrpcConnector,
     lightclient::lightclient_config::MAX_REORG,
-    lightwallet::{self, message::Message, now, LightWallet},
+    lightwallet::{self, data::WalletTx, message::Message, now, LightWallet},
 };
 use futures::future::{join_all, AbortHandle, Abortable};
 use json::{array, object, JsonValue};
@@ -1113,7 +1113,7 @@ impl LightClient {
                                 now() as u32,
                                 keys.clone(),
                                 wallet_txns.clone(),
-                                &price,
+                                WalletTx::get_price(now(), &price),
                             )
                             .await;
                         }
@@ -1325,7 +1325,6 @@ impl LightClient {
 
         // 2. Update the current price
         self.update_current_price().await;
-        let price = self.wallet.price.read().await.clone();
 
         // Sapling Tree GRPC Fetcher
         let grpc_connector = GrpcConnector::new(uri.clone());
@@ -1348,20 +1347,19 @@ impl LightClient {
         let (taddr_fetcher_handle, taddr_fetcher_tx) = grpc_connector.start_taddr_txn_fetcher().await;
 
         // The processor to fetch the full transactions, and decode the memos and the outgoing metadata
-        let fetch_full_tx_processor =
-            FetchFullTxns::new(&self.config, self.wallet.keys(), self.wallet.txns(), price.clone());
+        let fetch_full_tx_processor = FetchFullTxns::new(&self.config, self.wallet.keys(), self.wallet.txns());
         let (fetch_full_txns_handle, fetch_full_txn_tx, fetch_taddr_txns_tx) = fetch_full_tx_processor
             .start(fulltx_fetcher_tx, bsync_data.clone())
             .await;
 
         // The processor to process Transactions detected by the trial decryptions processor
-        let update_notes_processor = UpdateNotes::new(self.wallet.txns(), price.clone());
+        let update_notes_processor = UpdateNotes::new(self.wallet.txns());
         let (update_notes_handle, blocks_done_tx, detected_txns_tx) = update_notes_processor
             .start(bsync_data.clone(), fetch_full_txn_tx)
             .await;
 
         // Do Trial decryptions of all the sapling outputs, and pass on the successful ones to the update_notes processor
-        let trial_decryptions_processor = TrialDecryptions::new(self.wallet.keys(), self.wallet.txns(), price.clone());
+        let trial_decryptions_processor = TrialDecryptions::new(self.wallet.keys(), self.wallet.txns());
         let (trial_decrypts_handle, trial_decrypts_tx) = trial_decryptions_processor
             .start(uri.clone(), bsync_data.clone(), detected_txns_tx)
             .await;

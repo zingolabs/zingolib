@@ -637,7 +637,7 @@ impl WalletTx {
         }
     }
 
-    pub fn new(height: BlockHeight, datetime: u64, txid: &TxId, unconfirmed: bool, price: &WalletZecPriceInfo) -> Self {
+    pub fn new(height: BlockHeight, datetime: u64, txid: &TxId, unconfirmed: bool) -> Self {
         WalletTx {
             block: height,
             unconfirmed,
@@ -650,7 +650,7 @@ impl WalletTx {
             total_sapling_value_spent: 0,
             outgoing_metadata: vec![],
             full_tx_scanned: false,
-            zec_price: Self::get_price(datetime, price),
+            zec_price: None,
         }
     }
 

@@ -1,4 +1,3 @@
-use crate::lightwallet::data::WalletZecPriceInfo;
 use crate::lightwallet::{data::WalletTx, wallet_txns::WalletTxns};
 use std::sync::Arc;
 
@@ -25,12 +24,11 @@ use super::syncdata::BlazeSyncData;
 ///    - Update the witness for this note
 pub struct UpdateNotes {
     wallet_txns: Arc<RwLock<WalletTxns>>,
-    price: WalletZecPriceInfo,
 }
 
 impl UpdateNotes {
-    pub fn new(wallet_txns: Arc<RwLock<WalletTxns>>, price: WalletZecPriceInfo) -> Self {
-        Self { wallet_txns, price }
+    pub fn new(wallet_txns: Arc<RwLock<WalletTxns>>) -> Self {
+        Self { wallet_txns }
     }
 
     async fn update_witnesses(
@@ -88,7 +86,6 @@ impl UpdateNotes {
     ) {
         //info!("Starting Note Update processing");
 
-        let zec_price = self.price.clone();
         // Create a new channel where we'll be notified of TxIds that are to be processed
         let (tx, mut rx) = unbounded_channel::<(TxId, Nullifier, BlockHeight, Option<u32>)>();
 
@@ -148,16 +145,10 @@ impl UpdateNotes {
                         .mark_txid_nf_spent(txid, &nf, &spent_txid, spent_at_height);
 
                     // Record the future tx, the one that has spent the nullifiers recieved in this Tx in the wallet
-                    wallet_txns.write().await.add_new_spent(
-                        spent_txid,
-                        spent_at_height,
-                        false,
-                        ts,
-                        nf,
-                        value,
-                        txid,
-                        &zec_price,
-                    );
+                    wallet_txns
+                        .write()
+                        .await
+                        .add_new_spent(spent_txid, spent_at_height, false, ts, nf, value, txid);
 
                     // Send the future Tx to be fetched too, in case it has only spent nullifiers and not recieved any change
                     fetch_full_sender.send((spent_txid, spent_at_height)).unwrap();

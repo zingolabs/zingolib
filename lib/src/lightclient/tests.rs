@@ -1153,7 +1153,7 @@ async fn mempool_clearing() {
         0,
         lc.wallet.keys(),
         lc.wallet.txns(),
-        &lc.wallet.price.read().await.clone(),
+        Some(140.5),
     )
     .await;
 

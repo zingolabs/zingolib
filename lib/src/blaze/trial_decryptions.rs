@@ -1,10 +1,6 @@
 use crate::{
     compact_formats::CompactBlock,
-    lightwallet::{
-        data::{WalletTx, WalletZecPriceInfo},
-        keys::Keys,
-        wallet_txns::WalletTxns,
-    },
+    lightwallet::{data::WalletTx, keys::Keys, wallet_txns::WalletTxns},
 };
 use futures::future;
 use http::Uri;
@@ -30,16 +26,11 @@ use super::syncdata::BlazeSyncData;
 pub struct TrialDecryptions {
     keys: Arc<RwLock<Keys>>,
     wallet_txns: Arc<RwLock<WalletTxns>>,
-    price: WalletZecPriceInfo,
 }
 
 impl TrialDecryptions {
-    pub fn new(keys: Arc<RwLock<Keys>>, wallet_txns: Arc<RwLock<WalletTxns>>, price: WalletZecPriceInfo) -> Self {
-        Self {
-            keys,
-            wallet_txns,
-            price,
-        }
+    pub fn new(keys: Arc<RwLock<Keys>>, wallet_txns: Arc<RwLock<WalletTxns>>) -> Self {
+        Self { keys, wallet_txns }
     }
 
     pub async fn start(
@@ -55,7 +46,6 @@ impl TrialDecryptions {
 
         let keys = self.keys.clone();
         let wallet_txns = self.wallet_txns.clone();
-        let price = self.price.clone();
 
         let h = tokio::spawn(async move {
             let mut workers = vec![];
@@ -77,7 +67,6 @@ impl TrialDecryptions {
                 let ivks = ivks.clone();
                 let wallet_txns = wallet_txns.clone();
                 let bsync_data = bsync_data.clone();
-                let price = price.clone();
                 let uri = uri.clone();
 
                 let detected_txid_sender = detected_txid_sender.clone();
@@ -124,7 +113,6 @@ impl TrialDecryptions {
                                         &extfvk,
                                         have_spending_key,
                                         witness,
-                                        &price,
                                     );
 
                                     info!("Trial decrypt Detected txid {}", &txid);

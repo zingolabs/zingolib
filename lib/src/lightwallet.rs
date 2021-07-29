@@ -1,4 +1,5 @@
 use crate::compact_formats::TreeState;
+use crate::lightwallet::data::WalletTx;
 use crate::{
     blaze::fetch_full_tx::FetchFullTxns,
     lightclient::lightclient_config::LightClientConfig,
@@ -1225,7 +1226,7 @@ impl LightWallet {
                 now() as u32,
                 self.keys.clone(),
                 self.txns.clone(),
-                &price,
+                WalletTx::get_price(now(), &price),
             )
             .await;
         }

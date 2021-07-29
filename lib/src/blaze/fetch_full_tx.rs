@@ -1,7 +1,7 @@
 use crate::{
     lightclient::lightclient_config::LightClientConfig,
     lightwallet::{
-        data::{OutgoingTxMetadata, WalletZecPriceInfo},
+        data::OutgoingTxMetadata,
         keys::{Keys, ToBase58Check},
         wallet_txns::WalletTxns,
     },
@@ -41,21 +41,14 @@ pub struct FetchFullTxns {
     config: LightClientConfig,
     keys: Arc<RwLock<Keys>>,
     wallet_txns: Arc<RwLock<WalletTxns>>,
-    price: WalletZecPriceInfo,
 }
 
 impl FetchFullTxns {
-    pub fn new(
-        config: &LightClientConfig,
-        keys: Arc<RwLock<Keys>>,
-        wallet_txns: Arc<RwLock<WalletTxns>>,
-        price: WalletZecPriceInfo,
-    ) -> Self {
+    pub fn new(config: &LightClientConfig, keys: Arc<RwLock<Keys>>, wallet_txns: Arc<RwLock<WalletTxns>>) -> Self {
         Self {
             config: config.clone(),
             keys,
             wallet_txns,
-            price,
         }
     }
 
@@ -71,7 +64,6 @@ impl FetchFullTxns {
         let wallet_txns = self.wallet_txns.clone();
         let keys = self.keys.clone();
         let config = self.config.clone();
-        let price = self.price.clone();
 
         let start_height = bsync_data.read().await.sync_status.read().await.start_block;
         let end_height = bsync_data.read().await.sync_status.read().await.end_block;
@@ -89,7 +81,6 @@ impl FetchFullTxns {
                 let wallet_txns = wallet_txns.clone();
                 let block_time = bsync_data_i.read().await.block_data.get_block_timestamp(&height).await;
                 let fulltx_fetcher = fulltx_fetcher.clone();
-                let price = price.clone();
                 let bsync_data = bsync_data_i.clone();
                 let last_progress = last_progress.clone();
 
@@ -108,7 +99,7 @@ impl FetchFullTxns {
                         last_progress.store(progress, Ordering::SeqCst);
                     }
 
-                    Self::scan_full_tx(config, tx, height, false, block_time, keys, wallet_txns, &price).await;
+                    Self::scan_full_tx(config, tx, height, false, block_time, keys, wallet_txns, None).await;
 
                     Ok(())
                 }));
@@ -133,7 +124,6 @@ impl FetchFullTxns {
         let wallet_txns = self.wallet_txns.clone();
         let keys = self.keys.clone();
         let config = self.config.clone();
-        let price = self.price.clone();
 
         let (tx_tx, mut tx_rx) = unbounded_channel::<(Transaction, BlockHeight)>();
 
@@ -144,11 +134,10 @@ impl FetchFullTxns {
                 let config = config.clone();
                 let keys = keys.clone();
                 let wallet_txns = wallet_txns.clone();
-                let price = price.clone();
 
                 let block_time = bsync_data.read().await.block_data.get_block_timestamp(&height).await;
 
-                Self::scan_full_tx(config, tx, height, false, block_time, keys, wallet_txns, &price).await;
+                Self::scan_full_tx(config, tx, height, false, block_time, keys, wallet_txns, None).await;
             }
 
             //info!("Finished full_tx scanning all txns");
@@ -174,7 +163,7 @@ impl FetchFullTxns {
         block_time: u32,
         keys: Arc<RwLock<Keys>>,
         wallet_txns: Arc<RwLock<WalletTxns>>,
-        price: &WalletZecPriceInfo,
+        price: Option<f64>,
     ) {
         // Collect our t-addresses for easy checking
         let taddrs = keys.read().await.get_all_taddrs();
@@ -193,7 +182,6 @@ impl FetchFullTxns {
                             height.into(),
                             unconfirmed,
                             block_time as u64,
-                            price,
                             &vout,
                             n as u32,
                         );
@@ -257,7 +245,6 @@ impl FetchFullTxns {
                 height,
                 unconfirmed,
                 block_time as u64,
-                price,
                 total_transparent_value_spent,
             );
         }
@@ -276,7 +263,6 @@ impl FetchFullTxns {
                         *nf,
                         *value,
                         *txid,
-                        price,
                     );
                 }
             }
@@ -325,7 +311,6 @@ impl FetchFullTxns {
                         note.clone(),
                         to,
                         &extfvks.get(i).unwrap(),
-                        &price,
                     );
                 }
 
@@ -418,6 +403,11 @@ impl FetchFullTxns {
                 .write()
                 .await
                 .add_outgoing_metadata(&tx.txid(), outgoing_metadatas);
+        }
+
+        // Update price if available
+        if price.is_some() {
+            wallet_txns.write().await.set_price(&tx.txid(), price);
         }
 
         //info!("Finished Fetching full tx {}", tx.txid());

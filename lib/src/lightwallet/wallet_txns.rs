@@ -18,7 +18,7 @@ use zcash_primitives::{
 
 use crate::lightclient::lightclient_config::MAX_REORG;
 
-use super::data::{OutgoingTxMetadata, SaplingNoteData, Utxo, WalletTx, WalletZecPriceInfo, WitnessCache};
+use super::data::{OutgoingTxMetadata, SaplingNoteData, Utxo, WalletTx, WitnessCache};
 
 /// List of all transactions in a wallet.
 /// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
@@ -337,12 +337,11 @@ impl WalletTxns {
         height: BlockHeight,
         unconfirmed: bool,
         datetime: u64,
-        price: &WalletZecPriceInfo,
     ) -> &'_ mut WalletTx {
         if !self.current.contains_key(&txid) {
             self.current.insert(
                 txid.clone(),
-                WalletTx::new(BlockHeight::from(height), datetime, &txid, unconfirmed, price),
+                WalletTx::new(BlockHeight::from(height), datetime, &txid, unconfirmed),
             );
             self.last_txid = Some(txid.clone());
         }
@@ -353,10 +352,13 @@ impl WalletTxns {
             wtx.unconfirmed = unconfirmed;
             wtx.block = height;
             wtx.datetime = datetime;
-            wtx.zec_price = WalletTx::get_price(datetime, price);
         }
 
         wtx
+    }
+
+    pub fn set_price(&mut self, txid: &TxId, price: Option<f64>) {
+        price.map(|p| self.current.get_mut(txid).map(|tx| tx.zec_price = Some(p)));
     }
 
     // Records a TxId as having spent some nullifiers from the wallet.
@@ -369,11 +371,10 @@ impl WalletTxns {
         nullifier: Nullifier,
         value: u64,
         source_txid: TxId,
-        price: &WalletZecPriceInfo,
     ) {
         // Record this Tx as having spent some funds
         {
-            let wtx = self.get_or_create_tx(&txid, BlockHeight::from(height), unconfirmed, timestamp as u64, price);
+            let wtx = self.get_or_create_tx(&txid, BlockHeight::from(height), unconfirmed, timestamp as u64);
 
             // Mark the height correctly, in case this was previously a mempool or unconfirmed tx.
             wtx.block = height;
@@ -404,10 +405,9 @@ impl WalletTxns {
         height: BlockHeight,
         unconfirmed: bool,
         timestamp: u64,
-        price: &WalletZecPriceInfo,
         total_transparent_value_spent: u64,
     ) {
-        let wtx = self.get_or_create_tx(&txid, BlockHeight::from(height), unconfirmed, timestamp, price);
+        let wtx = self.get_or_create_tx(&txid, BlockHeight::from(height), unconfirmed, timestamp);
         wtx.total_transparent_value_spent = total_transparent_value_spent;
 
         self.check_notes_mark_change(&txid);
@@ -453,12 +453,11 @@ impl WalletTxns {
         height: u32,
         unconfirmed: bool,
         timestamp: u64,
-        price: &WalletZecPriceInfo,
         vout: &TxOut,
         output_num: u32,
     ) {
         // Read or create the current TxId
-        let wtx = self.get_or_create_tx(&txid, BlockHeight::from(height), unconfirmed, timestamp, price);
+        let wtx = self.get_or_create_tx(&txid, BlockHeight::from(height), unconfirmed, timestamp);
 
         // Add this UTXO if it doesn't already exist
         if let Some(utxo) = wtx
@@ -491,12 +490,11 @@ impl WalletTxns {
         note: Note,
         to: PaymentAddress,
         extfvk: &ExtendedFullViewingKey,
-        price: &WalletZecPriceInfo,
     ) {
         // Check if this is a change note
         let is_change = self.total_funds_spent_in(&txid) > 0;
 
-        let wtx = self.get_or_create_tx(&txid, BlockHeight::from(height), true, timestamp, price);
+        let wtx = self.get_or_create_tx(&txid, BlockHeight::from(height), true, timestamp);
         // Update the block height, in case this was a mempool or unconfirmed tx.
         wtx.block = height;
 
@@ -532,12 +530,11 @@ impl WalletTxns {
         extfvk: &ExtendedFullViewingKey,
         have_spending_key: bool,
         witness: IncrementalWitness<Node>,
-        price: &WalletZecPriceInfo,
     ) {
         // Check if this is a change note
         let is_change = self.total_funds_spent_in(&txid) > 0;
 
-        let wtx = self.get_or_create_tx(&txid, BlockHeight::from(height), unconfirmed, timestamp, price);
+        let wtx = self.get_or_create_tx(&txid, BlockHeight::from(height), unconfirmed, timestamp);
         // Update the block height, in case this was a mempool or unconfirmed tx.
         wtx.block = height;
 
