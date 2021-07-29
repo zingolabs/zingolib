@@ -1371,7 +1371,7 @@ impl LightClient {
         let fetch_compact_blocks_handle = tokio::spawn(async move {
             fetch_compact_blocks
                 .start(
-                    vec![block_and_witness_data_tx, trial_decrypts_tx],
+                    [block_and_witness_data_tx, trial_decrypts_tx],
                     start_block,
                     end_block,
                     reorg_rx,

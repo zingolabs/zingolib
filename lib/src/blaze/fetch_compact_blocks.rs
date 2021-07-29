@@ -4,10 +4,7 @@ use crate::{
     compact_formats::CompactBlock, grpc_connector::GrpcConnector, lightclient::lightclient_config::LightClientConfig,
 };
 use log::info;
-use tokio::{
-    join,
-    sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
-};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 pub struct FetchCompactBlocks {
     config: LightClientConfig,
@@ -20,14 +17,14 @@ impl FetchCompactBlocks {
 
     async fn fetch_blocks_range(
         &self,
-        receivers: &Vec<UnboundedSender<CompactBlock>>,
+        receivers: &[UnboundedSender<CompactBlock>; 2],
         start_block: u64,
         end_block: u64,
     ) -> Result<(), String> {
         let grpc_client = Arc::new(GrpcConnector::new(self.config.server.clone()));
         const STEP: u64 = 10_000;
 
-        // We need the `rev()` here because ranges can only go up
+        // We need the `rev()` here because rust ranges can only go up
         for b in (end_block..(start_block + 1)).rev().step_by(STEP as usize) {
             let start = b;
             let end = max((b as i64) - (STEP as i64) + 1, end_block as i64) as u64;
@@ -37,24 +34,7 @@ impl FetchCompactBlocks {
 
             info!("Fetching blocks {}-{}", start, end);
 
-            let grpc_client = grpc_client.clone();
-            let receivers = receivers.clone();
-            let (tx, mut rx) = unbounded_channel();
-
-            let h1 = tokio::spawn(async move { grpc_client.get_block_range(start, end, tx).await });
-
-            let h2 = tokio::spawn(async move {
-                while let Some(block) = rx.recv().await {
-                    // Send the CompactBlock to all recievers
-                    for r in &receivers {
-                        r.send(block.clone()).unwrap();
-                    }
-                }
-            });
-
-            let (r1, r2) = join!(h1, h2);
-            r1.map_err(|e| format!("{}", e))??;
-            r2.map_err(|e| format!("{}", e))?;
+            grpc_client.get_block_range(start, end, receivers).await?;
         }
 
         Ok(())
@@ -63,7 +43,7 @@ impl FetchCompactBlocks {
     // Load all the blocks from LightwalletD
     pub async fn start(
         &self,
-        receivers: Vec<UnboundedSender<CompactBlock>>,
+        receivers: [UnboundedSender<CompactBlock>; 2],
         start_block: u64,
         end_block: u64,
         mut reorg_rx: UnboundedReceiver<Option<u64>>,

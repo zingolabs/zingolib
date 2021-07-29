@@ -61,10 +61,20 @@ impl TrialDecryptions {
             let mut workers = vec![];
             let mut tasks = vec![];
 
+            let ivks = Arc::new(
+                keys.read()
+                    .await
+                    .zkeys
+                    .iter()
+                    .map(|zk| zk.extfvk().fvk.vk.ivk())
+                    .collect::<Vec<_>>(),
+            );
+
             let sync_status = bsync_data.read().await.sync_status.clone();
 
             while let Some(cb) = rx.recv().await {
                 let keys = keys.clone();
+                let ivks = ivks.clone();
                 let wallet_txns = wallet_txns.clone();
                 let bsync_data = bsync_data.clone();
                 let price = price.clone();
@@ -81,15 +91,16 @@ impl TrialDecryptions {
                             let cmu = co.cmu().map_err(|_| "No CMU".to_string())?;
                             let epk = co.epk().map_err(|_| "No EPK".to_string())?;
 
-                            for extfvk in keys.zkeys.iter().map(|zk| zk.extfvk()) {
+                            for (i, ivk) in ivks.iter().enumerate() {
                                 if let Some((note, to)) = try_sapling_compact_note_decryption(
                                     &MAIN_NETWORK,
                                     height,
-                                    &extfvk.fvk.vk.ivk(),
+                                    ivk,
                                     &epk,
                                     &cmu,
                                     &co.ciphertext,
                                 ) {
+                                    let extfvk = keys.zkeys[i].extfvk();
                                     let have_spending_key = keys.have_spending_key(extfvk);
 
                                     // Get the witness for the note

@@ -142,7 +142,7 @@ impl GrpcConnector {
         &self,
         start_height: u64,
         end_height: u64,
-        tx: UnboundedSender<CompactBlock>,
+        receivers: &[UnboundedSender<CompactBlock>; 2],
     ) -> Result<(), String> {
         let mut client = self.get_client().await.map_err(|e| format!("{}", e))?;
 
@@ -167,7 +167,8 @@ impl GrpcConnector {
             .into_inner();
 
         while let Some(block) = response.message().await.map_err(|e| format!("{}", e))? {
-            tx.send(block).map_err(|e| format!("{}", e))?;
+            receivers[0].send(block.clone()).map_err(|e| format!("{}", e))?;
+            receivers[1].send(block).map_err(|e| format!("{}", e))?;
         }
 
         Ok(())

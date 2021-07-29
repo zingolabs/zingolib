@@ -306,8 +306,8 @@ impl BlockAndWitnessData {
             // Reorg stuff
             let mut last_block_expecting = end_block;
 
-            // We'll process 25_000 blocks at a time.
             while let Some(cb) = rx.recv().await {
+                // We'll process 25_000 blocks at a time.
                 if cb.height % batch_size == 0 {
                     if !blks.is_empty() {
                         // Add these blocks to the list
