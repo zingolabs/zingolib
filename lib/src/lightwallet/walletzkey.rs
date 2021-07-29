@@ -106,6 +106,10 @@ impl WalletZKey {
         self.extsk.is_some() || self.enc_key.is_some() || self.hdkey_num.is_some()
     }
 
+    pub fn extfvk(&self) -> &'_ ExtendedFullViewingKey {
+        &self.extfvk
+    }
+
     fn serialized_version() -> u8 {
         return 1;
     }
