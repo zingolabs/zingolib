@@ -1361,7 +1361,7 @@ impl LightClient {
         // Do Trial decryptions of all the sapling outputs, and pass on the successful ones to the update_notes processor
         let trial_decryptions_processor = TrialDecryptions::new(self.wallet.keys(), self.wallet.txns());
         let (trial_decrypts_handle, trial_decrypts_tx) = trial_decryptions_processor
-            .start(uri.clone(), bsync_data.clone(), detected_txns_tx)
+            .start(bsync_data.clone(), detected_txns_tx)
             .await;
 
         // Fetch Compact blocks and send them to nullifier cache, node-and-witness cache and the trial-decryption processor

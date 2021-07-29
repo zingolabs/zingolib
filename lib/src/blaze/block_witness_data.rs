@@ -440,22 +440,13 @@ impl BlockAndWitnessData {
         let prev_height = { u64::from(height) - 1 };
 
         let (cb, mut tree) = {
-            let tree = {
-                let maybe_tree = if prev_height < self.sapling_activation_height {
-                    Some(CommitmentTree::empty())
-                } else {
-                    None
-                };
-
-                match maybe_tree {
-                    Some(t) => t,
-                    None => {
-                        let tree_state = GrpcConnector::get_sapling_tree(uri, prev_height).await?;
-                        let sapling_tree = hex::decode(&tree_state.tree).unwrap();
-                        self.verification_list.write().await.push(tree_state);
-                        CommitmentTree::read(&sapling_tree[..]).map_err(|e| format!("{}", e))?
-                    }
-                }
+            let tree = if prev_height < self.sapling_activation_height {
+                CommitmentTree::empty()
+            } else {
+                let tree_state = GrpcConnector::get_sapling_tree(uri, prev_height).await?;
+                let sapling_tree = hex::decode(&tree_state.tree).unwrap();
+                self.verification_list.write().await.push(tree_state);
+                CommitmentTree::read(&sapling_tree[..]).map_err(|e| format!("{}", e))?
             };
 
             // Get the current compact block

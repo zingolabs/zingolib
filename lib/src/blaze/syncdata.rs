@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use http::Uri;
 use tokio::sync::RwLock;
 
 use super::{block_witness_data::BlockAndWitnessData, sync_status::SyncStatus};
@@ -8,8 +9,8 @@ use crate::{lightclient::lightclient_config::LightClientConfig, lightwallet::dat
 
 pub struct BlazeSyncData {
     pub(crate) sync_status: Arc<RwLock<SyncStatus>>,
-
     pub(crate) block_data: BlockAndWitnessData,
+    uri: Uri,
 }
 
 impl BlazeSyncData {
@@ -18,8 +19,13 @@ impl BlazeSyncData {
 
         Self {
             sync_status: sync_status.clone(),
+            uri: config.server.clone(),
             block_data: BlockAndWitnessData::new(config, sync_status),
         }
+    }
+
+    pub fn uri(&self) -> &'_ Uri {
+        &self.uri
     }
 
     pub async fn setup_for_sync(

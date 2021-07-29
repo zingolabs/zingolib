@@ -3,7 +3,6 @@ use crate::{
     lightwallet::{data::WalletTx, keys::Keys, wallet_txns::WalletTxns},
 };
 use futures::future;
-use http::Uri;
 use log::info;
 use std::sync::Arc;
 use tokio::{
@@ -35,7 +34,6 @@ impl TrialDecryptions {
 
     pub async fn start(
         &self,
-        uri: Uri,
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         detected_txid_sender: UnboundedSender<(TxId, Nullifier, BlockHeight, Option<u32>)>,
     ) -> (JoinHandle<()>, UnboundedSender<CompactBlock>) {
@@ -67,12 +65,10 @@ impl TrialDecryptions {
                 let ivks = ivks.clone();
                 let wallet_txns = wallet_txns.clone();
                 let bsync_data = bsync_data.clone();
-                let uri = uri.clone();
 
                 let detected_txid_sender = detected_txid_sender.clone();
 
                 tasks.push(tokio::spawn(async move {
-                    let keys = keys.read().await;
                     let height = BlockHeight::from_u32(cb.height as u32);
 
                     for (tx_num, ctx) in cb.vtx.iter().enumerate() {
@@ -84,20 +80,22 @@ impl TrialDecryptions {
                                 if let Some((note, to)) = try_sapling_compact_note_decryption(
                                     &MAIN_NETWORK,
                                     height,
-                                    ivk,
+                                    &ivk,
                                     &epk,
                                     &cmu,
                                     &co.ciphertext,
                                 ) {
+                                    let keys = keys.read().await;
                                     let extfvk = keys.zkeys[i].extfvk();
                                     let have_spending_key = keys.have_spending_key(extfvk);
+                                    let uri = bsync_data.read().await.uri().clone();
 
                                     // Get the witness for the note
                                     let witness = bsync_data
                                         .read()
                                         .await
                                         .block_data
-                                        .get_note_witness(uri.clone(), height, tx_num, output_num)
+                                        .get_note_witness(uri, height, tx_num, output_num)
                                         .await?;
 
                                     let txid = WalletTx::new_txid(&ctx.hash);
