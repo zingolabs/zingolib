@@ -19,59 +19,177 @@ use zcash_primitives::{
 };
 
 #[derive(Clone)]
+pub struct CCompactTx {
+    pub hash: [u8; 32],
+    pub nfs: Vec<[u8; 32]>,
+    pub cmus: Vec<[u8; 32]>,
+}
+
+impl CCompactTx {
+    pub fn serialized_version() -> u64 {
+        return 21;
+    }
+
+    pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
+        let _version = reader.read_u64::<LittleEndian>()?;
+
+        let mut hash = [0u8; 32];
+        reader.read_exact(&mut hash)?;
+
+        let nfs = Vector::read(&mut reader, |r| {
+            let mut nf = [0u8; 32];
+            r.read_exact(&mut nf)?;
+
+            Ok(nf)
+        })?;
+
+        let cmus = Vector::read(&mut reader, |r| {
+            let mut cmu = [0u8; 32];
+            r.read_exact(&mut cmu)?;
+
+            Ok(cmu)
+        })?;
+
+        Ok(Self { hash, nfs, cmus })
+    }
+
+    pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+        writer.write_u64::<LittleEndian>(Self::serialized_version())?;
+
+        writer.write_all(&self.hash)?;
+
+        Vector::write(&mut writer, &self.nfs, |w, nf| w.write_all(nf))?;
+        Vector::write(&mut writer, &self.cmus, |w, cmu| w.write_all(cmu))?;
+
+        Ok(())
+    }
+}
+
+#[derive(Clone)]
 pub struct BlockData {
-    pub(crate) ecb: Vec<u8>,
-    pub height: u64,
+    pub hash: [u8; 32],
+    pub prev_hash: [u8; 32],
+    pub height: BlockHeight,
+    pub time: u32,
+    pub txns: Vec<CCompactTx>,
 }
 
 impl BlockData {
     pub fn serialized_version() -> u64 {
-        return 20;
+        return 21;
     }
 
-    pub(crate) fn new_with(height: u64, hash: &str) -> Self {
-        let mut cb = CompactBlock::default();
-        cb.hash = hex::decode(hash).unwrap().into_iter().rev().collect::<Vec<_>>();
+    pub(crate) fn new_with(height: u64, hash_str: &str) -> Self {
+        let mut hash = [0u8; 32];
+        hash.copy_from_slice(&hex::decode(hash_str).unwrap().into_iter().rev().collect::<Vec<_>>()[..]);
 
-        let mut ecb = vec![];
-        cb.encode(&mut ecb).unwrap();
-
-        Self { ecb, height }
+        Self {
+            hash,
+            prev_hash: [0u8; 32],
+            height: BlockHeight::from_u32(height as u32),
+            time: 0,
+            txns: vec![],
+        }
     }
 
-    pub(crate) fn new(mut cb: CompactBlock) -> Self {
-        for ctx in &mut cb.vtx {
-            for co in &mut ctx.outputs {
-                co.ciphertext.clear();
-                co.epk.clear();
+    pub(crate) fn new(cb: CompactBlock) -> Self {
+        let mut hash = [0u8; 32];
+        hash.copy_from_slice(&cb.hash[..]);
+
+        let mut prev_hash = [0u8; 32];
+        prev_hash.copy_from_slice(&cb.prev_hash[..]);
+
+        let mut txns = vec![];
+
+        for ctx in &cb.vtx {
+            let mut txhash = [0u8; 32];
+            let mut nfs = vec![];
+            let mut cmus = vec![];
+
+            txhash.copy_from_slice(&ctx.hash[..]);
+            for co in &ctx.outputs {
+                let mut cmu = [0u8; 32];
+                cmu.copy_from_slice(&co.cmu[..]);
+                cmus.push(cmu);
             }
+
+            for cs in &ctx.spends {
+                let mut nf = [0u8; 32];
+                nf.copy_from_slice(&cs.nf[..]);
+                nfs.push(nf);
+            }
+
+            txns.push(CCompactTx {
+                hash: txhash,
+                nfs,
+                cmus,
+            });
         }
 
-        cb.header.clear();
-        let height = cb.height;
-
-        let mut ecb = vec![];
-        cb.encode(&mut ecb).unwrap();
-
-        Self { ecb, height }
+        Self {
+            height: BlockHeight::from_u32(cb.height as u32),
+            time: cb.time,
+            hash,
+            prev_hash,
+            txns,
+        }
     }
-
-    pub(crate) fn cb(&self) -> CompactBlock {
-        let b = self.ecb.clone();
-        CompactBlock::decode(&b[..]).unwrap()
+    pub fn height(&self) -> u64 {
+        u64::from(self.height)
     }
 
     pub(crate) fn hash(&self) -> String {
-        self.cb().hash().to_string()
+        let mut hash_bytes = [0u8; 32];
+        hash_bytes.copy_from_slice(&self.hash);
+        hash_bytes.reverse();
+
+        hex::encode(hash_bytes)
+    }
+
+    #[cfg(test)]
+    pub fn to_cb(&self) -> CompactBlock {
+        use crate::compact_formats::{CompactOutput, CompactSpend, CompactTx};
+
+        let mut vtx = vec![];
+
+        for tx in &self.txns {
+            let mut spends = vec![];
+            let mut outputs = vec![];
+
+            for nf in &tx.nfs {
+                let mut cs = CompactSpend::default();
+                cs.nf = nf.to_vec();
+                spends.push(cs);
+            }
+
+            for cmu in &tx.cmus {
+                let mut co = CompactOutput::default();
+                co.cmu = cmu.to_vec();
+                outputs.push(co);
+            }
+
+            let mut ctx = CompactTx::default();
+            ctx.hash = tx.hash.to_vec();
+            ctx.spends = spends;
+            ctx.outputs = outputs;
+            vtx.push(ctx);
+        }
+
+        let mut cb = CompactBlock::default();
+        cb.hash = self.hash.to_vec();
+        cb.prev_hash = self.prev_hash.to_vec();
+        cb.time = self.time;
+        cb.height = self.height();
+        cb.vtx = vtx;
+
+        return cb;
     }
 
     pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
-        let height = reader.read_i32::<LittleEndian>()? as u64;
+        let height = reader.read_i32::<LittleEndian>()? as u32;
 
-        let mut hash_bytes = [0; 32];
-        reader.read_exact(&mut hash_bytes)?;
-        hash_bytes.reverse();
-        let hash = hex::encode(hash_bytes);
+        let mut hash = [0; 32];
+        reader.read_exact(&mut hash)?;
 
         // We don't need this, but because of a quirk, the version is stored later, so we can't actually
         // detect the version here. So we write an empty tree and read it back here
@@ -80,30 +198,53 @@ impl BlockData {
 
         let version = reader.read_u64::<LittleEndian>()?;
 
-        let ecb = if version <= 11 {
-            vec![]
+        let (time, prev_hash, txns) = if version <= 20 {
+            if version <= 11 {
+                (0, [0u8; 32], vec![])
+            } else {
+                let ecb_bytes = Vector::read(&mut reader, |r| r.read_u8())?;
+                match Message::decode(&ecb_bytes[..]) {
+                    Ok(cb) => {
+                        let b = Self::new(cb);
+                        (b.time, b.prev_hash, b.txns)
+                    }
+                    Err(_) => (0, [0u8; 32], vec![]),
+                }
+            }
         } else {
-            Vector::read(&mut reader, |r| r.read_u8())?
+            let mut prev_hash = [0; 32];
+            reader.read_exact(&mut prev_hash)?;
+
+            let time = reader.read_u32::<LittleEndian>()?;
+            let txns = Vector::read(reader, |r| CCompactTx::read(r))?;
+
+            (time, prev_hash, txns)
         };
 
-        if ecb.is_empty() {
-            Ok(BlockData::new_with(height, hash.as_str()))
-        } else {
-            Ok(BlockData { ecb, height })
-        }
+        Ok(Self {
+            height: BlockHeight::from_u32(height),
+            hash,
+            prev_hash,
+            time,
+            txns,
+        })
     }
 
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
-        writer.write_i32::<LittleEndian>(self.height as i32)?;
-
-        let hash_bytes: Vec<_> = hex::decode(self.hash()).unwrap().into_iter().rev().collect();
-        writer.write_all(&hash_bytes[..])?;
+        let height: u32 = self.height.into();
+        writer.write_i32::<LittleEndian>(height as i32)?;
+        writer.write_all(&self.hash)?;
 
         CommitmentTree::<Node>::empty().write(&mut writer)?;
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
-        // Write the ecb as well
-        Vector::write(&mut writer, &self.ecb, |w, b| w.write_u8(*b))?;
+        // prev hash
+        writer.write_all(&self.prev_hash)?;
+
+        // time
+        writer.write_u32::<LittleEndian>(self.time)?;
+
+        Vector::write(writer, &self.txns, |w, ctx| ctx.write(w))?;
 
         Ok(())
     }

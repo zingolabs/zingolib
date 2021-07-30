@@ -954,7 +954,14 @@ async fn recover_at_checkpoint() {
 
     // Check the trees
     assert_eq!(
-        lc.wallet.blocks.read().await.first().map(|b| b.clone()).unwrap().height,
+        lc.wallet
+            .blocks
+            .read()
+            .await
+            .first()
+            .map(|b| b.clone())
+            .unwrap()
+            .height(),
         1220110
     );
 
@@ -974,7 +981,14 @@ async fn recover_at_checkpoint() {
 
     // Check the trees
     assert_eq!(
-        lc.wallet.blocks.read().await.first().map(|b| b.clone()).unwrap().height,
+        lc.wallet
+            .blocks
+            .read()
+            .await
+            .first()
+            .map(|b| b.clone())
+            .unwrap()
+            .height(),
         1220110
     );
     // assert_eq!(

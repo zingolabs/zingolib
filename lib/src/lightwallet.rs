@@ -118,7 +118,7 @@ pub struct LightWallet {
 
 impl LightWallet {
     pub fn serialized_version() -> u64 {
-        return 23;
+        return 24;
     }
 
     pub fn new(config: LightClientConfig, seed_phrase: Option<String>, height: u64) -> io::Result<Self> {
@@ -509,7 +509,7 @@ impl LightWallet {
             .read()
             .await
             .first()
-            .map(|block| block.height)
+            .map(|block| block.height())
             .unwrap_or(self.config.sapling_activation_height - 1)
     }
 
@@ -523,7 +523,7 @@ impl LightWallet {
     }
 
     async fn get_target_height(&self) -> Option<u32> {
-        self.blocks.read().await.first().map(|block| block.height as u32 + 1)
+        self.blocks.read().await.first().map(|block| block.height() as u32 + 1)
     }
 
     /// Determines the target height for a transaction, and the offset from which to
@@ -532,8 +532,8 @@ impl LightWallet {
         match {
             let blocks = self.blocks.read().await;
             (
-                blocks.last().map(|block| block.height as u32),
-                blocks.first().map(|block| block.height as u32),
+                blocks.last().map(|block| block.height() as u32),
+                blocks.first().map(|block| block.height() as u32),
             )
         } {
             (Some(min_height), Some(max_height)) => {

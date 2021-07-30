@@ -1,12 +1,12 @@
 use crate::{
-    compact_formats::{CompactBlock, CompactTx, TreeState},
+    compact_formats::{CompactBlock, TreeState},
     grpc_connector::GrpcConnector,
     lightclient::{
         checkpoints::get_all_main_checkpoints,
         lightclient_config::{LightClientConfig, MAX_REORG},
     },
     lightwallet::{
-        data::{BlockData, WalletTx, WitnessCache},
+        data::{BlockData, CCompactTx, WitnessCache},
         wallet_txns::WalletTxns,
     },
 };
@@ -78,7 +78,7 @@ impl BlockAndWitnessData {
 
     pub async fn setup_sync(&mut self, existing_blocks: Vec<BlockData>, verified_tree: Option<TreeState>) {
         if !existing_blocks.is_empty() {
-            if existing_blocks.first().unwrap().height < existing_blocks.last().unwrap().height {
+            if existing_blocks.first().unwrap().height() < existing_blocks.last().unwrap().height() {
                 panic!("Blocks are in wrong order");
             }
         }
@@ -105,20 +105,16 @@ impl BlockAndWitnessData {
         }
     }
 
-    pub async fn get_ctx_for_nf_at_height(&self, nullifier: &Nullifier, height: u64) -> (CompactTx, u32) {
+    pub async fn get_ctx_for_nf_at_height(&self, nullifier: &Nullifier, height: u64) -> (CCompactTx, u32) {
         self.wait_for_block(height).await;
 
-        let cb = {
-            let blocks = self.blocks.read().await;
-            let pos = blocks.first().unwrap().height - height;
-            let bd = blocks.get(pos as usize).unwrap();
+        let blocks = self.blocks.read().await;
+        let pos = blocks.first().unwrap().height() - height;
+        let cb = blocks.get(pos as usize).unwrap();
 
-            bd.cb()
-        };
-
-        for ctx in &cb.vtx {
-            for cs in &ctx.spends {
-                if cs.nf == nullifier.to_vec() {
+        for ctx in &cb.txns {
+            for nf in &ctx.nfs {
+                if nf.to_vec() == nullifier.to_vec() {
                     return (ctx.clone(), cb.time);
                 }
             }
@@ -213,7 +209,7 @@ impl BlockAndWitnessData {
                     {
                         let blocks = blocks.read().await;
 
-                        let top_block = blocks.first().unwrap().height;
+                        let top_block = blocks.first().unwrap().height();
                         let start_pos = (top_block - ct.height - 1) as usize;
                         let end_pos = (top_block - vt.height) as usize;
 
@@ -223,10 +219,10 @@ impl BlockAndWitnessData {
                         }
 
                         for i in (end_pos..start_pos + 1).rev() {
-                            let cb = &blocks.get(i as usize).unwrap().cb();
-                            for ctx in &cb.vtx {
-                                for co in &ctx.outputs {
-                                    let node = Node::new(co.cmu().unwrap().into());
+                            let cb = blocks.get(i as usize).unwrap();
+                            for ctx in &cb.txns {
+                                for cmu in &ctx.cmus {
+                                    let node = Node::new(cmu.clone());
                                     tree.append(node).unwrap();
                                 }
                             }
@@ -264,7 +260,7 @@ impl BlockAndWitnessData {
     ) {
         // First, pop the first block (which is the top block) in the existing_blocks.
         let top_wallet_block = existing_blocks.write().await.drain(0..1).next().unwrap();
-        if top_wallet_block.height != reorg_height {
+        if top_wallet_block.height() != reorg_height {
             panic!("Wrong block reorg'd");
         }
 
@@ -325,7 +321,7 @@ impl BlockAndWitnessData {
                                 None
                             } else {
                                 // send a reorg signal
-                                Some(top_block.height)
+                                Some(top_block.height())
                             }
                         }
                         None => {
@@ -375,13 +371,13 @@ impl BlockAndWitnessData {
             //info!("Waiting for first block, blocks are empty!");
         }
 
-        self.blocks.read().await.first().unwrap().height
+        self.blocks.read().await.first().unwrap().height()
     }
 
     async fn wait_for_block(&self, height: u64) {
         self.wait_for_first_block().await;
 
-        while self.blocks.read().await.last().unwrap().height > height {
+        while self.blocks.read().await.last().unwrap().height() > height {
             yield_now().await;
             sleep(Duration::from_millis(100)).await;
 
@@ -399,15 +395,15 @@ impl BlockAndWitnessData {
         {
             // Read Lock
             let blocks = self.blocks.read().await;
-            let pos = blocks.first().unwrap().height - after_height;
+            let pos = blocks.first().unwrap().height() - after_height;
             let nf = nf.to_vec();
 
             for i in (0..pos + 1).rev() {
-                let cb = &blocks.get(i as usize).unwrap().cb();
-                for ctx in &cb.vtx {
-                    for cs in &ctx.spends {
-                        if cs.nf == nf {
-                            return Some(cb.height);
+                let cb = blocks.get(i as usize).unwrap();
+                for ctx in &cb.txns {
+                    for s_nf in &ctx.nfs {
+                        if s_nf.to_vec() == nf {
+                            return Some(cb.height());
                         }
                     }
                 }
@@ -423,8 +419,8 @@ impl BlockAndWitnessData {
 
         {
             let blocks = self.blocks.read().await;
-            let pos = blocks.first().unwrap().height - height;
-            blocks.get(pos as usize).unwrap().cb().time
+            let pos = blocks.first().unwrap().height() - height;
+            blocks.get(pos as usize).unwrap().time
         }
     }
 
@@ -455,12 +451,10 @@ impl BlockAndWitnessData {
                 self.wait_for_block(height).await;
 
                 {
-                    let mut blocks = self.blocks.write().await;
+                    let blocks = self.blocks.read().await;
 
-                    let pos = blocks.first().unwrap().height - height;
-                    let bd = blocks.get_mut(pos as usize).unwrap();
-
-                    bd.cb()
+                    let pos = blocks.first().unwrap().height() - height;
+                    blocks.get(pos as usize).unwrap().clone()
                 }
             };
 
@@ -469,9 +463,9 @@ impl BlockAndWitnessData {
 
         // Go over all the outputs. Remember that all the numbers are inclusive, i.e., we have to scan upto and including
         // block_height, tx_num and output_num
-        for (t_num, ctx) in cb.vtx.iter().enumerate() {
-            for (o_num, co) in ctx.outputs.iter().enumerate() {
-                let node = Node::new(co.cmu().unwrap().into());
+        for (t_num, ctx) in cb.txns.iter().enumerate() {
+            for (o_num, cmu) in ctx.cmus.iter().enumerate() {
+                let node = Node::new(cmu.clone());
                 tree.append(node).unwrap();
                 if t_num == tx_num && o_num == output_num {
                     return Ok(IncrementalWitness::from_tree(&tree));
@@ -496,7 +490,7 @@ impl BlockAndWitnessData {
 
         let top_block = {
             let mut blocks = self.blocks.read().await;
-            let top_block = blocks.first().unwrap().height;
+            let top_block = blocks.first().unwrap().height();
             let pos = top_block - height;
 
             // Get the last witness, and then use that.
@@ -504,10 +498,10 @@ impl BlockAndWitnessData {
             witnesses.into_fsb(&mut fsb);
 
             for i in (0..pos + 1).rev() {
-                let cb = &blocks.get(i as usize).unwrap().cb();
-                for ctx in &cb.vtx {
-                    for co in &ctx.outputs {
-                        let node = Node::new(co.cmu().unwrap().into());
+                let cb = &blocks.get(i as usize).unwrap();
+                for ctx in &cb.txns {
+                    for cmu in &ctx.cmus {
+                        let node = Node::new(cmu.clone());
                         w.append(node).unwrap();
                     }
                 }
@@ -545,21 +539,21 @@ impl BlockAndWitnessData {
 
         {
             let blocks = self.blocks.read().await;
-            let pos = blocks.first().unwrap().height - height;
+            let pos = blocks.first().unwrap().height() - height;
 
             let mut txid_found = false;
             let mut output_found = false;
 
-            let cb = &blocks.get(pos as usize).unwrap().cb();
-            for ctx in &cb.vtx {
-                if !txid_found && WalletTx::new_txid(&ctx.hash) == *txid {
+            let cb = &blocks.get(pos as usize).unwrap();
+            for ctx in &cb.txns {
+                if !txid_found && ctx.hash == txid.0 {
                     txid_found = true;
                 }
-                for j in 0..ctx.outputs.len() as u32 {
+                for j in 0..ctx.cmus.len() as u32 {
                     // If we've already passed the txid and output_num, stream the results
                     if txid_found && output_found {
-                        let co = ctx.outputs.get(j as usize).unwrap();
-                        let node = Node::new(co.cmu().unwrap().into());
+                        let cmu = ctx.cmus.get(j as usize).unwrap();
+                        let node = Node::new(cmu.clone());
                         w.append(node).unwrap();
                     }
 
@@ -649,8 +643,8 @@ mod test {
         // Blocks are in reverse order
         assert!(blocks.first().unwrap().height > blocks.last().unwrap().height);
 
-        let start_block = blocks.first().unwrap().height;
-        let end_block = blocks.last().unwrap().height;
+        let start_block = blocks.first().unwrap().height();
+        let end_block = blocks.last().unwrap().height();
 
         let sync_status = Arc::new(RwLock::new(SyncStatus::default()));
         let mut nw = BlockAndWitnessData::new(&config, sync_status);
@@ -670,7 +664,7 @@ mod test {
         let send_h: JoinHandle<Result<(), String>> = tokio::spawn(async move {
             for block in blocks {
                 cb_sender
-                    .send(block.cb())
+                    .send(block.to_cb())
                     .map_err(|e| format!("Couldn't send block: {}", e))?;
             }
             if let Some(Some(_h)) = reorg_rx.recv().await {
@@ -702,8 +696,8 @@ mod test {
         // Use the first 50 blocks as "existing", and then sync the other 150 blocks.
         let existing_blocks = blocks.split_off(150);
 
-        let start_block = blocks.first().unwrap().height;
-        let end_block = blocks.last().unwrap().height;
+        let start_block = blocks.first().unwrap().height();
+        let end_block = blocks.last().unwrap().height();
 
         let mut nw = BlockAndWitnessData::new_with_batchsize(&config, 25);
         nw.setup_sync(existing_blocks, None).await;
@@ -722,7 +716,7 @@ mod test {
         let send_h: JoinHandle<Result<(), String>> = tokio::spawn(async move {
             for block in blocks {
                 cb_sender
-                    .send(block.cb())
+                    .send(block.to_cb())
                     .map_err(|e| format!("Couldn't send block: {}", e))?;
             }
             if let Some(Some(_h)) = reorg_rx.recv().await {
@@ -742,8 +736,8 @@ mod test {
 
         let finished_blks = nw.finish_get_blocks(100).await;
         assert_eq!(finished_blks.len(), 100);
-        assert_eq!(finished_blks.first().unwrap().height, start_block);
-        assert_eq!(finished_blks.last().unwrap().height, start_block - 100 + 1);
+        assert_eq!(finished_blks.first().unwrap().height(), start_block);
+        assert_eq!(finished_blks.last().unwrap().height(), start_block - 100 + 1);
     }
 
     #[tokio::test]
@@ -773,33 +767,37 @@ mod test {
             OsRng.fill_bytes(&mut hash);
 
             if i == 0 {
-                let mut cb = blocks.pop().unwrap().cb();
-                cb.prev_hash = hash.to_vec();
-                blocks.push(BlockData::new(cb));
+                let mut cb = blocks.pop().unwrap();
+                cb.prev_hash = hash;
+                blocks.push(cb);
             } else {
-                let mut cb = reorged_blocks[i - 1].cb();
-                cb.prev_hash = hash.to_vec();
-                reorged_blocks[i - 1] = BlockData::new(cb);
+                let mut cb = reorged_blocks[i - 1].clone();
+                cb.prev_hash = hash;
+                reorged_blocks[i - 1] = cb;
             }
 
-            let mut cb = reorged_blocks[i].cb();
-            cb.hash = hash.to_vec();
-            reorged_blocks[i] = BlockData::new(cb);
+            let mut cb = reorged_blocks[i].clone();
+            cb.hash = hash;
+            reorged_blocks[i] = cb;
         }
         {
-            let mut cb = reorged_blocks[4].cb();
-            cb.prev_hash = existing_blocks
-                .iter()
-                .find(|b| b.height == 45)
-                .unwrap()
-                .cb()
-                .hash
-                .to_vec();
-            reorged_blocks[4] = BlockData::new(cb);
+            let mut cb = reorged_blocks[4].clone();
+            let mut prev_hash_bytes = [0u8; 32];
+            prev_hash_bytes.copy_from_slice(
+                existing_blocks
+                    .iter()
+                    .find(|b| b.height() == 45)
+                    .unwrap()
+                    .to_cb()
+                    .hash
+                    .as_slice(),
+            );
+            cb.prev_hash = prev_hash_bytes;
+            reorged_blocks[4] = cb;
         }
 
-        let start_block = blocks.first().unwrap().height;
-        let end_block = blocks.last().unwrap().height;
+        let start_block = blocks.first().unwrap().height();
+        let end_block = blocks.last().unwrap().height();
 
         let sync_status = Arc::new(RwLock::new(SyncStatus::default()));
         let mut nw = BlockAndWitnessData::new(&config, sync_status);
@@ -820,7 +818,7 @@ mod test {
             // Send the normal blocks
             for block in blocks {
                 cb_sender
-                    .send(block.cb())
+                    .send(block.to_cb())
                     .map_err(|e| format!("Couldn't send block: {}", e))?;
             }
 
@@ -835,7 +833,7 @@ mod test {
                 sent_ctr += 1;
 
                 cb_sender
-                    .send(reorged_blocks.drain(0..1).next().unwrap().cb())
+                    .send(reorged_blocks.drain(0..1).next().unwrap().to_cb())
                     .map_err(|e| format!("Couldn't send block: {}", e))?;
             }
 
@@ -856,13 +854,13 @@ mod test {
 
         let finished_blks = nw.finish_get_blocks(100).await;
         assert_eq!(finished_blks.len(), 100);
-        assert_eq!(finished_blks.first().unwrap().height, start_block);
-        assert_eq!(finished_blks.last().unwrap().height, start_block - 100 + 1);
+        assert_eq!(finished_blks.first().unwrap().height(), start_block);
+        assert_eq!(finished_blks.last().unwrap().height(), start_block - 100 + 1);
 
         // Verify the hashes
         for i in 0..(finished_blks.len() - 1) {
-            assert_eq!(finished_blks[i].cb().prev_hash, finished_blks[i + 1].cb().hash);
-            assert_eq!(finished_blks[i].hash(), finished_blks[i].cb().hash().to_string());
+            assert_eq!(finished_blks[i].prev_hash, finished_blks[i + 1].hash);
+            assert_eq!(finished_blks[i].hash(), finished_blks[i].to_cb().hash().to_string());
         }
     }
 }
