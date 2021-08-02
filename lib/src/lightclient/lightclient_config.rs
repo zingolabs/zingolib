@@ -15,7 +15,10 @@ use log4rs::{
     Config,
 };
 use tokio::runtime::Runtime;
-use zcash_primitives::constants::{mainnet, regtest, testnet};
+use zcash_primitives::{
+    consensus::Network,
+    constants::{mainnet, regtest, testnet},
+};
 
 use crate::{grpc_connector::GrpcConnector, lightclient::checkpoints};
 
@@ -89,6 +92,14 @@ impl LightClientConfig {
 
     pub fn set_data_dir(&mut self, dir_str: String) {
         self.data_dir = Some(dir_str);
+    }
+
+    pub fn get_params(&self) -> Network {
+        match self.chain_name.as_str() {
+            "main" => Network::MainNetwork,
+            "test" => Network::TestNetwork,
+            _ => panic!("Unknown network"),
+        }
     }
 
     /// Build the Logging config

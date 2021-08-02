@@ -32,7 +32,7 @@ use tokio::{
 use zcash_client_backend::encoding::{decode_payment_address, encode_payment_address};
 use zcash_primitives::{
     block::BlockHash,
-    consensus::{BlockHeight, BranchId, MAIN_NETWORK},
+    consensus::{BlockHeight, BranchId},
     memo::{Memo, MemoBytes},
     transaction::{components::amount::DEFAULT_FEE, Transaction, TxId},
 };
@@ -1496,7 +1496,8 @@ impl LightClient {
 
     async fn consensus_branch_id(&self) -> u32 {
         let height = self.wallet.last_scanned_height().await;
-        let branch: BranchId = BranchId::for_height(&MAIN_NETWORK, BlockHeight::from_u32(height as u32));
+
+        let branch: BranchId = BranchId::for_height(&self.config.get_params(), BlockHeight::from_u32(height as u32));
         let branch_id: u32 = u32::from(branch);
 
         branch_id

@@ -14,7 +14,7 @@ use tokio::{
 };
 
 use zcash_primitives::{
-    consensus::{BlockHeight, MAIN_NETWORK},
+    consensus::BlockHeight,
     note_encryption::try_sapling_compact_note_decryption,
     primitives::{Nullifier, SaplingIvk},
     transaction::TxId,
@@ -110,6 +110,7 @@ impl TrialDecryptions {
         wallet_txns: Arc<RwLock<WalletTxns>>,
         detected_txid_sender: UnboundedSender<(TxId, Nullifier, BlockHeight, Option<u32>)>,
     ) -> Result<(), String> {
+        let config = keys.read().await.config().clone();
         for cb in cbs {
             let height = BlockHeight::from_u32(cb.height as u32);
 
@@ -122,9 +123,14 @@ impl TrialDecryptions {
                     };
 
                     for (i, ivk) in ivks.iter().enumerate() {
-                        if let Some((note, to)) =
-                            try_sapling_compact_note_decryption(&MAIN_NETWORK, height, &ivk, &epk, &cmu, &co.ciphertext)
-                        {
+                        if let Some((note, to)) = try_sapling_compact_note_decryption(
+                            &config.get_params(),
+                            height,
+                            &ivk,
+                            &epk,
+                            &cmu,
+                            &co.ciphertext,
+                        ) {
                             let keys = keys.read().await;
                             let extfvk = keys.zkeys[i].extfvk();
                             let have_spending_key = keys.have_spending_key(extfvk);

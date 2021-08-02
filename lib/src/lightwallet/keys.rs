@@ -16,7 +16,6 @@ use zcash_client_backend::{
     encoding::{encode_extended_full_viewing_key, encode_extended_spending_key, encode_payment_address},
 };
 use zcash_primitives::{
-    consensus::MAIN_NETWORK,
     legacy::TransparentAddress,
     primitives::PaymentAddress,
     serialize::Vector,
@@ -343,6 +342,10 @@ impl Keys {
         Vector::write(&mut writer, &self.taddresses, |w, a| utils::write_string(w, a))?;
 
         Ok(())
+    }
+
+    pub fn config(&self) -> LightClientConfig {
+        self.config.clone()
     }
 
     pub fn get_seed_phrase(&self) -> String {
@@ -770,8 +773,8 @@ impl Keys {
         (extsk, extfvk, address)
     }
 
-    pub fn is_shielded_address(addr: &String, _config: &LightClientConfig) -> bool {
-        match address::RecipientAddress::decode(&MAIN_NETWORK, addr) {
+    pub fn is_shielded_address(addr: &String, config: &LightClientConfig) -> bool {
+        match address::RecipientAddress::decode(&config.get_params(), addr) {
             Some(address::RecipientAddress::Shielded(_)) => true,
             _ => false,
         }

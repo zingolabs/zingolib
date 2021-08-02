@@ -28,7 +28,7 @@ use tokio::{
 use zcash_client_backend::encoding::encode_payment_address;
 
 use zcash_primitives::{
-    consensus::{BlockHeight, MAIN_NETWORK},
+    consensus::BlockHeight,
     legacy::TransparentAddress,
     memo::Memo,
     note_encryption::{try_sapling_note_decryption, try_sapling_output_recovery},
@@ -297,7 +297,7 @@ impl FetchFullTxns {
                 let epk_prime = output.ephemeral_key;
 
                 let (note, to, memo_bytes) =
-                    match try_sapling_note_decryption(&MAIN_NETWORK, height, &ivk, &epk_prime, &cmu, &ct) {
+                    match try_sapling_note_decryption(&config.get_params(), height, &ivk, &epk_prime, &cmu, &ct) {
                         Some(ret) => ret,
                         None => continue,
                     };
@@ -327,7 +327,7 @@ impl FetchFullTxns {
                 .iter()
                 .filter_map(|ovk| {
                     match try_sapling_output_recovery(
-                        &MAIN_NETWORK,
+                        &config.get_params(),
                         height,
                         &ovk,
                         &output.cv,

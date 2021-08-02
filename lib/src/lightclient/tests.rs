@@ -11,7 +11,7 @@ use zcash_client_backend::address::RecipientAddress;
 use zcash_client_backend::encoding::{
     encode_extended_full_viewing_key, encode_extended_spending_key, encode_payment_address,
 };
-use zcash_primitives::consensus::{BlockHeight, MAIN_NETWORK};
+use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::memo::Memo;
 use zcash_primitives::merkle_tree::{CommitmentTree, IncrementalWitness};
 use zcash_primitives::note_encryption::SaplingNoteEncryption;
@@ -418,7 +418,7 @@ async fn z_to_z_scan_together() {
     let witness = IncrementalWitness::from_tree(&tree);
     let nf = note.nf(&extfvk1.fvk.vk, witness.position() as u64);
 
-    let pa = if let Some(RecipientAddress::Shielded(pa)) = RecipientAddress::decode(&MAIN_NETWORK, EXT_ZADDR) {
+    let pa = if let Some(RecipientAddress::Shielded(pa)) = RecipientAddress::decode(&config.get_params(), EXT_ZADDR) {
         pa
     } else {
         panic!("Couldn't parse address")

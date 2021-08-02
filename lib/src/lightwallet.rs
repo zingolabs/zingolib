@@ -26,7 +26,7 @@ use zcash_client_backend::{
 };
 use zcash_primitives::serialize::Optional;
 use zcash_primitives::{
-    consensus::{BlockHeight, BranchId, MAIN_NETWORK},
+    consensus::{BlockHeight, BranchId},
     legacy::Script,
     memo::Memo,
     prover::TxProver,
@@ -994,7 +994,7 @@ impl LightWallet {
         let recepients = tos
             .iter()
             .map(|to| {
-                let ra = match address::RecipientAddress::decode(&MAIN_NETWORK, to.0) {
+                let ra = match address::RecipientAddress::decode(&self.config.get_params(), to.0) {
                     Some(to) => to,
                     None => {
                         let e = format!("Invalid recipient address: '{}'", to.0);
@@ -1018,7 +1018,7 @@ impl LightWallet {
             None => return Err("No blocks in wallet to target, please sync first".to_string()),
         };
 
-        let mut builder = Builder::new(MAIN_NETWORK.clone(), target_height);
+        let mut builder = Builder::new(self.config.get_params().clone(), target_height);
 
         // Create a map from address -> sk for all taddrs, so we can spend from the
         // right address
