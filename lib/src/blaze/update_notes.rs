@@ -1,4 +1,4 @@
-use crate::lightwallet::wallet_txns::WalletTxns;
+use crate::lightwallet::{data::WalletTx, wallet_txns::WalletTxns};
 use std::sync::Arc;
 
 use futures::future::join_all;
@@ -135,7 +135,7 @@ impl UpdateNotes {
                         .get_ctx_for_nf_at_height(&nf, spent_height)
                         .await;
 
-                    let spent_txid = TxId { 0: ctx.hash };
+                    let spent_txid = WalletTx::new_txid(&ctx.hash);
                     let spent_at_height = BlockHeight::from_u32(spent_height as u32);
 
                     // Mark this note as being spent

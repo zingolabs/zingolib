@@ -25,7 +25,7 @@ use crate::{grpc_connector::GrpcConnector, lightclient::checkpoints};
 pub const DEFAULT_SERVER: &str = "https://lwdv3.zecwallet.co";
 pub const WALLET_NAME: &str = "zecwallet-light-wallet.dat";
 pub const LOGFILE_NAME: &str = "zecwallet-light-wallet.debug.log";
-pub const ANCHOR_OFFSET: [u32; 5] = [9, 4, 2, 1, 0];
+pub const ANCHOR_OFFSET: [u32; 5] = [4, 0, 0, 0, 0];
 pub const MAX_REORG: usize = 100;
 pub const GAP_RULE_UNUSED_ADDRESSES: usize = if cfg!(any(target_os = "ios", target_os = "android")) {
     0
