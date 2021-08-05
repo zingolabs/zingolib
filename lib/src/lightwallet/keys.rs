@@ -111,7 +111,7 @@ impl Keys {
         }
     }
 
-    pub fn new(config: &LightClientConfig, seed_phrase: Option<String>) -> Result<Self, String> {
+    pub fn new(config: &LightClientConfig, seed_phrase: Option<String>, num_zaddrs: u32) -> Result<Self, String> {
         let mut seed_bytes = [0u8; 32];
 
         if seed_phrase.is_none() {
@@ -139,8 +139,11 @@ impl Keys {
         let tpk = Self::get_taddr_from_bip39seed(&config, &bip39_seed.as_bytes(), 0);
         let taddr = Self::address_from_prefix_sk(&config.base58_pubkey_address(), &tpk);
 
-        let hdkey_num = 0;
-        let (extsk, _, _) = Self::get_zaddr_from_bip39seed(&config, &bip39_seed.as_bytes(), hdkey_num);
+        let mut zkeys = vec![];
+        for hdkey_num in 0..num_zaddrs {
+            let (extsk, _, _) = Self::get_zaddr_from_bip39seed(&config, &bip39_seed.as_bytes(), hdkey_num);
+            zkeys.push(WalletZKey::new_hdkey(hdkey_num, extsk));
+        }
 
         Ok(Self {
             config: config.clone(),
@@ -149,7 +152,7 @@ impl Keys {
             enc_seed: [0; 48],
             nonce: vec![],
             seed: seed_bytes,
-            zkeys: vec![WalletZKey::new_hdkey(hdkey_num, extsk)],
+            zkeys,
             tkeys: vec![tpk],
             taddresses: vec![taddr],
         })

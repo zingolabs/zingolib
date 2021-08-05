@@ -81,7 +81,7 @@ impl LightClient {
         }
 
         let l = LightClient {
-            wallet: LightWallet::new(config.clone(), seed_phrase, height)?,
+            wallet: LightWallet::new(config.clone(), seed_phrase, height, 1)?,
             config: config.clone(),
             mempool_monitor: std::sync::RwLock::new(None),
             bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
@@ -202,21 +202,10 @@ impl LightClient {
         };
     }
 
-    /// Create a brand new wallet with a new seed phrase. Will fail if a wallet file
-    /// already exists on disk
-    pub fn new(config: &LightClientConfig, latest_block: u64) -> io::Result<Self> {
-        #[cfg(all(not(target_os = "ios"), not(target_os = "android")))]
-        {
-            if config.wallet_exists() {
-                return Err(Error::new(
-                    ErrorKind::AlreadyExists,
-                    "Cannot create a new wallet from seed, because a wallet already exists",
-                ));
-            }
-        }
-        let l = Runtime::new().unwrap().block_on(async move {
+    fn new_wallet(config: &LightClientConfig, latest_block: u64, num_zaddrs: u32) -> io::Result<Self> {
+        Runtime::new().unwrap().block_on(async move {
             let l = LightClient {
-                wallet: LightWallet::new(config.clone(), None, latest_block)?,
+                wallet: LightWallet::new(config.clone(), None, latest_block, num_zaddrs)?,
                 config: config.clone(),
                 mempool_monitor: std::sync::RwLock::new(None),
                 sync_lock: Mutex::new(()),
@@ -234,8 +223,23 @@ impl LightClient {
                 .map_err(|s| io::Error::new(ErrorKind::PermissionDenied, s))?;
 
             Ok(l)
-        });
-        l
+        })
+    }
+
+    /// Create a brand new wallet with a new seed phrase. Will fail if a wallet file
+    /// already exists on disk
+    pub fn new(config: &LightClientConfig, latest_block: u64) -> io::Result<Self> {
+        #[cfg(all(not(target_os = "ios"), not(target_os = "android")))]
+        {
+            if config.wallet_exists() {
+                return Err(Error::new(
+                    ErrorKind::AlreadyExists,
+                    "Cannot create a new wallet from seed, because a wallet already exists",
+                ));
+            }
+        }
+
+        Self::new_wallet(config, latest_block, 1)
     }
 
     pub fn new_from_phrase(
@@ -253,27 +257,42 @@ impl LightClient {
                 ));
             }
         }
-        let l = Runtime::new().unwrap().block_on(async move {
-            let l = LightClient {
-                wallet: LightWallet::new(config.clone(), Some(seed_phrase), birthday)?,
-                config: config.clone(),
-                mempool_monitor: std::sync::RwLock::new(None),
-                sync_lock: Mutex::new(()),
-                bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
-            };
 
-            println!("Setting birthday to {}", birthday);
-            l.set_wallet_initial_state(birthday).await;
+        let lr = if seed_phrase.starts_with(config.hrp_sapling_private_key())
+            || seed_phrase.starts_with(config.hrp_sapling_viewing_key())
+        {
+            let lc = Self::new_wallet(config, birthday, 0)?;
+            Runtime::new().unwrap().block_on(async move {
+                lc.do_import_key(seed_phrase, birthday)
+                    .await
+                    .map_err(|e| io::Error::new(ErrorKind::InvalidData, e))?;
 
-            info!("Created new wallet!");
-            info!("Created LightClient to {}", &config.server);
+                info!("Created wallet with 0 keys, imported private key");
 
-            // Save
-            l.do_save().await.map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
-            Ok(l)
-        });
+                Ok(lc)
+            })
+        } else {
+            Runtime::new().unwrap().block_on(async move {
+                let l = LightClient {
+                    wallet: LightWallet::new(config.clone(), Some(seed_phrase), birthday, 1)?,
+                    config: config.clone(),
+                    mempool_monitor: std::sync::RwLock::new(None),
+                    sync_lock: Mutex::new(()),
+                    bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
+                };
 
-        l
+                l.set_wallet_initial_state(birthday).await;
+                l.do_save().await.map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
+
+                info!("Created new wallet!");
+
+                Ok(l)
+            })
+        };
+
+        info!("Created LightClient to {}", &config.server);
+
+        lr
     }
 
     pub fn read_from_buffer<R: Read>(config: &LightClientConfig, mut reader: R) -> io::Result<Self> {

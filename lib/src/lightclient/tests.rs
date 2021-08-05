@@ -4,6 +4,8 @@ use json::JsonValue;
 use jubjub::ExtendedPoint;
 use rand::rngs::OsRng;
 use secp256k1::{PublicKey, Secp256k1};
+use tempdir::TempDir;
+use tokio::runtime::Runtime;
 use tonic::transport::Channel;
 use tonic::Request;
 
@@ -33,6 +35,108 @@ use crate::lightclient::LightClient;
 use crate::lightwallet::data::WalletTx;
 
 use super::checkpoints;
+use super::lightclient_config::LightClientConfig;
+
+#[test]
+fn new_wallet_from_phrase() {
+    let temp_dir = TempDir::new("test").unwrap();
+    let data_dir = temp_dir
+        .into_path()
+        .canonicalize()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let config = LightClientConfig::create_unconnected("main".to_string(), Some(data_dir));
+    let lc = LightClient::new_from_phrase(TEST_SEED.to_string(), &config, 0, false).unwrap();
+
+    // The first t address and z address should be derived
+    Runtime::new().unwrap().block_on(async move {
+        let addresses = lc.do_address().await;
+
+        assert_eq!(
+            "zs1q6xk3q783t5k92kjqt2rkuuww8pdw2euzy5rk6jytw97enx8fhpazdv3th4xe7vsk6e9sfpawfg".to_string(),
+            addresses["z_addresses"][0]
+        );
+        assert_eq!(
+            "t1eQ63fwkQ4n4Eo5uCrPGaAV8FWB2tmx7ui".to_string(),
+            addresses["t_addresses"][0]
+        );
+        println!("z {}", lc.do_export(None).await.unwrap().pretty(2));
+    });
+}
+
+#[test]
+fn new_wallet_from_sk() {
+    let temp_dir = TempDir::new("test").unwrap();
+    let data_dir = temp_dir
+        .into_path()
+        .canonicalize()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let config = LightClientConfig::create_unconnected("main".to_string(), Some(data_dir));
+    let sk = "secret-extended-key-main1qvpa0qr8qqqqpqxn4l054nzxpxzp3a8r2djc7sekdek5upce8mc2j2z0arzps4zv940qeg706hd0wq6g5snzvhp332y6vhwyukdn8dhekmmsk7fzvzkqm6ypc99uy63tpesqwxhpre78v06cx8k5xpp9mrhtgqs5dvp68cqx2yrvthflmm2ynl8c0506dekul0f6jkcdmh0292lpphrksyc5z3pxwws97zd5els3l2mjt2s7hntap27mlmt6w0drtfmz36vz8pgu7ec0twfrq";
+    let lc = LightClient::new_from_phrase(sk.to_string(), &config, 0, false).unwrap();
+    Runtime::new().unwrap().block_on(async move {
+        let addresses = lc.do_address().await;
+        assert_eq!(addresses["z_addresses"].len(), 1);
+        assert_eq!(addresses["t_addresses"].len(), 1);
+        assert_eq!(
+            "zs1q6xk3q783t5k92kjqt2rkuuww8pdw2euzy5rk6jytw97enx8fhpazdv3th4xe7vsk6e9sfpawfg".to_string(),
+            addresses["z_addresses"][0]
+        );
+
+        // New address should be derived from the seed
+        lc.do_new_address("z").await.unwrap();
+
+        let addresses = lc.do_address().await;
+        assert_eq!(addresses["z_addresses"].len(), 2);
+        assert_ne!(
+            "zs1q6xk3q783t5k92kjqt2rkuuww8pdw2euzy5rk6jytw97enx8fhpazdv3th4xe7vsk6e9sfpawfg".to_string(),
+            addresses["z_addresses"][1]
+        );
+    });
+}
+
+#[test]
+fn new_wallet_from_vk() {
+    let temp_dir = TempDir::new("test").unwrap();
+    let data_dir = temp_dir
+        .into_path()
+        .canonicalize()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let config = LightClientConfig::create_unconnected("main".to_string(), Some(data_dir));
+    let vk = "zxviews1qvpa0qr8qqqqpqxn4l054nzxpxzp3a8r2djc7sekdek5upce8mc2j2z0arzps4zv9kdvg28gjzvxd47ant6jn4svln5psw3htx93cq93ahw4e7lptrtlq7he5r6p6rcm3s0z6l24ype84sgqfrmghu449htrjspfv6qg2zfx2yrvthflmm2ynl8c0506dekul0f6jkcdmh0292lpphrksyc5z3pxwws97zd5els3l2mjt2s7hntap27mlmt6w0drtfmz36vz8pgu7ecrxzsls";
+    let lc = LightClient::new_from_phrase(vk.to_string(), &config, 0, false).unwrap();
+
+    Runtime::new().unwrap().block_on(async move {
+        let addresses = lc.do_address().await;
+        assert_eq!(addresses["z_addresses"].len(), 1);
+        assert_eq!(addresses["t_addresses"].len(), 1);
+        assert_eq!(
+            "zs1q6xk3q783t5k92kjqt2rkuuww8pdw2euzy5rk6jytw97enx8fhpazdv3th4xe7vsk6e9sfpawfg".to_string(),
+            addresses["z_addresses"][0]
+        );
+
+        // New address should be derived from the seed
+        lc.do_new_address("z").await.unwrap();
+
+        let addresses = lc.do_address().await;
+        assert_eq!(addresses["z_addresses"].len(), 2);
+        assert_ne!(
+            "zs1q6xk3q783t5k92kjqt2rkuuww8pdw2euzy5rk6jytw97enx8fhpazdv3th4xe7vsk6e9sfpawfg".to_string(),
+            addresses["z_addresses"][1]
+        );
+    });
+}
 
 #[tokio::test]
 async fn basic_no_wallet_txns() {

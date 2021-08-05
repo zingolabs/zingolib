@@ -121,8 +121,13 @@ impl LightWallet {
         return 24;
     }
 
-    pub fn new(config: LightClientConfig, seed_phrase: Option<String>, height: u64) -> io::Result<Self> {
-        let keys = Keys::new(&config, seed_phrase).map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
+    pub fn new(
+        config: LightClientConfig,
+        seed_phrase: Option<String>,
+        height: u64,
+        num_zaddrs: u32,
+    ) -> io::Result<Self> {
+        let keys = Keys::new(&config, seed_phrase, num_zaddrs).map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
 
         Ok(Self {
             keys: Arc::new(RwLock::new(keys)),
