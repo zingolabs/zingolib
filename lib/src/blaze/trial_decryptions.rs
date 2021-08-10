@@ -58,8 +58,6 @@ impl TrialDecryptions {
                     .collect::<Vec<_>>(),
             );
 
-            let sync_status = bsync_data.read().await.sync_status.clone();
-
             while let Some(cb) = rx.recv().await {
                 cbs.push(cb);
 
@@ -70,7 +68,6 @@ impl TrialDecryptions {
                     let bsync_data = bsync_data.clone();
                     let detected_txid_sender = detected_txid_sender.clone();
 
-                    sync_status.write().await.trial_dec_done += cbs.len() as u64;
                     workers.push(tokio::spawn(Self::trial_decrypt_batch(
                         cbs.split_off(0),
                         keys,
@@ -82,7 +79,6 @@ impl TrialDecryptions {
                 }
             }
 
-            sync_status.write().await.trial_dec_done += cbs.len() as u64;
             workers.push(tokio::spawn(Self::trial_decrypt_batch(
                 cbs,
                 keys,
@@ -111,6 +107,8 @@ impl TrialDecryptions {
         detected_txid_sender: UnboundedSender<(TxId, Nullifier, BlockHeight, Option<u32>)>,
     ) -> Result<(), String> {
         let config = keys.read().await.config().clone();
+        let blk_count = cbs.len();
+
         for cb in cbs {
             let height = BlockHeight::from_u32(cb.height as u32);
 
@@ -172,6 +170,9 @@ impl TrialDecryptions {
                 }
             }
         }
+
+        // Update sync status
+        bsync_data.read().await.sync_status.write().await.trial_dec_done += blk_count as u64;
 
         // Return a nothing-value
         Ok::<(), String>(())
