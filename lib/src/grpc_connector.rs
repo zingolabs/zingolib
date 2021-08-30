@@ -7,6 +7,8 @@ use crate::compact_formats::{
     TransparentAddressBlockFilter, TreeState, TxFilter,
 };
 use futures::future::join_all;
+use futures::stream::FuturesUnordered;
+use futures::StreamExt;
 use log::warn;
 
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -130,8 +132,20 @@ impl GrpcConnector {
         let uri = self.uri.clone();
 
         let h = tokio::spawn(async move {
+            let mut workers = FuturesUnordered::new();
             while let Some((txid, result_tx)) = rx.recv().await {
-                result_tx.send(Self::get_full_tx(uri.clone(), &txid).await).unwrap()
+                let uri = uri.clone();
+                workers.push(tokio::spawn(async move {
+                    result_tx.send(Self::get_full_tx(uri.clone(), &txid).await).unwrap()
+                }));
+
+                // Do only 16 API calls in parallel, otherwise it might overflow OS's limit of
+                // number of simultaneous connections
+                if workers.len() > 16 {
+                    while let Some(_r) = workers.next().await {
+                        // Do nothing
+                    }
+                }
             }
         });
 
@@ -336,28 +350,35 @@ impl GrpcConnector {
             .map_err(|e| format!("Error getting client: {:?}", e))?;
 
         let mut prices = HashMap::new();
+        let mut error_count: u32 = 0;
 
         for (txid, ts) in txids {
-            let r = Request::new(PriceRequest {
-                timestamp: ts,
-                currency: currency.clone(),
-            });
-            match client.get_zec_price(r).await {
-                Ok(response) => {
-                    let price_response = response.into_inner();
-                    prices.insert(txid, Some(price_response.price));
-                }
-                Err(e) => {
-                    // If the server doesn't support this, bail
-                    if e.code() == tonic::Code::Unimplemented {
-                        return Err(format!("Unsupported by server"));
+            if error_count < 10 {
+                let r = Request::new(PriceRequest {
+                    timestamp: ts,
+                    currency: currency.clone(),
+                });
+                match client.get_zec_price(r).await {
+                    Ok(response) => {
+                        let price_response = response.into_inner();
+                        prices.insert(txid, Some(price_response.price));
                     }
+                    Err(e) => {
+                        // If the server doesn't support this, bail
+                        if e.code() == tonic::Code::Unimplemented {
+                            return Err(format!("Unsupported by server"));
+                        }
 
-                    // Ignore other errors, these are probably just for the particular date/time
-                    // and will be retried anyway
-                    warn!("Ignoring grpc error: {}", e);
-                    prices.insert(txid, None);
+                        // Ignore other errors, these are probably just for the particular date/time
+                        // and will be retried anyway
+                        warn!("Ignoring grpc error: {}", e);
+                        error_count += 1;
+                        prices.insert(txid, None);
+                    }
                 }
+            } else {
+                // If there are too many errors, don't bother querying the server, just return none
+                prices.insert(txid, None);
             }
         }
 
