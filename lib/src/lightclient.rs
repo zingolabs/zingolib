@@ -10,7 +10,7 @@ use crate::{
     lightclient::lightclient_config::MAX_REORG,
     lightwallet::{self, data::WalletTx, message::Message, now, LightWallet},
 };
-use futures::future::{join_all, AbortHandle, Abortable};
+use futures::future::join_all;
 use json::{array, object, JsonValue};
 use log::{error, info, warn};
 use std::{
@@ -1164,9 +1164,8 @@ impl LightClient {
         // Remember the previous sync id first
         let prev_sync_id = self.bsync_data.read().await.sync_status.read().await.sync_id;
 
-        // Start the sync with an abortable handle
-        let (abort_handle, abort_registration) = AbortHandle::new_pair();
-        let r_fut = Abortable::new(self.start_sync(), abort_registration);
+        // Start the sync
+        let r_fut = self.start_sync();
 
         // If printing updates, start a new task to print updates every 2 seconds.
         let sync_result = if print_updates {
@@ -1176,11 +1175,9 @@ impl LightClient {
             tokio::spawn(async move {
                 while sync_status.read().await.sync_id == prev_sync_id {
                     yield_now().await;
-                    sleep(Duration::from_secs(1)).await;
+                    sleep(Duration::from_secs(3)).await;
                 }
 
-                let mut prev_progress = format!("");
-                let mut stuck_ctr = 0;
                 loop {
                     if let Ok(_t) = rx.try_recv() {
                         break;
@@ -1191,22 +1188,8 @@ impl LightClient {
                         println!("{}", progress);
                     }
 
-                    // Check to see if we're making any progress
-                    if prev_progress != progress {
-                        stuck_ctr = 0;
-                        prev_progress = progress;
-                    } else {
-                        info!("Sync stuck for {} secs", stuck_ctr * 2);
-                        stuck_ctr += 1;
-                    }
-
-                    // Abort if we're stuck for more than 60*2 seconds
-                    if stuck_ctr > 60 {
-                        abort_handle.abort();
-                    }
-
                     yield_now().await;
-                    sleep(Duration::from_secs(2)).await;
+                    sleep(Duration::from_secs(3)).await;
                 }
             });
 
@@ -1220,18 +1203,7 @@ impl LightClient {
         // Mark the sync data as finished, which should clear everything
         self.bsync_data.read().await.finish().await;
 
-        match sync_result {
-            Ok(r) => r,
-            Err(a) => {
-                let errstr = format!("{}", a);
-                warn!("Aborted! {}", errstr);
-                self.bsync_data.read().await.sync_status.write().await.last_error = Some(errstr.clone());
-                Ok(object! {
-                    "result" => "aborted",
-                    "error" => errstr
-                })
-            }
-        }
+        sync_result
     }
 
     /// Start syncing in batches with the max size, so we don't consume memory more than
