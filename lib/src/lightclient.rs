@@ -1008,10 +1008,6 @@ impl LightClient {
         let response = self.do_sync(true).await;
 
         if response.is_ok() {
-            // At the end of a rescan, remove unused addresses.
-            self.wallet.remove_unused_taddrs().await;
-            self.wallet.remove_unused_zaddrs().await;
-
             self.do_save().await?;
         }
 
@@ -1340,7 +1336,7 @@ impl LightClient {
         // The processor to fetch the full transactions, and decode the memos and the outgoing metadata
         let fetch_full_tx_processor = FetchFullTxns::new(&self.config, self.wallet.keys(), self.wallet.txns());
         let (fetch_full_txns_handle, fetch_full_txn_tx, fetch_taddr_txns_tx) = fetch_full_tx_processor
-            .start(fulltx_fetcher_tx, bsync_data.clone())
+            .start(fulltx_fetcher_tx.clone(), bsync_data.clone())
             .await;
 
         // The processor to process Transactions detected by the trial decryptions processor
@@ -1352,7 +1348,7 @@ impl LightClient {
         // Do Trial decryptions of all the sapling outputs, and pass on the successful ones to the update_notes processor
         let trial_decryptions_processor = TrialDecryptions::new(self.wallet.keys(), self.wallet.txns());
         let (trial_decrypts_handle, trial_decrypts_tx) = trial_decryptions_processor
-            .start(bsync_data.clone(), detected_txns_tx)
+            .start(bsync_data.clone(), detected_txns_tx, fulltx_fetcher_tx)
             .await;
 
         // Fetch Compact blocks and send them to nullifier cache, node-and-witness cache and the trial-decryption processor

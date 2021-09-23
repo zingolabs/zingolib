@@ -5,20 +5,9 @@ use crate::{
 use futures::{stream::FuturesUnordered, StreamExt};
 use log::info;
 use std::sync::Arc;
-use tokio::{
-    sync::{
-        mpsc::{unbounded_channel, UnboundedSender},
-        RwLock,
-    },
-    task::JoinHandle,
-};
+use tokio::{sync::{RwLock, mpsc::{unbounded_channel, UnboundedSender}, oneshot}, task::JoinHandle};
 
-use zcash_primitives::{
-    consensus::BlockHeight,
-    note_encryption::try_sapling_compact_note_decryption,
-    primitives::{Nullifier, SaplingIvk},
-    transaction::TxId,
-};
+use zcash_primitives::{consensus::BlockHeight, note_encryption::try_sapling_compact_note_decryption, primitives::{Nullifier, SaplingIvk}, transaction::{Transaction, TxId}};
 
 use super::syncdata::BlazeSyncData;
 
@@ -36,6 +25,7 @@ impl TrialDecryptions {
         &self,
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         detected_txid_sender: UnboundedSender<(TxId, Nullifier, BlockHeight, Option<u32>)>,
+        fulltx_fetcher: UnboundedSender<(TxId, oneshot::Sender<Result<Transaction, String>>)>,
     ) -> (JoinHandle<()>, UnboundedSender<CompactBlock>) {
         //info!("Starting trial decrptions processor");
 
@@ -75,6 +65,7 @@ impl TrialDecryptions {
                         ivks,
                         wallet_txns,
                         detected_txid_sender,
+                        fulltx_fetcher.clone(),
                     )));
                 }
             }
@@ -86,6 +77,7 @@ impl TrialDecryptions {
                 ivks,
                 wallet_txns,
                 detected_txid_sender,
+                fulltx_fetcher,
             )));
 
             while let Some(r) = workers.next().await {
@@ -105,6 +97,7 @@ impl TrialDecryptions {
         ivks: Arc<Vec<SaplingIvk>>,
         wallet_txns: Arc<RwLock<WalletTxns>>,
         detected_txid_sender: UnboundedSender<(TxId, Nullifier, BlockHeight, Option<u32>)>,
+        fulltx_fetcher: UnboundedSender<(TxId, oneshot::Sender<Result<Transaction, String>>)>,
     ) -> Result<(), String> {
         let config = keys.read().await.config().clone();
         let blk_count = cbs.len();
@@ -114,6 +107,8 @@ impl TrialDecryptions {
             let height = BlockHeight::from_u32(cb.height as u32);
 
             for (tx_num, ctx) in cb.vtx.iter().enumerate() {
+                let mut wallet_tx = false;
+                
                 for (output_num, co) in ctx.outputs.iter().enumerate() {
                     let cmu = co.cmu().map_err(|_| "No CMU".to_string())?;
                     let epk = match co.epk() {
@@ -130,6 +125,8 @@ impl TrialDecryptions {
                             &cmu,
                             &co.ciphertext,
                         ) {
+                            wallet_tx = true;
+
                             let keys = keys.clone();
                             let bsync_data = bsync_data.clone();
                             let wallet_txns = wallet_txns.clone();
@@ -167,7 +164,7 @@ impl TrialDecryptions {
                                 );
 
                                 info!("Trial decrypt Detected txid {}", &txid);
-
+                                
                                 detected_txid_sender
                                     .send((txid, nullifier, height, Some(output_num as u32)))
                                     .unwrap();
@@ -179,6 +176,16 @@ impl TrialDecryptions {
                             break;
                         }
                     }
+                }
+
+                // TODO: Check option to see if we are fetching all txns.
+                if !wallet_tx && false {
+                    let txid = WalletTx::new_txid(&ctx.hash);
+                    let (tx, rx) = oneshot::channel();
+                    fulltx_fetcher.send((txid, tx)).unwrap();
+
+                    // Discard the result, because this was not a wallet tx.
+                    rx.await.unwrap()?;
                 }
             }
         }
