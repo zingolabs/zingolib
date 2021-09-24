@@ -1,3 +1,4 @@
+use crate::lightwallet::MemoDownloadOption;
 use crate::lightwallet::keys::Keys;
 use crate::{lightclient::LightClient, lightwallet::utils};
 use json::object;
@@ -923,6 +924,103 @@ impl Command for TransactionsCommand {
     }
 }
 
+struct SetOptionCommand {}
+impl Command for SetOptionCommand {
+    fn help(&self) -> String  {
+        let mut h = vec![];
+        h.push("Set a wallet option");
+        h.push("Usage:");
+        h.push("setoption <optionname>=<optionvalue>");
+        h.push("List of available options:");
+        h.push("download_memos : none | wallet | all");
+
+        h.join("\n")
+    }
+
+    fn short_help(&self) -> String {
+        "Set a wallet option".to_string()
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+        if args.len() != 1 {
+            return format!("Error: Need exactly 1 argument\n\n{}", self.help());
+        }
+
+        let option = args[0];
+        let values: Vec<&str> = option.split("=").collect();
+        
+        if values.len() != 2 {
+            return format!("Error: Please set option value like: <optionname>=<optionvalue>");
+        }
+
+        let option_name = values[0];
+        let option_value = values[1];
+
+        RT.block_on(async move {
+            match option_name {
+                "download_memos" => {
+                    match option_value {
+                        "none" => lightclient.wallet.set_download_memo(MemoDownloadOption::NoMemos).await,
+                        "wallet" => lightclient.wallet.set_download_memo(MemoDownloadOption::WalletMemos).await,
+                        "all" => lightclient.wallet.set_download_memo(MemoDownloadOption::AllMemos).await,
+                        _ => return format!("Error: Couldn't understand {} value {}", option_name, option_value),
+                    }
+                },
+                _ => return format!("Error: Couldn't understand {}", option_name),
+            }
+    
+            let r = object!{
+                "success" => true
+            };
+    
+            r.pretty(2)
+        })
+    }
+}
+
+
+struct GetOptionCommand {}
+impl Command for GetOptionCommand {
+    fn help(&self) -> String  {
+        let mut h = vec![];
+        h.push("Get a wallet option");
+        h.push("Usage:");
+        h.push("getoption <optionname>");
+
+        h.join("\n")
+    }
+
+    fn short_help(&self) -> String {
+        "Get a wallet option".to_string()
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+        if args.len() != 1 {
+            return format!("Error: Need exactly 1 argument\n\n{}", self.help());
+        }
+
+        let option_name = args[0];
+
+        RT.block_on(async move {
+            let value = match option_name {
+                "download_memos" => 
+                    match lightclient.wallet.wallet_options.read().await.download_memos {
+                        MemoDownloadOption::NoMemos => "none",
+                        MemoDownloadOption::WalletMemos => "wallet",
+                        MemoDownloadOption::AllMemos => "all"
+                    },
+                _ => return format!("Error: Couldn't understand {}", option_name),
+            };
+
+            let r = object!{
+                option_name => value
+            };
+
+            r.pretty(2)
+        })
+    }
+}
+
 struct ImportCommand {}
 impl Command for ImportCommand {
     fn help(&self) -> String {
@@ -976,7 +1074,7 @@ impl Command for ImportCommand {
             (
                 json_args["key"].as_str().unwrap().to_string(),
                 json_args["birthday"].as_u64().unwrap(),
-                !json_args.has_key("norescan"),
+                !json_args["norescan"].as_bool().unwrap_or(false),
             )
         } else {
             let key = args[0];
@@ -1194,6 +1292,8 @@ pub fn get_commands() -> Box<HashMap<String, Box<dyn Command>>> {
     map.insert("addresses".to_string(), Box::new(AddressCommand {}));
     map.insert("height".to_string(), Box::new(HeightCommand {}));
     map.insert("sendprogress".to_string(), Box::new(SendProgressCommand {}));
+    map.insert("setoption".to_string(), Box::new(SetOptionCommand{}));
+    map.insert("getoption".to_string(), Box::new(GetOptionCommand{}));
     map.insert("import".to_string(), Box::new(ImportCommand {}));
     map.insert("export".to_string(), Box::new(ExportCommand {}));
     map.insert("info".to_string(), Box::new(InfoCommand {}));

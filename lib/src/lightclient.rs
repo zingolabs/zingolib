@@ -1,15 +1,9 @@
 use self::lightclient_config::LightClientConfig;
-use crate::{
-    blaze::{
+use crate::{blaze::{
         block_witness_data::BlockAndWitnessData, fetch_compact_blocks::FetchCompactBlocks,
         fetch_full_tx::FetchFullTxns, fetch_taddr_txns::FetchTaddrTxns, sync_status::SyncStatus,
         syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions, update_notes::UpdateNotes,
-    },
-    compact_formats::RawTransaction,
-    grpc_connector::GrpcConnector,
-    lightclient::lightclient_config::MAX_REORG,
-    lightwallet::{self, data::WalletTx, message::Message, now, LightWallet},
-};
+    }, compact_formats::RawTransaction, grpc_connector::GrpcConnector, lightclient::lightclient_config::MAX_REORG, lightwallet::{self, LightWallet, data::WalletTx, message::Message, now}};
 use futures::future::join_all;
 use json::{array, object, JsonValue};
 use log::{error, info, warn};
@@ -949,7 +943,7 @@ impl LightClient {
         let new_address = {
             let addr = self.wallet.add_imported_sk(sk, birthday).await;
             if addr.starts_with("Error") {
-                let e = format!("Error creating new address{}", addr);
+                let e = addr;
                 error!("{}", e);
                 return Err(e);
             }
@@ -972,7 +966,7 @@ impl LightClient {
         let new_address = {
             let addr = self.wallet.add_imported_vk(vk, birthday).await;
             if addr.starts_with("Error") {
-                let e = format!("Error creating new address{}", addr);
+                let e = addr;
                 error!("{}", e);
                 return Err(e);
             }
@@ -1307,6 +1301,7 @@ impl LightClient {
                 batch_num,
                 self.wallet.get_blocks().await,
                 self.wallet.verified_tree.read().await.clone(),
+                *self.wallet.wallet_options.read().await,
             )
             .await;
 

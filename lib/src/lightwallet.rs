@@ -89,6 +89,57 @@ pub enum NodePosition {
     Highest,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MemoDownloadOption {
+    NoMemos = 0,
+    WalletMemos,
+    AllMemos,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct WalletOptions {
+    pub(crate) download_memos: MemoDownloadOption,
+}
+
+impl Default for WalletOptions {
+    fn default() -> Self {
+        WalletOptions {
+            download_memos: MemoDownloadOption::WalletMemos
+        }
+    }
+}
+
+impl WalletOptions {
+    pub fn serialized_version() -> u64 {
+        return 1;
+    }
+
+
+    pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
+        let _version = reader.read_u64::<LittleEndian>()?;
+
+        let download_memos = match reader.read_u8()? {
+            0 => MemoDownloadOption::NoMemos,
+            1 => MemoDownloadOption::WalletMemos,
+            2 => MemoDownloadOption::AllMemos,
+            v => {
+                return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Bad download option {}", v)));
+            }
+        };
+
+        Ok(Self {
+            download_memos
+        })
+    }
+
+    pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+        // Write the version
+        writer.write_u64::<LittleEndian>(Self::serialized_version())?;
+
+        writer.write_u8(self.download_memos as u8)
+    }
+}
+
 pub struct LightWallet {
     // All the keys in the wallet
     keys: Arc<RwLock<Keys>>,
@@ -102,6 +153,9 @@ pub struct LightWallet {
 
     // List of all txns
     pub(crate) txns: Arc<RwLock<WalletTxns>>,
+
+    // Wallet options
+    pub(crate) wallet_options: Arc<RwLock<WalletOptions>>,
 
     // Non-serialized fields
     config: LightClientConfig,
@@ -118,7 +172,7 @@ pub struct LightWallet {
 
 impl LightWallet {
     pub fn serialized_version() -> u64 {
-        return 23;
+        return 24;
     }
 
     pub fn new(
@@ -133,6 +187,7 @@ impl LightWallet {
             keys: Arc::new(RwLock::new(keys)),
             txns: Arc::new(RwLock::new(WalletTxns::new())),
             blocks: Arc::new(RwLock::new(vec![])),
+            wallet_options: Arc::new(RwLock::new(WalletOptions::default())),
             config,
             birthday: AtomicU64::new(height),
             verified_tree: Arc::new(RwLock::new(None)),
@@ -184,6 +239,12 @@ impl LightWallet {
             ));
         }
 
+        let wallet_options = if version <= 23 {
+            WalletOptions::default()
+        } else {
+            WalletOptions::read(&mut reader)?
+        };
+
         let birthday = reader.read_u64::<LittleEndian>()?;
 
         if version <= 22 {
@@ -225,6 +286,7 @@ impl LightWallet {
             txns: Arc::new(RwLock::new(txns)),
             blocks: Arc::new(RwLock::new(blocks)),
             config: config.clone(),
+            wallet_options: Arc::new(RwLock::new(wallet_options)),
             birthday: AtomicU64::new(birthday),
             verified_tree: Arc::new(RwLock::new(verified_tree)),
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
@@ -263,6 +325,8 @@ impl LightWallet {
         self.txns.read().await.write(&mut writer)?;
 
         utils::write_string(&mut writer, &self.config.chain_name)?;
+
+        self.wallet_options.read().await.write(&mut writer)?;
 
         // While writing the birthday, get it from the fn so we recalculate it properly
         // in case of rescans etc...
@@ -316,6 +380,10 @@ impl LightWallet {
             Some(pa) => Some(encode_payment_address(hrp, &pa)),
             None => None,
         }
+    }
+
+    pub async fn set_download_memo(&self, value: MemoDownloadOption) {
+        self.wallet_options.write().await.download_memos = value;
     }
 
     pub async fn get_birthday(&self) -> u64 {

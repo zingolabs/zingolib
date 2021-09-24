@@ -1,3 +1,4 @@
+use crate::lightwallet::MemoDownloadOption;
 use crate::lightwallet::{data::WalletTx, wallet_txns::WalletTxns};
 use std::sync::Arc;
 
@@ -86,6 +87,7 @@ impl UpdateNotes {
         UnboundedSender<(TxId, Nullifier, BlockHeight, Option<u32>)>,
     ) {
         //info!("Starting Note Update processing");
+        let download_memos = bsync_data.read().await.wallet_options.download_memos;
 
         // Create a new channel where we'll be notified of TxIds that are to be processed
         let (tx, mut rx) = unbounded_channel::<(TxId, Nullifier, BlockHeight, Option<u32>)>();
@@ -163,7 +165,9 @@ impl UpdateNotes {
                         );
 
                         // Send the future Tx to be fetched too, in case it has only spent nullifiers and not recieved any change
-                        fetch_full_sender.send((spent_txid, spent_at_height)).unwrap();
+                        if download_memos != MemoDownloadOption::NoMemos {
+                            fetch_full_sender.send((spent_txid, spent_at_height)).unwrap();
+                        }
                     } else {
                         //info!("Note was NOT spent, update its witnesses for TxId {}", txid);
 
@@ -172,7 +176,7 @@ impl UpdateNotes {
                     }
 
                     // Send it off to get the full transaction if this is a new Tx, that is, it has an output_num
-                    if output_num.is_some() {
+                    if output_num.is_some() && download_memos != MemoDownloadOption::NoMemos {
                         fetch_full_sender.send((txid, at_height)).unwrap();
                     }
                 }));

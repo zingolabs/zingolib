@@ -1,7 +1,4 @@
-use crate::{
-    compact_formats::CompactBlock,
-    lightwallet::{data::WalletTx, keys::Keys, wallet_txns::WalletTxns},
-};
+use crate::{compact_formats::CompactBlock, lightwallet::{MemoDownloadOption, data::WalletTx, keys::Keys, wallet_txns::WalletTxns}};
 use futures::{stream::FuturesUnordered, StreamExt};
 use log::info;
 use std::sync::Arc;
@@ -103,6 +100,8 @@ impl TrialDecryptions {
         let blk_count = cbs.len();
         let mut workers = FuturesUnordered::new();
 
+        let download_memos = bsync_data.read().await.wallet_options.download_memos;
+
         for cb in cbs {
             let height = BlockHeight::from_u32(cb.height as u32);
 
@@ -178,8 +177,8 @@ impl TrialDecryptions {
                     }
                 }
 
-                // TODO: Check option to see if we are fetching all txns.
-                if !wallet_tx && false {
+                // Check option to see if we are fetching all txns.
+                if !wallet_tx && download_memos == MemoDownloadOption::AllMemos {
                     let txid = WalletTx::new_txid(&ctx.hash);
                     let (tx, rx) = oneshot::channel();
                     fulltx_fetcher.send((txid, tx)).unwrap();
