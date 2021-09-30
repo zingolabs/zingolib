@@ -927,6 +927,8 @@ impl LightClient {
             self.do_import_sk(key, birthday).await
         } else if key.starts_with(self.config.hrp_sapling_viewing_key()) {
             self.do_import_vk(key, birthday).await
+        } else if key.starts_with("K") || key.starts_with("L") {
+            Err(format!("Can't import t-address keys yet!"))
         } else {
             Err(format!("'{}' was not recognized as either a spending key or a viewing key because it didn't start with either '{}' or '{}'", 
                 key, self.config.hrp_sapling_private_key(), self.config.hrp_sapling_viewing_key()))
