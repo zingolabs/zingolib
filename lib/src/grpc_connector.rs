@@ -196,6 +196,8 @@ impl GrpcConnector {
             hash: txid.0.to_vec(),
         });
 
+        // log::info!("Full fetching {}", txid);
+
         let mut client = client
             .get_client()
             .await

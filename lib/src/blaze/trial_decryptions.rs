@@ -183,8 +183,11 @@ impl TrialDecryptions {
                     let (tx, rx) = oneshot::channel();
                     fulltx_fetcher.send((txid, tx)).unwrap();
 
-                    // Discard the result, because this was not a wallet tx.
-                    rx.await.unwrap()?;
+                    workers.push(tokio::spawn(async move {
+                        // Discard the result, because this was not a wallet tx.
+                        rx.await.unwrap().map(|_r| ())
+                    }));
+                    
                 }
             }
         }
