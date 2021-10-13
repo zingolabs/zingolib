@@ -1464,7 +1464,7 @@ impl LightClient {
 
         let result = {
             let _lock = self.sync_lock.lock().await;
-            let (sapling_spend, sapling_output) = self.read_sapling_params()?;
+            let (sapling_output, sapling_spend) = self.read_sapling_params()?;
 
             let prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
 
