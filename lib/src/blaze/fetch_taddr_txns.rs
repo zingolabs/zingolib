@@ -150,6 +150,7 @@ mod test {
     use zcash_primitives::transaction::{Transaction, TransactionData};
 
     use crate::lightwallet::keys::Keys;
+    use crate::lightwallet::wallettkey::WalletTKey;
 
     use super::FetchTaddrTxns;
 
@@ -158,7 +159,7 @@ mod test {
         // 5 t addresses
         let mut keys = Keys::new_empty();
         let gened_taddrs: Vec<_> = (0..5).into_iter().map(|n| format!("taddr{}", n)).collect();
-        keys.taddresses = gened_taddrs.clone();
+        keys.tkeys = gened_taddrs.iter().map(|ta| WalletTKey::empty(ta)).collect::<Vec<_>>();
 
         let ftt = FetchTaddrTxns::new(Arc::new(RwLock::new(keys)));
 

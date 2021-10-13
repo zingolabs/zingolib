@@ -3,12 +3,11 @@ use std::{
     io::{self, Error, ErrorKind, Read, Write},
 };
 
-use base58::ToBase58;
+use base58::{FromBase58, ToBase58};
 use bip39::{Language, Mnemonic, Seed};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use rand::{rngs::OsRng, Rng};
 use ripemd160::Digest;
-use secp256k1::SecretKey;
 use sha2::Sha256;
 use sodiumoxide::crypto::secretbox;
 use zcash_client_backend::{
@@ -24,13 +23,13 @@ use zcash_primitives::{
 
 use crate::{
     lightclient::lightclient_config::{LightClientConfig, GAP_RULE_UNUSED_ADDRESSES},
-    lightwallet::{
-        extended_key::{ExtendedPrivKey, KeyIndex},
-        utils,
-    },
+    lightwallet::utils,
 };
 
-use super::walletzkey::{WalletZKey, WalletZKeyType};
+use super::{
+    wallettkey::{WalletTKey, WalletTKeyType},
+    walletzkey::{WalletZKey, WalletZKeyType},
+};
 
 /// Sha256(Sha256(value))
 pub fn double_sha256(payload: &[u8]) -> Vec<u8> {
@@ -61,6 +60,35 @@ impl ToBase58Check for [u8] {
     }
 }
 
+/// A trait for converting base58check encoded values.
+pub trait FromBase58Check {
+    /// Convert a value of `self`, interpreted as base58check encoded data, into the tuple with version and payload as bytes vector.
+    fn from_base58check(&self) -> io::Result<(u8, Vec<u8>)>;
+}
+
+impl FromBase58Check for str {
+    fn from_base58check(&self) -> io::Result<(u8, Vec<u8>)> {
+        let mut payload: Vec<u8> = match self.from_base58() {
+            Ok(payload) => payload,
+            Err(error) => return Err(io::Error::new(ErrorKind::InvalidData, format!("{:?}", error))),
+        };
+        if payload.len() < 5 {
+            return Err(io::Error::new(
+                ErrorKind::InvalidData,
+                format!("Invalid Checksum length"),
+            ));
+        }
+
+        let checksum_index = payload.len() - 4;
+        let provided_checksum = payload.split_off(checksum_index);
+        let checksum = double_sha256(&payload)[..4].to_vec();
+        if checksum != provided_checksum {
+            return Err(io::Error::new(ErrorKind::InvalidData, format!("Invalid Checksum")));
+        }
+        Ok((payload[0], payload[1..].to_vec()))
+    }
+}
+
 // Manages all the keys in the wallet. Note that the RwLock for this is present in `lightwallet.rs`, so we'll
 // assume that this is already gone through a RwLock, so we don't lock any of the individual fields.
 pub struct Keys {
@@ -85,14 +113,13 @@ pub struct Keys {
     pub(crate) zkeys: Vec<WalletZKey>,
 
     // Transparent keys. If the wallet is locked, then the secret keys will be encrypted,
-    // but the addresses will be present.
-    pub(crate) tkeys: Vec<secp256k1::SecretKey>,
-    pub(crate) taddresses: Vec<String>,
+    // but the addresses will be present. This Vec contains both wallet and imported tkeys
+    pub(crate) tkeys: Vec<WalletTKey>,
 }
 
 impl Keys {
     pub fn serialized_version() -> u64 {
-        return 20;
+        return 21;
     }
 
     #[cfg(test)]
@@ -107,7 +134,6 @@ impl Keys {
             seed: [0u8; 32],
             zkeys: vec![],
             tkeys: vec![],
-            taddresses: vec![],
         }
     }
 
@@ -136,8 +162,7 @@ impl Keys {
         let bip39_seed = Seed::new(&Mnemonic::from_entropy(&seed_bytes, Language::English).unwrap(), "");
 
         // Derive only the first sk and address
-        let tpk = Self::get_taddr_from_bip39seed(&config, &bip39_seed.as_bytes(), 0);
-        let taddr = Self::address_from_prefix_sk(&config.base58_pubkey_address(), &tpk);
+        let tpk = WalletTKey::new_hdkey(config, 0, &bip39_seed.as_bytes());
 
         let mut zkeys = vec![];
         for hdkey_num in 0..num_zaddrs {
@@ -154,7 +179,6 @@ impl Keys {
             seed: seed_bytes,
             zkeys,
             tkeys: vec![tpk],
-            taddresses: vec![taddr],
         })
     }
 
@@ -242,21 +266,33 @@ impl Keys {
             Vector::read(&mut reader, |r| WalletZKey::read(r))?
         };
 
-        let tkeys = Vector::read(&mut reader, |r| {
-            let mut tpk_bytes = [0u8; 32];
-            r.read_exact(&mut tpk_bytes)?;
-            secp256k1::SecretKey::from_slice(&tpk_bytes).map_err(|e| io::Error::new(ErrorKind::InvalidData, e))
-        })?;
+        let tkeys = if version <= 20 {
+            let tkeys = Vector::read(&mut reader, |r| {
+                let mut tpk_bytes = [0u8; 32];
+                r.read_exact(&mut tpk_bytes)?;
+                secp256k1::SecretKey::from_slice(&tpk_bytes).map_err(|e| io::Error::new(ErrorKind::InvalidData, e))
+            })?;
 
-        let taddresses = if version >= 4 {
-            // Read the addresses
-            Vector::read(&mut reader, |r| utils::read_string(r))?
-        } else {
-            // Calculate the addresses
+            let taddresses = if version >= 4 {
+                // Read the addresses
+                Vector::read(&mut reader, |r| utils::read_string(r))?
+            } else {
+                // Calculate the addresses
+                tkeys
+                    .iter()
+                    .map(|sk| WalletTKey::address_from_prefix_sk(&config.base58_pubkey_address(), sk))
+                    .collect()
+            };
+
             tkeys
                 .iter()
-                .map(|sk| Self::address_from_prefix_sk(&config.base58_pubkey_address(), sk))
-                .collect()
+                .zip(taddresses.iter())
+                .enumerate()
+                .map(|(i, (sk, taddr))| WalletTKey::from_raw(sk, taddr, i as u32))
+                .collect::<Vec<_>>()
+        } else {
+            // Read the TKeys
+            Vector::read(&mut reader, |r| WalletTKey::read(r))?
         };
 
         Ok(Self {
@@ -268,7 +304,6 @@ impl Keys {
             seed: seed_bytes,
             zkeys,
             tkeys,
-            taddresses,
         })
     }
 
@@ -295,13 +330,25 @@ impl Keys {
 
         let zkeys = Vector::read(&mut reader, |r| WalletZKey::read(r))?;
 
-        let tkeys = Vector::read(&mut reader, |r| {
-            let mut tpk_bytes = [0u8; 32];
-            r.read_exact(&mut tpk_bytes)?;
-            secp256k1::SecretKey::from_slice(&tpk_bytes).map_err(|e| io::Error::new(ErrorKind::InvalidData, e))
-        })?;
+        let tkeys = if version <= 20 {
+            let tkeys = Vector::read(&mut reader, |r| {
+                let mut tpk_bytes = [0u8; 32];
+                r.read_exact(&mut tpk_bytes)?;
+                secp256k1::SecretKey::from_slice(&tpk_bytes).map_err(|e| io::Error::new(ErrorKind::InvalidData, e))
+            })?;
 
-        let taddresses = Vector::read(&mut reader, |r| utils::read_string(r))?;
+            let taddresses = Vector::read(&mut reader, |r| utils::read_string(r))?;
+
+            tkeys
+                .iter()
+                .zip(taddresses.iter())
+                .enumerate()
+                .map(|(i, (sk, taddr))| WalletTKey::from_raw(sk, taddr, i as u32))
+                .collect::<Vec<_>>()
+        } else {
+            // Read the TKeys
+            Vector::read(&mut reader, |r| WalletTKey::read(r))?
+        };
 
         Ok(Self {
             config: config.clone(),
@@ -312,7 +359,6 @@ impl Keys {
             seed: seed_bytes,
             zkeys,
             tkeys,
-            taddresses,
         })
     }
 
@@ -339,10 +385,7 @@ impl Keys {
         Vector::write(&mut writer, &self.zkeys, |w, zk| zk.write(w))?;
 
         // Write the transparent private keys
-        Vector::write(&mut writer, &self.tkeys, |w, pk| w.write_all(&pk[..]))?;
-
-        // Write the transparent addresses
-        Vector::write(&mut writer, &self.taddresses, |w, a| utils::write_string(w, a))?;
+        Vector::write(&mut writer, &self.tkeys, |w, sk| sk.write(w))?;
 
         Ok(())
     }
@@ -382,7 +425,7 @@ impl Keys {
     }
 
     pub fn get_all_taddrs(&self) -> Vec<String> {
-        self.taddresses.iter().map(|t| t.clone()).collect()
+        self.tkeys.iter().map(|tk| tk.address.clone()).collect::<Vec<_>>()
     }
 
     pub fn have_spending_key(&self, extfvk: &ExtendedFullViewingKey) -> bool {
@@ -402,10 +445,9 @@ impl Keys {
     }
 
     pub fn get_taddr_to_sk_map(&self) -> HashMap<String, secp256k1::SecretKey> {
-        self.taddresses
+        self.tkeys
             .iter()
-            .zip(self.tkeys.iter())
-            .map(|(addr, sk)| (addr.clone(), sk.clone()))
+            .map(|tk| (tk.address.clone(), tk.key.unwrap().clone()))
             .collect()
     }
 
@@ -416,11 +458,12 @@ impl Keys {
         }
 
         let last_addresses = {
-            self.taddresses
+            self.tkeys
                 .iter()
+                .filter(|tk| tk.keytype == WalletTKeyType::HdKey)
                 .rev()
                 .take(GAP_RULE_UNUSED_ADDRESSES)
-                .map(|s| s.clone())
+                .map(|s| s.address.clone())
                 .collect::<Vec<String>>()
         };
 
@@ -509,14 +552,19 @@ impl Keys {
             return "Error: Can't add key while wallet is locked".to_string();
         }
 
-        let pos = self.tkeys.len() as u32;
+        // Find the highest pos we have
+        let pos = self
+            .tkeys
+            .iter()
+            .filter(|sk| sk.hdkey_num.is_some())
+            .max_by(|sk1, sk2| sk1.hdkey_num.unwrap().cmp(&sk2.hdkey_num.unwrap()))
+            .map_or(0, |sk| sk.hdkey_num.unwrap() + 1);
+
         let bip39_seed = bip39::Seed::new(&Mnemonic::from_entropy(&self.seed, Language::English).unwrap(), "");
 
-        let sk = Self::get_taddr_from_bip39seed(&self.config, &bip39_seed.as_bytes(), pos);
-        let address = self.address_from_sk(&sk);
-
-        self.tkeys.push(sk);
-        self.taddresses.push(address.clone());
+        let key = WalletTKey::new_hdkey(&self.config, pos, &bip39_seed.as_bytes());
+        let address = key.address.clone();
+        self.tkeys.push(key);
 
         address
     }
@@ -553,12 +601,7 @@ impl Keys {
     pub fn get_t_secret_keys(&self) -> Vec<(String, String)> {
         self.tkeys
             .iter()
-            .map(|sk| {
-                (
-                    self.address_from_sk(sk),
-                    sk[..].to_base58check(&self.config.base58_secretkey_prefix(), &[0x01]),
-                )
-            })
+            .map(|sk| (sk.address.clone(), sk.sk_as_string(&self.config).unwrap_or_default()))
             .collect::<Vec<(String, String)>>()
     }
 
@@ -582,6 +625,11 @@ impl Keys {
             .map(|k| k.encrypt(&key))
             .collect::<io::Result<Vec<()>>>()?;
 
+        self.tkeys
+            .iter_mut()
+            .map(|k| k.encrypt(&key))
+            .collect::<io::Result<Vec<()>>>()?;
+
         self.encrypted = true;
         self.lock()?;
 
@@ -599,9 +647,13 @@ impl Keys {
 
         // Empty the seed and the secret keys
         self.seed.copy_from_slice(&[0u8; 32]);
-        self.tkeys = vec![];
 
-        // Remove all the private key from the zkeys
+        // Remove all the private key from the zkeys and tkeys
+        self.tkeys
+            .iter_mut()
+            .map(|tk| tk.lock())
+            .collect::<io::Result<Vec<_>>>()?;
+
         self.zkeys
             .iter_mut()
             .map(|zk| zk.lock())
@@ -641,32 +693,20 @@ impl Keys {
         // The seed bytes is the raw entropy. To pass it to HD wallet generation,
         // we need to get the 64 byte bip39 entropy
         let bip39_seed = bip39::Seed::new(&Mnemonic::from_entropy(&seed, Language::English).unwrap(), "");
+        let config = self.config.clone();
 
         // Transparent keys
-        let mut tkeys = vec![];
-        for pos in 0..self.taddresses.len() {
-            let sk = Self::get_taddr_from_bip39seed(&self.config, &bip39_seed.as_bytes(), pos as u32);
-            let address = self.address_from_sk(&sk);
+        self.tkeys
+            .iter_mut()
+            .map(|tk| tk.unlock(&config, bip39_seed.as_bytes(), &key))
+            .collect::<io::Result<Vec<()>>>()?;
 
-            if address != self.taddresses[pos] {
-                return Err(io::Error::new(
-                    ErrorKind::InvalidData,
-                    format!("taddress mismatch at {}. {} vs {}", pos, address, self.taddresses[pos]),
-                ));
-            }
-
-            tkeys.push(sk);
-        }
-
-        let config = self.config.clone();
         // Go over the zkeys, and add the spending keys again
         self.zkeys
             .iter_mut()
             .map(|zk| zk.unlock(&config, bip39_seed.as_bytes(), &key))
             .collect::<io::Result<Vec<()>>>()?;
 
-        // Everything checks out, so we'll update our wallet with the decrypted values
-        self.tkeys = tkeys;
         self.seed.copy_from_slice(&seed);
 
         self.encrypted = true;
@@ -687,7 +727,12 @@ impl Keys {
             self.unlock(passwd)?;
         }
 
-        // Remove encryption from individual zkeys
+        // Remove encryption from individual zkeys and tkeys
+        self.tkeys
+            .iter_mut()
+            .map(|tk| tk.remove_encryption())
+            .collect::<io::Result<Vec<()>>>()?;
+
         self.zkeys
             .iter_mut()
             .map(|zk| zk.remove_encryption())
@@ -720,39 +765,6 @@ impl Keys {
             }
             _ => None,
         }
-    }
-
-    pub fn address_from_sk(&self, sk: &secp256k1::SecretKey) -> String {
-        Self::address_from_prefix_sk(&self.config.base58_pubkey_address(), sk)
-    }
-
-    pub fn address_from_prefix_sk(prefix: &[u8; 2], sk: &secp256k1::SecretKey) -> String {
-        let secp = secp256k1::Secp256k1::new();
-        let pk = secp256k1::PublicKey::from_secret_key(&secp, &sk);
-
-        // Encode into t address
-        let mut hash160 = ripemd160::Ripemd160::new();
-        hash160.update(Sha256::digest(&pk.serialize()[..].to_vec()));
-
-        hash160.finalize().to_base58check(prefix, &[])
-    }
-
-    pub fn get_taddr_from_bip39seed(config: &LightClientConfig, bip39_seed: &[u8], pos: u32) -> SecretKey {
-        assert_eq!(bip39_seed.len(), 64);
-
-        let ext_t_key = ExtendedPrivKey::with_seed(bip39_seed).unwrap();
-        ext_t_key
-            .derive_private_key(KeyIndex::hardened_from_normalize_index(44).unwrap())
-            .unwrap()
-            .derive_private_key(KeyIndex::hardened_from_normalize_index(config.get_coin_type()).unwrap())
-            .unwrap()
-            .derive_private_key(KeyIndex::hardened_from_normalize_index(0).unwrap())
-            .unwrap()
-            .derive_private_key(KeyIndex::Normal(0))
-            .unwrap()
-            .derive_private_key(KeyIndex::Normal(pos))
-            .unwrap()
-            .private_key
     }
 
     pub fn get_zaddr_from_bip39seed(

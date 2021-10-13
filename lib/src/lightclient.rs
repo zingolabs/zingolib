@@ -1,9 +1,15 @@
 use self::lightclient_config::LightClientConfig;
-use crate::{blaze::{
+use crate::{
+    blaze::{
         block_witness_data::BlockAndWitnessData, fetch_compact_blocks::FetchCompactBlocks,
         fetch_full_tx::FetchFullTxns, fetch_taddr_txns::FetchTaddrTxns, sync_status::SyncStatus,
         syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions, update_notes::UpdateNotes,
-    }, compact_formats::RawTransaction, grpc_connector::GrpcConnector, lightclient::lightclient_config::MAX_REORG, lightwallet::{self, LightWallet, data::WalletTx, message::Message, now}};
+    },
+    compact_formats::RawTransaction,
+    grpc_connector::GrpcConnector,
+    lightclient::lightclient_config::MAX_REORG,
+    lightwallet::{self, data::WalletTx, message::Message, now, LightWallet},
+};
 use futures::future::join_all;
 use json::{array, object, JsonValue};
 use log::{error, info, warn};
@@ -928,14 +934,34 @@ impl LightClient {
         } else if key.starts_with(self.config.hrp_sapling_viewing_key()) {
             self.do_import_vk(key, birthday).await
         } else if key.starts_with("K") || key.starts_with("L") {
-            Err(format!("Can't import t-address keys yet!"))
+            self.do_import_tk(key).await
         } else {
-            Err(format!("'{}' was not recognized as either a spending key or a viewing key because it didn't start with either '{}' or '{}'", 
-                key, self.config.hrp_sapling_private_key(), self.config.hrp_sapling_viewing_key()))
+            Err(format!(
+                "'{}' was not recognized as either a spending key or a viewing key",
+                key,
+            ))
         }
     }
 
-    /// Import a new private key
+    /// Import a new transparent private key
+    pub async fn do_import_tk(&self, sk: String) -> Result<JsonValue, String> {
+        if !self.wallet.is_unlocked_for_spending().await {
+            error!("Wallet is locked");
+            return Err("Wallet is locked".to_string());
+        }
+
+        let address = self.wallet.add_imported_tk(sk).await;
+        if address.starts_with("Error") {
+            let e = address;
+            error!("{}", e);
+            return Err(e);
+        }
+
+        self.do_save().await?;
+        Ok(array![address])
+    }
+
+    /// Import a new z-address private key
     pub async fn do_import_sk(&self, sk: String, birthday: u64) -> Result<JsonValue, String> {
         if !self.wallet.is_unlocked_for_spending().await {
             error!("Wallet is locked");

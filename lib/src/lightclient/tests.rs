@@ -3,7 +3,6 @@ use group::GroupEncoding;
 use json::JsonValue;
 use jubjub::ExtendedPoint;
 use rand::rngs::OsRng;
-use secp256k1::{PublicKey, Secp256k1};
 use tempdir::TempDir;
 use tokio::runtime::Runtime;
 use tonic::transport::Channel;
@@ -663,7 +662,6 @@ async fn z_incoming_viewkey() {
 
 #[tokio::test]
 async fn t_incoming_t_outgoing() {
-    let secp = Secp256k1::new();
     let (data, config, ready_rx, stop_tx, h1) = create_test_server().await;
 
     ready_rx.await.unwrap();
@@ -675,9 +673,9 @@ async fn t_incoming_t_outgoing() {
     mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
 
     // 2. Get an incoming tx to a t address
-    let sk = lc.wallet.keys().read().await.tkeys[0];
-    let pk = PublicKey::from_secret_key(&secp, &sk);
-    let taddr = lc.wallet.keys().read().await.address_from_sk(&sk);
+    let sk = lc.wallet.keys().read().await.tkeys[0].clone();
+    let pk = sk.pubkey().unwrap();
+    let taddr = sk.address;
     let value = 100_000;
 
     let mut ftx = FakeTransaction::new();
@@ -762,7 +760,6 @@ async fn t_incoming_t_outgoing() {
 
 #[tokio::test]
 async fn mixed_txn() {
-    let secp = Secp256k1::new();
     let (data, config, ready_rx, stop_tx, h1) = create_test_server().await;
 
     ready_rx.await.unwrap();
@@ -782,9 +779,9 @@ async fn mixed_txn() {
     mine_random_blocks(&mut fcbl, &data, &lc, 5).await;
 
     // 3. Send an incoming t-address txn
-    let sk = lc.wallet.keys().read().await.tkeys[0];
-    let pk = PublicKey::from_secret_key(&secp, &sk);
-    let taddr = lc.wallet.keys().read().await.address_from_sk(&sk);
+    let sk = lc.wallet.keys().read().await.tkeys[0].clone();
+    let pk = sk.pubkey().unwrap();
+    let taddr = sk.address;
     let tvalue = 200_000;
 
     let mut ftx = FakeTransaction::new();
@@ -865,7 +862,6 @@ async fn mixed_txn() {
 
 #[tokio::test]
 async fn aborted_resync() {
-    let secp = Secp256k1::new();
     let (data, config, ready_rx, stop_tx, h1) = create_test_server().await;
 
     ready_rx.await.unwrap();
@@ -885,9 +881,9 @@ async fn aborted_resync() {
     mine_random_blocks(&mut fcbl, &data, &lc, 5).await;
 
     // 3. Send an incoming t-address txn
-    let sk = lc.wallet.keys().read().await.tkeys[0];
-    let pk = PublicKey::from_secret_key(&secp, &sk);
-    let taddr = lc.wallet.keys().read().await.address_from_sk(&sk);
+    let sk = lc.wallet.keys().read().await.tkeys[0].clone();
+    let pk = sk.pubkey().unwrap();
+    let taddr = sk.address;
     let tvalue = 200_000;
 
     let mut ftx = FakeTransaction::new();
@@ -976,7 +972,6 @@ async fn aborted_resync() {
 
 #[tokio::test]
 async fn no_change() {
-    let secp = Secp256k1::new();
     let (data, config, ready_rx, stop_tx, h1) = create_test_server().await;
 
     ready_rx.await.unwrap();
@@ -996,9 +991,9 @@ async fn no_change() {
     mine_random_blocks(&mut fcbl, &data, &lc, 5).await;
 
     // 3. Send an incoming t-address txn
-    let sk = lc.wallet.keys().read().await.tkeys[0];
-    let pk = PublicKey::from_secret_key(&secp, &sk);
-    let taddr = lc.wallet.keys().read().await.address_from_sk(&sk);
+    let sk = lc.wallet.keys().read().await.tkeys[0].clone();
+    let pk = sk.pubkey().unwrap();
+    let taddr = sk.address;
     let tvalue = 200_000;
 
     let mut ftx = FakeTransaction::new();

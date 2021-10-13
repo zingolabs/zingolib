@@ -1,5 +1,6 @@
 use crate::compact_formats::TreeState;
 use crate::lightwallet::data::WalletTx;
+use crate::lightwallet::wallettkey::WalletTKey;
 use crate::{
     blaze::fetch_full_tx::FetchFullTxns,
     lightclient::lightclient_config::LightClientConfig,
@@ -51,6 +52,7 @@ pub(crate) mod keys;
 pub(crate) mod message;
 pub(crate) mod utils;
 pub(crate) mod wallet_txns;
+pub(crate) mod wallettkey;
 mod walletzkey;
 
 pub fn now() -> u64 {
@@ -104,7 +106,7 @@ pub struct WalletOptions {
 impl Default for WalletOptions {
     fn default() -> Self {
         WalletOptions {
-            download_memos: MemoDownloadOption::WalletMemos
+            download_memos: MemoDownloadOption::WalletMemos,
         }
     }
 }
@@ -114,7 +116,6 @@ impl WalletOptions {
         return 1;
     }
 
-
     pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
         let _version = reader.read_u64::<LittleEndian>()?;
 
@@ -123,13 +124,14 @@ impl WalletOptions {
             1 => MemoDownloadOption::WalletMemos,
             2 => MemoDownloadOption::AllMemos,
             v => {
-                return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Bad download option {}", v)));
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Bad download option {}", v),
+                ));
             }
         };
 
-        Ok(Self {
-            download_memos
-        })
+        Ok(Self { download_memos })
     }
 
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
@@ -469,6 +471,34 @@ impl LightWallet {
             self.birthday
                 .store(wallet_birthday, std::sync::atomic::Ordering::SeqCst);
         }
+    }
+
+    pub async fn add_imported_tk(&self, sk: String) -> String {
+        if self.keys.read().await.encrypted {
+            return "Error: Can't import transparent address key while wallet is encrypted".to_string();
+        }
+
+        let sk = match WalletTKey::from_sk_string(&self.config, sk) {
+            Err(e) => return format!("Error: {}", e),
+            Ok(k) => k,
+        };
+
+        let address = sk.address.clone();
+
+        if self
+            .keys
+            .read()
+            .await
+            .tkeys
+            .iter()
+            .find(|&tk| tk.address == address)
+            .is_some()
+        {
+            return "Error: Key already exists".to_string();
+        }
+
+        self.keys.write().await.tkeys.push(sk);
+        return address;
     }
 
     // Add a new imported spending key to the wallet
@@ -832,7 +862,6 @@ impl LightWallet {
         if highest_account.unwrap() == 0 {
             // Remove unused addresses
             self.keys.write().await.tkeys.truncate(1);
-            self.keys.write().await.taddresses.truncate(1);
         }
     }
 
@@ -1326,7 +1355,6 @@ impl LightWallet {
 
 #[cfg(test)]
 mod test {
-    use secp256k1::{PublicKey, Secp256k1};
     use zcash_primitives::transaction::components::Amount;
 
     use crate::{
@@ -1426,10 +1454,9 @@ mod test {
         assert_eq!(utxos.len(), 0);
 
         // 4. Get an incoming tx to a t address
-        let secp = Secp256k1::new();
-        let sk = lc.wallet.keys().read().await.tkeys[0];
-        let pk = PublicKey::from_secret_key(&secp, &sk);
-        let taddr = lc.wallet.keys().read().await.address_from_sk(&sk);
+        let sk = lc.wallet.keys().read().await.tkeys[0].clone();
+        let pk = sk.pubkey().unwrap();
+        let taddr = sk.address;
         let tvalue = 100_000;
 
         let mut ftx = FakeTransaction::new();
