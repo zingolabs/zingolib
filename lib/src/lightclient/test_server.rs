@@ -20,9 +20,8 @@ use tempdir::TempDir;
 use tokio::sync::{mpsc, oneshot, RwLock};
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
-use tokio_rustls::rustls::ServerConfig;
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::transport::{Server, ServerTlsConfig};
+use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 use tonic::{Request, Response, Status};
 use zcash_primitives::block::BlockHash;
 use zcash_primitives::merkle_tree::CommitmentTree;
@@ -51,7 +50,7 @@ pub async fn create_test_server(
     } else {
         format!("http://{}", server_port)
     };
-    let addr = server_port.parse().unwrap();
+    let addr: std::net::SocketAddr = server_port.parse().unwrap();
 
     let mut config = LightClientConfig::create_unconnected("main".to_string(), None);
     config.server = uri.replace("127.0.0.1", "localhost").parse().unwrap();
@@ -82,36 +81,9 @@ pub async fn create_test_server(
         ready_transmitter.send(()).unwrap();
 
         if https {
-            use std::{fs::File, io::BufReader};
-            let file = "localhost.pem";
-            let mut roots = tokio_rustls::rustls::RootCertStore::empty();
-            roots
-                .add_pem_file(&mut BufReader::new(File::open(file).unwrap()))
-                .unwrap();
-
-            roots.add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
-            let auther = tokio_rustls::rustls::AllowAnyAnonymousOrAuthenticatedClient::new(roots);
-            let mut server_config = ServerConfig::new(auther);
-            server_config.alpn_protocols.push(b"h2".to_vec());
-            server_config
-                .set_single_cert(
-                    vec![tokio_rustls::rustls::Certificate(
-                        rustls_pemfile::certs(&mut BufReader::new(File::open(file).unwrap()))
-                            .unwrap()
-                            .pop()
-                            .unwrap(),
-                    )],
-                    tokio_rustls::rustls::PrivateKey(
-                        rustls_pemfile::pkcs8_private_keys(&mut BufReader::new(File::open(file).unwrap()))
-                            .unwrap()
-                            .pop()
-                            .expect("empty vec of private keys??"),
-                    ),
-                )
-                .unwrap();
-            let mut tls = ServerTlsConfig::new();
-            tls.rustls_server_config(server_config);
-            Server::builder().tls_config(tls).unwrap()
+            let (cert, identity) = get_tls_test_pem();
+            let server_tls_config = ServerTlsConfig::new().identity(identity).client_ca_root(cert);
+            Server::builder().tls_config(server_tls_config).unwrap()
         } else {
             Server::builder()
         }
@@ -541,4 +513,22 @@ impl CompactTransactionStreamer for TestGRPCService {
     ) -> Result<tonic::Response<Self::GetMempoolStreamStream>, tonic::Status> {
         todo!()
     }
+}
+
+pub(crate) fn get_tls_test_pem() -> (Certificate, Identity) {
+    use std::{fs::File, io::BufReader};
+    let file = "localhost.pem";
+    let (cert, key) = (
+        Certificate::from_pem(
+            rustls_pemfile::certs(&mut BufReader::new(File::open(file).unwrap()))
+                .unwrap()
+                .pop()
+                .unwrap(),
+        ),
+        rustls_pemfile::pkcs8_private_keys(&mut BufReader::new(File::open(file).unwrap()))
+            .unwrap()
+            .pop()
+            .expect("empty vec of private keys??"),
+    );
+    (cert.clone(), Identity::from_pem(cert, key))
 }

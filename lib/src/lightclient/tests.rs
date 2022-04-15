@@ -890,6 +890,9 @@ async fn mixed_transaction() {
 
 #[tokio::test]
 async fn aborted_resync() {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing_subscriber::filter::LevelFilter::TRACE)
+        .init();
     for https in [true, false] {
         let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(https).await;
 

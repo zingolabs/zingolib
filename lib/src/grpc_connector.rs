@@ -39,22 +39,19 @@ impl GrpcConnector {
             Channel::builder(self.uri.clone()).connect().await?
         } else {
             //println!("https");
-            let mut config = ClientConfig::new();
 
-            config.alpn_protocols.push(b"h2".to_vec());
-
-            config
-                .root_store
-                .add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
+            let tls = ClientTlsConfig::new().domain_name(self.uri.host().unwrap());
 
             #[cfg(test)]
-            add_tls_test_config(&mut config).await;
+            let tls = add_tls_test_config(tls).await;
 
-            let tls = ClientTlsConfig::new()
-                .rustls_client_config(config)
-                .domain_name(self.uri.host().unwrap());
-
-            Channel::builder(self.uri.clone()).tls_config(tls)?.connect().await?
+            dbg!(&self.uri);
+            println!("{:?}", tls);
+            Channel::builder(self.uri.clone())
+                .tls_config(tls)
+                .unwrap()
+                .connect()
+                .await?
         };
 
         Ok(CompactTransactionStreamerClient::new(channel))
@@ -449,25 +446,7 @@ impl GrpcConnector {
 }
 
 #[cfg(test)]
-async fn add_tls_test_config(config: &mut ClientConfig) {
-    use std::{fs::File, io::BufReader};
-    let file = "localhost.pem";
-    let mut reader = BufReader::new(File::open(file).unwrap());
-    config.root_store.add_pem_file(&mut reader).unwrap();
-    config
-        .set_single_client_cert(
-            vec![tokio_rustls::rustls::Certificate(
-                rustls_pemfile::certs(&mut BufReader::new(File::open(file).unwrap()))
-                    .unwrap()
-                    .pop()
-                    .unwrap(),
-            )],
-            tokio_rustls::rustls::PrivateKey(
-                rustls_pemfile::pkcs8_private_keys(&mut BufReader::new(File::open(file).unwrap()))
-                    .unwrap()
-                    .pop()
-                    .expect("empty vec of private keys??"),
-            ),
-        )
-        .unwrap();
+async fn add_tls_test_config(tls: ClientTlsConfig) -> ClientTlsConfig {
+    let (cert, identity) = crate::lightclient::test_server::get_tls_test_pem();
+    tls.ca_certificate(cert).identity(identity)
 }
