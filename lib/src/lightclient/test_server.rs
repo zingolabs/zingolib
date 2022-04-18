@@ -22,6 +22,8 @@ use tokio::time::sleep;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
+use tracing;
+use tracing_subscriber;
 use zcash_primitives::block::BlockHash;
 use zcash_primitives::merkle_tree::CommitmentTree;
 use zcash_primitives::sapling::Node;
@@ -42,17 +44,18 @@ pub async fn create_test_server() -> (
 
     let port = portpicker::pick_unused_port().unwrap();
     let server_port = format!("127.0.0.1:{}", port);
-    let uri = format!("http://{}", server_port);
+    let uri = format!("https://{}", server_port);
     let addr = server_port.parse().unwrap();
 
     let mut config = LightClientConfig::create_unconnected("main".to_string(), None);
-    config.server = uri.parse().unwrap();
+    config.server = uri.replace("127.0.0.1", "localhost").parse().unwrap();
 
     let (service, data) = TestGRPCService::new(config.clone());
 
     let (data_dir_tx, data_dir_rx) = oneshot::channel();
 
     let h1 = tokio::spawn(async move {
+        tracing_subscriber::fmt().with_max_level(tracing::Level::DEBUG).init();
         let svc = CompactTxStreamerServer::new(service);
 
         // We create the temp dir here, so that we can clean it up after the test runs
@@ -73,6 +76,7 @@ pub async fn create_test_server() -> (
 
         ready_tx.send(true).unwrap();
         Server::builder()
+            .trace_fn(|_| tracing::info_span!("helloworld_server"))
             .add_service(svc)
             .serve_with_shutdown(addr, stop_rx.map(drop))
             .await

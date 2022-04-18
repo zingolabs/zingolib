@@ -52,6 +52,9 @@ zcash_primitives = { git = "https://github.com/adityapk00/librustzcash", rev = "
 zcash_client_backend = { git = "https://github.com/adityapk00/librustzcash", rev = "adeb3ec4ad15480482bc2962bc9fe453814db9ee"}
 zcash_proofs = { git = "https://github.com/adityapk00/librustzcash", rev = "adeb3ec4ad15480482bc2962bc9fe453814db9ee", features = ["multicore"]}
 
+tracing = "0.1.16"
+tracing-subscriber = { version = "0.3", features = ["tracing-log"] }
+
 [dev-dependencies]
 portpicker = "0.1.0"
 tempdir = "0.3.7"
