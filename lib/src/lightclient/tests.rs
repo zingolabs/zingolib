@@ -864,7 +864,7 @@ async fn mixed_txn() {
 #[tokio::test]
 async fn aborted_resync() {
     tracing_subscriber::fmt()
-        .with_max_level(tracing_subscriber::filter::LevelFilter::DEBUG)
+        .with_max_level(tracing_subscriber::filter::LevelFilter::TRACE)
         .init();
     let (data, config, ready_rx, stop_tx, h1) = create_test_server().await;
 

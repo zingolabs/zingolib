@@ -49,6 +49,13 @@ impl GrpcConnector {
                 .root_store
                 .add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
 
+            #[cfg(test)]
+            {
+                use std::{fs::File, io::BufReader};
+                let file = File::open("localhost.pem").unwrap();
+                let mut reader = BufReader::new(file);
+                config.root_store.add_pem_file(&mut reader).unwrap();
+            }
             //tracing::info!("root_store: {:?}", config.root_store); //Way too large to be meaningful
 
             let tls = ClientTlsConfig::new()

@@ -74,11 +74,33 @@ pub async fn create_test_server() -> (
 
         ready_tx.send(()).unwrap();
 
+        use std::{fs::File, io::BufReader};
+        let file = "localhost.pem";
         let mut roots = tokio_rustls::rustls::RootCertStore::empty();
+        roots
+            .add_pem_file(&mut BufReader::new(File::open(file).unwrap()))
+            .unwrap();
         roots.add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
         let auther = tokio_rustls::rustls::AllowAnyAnonymousOrAuthenticatedClient::new(roots);
 
         let mut server_config = ServerConfig::new(auther);
+
+        server_config
+            .set_single_cert(
+                vec![tokio_rustls::rustls::Certificate(
+                    rustls_pemfile::certs(&mut BufReader::new(File::open(file).unwrap()))
+                        .unwrap()
+                        .pop()
+                        .unwrap(),
+                )],
+                tokio_rustls::rustls::PrivateKey(
+                    rustls_pemfile::pkcs8_private_keys(&mut BufReader::new(File::open(file).unwrap()))
+                        .unwrap()
+                        .pop()
+                        .expect("empty vec of private keys??"),
+                ),
+            )
+            .unwrap();
         let mut tls = ServerTlsConfig::new();
         tls.rustls_server_config(server_config);
 
