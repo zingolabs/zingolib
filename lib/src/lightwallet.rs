@@ -1487,7 +1487,7 @@ mod test {
         assert_eq!(utxos.len(), 1);
 
         // Shutdown everything cleanly
-        stop_tx.send(true).unwrap();
+        stop_tx.send(()).unwrap();
         h1.await.unwrap();
     }
 
@@ -1555,7 +1555,7 @@ mod test {
         assert_eq!(utxos.len(), 0);
 
         // Shutdown everything cleanly
-        stop_tx.send(true).unwrap();
+        stop_tx.send(()).unwrap();
         h1.await.unwrap();
     }
 }

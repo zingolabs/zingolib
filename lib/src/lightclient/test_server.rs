@@ -33,8 +33,8 @@ use super::LightClient;
 pub async fn create_test_server() -> (
     Arc<RwLock<TestServerData>>,
     LightClientConfig,
-    oneshot::Receiver<bool>,
-    oneshot::Sender<bool>,
+    oneshot::Receiver<()>,
+    oneshot::Sender<()>,
     JoinHandle<()>,
 ) {
     let (ready_tx, ready_rx) = oneshot::channel();
@@ -71,7 +71,7 @@ pub async fn create_test_server() -> (
             )
             .unwrap();
 
-        ready_tx.send(true).unwrap();
+        ready_tx.send(()).unwrap();
         Server::builder()
             .add_service(svc)
             .serve_with_shutdown(addr, stop_rx.map(drop))

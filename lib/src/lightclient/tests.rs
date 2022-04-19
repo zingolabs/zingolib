@@ -159,7 +159,7 @@ async fn basic_no_wallet_txns() {
     mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
     assert_eq!(lc.wallet.last_scanned_height().await, 10);
 
-    stop_tx.send(true).unwrap();
+    stop_tx.send(()).unwrap();
     h1.await.unwrap();
 }
 
@@ -296,7 +296,7 @@ async fn z_incoming_z_outgoing() {
     assert_eq!(notes["spent_notes"][0]["spent_at_height"].as_u64().unwrap(), 17);
 
     // Shutdown everything cleanly
-    stop_tx.send(true).unwrap();
+    stop_tx.send(()).unwrap();
     h1.await.unwrap();
 }
 
@@ -443,7 +443,7 @@ async fn multiple_incoming_same_tx() {
     assert_eq!(txns[4]["outgoing_metadata"][0]["memo"].is_null(), true);
 
     // Shutdown everything cleanly
-    stop_tx.send(true).unwrap();
+    stop_tx.send(()).unwrap();
     h1.await.unwrap();
 }
 
@@ -498,7 +498,7 @@ async fn z_incoming_multiz_outgoing() {
     }
 
     // Shutdown everything cleanly
-    stop_tx.send(true).unwrap();
+    stop_tx.send(()).unwrap();
     h1.await.unwrap();
 }
 
@@ -560,7 +560,7 @@ async fn z_to_z_scan_together() {
     assert_eq!(list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(), spent_value);
 
     // Shutdown everything cleanly
-    stop_tx.send(true).unwrap();
+    stop_tx.send(()).unwrap();
     h1.await.unwrap();
 }
 
@@ -656,7 +656,7 @@ async fn z_incoming_viewkey() {
     assert_eq!(list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(), sent_value);
 
     // Shutdown everything cleanly
-    stop_tx.send(true).unwrap();
+    stop_tx.send(()).unwrap();
     h1.await.unwrap();
 }
 
@@ -754,7 +754,7 @@ async fn t_incoming_t_outgoing() {
     );
 
     // Shutdown everything cleanly
-    stop_tx.send(true).unwrap();
+    stop_tx.send(()).unwrap();
     h1.await.unwrap();
 }
 
@@ -856,7 +856,7 @@ async fn mixed_txn() {
     );
 
     // Shutdown everything cleanly
-    stop_tx.send(true).unwrap();
+    stop_tx.send(()).unwrap();
     h1.await.unwrap();
 }
 
@@ -967,7 +967,7 @@ async fn aborted_resync() {
     }
 
     // Shutdown everything cleanly
-    stop_tx.send(true).unwrap();
+    stop_tx.send(()).unwrap();
     h1.await.unwrap();
 }
 
@@ -1022,7 +1022,7 @@ async fn no_change() {
     assert_eq!(notes["spent_utxos"][0]["spent"], sent_txid);
 
     // Shutdown everything cleanly
-    stop_tx.send(true).unwrap();
+    stop_tx.send(()).unwrap();
     h1.await.unwrap();
 }
 
@@ -1108,7 +1108,7 @@ async fn recover_at_checkpoint() {
     // );
 
     // Shutdown everything cleanly
-    stop_tx.send(true).unwrap();
+    stop_tx.send(()).unwrap();
     h1.await.unwrap();
 }
 
@@ -1213,7 +1213,7 @@ async fn witness_clearing() {
     assert_eq!(witnesses.len(), 0);
 
     // Shutdown everything cleanly
-    stop_tx.send(true).unwrap();
+    stop_tx.send(()).unwrap();
     h1.await.unwrap();
 }
 
@@ -1306,7 +1306,7 @@ async fn mempool_clearing() {
     assert_eq!(txns.len(), 1);
 
     // Shutdown everything cleanly
-    stop_tx.send(true).unwrap();
+    stop_tx.send(()).unwrap();
     h1.await.unwrap();
 }
 
@@ -1376,7 +1376,7 @@ async fn mempool_and_balance() {
     assert_eq!(bal["unverified_zbalance"].as_u64().unwrap(), 0);
 
     // Shutdown everything cleanly
-    stop_tx.send(true).unwrap();
+    stop_tx.send(()).unwrap();
     h1.await.unwrap();
 }
 
