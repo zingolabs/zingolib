@@ -2160,6 +2160,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustls-pemfile"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e7522c9de787ff061458fe9a829dc790a3f5b22dc571694fc5883f448b94d9a9"
+dependencies = [
+ "base64",
+]
+
+[[package]]
 name = "rustyline"
 version = "5.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3326,6 +3335,7 @@ dependencies = [
  "ring",
  "ripemd160",
  "rust-embed",
+ "rustls-pemfile",
  "secp256k1",
  "sha2 0.9.5",
  "sodiumoxide",
