@@ -22,8 +22,6 @@ use tokio::time::sleep;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
-use tracing;
-use tracing_subscriber;
 use zcash_primitives::block::BlockHash;
 use zcash_primitives::merkle_tree::CommitmentTree;
 use zcash_primitives::sapling::Node;
@@ -55,7 +53,6 @@ pub async fn create_test_server() -> (
     let (data_dir_tx, data_dir_rx) = oneshot::channel();
 
     let h1 = tokio::spawn(async move {
-        tracing_subscriber::fmt().with_max_level(tracing::Level::DEBUG).init();
         let svc = CompactTxStreamerServer::new(service);
 
         // We create the temp dir here, so that we can clean it up after the test runs
@@ -76,7 +73,6 @@ pub async fn create_test_server() -> (
 
         ready_tx.send(true).unwrap();
         Server::builder()
-            .trace_fn(|_| tracing::info_span!("helloworld_server"))
             .add_service(svc)
             .serve_with_shutdown(addr, stop_rx.map(drop))
             .await
