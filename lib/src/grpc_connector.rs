@@ -42,9 +42,14 @@ impl GrpcConnector {
             let mut config = ClientConfig::new();
 
             config.alpn_protocols.push(b"h2".to_vec());
+
+            tracing::info!("Alpn protocols: {:?}", config.alpn_protocols);
+
             config
                 .root_store
                 .add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
+
+            //tracing::info!("root_store: {:?}", config.root_store); //Way too large to be meaningful
 
             let tls = ClientTlsConfig::new()
                 .rustls_client_config(config)

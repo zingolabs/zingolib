@@ -72,6 +72,7 @@ pub async fn create_test_server() -> (
             .unwrap();
 
         ready_tx.send(()).unwrap();
+
         Server::builder()
             .add_service(svc)
             .serve_with_shutdown(addr, stop_rx.map(drop))

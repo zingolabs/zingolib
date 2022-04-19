@@ -862,7 +862,7 @@ async fn mixed_txn() {
 
 #[tokio::test]
 async fn aborted_resync() {
-    tracing_subscriber::fmt().with_max_level(tracing::Level::TRACE).init();
+    tracing_subscriber::fmt().with_max_level(tracing::Level::DEBUG).init();
     let (data, config, ready_rx, stop_tx, h1) = create_test_server().await;
 
     ready_rx.await.unwrap();
@@ -870,9 +870,13 @@ async fn aborted_resync() {
     let lc = LightClient::test_new(&config, None, 0).await.unwrap();
     let mut fcbl = FakeCompactBlockList::new(0);
 
+    tracing::info!("About to mine!");
+
     // 1. Mine 10 blocks
     mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
     assert_eq!(lc.wallet.last_scanned_height().await, 10);
+
+    tracing::info!("Mined!");
 
     // 2. Send an incoming tx to fill the wallet
     let extfvk1 = lc.wallet.keys().read().await.get_all_extfvks()[0].clone();
