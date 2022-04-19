@@ -43,7 +43,7 @@ impl GrpcConnector {
 
             config.alpn_protocols.push(b"h2".to_vec());
 
-            tracing::info!("Alpn protocols: {:?}", config.alpn_protocols);
+            log::info!("Alpn protocols: {:?}", config.alpn_protocols);
 
             config
                 .root_store

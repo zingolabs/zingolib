@@ -3336,7 +3336,6 @@ dependencies = [
  "tokio-stream",
  "tonic",
  "tonic-build",
- "tracing",
  "tracing-subscriber",
  "webpki-roots",
  "zcash_client_backend",

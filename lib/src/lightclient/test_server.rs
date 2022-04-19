@@ -19,8 +19,9 @@ use tempdir::TempDir;
 use tokio::sync::{mpsc, oneshot, RwLock};
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
+use tokio_rustls::rustls::ServerConfig;
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::transport::Server;
+use tonic::transport::{Server, ServerTlsConfig};
 use tonic::{Request, Response, Status};
 use zcash_primitives::block::BlockHash;
 use zcash_primitives::merkle_tree::CommitmentTree;
@@ -73,7 +74,17 @@ pub async fn create_test_server() -> (
 
         ready_tx.send(()).unwrap();
 
+        let mut roots = tokio_rustls::rustls::RootCertStore::empty();
+        roots.add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
+        let auther = tokio_rustls::rustls::AllowAnyAnonymousOrAuthenticatedClient::new(roots);
+
+        let mut server_config = ServerConfig::new(auther);
+        let mut tls = ServerTlsConfig::new();
+        tls.rustls_server_config(server_config);
+
         Server::builder()
+            .tls_config(tls)
+            .unwrap()
             .add_service(svc)
             .serve_with_shutdown(addr, stop_rx.map(drop))
             .await
