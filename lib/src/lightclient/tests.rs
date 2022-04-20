@@ -6,7 +6,6 @@ use log::info;
 use rand::rngs::OsRng;
 use tempdir::TempDir;
 use tokio::runtime::Runtime;
-use tonic::transport::Channel;
 use tonic::Request;
 
 use zcash_client_backend::address::RecipientAddress;
@@ -27,7 +26,6 @@ use zcash_primitives::zip32::{ExtendedFullViewingKey, ExtendedSpendingKey};
 
 use crate::blaze::fetch_full_tx::FetchFullTxns;
 use crate::blaze::test_utils::{FakeCompactBlockList, FakeTransaction};
-use crate::compact_formats::compact_tx_streamer_client::CompactTxStreamerClient;
 
 use crate::compact_formats::{CompactOutput, CompactTx, Empty};
 use crate::lightclient::test_server::{create_test_server, mine_pending_blocks, mine_random_blocks};
@@ -145,7 +143,10 @@ async fn basic_no_wallet_txns() {
     ready_rx.await.unwrap();
 
     let uri = config.server.clone();
-    let mut client = CompactTxStreamerClient::new(Channel::builder(uri).connect().await.unwrap());
+    let mut client = crate::grpc_connector::GrpcConnector::new(uri)
+        .get_client()
+        .await
+        .unwrap();
 
     let r = client
         .get_lightd_info(Request::new(Empty {}))
@@ -863,9 +864,6 @@ async fn mixed_txn() {
 
 #[tokio::test]
 async fn aborted_resync() {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing_subscriber::filter::LevelFilter::DEBUG)
-        .init();
     let (data, config, ready_rx, stop_tx, h1) = create_test_server().await;
 
     ready_rx.await.unwrap();

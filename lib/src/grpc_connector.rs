@@ -33,7 +33,7 @@ impl GrpcConnector {
         Self { uri }
     }
 
-    async fn get_client(&self) -> Result<CompactTxStreamerClient<Channel>, Error> {
+    pub(crate) async fn get_client(&self) -> Result<CompactTxStreamerClient<Channel>, Error> {
         let channel = if self.uri.scheme_str() == Some("http") {
             //println!("http");
             Channel::builder(self.uri.clone()).connect().await?
