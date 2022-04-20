@@ -31,7 +31,9 @@ use zcash_primitives::transaction::{Transaction, TxId};
 use super::lightclient_config::LightClientConfig;
 use super::LightClient;
 
-pub async fn create_test_server() -> (
+pub async fn create_test_server(
+    https: bool,
+) -> (
     Arc<RwLock<TestServerData>>,
     LightClientConfig,
     oneshot::Receiver<()>,
@@ -43,7 +45,11 @@ pub async fn create_test_server() -> (
 
     let port = portpicker::pick_unused_port().unwrap();
     let server_port = format!("127.0.0.1:{}", port);
-    let uri = format!("https://{}", server_port);
+    let uri = if https {
+        format!("https://{}", server_port)
+    } else {
+        format!("http://{}", server_port)
+    };
     let addr = server_port.parse().unwrap();
 
     let mut config = LightClientConfig::create_unconnected("main".to_string(), None);
@@ -74,44 +80,44 @@ pub async fn create_test_server() -> (
 
         ready_tx.send(()).unwrap();
 
-        use std::{fs::File, io::BufReader};
-        let file = "localhost.pem";
-        let mut roots = tokio_rustls::rustls::RootCertStore::empty();
-        roots
-            .add_pem_file(&mut BufReader::new(File::open(file).unwrap()))
-            .unwrap();
-        roots.add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
-        let auther = tokio_rustls::rustls::AllowAnyAnonymousOrAuthenticatedClient::new(roots);
+        if https {
+            use std::{fs::File, io::BufReader};
+            let file = "localhost.pem";
+            let mut roots = tokio_rustls::rustls::RootCertStore::empty();
+            roots
+                .add_pem_file(&mut BufReader::new(File::open(file).unwrap()))
+                .unwrap();
 
-        let mut server_config = ServerConfig::new(auther);
-        server_config.alpn_protocols.push(b"h2".to_vec());
-
-        server_config
-            .set_single_cert(
-                vec![tokio_rustls::rustls::Certificate(
-                    rustls_pemfile::certs(&mut BufReader::new(File::open(file).unwrap()))
-                        .unwrap()
-                        .pop()
-                        .unwrap(),
-                )],
-                tokio_rustls::rustls::PrivateKey(
-                    rustls_pemfile::pkcs8_private_keys(&mut BufReader::new(File::open(file).unwrap()))
-                        .unwrap()
-                        .pop()
-                        .expect("empty vec of private keys??"),
-                ),
-            )
-            .unwrap();
-        let mut tls = ServerTlsConfig::new();
-        tls.rustls_server_config(server_config);
-
-        Server::builder()
-            .tls_config(tls)
-            .unwrap()
-            .add_service(svc)
-            .serve_with_shutdown(addr, stop_rx.map(drop))
-            .await
-            .unwrap();
+            roots.add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
+            let auther = tokio_rustls::rustls::AllowAnyAnonymousOrAuthenticatedClient::new(roots);
+            let mut server_config = ServerConfig::new(auther);
+            server_config.alpn_protocols.push(b"h2".to_vec());
+            server_config
+                .set_single_cert(
+                    vec![tokio_rustls::rustls::Certificate(
+                        rustls_pemfile::certs(&mut BufReader::new(File::open(file).unwrap()))
+                            .unwrap()
+                            .pop()
+                            .unwrap(),
+                    )],
+                    tokio_rustls::rustls::PrivateKey(
+                        rustls_pemfile::pkcs8_private_keys(&mut BufReader::new(File::open(file).unwrap()))
+                            .unwrap()
+                            .pop()
+                            .expect("empty vec of private keys??"),
+                    ),
+                )
+                .unwrap();
+            let mut tls = ServerTlsConfig::new();
+            tls.rustls_server_config(server_config);
+            Server::builder().tls_config(tls).unwrap()
+        } else {
+            Server::builder()
+        }
+        .add_service(svc)
+        .serve_with_shutdown(addr, stop_rx.map(drop))
+        .await
+        .unwrap();
 
         println!("Server stopped");
     });
