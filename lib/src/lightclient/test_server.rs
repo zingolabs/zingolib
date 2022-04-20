@@ -84,6 +84,7 @@ pub async fn create_test_server() -> (
         let auther = tokio_rustls::rustls::AllowAnyAnonymousOrAuthenticatedClient::new(roots);
 
         let mut server_config = ServerConfig::new(auther);
+        server_config.alpn_protocols.push(b"h2".to_vec());
 
         server_config
             .set_single_cert(

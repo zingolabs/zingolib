@@ -52,9 +52,25 @@ impl GrpcConnector {
             #[cfg(test)]
             {
                 use std::{fs::File, io::BufReader};
-                let file = File::open("localhost.pem").unwrap();
-                let mut reader = BufReader::new(file);
+                let file = "localhost.pem";
+                let mut reader = BufReader::new(File::open(file).unwrap());
                 config.root_store.add_pem_file(&mut reader).unwrap();
+                config
+                    .set_single_client_cert(
+                        vec![tokio_rustls::rustls::Certificate(
+                            rustls_pemfile::certs(&mut BufReader::new(File::open(file).unwrap()))
+                                .unwrap()
+                                .pop()
+                                .unwrap(),
+                        )],
+                        tokio_rustls::rustls::PrivateKey(
+                            rustls_pemfile::pkcs8_private_keys(&mut BufReader::new(File::open(file).unwrap()))
+                                .unwrap()
+                                .pop()
+                                .expect("empty vec of private keys??"),
+                        ),
+                    )
+                    .unwrap();
             }
             //tracing::info!("root_store: {:?}", config.root_store); //Way too large to be meaningful
 
