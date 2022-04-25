@@ -18,13 +18,17 @@ bytes = "0.4"
 log4rs = "1.0.0"
 rand = "0.7.3"
 http = "0.2.4"
+http-body = "0.4.4"
 hyper = { version = "0.14", features = ["full"] }
+hyper-rustls = { version = "0.23", features = ["http2"] }
 tonic = {version = "0.7.0", features = ["tls", "tls-roots", "tls-webpki-roots"]}
+tower = { version = "0.4" }
 prost = "0.10.0"
 tokio =  { version = "1.6.0", features = ["full"] }
 tokio-stream = "0.1.6"
-tokio-rustls = "0.22.0"
+tokio-rustls = "0.23.3"
 rustls-pemfile = "1.0.0"
+tower-http = { version = "0.2", features = ["add-extension"] }
 futures = "0.3.15"
 log = "0.4.14"
 hex = "0.3"
