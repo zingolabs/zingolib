@@ -11,17 +11,23 @@ use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use log::warn;
 
+use http_body::combinators::UnsyncBoxBody;
+use hyper::{client::HttpConnector, Uri};
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
-use tokio_rustls::rustls::ClientConfig;
-use tonic::transport::ClientTlsConfig;
-use tonic::{
-    transport::{Channel, Error},
-    Request,
-};
+use tokio_rustls::rustls::{ClientConfig, RootCertStore};
+use tonic::Request;
+use tonic::Status;
+use tower::{util::BoxCloneService, ServiceExt};
 use zcash_primitives::transaction::{Transaction, TxId};
+
+type UnderlyingService = BoxCloneService<
+    http::Request<UnsyncBoxBody<prost::bytes::Bytes, Status>>,
+    http::Response<hyper::Body>,
+    hyper::Error,
+>;
 
 #[derive(Clone)]
 pub struct GrpcConnector {
@@ -33,28 +39,79 @@ impl GrpcConnector {
         Self { uri }
     }
 
-    pub(crate) async fn get_client(&self) -> Result<CompactTransactionStreamerClient<Channel>, Error> {
-        let channel = if self.uri.scheme_str() == Some("http") {
-            //println!("http");
-            Channel::builder(self.uri.clone()).connect().await?
-        } else {
-            //println!("https");
+    pub(crate) fn get_client(
+        &self,
+    ) -> impl std::future::Future<
+        Output = Result<CompactTransactionStreamerClient<UnderlyingService>, Box<dyn std::error::Error>>,
+    > {
+        //Todo: Fix lifetime issues instead of causing significant data leak.
+        let new_self: &'static Self = Box::leak(Box::new(self.clone()));
+        async move {
+            dbg!(&new_self.uri);
+            let channel = if new_self.uri.scheme_str() == Some("http") {
+                //println!("http");
+                //Channel::builder(self.uri.clone()).connect().await?
+                todo!()
+            } else {
+                let mut roots = RootCertStore::empty();
 
-            let tls = ClientTlsConfig::new().domain_name(self.uri.host().unwrap());
+                let fd = std::fs::File::open("localhost.pem").unwrap();
+                let mut buf = std::io::BufReader::new(&fd);
+                let certs = rustls_pemfile::certs(&mut buf).unwrap();
+                roots.add_parsable_certificates(&certs);
 
-            #[cfg(test)]
-            let tls = add_tls_test_config(tls).await;
+                let tls = ClientConfig::builder()
+                    .with_safe_defaults()
+                    .with_root_certificates(roots)
+                    .with_no_client_auth();
 
-            dbg!(&self.uri);
-            println!("{:?}", tls);
-            Channel::builder(self.uri.clone())
-                .tls_config(tls)
-                .unwrap()
-                .connect()
-                .await?
-        };
+                let mut http = HttpConnector::new();
+                http.enforce_http(false);
 
-        Ok(CompactTransactionStreamerClient::new(channel))
+                // We have to do some wrapping here to map the request type from
+                // `https://example.com` -> `https://[::1]:50051` because `rustls`
+                // doesn't accept ip's as `ServerName`.
+                let connector = tower::ServiceBuilder::new()
+                    .layer_fn(move |s| {
+                        let tls = tls.clone();
+
+                        hyper_rustls::HttpsConnectorBuilder::new()
+                            .with_tls_config(tls)
+                            .https_or_http()
+                            .enable_http2()
+                            .wrap_connector(s)
+                    })
+                    // Since our cert is signed with `example.com` but we actually want to connect
+                    // to a local server we will override the Uri passed from the `HttpsConnector`
+                    // and map it to the correct `Uri` that will connect us directly to the local server.
+                    .map_request(move |_| new_self.uri.clone())
+                    .service(http);
+
+                let client = hyper::Client::builder().build(connector);
+
+                // Hyper expects an absolute `Uri` to allow it to know which server to connect too.
+                // Currently, tonic's generated code only sets the `path_and_query` section so we
+                // are going to write a custom tower layer in front of the hyper client to add the
+                // scheme and authority.
+                //
+                // Again, this Uri is `example.com` because our tls certs is signed with this SNI but above
+                // we actually map this back to `[::1]:50051` before the `Uri` is passed to hyper's `HttpConnector`
+                // to allow it to correctly establish the tcp connection to the local `tls-server`.
+                let uri = new_self.uri.clone();
+                let svc = tower::ServiceBuilder::new()
+                    .map_request(move |mut req: http::Request<tonic::body::BoxBody>| {
+                        use std::convert::TryFrom;
+                        let uri = Uri::try_from(uri.to_string().replace("localhost", "[::1]")).unwrap();
+                        *req.uri_mut() = uri;
+                        req
+                    })
+                    .service(client);
+
+                CompactTransactionStreamerClient::new(svc.boxed_clone())
+            };
+
+            Ok(channel)
+        }
     }
 
     pub async fn start_saplingtree_fetcher(
@@ -445,8 +502,8 @@ impl GrpcConnector {
     }
 }
 
-#[cfg(test)]
-async fn add_tls_test_config(tls: ClientTlsConfig) -> ClientTlsConfig {
-    let (cert, identity) = crate::lightclient::test_server::get_tls_test_pem();
-    tls.ca_certificate(cert).identity(identity)
-}
+//#[cfg(test)]
+//async fn add_tls_test_config(tls: ClientTlsConfig) -> ClientTlsConfig {
+//    let (cert, identity) = crate::lightclient::test_server::get_tls_test_pem();
+//    tls.ca_certificate(cert).identity(identity)
+//}
