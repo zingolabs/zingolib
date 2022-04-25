@@ -23,6 +23,7 @@ prost = "0.7.0"
 tokio =  { version = "1.6.0", features = ["full"] }
 tokio-stream = "0.1.6"
 tokio-rustls = "0.22.0"
+rustls-pemfile = "1.0.0"
 futures = "0.3.15"
 log = "0.4.14"
 hex = "0.3"
@@ -51,6 +52,9 @@ rust-embed = { version = "5.1.0", features = ["debug-embed"] }
 zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", rev = "adeb3ec4ad15480482bc2962bc9fe453814db9ee", features = ["transparent-inputs"] }
 zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash", rev = "adeb3ec4ad15480482bc2962bc9fe453814db9ee"}
 zcash_proofs = { git = "https://github.com/zingolabs/librustzcash", rev = "adeb3ec4ad15480482bc2962bc9fe453814db9ee", features = ["multicore"]}
+
+#tracing = "0.1.16"
+tracing-subscriber = { version = "0.3", features = ["tracing-log"] }
 
 [dev-dependencies]
 portpicker = "0.1.0"
