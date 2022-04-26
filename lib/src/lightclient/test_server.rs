@@ -116,7 +116,8 @@ pub async fn create_test_server(
             let mut http = hyper::server::conn::Http::new();
             http.http2_only(true);
 
-            let listener = tokio::net::TcpListener::bind(uri).await.unwrap();
+            let nameuri: std::string::String = uri.replace("127.0.0.1", "localhost").parse().unwrap();
+            let listener = tokio::net::TcpListener::bind(nameuri).await.unwrap();
             let tls_acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(tls));
 
             loop {
