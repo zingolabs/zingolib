@@ -60,7 +60,13 @@ pub async fn create_test_server(
 
     let (data_dir_transmitter, data_dir_receiver) = oneshot::channel();
 
+    let mtx = Arc::new(tokio::sync::Mutex::new(false));
+    let c_mtx = Arc::clone(&mtx);
+
+    log::info!("Starting server");
     let h1 = tokio::spawn(async move {
+        let mut lock = c_mtx.lock().await;
+        *lock = true;
         let svc = CompactTransactionStreamerServer::new(service);
 
         // We create the temp dir here, so that we can clean it up after the test runs
@@ -116,13 +122,18 @@ pub async fn create_test_server(
             let mut http = hyper::server::conn::Http::new();
             http.http2_only(true);
 
-            let nameuri: std::string::String = uri.replace("127.0.0.1", "localhost").parse().unwrap();
+            let nameuri: std::string::String = uri.replace("https://", "").parse().unwrap();
+            log::info!("binding");
             let listener = tokio::net::TcpListener::bind(nameuri).await.unwrap();
             let tls_acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(tls));
 
+            std::mem::drop(lock);
             loop {
                 let (conn, addr) = match listener.accept().await {
-                    Ok(incoming) => incoming,
+                    Ok(incoming) => {
+                        log::info!("{:?}", incoming);
+                        incoming
+                    }
                     Err(e) => {
                         eprintln!("Error accepting connection: {}", e);
                         continue;
@@ -166,6 +177,14 @@ pub async fn create_test_server(
         println!("Server stopped");
     });
 
+    loop {
+        if *mtx.lock().await {
+            break;
+        } else {
+            sleep(std::time::Duration::from_millis(100)).await;
+        }
+    }
+    log::info!("creating data dir");
     let data_dir = data_dir_receiver.await.unwrap();
     println!("GRPC Server listening on: {}. With datadir {}", addr, data_dir);
     config.data_dir = Some(data_dir);

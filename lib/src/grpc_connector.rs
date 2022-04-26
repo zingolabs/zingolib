@@ -100,9 +100,7 @@ impl GrpcConnector {
                 let uri = new_self.uri.clone();
                 let svc = tower::ServiceBuilder::new()
                     .map_request(move |mut req: http::Request<tonic::body::BoxBody>| {
-                        use std::convert::TryFrom;
-                        let uri = Uri::try_from(uri.to_string().replace("localhost", "[::1]")).unwrap();
-                        *req.uri_mut() = uri;
+                        *req.uri_mut() = uri.clone();
                         req
                     })
                     .service(client);
