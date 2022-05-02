@@ -22,7 +22,7 @@ use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tokio_rustls::rustls::ServerConfig;
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
+use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 use zcash_primitives::block::BlockHash;
 use zcash_primitives::merkle_tree::CommitmentTree;
@@ -60,7 +60,6 @@ pub async fn create_test_server(
 
     let (data_dir_transmitter, data_dir_receiver) = oneshot::channel();
 
-    log::info!("Starting server");
     let h1 = tokio::spawn(async move {
         let svc = CompactTransactionStreamerServer::new(service);
 
@@ -87,7 +86,6 @@ pub async fn create_test_server(
         http.http2_only(true);
 
         let nameuri: std::string::String = uri.replace("https://", "").replace("http://", "").parse().unwrap();
-        log::info!("binding");
         let listener = tokio::net::TcpListener::bind(nameuri).await.unwrap();
         let tls_acceptor = if https {
             let file = "localhost.pem";
@@ -122,17 +120,13 @@ pub async fn create_test_server(
         ready_transmitter.send(()).unwrap();
         loop {
             let mut accepted = Box::pin(listener.accept().fuse());
-            let (conn, addr) = match futures::select_biased!(
+            let (conn, _addr) = match futures::select_biased!(
                 _ = (&mut stop_fused).fuse() => {
-                log::info!("Received stop");
                 break
             }
                 conn_addr = accepted => conn_addr,
             ) {
-                Ok(incoming) => {
-                    log::info!("{:?}", incoming);
-                    incoming
-                }
+                Ok(incoming) => incoming,
                 Err(e) => {
                     eprintln!("Error accepting connection: {}", e);
                     continue;
@@ -159,9 +153,15 @@ pub async fn create_test_server(
                         .await
                         .unwrap();
 
-                    http.serve_connection(conn, svc).await;
+                    #[allow(unused_must_use)]
+                    {
+                        http.serve_connection(conn, svc).await;
+                    };
                 } else {
-                    http.serve_connection(conn, svc).await;
+                    #[allow(unused_must_use)]
+                    {
+                        http.serve_connection(conn, svc).await;
+                    };
                 }
             });
         }
@@ -588,22 +588,4 @@ impl CompactTransactionStreamer for TestGRPCService {
     ) -> Result<tonic::Response<Self::GetMempoolStreamStream>, tonic::Status> {
         todo!()
     }
-}
-
-pub(crate) fn get_tls_test_pem() -> (Certificate, Identity) {
-    use std::{fs::File, io::BufReader};
-    let file = "localhost.pem";
-    let (cert, key) = (
-        Certificate::from_pem(
-            rustls_pemfile::certs(&mut BufReader::new(File::open(file).unwrap()))
-                .unwrap()
-                .pop()
-                .unwrap(),
-        ),
-        rustls_pemfile::pkcs8_private_keys(&mut BufReader::new(File::open(file).unwrap()))
-            .unwrap()
-            .pop()
-            .expect("empty vec of private keys??"),
-    );
-    (cert.clone(), Identity::from_pem(cert, key))
 }

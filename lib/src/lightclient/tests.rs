@@ -2,7 +2,6 @@ use ff::{Field, PrimeField};
 use group::GroupEncoding;
 use json::JsonValue;
 use jubjub::ExtendedPoint;
-use log::info;
 use rand::rngs::OsRng;
 use tempdir::TempDir;
 use tokio::runtime::Runtime;
@@ -890,11 +889,10 @@ async fn mixed_transaction() {
 
 #[tokio::test]
 async fn aborted_resync() {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing_subscriber::filter::LevelFilter::INFO)
-        .init();
+    /*tracing_subscriber::fmt()
+    .with_max_level(tracing_subscriber::filter::LevelFilter::INFO)
+    .init();*/
     for https in [true, false] {
-        log::info!("{https}");
         let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(https).await;
 
         ready_receiver.await.unwrap();
@@ -902,13 +900,9 @@ async fn aborted_resync() {
         let lc = LightClient::test_new(&config, None, 0).await.unwrap();
         let mut fcbl = FakeCompactBlockList::new(0);
 
-        info!("About to mine!");
-
         // 1. Mine 10 blocks
         mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
         assert_eq!(lc.wallet.last_scanned_height().await, 10);
-
-        info!("Mined!");
 
         // 2. Send an incoming transaction to fill the wallet
         let extfvk1 = lc.wallet.keys().read().await.get_all_extfvks()[0].clone();
@@ -964,18 +958,15 @@ async fn aborted_resync() {
             .witnesses
             .clone();
 
-        info!("begin step 5");
         // 5. Now, we'll manually remove some of the blocks in the wallet, pretending that the sync was aborted in the middle.
         // We'll remove the top 20 blocks, so now the wallet only has the first 3 blocks
         lc.wallet.blocks.write().await.drain(0..20);
         assert_eq!(lc.wallet.last_scanned_height().await, 3);
 
-        info!("begin step 6");
         // 6. Do a sync again
         lc.do_sync(true).await.unwrap();
         assert_eq!(lc.wallet.last_scanned_height().await, 23);
 
-        info!("begin step 7");
         // 7. Should be exactly the same
         let notes_after = lc.do_list_notes(true).await;
         let list_after = lc.do_list_transactions(false).await;
@@ -1009,7 +1000,6 @@ async fn aborted_resync() {
             assert_eq!(hex::encode(before_bytes), hex::encode(after_bytes));
         }
 
-        log::info!("shutting down");
         // Shutdown everything cleanly
         stop_transmitter.send(()).unwrap();
         h1.await.unwrap();

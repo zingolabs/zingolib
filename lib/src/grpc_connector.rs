@@ -49,7 +49,10 @@ impl GrpcConnector {
             let mut http = HttpConnector::new();
             http.enforce_http(false);
             if uri.scheme_str() == Some("https") {
+                #[cfg(test)]
                 let mut roots = RootCertStore::empty();
+                #[cfg(not(test))]
+                let roots = RootCertStore::empty();
 
                 #[cfg(test)]
                 {
@@ -506,11 +509,3 @@ impl GrpcConnector {
         }
     }
 }
-
-fn make_config(https: bool) {}
-
-//#[cfg(test)]
-//async fn add_tls_test_config(tls: ClientTlsConfig) -> ClientTlsConfig {
-//    let (cert, identity) = crate::lightclient::test_server::get_tls_test_pem();
-//    tls.ca_certificate(cert).identity(identity)
-//}
