@@ -60,13 +60,8 @@ pub async fn create_test_server(
 
     let (data_dir_transmitter, data_dir_receiver) = oneshot::channel();
 
-    let mtx = Arc::new(tokio::sync::Mutex::new(false));
-    let c_mtx = Arc::clone(&mtx);
-
     log::info!("Starting server");
     let h1 = tokio::spawn(async move {
-        let mut lock = c_mtx.lock().await;
-        *lock = true;
         let svc = CompactTransactionStreamerServer::new(service);
 
         // We create the temp dir here, so that we can clean it up after the test runs
@@ -84,8 +79,6 @@ pub async fn create_test_server(
                     .to_string(),
             )
             .unwrap();
-
-        ready_transmitter.send(()).unwrap();
 
         if https {
             #[derive(Debug)]
@@ -127,9 +120,17 @@ pub async fn create_test_server(
             let listener = tokio::net::TcpListener::bind(nameuri).await.unwrap();
             let tls_acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(tls));
 
-            std::mem::drop(lock);
+            let mut stop_fused = stop_rx.fuse();
+            ready_tx.send(()).unwrap();
             loop {
-                let (conn, addr) = match listener.accept().await {
+                let mut accepted = Box::pin(listener.accept().fuse());
+                let (conn, addr) = match futures::select_biased!(
+                    _ = (&mut stop_fused).fuse() => {
+                    log::info!("Received stop");
+                    break
+                }
+                    conn_addr = accepted => conn_addr,
+                ) {
                     Ok(incoming) => {
                         log::info!("{:?}", incoming);
                         incoming
@@ -163,27 +164,21 @@ pub async fn create_test_server(
                         .add_extension(Arc::new(ConnInfo { addr, certificates }))
                         .service(svc);
 
-                    http.serve_connection(conn, svc).await.unwrap();
+                    http.serve_connection(conn, svc).await;
                 });
             }
         } else {
+            ready_transmitter.send(()).unwrap();
             Server::builder()
+                .add_service(svc)
+                .serve_with_shutdown(addr, stop_receiver.map(drop))
+                .await
+                .unwrap();
         }
-        .add_service(svc)
-        .serve_with_shutdown(addr, stop_receiver.map(drop))
-        .await
-        .unwrap();
 
         println!("Server stopped");
     });
 
-    loop {
-        if *mtx.lock().await {
-            break;
-        } else {
-            sleep(std::time::Duration::from_millis(100)).await;
-        }
-    }
     log::info!("creating data dir");
     let data_dir = data_dir_receiver.await.unwrap();
     println!("GRPC Server listening on: {}. With datadir {}", addr, data_dir);

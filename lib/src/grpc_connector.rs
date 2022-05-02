@@ -44,11 +44,9 @@ impl GrpcConnector {
     ) -> impl std::future::Future<
         Output = Result<CompactTransactionStreamerClient<UnderlyingService>, Box<dyn std::error::Error>>,
     > {
-        //Todo: Fix lifetime issues instead of causing significant data leak.
-        let new_self: &'static Self = Box::leak(Box::new(self.clone()));
+        let uri = Arc::new(self.uri.clone());
         async move {
-            dbg!(&new_self.uri);
-            let channel = if new_self.uri.scheme_str() == Some("http") {
+            let channel = if uri.scheme_str() == Some("http") {
                 //println!("http");
                 //Channel::builder(self.uri.clone()).connect().await?
                 todo!()
@@ -81,10 +79,6 @@ impl GrpcConnector {
                             .enable_http2()
                             .wrap_connector(s)
                     })
-                    // Since our cert is signed with `example.com` but we actually want to connect
-                    // to a local server we will override the Uri passed from the `HttpsConnector`
-                    // and map it to the correct `Uri` that will connect us directly to the local server.
-                    .map_request(move |_| new_self.uri.clone())
                     .service(http);
 
                 let client = hyper::Client::builder().build(connector);
@@ -97,10 +91,17 @@ impl GrpcConnector {
                 // Again, this Uri is `example.com` because our tls certs is signed with this SNI but above
                 // we actually map this back to `[::1]:50051` before the `Uri` is passed to hyper's `HttpConnector`
                 // to allow it to correctly establish the tcp connection to the local `tls-server`.
-                let uri = new_self.uri.clone();
+                let uri = uri.clone();
                 let svc = tower::ServiceBuilder::new()
                     .map_request(move |mut req: http::Request<tonic::body::BoxBody>| {
-                        *req.uri_mut() = uri.clone();
+                        let uri = Uri::builder()
+                            .scheme(uri.scheme().unwrap().clone())
+                            .authority(uri.authority().unwrap().clone())
+                            .path_and_query(req.uri().path_and_query().unwrap().clone())
+                            .build()
+                            .unwrap();
+
+                        *req.uri_mut() = uri;
                         req
                     })
                     .service(client);
