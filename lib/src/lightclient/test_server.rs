@@ -80,12 +80,16 @@ pub async fn create_test_server(
             )
             .unwrap();
 
-        if https {
-            #[derive(Debug)]
-            struct ConnInfo {
-                addr: std::net::SocketAddr,
-                certificates: Vec<tokio_rustls::rustls::Certificate>,
-            }
+        let mut tls;
+        let svc = Server::builder().add_service(svc).into_service();
+
+        let mut http = hyper::server::conn::Http::new();
+        http.http2_only(true);
+
+        let nameuri: std::string::String = uri.replace("https://", "").replace("http://", "").parse().unwrap();
+        log::info!("binding");
+        let listener = tokio::net::TcpListener::bind(nameuri).await.unwrap();
+        let tls_acceptor = if https {
             let file = "localhost.pem";
             use std::fs::File;
             use std::io::BufReader;
@@ -103,52 +107,48 @@ pub async fn create_test_server(
                         .expect("empty vec of private keys??"),
                 ),
             );
-            let mut tls = ServerConfig::builder()
+            tls = ServerConfig::builder()
                 .with_safe_defaults()
                 .with_no_client_auth()
                 .with_single_cert(vec![cert], key)
                 .unwrap();
             tls.alpn_protocols = vec![b"h2".to_vec()];
+            Some(tokio_rustls::TlsAcceptor::from(Arc::new(tls)))
+        } else {
+            None
+        };
 
-            let svc = Server::builder().add_service(svc).into_service();
-
-            let mut http = hyper::server::conn::Http::new();
-            http.http2_only(true);
-
-            let nameuri: std::string::String = uri.replace("https://", "").parse().unwrap();
-            log::info!("binding");
-            let listener = tokio::net::TcpListener::bind(nameuri).await.unwrap();
-            let tls_acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(tls));
-
-            let mut stop_fused = stop_rx.fuse();
-            ready_tx.send(()).unwrap();
-            loop {
-                let mut accepted = Box::pin(listener.accept().fuse());
-                let (conn, addr) = match futures::select_biased!(
-                    _ = (&mut stop_fused).fuse() => {
-                    log::info!("Received stop");
-                    break
+        let mut stop_fused = stop_receiver.fuse();
+        ready_transmitter.send(()).unwrap();
+        loop {
+            let mut accepted = Box::pin(listener.accept().fuse());
+            let (conn, addr) = match futures::select_biased!(
+                _ = (&mut stop_fused).fuse() => {
+                log::info!("Received stop");
+                break
+            }
+                conn_addr = accepted => conn_addr,
+            ) {
+                Ok(incoming) => {
+                    log::info!("{:?}", incoming);
+                    incoming
                 }
-                    conn_addr = accepted => conn_addr,
-                ) {
-                    Ok(incoming) => {
-                        log::info!("{:?}", incoming);
-                        incoming
-                    }
-                    Err(e) => {
-                        eprintln!("Error accepting connection: {}", e);
-                        continue;
-                    }
-                };
+                Err(e) => {
+                    eprintln!("Error accepting connection: {}", e);
+                    continue;
+                }
+            };
 
-                let http = http.clone();
-                let tls_acceptor = tls_acceptor.clone();
-                let svc = svc.clone();
+            let http = http.clone();
+            let tls_acceptor = tls_acceptor.clone();
+            let svc = svc.clone();
 
-                tokio::spawn(async move {
+            tokio::spawn(async move {
+                let svc = tower::ServiceBuilder::new().service(svc);
+                if https {
                     let mut certificates = Vec::new();
-
                     let conn = tls_acceptor
+                        .unwrap()
                         .accept_with(conn, |info| {
                             if let Some(certs) = info.peer_certificates() {
                                 for cert in certs {
@@ -159,21 +159,11 @@ pub async fn create_test_server(
                         .await
                         .unwrap();
 
-                    use tower_http::ServiceBuilderExt;
-                    let svc = tower::ServiceBuilder::new()
-                        .add_extension(Arc::new(ConnInfo { addr, certificates }))
-                        .service(svc);
-
                     http.serve_connection(conn, svc).await;
-                });
-            }
-        } else {
-            ready_transmitter.send(()).unwrap();
-            Server::builder()
-                .add_service(svc)
-                .serve_with_shutdown(addr, stop_receiver.map(drop))
-                .await
-                .unwrap();
+                } else {
+                    http.serve_connection(conn, svc).await;
+                }
+            });
         }
 
         println!("Server stopped");

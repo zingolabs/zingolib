@@ -46,29 +46,22 @@ impl GrpcConnector {
     > {
         let uri = Arc::new(self.uri.clone());
         async move {
-            let channel = if uri.scheme_str() == Some("http") {
-                //println!("http");
-                //Channel::builder(self.uri.clone()).connect().await?
-                todo!()
-            } else {
+            let mut http = HttpConnector::new();
+            http.enforce_http(false);
+            if uri.scheme_str() == Some("https") {
                 let mut roots = RootCertStore::empty();
 
-                let fd = std::fs::File::open("localhost.pem").unwrap();
-                let mut buf = std::io::BufReader::new(&fd);
-                let certs = rustls_pemfile::certs(&mut buf).unwrap();
-                roots.add_parsable_certificates(&certs);
-
+                #[cfg(test)]
+                {
+                    let fd = std::fs::File::open("localhost.pem").unwrap();
+                    let mut buf = std::io::BufReader::new(&fd);
+                    let certs = rustls_pemfile::certs(&mut buf).unwrap();
+                    roots.add_parsable_certificates(&certs);
+                }
                 let tls = ClientConfig::builder()
                     .with_safe_defaults()
                     .with_root_certificates(roots)
                     .with_no_client_auth();
-
-                let mut http = HttpConnector::new();
-                http.enforce_http(false);
-
-                // We have to do some wrapping here to map the request type from
-                // `https://example.com` -> `https://[::1]:50051` because `rustls`
-                // doesn't accept ip's as `ServerName`.
                 let connector = tower::ServiceBuilder::new()
                     .layer_fn(move |s| {
                         let tls = tls.clone();
@@ -80,23 +73,16 @@ impl GrpcConnector {
                             .wrap_connector(s)
                     })
                     .service(http);
-
-                let client = hyper::Client::builder().build(connector);
-
-                // Hyper expects an absolute `Uri` to allow it to know which server to connect too.
-                // Currently, tonic's generated code only sets the `path_and_query` section so we
-                // are going to write a custom tower layer in front of the hyper client to add the
-                // scheme and authority.
-                //
-                // Again, this Uri is `example.com` because our tls certs is signed with this SNI but above
-                // we actually map this back to `[::1]:50051` before the `Uri` is passed to hyper's `HttpConnector`
-                // to allow it to correctly establish the tcp connection to the local `tls-server`.
+                let client = Box::new(hyper::Client::builder().build(connector));
                 let uri = uri.clone();
                 let svc = tower::ServiceBuilder::new()
+                    //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
                     .map_request(move |mut req: http::Request<tonic::body::BoxBody>| {
                         let uri = Uri::builder()
                             .scheme(uri.scheme().unwrap().clone())
                             .authority(uri.authority().unwrap().clone())
+                            //here. The Request's uri contains the path to the GRPC sever and
+                            //the method being called
                             .path_and_query(req.uri().path_and_query().unwrap().clone())
                             .build()
                             .unwrap();
@@ -106,10 +92,30 @@ impl GrpcConnector {
                     })
                     .service(client);
 
-                CompactTransactionStreamerClient::new(svc.boxed_clone())
-            };
+                Ok(CompactTransactionStreamerClient::new(svc.boxed_clone()))
+            } else {
+                let connector = tower::ServiceBuilder::new().service(http);
+                let client = Box::new(hyper::Client::builder().http2_only(true).build(connector));
+                let uri = uri.clone();
+                let svc = tower::ServiceBuilder::new()
+                    //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
+                    .map_request(move |mut req: http::Request<tonic::body::BoxBody>| {
+                        let uri = Uri::builder()
+                            .scheme(uri.scheme().unwrap().clone())
+                            .authority(uri.authority().unwrap().clone())
+                            //here. The Request's uri contains the path to the GRPC sever and
+                            //the method being called
+                            .path_and_query(req.uri().path_and_query().unwrap().clone())
+                            .build()
+                            .unwrap();
 
-            Ok(channel)
+                        *req.uri_mut() = uri;
+                        req
+                    })
+                    .service(client);
+
+                Ok(CompactTransactionStreamerClient::new(svc.boxed_clone()))
+            }
         }
     }
 
@@ -500,6 +506,8 @@ impl GrpcConnector {
         }
     }
 }
+
+fn make_config(https: bool) {}
 
 //#[cfg(test)]
 //async fn add_tls_test_config(tls: ClientTlsConfig) -> ClientTlsConfig {
