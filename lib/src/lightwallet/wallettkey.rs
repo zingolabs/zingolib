@@ -85,8 +85,11 @@ impl WalletTKey {
         let suffix = bytes.split_off(32);
 
         // Assert the suffix
-        if suffix.len() !=1 || suffix[0] != 0x01 {
-            return Err(io::Error::new(ErrorKind::InvalidData, format!("Invalid Suffix: {:?}", suffix)));
+        if suffix.len() != 1 || suffix[0] != 0x01 {
+            return Err(io::Error::new(
+                ErrorKind::InvalidData,
+                format!("Invalid Suffix: {:?}", suffix),
+            ));
         }
 
         let key = SecretKey::from_slice(&bytes).map_err(|e| io::Error::new(ErrorKind::InvalidData, e))?;
