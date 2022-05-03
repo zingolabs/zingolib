@@ -3,7 +3,6 @@ use group::GroupEncoding;
 use json::JsonValue;
 use jubjub::ExtendedPoint;
 use rand::rngs::OsRng;
-use tempdir::TempDir;
 use tokio::runtime::Runtime;
 use tonic::Request;
 
@@ -36,7 +35,7 @@ use super::lightclient_config::LightClientConfig;
 
 #[test]
 fn new_wallet_from_phrase() {
-    let temp_dir = TempDir::new("test").unwrap();
+    let temp_dir = tempfile::Builder::new().prefix("test").tempdir().unwrap();
     let data_dir = temp_dir
         .into_path()
         .canonicalize()
@@ -66,7 +65,7 @@ fn new_wallet_from_phrase() {
 
 #[test]
 fn new_wallet_from_sk() {
-    let temp_dir = TempDir::new("test").unwrap();
+    let temp_dir = tempfile::Builder::new().prefix("test").tempdir().unwrap();
     let data_dir = temp_dir
         .into_path()
         .canonicalize()
@@ -101,7 +100,7 @@ fn new_wallet_from_sk() {
 
 #[test]
 fn new_wallet_from_vk() {
-    let temp_dir = TempDir::new("test").unwrap();
+    let temp_dir = tempfile::Builder::new().prefix("test").tempdir().unwrap();
     let data_dir = temp_dir
         .into_path()
         .canonicalize()

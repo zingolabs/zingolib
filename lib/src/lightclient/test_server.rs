@@ -16,7 +16,6 @@ use std::cmp;
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Arc;
-use tempdir::TempDir;
 use tokio::sync::{mpsc, oneshot, RwLock};
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
@@ -64,7 +63,10 @@ pub async fn create_test_server(
         let svc = CompactTransactionStreamerServer::new(service);
 
         // We create the temp dir here, so that we can clean it up after the test runs
-        let temp_dir = TempDir::new(&format!("test{}", port).as_str()).unwrap();
+        let temp_dir = tempfile::Builder::new()
+            .prefix(&format!("test{}", port).as_str())
+            .tempdir()
+            .unwrap();
 
         // Send the path name. Do into_path() to preserve the temp directory
         data_dir_transmitter

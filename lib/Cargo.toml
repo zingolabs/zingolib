@@ -63,7 +63,7 @@ tracing-subscriber = { version = "0.3", features = ["tracing-log"] }
 
 [dev-dependencies]
 portpicker = "0.1.0"
-tempdir = "0.3.7"
+tempfile = "3.3.0"
 
 [build-dependencies]
 tonic-build = "0.7.0"
