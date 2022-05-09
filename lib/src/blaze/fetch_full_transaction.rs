@@ -3,7 +3,7 @@ use crate::{
     lightwallet::{
         data::OutgoingTxMetadata,
         keys::{Keys, ToBase58Check},
-        wallet_txns::WalletTxns,
+        wallet_transactions::WalletTxns,
     },
 };
 
@@ -61,7 +61,7 @@ impl FetchFullTxns {
         UnboundedSender<(TxId, BlockHeight)>,
         UnboundedSender<(Transaction, BlockHeight)>,
     ) {
-        let wallet_txns = self.wallet_txns.clone();
+        let wallet_transactions = self.wallet_txns.clone();
         let keys = self.keys.clone();
         let config = self.config.clone();
 
@@ -70,27 +70,27 @@ impl FetchFullTxns {
 
         let bsync_data_i = bsync_data.clone();
 
-        let (txid_tx, mut txid_rx) = unbounded_channel::<(TxId, BlockHeight)>();
+        let (transaction_id_transmitter, mut transaction_id_receiver) = unbounded_channel::<(TxId, BlockHeight)>();
         let h1: JoinHandle<Result<(), String>> = tokio::spawn(async move {
             let last_progress = Arc::new(AtomicU64::new(0));
             let mut workers = FuturesUnordered::new();
 
-            while let Some((txid, height)) = txid_rx.recv().await {
+            while let Some((transaction_id, height)) = transaction_id_receiver.recv().await {
                 let config = config.clone();
                 let keys = keys.clone();
-                let wallet_txns = wallet_txns.clone();
+                let wallet_transactions = wallet_transactions.clone();
                 let block_time = bsync_data_i.read().await.block_data.get_block_timestamp(&height).await;
-                let fulltx_fetcher = fulltx_fetcher.clone();
+                let full_transaction_fetcher = fulltx_fetcher.clone();
                 let bsync_data = bsync_data_i.clone();
                 let last_progress = last_progress.clone();
 
                 workers.push(tokio::spawn(async move {
                     // It is possible that we recieve the same txid multiple times, so we keep track of all the txids that were fetched
-                    let tx = {
+                    let transaction = {
                         // Fetch the TxId from LightwalletD and process all the parts of it.
-                        let (tx, rx) = oneshot::channel();
-                        fulltx_fetcher.send((txid, tx)).unwrap();
-                        rx.await.unwrap()?
+                        let (transmitter, receiver) = oneshot::channel();
+                        full_transaction_fetcher.send((transaction_id, transmitter)).unwrap();
+                        receiver.await.unwrap()?
                     };
 
                     let progress = start_height - u64::from(height);
@@ -99,7 +99,17 @@ impl FetchFullTxns {
                         last_progress.store(progress, Ordering::SeqCst);
                     }
 
-                    Self::scan_full_tx(config, tx, height, false, block_time, keys, wallet_txns, None).await;
+                    Self::scan_full_tx(
+                        config,
+                        transaction,
+                        height,
+                        false,
+                        block_time,
+                        keys,
+                        wallet_transactions,
+                        None,
+                    )
+                    .await;
 
                     Ok::<_, String>(())
                 }));
@@ -115,22 +125,32 @@ impl FetchFullTxns {
             Ok(())
         });
 
-        let wallet_txns = self.wallet_txns.clone();
+        let wallet_transactions = self.wallet_txns.clone();
         let keys = self.keys.clone();
         let config = self.config.clone();
 
-        let (tx_tx, mut tx_rx) = unbounded_channel::<(Transaction, BlockHeight)>();
+        let (transaction_transmitter, mut transaction_receiver) = unbounded_channel::<(Transaction, BlockHeight)>();
 
         let h2: JoinHandle<Result<(), String>> = tokio::spawn(async move {
             let bsync_data = bsync_data.clone();
 
-            while let Some((tx, height)) = tx_rx.recv().await {
+            while let Some((transaction, height)) = transaction_receiver.recv().await {
                 let config = config.clone();
                 let keys = keys.clone();
-                let wallet_txns = wallet_txns.clone();
+                let wallet_transactions = wallet_transactions.clone();
 
                 let block_time = bsync_data.read().await.block_data.get_block_timestamp(&height).await;
-                Self::scan_full_tx(config, tx, height, false, block_time, keys, wallet_txns, None).await;
+                Self::scan_full_tx(
+                    config,
+                    transaction,
+                    height,
+                    false,
+                    block_time,
+                    keys,
+                    wallet_transactions,
+                    None,
+                )
+                .await;
             }
 
             //info!("Finished full_tx scanning all txns");
@@ -145,17 +165,17 @@ impl FetchFullTxns {
                 .collect::<Result<(), String>>()
         });
 
-        return (h, txid_tx, tx_tx);
+        return (h, transaction_id_transmitter, transaction_transmitter);
     }
 
     pub(crate) async fn scan_full_tx(
         config: LightClientConfig,
-        tx: Transaction,
+        transaction: Transaction,
         height: BlockHeight,
         unconfirmed: bool,
         block_time: u32,
         keys: Arc<RwLock<Keys>>,
-        wallet_txns: Arc<RwLock<WalletTxns>>,
+        wallet_transactions: Arc<RwLock<WalletTxns>>,
         price: Option<f64>,
     ) {
         // Collect our t-addresses for easy checking
@@ -163,14 +183,14 @@ impl FetchFullTxns {
         let taddrs_set: HashSet<_> = taddrs.iter().map(|t| t.clone()).collect();
 
         // Step 1: Scan all transparent outputs to see if we recieved any money
-        for (n, vout) in tx.vout.iter().enumerate() {
+        for (n, vout) in transaction.vout.iter().enumerate() {
             match vout.script_pubkey.address() {
                 Some(TransparentAddress::PublicKey(hash)) => {
                     let output_taddr = hash.to_base58check(&config.base58_pubkey_address(), &[]);
                     if taddrs_set.contains(&output_taddr) {
                         // This is our address. Add this as an output to the txid
-                        wallet_txns.write().await.add_new_taddr_output(
-                            tx.txid(),
+                        wallet_transactions.write().await.add_new_taddr_output(
+                            transaction.txid(),
                             output_taddr.clone(),
                             height.into(),
                             unconfirmed,
@@ -188,7 +208,7 @@ impl FetchFullTxns {
         }
 
         // Remember if this is an outgoing Tx. Useful for when we want to grab the outgoing metadata.
-        let mut is_outgoing_tx = false;
+        let mut is_outgoing_transaction = false;
 
         // Step 2. Scan transparent spends
 
@@ -197,44 +217,50 @@ impl FetchFullTxns {
         let mut spent_utxos = vec![];
 
         {
-            let current = &wallet_txns.read().await.current;
-            for vin in tx.vin.iter() {
+            let current = &wallet_transactions.read().await.current;
+            for vin in transaction.vin.iter() {
                 // Find the prev txid that was spent
-                let prev_txid = TxId { 0: *vin.prevout.hash() };
+                let prev_transaction_id = TxId { 0: *vin.prevout.hash() };
                 let prev_n = vin.prevout.n() as u64;
 
-                if let Some(wtx) = current.get(&prev_txid) {
+                if let Some(wtx) = current.get(&prev_transaction_id) {
                     // One of the tx outputs is a match
                     if let Some(spent_utxo) = wtx
                         .utxos
                         .iter()
-                        .find(|u| u.txid == prev_txid && u.output_index == prev_n)
+                        .find(|u| u.txid == prev_transaction_id && u.output_index == prev_n)
                     {
-                        info!("Spent: utxo from {} was spent in {}", prev_txid, tx.txid());
+                        info!(
+                            "Spent: utxo from {} was spent in {}",
+                            prev_transaction_id,
+                            transaction.txid()
+                        );
                         total_transparent_value_spent += spent_utxo.value;
-                        spent_utxos.push((prev_txid, prev_n as u32, tx.txid(), height));
+                        spent_utxos.push((prev_transaction_id, prev_n as u32, transaction.txid(), height));
                     }
                 }
             }
         }
 
         // Mark all the UTXOs that were spent here back in their original txns.
-        for (prev_txid, prev_n, txid, height) in spent_utxos {
+        for (prev_transaction_id, prev_n, transaction_id, height) in spent_utxos {
             // Mark that this Tx spent some funds
-            is_outgoing_tx = true;
+            is_outgoing_transaction = true;
 
-            wallet_txns
-                .write()
-                .await
-                .mark_txid_utxo_spent(prev_txid, prev_n, txid, height.into());
+            wallet_transactions.write().await.mark_txid_utxo_spent(
+                prev_transaction_id,
+                prev_n,
+                transaction_id,
+                height.into(),
+            );
         }
 
-        // If this Tx spent value, add the spent amount to the TxID
+        // If this transaction spent value, add the spent amount to the TxID
         if total_transparent_value_spent > 0 {
-            is_outgoing_tx = true;
+            is_outgoing_transaction = true;
 
-            wallet_txns.write().await.add_taddr_spent(
-                tx.txid(),
+            wallet_transactions.write().await.add_taddr_spent(
+                transaction.txid(),
                 height,
                 unconfirmed,
                 block_time as u64,
@@ -242,20 +268,22 @@ impl FetchFullTxns {
             );
         }
 
-        // Step 3: Check if any of the nullifiers spent in this Tx are ours. We only need this for unconfirmed txns,
-        // because for txns in the block, we will check the nullifiers from the blockdata
+        // Step 3: Check if any of the nullifiers spent in this transaction are ours. We only need this for unconfirmed transactions,
+        // because for transactions in the block, we will check the nullifiers from the blockdata
         if unconfirmed {
-            let unspent_nullifiers = wallet_txns.read().await.get_unspent_nullifiers();
-            for s in tx.shielded_spends.iter() {
-                if let Some((nf, value, txid)) = unspent_nullifiers.iter().find(|(nf, _, _)| *nf == s.nullifier) {
-                    wallet_txns.write().await.add_new_spent(
-                        tx.txid(),
+            let unspent_nullifiers = wallet_transactions.read().await.get_unspent_nullifiers();
+            for s in transaction.shielded_spends.iter() {
+                if let Some((nf, value, transaction_id)) =
+                    unspent_nullifiers.iter().find(|(nf, _, _)| *nf == s.nullifier)
+                {
+                    wallet_transactions.write().await.add_new_spent(
+                        transaction.txid(),
                         height,
                         unconfirmed,
                         block_time,
                         *nf,
                         *value,
-                        *txid,
+                        *transaction_id,
                     );
                 }
             }
@@ -276,12 +304,12 @@ impl FetchFullTxns {
         let ivks: Vec<_> = extfvks.iter().map(|k| k.fvk.vk.ivk()).collect();
 
         // Step 4: Scan shielded sapling outputs to see if anyone of them is us, and if it is, extract the memo. Note that if this
-        // is invoked by a transparent transaction, and we have not seen this Tx from the trial_decryptions processor, the Note
-        // might not exist, and the memo updating might be a No-Op. That's Ok, the memo will get updated when this Tx is scanned
-        // a second time by the Full Tx Fetcher
+        // is invoked by a transparent transaction, and we have not seen this transaction from the trial_decryptions processor, the Note
+        // might not exist, and the memo updating might be a No-Op. That's Ok, the memo will get updated when this transaction is scanned
+        // a second time by the Full transaction Fetcher
         let mut outgoing_metadatas = vec![];
 
-        for output in tx.shielded_outputs.iter() {
+        for output in transaction.shielded_outputs.iter() {
             let cmu = output.cmu;
             let ct = output.enc_ciphertext;
 
@@ -295,10 +323,10 @@ impl FetchFullTxns {
                         None => continue,
                     };
 
-                // info!("A sapling note was received into the wallet in {}", tx.txid());
+                // info!("A sapling note was received into the wallet in {}", transaction.txid());
                 if unconfirmed {
-                    wallet_txns.write().await.add_pending_note(
-                        tx.txid(),
+                    wallet_transactions.write().await.add_pending_note(
+                        transaction.txid(),
                         height,
                         block_time as u64,
                         note.clone(),
@@ -308,7 +336,10 @@ impl FetchFullTxns {
                 }
 
                 let memo = memo_bytes.clone().try_into().unwrap_or(Memo::Future(memo_bytes));
-                wallet_txns.write().await.add_memo_to_note(&tx.txid(), note, memo);
+                wallet_transactions
+                    .write()
+                    .await
+                    .add_memo_to_note(&transaction.txid(), note, memo);
             }
 
             // Also scan the output to see if it can be decoded with our OutgoingViewKey
@@ -330,8 +361,8 @@ impl FetchFullTxns {
                         &output.out_ciphertext,
                     ) {
                         Some((note, payment_address, memo_bytes)) => {
-                            // Mark this tx as an outgoing tx, so we can grab all outgoing metadata
-                            is_outgoing_tx = true;
+                            // Mark this transaction as an outgoing transaction, so we can grab all outgoing metadata
+                            is_outgoing_transaction = true;
 
                             let address = encode_payment_address(config.hrp_sapling_address(), &payment_address);
 
@@ -366,14 +397,19 @@ impl FetchFullTxns {
         }
 
         // Step 5. Process t-address outputs
-        // If this Tx in outgoing, i.e., we recieved sent some money in this Tx, then we need to grab all transparent outputs
+        // If this transaction in outgoing, i.e., we recieved sent some money in this transaction, then we need to grab all transparent outputs
         // that don't belong to us as the outgoing metadata
-        if wallet_txns.read().await.total_funds_spent_in(&tx.txid()) > 0 {
-            is_outgoing_tx = true;
+        if wallet_transactions
+            .read()
+            .await
+            .total_funds_spent_in(&transaction.txid())
+            > 0
+        {
+            is_outgoing_transaction = true;
         }
 
-        if is_outgoing_tx {
-            for vout in &tx.vout {
+        if is_outgoing_transaction {
+            for vout in &transaction.vout {
                 let taddr = keys.read().await.address_from_pubkeyhash(vout.script_pubkey.address());
 
                 if taddr.is_some() && !taddrs_set.contains(taddr.as_ref().unwrap()) {
@@ -385,24 +421,27 @@ impl FetchFullTxns {
                 }
             }
 
-            // Also, if this is an outgoing transaction, then mark all the *incoming* sapling notes to this Tx as change.
+            // Also, if this is an outgoing transaction, then mark all the *incoming* sapling notes to this transaction as change.
             // Note that this is also done in `WalletTxns::add_new_spent`, but that doesn't take into account transparent spends,
             // so we'll do it again here.
-            wallet_txns.write().await.check_notes_mark_change(&tx.txid());
+            wallet_transactions
+                .write()
+                .await
+                .check_notes_mark_change(&transaction.txid());
         }
 
         if !outgoing_metadatas.is_empty() {
-            wallet_txns
+            wallet_transactions
                 .write()
                 .await
-                .add_outgoing_metadata(&tx.txid(), outgoing_metadatas);
+                .add_outgoing_metadata(&transaction.txid(), outgoing_metadatas);
         }
 
         // Update price if available
         if price.is_some() {
-            wallet_txns.write().await.set_price(&tx.txid(), price);
+            wallet_transactions.write().await.set_price(&transaction.txid(), price);
         }
 
-        //info!("Finished Fetching full tx {}", tx.txid());
+        //info!("Finished Fetching full transaction {}", tx.txid());
     }
 }

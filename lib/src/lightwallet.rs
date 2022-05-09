@@ -2,7 +2,7 @@ use crate::compact_formats::TreeState;
 use crate::lightwallet::data::WalletTx;
 use crate::lightwallet::wallettkey::WalletTKey;
 use crate::{
-    blaze::fetch_full_tx::FetchFullTxns,
+    blaze::fetch_full_transaction::FetchFullTxns,
     lightclient::lightclient_config::LightClientConfig,
     lightwallet::{
         data::SpendableNote,
@@ -43,7 +43,7 @@ use self::{
     data::{BlockData, SaplingNoteData, Utxo, WalletZecPriceInfo},
     keys::Keys,
     message::Message,
-    wallet_txns::WalletTxns,
+    wallet_transactions::WalletTxns,
 };
 
 pub(crate) mod data;
@@ -51,7 +51,7 @@ mod extended_key;
 pub(crate) mod keys;
 pub(crate) mod message;
 pub(crate) mod utils;
-pub(crate) mod wallet_txns;
+pub(crate) mod wallet_transactions;
 pub(crate) mod wallettkey;
 mod walletzkey;
 
@@ -69,7 +69,7 @@ pub struct SendProgress {
     pub progress: u32,
     pub total: u32,
     pub last_error: Option<String>,
-    pub last_txid: Option<String>,
+    pub last_transaction_id: Option<String>,
 }
 
 impl SendProgress {
@@ -80,7 +80,7 @@ impl SendProgress {
             progress: 0,
             total: 0,
             last_error: None,
-            last_txid: None,
+            last_transaction_id: None,
         }
     }
 }
@@ -153,8 +153,8 @@ pub struct LightWallet {
     // The last 100 blocks, used if something gets re-orged
     pub(super) blocks: Arc<RwLock<Vec<BlockData>>>,
 
-    // List of all txns
-    pub(crate) txns: Arc<RwLock<WalletTxns>>,
+    // List of all transactions
+    pub(crate) transactions: Arc<RwLock<WalletTxns>>,
 
     // Wallet options
     pub(crate) wallet_options: Arc<RwLock<WalletOptions>>,
@@ -165,7 +165,7 @@ pub struct LightWallet {
     // Heighest verified block
     pub(crate) verified_tree: Arc<RwLock<Option<TreeState>>>,
 
-    // Progress of an outgoing tx
+    // Progress of an outgoing transaction
     send_progress: Arc<RwLock<SendProgress>>,
 
     // The current price of ZEC. (time_fetched, price in USD)
@@ -187,7 +187,7 @@ impl LightWallet {
 
         Ok(Self {
             keys: Arc::new(RwLock::new(keys)),
-            txns: Arc::new(RwLock::new(WalletTxns::new())),
+            transactions: Arc::new(RwLock::new(WalletTxns::new())),
             blocks: Arc::new(RwLock::new(vec![])),
             wallet_options: Arc::new(RwLock::new(WalletOptions::default())),
             config,
@@ -223,7 +223,7 @@ impl LightWallet {
             blocks = blocks.into_iter().rev().collect();
         }
 
-        let mut txns = if version <= 14 {
+        let mut transactions = if version <= 14 {
             WalletTxns::read_old(&mut reader)
         } else {
             WalletTxns::read(&mut reader)
@@ -274,7 +274,7 @@ impl LightWallet {
                 .filter(|extfvk| keys.have_spending_key(extfvk))
                 .collect();
 
-            txns.adjust_spendable_status(spendable_keys);
+            transactions.adjust_spendable_status(spendable_keys);
         }
 
         let price = if version <= 13 {
@@ -285,7 +285,7 @@ impl LightWallet {
 
         let mut lw = Self {
             keys: Arc::new(RwLock::new(keys)),
-            txns: Arc::new(RwLock::new(txns)),
+            transactions: Arc::new(RwLock::new(transactions)),
             blocks: Arc::new(RwLock::new(blocks)),
             config: config.clone(),
             wallet_options: Arc::new(RwLock::new(wallet_options)),
@@ -324,7 +324,7 @@ impl LightWallet {
 
         Vector::write(&mut writer, &self.blocks.read().await, |w, b| b.write(w))?;
 
-        self.txns.read().await.write(&mut writer)?;
+        self.transactions.read().await.write(&mut writer)?;
 
         utils::write_string(&mut writer, &self.config.chain_name)?;
 
@@ -351,7 +351,7 @@ impl LightWallet {
     // Before version 20, witnesses didn't store their height, so we need to update them.
     pub async fn set_witness_block_heights(&mut self) {
         let top_height = self.last_scanned_height().await;
-        self.txns.write().await.current.iter_mut().for_each(|(_, wtx)| {
+        self.transactions.write().await.current.iter_mut().for_each(|(_, wtx)| {
             wtx.notes.iter_mut().for_each(|nd| {
                 nd.witnesses.top_height = top_height;
             });
@@ -362,8 +362,8 @@ impl LightWallet {
         self.keys.clone()
     }
 
-    pub fn txns(&self) -> Arc<RwLock<WalletTxns>> {
-        self.txns.clone()
+    pub fn transactions(&self) -> Arc<RwLock<WalletTxns>> {
+        self.transactions.clone()
     }
 
     pub async fn set_blocks(&self, new_blocks: Vec<BlockData>) {
@@ -391,9 +391,9 @@ impl LightWallet {
     pub async fn get_birthday(&self) -> u64 {
         let birthday = self.birthday.load(std::sync::atomic::Ordering::SeqCst);
         if birthday == 0 {
-            self.get_first_tx_block().await
+            self.get_first_transaction_block().await
         } else {
-            cmp::min(self.get_first_tx_block().await, birthday)
+            cmp::min(self.get_first_transaction_block().await, birthday)
         }
     }
 
@@ -421,11 +421,11 @@ impl LightWallet {
     }
 
     // Set the previous send's status as success
-    async fn set_send_success(&self, txid: String) {
+    async fn set_send_success(&self, transaction_id: String) {
         let mut p = self.send_progress.write().await;
 
         p.is_send_in_progress = false;
-        p.last_txid = Some(txid);
+        p.last_transaction_id = Some(transaction_id);
     }
 
     // Reset the send progress status to blank
@@ -445,13 +445,13 @@ impl LightWallet {
         self.keys.read().await.is_encrypted()
     }
 
-    // Get the first block that this wallet has a tx in. This is often used as the wallet's "birthday"
-    // If there are no Txns, then the actual birthday (which is recorder at wallet creation) is returned
+    // Get the first block that this wallet has a transaction in. This is often used as the wallet's "birthday"
+    // If there are no transactions, then the actual birthday (which is recorder at wallet creation) is returned
     // If no birthday was recorded, return the sapling activation height
-    pub async fn get_first_tx_block(&self) -> u64 {
+    pub async fn get_first_transaction_block(&self) -> u64 {
         // Find the first transaction
         let earliest_block = self
-            .txns
+            .transactions
             .read()
             .await
             .current
@@ -460,7 +460,7 @@ impl LightWallet {
             .min();
 
         let birthday = self.birthday.load(std::sync::atomic::Ordering::SeqCst);
-        earliest_block // Returns optional, so if there's no txns, it'll get the activation height
+        earliest_block // Returns optional, so if there's no transactions, it'll get the activation height
             .unwrap_or(cmp::max(birthday, self.config.sapling_activation_height))
     }
 
@@ -593,7 +593,7 @@ impl LightWallet {
     /// and the wallet will need to be rescanned
     pub async fn clear_all(&self) {
         self.blocks.write().await.clear();
-        self.txns.write().await.clear();
+        self.transactions.write().await.clear();
     }
 
     pub async fn set_initial_block(&self, height: u64, hash: &str, _sapling_tree: &str) -> bool {
@@ -671,13 +671,14 @@ impl LightWallet {
     }
 
     pub async fn zbalance(&self, addr: Option<String>) -> u64 {
-        self.txns
+        self.transactions
             .read()
             .await
             .current
             .values()
-            .map(|tx| {
-                tx.notes
+            .map(|transaction| {
+                transaction
+                    .notes
                     .iter()
                     .filter(|nd| match addr.as_ref() {
                         Some(a) => {
@@ -702,12 +703,12 @@ impl LightWallet {
 
     // Get all (unspent) utxos. Unconfirmed spent utxos are included
     pub async fn get_utxos(&self) -> Vec<Utxo> {
-        self.txns
+        self.transactions
             .read()
             .await
             .current
             .values()
-            .flat_map(|tx| tx.utxos.iter().filter(|utxo| utxo.spent.is_none()))
+            .flat_map(|transaction| transaction.utxos.iter().filter(|utxo| utxo.spent.is_none()))
             .map(|utxo| utxo.clone())
             .collect::<Vec<Utxo>>()
     }
@@ -729,13 +730,14 @@ impl LightWallet {
 
         let keys = self.keys.read().await;
 
-        self.txns
+        self.transactions
             .read()
             .await
             .current
             .values()
-            .map(|tx| {
-                tx.notes
+            .map(|transaction| {
+                transaction
+                    .notes
                     .iter()
                     .filter(|nd| nd.spent.is_none() && nd.unconfirmed_spent.is_none())
                     .filter(|nd| {
@@ -752,7 +754,7 @@ impl LightWallet {
                         None => true,
                     })
                     .map(|nd| {
-                        if tx.block <= BlockHeight::from_u32(anchor_height) {
+                        if transaction.block <= BlockHeight::from_u32(anchor_height) {
                             // If confirmed, then unconfirmed is 0
                             0
                         } else {
@@ -768,14 +770,15 @@ impl LightWallet {
     pub async fn verified_zbalance(&self, addr: Option<String>) -> u64 {
         let anchor_height = self.get_anchor_height().await;
 
-        self.txns
+        self.transactions
             .read()
             .await
             .current
             .values()
-            .map(|tx| {
-                if tx.block <= BlockHeight::from_u32(anchor_height) {
-                    tx.notes
+            .map(|transaction| {
+                if transaction.block <= BlockHeight::from_u32(anchor_height) {
+                    transaction
+                        .notes
                         .iter()
                         .filter(|nd| nd.spent.is_none() && nd.unconfirmed_spent.is_none())
                         .filter(|nd| match addr.as_ref() {
@@ -801,14 +804,15 @@ impl LightWallet {
 
         let keys = self.keys.read().await;
 
-        self.txns
+        self.transactions
             .read()
             .await
             .current
             .values()
-            .map(|tx| {
-                if tx.block <= BlockHeight::from_u32(anchor_height) {
-                    tx.notes
+            .map(|transaction| {
+                if transaction.block <= BlockHeight::from_u32(anchor_height) {
+                    transaction
+                        .notes
                         .iter()
                         .filter(|nd| nd.spent.is_none() && nd.unconfirmed_spent.is_none())
                         .filter(|nd| {
@@ -840,7 +844,7 @@ impl LightWallet {
         }
 
         let highest_account = self
-            .txns
+            .transactions
             .read()
             .await
             .current
@@ -872,7 +876,7 @@ impl LightWallet {
         }
 
         let highest_account = self
-            .txns
+            .transactions
             .read()
             .await
             .current
@@ -922,36 +926,38 @@ impl LightWallet {
     // Add the spent_at_height for each sapling note that has been spent. This field was added in wallet version 8,
     // so for older wallets, it will need to be added
     pub async fn fix_spent_at_height(&self) {
-        // First, build an index of all the txids and the heights at which they were spent.
-        let spent_txid_map: HashMap<_, _> = self
-            .txns
+        // First, build an index of all the transaction_ids and the heights at which they were spent.
+        let spent_transaction_id_map: HashMap<_, _> = self
+            .transactions
             .read()
             .await
             .current
             .iter()
-            .map(|(txid, wtx)| (txid.clone(), wtx.block))
+            .map(|(transaction_id, wtx)| (transaction_id.clone(), wtx.block))
             .collect();
 
         // Go over all the sapling notes that might need updating
-        self.txns.write().await.current.values_mut().for_each(|wtx| {
+        self.transactions.write().await.current.values_mut().for_each(|wtx| {
             wtx.notes
                 .iter_mut()
                 .filter(|nd| nd.spent.is_some() && nd.spent.unwrap().1 == 0)
                 .for_each(|nd| {
-                    let txid = nd.spent.unwrap().0;
-                    if let Some(height) = spent_txid_map.get(&txid).map(|b| *b) {
-                        nd.spent = Some((txid, height.into()));
+                    let transaction_id = nd.spent.unwrap().0;
+                    if let Some(height) = spent_transaction_id_map.get(&transaction_id).map(|b| *b) {
+                        nd.spent = Some((transaction_id, height.into()));
                     }
                 })
         });
 
         // Go over all the Utxos that might need updating
-        self.txns.write().await.current.values_mut().for_each(|wtx| {
+        self.transactions.write().await.current.values_mut().for_each(|wtx| {
             wtx.utxos
                 .iter_mut()
                 .filter(|utxo| utxo.spent.is_some() && utxo.spent_at_height.is_none())
                 .for_each(|utxo| {
-                    utxo.spent_at_height = spent_txid_map.get(&utxo.spent.unwrap()).map(|b| u32::from(*b) as i32);
+                    utxo.spent_at_height = spent_transaction_id_map
+                        .get(&utxo.spent.unwrap())
+                        .map(|b| u32::from(*b) as i32);
                 })
         });
     }
@@ -988,21 +994,23 @@ impl LightWallet {
         for anchor_offset in &self.config.anchor_offset {
             let keys = self.keys.read().await;
             let mut candidate_notes = self
-                .txns
+                .transactions
                 .read()
                 .await
                 .current
                 .iter()
-                .flat_map(|(txid, tx)| tx.notes.iter().map(move |note| (*txid, note)))
+                .flat_map(|(transaction_id, transaction)| {
+                    transaction.notes.iter().map(move |note| (*transaction_id, note))
+                })
                 .filter(|(_, note)| note.note.value > 0)
-                .filter_map(|(txid, note)| {
+                .filter_map(|(transaction_id, note)| {
                     // Filter out notes that are already spent
                     if note.spent.is_some() || note.unconfirmed_spent.is_some() {
                         None
                     } else {
                         // Get the spending key for the selected fvk, if we have it
                         let extsk = keys.get_extsk_for_extfvk(&note.extfvk);
-                        SpendableNote::from(txid, note, *anchor_offset as usize, &extsk)
+                        SpendableNote::from(transaction_id, note, *anchor_offset as usize, &extsk)
                     }
                 })
                 .collect::<Vec<_>>();
@@ -1053,9 +1061,9 @@ impl LightWallet {
             .send_to_address_internal(consensus_branch_id, prover, transparent_only, tos, broadcast_fn)
             .await
         {
-            Ok((txid, rawtx)) => {
-                self.set_send_success(txid.clone()).await;
-                Ok((txid, rawtx))
+            Ok((transaction_id, raw_transaction)) => {
+                self.set_send_success(transaction_id.clone()).await;
+                Ok((transaction_id, raw_transaction))
             }
             Err(e) => {
                 self.set_send_error(format!("{}", e)).await;
@@ -1192,7 +1200,7 @@ impl LightWallet {
             );
         }
 
-        // We'll use the first ovk to encrypt outgoing Txns
+        // We'll use the first ovk to encrypt outgoing transactions
         let ovk = self.keys.read().await.zkeys[0].extfvk.fvk.ovk;
         let mut total_z_recepients = 0u32;
         for (to, value, memo) in recepients {
@@ -1228,19 +1236,19 @@ impl LightWallet {
         }
 
         // Set up a channel to recieve updates on the progress of building the transaction.
-        let (tx, rx) = channel::<u32>();
+        let (transmitter, receiver) = channel::<u32>();
         let progress = self.send_progress.clone();
 
         // Use a separate thread to handle sending from std::mpsc to tokio::sync::mpsc
-        let (tx2, mut rx2) = tokio::sync::mpsc::unbounded_channel();
+        let (transmitter2, mut receiver2) = tokio::sync::mpsc::unbounded_channel();
         std::thread::spawn(move || {
-            while let Ok(r) = rx.recv() {
-                tx2.send(r).unwrap();
+            while let Ok(r) = receiver.recv() {
+                transmitter2.send(r).unwrap();
             }
         });
 
         let progress_handle = tokio::spawn(async move {
-            while let Some(r) = rx2.recv().await {
+            while let Some(r) = receiver2.recv().await {
                 println!("Progress: {}", r);
                 progress.write().await.progress = r;
             }
@@ -1256,10 +1264,10 @@ impl LightWallet {
         }
 
         println!("{}: Building transaction", now() - start_time);
-        let (tx, _) = match builder.build_with_progress_notifier(
+        let (transaction, _) = match builder.build_with_progress_notifier(
             BranchId::try_from(consensus_branch_id).unwrap(),
             &prover,
-            Some(tx),
+            Some(transmitter),
         ) {
             Ok(res) => res,
             Err(e) => {
@@ -1274,37 +1282,37 @@ impl LightWallet {
         progress_handle.await.unwrap();
 
         println!("{}: Transaction created", now() - start_time);
-        println!("Transaction ID: {}", tx.txid());
+        println!("Transaction ID: {}", transaction.txid());
 
         {
             self.send_progress.write().await.is_send_in_progress = false;
         }
 
-        // Create the TX bytes
-        let mut raw_tx = vec![];
-        tx.write(&mut raw_tx).unwrap();
+        // Create the transaction bytes
+        let mut raw_transaction = vec![];
+        transaction.write(&mut raw_transaction).unwrap();
 
-        let txid = broadcast_fn(raw_tx.clone().into_boxed_slice()).await?;
+        let transaction_id = broadcast_fn(raw_transaction.clone().into_boxed_slice()).await?;
 
         // Mark notes as spent.
         {
             // Mark sapling notes as unconfirmed spent
-            let mut txs = self.txns.write().await;
+            let mut transactions = self.transactions.write().await;
             for selected in notes {
-                let mut spent_note = txs
+                let mut spent_note = transactions
                     .current
-                    .get_mut(&selected.txid)
+                    .get_mut(&selected.transaction_id)
                     .unwrap()
                     .notes
                     .iter_mut()
                     .find(|nd| nd.nullifier == selected.nullifier)
                     .unwrap();
-                spent_note.unconfirmed_spent = Some((tx.txid(), u32::from(target_height)));
+                spent_note.unconfirmed_spent = Some((transaction.txid(), u32::from(target_height)));
             }
 
             // Mark this utxo as unconfirmed spent
             for utxo in utxos {
-                let mut spent_utxo = txs
+                let mut spent_utxo = transactions
                     .current
                     .get_mut(&utxo.txid)
                     .unwrap()
@@ -1312,28 +1320,28 @@ impl LightWallet {
                     .iter_mut()
                     .find(|u| utxo.txid == u.txid && utxo.output_index == u.output_index)
                     .unwrap();
-                spent_utxo.unconfirmed_spent = Some((tx.txid(), u32::from(target_height)));
+                spent_utxo.unconfirmed_spent = Some((transaction.txid(), u32::from(target_height)));
             }
         }
 
-        // Add this Tx to the mempool structure
+        // Add this transaction to the mempool structure
         {
             let price = self.price.read().await.clone();
 
             FetchFullTxns::scan_full_tx(
                 self.config.clone(),
-                tx,
+                transaction,
                 target_height.into(),
                 true,
                 now() as u32,
                 self.keys.clone(),
-                self.txns.clone(),
+                self.transactions.clone(),
                 WalletTx::get_price(now(), &price),
             )
             .await;
         }
 
-        Ok((txid, raw_tx))
+        Ok((transaction_id, raw_transaction))
     }
 
     pub async fn encrypt(&self, passwd: String) -> io::Result<()> {
@@ -1368,8 +1376,8 @@ mod test {
     #[tokio::test]
     async fn z_t_note_selection() {
         for https in [true, false] {
-            let (data, config, ready_rx, stop_tx, h1) = create_test_server(https).await;
-            ready_rx.await.unwrap();
+            let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(https).await;
+            ready_receiver.await.unwrap();
 
             let mut lc = LightClient::test_new(&config, None, 0).await.unwrap();
 
@@ -1379,10 +1387,10 @@ mod test {
             mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
             assert_eq!(lc.wallet.last_scanned_height().await, 10);
 
-            // 2. Send an incoming tx to fill the wallet
+            // 2. Send an incoming transaction to fill the wallet
             let extfvk1 = lc.wallet.keys().read().await.get_all_extfvks()[0].clone();
             let value = 100_000;
-            let (tx, _height, _) = fcbl.add_tx_paying(&extfvk1, value);
+            let (transaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, value);
             mine_pending_blocks(&mut fcbl, &data, &lc).await;
 
             assert_eq!(lc.wallet.last_scanned_height().await, 11);
@@ -1399,7 +1407,14 @@ mod test {
             assert_eq!(
                 incw_to_string(&notes[0].witness),
                 incw_to_string(
-                    lc.wallet.txns.read().await.current.get(&tx.txid()).unwrap().notes[0]
+                    lc.wallet
+                        .transactions
+                        .read()
+                        .await
+                        .current
+                        .get(&transaction.txid())
+                        .unwrap()
+                        .notes[0]
                         .witnesses
                         .last()
                         .unwrap()
@@ -1423,7 +1438,14 @@ mod test {
             assert_eq!(
                 incw_to_string(&notes[0].witness),
                 incw_to_string(
-                    lc.wallet.txns.read().await.current.get(&tx.txid()).unwrap().notes[0]
+                    lc.wallet
+                        .transactions
+                        .read()
+                        .await
+                        .current
+                        .get(&transaction.txid())
+                        .unwrap()
+                        .notes[0]
                         .witnesses
                         .get_from_last(1)
                         .unwrap()
@@ -1441,7 +1463,14 @@ mod test {
             assert_eq!(
                 incw_to_string(&notes[0].witness),
                 incw_to_string(
-                    lc.wallet.txns.read().await.current.get(&tx.txid()).unwrap().notes[0]
+                    lc.wallet
+                        .transactions
+                        .read()
+                        .await
+                        .current
+                        .get(&transaction.txid())
+                        .unwrap()
+                        .notes[0]
                         .witnesses
                         .get_from_last(9)
                         .unwrap()
@@ -1454,15 +1483,15 @@ mod test {
             assert_eq!(notes.len(), 0);
             assert_eq!(utxos.len(), 0);
 
-            // 4. Get an incoming tx to a t address
+            // 4. Get an incoming transaction to a t address
             let sk = lc.wallet.keys().read().await.tkeys[0].clone();
             let pk = sk.pubkey().unwrap();
             let taddr = sk.address;
             let tvalue = 100_000;
 
-            let mut ftx = FakeTransaction::new();
-            ftx.add_t_output(&pk, taddr.clone(), tvalue);
-            let (_ttx, _) = fcbl.add_ftx(ftx);
+            let mut fake_transaction = FakeTransaction::new();
+            fake_transaction.add_t_output(&pk, taddr.clone(), tvalue);
+            let (_ttransaction, _) = fcbl.add_fake_transaction(fake_transaction);
             mine_pending_blocks(&mut fcbl, &data, &lc).await;
 
             // Trying to select a large amount will now succeed
@@ -1488,7 +1517,7 @@ mod test {
             assert_eq!(utxos.len(), 1);
 
             // Shutdown everything cleanly
-            stop_tx.send(()).unwrap();
+            stop_transmitter.send(()).unwrap();
             h1.await.unwrap();
         }
     }
@@ -1496,8 +1525,8 @@ mod test {
     #[tokio::test]
     async fn multi_z_note_selection() {
         for https in [true, false] {
-            let (data, config, ready_rx, stop_tx, h1) = create_test_server(https).await;
-            ready_rx.await.unwrap();
+            let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(https).await;
+            ready_receiver.await.unwrap();
 
             let mut lc = LightClient::test_new(&config, None, 0).await.unwrap();
 
@@ -1507,10 +1536,10 @@ mod test {
             mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
             assert_eq!(lc.wallet.last_scanned_height().await, 10);
 
-            // 2. Send an incoming tx to fill the wallet
+            // 2. Send an incoming transaction to fill the wallet
             let extfvk1 = lc.wallet.keys().read().await.get_all_extfvks()[0].clone();
             let value1 = 100_000;
-            let (tx, _height, _) = fcbl.add_tx_paying(&extfvk1, value1);
+            let (transaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, value1);
             mine_pending_blocks(&mut fcbl, &data, &lc).await;
 
             assert_eq!(lc.wallet.last_scanned_height().await, 11);
@@ -1527,7 +1556,14 @@ mod test {
             assert_eq!(
                 incw_to_string(&notes[0].witness),
                 incw_to_string(
-                    lc.wallet.txns.read().await.current.get(&tx.txid()).unwrap().notes[0]
+                    lc.wallet
+                        .transactions
+                        .read()
+                        .await
+                        .current
+                        .get(&transaction.txid())
+                        .unwrap()
+                        .notes[0]
                         .witnesses
                         .last()
                         .unwrap()
@@ -1537,9 +1573,9 @@ mod test {
             // Mine 5 blocks
             mine_random_blocks(&mut fcbl, &data, &lc, 5).await;
 
-            // 4. Send another incoming tx.
+            // 4. Send another incoming transaction.
             let value2 = 200_000;
-            let (_tx, _height, _) = fcbl.add_tx_paying(&extfvk1, value2);
+            let (_transaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, value2);
             mine_pending_blocks(&mut fcbl, &data, &lc).await;
 
             // Now, try to select a small amount, it should prefer the older note
@@ -1558,7 +1594,7 @@ mod test {
             assert_eq!(utxos.len(), 0);
 
             // Shutdown everything cleanly
-            stop_tx.send(()).unwrap();
+            stop_transmitter.send(()).unwrap();
             h1.await.unwrap();
         }
     }

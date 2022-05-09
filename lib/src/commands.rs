@@ -293,7 +293,7 @@ impl Command for LastTxIdCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        RT.block_on(async move { format!("{}", lightclient.do_last_txid().await.pretty(2)) })
+        RT.block_on(async move { format!("{}", lightclient.do_last_transaction_id().await.pretty(2)) })
     }
 }
 
@@ -580,8 +580,8 @@ impl Command for ShieldCommand {
         };
         RT.block_on(async move {
             match lightclient.do_shield(address).await {
-                Ok(txid) => {
-                    object! { "txid" => txid }
+                Ok(transaction_id) => {
+                    object! { "txid" => transaction_id }
                 }
                 Err(e) => {
                     object! { "error" => e }
@@ -811,8 +811,8 @@ impl Command for SendCommand {
                 .map(|(a, v, m)| (a.as_str(), *v, m.clone()))
                 .collect::<Vec<_>>();
             match lightclient.do_send(tos).await {
-                Ok(txid) => {
-                    object! { "txid" => txid }
+                Ok(transaction_id) => {
+                    object! { "txid" => transaction_id }
                 }
                 Err(e) => {
                     object! { "error" => e }

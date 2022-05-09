@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::compact_formats::compact_tx_streamer_client::CompactTxStreamerClient;
+use crate::compact_formats::compact_transaction_streamer_client::CompactTransactionStreamerClient;
 use crate::compact_formats::{
     BlockId, BlockRange, ChainSpec, CompactBlock, Empty, LightdInfo, PriceRequest, PriceResponse, RawTransaction,
-    TransparentAddressBlockFilter, TreeState, TxFilter,
+    TransactionFilter, TransparentAddressBlockFilter, TreeState,
 };
 use futures::future::join_all;
 use futures::stream::FuturesUnordered;
@@ -33,7 +33,7 @@ impl GrpcConnector {
         Self { uri }
     }
 
-    pub(crate) async fn get_client(&self) -> Result<CompactTxStreamerClient<Channel>, Error> {
+    pub(crate) async fn get_client(&self) -> Result<CompactTransactionStreamerClient<Channel>, Error> {
         let channel = if self.uri.scheme_str() == Some("http") {
             //println!("http");
             Channel::builder(self.uri.clone()).connect().await?
@@ -57,7 +57,7 @@ impl GrpcConnector {
             Channel::builder(self.uri.clone()).tls_config(tls)?.connect().await?
         };
 
-        Ok(CompactTxStreamerClient::new(channel))
+        Ok(CompactTransactionStreamerClient::new(channel))
     }
 
     pub async fn start_saplingtree_fetcher(
@@ -66,22 +66,22 @@ impl GrpcConnector {
         JoinHandle<()>,
         UnboundedSender<(u64, oneshot::Sender<Result<TreeState, String>>)>,
     ) {
-        let (tx, mut rx) = unbounded_channel::<(u64, oneshot::Sender<Result<TreeState, String>>)>();
+        let (transmitter, mut receiver) = unbounded_channel::<(u64, oneshot::Sender<Result<TreeState, String>>)>();
         let uri = self.uri.clone();
 
         let h = tokio::spawn(async move {
             let uri = uri.clone();
-            while let Some((height, result_tx)) = rx.recv().await {
-                result_tx
+            while let Some((height, result_transmitter)) = receiver.recv().await {
+                result_transmitter
                     .send(Self::get_sapling_tree(uri.clone(), height).await)
                     .unwrap()
             }
         });
 
-        (h, tx)
+        (h, transmitter)
     }
 
-    pub async fn start_taddr_txn_fetcher(
+    pub async fn start_taddr_transaction_fetcher(
         &self,
     ) -> (
         JoinHandle<()>,
@@ -90,7 +90,7 @@ impl GrpcConnector {
             oneshot::Sender<Vec<UnboundedReceiver<Result<RawTransaction, String>>>>,
         )>,
     ) {
-        let (tx, rx) = oneshot::channel::<(
+        let (transmitter, receiver) = oneshot::channel::<(
             (Vec<String>, u64, u64),
             oneshot::Sender<Vec<UnboundedReceiver<Result<RawTransaction, String>>>>,
         )>();
@@ -98,49 +98,51 @@ impl GrpcConnector {
 
         let h = tokio::spawn(async move {
             let uri = uri.clone();
-            if let Ok(((taddrs, start_height, end_height), result_tx)) = rx.await {
-                let mut tx_rs = vec![];
-                let mut tx_rs_workers = vec![];
+            if let Ok(((taddrs, start_height, end_height), result_transmitter)) = receiver.await {
+                let mut transaction_receivers = vec![];
+                let mut transaction_receivers_workers = vec![];
 
                 // Create a stream for every t-addr
                 for taddr in taddrs {
-                    let (tx_s, tx_r) = unbounded_channel();
-                    tx_rs.push(tx_r);
-                    tx_rs_workers.push(tokio::spawn(Self::get_taddr_txns(
+                    let (transaction_s, transaction_receiver) = unbounded_channel();
+                    transaction_receivers.push(transaction_receiver);
+                    transaction_receivers_workers.push(tokio::spawn(Self::get_taddr_transactions(
                         uri.clone(),
                         taddr,
                         start_height,
                         end_height,
-                        tx_s,
+                        transaction_s,
                     )));
                 }
 
                 // Dispatch a set of recievers
-                result_tx.send(tx_rs).unwrap();
+                result_transmitter.send(transaction_receivers).unwrap();
 
                 // // Wait for all the t-addr transactions to be fetched from LightwalletD and sent to the h1 handle.
-                join_all(tx_rs_workers).await;
+                join_all(transaction_receivers_workers).await;
             }
         });
 
-        (h, tx)
+        (h, transmitter)
     }
 
-    pub async fn start_fulltx_fetcher(
+    pub async fn start_full_transaction_fetcher(
         &self,
     ) -> (
         JoinHandle<()>,
         UnboundedSender<(TxId, oneshot::Sender<Result<Transaction, String>>)>,
     ) {
-        let (tx, mut rx) = unbounded_channel::<(TxId, oneshot::Sender<Result<Transaction, String>>)>();
+        let (transmitter, mut receiver) = unbounded_channel::<(TxId, oneshot::Sender<Result<Transaction, String>>)>();
         let uri = self.uri.clone();
 
         let h = tokio::spawn(async move {
             let mut workers = FuturesUnordered::new();
-            while let Some((txid, result_tx)) = rx.recv().await {
+            while let Some((transaction_id, result_transmitter)) = receiver.recv().await {
                 let uri = uri.clone();
                 workers.push(tokio::spawn(async move {
-                    result_tx.send(Self::get_full_tx(uri.clone(), &txid).await).unwrap()
+                    result_transmitter
+                        .send(Self::get_full_transaction(uri.clone(), &transaction_id).await)
+                        .unwrap()
                 }));
 
                 // Do only 16 API calls in parallel, otherwise it might overflow OS's limit of
@@ -153,14 +155,14 @@ impl GrpcConnector {
             }
         });
 
-        (h, tx)
+        (h, transmitter)
     }
 
     pub async fn get_block_range(
         &self,
         start_height: u64,
         end_height: u64,
-        receivers: &[UnboundedSender<CompactBlock>; 2],
+        senders: &[UnboundedSender<CompactBlock>; 2],
     ) -> Result<(), String> {
         let mut client = self.get_client().await.map_err(|e| format!("{}", e))?;
 
@@ -185,22 +187,22 @@ impl GrpcConnector {
             .into_inner();
 
         while let Some(block) = response.message().await.map_err(|e| format!("{}", e))? {
-            receivers[0].send(block.clone()).map_err(|e| format!("{}", e))?;
-            receivers[1].send(block).map_err(|e| format!("{}", e))?;
+            senders[0].send(block.clone()).map_err(|e| format!("{}", e))?;
+            senders[1].send(block).map_err(|e| format!("{}", e))?;
         }
 
         Ok(())
     }
 
-    async fn get_full_tx(uri: http::Uri, txid: &TxId) -> Result<Transaction, String> {
+    async fn get_full_transaction(uri: http::Uri, transaction_id: &TxId) -> Result<Transaction, String> {
         let client = Arc::new(GrpcConnector::new(uri));
-        let request = Request::new(TxFilter {
+        let request = Request::new(TransactionFilter {
             block: None,
             index: 0,
-            hash: txid.0.to_vec(),
+            hash: transaction_id.0.to_vec(),
         });
 
-        // log::info!("Full fetching {}", txid);
+        // log::info!("Full fetching {}", transaction_id);
 
         let mut client = client
             .get_client()
@@ -212,12 +214,12 @@ impl GrpcConnector {
         Transaction::read(&response.into_inner().data[..]).map_err(|e| format!("Error parsing Transaction: {}", e))
     }
 
-    async fn get_taddr_txns(
+    async fn get_taddr_transactions(
         uri: http::Uri,
         taddr: String,
         start_height: u64,
         end_height: u64,
-        txns_sender: UnboundedSender<Result<RawTransaction, String>>,
+        transactions_sender: UnboundedSender<Result<RawTransaction, String>>,
     ) -> Result<(), String> {
         let client = Arc::new(GrpcConnector::new(uri));
 
@@ -248,13 +250,16 @@ impl GrpcConnector {
             .await
             .map_err(|e| format!("Error getting client: {:?}", e))?;
 
-        let maybe_response = match client.get_taddress_txids(request).await {
+        let maybe_response = match client.get_taddress_transaction_ids(request).await {
             Ok(r) => r,
             Err(e) => {
                 if e.code() == tonic::Code::Unimplemented {
                     // Try the old, legacy API
                     let request = Request::new(args);
-                    client.get_address_txids(request).await.map_err(|e| format!("{}", e))?
+                    client
+                        .get_address_transaction_ids(request)
+                        .await
+                        .map_err(|e| format!("{}", e))?
                 } else {
                     return Err(format!("{}", e));
                 }
@@ -263,8 +268,8 @@ impl GrpcConnector {
 
         let mut response = maybe_response.into_inner();
 
-        while let Some(tx) = response.message().await.map_err(|e| format!("{}", e))? {
-            txns_sender.send(Ok(tx)).unwrap();
+        while let Some(transaction) = response.message().await.map_err(|e| format!("{}", e))? {
+            transactions_sender.send(Ok(transaction)).unwrap();
         }
 
         Ok(())
@@ -287,7 +292,10 @@ impl GrpcConnector {
         Ok(response.into_inner())
     }
 
-    pub async fn monitor_mempool(uri: http::Uri, mempool_tx: UnboundedSender<RawTransaction>) -> Result<(), String> {
+    pub async fn monitor_mempool(
+        uri: http::Uri,
+        mempool_transmitter: UnboundedSender<RawTransaction>,
+    ) -> Result<(), String> {
         let client = Arc::new(GrpcConnector::new(uri));
 
         let mut client = client
@@ -302,8 +310,8 @@ impl GrpcConnector {
             .await
             .map_err(|e| format!("{}", e))?
             .into_inner();
-        while let Some(rtx) = response.message().await.map_err(|e| format!("{}", e))? {
-            mempool_tx.send(rtx).map_err(|e| format!("{}", e))?;
+        while let Some(r_transmitter) = response.message().await.map_err(|e| format!("{}", e))? {
+            mempool_transmitter.send(r_transmitter).map_err(|e| format!("{}", e))?;
         }
 
         Ok(())
@@ -346,7 +354,7 @@ impl GrpcConnector {
 
     pub async fn get_historical_zec_prices(
         uri: http::Uri,
-        txids: Vec<(TxId, u64)>,
+        transaction_ids: Vec<(TxId, u64)>,
         currency: String,
     ) -> Result<HashMap<TxId, Option<f64>>, String> {
         let client = Arc::new(GrpcConnector::new(uri));
@@ -358,7 +366,7 @@ impl GrpcConnector {
         let mut prices = HashMap::new();
         let mut error_count: u32 = 0;
 
-        for (txid, ts) in txids {
+        for (transaction_id, ts) in transaction_ids {
             if error_count < 10 {
                 let r = Request::new(PriceRequest {
                     timestamp: ts,
@@ -367,7 +375,7 @@ impl GrpcConnector {
                 match client.get_zec_price(r).await {
                     Ok(response) => {
                         let price_response = response.into_inner();
-                        prices.insert(txid, Some(price_response.price));
+                        prices.insert(transaction_id, Some(price_response.price));
                     }
                     Err(e) => {
                         // If the server doesn't support this, bail
@@ -379,12 +387,12 @@ impl GrpcConnector {
                         // and will be retried anyway
                         warn!("Ignoring grpc error: {}", e);
                         error_count += 1;
-                        prices.insert(txid, None);
+                        prices.insert(transaction_id, None);
                     }
                 }
             } else {
                 // If there are too many errors, don't bother querying the server, just return none
-                prices.insert(txid, None);
+                prices.insert(transaction_id, None);
             }
         }
 
@@ -409,7 +417,7 @@ impl GrpcConnector {
         Ok(response.into_inner())
     }
 
-    pub async fn send_transaction(uri: http::Uri, tx_bytes: Box<[u8]>) -> Result<String, String> {
+    pub async fn send_transaction(uri: http::Uri, transaction_bytes: Box<[u8]>) -> Result<String, String> {
         let client = Arc::new(GrpcConnector::new(uri));
         let mut client = client
             .get_client()
@@ -417,7 +425,7 @@ impl GrpcConnector {
             .map_err(|e| format!("Error getting client: {:?}", e))?;
 
         let request = Request::new(RawTransaction {
-            data: tx_bytes.to_vec(),
+            data: transaction_bytes.to_vec(),
             height: 0,
         });
 
@@ -428,12 +436,12 @@ impl GrpcConnector {
 
         let sendresponse = response.into_inner();
         if sendresponse.error_code == 0 {
-            let mut txid = sendresponse.error_message;
-            if txid.starts_with("\"") && txid.ends_with("\"") {
-                txid = txid[1..txid.len() - 1].to_string();
+            let mut transaction_id = sendresponse.error_message;
+            if transaction_id.starts_with("\"") && transaction_id.ends_with("\"") {
+                transaction_id = transaction_id[1..transaction_id.len() - 1].to_string();
             }
 
-            Ok(txid)
+            Ok(transaction_id)
         } else {
             Err(format!("Error: {:?}", sendresponse))
         }

@@ -1,5 +1,5 @@
 use crate::{
-    compact_formats::{CompactBlock, CompactTx, TreeState},
+    compact_formats::{CompactBlock, CompactTransaction, TreeState},
     grpc_connector::GrpcConnector,
     lightclient::{
         checkpoints::get_all_main_checkpoints,
@@ -7,7 +7,7 @@ use crate::{
     },
     lightwallet::{
         data::{BlockData, WalletTx, WitnessCache},
-        wallet_txns::WalletTxns,
+        wallet_transactions::WalletTxns,
     },
 };
 
@@ -105,7 +105,7 @@ impl BlockAndWitnessData {
         }
     }
 
-    pub async fn get_ctx_for_nf_at_height(&self, nullifier: &Nullifier, height: u64) -> (CompactTx, u32) {
+    pub async fn get_ctx_for_nf_at_height(&self, nullifier: &Nullifier, height: u64) -> (CompactTransaction, u32) {
         self.wait_for_block(height).await;
 
         let cb = {
@@ -116,10 +116,10 @@ impl BlockAndWitnessData {
             bd.cb()
         };
 
-        for ctx in &cb.vtx {
-            for cs in &ctx.spends {
+        for compact_transaction in &cb.v_transaction {
+            for cs in &compact_transaction.spends {
                 if cs.nf == nullifier.to_vec() {
-                    return (ctx.clone(), cb.time);
+                    return (compact_transaction.clone(), cb.time);
                 }
             }
         }
@@ -224,8 +224,8 @@ impl BlockAndWitnessData {
 
                         for i in (end_pos..start_pos + 1).rev() {
                             let cb = &blocks.get(i as usize).unwrap().cb();
-                            for ctx in &cb.vtx {
-                                for co in &ctx.outputs {
+                            for compact_transaction in &cb.v_transaction {
+                                for co in &compact_transaction.outputs {
                                     let node = Node::new(co.cmu().unwrap().into());
                                     tree.append(node).unwrap();
                                 }
@@ -256,11 +256,11 @@ impl BlockAndWitnessData {
         return (true, heighest_tree);
     }
 
-    // Invalidate the block (and wallet txns associated with it) at the given block height
+    // Invalidate the block (and wallet transactions associated with it) at the given block height
     pub async fn invalidate_block(
         reorg_height: u64,
         existing_blocks: Arc<RwLock<Vec<BlockData>>>,
-        wallet_txns: Arc<RwLock<WalletTxns>>,
+        wallet_transactions: Arc<RwLock<WalletTxns>>,
     ) {
         // First, pop the first block (which is the top block) in the existing_blocks.
         let top_wallet_block = existing_blocks.write().await.drain(0..1).next().unwrap();
@@ -268,8 +268,8 @@ impl BlockAndWitnessData {
             panic!("Wrong block reorg'd");
         }
 
-        // Remove all wallet txns at the height
-        wallet_txns.write().await.remove_txns_at_height(reorg_height);
+        // Remove all wallet transactions at the height
+        wallet_transactions.write().await.remove_txns_at_height(reorg_height);
     }
 
     /// Start a new sync where we ingest all the blocks
@@ -277,14 +277,14 @@ impl BlockAndWitnessData {
         &self,
         start_block: u64,
         end_block: u64,
-        wallet_txns: Arc<RwLock<WalletTxns>>,
-        reorg_tx: UnboundedSender<Option<u64>>,
+        wallet_transactions: Arc<RwLock<WalletTxns>>,
+        reorg_transmitter: UnboundedSender<Option<u64>>,
     ) -> (JoinHandle<Result<u64, String>>, UnboundedSender<CompactBlock>) {
         //info!("Starting node and witness sync");
         let batch_size = self.batch_size;
 
         // Create a new channel where we'll receive the blocks
-        let (tx, mut rx) = mpsc::unbounded_channel::<CompactBlock>();
+        let (transmitter, mut receiver) = mpsc::unbounded_channel::<CompactBlock>();
 
         let blocks = self.blocks.clone();
         let existing_blocks = self.existing_blocks.clone();
@@ -306,7 +306,7 @@ impl BlockAndWitnessData {
             // Reorg stuff
             let mut last_block_expecting = end_block;
 
-            while let Some(cb) = rx.recv().await {
+            while let Some(cb) = receiver.recv().await {
                 // We'll process 25_000 blocks at a time.
                 if cb.height % batch_size == 0 {
                     if !blks.is_empty() {
@@ -334,12 +334,13 @@ impl BlockAndWitnessData {
                         }
                     };
 
-                    // If there was a reorg, then we need to invalidate the block and its associated txns
+                    // If there was a reorg, then we need to invalidate the block and its associated transactions
                     if let Some(reorg_height) = reorg_block {
-                        Self::invalidate_block(reorg_height, existing_blocks.clone(), wallet_txns.clone()).await;
+                        Self::invalidate_block(reorg_height, existing_blocks.clone(), wallet_transactions.clone())
+                            .await;
                         last_block_expecting = reorg_height;
                     }
-                    reorg_tx.send(reorg_block).unwrap();
+                    reorg_transmitter.send(reorg_block).unwrap();
                 }
 
                 earliest_block_height = cb.height;
@@ -364,7 +365,7 @@ impl BlockAndWitnessData {
             return Ok(earliest_block);
         });
 
-        return (h, tx);
+        return (h, transmitter);
     }
 
     async fn wait_for_first_block(&self) -> u64 {
@@ -404,8 +405,8 @@ impl BlockAndWitnessData {
 
             for i in (0..pos + 1).rev() {
                 let cb = &blocks.get(i as usize).unwrap().cb();
-                for ctx in &cb.vtx {
-                    for cs in &ctx.spends {
+                for compact_transaction in &cb.v_transaction {
+                    for cs in &compact_transaction.spends {
                         if cs.nf == nf {
                             return Some(cb.height);
                         }
@@ -432,7 +433,7 @@ impl BlockAndWitnessData {
         &self,
         uri: Uri,
         height: BlockHeight,
-        tx_num: usize,
+        transaction_num: usize,
         output_num: usize,
     ) -> Result<IncrementalWitness<Node>, String> {
         // Get the previous block's height, because that block's sapling tree is the tree state at the start
@@ -468,12 +469,12 @@ impl BlockAndWitnessData {
         };
 
         // Go over all the outputs. Remember that all the numbers are inclusive, i.e., we have to scan upto and including
-        // block_height, tx_num and output_num
-        for (t_num, ctx) in cb.vtx.iter().enumerate() {
-            for (o_num, co) in ctx.outputs.iter().enumerate() {
+        // block_height, transaction_num and output_num
+        for (t_num, compact_transaction) in cb.v_transaction.iter().enumerate() {
+            for (o_num, co) in compact_transaction.outputs.iter().enumerate() {
                 let node = Node::new(co.cmu().unwrap().into());
                 tree.append(node).unwrap();
-                if t_num == tx_num && o_num == output_num {
+                if t_num == transaction_num && o_num == output_num {
                     return Ok(IncrementalWitness::from_tree(&tree));
                 }
             }
@@ -505,8 +506,8 @@ impl BlockAndWitnessData {
 
             for i in (0..pos + 1).rev() {
                 let cb = &blocks.get(i as usize).unwrap().cb();
-                for ctx in &cb.vtx {
-                    for co in &ctx.outputs {
+                for compact_transaction in &cb.v_transaction {
+                    for co in &compact_transaction.outputs {
                         let node = Node::new(co.cmu().unwrap().into());
                         w.append(node).unwrap();
                     }
@@ -532,7 +533,7 @@ impl BlockAndWitnessData {
     pub(crate) async fn update_witness_after_pos(
         &self,
         height: &BlockHeight,
-        txid: &TxId,
+        transaction_id: &TxId,
         output_num: u32,
         witnesses: WitnessCache,
     ) -> WitnessCache {
@@ -547,31 +548,31 @@ impl BlockAndWitnessData {
             let blocks = self.blocks.read().await;
             let pos = blocks.first().unwrap().height - height;
 
-            let mut txid_found = false;
+            let mut transaction_id_found = false;
             let mut output_found = false;
 
             let cb = &blocks.get(pos as usize).unwrap().cb();
-            for ctx in &cb.vtx {
-                if !txid_found && WalletTx::new_txid(&ctx.hash) == *txid {
-                    txid_found = true;
+            for compact_transaction in &cb.v_transaction {
+                if !transaction_id_found && WalletTx::new_txid(&compact_transaction.hash) == *transaction_id {
+                    transaction_id_found = true;
                 }
-                for j in 0..ctx.outputs.len() as u32 {
-                    // If we've already passed the txid and output_num, stream the results
-                    if txid_found && output_found {
-                        let co = ctx.outputs.get(j as usize).unwrap();
+                for j in 0..compact_transaction.outputs.len() as u32 {
+                    // If we've already passed the transaction id and output_num, stream the results
+                    if transaction_id_found && output_found {
+                        let co = compact_transaction.outputs.get(j as usize).unwrap();
                         let node = Node::new(co.cmu().unwrap().into());
                         w.append(node).unwrap();
                     }
 
-                    // Mark as found if we reach the txid and output_num. Starting with the next output,
+                    // Mark as found if we reach the transaction id and output_num. Starting with the next output,
                     // we'll stream all the data to the requester
-                    if !output_found && txid_found && j == output_num {
+                    if !output_found && transaction_id_found && j == output_num {
                         output_found = true;
                     }
                 }
             }
 
-            if !txid_found || !output_found {
+            if !transaction_id_found || !output_found {
                 panic!("Txid or output not found");
             }
         }
@@ -588,7 +589,7 @@ mod test {
     use std::sync::Arc;
 
     use crate::blaze::sync_status::SyncStatus;
-    use crate::lightwallet::wallet_txns::WalletTxns;
+    use crate::lightwallet::wallet_transactions::WalletTxns;
     use crate::{
         blaze::test_utils::{FakeCompactBlock, FakeCompactBlockList},
         lightclient::lightclient_config::LightClientConfig,
@@ -656,14 +657,14 @@ mod test {
         let mut nw = BlockAndWitnessData::new(&config, sync_status);
         nw.setup_sync(vec![], None).await;
 
-        let (reorg_tx, mut reorg_rx) = unbounded_channel();
+        let (reorg_transmitter, mut reorg_receiver) = unbounded_channel();
 
         let (h, cb_sender) = nw
             .start(
                 start_block,
                 end_block,
                 Arc::new(RwLock::new(WalletTxns::new())),
-                reorg_tx,
+                reorg_transmitter,
             )
             .await;
 
@@ -673,7 +674,7 @@ mod test {
                     .send(block.cb())
                     .map_err(|e| format!("Couldn't send block: {}", e))?;
             }
-            if let Some(Some(_h)) = reorg_rx.recv().await {
+            if let Some(Some(_h)) = reorg_receiver.recv().await {
                 return Err(format!("Should not have requested a reorg!"));
             }
             Ok(())
@@ -708,14 +709,14 @@ mod test {
         let mut nw = BlockAndWitnessData::new_with_batchsize(&config, 25);
         nw.setup_sync(existing_blocks, None).await;
 
-        let (reorg_tx, mut reorg_rx) = unbounded_channel();
+        let (reorg_transmitter, mut reorg_receiver) = unbounded_channel();
 
         let (h, cb_sender) = nw
             .start(
                 start_block,
                 end_block,
                 Arc::new(RwLock::new(WalletTxns::new())),
-                reorg_tx,
+                reorg_transmitter,
             )
             .await;
 
@@ -725,7 +726,7 @@ mod test {
                     .send(block.cb())
                     .map_err(|e| format!("Couldn't send block: {}", e))?;
             }
-            if let Some(Some(_h)) = reorg_rx.recv().await {
+            if let Some(Some(_h)) = reorg_receiver.recv().await {
                 return Err(format!("Should not have requested a reorg!"));
             }
             Ok(())
@@ -805,14 +806,14 @@ mod test {
         let mut nw = BlockAndWitnessData::new(&config, sync_status);
         nw.setup_sync(existing_blocks, None).await;
 
-        let (reorg_tx, mut reorg_rx) = unbounded_channel();
+        let (reorg_transmitter, mut reorg_receiver) = unbounded_channel();
 
         let (h, cb_sender) = nw
             .start(
                 start_block,
                 end_block,
                 Arc::new(RwLock::new(WalletTxns::new())),
-                reorg_tx,
+                reorg_transmitter,
             )
             .await;
 
@@ -828,7 +829,7 @@ mod test {
             let mut expecting_height = 50;
             let mut sent_ctr = 0;
 
-            while let Some(Some(h)) = reorg_rx.recv().await {
+            while let Some(Some(h)) = reorg_receiver.recv().await {
                 assert_eq!(h, expecting_height);
 
                 expecting_height -= 1;

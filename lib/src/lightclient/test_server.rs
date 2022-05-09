@@ -1,10 +1,11 @@
 use crate::blaze::test_utils::{tree_to_string, FakeCompactBlockList};
-use crate::compact_formats::compact_tx_streamer_server::CompactTxStreamer;
-use crate::compact_formats::compact_tx_streamer_server::CompactTxStreamerServer;
+use crate::compact_formats::compact_transaction_streamer_server::CompactTransactionStreamer;
+use crate::compact_formats::compact_transaction_streamer_server::CompactTransactionStreamerServer;
 use crate::compact_formats::{
-    Address, AddressList, Balance, BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx, Duration, Empty, Exclude,
-    GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList, LightdInfo, PingResponse, PriceRequest,
-    PriceResponse, RawTransaction, SendResponse, TransparentAddressBlockFilter, TreeState, TxFilter,
+    Address, AddressList, Balance, BlockId, BlockRange, ChainSpec, CompactBlock, CompactTransaction, Duration, Empty,
+    Exclude, GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList, LightdInfo, PingResponse,
+    PriceRequest, PriceResponse, RawTransaction, SendResponse, TransactionFilter, TransparentAddressBlockFilter,
+    TreeState,
 };
 use crate::lightwallet::data::WalletTx;
 use crate::lightwallet::now;
@@ -40,8 +41,8 @@ pub async fn create_test_server(
     oneshot::Sender<()>,
     JoinHandle<()>,
 ) {
-    let (ready_tx, ready_rx) = oneshot::channel();
-    let (stop_tx, stop_rx) = oneshot::channel();
+    let (ready_transmitter, ready_receiver) = oneshot::channel();
+    let (stop_transmitter, stop_receiver) = oneshot::channel();
 
     let port = portpicker::pick_unused_port().unwrap();
     let server_port = format!("127.0.0.1:{}", port);
@@ -57,16 +58,16 @@ pub async fn create_test_server(
 
     let (service, data) = TestGRPCService::new(config.clone());
 
-    let (data_dir_tx, data_dir_rx) = oneshot::channel();
+    let (data_dir_transmitter, data_dir_receiver) = oneshot::channel();
 
     let h1 = tokio::spawn(async move {
-        let svc = CompactTxStreamerServer::new(service);
+        let svc = CompactTransactionStreamerServer::new(service);
 
         // We create the temp dir here, so that we can clean it up after the test runs
         let temp_dir = TempDir::new(&format!("test{}", port).as_str()).unwrap();
 
         // Send the path name. Do into_path() to preserve the temp directory
-        data_dir_tx
+        data_dir_transmitter
             .send(
                 temp_dir
                     .into_path()
@@ -78,7 +79,7 @@ pub async fn create_test_server(
             )
             .unwrap();
 
-        ready_tx.send(()).unwrap();
+        ready_transmitter.send(()).unwrap();
 
         if https {
             use std::{fs::File, io::BufReader};
@@ -115,18 +116,18 @@ pub async fn create_test_server(
             Server::builder()
         }
         .add_service(svc)
-        .serve_with_shutdown(addr, stop_rx.map(drop))
+        .serve_with_shutdown(addr, stop_receiver.map(drop))
         .await
         .unwrap();
 
         println!("Server stopped");
     });
 
-    let data_dir = data_dir_rx.await.unwrap();
+    let data_dir = data_dir_receiver.await.unwrap();
     println!("GRPC Server listening on: {}. With datadir {}", addr, data_dir);
     config.data_dir = Some(data_dir);
 
-    (data, config, ready_rx, stop_tx, h1)
+    (data, config, ready_receiver, stop_transmitter, h1)
 }
 
 pub async fn mine_random_blocks(
@@ -149,14 +150,14 @@ pub async fn mine_pending_blocks(
     let cbs = fcbl.into_compact_blocks();
 
     data.write().await.add_blocks(cbs.clone());
-    let mut v = fcbl.into_txns();
+    let mut v = fcbl.into_transactions();
 
     // Add all the t-addr spend's t-addresses into the maps, so the test grpc server
-    // knows to serve this tx when the txns for this particular taddr are requested.
+    // knows to serve this transaction when the transactions for this particular taddr are requested.
     for (t, _h, taddrs) in v.iter_mut() {
         for vin in &t.vin {
-            let prev_txid = WalletTx::new_txid(&vin.prevout.hash().to_vec());
-            if let Some(wtx) = lc.wallet.txns.read().await.current.get(&prev_txid) {
+            let prev_transaction_id = WalletTx::new_txid(&vin.prevout.hash().to_vec());
+            if let Some(wtx) = lc.wallet.transactions.read().await.current.get(&prev_transaction_id) {
                 if let Some(utxo) = wtx.utxos.iter().find(|u| u.output_index as u32 == vin.prevout.n()) {
                     if !taddrs.contains(&utxo.address) {
                         taddrs.push(utxo.address.clone());
@@ -166,7 +167,7 @@ pub async fn mine_pending_blocks(
         }
     }
 
-    data.write().await.add_txns(v);
+    data.write().await.add_transactions(v);
 
     lc.do_sync(true).await.unwrap();
 }
@@ -174,8 +175,8 @@ pub async fn mine_pending_blocks(
 #[derive(Debug)]
 pub struct TestServerData {
     pub blocks: Vec<CompactBlock>,
-    pub txns: HashMap<TxId, (Vec<String>, RawTransaction)>,
-    pub sent_txns: Vec<RawTransaction>,
+    pub transactions: HashMap<TxId, (Vec<String>, RawTransaction)>,
+    pub sent_transactions: Vec<RawTransaction>,
     pub config: LightClientConfig,
     pub zec_price: f64,
     pub tree_states: Vec<(u64, String, String)>,
@@ -185,8 +186,8 @@ impl TestServerData {
     pub fn new(config: LightClientConfig) -> Self {
         let data = Self {
             blocks: vec![],
-            txns: HashMap::new(),
-            sent_txns: vec![],
+            transactions: HashMap::new(),
+            sent_transactions: vec![],
             config,
             zec_price: 140.5,
             tree_states: vec![],
@@ -195,14 +196,14 @@ impl TestServerData {
         data
     }
 
-    pub fn add_txns(&mut self, txns: Vec<(Transaction, u64, Vec<String>)>) {
-        for (tx, height, taddrs) in txns {
-            let mut rtx = RawTransaction::default();
+    pub fn add_transactions(&mut self, transactions: Vec<(Transaction, u64, Vec<String>)>) {
+        for (transaction, height, taddrs) in transactions {
+            let mut raw_transaction = RawTransaction::default();
             let mut data = vec![];
-            tx.write(&mut data).unwrap();
-            rtx.data = data;
-            rtx.height = height;
-            self.txns.insert(tx.txid(), (taddrs, rtx));
+            transaction.write(&mut data).unwrap();
+            raw_transaction.data = data;
+            raw_transaction.height = height;
+            self.transactions.insert(transaction.txid(), (taddrs, raw_transaction));
         }
     }
 
@@ -257,7 +258,7 @@ impl TestGRPCService {
 }
 
 #[tonic::async_trait]
-impl CompactTxStreamer for TestGRPCService {
+impl CompactTransactionStreamer for TestGRPCService {
     async fn get_latest_block(&self, _request: Request<ChainSpec>) -> Result<Response<BlockId>, Status> {
         Self::wait_random().await;
 
@@ -292,7 +293,7 @@ impl CompactTxStreamer for TestGRPCService {
 
         let rev = start < end;
 
-        let (tx, rx) = mpsc::channel(self.data.read().await.blocks.len());
+        let (transmitter, receiver) = mpsc::channel(self.data.read().await.blocks.len());
 
         let blocks = self.data.read().await.blocks.clone();
         tokio::spawn(async move {
@@ -304,12 +305,12 @@ impl CompactTxStreamer for TestGRPCService {
             for b in iter {
                 if b.height >= min && b.height <= max {
                     Self::wait_random().await;
-                    tx.send(Ok(b)).await.unwrap();
+                    transmitter.send(Ok(b)).await.unwrap();
                 }
             }
         });
 
-        Ok(Response::new(Box::pin(ReceiverStream::new(rx))))
+        Ok(Response::new(Box::pin(ReceiverStream::new(receiver))))
     }
 
     async fn get_zec_price(&self, _request: Request<PriceRequest>) -> Result<Response<PriceResponse>, Status> {
@@ -327,73 +328,76 @@ impl CompactTxStreamer for TestGRPCService {
         Ok(Response::new(res))
     }
 
-    async fn get_transaction(&self, request: Request<TxFilter>) -> Result<Response<RawTransaction>, Status> {
+    async fn get_transaction(&self, request: Request<TransactionFilter>) -> Result<Response<RawTransaction>, Status> {
         Self::wait_random().await;
 
-        let txid = WalletTx::new_txid(&request.into_inner().hash);
-        match self.data.read().await.txns.get(&txid) {
-            Some((_taddrs, tx)) => Ok(Response::new(tx.clone())),
-            None => Err(Status::invalid_argument(format!("Can't find txid {}", txid))),
+        let transaction_id = WalletTx::new_txid(&request.into_inner().hash);
+        match self.data.read().await.transactions.get(&transaction_id) {
+            Some((_taddrs, transaction)) => Ok(Response::new(transaction.clone())),
+            None => Err(Status::invalid_argument(format!("Can't find txid {}", transaction_id))),
         }
     }
 
     async fn send_transaction(&self, request: Request<RawTransaction>) -> Result<Response<SendResponse>, Status> {
-        let rtx = request.into_inner();
-        let txid = Transaction::read(&rtx.data[..]).unwrap().txid();
+        let raw_transaction = request.into_inner();
+        let transaction_id = Transaction::read(&raw_transaction.data[..]).unwrap().txid();
 
-        self.data.write().await.sent_txns.push(rtx);
+        self.data.write().await.sent_transactions.push(raw_transaction);
         Ok(Response::new(SendResponse {
-            error_message: txid.to_string(),
+            error_message: transaction_id.to_string(),
             error_code: 0,
         }))
     }
 
-    type GetTaddressTxidsStream = Pin<Box<dyn Stream<Item = Result<RawTransaction, Status>> + Send + Sync>>;
+    type GetTaddressTransactionIdsStream = Pin<Box<dyn Stream<Item = Result<RawTransaction, Status>> + Send + Sync>>;
 
-    async fn get_taddress_txids(
+    async fn get_taddress_transaction_ids(
         &self,
         request: Request<TransparentAddressBlockFilter>,
-    ) -> Result<Response<Self::GetTaddressTxidsStream>, Status> {
-        let buf_size = cmp::max(self.data.read().await.txns.len(), 1);
-        let (tx, rx) = mpsc::channel(buf_size);
+    ) -> Result<Response<Self::GetTaddressTransactionIdsStream>, Status> {
+        let buf_size = cmp::max(self.data.read().await.transactions.len(), 1);
+        let (transmitter, receiver) = mpsc::channel(buf_size);
 
         let request = request.into_inner();
         let taddr = request.address;
         let start_block = request.range.as_ref().unwrap().start.as_ref().unwrap().height;
         let end_block = request.range.as_ref().unwrap().end.as_ref().unwrap().height;
 
-        let txns = self.data.read().await.txns.clone();
+        let transactions = self.data.read().await.transactions.clone();
         tokio::spawn(async move {
-            let mut txns_to_send = txns
+            let mut transactions_to_send = transactions
                 .values()
-                .filter_map(|(taddrs, rtx)| {
-                    if taddrs.contains(&taddr) && rtx.height >= start_block && rtx.height <= end_block {
-                        Some(rtx.clone())
+                .filter_map(|(taddrs, raw_transaction)| {
+                    if taddrs.contains(&taddr)
+                        && raw_transaction.height >= start_block
+                        && raw_transaction.height <= end_block
+                    {
+                        Some(raw_transaction.clone())
                     } else {
                         None
                     }
                 })
                 .collect::<Vec<_>>();
 
-            txns_to_send.sort_by_key(|rtx| rtx.height);
+            transactions_to_send.sort_by_key(|raw_transaction| raw_transaction.height);
 
-            for rtx in txns_to_send {
+            for raw_transaction in transactions_to_send {
                 Self::wait_random().await;
 
-                tx.send(Ok(rtx)).await.unwrap();
+                transmitter.send(Ok(raw_transaction)).await.unwrap();
             }
         });
 
-        Ok(Response::new(Box::pin(ReceiverStream::new(rx))))
+        Ok(Response::new(Box::pin(ReceiverStream::new(receiver))))
     }
 
-    type GetAddressTxidsStream = Pin<Box<dyn Stream<Item = Result<RawTransaction, Status>> + Send + Sync>>;
+    type GetAddressTransactionIdsStream = Pin<Box<dyn Stream<Item = Result<RawTransaction, Status>> + Send + Sync>>;
 
-    async fn get_address_txids(
+    async fn get_address_transaction_ids(
         &self,
         request: Request<TransparentAddressBlockFilter>,
-    ) -> Result<Response<Self::GetAddressTxidsStream>, Status> {
-        self.get_taddress_txids(request).await
+    ) -> Result<Response<Self::GetAddressTransactionIdsStream>, Status> {
+        self.get_taddress_transaction_ids(request).await
     }
 
     async fn get_taddress_balance(&self, _request: Request<AddressList>) -> Result<Response<Balance>, Status> {
@@ -407,9 +411,12 @@ impl CompactTxStreamer for TestGRPCService {
         todo!()
     }
 
-    type GetMempoolTxStream = Pin<Box<dyn Stream<Item = Result<CompactTx, Status>> + Send + Sync>>;
+    type GetMempoolTransactionStream = Pin<Box<dyn Stream<Item = Result<CompactTransaction, Status>> + Send + Sync>>;
 
-    async fn get_mempool_tx(&self, _request: Request<Exclude>) -> Result<Response<Self::GetMempoolTxStream>, Status> {
+    async fn get_mempool_transaction(
+        &self,
+        _request: Request<Exclude>,
+    ) -> Result<Response<Self::GetMempoolTransactionStream>, Status> {
         todo!()
     }
 
@@ -457,8 +464,8 @@ impl CompactTxStreamer for TestGRPCService {
             .rev()
             .take_while(|cb| cb.height <= block.height)
             .fold(start_tree, |mut tree, cb| {
-                for tx in &cb.vtx {
-                    for co in &tx.outputs {
+                for transaction in &cb.v_transaction {
+                    for co in &transaction.outputs {
                         tree.append(Node::new(co.cmu().unwrap().into())).unwrap();
                     }
                 }
