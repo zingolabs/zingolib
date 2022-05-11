@@ -26,6 +26,8 @@ jobs:
         with:
           command: build
           args: --verbose --all
+      - name: Run keygen
+        run: ./keygen.sh
       - name: Run tests
         uses: actions-rs/cargo@v1
         with:
