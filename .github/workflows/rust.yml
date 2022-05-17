@@ -31,6 +31,8 @@ jobs:
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo  
+      - name: Debug step
+        run: /home/runner/.cargo/bin/cargo --version
       - name:                   Install Tarpaulin 
         uses:                   actions-rs/cargo@v1
         with:
