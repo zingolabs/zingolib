@@ -28,16 +28,16 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo  
-      - name: Debug step
-        run: /home/runner/.cargo/bin/cargo --version
       - name:                   Install Tarpaulin 
         uses:                   actions-rs/cargo@v1
         with:
           command:              install
-          args:                 cargo-tarpaulin --verbose
+          args:                 cargo-tarpaulin --verbose --force
       - name:                   Generate code coverage
         run: |
           cargo tarpaulin --verbose --all-features --workspace --timeout 300 --out Xml --avoid-cfg-tarpaulin
