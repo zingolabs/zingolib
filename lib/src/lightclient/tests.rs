@@ -24,10 +24,10 @@ use zcash_primitives::transaction::components::{OutputDescription, GROTH_PROOF_S
 use zcash_primitives::transaction::{Transaction, TransactionData};
 use zcash_primitives::zip32::{ExtendedFullViewingKey, ExtendedSpendingKey};
 
-use crate::blaze::fetch_full_tx::FetchFullTxns;
+use crate::blaze::fetch_full_transaction::FetchFullTxns;
 use crate::blaze::test_utils::{FakeCompactBlockList, FakeTransaction};
 
-use crate::compact_formats::{CompactOutput, CompactTx, Empty};
+use crate::compact_formats::{CompactOutput, CompactTransaction, Empty};
 use crate::lightclient::test_server::{create_test_server, mine_pending_blocks, mine_random_blocks};
 use crate::lightclient::LightClient;
 use crate::lightwallet::data::WalletTx;
@@ -137,11 +137,11 @@ fn new_wallet_from_vk() {
 }
 
 #[tokio::test]
-async fn basic_no_wallet_txns() {
+async fn basic_no_wallet_transactions() {
     for https in [true, false] {
-        let (data, config, ready_rx, stop_tx, h1) = create_test_server(https).await;
+        let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(https).await;
 
-        ready_rx.await.unwrap();
+        ready_receiver.await.unwrap();
 
         let uri = config.server.clone();
         let mut client = crate::grpc_connector::GrpcConnector::new(uri)
@@ -162,7 +162,7 @@ async fn basic_no_wallet_txns() {
         mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
         assert_eq!(lc.wallet.last_scanned_height().await, 10);
 
-        stop_tx.send(()).unwrap();
+        stop_transmitter.send(()).unwrap();
         h1.await.unwrap();
     }
 }
@@ -170,9 +170,9 @@ async fn basic_no_wallet_txns() {
 #[tokio::test]
 async fn z_incoming_z_outgoing() {
     for https in [true, false] {
-        let (data, config, ready_rx, stop_tx, h1) = create_test_server(https).await;
+        let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(https).await;
 
-        ready_rx.await.unwrap();
+        ready_receiver.await.unwrap();
 
         let lc = LightClient::test_new(&config, None, 0).await.unwrap();
         let mut fcbl = FakeCompactBlockList::new(0);
@@ -181,15 +181,15 @@ async fn z_incoming_z_outgoing() {
         mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
         assert_eq!(lc.wallet.last_scanned_height().await, 10);
 
-        // 2. Send an incoming tx to fill the wallet
+        // 2. Send an incoming transaction to fill the wallet
         let extfvk1 = lc.wallet.keys().read().await.get_all_extfvks()[0].clone();
         let value = 100_000;
-        let (tx, _height, _) = fcbl.add_tx_paying(&extfvk1, value);
+        let (transaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, value);
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
 
         assert_eq!(lc.wallet.last_scanned_height().await, 11);
 
-        // 3. Check the balance is correct, and we recieved the incoming tx from outside
+        // 3. Check the balance is correct, and we recieved the incoming transaction from outside
         let b = lc.do_balance().await;
         assert_eq!(b["zbalance"].as_u64().unwrap(), value);
         assert_eq!(b["unverified_zbalance"].as_u64().unwrap(), value);
@@ -207,7 +207,7 @@ async fn z_incoming_z_outgoing() {
             assert_eq!(list.len(), 1);
             let jv = list[0].clone();
 
-            assert_eq!(jv["txid"], tx.txid().to_string());
+            assert_eq!(jv["txid"], transaction.txid().to_string());
             assert_eq!(jv["amount"].as_u64().unwrap(), value);
             assert_eq!(jv["address"], lc.wallet.keys().read().await.get_all_zaddresses()[0]);
             assert_eq!(jv["block_height"].as_u64().unwrap(), 11);
@@ -225,38 +225,41 @@ async fn z_incoming_z_outgoing() {
         assert_eq!(b["z_addresses"][0]["spendable_zbalance"].as_u64().unwrap(), value);
         assert_eq!(b["z_addresses"][0]["unverified_zbalance"].as_u64().unwrap(), 0);
 
-        // 5. Send z-to-z tx to external z address with a memo
+        // 5. Send z-to-z transaction to external z address with a memo
         let sent_value = 2000;
         let outgoing_memo = "Outgoing Memo".to_string();
 
-        let sent_txid = lc
+        let sent_transaction_id = lc
             .test_do_send(vec![(EXT_ZADDR, sent_value, Some(outgoing_memo.clone()))])
             .await
             .unwrap();
 
-        // 6. Check the unconfirmed txn is present
+        // 6. Check the unconfirmed transaction is present
         // 6.1 Check notes
 
         let notes = lc.do_list_notes(true).await;
         // Has a new (unconfirmed) unspent note (the change)
         assert_eq!(notes["unspent_notes"].len(), 1);
-        assert_eq!(notes["unspent_notes"][0]["created_in_txid"], sent_txid);
+        assert_eq!(notes["unspent_notes"][0]["created_in_txid"], sent_transaction_id);
         assert_eq!(notes["unspent_notes"][0]["unconfirmed"].as_bool().unwrap(), true);
 
         assert_eq!(notes["spent_notes"].len(), 0);
         assert_eq!(notes["pending_notes"].len(), 1);
-        assert_eq!(notes["pending_notes"][0]["created_in_txid"], tx.txid().to_string());
-        assert_eq!(notes["pending_notes"][0]["unconfirmed_spent"], sent_txid);
+        assert_eq!(
+            notes["pending_notes"][0]["created_in_txid"],
+            transaction.txid().to_string()
+        );
+        assert_eq!(notes["pending_notes"][0]["unconfirmed_spent"], sent_transaction_id);
         assert_eq!(notes["pending_notes"][0]["spent"].is_null(), true);
         assert_eq!(notes["pending_notes"][0]["spent_at_height"].is_null(), true);
 
-        // Check txn list
+        // Check transaction list
         let list = lc.do_list_transactions(false).await;
 
         assert_eq!(list.len(), 2);
-        let jv = list.members().find(|jv| jv["txid"] == sent_txid).unwrap();
+        let jv = list.members().find(|jv| jv["txid"] == sent_transaction_id).unwrap();
 
-        assert_eq!(jv["txid"], sent_txid);
+        assert_eq!(jv["txid"], sent_transaction_id);
         assert_eq!(
             jv["amount"].as_i64().unwrap(),
             -(sent_value as i64 + i64::from(DEFAULT_FEE))
@@ -275,7 +278,7 @@ async fn z_incoming_z_outgoing() {
         let list = lc.do_list_transactions(false).await;
 
         assert_eq!(list.len(), 2);
-        let jv = list.members().find(|jv| jv["txid"] == sent_txid).unwrap();
+        let jv = list.members().find(|jv| jv["txid"] == sent_transaction_id).unwrap();
 
         assert_eq!(jv.contains("unconfirmed"), false);
         assert_eq!(jv["block_height"].as_u64().unwrap(), 17);
@@ -284,7 +287,7 @@ async fn z_incoming_z_outgoing() {
         let notes = lc.do_list_notes(true).await;
         assert_eq!(notes["unspent_notes"].len(), 1);
         assert_eq!(notes["unspent_notes"][0]["created_in_block"].as_u64().unwrap(), 17);
-        assert_eq!(notes["unspent_notes"][0]["created_in_txid"], sent_txid);
+        assert_eq!(notes["unspent_notes"][0]["created_in_txid"], sent_transaction_id);
         assert_eq!(
             notes["unspent_notes"][0]["value"].as_u64().unwrap(),
             value - sent_value - u64::from(DEFAULT_FEE)
@@ -297,21 +300,21 @@ async fn z_incoming_z_outgoing() {
         assert_eq!(notes["spent_notes"][0]["value"].as_u64().unwrap(), value);
         assert_eq!(notes["spent_notes"][0]["is_change"].as_bool().unwrap(), false);
         assert_eq!(notes["spent_notes"][0]["spendable"].as_bool().unwrap(), false); // Already spent
-        assert_eq!(notes["spent_notes"][0]["spent"], sent_txid);
+        assert_eq!(notes["spent_notes"][0]["spent"], sent_transaction_id);
         assert_eq!(notes["spent_notes"][0]["spent_at_height"].as_u64().unwrap(), 17);
 
         // Shutdown everything cleanly
-        stop_tx.send(()).unwrap();
+        stop_transmitter.send(()).unwrap();
         h1.await.unwrap();
     }
 }
 
 #[tokio::test]
-async fn multiple_incoming_same_tx() {
+async fn multiple_incoming_same_transaction() {
     for https in [true, false] {
-        let (data, config, ready_rx, stop_tx, h1) = create_test_server(https).await;
+        let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(https).await;
 
-        ready_rx.await.unwrap();
+        ready_receiver.await.unwrap();
 
         let lc = LightClient::test_new(&config, None, 0).await.unwrap();
         let mut fcbl = FakeCompactBlockList::new(0);
@@ -323,11 +326,11 @@ async fn multiple_incoming_same_tx() {
         mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
         assert_eq!(lc.wallet.last_scanned_height().await, 10);
 
-        // 2. Construct the Fake tx.
+        // 2. Construct the Fake transaction.
         let to = extfvk1.default_address().unwrap().1;
 
         // Create fake note for the account
-        let mut ctx = CompactTx::default();
+        let mut compact_transaction = CompactTransaction::default();
         let mut td = TransactionData::new();
 
         // Add 4 outputs
@@ -372,24 +375,24 @@ async fn multiple_incoming_same_tx() {
             cout.cmu = cmu;
             cout.epk = epk;
             cout.ciphertext = enc_ciphertext[..52].to_vec();
-            ctx.outputs.push(cout);
+            compact_transaction.outputs.push(cout);
 
             td.shielded_outputs.push(od);
         }
 
         td.binding_sig = Signature::read(&vec![0u8; 64][..]).ok();
-        let tx = td.freeze().unwrap();
-        ctx.hash = tx.txid().clone().0.to_vec();
+        let transaction = td.freeze().unwrap();
+        compact_transaction.hash = transaction.txid().clone().0.to_vec();
 
         // Add and mine the block
-        fcbl.txns.push((tx.clone(), fcbl.next_height, vec![]));
-        fcbl.add_empty_block().add_txs(vec![ctx]);
+        fcbl.transactions.push((transaction.clone(), fcbl.next_height, vec![]));
+        fcbl.add_empty_block().add_transactions(vec![compact_transaction]);
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
         assert_eq!(lc.wallet.last_scanned_height().await, 11);
 
         // 2. Check the notes - that we recieved 4 notes
         let notes = lc.do_list_notes(true).await;
-        let txns = lc.do_list_transactions(false).await;
+        let transactions = lc.do_list_transactions(false).await;
 
         if let JsonValue::Array(mut unspent_notes) = notes["unspent_notes"].clone() {
             unspent_notes.sort_by_cached_key(|j| j["value"].as_u64().unwrap());
@@ -407,26 +410,26 @@ async fn multiple_incoming_same_tx() {
             panic!("unspent notes not found");
         }
 
-        if let JsonValue::Array(mut sorted_txns) = txns.clone() {
-            sorted_txns.sort_by_cached_key(|t| t["amount"].as_u64().unwrap());
+        if let JsonValue::Array(mut sorted_transactions) = transactions.clone() {
+            sorted_transactions.sort_by_cached_key(|t| t["amount"].as_u64().unwrap());
 
             for i in 0..4 {
-                assert_eq!(sorted_txns[i]["txid"], tx.txid().to_string());
-                assert_eq!(sorted_txns[i]["block_height"].as_u64().unwrap(), 11);
+                assert_eq!(sorted_transactions[i]["txid"], transaction.txid().to_string());
+                assert_eq!(sorted_transactions[i]["block_height"].as_u64().unwrap(), 11);
                 assert_eq!(
-                    sorted_txns[i]["address"],
+                    sorted_transactions[i]["address"],
                     lc.wallet.keys().read().await.get_all_zaddresses()[0]
                 );
-                assert_eq!(sorted_txns[i]["amount"].as_u64().unwrap(), value + i as u64);
+                assert_eq!(sorted_transactions[i]["amount"].as_u64().unwrap(), value + i as u64);
             }
         } else {
-            panic!("txns is not array");
+            panic!("transactions is not array");
         }
 
-        // 3. Send a big tx, so all the value is spent
+        // 3. Send a big transaction, so all the value is spent
         let sent_value = value * 3 + u64::from(DEFAULT_FEE);
         mine_random_blocks(&mut fcbl, &data, &lc, 5).await; // make the funds spentable
-        let sent_txid = lc.test_do_send(vec![(EXT_ZADDR, sent_value, None)]).await.unwrap();
+        let sent_transaction_id = lc.test_do_send(vec![(EXT_ZADDR, sent_value, None)]).await.unwrap();
 
         // 4. Mine the sent transaction
         fcbl.add_pending_sends(&data).await;
@@ -434,23 +437,29 @@ async fn multiple_incoming_same_tx() {
 
         // 5. Check the notes - that we spent all 4 notes
         let notes = lc.do_list_notes(true).await;
-        let txns = lc.do_list_transactions(false).await;
+        let transactions = lc.do_list_transactions(false).await;
         for i in 0..4 {
-            assert_eq!(notes["spent_notes"][i]["spent"], sent_txid);
+            assert_eq!(notes["spent_notes"][i]["spent"], sent_transaction_id);
             assert_eq!(notes["spent_notes"][i]["spent_at_height"].as_u64().unwrap(), 17);
         }
-        assert_eq!(txns[4]["txid"], sent_txid);
-        assert_eq!(txns[4]["block_height"], 17);
+        assert_eq!(transactions[4]["txid"], sent_transaction_id);
+        assert_eq!(transactions[4]["block_height"], 17);
         assert_eq!(
-            txns[4]["amount"].as_i64().unwrap(),
+            transactions[4]["amount"].as_i64().unwrap(),
             -(sent_value as i64) - i64::from(DEFAULT_FEE)
         );
-        assert_eq!(txns[4]["outgoing_metadata"][0]["address"], EXT_ZADDR.to_string());
-        assert_eq!(txns[4]["outgoing_metadata"][0]["value"].as_u64().unwrap(), sent_value);
-        assert_eq!(txns[4]["outgoing_metadata"][0]["memo"].is_null(), true);
+        assert_eq!(
+            transactions[4]["outgoing_metadata"][0]["address"],
+            EXT_ZADDR.to_string()
+        );
+        assert_eq!(
+            transactions[4]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
+            sent_value
+        );
+        assert_eq!(transactions[4]["outgoing_metadata"][0]["memo"].is_null(), true);
 
         // Shutdown everything cleanly
-        stop_tx.send(()).unwrap();
+        stop_transmitter.send(()).unwrap();
         h1.await.unwrap();
     }
 }
@@ -458,9 +467,9 @@ async fn multiple_incoming_same_tx() {
 #[tokio::test]
 async fn z_incoming_multiz_outgoing() {
     for https in [true, false] {
-        let (data, config, ready_rx, stop_tx, h1) = create_test_server(https).await;
+        let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(https).await;
 
-        ready_rx.await.unwrap();
+        ready_receiver.await.unwrap();
 
         let lc = LightClient::test_new(&config, None, 0).await.unwrap();
         let mut fcbl = FakeCompactBlockList::new(0);
@@ -469,28 +478,28 @@ async fn z_incoming_multiz_outgoing() {
         mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
         assert_eq!(lc.wallet.last_scanned_height().await, 10);
 
-        // 2. Send an incoming tx to fill the wallet
+        // 2. Send an incoming transaction to fill the wallet
         let extfvk1 = lc.wallet.keys().read().await.get_all_extfvks()[0].clone();
         let value = 100_000;
-        let (_tx, _height, _) = fcbl.add_tx_paying(&extfvk1, value);
+        let (_transaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, value);
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
         mine_random_blocks(&mut fcbl, &data, &lc, 5).await;
 
-        // 3. send a txn to multiple addresses
+        // 3. send a transaction to multiple addresses
         let tos = vec![
             (EXT_ZADDR, 1, Some("ext1-1".to_string())),
             (EXT_ZADDR, 2, Some("ext1-2".to_string())),
             (EXT_ZADDR2, 20, Some("ext2-20".to_string())),
         ];
-        let sent_txid = lc.test_do_send(tos.clone()).await.unwrap();
+        let sent_transaction_id = lc.test_do_send(tos.clone()).await.unwrap();
         fcbl.add_pending_sends(&data).await;
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
 
-        // 4. Check the outgoing txn list
+        // 4. Check the outgoing transaction list
         let list = lc.do_list_transactions(false).await;
 
         assert_eq!(list[1]["block_height"].as_u64().unwrap(), 17);
-        assert_eq!(list[1]["txid"], sent_txid);
+        assert_eq!(list[1]["txid"], sent_transaction_id);
         assert_eq!(
             list[1]["amount"].as_i64().unwrap(),
             -i64::from(DEFAULT_FEE) - (tos.iter().map(|(_, a, _)| *a).sum::<u64>() as i64)
@@ -507,18 +516,18 @@ async fn z_incoming_multiz_outgoing() {
         }
 
         // Shutdown everything cleanly
-        stop_tx.send(()).unwrap();
+        stop_transmitter.send(()).unwrap();
         h1.await.unwrap();
     }
 }
 
 #[tokio::test]
 async fn z_to_z_scan_together() {
-    // Create an incoming tx, and then send that tx, and scan everything together, to make sure it works.
+    // Create an incoming transaction, and then send that transaction, and scan everything together, to make sure it works.
     for https in [true, false] {
-        let (data, config, ready_rx, stop_tx, h1) = create_test_server(https).await;
+        let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(https).await;
 
-        ready_rx.await.unwrap();
+        ready_receiver.await.unwrap();
 
         let lc = LightClient::test_new(&config, None, 0).await.unwrap();
         let mut fcbl = FakeCompactBlockList::new(0);
@@ -526,18 +535,18 @@ async fn z_to_z_scan_together() {
         // 1. Start with 10 blocks that are unmined
         fcbl.add_blocks(10);
 
-        // 2. Send an incoming tx to fill the wallet
+        // 2. Send an incoming transaction to fill the wallet
         let extfvk1 = lc.wallet.keys().read().await.get_all_extfvks()[0].clone();
         let value = 100_000;
-        let (tx, _height, note) = fcbl.add_tx_paying(&extfvk1, value);
+        let (transaction, _height, note) = fcbl.add_transaction_paying(&extfvk1, value);
 
         // 3. Calculate witness so we can get the nullifier without it getting mined
         let tree = fcbl
             .blocks
             .iter()
             .fold(CommitmentTree::<Node>::empty(), |mut tree, fcb| {
-                for tx in &fcb.block.vtx {
-                    for co in &tx.outputs {
+                for transaction in &fcb.block.v_transaction {
+                    for co in &transaction.outputs {
                         tree.append(Node::new(co.cmu().unwrap().into())).unwrap();
                     }
                 }
@@ -554,25 +563,25 @@ async fn z_to_z_scan_together() {
             panic!("Couldn't parse address")
         };
         let spent_value = 250;
-        let spent_tx = fcbl.add_tx_spending(&nf, spent_value, &extfvk1.fvk.ovk, &pa);
+        let spent_transaction = fcbl.add_transaction_spending(&nf, spent_value, &extfvk1.fvk.ovk, &pa);
 
         // 4. Mine the blocks and sync the lightwallet
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
 
-        // 5. Check the tx list to make sure we got all txns
+        // 5. Check the transaction list to make sure we got all transactions
         let list = lc.do_list_transactions(false).await;
 
         assert_eq!(list[0]["block_height"].as_u64().unwrap(), 11);
-        assert_eq!(list[0]["txid"], tx.txid().to_string());
+        assert_eq!(list[0]["txid"], transaction.txid().to_string());
 
         assert_eq!(list[1]["block_height"].as_u64().unwrap(), 12);
-        assert_eq!(list[1]["txid"], spent_tx.txid().to_string());
+        assert_eq!(list[1]["txid"], spent_transaction.txid().to_string());
         assert_eq!(list[1]["amount"].as_i64().unwrap(), -(value as i64));
         assert_eq!(list[1]["outgoing_metadata"][0]["address"], EXT_ZADDR.to_string());
         assert_eq!(list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(), spent_value);
 
         // Shutdown everything cleanly
-        stop_tx.send(()).unwrap();
+        stop_transmitter.send(()).unwrap();
         h1.await.unwrap();
     }
 }
@@ -580,9 +589,9 @@ async fn z_to_z_scan_together() {
 #[tokio::test]
 async fn z_incoming_viewkey() {
     for https in [true, false] {
-        let (data, config, ready_rx, stop_tx, h1) = create_test_server(https).await;
+        let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(https).await;
 
-        ready_rx.await.unwrap();
+        ready_receiver.await.unwrap();
 
         let lc = LightClient::test_new(&config, None, 0).await.unwrap();
         let mut fcbl = FakeCompactBlockList::new(0);
@@ -607,15 +616,15 @@ async fn z_incoming_viewkey() {
         assert_eq!(addrs[0], iaddr);
 
         let value = 100_000;
-        let (tx, _height, _) = fcbl.add_tx_paying(&iextfvk, value);
+        let (transaction, _height, _) = fcbl.add_transaction_paying(&iextfvk, value);
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
         mine_random_blocks(&mut fcbl, &data, &lc, 5).await;
 
-        // 3. Test that we have the txn
+        // 3. Test that we have the transaction
         let list = lc.do_list_transactions(false).await;
         assert_eq!(lc.do_balance().await["zbalance"].as_u64().unwrap(), value);
         assert_eq!(lc.do_balance().await["spendable_zbalance"].as_u64().unwrap(), 0);
-        assert_eq!(list[0]["txid"], tx.txid().to_string());
+        assert_eq!(list[0]["txid"], transaction.txid().to_string());
         assert_eq!(list[0]["amount"].as_u64().unwrap(), value);
         assert_eq!(list[0]["address"], iaddr);
 
@@ -626,7 +635,7 @@ async fn z_incoming_viewkey() {
         let list = lc.do_list_transactions(false).await;
         assert_eq!(lc.do_balance().await["zbalance"].as_u64().unwrap(), value);
         assert_eq!(lc.do_balance().await["spendable_zbalance"].as_u64().unwrap(), 0);
-        assert_eq!(list[0]["txid"], tx.txid().to_string());
+        assert_eq!(list[0]["txid"], transaction.txid().to_string());
         assert_eq!(list[0]["amount"].as_u64().unwrap(), value);
         assert_eq!(list[0]["address"], iaddr);
 
@@ -652,16 +661,16 @@ async fn z_incoming_viewkey() {
         let sent_value = 3000;
         let outgoing_memo = "Outgoing Memo".to_string();
 
-        let sent_txid = lc
+        let sent_transaction_id = lc
             .test_do_send(vec![(EXT_ZADDR, sent_value, Some(outgoing_memo.clone()))])
             .await
             .unwrap();
         fcbl.add_pending_sends(&data).await;
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
 
-        // 8. Make sure tx is present
+        // 8. Make sure transaction is present
         let list = lc.do_list_transactions(false).await;
-        assert_eq!(list[1]["txid"], sent_txid);
+        assert_eq!(list[1]["txid"], sent_transaction_id);
         assert_eq!(
             list[1]["amount"].as_i64().unwrap(),
             -((sent_value + u64::from(DEFAULT_FEE)) as i64)
@@ -670,7 +679,7 @@ async fn z_incoming_viewkey() {
         assert_eq!(list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(), sent_value);
 
         // Shutdown everything cleanly
-        stop_tx.send(()).unwrap();
+        stop_transmitter.send(()).unwrap();
         h1.await.unwrap();
     }
 }
@@ -678,9 +687,9 @@ async fn z_incoming_viewkey() {
 #[tokio::test]
 async fn t_incoming_t_outgoing() {
     for https in [true, false] {
-        let (data, config, ready_rx, stop_tx, h1) = create_test_server(https).await;
+        let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(https).await;
 
-        ready_rx.await.unwrap();
+        ready_receiver.await.unwrap();
 
         let lc = LightClient::test_new(&config, None, 0).await.unwrap();
         let mut fcbl = FakeCompactBlockList::new(0);
@@ -688,32 +697,32 @@ async fn t_incoming_t_outgoing() {
         // 1. Mine 10 blocks
         mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
 
-        // 2. Get an incoming tx to a t address
+        // 2. Get an incoming transaction to a t address
         let sk = lc.wallet.keys().read().await.tkeys[0].clone();
         let pk = sk.pubkey().unwrap();
         let taddr = sk.address;
         let value = 100_000;
 
-        let mut ftx = FakeTransaction::new();
-        ftx.add_t_output(&pk, taddr.clone(), value);
-        let (tx, _) = fcbl.add_ftx(ftx);
+        let mut fake_transaction = FakeTransaction::new();
+        fake_transaction.add_t_output(&pk, taddr.clone(), value);
+        let (transaction, _) = fcbl.add_fake_transaction(fake_transaction);
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
 
         // 3. Test the list
         let list = lc.do_list_transactions(false).await;
         assert_eq!(list[0]["block_height"].as_u64().unwrap(), 11);
-        assert_eq!(list[0]["txid"], tx.txid().to_string());
+        assert_eq!(list[0]["txid"], transaction.txid().to_string());
         assert_eq!(list[0]["address"], taddr);
         assert_eq!(list[0]["amount"].as_u64().unwrap(), value);
 
         // 4. We can spend the funds immediately, since this is a taddr
         let sent_value = 20_000;
-        let sent_txid = lc.test_do_send(vec![(EXT_TADDR, sent_value, None)]).await.unwrap();
+        let sent_transaction_id = lc.test_do_send(vec![(EXT_TADDR, sent_value, None)]).await.unwrap();
 
         // 5. Test the unconfirmed send.
         let list = lc.do_list_transactions(false).await;
         assert_eq!(list[1]["block_height"].as_u64().unwrap(), 12);
-        assert_eq!(list[1]["txid"], sent_txid);
+        assert_eq!(list[1]["txid"], sent_transaction_id);
         assert_eq!(
             list[1]["amount"].as_i64().unwrap(),
             -(sent_value as i64 + i64::from(DEFAULT_FEE))
@@ -729,11 +738,11 @@ async fn t_incoming_t_outgoing() {
         let notes = lc.do_list_notes(true).await;
         assert_eq!(notes["spent_utxos"][0]["created_in_block"].as_u64().unwrap(), 11);
         assert_eq!(notes["spent_utxos"][0]["spent_at_height"].as_u64().unwrap(), 12);
-        assert_eq!(notes["spent_utxos"][0]["spent"], sent_txid);
+        assert_eq!(notes["spent_utxos"][0]["spent"], sent_transaction_id);
 
         // Change shielded note
         assert_eq!(notes["unspent_notes"][0]["created_in_block"].as_u64().unwrap(), 12);
-        assert_eq!(notes["unspent_notes"][0]["created_in_txid"], sent_txid);
+        assert_eq!(notes["unspent_notes"][0]["created_in_txid"], sent_transaction_id);
         assert_eq!(notes["unspent_notes"][0]["is_change"].as_bool().unwrap(), true);
         assert_eq!(
             notes["unspent_notes"][0]["value"].as_u64().unwrap(),
@@ -743,7 +752,7 @@ async fn t_incoming_t_outgoing() {
         let list = lc.do_list_transactions(false).await;
 
         assert_eq!(list[1]["block_height"].as_u64().unwrap(), 12);
-        assert_eq!(list[1]["txid"], sent_txid);
+        assert_eq!(list[1]["txid"], sent_transaction_id);
         assert_eq!(list[1]["unconfirmed"].as_bool().unwrap(), false);
         assert_eq!(list[1]["outgoing_metadata"][0]["address"], EXT_TADDR);
         assert_eq!(list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(), sent_value);
@@ -754,7 +763,7 @@ async fn t_incoming_t_outgoing() {
 
         let list = lc.do_list_transactions(false).await;
         assert_eq!(list[1]["block_height"].as_u64().unwrap(), 12);
-        assert_eq!(list[1]["txid"], sent_txid);
+        assert_eq!(list[1]["txid"], sent_transaction_id);
         assert_eq!(list[1]["unconfirmed"].as_bool().unwrap(), false);
         assert_eq!(list[1]["outgoing_metadata"][0]["address"], EXT_TADDR);
         assert_eq!(list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(), sent_value);
@@ -762,7 +771,7 @@ async fn t_incoming_t_outgoing() {
         let notes = lc.do_list_notes(true).await;
         // Change shielded note
         assert_eq!(notes["unspent_notes"][0]["created_in_block"].as_u64().unwrap(), 12);
-        assert_eq!(notes["unspent_notes"][0]["created_in_txid"], sent_txid);
+        assert_eq!(notes["unspent_notes"][0]["created_in_txid"], sent_transaction_id);
         assert_eq!(notes["unspent_notes"][0]["is_change"].as_bool().unwrap(), true);
         assert_eq!(
             notes["unspent_notes"][0]["value"].as_u64().unwrap(),
@@ -770,17 +779,17 @@ async fn t_incoming_t_outgoing() {
         );
 
         // Shutdown everything cleanly
-        stop_tx.send(()).unwrap();
+        stop_transmitter.send(()).unwrap();
         h1.await.unwrap();
     }
 }
 
 #[tokio::test]
-async fn mixed_txn() {
+async fn mixed_transaction() {
     for https in [true, false] {
-        let (data, config, ready_rx, stop_tx, h1) = create_test_server(https).await;
+        let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(https).await;
 
-        ready_rx.await.unwrap();
+        ready_receiver.await.unwrap();
 
         let lc = LightClient::test_new(&config, None, 0).await.unwrap();
         let mut fcbl = FakeCompactBlockList::new(0);
@@ -789,25 +798,25 @@ async fn mixed_txn() {
         mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
         assert_eq!(lc.wallet.last_scanned_height().await, 10);
 
-        // 2. Send an incoming tx to fill the wallet
+        // 2. Send an incoming transaction to fill the wallet
         let extfvk1 = lc.wallet.keys().read().await.get_all_extfvks()[0].clone();
         let zvalue = 100_000;
-        let (_ztx, _height, _) = fcbl.add_tx_paying(&extfvk1, zvalue);
+        let (_ztransaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, zvalue);
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
         mine_random_blocks(&mut fcbl, &data, &lc, 5).await;
 
-        // 3. Send an incoming t-address txn
+        // 3. Send an incoming t-address transaction
         let sk = lc.wallet.keys().read().await.tkeys[0].clone();
         let pk = sk.pubkey().unwrap();
         let taddr = sk.address;
         let tvalue = 200_000;
 
-        let mut ftx = FakeTransaction::new();
-        ftx.add_t_output(&pk, taddr.clone(), tvalue);
-        let (_ttx, _) = fcbl.add_ftx(ftx);
+        let mut fake_transaction = FakeTransaction::new();
+        fake_transaction.add_t_output(&pk, taddr.clone(), tvalue);
+        let (_ttransaction, _) = fcbl.add_fake_transaction(fake_transaction);
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
 
-        // 4. Send a tx to both external t-addr and external z addr and mine it
+        // 4. Send a transaction to both external t-addr and external z addr and mine it
         let sent_zvalue = 80_000;
         let sent_tvalue = 140_000;
         let sent_zmemo = "Ext z".to_string();
@@ -874,7 +883,7 @@ async fn mixed_txn() {
         );
 
         // Shutdown everything cleanly
-        stop_tx.send(()).unwrap();
+        stop_transmitter.send(()).unwrap();
         h1.await.unwrap();
     }
 }
@@ -882,9 +891,9 @@ async fn mixed_txn() {
 #[tokio::test]
 async fn aborted_resync() {
     for https in [true, false] {
-        let (data, config, ready_rx, stop_tx, h1) = create_test_server(https).await;
+        let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(https).await;
 
-        ready_rx.await.unwrap();
+        ready_receiver.await.unwrap();
 
         let lc = LightClient::test_new(&config, None, 0).await.unwrap();
         let mut fcbl = FakeCompactBlockList::new(0);
@@ -897,25 +906,25 @@ async fn aborted_resync() {
 
         info!("Mined!");
 
-        // 2. Send an incoming tx to fill the wallet
+        // 2. Send an incoming transaction to fill the wallet
         let extfvk1 = lc.wallet.keys().read().await.get_all_extfvks()[0].clone();
         let zvalue = 100_000;
-        let (_ztx, _height, _) = fcbl.add_tx_paying(&extfvk1, zvalue);
+        let (_ztransaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, zvalue);
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
         mine_random_blocks(&mut fcbl, &data, &lc, 5).await;
 
-        // 3. Send an incoming t-address txn
+        // 3. Send an incoming t-address transaction
         let sk = lc.wallet.keys().read().await.tkeys[0].clone();
         let pk = sk.pubkey().unwrap();
         let taddr = sk.address;
         let tvalue = 200_000;
 
-        let mut ftx = FakeTransaction::new();
-        ftx.add_t_output(&pk, taddr.clone(), tvalue);
-        let (_ttx, _) = fcbl.add_ftx(ftx);
+        let mut fake_transaction = FakeTransaction::new();
+        fake_transaction.add_t_output(&pk, taddr.clone(), tvalue);
+        let (_ttransaction, _) = fcbl.add_fake_transaction(fake_transaction);
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
 
-        // 4. Send a tx to both external t-addr and external z addr and mine it
+        // 4. Send a transaction to both external t-addr and external z addr and mine it
         let sent_zvalue = 80_000;
         let sent_tvalue = 140_000;
         let sent_zmemo = "Ext z".to_string();
@@ -923,7 +932,7 @@ async fn aborted_resync() {
             (EXT_ZADDR, sent_zvalue, Some(sent_zmemo.clone())),
             (EXT_TADDR, sent_tvalue, None),
         ];
-        let sent_txid = lc.test_do_send(tos).await.unwrap();
+        let sent_transaction_id = lc.test_do_send(tos).await.unwrap();
 
         fcbl.add_pending_sends(&data).await;
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
@@ -933,12 +942,16 @@ async fn aborted_resync() {
         let list_before = lc.do_list_transactions(false).await;
         let witness_before = lc
             .wallet
-            .txns
+            .transactions
             .read()
             .await
             .current
             .get(&WalletTx::new_txid(
-                &hex::decode(sent_txid.clone()).unwrap().into_iter().rev().collect(),
+                &hex::decode(sent_transaction_id.clone())
+                    .unwrap()
+                    .into_iter()
+                    .rev()
+                    .collect(),
             ))
             .unwrap()
             .notes
@@ -961,12 +974,12 @@ async fn aborted_resync() {
         let list_after = lc.do_list_transactions(false).await;
         let witness_after = lc
             .wallet
-            .txns
+            .transactions
             .read()
             .await
             .current
             .get(&WalletTx::new_txid(
-                &hex::decode(sent_txid).unwrap().into_iter().rev().collect(),
+                &hex::decode(sent_transaction_id).unwrap().into_iter().rev().collect(),
             ))
             .unwrap()
             .notes
@@ -990,7 +1003,7 @@ async fn aborted_resync() {
         }
 
         // Shutdown everything cleanly
-        stop_tx.send(()).unwrap();
+        stop_transmitter.send(()).unwrap();
         h1.await.unwrap();
     }
 }
@@ -998,9 +1011,9 @@ async fn aborted_resync() {
 #[tokio::test]
 async fn no_change() {
     for https in [true, false] {
-        let (data, config, ready_rx, stop_tx, h1) = create_test_server(https).await;
+        let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(https).await;
 
-        ready_rx.await.unwrap();
+        ready_receiver.await.unwrap();
 
         let lc = LightClient::test_new(&config, None, 0).await.unwrap();
         let mut fcbl = FakeCompactBlockList::new(0);
@@ -1009,28 +1022,28 @@ async fn no_change() {
         mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
         assert_eq!(lc.wallet.last_scanned_height().await, 10);
 
-        // 2. Send an incoming tx to fill the wallet
+        // 2. Send an incoming transaction to fill the wallet
         let extfvk1 = lc.wallet.keys().read().await.get_all_extfvks()[0].clone();
         let zvalue = 100_000;
-        let (_ztx, _height, _) = fcbl.add_tx_paying(&extfvk1, zvalue);
+        let (_ztransaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, zvalue);
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
         mine_random_blocks(&mut fcbl, &data, &lc, 5).await;
 
-        // 3. Send an incoming t-address txn
+        // 3. Send an incoming t-address transaction
         let sk = lc.wallet.keys().read().await.tkeys[0].clone();
         let pk = sk.pubkey().unwrap();
         let taddr = sk.address;
         let tvalue = 200_000;
 
-        let mut ftx = FakeTransaction::new();
-        ftx.add_t_output(&pk, taddr.clone(), tvalue);
-        let (_ttx, _) = fcbl.add_ftx(ftx);
+        let mut fake_transaction = FakeTransaction::new();
+        fake_transaction.add_t_output(&pk, taddr.clone(), tvalue);
+        let (_t_transaction, _) = fcbl.add_fake_transaction(fake_transaction);
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
 
-        // 4. Send a tx to both external t-addr and external z addr and mine it
+        // 4. Send a transaction to both external t-addr and external z addr and mine it
         let sent_zvalue = tvalue + zvalue - u64::from(DEFAULT_FEE);
         let tos = vec![(EXT_ZADDR, sent_zvalue, None)];
-        let sent_txid = lc.test_do_send(tos).await.unwrap();
+        let sent_transaction_id = lc.test_do_send(tos).await.unwrap();
 
         fcbl.add_pending_sends(&data).await;
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
@@ -1043,11 +1056,11 @@ async fn no_change() {
 
         assert_eq!(notes["spent_notes"].len(), 1);
         assert_eq!(notes["spent_utxos"].len(), 1);
-        assert_eq!(notes["spent_notes"][0]["spent"], sent_txid);
-        assert_eq!(notes["spent_utxos"][0]["spent"], sent_txid);
+        assert_eq!(notes["spent_notes"][0]["spent"], sent_transaction_id);
+        assert_eq!(notes["spent_utxos"][0]["spent"], sent_transaction_id);
 
         // Shutdown everything cleanly
-        stop_tx.send(()).unwrap();
+        stop_transmitter.send(()).unwrap();
         h1.await.unwrap();
     }
 }
@@ -1056,8 +1069,8 @@ async fn no_change() {
 async fn recover_at_checkpoint() {
     // 1. Wait for test server to start
     for https in [true, false] {
-        let (data, config, ready_rx, stop_tx, h1) = create_test_server(https).await;
-        ready_rx.await.unwrap();
+        let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(https).await;
+        ready_receiver.await.unwrap();
 
         // Get checkpoint at 1220000
         let (ckpt_height, hash, tree) = checkpoints::get_all_main_checkpoints()
@@ -1135,7 +1148,7 @@ async fn recover_at_checkpoint() {
         // );
 
         // Shutdown everything cleanly
-        stop_tx.send(()).unwrap();
+        stop_transmitter.send(()).unwrap();
         h1.await.unwrap();
     }
 }
@@ -1143,9 +1156,9 @@ async fn recover_at_checkpoint() {
 #[tokio::test]
 async fn witness_clearing() {
     for https in [true, false] {
-        let (data, config, ready_rx, stop_tx, h1) = create_test_server(https).await;
+        let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(https).await;
 
-        ready_rx.await.unwrap();
+        ready_receiver.await.unwrap();
 
         let lc = LightClient::test_new(&config, None, 0).await.unwrap();
         //lc.init_logging().unwrap();
@@ -1155,30 +1168,30 @@ async fn witness_clearing() {
         mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
         assert_eq!(lc.wallet.last_scanned_height().await, 10);
 
-        // 2. Send an incoming tx to fill the wallet
+        // 2. Send an incoming transaction to fill the wallet
         let extfvk1 = lc.wallet.keys().read().await.get_all_extfvks()[0].clone();
         let value = 100_000;
-        let (tx, _height, _) = fcbl.add_tx_paying(&extfvk1, value);
+        let (transaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, value);
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
         mine_random_blocks(&mut fcbl, &data, &lc, 5).await;
 
-        // 3. Send z-to-z tx to external z address with a memo
+        // 3. Send z-to-z transaction to external z address with a memo
         let sent_value = 2000;
         let outgoing_memo = "Outgoing Memo".to_string();
 
-        let _sent_txid = lc
+        let _sent_transaction_id = lc
             .test_do_send(vec![(EXT_ZADDR, sent_value, Some(outgoing_memo.clone()))])
             .await
             .unwrap();
 
-        // Tx is not yet mined, so witnesses should still be there
+        // transaction is not yet mined, so witnesses should still be there
         let witnesses = lc
             .wallet
-            .txns()
+            .transactions()
             .read()
             .await
             .current
-            .get(&tx.txid())
+            .get(&transaction.txid())
             .unwrap()
             .notes
             .get(0)
@@ -1191,14 +1204,14 @@ async fn witness_clearing() {
         fcbl.add_pending_sends(&data).await;
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
 
-        // Tx is now mined, but witnesses should still be there because not 100 blocks yet (i.e., could get reorged)
+        // transaction is now mined, but witnesses should still be there because not 100 blocks yet (i.e., could get reorged)
         let witnesses = lc
             .wallet
-            .txns()
+            .transactions()
             .read()
             .await
             .current
-            .get(&tx.txid())
+            .get(&transaction.txid())
             .unwrap()
             .notes
             .get(0)
@@ -1211,11 +1224,11 @@ async fn witness_clearing() {
         mine_random_blocks(&mut fcbl, &data, &lc, 50).await;
         let witnesses = lc
             .wallet
-            .txns()
+            .transactions()
             .read()
             .await
             .current
-            .get(&tx.txid())
+            .get(&transaction.txid())
             .unwrap()
             .notes
             .get(0)
@@ -1228,11 +1241,11 @@ async fn witness_clearing() {
         mine_random_blocks(&mut fcbl, &data, &lc, 100).await;
         let witnesses = lc
             .wallet
-            .txns()
+            .transactions()
             .read()
             .await
             .current
-            .get(&tx.txid())
+            .get(&transaction.txid())
             .unwrap()
             .notes
             .get(0)
@@ -1242,7 +1255,7 @@ async fn witness_clearing() {
         assert_eq!(witnesses.len(), 0);
 
         // Shutdown everything cleanly
-        stop_tx.send(()).unwrap();
+        stop_transmitter.send(()).unwrap();
         h1.await.unwrap();
     }
 }
@@ -1250,9 +1263,9 @@ async fn witness_clearing() {
 #[tokio::test]
 async fn mempool_clearing() {
     for https in [true, false] {
-        let (data, config, ready_rx, stop_tx, h1) = create_test_server(https).await;
+        let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(https).await;
 
-        ready_rx.await.unwrap();
+        ready_receiver.await.unwrap();
 
         let lc = LightClient::test_new(&config, None, 0).await.unwrap();
         //lc.init_logging().unwrap();
@@ -1262,82 +1275,82 @@ async fn mempool_clearing() {
         mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
         assert_eq!(lc.wallet.last_scanned_height().await, 10);
 
-        // 2. Send an incoming tx to fill the wallet
+        // 2. Send an incoming transaction to fill the wallet
         let extfvk1 = lc.wallet.keys().read().await.get_all_extfvks()[0].clone();
         let value = 100_000;
-        let (tx, _height, _) = fcbl.add_tx_paying(&extfvk1, value);
-        let orig_txid = tx.txid().to_string();
+        let (transaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, value);
+        let orig_transaction_id = transaction.txid().to_string();
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
         mine_random_blocks(&mut fcbl, &data, &lc, 5).await;
-        assert_eq!(lc.do_last_txid().await["last_txid"], orig_txid);
+        assert_eq!(lc.do_last_transaction_id().await["last_txid"], orig_transaction_id);
 
-        // 3. Send z-to-z tx to external z address with a memo
+        // 3. Send z-to-z transaction to external z address with a memo
         let sent_value = 2000;
         let outgoing_memo = "Outgoing Memo".to_string();
 
-        let sent_txid = lc
+        let sent_transaction_id = lc
             .test_do_send(vec![(EXT_ZADDR, sent_value, Some(outgoing_memo.clone()))])
             .await
             .unwrap();
 
-        // 4. The tx is not yet sent, it is just sitting in the test GRPC server, so remove it from there to make sure it doesn't get mined.
-        assert_eq!(lc.do_last_txid().await["last_txid"], sent_txid);
-        let mut sent_txns = data.write().await.sent_txns.drain(..).collect::<Vec<_>>();
-        assert_eq!(sent_txns.len(), 1);
-        let sent_tx = sent_txns.remove(0);
+        // 4. The transaction is not yet sent, it is just sitting in the test GRPC server, so remove it from there to make sure it doesn't get mined.
+        assert_eq!(lc.do_last_transaction_id().await["last_txid"], sent_transaction_id);
+        let mut sent_transactions = data.write().await.sent_transactions.drain(..).collect::<Vec<_>>();
+        assert_eq!(sent_transactions.len(), 1);
+        let sent_transaction = sent_transactions.remove(0);
 
-        // 5. At this point, the rawTx is already been parsed, but we'll parse it again just to make sure it doesn't create any duplicates.
+        // 5. At this point, the raw transaction is already been parsed, but we'll parse it again just to make sure it doesn't create any duplicates.
         let notes_before = lc.do_list_notes(true).await;
-        let txns_before = lc.do_list_transactions(false).await;
+        let transactions_before = lc.do_list_transactions(false).await;
 
-        let tx = Transaction::read(&sent_tx.data[..]).unwrap();
+        let transaction = Transaction::read(&sent_transaction.data[..]).unwrap();
         FetchFullTxns::scan_full_tx(
             config,
-            tx,
+            transaction,
             BlockHeight::from_u32(17),
             true,
             0,
             lc.wallet.keys(),
-            lc.wallet.txns(),
+            lc.wallet.transactions(),
             Some(140.5),
         )
         .await;
 
         let notes_after = lc.do_list_notes(true).await;
-        let txns_after = lc.do_list_transactions(false).await;
+        let transactions_after = lc.do_list_transactions(false).await;
 
         assert_eq!(notes_before.pretty(2), notes_after.pretty(2));
-        assert_eq!(txns_before.pretty(2), txns_after.pretty(2));
+        assert_eq!(transactions_before.pretty(2), transactions_after.pretty(2));
 
-        // 6. Mine 10 blocks, the unconfirmed tx should still be there.
+        // 6. Mine 10 blocks, the unconfirmed transaction should still be there.
         mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
         assert_eq!(lc.wallet.last_scanned_height().await, 26);
 
         let notes = lc.do_list_notes(true).await;
-        let txns = lc.do_list_transactions(false).await;
+        let transactions = lc.do_list_transactions(false).await;
 
-        // There is 1 unspent note, which is the unconfirmed tx
+        // There is 1 unspent note, which is the unconfirmed transaction
         assert_eq!(notes["unspent_notes"].len(), 1);
-        assert_eq!(notes["unspent_notes"][0]["created_in_txid"], sent_txid);
+        assert_eq!(notes["unspent_notes"][0]["created_in_txid"], sent_transaction_id);
         assert_eq!(notes["unspent_notes"][0]["unconfirmed"].as_bool().unwrap(), true);
-        assert_eq!(txns.len(), 2);
+        assert_eq!(transactions.len(), 2);
 
         // 7. Mine 100 blocks, so the mempool expires
         mine_random_blocks(&mut fcbl, &data, &lc, 100).await;
         assert_eq!(lc.wallet.last_scanned_height().await, 126);
 
         let notes = lc.do_list_notes(true).await;
-        let txns = lc.do_list_transactions(false).await;
+        let transactions = lc.do_list_transactions(false).await;
 
         // There is now again 1 unspent note, but it is the original (confirmed) note.
         assert_eq!(notes["unspent_notes"].len(), 1);
-        assert_eq!(notes["unspent_notes"][0]["created_in_txid"], orig_txid);
+        assert_eq!(notes["unspent_notes"][0]["created_in_txid"], orig_transaction_id);
         assert_eq!(notes["unspent_notes"][0]["unconfirmed"].as_bool().unwrap(), false);
         assert_eq!(notes["pending_notes"].len(), 0);
-        assert_eq!(txns.len(), 1);
+        assert_eq!(transactions.len(), 1);
 
         // Shutdown everything cleanly
-        stop_tx.send(()).unwrap();
+        stop_transmitter.send(()).unwrap();
         h1.await.unwrap();
     }
 }
@@ -1345,9 +1358,9 @@ async fn mempool_clearing() {
 #[tokio::test]
 async fn mempool_and_balance() {
     for https in [true, false] {
-        let (data, config, ready_rx, stop_tx, h1) = create_test_server(https).await;
+        let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(https).await;
 
-        ready_rx.await.unwrap();
+        ready_receiver.await.unwrap();
 
         let lc = LightClient::test_new(&config, None, 0).await.unwrap();
         let mut fcbl = FakeCompactBlockList::new(0);
@@ -1356,10 +1369,10 @@ async fn mempool_and_balance() {
         mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
         assert_eq!(lc.wallet.last_scanned_height().await, 10);
 
-        // 2. Send an incoming tx to fill the wallet
+        // 2. Send an incoming transaction to fill the wallet
         let extfvk1 = lc.wallet.keys().read().await.get_all_extfvks()[0].clone();
         let value = 100_000;
-        let (_tx, _height, _) = fcbl.add_tx_paying(&extfvk1, value);
+        let (_transaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, value);
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
 
         let bal = lc.do_balance().await;
@@ -1378,14 +1391,14 @@ async fn mempool_and_balance() {
         let sent_value = 2000;
         let outgoing_memo = "Outgoing Memo".to_string();
 
-        let _sent_txid = lc
+        let _sent_transaction_id = lc
             .test_do_send(vec![(EXT_ZADDR, sent_value, Some(outgoing_memo.clone()))])
             .await
             .unwrap();
 
         let bal = lc.do_balance().await;
 
-        // Even though the tx is not mined (in the mempool) the balances should be updated to reflect the spent funds
+        // Even though the transaction is not mined (in the mempool) the balances should be updated to reflect the spent funds
         let new_bal = value - (sent_value + u64::from(DEFAULT_FEE));
         assert_eq!(bal["zbalance"].as_u64().unwrap(), new_bal);
         assert_eq!(bal["verified_zbalance"].as_u64().unwrap(), 0);
@@ -1409,7 +1422,7 @@ async fn mempool_and_balance() {
         assert_eq!(bal["unverified_zbalance"].as_u64().unwrap(), 0);
 
         // Shutdown everything cleanly
-        stop_tx.send(()).unwrap();
+        stop_transmitter.send(()).unwrap();
         h1.await.unwrap();
     }
 }

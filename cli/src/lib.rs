@@ -113,20 +113,20 @@ pub fn startup(
     }
 
     // Start the command loop
-    let (command_tx, resp_rx) = command_loop(lightclient.clone());
+    let (command_transmitter, resp_receiver) = command_loop(lightclient.clone());
 
-    Ok((command_tx, resp_rx))
+    Ok((command_transmitter, resp_receiver))
 }
 
-pub fn start_interactive(command_tx: Sender<(String, Vec<String>)>, resp_rx: Receiver<String>) {
+pub fn start_interactive(command_transmitter: Sender<(String, Vec<String>)>, resp_receiver: Receiver<String>) {
     // `()` can be used when no completer is required
     let mut rl = rustyline::Editor::<()>::new();
 
     println!("Ready!");
 
     let send_command = |cmd: String, args: Vec<String>| -> String {
-        command_tx.send((cmd.clone(), args)).unwrap();
-        match resp_rx.recv() {
+        command_transmitter.send((cmd.clone(), args)).unwrap();
+        match resp_receiver.recv() {
             Ok(s) => s,
             Err(e) => {
                 let e = format!("Error executing command {}: {}", cmd, e);
@@ -194,19 +194,19 @@ pub fn start_interactive(command_tx: Sender<(String, Vec<String>)>, resp_rx: Rec
 }
 
 pub fn command_loop(lightclient: Arc<LightClient>) -> (Sender<(String, Vec<String>)>, Receiver<String>) {
-    let (command_tx, command_rx) = channel::<(String, Vec<String>)>();
-    let (resp_tx, resp_rx) = channel::<String>();
+    let (command_transmitter, command_receiver) = channel::<(String, Vec<String>)>();
+    let (resp_transmitter, resp_receiver) = channel::<String>();
 
     let lc = lightclient.clone();
     std::thread::spawn(move || {
         LightClient::start_mempool_monitor(lc.clone());
 
         loop {
-            if let Ok((cmd, args)) = command_rx.recv() {
+            if let Ok((cmd, args)) = command_receiver.recv() {
                 let args = args.iter().map(|s| s.as_ref()).collect();
 
                 let cmd_response = commands::do_user_command(&cmd, &args, lc.as_ref());
-                resp_tx.send(cmd_response).unwrap();
+                resp_transmitter.send(cmd_response).unwrap();
 
                 if cmd == "quit" {
                     info!("Quit");
@@ -218,7 +218,7 @@ pub fn command_loop(lightclient: Arc<LightClient>) -> (Sender<(String, Vec<Strin
         }
     });
 
-    (command_tx, resp_rx)
+    (command_transmitter, resp_receiver)
 }
 
 pub fn attempt_recover_seed(_password: Option<String>) {

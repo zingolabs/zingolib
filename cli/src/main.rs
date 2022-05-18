@@ -58,7 +58,7 @@ pub fn main() {
     let nosync = matches.is_present("nosync");
 
     let startup_chan = startup(server, seed, birthday, !nosync, command.is_none());
-    let (command_tx, resp_rx) = match startup_chan {
+    let (command_transmitter, resp_receiver) = match startup_chan {
         Ok(c) => c,
         Err(e) => {
             let emsg = format!("Error during startup:{}\nIf you repeatedly run into this issue, you might have to restore your wallet from your seed phrase.", e);
@@ -75,16 +75,16 @@ pub fn main() {
     };
 
     if command.is_none() {
-        start_interactive(command_tx, resp_rx);
+        start_interactive(command_transmitter, resp_receiver);
     } else {
-        command_tx
+        command_transmitter
             .send((
                 command.unwrap().to_string(),
                 params.iter().map(|s| s.to_string()).collect::<Vec<String>>(),
             ))
             .unwrap();
 
-        match resp_rx.recv() {
+        match resp_receiver.recv() {
             Ok(s) => println!("{}", s),
             Err(e) => {
                 let e = format!("Error executing command {}: {}", command.unwrap(), e);
@@ -94,7 +94,7 @@ pub fn main() {
         }
 
         // Save before exit
-        command_tx.send(("save".to_string(), vec![])).unwrap();
-        resp_rx.recv().unwrap();
+        command_transmitter.send(("save".to_string(), vec![])).unwrap();
+        resp_receiver.recv().unwrap();
     }
 }

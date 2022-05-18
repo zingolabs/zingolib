@@ -1,5 +1,5 @@
 use crate::lightwallet::MemoDownloadOption;
-use crate::lightwallet::{data::WalletTx, wallet_txns::WalletTxns};
+use crate::lightwallet::{data::WalletTx, wallet_transactions::WalletTxns};
 use std::sync::Arc;
 
 use futures::stream::FuturesUnordered;
@@ -90,25 +90,28 @@ impl UpdateNotes {
         let download_memos = bsync_data.read().await.wallet_options.download_memos;
 
         // Create a new channel where we'll be notified of TxIds that are to be processed
-        let (tx, mut rx) = unbounded_channel::<(TxId, Nullifier, BlockHeight, Option<u32>)>();
+        let (transmitter, mut receiver) = unbounded_channel::<(TxId, Nullifier, BlockHeight, Option<u32>)>();
 
         // Aside from the incoming Txns, we also need to update the notes that are currently in the wallet
-        let wallet_txns = self.wallet_txns.clone();
-        let tx_existing = tx.clone();
+        let wallet_transactions = self.wallet_txns.clone();
+        let transmitter_existing = transmitter.clone();
 
-        let (blocks_done_tx, blocks_done_rx) = oneshot::channel::<u64>();
+        let (blocks_done_transmitter, blocks_done_receiver) = oneshot::channel::<u64>();
 
         let h0: JoinHandle<Result<(), String>> = tokio::spawn(async move {
             // First, wait for notification that the blocks are done loading, and get the earliest block from there.
-            let earliest_block = blocks_done_rx
+            let earliest_block = blocks_done_receiver
                 .await
                 .map_err(|e| format!("Error getting notification that blocks are done. {}", e))?;
 
             // Get all notes from the wallet that are already existing, i.e., the ones that are before the earliest block that the block loader loaded
-            let notes = wallet_txns.read().await.get_notes_for_updating(earliest_block - 1);
-            for (txid, nf) in notes {
-                tx_existing
-                    .send((txid, nf, BlockHeight::from(earliest_block as u32), None))
+            let notes = wallet_transactions
+                .read()
+                .await
+                .get_notes_for_updating(earliest_block - 1);
+            for (transaction_id, nf) in notes {
+                transmitter_existing
+                    .send((transaction_id, nf, BlockHeight::from(earliest_block as u32), None))
                     .map_err(|e| format!("Error sending note for updating: {}", e))?;
             }
 
@@ -116,14 +119,14 @@ impl UpdateNotes {
             Ok(())
         });
 
-        let wallet_txns = self.wallet_txns.clone();
+        let wallet_transactions = self.wallet_txns.clone();
         let h1 = tokio::spawn(async move {
             let mut workers = FuturesUnordered::new();
 
             // Recieve Txns that are sent to the wallet. We need to update the notes for this.
-            while let Some((txid, nf, at_height, output_num)) = rx.recv().await {
+            while let Some((transaction_id, nf, at_height, output_num)) = receiver.recv().await {
                 let bsync_data = bsync_data.clone();
-                let wallet_txns = wallet_txns.clone();
+                let wallet_transactions = wallet_transactions.clone();
                 let fetch_full_sender = fetch_full_sender.clone();
 
                 workers.push(tokio::spawn(async move {
@@ -136,48 +139,56 @@ impl UpdateNotes {
                         .await
                     {
                         //info!("Note was spent, just add it as spent for TxId {}", txid);
-                        let (ctx, ts) = bsync_data
+                        let (compact_transaction, ts) = bsync_data
                             .read()
                             .await
                             .block_data
                             .get_ctx_for_nf_at_height(&nf, spent_height)
                             .await;
 
-                        let spent_txid = WalletTx::new_txid(&ctx.hash);
+                        let spent_transaction_id = WalletTx::new_txid(&compact_transaction.hash);
                         let spent_at_height = BlockHeight::from_u32(spent_height as u32);
 
                         // Mark this note as being spent
-                        let value =
-                            wallet_txns
-                                .write()
-                                .await
-                                .mark_txid_nf_spent(txid, &nf, &spent_txid, spent_at_height);
+                        let value = wallet_transactions.write().await.mark_txid_nf_spent(
+                            transaction_id,
+                            &nf,
+                            &spent_transaction_id,
+                            spent_at_height,
+                        );
 
-                        // Record the future tx, the one that has spent the nullifiers recieved in this Tx in the wallet
-                        wallet_txns.write().await.add_new_spent(
-                            spent_txid,
+                        // Record the future transaction, the one that has spent the nullifiers recieved in this transaction in the wallet
+                        wallet_transactions.write().await.add_new_spent(
+                            spent_transaction_id,
                             spent_at_height,
                             false,
                             ts,
                             nf,
                             value,
-                            txid,
+                            transaction_id,
                         );
 
-                        // Send the future Tx to be fetched too, in case it has only spent nullifiers and not recieved any change
+                        // Send the future transaction to be fetched too, in case it has only spent nullifiers and not recieved any change
                         if download_memos != MemoDownloadOption::NoMemos {
-                            fetch_full_sender.send((spent_txid, spent_at_height)).unwrap();
+                            fetch_full_sender.send((spent_transaction_id, spent_at_height)).unwrap();
                         }
                     } else {
                         //info!("Note was NOT spent, update its witnesses for TxId {}", txid);
 
                         // If this note's nullifier was not spent, then we need to update the witnesses for this.
-                        Self::update_witnesses(bsync_data.clone(), wallet_txns.clone(), txid, nf, output_num).await;
+                        Self::update_witnesses(
+                            bsync_data.clone(),
+                            wallet_transactions.clone(),
+                            transaction_id,
+                            nf,
+                            output_num,
+                        )
+                        .await;
                     }
 
-                    // Send it off to get the full transaction if this is a new Tx, that is, it has an output_num
+                    // Send it off to get the full transaction if this is a new transaction, that is, it has an output_num
                     if output_num.is_some() && download_memos != MemoDownloadOption::NoMemos {
-                        fetch_full_sender.send((txid, at_height)).unwrap();
+                        fetch_full_sender.send((transaction_id, at_height)).unwrap();
                     }
                 }));
             }
@@ -196,6 +207,6 @@ impl UpdateNotes {
             r1.map_err(|e| format!("{}", e))
         });
 
-        return (h, blocks_done_tx, tx);
+        return (h, blocks_done_transmitter, transmitter);
     }
 }

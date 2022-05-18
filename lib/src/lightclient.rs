@@ -2,8 +2,9 @@ use self::lightclient_config::LightClientConfig;
 use crate::{
     blaze::{
         block_witness_data::BlockAndWitnessData, fetch_compact_blocks::FetchCompactBlocks,
-        fetch_full_tx::FetchFullTxns, fetch_taddr_txns::FetchTaddrTxns, sync_status::SyncStatus,
-        syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions, update_notes::UpdateNotes,
+        fetch_full_transaction::FetchFullTxns, fetch_taddr_transactions::FetchTaddrTransactions,
+        sync_status::SyncStatus, syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions,
+        update_notes::UpdateNotes,
     },
     compact_formats::RawTransaction,
     grpc_connector::GrpcConnector,
@@ -300,7 +301,7 @@ impl LightClient {
             let wallet = LightWallet::read(&mut reader, config).await?;
 
             let lc = LightClient {
-                wallet: wallet,
+                wallet,
                 config: config.clone(),
                 mempool_monitor: std::sync::RwLock::new(None),
                 sync_lock: Mutex::new(()),
@@ -332,7 +333,7 @@ impl LightClient {
             let wallet = LightWallet::read(&mut file_buffer, config).await?;
 
             let lc = LightClient {
-                wallet: wallet,
+                wallet,
                 config: config.clone(),
                 mempool_monitor: std::sync::RwLock::new(None),
                 sync_lock: Mutex::new(()),
@@ -423,9 +424,9 @@ impl LightClient {
         }
     }
 
-    pub async fn do_last_txid(&self) -> JsonValue {
+    pub async fn do_last_transaction_id(&self) -> JsonValue {
         object! {
-            "last_txid" => self.wallet.txns().read().await.get_last_txid().map(|t| t.to_string())
+            "last_txid" => self.wallet.transactions().read().await.get_last_txid().map(|t| t.to_string())
         }
     }
 
@@ -593,7 +594,7 @@ impl LightClient {
             "sending" => progress.is_send_in_progress,
             "progress" => progress.progress,
             "total" => progress.total,
-            "txid" => progress.last_txid,
+            "txid" => progress.last_transaction_id,
             "error" => progress.last_error,
         })
     }
@@ -636,8 +637,8 @@ impl LightClient {
                 .collect();
 
             // Collect Sapling notes
-            self.wallet.txns.read().await.current.iter()
-                .flat_map( |(txid, wtx)| {
+            self.wallet.transactions.read().await.current.iter()
+                .flat_map( |(transaction_id, wtx)| {
                     let spendable_address = spendable_address.clone();
                     wtx.notes.iter().filter_map(move |nd|
                         if !all_notes && nd.spent.is_some() {
@@ -652,15 +653,15 @@ impl LightClient {
                             Some(object!{
                                 "created_in_block"   => created_block,
                                 "datetime"           => wtx.datetime,
-                                "created_in_txid"    => format!("{}", txid),
+                                "created_in_txid"    => format!("{}", transaction_id),
                                 "value"              => nd.note.value,
                                 "unconfirmed"        => wtx.unconfirmed,
                                 "is_change"          => nd.is_change,
                                 "address"            => address,
                                 "spendable"          => spendable,
-                                "spent"              => nd.spent.map(|(spent_txid, _)| format!("{}", spent_txid)),
+                                "spent"              => nd.spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
                                 "spent_at_height"    => nd.spent.map(|(_, h)| h),
-                                "unconfirmed_spent"  => nd.unconfirmed_spent.map(|(spent_txid, _)| format!("{}", spent_txid)),
+                                "unconfirmed_spent"  => nd.unconfirmed_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
                             })
                         }
                     )
@@ -681,8 +682,8 @@ impl LightClient {
         let mut pending_utxos: Vec<JsonValue> = vec![];
 
         {
-            self.wallet.txns.read().await.current.iter()
-                .flat_map( |(txid, wtx)| {
+            self.wallet.transactions.read().await.current.iter()
+                .flat_map( |(transaction_id, wtx)| {
                     wtx.utxos.iter().filter_map(move |utxo|
                         if !all_notes && utxo.spent.is_some() {
                             None
@@ -692,14 +693,14 @@ impl LightClient {
                             Some(object!{
                                 "created_in_block"   => created_block,
                                 "datetime"           => wtx.datetime,
-                                "created_in_txid"    => format!("{}", txid),
+                                "created_in_txid"    => format!("{}", transaction_id),
                                 "value"              => utxo.value,
                                 "scriptkey"          => hex::encode(utxo.script.clone()),
                                 "is_change"          => false, // TODO: Identify notes as change if we send change to our own taddrs
                                 "address"            => utxo.address.clone(),
                                 "spent_at_height"    => utxo.spent_at_height,
-                                "spent"              => utxo.spent.map(|spent_txid| format!("{}", spent_txid)),
-                                "unconfirmed_spent"  => utxo.unconfirmed_spent.map(|(spent_txid, _)| format!("{}", spent_txid)),
+                                "spent"              => utxo.spent.map(|spent_transaction_id| format!("{}", spent_transaction_id)),
+                                "unconfirmed_spent"  => utxo.unconfirmed_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
                             })
                         }
                     )
@@ -775,16 +776,16 @@ impl LightClient {
     }
 
     pub async fn do_list_transactions(&self, include_memo_hex: bool) -> JsonValue {
-        // Create a list of TransactionItems from wallet txns
-        let mut tx_list = self
+        // Create a list of TransactionItems from wallet transactions
+        let mut transaction_list = self
             .wallet
-            .txns
+            .transactions
             .read()
             .await
             .current
             .iter()
             .flat_map(|(_k, v)| {
-                let mut txns: Vec<JsonValue> = vec![];
+                let mut transactions: Vec<JsonValue> = vec![];
 
                 if v.total_sapling_value_spent + v.total_transparent_value_spent > 0 {
                     // If money was spent, create a transaction. For this, we'll subtract
@@ -818,7 +819,7 @@ impl LightClient {
                         .collect::<Vec<JsonValue>>();
 
                     let block_height: u32 = v.block.into();
-                    txns.push(object! {
+                    transactions.push(object! {
                         "block_height" => block_height,
                         "unconfirmed" => v.unconfirmed,
                         "datetime"     => v.datetime,
@@ -831,8 +832,8 @@ impl LightClient {
                     });
                 }
 
-                // For each sapling note that is not a change, add a Tx.
-                txns.extend(v.notes.iter().filter(|nd| !nd.is_change).enumerate().map(|(i, nd)| {
+                // For each sapling note that is not a change, add a transaction.
+                transactions.extend(v.notes.iter().filter(|nd| !nd.is_change).enumerate().map(|(i, nd)| {
                     let block_height: u32 = v.block.into();
                     let mut o = object! {
                         "block_height" => block_height,
@@ -868,7 +869,7 @@ impl LightClient {
                 if total_transparent_received > v.total_transparent_value_spent {
                     // Create an input transaction for the transparent value as well.
                     let block_height: u32 = v.block.into();
-                    txns.push(object! {
+                    transactions.push(object! {
                         "block_height" => block_height,
                         "unconfirmed" => v.unconfirmed,
                         "datetime"     => v.datetime,
@@ -880,11 +881,11 @@ impl LightClient {
                     })
                 }
 
-                txns
+                transactions
             })
             .collect::<Vec<JsonValue>>();
 
-        tx_list.sort_by(|a, b| {
+        transaction_list.sort_by(|a, b| {
             if a["block_height"] == b["block_height"] {
                 a["txid"].as_str().cmp(&b["txid"].as_str())
             } else {
@@ -892,7 +893,7 @@ impl LightClient {
             }
         });
 
-        JsonValue::Array(tx_list)
+        JsonValue::Array(transaction_list)
     }
 
     /// Create a new address, deriving it from the seed.
@@ -1053,51 +1054,65 @@ impl LightClient {
         let price = self.wallet.price.read().await.clone();
 
         // Gather all transactions that need historical prices
-        let txids_to_fetch = self
+        let transaction_ids_to_fetch = self
             .wallet
-            .txns
+            .transactions
             .read()
             .await
             .current
             .iter()
-            .filter_map(|(txid, wtx)| match wtx.zec_price {
-                None => Some((txid.clone(), wtx.datetime)),
+            .filter_map(|(transaction_id, wtx)| match wtx.zec_price {
+                None => Some((transaction_id.clone(), wtx.datetime)),
                 Some(_) => None,
             })
             .collect::<Vec<(TxId, u64)>>();
 
-        if txids_to_fetch.is_empty() {
+        if transaction_ids_to_fetch.is_empty() {
             return;
         }
 
-        info!("Fetching historical prices for {} txids", txids_to_fetch.len());
+        info!(
+            "Fetching historical prices for {} txids",
+            transaction_ids_to_fetch.len()
+        );
 
-        let retry_count_increase =
-            match GrpcConnector::get_historical_zec_prices(self.get_server_uri(), txids_to_fetch, price.currency).await
-            {
-                Ok(prices) => {
-                    let mut any_failed = false;
+        let retry_count_increase = match GrpcConnector::get_historical_zec_prices(
+            self.get_server_uri(),
+            transaction_ids_to_fetch,
+            price.currency,
+        )
+        .await
+        {
+            Ok(prices) => {
+                let mut any_failed = false;
 
-                    for (txid, p) in prices {
-                        match p {
-                            None => any_failed = true,
-                            Some(p) => {
-                                // Update the price
-                                // info!("Historical price at txid {} was {}", txid, p);
-                                self.wallet.txns.write().await.current.get_mut(&txid).unwrap().zec_price = Some(p);
-                            }
+                for (transaction_id, p) in prices {
+                    match p {
+                        None => any_failed = true,
+                        Some(p) => {
+                            // Update the price
+                            // info!("Historical price at txid {} was {}", txid, p);
+                            self.wallet
+                                .transactions
+                                .write()
+                                .await
+                                .current
+                                .get_mut(&transaction_id)
+                                .unwrap()
+                                .zec_price = Some(p);
                         }
                     }
-
-                    // If any of the txids failed, increase the retry_count by 1.
-                    if any_failed {
-                        1
-                    } else {
-                        0
-                    }
                 }
-                Err(_) => 1,
-            };
+
+                // If any of the txids failed, increase the retry_count by 1.
+                if any_failed {
+                    1
+                } else {
+                    0
+                }
+            }
+            Err(_) => 1,
+        };
 
         {
             let mut p = self.wallet.price.write().await;
@@ -1129,27 +1144,27 @@ impl LightClient {
         let h = std::thread::spawn(move || {
             // Start a new async runtime, which is fine because we are in a new thread.
             Runtime::new().unwrap().block_on(async move {
-                let (mempool_tx, mut mempool_rx) = unbounded_channel::<RawTransaction>();
+                let (mempool_transmitter, mut mempool_receiver) = unbounded_channel::<RawTransaction>();
                 let lc1 = lci.clone();
 
                 let h1 = tokio::spawn(async move {
                     let keys = lc1.wallet.keys();
-                    let wallet_txns = lc1.wallet.txns.clone();
+                    let wallet_transactions = lc1.wallet.transactions.clone();
                     let price = lc1.wallet.price.clone();
 
-                    while let Some(rtx) = mempool_rx.recv().await {
-                        if let Ok(tx) = Transaction::read(&rtx.data[..]) {
+                    while let Some(rtransaction) = mempool_receiver.recv().await {
+                        if let Ok(transaction) = Transaction::read(&rtransaction.data[..]) {
                             let price = price.read().await.clone();
                             //info!("Mempool attempting to scan {}", tx.txid());
 
                             FetchFullTxns::scan_full_tx(
                                 config.clone(),
-                                tx,
-                                BlockHeight::from_u32(rtx.height as u32),
+                                transaction,
+                                BlockHeight::from_u32(rtransaction.height as u32),
                                 true,
                                 now() as u32,
                                 keys.clone(),
-                                wallet_txns.clone(),
+                                wallet_transactions.clone(),
                                 WalletTx::get_price(now(), &price),
                             )
                             .await;
@@ -1160,7 +1175,7 @@ impl LightClient {
                 let h2 = tokio::spawn(async move {
                     loop {
                         //info!("Monitoring mempool");
-                        let r = GrpcConnector::monitor_mempool(uri.clone(), mempool_tx.clone()).await;
+                        let r = GrpcConnector::monitor_mempool(uri.clone(), mempool_transmitter.clone()).await;
 
                         if r.is_err() {
                             warn!("Mempool monitor returned {:?}, will restart listening", r);
@@ -1188,7 +1203,7 @@ impl LightClient {
         // If printing updates, start a new task to print updates every 2 seconds.
         let sync_result = if print_updates {
             let sync_status = self.bsync_data.read().await.sync_status.clone();
-            let (tx, mut rx) = oneshot::channel::<i32>();
+            let (transmitter, mut receiver) = oneshot::channel::<i32>();
 
             tokio::spawn(async move {
                 while sync_status.read().await.sync_id == prev_sync_id {
@@ -1197,7 +1212,7 @@ impl LightClient {
                 }
 
                 loop {
-                    if let Ok(_t) = rx.try_recv() {
+                    if let Ok(_t) = receiver.try_recv() {
                         break;
                     }
 
@@ -1212,7 +1227,7 @@ impl LightClient {
             });
 
             let r = r_fut.await;
-            tx.send(1).unwrap();
+            transmitter.send(1).unwrap();
             r
         } else {
             r_fut.await
@@ -1255,7 +1270,7 @@ impl LightClient {
                 BlockAndWitnessData::invalidate_block(
                     last_scanned_height,
                     self.wallet.blocks.clone(),
-                    self.wallet.txns.clone(),
+                    self.wallet.transactions.clone(),
                 )
                 .await;
             }
@@ -1340,38 +1355,45 @@ impl LightClient {
         let grpc_connector = GrpcConnector::new(uri.clone());
 
         // A signal to detect reorgs, and if so, ask the block_fetcher to fetch new blocks.
-        let (reorg_tx, reorg_rx) = unbounded_channel();
+        let (reorg_transmitter, reorg_receiver) = unbounded_channel();
 
         // Node and Witness Data Cache
-        let (block_and_witness_handle, block_and_witness_data_tx) = bsync_data
+        let (block_and_witness_handle, block_and_witness_data_transmitter) = bsync_data
             .read()
             .await
             .block_data
-            .start(start_block, end_block, self.wallet.txns(), reorg_tx)
+            .start(start_block, end_block, self.wallet.transactions(), reorg_transmitter)
             .await;
 
         // Full Tx GRPC fetcher
-        let (fulltx_fetcher_handle, fulltx_fetcher_tx) = grpc_connector.start_fulltx_fetcher().await;
+        let (full_transaction_fetcher_handle, full_transaction_fetcher_transmitter) =
+            grpc_connector.start_full_transaction_fetcher().await;
 
         // Transparent Transactions Fetcher
-        let (taddr_fetcher_handle, taddr_fetcher_tx) = grpc_connector.start_taddr_txn_fetcher().await;
+        let (taddr_fetcher_handle, taddr_fetcher_transmitter) = grpc_connector.start_taddr_transaction_fetcher().await;
 
         // The processor to fetch the full transactions, and decode the memos and the outgoing metadata
-        let fetch_full_tx_processor = FetchFullTxns::new(&self.config, self.wallet.keys(), self.wallet.txns());
-        let (fetch_full_txns_handle, fetch_full_txn_tx, fetch_taddr_txns_tx) = fetch_full_tx_processor
-            .start(fulltx_fetcher_tx.clone(), bsync_data.clone())
-            .await;
+        let fetch_full_transaction_processor =
+            FetchFullTxns::new(&self.config, self.wallet.keys(), self.wallet.transactions());
+        let (fetch_full_transactions_handle, fetch_full_transaction_transmitter, fetch_taddr_transactions_transmitter) =
+            fetch_full_transaction_processor
+                .start(full_transaction_fetcher_transmitter.clone(), bsync_data.clone())
+                .await;
 
         // The processor to process Transactions detected by the trial decryptions processor
-        let update_notes_processor = UpdateNotes::new(self.wallet.txns());
-        let (update_notes_handle, blocks_done_tx, detected_txns_tx) = update_notes_processor
-            .start(bsync_data.clone(), fetch_full_txn_tx)
+        let update_notes_processor = UpdateNotes::new(self.wallet.transactions());
+        let (update_notes_handle, blocks_done_transmitter, detected_transactions_transmitter) = update_notes_processor
+            .start(bsync_data.clone(), fetch_full_transaction_transmitter)
             .await;
 
         // Do Trial decryptions of all the sapling outputs, and pass on the successful ones to the update_notes processor
-        let trial_decryptions_processor = TrialDecryptions::new(self.wallet.keys(), self.wallet.txns());
-        let (trial_decrypts_handle, trial_decrypts_tx) = trial_decryptions_processor
-            .start(bsync_data.clone(), detected_txns_tx, fulltx_fetcher_tx)
+        let trial_decryptions_processor = TrialDecryptions::new(self.wallet.keys(), self.wallet.transactions());
+        let (trial_decrypts_handle, trial_decrypts_transmitter) = trial_decryptions_processor
+            .start(
+                bsync_data.clone(),
+                detected_transactions_transmitter,
+                full_transaction_fetcher_transmitter,
+            )
             .await;
 
         // Fetch Compact blocks and send them to nullifier cache, node-and-witness cache and the trial-decryption processor
@@ -1379,10 +1401,10 @@ impl LightClient {
         let fetch_compact_blocks_handle = tokio::spawn(async move {
             fetch_compact_blocks
                 .start(
-                    [block_and_witness_data_tx, trial_decrypts_tx],
+                    [block_and_witness_data_transmitter, trial_decrypts_transmitter],
                     start_block,
                     end_block,
-                    reorg_rx,
+                    reorg_receiver,
                 )
                 .await
         });
@@ -1392,12 +1414,17 @@ impl LightClient {
         let earliest_block = block_and_witness_handle.await.unwrap().unwrap();
 
         // 1. Fetch the transparent txns only after reorgs are done.
-        let taddr_txns_handle = FetchTaddrTxns::new(self.wallet.keys())
-            .start(start_block, earliest_block, taddr_fetcher_tx, fetch_taddr_txns_tx)
+        let taddr_transactions_handle = FetchTaddrTransactions::new(self.wallet.keys())
+            .start(
+                start_block,
+                earliest_block,
+                taddr_fetcher_transmitter,
+                fetch_taddr_transactions_transmitter,
+            )
             .await;
 
         // 2. Notify the notes updater that the blocks are done updating
-        blocks_done_tx.send(earliest_block).unwrap();
+        blocks_done_transmitter.send(earliest_block).unwrap();
 
         // 3. Verify all the downloaded data
         let block_data = bsync_data.clone();
@@ -1407,18 +1434,22 @@ impl LightClient {
 
         // Await all the futures
         let r1 = tokio::spawn(async move {
-            join_all(vec![trial_decrypts_handle, fulltx_fetcher_handle, taddr_fetcher_handle])
-                .await
-                .into_iter()
-                .map(|r| r.map_err(|e| format!("{}", e)))
-                .collect::<Result<(), _>>()
+            join_all(vec![
+                trial_decrypts_handle,
+                full_transaction_fetcher_handle,
+                taddr_fetcher_handle,
+            ])
+            .await
+            .into_iter()
+            .map(|r| r.map_err(|e| format!("{}", e)))
+            .collect::<Result<(), _>>()
         });
 
         join_all(vec![
             update_notes_handle,
-            taddr_txns_handle,
+            taddr_transactions_handle,
             fetch_compact_blocks_handle,
-            fetch_full_txns_handle,
+            fetch_full_transactions_handle,
             r1,
         ])
         .await
@@ -1447,10 +1478,18 @@ impl LightClient {
 
         // 4. Remove the witnesses for spent notes more than 100 blocks old, since now there
         // is no risk of reorg
-        self.wallet.txns().write().await.clear_old_witnesses(latest_block);
+        self.wallet
+            .transactions()
+            .write()
+            .await
+            .clear_old_witnesses(latest_block);
 
         // 5. Remove expired mempool transactions, if any
-        self.wallet.txns().write().await.clear_expired_mempool(latest_block);
+        self.wallet
+            .transactions()
+            .write()
+            .await
+            .clear_expired_mempool(latest_block);
 
         // 6. Set the heighest verified tree
         if heighest_tree.is_some() {
@@ -1495,13 +1534,17 @@ impl LightClient {
             let prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
 
             self.wallet
-                .send_to_address(branch_id, prover, true, vec![(&addr, tbal - fee, None)], |txbytes| {
-                    GrpcConnector::send_transaction(self.get_server_uri(), txbytes)
-                })
+                .send_to_address(
+                    branch_id,
+                    prover,
+                    true,
+                    vec![(&addr, tbal - fee, None)],
+                    |transaction_bytes| GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes),
+                )
                 .await
         };
 
-        result.map(|(txid, _)| txid)
+        result.map(|(transaction_id, _)| transaction_id)
     }
 
     async fn consensus_branch_id(&self) -> u32 {
@@ -1525,13 +1568,13 @@ impl LightClient {
             let prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
 
             self.wallet
-                .send_to_address(branch_id, prover, false, addrs, |txbytes| {
-                    GrpcConnector::send_transaction(self.get_server_uri(), txbytes)
+                .send_to_address(branch_id, prover, false, addrs, |transaction_bytes| {
+                    GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
                 })
                 .await
         };
 
-        result.map(|(txid, _)| txid)
+        result.map(|(transaction_id, _)| transaction_id)
     }
 
     #[cfg(test)]
@@ -1542,16 +1585,16 @@ impl LightClient {
 
         let result = {
             let _lock = self.sync_lock.lock().await;
-            let prover = crate::blaze::test_utils::FakeTxProver {};
+            let prover = crate::blaze::test_utils::FakeTransactionProver {};
 
             self.wallet
-                .send_to_address(branch_id, prover, false, addrs, |txbytes| {
-                    GrpcConnector::send_transaction(self.get_server_uri(), txbytes)
+                .send_to_address(branch_id, prover, false, addrs, |transaction_bytes| {
+                    GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
                 })
                 .await
         };
 
-        result.map(|(txid, _)| txid)
+        result.map(|(transaction_id, _)| transaction_id)
     }
 }
 

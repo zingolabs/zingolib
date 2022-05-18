@@ -40,8 +40,8 @@ impl BlockData {
     }
 
     pub(crate) fn new(mut cb: CompactBlock) -> Self {
-        for ctx in &mut cb.vtx {
-            for co in &mut ctx.outputs {
+        for compact_transaction in &mut cb.v_transaction {
+            for co in &mut compact_transaction.outputs {
                 co.ciphertext.clear();
                 co.epk.clear();
             }
@@ -188,7 +188,7 @@ pub struct SaplingNoteData {
     pub spent: Option<(TxId, u32)>, // If this note was confirmed spent
 
     // If this note was spent in a send, but has not yet been confirmed.
-    // Contains the txid and height at which it was broadcast
+    // Contains the transaction id and height at which it was broadcast
     pub unconfirmed_spent: Option<(TxId, u32)>,
     pub memo: Option<Memo>,
     pub is_change: bool,
@@ -297,9 +297,11 @@ impl SaplingNoteData {
         // from the blockchain anyway.
         let spent = if version <= 5 {
             let spent = Optional::read(&mut reader, |r| {
-                let mut txid_bytes = [0u8; 32];
-                r.read_exact(&mut txid_bytes)?;
-                Ok(TxId { 0: txid_bytes })
+                let mut transaction_id_bytes = [0u8; 32];
+                r.read_exact(&mut transaction_id_bytes)?;
+                Ok(TxId {
+                    0: transaction_id_bytes,
+                })
             })?;
 
             let spent_at_height = if version >= 2 {
@@ -315,10 +317,15 @@ impl SaplingNoteData {
             }
         } else {
             Optional::read(&mut reader, |r| {
-                let mut txid_bytes = [0u8; 32];
-                r.read_exact(&mut txid_bytes)?;
+                let mut transaction_id_bytes = [0u8; 32];
+                r.read_exact(&mut transaction_id_bytes)?;
                 let height = r.read_u32::<LittleEndian>()?;
-                Ok((TxId { 0: txid_bytes }, height))
+                Ok((
+                    TxId {
+                        0: transaction_id_bytes,
+                    },
+                    height,
+                ))
             })?
         };
 
@@ -326,11 +333,11 @@ impl SaplingNoteData {
             None
         } else {
             Optional::read(&mut reader, |r| {
-                let mut txbytes = [0u8; 32];
-                r.read_exact(&mut txbytes)?;
+                let mut transaction_bytes = [0u8; 32];
+                r.read_exact(&mut transaction_bytes)?;
 
                 let height = r.read_u32::<LittleEndian>()?;
-                Ok((TxId { 0: txbytes }, height))
+                Ok((TxId { 0: transaction_bytes }, height))
             })?
         };
 
@@ -392,13 +399,13 @@ impl SaplingNoteData {
 
         writer.write_all(&self.nullifier.0)?;
 
-        Optional::write(&mut writer, &self.spent, |w, (txid, h)| {
-            w.write_all(&txid.0)?;
+        Optional::write(&mut writer, &self.spent, |w, (transaction_id, h)| {
+            w.write_all(&transaction_id.0)?;
             w.write_u32::<LittleEndian>(*h)
         })?;
 
-        Optional::write(&mut writer, &self.unconfirmed_spent, |w, (txid, height)| {
-            w.write_all(&txid.0)?;
+        Optional::write(&mut writer, &self.unconfirmed_spent, |w, (transaction_id, height)| {
+            w.write_all(&transaction_id.0)?;
             w.write_u32::<LittleEndian>(*height)
         })?;
 
@@ -409,7 +416,7 @@ impl SaplingNoteData {
         writer.write_u8(if self.have_spending_key { 1 } else { 0 })?;
 
         // Note that we don't write the unconfirmed_spent field, because if the wallet is restarted,
-        // we don't want to be beholden to any expired txns
+        // we don't want to be beholden to any expired transactions
 
         Ok(())
     }
@@ -450,9 +457,11 @@ impl Utxo {
         let address = String::from_utf8(address_bytes).unwrap();
         assert_eq!(address.chars().take(1).collect::<Vec<char>>()[0], 't');
 
-        let mut txid_bytes = [0; 32];
-        reader.read_exact(&mut txid_bytes)?;
-        let txid = TxId { 0: txid_bytes };
+        let mut transaction_id_bytes = [0; 32];
+        reader.read_exact(&mut transaction_id_bytes)?;
+        let transaction_id = TxId {
+            0: transaction_id_bytes,
+        };
 
         let output_index = reader.read_u64::<LittleEndian>()?;
         let value = reader.read_u64::<LittleEndian>()?;
@@ -465,9 +474,9 @@ impl Utxo {
         })?;
 
         let spent = Optional::read(&mut reader, |r| {
-            let mut txbytes = [0u8; 32];
-            r.read_exact(&mut txbytes)?;
-            Ok(TxId { 0: txbytes })
+            let mut transaction_bytes = [0u8; 32];
+            r.read_exact(&mut transaction_bytes)?;
+            Ok(TxId { 0: transaction_bytes })
         })?;
 
         let spent_at_height = if version <= 1 {
@@ -480,17 +489,17 @@ impl Utxo {
             None
         } else {
             Optional::read(&mut reader, |r| {
-                let mut txbytes = [0u8; 32];
-                r.read_exact(&mut txbytes)?;
+                let mut transaction_bytes = [0u8; 32];
+                r.read_exact(&mut transaction_bytes)?;
 
                 let height = r.read_u32::<LittleEndian>()?;
-                Ok((TxId { 0: txbytes }, height))
+                Ok((TxId { 0: transaction_bytes }, height))
             })?
         };
 
         Ok(Utxo {
             address,
-            txid,
+            txid: transaction_id,
             output_index,
             script,
             value,
@@ -515,14 +524,16 @@ impl Utxo {
 
         Vector::write(&mut writer, &self.script, |w, b| w.write_all(&[*b]))?;
 
-        Optional::write(&mut writer, &self.spent, |w, txid| w.write_all(&txid.0))?;
+        Optional::write(&mut writer, &self.spent, |w, transaction_id| {
+            w.write_all(&transaction_id.0)
+        })?;
 
         Optional::write(&mut writer, &self.spent_at_height, |w, s| {
             w.write_i32::<LittleEndian>(*s)
         })?;
 
-        Optional::write(&mut writer, &self.unconfirmed_spent, |w, (txid, height)| {
-            w.write_all(&txid.0)?;
+        Optional::write(&mut writer, &self.unconfirmed_spent, |w, (transaction_id, height)| {
+            w.write_all(&transaction_id.0)?;
             w.write_u32::<LittleEndian>(*height)
         })?;
 
@@ -637,12 +648,12 @@ impl WalletTx {
         }
     }
 
-    pub fn new(height: BlockHeight, datetime: u64, txid: &TxId, unconfirmed: bool) -> Self {
+    pub fn new(height: BlockHeight, datetime: u64, transaction_id: &TxId, unconfirmed: bool) -> Self {
         WalletTx {
             block: height,
             unconfirmed,
             datetime,
-            txid: txid.clone(),
+            txid: transaction_id.clone(),
             spent_nullifiers: vec![],
             notes: vec![],
             utxos: vec![],
@@ -667,10 +678,12 @@ impl WalletTx {
             0
         };
 
-        let mut txid_bytes = [0u8; 32];
-        reader.read_exact(&mut txid_bytes)?;
+        let mut transaction_id_bytes = [0u8; 32];
+        reader.read_exact(&mut transaction_id_bytes)?;
 
-        let txid = TxId { 0: txid_bytes };
+        let transaction_id = TxId {
+            0: transaction_id_bytes,
+        };
 
         let notes = Vector::read(&mut reader, |r| SaplingNoteData::read(r))?;
         let utxos = Vector::read(&mut reader, |r| Utxo::read(r))?;
@@ -703,7 +716,7 @@ impl WalletTx {
             block,
             unconfirmed,
             datetime,
-            txid,
+            txid: transaction_id,
             notes,
             utxos,
             spent_nullifiers,
@@ -747,7 +760,7 @@ impl WalletTx {
 }
 
 pub struct SpendableNote {
-    pub txid: TxId,
+    pub transaction_id: TxId,
     pub nullifier: Nullifier,
     pub diversifier: Diversifier,
     pub note: Note,
@@ -757,7 +770,7 @@ pub struct SpendableNote {
 
 impl SpendableNote {
     pub fn from(
-        txid: TxId,
+        transaction_id: TxId,
         nd: &SaplingNoteData,
         anchor_offset: usize,
         extsk: &Option<ExtendedSpendingKey>,
@@ -771,7 +784,7 @@ impl SpendableNote {
             let witness = nd.witnesses.get(nd.witnesses.len() - anchor_offset - 1);
 
             witness.map(|w| SpendableNote {
-                txid,
+                transaction_id,
                 nullifier: nd.nullifier,
                 diversifier: nd.diversifier,
                 note: nd.note.clone(),
