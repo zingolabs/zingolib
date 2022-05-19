@@ -2,6 +2,7 @@ use ff::{Field, PrimeField};
 use group::GroupEncoding;
 use json::JsonValue;
 use jubjub::ExtendedPoint;
+use log::info;
 use rand::rngs::OsRng;
 use tokio::runtime::Runtime;
 use tonic::Request;
@@ -888,9 +889,6 @@ async fn mixed_transaction() {
 
 #[tokio::test]
 async fn aborted_resync() {
-    /*tracing_subscriber::fmt()
-    .with_max_level(tracing_subscriber::filter::LevelFilter::INFO)
-    .init();*/
     for https in [true, false] {
         let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(https).await;
 
@@ -899,9 +897,13 @@ async fn aborted_resync() {
         let lc = LightClient::test_new(&config, None, 0).await.unwrap();
         let mut fcbl = FakeCompactBlockList::new(0);
 
+        info!("About to mine!");
+
         // 1. Mine 10 blocks
         mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
         assert_eq!(lc.wallet.last_scanned_height().await, 10);
+
+        info!("Mined!");
 
         // 2. Send an incoming transaction to fill the wallet
         let extfvk1 = lc.wallet.keys().read().await.get_all_extfvks()[0].clone();
@@ -910,7 +912,7 @@ async fn aborted_resync() {
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
         mine_random_blocks(&mut fcbl, &data, &lc, 5).await;
 
-        // 3. Send an incoming t-address txn
+        // 3. Send an incoming t-address transaction
         let sk = lc.wallet.keys().read().await.tkeys[0].clone();
         let pk = sk.pubkey().unwrap();
         let taddr = sk.address;

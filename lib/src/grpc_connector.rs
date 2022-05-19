@@ -46,13 +46,11 @@ impl GrpcConnector {
     > {
         let uri = Arc::new(self.uri.clone());
         async move {
-            let mut http = HttpConnector::new();
-            http.enforce_http(false);
+            let mut http_connector = HttpConnector::new();
+            http_connector.enforce_http(false);
             if uri.scheme_str() == Some("https") {
                 #[cfg(test)]
                 let mut roots = RootCertStore::empty();
-                #[cfg(not(test))]
-                let roots = RootCertStore::empty();
 
                 #[cfg(test)]
                 {
@@ -61,6 +59,10 @@ impl GrpcConnector {
                     let certs = rustls_pemfile::certs(&mut buf).unwrap();
                     roots.add_parsable_certificates(&certs);
                 }
+
+                #[cfg(not(test))]
+                let roots = RootCertStore::empty();
+
                 let tls = ClientConfig::builder()
                     .with_safe_defaults()
                     .with_root_certificates(roots)
@@ -75,7 +77,7 @@ impl GrpcConnector {
                             .enable_http2()
                             .wrap_connector(s)
                     })
-                    .service(http);
+                    .service(http_connector);
                 let client = Box::new(hyper::Client::builder().build(connector));
                 let uri = uri.clone();
                 let svc = tower::ServiceBuilder::new()
@@ -97,7 +99,7 @@ impl GrpcConnector {
 
                 Ok(CompactTransactionStreamerClient::new(svc.boxed_clone()))
             } else {
-                let connector = tower::ServiceBuilder::new().service(http);
+                let connector = tower::ServiceBuilder::new().service(http_connector);
                 let client = Box::new(hyper::Client::builder().http2_only(true).build(connector));
                 let uri = uri.clone();
                 let svc = tower::ServiceBuilder::new()
