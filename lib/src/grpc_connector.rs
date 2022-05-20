@@ -11,17 +11,23 @@ use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use log::warn;
 
+use http_body::combinators::UnsyncBoxBody;
+use hyper::{client::HttpConnector, Uri};
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
-use tokio_rustls::rustls::ClientConfig;
-use tonic::transport::ClientTlsConfig;
-use tonic::{
-    transport::{Channel, Error},
-    Request,
-};
+use tokio_rustls::rustls::{ClientConfig, RootCertStore};
+use tonic::Request;
+use tonic::Status;
+use tower::{util::BoxCloneService, ServiceExt};
 use zcash_primitives::transaction::{Transaction, TxId};
+
+type UnderlyingService = BoxCloneService<
+    http::Request<UnsyncBoxBody<prost::bytes::Bytes, Status>>,
+    http::Response<hyper::Body>,
+    hyper::Error,
+>;
 
 #[derive(Clone)]
 pub struct GrpcConnector {
@@ -33,31 +39,89 @@ impl GrpcConnector {
         Self { uri }
     }
 
-    pub(crate) async fn get_client(&self) -> Result<CompactTransactionStreamerClient<Channel>, Error> {
-        let channel = if self.uri.scheme_str() == Some("http") {
-            //println!("http");
-            Channel::builder(self.uri.clone()).connect().await?
-        } else {
-            //println!("https");
-            let mut config = ClientConfig::new();
+    pub(crate) fn get_client(
+        &self,
+    ) -> impl std::future::Future<
+        Output = Result<CompactTransactionStreamerClient<UnderlyingService>, Box<dyn std::error::Error>>,
+    > {
+        let uri = Arc::new(self.uri.clone());
+        async move {
+            let mut http_connector = HttpConnector::new();
+            http_connector.enforce_http(false);
+            if uri.scheme_str() == Some("https") {
+                #[cfg(test)]
+                let mut roots = RootCertStore::empty();
 
-            config.alpn_protocols.push(b"h2".to_vec());
+                #[cfg(test)]
+                {
+                    let fd = std::fs::File::open("localhost.pem").unwrap();
+                    let mut buf = std::io::BufReader::new(&fd);
+                    let certs = rustls_pemfile::certs(&mut buf).unwrap();
+                    roots.add_parsable_certificates(&certs);
+                }
 
-            config
-                .root_store
-                .add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
+                #[cfg(not(test))]
+                let roots = RootCertStore::empty();
 
-            #[cfg(test)]
-            add_tls_test_config(&mut config).await;
+                let tls = ClientConfig::builder()
+                    .with_safe_defaults()
+                    .with_root_certificates(roots)
+                    .with_no_client_auth();
+                let connector = tower::ServiceBuilder::new()
+                    .layer_fn(move |s| {
+                        let tls = tls.clone();
 
-            let tls = ClientTlsConfig::new()
-                .rustls_client_config(config)
-                .domain_name(self.uri.host().unwrap());
+                        hyper_rustls::HttpsConnectorBuilder::new()
+                            .with_tls_config(tls)
+                            .https_or_http()
+                            .enable_http2()
+                            .wrap_connector(s)
+                    })
+                    .service(http_connector);
+                let client = Box::new(hyper::Client::builder().build(connector));
+                let uri = uri.clone();
+                let svc = tower::ServiceBuilder::new()
+                    //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
+                    .map_request(move |mut req: http::Request<tonic::body::BoxBody>| {
+                        let uri = Uri::builder()
+                            .scheme(uri.scheme().unwrap().clone())
+                            .authority(uri.authority().unwrap().clone())
+                            //here. The Request's uri contains the path to the GRPC sever and
+                            //the method being called
+                            .path_and_query(req.uri().path_and_query().unwrap().clone())
+                            .build()
+                            .unwrap();
 
-            Channel::builder(self.uri.clone()).tls_config(tls)?.connect().await?
-        };
+                        *req.uri_mut() = uri;
+                        req
+                    })
+                    .service(client);
 
-        Ok(CompactTransactionStreamerClient::new(channel))
+                Ok(CompactTransactionStreamerClient::new(svc.boxed_clone()))
+            } else {
+                let connector = tower::ServiceBuilder::new().service(http_connector);
+                let client = Box::new(hyper::Client::builder().http2_only(true).build(connector));
+                let uri = uri.clone();
+                let svc = tower::ServiceBuilder::new()
+                    //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
+                    .map_request(move |mut req: http::Request<tonic::body::BoxBody>| {
+                        let uri = Uri::builder()
+                            .scheme(uri.scheme().unwrap().clone())
+                            .authority(uri.authority().unwrap().clone())
+                            //here. The Request's uri contains the path to the GRPC sever and
+                            //the method being called
+                            .path_and_query(req.uri().path_and_query().unwrap().clone())
+                            .build()
+                            .unwrap();
+
+                        *req.uri_mut() = uri;
+                        req
+                    })
+                    .service(client);
+
+                Ok(CompactTransactionStreamerClient::new(svc.boxed_clone()))
+            }
+        }
     }
 
     pub async fn start_saplingtree_fetcher(
@@ -446,28 +510,4 @@ impl GrpcConnector {
             Err(format!("Error: {:?}", sendresponse))
         }
     }
-}
-
-#[cfg(test)]
-async fn add_tls_test_config(config: &mut ClientConfig) {
-    use std::{fs::File, io::BufReader};
-    let file = "localhost.pem";
-    let mut reader = BufReader::new(File::open(file).unwrap());
-    config.root_store.add_pem_file(&mut reader).unwrap();
-    config
-        .set_single_client_cert(
-            vec![tokio_rustls::rustls::Certificate(
-                rustls_pemfile::certs(&mut BufReader::new(File::open(file).unwrap()))
-                    .unwrap()
-                    .pop()
-                    .unwrap(),
-            )],
-            tokio_rustls::rustls::PrivateKey(
-                rustls_pemfile::pkcs8_private_keys(&mut BufReader::new(File::open(file).unwrap()))
-                    .unwrap()
-                    .pop()
-                    .expect("empty vec of private keys??"),
-            ),
-        )
-        .unwrap();
 }

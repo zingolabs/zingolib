@@ -15,7 +15,7 @@ Run `zecwallet-cli help` to see a list of all commands.
 * Also remember that t-addresses don't provide any privacy protection.
 
 ## Notes:
-* If you want to run your own server, please see [zecwallet lightwalletd](https://github.com/adityapk00/lightwalletd), and then run `./zecwallet-cli --server http://127.0.0.1:9067`.
+* If you want to run your own server, please see [zecwallet lightwalletd](https://github.com/zingolabs/lightwalletd), and then run `./zecwallet-cli --server http://127.0.0.1:9067`.
 * The log file is in `~/.zcash/zecwallet-light-wallet.debug.log`. Wallet is stored in `~/.zcash/zecwallet-light-wallet.dat`
 
 ### Note Management
@@ -37,7 +37,7 @@ Zecwallet-CLI does automatic note and utxo management, which means it doesn't al
     * Please install the build tools for your platform. On Ubuntu `sudo apt install build-essential gcc`
 
 ```
-git clone https://github.com/adityapk00/zecwallet-light-cli.git
+git clone https://github.com/zingolabs/zecwallet-light-cli.git
 cargo build --release
 ./target/release/zecwallet-cli
 ```
