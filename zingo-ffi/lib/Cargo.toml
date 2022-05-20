@@ -1,8 +1,8 @@
 [package]
 name = "rustlib"
 version = "1.0.1"
-authors = ["Zingolabs <zingo@zingolabs.com>"]
-edition = "2018"
+authors = ["Aditya Kulkarni <aditya@zecwallet.co>", "Zingolabs <zingo@zingolabs.com>"]
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
