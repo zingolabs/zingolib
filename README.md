@@ -1,5 +1,5 @@
 ## Zecwallet CLI - A command line ZecWallet light client. 
-[![license](https://img.shields.io/github/license/zingolabs/zecwallet-light-cli)](LICENSE)
+[![license](https://img.shields.io/github/license/zingolabs/zecwallet-light-cli)](LICENSE) [![codecov](https://codecov.io/gh/zingolabs/zecwalletlitelib/branch/dev/graph/badge.svg?token=WMKTJMQY28)](https://codecov.io/gh/zingolabs/zecwalletlitelib)
 
 `zecwallet-cli` is a command line ZecWallet light client. To use it, download the latest binary from the releases page and run `./zecwallet-cli`
 
