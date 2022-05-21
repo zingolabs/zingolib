@@ -30,9 +30,8 @@ jobs:
         with:
           path: |
             ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
+            ~/.cargo/registry/
+            ~/.cargo/git/
             ~/.cargo/.crates.toml
             ~/.cargo/.crates2.json
             target/
