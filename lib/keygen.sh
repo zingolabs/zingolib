@@ -3,5 +3,6 @@ openssl req -x509 -out localhost.crt -keyout localhost.key \
     -subj '/CN=localhost' -extensions EXT -config <( \
        printf "[dn]\nCN=localhost\n[req]\ndistinguished_name = dn\n[EXT]\nsubjectAltName=DNS:localhost\nkeyUsage=digitalSignature\nextendedKeyUsage=serverAuth,clientAuth")
 
-cat localhost.crt localhost.key > localhost.pem
+echo `pwd`
+cat localhost.crt localhost.key > $1
 rm localhost.crt localhost.key

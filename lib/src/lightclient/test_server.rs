@@ -31,6 +31,7 @@ use zcash_primitives::transaction::{Transaction, TxId};
 use super::lightclient_config::LightClientConfig;
 use super::LightClient;
 
+pub(crate) const TEST_PEMFILE_PATH: &'static str = "test-data/localhost.pem";
 static KEYGEN: std::sync::Once = std::sync::Once::new();
 
 pub async fn create_test_server(
@@ -44,7 +45,7 @@ pub async fn create_test_server(
 ) {
     KEYGEN.call_once(|| {
         assert!(std::process::Command::new("sh")
-            .arg("keygen.sh")
+            .args(["keygen.sh", TEST_PEMFILE_PATH])
             //For some reason, openssl, when successfully
             //generating a key, prints to stderr, not stdout
             .stderr(std::process::Stdio::null())
@@ -103,18 +104,17 @@ pub async fn create_test_server(
         let nameuri: std::string::String = uri.replace("https://", "").replace("http://", "").parse().unwrap();
         let listener = tokio::net::TcpListener::bind(nameuri).await.unwrap();
         let tls_acceptor = if https {
-            let file = "localhost.pem";
             use std::fs::File;
             use std::io::BufReader;
             let (cert, key) = (
                 tokio_rustls::rustls::Certificate(
-                    rustls_pemfile::certs(&mut BufReader::new(File::open(file).unwrap()))
+                    rustls_pemfile::certs(&mut BufReader::new(File::open(TEST_PEMFILE_PATH).unwrap()))
                         .unwrap()
                         .pop()
                         .unwrap(),
                 ),
                 tokio_rustls::rustls::PrivateKey(
-                    rustls_pemfile::pkcs8_private_keys(&mut BufReader::new(File::open(file).unwrap()))
+                    rustls_pemfile::pkcs8_private_keys(&mut BufReader::new(File::open(TEST_PEMFILE_PATH).unwrap()))
                         .unwrap()
                         .pop()
                         .expect("empty vec of private keys??"),
