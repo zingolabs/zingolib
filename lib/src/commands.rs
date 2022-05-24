@@ -104,7 +104,7 @@ impl Command for SyncStatusCommand {
             } else {
                 object! {
                     "sync_id" => status.sync_id,
-                    "in_prorgess" => status.in_progress,
+                    "in_progress" => status.in_progress,
                     "last_error" => status.last_error,
                 }
             };
