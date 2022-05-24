@@ -23,8 +23,6 @@ jobs:
           toolchain:            1.60.0
           override:             true
           components:           rustfmt, clippy
-      - name:                   Run keygen
-        run:                    ./keygen.sh
       - name: Grab cached files
         uses: actions/cache@v3
         with:
