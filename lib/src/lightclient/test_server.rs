@@ -44,14 +44,27 @@ pub async fn create_test_server(
     JoinHandle<()>,
 ) {
     KEYGEN.call_once(|| {
-        assert!(std::process::Command::new("bash")
-            .args(["keygen.sh", TEST_PEMFILE_PATH])
-            //For some reason, openssl, when successfully
-            //generating a key, prints to stderr, not stdout
-            .stderr(std::process::Stdio::null())
-            .status()
-            .unwrap()
-            .success())
+        std::process::Command::new("openssl")
+            .args([
+                "req",
+                "-x509",
+                "-out",
+                TEST_PEMFILE_PATH,
+                "-keyout",
+                TEST_PEMFILE_PATH,
+                "-newkey",
+                "rsa:2048",
+                "-nodes",
+                "-sha256",
+                "-subj",
+                "/CN=localhost",
+                "-extensions",
+                "EXT",
+                "-config",
+                "test-data/openssl_cfg",
+            ])
+            .output()
+            .unwrap();
     });
     let (ready_transmitter, ready_receiver) = oneshot::channel();
     let (stop_transmitter, stop_receiver) = oneshot::channel();

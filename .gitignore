@@ -5,3 +5,4 @@
 *.json.txt
 lib/test-data/*
 !lib/test-data/README
+!lib/test-data/openssl_cfg
