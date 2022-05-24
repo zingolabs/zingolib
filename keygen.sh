@@ -4,3 +4,4 @@ openssl req -x509 -out localhost.crt -keyout localhost.key \
        printf "[dn]\nCN=localhost\n[req]\ndistinguished_name = dn\n[EXT]\nsubjectAltName=DNS:localhost\nkeyUsage=digitalSignature\nextendedKeyUsage=serverAuth,clientAuth")
 
 cat localhost.crt localhost.key > lib/localhost.pem
+rm localhost.crt localhost.key
