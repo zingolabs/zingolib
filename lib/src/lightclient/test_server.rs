@@ -44,7 +44,7 @@ pub async fn create_test_server(
     JoinHandle<()>,
 ) {
     KEYGEN.call_once(|| {
-        assert!(std::process::Command::new("sh")
+        assert!(std::process::Command::new("bash")
             .args(["keygen.sh", TEST_PEMFILE_PATH])
             //For some reason, openssl, when successfully
             //generating a key, prints to stderr, not stdout
