@@ -31,6 +31,8 @@ use zcash_primitives::transaction::{Transaction, TxId};
 use super::lightclient_config::LightClientConfig;
 use super::LightClient;
 
+static KEYGEN: std::sync::Once = std::sync::Once::new();
+
 pub async fn create_test_server(
     https: bool,
 ) -> (
@@ -40,6 +42,16 @@ pub async fn create_test_server(
     oneshot::Sender<()>,
     JoinHandle<()>,
 ) {
+    KEYGEN.call_once(|| {
+        assert!(std::process::Command::new("sh")
+            .arg("keygen.sh")
+            //For some reason, openssl, when successfully
+            //generating a key, prints to stderr, not stdout
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap()
+            .success())
+    });
     let (ready_transmitter, ready_receiver) = oneshot::channel();
     let (stop_transmitter, stop_receiver) = oneshot::channel();
     let mut stop_fused = stop_receiver.fuse();
