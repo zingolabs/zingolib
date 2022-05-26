@@ -1,7 +1,7 @@
 use std::{convert::TryInto, sync::Arc};
 
 use crate::{
-    compact_formats::{CompactBlock, CompactOutput, CompactSpend, CompactTransaction},
+    compact_formats::{CompactBlock, CompactOutput, CompactSpend, CompactTx},
     lightclient::test_server::TestServerData,
     lightwallet::{data::BlockData, keys::ToBase58Check},
 };
@@ -61,7 +61,7 @@ pub fn node_to_string(n: &Node) -> String {
 
 pub fn list_all_witness_nodes(cb: &CompactBlock) -> Vec<Node> {
     let mut nodes = vec![];
-    for transaction in &cb.v_transaction {
+    for transaction in &cb.vtx {
         for co in &transaction.outputs {
             nodes.push(Node::new(co.cmu().unwrap().into()))
         }
@@ -71,7 +71,7 @@ pub fn list_all_witness_nodes(cb: &CompactBlock) -> Vec<Node> {
 }
 
 pub struct FakeTransaction {
-    pub compact_transaction: CompactTransaction,
+    pub compact_transaction: CompactTx,
     pub td: TransactionData,
     pub taddrs_involved: Vec<String>,
 }
@@ -79,7 +79,7 @@ pub struct FakeTransaction {
 impl FakeTransaction {
     pub fn new() -> Self {
         Self {
-            compact_transaction: CompactTransaction::default(),
+            compact_transaction: CompactTx::default(),
             td: TransactionData::new(),
             taddrs_involved: vec![],
         }
@@ -187,7 +187,7 @@ impl FakeTransaction {
         self.taddrs_involved.push(taddr);
     }
 
-    pub fn into_transaction(mut self) -> (CompactTransaction, Transaction, Vec<String>) {
+    pub fn into_transaction(mut self) -> (CompactTx, Transaction, Vec<String>) {
         let transaction = self.td.freeze().unwrap();
         self.compact_transaction.hash = transaction.txid().clone().0.to_vec();
 
@@ -216,8 +216,8 @@ impl FakeCompactBlock {
         Self { block: cb, height }
     }
 
-    pub fn add_transactions(&mut self, compact_transactions: Vec<CompactTransaction>) {
-        self.block.v_transaction.extend(compact_transactions);
+    pub fn add_transactions(&mut self, compact_transactions: Vec<CompactTx>) {
+        self.block.vtx.extend(compact_transactions);
     }
 
     // Add a new transaction into the block, paying the given address the amount.
@@ -229,7 +229,7 @@ impl FakeCompactBlock {
         let to = extfvk.default_address().unwrap().1;
         let value = Amount::from_u64(1).unwrap();
 
-        let mut compact_transaction = CompactTransaction::default();
+        let mut compact_transaction = CompactTx::default();
         compact_transaction.hash = random_u8_32().to_vec();
 
         for _ in 0..num_outputs {
@@ -248,7 +248,7 @@ impl FakeCompactBlock {
             compact_transaction.outputs.push(cout);
         }
 
-        self.block.v_transaction.push(compact_transaction);
+        self.block.vtx.push(compact_transaction);
     }
 
     pub fn as_bytes(&self) -> Vec<u8> {
@@ -289,7 +289,7 @@ impl FakeCompactBlockList {
 
         for read_transaction in sent_transactions {
             let transaction = Transaction::read(&read_transaction.data[..]).unwrap();
-            let mut compact_transaction = CompactTransaction::default();
+            let mut compact_transaction = CompactTx::default();
 
             for out in &transaction.shielded_outputs {
                 let mut cout = CompactOutput::default();

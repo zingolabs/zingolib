@@ -1,5 +1,5 @@
 use crate::{
-    compact_formats::{CompactBlock, CompactTransaction, TreeState},
+    compact_formats::{CompactBlock, CompactTx, TreeState},
     grpc_connector::GrpcConnector,
     lightclient::{
         checkpoints::get_all_main_checkpoints,
@@ -105,7 +105,7 @@ impl BlockAndWitnessData {
         }
     }
 
-    pub async fn get_ctx_for_nf_at_height(&self, nullifier: &Nullifier, height: u64) -> (CompactTransaction, u32) {
+    pub async fn get_ctx_for_nf_at_height(&self, nullifier: &Nullifier, height: u64) -> (CompactTx, u32) {
         self.wait_for_block(height).await;
 
         let cb = {
@@ -116,7 +116,7 @@ impl BlockAndWitnessData {
             bd.cb()
         };
 
-        for compact_transaction in &cb.v_transaction {
+        for compact_transaction in &cb.vtx {
             for cs in &compact_transaction.spends {
                 if cs.nf == nullifier.to_vec() {
                     return (compact_transaction.clone(), cb.time);
@@ -224,7 +224,7 @@ impl BlockAndWitnessData {
 
                         for i in (end_pos..start_pos + 1).rev() {
                             let cb = &blocks.get(i as usize).unwrap().cb();
-                            for compact_transaction in &cb.v_transaction {
+                            for compact_transaction in &cb.vtx {
                                 for co in &compact_transaction.outputs {
                                     let node = Node::new(co.cmu().unwrap().into());
                                     tree.append(node).unwrap();
@@ -405,7 +405,7 @@ impl BlockAndWitnessData {
 
             for i in (0..pos + 1).rev() {
                 let cb = &blocks.get(i as usize).unwrap().cb();
-                for compact_transaction in &cb.v_transaction {
+                for compact_transaction in &cb.vtx {
                     for cs in &compact_transaction.spends {
                         if cs.nf == nf {
                             return Some(cb.height);
@@ -470,7 +470,7 @@ impl BlockAndWitnessData {
 
         // Go over all the outputs. Remember that all the numbers are inclusive, i.e., we have to scan upto and including
         // block_height, transaction_num and output_num
-        for (t_num, compact_transaction) in cb.v_transaction.iter().enumerate() {
+        for (t_num, compact_transaction) in cb.vtx.iter().enumerate() {
             for (o_num, co) in compact_transaction.outputs.iter().enumerate() {
                 let node = Node::new(co.cmu().unwrap().into());
                 tree.append(node).unwrap();
@@ -506,7 +506,7 @@ impl BlockAndWitnessData {
 
             for i in (0..pos + 1).rev() {
                 let cb = &blocks.get(i as usize).unwrap().cb();
-                for compact_transaction in &cb.v_transaction {
+                for compact_transaction in &cb.vtx {
                     for co in &compact_transaction.outputs {
                         let node = Node::new(co.cmu().unwrap().into());
                         w.append(node).unwrap();
@@ -552,7 +552,7 @@ impl BlockAndWitnessData {
             let mut output_found = false;
 
             let cb = &blocks.get(pos as usize).unwrap().cb();
-            for compact_transaction in &cb.v_transaction {
+            for compact_transaction in &cb.vtx {
                 if !transaction_id_found && WalletTx::new_txid(&compact_transaction.hash) == *transaction_id {
                     transaction_id_found = true;
                 }

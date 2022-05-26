@@ -1,10 +1,10 @@
 use crate::blaze::test_utils::{tree_to_string, FakeCompactBlockList};
-use crate::compact_formats::compact_transaction_streamer_server::CompactTransactionStreamer;
-use crate::compact_formats::compact_transaction_streamer_server::CompactTransactionStreamerServer;
+use crate::compact_formats::compact_tx_streamer_server::CompactTxStreamer;
+use crate::compact_formats::compact_tx_streamer_server::CompactTxStreamerServer;
 use crate::compact_formats::{
-    Address, AddressList, Balance, BlockId, BlockRange, ChainSpec, CompactBlock, CompactTransaction, Duration, Empty,
+    Address, AddressList, Balance, BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx, Duration, Empty,
     Exclude, GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList, LightdInfo, PingResponse,
-    PriceRequest, PriceResponse, RawTransaction, SendResponse, TransactionFilter, TransparentAddressBlockFilter,
+    PriceRequest, PriceResponse, RawTransaction, SendResponse, TxFilter, TransparentAddressBlockFilter,
     TreeState,
 };
 use crate::lightwallet::data::WalletTx;
@@ -87,7 +87,7 @@ pub async fn create_test_server(
     let (data_dir_transmitter, data_dir_receiver) = oneshot::channel();
 
     let h1 = tokio::spawn(async move {
-        let svc = CompactTransactionStreamerServer::new(service);
+        let svc = CompactTxStreamerServer::new(service);
 
         // We create the temp dir here, so that we can clean it up after the test runs
         let temp_dir = tempfile::Builder::new()
@@ -331,7 +331,7 @@ impl TestGRPCService {
 }
 
 #[tonic::async_trait]
-impl CompactTransactionStreamer for TestGRPCService {
+impl CompactTxStreamer for TestGRPCService {
     async fn get_latest_block(&self, _request: Request<ChainSpec>) -> Result<Response<BlockId>, Status> {
         Self::wait_random().await;
 
@@ -401,7 +401,7 @@ impl CompactTransactionStreamer for TestGRPCService {
         Ok(Response::new(res))
     }
 
-    async fn get_transaction(&self, request: Request<TransactionFilter>) -> Result<Response<RawTransaction>, Status> {
+    async fn get_transaction(&self, request: Request<TxFilter>) -> Result<Response<RawTransaction>, Status> {
         Self::wait_random().await;
 
         let transaction_id = WalletTx::new_txid(&request.into_inner().hash);
@@ -422,12 +422,12 @@ impl CompactTransactionStreamer for TestGRPCService {
         }))
     }
 
-    type GetTaddressTransactionIdsStream = Pin<Box<dyn Stream<Item = Result<RawTransaction, Status>> + Send + Sync>>;
+    type GetTaddressTxidsStream = Pin<Box<dyn Stream<Item = Result<RawTransaction, Status>> + Send + Sync>>;
 
-    async fn get_taddress_transaction_ids(
+    async fn get_taddress_txids(
         &self,
         request: Request<TransparentAddressBlockFilter>,
-    ) -> Result<Response<Self::GetTaddressTransactionIdsStream>, Status> {
+    ) -> Result<Response<Self::GetTaddressTxidsStream>, Status> {
         let buf_size = cmp::max(self.data.read().await.transactions.len(), 1);
         let (transmitter, receiver) = mpsc::channel(buf_size);
 
@@ -464,13 +464,13 @@ impl CompactTransactionStreamer for TestGRPCService {
         Ok(Response::new(Box::pin(ReceiverStream::new(receiver))))
     }
 
-    type GetAddressTransactionIdsStream = Pin<Box<dyn Stream<Item = Result<RawTransaction, Status>> + Send + Sync>>;
+    type GetAddressTxidsStream = Pin<Box<dyn Stream<Item = Result<RawTransaction, Status>> + Send + Sync>>;
 
-    async fn get_address_transaction_ids(
+    async fn get_address_txids(
         &self,
         request: Request<TransparentAddressBlockFilter>,
-    ) -> Result<Response<Self::GetAddressTransactionIdsStream>, Status> {
-        self.get_taddress_transaction_ids(request).await
+    ) -> Result<Response<Self::GetAddressTxidsStream>, Status> {
+        self.get_taddress_txids(request).await
     }
 
     async fn get_taddress_balance(&self, _request: Request<AddressList>) -> Result<Response<Balance>, Status> {
@@ -484,12 +484,12 @@ impl CompactTransactionStreamer for TestGRPCService {
         todo!()
     }
 
-    type GetMempoolTransactionStream = Pin<Box<dyn Stream<Item = Result<CompactTransaction, Status>> + Send + Sync>>;
+    type GetMempoolTxStream = Pin<Box<dyn Stream<Item = Result<CompactTx, Status>> + Send + Sync>>;
 
-    async fn get_mempool_transaction(
+    async fn get_mempool_tx(
         &self,
         _request: Request<Exclude>,
-    ) -> Result<Response<Self::GetMempoolTransactionStream>, Status> {
+    ) -> Result<Response<Self::GetMempoolTxStream>, Status> {
         todo!()
     }
 
@@ -537,7 +537,7 @@ impl CompactTransactionStreamer for TestGRPCService {
             .rev()
             .take_while(|cb| cb.height <= block.height)
             .fold(start_tree, |mut tree, cb| {
-                for transaction in &cb.v_transaction {
+                for transaction in &cb.vtx {
                     for co in &transaction.outputs {
                         tree.append(Node::new(co.cmu().unwrap().into())).unwrap();
                     }

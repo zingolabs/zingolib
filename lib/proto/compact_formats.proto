@@ -20,13 +20,13 @@ message CompactBlock {
     bytes prevHash = 4;         // the ID (hash) of this block's predecessor
     uint32 time = 5;            // Unix epoch time when the block was mined
     bytes header = 6;           // (hash, prevHash, and time) OR (full header)
-    repeated CompactTransaction v_transaction = 7; // zero or more compact transactions from this block
+    repeated CompactTx vtx = 7; // zero or more compact transactions from this block
 }
 
-// CompactTransaction contains the minimum information for a wallet to know if this transaction
+// CompactTx contains the minimum information for a wallet to know if this transaction
 // is relevant to it (either pays to it or spends from it) via shielded elements
 // only. This message will not encode a transparent-to-transparent transaction.
-message CompactTransaction {
+message CompactTx {
     uint64 index = 1;   // the index within the full block
     bytes hash = 2;     // the ID (hash) of this transaction, same as in block explorers
 
