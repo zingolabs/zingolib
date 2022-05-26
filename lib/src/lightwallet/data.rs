@@ -40,7 +40,7 @@ impl BlockData {
     }
 
     pub(crate) fn new(mut cb: CompactBlock) -> Self {
-        for compact_transaction in &mut cb.v_transaction {
+        for compact_transaction in &mut cb.vtx {
             for co in &mut compact_transaction.outputs {
                 co.ciphertext.clear();
                 co.epk.clear();

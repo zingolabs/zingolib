@@ -26,7 +26,7 @@ use zcash_primitives::zip32::{ExtendedFullViewingKey, ExtendedSpendingKey};
 use crate::blaze::fetch_full_transaction::FetchFullTxns;
 use crate::blaze::test_utils::{FakeCompactBlockList, FakeTransaction};
 
-use crate::compact_formats::{CompactOutput, CompactTransaction, Empty};
+use crate::compact_formats::{CompactOutput, CompactTx, Empty};
 use crate::lightclient::test_server::{create_test_server, mine_pending_blocks, mine_random_blocks};
 use crate::lightclient::LightClient;
 use crate::lightwallet::data::WalletTx;
@@ -329,7 +329,7 @@ async fn multiple_incoming_same_transaction() {
         let to = extfvk1.default_address().unwrap().1;
 
         // Create fake note for the account
-        let mut compact_transaction = CompactTransaction::default();
+        let mut compact_transaction = CompactTx::default();
         let mut td = TransactionData::new();
 
         // Add 4 outputs
@@ -544,7 +544,7 @@ async fn z_to_z_scan_together() {
             .blocks
             .iter()
             .fold(CommitmentTree::<Node>::empty(), |mut tree, fcb| {
-                for transaction in &fcb.block.v_transaction {
+                for transaction in &fcb.block.vtx {
                     for co in &transaction.outputs {
                         tree.append(Node::new(co.cmu().unwrap().into())).unwrap();
                     }

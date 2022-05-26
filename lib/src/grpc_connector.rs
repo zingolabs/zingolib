@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::compact_formats::compact_transaction_streamer_client::CompactTransactionStreamerClient;
+use crate::compact_formats::compact_tx_streamer_client::CompactTxStreamerClient;
 use crate::compact_formats::{
     BlockId, BlockRange, ChainSpec, CompactBlock, Empty, LightdInfo, PriceRequest, PriceResponse, RawTransaction,
-    TransactionFilter, TransparentAddressBlockFilter, TreeState,
+    TxFilter, TransparentAddressBlockFilter, TreeState,
 };
 use futures::future::join_all;
 use futures::stream::FuturesUnordered;
@@ -42,7 +42,7 @@ impl GrpcConnector {
     pub(crate) fn get_client(
         &self,
     ) -> impl std::future::Future<
-        Output = Result<CompactTransactionStreamerClient<UnderlyingService>, Box<dyn std::error::Error>>,
+        Output = Result<CompactTxStreamerClient<UnderlyingService>, Box<dyn std::error::Error>>,
     > {
         let uri = Arc::new(self.uri.clone());
         async move {
@@ -92,7 +92,7 @@ impl GrpcConnector {
                     })
                     .service(client);
 
-                Ok(CompactTransactionStreamerClient::new(svc.boxed_clone()))
+                Ok(CompactTxStreamerClient::new(svc.boxed_clone()))
             } else {
                 let connector = tower::ServiceBuilder::new().service(http_connector);
                 let client = Box::new(hyper::Client::builder().http2_only(true).build(connector));
@@ -114,7 +114,7 @@ impl GrpcConnector {
                     })
                     .service(client);
 
-                Ok(CompactTransactionStreamerClient::new(svc.boxed_clone()))
+                Ok(CompactTxStreamerClient::new(svc.boxed_clone()))
             }
         }
     }
@@ -255,7 +255,7 @@ impl GrpcConnector {
 
     async fn get_full_transaction(uri: http::Uri, transaction_id: &TxId) -> Result<Transaction, String> {
         let client = Arc::new(GrpcConnector::new(uri));
-        let request = Request::new(TransactionFilter {
+        let request = Request::new(TxFilter {
             block: None,
             index: 0,
             hash: transaction_id.0.to_vec(),
@@ -309,14 +309,14 @@ impl GrpcConnector {
             .await
             .map_err(|e| format!("Error getting client: {:?}", e))?;
 
-        let maybe_response = match client.get_taddress_transaction_ids(request).await {
+        let maybe_response = match client.get_taddress_txids(request).await {
             Ok(r) => r,
             Err(e) => {
                 if e.code() == tonic::Code::Unimplemented {
                     // Try the old, legacy API
                     let request = Request::new(args);
                     client
-                        .get_address_transaction_ids(request)
+                        .get_address_txids(request)
                         .await
                         .map_err(|e| format!("{}", e))?
                 } else {

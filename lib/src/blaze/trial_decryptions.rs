@@ -122,7 +122,7 @@ impl TrialDecryptions {
         for cb in cbs {
             let height = BlockHeight::from_u32(cb.height as u32);
 
-            for (transaction_num, compact_transaction) in cb.v_transaction.iter().enumerate() {
+            for (transaction_num, compact_transaction) in cb.vtx.iter().enumerate() {
                 let mut wallet_transaction = false;
 
                 for (output_num, co) in compact_transaction.outputs.iter().enumerate() {
