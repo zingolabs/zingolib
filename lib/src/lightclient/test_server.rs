@@ -2,10 +2,9 @@ use crate::blaze::test_utils::{tree_to_string, FakeCompactBlockList};
 use crate::compact_formats::compact_tx_streamer_server::CompactTxStreamer;
 use crate::compact_formats::compact_tx_streamer_server::CompactTxStreamerServer;
 use crate::compact_formats::{
-    Address, AddressList, Balance, BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx, Duration, Empty,
-    Exclude, GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList, LightdInfo, PingResponse,
-    PriceRequest, PriceResponse, RawTransaction, SendResponse, TxFilter, TransparentAddressBlockFilter,
-    TreeState,
+    Address, AddressList, Balance, BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx, Duration, Empty, Exclude,
+    GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList, LightdInfo, PingResponse, PriceRequest,
+    PriceResponse, RawTransaction, SendResponse, TransparentAddressBlockFilter, TreeState, TxFilter,
 };
 use crate::lightwallet::data::WalletTx;
 use crate::lightwallet::now;
@@ -486,10 +485,7 @@ impl CompactTxStreamer for TestGRPCService {
 
     type GetMempoolTxStream = Pin<Box<dyn Stream<Item = Result<CompactTx, Status>> + Send + Sync>>;
 
-    async fn get_mempool_tx(
-        &self,
-        _request: Request<Exclude>,
-    ) -> Result<Response<Self::GetMempoolTxStream>, Status> {
+    async fn get_mempool_tx(&self, _request: Request<Exclude>) -> Result<Response<Self::GetMempoolTxStream>, Status> {
         todo!()
     }
 
