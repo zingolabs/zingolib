@@ -5,9 +5,9 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use sodiumoxide::crypto::secretbox;
 
+use zcash_encoding::{Optional, Vector};
 use zcash_primitives::{
-    primitives::PaymentAddress,
-    serialize::{Optional, Vector},
+    sapling::PaymentAddress,
     zip32::{ExtendedFullViewingKey, ExtendedSpendingKey},
 };
 

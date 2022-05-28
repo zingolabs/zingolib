@@ -3411,6 +3411,7 @@ dependencies = [
  "tracing-subscriber",
  "webpki-roots 0.21.1",
  "zcash_client_backend",
+ "zcash_encoding",
  "zcash_primitives",
  "zcash_proofs",
 ]
