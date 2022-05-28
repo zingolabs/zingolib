@@ -1427,14 +1427,31 @@ impl LightClient {
         let earliest_block = block_and_witness_handle.await.unwrap().unwrap();
 
         // 1. Fetch the transparent txns only after reorgs are done.
-        let taddr_transactions_handle = FetchTaddrTransactions::new(self.wallet.keys())
-            .start(
-                start_block,
-                earliest_block,
-                taddr_fetcher_transmitter,
-                fetch_taddr_transactions_transmitter,
-            )
-            .await;
+        let taddr_transactions_handle = match self.config.chain_name.as_str() {
+            "main" => {
+                FetchTaddrTransactions::new(self.wallet.keys())
+                    .start(
+                        start_block,
+                        earliest_block,
+                        taddr_fetcher_transmitter,
+                        fetch_taddr_transactions_transmitter,
+                        &MAIN_NETWORK,
+                    )
+                    .await
+            }
+            "test" => {
+                FetchTaddrTransactions::new(self.wallet.keys())
+                    .start(
+                        start_block,
+                        earliest_block,
+                        taddr_fetcher_transmitter,
+                        fetch_taddr_transactions_transmitter,
+                        &TEST_NETWORK,
+                    )
+                    .await
+            }
+            other => panic!("Unrecognized network: {other}"),
+        };
 
         // 2. Notify the notes updater that the blocks are done updating
         blocks_done_transmitter.send(earliest_block).unwrap();
