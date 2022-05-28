@@ -25,8 +25,7 @@ use tokio::{
 use zcash_primitives::{
     consensus::BlockHeight,
     merkle_tree::{CommitmentTree, IncrementalWitness},
-    primitives::Nullifier,
-    sapling::Node,
+    sapling::{Node, Nullifier},
     transaction::TxId,
 };
 
