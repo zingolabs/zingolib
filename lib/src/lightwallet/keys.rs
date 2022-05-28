@@ -14,10 +14,10 @@ use zcash_client_backend::{
     address,
     encoding::{encode_extended_full_viewing_key, encode_extended_spending_key, encode_payment_address},
 };
+use zcash_encoding::Vector;
 use zcash_primitives::{
     legacy::TransparentAddress,
-    primitives::PaymentAddress,
-    serialize::Vector,
+    sapling::PaymentAddress,
     zip32::{ChildIndex, ExtendedFullViewingKey, ExtendedSpendingKey},
 };
 
