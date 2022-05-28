@@ -15,8 +15,7 @@ use tokio::{
 
 use zcash_primitives::{
     consensus::BlockHeight,
-    note_encryption::try_sapling_compact_note_decryption,
-    primitives::{Nullifier, SaplingIvk},
+    sapling::{note_encryption::try_sapling_compact_note_decryption, Nullifier, SaplingIvk},
     transaction::{Transaction, TxId},
 };
 
