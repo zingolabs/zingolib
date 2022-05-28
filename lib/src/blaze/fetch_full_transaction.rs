@@ -31,7 +31,7 @@ use zcash_primitives::{
     consensus::BlockHeight,
     legacy::TransparentAddress,
     memo::Memo,
-    note_encryption::{try_sapling_note_decryption, try_sapling_output_recovery},
+    sapling::note_encryption::{try_sapling_note_decryption, try_sapling_output_recovery},
     transaction::{Transaction, TxId},
 };
 
