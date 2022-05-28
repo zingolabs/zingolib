@@ -3354,7 +3354,7 @@ dependencies = [
  "dirs 3.0.2",
  "ff 0.8.0",
  "futures",
- "group 0.8.0",
+ "group 0.12.0",
  "hex 0.3.2",
  "http",
  "http-body",
