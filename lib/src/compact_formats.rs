@@ -2,9 +2,11 @@ use ff::PrimeField;
 use group::GroupEncoding;
 use std::convert::TryInto;
 
+use zcash_note_encryption::{EphemeralKeyBytes, ShieldedOutput};
 use zcash_primitives::{
     block::{BlockHash, BlockHeader},
-    consensus::BlockHeight,
+    consensus::{BlockHeight, Parameters},
+    sapling::note_encryption::SaplingDomain,
 };
 
 tonic::include_proto!("cash.z.wallet.sdk.rpc");
@@ -92,4 +94,17 @@ impl CompactOutput {
             Err(())
         }
     }
+}
+
+impl<P: Parameters> ShieldedOutput<SaplingDomain<P>, 52_usize> for CompactOutput {
+    fn ephemeral_key(&self) -> EphemeralKeyBytes {
+        EphemeralKeyBytes(<[u8; 32]>::try_from(self.epk).unwrap())
+    }
+    fn cmstar_bytes(&self) -> [u8; 32] {
+        <[u8; 32]>::try_from(self.cmu).unwrap()
+    }
+    fn enc_ciphertext(&self) -> &[u8; 52] {
+        &<[u8; 52]>::try_from(self.ciphertext).unwrap()
+    }
+    //todo: Get rid of unwraps, these are likely dangerous
 }

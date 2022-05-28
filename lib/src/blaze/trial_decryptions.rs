@@ -132,14 +132,9 @@ impl TrialDecryptions {
                     };
 
                     for (i, ivk) in ivks.iter().enumerate() {
-                        if let Some((note, to)) = try_sapling_compact_note_decryption(
-                            &config.get_params(),
-                            height,
-                            &ivk,
-                            &epk,
-                            &cmu,
-                            &co.ciphertext,
-                        ) {
+                        if let Some((note, to)) =
+                            try_sapling_compact_note_decryption(&config.get_params(), height, &ivk, co)
+                        {
                             wallet_transaction = true;
 
                             let keys = keys.clone();
