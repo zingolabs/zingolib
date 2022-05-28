@@ -10,7 +10,7 @@ use tokio::sync::{mpsc::unbounded_channel, RwLock};
 use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle};
 
 use zcash_primitives::consensus::BlockHeight;
-use zcash_primitives::primitives::Nullifier;
+use zcash_primitives::sapling::Nullifier;
 use zcash_primitives::transaction::TxId;
 
 use super::syncdata::BlazeSyncData;
