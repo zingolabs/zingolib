@@ -5,13 +5,12 @@ use std::{
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use log::error;
+use zcash_encoding::Vector;
 use zcash_primitives::{
     consensus::BlockHeight,
     memo::Memo,
     merkle_tree::IncrementalWitness,
-    primitives::{Note, Nullifier, PaymentAddress},
-    sapling::Node,
-    serialize::Vector,
+    sapling::{Node, Note, Nullifier, PaymentAddress},
     transaction::{components::TxOut, TxId},
     zip32::ExtendedFullViewingKey,
 };
