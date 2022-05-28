@@ -219,7 +219,7 @@ impl Keys {
             // Calculate the addresses
             let addresses = extfvks
                 .iter()
-                .map(|fvk| fvk.default_address().unwrap().1)
+                .map(|fvk| fvk.default_address().1)
                 .collect::<Vec<PaymentAddress>>();
 
             // If extsks is of len 0, then this wallet is locked
@@ -783,7 +783,7 @@ impl Keys {
             ],
         );
         let extfvk = ExtendedFullViewingKey::from(&extsk);
-        let address = extfvk.default_address().unwrap().1;
+        let address = extfvk.default_address().1;
 
         (extsk, extfvk, address)
     }
