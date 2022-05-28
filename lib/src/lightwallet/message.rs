@@ -13,7 +13,7 @@ use zcash_primitives::{
     keys::OutgoingViewingKey,
     memo::Memo,
     sapling::{
-        note_encryption::{prf_ock, try_sapling_note_decryption},
+        note_encryption::{prf_ock, try_sapling_note_decryption, SaplingDomain},
         PaymentAddress, Rseed, SaplingIvk, ValueCommitment,
     },
 };
@@ -73,7 +73,12 @@ impl Message {
         let cmu = note.cmu();
 
         // Create the note encrytion object
-        let mut ne = NoteEncryption::new(ovk, note, self.to.clone(), self.memo.clone().into(), &mut rng);
+        let mut ne = NoteEncryption::<SaplingDomain<zcash_primitives::consensus::Network>>::new(
+            ovk,
+            note,
+            self.to.clone(),
+            self.memo.clone().into(),
+        );
 
         // EPK, which needs to be sent to the reciever.
         let epk = ne.epk().clone().into();
