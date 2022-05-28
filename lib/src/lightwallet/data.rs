@@ -7,13 +7,12 @@ use std::usize;
 use zcash_primitives::memo::MemoBytes;
 
 use crate::blaze::fixed_size_buffer::FixedSizeBuffer;
+use zcash_encoding::{Optional, Vector};
 use zcash_primitives::{consensus::BlockHeight, zip32::ExtendedSpendingKey};
 use zcash_primitives::{
     memo::Memo,
     merkle_tree::{CommitmentTree, IncrementalWitness},
-    primitives::{Diversifier, Note, Nullifier, Rseed},
-    sapling::Node,
-    serialize::{Optional, Vector},
+    sapling::{Diversifier, Node, Note, Nullifier, Rseed},
     transaction::{components::OutPoint, TxId},
     zip32::ExtendedFullViewingKey,
 };
