@@ -398,17 +398,17 @@ impl SaplingNoteData {
 
         writer.write_all(&self.nullifier.0)?;
 
-        Optional::write(&mut writer, &self.spent, |w, (transaction_id, h)| {
-            w.write_all(&transaction_id.0)?;
-            w.write_u32::<LittleEndian>(*h)
+        Optional::write(&mut writer, self.spent, |w, (transaction_id, h)| {
+            w.write_all(transaction_id.as_ref())?;
+            w.write_u32::<LittleEndian>(h)
         })?;
 
-        Optional::write(&mut writer, &self.unconfirmed_spent, |w, (transaction_id, height)| {
-            w.write_all(&transaction_id.0)?;
-            w.write_u32::<LittleEndian>(*height)
+        Optional::write(&mut writer, self.unconfirmed_spent, |w, (transaction_id, height)| {
+            w.write_all(transaction_id.as_ref())?;
+            w.write_u32::<LittleEndian>(height)
         })?;
 
-        Optional::write(&mut writer, &self.memo, |w, m| w.write_all(m.encode().as_array()))?;
+        Optional::write(&mut writer, self.memo, |w, m| w.write_all(m.encode().as_array()))?;
 
         writer.write_u8(if self.is_change { 1 } else { 0 })?;
 
@@ -444,7 +444,7 @@ impl Utxo {
     }
 
     pub fn to_outpoint(&self) -> OutPoint {
-        OutPoint::new(self.txid.0, self.output_index as u32)
+        OutPoint::new(*self.txid.as_ref(), self.output_index as u32)
     }
 
     pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
@@ -515,7 +515,7 @@ impl Utxo {
         writer.write_u32::<LittleEndian>(self.address.as_bytes().len() as u32)?;
         writer.write_all(self.address.as_bytes())?;
 
-        writer.write_all(&self.txid.0)?;
+        writer.write_all(self.txid.as_ref())?;
 
         writer.write_u64::<LittleEndian>(self.output_index)?;
         writer.write_u64::<LittleEndian>(self.value)?;
@@ -523,17 +523,15 @@ impl Utxo {
 
         Vector::write(&mut writer, &self.script, |w, b| w.write_all(&[*b]))?;
 
-        Optional::write(&mut writer, &self.spent, |w, transaction_id| {
-            w.write_all(&transaction_id.0)
+        Optional::write(&mut writer, self.spent, |w, transaction_id| {
+            w.write_all(transaction_id.as_ref())
         })?;
 
-        Optional::write(&mut writer, &self.spent_at_height, |w, s| {
-            w.write_i32::<LittleEndian>(*s)
-        })?;
+        Optional::write(&mut writer, self.spent_at_height, |w, s| w.write_i32::<LittleEndian>(s))?;
 
-        Optional::write(&mut writer, &self.unconfirmed_spent, |w, (transaction_id, height)| {
-            w.write_all(&transaction_id.0)?;
-            w.write_u32::<LittleEndian>(*height)
+        Optional::write(&mut writer, self.unconfirmed_spent, |w, (transaction_id, height)| {
+            w.write_all(transaction_id.as_ref())?;
+            w.write_u32::<LittleEndian>(height)
         })?;
 
         Ok(())
@@ -737,7 +735,7 @@ impl WalletTx {
 
         writer.write_u64::<LittleEndian>(self.datetime)?;
 
-        writer.write_all(&self.txid.0)?;
+        writer.write_all(self.txid.as_ref())?;
 
         Vector::write(&mut writer, &self.notes, |w, nd| nd.write(w))?;
         Vector::write(&mut writer, &self.utxos, |w, u| u.write(w))?;
@@ -750,7 +748,7 @@ impl WalletTx {
 
         writer.write_u8(if self.full_tx_scanned { 1 } else { 0 })?;
 
-        Optional::write(&mut writer, &self.zec_price, |w, p| w.write_f64::<LittleEndian>(*p))?;
+        Optional::write(&mut writer, self.zec_price, |w, p| w.write_f64::<LittleEndian>(p))?;
 
         Vector::write(&mut writer, &self.spent_nullifiers, |w, n| w.write_all(&n.0))?;
 
@@ -856,8 +854,8 @@ impl WalletZecPriceInfo {
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
         // We don't write the currency zec price or the currency yet.
-        Optional::write(&mut writer, &self.last_historical_prices_fetched_at, |w, t| {
-            w.write_u64::<LittleEndian>(*t)
+        Optional::write(&mut writer, self.last_historical_prices_fetched_at, |w, t| {
+            w.write_u64::<LittleEndian>(t)
         })?;
         writer.write_u64::<LittleEndian>(self.historical_prices_retry_count)?;
 
