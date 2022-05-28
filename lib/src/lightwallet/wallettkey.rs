@@ -206,18 +206,18 @@ impl WalletTKey {
 
         out.write_u8(self.locked as u8)?;
 
-        Optional::write(&mut out, &self.key, |w, sk| w.write_all(&sk[..]))?;
+        Optional::write(&mut out, self.key, |w, sk| w.write_all(&sk[..]))?;
         utils::write_string(&mut out, &self.address)?;
 
-        Optional::write(&mut out, &self.hdkey_num, |o, n| o.write_u32::<LittleEndian>(*n))?;
+        Optional::write(&mut out, self.hdkey_num, |o, n| o.write_u32::<LittleEndian>(n))?;
 
         // Write enc_key
-        Optional::write(&mut out, &self.enc_key, |o, v| {
-            Vector::write(o, v, |o, n| o.write_u8(*n))
+        Optional::write(&mut out, self.enc_key, |o, v| {
+            Vector::write(o, &v, |o, n| o.write_u8(*n))
         })?;
 
         // Write nonce
-        Optional::write(&mut out, &self.nonce, |o, v| Vector::write(o, v, |o, n| o.write_u8(*n)))
+        Optional::write(&mut out, self.nonce, |o, v| Vector::write(o, &v, |o, n| o.write_u8(*n)))
     }
 
     pub fn lock(&mut self) -> io::Result<()> {
