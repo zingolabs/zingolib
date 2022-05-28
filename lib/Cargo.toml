@@ -58,6 +58,7 @@ zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", rev = "7
 zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash", rev = "73d9395c9d3c5fa81fc7becd363a2c1a51772a76"}
 zcash_proofs = { git = "https://github.com/zingolabs/librustzcash", rev = "73d9395c9d3c5fa81fc7becd363a2c1a51772a76", features = ["multicore"]}
 zcash_encoding = { git = "https://github.com/zingolabs/librustzcash", rev = "73d9395c9d3c5fa81fc7becd363a2c1a51772a76"}
+zcash_note_encryption = { git = "https://github.com/zingolabs/librustzcash", rev = "73d9395c9d3c5fa81fc7becd363a2c1a51772a76", features = ["pre-zip-212"]}
 #tracing = "0.1.16"
 tracing-subscriber = { version = "0.3", features = ["tracing-log"] }
 
