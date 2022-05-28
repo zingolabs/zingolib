@@ -25,13 +25,12 @@ use zcash_client_backend::{
     address,
     encoding::{decode_extended_full_viewing_key, decode_extended_spending_key, encode_payment_address},
 };
-use zcash_primitives::serialize::Optional;
+use zcash_encoding::{Optional, Vector};
 use zcash_primitives::{
     consensus::{BlockHeight, BranchId},
     legacy::Script,
     memo::Memo,
-    prover::TxProver,
-    serialize::Vector,
+    sapling::prover::TxProver,
     transaction::{
         builder::Builder,
         components::{amount::DEFAULT_FEE, Amount, OutPoint, TxOut},
