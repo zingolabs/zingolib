@@ -5,7 +5,7 @@ use ripemd160::Digest;
 use secp256k1::SecretKey;
 use sha2::Sha256;
 use sodiumoxide::crypto::secretbox;
-use zcash_primitives::serialize::{Optional, Vector};
+use zcash_encoding::{Optional, Vector};
 
 use crate::{
     lightclient::lightclient_config::LightClientConfig,
