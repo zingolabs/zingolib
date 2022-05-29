@@ -75,7 +75,7 @@ impl Message {
         let cmu = note.cmu();
 
         // Create the note encrytion object
-        let mut ne = NoteEncryption::<SaplingDomain<zcash_primitives::consensus::Network>>::new(
+        let ne = NoteEncryption::<SaplingDomain<zcash_primitives::consensus::Network>>::new(
             ovk,
             note,
             self.to.clone(),
@@ -219,7 +219,7 @@ pub mod tests {
     use rand::{rngs::OsRng, Rng};
     use zcash_primitives::{
         memo::Memo,
-        primitives::{PaymentAddress, Rseed, SaplingIvk},
+        sapling::{PaymentAddress, Rseed, SaplingIvk},
         zip32::{ExtendedFullViewingKey, ExtendedSpendingKey},
     };
 

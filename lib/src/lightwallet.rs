@@ -1078,7 +1078,7 @@ impl LightWallet {
 
     async fn send_to_address_internal<F, Fut, P: TxProver>(
         &self,
-        consensus_branch_id: u32,
+        #[allow(unused_variables)] consensus_branch_id: u32,
         prover: P,
         transparent_only: bool,
         tos: Vec<(&str, u64, Option<String>)>,
