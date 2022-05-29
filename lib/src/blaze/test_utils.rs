@@ -21,11 +21,10 @@ use zcash_primitives::{
     legacy::{Script, TransparentAddress},
     memo::Memo,
     merkle_tree::{CommitmentTree, Hashable, IncrementalWitness, MerklePath},
-    note_encryption::SaplingNoteEncryption,
-    primitives::{Diversifier, Note, Nullifier, PaymentAddress, ProofGenerationKey, Rseed, ValueCommitment},
-    prover::TxProver,
-    redjubjub::Signature,
-    sapling::Node,
+    sapling::{
+        note_encryption::sapling_note_encryption, prover::TxProver, redjubjub::Signature, Diversifier, Node, Note,
+        Nullifier, PaymentAddress, ProofGenerationKey, Rseed, ValueCommitment,
+    },
     transaction::{
         components::{Amount, OutPoint, OutputDescription, TxIn, TxOut, GROTH_PROOF_SIZE},
         Transaction, TransactionData, TxId,
@@ -72,7 +71,7 @@ pub fn list_all_witness_nodes(cb: &CompactBlock) -> Vec<Node> {
 
 pub struct FakeTransaction {
     pub compact_transaction: CompactTx,
-    pub td: TransactionData,
+    pub td: TransactionData<zcash_primitives::transaction::Authorized>,
     pub taddrs_involved: Vec<String>,
 }
 
@@ -97,7 +96,7 @@ impl FakeTransaction {
             rseed: Rseed::BeforeZip212(jubjub::Fr::random(rng)),
         };
 
-        let mut encryptor = SaplingNoteEncryption::new(ovk, note.clone(), to.clone(), Memo::default().into(), &mut rng);
+        let mut encryptor = sapling_note_encryption(ovk, note.clone(), to.clone(), Memo::default().into(), &mut rng);
 
         let mut rng = OsRng;
         let rcv = jubjub::Fr::random(&mut rng);
@@ -112,7 +111,7 @@ impl FakeTransaction {
             cmu: note.cmu(),
             ephemeral_key: ExtendedPoint::from(*encryptor.epk()),
             enc_ciphertext: encryptor.encrypt_note_plaintext(),
-            out_ciphertext: encryptor.encrypt_outgoing_plaintext(&cv.commitment().into(), &cmu),
+            out_ciphertext: encryptor.encrypt_outgoing_plaintext(&cv.commitment().into(), &cmu, &mut rng),
             zkproof: [0; GROTH_PROOF_SIZE],
         };
 
@@ -288,7 +287,11 @@ impl FakeCompactBlockList {
         let sent_transactions = data.write().await.sent_transactions.split_off(0);
 
         for read_transaction in sent_transactions {
-            let transaction = Transaction::read(&read_transaction.data[..]).unwrap();
+            let transaction = Transaction::read(
+                &read_transaction.data[..],
+                zcash_primitives::consensus::BranchId::Sapling,
+            )
+            .unwrap();
             let mut compact_transaction = CompactTx::default();
 
             for out in &transaction.shielded_outputs {
@@ -440,7 +443,7 @@ impl TxProver for FakeTransactionProver {
         (
             [u8; GROTH_PROOF_SIZE],
             jubjub::ExtendedPoint,
-            zcash_primitives::redjubjub::PublicKey,
+            zcash_primitives::sapling::redjubjub::PublicKey,
         ),
         (),
     > {
@@ -454,7 +457,7 @@ impl TxProver for FakeTransactionProver {
         // Compute value commitment
         let value_commitment: jubjub::ExtendedPoint = cv.commitment().into();
 
-        let rk = zcash_primitives::redjubjub::PublicKey(proof_generation_key.ak.clone().into())
+        let rk = zcash_primitives::sapling::redjubjub::PublicKey(proof_generation_key.ak.clone().into())
             .randomize(ar, SPENDING_KEY_GENERATOR);
 
         Ok((zkproof, value_commitment, rk))
