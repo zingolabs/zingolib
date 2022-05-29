@@ -98,13 +98,17 @@ impl CompactOutput {
 
 impl<P: Parameters> ShieldedOutput<SaplingDomain<P>, 52_usize> for CompactOutput {
     fn ephemeral_key(&self) -> EphemeralKeyBytes {
-        EphemeralKeyBytes(<[u8; 32]>::try_from(self.epk).unwrap())
+        EphemeralKeyBytes(*vec_to_array(&self.epk))
     }
     fn cmstar_bytes(&self) -> [u8; 32] {
-        <[u8; 32]>::try_from(self.cmu).unwrap()
+        *vec_to_array(&self.cmu)
     }
     fn enc_ciphertext(&self) -> &[u8; 52] {
-        &<[u8; 52]>::try_from(self.ciphertext).unwrap()
+        vec_to_array(&self.ciphertext)
     }
-    //todo: Get rid of unwraps, these are likely dangerous
+}
+
+fn vec_to_array<'a, T, const N: usize>(vec: &'a Vec<T>) -> &'a [T; N] {
+    <&[T; N]>::try_from(&vec[..]).unwrap()
+    //todo: This unwrap is dangerous. Find better solution
 }

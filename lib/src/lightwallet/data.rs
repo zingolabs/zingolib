@@ -408,7 +408,9 @@ impl SaplingNoteData {
             w.write_u32::<LittleEndian>(height)
         })?;
 
-        Optional::write(&mut writer, self.memo, |w, m| w.write_all(m.encode().as_array()))?;
+        Optional::write(&mut writer, self.memo.as_ref(), |w, m| {
+            w.write_all(m.encode().as_array())
+        })?;
 
         writer.write_u8(if self.is_change { 1 } else { 0 })?;
 
