@@ -80,7 +80,7 @@ impl Message {
             self.memo.clone().into(),
         );
 
-        // EPK, which needs to be sent to the reciever.
+        // EPK, which needs to be sent to the receiver.
         let epk = ne.epk().clone().into();
 
         // enc_ciphertext is the encrypted note, out_ciphertext is the outgoing cipher text that the
