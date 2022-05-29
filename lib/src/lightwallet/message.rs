@@ -7,9 +7,11 @@ use std::{
     convert::TryInto,
     io::{self, ErrorKind, Read},
 };
-use zcash_note_encryption::{NoteEncryption, OutgoingCipherKey, ENC_CIPHERTEXT_SIZE, OUT_CIPHERTEXT_SIZE};
+use zcash_note_encryption::{
+    EphemeralKeyBytes, NoteEncryption, OutgoingCipherKey, ShieldedOutput, ENC_CIPHERTEXT_SIZE, OUT_CIPHERTEXT_SIZE,
+};
 use zcash_primitives::{
-    consensus::{BlockHeight, MAIN_NETWORK},
+    consensus::{BlockHeight, MainNetwork, MAIN_NETWORK},
     keys::OutgoingViewingKey,
     memo::Memo,
     sapling::{
@@ -168,6 +170,25 @@ impl Message {
         let mut enc_bytes = [0u8; ENC_CIPHERTEXT_SIZE];
         reader.read_exact(&mut enc_bytes)?;
 
+        #[derive(Debug)]
+        struct Unspendable {
+            cmu_bytes: [u8; 32],
+            epk_bytes: [u8; 32],
+            enc_bytes: [u8; ENC_CIPHERTEXT_SIZE],
+        }
+
+        impl ShieldedOutput<SaplingDomain<MainNetwork>, ENC_CIPHERTEXT_SIZE> for Unspendable {
+            fn ephemeral_key(&self) -> EphemeralKeyBytes {
+                EphemeralKeyBytes(self.epk_bytes)
+            }
+            fn cmstar_bytes(&self) -> [u8; 32] {
+                self.cmu_bytes
+            }
+            fn enc_ciphertext(&self) -> &[u8; ENC_CIPHERTEXT_SIZE] {
+                &self.enc_bytes
+            }
+        }
+
         // Attempt decryption. We attempt at main_network at 1,000,000 height, but it doesn't
         // really apply, since this note is not spendable anyway, so the rseed and the note iteself
         // are not usable.
@@ -175,9 +196,11 @@ impl Message {
             &MAIN_NETWORK,
             BlockHeight::from_u32(1_000_000),
             &ivk,
-            &epk.unwrap(),
-            &cmu.unwrap(),
-            &enc_bytes,
+            &Unspendable {
+                cmu_bytes,
+                epk_bytes,
+                enc_bytes,
+            },
         ) {
             Some((_note, address, memo)) => Ok(Self::new(
                 address,
