@@ -90,7 +90,7 @@ impl Message {
 
         // OCK is used to recover outgoing encrypted notes
         let ock = if ovk.is_some() {
-            Some(prf_ock(&ovk.unwrap(), &cv, &cmu, &epk))
+            Some(prf_ock(&ovk.unwrap(), &cv, &cmu.to_bytes(), &epk))
         } else {
             None
         };
