@@ -86,7 +86,7 @@ impl Message {
         // enc_ciphertext is the encrypted note, out_ciphertext is the outgoing cipher text that the
         // sender can recover
         let enc_ciphertext = ne.encrypt_note_plaintext();
-        let out_ciphertext = ne.encrypt_outgoing_plaintext(&cv, &cmu);
+        let out_ciphertext = ne.encrypt_outgoing_plaintext(&cv, &cmu, &mut rng);
 
         // OCK is used to recover outgoing encrypted notes
         let ock = if ovk.is_some() {
