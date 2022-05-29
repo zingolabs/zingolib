@@ -81,7 +81,7 @@ impl Message {
         );
 
         // EPK, which needs to be sent to the receiver.
-        let epk = ne.epk().clone().to_bytes().into();
+        let epk = ne.epk().to_bytes().into();
 
         // enc_ciphertext is the encrypted note, out_ciphertext is the outgoing cipher text that the
         // sender can recover
@@ -95,7 +95,7 @@ impl Message {
             None
         };
 
-        Ok((ock, cv, cmu, epk, enc_ciphertext, out_ciphertext))
+        Ok((ock, cv, cmu, *ne.epk(), enc_ciphertext, out_ciphertext))
     }
 
     pub fn encrypt(&self) -> Result<Vec<u8>, String> {
