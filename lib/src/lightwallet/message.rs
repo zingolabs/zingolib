@@ -81,7 +81,7 @@ impl Message {
         );
 
         // EPK, which needs to be sent to the receiver.
-        let epk = ne.epk().clone().into();
+        let epk = ne.epk().clone().to_bytes().into();
 
         // enc_ciphertext is the encrypted note, out_ciphertext is the outgoing cipher text that the
         // sender can recover
