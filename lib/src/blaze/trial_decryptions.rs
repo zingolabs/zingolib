@@ -125,10 +125,8 @@ impl TrialDecryptions {
                 let mut wallet_transaction = false;
 
                 for (output_num, co) in compact_transaction.outputs.iter().enumerate() {
-                    let cmu = co.cmu().map_err(|_| "No CMU".to_string())?;
-                    let epk = match co.epk() {
-                        Err(_) => continue,
-                        Ok(epk) => epk,
+                    if let Err(_) = co.epk() {
+                        continue;
                     };
 
                     for (i, ivk) in ivks.iter().enumerate() {

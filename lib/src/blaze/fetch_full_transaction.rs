@@ -223,7 +223,7 @@ impl FetchFullTxns {
             if let Some(t_bundle) = transaction.transparent_bundle() {
                 for vin in t_bundle.vin.iter() {
                     // Find the prev txid that was spent
-                    let prev_transaction_id = TxId { 0: *vin.prevout.hash() };
+                    let prev_transaction_id = TxId::from_bytes(*vin.prevout.hash());
                     let prev_n = vin.prevout.n() as u64;
 
                     if let Some(wtx) = current.get(&prev_transaction_id) {

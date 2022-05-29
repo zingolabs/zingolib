@@ -44,7 +44,7 @@ impl WalletTxns {
             let mut txid_bytes = [0u8; 32];
             r.read_exact(&mut txid_bytes)?;
 
-            Ok((TxId { 0: txid_bytes }, WalletTx::read(r).unwrap()))
+            Ok((TxId::from_bytes(txid_bytes), WalletTx::read(r).unwrap()))
         })?;
 
         let txs = txs_tuples.into_iter().collect::<HashMap<TxId, WalletTx>>();
@@ -68,7 +68,7 @@ impl WalletTxns {
             let mut txid_bytes = [0u8; 32];
             r.read_exact(&mut txid_bytes)?;
 
-            Ok((TxId { 0: txid_bytes }, WalletTx::read(r).unwrap()))
+            Ok((TxId::from_bytes(txid_bytes), WalletTx::read(r).unwrap()))
         })?;
 
         let current = txs_tuples.into_iter().collect::<HashMap<TxId, WalletTx>>();
@@ -89,7 +89,7 @@ impl WalletTxns {
                 r.read_exact(&mut txid_bytes)?;
                 let wtx = WalletTx::read(r)?;
 
-                Ok((TxId { 0: txid_bytes }, wtx))
+                Ok((TxId::from_bytes(txid_bytes), wtx))
             })?
             .into_iter()
             .collect()
