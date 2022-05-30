@@ -17,6 +17,7 @@ use tokio::sync::RwLock;
 use zcash_note_encryption::EphemeralKeyBytes;
 use zcash_primitives::{
     block::BlockHash,
+    consensus::BranchId,
     constants::SPENDING_KEY_GENERATOR,
     keys::OutgoingViewingKey,
     legacy::{Script, TransparentAddress},
@@ -28,7 +29,7 @@ use zcash_primitives::{
     },
     transaction::{
         components::{Amount, OutPoint, OutputDescription, TxIn, TxOut, GROTH_PROOF_SIZE},
-        Transaction, TransactionData, TxId,
+        Transaction, TransactionData, TxId, TxVersion,
     },
     zip32::{ExtendedFullViewingKey, ExtendedSpendingKey},
 };
@@ -78,9 +79,19 @@ pub struct FakeTransaction {
 
 impl FakeTransaction {
     pub fn new() -> Self {
+        let fake_transaction_data = TransactionData::from_parts(
+            TxVersion::Sapling,
+            BranchId::Sapling,
+            0,
+            0u32.into(),
+            None,
+            None,
+            None,
+            None,
+        );
         Self {
             compact_transaction: CompactTx::default(),
-            td: TransactionData::new(),
+            td: fake_transaction_data,
             taddrs_involved: vec![],
         }
     }
