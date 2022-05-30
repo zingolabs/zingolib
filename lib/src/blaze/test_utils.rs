@@ -14,6 +14,7 @@ use secp256k1::PublicKey;
 use sha2::{Digest, Sha256};
 use tokio::sync::RwLock;
 
+use zcash_note_encryption::EphemeralKeyBytes;
 use zcash_primitives::{
     block::BlockHash,
     constants::SPENDING_KEY_GENERATOR,
@@ -109,7 +110,7 @@ impl FakeTransaction {
         let od = OutputDescription {
             cv: cv.commitment().into(),
             cmu: note.cmu(),
-            ephemeral_key: ExtendedPoint::from(*encryptor.epk()),
+            ephemeral_key: EphemeralKeyBytes::from(encryptor.epk().to_bytes()),
             enc_ciphertext: encryptor.encrypt_note_plaintext(),
             out_ciphertext: encryptor.encrypt_outgoing_plaintext(&cv.commitment().into(), &cmu, &mut rng),
             zkproof: [0; GROTH_PROOF_SIZE],
