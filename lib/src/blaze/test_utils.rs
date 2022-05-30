@@ -79,14 +79,16 @@ pub struct FakeTransaction {
 
 impl FakeTransaction {
     pub fn new() -> Self {
-        use zcash_primitives::consensus::Parameters as _;
-        use zcash_primitives::consensus::TEST_NETWORK;
-        let sapling_activation_height = TEST_NETWORK.activation_height(NetworkUpgrade::Sapling).unwrap();
-        let mock_sapling_bundle = zcash_primitives::transaction::builder::Builder::new(
-            zcash_primitives::consensus::TEST_NETWORK,
-            sapling_activation_height,
-        )
-        .mock_build();
+        use zcash_primitives::transaction::components::sapling::{Authorized, Bundle};
+        let authorization = Authorized {
+            binding_sig: Signature::read(&vec![0u8; 64][..]).expect("Signature read error!"),
+        };
+        let sapling_bundle = Bundle {
+            shielded_spends: vec![],
+            shielded_outputs: vec![],
+            value_balance: Amount::zero(),
+            authorization,
+        };
         let fake_transaction_data = TransactionData::from_parts(
             TxVersion::Sapling,
             BranchId::Sapling,
@@ -94,7 +96,7 @@ impl FakeTransaction {
             0u32.into(),
             None,
             None,
-            mock_sapling_bundle,
+            Some(sapling_bundle),
             None,
         );
         Self {
