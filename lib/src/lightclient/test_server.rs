@@ -2,10 +2,9 @@ use crate::blaze::test_utils::{tree_to_string, FakeCompactBlockList};
 use crate::compact_formats::compact_tx_streamer_server::CompactTxStreamer;
 use crate::compact_formats::compact_tx_streamer_server::CompactTxStreamerServer;
 use crate::compact_formats::{
-    Address, AddressList, Balance, BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx, Duration, Empty,
-    Exclude, GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList, LightdInfo, PingResponse,
-    PriceRequest, PriceResponse, RawTransaction, SendResponse, TxFilter, TransparentAddressBlockFilter,
-    TreeState,
+    Address, AddressList, Balance, BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx, Duration, Empty, Exclude,
+    GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList, LightdInfo, PingResponse, PriceRequest,
+    PriceResponse, RawTransaction, SendResponse, TransparentAddressBlockFilter, TreeState, TxFilter,
 };
 use crate::lightwallet::data::WalletTx;
 use crate::lightwallet::now;
@@ -24,6 +23,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 use zcash_primitives::block::BlockHash;
+use zcash_primitives::consensus::BranchId;
 use zcash_primitives::merkle_tree::CommitmentTree;
 use zcash_primitives::sapling::Node;
 use zcash_primitives::transaction::{Transaction, TxId};
@@ -228,12 +228,14 @@ pub async fn mine_pending_blocks(
     // Add all the t-addr spend's t-addresses into the maps, so the test grpc server
     // knows to serve this transaction when the transactions for this particular taddr are requested.
     for (t, _h, taddrs) in v.iter_mut() {
-        for vin in &t.vin {
-            let prev_transaction_id = WalletTx::new_txid(&vin.prevout.hash().to_vec());
-            if let Some(wtx) = lc.wallet.transactions.read().await.current.get(&prev_transaction_id) {
-                if let Some(utxo) = wtx.utxos.iter().find(|u| u.output_index as u32 == vin.prevout.n()) {
-                    if !taddrs.contains(&utxo.address) {
-                        taddrs.push(utxo.address.clone());
+        if let Some(t_bundle) = t.transparent_bundle() {
+            for vin in &t_bundle.vin {
+                let prev_transaction_id = WalletTx::new_txid(&vin.prevout.hash().to_vec());
+                if let Some(wtx) = lc.wallet.transactions.read().await.current.get(&prev_transaction_id) {
+                    if let Some(utxo) = wtx.utxos.iter().find(|u| u.output_index as u32 == vin.prevout.n()) {
+                        if !taddrs.contains(&utxo.address) {
+                            taddrs.push(utxo.address.clone());
+                        }
                     }
                 }
             }
@@ -325,7 +327,7 @@ impl TestGRPCService {
     }
 
     async fn wait_random() {
-        let msecs = OsRng.gen_range(0, 100);
+        let msecs = OsRng.gen_range(0..100);
         sleep(std::time::Duration::from_millis(msecs)).await;
     }
 }
@@ -413,7 +415,9 @@ impl CompactTxStreamer for TestGRPCService {
 
     async fn send_transaction(&self, request: Request<RawTransaction>) -> Result<Response<SendResponse>, Status> {
         let raw_transaction = request.into_inner();
-        let transaction_id = Transaction::read(&raw_transaction.data[..]).unwrap().txid();
+        let transaction_id = Transaction::read(&raw_transaction.data[..], BranchId::Sapling)
+            .unwrap()
+            .txid();
 
         self.data.write().await.sent_transactions.push(raw_transaction);
         Ok(Response::new(SendResponse {
@@ -486,10 +490,7 @@ impl CompactTxStreamer for TestGRPCService {
 
     type GetMempoolTxStream = Pin<Box<dyn Stream<Item = Result<CompactTx, Status>> + Send + Sync>>;
 
-    async fn get_mempool_tx(
-        &self,
-        _request: Request<Exclude>,
-    ) -> Result<Response<Self::GetMempoolTxStream>, Status> {
+    async fn get_mempool_tx(&self, _request: Request<Exclude>) -> Result<Response<Self::GetMempoolTxStream>, Status> {
         todo!()
     }
 

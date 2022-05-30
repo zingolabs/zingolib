@@ -11,13 +11,12 @@ use zcash_client_backend::address::RecipientAddress;
 use zcash_client_backend::encoding::{
     encode_extended_full_viewing_key, encode_extended_spending_key, encode_payment_address,
 };
-use zcash_primitives::consensus::BlockHeight;
+use zcash_note_encryption::EphemeralKeyBytes;
+use zcash_primitives::consensus::{BlockHeight, BranchId};
 use zcash_primitives::memo::Memo;
 use zcash_primitives::merkle_tree::{CommitmentTree, IncrementalWitness};
-use zcash_primitives::note_encryption::SaplingNoteEncryption;
-use zcash_primitives::primitives::{Note, Rseed, ValueCommitment};
-use zcash_primitives::redjubjub::Signature;
-use zcash_primitives::sapling::Node;
+use zcash_primitives::sapling::note_encryption::sapling_note_encryption;
+use zcash_primitives::sapling::{redjubjub::Signature, Node, Note, Rseed, ValueCommitment};
 use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
 use zcash_primitives::transaction::components::{OutputDescription, GROTH_PROOF_SIZE};
 use zcash_primitives::transaction::{Transaction, TransactionData};
@@ -326,7 +325,7 @@ async fn multiple_incoming_same_transaction() {
         assert_eq!(lc.wallet.last_scanned_height().await, 10);
 
         // 2. Construct the Fake transaction.
-        let to = extfvk1.default_address().unwrap().1;
+        let to = extfvk1.default_address().1;
 
         // Create fake note for the account
         let mut compact_transaction = CompactTx::default();
@@ -344,7 +343,7 @@ async fn multiple_incoming_same_transaction() {
             };
 
             let mut encryptor =
-                SaplingNoteEncryption::new(None, note.clone(), to.clone(), Memo::default().into(), &mut rng);
+                sapling_note_encryption(None, note.clone(), to.clone(), Memo::default().into(), &mut rng);
 
             let mut rng = OsRng;
             let rcv = jubjub::Fr::random(&mut rng);
@@ -357,9 +356,9 @@ async fn multiple_incoming_same_transaction() {
             let od = OutputDescription {
                 cv: cv.commitment().into(),
                 cmu: note.cmu(),
-                ephemeral_key: ExtendedPoint::from(*encryptor.epk()),
+                ephemeral_key: EphemeralKeyBytes::from(encryptor.epk().to_bytes()),
                 enc_ciphertext: encryptor.encrypt_note_plaintext(),
-                out_ciphertext: encryptor.encrypt_outgoing_plaintext(&cv.commitment().into(), &cmu),
+                out_ciphertext: encryptor.encrypt_outgoing_plaintext(&cv.commitment().into(), &cmu, &mut rng),
                 zkproof: [0; GROTH_PROOF_SIZE],
             };
 
@@ -1302,7 +1301,7 @@ async fn mempool_clearing() {
         let notes_before = lc.do_list_notes(true).await;
         let transactions_before = lc.do_list_transactions(false).await;
 
-        let transaction = Transaction::read(&sent_transaction.data[..]).unwrap();
+        let transaction = Transaction::read(&sent_transaction.data[..], BranchId::Sapling).unwrap();
         FetchFullTxns::scan_full_tx(
             config,
             transaction,

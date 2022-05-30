@@ -397,7 +397,7 @@ pub mod tests {
         {
             assert!(wzk.extsk.is_none());
             assert_eq!(wzk.locked, true);
-            assert_eq!(wzk.zaddress, wzk.extfvk.default_address().unwrap().1);
+            assert_eq!(wzk.zaddress, wzk.extfvk.default_address().1);
         }
 
         // Can't remove encryption without unlocking
@@ -449,7 +449,7 @@ pub mod tests {
         {
             assert!(wzk.extsk.is_none());
             assert_eq!(wzk.locked, true);
-            assert_eq!(wzk.zaddress, wzk.extfvk.default_address().unwrap().1);
+            assert_eq!(wzk.zaddress, wzk.extfvk.default_address().1);
         }
 
         // Can't remove encryption without unlocking
