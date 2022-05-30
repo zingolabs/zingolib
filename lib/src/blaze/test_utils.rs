@@ -14,21 +14,23 @@ use secp256k1::PublicKey;
 use sha2::{Digest, Sha256};
 use tokio::sync::RwLock;
 
-use zcash_note_encryption::EphemeralKeyBytes;
+use zcash_note_encryption::{EphemeralKeyBytes, NoteEncryption};
 use zcash_primitives::{
     block::BlockHash,
-    consensus::{BranchId, NetworkUpgrade},
+    consensus::{BranchId, NetworkUpgrade, TestNetwork, TEST_NETWORK},
     constants::SPENDING_KEY_GENERATOR,
     keys::OutgoingViewingKey,
     legacy::{Script, TransparentAddress},
     memo::Memo,
     merkle_tree::{CommitmentTree, Hashable, IncrementalWitness, MerklePath},
     sapling::{
-        note_encryption::sapling_note_encryption, prover::TxProver, redjubjub::Signature, Diversifier, Node, Note,
-        Nullifier, PaymentAddress, ProofGenerationKey, Rseed, ValueCommitment,
+        note_encryption::{sapling_note_encryption, SaplingDomain},
+        prover::TxProver,
+        redjubjub::Signature,
+        Diversifier, Node, Note, Nullifier, PaymentAddress, ProofGenerationKey, Rseed, ValueCommitment,
     },
     transaction::{
-        components::{Amount, OutPoint, OutputDescription, TxIn, TxOut, GROTH_PROOF_SIZE},
+        components::{transparent, Amount, OutPoint, OutputDescription, TxIn, TxOut, GROTH_PROOF_SIZE},
         Transaction, TransactionData, TxId, TxVersion,
     },
     zip32::{ExtendedFullViewingKey, ExtendedSpendingKey},
@@ -118,7 +120,8 @@ impl FakeTransaction {
             rseed: Rseed::BeforeZip212(jubjub::Fr::random(rng)),
         };
 
-        let mut encryptor = sapling_note_encryption(ovk, note.clone(), to.clone(), Memo::default().into(), &mut rng);
+        let mut encryptor: NoteEncryption<SaplingDomain<TestNetwork>> =
+            sapling_note_encryption(ovk, note.clone(), to.clone(), Memo::default().into(), &mut rng);
 
         let mut rng = OsRng;
         let rcv = jubjub::Fr::random(&mut rng);
@@ -150,11 +153,6 @@ impl FakeTransaction {
         cout.ciphertext = enc_ciphertext[..52].to_vec();
 
         self.td.sapling_bundle().unwrap().shielded_outputs.push(od);
-        use zcash_primitives::sapling::prover::mock::MockTxProver;
-        use zcash_primitives::transaction::components::sapling::builder::SaplingBuilder;
-        let prover = MockTxProver();
-        self.td.binding_sig = Signature::read(&vec![0u8; 64][..]).ok();
-
         self.compact_transaction.outputs.push(cout);
 
         note
@@ -180,7 +178,7 @@ impl FakeTransaction {
     // Add a new transaction into the block, paying the given address the amount.
     // Returns the nullifier of the new note.
     pub fn add_transaction_paying(&mut self, extfvk: &ExtendedFullViewingKey, value: u64) -> Note {
-        let to = extfvk.default_address().unwrap().1;
+        let to = extfvk.default_address().1;
         let note = self.add_sapling_output(value, None, &to);
 
         note
@@ -193,6 +191,14 @@ impl FakeTransaction {
 
         let taddr_bytes = hash160.finalize();
 
+        if self.td.transparent_bundle().is_none() {
+            let auth = transparent::Authorized;
+            self.td.transparent_bundle() = transparent::Bundle {
+                vin: vec![],
+                vout: vec![],
+                authorization,
+            };
+        };
         self.td.vout.push(TxOut {
             value: Amount::from_u64(value).unwrap(),
             script_pubkey: TransparentAddress::PublicKey(taddr_bytes.try_into().unwrap()).script(),
