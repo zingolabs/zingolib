@@ -17,7 +17,7 @@ use tokio::sync::RwLock;
 use zcash_note_encryption::EphemeralKeyBytes;
 use zcash_primitives::{
     block::BlockHash,
-    consensus::BranchId,
+    consensus::{BranchId, NetworkUpgrade},
     constants::SPENDING_KEY_GENERATOR,
     keys::OutgoingViewingKey,
     legacy::{Script, TransparentAddress},
@@ -79,16 +79,18 @@ pub struct FakeTransaction {
 
 impl FakeTransaction {
     pub fn new() -> Self {
-        let fake_transaction_data = TransactionData::from_parts(
-            TxVersion::Sapling,
-            BranchId::Sapling,
-            0,
-            0u32.into(),
-            None,
-            None,
-            None,
-            None,
-        );
+        use zcash_primitives::consensus::Parameters as _;
+        use zcash_primitives::consensus::TEST_NETWORK;
+        use zcash_primitives::sapling::prover::mock::MockTxProver;
+        let mock_ctx = MockTxProver.new_sapling_proving_context();
+        let sapling_activation_height = TEST_NETWORK.activation_height(NetworkUpgrade::Sapling).unwrap();
+        let sapling_bundle = zcash_primitives::transaction::components::sapling::builder::SaplingBuilder::new(
+            zcash_primitives::consensus::TEST_NETWORK,
+            sapling_activation_height,
+        )
+        .build(MockTxProver);
+        let fake_transaction_data =
+            TransactionData::from_parts(TxVersion::Sapling, BranchId::Sapling, 0, 0u32.into(), None, None, None);
         Self {
             compact_transaction: CompactTx::default(),
             td: fake_transaction_data,
@@ -139,7 +141,10 @@ impl FakeTransaction {
         cout.epk = epk;
         cout.ciphertext = enc_ciphertext[..52].to_vec();
 
-        self.td.shielded_outputs.push(od);
+        self.td.sapling_bundle().unwrap().shielded_outputs.push(od);
+        use zcash_primitives::sapling::prover::mock::MockTxProver;
+        use zcash_primitives::transaction::components::sapling::builder::SaplingBuilder;
+        let prover = MockTxProver();
         self.td.binding_sig = Signature::read(&vec![0u8; 64][..]).ok();
 
         self.compact_transaction.outputs.push(cout);

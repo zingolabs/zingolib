@@ -54,7 +54,7 @@ group = "0.12"
 
 rust-embed = { version = "6.3.0", features = ["debug-embed"] }
 
-zcash_primitives = { git = "https://github.com/zcash/librustzcash", rev = "73d9395c9d3c5fa81fc7becd363a2c1a51772a76", features = ["transparent-inputs"] }
+zcash_primitives = { git = "https://github.com/zcash/librustzcash", rev = "73d9395c9d3c5fa81fc7becd363a2c1a51772a76", features = ["transparent-inputs", "test-dependencies"] }
 zcash_client_backend = { git = "https://github.com/zcash/librustzcash", rev = "73d9395c9d3c5fa81fc7becd363a2c1a51772a76"}
 zcash_proofs = { git = "https://github.com/zcash/librustzcash", rev = "73d9395c9d3c5fa81fc7becd363a2c1a51772a76", features = ["multicore"]}
 zcash_encoding = { git = "https://github.com/zcash/librustzcash", rev = "73d9395c9d3c5fa81fc7becd363a2c1a51772a76"}
