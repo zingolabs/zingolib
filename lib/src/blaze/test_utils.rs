@@ -381,11 +381,11 @@ impl FakeCompactBlockList {
 
             let new_block_height = {
                 let new_block = self.add_empty_block();
-                compact_transaction.hash = transaction.txid().0.to_vec();
+                compact_transaction.hash = transaction.txid().as_ref().to_vec();
                 new_block.add_transactions(vec![compact_transaction]);
                 new_block.height
             };
-            self.transactions.push((transaction.clone(), new_block_height, taddrs));
+            self.transactions.push((transaction, new_block_height, taddrs));
         }
     }
 
