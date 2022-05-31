@@ -268,7 +268,7 @@ impl FakeCompactBlock {
         let xsk_m = ExtendedSpendingKey::master(&[1u8; 32]);
         let extfvk = ExtendedFullViewingKey::from(&xsk_m);
 
-        let to = extfvk.default_address().unwrap().1;
+        let to = extfvk.default_address().1;
         let value = Amount::from_u64(1).unwrap();
 
         let mut compact_transaction = CompactTx::default();
@@ -337,7 +337,11 @@ impl FakeCompactBlockList {
             .unwrap();
             let mut compact_transaction = CompactTx::default();
 
-            for out in &transaction.shielded_outputs {
+            for out in &transaction
+                .sapling_bundle()
+                .expect("surprise missing sapling bundle")
+                .shielded_outputs
+            {
                 let mut cout = CompactOutput::default();
                 cout.cmu = out.cmu.to_repr().to_vec();
                 cout.epk = out.ephemeral_key.to_bytes().to_vec();
