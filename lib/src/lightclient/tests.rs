@@ -602,7 +602,7 @@ async fn z_incoming_viewkey() {
         // 2. Create a new Viewkey and import it
         let iextsk = ExtendedSpendingKey::master(&[1u8; 32]);
         let iextfvk = ExtendedFullViewingKey::from(&iextsk);
-        let iaddr = encode_payment_address(config.hrp_sapling_address(), &iextfvk.default_address().unwrap().1);
+        let iaddr = encode_payment_address(config.hrp_sapling_address(), &iextfvk.default_address().1);
         let addrs = lc
             .do_import_vk(
                 encode_extended_full_viewing_key(config.hrp_sapling_viewing_key(), &iextfvk),
