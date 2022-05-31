@@ -11,14 +11,14 @@ use zcash_client_backend::encoding::{
     encode_extended_full_viewing_key, encode_extended_spending_key, encode_payment_address,
 };
 use zcash_note_encryption::EphemeralKeyBytes;
-use zcash_primitives::consensus::{BlockHeight, BranchId};
+use zcash_primitives::consensus::{BlockHeight, BranchId, TestNetwork};
 use zcash_primitives::memo::Memo;
 use zcash_primitives::merkle_tree::{CommitmentTree, IncrementalWitness};
 use zcash_primitives::sapling::note_encryption::sapling_note_encryption;
 use zcash_primitives::sapling::{redjubjub::Signature, Node, Note, Rseed, ValueCommitment};
 use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
-use zcash_primitives::transaction::components::{OutputDescription, GROTH_PROOF_SIZE};
-use zcash_primitives::transaction::{Transaction, TransactionData};
+use zcash_primitives::transaction::components::{sapling, Amount, OutputDescription, GROTH_PROOF_SIZE};
+use zcash_primitives::transaction::{Transaction, TransactionData, TxVersion};
 use zcash_primitives::zip32::{ExtendedFullViewingKey, ExtendedSpendingKey};
 
 use crate::blaze::fetch_full_transaction::FetchFullTxns;
@@ -328,7 +328,25 @@ async fn multiple_incoming_same_transaction() {
 
         // Create fake note for the account
         let mut compact_transaction = CompactTx::default();
-        let mut td = TransactionData::new();
+        let authorization = sapling::Authorized {
+            binding_sig: Signature::read(&vec![0u8; 64][..]).expect("Signature read error!"),
+        };
+        let sapling_bundle = sapling::Bundle {
+            shielded_spends: vec![],
+            shielded_outputs: vec![],
+            value_balance: Amount::zero(),
+            authorization,
+        };
+        let mut td: TransactionData<zcash_primitives::transaction::Authorized> = TransactionData::from_parts(
+            TxVersion::Sapling,
+            BranchId::Sapling,
+            0,
+            0u32.into(),
+            None,
+            None,
+            Some(sapling_bundle),
+            None,
+        );
 
         // Add 4 outputs
         for i in 0..4 {
@@ -341,8 +359,13 @@ async fn multiple_incoming_same_transaction() {
                 rseed: Rseed::BeforeZip212(jubjub::Fr::random(rng)),
             };
 
-            let mut encryptor =
-                sapling_note_encryption(None, note.clone(), to.clone(), Memo::default().into(), &mut rng);
+            let mut encryptor = sapling_note_encryption::<_, TestNetwork>(
+                None,
+                note.clone(),
+                to.clone(),
+                Memo::default().into(),
+                &mut rng,
+            );
 
             let mut rng = OsRng;
             let rcv = jubjub::Fr::random(&mut rng);
@@ -373,16 +396,13 @@ async fn multiple_incoming_same_transaction() {
             cout.epk = epk;
             cout.ciphertext = enc_ciphertext[..52].to_vec();
             compact_transaction.outputs.push(cout);
-
-            td.shielded_outputs.push(od);
         }
 
-        td.binding_sig = Signature::read(&vec![0u8; 64][..]).ok();
         let transaction = td.freeze().unwrap();
-        compact_transaction.hash = transaction.txid().clone().0.to_vec();
+        compact_transaction.hash = transaction.txid().clone().as_ref().to_vec();
 
         // Add and mine the block
-        fcbl.transactions.push((transaction.clone(), fcbl.next_height, vec![]));
+        fcbl.transactions.push((transaction, fcbl.next_height, vec![]));
         fcbl.add_empty_block().add_transactions(vec![compact_transaction]);
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
         assert_eq!(lc.wallet.last_scanned_height().await, 11);
