@@ -393,7 +393,7 @@ impl FakeCompactBlockList {
         let (compact_transaction, transaction, taddrs) = fake_transaction.into_transaction();
 
         let height = self.next_height;
-        self.transactions.push((transaction.clone(), height, taddrs));
+        self.transactions.push((transaction, height, taddrs));
         self.add_empty_block().add_transactions(vec![compact_transaction]);
 
         (transaction, height)
