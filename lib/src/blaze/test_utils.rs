@@ -342,9 +342,13 @@ impl FakeCompactBlockList {
                 .expect("surprise missing sapling bundle")
                 .shielded_outputs
             {
+                let mut epkv = vec![];
+                for c in (*out.ephemeral_key.clone().as_ref()).iter() {
+                    epkv.push(*c);
+                }
                 let mut cout = CompactOutput::default();
                 cout.cmu = out.cmu.to_repr().to_vec();
-                cout.epk = out.ephemeral_key.to_bytes().to_vec();
+                cout.epk = epkv;
                 cout.ciphertext = out.enc_ciphertext[..52].to_vec();
 
                 compact_transaction.outputs.push(cout);
