@@ -5,9 +5,9 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use sodiumoxide::crypto::secretbox;
 
+use zcash_encoding::{Optional, Vector};
 use zcash_primitives::{
-    primitives::PaymentAddress,
-    serialize::{Optional, Vector},
+    sapling::PaymentAddress,
     zip32::{ExtendedFullViewingKey, ExtendedSpendingKey},
 };
 
@@ -42,7 +42,7 @@ pub struct WalletZKey {
 impl WalletZKey {
     pub fn new_hdkey(hdkey_num: u32, extsk: ExtendedSpendingKey) -> Self {
         let extfvk = ExtendedFullViewingKey::from(&extsk);
-        let zaddress = extfvk.default_address().unwrap().1;
+        let zaddress = extfvk.default_address().1;
 
         WalletZKey {
             keytype: WalletZKeyType::HdKey,
@@ -57,7 +57,7 @@ impl WalletZKey {
     }
 
     pub fn new_locked_hdkey(hdkey_num: u32, extfvk: ExtendedFullViewingKey) -> Self {
-        let zaddress = extfvk.default_address().unwrap().1;
+        let zaddress = extfvk.default_address().1;
 
         WalletZKey {
             keytype: WalletZKeyType::HdKey,
@@ -73,7 +73,7 @@ impl WalletZKey {
 
     pub fn new_imported_sk(extsk: ExtendedSpendingKey) -> Self {
         let extfvk = ExtendedFullViewingKey::from(&extsk);
-        let zaddress = extfvk.default_address().unwrap().1;
+        let zaddress = extfvk.default_address().1;
 
         WalletZKey {
             keytype: WalletZKeyType::ImportedSpendingKey,
@@ -88,7 +88,7 @@ impl WalletZKey {
     }
 
     pub fn new_imported_viewkey(extfvk: ExtendedFullViewingKey) -> Self {
-        let zaddress = extfvk.default_address().unwrap().1;
+        let zaddress = extfvk.default_address().1;
 
         WalletZKey {
             keytype: WalletZKeyType::ImportedViewKey,
@@ -132,7 +132,7 @@ impl WalletZKey {
 
         let extsk = Optional::read(&mut inp, |r| ExtendedSpendingKey::read(r))?;
         let extfvk = ExtendedFullViewingKey::read(&mut inp)?;
-        let zaddress = extfvk.default_address().unwrap().1;
+        let zaddress = extfvk.default_address().1;
 
         let hdkey_num = Optional::read(&mut inp, |r| r.read_u32::<LittleEndian>())?;
 
@@ -158,19 +158,23 @@ impl WalletZKey {
 
         out.write_u8(self.locked as u8)?;
 
-        Optional::write(&mut out, &self.extsk, |w, sk| ExtendedSpendingKey::write(sk, w))?;
+        Optional::write(&mut out, self.extsk.as_ref(), |w, sk| {
+            ExtendedSpendingKey::write(&sk, w)
+        })?;
 
         ExtendedFullViewingKey::write(&self.extfvk, &mut out)?;
 
-        Optional::write(&mut out, &self.hdkey_num, |o, n| o.write_u32::<LittleEndian>(*n))?;
+        Optional::write(&mut out, self.hdkey_num, |o, n| o.write_u32::<LittleEndian>(n))?;
 
         // Write enc_key
-        Optional::write(&mut out, &self.enc_key, |o, v| {
-            Vector::write(o, v, |o, n| o.write_u8(*n))
+        Optional::write(&mut out, self.enc_key.as_ref(), |o, v| {
+            Vector::write(o, &v, |o, n| o.write_u8(*n))
         })?;
 
         // Write nonce
-        Optional::write(&mut out, &self.nonce, |o, v| Vector::write(o, v, |o, n| o.write_u8(*n)))
+        Optional::write(&mut out, self.nonce.as_ref(), |o, v| {
+            Vector::write(o, &v, |o, n| o.write_u8(*n))
+        })
     }
 
     pub fn lock(&mut self) -> io::Result<()> {
@@ -393,7 +397,7 @@ pub mod tests {
         {
             assert!(wzk.extsk.is_none());
             assert_eq!(wzk.locked, true);
-            assert_eq!(wzk.zaddress, wzk.extfvk.default_address().unwrap().1);
+            assert_eq!(wzk.zaddress, wzk.extfvk.default_address().1);
         }
 
         // Can't remove encryption without unlocking
@@ -445,7 +449,7 @@ pub mod tests {
         {
             assert!(wzk.extsk.is_none());
             assert_eq!(wzk.locked, true);
-            assert_eq!(wzk.zaddress, wzk.extfvk.default_address().unwrap().1);
+            assert_eq!(wzk.zaddress, wzk.extfvk.default_address().1);
         }
 
         // Can't remove encryption without unlocking

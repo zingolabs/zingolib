@@ -15,8 +15,7 @@ use tokio::{
 
 use zcash_primitives::{
     consensus::BlockHeight,
-    note_encryption::try_sapling_compact_note_decryption,
-    primitives::{Nullifier, SaplingIvk},
+    sapling::{note_encryption::try_sapling_compact_note_decryption, Nullifier, SaplingIvk},
     transaction::{Transaction, TxId},
 };
 
@@ -126,21 +125,14 @@ impl TrialDecryptions {
                 let mut wallet_transaction = false;
 
                 for (output_num, co) in compact_transaction.outputs.iter().enumerate() {
-                    let cmu = co.cmu().map_err(|_| "No CMU".to_string())?;
-                    let epk = match co.epk() {
-                        Err(_) => continue,
-                        Ok(epk) => epk,
+                    if let Err(_) = co.epk() {
+                        continue;
                     };
 
                     for (i, ivk) in ivks.iter().enumerate() {
-                        if let Some((note, to)) = try_sapling_compact_note_decryption(
-                            &config.get_params(),
-                            height,
-                            &ivk,
-                            &epk,
-                            &cmu,
-                            &co.ciphertext,
-                        ) {
+                        if let Some((note, to)) =
+                            try_sapling_compact_note_decryption(&config.get_params(), height, &ivk, co)
+                        {
                             wallet_transaction = true;
 
                             let keys = keys.clone();

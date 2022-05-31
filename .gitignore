@@ -1,4 +1,6 @@
-/target
+target
+lib/target
+cli/target
 /testdata
 /procgov
 .DS_Store

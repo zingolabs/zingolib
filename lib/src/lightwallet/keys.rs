@@ -14,10 +14,10 @@ use zcash_client_backend::{
     address,
     encoding::{encode_extended_full_viewing_key, encode_extended_spending_key, encode_payment_address},
 };
+use zcash_encoding::Vector;
 use zcash_primitives::{
     legacy::TransparentAddress,
-    primitives::PaymentAddress,
-    serialize::Vector,
+    sapling::PaymentAddress,
     zip32::{ChildIndex, ExtendedFullViewingKey, ExtendedSpendingKey},
 };
 
@@ -219,7 +219,7 @@ impl Keys {
             // Calculate the addresses
             let addresses = extfvks
                 .iter()
-                .map(|fvk| fvk.default_address().unwrap().1)
+                .map(|fvk| fvk.default_address().1)
                 .collect::<Vec<PaymentAddress>>();
 
             // If extsks is of len 0, then this wallet is locked
@@ -783,7 +783,7 @@ impl Keys {
             ],
         );
         let extfvk = ExtendedFullViewingKey::from(&extsk);
-        let address = extfvk.default_address().unwrap().1;
+        let address = extfvk.default_address().1;
 
         (extsk, extfvk, address)
     }

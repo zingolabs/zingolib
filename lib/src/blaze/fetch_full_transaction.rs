@@ -31,7 +31,7 @@ use zcash_primitives::{
     consensus::BlockHeight,
     legacy::TransparentAddress,
     memo::Memo,
-    note_encryption::{try_sapling_note_decryption, try_sapling_output_recovery},
+    sapling::note_encryption::{try_sapling_note_decryption, try_sapling_output_recovery},
     transaction::{Transaction, TxId},
 };
 
@@ -183,27 +183,29 @@ impl FetchFullTxns {
         let taddrs_set: HashSet<_> = taddrs.iter().map(|t| t.clone()).collect();
 
         // Step 1: Scan all transparent outputs to see if we recieved any money
-        for (n, vout) in transaction.vout.iter().enumerate() {
-            match vout.script_pubkey.address() {
-                Some(TransparentAddress::PublicKey(hash)) => {
-                    let output_taddr = hash.to_base58check(&config.base58_pubkey_address(), &[]);
-                    if taddrs_set.contains(&output_taddr) {
-                        // This is our address. Add this as an output to the txid
-                        wallet_transactions.write().await.add_new_taddr_output(
-                            transaction.txid(),
-                            output_taddr.clone(),
-                            height.into(),
-                            unconfirmed,
-                            block_time as u64,
-                            &vout,
-                            n as u32,
-                        );
+        if let Some(t_bundle) = transaction.transparent_bundle() {
+            for (n, vout) in t_bundle.vout.iter().enumerate() {
+                match vout.script_pubkey.address() {
+                    Some(TransparentAddress::PublicKey(hash)) => {
+                        let output_taddr = hash.to_base58check(&config.base58_pubkey_address(), &[]);
+                        if taddrs_set.contains(&output_taddr) {
+                            // This is our address. Add this as an output to the txid
+                            wallet_transactions.write().await.add_new_taddr_output(
+                                transaction.txid(),
+                                output_taddr.clone(),
+                                height.into(),
+                                unconfirmed,
+                                block_time as u64,
+                                &vout,
+                                n as u32,
+                            );
 
-                        // Ensure that we add any new HD addresses
-                        keys.write().await.ensure_hd_taddresses(&output_taddr);
+                            // Ensure that we add any new HD addresses
+                            keys.write().await.ensure_hd_taddresses(&output_taddr);
+                        }
                     }
+                    _ => {}
                 }
-                _ => {}
             }
         }
 
@@ -218,25 +220,27 @@ impl FetchFullTxns {
 
         {
             let current = &wallet_transactions.read().await.current;
-            for vin in transaction.vin.iter() {
-                // Find the prev txid that was spent
-                let prev_transaction_id = TxId { 0: *vin.prevout.hash() };
-                let prev_n = vin.prevout.n() as u64;
+            if let Some(t_bundle) = transaction.transparent_bundle() {
+                for vin in t_bundle.vin.iter() {
+                    // Find the prev txid that was spent
+                    let prev_transaction_id = TxId::from_bytes(*vin.prevout.hash());
+                    let prev_n = vin.prevout.n() as u64;
 
-                if let Some(wtx) = current.get(&prev_transaction_id) {
-                    // One of the tx outputs is a match
-                    if let Some(spent_utxo) = wtx
-                        .utxos
-                        .iter()
-                        .find(|u| u.txid == prev_transaction_id && u.output_index == prev_n)
-                    {
-                        info!(
-                            "Spent: utxo from {} was spent in {}",
-                            prev_transaction_id,
-                            transaction.txid()
-                        );
-                        total_transparent_value_spent += spent_utxo.value;
-                        spent_utxos.push((prev_transaction_id, prev_n as u32, transaction.txid(), height));
+                    if let Some(wtx) = current.get(&prev_transaction_id) {
+                        // One of the tx outputs is a match
+                        if let Some(spent_utxo) = wtx
+                            .utxos
+                            .iter()
+                            .find(|u| u.txid == prev_transaction_id && u.output_index == prev_n)
+                        {
+                            info!(
+                                "Spent: utxo from {} was spent in {}",
+                                prev_transaction_id,
+                                transaction.txid()
+                            );
+                            total_transparent_value_spent += spent_utxo.value;
+                            spent_utxos.push((prev_transaction_id, prev_n as u32, transaction.txid(), height));
+                        }
                     }
                 }
             }
@@ -272,19 +276,21 @@ impl FetchFullTxns {
         // because for transactions in the block, we will check the nullifiers from the blockdata
         if unconfirmed {
             let unspent_nullifiers = wallet_transactions.read().await.get_unspent_nullifiers();
-            for s in transaction.shielded_spends.iter() {
-                if let Some((nf, value, transaction_id)) =
-                    unspent_nullifiers.iter().find(|(nf, _, _)| *nf == s.nullifier)
-                {
-                    wallet_transactions.write().await.add_new_spent(
-                        transaction.txid(),
-                        height,
-                        unconfirmed,
-                        block_time,
-                        *nf,
-                        *value,
-                        *transaction_id,
-                    );
+            if let Some(s_bundle) = transaction.sapling_bundle() {
+                for s in s_bundle.shielded_spends.iter() {
+                    if let Some((nf, value, transaction_id)) =
+                        unspent_nullifiers.iter().find(|(nf, _, _)| *nf == s.nullifier)
+                    {
+                        wallet_transactions.write().await.add_new_spent(
+                            transaction.txid(),
+                            height,
+                            unconfirmed,
+                            block_time,
+                            *nf,
+                            *value,
+                            *transaction_id,
+                        );
+                    }
                 }
             }
         }
@@ -309,91 +315,79 @@ impl FetchFullTxns {
         // a second time by the Full transaction Fetcher
         let mut outgoing_metadatas = vec![];
 
-        for output in transaction.shielded_outputs.iter() {
-            let cmu = output.cmu;
-            let ct = output.enc_ciphertext;
+        if let Some(s_bundle) = transaction.sapling_bundle() {
+            for output in s_bundle.shielded_outputs.iter() {
+                // Search all of our keys
+                for (i, ivk) in ivks.iter().enumerate() {
+                    let (note, to, memo_bytes) =
+                        match try_sapling_note_decryption(&config.get_params(), height, &ivk, output) {
+                            Some(ret) => ret,
+                            None => continue,
+                        };
 
-            // Search all of our keys
-            for (i, ivk) in ivks.iter().enumerate() {
-                let epk_prime = output.ephemeral_key;
+                    // info!("A sapling note was received into the wallet in {}", transaction.txid());
+                    if unconfirmed {
+                        wallet_transactions.write().await.add_pending_note(
+                            transaction.txid(),
+                            height,
+                            block_time as u64,
+                            note.clone(),
+                            to,
+                            &extfvks.get(i).unwrap(),
+                        );
+                    }
 
-                let (note, to, memo_bytes) =
-                    match try_sapling_note_decryption(&config.get_params(), height, &ivk, &epk_prime, &cmu, &ct) {
-                        Some(ret) => ret,
-                        None => continue,
-                    };
-
-                // info!("A sapling note was received into the wallet in {}", transaction.txid());
-                if unconfirmed {
-                    wallet_transactions.write().await.add_pending_note(
-                        transaction.txid(),
-                        height,
-                        block_time as u64,
-                        note.clone(),
-                        to,
-                        &extfvks.get(i).unwrap(),
-                    );
+                    let memo = memo_bytes.clone().try_into().unwrap_or(Memo::Future(memo_bytes));
+                    wallet_transactions
+                        .write()
+                        .await
+                        .add_memo_to_note(&transaction.txid(), note, memo);
                 }
 
-                let memo = memo_bytes.clone().try_into().unwrap_or(Memo::Future(memo_bytes));
-                wallet_transactions
-                    .write()
-                    .await
-                    .add_memo_to_note(&transaction.txid(), note, memo);
-            }
+                // Also scan the output to see if it can be decoded with our OutgoingViewKey
+                // If it can, then we sent this transaction, so we should be able to get
+                // the memo and value for our records
 
-            // Also scan the output to see if it can be decoded with our OutgoingViewKey
-            // If it can, then we sent this transaction, so we should be able to get
-            // the memo and value for our records
+                // Search all ovks that we have
+                let omds = ovks
+                    .iter()
+                    .filter_map(|ovk| {
+                        match try_sapling_output_recovery(&config.get_params(), height, &ovk, &output) {
+                            Some((note, payment_address, memo_bytes)) => {
+                                // Mark this transaction as an outgoing transaction, so we can grab all outgoing metadata
+                                is_outgoing_transaction = true;
 
-            // Search all ovks that we have
-            let omds = ovks
-                .iter()
-                .filter_map(|ovk| {
-                    match try_sapling_output_recovery(
-                        &config.get_params(),
-                        height,
-                        &ovk,
-                        &output.cv,
-                        &output.cmu,
-                        &output.ephemeral_key,
-                        &output.enc_ciphertext,
-                        &output.out_ciphertext,
-                    ) {
-                        Some((note, payment_address, memo_bytes)) => {
-                            // Mark this transaction as an outgoing transaction, so we can grab all outgoing metadata
-                            is_outgoing_transaction = true;
+                                let address = encode_payment_address(config.hrp_sapling_address(), &payment_address);
 
-                            let address = encode_payment_address(config.hrp_sapling_address(), &payment_address);
-
-                            // Check if this is change, and if it also doesn't have a memo, don't add
-                            // to the outgoing metadata.
-                            // If this is change (i.e., funds sent to ourself) AND has a memo, then
-                            // presumably the users is writing a memo to themself, so we will add it to
-                            // the outgoing metadata, even though it might be confusing in the UI, but hopefully
-                            // the user can make sense of it.
-                            match Memo::try_from(memo_bytes) {
-                                Err(_) => None,
-                                Ok(memo) => {
-                                    if z_addresses.contains(&address) && memo == Memo::Empty {
-                                        None
-                                    } else {
-                                        Some(OutgoingTxMetadata {
-                                            address,
-                                            value: note.value,
-                                            memo,
-                                        })
+                                // Check if this is change, and if it also doesn't have a memo, don't add
+                                // to the outgoing metadata.
+                                // If this is change (i.e., funds sent to ourself) AND has a memo, then
+                                // presumably the users is writing a memo to themself, so we will add it to
+                                // the outgoing metadata, even though it might be confusing in the UI, but hopefully
+                                // the user can make sense of it.
+                                match Memo::try_from(memo_bytes) {
+                                    Err(_) => None,
+                                    Ok(memo) => {
+                                        if z_addresses.contains(&address) && memo == Memo::Empty {
+                                            None
+                                        } else {
+                                            Some(OutgoingTxMetadata {
+                                                address,
+                                                value: note.value,
+                                                memo,
+                                            })
+                                        }
                                     }
                                 }
                             }
+                            None => None,
                         }
-                        None => None,
-                    }
-                })
-                .collect::<Vec<_>>();
+                    })
+                    .collect::<Vec<_>>();
 
-            // Add it to the overall outgoing metadatas
-            outgoing_metadatas.extend(omds);
+                // Add it to the overall outgoing metadatas
+                outgoing_metadatas.extend(omds);
+            }
         }
 
         // Step 5. Process t-address outputs
@@ -409,15 +403,17 @@ impl FetchFullTxns {
         }
 
         if is_outgoing_transaction {
-            for vout in &transaction.vout {
-                let taddr = keys.read().await.address_from_pubkeyhash(vout.script_pubkey.address());
+            if let Some(t_bundle) = transaction.transparent_bundle() {
+                for vout in &t_bundle.vout {
+                    let taddr = keys.read().await.address_from_pubkeyhash(vout.script_pubkey.address());
 
-                if taddr.is_some() && !taddrs_set.contains(taddr.as_ref().unwrap()) {
-                    outgoing_metadatas.push(OutgoingTxMetadata {
-                        address: taddr.unwrap(),
-                        value: vout.value.into(),
-                        memo: Memo::Empty,
-                    });
+                    if taddr.is_some() && !taddrs_set.contains(taddr.as_ref().unwrap()) {
+                        outgoing_metadatas.push(OutgoingTxMetadata {
+                            address: taddr.unwrap(),
+                            value: vout.value.into(),
+                            memo: Memo::Empty,
+                        });
+                    }
                 }
             }
 

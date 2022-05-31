@@ -2,9 +2,11 @@ use ff::PrimeField;
 use group::GroupEncoding;
 use std::convert::TryInto;
 
+use zcash_note_encryption::{EphemeralKeyBytes, ShieldedOutput};
 use zcash_primitives::{
     block::{BlockHash, BlockHeader},
-    consensus::BlockHeight,
+    consensus::{BlockHeight, Parameters},
+    sapling::note_encryption::SaplingDomain,
 };
 
 tonic::include_proto!("cash.z.wallet.sdk.rpc");
@@ -76,7 +78,7 @@ impl CompactOutput {
     pub fn cmu(&self) -> Result<bls12_381::Scalar, ()> {
         let mut repr = [0; 32];
         repr.as_mut().copy_from_slice(&self.cmu[..]);
-        bls12_381::Scalar::from_repr(repr).ok_or(())
+        Option::from(bls12_381::Scalar::from_repr(repr)).ok_or(())
     }
 
     /// Returns the ephemeral public key for this output.
@@ -92,4 +94,21 @@ impl CompactOutput {
             Err(())
         }
     }
+}
+
+impl<P: Parameters> ShieldedOutput<SaplingDomain<P>, 52_usize> for CompactOutput {
+    fn ephemeral_key(&self) -> EphemeralKeyBytes {
+        EphemeralKeyBytes(*vec_to_array(&self.epk))
+    }
+    fn cmstar_bytes(&self) -> [u8; 32] {
+        *vec_to_array(&self.cmu)
+    }
+    fn enc_ciphertext(&self) -> &[u8; 52] {
+        vec_to_array(&self.ciphertext)
+    }
+}
+
+fn vec_to_array<'a, T, const N: usize>(vec: &'a Vec<T>) -> &'a [T; N] {
+    <&[T; N]>::try_from(&vec[..]).unwrap()
+    //todo: This unwrap is dangerous. Find better solution
 }

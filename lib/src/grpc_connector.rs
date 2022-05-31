@@ -21,6 +21,7 @@ use tokio_rustls::rustls::{ClientConfig, RootCertStore};
 use tonic::Request;
 use tonic::Status;
 use tower::{util::BoxCloneService, ServiceExt};
+use zcash_primitives::consensus::{BlockHeight, BranchId, Parameters};
 use zcash_primitives::transaction::{Transaction, TxId};
 
 type UnderlyingService = BoxCloneService<
@@ -189,6 +190,7 @@ impl GrpcConnector {
 
     pub async fn start_full_transaction_fetcher(
         &self,
+        network: &'static (impl Parameters + Sync),
     ) -> (
         JoinHandle<()>,
         UnboundedSender<(TxId, oneshot::Sender<Result<Transaction, String>>)>,
@@ -202,7 +204,7 @@ impl GrpcConnector {
                 let uri = uri.clone();
                 workers.push(tokio::spawn(async move {
                     result_transmitter
-                        .send(Self::get_full_transaction(uri.clone(), &transaction_id).await)
+                        .send(Self::get_full_transaction(uri.clone(), &transaction_id, network).await)
                         .unwrap()
                 }));
 
@@ -255,12 +257,16 @@ impl GrpcConnector {
         Ok(())
     }
 
-    async fn get_full_transaction(uri: http::Uri, transaction_id: &TxId) -> Result<Transaction, String> {
+    async fn get_full_transaction(
+        uri: http::Uri,
+        transaction_id: &TxId,
+        network: &impl Parameters,
+    ) -> Result<Transaction, String> {
         let client = Arc::new(GrpcConnector::new(uri));
         let request = Request::new(TxFilter {
             block: None,
             index: 0,
-            hash: transaction_id.0.to_vec(),
+            hash: transaction_id.as_ref().to_vec(),
         });
 
         // log::info!("Full fetching {}", transaction_id);
@@ -270,9 +276,17 @@ impl GrpcConnector {
             .await
             .map_err(|e| format!("Error getting client: {:?}", e))?;
 
-        let response = client.get_transaction(request).await.map_err(|e| format!("{}", e))?;
+        let response = client
+            .get_transaction(request)
+            .await
+            .map_err(|e| format!("{}", e))?
+            .into_inner();
 
-        Transaction::read(&response.into_inner().data[..]).map_err(|e| format!("Error parsing Transaction: {}", e))
+        Transaction::read(
+            &response.data[..],
+            BranchId::for_height(network, BlockHeight::from_u32(response.height as u32)),
+        )
+        .map_err(|e| format!("Error parsing Transaction: {}", e))
     }
 
     async fn get_taddr_transactions(

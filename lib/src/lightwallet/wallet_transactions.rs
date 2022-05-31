@@ -5,13 +5,12 @@ use std::{
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use log::error;
+use zcash_encoding::Vector;
 use zcash_primitives::{
     consensus::BlockHeight,
     memo::Memo,
     merkle_tree::IncrementalWitness,
-    primitives::{Note, Nullifier, PaymentAddress},
-    sapling::Node,
-    serialize::Vector,
+    sapling::{Node, Note, Nullifier, PaymentAddress},
     transaction::{components::TxOut, TxId},
     zip32::ExtendedFullViewingKey,
 };
@@ -45,7 +44,7 @@ impl WalletTxns {
             let mut txid_bytes = [0u8; 32];
             r.read_exact(&mut txid_bytes)?;
 
-            Ok((TxId { 0: txid_bytes }, WalletTx::read(r).unwrap()))
+            Ok((TxId::from_bytes(txid_bytes), WalletTx::read(r).unwrap()))
         })?;
 
         let txs = txs_tuples.into_iter().collect::<HashMap<TxId, WalletTx>>();
@@ -69,7 +68,7 @@ impl WalletTxns {
             let mut txid_bytes = [0u8; 32];
             r.read_exact(&mut txid_bytes)?;
 
-            Ok((TxId { 0: txid_bytes }, WalletTx::read(r).unwrap()))
+            Ok((TxId::from_bytes(txid_bytes), WalletTx::read(r).unwrap()))
         })?;
 
         let current = txs_tuples.into_iter().collect::<HashMap<TxId, WalletTx>>();
@@ -90,7 +89,7 @@ impl WalletTxns {
                 r.read_exact(&mut txid_bytes)?;
                 let wtx = WalletTx::read(r)?;
 
-                Ok((TxId { 0: txid_bytes }, wtx))
+                Ok((TxId::from_bytes(txid_bytes), wtx))
             })?
             .into_iter()
             .collect()
@@ -112,7 +111,7 @@ impl WalletTxns {
             txns.sort_by(|a, b| a.0.partial_cmp(b.0).unwrap());
 
             Vector::write(&mut writer, &txns, |w, (k, v)| {
-                w.write_all(&k.0)?;
+                w.write_all(k.as_ref())?;
                 v.write(w)
             })?;
         }

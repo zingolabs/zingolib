@@ -12,6 +12,8 @@ use tokio::{
 };
 use zcash_primitives::consensus::BlockHeight;
 
+use zcash_primitives::consensus::BranchId;
+use zcash_primitives::consensus::Parameters;
 use zcash_primitives::transaction::Transaction;
 
 pub struct FetchTaddrTransactions {
@@ -32,6 +34,7 @@ impl FetchTaddrTransactions {
             oneshot::Sender<Vec<UnboundedReceiver<Result<RawTransaction, String>>>>,
         )>,
         full_transaction_scanner: UnboundedSender<(Transaction, BlockHeight)>,
+        network: &'static (impl Parameters + Sync),
     ) -> JoinHandle<Result<(), String>> {
         let keys = self.keys.clone();
 
@@ -114,8 +117,11 @@ impl FetchTaddrTransactions {
                     }
                     prev_height = raw_transaction.height;
 
-                    let transaction = Transaction::read(&raw_transaction.data[..])
-                        .map_err(|e| format!("Error reading transaction: {}", e))?;
+                    let transaction = Transaction::read(
+                        &raw_transaction.data[..],
+                        BranchId::for_height(network, BlockHeight::from_u32(raw_transaction.height as u32)),
+                    )
+                    .map_err(|e| format!("Error reading transaction: {}", e))?;
                     full_transaction_scanner
                         .send((transaction, BlockHeight::from_u32(raw_transaction.height as u32)))
                         .unwrap();
@@ -142,6 +148,7 @@ mod test {
     use tokio::join;
     use tokio::sync::mpsc::UnboundedReceiver;
     use tokio::task::JoinError;
+    use zcash_primitives::consensus::TEST_NETWORK;
 
     use tokio::sync::oneshot;
     use tokio::sync::RwLock;
@@ -149,7 +156,7 @@ mod test {
     use zcash_primitives::consensus::BlockHeight;
 
     use crate::compact_formats::RawTransaction;
-    use zcash_primitives::transaction::{Transaction, TransactionData};
+    use zcash_primitives::transaction::Transaction;
 
     use crate::lightwallet::keys::Keys;
     use crate::lightwallet::wallettkey::WalletTKey;
@@ -186,17 +193,22 @@ mod test {
                     let mut rng = rand::thread_rng();
 
                     // Generate between 50 and 200 transactions per taddr
-                    let num_transactions = rng.gen_range(50, 200);
+                    let num_transactions = rng.gen_range(50..200);
 
                     let mut raw_transactions = (0..num_transactions)
                         .into_iter()
-                        .map(|_| rng.gen_range(1, 100))
+                        .map(|_| rng.gen_range(1..100))
                         .map(|h| {
                             let mut raw_transaction = RawTransaction::default();
                             raw_transaction.height = h;
 
                             let mut b = vec![];
-                            TransactionData::new().freeze().unwrap().write(&mut b).unwrap();
+                            use crate::lightclient::testmocks;
+                            testmocks::new_transactiondata()
+                                .freeze()
+                                .unwrap()
+                                .write(&mut b)
+                                .unwrap();
                             raw_transaction.data = b;
 
                             raw_transaction
@@ -242,8 +254,16 @@ mod test {
         });
 
         let h3 = ftt
-            .start(100, 1, taddr_fetcher_transmitter, full_transaction_scanner_transmitter)
+            .start(
+                100,
+                1,
+                taddr_fetcher_transmitter,
+                full_transaction_scanner_transmitter,
+                &TEST_NETWORK,
+            )
             .await;
+        //Todo: Add regtest support
+        //this test will probably fail until we do
 
         let (total_sent, total_recieved) = join!(h1, h2);
         assert_eq!(total_sent.unwrap().unwrap(), total_recieved.unwrap().unwrap());
