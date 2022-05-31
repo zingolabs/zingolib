@@ -79,26 +79,39 @@ pub struct FakeTransaction {
     pub taddrs_involved: Vec<String>,
 }
 
+use zcash_primitives::transaction::components::sapling;
+fn sapling_bundle() -> Option<sapling::Bundle<sapling::Authorized>> {
+    let authorization = sapling::Authorized {
+        binding_sig: Signature::read(&vec![0u8; 64][..]).expect("Signature read error!"),
+    };
+    Some(sapling::Bundle {
+        shielded_spends: vec![],
+        shielded_outputs: vec![],
+        value_balance: Amount::zero(),
+        authorization,
+    })
+}
+fn optional_transparent_bundle(include_tbundle: bool) -> Option<transparent::Bundle<transparent::Authorized>> {
+    if include_tbundle {
+        return Some(transparent::Bundle {
+            vin: vec![],
+            vout: vec![],
+            authorization: transparent::Authorized,
+        });
+    } else {
+        return None;
+    }
+}
 impl FakeTransaction {
-    pub fn new() -> Self {
-        use zcash_primitives::transaction::components::sapling::{Authorized, Bundle};
-        let authorization = Authorized {
-            binding_sig: Signature::read(&vec![0u8; 64][..]).expect("Signature read error!"),
-        };
-        let sapling_bundle = Bundle {
-            shielded_spends: vec![],
-            shielded_outputs: vec![],
-            value_balance: Amount::zero(),
-            authorization,
-        };
+    pub fn new(with_transparent: bool) -> Self {
         let fake_transaction_data = TransactionData::from_parts(
             TxVersion::Sapling,
             BranchId::Sapling,
             0,
             0u32.into(),
+            optional_transparent_bundle(with_transparent),
             None,
-            None,
-            Some(sapling_bundle),
+            sapling_bundle(),
             None,
         );
         Self {
@@ -190,15 +203,6 @@ impl FakeTransaction {
         hash160.update(Sha256::digest(&pk.serialize()[..].to_vec()));
 
         let taddr_bytes = hash160.finalize();
-
-        if self.td.transparent_bundle().is_none() {
-            let auth = transparent::Authorized;
-            self.td.transparent_bundle() = transparent::Bundle {
-                vin: vec![],
-                vout: vec![],
-                authorization,
-            };
-        };
         self.td.vout.push(TxOut {
             value: Amount::from_u64(value).unwrap(),
             script_pubkey: TransparentAddress::PublicKey(taddr_bytes.try_into().unwrap()).script(),
@@ -382,7 +386,7 @@ impl FakeCompactBlockList {
         ovk: &OutgoingViewingKey,
         to: &PaymentAddress,
     ) -> Transaction {
-        let mut fake_transaction = FakeTransaction::new();
+        let mut fake_transaction = FakeTransaction::new(false);
         fake_transaction.add_transaction_spending(nf, value, ovk, to);
 
         let (transaction, _) = self.add_fake_transaction(fake_transaction);
@@ -393,7 +397,7 @@ impl FakeCompactBlockList {
     // Add a new transaction into the block, paying the given address the amount.
     // Returns the nullifier of the new note.
     pub fn add_transaction_paying(&mut self, extfvk: &ExtendedFullViewingKey, value: u64) -> (Transaction, u64, Note) {
-        let mut fake_transaction = FakeTransaction::new();
+        let mut fake_transaction = FakeTransaction::new(false);
         let note = fake_transaction.add_transaction_paying(extfvk, value);
 
         let (transaction, height) = self.add_fake_transaction(fake_transaction);

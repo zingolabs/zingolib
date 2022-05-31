@@ -1493,7 +1493,7 @@ mod test {
             let taddr = sk.address;
             let tvalue = 100_000;
 
-            let mut fake_transaction = FakeTransaction::new();
+            let mut fake_transaction = FakeTransaction::new(true);
             fake_transaction.add_t_output(&pk, taddr.clone(), tvalue);
             let (_ttransaction, _) = fcbl.add_fake_transaction(fake_transaction);
             mine_pending_blocks(&mut fcbl, &data, &lc).await;

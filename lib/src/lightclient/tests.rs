@@ -701,7 +701,7 @@ async fn t_incoming_t_outgoing() {
         let taddr = sk.address;
         let value = 100_000;
 
-        let mut fake_transaction = FakeTransaction::new();
+        let mut fake_transaction = FakeTransaction::new(true);
         fake_transaction.add_t_output(&pk, taddr.clone(), value);
         let (transaction, _) = fcbl.add_fake_transaction(fake_transaction);
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
@@ -809,7 +809,7 @@ async fn mixed_transaction() {
         let taddr = sk.address;
         let tvalue = 200_000;
 
-        let mut fake_transaction = FakeTransaction::new();
+        let mut fake_transaction = FakeTransaction::new(true);
         fake_transaction.add_t_output(&pk, taddr.clone(), tvalue);
         let (_ttransaction, _) = fcbl.add_fake_transaction(fake_transaction);
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
@@ -917,7 +917,7 @@ async fn aborted_resync() {
         let taddr = sk.address;
         let tvalue = 200_000;
 
-        let mut fake_transaction = FakeTransaction::new();
+        let mut fake_transaction = FakeTransaction::new(true);
         fake_transaction.add_t_output(&pk, taddr.clone(), tvalue);
         let (_ttransaction, _) = fcbl.add_fake_transaction(fake_transaction);
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
@@ -1033,7 +1033,7 @@ async fn no_change() {
         let taddr = sk.address;
         let tvalue = 200_000;
 
-        let mut fake_transaction = FakeTransaction::new();
+        let mut fake_transaction = FakeTransaction::new(true);
         fake_transaction.add_t_output(&pk, taddr.clone(), tvalue);
         let (_t_transaction, _) = fcbl.add_fake_transaction(fake_transaction);
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
