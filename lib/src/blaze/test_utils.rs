@@ -203,21 +203,29 @@ impl FakeTransaction {
         hash160.update(Sha256::digest(&pk.serialize()[..].to_vec()));
 
         let taddr_bytes = hash160.finalize();
-        self.td.vout.push(TxOut {
-            value: Amount::from_u64(value).unwrap(),
-            script_pubkey: TransparentAddress::PublicKey(taddr_bytes.try_into().unwrap()).script(),
-        });
+        self.td
+            .transparent_bundle()
+            .expect("Construction should guarantee Some")
+            .vout
+            .push(TxOut {
+                value: Amount::from_u64(value).unwrap(),
+                script_pubkey: TransparentAddress::PublicKey(taddr_bytes.try_into().unwrap()).script(),
+            });
 
         self.taddrs_involved.push(taddr)
     }
 
     // Spend the given utxo
     pub fn add_t_input(&mut self, transaction_id: TxId, n: u32, taddr: String) {
-        self.td.vin.push(TxIn {
-            prevout: OutPoint::new(transaction_id.0, n),
-            script_sig: Script { 0: vec![] },
-            sequence: 0,
-        });
+        self.td
+            .transparent_bundle()
+            .expect("Depend on construction for Some.")
+            .vin
+            .push(TxIn {
+                prevout: OutPoint::new(*(transaction_id.as_ref()), n),
+                script_sig: Script { 0: vec![] },
+                sequence: 0,
+            });
         self.taddrs_involved.push(taddr);
     }
 
