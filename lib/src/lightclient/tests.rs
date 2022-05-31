@@ -328,7 +328,7 @@ async fn multiple_incoming_same_transaction() {
         let to = extfvk1.default_address().1;
 
         // Create fake note for the account
-        let mut td = testmocks::new_transactiondata();
+        let td = testmocks::new_transactiondata();
         let mut compact_transaction = CompactTx::default();
         // Add 4 outputs
         for i in 0..4 {
@@ -341,7 +341,7 @@ async fn multiple_incoming_same_transaction() {
                 rseed: Rseed::BeforeZip212(jubjub::Fr::random(rng)),
             };
 
-            let mut encryptor = sapling_note_encryption::<_, TestNetwork>(
+            let encryptor = sapling_note_encryption::<_, TestNetwork>(
                 None,
                 note.clone(),
                 to.clone(),
@@ -357,7 +357,7 @@ async fn multiple_incoming_same_transaction() {
             };
 
             let cmu = note.cmu();
-            let od = OutputDescription {
+            let _od = OutputDescription {
                 cv: cv.commitment().into(),
                 cmu: note.cmu(),
                 ephemeral_key: EphemeralKeyBytes::from(encryptor.epk().to_bytes()),

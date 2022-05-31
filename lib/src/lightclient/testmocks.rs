@@ -12,7 +12,7 @@ pub fn new_transactiondata() -> TransactionData<zcash_primitives::transaction::A
         value_balance: Amount::zero(),
         authorization,
     };
-    let mut td: TransactionData<zcash_primitives::transaction::Authorized> = TransactionData::from_parts(
+    let td: TransactionData<zcash_primitives::transaction::Authorized> = TransactionData::from_parts(
         TxVersion::Sapling,
         BranchId::Sapling,
         0,
