@@ -7,7 +7,6 @@ use crate::{
 };
 use ff::{Field, PrimeField};
 use group::GroupEncoding;
-use jubjub::ExtendedPoint;
 use prost::Message;
 use rand::{rngs::OsRng, RngCore};
 use secp256k1::PublicKey;
@@ -17,7 +16,7 @@ use tokio::sync::RwLock;
 use zcash_note_encryption::{EphemeralKeyBytes, NoteEncryption};
 use zcash_primitives::{
     block::BlockHash,
-    consensus::{BranchId, NetworkUpgrade, TestNetwork, TEST_NETWORK},
+    consensus::{BranchId, TestNetwork},
     constants::SPENDING_KEY_GENERATOR,
     keys::OutgoingViewingKey,
     legacy::{Script, TransparentAddress},

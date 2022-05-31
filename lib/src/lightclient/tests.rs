@@ -1,7 +1,6 @@
 use ff::{Field, PrimeField};
 use group::GroupEncoding;
 use json::JsonValue;
-use jubjub::ExtendedPoint;
 use log::info;
 use rand::rngs::OsRng;
 use tokio::runtime::Runtime;
