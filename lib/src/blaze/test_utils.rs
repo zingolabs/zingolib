@@ -366,6 +366,8 @@ impl FakeCompactBlockList {
 
             let config = data.read().await.config.clone();
             let taddrs = transaction
+                .transparent_bundle()
+                .expect("missing transparent bundle")
                 .vout
                 .iter()
                 .filter_map(|vout| {
