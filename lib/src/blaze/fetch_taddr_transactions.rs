@@ -156,7 +156,7 @@ mod test {
     use zcash_primitives::consensus::BlockHeight;
 
     use crate::compact_formats::RawTransaction;
-    use zcash_primitives::transaction::{Transaction, TransactionData};
+    use zcash_primitives::transaction::Transaction;
 
     use crate::lightwallet::keys::Keys;
     use crate::lightwallet::wallettkey::WalletTKey;
@@ -203,7 +203,12 @@ mod test {
                             raw_transaction.height = h;
 
                             let mut b = vec![];
-                            TransactionData::new().freeze().unwrap().write(&mut b).unwrap();
+                            use crate::lightclient::testmocks;
+                            testmocks::new_transactiondata()
+                                .freeze()
+                                .unwrap()
+                                .write(&mut b)
+                                .unwrap();
                             raw_transaction.data = b;
 
                             raw_transaction
