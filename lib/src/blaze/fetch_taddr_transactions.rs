@@ -193,11 +193,11 @@ mod test {
                     let mut rng = rand::thread_rng();
 
                     // Generate between 50 and 200 transactions per taddr
-                    let num_transactions = rng.gen_range(50, 200);
+                    let num_transactions = rng.gen_range(50..200);
 
                     let mut raw_transactions = (0..num_transactions)
                         .into_iter()
-                        .map(|_| rng.gen_range(1, 100))
+                        .map(|_| rng.gen_range(1..100))
                         .map(|h| {
                             let mut raw_transaction = RawTransaction::default();
                             raw_transaction.height = h;
