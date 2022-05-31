@@ -1,7 +1,7 @@
-use zcash_primitives::consensus::{BlockHeight, BranchId, TestNetwork};
-use zcash_primitives::sapling::{redjubjub::Signature, Node, Note, Rseed, ValueCommitment};
-use zcash_primitives::transaction::components::{sapling, Amount, OutputDescription, GROTH_PROOF_SIZE};
-use zcash_primitives::transaction::{Transaction, TransactionData, TxVersion};
+use zcash_primitives::consensus::BranchId;
+use zcash_primitives::sapling::redjubjub::Signature;
+use zcash_primitives::transaction::components::{sapling, Amount};
+use zcash_primitives::transaction::{TransactionData, TxVersion};
 pub fn new_transactiondata() -> TransactionData<zcash_primitives::transaction::Authorized> {
     let authorization = sapling::Authorized {
         binding_sig: Signature::read(&vec![0u8; 64][..]).expect("Signature read error!"),

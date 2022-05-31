@@ -15,10 +15,10 @@ use zcash_primitives::consensus::{BlockHeight, BranchId, TestNetwork};
 use zcash_primitives::memo::Memo;
 use zcash_primitives::merkle_tree::{CommitmentTree, IncrementalWitness};
 use zcash_primitives::sapling::note_encryption::sapling_note_encryption;
-use zcash_primitives::sapling::{redjubjub::Signature, Node, Note, Rseed, ValueCommitment};
+use zcash_primitives::sapling::{Node, Note, Rseed, ValueCommitment};
 use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
-use zcash_primitives::transaction::components::{sapling, Amount, OutputDescription, GROTH_PROOF_SIZE};
-use zcash_primitives::transaction::{Transaction, TransactionData, TxVersion};
+use zcash_primitives::transaction::components::{OutputDescription, GROTH_PROOF_SIZE};
+use zcash_primitives::transaction::Transaction;
 use zcash_primitives::zip32::{ExtendedFullViewingKey, ExtendedSpendingKey};
 
 use crate::blaze::fetch_full_transaction::FetchFullTxns;
