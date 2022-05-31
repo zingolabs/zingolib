@@ -23,6 +23,7 @@ use zcash_primitives::zip32::{ExtendedFullViewingKey, ExtendedSpendingKey};
 
 use crate::blaze::fetch_full_transaction::FetchFullTxns;
 use crate::blaze::test_utils::{FakeCompactBlockList, FakeTransaction};
+use crate::lightclient::testmocks;
 
 use crate::compact_formats::{CompactOutput, CompactTx, Empty};
 use crate::lightclient::test_server::{create_test_server, mine_pending_blocks, mine_random_blocks};
@@ -327,27 +328,8 @@ async fn multiple_incoming_same_transaction() {
         let to = extfvk1.default_address().1;
 
         // Create fake note for the account
+        let mut td = testmocks::new_transactiondata();
         let mut compact_transaction = CompactTx::default();
-        let authorization = sapling::Authorized {
-            binding_sig: Signature::read(&vec![0u8; 64][..]).expect("Signature read error!"),
-        };
-        let sapling_bundle = sapling::Bundle {
-            shielded_spends: vec![],
-            shielded_outputs: vec![],
-            value_balance: Amount::zero(),
-            authorization,
-        };
-        let mut td: TransactionData<zcash_primitives::transaction::Authorized> = TransactionData::from_parts(
-            TxVersion::Sapling,
-            BranchId::Sapling,
-            0,
-            0u32.into(),
-            None,
-            None,
-            Some(sapling_bundle),
-            None,
-        );
-
         // Add 4 outputs
         for i in 0..4 {
             let mut rng = OsRng;
