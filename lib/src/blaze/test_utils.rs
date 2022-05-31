@@ -354,7 +354,11 @@ impl FakeCompactBlockList {
                 compact_transaction.outputs.push(cout);
             }
 
-            for spend in &transaction.shielded_spends {
+            for spend in &transaction
+                .sapling_bundle()
+                .expect("missing sapling bundle")
+                .shielded_spends
+            {
                 let mut cs = CompactSpend::default();
                 cs.nf = spend.nullifier.to_vec();
 
