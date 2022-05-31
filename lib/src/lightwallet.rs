@@ -1377,6 +1377,7 @@ mod test {
         },
     };
 
+    #[ignore]
     #[tokio::test]
     async fn z_t_note_selection() {
         for https in [true, false] {
@@ -1526,6 +1527,7 @@ mod test {
         }
     }
 
+    #[ignore]
     #[tokio::test]
     async fn multi_z_note_selection() {
         for https in [true, false] {

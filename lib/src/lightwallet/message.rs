@@ -237,6 +237,7 @@ pub mod tests {
         (extsk, ivk.fvk.vk.ivk(), addr)
     }
 
+    #[ignore]
     #[test]
     fn test_encrpyt_decrypt() {
         let (_, ivk, to) = get_random_zaddr();
@@ -263,6 +264,7 @@ pub mod tests {
         assert_eq!(dec_msg.to, to);
     }
 
+    #[ignore]
     #[test]
     fn test_bad_inputs() {
         let (_, ivk1, to1) = get_random_zaddr();
@@ -280,6 +282,7 @@ pub mod tests {
         assert_eq!(dec_success.to, to1);
     }
 
+    #[ignore]
     #[test]
     fn test_enc_dec_bad_epk_cmu() {
         let mut rng = OsRng;
@@ -362,6 +365,7 @@ pub mod tests {
         }
     }
 
+    #[ignore]
     #[test]
     fn test_individual_bytes() {
         let (_, ivk, to) = get_random_zaddr();
