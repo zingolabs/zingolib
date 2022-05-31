@@ -441,7 +441,7 @@ async fn multiple_incoming_same_transaction() {
             assert_eq!(notes["spent_notes"][i]["spent_at_height"].as_u64().unwrap(), 17);
         }
         assert_eq!(transactions[4]["txid"], sent_transaction_id);
-        assert_eq!(transactions[4]["block_height"], 17);
+        assert_eq!(transactions[4]["block_height"], 17 as u32);
         assert_eq!(
             transactions[4]["amount"].as_i64().unwrap(),
             -(sent_value as i64) - i64::from(DEFAULT_FEE)
