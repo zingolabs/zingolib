@@ -164,7 +164,7 @@ impl FakeTransaction {
         cout.epk = epk;
         cout.ciphertext = enc_ciphertext[..52].to_vec();
 
-        //self.td.sapling_bundle().unwrap().shielded_outputs.push(od);
+        self.td.sapling_bundle().unwrap().shielded_outputs.push(od);
         self.compact_transaction.outputs.push(cout);
 
         note
@@ -202,7 +202,7 @@ impl FakeTransaction {
         hash160.update(Sha256::digest(&pk.serialize()[..].to_vec()));
 
         let taddr_bytes = hash160.finalize();
-        /*self.td
+        self.td
             .transparent_bundle()
             .expect("Construction should guarantee Some")
             .vout
@@ -210,13 +210,12 @@ impl FakeTransaction {
                 value: Amount::from_u64(value).unwrap(),
                 script_pubkey: TransparentAddress::PublicKey(taddr_bytes.try_into().unwrap()).script(),
             });
-        */
+
         self.taddrs_involved.push(taddr)
     }
 
     // Spend the given utxo
     pub fn add_t_input(&mut self, transaction_id: TxId, n: u32, taddr: String) {
-        /*
         self.td
             .transparent_bundle()
             .expect("Depend on construction for Some.")
@@ -225,7 +224,7 @@ impl FakeTransaction {
                 prevout: OutPoint::new(*(transaction_id.as_ref()), n),
                 script_sig: Script { 0: vec![] },
                 sequence: 0,
-            });*/
+            });
         self.taddrs_involved.push(taddr);
     }
 
@@ -395,7 +394,7 @@ impl FakeCompactBlockList {
         let (compact_transaction, transaction, taddrs) = fake_transaction.into_transaction();
 
         let height = self.next_height;
-        //self.transactions.push((transaction, height, taddrs));
+        self.transactions.push((transaction, height, taddrs));
         self.add_empty_block().add_transactions(vec![compact_transaction]);
 
         (transaction, height)
