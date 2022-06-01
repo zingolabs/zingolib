@@ -132,7 +132,7 @@ impl FakeTransaction {
             rseed: Rseed::BeforeZip212(jubjub::Fr::random(rng)),
         };
 
-        let mut encryptor: NoteEncryption<SaplingDomain<TestNetwork>> =
+        let encryptor: NoteEncryption<SaplingDomain<TestNetwork>> =
             sapling_note_encryption(ovk, note.clone(), to.clone(), Memo::default().into(), &mut rng);
 
         let mut rng = OsRng;
@@ -164,7 +164,19 @@ impl FakeTransaction {
         cout.epk = epk;
         cout.ciphertext = enc_ciphertext[..52].to_vec();
 
-        self.td.sapling_bundle().unwrap().shielded_outputs.push(od);
+        let mut added_sapling_bundle = self.td.sapling_bundle().unwrap().clone();
+        added_sapling_bundle.shielded_outputs.push(od);
+        let new_td = TransactionData::from_parts(
+            self.td.version(),
+            self.td.consensus_branch_id(),
+            self.td.lock_time(),
+            self.td.expiry_height(),
+            Some(self.td.transparent_bundle().unwrap().clone()),
+            Some(self.td.sprout_bundle().unwrap().clone()),
+            Some(added_sapling_bundle),
+            Some(self.td.orchard_bundle().unwrap().clone()),
+        );
+        self.td = new_td;
         self.compact_transaction.outputs.push(cout);
 
         note
