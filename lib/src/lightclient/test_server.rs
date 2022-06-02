@@ -6,6 +6,7 @@ use crate::compact_formats::{
     GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList, LightdInfo, PingResponse, PriceRequest,
     PriceResponse, RawTransaction, SendResponse, TransparentAddressBlockFilter, TreeState, TxFilter,
 };
+use crate::lightclient::lightclient_config::Network;
 use crate::lightwallet::data::WalletTx;
 use crate::lightwallet::now;
 use futures::{FutureExt, Stream};
@@ -79,7 +80,7 @@ pub async fn create_test_server(
     };
     let addr: std::net::SocketAddr = server_port.parse().unwrap();
 
-    let mut config = LightClientConfig::create_unconnected("main".to_string(), None);
+    let mut config = LightClientConfig::create_unconnected(Network::FakeMainnet, None);
     config.server = uri.replace("127.0.0.1", "localhost").parse().unwrap();
 
     let (service, data) = TestGRPCService::new(config.clone());
@@ -597,8 +598,8 @@ impl CompactTxStreamer for TestGRPCService {
             .max()
             .unwrap_or(0);
         ld.taddr_support = true;
-        ld.chain_name = self.data.read().await.config.chain_name.clone();
-        ld.sapling_activation_height = self.data.read().await.config.sapling_activation_height;
+        ld.chain_name = self.data.read().await.config.chain.to_string();
+        ld.sapling_activation_height = self.data.read().await.config.sapling_activation_height();
 
         Ok(Response::new(ld))
     }

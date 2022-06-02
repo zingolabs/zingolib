@@ -34,7 +34,7 @@ impl FetchTaddrTransactions {
             oneshot::Sender<Vec<UnboundedReceiver<Result<RawTransaction, String>>>>,
         )>,
         full_transaction_scanner: UnboundedSender<(Transaction, BlockHeight)>,
-        network: &'static (impl Parameters + Sync),
+        network: impl Parameters + Send + Copy + 'static,
     ) -> JoinHandle<Result<(), String>> {
         let keys = self.keys.clone();
 
@@ -119,7 +119,7 @@ impl FetchTaddrTransactions {
 
                     let transaction = Transaction::read(
                         &raw_transaction.data[..],
-                        BranchId::for_height(network, BlockHeight::from_u32(raw_transaction.height as u32)),
+                        BranchId::for_height(&network, BlockHeight::from_u32(raw_transaction.height as u32)),
                     )
                     .map_err(|e| format!("Error reading transaction: {}", e))?;
                     full_transaction_scanner
@@ -148,7 +148,6 @@ mod test {
     use tokio::join;
     use tokio::sync::mpsc::UnboundedReceiver;
     use tokio::task::JoinError;
-    use zcash_primitives::consensus::TEST_NETWORK;
 
     use tokio::sync::oneshot;
     use tokio::sync::RwLock;
@@ -259,7 +258,7 @@ mod test {
                 1,
                 taddr_fetcher_transmitter,
                 full_transaction_scanner_transmitter,
-                &TEST_NETWORK,
+                crate::lightclient::lightclient_config::Network::FakeMainnet,
             )
             .await;
         //Todo: Add regtest support

@@ -190,7 +190,7 @@ impl GrpcConnector {
 
     pub async fn start_full_transaction_fetcher(
         &self,
-        network: &'static (impl Parameters + Sync),
+        network: impl Parameters + Send + Copy + 'static,
     ) -> (
         JoinHandle<()>,
         UnboundedSender<(TxId, oneshot::Sender<Result<Transaction, String>>)>,
@@ -260,7 +260,7 @@ impl GrpcConnector {
     async fn get_full_transaction(
         uri: http::Uri,
         transaction_id: &TxId,
-        network: &impl Parameters,
+        network: impl Parameters,
     ) -> Result<Transaction, String> {
         let client = Arc::new(GrpcConnector::new(uri));
         let request = Request::new(TxFilter {
@@ -284,7 +284,7 @@ impl GrpcConnector {
 
         Transaction::read(
             &response.data[..],
-            BranchId::for_height(network, BlockHeight::from_u32(response.height as u32)),
+            BranchId::for_height(&network, BlockHeight::from_u32(response.height as u32)),
         )
         .map_err(|e| format!("Error parsing Transaction: {}", e))
     }

@@ -31,7 +31,7 @@ use crate::lightclient::LightClient;
 use crate::lightwallet::data::WalletTx;
 
 use super::checkpoints;
-use super::lightclient_config::LightClientConfig;
+use super::lightclient_config::{LightClientConfig, Network};
 
 #[test]
 fn new_wallet_from_phrase() {
@@ -44,7 +44,7 @@ fn new_wallet_from_phrase() {
         .unwrap()
         .to_string();
 
-    let config = LightClientConfig::create_unconnected("main".to_string(), Some(data_dir));
+    let config = LightClientConfig::create_unconnected(Network::FakeMainnet, Some(data_dir));
     let lc = LightClient::new_from_phrase(TEST_SEED.to_string(), &config, 0, false).unwrap();
 
     // The first t address and z address should be derived
@@ -74,7 +74,7 @@ fn new_wallet_from_sk() {
         .unwrap()
         .to_string();
 
-    let config = LightClientConfig::create_unconnected("main".to_string(), Some(data_dir));
+    let config = LightClientConfig::create_unconnected(Network::FakeMainnet, Some(data_dir));
     let sk = "secret-extended-key-main1qvpa0qr8qqqqpqxn4l054nzxpxzp3a8r2djc7sekdek5upce8mc2j2z0arzps4zv940qeg706hd0wq6g5snzvhp332y6vhwyukdn8dhekmmsk7fzvzkqm6ypc99uy63tpesqwxhpre78v06cx8k5xpp9mrhtgqs5dvp68cqx2yrvthflmm2ynl8c0506dekul0f6jkcdmh0292lpphrksyc5z3pxwws97zd5els3l2mjt2s7hntap27mlmt6w0drtfmz36vz8pgu7ec0twfrq";
     let lc = LightClient::new_from_phrase(sk.to_string(), &config, 0, false).unwrap();
     Runtime::new().unwrap().block_on(async move {
@@ -109,7 +109,7 @@ fn new_wallet_from_vk() {
         .unwrap()
         .to_string();
 
-    let config = LightClientConfig::create_unconnected("main".to_string(), Some(data_dir));
+    let config = LightClientConfig::create_unconnected(Network::FakeMainnet, Some(data_dir));
     let vk = "zxviews1qvpa0qr8qqqqpqxn4l054nzxpxzp3a8r2djc7sekdek5upce8mc2j2z0arzps4zv9kdvg28gjzvxd47ant6jn4svln5psw3htx93cq93ahw4e7lptrtlq7he5r6p6rcm3s0z6l24ype84sgqfrmghu449htrjspfv6qg2zfx2yrvthflmm2ynl8c0506dekul0f6jkcdmh0292lpphrksyc5z3pxwws97zd5els3l2mjt2s7hntap27mlmt6w0drtfmz36vz8pgu7ecrxzsls";
     let lc = LightClient::new_from_phrase(vk.to_string(), &config, 0, false).unwrap();
 
@@ -165,7 +165,6 @@ async fn basic_no_wallet_transactions() {
     }
 }
 
-#[ignore]
 #[tokio::test]
 async fn z_incoming_z_outgoing() {
     for https in [true, false] {
@@ -306,7 +305,6 @@ async fn z_incoming_z_outgoing() {
     }
 }
 
-#[ignore]
 #[tokio::test]
 async fn multiple_incoming_same_transaction() {
     for https in [true, false] {
@@ -463,7 +461,6 @@ async fn multiple_incoming_same_transaction() {
     }
 }
 
-#[ignore]
 #[tokio::test]
 async fn z_incoming_multiz_outgoing() {
     for https in [true, false] {
@@ -521,7 +518,6 @@ async fn z_incoming_multiz_outgoing() {
     }
 }
 
-#[ignore]
 #[tokio::test]
 async fn z_to_z_scan_together() {
     // Create an incoming transaction, and then send that transaction, and scan everything together, to make sure it works.
@@ -558,8 +554,7 @@ async fn z_to_z_scan_together() {
         let witness = IncrementalWitness::from_tree(&tree);
         let nf = note.nf(&extfvk1.fvk.vk, witness.position() as u64);
 
-        let pa = if let Some(RecipientAddress::Shielded(pa)) = RecipientAddress::decode(&config.get_params(), EXT_ZADDR)
-        {
+        let pa = if let Some(RecipientAddress::Shielded(pa)) = RecipientAddress::decode(&config.chain, EXT_ZADDR) {
             pa
         } else {
             panic!("Couldn't parse address")
@@ -589,7 +584,6 @@ async fn z_to_z_scan_together() {
     }
 }
 
-#[ignore]
 #[tokio::test]
 async fn z_incoming_viewkey() {
     for https in [true, false] {
@@ -689,7 +683,6 @@ async fn z_incoming_viewkey() {
     }
 }
 
-#[ignore]
 #[tokio::test]
 async fn t_incoming_t_outgoing() {
     for https in [true, false] {
@@ -791,7 +784,6 @@ async fn t_incoming_t_outgoing() {
     }
 }
 
-#[ignore]
 #[tokio::test]
 async fn mixed_transaction() {
     for https in [true, false] {
@@ -896,7 +888,6 @@ async fn mixed_transaction() {
     }
 }
 
-#[ignore]
 #[tokio::test]
 async fn aborted_resync() {
     for https in [true, false] {
@@ -1017,7 +1008,6 @@ async fn aborted_resync() {
     }
 }
 
-#[ignore]
 #[tokio::test]
 async fn no_change() {
     for https in [true, false] {
@@ -1163,7 +1153,6 @@ async fn recover_at_checkpoint() {
     }
 }
 
-#[ignore]
 #[tokio::test]
 async fn witness_clearing() {
     for https in [true, false] {
@@ -1272,7 +1261,6 @@ async fn witness_clearing() {
     }
 }
 
-#[ignore]
 #[tokio::test]
 async fn mempool_clearing() {
     for https in [true, false] {
@@ -1368,7 +1356,6 @@ async fn mempool_clearing() {
     }
 }
 
-#[ignore]
 #[tokio::test]
 async fn mempool_and_balance() {
     for https in [true, false] {

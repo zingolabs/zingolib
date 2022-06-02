@@ -124,7 +124,8 @@ impl Keys {
 
     #[cfg(test)]
     pub fn new_empty() -> Self {
-        let config = LightClientConfig::create_unconnected("mainnet".to_string(), None);
+        let config =
+            LightClientConfig::create_unconnected(crate::lightclient::lightclient_config::Network::FakeMainnet, None);
         Self {
             config,
             encrypted: false,
@@ -789,7 +790,7 @@ impl Keys {
     }
 
     pub fn is_shielded_address(addr: &String, config: &LightClientConfig) -> bool {
-        match address::RecipientAddress::decode(&config.get_params(), addr) {
+        match address::RecipientAddress::decode(&config.chain, addr) {
             Some(address::RecipientAddress::Shielded(_)) => true,
             _ => false,
         }

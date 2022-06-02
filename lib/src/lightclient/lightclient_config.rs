@@ -16,8 +16,8 @@ use log4rs::{
 };
 use tokio::runtime::Runtime;
 use zcash_primitives::{
-    consensus::Network,
-    constants::{mainnet, regtest, testnet},
+    consensus::{BlockHeight, NetworkUpgrade, Parameters, MAIN_NETWORK, TEST_NETWORK},
+    constants,
 };
 
 use crate::{grpc_connector::GrpcConnector, lightclient::checkpoints};
@@ -33,11 +33,100 @@ pub const GAP_RULE_UNUSED_ADDRESSES: usize = if cfg!(any(target_os = "ios", targ
     5
 };
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Network {
+    Testnet,
+    Mainnet,
+    FakeMainnet,
+}
+
+impl std::fmt::Display for Network {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use Network::*;
+        let name = match self {
+            Mainnet => "main",
+            Testnet => "test",
+            FakeMainnet => "regtest",
+        };
+        write!(f, "{name}")
+    }
+}
+
+impl Parameters for Network {
+    fn activation_height(&self, nu: NetworkUpgrade) -> Option<zcash_primitives::consensus::BlockHeight> {
+        use Network::*;
+        match self {
+            Mainnet => MAIN_NETWORK.activation_height(nu),
+            Testnet => TEST_NETWORK.activation_height(nu),
+            FakeMainnet => {
+                //Tests don't need to worry about NU5 yet
+                match nu {
+                    NetworkUpgrade::Nu5 => None,
+                    _ => Some(BlockHeight::from_u32(1)),
+                }
+            }
+        }
+    }
+
+    fn coin_type(&self) -> u32 {
+        use Network::*;
+        match self {
+            Mainnet => constants::mainnet::COIN_TYPE,
+            Testnet => constants::testnet::COIN_TYPE,
+            FakeMainnet => constants::mainnet::COIN_TYPE,
+        }
+    }
+
+    fn hrp_sapling_extended_spending_key(&self) -> &str {
+        use Network::*;
+        match self {
+            Mainnet => constants::mainnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
+            Testnet => constants::testnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
+            FakeMainnet => constants::mainnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
+        }
+    }
+
+    fn hrp_sapling_extended_full_viewing_key(&self) -> &str {
+        use Network::*;
+        match self {
+            Mainnet => constants::mainnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
+            Testnet => constants::testnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
+            FakeMainnet => constants::mainnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
+        }
+    }
+
+    fn hrp_sapling_payment_address(&self) -> &str {
+        use Network::*;
+        match self {
+            Mainnet => constants::mainnet::HRP_SAPLING_PAYMENT_ADDRESS,
+            Testnet => constants::testnet::HRP_SAPLING_PAYMENT_ADDRESS,
+            FakeMainnet => constants::mainnet::HRP_SAPLING_PAYMENT_ADDRESS,
+        }
+    }
+
+    fn b58_pubkey_address_prefix(&self) -> [u8; 2] {
+        use Network::*;
+        match self {
+            Mainnet => constants::mainnet::B58_PUBKEY_ADDRESS_PREFIX,
+            Testnet => constants::testnet::B58_PUBKEY_ADDRESS_PREFIX,
+            FakeMainnet => constants::mainnet::B58_PUBKEY_ADDRESS_PREFIX,
+        }
+    }
+
+    fn b58_script_address_prefix(&self) -> [u8; 2] {
+        use Network::*;
+        match self {
+            Mainnet => constants::mainnet::B58_SCRIPT_ADDRESS_PREFIX,
+            Testnet => constants::testnet::B58_SCRIPT_ADDRESS_PREFIX,
+            FakeMainnet => constants::mainnet::B58_SCRIPT_ADDRESS_PREFIX,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct LightClientConfig {
     pub server: http::Uri,
-    pub chain_name: String,
-    pub sapling_activation_height: u64,
+    pub chain: Network,
     pub anchor_offset: [u32; 5],
     pub monitor_mempool: bool,
     pub data_dir: Option<String>,
@@ -45,15 +134,19 @@ pub struct LightClientConfig {
 
 impl LightClientConfig {
     // Create an unconnected (to any server) config to test for local wallet etc...
-    pub fn create_unconnected(chain_name: String, dir: Option<String>) -> LightClientConfig {
+    pub fn create_unconnected(chain: Network, dir: Option<String>) -> LightClientConfig {
         LightClientConfig {
             server: http::Uri::default(),
-            chain_name: chain_name,
-            sapling_activation_height: 1,
+            chain,
             monitor_mempool: false,
             anchor_offset: [4u32; 5],
             data_dir: dir,
         }
+    }
+
+    //Convenience wrapper
+    pub fn sapling_activation_height(&self) -> u64 {
+        self.chain.activation_height(NetworkUpgrade::Sapling).unwrap().into()
     }
 
     pub fn create(server: http::Uri) -> io::Result<(LightClientConfig, u64)> {
@@ -77,9 +170,12 @@ impl LightClientConfig {
             // Create a Light Client Config
             let config = LightClientConfig {
                 server,
-                chain_name: info.chain_name,
+                chain: match info.chain_name.as_str() {
+                    "main" => Network::Mainnet,
+                    "test" => Network::Testnet,
+                    _ => panic!("Unknown network"),
+                },
                 monitor_mempool: true,
-                sapling_activation_height: info.sapling_activation_height,
                 anchor_offset: ANCHOR_OFFSET,
                 data_dir: None,
             };
@@ -92,14 +188,6 @@ impl LightClientConfig {
 
     pub fn set_data_dir(&mut self, dir_str: String) {
         self.data_dir = Some(dir_str);
-    }
-
-    pub fn get_params(&self) -> Network {
-        match self.chain_name.as_str() {
-            "main" => Network::MainNetwork,
-            "test" => Network::TestNetwork,
-            _ => panic!("Unknown network"),
-        }
     }
 
     /// Build the Logging config
@@ -148,11 +236,10 @@ impl LightClientConfig {
                     zcash_data_location.push(".zcash");
                 };
 
-                match &self.chain_name[..] {
-                    "main" => {}
-                    "test" => zcash_data_location.push("testnet3"),
-                    "regtest" => zcash_data_location.push("regtest"),
-                    c => panic!("Unknown chain {}", c),
+                match &self.chain {
+                    Network::Mainnet => {}
+                    Network::Testnet => zcash_data_location.push("testnet3"),
+                    Network::FakeMainnet => zcash_data_location.push("regtest"),
                 };
             }
 
@@ -239,7 +326,7 @@ impl LightClientConfig {
     }
 
     pub async fn get_initial_state(&self, height: u64) -> Option<(u64, String, String)> {
-        if height <= self.sapling_activation_height {
+        if height <= self.sapling_activation_height() {
             return None;
         }
 
@@ -252,7 +339,7 @@ impl LightClientConfig {
             }
             Err(e) => {
                 error!("Error getting sapling tree:{}\nWill return checkpoint instead.", e);
-                match checkpoints::get_closest_checkpoint(&self.chain_name, height) {
+                match checkpoints::get_closest_checkpoint(&self.chain, height) {
                     Some((height, hash, tree)) => Some((height, hash.to_string(), tree.to_string())),
                     None => None,
                 }
@@ -281,65 +368,33 @@ impl LightClientConfig {
     }
 
     pub fn get_coin_type(&self) -> u32 {
-        match &self.chain_name[..] {
-            "main" => mainnet::COIN_TYPE,
-            "test" => testnet::COIN_TYPE,
-            "regtest" => regtest::COIN_TYPE,
-            c => panic!("Unknown chain {}", c),
-        }
+        self.chain.coin_type()
     }
 
     pub fn hrp_sapling_address(&self) -> &str {
-        match &self.chain_name[..] {
-            "main" => mainnet::HRP_SAPLING_PAYMENT_ADDRESS,
-            "test" => testnet::HRP_SAPLING_PAYMENT_ADDRESS,
-            "regtest" => regtest::HRP_SAPLING_PAYMENT_ADDRESS,
-            c => panic!("Unknown chain {}", c),
-        }
+        self.chain.hrp_sapling_payment_address()
     }
 
     pub fn hrp_sapling_private_key(&self) -> &str {
-        match &self.chain_name[..] {
-            "main" => mainnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
-            "test" => testnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
-            "regtest" => regtest::HRP_SAPLING_EXTENDED_SPENDING_KEY,
-            c => panic!("Unknown chain {}", c),
-        }
+        self.chain.hrp_sapling_extended_spending_key()
     }
 
     pub fn hrp_sapling_viewing_key(&self) -> &str {
-        match &self.chain_name[..] {
-            "main" => mainnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
-            "test" => testnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
-            "regtest" => regtest::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
-            c => panic!("Unknown chain {}", c),
-        }
+        self.chain.hrp_sapling_extended_full_viewing_key()
     }
 
     pub fn base58_pubkey_address(&self) -> [u8; 2] {
-        match &self.chain_name[..] {
-            "main" => mainnet::B58_PUBKEY_ADDRESS_PREFIX,
-            "test" => testnet::B58_PUBKEY_ADDRESS_PREFIX,
-            "regtest" => regtest::B58_PUBKEY_ADDRESS_PREFIX,
-            c => panic!("Unknown chain {}", c),
-        }
+        self.chain.b58_pubkey_address_prefix()
     }
 
     pub fn base58_script_address(&self) -> [u8; 2] {
-        match &self.chain_name[..] {
-            "main" => mainnet::B58_SCRIPT_ADDRESS_PREFIX,
-            "test" => testnet::B58_SCRIPT_ADDRESS_PREFIX,
-            "regtest" => regtest::B58_SCRIPT_ADDRESS_PREFIX,
-            c => panic!("Unknown chain {}", c),
-        }
+        self.chain.b58_script_address_prefix()
     }
 
     pub fn base58_secretkey_prefix(&self) -> [u8; 1] {
-        match &self.chain_name[..] {
-            "main" => [0x80],
-            "test" => [0xEF],
-            "regtest" => [0xEF],
-            c => panic!("Unknown chain {}", c),
+        match self.chain {
+            Network::Mainnet => [0x80],
+            Network::Testnet | Network::FakeMainnet => [0xEF],
         }
     }
 }

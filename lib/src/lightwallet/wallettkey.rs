@@ -343,7 +343,8 @@ mod test {
 
     #[test]
     fn tkey_encode_decode() {
-        let config = LightClientConfig::create_unconnected("main".to_string(), None);
+        let config =
+            LightClientConfig::create_unconnected(crate::lightclient::lightclient_config::Network::FakeMainnet, None);
 
         for _i in 0..10 {
             let mut b = [0u8; 32];
