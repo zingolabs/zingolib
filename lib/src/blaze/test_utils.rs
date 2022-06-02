@@ -29,7 +29,7 @@ use zcash_primitives::{
         Diversifier, Node, Note, Nullifier, PaymentAddress, ProofGenerationKey, Rseed, ValueCommitment,
     },
     transaction::{
-        components::{transparent, Amount, OutPoint, OutputDescription, TxIn, TxOut, GROTH_PROOF_SIZE},
+        components::{self, transparent, Amount, OutPoint, OutputDescription, TxIn, TxOut, GROTH_PROOF_SIZE},
         Transaction, TransactionData, TxId, TxVersion,
     },
     zip32::{ExtendedFullViewingKey, ExtendedSpendingKey},
@@ -214,7 +214,15 @@ impl FakeTransaction {
         hash160.update(Sha256::digest(&pk.serialize()[..].to_vec()));
 
         let taddr_bytes = hash160.finalize();
-        let mut added_transparent_bundle = self.td.transparent_bundle().unwrap().clone();
+        let mut added_transparent_bundle = self
+            .td
+            .transparent_bundle()
+            .unwrap_or(&components::transparent::Bundle {
+                vin: vec![],
+                vout: vec![],
+                authorization: transparent::Authorized,
+            })
+            .clone();
         added_transparent_bundle.vout.push(TxOut {
             value: Amount::from_u64(value).unwrap(),
             script_pubkey: TransparentAddress::PublicKey(taddr_bytes.try_into().unwrap()).script(),
@@ -226,9 +234,9 @@ impl FakeTransaction {
             self.td.lock_time(),
             self.td.expiry_height(),
             Some(added_transparent_bundle),
-            Some(self.td.sprout_bundle().unwrap().clone()),
-            Some(self.td.sapling_bundle().unwrap().clone()),
-            Some(self.td.orchard_bundle().unwrap().clone()),
+            self.td.sprout_bundle().map(Clone::clone),
+            self.td.sapling_bundle().map(Clone::clone),
+            self.td.orchard_bundle().map(Clone::clone),
         );
         self.td = new_td;
         self.taddrs_involved.push(taddr)
@@ -394,20 +402,21 @@ impl FakeCompactBlockList {
             }
 
             let config = data.read().await.config.clone();
-            let taddrs = transaction
-                .transparent_bundle()
-                .expect("missing transparent bundle")
-                .vout
-                .iter()
-                .filter_map(|vout| {
-                    if let Some(TransparentAddress::PublicKey(taddr_hash)) = vout.script_pubkey.address() {
-                        let taddr = taddr_hash.to_base58check(&config.base58_pubkey_address(), &[]);
-                        Some(taddr)
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>();
+            let taddrs = match transaction.transparent_bundle() {
+                Some(bundle) => bundle
+                    .vout
+                    .iter()
+                    .filter_map(|vout| {
+                        if let Some(TransparentAddress::PublicKey(taddr_hash)) = vout.script_pubkey.address() {
+                            let taddr = taddr_hash.to_base58check(&config.base58_pubkey_address(), &[]);
+                            Some(taddr)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>(),
+                None => vec![],
+            };
 
             let new_block_height = {
                 let new_block = self.add_empty_block();

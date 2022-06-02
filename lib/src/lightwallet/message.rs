@@ -2,7 +2,7 @@ use byteorder::ReadBytesExt;
 use bytes::{Buf, Bytes, IntoBuf};
 use ff::Field;
 use group::GroupEncoding;
-use rand::{rngs::OsRng, CryptoRng, RngCore};
+use rand::{rngs::OsRng, CryptoRng, Rng, RngCore};
 use std::{
     convert::TryInto,
     io::{self, ErrorKind, Read},
@@ -64,8 +64,7 @@ impl Message {
         };
         let cv = value_commitment.commitment().into();
 
-        // Use a rseed from pre-canopy. It doesn't really matter, but this is what is tested out.
-        let rseed = Rseed::BeforeZip212(jubjub::Fr::random(&mut rng));
+        let rseed = Rseed::AfterZip212(rng.gen::<[u8; 32]>());
 
         // 0-value note with the rseed
         let note = self.to.create_note(value, rseed).unwrap();
@@ -194,7 +193,7 @@ impl Message {
         // are not usable.
         match try_sapling_note_decryption(
             &MAIN_NETWORK,
-            BlockHeight::from_u32(1_000_000),
+            BlockHeight::from_u32(1_100_000),
             &ivk,
             &Unspendable {
                 cmu_bytes,

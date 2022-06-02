@@ -56,8 +56,8 @@ impl Parameters for Network {
     fn activation_height(&self, nu: NetworkUpgrade) -> Option<zcash_primitives::consensus::BlockHeight> {
         use Network::*;
         match self {
-            Mainnet => TEST_NETWORK.activation_height(nu),
-            Testnet => MAIN_NETWORK.activation_height(nu),
+            Mainnet => MAIN_NETWORK.activation_height(nu),
+            Testnet => TEST_NETWORK.activation_height(nu),
             Regtest => {
                 //Tests don't need to worry about NU5 yet
                 match nu {
