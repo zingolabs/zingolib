@@ -1338,7 +1338,10 @@ pub mod tests {
         let lc = Runtime::new()
             .unwrap()
             .block_on(LightClient::test_new(
-                &LightClientConfig::create_unconnected(crate::lightclient::lightclient_config::Network::Regtest, None),
+                &LightClientConfig::create_unconnected(
+                    crate::lightclient::lightclient_config::Network::FakeMainnet,
+                    None,
+                ),
                 Some(TEST_SEED.to_string()),
                 0,
             ))

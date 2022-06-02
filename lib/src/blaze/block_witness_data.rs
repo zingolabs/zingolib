@@ -607,7 +607,7 @@ mod test {
     #[tokio::test]
     async fn setup_finish_simple() {
         let mut nw = BlockAndWitnessData::new_with_batchsize(
-            &LightClientConfig::create_unconnected(Network::Regtest, None),
+            &LightClientConfig::create_unconnected(Network::FakeMainnet, None),
             25_000,
         );
 
@@ -624,7 +624,7 @@ mod test {
     #[tokio::test]
     async fn setup_finish_large() {
         let mut nw = BlockAndWitnessData::new_with_batchsize(
-            &LightClientConfig::create_unconnected(Network::Regtest, None),
+            &LightClientConfig::create_unconnected(Network::FakeMainnet, None),
             25_000,
         );
 
@@ -642,7 +642,7 @@ mod test {
 
     #[tokio::test]
     async fn from_sapling_genesis() {
-        let mut config = LightClientConfig::create_unconnected(Network::Regtest, None);
+        let mut config = LightClientConfig::create_unconnected(Network::FakeMainnet, None);
 
         let blocks = FakeCompactBlockList::new(200).into_blockdatas();
 
@@ -691,7 +691,7 @@ mod test {
 
     #[tokio::test]
     async fn with_existing_batched() {
-        let mut config = LightClientConfig::create_unconnected(Network::Regtest, None);
+        let mut config = LightClientConfig::create_unconnected(Network::FakeMainnet, None);
 
         let mut blocks = FakeCompactBlockList::new(200).into_blockdatas();
 
@@ -747,7 +747,7 @@ mod test {
 
     #[tokio::test]
     async fn with_reorg() {
-        let mut config = LightClientConfig::create_unconnected(Network::Regtest, None);
+        let mut config = LightClientConfig::create_unconnected(Network::FakeMainnet, None);
 
         let mut blocks = FakeCompactBlockList::new(100).into_blockdatas();
 

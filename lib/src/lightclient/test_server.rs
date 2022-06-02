@@ -80,7 +80,7 @@ pub async fn create_test_server(
     };
     let addr: std::net::SocketAddr = server_port.parse().unwrap();
 
-    let mut config = LightClientConfig::create_unconnected(Network::Regtest, None);
+    let mut config = LightClientConfig::create_unconnected(Network::FakeMainnet, None);
     config.server = uri.replace("127.0.0.1", "localhost").parse().unwrap();
 
     let (service, data) = TestGRPCService::new(config.clone());

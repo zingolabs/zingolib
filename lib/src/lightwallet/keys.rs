@@ -125,7 +125,7 @@ impl Keys {
     #[cfg(test)]
     pub fn new_empty() -> Self {
         let config =
-            LightClientConfig::create_unconnected(crate::lightclient::lightclient_config::Network::Regtest, None);
+            LightClientConfig::create_unconnected(crate::lightclient::lightclient_config::Network::FakeMainnet, None);
         Self {
             config,
             encrypted: false,

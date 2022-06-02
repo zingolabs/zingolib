@@ -37,7 +37,7 @@ pub const GAP_RULE_UNUSED_ADDRESSES: usize = if cfg!(any(target_os = "ios", targ
 pub enum Network {
     Testnet,
     Mainnet,
-    Regtest,
+    FakeMainnet,
 }
 
 impl std::fmt::Display for Network {
@@ -46,7 +46,7 @@ impl std::fmt::Display for Network {
         let name = match self {
             Mainnet => "main",
             Testnet => "test",
-            Regtest => "regtest",
+            FakeMainnet => "regtest",
         };
         write!(f, "{name}")
     }
@@ -58,7 +58,7 @@ impl Parameters for Network {
         match self {
             Mainnet => MAIN_NETWORK.activation_height(nu),
             Testnet => TEST_NETWORK.activation_height(nu),
-            Regtest => {
+            FakeMainnet => {
                 //Tests don't need to worry about NU5 yet
                 match nu {
                     NetworkUpgrade::Nu5 => None,
@@ -73,7 +73,7 @@ impl Parameters for Network {
         match self {
             Mainnet => constants::mainnet::COIN_TYPE,
             Testnet => constants::testnet::COIN_TYPE,
-            Regtest => constants::mainnet::COIN_TYPE,
+            FakeMainnet => constants::mainnet::COIN_TYPE,
         }
     }
 
@@ -82,7 +82,7 @@ impl Parameters for Network {
         match self {
             Mainnet => constants::mainnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
             Testnet => constants::testnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
-            Regtest => constants::mainnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
+            FakeMainnet => constants::mainnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
         }
     }
 
@@ -91,7 +91,7 @@ impl Parameters for Network {
         match self {
             Mainnet => constants::mainnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
             Testnet => constants::testnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
-            Regtest => constants::mainnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
+            FakeMainnet => constants::mainnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
         }
     }
 
@@ -100,7 +100,7 @@ impl Parameters for Network {
         match self {
             Mainnet => constants::mainnet::HRP_SAPLING_PAYMENT_ADDRESS,
             Testnet => constants::testnet::HRP_SAPLING_PAYMENT_ADDRESS,
-            Regtest => constants::mainnet::HRP_SAPLING_PAYMENT_ADDRESS,
+            FakeMainnet => constants::mainnet::HRP_SAPLING_PAYMENT_ADDRESS,
         }
     }
 
@@ -109,7 +109,7 @@ impl Parameters for Network {
         match self {
             Mainnet => constants::mainnet::B58_PUBKEY_ADDRESS_PREFIX,
             Testnet => constants::testnet::B58_PUBKEY_ADDRESS_PREFIX,
-            Regtest => constants::mainnet::B58_PUBKEY_ADDRESS_PREFIX,
+            FakeMainnet => constants::mainnet::B58_PUBKEY_ADDRESS_PREFIX,
         }
     }
 
@@ -118,7 +118,7 @@ impl Parameters for Network {
         match self {
             Mainnet => constants::mainnet::B58_SCRIPT_ADDRESS_PREFIX,
             Testnet => constants::testnet::B58_SCRIPT_ADDRESS_PREFIX,
-            Regtest => constants::mainnet::B58_SCRIPT_ADDRESS_PREFIX,
+            FakeMainnet => constants::mainnet::B58_SCRIPT_ADDRESS_PREFIX,
         }
     }
 }
@@ -239,7 +239,7 @@ impl LightClientConfig {
                 match &self.chain {
                     Network::Mainnet => {}
                     Network::Testnet => zcash_data_location.push("testnet3"),
-                    Network::Regtest => zcash_data_location.push("regtest"),
+                    Network::FakeMainnet => zcash_data_location.push("regtest"),
                 };
             }
 
@@ -394,7 +394,7 @@ impl LightClientConfig {
     pub fn base58_secretkey_prefix(&self) -> [u8; 1] {
         match self.chain {
             Network::Mainnet => [0x80],
-            Network::Testnet | Network::Regtest => [0xEF],
+            Network::Testnet | Network::FakeMainnet => [0xEF],
         }
     }
 }

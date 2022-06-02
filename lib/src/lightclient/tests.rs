@@ -44,7 +44,7 @@ fn new_wallet_from_phrase() {
         .unwrap()
         .to_string();
 
-    let config = LightClientConfig::create_unconnected(Network::Regtest, Some(data_dir));
+    let config = LightClientConfig::create_unconnected(Network::FakeMainnet, Some(data_dir));
     let lc = LightClient::new_from_phrase(TEST_SEED.to_string(), &config, 0, false).unwrap();
 
     // The first t address and z address should be derived
@@ -74,7 +74,7 @@ fn new_wallet_from_sk() {
         .unwrap()
         .to_string();
 
-    let config = LightClientConfig::create_unconnected(Network::Regtest, Some(data_dir));
+    let config = LightClientConfig::create_unconnected(Network::FakeMainnet, Some(data_dir));
     let sk = "secret-extended-key-main1qvpa0qr8qqqqpqxn4l054nzxpxzp3a8r2djc7sekdek5upce8mc2j2z0arzps4zv940qeg706hd0wq6g5snzvhp332y6vhwyukdn8dhekmmsk7fzvzkqm6ypc99uy63tpesqwxhpre78v06cx8k5xpp9mrhtgqs5dvp68cqx2yrvthflmm2ynl8c0506dekul0f6jkcdmh0292lpphrksyc5z3pxwws97zd5els3l2mjt2s7hntap27mlmt6w0drtfmz36vz8pgu7ec0twfrq";
     let lc = LightClient::new_from_phrase(sk.to_string(), &config, 0, false).unwrap();
     Runtime::new().unwrap().block_on(async move {
@@ -109,7 +109,7 @@ fn new_wallet_from_vk() {
         .unwrap()
         .to_string();
 
-    let config = LightClientConfig::create_unconnected(Network::Regtest, Some(data_dir));
+    let config = LightClientConfig::create_unconnected(Network::FakeMainnet, Some(data_dir));
     let vk = "zxviews1qvpa0qr8qqqqpqxn4l054nzxpxzp3a8r2djc7sekdek5upce8mc2j2z0arzps4zv9kdvg28gjzvxd47ant6jn4svln5psw3htx93cq93ahw4e7lptrtlq7he5r6p6rcm3s0z6l24ype84sgqfrmghu449htrjspfv6qg2zfx2yrvthflmm2ynl8c0506dekul0f6jkcdmh0292lpphrksyc5z3pxwws97zd5els3l2mjt2s7hntap27mlmt6w0drtfmz36vz8pgu7ecrxzsls";
     let lc = LightClient::new_from_phrase(vk.to_string(), &config, 0, false).unwrap();
 
