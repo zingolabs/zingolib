@@ -15,7 +15,10 @@ use log4rs::{
     Config,
 };
 use tokio::runtime::Runtime;
-use zcash_primitives::consensus::{NetworkUpgrade, Parameters};
+use zcash_primitives::{
+    consensus::{BlockHeight, NetworkUpgrade, Parameters, MAIN_NETWORK, TEST_NETWORK},
+    constants,
+};
 
 use crate::{grpc_connector::GrpcConnector, lightclient::checkpoints};
 
@@ -39,31 +42,72 @@ pub enum Network {
 
 impl Parameters for Network {
     fn activation_height(&self, nu: NetworkUpgrade) -> Option<zcash_primitives::consensus::BlockHeight> {
-        todo!()
+        use Network::*;
+        match self {
+            Testnet => TEST_NETWORK.activation_height(nu),
+            Mainnet => MAIN_NETWORK.activation_height(nu),
+            Regtest => {
+                //Tests don't need to worry about NU5 yet
+                match nu {
+                    NetworkUpgrade::Nu5 => None,
+                    _ => Some(BlockHeight::from_u32(0)),
+                }
+            }
+        }
     }
 
     fn coin_type(&self) -> u32 {
-        todo!()
+        use Network::*;
+        match self {
+            Testnet => constants::mainnet::COIN_TYPE,
+            Mainnet => constants::testnet::COIN_TYPE,
+            Regtest => constants::regtest::COIN_TYPE,
+        }
     }
 
     fn hrp_sapling_extended_spending_key(&self) -> &str {
-        todo!()
+        use Network::*;
+        match self {
+            Testnet => constants::mainnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
+            Mainnet => constants::testnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
+            Regtest => constants::regtest::HRP_SAPLING_EXTENDED_SPENDING_KEY,
+        }
     }
 
     fn hrp_sapling_extended_full_viewing_key(&self) -> &str {
-        todo!()
+        use Network::*;
+        match self {
+            Testnet => constants::mainnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
+            Mainnet => constants::testnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
+            Regtest => constants::regtest::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
+        }
     }
 
     fn hrp_sapling_payment_address(&self) -> &str {
-        todo!()
+        use Network::*;
+        match self {
+            Testnet => constants::mainnet::HRP_SAPLING_PAYMENT_ADDRESS,
+            Mainnet => constants::testnet::HRP_SAPLING_PAYMENT_ADDRESS,
+            Regtest => constants::regtest::HRP_SAPLING_PAYMENT_ADDRESS,
+        }
     }
 
     fn b58_pubkey_address_prefix(&self) -> [u8; 2] {
-        todo!()
+        use Network::*;
+        match self {
+            Testnet => constants::mainnet::B58_PUBKEY_ADDRESS_PREFIX,
+            Mainnet => constants::testnet::B58_PUBKEY_ADDRESS_PREFIX,
+            Regtest => constants::regtest::B58_PUBKEY_ADDRESS_PREFIX,
+        }
     }
 
     fn b58_script_address_prefix(&self) -> [u8; 2] {
-        todo!()
+        use Network::*;
+        match self {
+            Testnet => constants::mainnet::B58_SCRIPT_ADDRESS_PREFIX,
+            Mainnet => constants::testnet::B58_SCRIPT_ADDRESS_PREFIX,
+            Regtest => constants::regtest::B58_SCRIPT_ADDRESS_PREFIX,
+        }
     }
 }
 
