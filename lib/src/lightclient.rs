@@ -33,7 +33,7 @@ use tokio::{
 use zcash_client_backend::encoding::{decode_payment_address, encode_payment_address};
 use zcash_primitives::{
     block::BlockHash,
-    consensus::{BlockHeight, BranchId, MAIN_NETWORK, TEST_NETWORK},
+    consensus::{BlockHeight, BranchId},
     memo::{Memo, MemoBytes},
     transaction::{components::amount::DEFAULT_FEE, Transaction, TxId},
 };
@@ -1153,17 +1153,10 @@ impl LightClient {
                     let price = lc1.wallet.price.clone();
 
                     while let Some(rtransaction) = mempool_receiver.recv().await {
-                        if let Ok(transaction) = match config.chain_name.as_str() {
-                            "main" => Transaction::read(
-                                &rtransaction.data[..],
-                                BranchId::for_height(&MAIN_NETWORK, BlockHeight::from_u32(rtransaction.height as u32)),
-                            ),
-                            "test" => Transaction::read(
-                                &rtransaction.data[..],
-                                BranchId::for_height(&TEST_NETWORK, BlockHeight::from_u32(rtransaction.height as u32)),
-                            ),
-                            other => panic!("Unrecognized network: {other}"),
-                        } {
+                        if let Ok(transaction) = Transaction::read(
+                            &rtransaction.data[..],
+                            BranchId::for_height(&config.chain, BlockHeight::from_u32(rtransaction.height as u32)),
+                        ) {
                             let price = price.read().await.clone();
                             //info!("Mempool attempting to scan {}", tx.txid());
 
@@ -1377,11 +1370,7 @@ impl LightClient {
 
         // Full Tx GRPC fetcher
         let (full_transaction_fetcher_handle, full_transaction_fetcher_transmitter) =
-            match self.config.chain_name.as_str() {
-                "main" => grpc_connector.start_full_transaction_fetcher(&MAIN_NETWORK).await,
-                "test" => grpc_connector.start_full_transaction_fetcher(&TEST_NETWORK).await,
-                other => panic!("Unrecognized network: {other}"),
-            };
+            grpc_connector.start_full_transaction_fetcher(self.config.chain).await;
         // Transparent Transactions Fetcher
         let (taddr_fetcher_handle, taddr_fetcher_transmitter) = grpc_connector.start_taddr_transaction_fetcher().await;
 
@@ -1427,31 +1416,15 @@ impl LightClient {
         let earliest_block = block_and_witness_handle.await.unwrap().unwrap();
 
         // 1. Fetch the transparent txns only after reorgs are done.
-        let taddr_transactions_handle = match self.config.chain_name.as_str() {
-            "main" => {
-                FetchTaddrTransactions::new(self.wallet.keys())
-                    .start(
-                        start_block,
-                        earliest_block,
-                        taddr_fetcher_transmitter,
-                        fetch_taddr_transactions_transmitter,
-                        &MAIN_NETWORK,
-                    )
-                    .await
-            }
-            "test" => {
-                FetchTaddrTransactions::new(self.wallet.keys())
-                    .start(
-                        start_block,
-                        earliest_block,
-                        taddr_fetcher_transmitter,
-                        fetch_taddr_transactions_transmitter,
-                        &TEST_NETWORK,
-                    )
-                    .await
-            }
-            other => panic!("Unrecognized network: {other}"),
-        };
+        let taddr_transactions_handle = FetchTaddrTransactions::new(self.wallet.keys())
+            .start(
+                start_block,
+                earliest_block,
+                taddr_fetcher_transmitter,
+                fetch_taddr_transactions_transmitter,
+                self.config.chain,
+            )
+            .await;
 
         // 2. Notify the notes updater that the blocks are done updating
         blocks_done_transmitter.send(earliest_block).unwrap();
@@ -1580,7 +1553,7 @@ impl LightClient {
     async fn consensus_branch_id(&self) -> u32 {
         let height = self.wallet.last_scanned_height().await;
 
-        let branch: BranchId = BranchId::for_height(&self.config.get_params(), BlockHeight::from_u32(height as u32));
+        let branch: BranchId = BranchId::for_height(&self.config.chain, BlockHeight::from_u32(height as u32));
         let branch_id: u32 = u32::from(branch);
 
         branch_id
