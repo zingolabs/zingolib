@@ -104,8 +104,8 @@ fn optional_transparent_bundle(include_tbundle: bool) -> Option<transparent::Bun
 impl FakeTransaction {
     pub fn new(with_transparent: bool) -> Self {
         let fake_transaction_data = TransactionData::from_parts(
-            TxVersion::Sapling,
-            BranchId::Sapling,
+            TxVersion::Zip225,
+            BranchId::Nu5,
             0,
             0u32.into(),
             optional_transparent_bundle(with_transparent),
