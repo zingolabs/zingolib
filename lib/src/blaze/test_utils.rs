@@ -258,7 +258,8 @@ impl FakeTransaction {
 
     pub fn into_transaction(mut self) -> (CompactTx, Transaction, Vec<String>) {
         let transaction = self.td.freeze().unwrap();
-        self.compact_transaction.hash = Vec::from(*(transaction.txid().clone().as_ref()));
+        let txid = transaction.txid().clone();
+        self.compact_transaction.hash = Vec::from(*(txid.as_ref()));
 
         (self.compact_transaction, transaction, self.taddrs_involved)
     }
