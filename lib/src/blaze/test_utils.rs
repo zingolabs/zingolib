@@ -419,14 +419,14 @@ impl FakeCompactBlockList {
         }
     }
 
-    pub fn add_fake_transaction(&mut self, fake_transaction: FakeTransaction) -> (Transaction, u64) {
+    pub fn add_fake_transaction(&mut self, fake_transaction: FakeTransaction) -> (&Transaction, u64) {
         let (compact_transaction, transaction, taddrs) = fake_transaction.into_transaction();
 
         let height = self.next_height;
         self.transactions.push((transaction, height, taddrs));
         self.add_empty_block().add_transactions(vec![compact_transaction]);
 
-        (transaction, height)
+        (&self.transactions.last().unwrap().0, height)
     }
 
     pub fn add_transaction_spending(
@@ -435,7 +435,7 @@ impl FakeCompactBlockList {
         value: u64,
         ovk: &OutgoingViewingKey,
         to: &PaymentAddress,
-    ) -> Transaction {
+    ) -> &Transaction {
         let mut fake_transaction = FakeTransaction::new(false);
         fake_transaction.add_transaction_spending(nf, value, ovk, to);
 
@@ -446,7 +446,7 @@ impl FakeCompactBlockList {
 
     // Add a new transaction into the block, paying the given address the amount.
     // Returns the nullifier of the new note.
-    pub fn add_transaction_paying(&mut self, extfvk: &ExtendedFullViewingKey, value: u64) -> (Transaction, u64, Note) {
+    pub fn add_transaction_paying(&mut self, extfvk: &ExtendedFullViewingKey, value: u64) -> (&Transaction, u64, Note) {
         let mut fake_transaction = FakeTransaction::new(false);
         let note = fake_transaction.add_transaction_paying(extfvk, value);
 

@@ -1396,6 +1396,7 @@ mod test {
             let extfvk1 = lc.wallet.keys().read().await.get_all_extfvks()[0].clone();
             let value = 100_000;
             let (transaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, value);
+            let txid = transaction.txid();
             mine_pending_blocks(&mut fcbl, &data, &lc).await;
 
             assert_eq!(lc.wallet.last_scanned_height().await, 11);
@@ -1412,14 +1413,7 @@ mod test {
             assert_eq!(
                 incw_to_string(&notes[0].witness),
                 incw_to_string(
-                    lc.wallet
-                        .transactions
-                        .read()
-                        .await
-                        .current
-                        .get(&transaction.txid())
-                        .unwrap()
-                        .notes[0]
+                    lc.wallet.transactions.read().await.current.get(&txid).unwrap().notes[0]
                         .witnesses
                         .last()
                         .unwrap()
@@ -1443,14 +1437,7 @@ mod test {
             assert_eq!(
                 incw_to_string(&notes[0].witness),
                 incw_to_string(
-                    lc.wallet
-                        .transactions
-                        .read()
-                        .await
-                        .current
-                        .get(&transaction.txid())
-                        .unwrap()
-                        .notes[0]
+                    lc.wallet.transactions.read().await.current.get(&txid).unwrap().notes[0]
                         .witnesses
                         .get_from_last(1)
                         .unwrap()
@@ -1468,14 +1455,7 @@ mod test {
             assert_eq!(
                 incw_to_string(&notes[0].witness),
                 incw_to_string(
-                    lc.wallet
-                        .transactions
-                        .read()
-                        .await
-                        .current
-                        .get(&transaction.txid())
-                        .unwrap()
-                        .notes[0]
+                    lc.wallet.transactions.read().await.current.get(&txid).unwrap().notes[0]
                         .witnesses
                         .get_from_last(9)
                         .unwrap()
@@ -1546,6 +1526,7 @@ mod test {
             let extfvk1 = lc.wallet.keys().read().await.get_all_extfvks()[0].clone();
             let value1 = 100_000;
             let (transaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, value1);
+            let txid = transaction.txid();
             mine_pending_blocks(&mut fcbl, &data, &lc).await;
 
             assert_eq!(lc.wallet.last_scanned_height().await, 11);
@@ -1562,14 +1543,7 @@ mod test {
             assert_eq!(
                 incw_to_string(&notes[0].witness),
                 incw_to_string(
-                    lc.wallet
-                        .transactions
-                        .read()
-                        .await
-                        .current
-                        .get(&transaction.txid())
-                        .unwrap()
-                        .notes[0]
+                    lc.wallet.transactions.read().await.current.get(&txid).unwrap().notes[0]
                         .witnesses
                         .last()
                         .unwrap()
