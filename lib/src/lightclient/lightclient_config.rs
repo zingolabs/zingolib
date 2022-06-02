@@ -88,6 +88,11 @@ impl LightClientConfig {
         }
     }
 
+    //Convenience wrapper
+    pub fn sapling_activation_height(&self) -> u64 {
+        self.chain.activation_height(NetworkUpgrade::Sapling).unwrap().into()
+    }
+
     pub fn create(server: http::Uri) -> io::Result<(LightClientConfig, u64)> {
         use std::net::ToSocketAddrs;
 
@@ -265,7 +270,7 @@ impl LightClientConfig {
     }
 
     pub async fn get_initial_state(&self, height: u64) -> Option<(u64, String, String)> {
-        if height <= self.chain.activation_height(NetworkUpgrade::Sapling).unwrap().into() {
+        if height <= self.sapling_activation_height() {
             return None;
         }
 

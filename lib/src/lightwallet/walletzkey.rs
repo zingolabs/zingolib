@@ -324,9 +324,8 @@ pub mod tests {
     fn get_config() -> LightClientConfig {
         LightClientConfig {
             server: "0.0.0.0:0".parse().unwrap(),
-            chain_name: "main".to_string(),
+            chain: crate::lightclient::lightclient_config::Network::Regtest,
             monitor_mempool: false,
-            sapling_activation_height: 0,
             anchor_offset: [0u32; 5],
             data_dir: None,
         }
