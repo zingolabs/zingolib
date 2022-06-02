@@ -214,29 +214,45 @@ impl FakeTransaction {
         hash160.update(Sha256::digest(&pk.serialize()[..].to_vec()));
 
         let taddr_bytes = hash160.finalize();
-        self.td
-            .transparent_bundle()
-            .expect("Construction should guarantee Some")
-            .vout
-            .push(TxOut {
-                value: Amount::from_u64(value).unwrap(),
-                script_pubkey: TransparentAddress::PublicKey(taddr_bytes.try_into().unwrap()).script(),
-            });
+        let mut added_transparent_bundle = self.td.transparent_bundle().unwrap().clone();
+        added_transparent_bundle.vout.push(TxOut {
+            value: Amount::from_u64(value).unwrap(),
+            script_pubkey: TransparentAddress::PublicKey(taddr_bytes.try_into().unwrap()).script(),
+        });
 
+        let new_td = TransactionData::from_parts(
+            self.td.version(),
+            self.td.consensus_branch_id(),
+            self.td.lock_time(),
+            self.td.expiry_height(),
+            Some(added_transparent_bundle),
+            Some(self.td.sprout_bundle().unwrap().clone()),
+            Some(self.td.sapling_bundle().unwrap().clone()),
+            Some(self.td.orchard_bundle().unwrap().clone()),
+        );
+        self.td = new_td;
         self.taddrs_involved.push(taddr)
     }
 
     // Spend the given utxo
     pub fn add_t_input(&mut self, transaction_id: TxId, n: u32, taddr: String) {
-        self.td
-            .transparent_bundle()
-            .expect("Depend on construction for Some.")
-            .vin
-            .push(TxIn {
-                prevout: OutPoint::new(*(transaction_id.as_ref()), n),
-                script_sig: Script { 0: vec![] },
-                sequence: 0,
-            });
+        let mut added_transparent_bundle = self.td.transparent_bundle().unwrap().clone();
+        added_transparent_bundle.vin.push(TxIn {
+            prevout: OutPoint::new(*(transaction_id.as_ref()), n),
+            script_sig: Script { 0: vec![] },
+            sequence: 0,
+        });
+        let new_td = TransactionData::from_parts(
+            self.td.version(),
+            self.td.consensus_branch_id(),
+            self.td.lock_time(),
+            self.td.expiry_height(),
+            Some(added_transparent_bundle),
+            Some(self.td.sprout_bundle().unwrap().clone()),
+            Some(self.td.sapling_bundle().unwrap().clone()),
+            Some(self.td.orchard_bundle().unwrap().clone()),
+        );
+        self.td = new_td;
         self.taddrs_involved.push(taddr);
     }
 
