@@ -184,6 +184,7 @@ async fn z_incoming_z_outgoing() {
         let extfvk1 = lc.wallet.keys().read().await.get_all_extfvks()[0].clone();
         let value = 100_000;
         let (transaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, value);
+        let txid = transaction.txid();
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
 
         assert_eq!(lc.wallet.last_scanned_height().await, 11);
@@ -206,7 +207,7 @@ async fn z_incoming_z_outgoing() {
             assert_eq!(list.len(), 1);
             let jv = list[0].clone();
 
-            assert_eq!(jv["txid"], transaction.txid().to_string());
+            assert_eq!(jv["txid"], txid.to_string());
             assert_eq!(jv["amount"].as_u64().unwrap(), value);
             assert_eq!(jv["address"], lc.wallet.keys().read().await.get_all_zaddresses()[0]);
             assert_eq!(jv["block_height"].as_u64().unwrap(), 11);
@@ -244,10 +245,7 @@ async fn z_incoming_z_outgoing() {
 
         assert_eq!(notes["spent_notes"].len(), 0);
         assert_eq!(notes["pending_notes"].len(), 1);
-        assert_eq!(
-            notes["pending_notes"][0]["created_in_txid"],
-            transaction.txid().to_string()
-        );
+        assert_eq!(notes["pending_notes"][0]["created_in_txid"], txid.to_string());
         assert_eq!(notes["pending_notes"][0]["unconfirmed_spent"], sent_transaction_id);
         assert_eq!(notes["pending_notes"][0]["spent"].is_null(), true);
         assert_eq!(notes["pending_notes"][0]["spent_at_height"].is_null(), true);
@@ -542,6 +540,7 @@ async fn z_to_z_scan_together() {
         let extfvk1 = lc.wallet.keys().read().await.get_all_extfvks()[0].clone();
         let value = 100_000;
         let (transaction, _height, note) = fcbl.add_transaction_paying(&extfvk1, value);
+        let txid = transaction.txid();
 
         // 3. Calculate witness so we can get the nullifier without it getting mined
         let tree = fcbl
@@ -566,8 +565,9 @@ async fn z_to_z_scan_together() {
             panic!("Couldn't parse address")
         };
         let spent_value = 250;
-        let spent_transaction = fcbl.add_transaction_spending(&nf, spent_value, &extfvk1.fvk.ovk, &pa);
-
+        let spent_txid = fcbl
+            .add_transaction_spending(&nf, spent_value, &extfvk1.fvk.ovk, &pa)
+            .txid();
         // 4. Mine the blocks and sync the lightwallet
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
 
@@ -575,10 +575,10 @@ async fn z_to_z_scan_together() {
         let list = lc.do_list_transactions(false).await;
 
         assert_eq!(list[0]["block_height"].as_u64().unwrap(), 11);
-        assert_eq!(list[0]["txid"], transaction.txid().to_string());
+        assert_eq!(list[0]["txid"], txid.to_string());
 
         assert_eq!(list[1]["block_height"].as_u64().unwrap(), 12);
-        assert_eq!(list[1]["txid"], spent_transaction.txid().to_string());
+        assert_eq!(list[1]["txid"], spent_txid.to_string());
         assert_eq!(list[1]["amount"].as_i64().unwrap(), -(value as i64));
         assert_eq!(list[1]["outgoing_metadata"][0]["address"], EXT_ZADDR.to_string());
         assert_eq!(list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(), spent_value);
@@ -621,6 +621,7 @@ async fn z_incoming_viewkey() {
 
         let value = 100_000;
         let (transaction, _height, _) = fcbl.add_transaction_paying(&iextfvk, value);
+        let txid = transaction.txid();
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
         mine_random_blocks(&mut fcbl, &data, &lc, 5).await;
 
@@ -628,7 +629,7 @@ async fn z_incoming_viewkey() {
         let list = lc.do_list_transactions(false).await;
         assert_eq!(lc.do_balance().await["zbalance"].as_u64().unwrap(), value);
         assert_eq!(lc.do_balance().await["spendable_zbalance"].as_u64().unwrap(), 0);
-        assert_eq!(list[0]["txid"], transaction.txid().to_string());
+        assert_eq!(list[0]["txid"], txid.to_string());
         assert_eq!(list[0]["amount"].as_u64().unwrap(), value);
         assert_eq!(list[0]["address"], iaddr);
 
@@ -639,7 +640,7 @@ async fn z_incoming_viewkey() {
         let list = lc.do_list_transactions(false).await;
         assert_eq!(lc.do_balance().await["zbalance"].as_u64().unwrap(), value);
         assert_eq!(lc.do_balance().await["spendable_zbalance"].as_u64().unwrap(), 0);
-        assert_eq!(list[0]["txid"], transaction.txid().to_string());
+        assert_eq!(list[0]["txid"], txid.to_string());
         assert_eq!(list[0]["amount"].as_u64().unwrap(), value);
         assert_eq!(list[0]["address"], iaddr);
 
@@ -711,12 +712,13 @@ async fn t_incoming_t_outgoing() {
         let mut fake_transaction = FakeTransaction::new(true);
         fake_transaction.add_t_output(&pk, taddr.clone(), value);
         let (transaction, _) = fcbl.add_fake_transaction(fake_transaction);
+        let txid = transaction.txid();
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
 
         // 3. Test the list
         let list = lc.do_list_transactions(false).await;
         assert_eq!(list[0]["block_height"].as_u64().unwrap(), 11);
-        assert_eq!(list[0]["txid"], transaction.txid().to_string());
+        assert_eq!(list[0]["txid"], txid.to_string());
         assert_eq!(list[0]["address"], taddr);
         assert_eq!(list[0]["amount"].as_u64().unwrap(), value);
 
@@ -1181,6 +1183,7 @@ async fn witness_clearing() {
         let extfvk1 = lc.wallet.keys().read().await.get_all_extfvks()[0].clone();
         let value = 100_000;
         let (transaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, value);
+        let txid = transaction.txid();
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
         mine_random_blocks(&mut fcbl, &data, &lc, 5).await;
 
@@ -1200,7 +1203,7 @@ async fn witness_clearing() {
             .read()
             .await
             .current
-            .get(&transaction.txid())
+            .get(&txid)
             .unwrap()
             .notes
             .get(0)
@@ -1220,7 +1223,7 @@ async fn witness_clearing() {
             .read()
             .await
             .current
-            .get(&transaction.txid())
+            .get(&txid)
             .unwrap()
             .notes
             .get(0)
@@ -1237,7 +1240,7 @@ async fn witness_clearing() {
             .read()
             .await
             .current
-            .get(&transaction.txid())
+            .get(&txid)
             .unwrap()
             .notes
             .get(0)
@@ -1254,7 +1257,7 @@ async fn witness_clearing() {
             .read()
             .await
             .current
-            .get(&transaction.txid())
+            .get(&txid)
             .unwrap()
             .notes
             .get(0)

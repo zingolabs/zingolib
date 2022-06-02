@@ -132,7 +132,7 @@ impl FakeTransaction {
             rseed: Rseed::BeforeZip212(jubjub::Fr::random(rng)),
         };
 
-        let mut encryptor: NoteEncryption<SaplingDomain<TestNetwork>> =
+        let encryptor: NoteEncryption<SaplingDomain<TestNetwork>> =
             sapling_note_encryption(ovk, note.clone(), to.clone(), Memo::default().into(), &mut rng);
 
         let mut rng = OsRng;
@@ -164,7 +164,19 @@ impl FakeTransaction {
         cout.epk = epk;
         cout.ciphertext = enc_ciphertext[..52].to_vec();
 
-        //self.td.sapling_bundle().unwrap().shielded_outputs.push(od);
+        let mut added_sapling_bundle = self.td.sapling_bundle().unwrap().clone();
+        added_sapling_bundle.shielded_outputs.push(od);
+        let new_td = TransactionData::from_parts(
+            self.td.version(),
+            self.td.consensus_branch_id(),
+            self.td.lock_time(),
+            self.td.expiry_height(),
+            self.td.transparent_bundle().map(Clone::clone),
+            self.td.sprout_bundle().map(Clone::clone),
+            Some(added_sapling_bundle),
+            self.td.orchard_bundle().map(Clone::clone),
+        );
+        self.td = new_td;
         self.compact_transaction.outputs.push(cout);
 
         note
@@ -202,36 +214,52 @@ impl FakeTransaction {
         hash160.update(Sha256::digest(&pk.serialize()[..].to_vec()));
 
         let taddr_bytes = hash160.finalize();
-        /*self.td
-            .transparent_bundle()
-            .expect("Construction should guarantee Some")
-            .vout
-            .push(TxOut {
-                value: Amount::from_u64(value).unwrap(),
-                script_pubkey: TransparentAddress::PublicKey(taddr_bytes.try_into().unwrap()).script(),
-            });
-        */
+        let mut added_transparent_bundle = self.td.transparent_bundle().unwrap().clone();
+        added_transparent_bundle.vout.push(TxOut {
+            value: Amount::from_u64(value).unwrap(),
+            script_pubkey: TransparentAddress::PublicKey(taddr_bytes.try_into().unwrap()).script(),
+        });
+
+        let new_td = TransactionData::from_parts(
+            self.td.version(),
+            self.td.consensus_branch_id(),
+            self.td.lock_time(),
+            self.td.expiry_height(),
+            Some(added_transparent_bundle),
+            Some(self.td.sprout_bundle().unwrap().clone()),
+            Some(self.td.sapling_bundle().unwrap().clone()),
+            Some(self.td.orchard_bundle().unwrap().clone()),
+        );
+        self.td = new_td;
         self.taddrs_involved.push(taddr)
     }
 
     // Spend the given utxo
     pub fn add_t_input(&mut self, transaction_id: TxId, n: u32, taddr: String) {
-        /*
-        self.td
-            .transparent_bundle()
-            .expect("Depend on construction for Some.")
-            .vin
-            .push(TxIn {
-                prevout: OutPoint::new(*(transaction_id.as_ref()), n),
-                script_sig: Script { 0: vec![] },
-                sequence: 0,
-            });*/
+        let mut added_transparent_bundle = self.td.transparent_bundle().unwrap().clone();
+        added_transparent_bundle.vin.push(TxIn {
+            prevout: OutPoint::new(*(transaction_id.as_ref()), n),
+            script_sig: Script { 0: vec![] },
+            sequence: 0,
+        });
+        let new_td = TransactionData::from_parts(
+            self.td.version(),
+            self.td.consensus_branch_id(),
+            self.td.lock_time(),
+            self.td.expiry_height(),
+            Some(added_transparent_bundle),
+            Some(self.td.sprout_bundle().unwrap().clone()),
+            Some(self.td.sapling_bundle().unwrap().clone()),
+            Some(self.td.orchard_bundle().unwrap().clone()),
+        );
+        self.td = new_td;
         self.taddrs_involved.push(taddr);
     }
 
     pub fn into_transaction(mut self) -> (CompactTx, Transaction, Vec<String>) {
         let transaction = self.td.freeze().unwrap();
-        self.compact_transaction.hash = Vec::from(*(transaction.txid().clone().as_ref()));
+        let txid = transaction.txid().clone();
+        self.compact_transaction.hash = Vec::from(*(txid.as_ref()));
 
         (self.compact_transaction, transaction, self.taddrs_involved)
     }
@@ -391,14 +419,14 @@ impl FakeCompactBlockList {
         }
     }
 
-    pub fn add_fake_transaction(&mut self, fake_transaction: FakeTransaction) -> (Transaction, u64) {
+    pub fn add_fake_transaction(&mut self, fake_transaction: FakeTransaction) -> (&Transaction, u64) {
         let (compact_transaction, transaction, taddrs) = fake_transaction.into_transaction();
 
         let height = self.next_height;
-        //self.transactions.push((transaction, height, taddrs));
+        self.transactions.push((transaction, height, taddrs));
         self.add_empty_block().add_transactions(vec![compact_transaction]);
 
-        (transaction, height)
+        (&self.transactions.last().unwrap().0, height)
     }
 
     pub fn add_transaction_spending(
@@ -407,7 +435,7 @@ impl FakeCompactBlockList {
         value: u64,
         ovk: &OutgoingViewingKey,
         to: &PaymentAddress,
-    ) -> Transaction {
+    ) -> &Transaction {
         let mut fake_transaction = FakeTransaction::new(false);
         fake_transaction.add_transaction_spending(nf, value, ovk, to);
 
@@ -418,7 +446,7 @@ impl FakeCompactBlockList {
 
     // Add a new transaction into the block, paying the given address the amount.
     // Returns the nullifier of the new note.
-    pub fn add_transaction_paying(&mut self, extfvk: &ExtendedFullViewingKey, value: u64) -> (Transaction, u64, Note) {
+    pub fn add_transaction_paying(&mut self, extfvk: &ExtendedFullViewingKey, value: u64) -> (&Transaction, u64, Note) {
         let mut fake_transaction = FakeTransaction::new(false);
         let note = fake_transaction.add_transaction_paying(extfvk, value);
 
