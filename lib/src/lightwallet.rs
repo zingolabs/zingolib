@@ -231,12 +231,12 @@ impl LightWallet {
 
         let chain_name = utils::read_string(&mut reader)?;
 
-        if chain_name != config.chain_name {
+        if chain_name != config.chain.to_string() {
             return Err(Error::new(
                 ErrorKind::InvalidData,
                 format!(
                     "Wallet chain name {} doesn't match expected {}",
-                    chain_name, config.chain_name
+                    chain_name, config.chain
                 ),
             ));
         }
@@ -326,7 +326,7 @@ impl LightWallet {
 
         self.transactions.read().await.write(&mut writer)?;
 
-        utils::write_string(&mut writer, &self.config.chain_name)?;
+        utils::write_string(&mut writer, &self.config.chain.to_string())?;
 
         self.wallet_options.read().await.write(&mut writer)?;
 
@@ -461,13 +461,13 @@ impl LightWallet {
 
         let birthday = self.birthday.load(std::sync::atomic::Ordering::SeqCst);
         earliest_block // Returns optional, so if there's no transactions, it'll get the activation height
-            .unwrap_or(cmp::max(birthday, self.config.sapling_activation_height))
+            .unwrap_or(cmp::max(birthday, self.config.sapling_activation_height()))
     }
 
     fn adjust_wallet_birthday(&self, new_birthday: u64) {
         let mut wallet_birthday = self.birthday.load(std::sync::atomic::Ordering::SeqCst);
         if new_birthday < wallet_birthday {
-            wallet_birthday = cmp::max(new_birthday, self.config.sapling_activation_height);
+            wallet_birthday = cmp::max(new_birthday, self.config.sapling_activation_height());
             self.birthday
                 .store(wallet_birthday, std::sync::atomic::Ordering::SeqCst);
         }
@@ -613,7 +613,7 @@ impl LightWallet {
             .await
             .first()
             .map(|block| block.height)
-            .unwrap_or(self.config.sapling_activation_height - 1)
+            .unwrap_or(self.config.sapling_activation_height() - 1)
     }
 
     pub async fn last_scanned_hash(&self) -> String {
@@ -1108,7 +1108,7 @@ impl LightWallet {
         let recepients = tos
             .iter()
             .map(|to| {
-                let ra = match address::RecipientAddress::decode(&self.config.get_params(), to.0) {
+                let ra = match address::RecipientAddress::decode(&self.config.chain, to.0) {
                     Some(to) => to,
                     None => {
                         let e = format!("Invalid recipient address: '{}'", to.0);
@@ -1132,7 +1132,7 @@ impl LightWallet {
             None => return Err("No blocks in wallet to target, please sync first".to_string()),
         };
 
-        let mut builder = Builder::new(self.config.get_params().clone(), target_height);
+        let mut builder = Builder::new(self.config.chain, target_height);
 
         // Create a map from address -> sk for all taddrs, so we can spend from the
         // right address

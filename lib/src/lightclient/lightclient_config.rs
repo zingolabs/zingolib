@@ -33,11 +33,23 @@ pub const GAP_RULE_UNUSED_ADDRESSES: usize = if cfg!(any(target_os = "ios", targ
     5
 };
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Network {
     Testnet,
     Mainnet,
     Regtest,
+}
+
+impl std::fmt::Display for Network {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use Network::*;
+        let name = match self {
+            Testnet => "test",
+            Mainnet => "main",
+            Regtest => "regtest",
+        };
+        write!(f, "{name}")
+    }
 }
 
 impl Parameters for Network {

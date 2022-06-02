@@ -319,11 +319,11 @@ impl FetchFullTxns {
             for output in s_bundle.shielded_outputs.iter() {
                 // Search all of our keys
                 for (i, ivk) in ivks.iter().enumerate() {
-                    let (note, to, memo_bytes) =
-                        match try_sapling_note_decryption(&config.get_params(), height, &ivk, output) {
-                            Some(ret) => ret,
-                            None => continue,
-                        };
+                    let (note, to, memo_bytes) = match try_sapling_note_decryption(&config.chain, height, &ivk, output)
+                    {
+                        Some(ret) => ret,
+                        None => continue,
+                    };
 
                     // info!("A sapling note was received into the wallet in {}", transaction.txid());
                     if unconfirmed {
@@ -352,7 +352,7 @@ impl FetchFullTxns {
                 let omds = ovks
                     .iter()
                     .filter_map(|ovk| {
-                        match try_sapling_output_recovery(&config.get_params(), height, &ovk, &output) {
+                        match try_sapling_output_recovery(&config.chain, height, &ovk, &output) {
                             Some((note, payment_address, memo_bytes)) => {
                                 // Mark this transaction as an outgoing transaction, so we can grab all outgoing metadata
                                 is_outgoing_transaction = true;
