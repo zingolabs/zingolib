@@ -44,8 +44,8 @@ impl std::fmt::Display for Network {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use Network::*;
         let name = match self {
-            Testnet => "test",
             Mainnet => "main",
+            Testnet => "test",
             Regtest => "regtest",
         };
         write!(f, "{name}")
@@ -56,13 +56,13 @@ impl Parameters for Network {
     fn activation_height(&self, nu: NetworkUpgrade) -> Option<zcash_primitives::consensus::BlockHeight> {
         use Network::*;
         match self {
-            Testnet => TEST_NETWORK.activation_height(nu),
-            Mainnet => MAIN_NETWORK.activation_height(nu),
+            Mainnet => TEST_NETWORK.activation_height(nu),
+            Testnet => MAIN_NETWORK.activation_height(nu),
             Regtest => {
                 //Tests don't need to worry about NU5 yet
                 match nu {
                     NetworkUpgrade::Nu5 => None,
-                    _ => Some(BlockHeight::from_u32(0)),
+                    _ => Some(BlockHeight::from_u32(1)),
                 }
             }
         }
@@ -71,54 +71,54 @@ impl Parameters for Network {
     fn coin_type(&self) -> u32 {
         use Network::*;
         match self {
-            Testnet => constants::mainnet::COIN_TYPE,
-            Mainnet => constants::testnet::COIN_TYPE,
-            Regtest => constants::regtest::COIN_TYPE,
+            Mainnet => constants::mainnet::COIN_TYPE,
+            Testnet => constants::testnet::COIN_TYPE,
+            Regtest => constants::mainnet::COIN_TYPE,
         }
     }
 
     fn hrp_sapling_extended_spending_key(&self) -> &str {
         use Network::*;
         match self {
-            Testnet => constants::mainnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
-            Mainnet => constants::testnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
-            Regtest => constants::regtest::HRP_SAPLING_EXTENDED_SPENDING_KEY,
+            Mainnet => constants::mainnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
+            Testnet => constants::testnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
+            Regtest => constants::mainnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
         }
     }
 
     fn hrp_sapling_extended_full_viewing_key(&self) -> &str {
         use Network::*;
         match self {
-            Testnet => constants::mainnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
-            Mainnet => constants::testnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
-            Regtest => constants::regtest::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
+            Mainnet => constants::mainnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
+            Testnet => constants::testnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
+            Regtest => constants::mainnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
         }
     }
 
     fn hrp_sapling_payment_address(&self) -> &str {
         use Network::*;
         match self {
-            Testnet => constants::mainnet::HRP_SAPLING_PAYMENT_ADDRESS,
-            Mainnet => constants::testnet::HRP_SAPLING_PAYMENT_ADDRESS,
-            Regtest => constants::regtest::HRP_SAPLING_PAYMENT_ADDRESS,
+            Mainnet => constants::mainnet::HRP_SAPLING_PAYMENT_ADDRESS,
+            Testnet => constants::testnet::HRP_SAPLING_PAYMENT_ADDRESS,
+            Regtest => constants::mainnet::HRP_SAPLING_PAYMENT_ADDRESS,
         }
     }
 
     fn b58_pubkey_address_prefix(&self) -> [u8; 2] {
         use Network::*;
         match self {
-            Testnet => constants::mainnet::B58_PUBKEY_ADDRESS_PREFIX,
-            Mainnet => constants::testnet::B58_PUBKEY_ADDRESS_PREFIX,
-            Regtest => constants::regtest::B58_PUBKEY_ADDRESS_PREFIX,
+            Mainnet => constants::mainnet::B58_PUBKEY_ADDRESS_PREFIX,
+            Testnet => constants::testnet::B58_PUBKEY_ADDRESS_PREFIX,
+            Regtest => constants::mainnet::B58_PUBKEY_ADDRESS_PREFIX,
         }
     }
 
     fn b58_script_address_prefix(&self) -> [u8; 2] {
         use Network::*;
         match self {
-            Testnet => constants::mainnet::B58_SCRIPT_ADDRESS_PREFIX,
-            Mainnet => constants::testnet::B58_SCRIPT_ADDRESS_PREFIX,
-            Regtest => constants::regtest::B58_SCRIPT_ADDRESS_PREFIX,
+            Mainnet => constants::mainnet::B58_SCRIPT_ADDRESS_PREFIX,
+            Testnet => constants::testnet::B58_SCRIPT_ADDRESS_PREFIX,
+            Regtest => constants::mainnet::B58_SCRIPT_ADDRESS_PREFIX,
         }
     }
 }
@@ -380,7 +380,7 @@ impl LightClientConfig {
     }
 
     pub fn hrp_sapling_viewing_key(&self) -> &str {
-        self.chain.hrp_sapling_payment_address()
+        self.chain.hrp_sapling_extended_full_viewing_key()
     }
 
     pub fn base58_pubkey_address(&self) -> [u8; 2] {

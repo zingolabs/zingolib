@@ -258,6 +258,7 @@ impl LightClient {
                 ));
             }
         }
+        println!("Seed: {seed_phrase}\nhrp_view: {}", config.hrp_sapling_viewing_key());
 
         let lr = if seed_phrase.starts_with(config.hrp_sapling_private_key())
             || seed_phrase.starts_with(config.hrp_sapling_viewing_key())
