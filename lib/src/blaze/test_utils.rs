@@ -171,10 +171,10 @@ impl FakeTransaction {
             self.td.consensus_branch_id(),
             self.td.lock_time(),
             self.td.expiry_height(),
-            Some(self.td.transparent_bundle().unwrap().clone()),
-            Some(self.td.sprout_bundle().unwrap().clone()),
+            self.td.transparent_bundle().map(Clone::clone),
+            self.td.sprout_bundle().map(Clone::clone),
             Some(added_sapling_bundle),
-            Some(self.td.orchard_bundle().unwrap().clone()),
+            self.td.orchard_bundle().map(Clone::clone),
         );
         self.td = new_td;
         self.compact_transaction.outputs.push(cout);
