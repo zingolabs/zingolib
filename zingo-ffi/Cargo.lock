@@ -248,7 +248,7 @@ checksum = "cf9ff0bbfd639f15c74af777d81383cf53efb7c93613f6cab67c6c11e05bbf8b"
 [[package]]
 name = "bellman"
 version = "0.13.0"
-source = "git+https://github.com/dannasessha/bellman?rev=788eb8266ee07037ba7fe5afa58c038dda2cf624#788eb8266ee07037ba7fe5afa58c038dda2cf624"
+source = "git+https://github.com/dannasessha/bellman?rev=712337ea591cb89e031b9f203462d32de00bf7ff#712337ea591cb89e031b9f203462d32de00bf7ff"
 dependencies = [
  "bitvec",
  "blake2s_simd",
