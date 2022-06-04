@@ -248,8 +248,7 @@ checksum = "cf9ff0bbfd639f15c74af777d81383cf53efb7c93613f6cab67c6c11e05bbf8b"
 [[package]]
 name = "bellman"
 version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d96d7f4f3dc9a699bdef1d19648f6f20ef966b51892d224582a4475be669cb5"
+source = "git+https://github.com/dannasessha/bellman?rev=788eb8266ee07037ba7fe5afa58c038dda2cf624#788eb8266ee07037ba7fe5afa58c038dda2cf624"
 dependencies = [
  "bitvec",
  "blake2s_simd",
@@ -2033,7 +2032,6 @@ name = "rust"
 version = "1.0.1"
 dependencies = [
  "android_logger 0.11.0",
- "bellman",
  "jni 0.19.0",
  "log",
  "rustlib",
@@ -2638,9 +2636,9 @@ checksum = "cda74da7e1a664f795bb1f8a87ec406fb89a02522cf6e50620d016add6dbbf5c"
 
 [[package]]
 name = "tokio"
-version = "1.18.2"
+version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4903bf0427cf68dddd5aa6a93220756f8be0c34fcfa9f5e6191e103e15a31395"
+checksum = "0f392c8f16bda3456c0b00c6de39cb100449b98de55ac41c6cdd2bfcf53a1245"
 dependencies = [
  "bytes 1.1.0",
  "libc",
