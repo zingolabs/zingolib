@@ -10,4 +10,4 @@ debug = false
 
 # [target.'cfg(target_arch = "i686")'.dependencies]
 [patch.crates-io]
-bellman = { git = "https://github.com/dannasessha/bellman", rev="788eb8266ee07037ba7fe5afa58c038dda2cf624", default-features=false, features = ["groth16"] }
+bellman = { git = "https://github.com/dannasessha/bellman", rev="712337ea591cb89e031b9f203462d32de00bf7ff", default-features=false, features = ["groth16"] }
