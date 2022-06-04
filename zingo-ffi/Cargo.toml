@@ -7,3 +7,5 @@ members = [
 
 [profile.release]
 debug = false
+[patch.crates-io]
+bellman = { git = 'https://github.com/dannasessha/bellman', branch = 'update_rayon_dep' }
