@@ -9,4 +9,4 @@ members = [
 debug = false
 
 [patch.crates-io]
-bellman = { git = "https://github.com/dannasessha/bellman", rev="712337ea591cb89e031b9f203462d32de00bf7ff", default-features=false, features = ["groth16"] }
+bellman = { git = "https://github.com/dannasessha/bellman", rev="712337ea591cb89e031b9f203462d32de00bf7ff" }
