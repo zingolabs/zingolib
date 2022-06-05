@@ -8,5 +8,5 @@ members = [
 [profile.release]
 debug = false
 
-# [patch.crates-io]
-# bellman = { git = "https://github.com/dannasessha/bellman", rev="712337ea591cb89e031b9f203462d32de00bf7ff" }
+[patch.crates-io]
+bellman = { git = "https://github.com/dannasessha/bellman", rev="712337ea591cb89e031b9f203462d32de00bf7ff" }
