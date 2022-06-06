@@ -149,7 +149,7 @@ impl LightClientConfig {
         self.chain.activation_height(NetworkUpgrade::Sapling).unwrap().into()
     }
 
-    pub fn create(server: http::Uri) -> io::Result<(LightClientConfig, u64)> {
+    pub fn create_on_data_dir(server: http::Uri, data_dir: Option<String>) -> io::Result<(LightClientConfig, u64)> {
         use std::net::ToSocketAddrs;
 
         let lc = Runtime::new().unwrap().block_on(async move {
@@ -177,13 +177,17 @@ impl LightClientConfig {
                 },
                 monitor_mempool: true,
                 anchor_offset: ANCHOR_OFFSET,
-                data_dir: None,
+                data_dir,
             };
 
             Ok((config, info.block_height))
         });
 
         lc
+    }
+
+    pub fn create(server: http::Uri) -> io::Result<(LightClientConfig, u64)> {
+        Self::create_on_data_dir(server, None)
     }
 
     pub fn set_data_dir(&mut self, dir_str: String) {
@@ -222,6 +226,7 @@ impl LightClientConfig {
             PathBuf::from(&self.data_dir.as_ref().unwrap()).into_boxed_path()
         } else {
             let mut zcash_data_location;
+            // If there's some --data-dir path provided, use it
             if self.data_dir.is_some() {
                 zcash_data_location = PathBuf::from(&self.data_dir.as_ref().unwrap());
             } else {

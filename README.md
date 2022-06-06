@@ -63,3 +63,5 @@ Here are some CLI arguments you can pass to `zecwallet-cli`. Please run `zecwall
 * `--seed`: Restore a wallet from a seed phrase. Note that this will fail if there is an existing wallet. Delete (or move) any existing wallet to restore from the 24-word seed phrase
     * Example: `./zecwallet-cli --seed "twenty four words seed phrase"`
  * `--recover`: Attempt to recover the seed phrase from a corrupted wallet
+ * `--data-dir`: uses the specified path as data directory.
+    * Example: `./zecwallet-cli --server 127.0.0.1:9067 --data-dir /Users/ZecWalletRocks/my-test-wallet` will use the provided directory to store `zecwallet-light-wallet.dat` and logs. If the provided directory does not exist, it will create it.
