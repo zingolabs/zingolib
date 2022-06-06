@@ -46,6 +46,21 @@ fn new_wallet_from_phrase() {
 
     let config = LightClientConfig::create_unconnected(Network::FakeMainnet, Some(data_dir));
     let lc = LightClient::new_from_phrase(TEST_SEED.to_string(), &config, 0, false).unwrap();
+    assert_eq!(
+        format!(
+            "{:?}",
+            LightClient::new_from_phrase(TEST_SEED.to_string(), &config, 0, false)
+                .err()
+                .unwrap()
+        ),
+        format!(
+            "{:?}",
+            std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                format!("Cannot create a new wallet from seed, because a wallet already exists"),
+            )
+        )
+    );
 
     // The first t address and z address should be derived
     Runtime::new().unwrap().block_on(async move {
