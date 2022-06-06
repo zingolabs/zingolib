@@ -28,7 +28,7 @@ use crate::lightclient::testmocks;
 use crate::compact_formats::{CompactOutput, CompactTx, Empty};
 use crate::lightclient::test_server::{create_test_server, mine_pending_blocks, mine_random_blocks};
 use crate::lightclient::LightClient;
-use crate::lightwallet::data::WalletTx;
+use crate::lightwallet::data::{SaplingNoteData, WalletTx};
 
 use super::checkpoints;
 use super::lightclient_config::{LightClientConfig, Network};
@@ -46,6 +46,21 @@ fn new_wallet_from_phrase() {
 
     let config = LightClientConfig::create_unconnected(Network::FakeMainnet, Some(data_dir));
     let lc = LightClient::new_from_phrase(TEST_SEED.to_string(), &config, 0, false).unwrap();
+    assert_eq!(
+        format!(
+            "{:?}",
+            LightClient::new_from_phrase(TEST_SEED.to_string(), &config, 0, false)
+                .err()
+                .unwrap()
+        ),
+        format!(
+            "{:?}",
+            std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                format!("Cannot create a new wallet from seed, because a wallet already exists"),
+            )
+        )
+    );
 
     // The first t address and z address should be derived
     Runtime::new().unwrap().block_on(async move {
@@ -1317,6 +1332,25 @@ async fn mempool_clearing() {
         )
         .await;
 
+        {
+            let transactions_reader = lc.wallet.transactions.clone();
+            let wallet_transactions = transactions_reader.read().await;
+            let sapling_notes: Vec<_> = wallet_transactions
+                .current
+                .values()
+                .map(|wallet_tx| &wallet_tx.notes)
+                .flatten()
+                .collect();
+            assert_ne!(sapling_notes.len(), 0);
+            for note in sapling_notes {
+                let mut note_bytes = Vec::new();
+                note.write(&mut note_bytes).unwrap();
+                assert_eq!(
+                    format!("{:#?}", note),
+                    format!("{:#?}", SaplingNoteData::read(&*note_bytes).unwrap())
+                );
+            }
+        }
         let notes_after = lc.do_list_notes(true).await;
         let transactions_after = lc.do_list_transactions(false).await;
 
@@ -1426,6 +1460,46 @@ async fn mempool_and_balance() {
         stop_transmitter.send(()).unwrap();
         h1.await.unwrap();
     }
+}
+
+#[test]
+fn test_read_wallet_from_buffer() {
+    //Block_on needed because read_from_buffer starts a tokio::Runtime, which panics when called in async code
+    //as you cannot create a Runtime inside a Runtime
+    let mut buf = Vec::new();
+    let config = LightClientConfig::create_unconnected(Network::FakeMainnet, None);
+    Runtime::new().unwrap().block_on(async {
+        let wallet = crate::lightwallet::LightWallet::new(config.clone(), None, 0, 7).unwrap();
+        wallet.write(&mut buf).await.unwrap();
+    });
+    let client = LightClient::read_from_buffer(&config, &buf[..]).unwrap();
+    Runtime::new().unwrap().block_on(async {
+        use std::ops::Deref as _;
+        let wallet = client.wallet;
+        assert_eq!(wallet.keys().read().await.deref().zkeys.len(), 7);
+    });
+}
+
+#[tokio::test]
+async fn read_write_block_data() {
+    let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(true).await;
+
+    ready_receiver.await.unwrap();
+
+    let lc = LightClient::test_new(&config, None, 0).await.unwrap();
+    let mut fcbl = FakeCompactBlockList::new(0);
+
+    // 1. Mine 10 blocks
+    mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
+    assert_eq!(lc.wallet.last_scanned_height().await, 10);
+    for block in fcbl.blocks {
+        let block_bytes: &mut [u8] = &mut [];
+        let cb = crate::lightwallet::data::BlockData::new(block.block);
+        cb.write(&mut *block_bytes).unwrap();
+        assert_eq!(cb, crate::lightwallet::data::BlockData::read(&*block_bytes).unwrap());
+    }
+    stop_transmitter.send(()).unwrap();
+    h1.await.unwrap();
 }
 
 pub const EXT_TADDR: &str = "t1NoS6ZgaUTpmjkge2cVpXGcySasdYDrXqh";

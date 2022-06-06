@@ -17,7 +17,7 @@ use zcash_primitives::{
     zip32::ExtendedFullViewingKey,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct BlockData {
     pub(crate) ecb: Vec<u8>,
     pub height: u64,
@@ -194,6 +194,28 @@ pub struct SaplingNoteData {
 
     // If the spending key is available in the wallet (i.e., whether to keep witness up-to-date)
     pub have_spending_key: bool,
+}
+
+impl std::fmt::Debug for SaplingNoteData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SaplingNoteData")
+            .field("extfvk", &self.extfvk)
+            .field("diversifier", &self.diversifier)
+            .field("note", &self.note)
+            .field("nullifier", &self.nullifier)
+            .field("spent", &self.spent)
+            .field("unconfirmed_spent", &self.unconfirmed_spent)
+            .field("memo", &self.memo)
+            .field("extfvk", &self.extfvk)
+            .field("diversifier", &self.diversifier)
+            .field("note", &self.note)
+            .field("nullifier", &self.nullifier)
+            .field("spent", &self.spent)
+            .field("unconfirmed_spent", &self.unconfirmed_spent)
+            .field("memo", &self.memo)
+            .field("is_change", &self.is_change)
+            .finish_non_exhaustive()
+    }
 }
 
 // Reading a note also needs the corresponding address to read from.
