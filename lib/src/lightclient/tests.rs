@@ -1443,6 +1443,24 @@ async fn mempool_and_balance() {
     }
 }
 
+#[test]
+fn test_read_wallet_from_buffer() {
+    //Block_on needed because read_from_buffer starts a tokio::Runtime, which panics when called in async code
+    //as you cannot create a Runtime inside a Runtime
+    let mut buf = Vec::new();
+    let config = LightClientConfig::create_unconnected(Network::FakeMainnet, None);
+    Runtime::new().unwrap().block_on(async {
+        let wallet = crate::lightwallet::LightWallet::new(config.clone(), None, 0, 7).unwrap();
+        wallet.write(&mut buf).await.unwrap();
+    });
+    let client = LightClient::read_from_buffer(&config, &buf[..]).unwrap();
+    Runtime::new().unwrap().block_on(async {
+        use std::ops::Deref as _;
+        let wallet = client.wallet;
+        assert_eq!(wallet.keys().read().await.deref().zkeys.len(), 7);
+    });
+}
+
 pub const EXT_TADDR: &str = "t1NoS6ZgaUTpmjkge2cVpXGcySasdYDrXqh";
 pub const EXT_ZADDR: &str = "zs1va5902apnzlhdu0pw9r9q7ca8s4vnsrp2alr6xndt69jnepn2v2qrj9vg3wfcnjyks5pg65g9dc";
 pub const EXT_ZADDR2: &str = "zs1fxgluwznkzm52ux7jkf4st5znwzqay8zyz4cydnyegt2rh9uhr9458z0nk62fdsssx0cqhy6lyv";
