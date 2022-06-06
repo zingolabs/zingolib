@@ -28,7 +28,7 @@ use crate::lightclient::testmocks;
 use crate::compact_formats::{CompactOutput, CompactTx, Empty};
 use crate::lightclient::test_server::{create_test_server, mine_pending_blocks, mine_random_blocks};
 use crate::lightclient::LightClient;
-use crate::lightwallet::data::WalletTx;
+use crate::lightwallet::data::{SaplingNoteData, WalletTx};
 
 use super::checkpoints;
 use super::lightclient_config::{LightClientConfig, Network};
@@ -1332,6 +1332,25 @@ async fn mempool_clearing() {
         )
         .await;
 
+        {
+            let transactions_reader = lc.wallet.transactions.clone();
+            let wallet_transactions = transactions_reader.read().await;
+            let sapling_notes: Vec<_> = wallet_transactions
+                .current
+                .values()
+                .map(|wallet_tx| &wallet_tx.notes)
+                .flatten()
+                .collect();
+            assert_ne!(sapling_notes.len(), 0);
+            for note in sapling_notes {
+                let mut note_bytes = Vec::new();
+                note.write(&mut note_bytes).unwrap();
+                assert_eq!(
+                    format!("{:#?}", note),
+                    format!("{:#?}", SaplingNoteData::read(&*note_bytes).unwrap())
+                );
+            }
+        }
         let notes_after = lc.do_list_notes(true).await;
         let transactions_after = lc.do_list_transactions(false).await;
 

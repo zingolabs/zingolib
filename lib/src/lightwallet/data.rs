@@ -196,6 +196,28 @@ pub struct SaplingNoteData {
     pub have_spending_key: bool,
 }
 
+impl std::fmt::Debug for SaplingNoteData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SaplingNoteData")
+            .field("extfvk", &self.extfvk)
+            .field("diversifier", &self.diversifier)
+            .field("note", &self.note)
+            .field("nullifier", &self.nullifier)
+            .field("spent", &self.spent)
+            .field("unconfirmed_spent", &self.unconfirmed_spent)
+            .field("memo", &self.memo)
+            .field("extfvk", &self.extfvk)
+            .field("diversifier", &self.diversifier)
+            .field("note", &self.note)
+            .field("nullifier", &self.nullifier)
+            .field("spent", &self.spent)
+            .field("unconfirmed_spent", &self.unconfirmed_spent)
+            .field("memo", &self.memo)
+            .field("is_change", &self.is_change)
+            .finish_non_exhaustive()
+    }
+}
+
 // Reading a note also needs the corresponding address to read from.
 fn read_rseed<R: Read>(mut reader: R) -> io::Result<Rseed> {
     let note_type = reader.read_u8()?;
