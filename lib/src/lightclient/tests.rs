@@ -1461,6 +1461,28 @@ fn test_read_wallet_from_buffer() {
     });
 }
 
+#[tokio::test]
+async fn read_write_block_data() {
+    let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(true).await;
+
+    ready_receiver.await.unwrap();
+
+    let lc = LightClient::test_new(&config, None, 0).await.unwrap();
+    let mut fcbl = FakeCompactBlockList::new(0);
+
+    // 1. Mine 10 blocks
+    mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
+    assert_eq!(lc.wallet.last_scanned_height().await, 10);
+    for block in fcbl.blocks {
+        let block_bytes: &mut [u8] = &mut [];
+        let cb = crate::lightwallet::data::BlockData::new(block.block);
+        cb.write(&mut *block_bytes).unwrap();
+        assert_eq!(cb, crate::lightwallet::data::BlockData::read(&*block_bytes).unwrap());
+    }
+    stop_transmitter.send(()).unwrap();
+    h1.await.unwrap();
+}
+
 pub const EXT_TADDR: &str = "t1NoS6ZgaUTpmjkge2cVpXGcySasdYDrXqh";
 pub const EXT_ZADDR: &str = "zs1va5902apnzlhdu0pw9r9q7ca8s4vnsrp2alr6xndt69jnepn2v2qrj9vg3wfcnjyks5pg65g9dc";
 pub const EXT_ZADDR2: &str = "zs1fxgluwznkzm52ux7jkf4st5znwzqay8zyz4cydnyegt2rh9uhr9458z0nk62fdsssx0cqhy6lyv";

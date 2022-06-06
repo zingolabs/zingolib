@@ -17,7 +17,7 @@ use zcash_primitives::{
     zip32::ExtendedFullViewingKey,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct BlockData {
     pub(crate) ecb: Vec<u8>,
     pub height: u64,
