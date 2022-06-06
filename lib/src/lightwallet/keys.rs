@@ -4,7 +4,7 @@ use std::{
 };
 
 use base58::{FromBase58, ToBase58};
-use bip39::{Language, Mnemonic, Seed};
+use bip0039::Mnemonic;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use rand::{rngs::OsRng, Rng};
 use ripemd160::Digest;
@@ -146,7 +146,7 @@ impl Keys {
             let mut system_rng = OsRng;
             system_rng.fill(&mut seed_bytes);
         } else {
-            let phrase = match Mnemonic::from_phrase(seed_phrase.unwrap().as_str(), Language::English) {
+            let phrase = match Mnemonic::from_phrase(seed_phrase.unwrap().as_str()) {
                 Ok(p) => p,
                 Err(e) => {
                     let e = format!("Error parsing phrase: {}", e);
@@ -160,14 +160,14 @@ impl Keys {
 
         // The seed bytes is the raw entropy. To pass it to HD wallet generation,
         // we need to get the 64 byte bip39 entropy
-        let bip39_seed = Seed::new(&Mnemonic::from_entropy(&seed_bytes, Language::English).unwrap(), "");
+        let bip39_seed = Mnemonic::from_entropy(seed_bytes).unwrap().to_seed("");
 
         // Derive only the first sk and address
-        let tpk = WalletTKey::new_hdkey(config, 0, &bip39_seed.as_bytes());
+        let tpk = WalletTKey::new_hdkey(config, 0, &bip39_seed);
 
         let mut zkeys = vec![];
         for hdkey_num in 0..num_zaddrs {
-            let (extsk, _, _) = Self::get_zaddr_from_bip39seed(&config, &bip39_seed.as_bytes(), hdkey_num);
+            let (extsk, _, _) = Self::get_zaddr_from_bip39seed(&config, &bip39_seed, hdkey_num);
             zkeys.push(WalletZKey::new_hdkey(hdkey_num, extsk));
         }
 
@@ -400,10 +400,7 @@ impl Keys {
             return "".to_string();
         }
 
-        Mnemonic::from_entropy(&self.seed, Language::English)
-            .unwrap()
-            .phrase()
-            .to_string()
+        Mnemonic::from_entropy(self.seed).unwrap().phrase().to_string()
     }
 
     pub fn get_all_extfvks(&self) -> Vec<ExtendedFullViewingKey> {
@@ -534,9 +531,9 @@ impl Keys {
             .max_by(|zk1, zk2| zk1.hdkey_num.unwrap().cmp(&zk2.hdkey_num.unwrap()))
             .map_or(0, |zk| zk.hdkey_num.unwrap() + 1);
 
-        let bip39_seed = bip39::Seed::new(&Mnemonic::from_entropy(&self.seed, Language::English).unwrap(), "");
+        let bip39_seed = &Mnemonic::from_entropy(self.seed).unwrap().to_seed("");
 
-        let (extsk, _, _) = Self::get_zaddr_from_bip39seed(&self.config, &bip39_seed.as_bytes(), pos);
+        let (extsk, _, _) = Self::get_zaddr_from_bip39seed(&self.config, bip39_seed, pos);
 
         // let zaddr = encode_payment_address(self.config.hrp_sapling_address(), &address);
         let newkey = WalletZKey::new_hdkey(pos, extsk);
@@ -561,9 +558,9 @@ impl Keys {
             .max_by(|sk1, sk2| sk1.hdkey_num.unwrap().cmp(&sk2.hdkey_num.unwrap()))
             .map_or(0, |sk| sk.hdkey_num.unwrap() + 1);
 
-        let bip39_seed = bip39::Seed::new(&Mnemonic::from_entropy(&self.seed, Language::English).unwrap(), "");
+        let bip39_seed = &Mnemonic::from_entropy(self.seed).unwrap().to_seed("");
 
-        let key = WalletTKey::new_hdkey(&self.config, pos, &bip39_seed.as_bytes());
+        let key = WalletTKey::new_hdkey(&self.config, pos, bip39_seed);
         let address = key.address.clone();
         self.tkeys.push(key);
 
@@ -688,27 +685,26 @@ impl Keys {
             }
         };
 
+        self.seed.copy_from_slice(&seed);
         // Now that we have the seed, we'll generate the extsks and tkeys, and verify the fvks and addresses
         // respectively match
 
         // The seed bytes is the raw entropy. To pass it to HD wallet generation,
         // we need to get the 64 byte bip39 entropy
-        let bip39_seed = bip39::Seed::new(&Mnemonic::from_entropy(&seed, Language::English).unwrap(), "");
+        let bip39_seed = &Mnemonic::from_entropy(seed).unwrap().to_seed("");
         let config = self.config.clone();
 
         // Transparent keys
         self.tkeys
             .iter_mut()
-            .map(|tk| tk.unlock(&config, bip39_seed.as_bytes(), &key))
+            .map(|tk| tk.unlock(&config, bip39_seed, &key))
             .collect::<io::Result<Vec<()>>>()?;
 
         // Go over the zkeys, and add the spending keys again
         self.zkeys
             .iter_mut()
-            .map(|zk| zk.unlock(&config, bip39_seed.as_bytes(), &key))
+            .map(|zk| zk.unlock(&config, bip39_seed, &key))
             .collect::<io::Result<Vec<()>>>()?;
-
-        self.seed.copy_from_slice(&seed);
 
         self.encrypted = true;
         self.unlocked = true;
