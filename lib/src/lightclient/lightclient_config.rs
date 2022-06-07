@@ -52,6 +52,16 @@ impl std::fmt::Display for Network {
     }
 }
 
+impl Network {
+    pub fn hrp_orchard_extended_spending_key(&self) -> &str {
+        match self {
+            Network::Mainnet => "secret-orchard-sk-main",
+            Network::Testnet => "secret-orchard-sk-test",
+            Network::FakeMainnet => "secret-orchard-sk-main",
+        }
+    }
+}
+
 impl Parameters for Network {
     fn activation_height(&self, nu: NetworkUpgrade) -> Option<zcash_primitives::consensus::BlockHeight> {
         use Network::*;

@@ -273,6 +273,8 @@ impl LightClient {
 
                 Ok(lc)
             })
+        } else if seed_phrase.starts_with(config.chain.hrp_orchard_extended_spending_key()) {
+            todo!()
         } else {
             Runtime::new().unwrap().block_on(async move {
                 let l = LightClient {
@@ -942,6 +944,8 @@ impl LightClient {
             self.do_import_vk(key, birthday).await
         } else if key.starts_with("K") || key.starts_with("L") {
             self.do_import_tk(key).await
+        } else if key.starts_with(self.config.chain.hrp_orchard_extended_spending_key()) {
+            self.do_import_ok(key, birthday)
         } else {
             Err(format!(
                 "'{}' was not recognized as either a spending key or a viewing key",
@@ -966,6 +970,29 @@ impl LightClient {
 
         self.do_save().await?;
         Ok(array![address])
+    }
+
+    /// Import a new orchard private key
+    pub async fn do_import_ok(&self, key: String, birthday: u64) -> Result<JsonValue, String> {
+        if !self.wallet.is_unlocked_for_spending().await {
+            error!("Wallet is locked");
+            return Err("Wallet is locked".to_string());
+        }
+
+        let new_address = {
+            let addr = self.wallet.add_imported_ok(sk, birthday).await;
+            if addr.starts_with("Error") {
+                let e = addr;
+                error!("{}", e);
+                return Err(e);
+            }
+
+            addr
+        };
+
+        self.do_save().await?;
+
+        Ok(array![new_address])
     }
 
     /// Import a new z-address private key

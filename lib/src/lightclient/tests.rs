@@ -79,7 +79,7 @@ fn new_wallet_from_phrase() {
 }
 
 #[test]
-fn new_wallet_from_sk() {
+fn new_wallet_from_zsk() {
     let temp_dir = tempfile::Builder::new().prefix("test").tempdir().unwrap();
     let data_dir = temp_dir
         .into_path()
@@ -103,7 +103,6 @@ fn new_wallet_from_sk() {
 
         // New address should be derived from the seed
         lc.do_new_address("z").await.unwrap();
-        lc.do_new_address("o").await.unwrap();
 
         let addresses = lc.do_address().await;
         assert_eq!(addresses["z_addresses"].len(), 2);
@@ -111,13 +110,27 @@ fn new_wallet_from_sk() {
             "zs1q6xk3q783t5k92kjqt2rkuuww8pdw2euzy5rk6jytw97enx8fhpazdv3th4xe7vsk6e9sfpawfg".to_string(),
             addresses["z_addresses"][1]
         );
-
-        panic!("{}", addresses["o_addresses"]);
     });
 }
 
 #[test]
-fn new_wallet_from_vk() {
+fn import_osk() {
+    let temp_dir = tempfile::Builder::new().prefix("test").tempdir().unwrap();
+    let data_dir = temp_dir
+        .into_path()
+        .canonicalize()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let config = LightClientConfig::create_unconnected(Network::FakeMainnet, Some(data_dir));
+    let lc = LightClient::new(&config, 0).unwrap();
+    Runtime::new().unwrap().block_on(async move {});
+}
+
+#[test]
+fn new_wallet_from_zvk() {
     let temp_dir = tempfile::Builder::new().prefix("test").tempdir().unwrap();
     let data_dir = temp_dir
         .into_path()
