@@ -56,6 +56,7 @@ pub(crate) mod message;
 mod orchardkeys;
 pub(crate) mod utils;
 pub(crate) mod wallet_transactions;
+mod walletokey;
 pub(crate) mod wallettkey;
 mod walletzkey;
 
