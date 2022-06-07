@@ -422,6 +422,20 @@ impl Keys {
             .collect()
     }
 
+    pub fn get_all_oaddresses(&self) -> Vec<String> {
+        self.okeys
+            .iter()
+            .map(|zk| {
+                use zcash_address::unified::Encoding as _;
+                zk.unified_address.encode(&match self.config.chain {
+                    crate::lightclient::lightclient_config::Network::Mainnet => zcash_address::Network::Main,
+                    crate::lightclient::lightclient_config::Network::Testnet => zcash_address::Network::Test,
+                    crate::lightclient::lightclient_config::Network::FakeMainnet => zcash_address::Network::Main,
+                })
+            })
+            .collect()
+    }
+
     pub fn get_all_spendable_zaddresses(&self) -> Vec<String> {
         self.zkeys
             .iter()

@@ -419,9 +419,13 @@ impl LightClient {
         // Collect t addresses
         let t_addresses = self.wallet.keys().read().await.get_all_taddrs();
 
+        // Collect o addresses
+        let o_addresses = self.wallet.keys().read().await.get_all_oaddresses();
+
         object! {
             "z_addresses" => z_addresses,
             "t_addresses" => t_addresses,
+            "o_addresses" => o_addresses,
         }
     }
 
@@ -908,6 +912,7 @@ impl LightClient {
             let addr = match addr_type {
                 "z" => self.wallet.keys().write().await.add_zaddr(),
                 "t" => self.wallet.keys().write().await.add_taddr(),
+                "o" => self.wallet.keys().write().await.add_oaddr(),
                 _ => {
                     let e = format!("Unrecognized address type: {}", addr_type);
                     error!("{}", e);
