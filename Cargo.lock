@@ -3236,6 +3236,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "zcash_address"
+version = "0.1.0"
+source = "git+https://github.com/zcash/librustzcash?rev=73d9395c9d3c5fa81fc7becd363a2c1a51772a76#73d9395c9d3c5fa81fc7becd363a2c1a51772a76"
+dependencies = [
+ "bech32",
+ "bs58",
+ "f4jumble",
+ "zcash_encoding",
+]
+
+[[package]]
 name = "zcash_client_backend"
 version = "0.5.0"
 source = "git+https://github.com/zcash/librustzcash?rev=73d9395c9d3c5fa81fc7becd363a2c1a51772a76#73d9395c9d3c5fa81fc7becd363a2c1a51772a76"
@@ -3371,6 +3382,7 @@ dependencies = [
  "lazy_static",
  "log",
  "log4rs",
+ "orchard",
  "pairing",
  "portpicker",
  "prost",
@@ -3382,6 +3394,7 @@ dependencies = [
  "secp256k1",
  "sha2 0.9.9",
  "sodiumoxide",
+ "subtle",
  "tempfile",
  "tokio",
  "tokio-rustls",
@@ -3391,6 +3404,7 @@ dependencies = [
  "tower",
  "tower-http 0.2.5",
  "webpki-roots 0.21.1",
+ "zcash_address",
  "zcash_client_backend",
  "zcash_encoding",
  "zcash_note_encryption 0.1.0 (git+https://github.com/zcash/librustzcash?rev=73d9395c9d3c5fa81fc7becd363a2c1a51772a76)",

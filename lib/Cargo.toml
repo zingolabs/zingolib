@@ -48,6 +48,9 @@ jubjub = "0.9.0"
 bls12_381 = "0.7"
 group = "0.12"
 rust-embed = { version = "6.3.0", features = ["debug-embed"] }
+orchard = "0.1.0"
+subtle = "2.4.1"
+zcash_address = { git = "https://github.com/zcash/librustzcash", rev = "73d9395c9d3c5fa81fc7becd363a2c1a51772a76"}
 zcash_primitives = { git = "https://github.com/zcash/librustzcash", rev = "73d9395c9d3c5fa81fc7becd363a2c1a51772a76", features = ["transparent-inputs", "test-dependencies"] }
 zcash_client_backend = { git = "https://github.com/zcash/librustzcash", rev = "73d9395c9d3c5fa81fc7becd363a2c1a51772a76"}
 zcash_proofs = { git = "https://github.com/zcash/librustzcash", rev = "73d9395c9d3c5fa81fc7becd363a2c1a51772a76", features = ["multicore"]}
