@@ -27,6 +27,7 @@ use crate::{
 };
 
 use super::{
+    walletokey::WalletOKey,
     wallettkey::{WalletTKey, WalletTKeyType},
     walletzkey::{WalletZKey, WalletZKeyType},
 };
@@ -115,6 +116,9 @@ pub struct Keys {
     // Transparent keys. If the wallet is locked, then the secret keys will be encrypted,
     // but the addresses will be present. This Vec contains both wallet and imported tkeys
     pub(crate) tkeys: Vec<WalletTKey>,
+
+    // Orchard keys
+    pub(crate) okeys: Vec<WalletOKey>,
 }
 
 impl Keys {
@@ -135,6 +139,7 @@ impl Keys {
             seed: [0u8; 32],
             zkeys: vec![],
             tkeys: vec![],
+            okeys: vec![],
         }
     }
 
@@ -180,6 +185,7 @@ impl Keys {
             seed: seed_bytes,
             zkeys,
             tkeys: vec![tpk],
+            okeys: vec![],
         })
     }
 
@@ -305,6 +311,7 @@ impl Keys {
             seed: seed_bytes,
             zkeys,
             tkeys,
+            okeys: vec![],
         })
     }
 
@@ -360,6 +367,7 @@ impl Keys {
             seed: seed_bytes,
             zkeys,
             tkeys,
+            okeys: vec![],
         })
     }
 
@@ -542,6 +550,37 @@ impl Keys {
         encode_payment_address(self.config.hrp_sapling_address(), &newkey.zaddress)
     }
 
+    /// Adds a new orchard address to the wallet. This will derive a new address from the seed
+    /// at the next position and add it to the wallet.
+    /// NOTE: This does NOT rescan
+    pub fn add_oaddr(&mut self) -> String {
+        if !self.unlocked {
+            return "Error: Can't add key while wallet is locked".to_string();
+        }
+
+        // Find the highest pos we have, use it as an account number
+        let account = self
+            .okeys
+            .iter()
+            .filter(|ok| ok.hdkey_num.is_some())
+            .max_by(|ok1, ok2| ok1.hdkey_num.unwrap().cmp(&ok2.hdkey_num.unwrap()))
+            .map_or(0, |ok| ok.hdkey_num.unwrap() + 1);
+
+        let bip39_seed = &Mnemonic::from_entropy(self.seed).unwrap().to_seed("");
+
+        let spending_key =
+            orchard::keys::SpendingKey::from_zip32_seed(bip39_seed, self.config.get_coin_type(), account).unwrap();
+
+        let newkey = WalletOKey::new_hdkey(account, spending_key);
+        self.okeys.push(newkey.clone());
+
+        use zcash_address::unified::Encoding as _;
+        newkey.unified_address.encode(&match self.config.chain {
+            crate::lightclient::lightclient_config::Network::Mainnet => zcash_address::Network::Main,
+            crate::lightclient::lightclient_config::Network::Testnet => zcash_address::Network::Test,
+            crate::lightclient::lightclient_config::Network::FakeMainnet => zcash_address::Network::Main,
+        })
+    }
     /// Add a new t address to the wallet. This will derive a new address from the seed
     /// at the next position.
     /// NOTE: This will not rescan the wallet

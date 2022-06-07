@@ -5,7 +5,7 @@ use zcash_address::unified::{Address, Encoding, Receiver, Typecode};
 pub struct WalletOKey {
     pub(super) key: WalletOKeyInner,
     locked: bool,
-    unified_address: Address,
+    pub(super) unified_address: Address,
 
     // If this is a HD key, what is the key number
     pub(super) hdkey_num: Option<u32>,
