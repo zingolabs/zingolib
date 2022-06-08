@@ -21,6 +21,7 @@ use std::{
     time::SystemTime,
 };
 use tokio::sync::RwLock;
+use zcash_address::unified::Encoding;
 use zcash_client_backend::{
     address,
     encoding::{decode_extended_full_viewing_key, decode_extended_spending_key, encode_payment_address},
@@ -576,7 +577,7 @@ impl LightWallet {
             .await
             .okeys
             .iter()
-            .find(|&wk| wk.key.spending_key().map(|x| x.to_bytes()) == Some(spending_key.to_bytes()))
+            .find(|&wk| wk.key.spending_key().map(|x| x.to_bytes().to_vec()) == Some(spending_key.to_bytes().to_vec()))
             .is_some()
         {
             return "Error: Key already exists".to_string();
@@ -585,7 +586,9 @@ impl LightWallet {
         let extfvk = OrchardFullViewingKey::from(&spending_key);
         let unified_address = {
             let okeys = &mut self.keys.write().await.okeys;
-            let maybe_existing_okey = okeys.iter_mut().find(|wk| wk.key.full_viewing_key() == Some(extfvk));
+            let maybe_existing_okey = okeys
+                .iter_mut()
+                .find(|wk| wk.key.full_viewing_key() == Some(extfvk.clone()));
 
             // If the viewing key exists, and is now being upgraded to the spending key, replace it in-place
             if maybe_existing_okey.is_some() {
@@ -602,7 +605,7 @@ impl LightWallet {
         // Adjust wallet birthday
         self.adjust_wallet_birthday(birthday);
 
-        encode_payment_address(self.config.chain.hrp_orchard_extended_spending_key(), &unified_address)
+        unified_address.encode(&self.config.chain.to_zcash_address_network())
     }
 
     // Add a new imported viewing key to the wallet

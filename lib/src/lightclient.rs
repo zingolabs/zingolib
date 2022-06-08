@@ -945,7 +945,7 @@ impl LightClient {
         } else if key.starts_with("K") || key.starts_with("L") {
             self.do_import_tk(key).await
         } else if key.starts_with(self.config.chain.hrp_orchard_extended_spending_key()) {
-            self.do_import_ok(key, birthday)
+            self.do_import_ok(key, birthday).await
         } else {
             Err(format!(
                 "'{}' was not recognized as either a spending key or a viewing key",
@@ -980,7 +980,7 @@ impl LightClient {
         }
 
         let new_address = {
-            let addr = self.wallet.add_imported_ok(sk, birthday).await;
+            let addr = self.wallet.add_imported_ok(key, birthday).await;
             if addr.starts_with("Error") {
                 let e = addr;
                 error!("{}", e);

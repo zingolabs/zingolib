@@ -60,6 +60,12 @@ impl Network {
             Network::FakeMainnet => "secret-orchard-sk-main",
         }
     }
+    pub fn to_zcash_address_network(&self) -> zcash_address::Network {
+        match self {
+            Network::Testnet => zcash_address::Network::Test,
+            _ => zcash_address::Network::Main,
+        }
+    }
 }
 
 impl Parameters for Network {

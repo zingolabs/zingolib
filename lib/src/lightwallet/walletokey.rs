@@ -1,11 +1,11 @@
 use orchard::keys::{Diversifier, FullViewingKey, IncomingViewingKey, OutgoingViewingKey, Scope, SpendingKey};
-use zcash_address::unified::{Address, Encoding, Receiver, Typecode};
+use zcash_address::unified::{Address as UnifiedAddress, Encoding, Receiver, Typecode};
 // A struct that holds orchard private keys or view keys
 #[derive(Clone, Debug, PartialEq)]
 pub struct WalletOKey {
     pub(super) key: WalletOKeyInner,
     locked: bool,
-    pub(super) unified_address: Address,
+    pub(super) unified_address: UnifiedAddress,
 
     // If this is a HD key, what is the key number
     pub(super) hdkey_num: Option<u32>,
@@ -14,6 +14,25 @@ pub struct WalletOKey {
     enc_key: Option<Vec<u8>>,
     nonce: Option<Vec<u8>>,
 }
+
+impl WalletOKey {
+    pub fn new_imported_osk(key: SpendingKey) -> Self {
+        Self {
+            key: WalletOKeyInner::ImportedSpendingKey(key),
+            locked: false,
+            unified_address: UnifiedAddress::try_from_items(vec![Receiver::Orchard(
+                FullViewingKey::from(&key)
+                    .address_at(0u32, Scope::Internal)
+                    .to_raw_address_bytes(),
+            )])
+            .unwrap(),
+            hdkey_num: None,
+            enc_key: None,
+            nonce: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) enum WalletOKeyInner {
     HdKey(SpendingKey),
@@ -35,7 +54,7 @@ impl WalletOKeyInner {
         match self {
             Self::HdKey(k) => Some(FullViewingKey::from(k)),
             Self::ImportedSpendingKey(k) => Some(FullViewingKey::from(k)),
-            Self::ImportedFullViewKey(k) => Some(*k),
+            Self::ImportedFullViewKey(k) => Some(k.clone()),
             _ => None,
         }
     }
@@ -59,9 +78,8 @@ impl WalletOKey {
     pub fn new_hdkey(hdkey_num: u32, spending_key: SpendingKey) -> Self {
         let key = WalletOKeyInner::HdKey(spending_key);
         let address = FullViewingKey::from(&spending_key).address_at(0u64, Scope::Internal);
-        let orchard_container =
-            Receiver::try_from((u32::from(Typecode::Orchard), &address.to_raw_address_bytes()[..])).unwrap();
-        let unified_address = Address::try_from_items(vec![orchard_container]).unwrap();
+        let orchard_container = Receiver::Orchard(address.to_raw_address_bytes());
+        let unified_address = UnifiedAddress::try_from_items(vec![orchard_container]).unwrap();
 
         WalletOKey {
             key,
