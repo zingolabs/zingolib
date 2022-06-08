@@ -12,6 +12,7 @@ use crate::{
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::Future;
 use log::{error, info, warn};
+use orchard::keys::{FullViewingKey as OrchardFullViewingKey, SpendingKey as OrchardSpendingKey};
 use std::{
     cmp,
     collections::HashMap,
@@ -39,6 +40,7 @@ use zcash_primitives::{
     zip32::ExtendedFullViewingKey,
 };
 
+use self::walletokey::{WalletOKey, WalletOKeyInner};
 use self::{
     data::{BlockData, SaplingNoteData, Utxo, WalletZecPriceInfo},
     keys::Keys,
@@ -551,6 +553,56 @@ impl LightWallet {
         self.adjust_wallet_birthday(birthday);
 
         encode_payment_address(self.config.hrp_sapling_address(), &zaddress)
+    }
+
+    // Add a new imported orchard secret key to the wallet
+    /// NOTE: This will not rescan the wallet
+    pub async fn add_imported_ok(&self, osk: String, birthday: u64) -> String {
+        if self.keys.read().await.encrypted {
+            return "Error: Can't import spending key while wallet is encrypted".to_string();
+        }
+
+        // First, try to interpret the key
+        let spending_key: OrchardSpendingKey =
+            match OrchardSpendingKey::from_bytes(<[u8; 32]>::try_from(osk.as_bytes()).unwrap()).into() {
+                Some(k) => k,
+                None => return format!("Error importing spending key"),
+            };
+
+        // Make sure the key doesn't already exist
+        if self
+            .keys
+            .read()
+            .await
+            .okeys
+            .iter()
+            .find(|&wk| wk.key.spending_key().map(|x| x.to_bytes()) == Some(spending_key.to_bytes()))
+            .is_some()
+        {
+            return "Error: Key already exists".to_string();
+        }
+
+        let extfvk = OrchardFullViewingKey::from(&spending_key);
+        let unified_address = {
+            let okeys = &mut self.keys.write().await.okeys;
+            let maybe_existing_okey = okeys.iter_mut().find(|wk| wk.key.full_viewing_key() == Some(extfvk));
+
+            // If the viewing key exists, and is now being upgraded to the spending key, replace it in-place
+            if maybe_existing_okey.is_some() {
+                let mut existing_okey = maybe_existing_okey.unwrap();
+                existing_okey.key = WalletOKeyInner::ImportedSpendingKey(spending_key);
+                existing_okey.unified_address.clone()
+            } else {
+                let newkey = WalletOKey::new_imported_osk(spending_key);
+                okeys.push(newkey.clone());
+                newkey.unified_address
+            }
+        };
+
+        // Adjust wallet birthday
+        self.adjust_wallet_birthday(birthday);
+
+        encode_payment_address(self.config.chain.hrp_orchard_extended_spending_key(), &unified_address)
     }
 
     // Add a new imported viewing key to the wallet

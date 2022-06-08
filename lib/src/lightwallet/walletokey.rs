@@ -23,6 +23,24 @@ pub(crate) enum WalletOKeyInner {
     ImportedOutViewKey(OutgoingViewingKey),
 }
 
+impl WalletOKeyInner {
+    pub(crate) fn spending_key(&self) -> Option<SpendingKey> {
+        match self {
+            Self::HdKey(k) => Some(*k),
+            Self::ImportedSpendingKey(k) => Some(*k),
+            _ => None,
+        }
+    }
+    pub(crate) fn full_viewing_key(&self) -> Option<FullViewingKey> {
+        match self {
+            Self::HdKey(k) => Some(FullViewingKey::from(k)),
+            Self::ImportedSpendingKey(k) => Some(FullViewingKey::from(k)),
+            Self::ImportedFullViewKey(k) => Some(*k),
+            _ => None,
+        }
+    }
+}
+
 impl PartialEq for WalletOKeyInner {
     fn eq(&self, other: &Self) -> bool {
         use subtle::ConstantTimeEq as _;
