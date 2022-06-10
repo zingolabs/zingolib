@@ -27,7 +27,7 @@ use crate::{
 };
 
 use super::{
-    walletokey::WalletOKey,
+    orchardkeys::WalletOKey,
     wallettkey::{WalletTKey, WalletTKeyType},
     walletzkey::{WalletZKey, WalletZKeyType},
 };

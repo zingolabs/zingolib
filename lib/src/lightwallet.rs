@@ -41,7 +41,7 @@ use zcash_primitives::{
     zip32::ExtendedFullViewingKey,
 };
 
-use self::walletokey::{WalletOKey, WalletOKeyInner};
+use self::orchardkeys::{WalletOKey, WalletOKeyInner};
 use self::{
     data::{BlockData, SaplingNoteData, Utxo, WalletZecPriceInfo},
     keys::Keys,
@@ -55,7 +55,7 @@ pub(crate) mod keys;
 pub(crate) mod message;
 pub(crate) mod utils;
 pub(crate) mod wallet_transactions;
-mod walletokey;
+mod orchardkeys;
 pub(crate) mod wallettkey;
 mod walletzkey;
 
