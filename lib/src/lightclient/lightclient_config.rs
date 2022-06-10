@@ -60,6 +60,13 @@ impl Network {
             Network::FakeMainnet => "secret-orchard-sk-main",
         }
     }
+    pub fn hrp_unified_full_viewing_key(&self) -> &str {
+        match self {
+            Network::Mainnet => "uview",
+            Network::Testnet => "uviewtest",
+            Network::FakeMainnet => "uview",
+        }
+    }
     pub fn to_zcash_address_network(&self) -> zcash_address::Network {
         match self {
             Network::Testnet => zcash_address::Network::Test,

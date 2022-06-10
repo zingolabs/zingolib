@@ -938,20 +938,26 @@ impl LightClient {
 
     /// Convinence function to determine what type of key this is and import it
     pub async fn do_import_key(&self, key: String, birthday: u64) -> Result<JsonValue, String> {
-        if key.starts_with(self.config.hrp_sapling_private_key()) {
-            self.do_import_sk(key, birthday).await
-        } else if key.starts_with(self.config.hrp_sapling_viewing_key()) {
-            self.do_import_vk(key, birthday).await
-        } else if key.starts_with("K") || key.starts_with("L") {
-            self.do_import_tk(key).await
-        } else if key.starts_with(self.config.chain.hrp_orchard_spending_key()) {
-            self.do_import_ok(key, birthday).await
-        } else {
-            Err(format!(
-                "'{}' was not recognized as either a spending key or a viewing key",
-                key,
-            ))
+        macro_rules! match_key_type {
+            ($key:ident: $($start:expr => $do:expr,)+) => {
+                match $key {
+                    $(_ if $key.starts_with($start) => $do,)+
+                    _ => Err(format!(
+                        "'{}' was not recognized as either a spending key or a viewing key",
+                        key,
+                    )),
+                }
+            }
         }
+
+        match_key_type!(key:
+            self.config.hrp_sapling_private_key() => self.do_import_sk(key, birthday).await,
+            self.config.hrp_sapling_viewing_key() => self.do_import_vk(key, birthday).await,
+            "K" => self.do_import_tk(key).await,
+            "L" => self.do_import_tk(key).await,
+            self.config.chain.hrp_orchard_spending_key() => self.do_import_ok(key, birthday).await,
+            self.config.chain.hrp_unified_full_viewing_key() => todo!(),
+        )
     }
 
     /// Import a new transparent private key
