@@ -53,7 +53,7 @@ impl std::fmt::Display for Network {
 }
 
 impl Network {
-    pub fn hrp_orchard_extended_spending_key(&self) -> &str {
+    pub fn hrp_orchard_spending_key(&self) -> &str {
         match self {
             Network::Mainnet => "secret-orchard-sk-main",
             Network::Testnet => "secret-orchard-sk-test",

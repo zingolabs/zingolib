@@ -273,7 +273,7 @@ impl LightClient {
 
                 Ok(lc)
             })
-        } else if seed_phrase.starts_with(config.chain.hrp_orchard_extended_spending_key()) {
+        } else if seed_phrase.starts_with(config.chain.hrp_orchard_spending_key()) {
             todo!()
         } else {
             Runtime::new().unwrap().block_on(async move {
@@ -944,7 +944,7 @@ impl LightClient {
             self.do_import_vk(key, birthday).await
         } else if key.starts_with("K") || key.starts_with("L") {
             self.do_import_tk(key).await
-        } else if key.starts_with(self.config.chain.hrp_orchard_extended_spending_key()) {
+        } else if key.starts_with(self.config.chain.hrp_orchard_spending_key()) {
             self.do_import_ok(key, birthday).await
         } else {
             Err(format!(
