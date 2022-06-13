@@ -9,7 +9,7 @@ use crate::{
     compact_formats::RawTransaction,
     grpc_connector::GrpcConnector,
     lightclient::lightclient_config::MAX_REORG,
-    lightwallet::{self, data::WalletTx, message::Message, now, LightWallet},
+    lightwallet::{self, data::WalletTx, keys::Keys, message::Message, now, LightWallet},
 };
 use futures::future::join_all;
 use json::{array, object, JsonValue};
@@ -371,47 +371,61 @@ impl LightClient {
         let address = addr.clone();
         // Go over all z addresses
         let z_keys = self
-            .wallet
-            .keys()
-            .read()
-            .await
-            .get_z_private_keys()
-            .iter()
-            .filter(move |(addr, _, _)| address.is_none() || address.as_ref() == Some(addr))
-            .map(|(addr, pk, vk)| {
-                object! {
+            .export_x_keys(Keys::get_z_private_keys, |(addr, pk, vk)| match &address {
+                Some(target_addr) if target_addr != addr => None,
+                _ => Some(object! {
                     "address"     => addr.clone(),
                     "private_key" => pk.clone(),
                     "viewing_key" => vk.clone(),
-                }
+                }),
             })
-            .collect::<Vec<JsonValue>>();
+            .await;
 
         // Clone address so it can be moved into the closure
         let address = addr.clone();
 
         // Go over all t addresses
         let t_keys = self
-            .wallet
-            .keys()
-            .read()
-            .await
-            .get_t_secret_keys()
-            .iter()
-            .filter(move |(addr, _)| address.is_none() || address.as_ref() == Some(addr))
-            .map(|(addr, sk)| {
-                object! {
+            .export_x_keys(Keys::get_t_secret_keys, |(addr, sk)| match &address {
+                Some(target_addr) if target_addr != addr => None,
+                _ => Some(object! {
                     "address"     => addr.clone(),
                     "private_key" => sk.clone(),
-                }
+                }),
             })
-            .collect::<Vec<JsonValue>>();
+            .await;
+
+        // Clone address so it can be moved into the closure
+        let address = addr.clone();
+
+        // Go over all orchard addresses
+        let o_keys = self
+            .export_x_keys(Keys::get_o_secret_keys, |(addr, sk)| match &address {
+                Some(target_addr) if target_addr != addr => None,
+                _ => Some(object! {
+                    "address"     => addr.clone(),
+                    "private_key" => sk.clone(),
+                }),
+            })
+            .await;
 
         let mut all_keys = vec![];
         all_keys.extend_from_slice(&z_keys);
         all_keys.extend_from_slice(&t_keys);
 
         Ok(all_keys.into())
+    }
+
+    //helper function to export all keys of a type
+    async fn export_x_keys<T, F: Fn(&Keys) -> Vec<T>, G: Fn(&T) -> Option<JsonValue>>(
+        &self,
+        key_getter: F,
+        key_filter_map: G,
+    ) -> Vec<JsonValue> {
+        key_getter(&*self.wallet.keys().read().await)
+            .iter()
+            .filter_map(key_filter_map)
+            .collect()
     }
 
     pub async fn do_address(&self) -> JsonValue {

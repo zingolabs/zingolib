@@ -584,6 +584,7 @@ impl Keys {
 
         let spending_key =
             orchard::keys::SpendingKey::from_zip32_seed(bip39_seed, self.config.get_coin_type(), account).unwrap();
+        println!("{:?}", spending_key.to_bytes());
 
         let newkey = WalletOKey::new_hdkey(account, spending_key);
         self.okeys.push(newkey.clone());

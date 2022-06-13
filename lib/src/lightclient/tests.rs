@@ -125,8 +125,10 @@ fn import_osk() {
         .to_string();
 
     let config = LightClientConfig::create_unconnected(Network::FakeMainnet, Some(data_dir));
-    let lc = LightClient::new(&config, 0).unwrap();
     Runtime::new().unwrap().block_on(async move {
+        let lc = LightClient::test_new(&config, Some(TEST_SEED.to_string()), 0)
+            .await
+            .unwrap();
         panic!("{:?}", lc.do_new_address("o").await);
         let new_address = lc.wallet.add_imported_ok("foo".to_string(), 0).await;
         panic!("{}", new_address);
