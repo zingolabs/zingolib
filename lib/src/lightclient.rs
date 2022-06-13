@@ -914,7 +914,7 @@ impl LightClient {
             let addr = match addr_type {
                 "z" => self.wallet.keys().write().await.add_zaddr(),
                 "t" => self.wallet.keys().write().await.add_taddr(),
-                "o" => self.wallet.keys().write().await.add_oaddr(),
+                "o" => self.wallet.keys().write().await.add_orchard_addr(),
                 _ => {
                     let e = format!("Unrecognized address type: {}", addr_type);
                     error!("{}", e);

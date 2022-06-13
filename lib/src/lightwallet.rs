@@ -53,9 +53,9 @@ pub(crate) mod data;
 mod extended_key;
 pub(crate) mod keys;
 pub(crate) mod message;
+mod orchardkeys;
 pub(crate) mod utils;
 pub(crate) mod wallet_transactions;
-mod orchardkeys;
 pub(crate) mod wallettkey;
 mod walletzkey;
 
@@ -563,12 +563,15 @@ impl LightWallet {
             return "Error: Can't import spending key while wallet is encrypted".to_string();
         }
 
+        let key_bytes = match <[u8; 32]>::try_from(osk.as_bytes()) {
+            Ok(bytes) => bytes,
+            Err(e) => return format!("{e}: Spending key not 32 bytes!"),
+        };
         // First, try to interpret the key
-        let spending_key: OrchardSpendingKey =
-            match OrchardSpendingKey::from_bytes(<[u8; 32]>::try_from(osk.as_bytes()).unwrap()).into() {
-                Some(k) => k,
-                None => return format!("Error importing spending key"),
-            };
+        let spending_key: OrchardSpendingKey = match OrchardSpendingKey::from_bytes(key_bytes).into() {
+            Some(k) => k,
+            None => return format!("Error importing spending key"),
+        };
 
         // Make sure the key doesn't already exist
         if self

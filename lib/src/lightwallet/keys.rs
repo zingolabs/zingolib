@@ -567,7 +567,7 @@ impl Keys {
     /// Adds a new orchard address to the wallet. This will derive a new address from the seed
     /// at the next position and add it to the wallet.
     /// NOTE: This does NOT rescan
-    pub fn add_oaddr(&mut self) -> String {
+    pub fn add_orchard_addr(&mut self) -> String {
         if !self.unlocked {
             return "Error: Can't add key while wallet is locked".to_string();
         }
