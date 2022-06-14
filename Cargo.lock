@@ -3427,7 +3427,6 @@ dependencies = [
  "http",
  "json",
  "log",
- "log4rs",
  "rustyline",
  "shellwords",
  "zecwalletlitelib",
