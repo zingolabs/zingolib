@@ -563,9 +563,25 @@ impl LightWallet {
             return "Error: Can't import spending key while wallet is encrypted".to_string();
         }
 
-        let key_bytes = match <[u8; 32]>::try_from(osk.as_bytes()) {
-            Ok(bytes) => bytes,
-            Err(e) => return format!("{e}: Spending key not 32 bytes!"),
+        use bech32::FromBase32;
+        let key_bytes = match bech32::decode(&osk) {
+            Ok((hrp, bytes, variant)) => {
+                if hrp != self.config.chain.hrp_orchard_spending_key() {
+                    return format!(
+                        "invalid human-readable-part {hrp}, expected {}.",
+                        self.config.chain.hrp_orchard_spending_key()
+                    );
+                }
+                if variant != bech32::Variant::Bech32m {
+                    return "Wrong encoding, expected bech32m".to_string();
+                }
+                match Vec::<u8>::from_base32(&bytes).map(<[u8; 32]>::try_from) {
+                    Ok(Ok(b)) => b,
+                    Ok(Err(e)) => return format!("key {osk} decodes to {e:?}, which is not 32 bytes"),
+                    Err(e) => return e.to_string(),
+                }
+            }
+            Err(e) => return format!("{e}"),
         };
         // First, try to interpret the key
         let spending_key: OrchardSpendingKey = match OrchardSpendingKey::from_bytes(key_bytes).into() {

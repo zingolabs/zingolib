@@ -1185,7 +1185,7 @@ impl Command for NewAddressCommand {
         let mut h = vec![];
         h.push("Create a new address in this wallet");
         h.push("Usage:");
-        h.push("new [z | t]");
+        h.push("new [z | t | o]");
         h.push("");
         h.push("Example:");
         h.push("To create a new z address:");

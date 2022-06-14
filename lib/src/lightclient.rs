@@ -400,16 +400,18 @@ impl LightClient {
 
         // Go over all orchard addresses
         let o_keys = self
-            .export_x_keys(Keys::get_o_secret_keys, |(addr, sk)| match &address {
+            .export_x_keys(Keys::get_orchard_spending_keys, |(addr, sk, vk)| match &address {
                 Some(target_addr) if target_addr != addr => None,
                 _ => Some(object! {
                     "address"     => addr.clone(),
-                    "private_key" => sk.clone(),
+                    "spending_key" => sk.clone(),
+                    "full_viewing_key" => vk.clone(),
                 }),
             })
             .await;
 
         let mut all_keys = vec![];
+        all_keys.extend_from_slice(&o_keys);
         all_keys.extend_from_slice(&z_keys);
         all_keys.extend_from_slice(&t_keys);
 

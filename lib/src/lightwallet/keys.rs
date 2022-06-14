@@ -10,6 +10,7 @@ use rand::{rngs::OsRng, Rng};
 use ripemd160::Digest;
 use sha2::Sha256;
 use sodiumoxide::crypto::secretbox;
+use zcash_address::unified::{Encoding, Ufvk};
 use zcash_client_backend::{
     address,
     encoding::{encode_extended_full_viewing_key, encode_extended_spending_key, encode_payment_address},
@@ -27,7 +28,7 @@ use crate::{
 };
 
 use super::{
-    orchardkeys::WalletOKey,
+    orchardkeys::{WalletOKey, WalletOKeyInner},
     wallettkey::{WalletTKey, WalletTKeyType},
     walletzkey::{WalletZKey, WalletZKeyType},
 };
@@ -427,13 +428,17 @@ impl Keys {
             .iter()
             .map(|zk| {
                 use zcash_address::unified::Encoding as _;
-                zk.unified_address.encode(&match self.config.chain {
-                    crate::lightclient::lightclient_config::Network::Mainnet => zcash_address::Network::Main,
-                    crate::lightclient::lightclient_config::Network::Testnet => zcash_address::Network::Test,
-                    crate::lightclient::lightclient_config::Network::FakeMainnet => zcash_address::Network::Main,
-                })
+                zk.unified_address.encode(&self.get_network_enum())
             })
             .collect()
+    }
+
+    fn get_network_enum(&self) -> zcash_address::Network {
+        match self.config.chain {
+            crate::lightclient::lightclient_config::Network::Mainnet => zcash_address::Network::Main,
+            crate::lightclient::lightclient_config::Network::Testnet => zcash_address::Network::Test,
+            crate::lightclient::lightclient_config::Network::FakeMainnet => zcash_address::Network::Main,
+        }
     }
 
     pub fn get_all_spendable_zaddresses(&self) -> Vec<String> {
@@ -584,7 +589,6 @@ impl Keys {
 
         let spending_key =
             orchard::keys::SpendingKey::from_zip32_seed(bip39_seed, self.config.get_coin_type(), account).unwrap();
-        println!("{:?}", spending_key.to_bytes());
 
         let newkey = WalletOKey::new_hdkey(account, spending_key);
         self.okeys.push(newkey.clone());
@@ -643,6 +647,39 @@ impl Keys {
                     pkey,
                     vkey,
                 )
+            })
+            .collect::<Vec<(String, String, String)>>();
+
+        keys
+    }
+
+    // Get all orchard spending keys. Returns a Vector of (address, spendingkey, fullviewingkey)
+    pub fn get_orchard_spending_keys(&self) -> Vec<(String, String, String)> {
+        let keys = self
+            .okeys
+            .iter()
+            .map(|k| {
+                use bech32::ToBase32 as _;
+                let pkey = match k.key.spending_key() {
+                    Some(spending_key) => bech32::encode(
+                        self.config.chain.hrp_orchard_spending_key(),
+                        spending_key.to_bytes().to_base32(),
+                        bech32::Variant::Bech32m,
+                    )
+                    .unwrap_or_else(|e| e.to_string()),
+                    None => "".to_string(),
+                };
+
+                let vkey = match k.key.full_viewing_key() {
+                    Some(viewing_key) => {
+                        Ufvk::try_from_items(vec![zcash_address::unified::Fvk::Orchard(viewing_key.to_bytes())])
+                            .map(|vk| vk.encode(&self.get_network_enum()))
+                            .unwrap_or_else(|e| e.to_string())
+                    }
+                    None => "".to_string(),
+                };
+
+                (k.unified_address.encode(&self.get_network_enum()), pkey, vkey)
             })
             .collect::<Vec<(String, String, String)>>();
 

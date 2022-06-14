@@ -188,6 +188,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf9ff0bbfd639f15c74af777d81383cf53efb7c93613f6cab67c6c11e05bbf8b"
 
 [[package]]
+name = "bech32"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c5738be7561b0eeb501ef1d5c5db3f24e01ceb55fededd9b00039aada34966ad"
+
+[[package]]
 name = "bellman"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3240,7 +3246,7 @@ name = "zcash_address"
 version = "0.1.0"
 source = "git+https://github.com/zcash/librustzcash?rev=73d9395c9d3c5fa81fc7becd363a2c1a51772a76#73d9395c9d3c5fa81fc7becd363a2c1a51772a76"
 dependencies = [
- "bech32",
+ "bech32 0.8.1",
  "bs58",
  "f4jumble",
  "zcash_encoding",
@@ -3252,7 +3258,7 @@ version = "0.5.0"
 source = "git+https://github.com/zcash/librustzcash?rev=73d9395c9d3c5fa81fc7becd363a2c1a51772a76#73d9395c9d3c5fa81fc7becd363a2c1a51772a76"
 dependencies = [
  "base64",
- "bech32",
+ "bech32 0.8.1",
  "bls12_381",
  "bs58",
  "ff",
@@ -3364,6 +3370,7 @@ version = "0.1.0"
 dependencies = [
  "base58",
  "base64",
+ "bech32 0.9.0",
  "bip0039 0.10.1",
  "bls12_381",
  "byteorder",

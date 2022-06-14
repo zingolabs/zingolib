@@ -129,9 +129,15 @@ fn import_osk() {
         let lc = LightClient::test_new(&config, Some(TEST_SEED.to_string()), 0)
             .await
             .unwrap();
-        panic!("{:?}", lc.do_new_address("o").await);
-        let new_address = lc.wallet.add_imported_ok("foo".to_string(), 0).await;
-        panic!("{}", new_address);
+        lc.do_new_address("o").await.unwrap();
+        let new_address = lc
+            .wallet
+            .add_imported_ok(
+                "secret-orchard-sk-main10vj29mt2ezeyc8y5ut6knfcdptg3umdsjk4v8zge6fdmt2kepycqs6j2g8".to_string(),
+                0,
+            )
+            .await;
+        assert_eq!(new_address, "Error: Key already exists");
     });
 }
 
