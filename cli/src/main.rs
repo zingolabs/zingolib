@@ -1,8 +1,8 @@
 use log::error;
-use zecwallet_cli::{
+use zecwalletlitelib::lightclient::{self, lightclient_config::LightClientConfig};
+use zingowallet_cli::{
     attempt_recover_seed, configure_clapapp, report_permission_error, start_interactive, startup, version::VERSION,
 };
-use zecwalletlitelib::lightclient::{self, lightclient_config::LightClientConfig};
 
 pub fn main() {
     // Get command line arguments
