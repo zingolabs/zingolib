@@ -11,8 +11,6 @@ log4rs = "1.1.1"
 shellwords = "1.1.0"
 json = "0.12.4"
 http = "0.2.8"
-byteorder = "1.4.3"
-bip0039 = "0.10.1"
 
 zecwalletlitelib = { path = "../lib/" }
 
