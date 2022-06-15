@@ -3420,7 +3420,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "zingowallet-cli"
+name = "zingo-cli"
 version = "0.0.1"
 dependencies = [
  "clap",

@@ -1,6 +1,6 @@
 use log::error;
 use zecwalletlitelib::lightclient::{self, lightclient_config::LightClientConfig};
-use zingowallet_cli::{
+use zingo_cli::{
     attempt_recover_seed, configure_clapapp, report_permission_error, start_interactive, startup, version::VERSION,
 };
 
