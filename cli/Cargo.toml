@@ -1,18 +1,14 @@
 [package]
-name = "zecwallet-cli"
-version = "1.7.7"
+name = "zingo-cli"
+version = "0.0.1"
 edition = "2021"
 
 [dependencies]
-rustyline = "5.0.6"
+rustyline = "9.1.2"
 clap = "2.33"
-log = "0.4"
-log4rs = "1.1.1"
-shellwords = "1.0.0"
-json = "0.12.0"
-http = "0.2"
-byteorder = "1"
-tiny-bip39 = "0.8.2"
+log = "0.4.17"
+shellwords = "1.1.0"
+json = "0.12.4"
+http = "0.2.8"
 
 zecwalletlitelib = { path = "../lib/" }
-
