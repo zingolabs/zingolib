@@ -444,7 +444,7 @@ impl Keys {
     pub fn get_all_spendable_zaddresses(&self) -> Vec<String> {
         self.zkeys
             .iter()
-            .filter(|zk| zk.have_spending_key())
+            .filter(|zk| zk.have_sapling_spending_key())
             .map(|zk| encode_payment_address(self.config.hrp_sapling_address(), &zk.zaddress))
             .collect()
     }
@@ -453,11 +453,11 @@ impl Keys {
         self.tkeys.iter().map(|tk| tk.address.clone()).collect::<Vec<_>>()
     }
 
-    pub fn have_spending_key(&self, extfvk: &ExtendedFullViewingKey) -> bool {
+    pub fn have_sapling_spending_key(&self, extfvk: &ExtendedFullViewingKey) -> bool {
         self.zkeys
             .iter()
             .find(|zk| zk.extfvk == *extfvk)
-            .map(|zk| zk.have_spending_key())
+            .map(|zk| zk.have_sapling_spending_key())
             .unwrap_or(false)
     }
 
