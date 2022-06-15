@@ -274,7 +274,7 @@ impl LightWallet {
         if version <= 8 {
             // Collect all spendable keys
             let spendable_keys: Vec<_> = keys
-                .get_all_extfvks()
+                .get_all_sapling_extfvks()
                 .into_iter()
                 .filter(|extfvk| keys.have_sapling_spending_key(extfvk))
                 .collect();
@@ -982,7 +982,7 @@ impl LightWallet {
             .keys
             .read()
             .await
-            .get_all_extfvks()
+            .get_all_sapling_extfvks()
             .iter()
             .map(|extfvk| extfvk.fvk.vk.ivk())
             .collect();
@@ -1468,7 +1468,7 @@ mod test {
             assert_eq!(lc.wallet.last_scanned_height().await, 10);
 
             // 2. Send an incoming transaction to fill the wallet
-            let extfvk1 = lc.wallet.keys().read().await.get_all_extfvks()[0].clone();
+            let extfvk1 = lc.wallet.keys().read().await.get_all_sapling_extfvks()[0].clone();
             let value = 100_000;
             let (transaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, value);
             let txid = transaction.txid();
@@ -1597,7 +1597,7 @@ mod test {
             assert_eq!(lc.wallet.last_scanned_height().await, 10);
 
             // 2. Send an incoming transaction to fill the wallet
-            let extfvk1 = lc.wallet.keys().read().await.get_all_extfvks()[0].clone();
+            let extfvk1 = lc.wallet.keys().read().await.get_all_sapling_extfvks()[0].clone();
             let value1 = 100_000;
             let (transaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, value1);
             let txid = transaction.txid();

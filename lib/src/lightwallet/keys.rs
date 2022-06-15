@@ -412,7 +412,7 @@ impl Keys {
         Mnemonic::from_entropy(self.seed).unwrap().phrase().to_string()
     }
 
-    pub fn get_all_extfvks(&self) -> Vec<ExtendedFullViewingKey> {
+    pub fn get_all_sapling_extfvks(&self) -> Vec<ExtendedFullViewingKey> {
         self.zkeys.iter().map(|zk| zk.extfvk.clone()).collect()
     }
 

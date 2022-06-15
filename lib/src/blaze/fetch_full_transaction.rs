@@ -301,12 +301,12 @@ impl FetchFullTxns {
         let ovks: Vec<_> = keys
             .read()
             .await
-            .get_all_extfvks()
+            .get_all_sapling_extfvks()
             .iter()
             .map(|k| k.fvk.ovk.clone())
             .collect();
 
-        let extfvks = Arc::new(keys.read().await.get_all_extfvks());
+        let extfvks = Arc::new(keys.read().await.get_all_sapling_extfvks());
         let ivks: Vec<_> = extfvks.iter().map(|k| k.fvk.vk.ivk()).collect();
 
         // Step 4: Scan shielded sapling outputs to see if anyone of them is us, and if it is, extract the memo. Note that if this

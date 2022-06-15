@@ -223,7 +223,7 @@ async fn z_incoming_z_outgoing() {
         assert_eq!(lc.wallet.last_scanned_height().await, 10);
 
         // 2. Send an incoming transaction to fill the wallet
-        let extfvk1 = lc.wallet.keys().read().await.get_all_extfvks()[0].clone();
+        let extfvk1 = lc.wallet.keys().read().await.get_all_sapling_extfvks()[0].clone();
         let value = 100_000;
         let (transaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, value);
         let txid = transaction.txid();
@@ -358,7 +358,7 @@ async fn multiple_incoming_same_transaction() {
         let lc = LightClient::test_new(&config, None, 0).await.unwrap();
         let mut fcbl = FakeCompactBlockList::new(0);
 
-        let extfvk1 = lc.wallet.keys().read().await.get_all_extfvks()[0].clone();
+        let extfvk1 = lc.wallet.keys().read().await.get_all_sapling_extfvks()[0].clone();
         let value = 100_000;
 
         // 1. Mine 10 blocks
@@ -519,7 +519,7 @@ async fn z_incoming_multiz_outgoing() {
         assert_eq!(lc.wallet.last_scanned_height().await, 10);
 
         // 2. Send an incoming transaction to fill the wallet
-        let extfvk1 = lc.wallet.keys().read().await.get_all_extfvks()[0].clone();
+        let extfvk1 = lc.wallet.keys().read().await.get_all_sapling_extfvks()[0].clone();
         let value = 100_000;
         let (_transaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, value);
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
@@ -576,7 +576,7 @@ async fn z_to_z_scan_together() {
         fcbl.add_blocks(10);
 
         // 2. Send an incoming transaction to fill the wallet
-        let extfvk1 = lc.wallet.keys().read().await.get_all_extfvks()[0].clone();
+        let extfvk1 = lc.wallet.keys().read().await.get_all_sapling_extfvks()[0].clone();
         let value = 100_000;
         let (transaction, _height, note) = fcbl.add_transaction_paying(&extfvk1, value);
         let txid = transaction.txid();
@@ -842,7 +842,7 @@ async fn mixed_transaction() {
         assert_eq!(lc.wallet.last_scanned_height().await, 10);
 
         // 2. Send an incoming transaction to fill the wallet
-        let extfvk1 = lc.wallet.keys().read().await.get_all_extfvks()[0].clone();
+        let extfvk1 = lc.wallet.keys().read().await.get_all_sapling_extfvks()[0].clone();
         let zvalue = 100_000;
         let (_ztransaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, zvalue);
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
@@ -950,7 +950,7 @@ async fn aborted_resync() {
         info!("Mined!");
 
         // 2. Send an incoming transaction to fill the wallet
-        let extfvk1 = lc.wallet.keys().read().await.get_all_extfvks()[0].clone();
+        let extfvk1 = lc.wallet.keys().read().await.get_all_sapling_extfvks()[0].clone();
         let zvalue = 100_000;
         let (_ztransaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, zvalue);
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
@@ -1066,7 +1066,7 @@ async fn no_change() {
         assert_eq!(lc.wallet.last_scanned_height().await, 10);
 
         // 2. Send an incoming transaction to fill the wallet
-        let extfvk1 = lc.wallet.keys().read().await.get_all_extfvks()[0].clone();
+        let extfvk1 = lc.wallet.keys().read().await.get_all_sapling_extfvks()[0].clone();
         let zvalue = 100_000;
         let (_ztransaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, zvalue);
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
@@ -1212,7 +1212,7 @@ async fn witness_clearing() {
         assert_eq!(lc.wallet.last_scanned_height().await, 10);
 
         // 2. Send an incoming transaction to fill the wallet
-        let extfvk1 = lc.wallet.keys().read().await.get_all_extfvks()[0].clone();
+        let extfvk1 = lc.wallet.keys().read().await.get_all_sapling_extfvks()[0].clone();
         let value = 100_000;
         let (transaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, value);
         let txid = transaction.txid();
@@ -1320,7 +1320,7 @@ async fn mempool_clearing() {
         assert_eq!(lc.wallet.last_scanned_height().await, 10);
 
         // 2. Send an incoming transaction to fill the wallet
-        let extfvk1 = lc.wallet.keys().read().await.get_all_extfvks()[0].clone();
+        let extfvk1 = lc.wallet.keys().read().await.get_all_sapling_extfvks()[0].clone();
         let value = 100_000;
         let (transaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, value);
         let orig_transaction_id = transaction.txid().to_string();
@@ -1433,7 +1433,7 @@ async fn mempool_and_balance() {
         assert_eq!(lc.wallet.last_scanned_height().await, 10);
 
         // 2. Send an incoming transaction to fill the wallet
-        let extfvk1 = lc.wallet.keys().read().await.get_all_extfvks()[0].clone();
+        let extfvk1 = lc.wallet.keys().read().await.get_all_sapling_extfvks()[0].clone();
         let value = 100_000;
         let (_transaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, value);
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
