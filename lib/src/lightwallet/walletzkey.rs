@@ -102,7 +102,7 @@ impl WalletZKey {
         }
     }
 
-    pub fn have_spending_key(&self) -> bool {
+    pub fn have_sapling_spending_key(&self) -> bool {
         self.extsk.is_some() || self.enc_key.is_some() || self.hdkey_num.is_some()
     }
 

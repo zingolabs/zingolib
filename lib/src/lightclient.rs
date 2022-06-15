@@ -9,7 +9,7 @@ use crate::{
     compact_formats::RawTransaction,
     grpc_connector::GrpcConnector,
     lightclient::lightclient_config::MAX_REORG,
-    lightwallet::{self, data::WalletTx, message::Message, now, LightWallet},
+    lightwallet::{self, data::WalletTx, keys::Keys, message::Message, now, LightWallet},
 };
 use futures::future::join_all;
 use json::{array, object, JsonValue};
@@ -273,6 +273,8 @@ impl LightClient {
 
                 Ok(lc)
             })
+        } else if seed_phrase.starts_with(config.chain.hrp_orchard_spending_key()) {
+            todo!()
         } else {
             Runtime::new().unwrap().block_on(async move {
                 let l = LightClient {
@@ -369,47 +371,63 @@ impl LightClient {
         let address = addr.clone();
         // Go over all z addresses
         let z_keys = self
-            .wallet
-            .keys()
-            .read()
-            .await
-            .get_z_private_keys()
-            .iter()
-            .filter(move |(addr, _, _)| address.is_none() || address.as_ref() == Some(addr))
-            .map(|(addr, pk, vk)| {
-                object! {
+            .export_x_keys(Keys::get_z_private_keys, |(addr, pk, vk)| match &address {
+                Some(target_addr) if target_addr != addr => None,
+                _ => Some(object! {
                     "address"     => addr.clone(),
                     "private_key" => pk.clone(),
                     "viewing_key" => vk.clone(),
-                }
+                }),
             })
-            .collect::<Vec<JsonValue>>();
+            .await;
 
         // Clone address so it can be moved into the closure
         let address = addr.clone();
 
         // Go over all t addresses
         let t_keys = self
-            .wallet
-            .keys()
-            .read()
-            .await
-            .get_t_secret_keys()
-            .iter()
-            .filter(move |(addr, _)| address.is_none() || address.as_ref() == Some(addr))
-            .map(|(addr, sk)| {
-                object! {
+            .export_x_keys(Keys::get_t_secret_keys, |(addr, sk)| match &address {
+                Some(target_addr) if target_addr != addr => None,
+                _ => Some(object! {
                     "address"     => addr.clone(),
                     "private_key" => sk.clone(),
-                }
+                }),
             })
-            .collect::<Vec<JsonValue>>();
+            .await;
+
+        // Clone address so it can be moved into the closure
+        let address = addr.clone();
+
+        // Go over all orchard addresses
+        let o_keys = self
+            .export_x_keys(Keys::get_orchard_spending_keys, |(addr, sk, vk)| match &address {
+                Some(target_addr) if target_addr != addr => None,
+                _ => Some(object! {
+                    "address"     => addr.clone(),
+                    "spending_key" => sk.clone(),
+                    "full_viewing_key" => vk.clone(),
+                }),
+            })
+            .await;
 
         let mut all_keys = vec![];
+        all_keys.extend_from_slice(&o_keys);
         all_keys.extend_from_slice(&z_keys);
         all_keys.extend_from_slice(&t_keys);
 
         Ok(all_keys.into())
+    }
+
+    //helper function to export all keys of a type
+    async fn export_x_keys<T, F: Fn(&Keys) -> Vec<T>, G: Fn(&T) -> Option<JsonValue>>(
+        &self,
+        key_getter: F,
+        key_filter_map: G,
+    ) -> Vec<JsonValue> {
+        key_getter(&*self.wallet.keys().read().await)
+            .iter()
+            .filter_map(key_filter_map)
+            .collect()
     }
 
     pub async fn do_address(&self) -> JsonValue {
@@ -419,9 +437,13 @@ impl LightClient {
         // Collect t addresses
         let t_addresses = self.wallet.keys().read().await.get_all_taddrs();
 
+        // Collect o addresses
+        let o_addresses = self.wallet.keys().read().await.get_all_oaddresses();
+
         object! {
             "z_addresses" => z_addresses,
             "t_addresses" => t_addresses,
+            "o_addresses" => o_addresses,
         }
     }
 
@@ -908,6 +930,7 @@ impl LightClient {
             let addr = match addr_type {
                 "z" => self.wallet.keys().write().await.add_zaddr(),
                 "t" => self.wallet.keys().write().await.add_taddr(),
+                "o" => self.wallet.keys().write().await.add_orchard_addr(),
                 _ => {
                     let e = format!("Unrecognized address type: {}", addr_type);
                     error!("{}", e);
@@ -931,18 +954,26 @@ impl LightClient {
 
     /// Convinence function to determine what type of key this is and import it
     pub async fn do_import_key(&self, key: String, birthday: u64) -> Result<JsonValue, String> {
-        if key.starts_with(self.config.hrp_sapling_private_key()) {
-            self.do_import_sk(key, birthday).await
-        } else if key.starts_with(self.config.hrp_sapling_viewing_key()) {
-            self.do_import_vk(key, birthday).await
-        } else if key.starts_with("K") || key.starts_with("L") {
-            self.do_import_tk(key).await
-        } else {
-            Err(format!(
-                "'{}' was not recognized as either a spending key or a viewing key",
-                key,
-            ))
+        macro_rules! match_key_type {
+            ($key:ident: $($start:expr => $do:expr,)+) => {
+                match $key {
+                    $(_ if $key.starts_with($start) => $do,)+
+                    _ => Err(format!(
+                        "'{}' was not recognized as either a spending key or a viewing key",
+                        key,
+                    )),
+                }
+            }
         }
+
+        match_key_type!(key:
+            self.config.hrp_sapling_private_key() => self.do_import_sk(key, birthday).await,
+            self.config.hrp_sapling_viewing_key() => self.do_import_vk(key, birthday).await,
+            "K" => self.do_import_tk(key).await,
+            "L" => self.do_import_tk(key).await,
+            self.config.chain.hrp_orchard_spending_key() => self.do_import_ok(key, birthday).await,
+            self.config.chain.hrp_unified_full_viewing_key() => todo!(),
+        )
     }
 
     /// Import a new transparent private key
@@ -961,6 +992,29 @@ impl LightClient {
 
         self.do_save().await?;
         Ok(array![address])
+    }
+
+    /// Import a new orchard private key
+    pub async fn do_import_ok(&self, key: String, birthday: u64) -> Result<JsonValue, String> {
+        if !self.wallet.is_unlocked_for_spending().await {
+            error!("Wallet is locked");
+            return Err("Wallet is locked".to_string());
+        }
+
+        let new_address = {
+            let addr = self.wallet.add_imported_ok(key, birthday).await;
+            if addr.starts_with("Error") {
+                let e = addr;
+                error!("{}", e);
+                return Err(e);
+            }
+
+            addr
+        };
+
+        self.do_save().await?;
+
+        Ok(array![new_address])
     }
 
     /// Import a new z-address private key

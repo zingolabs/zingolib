@@ -52,6 +52,29 @@ impl std::fmt::Display for Network {
     }
 }
 
+impl Network {
+    pub fn hrp_orchard_spending_key(&self) -> &str {
+        match self {
+            Network::Mainnet => "secret-orchard-sk-main",
+            Network::Testnet => "secret-orchard-sk-test",
+            Network::FakeMainnet => "secret-orchard-sk-main",
+        }
+    }
+    pub fn hrp_unified_full_viewing_key(&self) -> &str {
+        match self {
+            Network::Mainnet => "uview",
+            Network::Testnet => "uviewtest",
+            Network::FakeMainnet => "uview",
+        }
+    }
+    pub fn to_zcash_address_network(&self) -> zcash_address::Network {
+        match self {
+            Network::Testnet => zcash_address::Network::Test,
+            _ => zcash_address::Network::Main,
+        }
+    }
+}
+
 impl Parameters for Network {
     fn activation_height(&self, nu: NetworkUpgrade) -> Option<zcash_primitives::consensus::BlockHeight> {
         use Network::*;

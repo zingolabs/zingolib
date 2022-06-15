@@ -12,6 +12,7 @@ use crate::{
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::Future;
 use log::{error, info, warn};
+use orchard::keys::{FullViewingKey as OrchardFullViewingKey, SpendingKey as OrchardSpendingKey};
 use std::{
     cmp,
     collections::HashMap,
@@ -20,6 +21,7 @@ use std::{
     time::SystemTime,
 };
 use tokio::sync::RwLock;
+use zcash_address::unified::Encoding;
 use zcash_client_backend::{
     address,
     encoding::{decode_extended_full_viewing_key, decode_extended_spending_key, encode_payment_address},
@@ -39,6 +41,7 @@ use zcash_primitives::{
     zip32::ExtendedFullViewingKey,
 };
 
+use self::orchardkeys::{WalletOKey, WalletOKeyInner};
 use self::{
     data::{BlockData, SaplingNoteData, Utxo, WalletZecPriceInfo},
     keys::Keys,
@@ -50,6 +53,7 @@ pub(crate) mod data;
 mod extended_key;
 pub(crate) mod keys;
 pub(crate) mod message;
+mod orchardkeys;
 pub(crate) mod utils;
 pub(crate) mod wallet_transactions;
 pub(crate) mod wallettkey;
@@ -271,7 +275,7 @@ impl LightWallet {
             let spendable_keys: Vec<_> = keys
                 .get_all_extfvks()
                 .into_iter()
-                .filter(|extfvk| keys.have_spending_key(extfvk))
+                .filter(|extfvk| keys.have_sapling_spending_key(extfvk))
                 .collect();
 
             transactions.adjust_spendable_status(spendable_keys);
@@ -552,6 +556,77 @@ impl LightWallet {
         encode_payment_address(self.config.hrp_sapling_address(), &zaddress)
     }
 
+    // Add a new imported orchard secret key to the wallet
+    /// NOTE: This will not rescan the wallet
+    pub async fn add_imported_ok(&self, osk: String, birthday: u64) -> String {
+        if self.keys.read().await.encrypted {
+            return "Error: Can't import spending key while wallet is encrypted".to_string();
+        }
+
+        use bech32::FromBase32;
+        let key_bytes = match bech32::decode(&osk) {
+            Ok((hrp, bytes, variant)) => {
+                if hrp != self.config.chain.hrp_orchard_spending_key() {
+                    return format!(
+                        "invalid human-readable-part {hrp}, expected {}.",
+                        self.config.chain.hrp_orchard_spending_key()
+                    );
+                }
+                if variant != bech32::Variant::Bech32m {
+                    return "Wrong encoding, expected bech32m".to_string();
+                }
+                match Vec::<u8>::from_base32(&bytes).map(<[u8; 32]>::try_from) {
+                    Ok(Ok(b)) => b,
+                    Ok(Err(e)) => return format!("key {osk} decodes to {e:?}, which is not 32 bytes"),
+                    Err(e) => return e.to_string(),
+                }
+            }
+            Err(e) => return format!("{e}"),
+        };
+        // First, try to interpret the key
+        let spending_key: OrchardSpendingKey = match OrchardSpendingKey::from_bytes(key_bytes).into() {
+            Some(k) => k,
+            None => return format!("Error importing spending key"),
+        };
+
+        // Make sure the key doesn't already exist
+        if self
+            .keys
+            .read()
+            .await
+            .okeys
+            .iter()
+            .find(|&wk| wk.key.spending_key().map(|x| x.to_bytes().to_vec()) == Some(spending_key.to_bytes().to_vec()))
+            .is_some()
+        {
+            return "Error: Key already exists".to_string();
+        }
+
+        let extfvk = OrchardFullViewingKey::from(&spending_key);
+        let unified_address = {
+            let okeys = &mut self.keys.write().await.okeys;
+            let maybe_existing_okey = okeys
+                .iter_mut()
+                .find(|wk| wk.key.full_viewing_key() == Some(extfvk.clone()));
+
+            // If the viewing key exists, and is now being upgraded to the spending key, replace it in-place
+            if maybe_existing_okey.is_some() {
+                let mut existing_okey = maybe_existing_okey.unwrap();
+                existing_okey.key = WalletOKeyInner::ImportedSpendingKey(spending_key);
+                existing_okey.unified_address.clone()
+            } else {
+                let newkey = WalletOKey::new_imported_osk(spending_key);
+                okeys.push(newkey.clone());
+                newkey.unified_address
+            }
+        };
+
+        // Adjust wallet birthday
+        self.adjust_wallet_birthday(birthday);
+
+        unified_address.encode(&self.config.chain.to_zcash_address_network())
+    }
+
     // Add a new imported viewing key to the wallet
     /// NOTE: This will not rescan the wallet
     pub async fn add_imported_vk(&self, vk: String, birthday: u64) -> String {
@@ -742,7 +817,7 @@ impl LightWallet {
                     .filter(|nd| nd.spent.is_none() && nd.unconfirmed_spent.is_none())
                     .filter(|nd| {
                         // Check to see if we have this note's spending key.
-                        keys.have_spending_key(&nd.extfvk)
+                        keys.have_sapling_spending_key(&nd.extfvk)
                     })
                     .filter(|nd| match addr.clone() {
                         Some(a) => {
@@ -817,7 +892,7 @@ impl LightWallet {
                         .filter(|nd| nd.spent.is_none() && nd.unconfirmed_spent.is_none())
                         .filter(|nd| {
                             // Check to see if we have this note's spending key and witnesses
-                            keys.have_spending_key(&nd.extfvk) && nd.witnesses.len() > 0
+                            keys.have_sapling_spending_key(&nd.extfvk) && nd.witnesses.len() > 0
                         })
                         .filter(|nd| match addr.as_ref() {
                             Some(a) => {

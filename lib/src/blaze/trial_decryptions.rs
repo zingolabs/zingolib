@@ -143,7 +143,7 @@ impl TrialDecryptions {
                             workers.push(tokio::spawn(async move {
                                 let keys = keys.read().await;
                                 let extfvk = keys.zkeys[i].extfvk();
-                                let have_spending_key = keys.have_spending_key(extfvk);
+                                let have_sapling_spending_key = keys.have_sapling_spending_key(extfvk);
                                 let uri = bsync_data.read().await.uri().clone();
 
                                 // Get the witness for the note
@@ -165,7 +165,7 @@ impl TrialDecryptions {
                                     note,
                                     to,
                                     &extfvk,
-                                    have_spending_key,
+                                    have_sapling_spending_key,
                                     witness,
                                 );
 

@@ -79,7 +79,7 @@ fn new_wallet_from_phrase() {
 }
 
 #[test]
-fn new_wallet_from_sk() {
+fn new_wallet_from_zsk() {
     let temp_dir = tempfile::Builder::new().prefix("test").tempdir().unwrap();
     let data_dir = temp_dir
         .into_path()
@@ -114,7 +114,35 @@ fn new_wallet_from_sk() {
 }
 
 #[test]
-fn new_wallet_from_vk() {
+fn import_osk() {
+    let temp_dir = tempfile::Builder::new().prefix("test").tempdir().unwrap();
+    let data_dir = temp_dir
+        .into_path()
+        .canonicalize()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let config = LightClientConfig::create_unconnected(Network::FakeMainnet, Some(data_dir));
+    Runtime::new().unwrap().block_on(async move {
+        let lc = LightClient::test_new(&config, Some(TEST_SEED.to_string()), 0)
+            .await
+            .unwrap();
+        lc.do_new_address("o").await.unwrap();
+        let new_address = lc
+            .wallet
+            .add_imported_ok(
+                "secret-orchard-sk-main10vj29mt2ezeyc8y5ut6knfcdptg3umdsjk4v8zge6fdmt2kepycqs6j2g8".to_string(),
+                0,
+            )
+            .await;
+        assert_eq!(new_address, "Error: Key already exists");
+    });
+}
+
+#[test]
+fn new_wallet_from_zvk() {
     let temp_dir = tempfile::Builder::new().prefix("test").tempdir().unwrap();
     let data_dir = temp_dir
         .into_path()

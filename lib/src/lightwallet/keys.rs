@@ -10,6 +10,7 @@ use rand::{rngs::OsRng, Rng};
 use ripemd160::Digest;
 use sha2::Sha256;
 use sodiumoxide::crypto::secretbox;
+use zcash_address::unified::{Encoding, Ufvk};
 use zcash_client_backend::{
     address,
     encoding::{encode_extended_full_viewing_key, encode_extended_spending_key, encode_payment_address},
@@ -27,6 +28,7 @@ use crate::{
 };
 
 use super::{
+    orchardkeys::{WalletOKey, WalletOKeyInner},
     wallettkey::{WalletTKey, WalletTKeyType},
     walletzkey::{WalletZKey, WalletZKeyType},
 };
@@ -115,6 +117,9 @@ pub struct Keys {
     // Transparent keys. If the wallet is locked, then the secret keys will be encrypted,
     // but the addresses will be present. This Vec contains both wallet and imported tkeys
     pub(crate) tkeys: Vec<WalletTKey>,
+
+    // Orchard keys
+    pub(crate) okeys: Vec<WalletOKey>,
 }
 
 impl Keys {
@@ -135,6 +140,7 @@ impl Keys {
             seed: [0u8; 32],
             zkeys: vec![],
             tkeys: vec![],
+            okeys: vec![],
         }
     }
 
@@ -180,6 +186,7 @@ impl Keys {
             seed: seed_bytes,
             zkeys,
             tkeys: vec![tpk],
+            okeys: vec![],
         })
     }
 
@@ -305,6 +312,7 @@ impl Keys {
             seed: seed_bytes,
             zkeys,
             tkeys,
+            okeys: vec![],
         })
     }
 
@@ -360,6 +368,7 @@ impl Keys {
             seed: seed_bytes,
             zkeys,
             tkeys,
+            okeys: vec![],
         })
     }
 
@@ -414,10 +423,28 @@ impl Keys {
             .collect()
     }
 
+    pub fn get_all_oaddresses(&self) -> Vec<String> {
+        self.okeys
+            .iter()
+            .map(|zk| {
+                use zcash_address::unified::Encoding as _;
+                zk.unified_address.encode(&self.get_network_enum())
+            })
+            .collect()
+    }
+
+    fn get_network_enum(&self) -> zcash_address::Network {
+        match self.config.chain {
+            crate::lightclient::lightclient_config::Network::Mainnet => zcash_address::Network::Main,
+            crate::lightclient::lightclient_config::Network::Testnet => zcash_address::Network::Test,
+            crate::lightclient::lightclient_config::Network::FakeMainnet => zcash_address::Network::Main,
+        }
+    }
+
     pub fn get_all_spendable_zaddresses(&self) -> Vec<String> {
         self.zkeys
             .iter()
-            .filter(|zk| zk.have_spending_key())
+            .filter(|zk| zk.have_sapling_spending_key())
             .map(|zk| encode_payment_address(self.config.hrp_sapling_address(), &zk.zaddress))
             .collect()
     }
@@ -426,11 +453,11 @@ impl Keys {
         self.tkeys.iter().map(|tk| tk.address.clone()).collect::<Vec<_>>()
     }
 
-    pub fn have_spending_key(&self, extfvk: &ExtendedFullViewingKey) -> bool {
+    pub fn have_sapling_spending_key(&self, extfvk: &ExtendedFullViewingKey) -> bool {
         self.zkeys
             .iter()
             .find(|zk| zk.extfvk == *extfvk)
-            .map(|zk| zk.have_spending_key())
+            .map(|zk| zk.have_sapling_spending_key())
             .unwrap_or(false)
     }
 
@@ -542,6 +569,37 @@ impl Keys {
         encode_payment_address(self.config.hrp_sapling_address(), &newkey.zaddress)
     }
 
+    /// Adds a new orchard address to the wallet. This will derive a new address from the seed
+    /// at the next position and add it to the wallet.
+    /// NOTE: This does NOT rescan
+    pub fn add_orchard_addr(&mut self) -> String {
+        if !self.unlocked {
+            return "Error: Can't add key while wallet is locked".to_string();
+        }
+
+        // Find the highest pos we have, use it as an account number
+        let account = self
+            .okeys
+            .iter()
+            .filter(|ok| ok.hdkey_num.is_some())
+            .max_by(|ok1, ok2| ok1.hdkey_num.unwrap().cmp(&ok2.hdkey_num.unwrap()))
+            .map_or(0, |ok| ok.hdkey_num.unwrap() + 1);
+
+        let bip39_seed = &Mnemonic::from_entropy(self.seed).unwrap().to_seed("");
+
+        let spending_key =
+            orchard::keys::SpendingKey::from_zip32_seed(bip39_seed, self.config.get_coin_type(), account).unwrap();
+
+        let newkey = WalletOKey::new_hdkey(account, spending_key);
+        self.okeys.push(newkey.clone());
+
+        use zcash_address::unified::Encoding as _;
+        newkey.unified_address.encode(&match self.config.chain {
+            crate::lightclient::lightclient_config::Network::Mainnet => zcash_address::Network::Main,
+            crate::lightclient::lightclient_config::Network::Testnet => zcash_address::Network::Test,
+            crate::lightclient::lightclient_config::Network::FakeMainnet => zcash_address::Network::Main,
+        })
+    }
     /// Add a new t address to the wallet. This will derive a new address from the seed
     /// at the next position.
     /// NOTE: This will not rescan the wallet
@@ -589,6 +647,39 @@ impl Keys {
                     pkey,
                     vkey,
                 )
+            })
+            .collect::<Vec<(String, String, String)>>();
+
+        keys
+    }
+
+    // Get all orchard spending keys. Returns a Vector of (address, spendingkey, fullviewingkey)
+    pub fn get_orchard_spending_keys(&self) -> Vec<(String, String, String)> {
+        let keys = self
+            .okeys
+            .iter()
+            .map(|k| {
+                use bech32::ToBase32 as _;
+                let pkey = match k.key.spending_key() {
+                    Some(spending_key) => bech32::encode(
+                        self.config.chain.hrp_orchard_spending_key(),
+                        spending_key.to_bytes().to_base32(),
+                        bech32::Variant::Bech32m,
+                    )
+                    .unwrap_or_else(|e| e.to_string()),
+                    None => "".to_string(),
+                };
+
+                let vkey = match k.key.full_viewing_key() {
+                    Some(viewing_key) => {
+                        Ufvk::try_from_items(vec![zcash_address::unified::Fvk::Orchard(viewing_key.to_bytes())])
+                            .map(|vk| vk.encode(&self.get_network_enum()))
+                            .unwrap_or_else(|e| e.to_string())
+                    }
+                    None => "".to_string(),
+                };
+
+                (k.unified_address.encode(&self.get_network_enum()), pkey, vkey)
             })
             .collect::<Vec<(String, String, String)>>();
 
