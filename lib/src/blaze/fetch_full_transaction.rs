@@ -178,99 +178,26 @@ impl FetchFullTxns {
         wallet_transactions: Arc<RwLock<WalletTxns>>,
         price: Option<f64>,
     ) {
+        // Remember if this is an outgoing Tx. Useful for when we want to grab the outgoing metadata.
+        let mut is_outgoing_transaction = false;
+
         // Collect our t-addresses for easy checking
         let taddrs = keys.read().await.get_all_taddrs();
         let taddrs_set: HashSet<_> = taddrs.iter().map(|t| t.clone()).collect();
 
-        // Step 1: Scan all transparent outputs to see if we recieved any money
-        if let Some(t_bundle) = transaction.transparent_bundle() {
-            for (n, vout) in t_bundle.vout.iter().enumerate() {
-                match vout.script_pubkey.address() {
-                    Some(TransparentAddress::PublicKey(hash)) => {
-                        let output_taddr = hash.to_base58check(&config.base58_pubkey_address(), &[]);
-                        if taddrs_set.contains(&output_taddr) {
-                            // This is our address. Add this as an output to the txid
-                            wallet_transactions.write().await.add_new_taddr_output(
-                                transaction.txid(),
-                                output_taddr.clone(),
-                                height.into(),
-                                unconfirmed,
-                                block_time as u64,
-                                &vout,
-                                n as u32,
-                            );
-
-                            // Ensure that we add any new HD addresses
-                            keys.write().await.ensure_hd_taddresses(&output_taddr);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        // Remember if this is an outgoing Tx. Useful for when we want to grab the outgoing metadata.
-        let mut is_outgoing_transaction = false;
-
-        // Step 2. Scan transparent spends
-
-        // Scan all the inputs to see if we spent any transparent funds in this tx
-        let mut total_transparent_value_spent = 0;
-        let mut spent_utxos = vec![];
-
-        {
-            let current = &wallet_transactions.read().await.current;
-            if let Some(t_bundle) = transaction.transparent_bundle() {
-                for vin in t_bundle.vin.iter() {
-                    // Find the prev txid that was spent
-                    let prev_transaction_id = TxId::from_bytes(*vin.prevout.hash());
-                    let prev_n = vin.prevout.n() as u64;
-
-                    if let Some(wtx) = current.get(&prev_transaction_id) {
-                        // One of the tx outputs is a match
-                        if let Some(spent_utxo) = wtx
-                            .utxos
-                            .iter()
-                            .find(|u| u.txid == prev_transaction_id && u.output_index == prev_n)
-                        {
-                            info!(
-                                "Spent: utxo from {} was spent in {}",
-                                prev_transaction_id,
-                                transaction.txid()
-                            );
-                            total_transparent_value_spent += spent_utxo.value;
-                            spent_utxos.push((prev_transaction_id, prev_n as u32, transaction.txid(), height));
-                        }
-                    }
-                }
-            }
-        }
-
-        // Mark all the UTXOs that were spent here back in their original txns.
-        for (prev_transaction_id, prev_n, transaction_id, height) in spent_utxos {
-            // Mark that this Tx spent some funds
-            is_outgoing_transaction = true;
-
-            wallet_transactions.write().await.mark_txid_utxo_spent(
-                prev_transaction_id,
-                prev_n,
-                transaction_id,
-                height.into(),
-            );
-        }
-
-        // If this transaction spent value, add the spent amount to the TxID
-        if total_transparent_value_spent > 0 {
-            is_outgoing_transaction = true;
-
-            wallet_transactions.write().await.add_taddr_spent(
-                transaction.txid(),
-                height,
-                unconfirmed,
-                block_time as u64,
-                total_transparent_value_spent,
-            );
-        }
+        //todo: investigate scanning all bundles simultaneously
+        Self::scan_transparent_bundle(
+            &config,
+            &transaction,
+            height,
+            unconfirmed,
+            block_time,
+            &keys,
+            &wallet_transactions,
+            &mut is_outgoing_transaction,
+            &taddrs_set,
+        )
+        .await;
 
         // Step 3: Check if any of the nullifiers spent in this transaction are ours. We only need this for unconfirmed transactions,
         // because for transactions in the block, we will check the nullifiers from the blockdata
@@ -439,5 +366,104 @@ impl FetchFullTxns {
         }
 
         //info!("Finished Fetching full transaction {}", tx.txid());
+    }
+
+    async fn scan_transparent_bundle(
+        config: &LightClientConfig,
+        transaction: &Transaction,
+        height: BlockHeight,
+        unconfirmed: bool,
+        block_time: u32,
+        keys: &Arc<RwLock<Keys>>,
+        wallet_transactions: &Arc<RwLock<WalletTxns>>,
+        is_outgoing_transaction: &mut bool,
+        taddrs_set: &HashSet<String>,
+    ) {
+        // Step 1: Scan all transparent outputs to see if we recieved any money
+        if let Some(t_bundle) = transaction.transparent_bundle() {
+            for (n, vout) in t_bundle.vout.iter().enumerate() {
+                match vout.script_pubkey.address() {
+                    Some(TransparentAddress::PublicKey(hash)) => {
+                        let output_taddr = hash.to_base58check(&config.base58_pubkey_address(), &[]);
+                        if taddrs_set.contains(&output_taddr) {
+                            // This is our address. Add this as an output to the txid
+                            wallet_transactions.write().await.add_new_taddr_output(
+                                transaction.txid(),
+                                output_taddr.clone(),
+                                height.into(),
+                                unconfirmed,
+                                block_time as u64,
+                                &vout,
+                                n as u32,
+                            );
+
+                            // Ensure that we add any new HD addresses
+                            keys.write().await.ensure_hd_taddresses(&output_taddr);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Step 2. Scan transparent spends
+
+        // Scan all the inputs to see if we spent any transparent funds in this tx
+        let mut total_transparent_value_spent = 0;
+        let mut spent_utxos = vec![];
+
+        {
+            let current = &wallet_transactions.read().await.current;
+            if let Some(t_bundle) = transaction.transparent_bundle() {
+                for vin in t_bundle.vin.iter() {
+                    // Find the prev txid that was spent
+                    let prev_transaction_id = TxId::from_bytes(*vin.prevout.hash());
+                    let prev_n = vin.prevout.n() as u64;
+
+                    if let Some(wtx) = current.get(&prev_transaction_id) {
+                        // One of the tx outputs is a match
+                        if let Some(spent_utxo) = wtx
+                            .utxos
+                            .iter()
+                            .find(|u| u.txid == prev_transaction_id && u.output_index == prev_n)
+                        {
+                            info!(
+                                "Spent: utxo from {} was spent in {}",
+                                prev_transaction_id,
+                                transaction.txid()
+                            );
+                            total_transparent_value_spent += spent_utxo.value;
+                            spent_utxos.push((prev_transaction_id, prev_n as u32, transaction.txid(), height));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Mark all the UTXOs that were spent here back in their original txns.
+        for (prev_transaction_id, prev_n, transaction_id, height) in spent_utxos {
+            // Mark that this Tx spent some funds
+            *is_outgoing_transaction = true;
+
+            wallet_transactions.write().await.mark_txid_utxo_spent(
+                prev_transaction_id,
+                prev_n,
+                transaction_id,
+                height.into(),
+            );
+        }
+
+        // If this transaction spent value, add the spent amount to the TxID
+        if total_transparent_value_spent > 0 {
+            *is_outgoing_transaction = true;
+
+            wallet_transactions.write().await.add_taddr_spent(
+                transaction.txid(),
+                height,
+                unconfirmed,
+                block_time as u64,
+                total_transparent_value_spent,
+            );
+        }
     }
 }
