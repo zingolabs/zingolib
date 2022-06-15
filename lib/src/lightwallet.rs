@@ -597,7 +597,13 @@ impl LightWallet {
             .await
             .okeys
             .iter()
-            .find(|&wk| wk.key.spending_key().map(|x| x.to_bytes().to_vec()) == Some(spending_key.to_bytes().to_vec()))
+            .find(|&wk| {
+                (&wk.key)
+                    .try_into()
+                    .ok()
+                    .map(|x: OrchardSpendingKey| x.to_bytes().to_vec())
+                    == Some(spending_key.to_bytes().to_vec())
+            })
             .is_some()
         {
             return "Error: Key already exists".to_string();
@@ -608,7 +614,7 @@ impl LightWallet {
             let okeys = &mut self.keys.write().await.okeys;
             let maybe_existing_okey = okeys
                 .iter_mut()
-                .find(|wk| wk.key.full_viewing_key() == Some(extfvk.clone()));
+                .find(|wk| (&wk.key).try_into().ok() == Some(extfvk.clone()));
 
             // If the viewing key exists, and is now being upgraded to the spending key, replace it in-place
             if maybe_existing_okey.is_some() {

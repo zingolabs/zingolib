@@ -213,7 +213,7 @@ impl FetchFullTxns {
         )
         .await;
 
-        Self::scan_orchard_bundle().await;
+        Self::scan_orchard_bundle(&keys).await;
 
         // Step 5. Process t-address outputs
         // If this transaction in outgoing, i.e., we recieved sent some money in this transaction, then we need to grab all transparent outputs
@@ -492,7 +492,11 @@ impl FetchFullTxns {
             }
         }
     }
-    async fn scan_orchard_bundle() {
+    async fn scan_orchard_bundle(keys: &Arc<RwLock<Keys>>) {
         //Todo: Implement this!
+        let fvks = keys
+            .read()
+            .await
+            .get_all_orchard_keys_of_type::<orchard::keys::FullViewingKey>();
     }
 }
