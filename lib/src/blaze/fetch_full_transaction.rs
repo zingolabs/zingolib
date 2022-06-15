@@ -199,123 +199,21 @@ impl FetchFullTxns {
         )
         .await;
 
-        // Step 3: Check if any of the nullifiers spent in this transaction are ours. We only need this for unconfirmed transactions,
-        // because for transactions in the block, we will check the nullifiers from the blockdata
-        if unconfirmed {
-            let unspent_nullifiers = wallet_transactions.read().await.get_unspent_nullifiers();
-            if let Some(s_bundle) = transaction.sapling_bundle() {
-                for s in s_bundle.shielded_spends.iter() {
-                    if let Some((nf, value, transaction_id)) =
-                        unspent_nullifiers.iter().find(|(nf, _, _)| *nf == s.nullifier)
-                    {
-                        wallet_transactions.write().await.add_new_spent(
-                            transaction.txid(),
-                            height,
-                            unconfirmed,
-                            block_time,
-                            *nf,
-                            *value,
-                            *transaction_id,
-                        );
-                    }
-                }
-            }
-        }
-        // Collect all our z addresses, to check for change
-        let z_addresses: HashSet<String> = HashSet::from_iter(keys.read().await.get_all_zaddresses().into_iter());
-
-        // Collect all our OVKs, to scan for outputs
-        let ovks: Vec<_> = keys
-            .read()
-            .await
-            .get_all_sapling_extfvks()
-            .iter()
-            .map(|k| k.fvk.ovk.clone())
-            .collect();
-
-        let extfvks = Arc::new(keys.read().await.get_all_sapling_extfvks());
-        let ivks: Vec<_> = extfvks.iter().map(|k| k.fvk.vk.ivk()).collect();
-
-        // Step 4: Scan shielded sapling outputs to see if anyone of them is us, and if it is, extract the memo. Note that if this
-        // is invoked by a transparent transaction, and we have not seen this transaction from the trial_decryptions processor, the Note
-        // might not exist, and the memo updating might be a No-Op. That's Ok, the memo will get updated when this transaction is scanned
-        // a second time by the Full transaction Fetcher
         let mut outgoing_metadatas = vec![];
+        Self::scan_sapling_bundle(
+            &config,
+            &transaction,
+            height,
+            unconfirmed,
+            block_time,
+            &keys,
+            &wallet_transactions,
+            &mut is_outgoing_transaction,
+            &mut outgoing_metadatas,
+        )
+        .await;
 
-        if let Some(s_bundle) = transaction.sapling_bundle() {
-            for output in s_bundle.shielded_outputs.iter() {
-                // Search all of our keys
-                for (i, ivk) in ivks.iter().enumerate() {
-                    let (note, to, memo_bytes) = match try_sapling_note_decryption(&config.chain, height, &ivk, output)
-                    {
-                        Some(ret) => ret,
-                        None => continue,
-                    };
-
-                    // info!("A sapling note was received into the wallet in {}", transaction.txid());
-                    if unconfirmed {
-                        wallet_transactions.write().await.add_pending_note(
-                            transaction.txid(),
-                            height,
-                            block_time as u64,
-                            note.clone(),
-                            to,
-                            &extfvks.get(i).unwrap(),
-                        );
-                    }
-
-                    let memo = memo_bytes.clone().try_into().unwrap_or(Memo::Future(memo_bytes));
-                    wallet_transactions
-                        .write()
-                        .await
-                        .add_memo_to_note(&transaction.txid(), note, memo);
-                }
-
-                // Also scan the output to see if it can be decoded with our OutgoingViewKey
-                // If it can, then we sent this transaction, so we should be able to get
-                // the memo and value for our records
-
-                // Search all ovks that we have
-                let omds = ovks
-                    .iter()
-                    .filter_map(|ovk| {
-                        match try_sapling_output_recovery(&config.chain, height, &ovk, &output) {
-                            Some((note, payment_address, memo_bytes)) => {
-                                // Mark this transaction as an outgoing transaction, so we can grab all outgoing metadata
-                                is_outgoing_transaction = true;
-
-                                let address = encode_payment_address(config.hrp_sapling_address(), &payment_address);
-
-                                // Check if this is change, and if it also doesn't have a memo, don't add
-                                // to the outgoing metadata.
-                                // If this is change (i.e., funds sent to ourself) AND has a memo, then
-                                // presumably the users is writing a memo to themself, so we will add it to
-                                // the outgoing metadata, even though it might be confusing in the UI, but hopefully
-                                // the user can make sense of it.
-                                match Memo::try_from(memo_bytes) {
-                                    Err(_) => None,
-                                    Ok(memo) => {
-                                        if z_addresses.contains(&address) && memo == Memo::Empty {
-                                            None
-                                        } else {
-                                            Some(OutgoingTxMetadata {
-                                                address,
-                                                value: note.value,
-                                                memo,
-                                            })
-                                        }
-                                    }
-                                }
-                            }
-                            None => None,
-                        }
-                    })
-                    .collect::<Vec<_>>();
-
-                // Add it to the overall outgoing metadatas
-                outgoing_metadatas.extend(omds);
-            }
-        }
+        Self::scan_orchard_bundle().await;
 
         // Step 5. Process t-address outputs
         // If this transaction in outgoing, i.e., we recieved sent some money in this transaction, then we need to grab all transparent outputs
@@ -465,5 +363,136 @@ impl FetchFullTxns {
                 total_transparent_value_spent,
             );
         }
+    }
+    async fn scan_sapling_bundle(
+        config: &LightClientConfig,
+        transaction: &Transaction,
+        height: BlockHeight,
+        unconfirmed: bool,
+        block_time: u32,
+        keys: &Arc<RwLock<Keys>>,
+        wallet_transactions: &Arc<RwLock<WalletTxns>>,
+        is_outgoing_transaction: &mut bool,
+        outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
+    ) {
+        // Step 3: Check if any of the nullifiers spent in this transaction are ours. We only need this for unconfirmed transactions,
+        // because for transactions in the block, we will check the nullifiers from the blockdata
+        if unconfirmed {
+            let unspent_nullifiers = wallet_transactions.read().await.get_unspent_nullifiers();
+            if let Some(s_bundle) = transaction.sapling_bundle() {
+                for s in s_bundle.shielded_spends.iter() {
+                    if let Some((nf, value, transaction_id)) =
+                        unspent_nullifiers.iter().find(|(nf, _, _)| *nf == s.nullifier)
+                    {
+                        wallet_transactions.write().await.add_new_spent(
+                            transaction.txid(),
+                            height,
+                            unconfirmed,
+                            block_time,
+                            *nf,
+                            *value,
+                            *transaction_id,
+                        );
+                    }
+                }
+            }
+        }
+        // Collect all our z addresses, to check for change
+        let z_addresses: HashSet<String> = HashSet::from_iter(keys.read().await.get_all_zaddresses().into_iter());
+
+        // Collect all our sapling OVKs, to scan for outputs
+        let ovks: Vec<_> = keys
+            .read()
+            .await
+            .get_all_sapling_extfvks()
+            .iter()
+            .map(|k| k.fvk.ovk.clone())
+            .collect();
+
+        let extfvks = Arc::new(keys.read().await.get_all_sapling_extfvks());
+        let ivks: Vec<_> = extfvks.iter().map(|k| k.fvk.vk.ivk()).collect();
+
+        // Step 4: Scan shielded sapling outputs to see if anyone of them is us, and if it is, extract the memo. Note that if this
+        // is invoked by a transparent transaction, and we have not seen this transaction from the trial_decryptions processor, the Note
+        // might not exist, and the memo updating might be a No-Op. That's Ok, the memo will get updated when this transaction is scanned
+        // a second time by the Full transaction Fetcher
+
+        if let Some(s_bundle) = transaction.sapling_bundle() {
+            for output in s_bundle.shielded_outputs.iter() {
+                // Search all of our keys
+                for (i, ivk) in ivks.iter().enumerate() {
+                    let (note, to, memo_bytes) = match try_sapling_note_decryption(&config.chain, height, &ivk, output)
+                    {
+                        Some(ret) => ret,
+                        None => continue,
+                    };
+
+                    // info!("A sapling note was received into the wallet in {}", transaction.txid());
+                    if unconfirmed {
+                        wallet_transactions.write().await.add_pending_note(
+                            transaction.txid(),
+                            height,
+                            block_time as u64,
+                            note.clone(),
+                            to,
+                            &extfvks.get(i).unwrap(),
+                        );
+                    }
+
+                    let memo = memo_bytes.clone().try_into().unwrap_or(Memo::Future(memo_bytes));
+                    wallet_transactions
+                        .write()
+                        .await
+                        .add_memo_to_note(&transaction.txid(), note, memo);
+                }
+
+                // Also scan the output to see if it can be decoded with our OutgoingViewKey
+                // If it can, then we sent this transaction, so we should be able to get
+                // the memo and value for our records
+
+                // Search all ovks that we have
+                let omds = ovks
+                    .iter()
+                    .filter_map(|ovk| {
+                        match try_sapling_output_recovery(&config.chain, height, &ovk, &output) {
+                            Some((note, payment_address, memo_bytes)) => {
+                                // Mark this transaction as an outgoing transaction, so we can grab all outgoing metadata
+                                *is_outgoing_transaction = true;
+
+                                let address = encode_payment_address(config.hrp_sapling_address(), &payment_address);
+
+                                // Check if this is change, and if it also doesn't have a memo, don't add
+                                // to the outgoing metadata.
+                                // If this is change (i.e., funds sent to ourself) AND has a memo, then
+                                // presumably the users is writing a memo to themself, so we will add it to
+                                // the outgoing metadata, even though it might be confusing in the UI, but hopefully
+                                // the user can make sense of it.
+                                match Memo::try_from(memo_bytes) {
+                                    Err(_) => None,
+                                    Ok(memo) => {
+                                        if z_addresses.contains(&address) && memo == Memo::Empty {
+                                            None
+                                        } else {
+                                            Some(OutgoingTxMetadata {
+                                                address,
+                                                value: note.value,
+                                                memo,
+                                            })
+                                        }
+                                    }
+                                }
+                            }
+                            None => None,
+                        }
+                    })
+                    .collect::<Vec<_>>();
+
+                // Add it to the overall outgoing metadatas
+                outgoing_metadatas.extend(omds);
+            }
+        }
+    }
+    async fn scan_orchard_bundle() {
+        //Todo: Implement this!
     }
 }
