@@ -647,7 +647,7 @@ async fn z_incoming_viewkey() {
         let iextfvk = ExtendedFullViewingKey::from(&iextsk);
         let iaddr = encode_payment_address(config.hrp_sapling_address(), &iextfvk.default_address().1);
         let addrs = lc
-            .do_import_vk(
+            .do_import_sapling_full_view_key(
                 encode_extended_full_viewing_key(config.hrp_sapling_viewing_key(), &iextfvk),
                 1,
             )
@@ -683,7 +683,7 @@ async fn z_incoming_viewkey() {
 
         // 5. Import the corresponding spending key.
         let sk_addr = lc
-            .do_import_sk(
+            .do_import_sapling_spend_key(
                 encode_extended_spending_key(config.hrp_sapling_private_key(), &iextsk),
                 1,
             )

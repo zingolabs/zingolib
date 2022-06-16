@@ -967,8 +967,8 @@ impl LightClient {
         }
 
         match_key_type!(key:
-            self.config.hrp_sapling_private_key() => self.do_import_sk(key, birthday).await,
-            self.config.hrp_sapling_viewing_key() => self.do_import_vk(key, birthday).await,
+            self.config.hrp_sapling_private_key() => self.do_import_sapling_spend_key(key, birthday).await,
+            self.config.hrp_sapling_viewing_key() => self.do_import_sapling_full_view_key(key, birthday).await,
             "K" => self.do_import_tk(key).await,
             "L" => self.do_import_tk(key).await,
             self.config.chain.hrp_orchard_spending_key() => self.do_import_orchard_secret_key(key, birthday).await,
@@ -1018,7 +1018,7 @@ impl LightClient {
     }
 
     /// Import a new z-address private key
-    pub async fn do_import_sk(&self, sk: String, birthday: u64) -> Result<JsonValue, String> {
+    pub async fn do_import_sapling_spend_key(&self, sk: String, birthday: u64) -> Result<JsonValue, String> {
         if !self.wallet.is_unlocked_for_spending().await {
             error!("Wallet is locked");
             return Err("Wallet is locked".to_string());
@@ -1041,7 +1041,7 @@ impl LightClient {
     }
 
     /// Import a new viewing key
-    pub async fn do_import_vk(&self, vk: String, birthday: u64) -> Result<JsonValue, String> {
+    pub async fn do_import_sapling_full_view_key(&self, vk: String, birthday: u64) -> Result<JsonValue, String> {
         if !self.wallet.is_unlocked_for_spending().await {
             error!("Wallet is locked");
             return Err("Wallet is locked".to_string());
