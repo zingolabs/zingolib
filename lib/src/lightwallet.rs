@@ -1447,7 +1447,7 @@ mod test {
     use crate::{
         blaze::test_utils::{incw_to_string, FakeCompactBlockList, FakeTransaction},
         lightclient::{
-            test_server::{create_test_server, mine_pending_blocks, mine_random_blocks},
+            test_server::{clean_shutdown, create_test_server, mine_pending_blocks, mine_random_blocks},
             LightClient,
         },
     };
@@ -1576,8 +1576,7 @@ mod test {
             assert_eq!(utxos.len(), 1);
 
             // Shutdown everything cleanly
-            stop_transmitter.send(()).unwrap();
-            h1.await.unwrap();
+            clean_shutdown(stop_transmitter, h1).await;
         }
     }
 
@@ -1647,8 +1646,7 @@ mod test {
             assert_eq!(utxos.len(), 0);
 
             // Shutdown everything cleanly
-            stop_transmitter.send(()).unwrap();
-            h1.await.unwrap();
+            clean_shutdown(stop_transmitter, h1).await;
         }
     }
 }

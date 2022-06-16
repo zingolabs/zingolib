@@ -204,6 +204,11 @@ pub async fn create_test_server(
     (data, config, ready_receiver, stop_transmitter, h1)
 }
 
+pub async fn clean_shutdown(stop_transmitter: oneshot::Sender<()>, server_thread_handle: JoinHandle<()>) {
+    stop_transmitter.send(()).unwrap();
+    server_thread_handle.await.unwrap();
+}
+
 pub async fn mine_random_blocks(
     fcbl: &mut FakeCompactBlockList,
     data: &Arc<RwLock<TestServerData>>,
