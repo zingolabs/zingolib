@@ -79,7 +79,7 @@ fn new_wallet_from_phrase() {
 }
 
 #[test]
-fn new_wallet_from_zsk() {
+fn new_wallet_from_sapling_esk() {
     let temp_dir = tempfile::Builder::new().prefix("test").tempdir().unwrap();
     let data_dir = temp_dir
         .into_path()
@@ -114,7 +114,7 @@ fn new_wallet_from_zsk() {
 }
 
 #[test]
-fn import_osk() {
+fn import_orchard_spending_key() {
     let temp_dir = tempfile::Builder::new().prefix("test").tempdir().unwrap();
     let data_dir = temp_dir
         .into_path()
@@ -132,7 +132,7 @@ fn import_osk() {
         lc.do_new_address("o").await.unwrap();
         let new_address = lc
             .wallet
-            .add_imported_ok(
+            .add_imported_orchard_secret_key(
                 "secret-orchard-sk-main10vj29mt2ezeyc8y5ut6knfcdptg3umdsjk4v8zge6fdmt2kepycqs6j2g8".to_string(),
                 0,
             )

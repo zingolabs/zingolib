@@ -559,7 +559,7 @@ impl LightWallet {
 
     // Add a new imported orchard secret key to the wallet
     /// NOTE: This will not rescan the wallet
-    pub async fn add_imported_ok(&self, osk: String, birthday: u64) -> String {
+    pub async fn add_imported_orchard_secret_key(&self, osk: String, birthday: u64) -> String {
         if self.keys.read().await.encrypted {
             return "Error: Can't import spending key while wallet is encrypted".to_string();
         }

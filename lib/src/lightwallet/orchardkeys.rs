@@ -7,7 +7,8 @@ pub struct WalletOKey {
     locked: bool,
     pub(super) unified_address: UnifiedAddress,
 
-    // If this is a HD key, what is the key number
+    // If this is a key derived from our HD seed, the account number of the key
+    // This is effectively the index number used to generate the key from the seed
     pub(super) hdkey_num: Option<u32>,
 
     // If locked, the encrypted private key is stored here

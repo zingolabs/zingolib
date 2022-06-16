@@ -971,7 +971,7 @@ impl LightClient {
             self.config.hrp_sapling_viewing_key() => self.do_import_vk(key, birthday).await,
             "K" => self.do_import_tk(key).await,
             "L" => self.do_import_tk(key).await,
-            self.config.chain.hrp_orchard_spending_key() => self.do_import_ok(key, birthday).await,
+            self.config.chain.hrp_orchard_spending_key() => self.do_import_orchard_secret_key(key, birthday).await,
             self.config.chain.hrp_unified_full_viewing_key() => todo!(),
         )
     }
@@ -995,14 +995,14 @@ impl LightClient {
     }
 
     /// Import a new orchard private key
-    pub async fn do_import_ok(&self, key: String, birthday: u64) -> Result<JsonValue, String> {
+    pub async fn do_import_orchard_secret_key(&self, key: String, birthday: u64) -> Result<JsonValue, String> {
         if !self.wallet.is_unlocked_for_spending().await {
             error!("Wallet is locked");
             return Err("Wallet is locked".to_string());
         }
 
         let new_address = {
-            let addr = self.wallet.add_imported_ok(key, birthday).await;
+            let addr = self.wallet.add_imported_orchard_secret_key(key, birthday).await;
             if addr.starts_with("Error") {
                 let e = addr;
                 error!("{}", e);

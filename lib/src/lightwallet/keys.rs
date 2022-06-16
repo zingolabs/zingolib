@@ -588,9 +588,9 @@ impl Keys {
         let account = self
             .okeys
             .iter()
-            .filter(|ok| ok.hdkey_num.is_some())
-            .max_by(|ok1, ok2| ok1.hdkey_num.unwrap().cmp(&ok2.hdkey_num.unwrap()))
-            .map_or(0, |ok| ok.hdkey_num.unwrap() + 1);
+            .filter_map(|ok| ok.hdkey_num)
+            .max()
+            .map_or(0, |hdkey_num| hdkey_num + 1);
 
         let bip39_seed = &Mnemonic::from_entropy(self.seed).unwrap().to_seed("");
 
