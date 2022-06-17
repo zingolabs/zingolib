@@ -310,6 +310,17 @@ impl WalletZKey {
         }
     }
 }
+impl super::WalletKey for WalletZKey {
+    type Address = PaymentAddress;
+    type SpendKey = ExtendedSpendingKey;
+    fn address(&self) -> Self::Address {
+        self.zaddress.clone()
+    }
+    fn set_spend_key_for_view_key(&mut self, key: Self::SpendKey) {
+        self.extsk = Some(key);
+        self.keytype = WalletZKeyType::ImportedSpendingKey;
+    }
+}
 
 #[cfg(test)]
 pub mod tests {

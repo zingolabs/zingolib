@@ -123,6 +123,24 @@ pub struct Keys {
 }
 
 impl Keys {
+    pub(crate) fn zkeys(&self) -> &Vec<WalletZKey> {
+        &self.zkeys
+    }
+    pub(crate) fn okeys(&self) -> &Vec<WalletOKey> {
+        &self.okeys
+    }
+    pub(crate) fn tkeys(&self) -> &Vec<WalletTKey> {
+        &self.tkeys
+    }
+    pub(crate) fn zkeys_mut(&mut self) -> &mut Vec<WalletZKey> {
+        &mut self.zkeys
+    }
+    pub(crate) fn okeys_mut(&mut self) -> &mut Vec<WalletOKey> {
+        &mut self.okeys
+    }
+    pub(crate) fn tkeys_mut(&mut self) -> &mut Vec<WalletTKey> {
+        &mut self.tkeys
+    }
     pub fn serialized_version() -> u64 {
         return 21;
     }
@@ -416,7 +434,7 @@ impl Keys {
         self.zkeys.iter().map(|zk| zk.extfvk.clone()).collect()
     }
 
-    pub fn get_all_orchard_keys_of_type<T>(&self) -> Vec<T>
+    pub(crate) fn get_all_orchard_keys_of_type<T>(&self) -> Vec<T>
     where
         for<'a> T: TryFrom<&'a WalletOKeyInner>,
     {

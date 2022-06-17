@@ -1,5 +1,5 @@
-use orchard::keys::{Diversifier, FullViewingKey, IncomingViewingKey, OutgoingViewingKey, Scope, SpendingKey};
-use zcash_address::unified::{Address as UnifiedAddress, Encoding, Receiver, Typecode};
+use orchard::keys::{FullViewingKey, IncomingViewingKey, OutgoingViewingKey, Scope, SpendingKey};
+use zcash_address::unified::{Address as UnifiedAddress, Encoding, Receiver};
 // A struct that holds orchard private keys or view keys
 #[derive(Clone, Debug, PartialEq)]
 pub struct WalletOKey {
@@ -105,5 +105,17 @@ impl WalletOKey {
             enc_key: None,
             nonce: None,
         }
+    }
+}
+
+impl super::WalletKey for WalletOKey {
+    type Address = UnifiedAddress;
+    type SpendKey = SpendingKey;
+    fn address(&self) -> Self::Address {
+        self.unified_address.clone()
+    }
+
+    fn set_spend_key_for_view_key(&mut self, key: Self::SpendKey) {
+        self.key = WalletOKeyInner::ImportedSpendingKey(key)
     }
 }

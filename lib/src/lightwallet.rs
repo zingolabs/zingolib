@@ -4,15 +4,12 @@ use crate::lightwallet::wallettkey::WalletTKey;
 use crate::{
     blaze::fetch_full_transaction::FetchFullTxns,
     lightclient::lightclient_config::LightClientConfig,
-    lightwallet::{
-        data::SpendableNote,
-        walletzkey::{WalletZKey, WalletZKeyType},
-    },
+    lightwallet::{data::SpendableNote, walletzkey::WalletZKey},
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::Future;
 use log::{error, info, warn};
-use orchard::keys::{FullViewingKey as OrchardFullViewingKey, SpendingKey as OrchardSpendingKey};
+use orchard::keys::SpendingKey as OrchardSpendingKey;
 use std::{
     cmp,
     collections::HashMap,
@@ -38,10 +35,9 @@ use zcash_primitives::{
         builder::Builder,
         components::{amount::DEFAULT_FEE, Amount, OutPoint, TxOut},
     },
-    zip32::ExtendedFullViewingKey,
 };
 
-use self::orchardkeys::{WalletOKey, WalletOKeyInner};
+use self::orchardkeys::WalletOKey;
 use self::{
     data::{BlockData, SaplingNoteData, Utxo, WalletZecPriceInfo},
     keys::Keys,
@@ -56,7 +52,6 @@ pub(crate) mod message;
 mod orchardkeys;
 pub(crate) mod utils;
 pub(crate) mod wallet_transactions;
-mod walletokey;
 pub(crate) mod wallettkey;
 mod walletzkey;
 
@@ -509,131 +504,98 @@ impl LightWallet {
     // Add a new imported spending key to the wallet
     /// NOTE: This will not rescan the wallet
     pub async fn add_imported_sk(&self, sk: String, birthday: u64) -> String {
-        if self.keys.read().await.encrypted {
-            return "Error: Can't import spending key while wallet is encrypted".to_string();
-        }
-
-        // First, try to interpret the key
-        let extsk = match decode_extended_spending_key(self.config.hrp_sapling_private_key(), &sk) {
-            Ok(Some(k)) => k,
-            Ok(None) => return format!("Error: Couldn't decode spending key"),
-            Err(e) => return format!("Error importing spending key: {}", e),
-        };
-
-        // Make sure the key doesn't already exist
-        if self
-            .keys
-            .read()
-            .await
-            .zkeys
-            .iter()
-            .find(|&wk| wk.extsk.is_some() && wk.extsk.as_ref().unwrap() == &extsk.clone())
-            .is_some()
-        {
-            return "Error: Key already exists".to_string();
-        }
-
-        let extfvk = ExtendedFullViewingKey::from(&extsk);
-        let zaddress = {
-            let zkeys = &mut self.keys.write().await.zkeys;
-            let maybe_existing_zkey = zkeys.iter_mut().find(|wk| wk.extfvk == extfvk);
-
-            // If the viewing key exists, and is now being upgraded to the spending key, replace it in-place
-            if maybe_existing_zkey.is_some() {
-                let mut existing_zkey = maybe_existing_zkey.unwrap();
-                existing_zkey.extsk = Some(extsk);
-                existing_zkey.keytype = WalletZKeyType::ImportedSpendingKey;
-                existing_zkey.zaddress.clone()
-            } else {
-                let newkey = WalletZKey::new_imported_sk(extsk);
-                zkeys.push(newkey.clone());
-                newkey.zaddress
-            }
-        };
-
-        // Adjust wallet birthday
-        self.adjust_wallet_birthday(birthday);
-
-        encode_payment_address(self.config.hrp_sapling_address(), &zaddress)
+        self.add_imported_key_with_decoder(
+            &sk,
+            self.config.hrp_sapling_private_key(),
+            birthday,
+            decode_extended_spending_key,
+            Keys::zkeys,
+            Keys::zkeys_mut,
+            |wallet_key: &WalletZKey, new_key: &zcash_primitives::zip32::ExtendedSpendingKey| {
+                wallet_key.extsk.is_some() && wallet_key.extsk.as_ref().unwrap() == &new_key.clone()
+            },
+            |wk, fvk| &wk.extfvk == fvk,
+            WalletZKey::new_imported_sk,
+            |key| encode_payment_address(self.config.hrp_sapling_address(), &key),
+        )
+        .await
     }
 
     // Add a new imported orchard secret key to the wallet
     /// NOTE: This will not rescan the wallet
     pub async fn add_imported_orchard_secret_key(&self, osk: String, birthday: u64) -> String {
-        if self.keys.read().await.encrypted {
-            return "Error: Can't import spending key while wallet is encrypted".to_string();
-        }
-
-        use bech32::FromBase32;
-        let key_bytes = match bech32::decode(&osk) {
-            Ok((hrp, bytes, variant)) => {
-                if hrp != self.config.chain.hrp_orchard_spending_key() {
-                    return format!(
-                        "invalid human-readable-part {hrp}, expected {}.",
-                        self.config.chain.hrp_orchard_spending_key()
-                    );
-                }
-                if variant != bech32::Variant::Bech32m {
-                    return "Wrong encoding, expected bech32m".to_string();
-                }
-                match Vec::<u8>::from_base32(&bytes).map(<[u8; 32]>::try_from) {
-                    Ok(Ok(b)) => b,
-                    Ok(Err(e)) => return format!("key {osk} decodes to {e:?}, which is not 32 bytes"),
-                    Err(e) => return e.to_string(),
-                }
-            }
-            Err(e) => return format!("{e}"),
-        };
-        // First, try to interpret the key
-        let spending_key: OrchardSpendingKey = match OrchardSpendingKey::from_bytes(key_bytes).into() {
-            Some(k) => k,
-            None => return format!("Error importing spending key"),
-        };
-
-        // Make sure the key doesn't already exist
-        if self
-            .keys
-            .read()
-            .await
-            .okeys
-            .iter()
-            .find(|&wk| {
-                (&wk.key)
+        self.add_imported_key_with_decoder(
+            &osk,
+            self.config.chain.hrp_orchard_spending_key(),
+            birthday,
+            decode_orchard_spending_key,
+            Keys::okeys,
+            Keys::okeys_mut,
+            |wallet_key, new_key| {
+                (&wallet_key.key)
                     .try_into()
                     .ok()
                     .map(|x: OrchardSpendingKey| x.to_bytes().to_vec())
-                    == Some(spending_key.to_bytes().to_vec())
-            })
-            .is_some()
-        {
-            return "Error: Key already exists".to_string();
-        }
-
-        let extfvk = OrchardFullViewingKey::from(&spending_key);
-        let unified_address = {
-            let okeys = &mut self.keys.write().await.okeys;
-            let maybe_existing_okey = okeys
-                .iter_mut()
-                .find(|wk| (&wk.key).try_into().ok() == Some(extfvk.clone()));
-
-            // If the viewing key exists, and is now being upgraded to the spending key, replace it in-place
-            if maybe_existing_okey.is_some() {
-                let mut existing_okey = maybe_existing_okey.unwrap();
-                existing_okey.key = WalletOKeyInner::ImportedSpendingKey(spending_key);
-                existing_okey.unified_address.clone()
-            } else {
-                let newkey = WalletOKey::new_imported_osk(spending_key);
-                okeys.push(newkey.clone());
-                newkey.unified_address
-            }
-        };
-
-        // Adjust wallet birthday
-        self.adjust_wallet_birthday(birthday);
-
-        unified_address.encode(&self.config.chain.to_zcash_address_network())
+                    == Some(new_key.to_bytes().to_vec())
+            },
+            |wk: &WalletOKey, fvk: &orchard::keys::FullViewingKey| (&wk.key).try_into().ok() == Some(fvk.clone()),
+            WalletOKey::new_imported_osk,
+            |address: zcash_address::unified::Address| address.encode(&self.config.chain.to_zcash_address_network()),
+        )
+        .await
     }
 
+    async fn add_imported_key_with_decoder<
+        WKey: WalletKey + Clone,
+        ViewKey: for<'a> From<&'a WKey::SpendKey>,
+        DecodeError: std::fmt::Display,
+    >(
+        &self,
+        key: &str,
+        hrp: &str,
+        birthday: u64,
+        decoder: impl Fn(&str, &str) -> Result<Option<WKey::SpendKey>, DecodeError>,
+        key_finder: impl Fn(&Keys) -> &Vec<WKey>,
+        key_finder_mut: impl Fn(&mut Keys) -> &mut Vec<WKey>,
+        key_matcher: impl Fn(&WKey, &WKey::SpendKey) -> bool,
+        find_view_key: impl Fn(&WKey, &ViewKey) -> bool,
+        key_importer: impl Fn(WKey::SpendKey) -> WKey,
+        encode_address: impl Fn(WKey::Address) -> String,
+    ) -> String {
+        if self.keys.read().await.encrypted {
+            return "Error: Can't import spending key while wallet is encrypted".to_string();
+        }
+        let decoded_key = match decoder(hrp, key) {
+            Ok(Some(k)) => k,
+            Ok(None) => return format!("Error: Couldn't decode {} key", std::any::type_name::<WKey::SpendKey>()),
+            Err(e) => return format!("Error importing {} key: {e}", std::any::type_name::<WKey::SpendKey>()),
+        };
+        if key_finder(&*self.keys.read().await)
+            .iter()
+            .any(|k| key_matcher(k, &decoded_key))
+        {
+            return "Error: Key already exists".to_string();
+        };
+        let fvk = ViewKey::from(&decoded_key);
+        let address = {
+            let mut write_keys = self.keys.write().await;
+            let write_keys = key_finder_mut(&mut *write_keys);
+            let maybe_existing_key = write_keys.iter_mut().find(|k| find_view_key(k, &fvk));
+            // If the viewing key exists, and is now being upgraded to the spending key, replace it in-place
+            if maybe_existing_key.is_some() {
+                let existing_key = maybe_existing_key.unwrap();
+                existing_key.set_spend_key_for_view_key(decoded_key);
+                existing_key.address()
+            } else {
+                let newkey = key_importer(decoded_key);
+                write_keys.push(newkey.clone());
+                newkey.address()
+            }
+        };
+        // Adjust wallet birthday
+        self.adjust_wallet_birthday(birthday);
+        encode_address(address)
+    }
     // Add a new imported viewing key to the wallet
     /// NOTE: This will not rescan the wallet
     pub async fn add_imported_vk(&self, vk: String, birthday: u64) -> String {
@@ -1445,6 +1407,31 @@ impl LightWallet {
     pub async fn remove_encryption(&self, passwd: String) -> io::Result<()> {
         self.keys.write().await.remove_encryption(passwd)
     }
+}
+fn decode_orchard_spending_key(expected_hrp: &str, s: &str) -> Result<Option<OrchardSpendingKey>, String> {
+    match bech32::decode(&s) {
+        Ok((hrp, bytes, variant)) => {
+            use bech32::FromBase32;
+            if hrp != expected_hrp {
+                return Err(format!("invalid human-readable-part {hrp}, expected {expected_hrp}.",));
+            }
+            if variant != bech32::Variant::Bech32m {
+                return Err("Wrong encoding, expected bech32m".to_string());
+            }
+            match Vec::<u8>::from_base32(&bytes).map(<[u8; 32]>::try_from) {
+                Ok(Ok(b)) => Ok(OrchardSpendingKey::from_bytes(b).into()),
+                Ok(Err(e)) => Err(format!("key {s} decodes to {e:?}, which is not 32 bytes")),
+                Err(e) => Err(e.to_string()),
+            }
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+trait WalletKey {
+    type Address;
+    type SpendKey;
+    fn address(&self) -> Self::Address;
+    fn set_spend_key_for_view_key(&mut self, key: Self::SpendKey);
 }
 
 #[cfg(test)]
