@@ -9,6 +9,7 @@ use crate::{
 
 use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
 use log::info;
+use orchard::note_encryption::OrchardDomain;
 use std::{
     collections::HashSet,
     convert::{TryFrom, TryInto},
@@ -26,6 +27,7 @@ use tokio::{
     task::JoinHandle,
 };
 use zcash_client_backend::encoding::encode_payment_address;
+use zcash_note_encryption::try_note_decryption;
 
 use zcash_primitives::{
     consensus::BlockHeight,
@@ -243,7 +245,7 @@ impl FetchFullTxns {
         )
         .await;
 
-        Self::scan_orchard_bundle(&keys).await;
+        Self::scan_orchard_bundle(&transaction, &keys).await;
 
         // Process t-address outputs
         // If this transaction in outgoing, i.e., we recieved sent some money in this transaction, then we need to grab all transparent outputs
@@ -543,11 +545,23 @@ impl FetchFullTxns {
             }
         }
     }
-    async fn scan_orchard_bundle(keys: &Arc<RwLock<Keys>>) {
+    async fn scan_orchard_bundle(transaction: &Transaction, keys: &Arc<RwLock<Keys>>) {
+        use orchard::keys::Scope;
         //Todo: Implement this!
         let fvks = keys
             .read()
             .await
             .get_all_orchard_keys_of_type::<orchard::keys::FullViewingKey>();
+        if let Some(o_bundle) = transaction.orchard_bundle() {
+            for action in o_bundle.actions().iter() {
+                for (i, ivk) in fvks.iter().map(|fvk| (fvk.to_ivk(Scope::External))).enumerate() {
+                    let (note, to, memo_bytes) =
+                        match try_note_decryption(&OrchardDomain::for_action(action), &ivk, action) {
+                            Some(ret) => ret,
+                            None => continue,
+                        };
+                }
+            }
+        }
     }
 }
