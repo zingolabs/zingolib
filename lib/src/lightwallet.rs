@@ -504,7 +504,7 @@ impl LightWallet {
     // Add a new imported spending key to the wallet
     /// NOTE: This will not rescan the wallet
     pub async fn add_imported_sk(&self, sk: String, birthday: u64) -> String {
-        self.add_imported_key_with_decoder(
+        self.add_imported_spend_key(
             &sk,
             self.config.hrp_sapling_private_key(),
             birthday,
@@ -524,7 +524,7 @@ impl LightWallet {
     // Add a new imported orchard secret key to the wallet
     /// NOTE: This will not rescan the wallet
     pub async fn add_imported_orchard_secret_key(&self, osk: String, birthday: u64) -> String {
-        self.add_imported_key_with_decoder(
+        self.add_imported_spend_key(
             &osk,
             self.config.chain.hrp_orchard_spending_key(),
             birthday,
@@ -545,7 +545,7 @@ impl LightWallet {
         .await
     }
 
-    async fn add_imported_key_with_decoder<
+    async fn add_imported_spend_key<
         WKey: WalletKey + Clone,
         ViewKey: for<'a> From<&'a WKey::SpendKey>,
         DecodeError: std::fmt::Display,
@@ -562,13 +562,43 @@ impl LightWallet {
         key_importer: impl Fn(WKey::SpendKey) -> WKey,
         encode_address: impl Fn(WKey::Address) -> String,
     ) -> String {
+        let address_getter =
+            |decoded_key| self.update_view_key(decoded_key, key_finder_mut, find_view_key, key_importer);
+        self.add_imported_key(
+            key,
+            hrp,
+            birthday,
+            decoder,
+            key_finder,
+            key_matcher,
+            address_getter,
+            encode_address,
+        )
+        .await
+    }
+    async fn add_imported_key<
+        KeyType,
+        WKey: WalletKey + Clone,
+        DecodeError: std::fmt::Display,
+        Fut: Future<Output = WKey::Address>,
+    >(
+        &self,
+        key: &str,
+        hrp: &str,
+        birthday: u64,
+        decoder: impl Fn(&str, &str) -> Result<Option<KeyType>, DecodeError>,
+        key_finder: impl Fn(&Keys) -> &Vec<WKey>,
+        key_matcher: impl Fn(&WKey, &KeyType) -> bool,
+        address_getter: impl FnOnce(KeyType) -> Fut,
+        encode_address: impl Fn(WKey::Address) -> String,
+    ) -> String {
         if self.keys.read().await.encrypted {
             return "Error: Can't import spending key while wallet is encrypted".to_string();
         }
         let decoded_key = match decoder(hrp, key) {
             Ok(Some(k)) => k,
-            Ok(None) => return format!("Error: Couldn't decode {} key", std::any::type_name::<WKey::SpendKey>()),
-            Err(e) => return format!("Error importing {} key: {e}", std::any::type_name::<WKey::SpendKey>()),
+            Ok(None) => return format!("Error: Couldn't decode {} key", std::any::type_name::<KeyType>()),
+            Err(e) => return format!("Error importing {} key: {e}", std::any::type_name::<KeyType>()),
         };
         if key_finder(&*self.keys.read().await)
             .iter()
@@ -576,60 +606,50 @@ impl LightWallet {
         {
             return "Error: Key already exists".to_string();
         };
-        let fvk = ViewKey::from(&decoded_key);
-        let address = {
-            let mut write_keys = self.keys.write().await;
-            let write_keys = key_finder_mut(&mut *write_keys);
-            let maybe_existing_key = write_keys.iter_mut().find(|k| find_view_key(k, &fvk));
-            // If the viewing key exists, and is now being upgraded to the spending key, replace it in-place
-            if maybe_existing_key.is_some() {
-                let existing_key = maybe_existing_key.unwrap();
-                existing_key.set_spend_key_for_view_key(decoded_key);
-                existing_key.address()
-            } else {
-                let newkey = key_importer(decoded_key);
-                write_keys.push(newkey.clone());
-                newkey.address()
-            }
-        };
         // Adjust wallet birthday
         self.adjust_wallet_birthday(birthday);
-        encode_address(address)
+        encode_address(address_getter(decoded_key).await)
+    }
+    async fn update_view_key<WKey: WalletKey + Clone, ViewKey: for<'a> From<&'a WKey::SpendKey>>(
+        &self,
+        decoded_key: WKey::SpendKey,
+        key_finder_mut: impl Fn(&mut Keys) -> &mut Vec<WKey>,
+        find_view_key: impl Fn(&WKey, &ViewKey) -> bool,
+        key_importer: impl Fn(WKey::SpendKey) -> WKey,
+    ) -> WKey::Address {
+        let fvk = ViewKey::from(&decoded_key);
+        let mut write_keys = self.keys.write().await;
+        let write_keys = key_finder_mut(&mut *write_keys);
+        let maybe_existing_key = write_keys.iter_mut().find(|k| find_view_key(k, &fvk));
+        // If the viewing key exists, and is now being upgraded to the spending key, replace it in-place
+        if maybe_existing_key.is_some() {
+            let existing_key = maybe_existing_key.unwrap();
+            existing_key.set_spend_key_for_view_key(decoded_key);
+            existing_key.address()
+        } else {
+            let newkey = key_importer(decoded_key);
+            write_keys.push(newkey.clone());
+            newkey.address()
+        }
     }
     // Add a new imported viewing key to the wallet
     /// NOTE: This will not rescan the wallet
     pub async fn add_imported_vk(&self, vk: String, birthday: u64) -> String {
-        if !self.keys().read().await.unlocked {
-            return "Error: Can't add key while wallet is locked".to_string();
-        }
-
-        // First, try to interpret the key
-        let extfvk = match decode_extended_full_viewing_key(self.config.hrp_sapling_viewing_key(), &vk) {
-            Ok(Some(k)) => k,
-            Ok(None) => return format!("Error: Couldn't decode viewing key"),
-            Err(e) => return format!("Error importing viewing key: {}", e),
-        };
-
-        // Make sure the key doesn't already exist
-        if self
-            .keys()
-            .read()
-            .await
-            .zkeys
-            .iter()
-            .find(|wk| wk.extfvk == extfvk.clone())
-            .is_some()
-        {
-            return "Error: Key already exists".to_string();
-        }
-
-        let newkey = WalletZKey::new_imported_viewkey(extfvk);
-        self.keys().write().await.zkeys.push(newkey.clone());
-
-        // Adjust wallet birthday
-        self.adjust_wallet_birthday(birthday);
-
-        encode_payment_address(self.config.hrp_sapling_address(), &newkey.zaddress)
+        self.add_imported_key(
+            &vk,
+            self.config.hrp_sapling_viewing_key(),
+            birthday,
+            decode_extended_full_viewing_key,
+            Keys::zkeys,
+            |wallet_key, new_key| wallet_key.extfvk == new_key.clone(),
+            |key| async {
+                let newkey = WalletZKey::new_imported_viewkey(key);
+                self.keys().write().await.zkeys.push(newkey.clone());
+                newkey.zaddress
+            },
+            |address| encode_payment_address(self.config.hrp_sapling_address(), &address),
+        )
+        .await
     }
 
     /// Clears all the downloaded blocks and resets the state back to the initial block.
