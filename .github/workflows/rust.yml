@@ -28,12 +28,6 @@ jobs:
       - name: Grab cached files
         uses: actions/cache@v3
         with:
-          path: |
-            ~/.cargo/bin/cargo-tarpaulin
-            ~/.cargo/registry/
-            ~/.cargo/git/
-            ~/.cargo/.crates.toml
-            ~/.cargo/.crates2.json
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo  
       - name:                   Install Tarpaulin 
