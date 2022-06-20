@@ -215,7 +215,7 @@ impl FetchFullTxns {
 
         Self::scan_orchard_bundle(&keys).await;
 
-        // Step 5. Process t-address outputs
+        // Process t-address outputs
         // If this transaction in outgoing, i.e., we recieved sent some money in this transaction, then we need to grab all transparent outputs
         // that don't belong to us as the outgoing metadata
         if wallet_transactions
@@ -277,7 +277,7 @@ impl FetchFullTxns {
         is_outgoing_transaction: &mut bool,
         taddrs_set: &HashSet<String>,
     ) {
-        // Step 1: Scan all transparent outputs to see if we recieved any money
+        // Scan all transparent outputs to see if we recieved any money
         if let Some(t_bundle) = transaction.transparent_bundle() {
             for (n, vout) in t_bundle.vout.iter().enumerate() {
                 match vout.script_pubkey.address() {
@@ -304,7 +304,7 @@ impl FetchFullTxns {
             }
         }
 
-        // Step 2. Scan transparent spends
+        // Scan transparent spends
 
         // Scan all the inputs to see if we spent any transparent funds in this tx
         let mut total_transparent_value_spent = 0;
@@ -375,7 +375,7 @@ impl FetchFullTxns {
         is_outgoing_transaction: &mut bool,
         outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
     ) {
-        // Step 3: Check if any of the nullifiers spent in this transaction are ours. We only need this for unconfirmed transactions,
+        // Check if any of the nullifiers spent in this transaction are ours. We only need this for unconfirmed transactions,
         // because for transactions in the block, we will check the nullifiers from the blockdata
         if unconfirmed {
             let unspent_nullifiers = wallet_transactions.read().await.get_unspent_nullifiers();
@@ -412,7 +412,7 @@ impl FetchFullTxns {
         let extfvks = Arc::new(keys.read().await.get_all_sapling_extfvks());
         let ivks: Vec<_> = extfvks.iter().map(|k| k.fvk.vk.ivk()).collect();
 
-        // Step 4: Scan shielded sapling outputs to see if anyone of them is us, and if it is, extract the memo. Note that if this
+        // Scan shielded sapling outputs to see if anyone of them is us, and if it is, extract the memo. Note that if this
         // is invoked by a transparent transaction, and we have not seen this transaction from the trial_decryptions processor, the Note
         // might not exist, and the memo updating might be a No-Op. That's Ok, the memo will get updated when this transaction is scanned
         // a second time by the Full transaction Fetcher
