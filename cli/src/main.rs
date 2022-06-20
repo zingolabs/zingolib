@@ -7,7 +7,7 @@ use zingo_cli::{
 pub fn main() {
     // Get command line arguments
     use clap::{App, Arg};
-    let fresh_app = App::new("Zecwallet CLI");
+    let fresh_app = App::new("Zingo CLI");
     let configured_app = configure_clapapp!(fresh_app);
     let matches = configured_app.get_matches();
 

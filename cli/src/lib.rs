@@ -104,7 +104,7 @@ pub fn startup(
 
     // Print startup Messages
     info!(""); // Blank line
-    info!("Starting Zecwallet-CLI");
+    info!("Starting Zingo-CLI");
     info!("Light Client config {:?}", config);
 
     if print_updates {

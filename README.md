@@ -12,7 +12,7 @@ This repo provides both a library for zecwallet-lite and zecwallet-mobile, as we
 * Using this software (a light wallet) does not offer the full privacy or security of running a full-node zcash client.
 * This software does not provide privacy guarantees against network monitoring of the type or pattern of traffic it generates. That is to say, in some cases, the specifics of use may be able to remain private, but the use of this tool may be apparent to network observers.
 
-## Zecwallet CLI
+## Zingo CLI
 `zingo-cli` is a command line ZecWallet light client. To use it, see "compiling from source" below. Releases are currently only provisional, we will update the README as releases come out.
 
 ## Privacy 
@@ -21,12 +21,12 @@ This repo provides both a library for zecwallet-lite and zecwallet-mobile, as we
 * Also remember that t-addresses don't provide any privacy protection.
 
 ### Note Management
-Zecwallet-CLI does automatic note and utxo management, which means it doesn't allow you to manually select which address to send outgoing transactions from. It follows these principles:
+Zingo-CLI does automatic note and utxo management, which means it doesn't allow you to manually select which address to send outgoing transactions from. It follows these principles:
 * Defaults to sending shielded transactions, even if you're sending to a transparent address
 * Sapling funds need at least 5 confirmations before they can be spent
 * Can select funds from multiple shielded addresses in the same transaction
 * Will automatically shield your transparent funds at the first opportunity
-    * When sending an outgoing transaction to a shielded address, Zecwallet-CLI can decide to use the transaction to additionally shield your transparent funds (i.e., send your transparent funds to your own shielded address in the same transaction)
+    * When sending an outgoing transaction to a shielded address, Zingo-CLI can decide to use the transaction to additionally shield your transparent funds (i.e., send your transparent funds to your own shielded address in the same transaction)
 
 ## Compiling from source
 
