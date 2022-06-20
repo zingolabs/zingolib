@@ -1,6 +1,6 @@
 [package]
 name = "zingo-cli"
-version = "0.0.1"
+version = "0.1.1"
 edition = "2021"
 
 [dependencies]
@@ -11,4 +11,4 @@ shellwords = "1.1.0"
 json = "0.12.4"
 http = "0.2.8"
 
-zecwalletlitelib = { path = "../lib/" }
+zingolib = { path = "../lib/" }

@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use log::{error, info};
 
-use zecwalletlitelib::lightclient::lightclient_config::LightClientConfig;
-use zecwalletlitelib::{commands, lightclient::LightClient};
+use zingolib::lightclient::lightclient_config::LightClientConfig;
+use zingolib::{commands, lightclient::LightClient};
 
 pub mod version;
 
@@ -14,7 +14,7 @@ macro_rules! configure_clapapp {
     ( $freshapp: expr ) => {
     $freshapp.version(VERSION)
             .arg(Arg::with_name("nosync")
-                .help("By default, zecwallet-cli will sync the wallet at startup. Pass --nosync to prevent the automatic sync at startup.")
+                .help("By default, zingo-cli will sync the wallet at startup. Pass --nosync to prevent the automatic sync at startup.")
                 .long("nosync")
                 .short("n")
                 .takes_value(false))
@@ -50,7 +50,7 @@ macro_rules! configure_clapapp {
                 .help("Absolute path to use as data directory")
                 .takes_value(true))
             .arg(Arg::with_name("COMMAND")
-                .help("Command to execute. If a command is not specified, zecwallet-cli will start in interactive mode.")
+                .help("Command to execute. If a command is not specified, zingo-cli will start in interactive mode.")
                 .required(false)
                 .index(1))
             .arg(Arg::with_name("PARAMS")
@@ -104,7 +104,7 @@ pub fn startup(
 
     // Print startup Messages
     info!(""); // Blank line
-    info!("Starting Zecwallet-CLI");
+    info!("Starting Zingo-CLI");
     info!("Light Client config {:?}", config);
 
     if print_updates {
@@ -232,7 +232,7 @@ pub fn attempt_recover_seed(_password: Option<String>) {
     // Create a Light Client Config in an attempt to recover the file.
     let _config = LightClientConfig {
         server: "0.0.0.0:0".parse().unwrap(),
-        chain: zecwalletlitelib::lightclient::lightclient_config::Network::Mainnet,
+        chain: zingolib::lightclient::lightclient_config::Network::Mainnet,
         monitor_mempool: false,
         anchor_offset: [0u32; 5],
         data_dir: None,

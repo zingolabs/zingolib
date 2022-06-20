@@ -8,7 +8,7 @@
             "name": "(Windows) Launch",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/target/debug/zecwallet-cli.exe",
+            "program": "${workspaceFolder}/target/debug/zingo-cli.exe",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${fileDirname}",

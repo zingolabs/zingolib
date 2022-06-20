@@ -3373,8 +3373,42 @@ dependencies = [
 ]
 
 [[package]]
-name = "zecwalletlitelib"
-version = "0.1.0"
+name = "zeroize"
+version = "1.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d68d9dcec5f9b43a30d38c49f91dfedfaac384cb8f085faca366c26207dd1619"
+dependencies = [
+ "zeroize_derive",
+]
+
+[[package]]
+name = "zeroize_derive"
+version = "1.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f8f187641dad4f680d25c4bfc4225b418165984179f26ca76ec4fb6441d3a17"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+ "synstructure",
+]
+
+[[package]]
+name = "zingo-cli"
+version = "0.1.1"
+dependencies = [
+ "clap",
+ "http",
+ "json",
+ "log",
+ "rustyline",
+ "shellwords",
+ "zingolib",
+]
+
+[[package]]
+name = "zingolib"
+version = "0.1.1"
 dependencies = [
  "base58",
  "base64",
@@ -3425,38 +3459,4 @@ dependencies = [
  "zcash_note_encryption 0.1.0 (git+https://github.com/zcash/librustzcash?rev=73d9395c9d3c5fa81fc7becd363a2c1a51772a76)",
  "zcash_primitives",
  "zcash_proofs",
-]
-
-[[package]]
-name = "zeroize"
-version = "1.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d68d9dcec5f9b43a30d38c49f91dfedfaac384cb8f085faca366c26207dd1619"
-dependencies = [
- "zeroize_derive",
-]
-
-[[package]]
-name = "zeroize_derive"
-version = "1.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f8f187641dad4f680d25c4bfc4225b418165984179f26ca76ec4fb6441d3a17"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
- "synstructure",
-]
-
-[[package]]
-name = "zingo-cli"
-version = "0.0.1"
-dependencies = [
- "clap",
- "http",
- "json",
- "log",
- "rustyline",
- "shellwords",
- "zecwalletlitelib",
 ]
