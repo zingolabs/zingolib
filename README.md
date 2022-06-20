@@ -64,4 +64,4 @@ Here are some CLI arguments you can pass to `zingo-cli`. Please run `zingo-cli -
     * Example: `./zingo-cli --seed "twenty four words seed phrase"`
  * `--recover`: Attempt to recover the seed phrase from a corrupted wallet
  * `--data-dir`: uses the specified path as data directory.
-    * Example: `./zingo-cli --server 127.0.0.1:9067 --data-dir /Users/ZecWalletRocks/my-test-wallet` will use the provided directory to store `zingo-wallet.dat` and logs. If the provided directory does not exist, it will create it.
+    * Example: `./zingo-cli --server 127.0.0.1:9067 --data-dir /Users/ZingoRocks/my-test-wallet` will use the provided directory to store `zingo-wallet.dat` and logs. If the provided directory does not exist, it will create it.
