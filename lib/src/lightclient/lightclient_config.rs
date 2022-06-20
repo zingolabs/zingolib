@@ -23,8 +23,8 @@ use zcash_primitives::{
 use crate::{grpc_connector::GrpcConnector, lightclient::checkpoints};
 
 pub const DEFAULT_SERVER: &str = "https://lwdv3.zecwallet.co";
-pub const WALLET_NAME: &str = "zecwallet-light-wallet.dat";
-pub const LOGFILE_NAME: &str = "zecwallet-light-wallet.debug.log";
+pub const WALLET_NAME: &str = "zingo-wallet.dat";
+pub const LOGFILE_NAME: &str = "zingo-wallet.debug.log";
 pub const ANCHOR_OFFSET: [u32; 5] = [4, 0, 0, 0, 0];
 pub const MAX_REORG: usize = 100;
 pub const GAP_RULE_UNUSED_ADDRESSES: usize = if cfg!(any(target_os = "ios", target_os = "android")) {
@@ -221,7 +221,7 @@ impl LightClientConfig {
     pub fn get_log_config(&self) -> io::Result<Config> {
         let window_size = 3; // log0, log1, log2
         let fixed_window_roller = FixedWindowRoller::builder()
-            .build("zecwallet-light-wallet-log{}", window_size)
+            .build("zingo-wallet-log{}", window_size)
             .unwrap();
         let size_limit = 5 * 1024 * 1024; // 5MB as max log file size to roll
         let size_trigger = SizeTrigger::new(size_limit);
@@ -335,7 +335,7 @@ impl LightClientConfig {
 
         let mut backup_file_path = self.get_zcash_data_path().into_path_buf();
         backup_file_path.push(&format!(
-            "zecwallet-light-wallet.backup.{}.dat",
+            "zingo-wallet.backup.{}.dat",
             SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()
         ));
 

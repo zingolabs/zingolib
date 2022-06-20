@@ -14,7 +14,7 @@ macro_rules! configure_clapapp {
     ( $freshapp: expr ) => {
     $freshapp.version(VERSION)
             .arg(Arg::with_name("nosync")
-                .help("By default, zecwallet-cli will sync the wallet at startup. Pass --nosync to prevent the automatic sync at startup.")
+                .help("By default, zingo-cli will sync the wallet at startup. Pass --nosync to prevent the automatic sync at startup.")
                 .long("nosync")
                 .short("n")
                 .takes_value(false))
@@ -50,7 +50,7 @@ macro_rules! configure_clapapp {
                 .help("Absolute path to use as data directory")
                 .takes_value(true))
             .arg(Arg::with_name("COMMAND")
-                .help("Command to execute. If a command is not specified, zecwallet-cli will start in interactive mode.")
+                .help("Command to execute. If a command is not specified, zingo-cli will start in interactive mode.")
                 .required(false)
                 .index(1))
             .arg(Arg::with_name("PARAMS")
