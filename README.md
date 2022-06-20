@@ -1,5 +1,5 @@
-## Zecwalletlitelib
-[![license](https://img.shields.io/github/license/zingolabs/zecwalletlitelib)](LICENSE) [![codecov](https://codecov.io/gh/zingolabs/zecwalletlitelib/branch/dev/graph/badge.svg?token=WMKTJMQY28)](https://codecov.io/gh/zingolabs/zecwalletlitelib)
+## Zingolib
+[![license](https://img.shields.io/github/license/zingolabs/zingolib)](LICENSE) [![codecov](https://codecov.io/gh/zingolabs/zingolib/branch/dev/graph/badge.svg?token=WMKTJMQY28)](https://codecov.io/gh/zingolabs/zingolib)
 This repo provides both a library for zecwallet-lite and zecwallet-mobile, as well as an included cli application to interact with zcashd via lightwalletd.
 
 ## WARNING! Experimental
@@ -39,7 +39,7 @@ Zecwallet-CLI does automatic note and utxo management, which means it doesn't al
     * Please install the build tools for your platform. On Ubuntu `sudo apt install build-essential gcc`
 
 ```
-git clone https://github.com/zingolabs/zecwalletlitelib.git
+git clone https://github.com/zingolabs/zingolib.git
 cargo build --release
 ./target/release/zecwallet-cli
 ```
