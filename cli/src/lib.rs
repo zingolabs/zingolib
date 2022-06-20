@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use log::{error, info};
 
-use zecwalletlitelib::lightclient::lightclient_config::LightClientConfig;
-use zecwalletlitelib::{commands, lightclient::LightClient};
+use zingolib::lightclient::lightclient_config::LightClientConfig;
+use zingolib::{commands, lightclient::LightClient};
 
 pub mod version;
 
@@ -232,7 +232,7 @@ pub fn attempt_recover_seed(_password: Option<String>) {
     // Create a Light Client Config in an attempt to recover the file.
     let _config = LightClientConfig {
         server: "0.0.0.0:0".parse().unwrap(),
-        chain: zecwalletlitelib::lightclient::lightclient_config::Network::Mainnet,
+        chain: zingolib::lightclient::lightclient_config::Network::Mainnet,
         monitor_mempool: false,
         anchor_offset: [0u32; 5],
         data_dir: None,
