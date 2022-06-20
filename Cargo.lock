@@ -3395,7 +3395,7 @@ dependencies = [
 
 [[package]]
 name = "zingo-cli"
-version = "0.0.1"
+version = "0.1.1"
 dependencies = [
  "clap",
  "http",
@@ -3408,7 +3408,7 @@ dependencies = [
 
 [[package]]
 name = "zingolib"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base58",
  "base64",
