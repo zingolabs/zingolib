@@ -1,6 +1,6 @@
 ## Zingolib
 [![license](https://img.shields.io/github/license/zingolabs/zingolib)](LICENSE) [![codecov](https://codecov.io/gh/zingolabs/zingolib/branch/dev/graph/badge.svg?token=WMKTJMQY28)](https://codecov.io/gh/zingolabs/zingolib)
-This repo provides both a library for zecwallet-lite and zecwallet-mobile, as well as an included cli application to interact with zcashd via lightwalletd.
+This repo provides both a library for zingoproxyclient and zingo-mobile, as well as an included cli application to interact with zcashd via lightwalletd.
 
 ## WARNING! Experimental
 * This is experimental software. 
@@ -13,7 +13,7 @@ This repo provides both a library for zecwallet-lite and zecwallet-mobile, as we
 * This software does not provide privacy guarantees against network monitoring of the type or pattern of traffic it generates. That is to say, in some cases, the specifics of use may be able to remain private, but the use of this tool may be apparent to network observers.
 
 ## Zingo CLI
-`zingo-cli` is a command line ZecWallet light client. To use it, see "compiling from source" below. Releases are currently only provisional, we will update the README as releases come out.
+`zingo-cli` is a command line Zingo lightwalletd-proxy client. To use it, see "compiling from source" below. Releases are currently only provisional, we will update the README as releases come out.
 
 ## Privacy 
 * While all the keys and transaction detection happens on the client, the server can learn what blocks contain your shielded transactions.
@@ -47,7 +47,7 @@ cargo build --release
 This will launch the interactive prompt. Type `help` to get a list of commands.
 
 ## Notes:
-* If you want to run your own server, please see [zecwallet lightwalletd](https://github.com/zingolabs/lightwalletd), and then run `./zingo-cli --server http://127.0.0.1:9067`
+* If you want to run your own server, please see [zingo lightwalletd](https://github.com/zingolabs/lightwalletd), and then run `./zingo-cli --server http://127.0.0.1:9067`
 * The log file is in `~/.zcash/zingo-wallet.debug.log`. Wallet is stored in `~/.zcash/zingo-wallet.dat`
 * Currently, the default, hard-coded `lightwalletd` server is https://lwdv3.zecwallet.co:443/. To change this, you can modify line 25 of `lib/src/lightclient/lightclient_config.rs`
 
@@ -58,7 +58,7 @@ Run `zingo-cli help` to see a list of all commands.
 ## Options
 Here are some CLI arguments you can pass to `zingo-cli`. Please run `zingo-cli --help` for the full list. 
 
-* `--server`: Connect to a custom zecwallet lightwalletd server. 
+* `--server`: Connect to a custom zcash lightwalletd server. 
     * Example: `./zingo-cli --server 127.0.0.1:9067`
 * `--seed`: Restore a wallet from a seed phrase. Note that this will fail if there is an existing wallet. Delete (or move) any existing wallet to restore from the 24-word seed phrase
     * Example: `./zingo-cli --seed "twenty four words seed phrase"`
