@@ -256,27 +256,6 @@ impl Command for InfoCommand {
     }
 }
 
-struct ZecPriceCommand {}
-impl Command for ZecPriceCommand {
-    fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("Get the latest ZEC price in the wallet's currency (USD)");
-        h.push("Usage:");
-        h.push("zecprice");
-        h.push("");
-
-        h.join("\n")
-    }
-
-    fn short_help(&self) -> String {
-        "Get the latest ZEC price in the wallet's currency (USD)".to_string()
-    }
-
-    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        RT.block_on(async move { lightclient.do_zec_price().await })
-    }
-}
-
 struct LastTxIdCommand {}
 impl Command for LastTxIdCommand {
     fn help(&self) -> String {
@@ -1380,7 +1359,6 @@ pub fn get_commands() -> Box<HashMap<String, Box<dyn Command>>> {
     map.insert("import".to_string(), Box::new(ImportCommand {}));
     map.insert("export".to_string(), Box::new(ExportCommand {}));
     map.insert("info".to_string(), Box::new(InfoCommand {}));
-    map.insert("zecprice".to_string(), Box::new(ZecPriceCommand {}));
     map.insert("send".to_string(), Box::new(SendCommand {}));
     map.insert("shield".to_string(), Box::new(ShieldCommand {}));
     map.insert("save".to_string(), Box::new(SaveCommand {}));
