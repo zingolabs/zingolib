@@ -1,7 +1,7 @@
 use std::{convert::TryInto, sync::Arc};
 
 use crate::{
-    compact_formats::{CompactBlock, CompactOutput, CompactSpend, CompactTx},
+    compact_formats::{CompactBlock, CompactSaplingOutput, CompactSpend, CompactTx},
     lightclient::test_server::TestServerData,
     wallet::{data::BlockData, keys::ToBase58Check},
 };
@@ -178,7 +178,7 @@ impl FakeTransaction {
         let enc_ciphertext = encryptor.encrypt_note_plaintext();
 
         // Create a fake CompactBlock containing the note
-        let mut cout = CompactOutput::default();
+        let mut cout = CompactSaplingOutput::default();
         cout.cmu = cmu;
         cout.epk = epk;
         cout.ciphertext = enc_ciphertext[..52].to_vec();
@@ -339,7 +339,7 @@ impl FakeCompactBlock {
             };
 
             // Create a fake CompactBlock containing the note
-            let mut cout = CompactOutput::default();
+            let mut cout = CompactSaplingOutput::default();
             cout.cmu = note.cmu().to_bytes().to_vec();
 
             compact_transaction.outputs.push(cout);
@@ -401,7 +401,7 @@ impl FakeCompactBlockList {
                 for c in (*out.ephemeral_key.clone().as_ref()).iter() {
                     epkv.push(*c);
                 }
-                let mut cout = CompactOutput::default();
+                let mut cout = CompactSaplingOutput::default();
                 cout.cmu = out.cmu.to_repr().to_vec();
                 cout.epk = epkv;
                 cout.ciphertext = out.enc_ciphertext[..52].to_vec();

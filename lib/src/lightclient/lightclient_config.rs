@@ -271,7 +271,7 @@ impl LightClientConfig {
         match GrpcConnector::get_sapling_tree(self.server.clone(), height).await {
             Ok(tree_state) => {
                 let hash = tree_state.hash.clone();
-                let tree = tree_state.tree.clone();
+                let tree = tree_state.sapling_tree.clone();
                 Some((tree_state.height, hash, tree))
             }
             Err(e) => {

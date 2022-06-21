@@ -25,10 +25,8 @@ use crate::blaze::fetch_full_transaction::FetchFullTxns;
 use crate::blaze::test_utils::{FakeCompactBlockList, FakeTransaction};
 use crate::lightclient::testmocks;
 
-use crate::compact_formats::{CompactOutput, CompactTx, Empty};
-use crate::lightclient::test_server::{
-    clean_shutdown, create_test_server, mine_pending_blocks, mine_random_blocks,
-};
+use crate::compact_formats::{CompactSaplingOutput, CompactTx, Empty};
+use crate::lightclient::test_server::{clean_shutdown, create_test_server, mine_pending_blocks, mine_random_blocks};
 use crate::lightclient::LightClient;
 use crate::wallet::data::{SaplingNoteData, WalletTx};
 
@@ -489,7 +487,7 @@ async fn multiple_incoming_same_transaction() {
             let enc_ciphertext = encryptor.encrypt_note_plaintext();
 
             // Create a fake CompactBlock containing the note
-            let mut cout = CompactOutput::default();
+            let mut cout = CompactSaplingOutput::default();
             cout.cmu = cmu;
             cout.epk = epk;
             cout.ciphertext = enc_ciphertext[..52].to_vec();

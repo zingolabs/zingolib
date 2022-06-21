@@ -69,12 +69,12 @@ impl CompactBlock {
     }
 }
 
-impl CompactOutput {
+impl CompactSaplingOutput {
     /// Returns the note commitment for this output.
     ///
-    /// A convenience method that parses [`CompactOutput.cmu`].
+    /// A convenience method that parses [`CompactSaplingOutput.cmu`].
     ///
-    /// [`CompactOutput.cmu`]: #structfield.cmu
+    /// [`CompactSaplingOutput.cmu`]: #structfield.cmu
     pub fn cmu(&self) -> Result<bls12_381::Scalar, ()> {
         let mut repr = [0; 32];
         repr.as_mut().copy_from_slice(&self.cmu[..]);
@@ -83,9 +83,9 @@ impl CompactOutput {
 
     /// Returns the ephemeral public key for this output.
     ///
-    /// A convenience method that parses [`CompactOutput.epk`].
+    /// A convenience method that parses [`CompactSaplingOutput.epk`].
     ///
-    /// [`CompactOutput.epk`]: #structfield.epk
+    /// [`CompactSaplingOutput.epk`]: #structfield.epk
     pub fn epk(&self) -> Result<jubjub::ExtendedPoint, ()> {
         let p = jubjub::ExtendedPoint::from_bytes(&self.epk[..].try_into().map_err(|_| ())?);
         if p.is_some().into() {
@@ -96,7 +96,7 @@ impl CompactOutput {
     }
 }
 
-impl<P: Parameters> ShieldedOutput<SaplingDomain<P>, 52_usize> for CompactOutput {
+impl<P: Parameters> ShieldedOutput<SaplingDomain<P>, 52_usize> for CompactSaplingOutput {
     fn ephemeral_key(&self) -> EphemeralKeyBytes {
         EphemeralKeyBytes(*vec_to_array(&self.epk))
     }
