@@ -1,8 +1,9 @@
 use ff::PrimeField;
 use group::GroupEncoding;
+use orchard::note_encryption::OrchardDomain;
 use std::convert::TryInto;
 
-use zcash_note_encryption::{EphemeralKeyBytes, ShieldedOutput};
+use zcash_note_encryption::{EphemeralKeyBytes, ShieldedOutput, COMPACT_NOTE_SIZE};
 use zcash_primitives::{
     block::{BlockHash, BlockHeader},
     consensus::{BlockHeight, Parameters},
@@ -96,14 +97,25 @@ impl CompactSaplingOutput {
     }
 }
 
-impl<P: Parameters> ShieldedOutput<SaplingDomain<P>, 52_usize> for CompactSaplingOutput {
+impl<P: Parameters> ShieldedOutput<SaplingDomain<P>, COMPACT_NOTE_SIZE> for CompactSaplingOutput {
     fn ephemeral_key(&self) -> EphemeralKeyBytes {
         EphemeralKeyBytes(*vec_to_array(&self.epk))
     }
     fn cmstar_bytes(&self) -> [u8; 32] {
         *vec_to_array(&self.cmu)
     }
-    fn enc_ciphertext(&self) -> &[u8; 52] {
+    fn enc_ciphertext(&self) -> &[u8; COMPACT_NOTE_SIZE] {
+        vec_to_array(&self.ciphertext)
+    }
+}
+impl ShieldedOutput<OrchardDomain, COMPACT_NOTE_SIZE> for CompactOrchardAction {
+    fn ephemeral_key(&self) -> EphemeralKeyBytes {
+        EphemeralKeyBytes(*vec_to_array(&self.ephemeral_key))
+    }
+    fn cmstar_bytes(&self) -> [u8; 32] {
+        *vec_to_array(&self.cmx)
+    }
+    fn enc_ciphertext(&self) -> &[u8; COMPACT_NOTE_SIZE] {
         vec_to_array(&self.ciphertext)
     }
 }

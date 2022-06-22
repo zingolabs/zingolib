@@ -32,7 +32,7 @@ use zcash_note_encryption::try_note_decryption;
 use zcash_primitives::{
     consensus::BlockHeight,
     legacy::TransparentAddress,
-    memo::Memo,
+    memo::{Memo, MemoBytes},
     sapling::note_encryption::{try_sapling_note_decryption, try_sapling_output_recovery},
     transaction::{Transaction, TxId},
 };
@@ -83,6 +83,7 @@ impl FetchFullTxns {
             let mut workers = FuturesUnordered::new();
 
             while let Some((transaction_id, height)) = transaction_id_receiver.recv().await {
+                println!("\n Sent transaction from block {height}");
                 let config = config.clone();
                 let keys = keys.clone();
                 let wallet_transactions = wallet_transactions.clone();
@@ -241,8 +242,18 @@ impl FetchFullTxns {
             &mut outgoing_metadatas,
         )
         .await;
-
-        Self::scan_orchard_bundle(&transaction, &keys).await;
+        Self::scan_orchard_bundle(
+            &config,
+            &transaction,
+            height,
+            unconfirmed,
+            block_time,
+            &keys,
+            &wallet_transactions,
+            &mut is_outgoing_transaction,
+            &mut outgoing_metadatas,
+        )
+        .await;
 
         // Process t-address outputs
         // If this transaction in outgoing, i.e., we recieved sent some money in this transaction, then we need to grab all transparent outputs
@@ -534,26 +545,57 @@ impl FetchFullTxns {
             }
         }
     }
-    async fn scan_orchard_bundle(transaction: &Transaction, keys: &Arc<RwLock<Keys>>) {
+    async fn scan_orchard_bundle(
+        config: &LightClientConfig,
+        transaction: &Transaction,
+        height: BlockHeight,
+        unconfirmed: bool,
+        block_time: u32,
+        keys: &Arc<RwLock<Keys>>,
+        wallet_transactions: &Arc<RwLock<WalletTxns>>,
+        is_outgoing_transaction: &mut bool,
+        outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
+    ) {
         use orchard::keys::Scope;
         //Todo: Implement this!
         let fvks = keys
             .read()
             .await
             .get_all_orchard_keys_of_type::<orchard::keys::FullViewingKey>();
-        if let Some(o_bundle) = transaction.orchard_bundle() {
+        println!("Txid {}", transaction.txid());
+        println!("Height {height}");
+        if let Some(o_bundle) = dbg!(transaction.orchard_bundle()) {
             for action in o_bundle.actions().iter() {
-                for (i, ivk) in fvks
-                    .iter()
-                    .map(|fvk| (fvk.to_ivk(Scope::External)))
-                    .enumerate()
-                {
+                for (i, ivk) in fvks.iter().map(|fvk| (fvk.to_ivk(Scope::External))).enumerate() {
+                    println!("try note decryption: {i}");
                     let (note, to, memo_bytes) =
                         match try_note_decryption(&OrchardDomain::for_action(action), &ivk, action)
                         {
                             Some(ret) => ret,
                             None => continue,
                         };
+                    let memo_bytes = MemoBytes::from_bytes(memo_bytes.as_slice()).unwrap();
+                    let memo = memo_bytes.clone().try_into().unwrap_or(Memo::Future(memo_bytes));
+                    println!("Recieved orchard tx with memo {:?}", memo);
+                    //This logic is all sapling specific! Need to implement orchard version
+                    /*
+                    if unconfirmed {
+                        wallet_transactions.write().await.add_pending_note(
+                            transaction.txid(),
+                            height,
+                            block_time as u64,
+                            note.clone(),
+                            to,
+                            &extfvks.get(i).unwrap(),
+                        );
+                    }
+
+                    let memo = memo_bytes.clone().try_into().unwrap_or(Memo::Future(memo_bytes));
+                    wallet_transactions
+                        .write()
+                        .await
+                        .add_memo_to_note(&transaction.txid(), note, memo);
+                    */
                 }
             }
         }

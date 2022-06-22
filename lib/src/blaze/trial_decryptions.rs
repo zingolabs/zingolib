@@ -4,6 +4,7 @@ use crate::{
 };
 use futures::{stream::FuturesUnordered, StreamExt};
 use log::info;
+use orchard::{keys::IncomingViewingKey as OrchardIvk, note_encryption::OrchardDomain};
 use std::sync::Arc;
 use tokio::{
     sync::{
@@ -12,7 +13,6 @@ use tokio::{
     },
     task::JoinHandle,
 };
-
 use zcash_primitives::{
     consensus::BlockHeight,
     sapling::{note_encryption::try_sapling_compact_note_decryption, Nullifier, SaplingIvk},
@@ -60,7 +60,7 @@ impl TrialDecryptions {
             let mut workers = FuturesUnordered::new();
             let mut cbs = vec![];
 
-            let ivks = Arc::new(
+            let sapling_ivks = Arc::new(
                 keys.read()
                     .await
                     .zkeys
@@ -68,13 +68,15 @@ impl TrialDecryptions {
                     .map(|zk| zk.extfvk().fvk.vk.ivk())
                     .collect::<Vec<_>>(),
             );
+            let orchard_ivks = Arc::new(keys.read().await.get_all_orchard_keys_of_type());
 
             while let Some(cb) = receiver.recv().await {
                 cbs.push(cb);
 
                 if cbs.len() >= 1_000 {
                     let keys = keys.clone();
-                    let ivks = ivks.clone();
+                    let sapling_ivks = sapling_ivks.clone();
+                    let orchard_ivks = orchard_ivks.clone();
                     let wallet_transactions = wallet_transactions.clone();
                     let bsync_data = bsync_data.clone();
                     let detected_transaction_id_sender = detected_transaction_id_sender.clone();
@@ -83,7 +85,8 @@ impl TrialDecryptions {
                         cbs.split_off(0),
                         keys,
                         bsync_data,
-                        ivks,
+                        sapling_ivks,
+                        orchard_ivks,
                         wallet_transactions,
                         detected_transaction_id_sender,
                         full_transaction_fetcher.clone(),
@@ -95,7 +98,8 @@ impl TrialDecryptions {
                 cbs,
                 keys,
                 bsync_data,
-                ivks,
+                sapling_ivks,
+                orchard_ivks,
                 wallet_transactions,
                 detected_transaction_id_sender,
                 full_transaction_fetcher,
@@ -115,7 +119,8 @@ impl TrialDecryptions {
         cbs: Vec<CompactBlock>,
         keys: Arc<RwLock<Keys>>,
         bsync_data: Arc<RwLock<BlazeSyncData>>,
-        ivks: Arc<Vec<SaplingIvk>>,
+        sapling_ivks: Arc<Vec<SaplingIvk>>,
+        orchard_ivks: Arc<Vec<OrchardIvk>>,
         wallet_transactions: Arc<RwLock<WalletTxns>>,
         detected_transaction_id_sender: UnboundedSender<(
             TxId,
@@ -145,10 +150,8 @@ impl TrialDecryptions {
                         continue;
                     };
 
-                    for (i, ivk) in ivks.iter().enumerate() {
-                        if let Some((note, to)) =
-                            try_sapling_compact_note_decryption(&config.chain, height, &ivk, co)
-                        {
+                    for (i, ivk) in sapling_ivks.iter().enumerate() {
+                        if let Some((note, to)) = try_sapling_compact_note_decryption(&config.chain, height, &ivk, co) {
                             wallet_transaction = true;
 
                             let keys = keys.clone();
@@ -206,6 +209,14 @@ impl TrialDecryptions {
                             // No need to try the other ivks if we found one
                             break;
                         }
+                    }
+                }
+                for (action_num, action) in compact_transaction.actions.iter().enumerate() {
+                    for (i, ivk) in orchard_ivks.iter().enumerate() {
+                        // if let Some(x) =
+                        //   zcash_note_encryption::try_note_decryption(&OrchardDomain::for_action(action), ivk, action)
+                        // {
+                        // }
                     }
                 }
 
