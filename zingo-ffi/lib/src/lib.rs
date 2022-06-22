@@ -6,8 +6,8 @@ use std::sync::{Arc, Mutex};
 
 use base64::{decode, encode};
 
-use zecwalletlitelib::lightclient::lightclient_config::LightClientConfig;
-use zecwalletlitelib::{commands, lightclient::LightClient};
+use zingolib::lightclient::lightclient_config::LightClientConfig;
+use zingolib::{commands, lightclient::LightClient};
 
 // We'll use a MUTEX to store a global lightclient instance,
 // so we don't have to keep creating it. We need to store it here, in rust
