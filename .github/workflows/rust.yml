@@ -4,7 +4,7 @@ on:
   pull_request:
   push:
     branches:
-      - master
+      - main
       - dev
 
 jobs:
@@ -13,7 +13,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-20.04]
+        os: [ubuntu-22.04]
 
     steps:
       - name:                   Checkout repository
@@ -25,18 +25,6 @@ jobs:
           components:           rustfmt, clippy
       - name: Check formatting of code
         run: cargo fmt --check
-      - name: Grab cached files
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/bin/cargo-tarpaulin
-            ~/.cargo/registry/
-            ~/.cargo/git/
-            ~/.cargo/.crates.toml
-            ~/.cargo/.crates2.json
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo  
       - name:                   Install Tarpaulin 
         uses:                   actions-rs/cargo@v1
         with:
