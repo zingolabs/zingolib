@@ -1,6 +1,6 @@
 use crate::{
     lightclient::lightclient_config::LightClientConfig,
-    lightwallet::{
+    wallet::{
         data::OutgoingTxMetadata,
         keys::{Keys, ToBase58Check},
         wallet_transactions::WalletTxns,

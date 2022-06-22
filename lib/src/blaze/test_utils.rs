@@ -3,7 +3,7 @@ use std::{convert::TryInto, sync::Arc};
 use crate::{
     compact_formats::{CompactBlock, CompactOutput, CompactSpend, CompactTx},
     lightclient::test_server::TestServerData,
-    lightwallet::{data::BlockData, keys::ToBase58Check},
+    wallet::{data::BlockData, keys::ToBase58Check},
 };
 use ff::{Field, PrimeField};
 use group::GroupEncoding;

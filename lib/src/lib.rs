@@ -6,7 +6,7 @@ pub mod commands;
 pub mod compact_formats;
 pub mod grpc_connector;
 pub mod lightclient;
-pub mod lightwallet;
+pub mod wallet;
 
 #[cfg(feature = "embed_params")]
 #[derive(RustEmbed)]

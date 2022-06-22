@@ -1,10 +1,10 @@
 use crate::compact_formats::TreeState;
-use crate::lightwallet::data::WalletTx;
-use crate::lightwallet::wallettkey::WalletTKey;
+use crate::wallet::data::WalletTx;
+use crate::wallet::keys::transparent::WalletTKey;
 use crate::{
     blaze::fetch_full_transaction::FetchFullTxns,
     lightclient::lightclient_config::LightClientConfig,
-    lightwallet::{data::SpendableNote, walletzkey::WalletZKey},
+    wallet::{data::SpendableNote, keys::sapling::WalletZKey},
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::Future;
@@ -37,7 +37,7 @@ use zcash_primitives::{
     },
 };
 
-use self::orchardkeys::WalletOKey;
+use self::keys::orchard::WalletOKey;
 use self::{
     data::{BlockData, SaplingNoteData, Utxo, WalletZecPriceInfo},
     keys::Keys,
@@ -49,11 +49,8 @@ pub(crate) mod data;
 mod extended_key;
 pub(crate) mod keys;
 pub(crate) mod message;
-mod orchardkeys;
 pub(crate) mod utils;
 pub(crate) mod wallet_transactions;
-pub(crate) mod wallettkey;
-mod walletzkey;
 
 pub fn now() -> u64 {
     SystemTime::now()

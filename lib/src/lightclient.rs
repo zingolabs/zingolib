@@ -9,7 +9,7 @@ use crate::{
     compact_formats::RawTransaction,
     grpc_connector::GrpcConnector,
     lightclient::lightclient_config::MAX_REORG,
-    lightwallet::{self, data::WalletTx, keys::Keys, message::Message, now, LightWallet},
+    wallet::{self, data::WalletTx, keys::Keys, message::Message, now, LightWallet},
 };
 use futures::future::join_all;
 use json::{array, object, JsonValue};
@@ -1171,7 +1171,7 @@ impl LightClient {
 
         {
             let mut p = self.wallet.price.write().await;
-            p.last_historical_prices_fetched_at = Some(lightwallet::now());
+            p.last_historical_prices_fetched_at = Some(wallet::now());
             p.historical_prices_retry_count += retry_count_increase;
         }
     }

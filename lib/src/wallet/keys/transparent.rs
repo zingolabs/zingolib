@@ -9,12 +9,11 @@ use zcash_encoding::{Optional, Vector};
 
 use crate::{
     lightclient::lightclient_config::LightClientConfig,
-    lightwallet::extended_key::{ExtendedPrivKey, KeyIndex},
-};
-
-use super::{
-    keys::{FromBase58Check, ToBase58Check},
-    utils,
+    wallet::{
+        extended_key::{ExtendedPrivKey, KeyIndex},
+        keys::{FromBase58Check, ToBase58Check},
+        utils,
+    },
 };
 
 #[derive(Debug, PartialEq, Clone, Copy)]

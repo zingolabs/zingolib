@@ -1,6 +1,6 @@
 use crate::compact_formats::RawTransaction;
 
-use crate::lightwallet::keys::Keys;
+use crate::wallet::keys::Keys;
 use std::sync::Arc;
 use tokio::join;
 use tokio::sync::mpsc::unbounded_channel;
@@ -157,8 +157,8 @@ mod test {
     use crate::compact_formats::RawTransaction;
     use zcash_primitives::transaction::Transaction;
 
-    use crate::lightwallet::keys::Keys;
-    use crate::lightwallet::wallettkey::WalletTKey;
+    use crate::wallet::keys::transparent::WalletTKey;
+    use crate::wallet::keys::Keys;
 
     use super::FetchTaddrTransactions;
 

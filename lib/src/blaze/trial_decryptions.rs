@@ -1,6 +1,6 @@
 use crate::{
     compact_formats::CompactBlock,
-    lightwallet::{data::WalletTx, keys::Keys, wallet_transactions::WalletTxns, MemoDownloadOption},
+    wallet::{data::WalletTx, keys::Keys, wallet_transactions::WalletTxns, MemoDownloadOption},
 };
 use futures::{stream::FuturesUnordered, StreamExt};
 use log::info;
