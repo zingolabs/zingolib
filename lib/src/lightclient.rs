@@ -1002,7 +1002,7 @@ impl LightClient {
         }
 
         let new_address = {
-            let addr = self.wallet.add_imported_orchard_secret_key(key, birthday).await;
+            let addr = self.wallet.add_imported_orchard_spending_key(key, birthday).await;
             if addr.starts_with("Error") {
                 let e = addr;
                 error!("{}", e);

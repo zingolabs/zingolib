@@ -523,7 +523,7 @@ impl LightWallet {
 
     // Add a new imported orchard secret key to the wallet
     /// NOTE: This will not rescan the wallet
-    pub async fn add_imported_orchard_secret_key(&self, osk: String, birthday: u64) -> String {
+    pub async fn add_imported_orchard_spending_key(&self, osk: String, birthday: u64) -> String {
         self.add_imported_spend_key(
             &osk,
             self.config.chain.hrp_orchard_spending_key(),

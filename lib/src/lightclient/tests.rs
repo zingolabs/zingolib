@@ -132,7 +132,7 @@ fn import_orchard_spending_key() {
         lc.do_new_address("o").await.unwrap();
         let new_address = lc
             .wallet
-            .add_imported_orchard_secret_key(
+            .add_imported_orchard_spending_key(
                 "secret-orchard-sk-main10vj29mt2ezeyc8y5ut6knfcdptg3umdsjk4v8zge6fdmt2kepycqs6j2g8".to_string(),
                 0,
             )
