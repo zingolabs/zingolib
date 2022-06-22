@@ -1,6 +1,6 @@
-use crate::lightwallet::keys::Keys;
-use crate::lightwallet::MemoDownloadOption;
-use crate::{lightclient::LightClient, lightwallet::utils};
+use crate::wallet::keys::Keys;
+use crate::wallet::MemoDownloadOption;
+use crate::{lightclient::LightClient, wallet::utils};
 use json::object;
 use lazy_static::lazy_static;
 use std::collections::HashMap;

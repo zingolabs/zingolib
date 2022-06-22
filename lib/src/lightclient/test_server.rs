@@ -7,8 +7,8 @@ use crate::compact_formats::{
     PriceResponse, RawTransaction, SendResponse, TransparentAddressBlockFilter, TreeState, TxFilter,
 };
 use crate::lightclient::lightclient_config::Network;
-use crate::lightwallet::data::WalletTx;
-use crate::lightwallet::now;
+use crate::wallet::data::WalletTx;
+use crate::wallet::now;
 use futures::{FutureExt, Stream};
 use rand::rngs::OsRng;
 use rand::Rng;

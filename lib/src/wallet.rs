@@ -1,10 +1,10 @@
 use crate::compact_formats::TreeState;
-use crate::lightwallet::data::WalletTx;
-use crate::lightwallet::wallettkey::WalletTKey;
+use crate::wallet::data::WalletTx;
+use crate::wallet::keys::transparent::WalletTKey;
 use crate::{
     blaze::fetch_full_transaction::FetchFullTxns,
     lightclient::lightclient_config::LightClientConfig,
-    lightwallet::{data::SpendableNote, walletzkey::WalletZKey},
+    wallet::{data::SpendableNote, keys::sapling::WalletZKey},
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::Future;
@@ -37,23 +37,18 @@ use zcash_primitives::{
     },
 };
 
-use self::orchardkeys::WalletOKey;
 use self::{
     data::{BlockData, SaplingNoteData, Utxo, WalletZecPriceInfo},
-    keys::Keys,
+    keys::{orchard::WalletOKey, Keys},
     message::Message,
-    wallet_transactions::WalletTxns,
+    transactions::WalletTxns,
 };
 
 pub(crate) mod data;
-mod extended_key;
 pub(crate) mod keys;
 pub(crate) mod message;
-mod orchardkeys;
+pub(crate) mod transactions;
 pub(crate) mod utils;
-pub(crate) mod wallet_transactions;
-pub(crate) mod wallettkey;
-mod walletzkey;
 
 pub fn now() -> u64 {
     SystemTime::now()
@@ -523,7 +518,7 @@ impl LightWallet {
 
     // Add a new imported orchard secret key to the wallet
     /// NOTE: This will not rescan the wallet
-    pub async fn add_imported_orchard_secret_key(&self, osk: String, birthday: u64) -> String {
+    pub async fn add_imported_orchard_spending_key(&self, osk: String, birthday: u64) -> String {
         self.add_imported_spend_key(
             &osk,
             self.config.chain.hrp_orchard_spending_key(),

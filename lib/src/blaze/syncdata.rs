@@ -5,8 +5,8 @@ use tokio::sync::RwLock;
 
 use super::{block_witness_data::BlockAndWitnessData, sync_status::SyncStatus};
 use crate::compact_formats::TreeState;
-use crate::lightwallet::WalletOptions;
-use crate::{lightclient::lightclient_config::LightClientConfig, lightwallet::data::BlockData};
+use crate::wallet::WalletOptions;
+use crate::{lightclient::lightclient_config::LightClientConfig, wallet::data::BlockData};
 
 pub struct BlazeSyncData {
     pub(crate) sync_status: Arc<RwLock<SyncStatus>>,

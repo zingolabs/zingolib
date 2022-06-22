@@ -24,14 +24,19 @@ use zcash_primitives::{
 
 use crate::{
     lightclient::lightclient_config::{LightClientConfig, GAP_RULE_UNUSED_ADDRESSES},
-    lightwallet::utils,
+    wallet::utils,
 };
 
-use super::{
-    orchardkeys::{WalletOKey, WalletOKeyInner},
-    wallettkey::{WalletTKey, WalletTKeyType},
-    walletzkey::{WalletZKey, WalletZKeyType},
+use self::{
+    orchard::{WalletOKey, WalletOKeyInner},
+    sapling::{WalletZKey, WalletZKeyType},
+    transparent::{WalletTKey, WalletTKeyType},
 };
+
+pub(crate) mod extended_transparent;
+pub(crate) mod orchard;
+pub(crate) mod sapling;
+pub(crate) mod transparent;
 
 /// Sha256(Sha256(value))
 pub fn double_sha256(payload: &[u8]) -> Vec<u8> {
@@ -613,7 +618,7 @@ impl Keys {
         let bip39_seed = &Mnemonic::from_entropy(self.seed).unwrap().to_seed("");
 
         let spending_key =
-            orchard::keys::SpendingKey::from_zip32_seed(bip39_seed, self.config.get_coin_type(), account).unwrap();
+            ::orchard::keys::SpendingKey::from_zip32_seed(bip39_seed, self.config.get_coin_type(), account).unwrap();
 
         let newkey = WalletOKey::new_hdkey(account, spending_key);
         self.okeys.push(newkey.clone());
@@ -685,7 +690,7 @@ impl Keys {
             .iter()
             .map(|k| {
                 use bech32::ToBase32 as _;
-                let pkey = match orchard::keys::SpendingKey::try_from(&k.key) {
+                let pkey = match ::orchard::keys::SpendingKey::try_from(&k.key) {
                     Ok(spending_key) => bech32::encode(
                         self.config.chain.hrp_orchard_spending_key(),
                         spending_key.to_bytes().to_base32(),
@@ -695,7 +700,7 @@ impl Keys {
                     Err(_) => "".to_string(),
                 };
 
-                let vkey = match orchard::keys::FullViewingKey::try_from(&k.key) {
+                let vkey = match ::orchard::keys::FullViewingKey::try_from(&k.key) {
                     Ok(viewing_key) => {
                         Ufvk::try_from_items(vec![zcash_address::unified::Fvk::Orchard(viewing_key.to_bytes())])
                             .map(|vk| vk.encode(&self.get_network_enum()))

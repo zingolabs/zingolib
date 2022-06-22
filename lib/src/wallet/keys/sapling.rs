@@ -13,7 +13,7 @@ use zcash_primitives::{
 
 use crate::lightclient::lightclient_config::LightClientConfig;
 
-use super::keys::Keys;
+use super::Keys;
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum WalletZKeyType {
@@ -25,14 +25,14 @@ pub enum WalletZKeyType {
 // A struct that holds z-address private keys or view keys
 #[derive(Clone, Debug, PartialEq)]
 pub struct WalletZKey {
-    pub(super) keytype: WalletZKeyType,
+    pub(crate) keytype: WalletZKeyType,
     locked: bool,
-    pub(super) extsk: Option<ExtendedSpendingKey>,
-    pub(super) extfvk: ExtendedFullViewingKey,
-    pub(super) zaddress: PaymentAddress,
+    pub(crate) extsk: Option<ExtendedSpendingKey>,
+    pub(crate) extfvk: ExtendedFullViewingKey,
+    pub(crate) zaddress: PaymentAddress,
 
     // If this is a HD key, what is the key number
-    pub(super) hdkey_num: Option<u32>,
+    pub(crate) hdkey_num: Option<u32>,
 
     // If locked, the encrypted private key is stored here
     enc_key: Option<Vec<u8>>,
@@ -310,7 +310,7 @@ impl WalletZKey {
         }
     }
 }
-impl super::WalletKey for WalletZKey {
+impl crate::wallet::WalletKey for WalletZKey {
     type Address = PaymentAddress;
     type SpendKey = ExtendedSpendingKey;
     fn address(&self) -> Self::Address {

@@ -28,7 +28,7 @@ use crate::lightclient::testmocks;
 use crate::compact_formats::{CompactOutput, CompactTx, Empty};
 use crate::lightclient::test_server::{clean_shutdown, create_test_server, mine_pending_blocks, mine_random_blocks};
 use crate::lightclient::LightClient;
-use crate::lightwallet::data::{SaplingNoteData, WalletTx};
+use crate::wallet::data::{SaplingNoteData, WalletTx};
 
 use super::checkpoints;
 use super::lightclient_config::{LightClientConfig, Network};
@@ -132,7 +132,7 @@ fn import_orchard_spending_key() {
         lc.do_new_address("o").await.unwrap();
         let new_address = lc
             .wallet
-            .add_imported_orchard_secret_key(
+            .add_imported_orchard_spending_key(
                 "secret-orchard-sk-main10vj29mt2ezeyc8y5ut6knfcdptg3umdsjk4v8zge6fdmt2kepycqs6j2g8".to_string(),
                 0,
             )
@@ -1483,7 +1483,7 @@ fn test_read_wallet_from_buffer() {
     let mut buf = Vec::new();
     let config = LightClientConfig::create_unconnected(Network::FakeMainnet, None);
     Runtime::new().unwrap().block_on(async {
-        let wallet = crate::lightwallet::LightWallet::new(config.clone(), None, 0, 7).unwrap();
+        let wallet = crate::wallet::LightWallet::new(config.clone(), None, 0, 7).unwrap();
         wallet.write(&mut buf).await.unwrap();
     });
     let client = LightClient::read_from_buffer(&config, &buf[..]).unwrap();
@@ -1508,9 +1508,9 @@ async fn read_write_block_data() {
     assert_eq!(lc.wallet.last_scanned_height().await, 10);
     for block in fcbl.blocks {
         let block_bytes: &mut [u8] = &mut [];
-        let cb = crate::lightwallet::data::BlockData::new(block.block);
+        let cb = crate::wallet::data::BlockData::new(block.block);
         cb.write(&mut *block_bytes).unwrap();
-        assert_eq!(cb, crate::lightwallet::data::BlockData::read(&*block_bytes).unwrap());
+        assert_eq!(cb, crate::wallet::data::BlockData::read(&*block_bytes).unwrap());
     }
     clean_shutdown(stop_transmitter, h1).await;
 }

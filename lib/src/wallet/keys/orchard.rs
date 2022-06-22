@@ -3,13 +3,13 @@ use zcash_address::unified::{Address as UnifiedAddress, Encoding, Receiver};
 // A struct that holds orchard private keys or view keys
 #[derive(Clone, Debug, PartialEq)]
 pub struct WalletOKey {
-    pub(super) key: WalletOKeyInner,
+    pub(crate) key: WalletOKeyInner,
     locked: bool,
-    pub(super) unified_address: UnifiedAddress,
+    pub(crate) unified_address: UnifiedAddress,
 
     // If this is a key derived from our HD seed, the account number of the key
     // This is effectively the index number used to generate the key from the seed
-    pub(super) hdkey_num: Option<u32>,
+    pub(crate) hdkey_num: Option<u32>,
 
     // If locked, the encrypted private key is stored here
     enc_key: Option<Vec<u8>>,
@@ -108,7 +108,7 @@ impl WalletOKey {
     }
 }
 
-impl super::WalletKey for WalletOKey {
+impl crate::wallet::WalletKey for WalletOKey {
     type Address = UnifiedAddress;
     type SpendKey = SpendingKey;
     fn address(&self) -> Self::Address {
