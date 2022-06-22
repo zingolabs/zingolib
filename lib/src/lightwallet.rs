@@ -503,7 +503,7 @@ impl LightWallet {
 
     // Add a new imported spending key to the wallet
     /// NOTE: This will not rescan the wallet
-    pub async fn add_imported_sk(&self, sk: String, birthday: u64) -> String {
+    pub async fn add_imported_sapling_extsk(&self, sk: String, birthday: u64) -> String {
         self.add_imported_spend_key(
             &sk,
             self.config.hrp_sapling_private_key(),
@@ -634,7 +634,7 @@ impl LightWallet {
     }
     // Add a new imported viewing key to the wallet
     /// NOTE: This will not rescan the wallet
-    pub async fn add_imported_vk(&self, vk: String, birthday: u64) -> String {
+    pub async fn add_imported_sapling_extfvk(&self, vk: String, birthday: u64) -> String {
         self.add_imported_key(
             &vk,
             self.config.hrp_sapling_viewing_key(),

@@ -1025,7 +1025,7 @@ impl LightClient {
         }
 
         let new_address = {
-            let addr = self.wallet.add_imported_sk(sk, birthday).await;
+            let addr = self.wallet.add_imported_sapling_extsk(sk, birthday).await;
             if addr.starts_with("Error") {
                 let e = addr;
                 error!("{}", e);
@@ -1048,7 +1048,7 @@ impl LightClient {
         }
 
         let new_address = {
-            let addr = self.wallet.add_imported_vk(vk, birthday).await;
+            let addr = self.wallet.add_imported_sapling_extfvk(vk, birthday).await;
             if addr.starts_with("Error") {
                 let e = addr;
                 error!("{}", e);
