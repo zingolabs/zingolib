@@ -123,6 +123,24 @@ pub struct Keys {
 }
 
 impl Keys {
+    pub(crate) fn zkeys(&self) -> &Vec<WalletZKey> {
+        &self.zkeys
+    }
+    pub(crate) fn okeys(&self) -> &Vec<WalletOKey> {
+        &self.okeys
+    }
+    pub(crate) fn tkeys(&self) -> &Vec<WalletTKey> {
+        &self.tkeys
+    }
+    pub(crate) fn zkeys_mut(&mut self) -> &mut Vec<WalletZKey> {
+        &mut self.zkeys
+    }
+    pub(crate) fn okeys_mut(&mut self) -> &mut Vec<WalletOKey> {
+        &mut self.okeys
+    }
+    pub(crate) fn tkeys_mut(&mut self) -> &mut Vec<WalletTKey> {
+        &mut self.tkeys
+    }
     pub fn serialized_version() -> u64 {
         return 21;
     }
@@ -412,8 +430,15 @@ impl Keys {
         Mnemonic::from_entropy(self.seed).unwrap().phrase().to_string()
     }
 
-    pub fn get_all_extfvks(&self) -> Vec<ExtendedFullViewingKey> {
+    pub fn get_all_sapling_extfvks(&self) -> Vec<ExtendedFullViewingKey> {
         self.zkeys.iter().map(|zk| zk.extfvk.clone()).collect()
+    }
+
+    pub(crate) fn get_all_orchard_keys_of_type<T>(&self) -> Vec<T>
+    where
+        for<'a> T: TryFrom<&'a WalletOKeyInner>,
+    {
+        self.okeys.iter().filter_map(|k| T::try_from(&k.key).ok()).collect()
     }
 
     pub fn get_all_zaddresses(&self) -> Vec<String> {
@@ -581,9 +606,9 @@ impl Keys {
         let account = self
             .okeys
             .iter()
-            .filter(|ok| ok.hdkey_num.is_some())
-            .max_by(|ok1, ok2| ok1.hdkey_num.unwrap().cmp(&ok2.hdkey_num.unwrap()))
-            .map_or(0, |ok| ok.hdkey_num.unwrap() + 1);
+            .filter_map(|ok| ok.hdkey_num)
+            .max()
+            .map_or(0, |hdkey_num| hdkey_num + 1);
 
         let bip39_seed = &Mnemonic::from_entropy(self.seed).unwrap().to_seed("");
 
@@ -660,23 +685,23 @@ impl Keys {
             .iter()
             .map(|k| {
                 use bech32::ToBase32 as _;
-                let pkey = match k.key.spending_key() {
-                    Some(spending_key) => bech32::encode(
+                let pkey = match orchard::keys::SpendingKey::try_from(&k.key) {
+                    Ok(spending_key) => bech32::encode(
                         self.config.chain.hrp_orchard_spending_key(),
                         spending_key.to_bytes().to_base32(),
                         bech32::Variant::Bech32m,
                     )
                     .unwrap_or_else(|e| e.to_string()),
-                    None => "".to_string(),
+                    Err(_) => "".to_string(),
                 };
 
-                let vkey = match k.key.full_viewing_key() {
-                    Some(viewing_key) => {
+                let vkey = match orchard::keys::FullViewingKey::try_from(&k.key) {
+                    Ok(viewing_key) => {
                         Ufvk::try_from_items(vec![zcash_address::unified::Fvk::Orchard(viewing_key.to_bytes())])
                             .map(|vk| vk.encode(&self.get_network_enum()))
                             .unwrap_or_else(|e| e.to_string())
                     }
-                    None => "".to_string(),
+                    Err(_) => "".to_string(),
                 };
 
                 (k.unified_address.encode(&self.get_network_enum()), pkey, vkey)

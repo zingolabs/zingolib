@@ -1,5 +1,5 @@
-use orchard::keys::{Diversifier, FullViewingKey, IncomingViewingKey, OutgoingViewingKey, Scope, SpendingKey};
-use zcash_address::unified::{Address as UnifiedAddress, Encoding, Receiver, Typecode};
+use orchard::keys::{FullViewingKey, IncomingViewingKey, OutgoingViewingKey, Scope, SpendingKey};
+use zcash_address::unified::{Address as UnifiedAddress, Encoding, Receiver};
 // A struct that holds orchard private keys or view keys
 #[derive(Clone, Debug, PartialEq)]
 pub struct WalletOKey {
@@ -7,7 +7,8 @@ pub struct WalletOKey {
     locked: bool,
     pub(super) unified_address: UnifiedAddress,
 
-    // If this is a HD key, what is the key number
+    // If this is a key derived from our HD seed, the account number of the key
+    // This is effectively the index number used to generate the key from the seed
     pub(super) hdkey_num: Option<u32>,
 
     // If locked, the encrypted private key is stored here
@@ -42,20 +43,35 @@ pub(crate) enum WalletOKeyInner {
     ImportedOutViewKey(OutgoingViewingKey),
 }
 
-impl WalletOKeyInner {
-    pub(crate) fn spending_key(&self) -> Option<SpendingKey> {
-        match self {
-            Self::HdKey(k) => Some(*k),
-            Self::ImportedSpendingKey(k) => Some(*k),
-            _ => None,
+impl TryFrom<&WalletOKeyInner> for SpendingKey {
+    type Error = String;
+    fn try_from(key: &WalletOKeyInner) -> Result<SpendingKey, String> {
+        match key {
+            WalletOKeyInner::HdKey(k) => Ok(*k),
+            WalletOKeyInner::ImportedSpendingKey(k) => Ok(*k),
+            other => Err(format!("{other:?} is not a spending key")),
         }
     }
-    pub(crate) fn full_viewing_key(&self) -> Option<FullViewingKey> {
-        match self {
-            Self::HdKey(k) => Some(FullViewingKey::from(k)),
-            Self::ImportedSpendingKey(k) => Some(FullViewingKey::from(k)),
-            Self::ImportedFullViewKey(k) => Some(k.clone()),
-            _ => None,
+}
+impl TryFrom<&WalletOKeyInner> for FullViewingKey {
+    type Error = String;
+    fn try_from(key: &WalletOKeyInner) -> Result<FullViewingKey, String> {
+        match key {
+            WalletOKeyInner::HdKey(k) => Ok(FullViewingKey::from(k)),
+            WalletOKeyInner::ImportedSpendingKey(k) => Ok(FullViewingKey::from(k)),
+            WalletOKeyInner::ImportedFullViewKey(k) => Ok(k.clone()),
+            other => Err(format!("{other:?} is not a full viewing key")),
+        }
+    }
+}
+impl TryFrom<&WalletOKeyInner> for OutgoingViewingKey {
+    type Error = String;
+    fn try_from(key: &WalletOKeyInner) -> Result<OutgoingViewingKey, String> {
+        match key {
+            WalletOKeyInner::ImportedOutViewKey(k) => Ok(k.clone()),
+            WalletOKeyInner::ImportedFullViewKey(k) => Ok(k.to_ovk(Scope::External)),
+            WalletOKeyInner::ImportedInViewKey(k) => Err(format!("Received ivk {k:?} which does not contain an ovk")),
+            _ => Ok(FullViewingKey::try_from(key).unwrap().to_ovk(Scope::External)),
         }
     }
 }
@@ -89,5 +105,17 @@ impl WalletOKey {
             enc_key: None,
             nonce: None,
         }
+    }
+}
+
+impl super::WalletKey for WalletOKey {
+    type Address = UnifiedAddress;
+    type SpendKey = SpendingKey;
+    fn address(&self) -> Self::Address {
+        self.unified_address.clone()
+    }
+
+    fn set_spend_key_for_view_key(&mut self, key: Self::SpendKey) {
+        self.key = WalletOKeyInner::ImportedSpendingKey(key)
     }
 }
