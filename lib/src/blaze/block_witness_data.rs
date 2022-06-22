@@ -7,7 +7,7 @@ use crate::{
     },
     wallet::{
         data::{BlockData, WalletTx, WitnessCache},
-        wallet_transactions::WalletTxns,
+        transactions::WalletTxns,
     },
 };
 
@@ -589,7 +589,7 @@ mod test {
 
     use crate::blaze::sync_status::SyncStatus;
     use crate::lightclient::lightclient_config::Network;
-    use crate::wallet::wallet_transactions::WalletTxns;
+    use crate::wallet::transactions::WalletTxns;
     use crate::{
         blaze::test_utils::{FakeCompactBlock, FakeCompactBlockList},
         lightclient::lightclient_config::LightClientConfig,

@@ -37,20 +37,18 @@ use zcash_primitives::{
     },
 };
 
-use self::keys::orchard::WalletOKey;
 use self::{
     data::{BlockData, SaplingNoteData, Utxo, WalletZecPriceInfo},
-    keys::Keys,
+    keys::{orchard::WalletOKey, Keys},
     message::Message,
-    wallet_transactions::WalletTxns,
+    transactions::WalletTxns,
 };
 
 pub(crate) mod data;
-mod extended_key;
 pub(crate) mod keys;
 pub(crate) mod message;
+pub(crate) mod transactions;
 pub(crate) mod utils;
-pub(crate) mod wallet_transactions;
 
 pub fn now() -> u64 {
     SystemTime::now()

@@ -33,6 +33,7 @@ use self::{
     transparent::{WalletTKey, WalletTKeyType},
 };
 
+pub(crate) mod extended_transparent;
 pub(crate) mod orchard;
 pub(crate) mod sapling;
 pub(crate) mod transparent;

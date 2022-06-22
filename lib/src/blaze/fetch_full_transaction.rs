@@ -3,7 +3,7 @@ use crate::{
     wallet::{
         data::OutgoingTxMetadata,
         keys::{Keys, ToBase58Check},
-        wallet_transactions::WalletTxns,
+        transactions::WalletTxns,
     },
 };
 

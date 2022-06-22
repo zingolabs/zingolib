@@ -1,5 +1,5 @@
 use crate::wallet::MemoDownloadOption;
-use crate::wallet::{data::WalletTx, wallet_transactions::WalletTxns};
+use crate::wallet::{data::WalletTx, transactions::WalletTxns};
 use std::sync::Arc;
 
 use futures::stream::FuturesUnordered;
