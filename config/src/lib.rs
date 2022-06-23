@@ -2,6 +2,8 @@ use zcash_primitives::{
     consensus::{BlockHeight, NetworkUpgrade, Parameters, MAIN_NETWORK, TEST_NETWORK},
     constants,
 };
+
+pub const DEFAULT_SERVER: &str = "https://lwdv3.zecwallet.co";
 pub const MAX_REORG: usize = 100;
 
 #[derive(Clone, Copy, Debug, PartialEq)]

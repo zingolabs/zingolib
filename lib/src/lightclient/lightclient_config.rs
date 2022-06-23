@@ -23,9 +23,8 @@ use zcash_primitives::{
 };
 
 use crate::{grpc_connector::GrpcConnector, lightclient::checkpoints};
-use zingoconfig::Network;
+use zingoconfig::{Network, DEFAULT_SERVER};
 
-pub const DEFAULT_SERVER: &str = "https://lwdv3.zecwallet.co";
 pub const WALLET_NAME: &str = "zingo-wallet.dat";
 pub const LOGFILE_NAME: &str = "zingo-wallet.debug.log";
 pub const ANCHOR_OFFSET: [u32; 5] = [4, 0, 0, 0, 0];

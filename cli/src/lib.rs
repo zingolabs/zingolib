@@ -1,10 +1,8 @@
-use std::io::{self};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 
 use log::{error, info};
 
-use zingoconfig::Network;
 use zingolib::lightclient::lightclient_config::LightClientConfig;
 use zingolib::{commands, lightclient::LightClient};
 
@@ -43,7 +41,7 @@ macro_rules! configure_clapapp {
                 .value_name("server")
                 .help("Lightwalletd server to connect to.")
                 .takes_value(true)
-                .default_value(lightclient::lightclient_config::DEFAULT_SERVER)
+                .default_value(zingoconfig::DEFAULT_SERVER)
                 .takes_value(true))
             .arg(Arg::with_name("data-dir")
                 .long("data-dir")
@@ -90,7 +88,7 @@ pub fn startup(
     data_dir: Option<String>,
     first_sync: bool,
     print_updates: bool,
-) -> io::Result<(Sender<(String, Vec<String>)>, Receiver<String>)> {
+) -> std::io::Result<(Sender<(String, Vec<String>)>, Receiver<String>)> {
     // Try to get the configuration
     let (config, latest_block_height) =
         LightClientConfig::create_on_data_dir(server.clone(), data_dir)?;
