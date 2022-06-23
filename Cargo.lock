@@ -3403,7 +3403,16 @@ dependencies = [
  "log",
  "rustyline",
  "shellwords",
+ "zingoconfig",
  "zingolib",
+]
+
+[[package]]
+name = "zingoconfig"
+version = "0.1.0"
+dependencies = [
+ "zcash_address",
+ "zcash_primitives",
 ]
 
 [[package]]
@@ -3459,4 +3468,5 @@ dependencies = [
  "zcash_note_encryption 0.1.0 (git+https://github.com/zcash/librustzcash?rev=73d9395c9d3c5fa81fc7becd363a2c1a51772a76)",
  "zcash_primitives",
  "zcash_proofs",
+ "zingoconfig",
 ]

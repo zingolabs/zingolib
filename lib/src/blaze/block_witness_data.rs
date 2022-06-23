@@ -1,15 +1,13 @@
 use crate::{
     compact_formats::{CompactBlock, CompactTx, TreeState},
     grpc_connector::GrpcConnector,
-    lightclient::{
-        checkpoints::get_all_main_checkpoints,
-        lightclient_config::{LightClientConfig, MAX_REORG},
-    },
+    lightclient::{checkpoints::get_all_main_checkpoints, lightclient_config::LightClientConfig},
     wallet::{
         data::{BlockData, WalletTx, WitnessCache},
         transactions::WalletTxns,
     },
 };
+use zingoconfig::MAX_REORG;
 
 use futures::future::join_all;
 use http::Uri;
@@ -588,7 +586,6 @@ mod test {
     use std::sync::Arc;
 
     use crate::blaze::sync_status::SyncStatus;
-    use crate::lightclient::lightclient_config::Network;
     use crate::wallet::transactions::WalletTxns;
     use crate::{
         blaze::test_utils::{FakeCompactBlock, FakeCompactBlockList},
@@ -601,6 +598,7 @@ mod test {
     use tokio::sync::RwLock;
     use tokio::{sync::mpsc::unbounded_channel, task::JoinHandle};
     use zcash_primitives::block::BlockHash;
+    use zingoconfig::Network;
 
     use super::BlockAndWitnessData;
 

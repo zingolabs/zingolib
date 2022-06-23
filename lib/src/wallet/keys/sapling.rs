@@ -335,7 +335,7 @@ pub mod tests {
     fn get_config() -> LightClientConfig {
         LightClientConfig {
             server: "0.0.0.0:0".parse().unwrap(),
-            chain: crate::lightclient::lightclient_config::Network::FakeMainnet,
+            chain: zingoconfig::Network::FakeMainnet,
             monitor_mempool: false,
             anchor_offset: [0u32; 5],
             data_dir: None,

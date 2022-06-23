@@ -8,7 +8,6 @@ use crate::{
     },
     compact_formats::RawTransaction,
     grpc_connector::GrpcConnector,
-    lightclient::lightclient_config::MAX_REORG,
     wallet::{self, data::WalletTx, keys::Keys, message::Message, now, LightWallet},
 };
 use futures::future::join_all;
@@ -38,6 +37,7 @@ use zcash_primitives::{
     transaction::{components::amount::DEFAULT_FEE, Transaction, TxId},
 };
 use zcash_proofs::prover::LocalTxProver;
+use zingoconfig::MAX_REORG;
 
 pub(crate) mod checkpoints;
 pub mod lightclient_config;

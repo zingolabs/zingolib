@@ -31,7 +31,8 @@ use crate::lightclient::LightClient;
 use crate::wallet::data::{SaplingNoteData, WalletTx};
 
 use super::checkpoints;
-use super::lightclient_config::{LightClientConfig, Network};
+use super::lightclient_config::LightClientConfig;
+use zingoconfig::Network;
 
 #[test]
 fn new_wallet_from_phrase() {

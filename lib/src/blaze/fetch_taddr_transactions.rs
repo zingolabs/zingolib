@@ -258,7 +258,7 @@ mod test {
                 1,
                 taddr_fetcher_transmitter,
                 full_transaction_scanner_transmitter,
-                crate::lightclient::lightclient_config::Network::FakeMainnet,
+                zingoconfig::Network::FakeMainnet,
             )
             .await;
         //Todo: Add regtest support

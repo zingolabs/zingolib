@@ -6,7 +6,7 @@ use crate::compact_formats::{
     GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList, LightdInfo, PingResponse, PriceRequest,
     PriceResponse, RawTransaction, SendResponse, TransparentAddressBlockFilter, TreeState, TxFilter,
 };
-use crate::lightclient::lightclient_config::Network;
+use zingoconfig::Network;
 use crate::wallet::data::WalletTx;
 use crate::wallet::now;
 use futures::{FutureExt, Stream};

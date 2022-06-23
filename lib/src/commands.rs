@@ -1339,7 +1339,7 @@ pub mod tests {
             .unwrap()
             .block_on(LightClient::test_new(
                 &LightClientConfig::create_unconnected(
-                    crate::lightclient::lightclient_config::Network::FakeMainnet,
+                    zingoconfig::Network::FakeMainnet,
                     None,
                 ),
                 Some(TEST_SEED.to_string()),

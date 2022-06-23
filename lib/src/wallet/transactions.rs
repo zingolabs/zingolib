@@ -15,7 +15,7 @@ use zcash_primitives::{
     zip32::ExtendedFullViewingKey,
 };
 
-use crate::lightclient::lightclient_config::MAX_REORG;
+use zingoconfig::MAX_REORG;
 
 use super::data::{OutgoingTxMetadata, SaplingNoteData, Utxo, WalletTx, WitnessCache};
 

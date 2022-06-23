@@ -12,3 +12,4 @@ json = "0.12.4"
 http = "0.2.8"
 
 zingolib = { path = "../lib/" }
+zingoconfig = { path = "../config/" }

@@ -1,4 +1,4 @@
-use super::lightclient_config::Network;
+use zingoconfig::Network;
 
 pub fn get_closest_checkpoint(chain: &Network, height: u64) -> Option<(u64, &'static str, &'static str)> {
     log::info!("Trying to get checkpoint closest to block {}", height);

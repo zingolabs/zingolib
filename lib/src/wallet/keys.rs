@@ -21,6 +21,7 @@ use zcash_primitives::{
     sapling::PaymentAddress,
     zip32::{ChildIndex, ExtendedFullViewingKey, ExtendedSpendingKey},
 };
+use zingoconfig::Network;
 
 use crate::{
     lightclient::lightclient_config::{LightClientConfig, GAP_RULE_UNUSED_ADDRESSES},
@@ -152,8 +153,7 @@ impl Keys {
 
     #[cfg(test)]
     pub fn new_empty() -> Self {
-        let config =
-            LightClientConfig::create_unconnected(crate::lightclient::lightclient_config::Network::FakeMainnet, None);
+        let config = LightClientConfig::create_unconnected(Network::FakeMainnet, None);
         Self {
             config,
             encrypted: false,
@@ -465,9 +465,9 @@ impl Keys {
 
     fn get_network_enum(&self) -> zcash_address::Network {
         match self.config.chain {
-            crate::lightclient::lightclient_config::Network::Mainnet => zcash_address::Network::Main,
-            crate::lightclient::lightclient_config::Network::Testnet => zcash_address::Network::Test,
-            crate::lightclient::lightclient_config::Network::FakeMainnet => zcash_address::Network::Main,
+            Network::Mainnet => zcash_address::Network::Main,
+            Network::Testnet => zcash_address::Network::Test,
+            Network::FakeMainnet => zcash_address::Network::Main,
         }
     }
 
@@ -625,9 +625,9 @@ impl Keys {
 
         use zcash_address::unified::Encoding as _;
         newkey.unified_address.encode(&match self.config.chain {
-            crate::lightclient::lightclient_config::Network::Mainnet => zcash_address::Network::Main,
-            crate::lightclient::lightclient_config::Network::Testnet => zcash_address::Network::Test,
-            crate::lightclient::lightclient_config::Network::FakeMainnet => zcash_address::Network::Main,
+            Network::Mainnet => zcash_address::Network::Main,
+            Network::Testnet => zcash_address::Network::Test,
+            Network::FakeMainnet => zcash_address::Network::Main,
         })
     }
     /// Add a new t address to the wallet. This will derive a new address from the seed
