@@ -1,6 +1,9 @@
 use zingoconfig::Network;
 
-pub fn get_closest_checkpoint(chain: &Network, height: u64) -> Option<(u64, &'static str, &'static str)> {
+pub fn get_closest_checkpoint(
+    chain: &Network,
+    height: u64,
+) -> Option<(u64, &'static str, &'static str)> {
     log::info!("Trying to get checkpoint closest to block {}", height);
     match chain {
         Network::Testnet => get_test_checkpoint(height),
@@ -103,7 +106,10 @@ fn find_checkpoint(
     heights.sort();
 
     match get_first_lower_than(height, heights) {
-        Some(closest_height) => chkpts.iter().find(|(h, _, _)| *h == closest_height).map(|t| *t),
+        Some(closest_height) => chkpts
+            .iter()
+            .find(|(h, _, _)| *h == closest_height)
+            .map(|t| *t),
         None => None,
     }
 }

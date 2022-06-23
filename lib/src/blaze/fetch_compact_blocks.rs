@@ -1,7 +1,8 @@
 use std::{cmp::max, sync::Arc};
 
 use crate::{
-    compact_formats::CompactBlock, grpc_connector::GrpcConnector, lightclient::lightclient_config::LightClientConfig,
+    compact_formats::CompactBlock, grpc_connector::GrpcConnector,
+    lightclient::lightclient_config::LightClientConfig,
 };
 use log::info;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -12,7 +13,9 @@ pub struct FetchCompactBlocks {
 
 impl FetchCompactBlocks {
     pub fn new(config: &LightClientConfig) -> Self {
-        Self { config: config.clone() }
+        Self {
+            config: config.clone(),
+        }
     }
 
     async fn fetch_blocks_range(
@@ -53,12 +56,14 @@ impl FetchCompactBlocks {
         }
 
         //info!("Starting fetch compact blocks");
-        self.fetch_blocks_range(&senders, start_block, end_block).await?;
+        self.fetch_blocks_range(&senders, start_block, end_block)
+            .await?;
 
         // After fetching all the normal blocks, we actually wait to see if any re-org'd blocks are recieved
         while let Some(Some(reorg_block)) = reorg_receiver.recv().await {
             // Fetch the additional block.
-            self.fetch_blocks_range(&senders, reorg_block, reorg_block).await?;
+            self.fetch_blocks_range(&senders, reorg_block, reorg_block)
+                .await?;
         }
 
         //info!("Finished fetch compact blocks, closing channels");

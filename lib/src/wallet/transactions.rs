@@ -150,7 +150,9 @@ impl WalletTxns {
                 }
 
                 // Remove unconfirmed spends too
-                if nd.unconfirmed_spent.is_some() && txids_to_remove.contains(&nd.unconfirmed_spent.unwrap().0) {
+                if nd.unconfirmed_spent.is_some()
+                    && txids_to_remove.contains(&nd.unconfirmed_spent.unwrap().0)
+                {
                     nd.unconfirmed_spent = None;
                 }
             });
@@ -162,7 +164,9 @@ impl WalletTxns {
                     utxo.spent_at_height = None;
                 }
 
-                if utxo.unconfirmed_spent.is_some() && txids_to_remove.contains(&utxo.unconfirmed_spent.unwrap().0) {
+                if utxo.unconfirmed_spent.is_some()
+                    && txids_to_remove.contains(&utxo.unconfirmed_spent.unwrap().0)
+                {
                     utxo.unconfirmed_spent = None;
                 }
             })
@@ -248,7 +252,11 @@ impl WalletTxns {
             .collect()
     }
 
-    pub(crate) fn get_note_witness(&self, txid: &TxId, nullifier: &Nullifier) -> Option<(WitnessCache, BlockHeight)> {
+    pub(crate) fn get_note_witness(
+        &self,
+        txid: &TxId,
+        nullifier: &Nullifier,
+    ) -> Option<(WitnessCache, BlockHeight)> {
         self.current.get(txid).map(|wtx| {
             wtx.notes
                 .iter()
@@ -257,7 +265,12 @@ impl WalletTxns {
         })?
     }
 
-    pub(crate) fn set_note_witnesses(&mut self, txid: &TxId, nullifier: &Nullifier, witnesses: WitnessCache) {
+    pub(crate) fn set_note_witnesses(
+        &mut self,
+        txid: &TxId,
+        nullifier: &Nullifier,
+        witnesses: WitnessCache,
+    ) {
         self.current
             .get_mut(txid)
             .unwrap()
@@ -274,7 +287,9 @@ impl WalletTxns {
         self.current.iter_mut().for_each(|(_, wtx)| {
             wtx.notes
                 .iter_mut()
-                .filter(|n| !n.witnesses.is_empty() && n.spent.is_some() && n.spent.unwrap().1 < cutoff)
+                .filter(|n| {
+                    !n.witnesses.is_empty() && n.spent.is_some() && n.spent.unwrap().1 < cutoff
+                })
                 .for_each(|n| n.witnesses.clear());
         });
     }
@@ -373,12 +388,22 @@ impl WalletTxns {
     ) {
         // Record this Tx as having spent some funds
         {
-            let wtx = self.get_or_create_tx(&txid, BlockHeight::from(height), unconfirmed, timestamp as u64);
+            let wtx = self.get_or_create_tx(
+                &txid,
+                BlockHeight::from(height),
+                unconfirmed,
+                timestamp as u64,
+            );
 
             // Mark the height correctly, in case this was previously a mempool or unconfirmed tx.
             wtx.block = height;
 
-            if wtx.spent_nullifiers.iter().find(|nf| **nf == nullifier).is_none() {
+            if wtx
+                .spent_nullifiers
+                .iter()
+                .find(|nf| **nf == nullifier)
+                .is_none()
+            {
                 wtx.spent_nullifiers.push(nullifier);
                 wtx.total_sapling_value_spent += value;
             }
@@ -389,12 +414,18 @@ impl WalletTxns {
 
         // Mark the source note's nullifier as spent
         if !unconfirmed {
-            let wtx = self.current.get_mut(&source_txid).expect("Txid should be present");
+            let wtx = self
+                .current
+                .get_mut(&source_txid)
+                .expect("Txid should be present");
 
-            wtx.notes.iter_mut().find(|n| n.nullifier == nullifier).map(|nd| {
-                // Record the spent height
-                nd.spent = Some((txid, height.into()));
-            });
+            wtx.notes
+                .iter_mut()
+                .find(|n| n.nullifier == nullifier)
+                .map(|nd| {
+                    // Record the spent height
+                    nd.spent = Some((txid, height.into()));
+                });
         }
     }
 
@@ -584,7 +615,11 @@ impl WalletTxns {
         });
     }
 
-    pub fn add_outgoing_metadata(&mut self, txid: &TxId, outgoing_metadata: Vec<OutgoingTxMetadata>) {
+    pub fn add_outgoing_metadata(
+        &mut self,
+        txid: &TxId,
+        outgoing_metadata: Vec<OutgoingTxMetadata>,
+    ) {
         if let Some(wtx) = self.current.get_mut(txid) {
             // This is n^2 search, but this is likely very small struct, limited by the protocol, so...
             let new_omd: Vec<_> = outgoing_metadata
@@ -594,7 +629,10 @@ impl WalletTxns {
 
             wtx.outgoing_metadata.extend(new_omd);
         } else {
-            error!("TxId {} should be present while adding metadata, but wasn't", txid);
+            error!(
+                "TxId {} should be present while adding metadata, but wasn't",
+                txid
+            );
         }
     }
 }

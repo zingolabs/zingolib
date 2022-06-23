@@ -47,7 +47,10 @@ impl std::fmt::Display for Network {
 }
 
 impl Parameters for Network {
-    fn activation_height(&self, nu: NetworkUpgrade) -> Option<zcash_primitives::consensus::BlockHeight> {
+    fn activation_height(
+        &self,
+        nu: NetworkUpgrade,
+    ) -> Option<zcash_primitives::consensus::BlockHeight> {
         use Network::*;
         match self {
             Mainnet => MAIN_NETWORK.activation_height(nu),

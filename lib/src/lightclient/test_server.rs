@@ -2,11 +2,11 @@ use crate::blaze::test_utils::{tree_to_string, FakeCompactBlockList};
 use crate::compact_formats::compact_tx_streamer_server::CompactTxStreamer;
 use crate::compact_formats::compact_tx_streamer_server::CompactTxStreamerServer;
 use crate::compact_formats::{
-    Address, AddressList, Balance, BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx, Duration, Empty, Exclude,
-    GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList, LightdInfo, PingResponse, PriceRequest,
-    PriceResponse, RawTransaction, SendResponse, TransparentAddressBlockFilter, TreeState, TxFilter,
+    Address, AddressList, Balance, BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx,
+    Duration, Empty, Exclude, GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList,
+    LightdInfo, PingResponse, PriceRequest, PriceResponse, RawTransaction, SendResponse,
+    TransparentAddressBlockFilter, TreeState, TxFilter,
 };
-use zingoconfig::Network;
 use crate::wallet::data::WalletTx;
 use crate::wallet::now;
 use futures::{FutureExt, Stream};
@@ -28,6 +28,7 @@ use zcash_primitives::consensus::BranchId;
 use zcash_primitives::merkle_tree::CommitmentTree;
 use zcash_primitives::sapling::Node;
 use zcash_primitives::transaction::{Transaction, TxId};
+use zingoconfig::Network;
 
 use super::lightclient_config::LightClientConfig;
 use super::LightClient;
@@ -115,23 +116,31 @@ pub async fn create_test_server(
         let mut http = hyper::server::conn::Http::new();
         http.http2_only(true);
 
-        let nameuri: std::string::String = uri.replace("https://", "").replace("http://", "").parse().unwrap();
+        let nameuri: std::string::String = uri
+            .replace("https://", "")
+            .replace("http://", "")
+            .parse()
+            .unwrap();
         let listener = tokio::net::TcpListener::bind(nameuri).await.unwrap();
         let tls_acceptor = if https {
             use std::fs::File;
             use std::io::BufReader;
             let (cert, key) = (
                 tokio_rustls::rustls::Certificate(
-                    rustls_pemfile::certs(&mut BufReader::new(File::open(TEST_PEMFILE_PATH).unwrap()))
-                        .unwrap()
-                        .pop()
-                        .unwrap(),
+                    rustls_pemfile::certs(&mut BufReader::new(
+                        File::open(TEST_PEMFILE_PATH).unwrap(),
+                    ))
+                    .unwrap()
+                    .pop()
+                    .unwrap(),
                 ),
                 tokio_rustls::rustls::PrivateKey(
-                    rustls_pemfile::pkcs8_private_keys(&mut BufReader::new(File::open(TEST_PEMFILE_PATH).unwrap()))
-                        .unwrap()
-                        .pop()
-                        .expect("empty vec of private keys??"),
+                    rustls_pemfile::pkcs8_private_keys(&mut BufReader::new(
+                        File::open(TEST_PEMFILE_PATH).unwrap(),
+                    ))
+                    .unwrap()
+                    .pop()
+                    .expect("empty vec of private keys??"),
                 ),
             );
             tls = ServerConfig::builder()
@@ -198,13 +207,19 @@ pub async fn create_test_server(
 
     log::info!("creating data dir");
     let data_dir = data_dir_receiver.await.unwrap();
-    println!("GRPC Server listening on: {}. With datadir {}", addr, data_dir);
+    println!(
+        "GRPC Server listening on: {}. With datadir {}",
+        addr, data_dir
+    );
     config.data_dir = Some(data_dir);
 
     (data, config, ready_receiver, stop_transmitter, h1)
 }
 
-pub async fn clean_shutdown(stop_transmitter: oneshot::Sender<()>, server_thread_handle: JoinHandle<()>) {
+pub async fn clean_shutdown(
+    stop_transmitter: oneshot::Sender<()>,
+    server_thread_handle: JoinHandle<()>,
+) {
     stop_transmitter.send(()).unwrap();
     server_thread_handle.await.unwrap();
 }
@@ -237,8 +252,19 @@ pub async fn mine_pending_blocks(
         if let Some(t_bundle) = t.transparent_bundle() {
             for vin in &t_bundle.vin {
                 let prev_transaction_id = WalletTx::new_txid(&vin.prevout.hash().to_vec());
-                if let Some(wtx) = lc.wallet.transactions.read().await.current.get(&prev_transaction_id) {
-                    if let Some(utxo) = wtx.utxos.iter().find(|u| u.output_index as u32 == vin.prevout.n()) {
+                if let Some(wtx) = lc
+                    .wallet
+                    .transactions
+                    .read()
+                    .await
+                    .current
+                    .get(&prev_transaction_id)
+                {
+                    if let Some(utxo) = wtx
+                        .utxos
+                        .iter()
+                        .find(|u| u.output_index as u32 == vin.prevout.n())
+                    {
                         if !taddrs.contains(&utxo.address) {
                             taddrs.push(utxo.address.clone());
                         }
@@ -284,7 +310,8 @@ impl TestServerData {
             transaction.write(&mut data).unwrap();
             raw_transaction.data = data;
             raw_transaction.height = height;
-            self.transactions.insert(transaction.txid(), (taddrs, raw_transaction));
+            self.transactions
+                .insert(transaction.txid(), (taddrs, raw_transaction));
         }
     }
 
@@ -340,10 +367,20 @@ impl TestGRPCService {
 
 #[tonic::async_trait]
 impl CompactTxStreamer for TestGRPCService {
-    async fn get_latest_block(&self, _request: Request<ChainSpec>) -> Result<Response<BlockId>, Status> {
+    async fn get_latest_block(
+        &self,
+        _request: Request<ChainSpec>,
+    ) -> Result<Response<BlockId>, Status> {
         Self::wait_random().await;
 
-        match self.data.read().await.blocks.iter().max_by_key(|b| b.height) {
+        match self
+            .data
+            .read()
+            .await
+            .blocks
+            .iter()
+            .max_by_key(|b| b.height)
+        {
             Some(latest_block) => Ok(Response::new(BlockId {
                 height: latest_block.height,
                 hash: latest_block.hash.clone(),
@@ -357,13 +394,21 @@ impl CompactTxStreamer for TestGRPCService {
 
         let height = request.into_inner().height;
 
-        match self.data.read().await.blocks.iter().find(|b| b.height == height) {
+        match self
+            .data
+            .read()
+            .await
+            .blocks
+            .iter()
+            .find(|b| b.height == height)
+        {
             Some(b) => Ok(Response::new(b.clone())),
             None => Err(Status::unavailable(format!("Block {} not found", height))),
         }
     }
 
-    type GetBlockRangeStream = Pin<Box<dyn Stream<Item = Result<CompactBlock, Status>> + Send + Sync>>;
+    type GetBlockRangeStream =
+        Pin<Box<dyn Stream<Item = Result<CompactBlock, Status>> + Send + Sync>>;
     async fn get_block_range(
         &self,
         request: Request<BlockRange>,
@@ -394,11 +439,17 @@ impl CompactTxStreamer for TestGRPCService {
         Ok(Response::new(Box::pin(ReceiverStream::new(receiver))))
     }
 
-    async fn get_zec_price(&self, _request: Request<PriceRequest>) -> Result<Response<PriceResponse>, Status> {
+    async fn get_zec_price(
+        &self,
+        _request: Request<PriceRequest>,
+    ) -> Result<Response<PriceResponse>, Status> {
         self.get_current_zec_price(Request::new(Empty {})).await
     }
 
-    async fn get_current_zec_price(&self, _request: Request<Empty>) -> Result<Response<PriceResponse>, Status> {
+    async fn get_current_zec_price(
+        &self,
+        _request: Request<Empty>,
+    ) -> Result<Response<PriceResponse>, Status> {
         Self::wait_random().await;
 
         let mut res = PriceResponse::default();
@@ -409,30 +460,44 @@ impl CompactTxStreamer for TestGRPCService {
         Ok(Response::new(res))
     }
 
-    async fn get_transaction(&self, request: Request<TxFilter>) -> Result<Response<RawTransaction>, Status> {
+    async fn get_transaction(
+        &self,
+        request: Request<TxFilter>,
+    ) -> Result<Response<RawTransaction>, Status> {
         Self::wait_random().await;
 
         let transaction_id = WalletTx::new_txid(&request.into_inner().hash);
         match self.data.read().await.transactions.get(&transaction_id) {
             Some((_taddrs, transaction)) => Ok(Response::new(transaction.clone())),
-            None => Err(Status::invalid_argument(format!("Can't find txid {}", transaction_id))),
+            None => Err(Status::invalid_argument(format!(
+                "Can't find txid {}",
+                transaction_id
+            ))),
         }
     }
 
-    async fn send_transaction(&self, request: Request<RawTransaction>) -> Result<Response<SendResponse>, Status> {
+    async fn send_transaction(
+        &self,
+        request: Request<RawTransaction>,
+    ) -> Result<Response<SendResponse>, Status> {
         let raw_transaction = request.into_inner();
         let transaction_id = Transaction::read(&raw_transaction.data[..], BranchId::Sapling)
             .unwrap()
             .txid();
 
-        self.data.write().await.sent_transactions.push(raw_transaction);
+        self.data
+            .write()
+            .await
+            .sent_transactions
+            .push(raw_transaction);
         Ok(Response::new(SendResponse {
             error_message: transaction_id.to_string(),
             error_code: 0,
         }))
     }
 
-    type GetTaddressTxidsStream = Pin<Box<dyn Stream<Item = Result<RawTransaction, Status>> + Send + Sync>>;
+    type GetTaddressTxidsStream =
+        Pin<Box<dyn Stream<Item = Result<RawTransaction, Status>> + Send + Sync>>;
 
     async fn get_taddress_txids(
         &self,
@@ -443,7 +508,14 @@ impl CompactTxStreamer for TestGRPCService {
 
         let request = request.into_inner();
         let taddr = request.address;
-        let start_block = request.range.as_ref().unwrap().start.as_ref().unwrap().height;
+        let start_block = request
+            .range
+            .as_ref()
+            .unwrap()
+            .start
+            .as_ref()
+            .unwrap()
+            .height;
         let end_block = request.range.as_ref().unwrap().end.as_ref().unwrap().height;
 
         let transactions = self.data.read().await.transactions.clone();
@@ -474,7 +546,8 @@ impl CompactTxStreamer for TestGRPCService {
         Ok(Response::new(Box::pin(ReceiverStream::new(receiver))))
     }
 
-    type GetAddressTxidsStream = Pin<Box<dyn Stream<Item = Result<RawTransaction, Status>> + Send + Sync>>;
+    type GetAddressTxidsStream =
+        Pin<Box<dyn Stream<Item = Result<RawTransaction, Status>> + Send + Sync>>;
 
     async fn get_address_txids(
         &self,
@@ -483,7 +556,10 @@ impl CompactTxStreamer for TestGRPCService {
         self.get_taddress_txids(request).await
     }
 
-    async fn get_taddress_balance(&self, _request: Request<AddressList>) -> Result<Response<Balance>, Status> {
+    async fn get_taddress_balance(
+        &self,
+        _request: Request<AddressList>,
+    ) -> Result<Response<Balance>, Status> {
         todo!()
     }
 
@@ -496,11 +572,17 @@ impl CompactTxStreamer for TestGRPCService {
 
     type GetMempoolTxStream = Pin<Box<dyn Stream<Item = Result<CompactTx, Status>> + Send + Sync>>;
 
-    async fn get_mempool_tx(&self, _request: Request<Exclude>) -> Result<Response<Self::GetMempoolTxStream>, Status> {
+    async fn get_mempool_tx(
+        &self,
+        _request: Request<Exclude>,
+    ) -> Result<Response<Self::GetMempoolTxStream>, Status> {
         todo!()
     }
 
-    async fn get_tree_state(&self, request: Request<BlockId>) -> Result<Response<TreeState>, Status> {
+    async fn get_tree_state(
+        &self,
+        request: Request<BlockId>,
+    ) -> Result<Response<TreeState>, Status> {
         Self::wait_random().await;
 
         let block = request.into_inner();
@@ -523,7 +605,14 @@ impl CompactTxStreamer for TestGRPCService {
             return Ok(Response::new(ts));
         }
 
-        let start_block = self.data.read().await.blocks.last().map(|b| b.height - 1).unwrap_or(0);
+        let start_block = self
+            .data
+            .read()
+            .await
+            .blocks
+            .last()
+            .map(|b| b.height - 1)
+            .unwrap_or(0);
 
         let start_tree = self
             .data
@@ -579,7 +668,8 @@ impl CompactTxStreamer for TestGRPCService {
         todo!()
     }
 
-    type GetAddressUtxosStreamStream = Pin<Box<dyn Stream<Item = Result<GetAddressUtxosReply, Status>> + Send + Sync>>;
+    type GetAddressUtxosStreamStream =
+        Pin<Box<dyn Stream<Item = Result<GetAddressUtxosReply, Status>> + Send + Sync>>;
 
     async fn get_address_utxos_stream(
         &self,
@@ -588,7 +678,10 @@ impl CompactTxStreamer for TestGRPCService {
         todo!()
     }
 
-    async fn get_lightd_info(&self, _request: Request<Empty>) -> Result<Response<LightdInfo>, Status> {
+    async fn get_lightd_info(
+        &self,
+        _request: Request<Empty>,
+    ) -> Result<Response<LightdInfo>, Status> {
         Self::wait_random().await;
 
         let mut ld = LightdInfo::default();
@@ -613,7 +706,8 @@ impl CompactTxStreamer for TestGRPCService {
         todo!()
     }
 
-    type GetMempoolStreamStream = Pin<Box<dyn Stream<Item = Result<RawTransaction, Status>> + Send + Sync>>;
+    type GetMempoolStreamStream =
+        Pin<Box<dyn Stream<Item = Result<RawTransaction, Status>> + Send + Sync>>;
 
     async fn get_mempool_stream(
         &self,

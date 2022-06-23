@@ -6,7 +6,9 @@ use std::{
 use log::{error, info, LevelFilter};
 use log4rs::{
     append::rolling_file::{
-        policy::compound::{roll::fixed_window::FixedWindowRoller, trigger::size::SizeTrigger, CompoundPolicy},
+        policy::compound::{
+            roll::fixed_window::FixedWindowRoller, trigger::size::SizeTrigger, CompoundPolicy,
+        },
         RollingFileAppender,
     },
     config::{Appender, Root},
@@ -27,7 +29,8 @@ pub const DEFAULT_SERVER: &str = "https://lwdv3.zecwallet.co";
 pub const WALLET_NAME: &str = "zingo-wallet.dat";
 pub const LOGFILE_NAME: &str = "zingo-wallet.debug.log";
 pub const ANCHOR_OFFSET: [u32; 5] = [4, 0, 0, 0, 0];
-pub const GAP_RULE_UNUSED_ADDRESSES: usize = if cfg!(any(target_os = "ios", target_os = "android")) {
+pub const GAP_RULE_UNUSED_ADDRESSES: usize = if cfg!(any(target_os = "ios", target_os = "android"))
+{
     0
 } else {
     5
@@ -56,10 +59,16 @@ impl LightClientConfig {
 
     //Convenience wrapper
     pub fn sapling_activation_height(&self) -> u64 {
-        self.chain.activation_height(NetworkUpgrade::Sapling).unwrap().into()
+        self.chain
+            .activation_height(NetworkUpgrade::Sapling)
+            .unwrap()
+            .into()
     }
 
-    pub fn create_on_data_dir(server: http::Uri, data_dir: Option<String>) -> io::Result<(LightClientConfig, u64)> {
+    pub fn create_on_data_dir(
+        server: http::Uri,
+        data_dir: Option<String>,
+    ) -> io::Result<(LightClientConfig, u64)> {
         use std::net::ToSocketAddrs;
 
         let lc = Runtime::new().unwrap().block_on(async move {
@@ -112,7 +121,8 @@ impl LightClientConfig {
             .unwrap();
         let size_limit = 5 * 1024 * 1024; // 5MB as max log file size to roll
         let size_trigger = SizeTrigger::new(size_limit);
-        let compound_policy = CompoundPolicy::new(Box::new(size_trigger), Box::new(fixed_window_roller));
+        let compound_policy =
+            CompoundPolicy::new(Box::new(size_trigger), Box::new(fixed_window_roller));
 
         Config::builder()
             .appender(
@@ -127,7 +137,11 @@ impl LightClientConfig {
                         ),
                     ),
             )
-            .build(Root::builder().appender("logfile").build(LevelFilter::Debug))
+            .build(
+                Root::builder()
+                    .appender("logfile")
+                    .build(LevelFilter::Debug),
+            )
             .map_err(|e| Error::new(ErrorKind::Other, format!("{}", e)))
     }
 
@@ -141,13 +155,15 @@ impl LightClientConfig {
                 zcash_data_location = PathBuf::from(&self.data_dir.as_ref().unwrap());
             } else {
                 if cfg!(target_os = "macos") || cfg!(target_os = "windows") {
-                    zcash_data_location = dirs::data_dir().expect("Couldn't determine app data directory!");
+                    zcash_data_location =
+                        dirs::data_dir().expect("Couldn't determine app data directory!");
                     zcash_data_location.push("Zcash");
                 } else {
                     if dirs::home_dir().is_none() {
                         info!("Couldn't determine home dir!");
                     }
-                    zcash_data_location = dirs::home_dir().expect("Couldn't determine home directory!");
+                    zcash_data_location =
+                        dirs::home_dir().expect("Couldn't determine home directory!");
                     zcash_data_location.push(".zcash");
                 };
 
@@ -223,7 +239,10 @@ impl LightClientConfig {
         let mut backup_file_path = self.get_zcash_data_path().into_path_buf();
         backup_file_path.push(&format!(
             "zingo-wallet.backup.{}.dat",
-            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
         ));
 
         let backup_file_str = backup_file_path.to_string_lossy().to_string();
@@ -245,7 +264,10 @@ impl LightClientConfig {
             return None;
         }
 
-        info!("Getting sapling tree from LightwalletD at height {}", height);
+        info!(
+            "Getting sapling tree from LightwalletD at height {}",
+            height
+        );
         match GrpcConnector::get_sapling_tree(self.server.clone(), height).await {
             Ok(tree_state) => {
                 let hash = tree_state.hash.clone();
@@ -253,9 +275,14 @@ impl LightClientConfig {
                 Some((tree_state.height, hash, tree))
             }
             Err(e) => {
-                error!("Error getting sapling tree:{}\nWill return checkpoint instead.", e);
+                error!(
+                    "Error getting sapling tree:{}\nWill return checkpoint instead.",
+                    e
+                );
                 match checkpoints::get_closest_checkpoint(&self.chain, height) {
-                    Some((height, hash, tree)) => Some((height, hash.to_string(), tree.to_string())),
+                    Some((height, hash, tree)) => {
+                        Some((height, hash.to_string(), tree.to_string()))
+                    }
                     None => None,
                 }
             }

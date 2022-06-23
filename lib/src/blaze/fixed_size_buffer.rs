@@ -14,7 +14,11 @@ impl<T> FixedSizeBuffer<T> {
 
         let mut buf = Vec::<T>::new();
         buf.reserve_exact(capacity);
-        Self { buf, pos: 0, capacity }
+        Self {
+            buf,
+            pos: 0,
+            capacity,
+        }
     }
 
     pub fn push(&mut self, item: T) {

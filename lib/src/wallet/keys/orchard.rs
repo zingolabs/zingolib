@@ -70,8 +70,12 @@ impl TryFrom<&WalletOKeyInner> for OutgoingViewingKey {
         match key {
             WalletOKeyInner::ImportedOutViewKey(k) => Ok(k.clone()),
             WalletOKeyInner::ImportedFullViewKey(k) => Ok(k.to_ovk(Scope::External)),
-            WalletOKeyInner::ImportedInViewKey(k) => Err(format!("Received ivk {k:?} which does not contain an ovk")),
-            _ => Ok(FullViewingKey::try_from(key).unwrap().to_ovk(Scope::External)),
+            WalletOKeyInner::ImportedInViewKey(k) => {
+                Err(format!("Received ivk {k:?} which does not contain an ovk"))
+            }
+            _ => Ok(FullViewingKey::try_from(key)
+                .unwrap()
+                .to_ovk(Scope::External)),
         }
     }
 }

@@ -8,7 +8,8 @@ pub fn read_string<R: Read>(mut reader: R) -> io::Result<String> {
     let mut str_bytes = vec![0; str_len as usize];
     reader.read_exact(&mut str_bytes)?;
 
-    let str = String::from_utf8(str_bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+    let str = String::from_utf8(str_bytes)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
 
     Ok(str)
 }
@@ -32,5 +33,6 @@ pub fn interpret_memo_string(memo_str: String) -> Result<MemoBytes, String> {
         Vec::from(memo_str.as_bytes())
     };
 
-    MemoBytes::from_bytes(&s_bytes).map_err(|_| format!("Error creating output. Memo '{:?}' is too long", memo_str))
+    MemoBytes::from_bytes(&s_bytes)
+        .map_err(|_| format!("Error creating output. Memo '{:?}' is too long", memo_str))
 }

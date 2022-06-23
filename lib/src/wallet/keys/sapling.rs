@@ -164,7 +164,9 @@ impl WalletZKey {
 
         ExtendedFullViewingKey::write(&self.extfvk, &mut out)?;
 
-        Optional::write(&mut out, self.hdkey_num, |o, n| o.write_u32::<LittleEndian>(n))?;
+        Optional::write(&mut out, self.hdkey_num, |o, n| {
+            o.write_u32::<LittleEndian>(n)
+        })?;
 
         // Write enc_key
         Optional::write(&mut out, self.enc_key.as_ref(), |o, v| {
@@ -205,7 +207,12 @@ impl WalletZKey {
         Ok(())
     }
 
-    pub fn unlock(&mut self, config: &LightClientConfig, bip39_seed: &[u8], key: &secretbox::Key) -> io::Result<()> {
+    pub fn unlock(
+        &mut self,
+        config: &LightClientConfig,
+        bip39_seed: &[u8],
+        key: &secretbox::Key,
+    ) -> io::Result<()> {
         match self.keytype {
             WalletZKeyType::HdKey => {
                 let (extsk, extfvk, address) =
@@ -240,15 +247,16 @@ impl WalletZKey {
             WalletZKeyType::ImportedSpendingKey => {
                 // For imported keys, we need to decrypt from the encrypted key
                 let nonce = secretbox::Nonce::from_slice(&self.nonce.as_ref().unwrap()).unwrap();
-                let extsk_bytes = match secretbox::open(&self.enc_key.as_ref().unwrap(), &nonce, &key) {
-                    Ok(s) => s,
-                    Err(_) => {
-                        return Err(io::Error::new(
-                            ErrorKind::InvalidData,
-                            "Decryption failed. Is your password correct?",
-                        ));
-                    }
-                };
+                let extsk_bytes =
+                    match secretbox::open(&self.enc_key.as_ref().unwrap(), &nonce, &key) {
+                        Ok(s) => s,
+                        Err(_) => {
+                            return Err(io::Error::new(
+                                ErrorKind::InvalidData,
+                                "Decryption failed. Is your password correct?",
+                            ));
+                        }
+                    };
 
                 self.extsk = Some(ExtendedSpendingKey::read(&extsk_bytes[..])?);
             }
@@ -355,7 +363,8 @@ pub mod tests {
         let wzk = WalletZKey::new_imported_sk(esk);
         assert_eq!(
             encode_payment_address(config.hrp_sapling_address(), &wzk.zaddress),
-            "zs1fxgluwznkzm52ux7jkf4st5znwzqay8zyz4cydnyegt2rh9uhr9458z0nk62fdsssx0cqhy6lyv".to_string()
+            "zs1fxgluwznkzm52ux7jkf4st5znwzqay8zyz4cydnyegt2rh9uhr9458z0nk62fdsssx0cqhy6lyv"
+                .to_string()
         );
 
         let mut v: Vec<u8> = vec![];
@@ -385,7 +394,8 @@ pub mod tests {
         let mut wzk = WalletZKey::new_imported_sk(esk);
         assert_eq!(
             encode_payment_address(config.hrp_sapling_address(), &wzk.zaddress),
-            "zs1fxgluwznkzm52ux7jkf4st5znwzqay8zyz4cydnyegt2rh9uhr9458z0nk62fdsssx0cqhy6lyv".to_string()
+            "zs1fxgluwznkzm52ux7jkf4st5znwzqay8zyz4cydnyegt2rh9uhr9458z0nk62fdsssx0cqhy6lyv"
+                .to_string()
         );
 
         // Can't lock without encryption
@@ -441,7 +451,8 @@ pub mod tests {
 
         assert_eq!(
             encode_payment_address(config.hrp_sapling_address(), &wzk.zaddress),
-            "zs1va5902apnzlhdu0pw9r9q7ca8s4vnsrp2alr6xndt69jnepn2v2qrj9vg3wfcnjyks5pg65g9dc".to_string()
+            "zs1va5902apnzlhdu0pw9r9q7ca8s4vnsrp2alr6xndt69jnepn2v2qrj9vg3wfcnjyks5pg65g9dc"
+                .to_string()
         );
 
         // Encryption key

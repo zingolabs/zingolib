@@ -293,7 +293,9 @@ impl Command for LastTxIdCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        RT.block_on(async move { format!("{}", lightclient.do_last_transaction_id().await.pretty(2)) })
+        RT.block_on(
+            async move { format!("{}", lightclient.do_last_transaction_id().await.pretty(2)) },
+        )
     }
 }
 
@@ -349,7 +351,9 @@ impl Command for ExportCommand {
         h.push("Usage:");
         h.push("export [t-address or z-address]");
         h.push("");
-        h.push("If no address is passed, private key for all addresses in the wallet are exported.");
+        h.push(
+            "If no address is passed, private key for all addresses in the wallet are exported.",
+        );
         h.push("");
         h.push("Example:");
         h.push("export ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d");
@@ -389,7 +393,9 @@ impl Command for EncryptCommand {
         h.push("Note 1: This will encrypt the seed and the sapling and transparent private keys.");
         h.push("        Use 'unlock' to temporarily unlock the wallet for spending or 'decrypt' ");
         h.push("        to permanatly remove the encryption");
-        h.push("Note 2: If you forget the password, the only way to recover the wallet is to restore");
+        h.push(
+            "Note 2: If you forget the password, the only way to recover the wallet is to restore",
+        );
         h.push("        from the seed phrase.");
         h.push("Usage:");
         h.push("encrypt password");
@@ -652,7 +658,10 @@ impl Command for EncryptMessageCommand {
 
             (to, memo.unwrap())
         } else {
-            return format!("Wrong number of arguments. Was expecting 1 or 2\n{}", self.help());
+            return format!(
+                "Wrong number of arguments. Was expecting 1 or 2\n{}",
+                self.help()
+            );
         };
 
         if let Ok(m) = memo.try_into() {
@@ -687,7 +696,12 @@ impl Command for DecryptMessageCommand {
             return self.help();
         }
 
-        RT.block_on(async move { lightclient.do_decrypt_message(args[0].to_string()).await.pretty(2) })
+        RT.block_on(async move {
+            lightclient
+                .do_decrypt_message(args[0].to_string())
+                .await
+                .pretty(2)
+        })
     }
 }
 
@@ -697,7 +711,9 @@ impl Command for SendCommand {
         let mut h = vec![];
         h.push("Send ZEC to a given address(es)");
         h.push("Usage:");
-        h.push("send <address> <amount in zatoshis || \"entire-verified-zbalance\"> \"optional_memo\"");
+        h.push(
+            "send <address> <amount in zatoshis || \"entire-verified-zbalance\"> \"optional_memo\"",
+        );
         h.push("OR");
         h.push("send '[{'address': <address>, 'amount': <amount in zatoshis>, 'memo': <optional memo>}, ...]'");
         h.push("");
@@ -739,7 +755,11 @@ impl Command for SendCommand {
                 }
 
                 let fee = u64::from(DEFAULT_FEE);
-                let all_zbalance = lightclient.wallet.verified_zbalance(None).await.checked_sub(fee);
+                let all_zbalance = lightclient
+                    .wallet
+                    .verified_zbalance(None)
+                    .await
+                    .checked_sub(fee);
 
                 let maybe_send_args = json_args
                     .members()
@@ -758,7 +778,10 @@ impl Command for SendCommand {
                                     amt,
                                     j["memo"].as_str().map(|s| s.to_string().clone()),
                                 )),
-                                None => Err(format!("Not enough in wallet to pay transaction fee of {}", fee)),
+                                None => Err(format!(
+                                    "Not enough in wallet to pay transaction fee of {}",
+                                    fee
+                                )),
                             }
                         }
                     })
@@ -779,9 +802,19 @@ impl Command for SendCommand {
                     Err(e) => {
                         if args[1] == "entire-verified-zbalance" {
                             let fee = u64::from(DEFAULT_FEE);
-                            match lightclient.wallet.verified_zbalance(None).await.checked_sub(fee) {
+                            match lightclient
+                                .wallet
+                                .verified_zbalance(None)
+                                .await
+                                .checked_sub(fee)
+                            {
                                 Some(amt) => amt,
-                                None => return format!("Not enough in wallet to pay transaction fee of {}", fee),
+                                None => {
+                                    return format!(
+                                        "Not enough in wallet to pay transaction fee of {}",
+                                        fee
+                                    )
+                                }
                             }
                         } else {
                             return format!("Couldn't parse amount: {}", e);
@@ -914,13 +947,25 @@ impl Command for TransactionsCommand {
             if args[0] == "allmemos" || args[0] == "true" || args[0] == "yes" {
                 true
             } else {
-                return format!("Couldn't understand first argument '{}'\n{}", args[0], self.help());
+                return format!(
+                    "Couldn't understand first argument '{}'\n{}",
+                    args[0],
+                    self.help()
+                );
             }
         } else {
             false
         };
 
-        RT.block_on(async move { format!("{}", lightclient.do_list_transactions(include_memo_hex).await.pretty(2)) })
+        RT.block_on(async move {
+            format!(
+                "{}",
+                lightclient
+                    .do_list_transactions(include_memo_hex)
+                    .await
+                    .pretty(2)
+            )
+        })
     }
 }
 
@@ -959,15 +1004,30 @@ impl Command for SetOptionCommand {
         RT.block_on(async move {
             match option_name {
                 "download_memos" => match option_value {
-                    "none" => lightclient.wallet.set_download_memo(MemoDownloadOption::NoMemos).await,
+                    "none" => {
+                        lightclient
+                            .wallet
+                            .set_download_memo(MemoDownloadOption::NoMemos)
+                            .await
+                    }
                     "wallet" => {
                         lightclient
                             .wallet
                             .set_download_memo(MemoDownloadOption::WalletMemos)
                             .await
                     }
-                    "all" => lightclient.wallet.set_download_memo(MemoDownloadOption::AllMemos).await,
-                    _ => return format!("Error: Couldn't understand {} value {}", option_name, option_value),
+                    "all" => {
+                        lightclient
+                            .wallet
+                            .set_download_memo(MemoDownloadOption::AllMemos)
+                            .await
+                    }
+                    _ => {
+                        return format!(
+                            "Error: Couldn't understand {} value {}",
+                            option_name, option_value
+                        )
+                    }
                 },
                 _ => return format!("Error: Couldn't understand {}", option_name),
             }
@@ -1005,7 +1065,13 @@ impl Command for GetOptionCommand {
 
         RT.block_on(async move {
             let value = match option_name {
-                "download_memos" => match lightclient.wallet.wallet_options.read().await.download_memos {
+                "download_memos" => match lightclient
+                    .wallet
+                    .wallet_options
+                    .read()
+                    .await
+                    .download_memos
+                {
                     MemoDownloadOption::NoMemos => "none",
                     MemoDownloadOption::WalletMemos => "wallet",
                     MemoDownloadOption::AllMemos => "all",
@@ -1241,13 +1307,20 @@ impl Command for NotesCommand {
         let all_notes = if args.len() == 1 {
             match args[0] {
                 "all" => true,
-                a => return format!("Invalid argument \"{}\". Specify 'all' to include unspent notes", a),
+                a => {
+                    return format!(
+                        "Invalid argument \"{}\". Specify 'all' to include unspent notes",
+                        a
+                    )
+                }
             }
         } else {
             false
         };
 
-        RT.block_on(async move { format!("{}", lightclient.do_list_notes(all_notes).await.pretty(2)) })
+        RT.block_on(
+            async move { format!("{}", lightclient.do_list_notes(all_notes).await.pretty(2)) },
+        )
     }
 }
 
@@ -1282,9 +1355,18 @@ pub fn get_commands() -> Box<HashMap<String, Box<dyn Command>>> {
 
     map.insert("sync".to_string(), Box::new(SyncCommand {}));
     map.insert("syncstatus".to_string(), Box::new(SyncStatusCommand {}));
-    map.insert("encryptionstatus".to_string(), Box::new(EncryptionStatusCommand {}));
-    map.insert("encryptmessage".to_string(), Box::new(EncryptMessageCommand {}));
-    map.insert("decryptmessage".to_string(), Box::new(DecryptMessageCommand {}));
+    map.insert(
+        "encryptionstatus".to_string(),
+        Box::new(EncryptionStatusCommand {}),
+    );
+    map.insert(
+        "encryptmessage".to_string(),
+        Box::new(EncryptMessageCommand {}),
+    );
+    map.insert(
+        "decryptmessage".to_string(),
+        Box::new(DecryptMessageCommand {}),
+    );
     map.insert("rescan".to_string(), Box::new(RescanCommand {}));
     map.insert("clear".to_string(), Box::new(ClearCommand {}));
     map.insert("help".to_string(), Box::new(HelpCommand {}));
@@ -1319,7 +1401,10 @@ pub fn get_commands() -> Box<HashMap<String, Box<dyn Command>>> {
 pub fn do_user_command(cmd: &str, args: &Vec<&str>, lightclient: &LightClient) -> String {
     match get_commands().get(&cmd.to_ascii_lowercase()) {
         Some(cmd) => cmd.exec(args, lightclient),
-        None => format!("Unknown command : {}. Type 'help' for a list of commands", cmd),
+        None => format!(
+            "Unknown command : {}. Type 'help' for a list of commands",
+            cmd
+        ),
     }
 }
 
@@ -1338,10 +1423,7 @@ pub mod tests {
         let lc = Runtime::new()
             .unwrap()
             .block_on(LightClient::test_new(
-                &LightClientConfig::create_unconnected(
-                    zingoconfig::Network::FakeMainnet,
-                    None,
-                ),
+                &LightClientConfig::create_unconnected(zingoconfig::Network::FakeMainnet, None),
                 Some(TEST_SEED.to_string()),
                 0,
             ))

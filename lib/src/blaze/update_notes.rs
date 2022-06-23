@@ -90,7 +90,8 @@ impl UpdateNotes {
         let download_memos = bsync_data.read().await.wallet_options.download_memos;
 
         // Create a new channel where we'll be notified of TxIds that are to be processed
-        let (transmitter, mut receiver) = unbounded_channel::<(TxId, Nullifier, BlockHeight, Option<u32>)>();
+        let (transmitter, mut receiver) =
+            unbounded_channel::<(TxId, Nullifier, BlockHeight, Option<u32>)>();
 
         // Aside from the incoming Txns, we also need to update the notes that are currently in the wallet
         let wallet_transactions = self.wallet_txns.clone();
@@ -111,7 +112,12 @@ impl UpdateNotes {
                 .get_notes_for_updating(earliest_block - 1);
             for (transaction_id, nf) in notes {
                 transmitter_existing
-                    .send((transaction_id, nf, BlockHeight::from(earliest_block as u32), None))
+                    .send((
+                        transaction_id,
+                        nf,
+                        BlockHeight::from(earliest_block as u32),
+                        None,
+                    ))
                     .map_err(|e| format!("Error sending note for updating: {}", e))?;
             }
 
@@ -170,7 +176,9 @@ impl UpdateNotes {
 
                         // Send the future transaction to be fetched too, in case it has only spent nullifiers and not recieved any change
                         if download_memos != MemoDownloadOption::NoMemos {
-                            fetch_full_sender.send((spent_transaction_id, spent_at_height)).unwrap();
+                            fetch_full_sender
+                                .send((spent_transaction_id, spent_at_height))
+                                .unwrap();
                         }
                     } else {
                         //info!("Note was NOT spent, update its witnesses for TxId {}", txid);

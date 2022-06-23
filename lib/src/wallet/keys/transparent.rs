@@ -40,14 +40,20 @@ pub struct WalletTKey {
 }
 
 impl WalletTKey {
-    pub fn get_taddr_from_bip39seed(config: &LightClientConfig, bip39_seed: &[u8], pos: u32) -> secp256k1::SecretKey {
+    pub fn get_taddr_from_bip39seed(
+        config: &LightClientConfig,
+        bip39_seed: &[u8],
+        pos: u32,
+    ) -> secp256k1::SecretKey {
         assert_eq!(bip39_seed.len(), 64);
 
         let ext_t_key = ExtendedPrivKey::with_seed(bip39_seed).unwrap();
         ext_t_key
             .derive_private_key(KeyIndex::hardened_from_normalize_index(44).unwrap())
             .unwrap()
-            .derive_private_key(KeyIndex::hardened_from_normalize_index(config.get_coin_type()).unwrap())
+            .derive_private_key(
+                KeyIndex::hardened_from_normalize_index(config.get_coin_type()).unwrap(),
+            )
             .unwrap()
             .derive_private_key(KeyIndex::hardened_from_normalize_index(0).unwrap())
             .unwrap()
@@ -93,7 +99,8 @@ impl WalletTKey {
             ));
         }
 
-        let key = SecretKey::from_slice(&bytes).map_err(|e| io::Error::new(ErrorKind::InvalidData, e))?;
+        let key =
+            SecretKey::from_slice(&bytes).map_err(|e| io::Error::new(ErrorKind::InvalidData, e))?;
         let address = Self::address_from_prefix_sk(&config.base58_pubkey_address(), &key);
 
         Ok(WalletTKey {
@@ -130,7 +137,8 @@ impl WalletTKey {
             return Err(io::Error::new(ErrorKind::NotFound, "Wallet locked"));
         }
 
-        Ok(self.key.as_ref().unwrap()[..].to_base58check(&config.base58_secretkey_prefix(), &[0x01]))
+        Ok(self.key.as_ref().unwrap()[..]
+            .to_base58check(&config.base58_secretkey_prefix(), &[0x01]))
     }
 
     #[cfg(test)]
@@ -180,7 +188,8 @@ impl WalletTKey {
         let key = Optional::read(&mut inp, |r| {
             let mut tpk_bytes = [0u8; 32];
             r.read_exact(&mut tpk_bytes)?;
-            secp256k1::SecretKey::from_slice(&tpk_bytes).map_err(|e| io::Error::new(ErrorKind::InvalidData, e))
+            secp256k1::SecretKey::from_slice(&tpk_bytes)
+                .map_err(|e| io::Error::new(ErrorKind::InvalidData, e))
         })?;
         let address = utils::read_string(&mut inp)?;
 
@@ -210,7 +219,9 @@ impl WalletTKey {
         Optional::write(&mut out, self.key, |w, sk| w.write_all(&sk[..]))?;
         utils::write_string(&mut out, &self.address)?;
 
-        Optional::write(&mut out, self.hdkey_num, |o, n| o.write_u32::<LittleEndian>(n))?;
+        Optional::write(&mut out, self.hdkey_num, |o, n| {
+            o.write_u32::<LittleEndian>(n)
+        })?;
 
         // Write enc_key
         Optional::write(&mut out, self.enc_key.as_ref(), |o, v| {
@@ -247,10 +258,16 @@ impl WalletTKey {
         Ok(())
     }
 
-    pub fn unlock(&mut self, config: &LightClientConfig, bip39_seed: &[u8], key: &secretbox::Key) -> io::Result<()> {
+    pub fn unlock(
+        &mut self,
+        config: &LightClientConfig,
+        bip39_seed: &[u8],
+        key: &secretbox::Key,
+    ) -> io::Result<()> {
         match self.keytype {
             WalletTKeyType::HdKey => {
-                let sk = Self::get_taddr_from_bip39seed(&config, &bip39_seed, self.hdkey_num.unwrap());
+                let sk =
+                    Self::get_taddr_from_bip39seed(&config, &bip39_seed, self.hdkey_num.unwrap());
                 let address = Self::address_from_prefix_sk(&config.base58_pubkey_address(), &sk);
 
                 if address != self.address {
@@ -270,7 +287,8 @@ impl WalletTKey {
             WalletTKeyType::ImportedKey => {
                 // For imported keys, we need to decrypt from the encrypted key
                 let nonce = secretbox::Nonce::from_slice(&self.nonce.as_ref().unwrap()).unwrap();
-                let sk_bytes = match secretbox::open(&self.enc_key.as_ref().unwrap(), &nonce, &key) {
+                let sk_bytes = match secretbox::open(&self.enc_key.as_ref().unwrap(), &nonce, &key)
+                {
                     Ok(s) => s,
                     Err(_) => {
                         return Err(io::Error::new(

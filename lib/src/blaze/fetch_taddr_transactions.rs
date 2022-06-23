@@ -47,7 +47,8 @@ impl FetchTaddrTransactions {
                 oneshot::channel::<Vec<UnboundedReceiver<Result<RawTransaction, String>>>>();
             taddr_fetcher.send((req, res_transmitter)).unwrap();
 
-            let (ordered_raw_transaction_transmitter, mut ordered_raw_transaction_receiver) = unbounded_channel();
+            let (ordered_raw_transaction_transmitter, mut ordered_raw_transaction_receiver) =
+                unbounded_channel();
 
             // Process every transparent address transaction, in order of height
             let h1: JoinHandle<Result<(), String>> = tokio::spawn(async move {
@@ -67,21 +68,20 @@ impl FetchTaddrTransactions {
                 // While at least one of them is still returning transactions
                 while transactions_top.iter().any(|t| t.is_some()) {
                     // Find the transaction with the lowest height
-                    let (_height, idx) =
-                        transactions_top
-                            .iter()
-                            .enumerate()
-                            .fold((u64::MAX, 0), |(prev_height, prev_idx), (idx, t)| {
-                                if let Some(transaction) = t {
-                                    if transaction.height < prev_height {
-                                        (transaction.height, idx)
-                                    } else {
-                                        (prev_height, prev_idx)
-                                    }
+                    let (_height, idx) = transactions_top.iter().enumerate().fold(
+                        (u64::MAX, 0),
+                        |(prev_height, prev_idx), (idx, t)| {
+                            if let Some(transaction) = t {
+                                if transaction.height < prev_height {
+                                    (transaction.height, idx)
                                 } else {
                                     (prev_height, prev_idx)
                                 }
-                            });
+                            } else {
+                                (prev_height, prev_idx)
+                            }
+                        },
+                    );
 
                     // Grab the transaction at the index
                     let transaction = transactions_top[idx].as_ref().unwrap().clone();
@@ -95,7 +95,9 @@ impl FetchTaddrTransactions {
 
                     // Dispatch the result only if it is in out scan range
                     if transaction.height <= start_height && transaction.height >= end_height {
-                        ordered_raw_transaction_transmitter.send(transaction).unwrap();
+                        ordered_raw_transaction_transmitter
+                            .send(transaction)
+                            .unwrap();
                     }
                 }
 
@@ -119,11 +121,17 @@ impl FetchTaddrTransactions {
 
                     let transaction = Transaction::read(
                         &raw_transaction.data[..],
-                        BranchId::for_height(&network, BlockHeight::from_u32(raw_transaction.height as u32)),
+                        BranchId::for_height(
+                            &network,
+                            BlockHeight::from_u32(raw_transaction.height as u32),
+                        ),
                     )
                     .map_err(|e| format!("Error reading transaction: {}", e))?;
                     full_transaction_scanner
-                        .send((transaction, BlockHeight::from_u32(raw_transaction.height as u32)))
+                        .send((
+                            transaction,
+                            BlockHeight::from_u32(raw_transaction.height as u32),
+                        ))
                         .unwrap();
                 }
 
@@ -167,7 +175,10 @@ mod test {
         // 5 t addresses
         let mut keys = Keys::new_empty();
         let gened_taddrs: Vec<_> = (0..5).into_iter().map(|n| format!("taddr{}", n)).collect();
-        keys.tkeys = gened_taddrs.iter().map(|ta| WalletTKey::empty(ta)).collect::<Vec<_>>();
+        keys.tkeys = gened_taddrs
+            .iter()
+            .map(|ta| WalletTKey::empty(ta))
+            .collect::<Vec<_>>();
 
         let ftt = FetchTaddrTransactions::new(Arc::new(RwLock::new(keys)));
 
@@ -244,7 +255,10 @@ mod test {
             let mut total = 0;
             while let Some((_transaction, h)) = full_transaction_scanner_receiver.recv().await {
                 if h < prev_height {
-                    return Err(format!("Wrong height. prev = {}, current = {}", prev_height, h));
+                    return Err(format!(
+                        "Wrong height. prev = {}, current = {}",
+                        prev_height, h
+                    ));
                 }
                 prev_height = h;
                 total += 1;
@@ -265,7 +279,10 @@ mod test {
         //this test will probably fail until we do
 
         let (total_sent, total_recieved) = join!(h1, h2);
-        assert_eq!(total_sent.unwrap().unwrap(), total_recieved.unwrap().unwrap());
+        assert_eq!(
+            total_sent.unwrap().unwrap(),
+            total_recieved.unwrap().unwrap()
+        );
 
         h3.await.unwrap().unwrap();
     }

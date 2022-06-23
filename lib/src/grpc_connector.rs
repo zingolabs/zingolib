@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use crate::compact_formats::compact_tx_streamer_client::CompactTxStreamerClient;
 use crate::compact_formats::{
-    BlockId, BlockRange, ChainSpec, CompactBlock, Empty, LightdInfo, PriceRequest, PriceResponse, RawTransaction,
-    TransparentAddressBlockFilter, TreeState, TxFilter,
+    BlockId, BlockRange, ChainSpec, CompactBlock, Empty, LightdInfo, PriceRequest, PriceResponse,
+    RawTransaction, TransparentAddressBlockFilter, TreeState, TxFilter,
 };
 use futures::future::join_all;
 use futures::stream::FuturesUnordered;
@@ -42,21 +42,24 @@ impl GrpcConnector {
 
     pub(crate) fn get_client(
         &self,
-    ) -> impl std::future::Future<Output = Result<CompactTxStreamerClient<UnderlyingService>, Box<dyn std::error::Error>>>
-    {
+    ) -> impl std::future::Future<
+        Output = Result<CompactTxStreamerClient<UnderlyingService>, Box<dyn std::error::Error>>,
+    > {
         let uri = Arc::new(self.uri.clone());
         async move {
             let mut http_connector = HttpConnector::new();
             http_connector.enforce_http(false);
             if uri.scheme_str() == Some("https") {
                 let mut roots = RootCertStore::empty();
-                roots.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(|anchor_ref| {
-                    tokio_rustls::rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
-                        anchor_ref.subject,
-                        anchor_ref.spki,
-                        anchor_ref.name_constraints,
-                    )
-                }));
+                roots.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(
+                    |anchor_ref| {
+                        tokio_rustls::rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
+                            anchor_ref.subject,
+                            anchor_ref.spki,
+                            anchor_ref.name_constraints,
+                        )
+                    },
+                ));
 
                 #[cfg(test)]
                 add_test_cert_to_roots(&mut roots);
@@ -128,7 +131,8 @@ impl GrpcConnector {
         JoinHandle<()>,
         UnboundedSender<(u64, oneshot::Sender<Result<TreeState, String>>)>,
     ) {
-        let (transmitter, mut receiver) = unbounded_channel::<(u64, oneshot::Sender<Result<TreeState, String>>)>();
+        let (transmitter, mut receiver) =
+            unbounded_channel::<(u64, oneshot::Sender<Result<TreeState, String>>)>();
         let uri = self.uri.clone();
 
         let h = tokio::spawn(async move {
@@ -195,7 +199,8 @@ impl GrpcConnector {
         JoinHandle<()>,
         UnboundedSender<(TxId, oneshot::Sender<Result<Transaction, String>>)>,
     ) {
-        let (transmitter, mut receiver) = unbounded_channel::<(TxId, oneshot::Sender<Result<Transaction, String>>)>();
+        let (transmitter, mut receiver) =
+            unbounded_channel::<(TxId, oneshot::Sender<Result<Transaction, String>>)>();
         let uri = self.uri.clone();
 
         let h = tokio::spawn(async move {
@@ -204,7 +209,9 @@ impl GrpcConnector {
                 let uri = uri.clone();
                 workers.push(tokio::spawn(async move {
                     result_transmitter
-                        .send(Self::get_full_transaction(uri.clone(), &transaction_id, network).await)
+                        .send(
+                            Self::get_full_transaction(uri.clone(), &transaction_id, network).await,
+                        )
                         .unwrap()
                 }));
 
@@ -250,7 +257,9 @@ impl GrpcConnector {
             .into_inner();
 
         while let Some(block) = response.message().await.map_err(|e| format!("{}", e))? {
-            senders[0].send(block.clone()).map_err(|e| format!("{}", e))?;
+            senders[0]
+                .send(block.clone())
+                .map_err(|e| format!("{}", e))?;
             senders[1].send(block).map_err(|e| format!("{}", e))?;
         }
 
@@ -331,7 +340,10 @@ impl GrpcConnector {
                 if e.code() == tonic::Code::Unimplemented {
                     // Try the old, legacy API
                     let request = Request::new(args);
-                    client.get_address_txids(request).await.map_err(|e| format!("{}", e))?
+                    client
+                        .get_address_txids(request)
+                        .await
+                        .map_err(|e| format!("{}", e))?
                 } else {
                     return Err(format!("{}", e));
                 }
@@ -383,7 +395,9 @@ impl GrpcConnector {
             .map_err(|e| format!("{}", e))?
             .into_inner();
         while let Some(r_transmitter) = response.message().await.map_err(|e| format!("{}", e))? {
-            mempool_transmitter.send(r_transmitter).map_err(|e| format!("{}", e))?;
+            mempool_transmitter
+                .send(r_transmitter)
+                .map_err(|e| format!("{}", e))?;
         }
 
         Ok(())
@@ -489,7 +503,10 @@ impl GrpcConnector {
         Ok(response.into_inner())
     }
 
-    pub async fn send_transaction(uri: http::Uri, transaction_bytes: Box<[u8]>) -> Result<String, String> {
+    pub async fn send_transaction(
+        uri: http::Uri,
+        transaction_bytes: Box<[u8]>,
+    ) -> Result<String, String> {
         let client = Arc::new(GrpcConnector::new(uri));
         let mut client = client
             .get_client()
