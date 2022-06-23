@@ -10,3 +10,4 @@ debug = false
 
 [patch.crates-io]
 zcash_note_encryption = { git = "https://github.com/zcash/librustzcash", rev = "73d9395c9d3c5fa81fc7becd363a2c1a51772a76" }
+orchard = { git = "https://github.com/zingolabs/orchard", rev = "22b77c028f054d11455b60ac600787c3cdf74597" }

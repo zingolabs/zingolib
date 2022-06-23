@@ -1,6 +1,6 @@
 use ff::PrimeField;
 use group::GroupEncoding;
-use orchard::note_encryption::OrchardDomain;
+use orchard::note::ExtractedNoteCommitment;
 use std::convert::TryInto;
 
 use zcash_note_encryption::{EphemeralKeyBytes, ShieldedOutput, COMPACT_NOTE_SIZE};
@@ -108,15 +108,23 @@ impl<P: Parameters> ShieldedOutput<SaplingDomain<P>, COMPACT_NOTE_SIZE> for Comp
         vec_to_array(&self.ciphertext)
     }
 }
-impl ShieldedOutput<OrchardDomain, COMPACT_NOTE_SIZE> for CompactOrchardAction {
-    fn ephemeral_key(&self) -> EphemeralKeyBytes {
-        EphemeralKeyBytes(*vec_to_array(&self.ephemeral_key))
-    }
-    fn cmstar_bytes(&self) -> [u8; 32] {
-        *vec_to_array(&self.cmx)
-    }
-    fn enc_ciphertext(&self) -> &[u8; COMPACT_NOTE_SIZE] {
-        vec_to_array(&self.ciphertext)
+
+impl TryFrom<&CompactOrchardAction> for orchard::note_encryption::CompactAction {
+    type Error = Box<dyn std::error::Error>;
+
+    fn try_from(value: &CompactOrchardAction) -> Result<Self, Self::Error> {
+        Ok(Self::from_parts(
+            Option::from(orchard::note::Nullifier::from_bytes(&<[u8; 32]>::try_from(
+                value.nullifier.as_slice(),
+            )?))
+            .ok_or("bad nullifier")?,
+            Option::from(ExtractedNoteCommitment::from_bytes(&<[u8; 32]>::try_from(
+                value.cmx.as_slice(),
+            )?))
+            .ok_or("bad enc")?,
+            <[u8; 32]>::try_from(value.ephemeral_key.as_slice())?.into(),
+            <[u8; COMPACT_NOTE_SIZE]>::try_from(value.ciphertext.as_slice())?,
+        ))
     }
 }
 

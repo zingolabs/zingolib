@@ -4,7 +4,10 @@ use crate::{
 };
 use futures::{stream::FuturesUnordered, StreamExt};
 use log::info;
-use orchard::{keys::IncomingViewingKey as OrchardIvk, note_encryption::OrchardDomain};
+use orchard::{
+    keys::IncomingViewingKey as OrchardIvk,
+    note_encryption::{CompactAction, OrchardDomain},
+};
 use std::sync::Arc;
 use tokio::{
     sync::{
@@ -151,7 +154,9 @@ impl TrialDecryptions {
                     };
 
                     for (i, ivk) in sapling_ivks.iter().enumerate() {
-                        if let Some((note, to)) = try_sapling_compact_note_decryption(&config.chain, height, &ivk, co) {
+                        if let Some((note, to)) =
+                            try_sapling_compact_note_decryption(&config.chain, height, &ivk, co)
+                        {
                             wallet_transaction = true;
 
                             let keys = keys.clone();
@@ -212,11 +217,22 @@ impl TrialDecryptions {
                     }
                 }
                 for (action_num, action) in compact_transaction.actions.iter().enumerate() {
+                    let action = match CompactAction::try_from(action) {
+                        Ok(a) => a,
+                        Err(e) => {
+                            todo!("Implement error handling for action parsing")
+                        }
+                    };
                     for (i, ivk) in orchard_ivks.iter().enumerate() {
-                        // if let Some(x) =
-                        //   zcash_note_encryption::try_note_decryption(&OrchardDomain::for_action(action), ivk, action)
-                        // {
-                        // }
+                        if let Some((note, recipient)) =
+                            zcash_note_encryption::try_compact_note_decryption(
+                                &OrchardDomain::for_nullifier(action.nullifier()),
+                                ivk,
+                                &action,
+                            )
+                        {
+                            println!("Detected orchard transaction, to {recipient:?},\n note is {note:?}");
+                        }
                     }
                 }
 
