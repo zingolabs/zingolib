@@ -2,6 +2,7 @@
 members = [
     "lib",
     "cli",
+    "config"
 ]
 
 [profile.release]

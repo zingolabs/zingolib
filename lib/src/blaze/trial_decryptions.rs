@@ -37,8 +37,16 @@ impl TrialDecryptions {
     pub async fn start(
         &self,
         bsync_data: Arc<RwLock<BlazeSyncData>>,
-        detected_transaction_id_sender: UnboundedSender<(TxId, Nullifier, BlockHeight, Option<u32>)>,
-        full_transaction_fetcher: UnboundedSender<(TxId, oneshot::Sender<Result<Transaction, String>>)>,
+        detected_transaction_id_sender: UnboundedSender<(
+            TxId,
+            Nullifier,
+            BlockHeight,
+            Option<u32>,
+        )>,
+        full_transaction_fetcher: UnboundedSender<(
+            TxId,
+            oneshot::Sender<Result<Transaction, String>>,
+        )>,
     ) -> (JoinHandle<()>, UnboundedSender<CompactBlock>) {
         //info!("Starting trial decrptions processor");
 
@@ -109,8 +117,16 @@ impl TrialDecryptions {
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         ivks: Arc<Vec<SaplingIvk>>,
         wallet_transactions: Arc<RwLock<WalletTxns>>,
-        detected_transaction_id_sender: UnboundedSender<(TxId, Nullifier, BlockHeight, Option<u32>)>,
-        full_transaction_fetcher: UnboundedSender<(TxId, oneshot::Sender<Result<Transaction, String>>)>,
+        detected_transaction_id_sender: UnboundedSender<(
+            TxId,
+            Nullifier,
+            BlockHeight,
+            Option<u32>,
+        )>,
+        full_transaction_fetcher: UnboundedSender<(
+            TxId,
+            oneshot::Sender<Result<Transaction, String>>,
+        )>,
     ) -> Result<(), String> {
         let config = keys.read().await.config().clone();
         let blk_count = cbs.len();
@@ -130,20 +146,24 @@ impl TrialDecryptions {
                     };
 
                     for (i, ivk) in ivks.iter().enumerate() {
-                        if let Some((note, to)) = try_sapling_compact_note_decryption(&config.chain, height, &ivk, co) {
+                        if let Some((note, to)) =
+                            try_sapling_compact_note_decryption(&config.chain, height, &ivk, co)
+                        {
                             wallet_transaction = true;
 
                             let keys = keys.clone();
                             let bsync_data = bsync_data.clone();
                             let wallet_transactions = wallet_transactions.clone();
-                            let detected_transaction_id_sender = detected_transaction_id_sender.clone();
+                            let detected_transaction_id_sender =
+                                detected_transaction_id_sender.clone();
                             let timestamp = cb.time as u64;
                             let compact_transaction = compact_transaction.clone();
 
                             workers.push(tokio::spawn(async move {
                                 let keys = keys.read().await;
                                 let extfvk = keys.zkeys[i].extfvk();
-                                let have_sapling_spending_key = keys.have_sapling_spending_key(extfvk);
+                                let have_sapling_spending_key =
+                                    keys.have_sapling_spending_key(extfvk);
                                 let uri = bsync_data.read().await.uri().clone();
 
                                 // Get the witness for the note
@@ -172,7 +192,12 @@ impl TrialDecryptions {
                                 info!("Trial decrypt Detected txid {}", &transaction_id);
 
                                 detected_transaction_id_sender
-                                    .send((transaction_id, nullifier, height, Some(output_num as u32)))
+                                    .send((
+                                        transaction_id,
+                                        nullifier,
+                                        height,
+                                        Some(output_num as u32),
+                                    ))
                                     .unwrap();
 
                                 Ok::<_, String>(())
@@ -188,7 +213,9 @@ impl TrialDecryptions {
                 if !wallet_transaction && download_memos == MemoDownloadOption::AllMemos {
                     let transaction_id = WalletTx::new_txid(&compact_transaction.hash);
                     let (transmitter, receiver) = oneshot::channel();
-                    full_transaction_fetcher.send((transaction_id, transmitter)).unwrap();
+                    full_transaction_fetcher
+                        .send((transaction_id, transmitter))
+                        .unwrap();
 
                     workers.push(tokio::spawn(async move {
                         // Discard the result, because this was not a wallet transaction.
@@ -203,7 +230,13 @@ impl TrialDecryptions {
         }
 
         // Update sync status
-        bsync_data.read().await.sync_status.write().await.trial_dec_done += blk_count as u64;
+        bsync_data
+            .read()
+            .await
+            .sync_status
+            .write()
+            .await
+            .trial_dec_done += blk_count as u64;
 
         // Return a nothing-value
         Ok::<(), String>(())

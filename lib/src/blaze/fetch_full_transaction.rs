@@ -44,7 +44,11 @@ pub struct FetchFullTxns {
 }
 
 impl FetchFullTxns {
-    pub fn new(config: &LightClientConfig, keys: Arc<RwLock<Keys>>, wallet_txns: Arc<RwLock<WalletTxns>>) -> Self {
+    pub fn new(
+        config: &LightClientConfig,
+        keys: Arc<RwLock<Keys>>,
+        wallet_txns: Arc<RwLock<WalletTxns>>,
+    ) -> Self {
         Self {
             config: config.clone(),
             keys,
@@ -70,7 +74,8 @@ impl FetchFullTxns {
 
         let bsync_data_i = bsync_data.clone();
 
-        let (transaction_id_transmitter, mut transaction_id_receiver) = unbounded_channel::<(TxId, BlockHeight)>();
+        let (transaction_id_transmitter, mut transaction_id_receiver) =
+            unbounded_channel::<(TxId, BlockHeight)>();
         let h1: JoinHandle<Result<(), String>> = tokio::spawn(async move {
             let last_progress = Arc::new(AtomicU64::new(0));
             let mut workers = FuturesUnordered::new();
@@ -79,7 +84,12 @@ impl FetchFullTxns {
                 let config = config.clone();
                 let keys = keys.clone();
                 let wallet_transactions = wallet_transactions.clone();
-                let block_time = bsync_data_i.read().await.block_data.get_block_timestamp(&height).await;
+                let block_time = bsync_data_i
+                    .read()
+                    .await
+                    .block_data
+                    .get_block_timestamp(&height)
+                    .await;
                 let full_transaction_fetcher = fulltx_fetcher.clone();
                 let bsync_data = bsync_data_i.clone();
                 let last_progress = last_progress.clone();
@@ -89,13 +99,21 @@ impl FetchFullTxns {
                     let transaction = {
                         // Fetch the TxId from LightwalletD and process all the parts of it.
                         let (transmitter, receiver) = oneshot::channel();
-                        full_transaction_fetcher.send((transaction_id, transmitter)).unwrap();
+                        full_transaction_fetcher
+                            .send((transaction_id, transmitter))
+                            .unwrap();
                         receiver.await.unwrap()?
                     };
 
                     let progress = start_height - u64::from(height);
                     if progress > last_progress.load(Ordering::SeqCst) {
-                        bsync_data.read().await.sync_status.write().await.txn_scan_done = progress;
+                        bsync_data
+                            .read()
+                            .await
+                            .sync_status
+                            .write()
+                            .await
+                            .txn_scan_done = progress;
                         last_progress.store(progress, Ordering::SeqCst);
                     }
 
@@ -119,7 +137,13 @@ impl FetchFullTxns {
                 r.map_err(|r| r.to_string())??;
             }
 
-            bsync_data_i.read().await.sync_status.write().await.txn_scan_done = start_height - end_height + 1;
+            bsync_data_i
+                .read()
+                .await
+                .sync_status
+                .write()
+                .await
+                .txn_scan_done = start_height - end_height + 1;
             //info!("Finished fetching all full transactions");
 
             Ok(())
@@ -129,7 +153,8 @@ impl FetchFullTxns {
         let keys = self.keys.clone();
         let config = self.config.clone();
 
-        let (transaction_transmitter, mut transaction_receiver) = unbounded_channel::<(Transaction, BlockHeight)>();
+        let (transaction_transmitter, mut transaction_receiver) =
+            unbounded_channel::<(Transaction, BlockHeight)>();
 
         let h2: JoinHandle<Result<(), String>> = tokio::spawn(async move {
             let bsync_data = bsync_data.clone();
@@ -139,7 +164,12 @@ impl FetchFullTxns {
                 let keys = keys.clone();
                 let wallet_transactions = wallet_transactions.clone();
 
-                let block_time = bsync_data.read().await.block_data.get_block_timestamp(&height).await;
+                let block_time = bsync_data
+                    .read()
+                    .await
+                    .block_data
+                    .get_block_timestamp(&height)
+                    .await;
                 Self::scan_full_tx(
                     config,
                     transaction,
@@ -230,7 +260,10 @@ impl FetchFullTxns {
         if is_outgoing_transaction {
             if let Some(t_bundle) = transaction.transparent_bundle() {
                 for vout in &t_bundle.vout {
-                    let taddr = keys.read().await.address_from_pubkeyhash(vout.script_pubkey.address());
+                    let taddr = keys
+                        .read()
+                        .await
+                        .address_from_pubkeyhash(vout.script_pubkey.address());
 
                     if taddr.is_some() && !taddrs_set.contains(taddr.as_ref().unwrap()) {
                         outgoing_metadatas.push(OutgoingTxMetadata {
@@ -260,7 +293,10 @@ impl FetchFullTxns {
 
         // Update price if available
         if price.is_some() {
-            wallet_transactions.write().await.set_price(&transaction.txid(), price);
+            wallet_transactions
+                .write()
+                .await
+                .set_price(&transaction.txid(), price);
         }
 
         //info!("Finished Fetching full transaction {}", tx.txid());
@@ -282,7 +318,8 @@ impl FetchFullTxns {
             for (n, vout) in t_bundle.vout.iter().enumerate() {
                 match vout.script_pubkey.address() {
                     Some(TransparentAddress::PublicKey(hash)) => {
-                        let output_taddr = hash.to_base58check(&config.base58_pubkey_address(), &[]);
+                        let output_taddr =
+                            hash.to_base58check(&config.base58_pubkey_address(), &[]);
                         if taddrs_set.contains(&output_taddr) {
                             // This is our address. Add this as an output to the txid
                             wallet_transactions.write().await.add_new_taddr_output(
@@ -331,7 +368,12 @@ impl FetchFullTxns {
                                 transaction.txid()
                             );
                             total_transparent_value_spent += spent_utxo.value;
-                            spent_utxos.push((prev_transaction_id, prev_n as u32, transaction.txid(), height));
+                            spent_utxos.push((
+                                prev_transaction_id,
+                                prev_n as u32,
+                                transaction.txid(),
+                                height,
+                            ));
                         }
                     }
                 }
@@ -381,8 +423,9 @@ impl FetchFullTxns {
             let unspent_nullifiers = wallet_transactions.read().await.get_unspent_nullifiers();
             if let Some(s_bundle) = transaction.sapling_bundle() {
                 for s in s_bundle.shielded_spends.iter() {
-                    if let Some((nf, value, transaction_id)) =
-                        unspent_nullifiers.iter().find(|(nf, _, _)| *nf == s.nullifier)
+                    if let Some((nf, value, transaction_id)) = unspent_nullifiers
+                        .iter()
+                        .find(|(nf, _, _)| *nf == s.nullifier)
                     {
                         wallet_transactions.write().await.add_new_spent(
                             transaction.txid(),
@@ -398,7 +441,8 @@ impl FetchFullTxns {
             }
         }
         // Collect all our z addresses, to check for change
-        let z_addresses: HashSet<String> = HashSet::from_iter(keys.read().await.get_all_zaddresses().into_iter());
+        let z_addresses: HashSet<String> =
+            HashSet::from_iter(keys.read().await.get_all_zaddresses().into_iter());
 
         // Collect all our sapling OVKs, to scan for outputs
         let ovks: Vec<_> = keys
@@ -421,11 +465,11 @@ impl FetchFullTxns {
             for output in s_bundle.shielded_outputs.iter() {
                 // Search all of our keys
                 for (i, ivk) in ivks.iter().enumerate() {
-                    let (note, to, memo_bytes) = match try_sapling_note_decryption(&config.chain, height, &ivk, output)
-                    {
-                        Some(ret) => ret,
-                        None => continue,
-                    };
+                    let (note, to, memo_bytes) =
+                        match try_sapling_note_decryption(&config.chain, height, &ivk, output) {
+                            Some(ret) => ret,
+                            None => continue,
+                        };
 
                     // info!("A sapling note was received into the wallet in {}", transaction.txid());
                     if unconfirmed {
@@ -439,11 +483,15 @@ impl FetchFullTxns {
                         );
                     }
 
-                    let memo = memo_bytes.clone().try_into().unwrap_or(Memo::Future(memo_bytes));
-                    wallet_transactions
-                        .write()
-                        .await
-                        .add_memo_to_note(&transaction.txid(), note, memo);
+                    let memo = memo_bytes
+                        .clone()
+                        .try_into()
+                        .unwrap_or(Memo::Future(memo_bytes));
+                    wallet_transactions.write().await.add_memo_to_note(
+                        &transaction.txid(),
+                        note,
+                        memo,
+                    );
                 }
 
                 // Also scan the output to see if it can be decoded with our OutgoingViewKey
@@ -459,7 +507,10 @@ impl FetchFullTxns {
                                 // Mark this transaction as an outgoing transaction, so we can grab all outgoing metadata
                                 *is_outgoing_transaction = true;
 
-                                let address = encode_payment_address(config.hrp_sapling_address(), &payment_address);
+                                let address = encode_payment_address(
+                                    config.hrp_sapling_address(),
+                                    &payment_address,
+                                );
 
                                 // Check if this is change, and if it also doesn't have a memo, don't add
                                 // to the outgoing metadata.

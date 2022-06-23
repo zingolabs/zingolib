@@ -26,10 +26,13 @@ use zcash_primitives::{
         note_encryption::{sapling_note_encryption, SaplingDomain},
         prover::TxProver,
         redjubjub::Signature,
-        Diversifier, Node, Note, Nullifier, PaymentAddress, ProofGenerationKey, Rseed, ValueCommitment,
+        Diversifier, Node, Note, Nullifier, PaymentAddress, ProofGenerationKey, Rseed,
+        ValueCommitment,
     },
     transaction::{
-        components::{self, transparent, Amount, OutPoint, OutputDescription, TxIn, TxOut, GROTH_PROOF_SIZE},
+        components::{
+            self, transparent, Amount, OutPoint, OutputDescription, TxIn, TxOut, GROTH_PROOF_SIZE,
+        },
         Transaction, TransactionData, TxId, TxVersion,
     },
     zip32::{ExtendedFullViewingKey, ExtendedSpendingKey},
@@ -90,7 +93,9 @@ fn sapling_bundle() -> Option<sapling::Bundle<sapling::Authorized>> {
         authorization,
     })
 }
-fn optional_transparent_bundle(include_tbundle: bool) -> Option<transparent::Bundle<transparent::Authorized>> {
+fn optional_transparent_bundle(
+    include_tbundle: bool,
+) -> Option<transparent::Bundle<transparent::Authorized>> {
     if include_tbundle {
         return Some(transparent::Bundle {
             vin: vec![],
@@ -122,7 +127,12 @@ impl FakeTransaction {
 
     // Add a dummy compact output with given value sending it to 'to', and encode
     // the output with the ovk if available
-    fn add_sapling_output(&mut self, value: u64, ovk: Option<OutgoingViewingKey>, to: &PaymentAddress) -> Note {
+    fn add_sapling_output(
+        &mut self,
+        value: u64,
+        ovk: Option<OutgoingViewingKey>,
+        to: &PaymentAddress,
+    ) -> Note {
         // Create a fake Note for the account
         let mut rng = OsRng;
         let note = Note {
@@ -132,8 +142,13 @@ impl FakeTransaction {
             rseed: Rseed::BeforeZip212(jubjub::Fr::random(rng)),
         };
 
-        let encryptor: NoteEncryption<SaplingDomain<TestNetwork>> =
-            sapling_note_encryption(ovk, note.clone(), to.clone(), Memo::default().into(), &mut rng);
+        let encryptor: NoteEncryption<SaplingDomain<TestNetwork>> = sapling_note_encryption(
+            ovk,
+            note.clone(),
+            to.clone(),
+            Memo::default().into(),
+            &mut rng,
+        );
 
         let mut rng = OsRng;
         let rcv = jubjub::Fr::random(&mut rng);
@@ -148,7 +163,11 @@ impl FakeTransaction {
             cmu: note.cmu(),
             ephemeral_key: EphemeralKeyBytes::from(encryptor.epk().to_bytes()),
             enc_ciphertext: encryptor.encrypt_note_plaintext(),
-            out_ciphertext: encryptor.encrypt_outgoing_plaintext(&cv.commitment().into(), &cmu, &mut rng),
+            out_ciphertext: encryptor.encrypt_outgoing_plaintext(
+                &cv.commitment().into(),
+                &cmu,
+                &mut rng,
+            ),
             zkproof: [0; GROTH_PROOF_SIZE],
         };
 
@@ -407,8 +426,11 @@ impl FakeCompactBlockList {
                     .vout
                     .iter()
                     .filter_map(|vout| {
-                        if let Some(TransparentAddress::PublicKey(taddr_hash)) = vout.script_pubkey.address() {
-                            let taddr = taddr_hash.to_base58check(&config.base58_pubkey_address(), &[]);
+                        if let Some(TransparentAddress::PublicKey(taddr_hash)) =
+                            vout.script_pubkey.address()
+                        {
+                            let taddr =
+                                taddr_hash.to_base58check(&config.base58_pubkey_address(), &[]);
                             Some(taddr)
                         } else {
                             None
@@ -424,16 +446,21 @@ impl FakeCompactBlockList {
                 new_block.add_transactions(vec![compact_transaction]);
                 new_block.height
             };
-            self.transactions.push((transaction, new_block_height, taddrs));
+            self.transactions
+                .push((transaction, new_block_height, taddrs));
         }
     }
 
-    pub fn add_fake_transaction(&mut self, fake_transaction: FakeTransaction) -> (&Transaction, u64) {
+    pub fn add_fake_transaction(
+        &mut self,
+        fake_transaction: FakeTransaction,
+    ) -> (&Transaction, u64) {
         let (compact_transaction, transaction, taddrs) = fake_transaction.into_transaction();
 
         let height = self.next_height;
         self.transactions.push((transaction, height, taddrs));
-        self.add_empty_block().add_transactions(vec![compact_transaction]);
+        self.add_empty_block()
+            .add_transactions(vec![compact_transaction]);
 
         (&self.transactions.last().unwrap().0, height)
     }
@@ -455,7 +482,11 @@ impl FakeCompactBlockList {
 
     // Add a new transaction into the block, paying the given address the amount.
     // Returns the nullifier of the new note.
-    pub fn add_transaction_paying(&mut self, extfvk: &ExtendedFullViewingKey, value: u64) -> (&Transaction, u64, Note) {
+    pub fn add_transaction_paying(
+        &mut self,
+        extfvk: &ExtendedFullViewingKey,
+        value: u64,
+    ) -> (&Transaction, u64, Note) {
         let mut fake_transaction = FakeTransaction::new(false);
         let note = fake_transaction.add_transaction_paying(extfvk, value);
 
@@ -547,12 +578,16 @@ impl TxProver for FakeTransactionProver {
 
         // We create the randomness of the value commitment
         let rcv = jubjub::Fr::random(&mut rng);
-        let cv = ValueCommitment { value, randomness: rcv };
+        let cv = ValueCommitment {
+            value,
+            randomness: rcv,
+        };
         // Compute value commitment
         let value_commitment: jubjub::ExtendedPoint = cv.commitment().into();
 
-        let rk = zcash_primitives::sapling::redjubjub::PublicKey(proof_generation_key.ak.clone().into())
-            .randomize(ar, SPENDING_KEY_GENERATOR);
+        let rk =
+            zcash_primitives::sapling::redjubjub::PublicKey(proof_generation_key.ak.clone().into())
+                .randomize(ar, SPENDING_KEY_GENERATOR);
 
         Ok((zkproof, value_commitment, rk))
     }
@@ -572,7 +607,10 @@ impl TxProver for FakeTransactionProver {
         // We create the randomness of the value commitment
         let rcv = jubjub::Fr::random(&mut rng);
 
-        let cv = ValueCommitment { value, randomness: rcv };
+        let cv = ValueCommitment {
+            value,
+            randomness: rcv,
+        };
         // Compute value commitment
         let value_commitment: jubjub::ExtendedPoint = cv.commitment().into();
         (zkproof, value_commitment)

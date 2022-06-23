@@ -8,7 +8,8 @@ use std::{
     io::{self, ErrorKind, Read},
 };
 use zcash_note_encryption::{
-    EphemeralKeyBytes, NoteEncryption, OutgoingCipherKey, ShieldedOutput, ENC_CIPHERTEXT_SIZE, OUT_CIPHERTEXT_SIZE,
+    EphemeralKeyBytes, NoteEncryption, OutgoingCipherKey, ShieldedOutput, ENC_CIPHERTEXT_SIZE,
+    OUT_CIPHERTEXT_SIZE,
 };
 use zcash_primitives::{
     consensus::{BlockHeight, MainNetwork, MAIN_NETWORK},
@@ -103,7 +104,8 @@ impl Message {
         let mut rng = OsRng;
 
         // Encrypt To address. We're using a 'NONE' OVK here, so the out_ciphertext is not recoverable.
-        let (_ock, _cv, cmu, epk, enc_ciphertext, _out_ciphertext) = self.encrypt_message_to(None, &mut rng)?;
+        let (_ock, _cv, cmu, epk, enc_ciphertext, _out_ciphertext) =
+            self.encrypt_message_to(None, &mut rng)?;
 
         // We'll encode the message on the wire as a series of bytes
         // u8 -> serialized version
@@ -156,14 +158,20 @@ impl Message {
         reader.read_exact(&mut cmu_bytes)?;
         let cmu = bls12_381::Scalar::from_bytes(&cmu_bytes);
         if cmu.is_none().into() {
-            return Err(io::Error::new(ErrorKind::InvalidData, format!("Can't read CMU bytes")));
+            return Err(io::Error::new(
+                ErrorKind::InvalidData,
+                format!("Can't read CMU bytes"),
+            ));
         }
 
         let mut epk_bytes = [0u8; 32];
         reader.read_exact(&mut epk_bytes)?;
         let epk = jubjub::ExtendedPoint::from_bytes(&epk_bytes);
         if epk.is_none().into() {
-            return Err(io::Error::new(ErrorKind::InvalidData, format!("Can't read EPK bytes")));
+            return Err(io::Error::new(
+                ErrorKind::InvalidData,
+                format!("Can't read EPK bytes"),
+            ));
         }
 
         let mut enc_bytes = [0u8; ENC_CIPHERTEXT_SIZE];
@@ -203,10 +211,14 @@ impl Message {
         ) {
             Some((_note, address, memo)) => Ok(Self::new(
                 address,
-                memo.try_into()
-                    .map_err(|_e| io::Error::new(ErrorKind::InvalidData, format!("Failed to decrypt")))?,
+                memo.try_into().map_err(|_e| {
+                    io::Error::new(ErrorKind::InvalidData, format!("Failed to decrypt"))
+                })?,
             )),
-            None => Err(io::Error::new(ErrorKind::InvalidData, format!("Failed to decrypt"))),
+            None => Err(io::Error::new(
+                ErrorKind::InvalidData,
+                format!("Failed to decrypt"),
+            )),
         }
     }
 }
@@ -300,7 +312,10 @@ pub mod tests {
 
         // Bad version
         let mut bad_enc = enc.clone();
-        bad_enc.splice(magic_len..magic_len + 1, [Message::serialized_version() + 1].to_vec());
+        bad_enc.splice(
+            magic_len..magic_len + 1,
+            [Message::serialized_version() + 1].to_vec(),
+        );
         let dec_success = Message::decrypt(&bad_enc, &ivk);
         assert!(dec_success.is_err());
 

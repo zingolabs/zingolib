@@ -13,7 +13,9 @@ use sodiumoxide::crypto::secretbox;
 use zcash_address::unified::{Encoding, Ufvk};
 use zcash_client_backend::{
     address,
-    encoding::{encode_extended_full_viewing_key, encode_extended_spending_key, encode_payment_address},
+    encoding::{
+        encode_extended_full_viewing_key, encode_extended_spending_key, encode_payment_address,
+    },
 };
 use zcash_encoding::Vector;
 use zcash_primitives::{
@@ -21,6 +23,7 @@ use zcash_primitives::{
     sapling::PaymentAddress,
     zip32::{ChildIndex, ExtendedFullViewingKey, ExtendedSpendingKey},
 };
+use zingoconfig::Network;
 
 use crate::{
     lightclient::lightclient_config::{LightClientConfig, GAP_RULE_UNUSED_ADDRESSES},
@@ -77,7 +80,12 @@ impl FromBase58Check for str {
     fn from_base58check(&self) -> io::Result<(u8, Vec<u8>)> {
         let mut payload: Vec<u8> = match self.from_base58() {
             Ok(payload) => payload,
-            Err(error) => return Err(io::Error::new(ErrorKind::InvalidData, format!("{:?}", error))),
+            Err(error) => {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidData,
+                    format!("{:?}", error),
+                ))
+            }
         };
         if payload.len() < 5 {
             return Err(io::Error::new(
@@ -90,7 +98,10 @@ impl FromBase58Check for str {
         let provided_checksum = payload.split_off(checksum_index);
         let checksum = double_sha256(&payload)[..4].to_vec();
         if checksum != provided_checksum {
-            return Err(io::Error::new(ErrorKind::InvalidData, format!("Invalid Checksum")));
+            return Err(io::Error::new(
+                ErrorKind::InvalidData,
+                format!("Invalid Checksum"),
+            ));
         }
         Ok((payload[0], payload[1..].to_vec()))
     }
@@ -152,8 +163,7 @@ impl Keys {
 
     #[cfg(test)]
     pub fn new_empty() -> Self {
-        let config =
-            LightClientConfig::create_unconnected(crate::lightclient::lightclient_config::Network::FakeMainnet, None);
+        let config = LightClientConfig::create_unconnected(Network::FakeMainnet, None);
         Self {
             config,
             encrypted: false,
@@ -167,7 +177,11 @@ impl Keys {
         }
     }
 
-    pub fn new(config: &LightClientConfig, seed_phrase: Option<String>, num_zaddrs: u32) -> Result<Self, String> {
+    pub fn new(
+        config: &LightClientConfig,
+        seed_phrase: Option<String>,
+        num_zaddrs: u32,
+    ) -> Result<Self, String> {
         let mut seed_bytes = [0u8; 32];
 
         if seed_phrase.is_none() {
@@ -213,8 +227,16 @@ impl Keys {
         })
     }
 
-    pub fn read_old<R: Read>(version: u64, mut reader: R, config: &LightClientConfig) -> io::Result<Self> {
-        let encrypted = if version >= 4 { reader.read_u8()? > 0 } else { false };
+    pub fn read_old<R: Read>(
+        version: u64,
+        mut reader: R,
+        config: &LightClientConfig,
+    ) -> io::Result<Self> {
+        let encrypted = if version >= 4 {
+            reader.read_u8()? > 0
+        } else {
+            false
+        };
 
         let mut enc_seed = [0u8; 48];
         if version >= 4 {
@@ -263,7 +285,10 @@ impl Keys {
                     .map(|(i, (extfvk, payment_address))| {
                         let zk = WalletZKey::new_locked_hdkey(i as u32, extfvk.clone());
                         if zk.zaddress != *payment_address {
-                            Err(io::Error::new(ErrorKind::InvalidData, "Payment address didn't match"))
+                            Err(io::Error::new(
+                                ErrorKind::InvalidData,
+                                "Payment address didn't match",
+                            ))
                         } else {
                             Ok(zk)
                         }
@@ -278,11 +303,17 @@ impl Keys {
                     .map(|(i, (extsk, (extfvk, payment_address)))| {
                         let zk = WalletZKey::new_hdkey(i as u32, extsk);
                         if zk.zaddress != *payment_address {
-                            return Err(io::Error::new(ErrorKind::InvalidData, "Payment address didn't match"));
+                            return Err(io::Error::new(
+                                ErrorKind::InvalidData,
+                                "Payment address didn't match",
+                            ));
                         }
 
                         if zk.extfvk != extfvk {
-                            return Err(io::Error::new(ErrorKind::InvalidData, "Full View key didn't match"));
+                            return Err(io::Error::new(
+                                ErrorKind::InvalidData,
+                                "Full View key didn't match",
+                            ));
                         }
 
                         Ok(zk)
@@ -301,7 +332,8 @@ impl Keys {
             let tkeys = Vector::read(&mut reader, |r| {
                 let mut tpk_bytes = [0u8; 32];
                 r.read_exact(&mut tpk_bytes)?;
-                secp256k1::SecretKey::from_slice(&tpk_bytes).map_err(|e| io::Error::new(ErrorKind::InvalidData, e))
+                secp256k1::SecretKey::from_slice(&tpk_bytes)
+                    .map_err(|e| io::Error::new(ErrorKind::InvalidData, e))
             })?;
 
             let taddresses = if version >= 4 {
@@ -311,7 +343,9 @@ impl Keys {
                 // Calculate the addresses
                 tkeys
                     .iter()
-                    .map(|sk| WalletTKey::address_from_prefix_sk(&config.base58_pubkey_address(), sk))
+                    .map(|sk| {
+                        WalletTKey::address_from_prefix_sk(&config.base58_pubkey_address(), sk)
+                    })
                     .collect()
             };
 
@@ -366,7 +400,8 @@ impl Keys {
             let tkeys = Vector::read(&mut reader, |r| {
                 let mut tpk_bytes = [0u8; 32];
                 r.read_exact(&mut tpk_bytes)?;
-                secp256k1::SecretKey::from_slice(&tpk_bytes).map_err(|e| io::Error::new(ErrorKind::InvalidData, e))
+                secp256k1::SecretKey::from_slice(&tpk_bytes)
+                    .map_err(|e| io::Error::new(ErrorKind::InvalidData, e))
             })?;
 
             let taddresses = Vector::read(&mut reader, |r| utils::read_string(r))?;
@@ -432,7 +467,10 @@ impl Keys {
             return "".to_string();
         }
 
-        Mnemonic::from_entropy(self.seed).unwrap().phrase().to_string()
+        Mnemonic::from_entropy(self.seed)
+            .unwrap()
+            .phrase()
+            .to_string()
     }
 
     pub fn get_all_sapling_extfvks(&self) -> Vec<ExtendedFullViewingKey> {
@@ -443,7 +481,10 @@ impl Keys {
     where
         for<'a> T: TryFrom<&'a WalletOKeyInner>,
     {
-        self.okeys.iter().filter_map(|k| T::try_from(&k.key).ok()).collect()
+        self.okeys
+            .iter()
+            .filter_map(|k| T::try_from(&k.key).ok())
+            .collect()
     }
 
     pub fn get_all_zaddresses(&self) -> Vec<String> {
@@ -465,9 +506,9 @@ impl Keys {
 
     fn get_network_enum(&self) -> zcash_address::Network {
         match self.config.chain {
-            crate::lightclient::lightclient_config::Network::Mainnet => zcash_address::Network::Main,
-            crate::lightclient::lightclient_config::Network::Testnet => zcash_address::Network::Test,
-            crate::lightclient::lightclient_config::Network::FakeMainnet => zcash_address::Network::Main,
+            Network::Mainnet => zcash_address::Network::Main,
+            Network::Testnet => zcash_address::Network::Test,
+            Network::FakeMainnet => zcash_address::Network::Main,
         }
     }
 
@@ -480,7 +521,10 @@ impl Keys {
     }
 
     pub fn get_all_taddrs(&self) -> Vec<String> {
-        self.tkeys.iter().map(|tk| tk.address.clone()).collect::<Vec<_>>()
+        self.tkeys
+            .iter()
+            .map(|tk| tk.address.clone())
+            .collect::<Vec<_>>()
     }
 
     pub fn have_sapling_spending_key(&self, extfvk: &ExtendedFullViewingKey) -> bool {
@@ -491,7 +535,10 @@ impl Keys {
             .unwrap_or(false)
     }
 
-    pub fn get_extsk_for_extfvk(&self, extfvk: &ExtendedFullViewingKey) -> Option<ExtendedSpendingKey> {
+    pub fn get_extsk_for_extfvk(
+        &self,
+        extfvk: &ExtendedFullViewingKey,
+    ) -> Option<ExtendedSpendingKey> {
         self.zkeys
             .iter()
             .find(|zk| zk.extfvk == *extfvk)
@@ -617,17 +664,21 @@ impl Keys {
 
         let bip39_seed = &Mnemonic::from_entropy(self.seed).unwrap().to_seed("");
 
-        let spending_key =
-            ::orchard::keys::SpendingKey::from_zip32_seed(bip39_seed, self.config.get_coin_type(), account).unwrap();
+        let spending_key = ::orchard::keys::SpendingKey::from_zip32_seed(
+            bip39_seed,
+            self.config.get_coin_type(),
+            account,
+        )
+        .unwrap();
 
         let newkey = WalletOKey::new_hdkey(account, spending_key);
         self.okeys.push(newkey.clone());
 
         use zcash_address::unified::Encoding as _;
         newkey.unified_address.encode(&match self.config.chain {
-            crate::lightclient::lightclient_config::Network::Mainnet => zcash_address::Network::Main,
-            crate::lightclient::lightclient_config::Network::Testnet => zcash_address::Network::Test,
-            crate::lightclient::lightclient_config::Network::FakeMainnet => zcash_address::Network::Main,
+            Network::Mainnet => zcash_address::Network::Main,
+            Network::Testnet => zcash_address::Network::Test,
+            Network::FakeMainnet => zcash_address::Network::Main,
         })
     }
     /// Add a new t address to the wallet. This will derive a new address from the seed
@@ -661,16 +712,17 @@ impl Keys {
             .zkeys
             .iter()
             .map(|k| {
-                let pkey = match k
-                    .extsk
-                    .clone()
-                    .map(|extsk| encode_extended_spending_key(self.config.hrp_sapling_private_key(), &extsk))
-                {
+                let pkey = match k.extsk.clone().map(|extsk| {
+                    encode_extended_spending_key(self.config.hrp_sapling_private_key(), &extsk)
+                }) {
                     Some(pk) => pk,
                     None => "".to_string(),
                 };
 
-                let vkey = encode_extended_full_viewing_key(self.config.hrp_sapling_viewing_key(), &k.extfvk);
+                let vkey = encode_extended_full_viewing_key(
+                    self.config.hrp_sapling_viewing_key(),
+                    &k.extfvk,
+                );
 
                 (
                     encode_payment_address(self.config.hrp_sapling_address(), &k.zaddress),
@@ -702,14 +754,20 @@ impl Keys {
 
                 let vkey = match ::orchard::keys::FullViewingKey::try_from(&k.key) {
                     Ok(viewing_key) => {
-                        Ufvk::try_from_items(vec![zcash_address::unified::Fvk::Orchard(viewing_key.to_bytes())])
-                            .map(|vk| vk.encode(&self.get_network_enum()))
-                            .unwrap_or_else(|e| e.to_string())
+                        Ufvk::try_from_items(vec![zcash_address::unified::Fvk::Orchard(
+                            viewing_key.to_bytes(),
+                        )])
+                        .map(|vk| vk.encode(&self.get_network_enum()))
+                        .unwrap_or_else(|e| e.to_string())
                     }
                     Err(_) => "".to_string(),
                 };
 
-                (k.unified_address.encode(&self.get_network_enum()), pkey, vkey)
+                (
+                    k.unified_address.encode(&self.get_network_enum()),
+                    pkey,
+                    vkey,
+                )
             })
             .collect::<Vec<(String, String, String)>>();
 
@@ -720,13 +778,21 @@ impl Keys {
     pub fn get_t_secret_keys(&self) -> Vec<(String, String)> {
         self.tkeys
             .iter()
-            .map(|sk| (sk.address.clone(), sk.sk_as_string(&self.config).unwrap_or_default()))
+            .map(|sk| {
+                (
+                    sk.address.clone(),
+                    sk.sk_as_string(&self.config).unwrap_or_default(),
+                )
+            })
             .collect::<Vec<(String, String)>>()
     }
 
     pub fn encrypt(&mut self, passwd: String) -> io::Result<()> {
         if self.encrypted {
-            return Err(io::Error::new(ErrorKind::AlreadyExists, "Wallet is already encrypted"));
+            return Err(io::Error::new(
+                ErrorKind::AlreadyExists,
+                "Wallet is already encrypted",
+            ));
         }
 
         // Get the doublesha256 of the password, which is the right length
@@ -757,11 +823,17 @@ impl Keys {
 
     pub fn lock(&mut self) -> io::Result<()> {
         if !self.encrypted {
-            return Err(io::Error::new(ErrorKind::AlreadyExists, "Wallet is not encrypted"));
+            return Err(io::Error::new(
+                ErrorKind::AlreadyExists,
+                "Wallet is not encrypted",
+            ));
         }
 
         if !self.unlocked {
-            return Err(io::Error::new(ErrorKind::AlreadyExists, "Wallet is already locked"));
+            return Err(io::Error::new(
+                ErrorKind::AlreadyExists,
+                "Wallet is already locked",
+            ));
         }
 
         // Empty the seed and the secret keys
@@ -785,11 +857,17 @@ impl Keys {
 
     pub fn unlock(&mut self, passwd: String) -> io::Result<()> {
         if !self.encrypted {
-            return Err(Error::new(ErrorKind::AlreadyExists, "Wallet is not encrypted"));
+            return Err(Error::new(
+                ErrorKind::AlreadyExists,
+                "Wallet is not encrypted",
+            ));
         }
 
         if self.encrypted && self.unlocked {
-            return Err(Error::new(ErrorKind::AlreadyExists, "Wallet is already unlocked"));
+            return Err(Error::new(
+                ErrorKind::AlreadyExists,
+                "Wallet is already unlocked",
+            ));
         }
 
         // Get the doublesha256 of the password, which is the right length
@@ -837,7 +915,10 @@ impl Keys {
     // permanantly removing the encryption
     pub fn remove_encryption(&mut self, passwd: String) -> io::Result<()> {
         if !self.encrypted {
-            return Err(Error::new(ErrorKind::AlreadyExists, "Wallet is not encrypted"));
+            return Err(Error::new(
+                ErrorKind::AlreadyExists,
+                "Wallet is not encrypted",
+            ));
         }
 
         // Unlock the wallet if it's locked

@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use log::{error, info};
 
+use zingoconfig::Network;
 use zingolib::lightclient::lightclient_config::LightClientConfig;
 use zingolib::{commands, lightclient::LightClient};
 
@@ -64,14 +65,21 @@ macro_rules! configure_clapapp {
 pub fn report_permission_error() {
     let user = std::env::var("USER").expect("Unexpected error reading value of $USER!");
     let home = std::env::var("HOME").expect("Unexpected error reading value of $HOME!");
-    let current_executable = std::env::current_exe().expect("Unexpected error reporting executable path!");
+    let current_executable =
+        std::env::current_exe().expect("Unexpected error reporting executable path!");
     eprintln!("USER: {}", user);
     eprintln!("HOME: {}", home);
     eprintln!("Executable: {}", current_executable.display());
     if home == "/" {
-        eprintln!("User {} must have permission to write to '{}.zcash/' .", user, home);
+        eprintln!(
+            "User {} must have permission to write to '{}.zcash/' .",
+            user, home
+        );
     } else {
-        eprintln!("User {} must have permission to write to '{}/.zcash/' .", user, home);
+        eprintln!(
+            "User {} must have permission to write to '{}/.zcash/' .",
+            user, home
+        );
     }
 }
 
@@ -84,17 +92,23 @@ pub fn startup(
     print_updates: bool,
 ) -> io::Result<(Sender<(String, Vec<String>)>, Receiver<String>)> {
     // Try to get the configuration
-    let (config, latest_block_height) = LightClientConfig::create_on_data_dir(server.clone(), data_dir)?;
+    let (config, latest_block_height) =
+        LightClientConfig::create_on_data_dir(server.clone(), data_dir)?;
 
     let lightclient = match seed {
-        Some(phrase) => Arc::new(LightClient::new_from_phrase(phrase, &config, birthday, false)?),
+        Some(phrase) => Arc::new(LightClient::new_from_phrase(
+            phrase, &config, birthday, false,
+        )?),
         None => {
             if config.wallet_exists() {
                 Arc::new(LightClient::read_from_disk(&config)?)
             } else {
                 println!("Creating a new wallet");
                 // Create a wallet with height - 100, to protect against reorgs
-                Arc::new(LightClient::new(&config, latest_block_height.saturating_sub(100))?)
+                Arc::new(LightClient::new(
+                    &config,
+                    latest_block_height.saturating_sub(100),
+                )?)
             }
         }
     };
@@ -125,7 +139,10 @@ pub fn startup(
     Ok((command_transmitter, resp_receiver))
 }
 
-pub fn start_interactive(command_transmitter: Sender<(String, Vec<String>)>, resp_receiver: Receiver<String>) {
+pub fn start_interactive(
+    command_transmitter: Sender<(String, Vec<String>)>,
+    resp_receiver: Receiver<String>,
+) {
     // `()` can be used when no completer is required
     let mut rl = rustyline::Editor::<()>::new();
 
@@ -145,15 +162,25 @@ pub fn start_interactive(command_transmitter: Sender<(String, Vec<String>)>, res
     };
 
     let info = send_command("info".to_string(), vec![]);
-    let chain_name = json::parse(&info).unwrap()["chain_name"].as_str().unwrap().to_string();
+    let chain_name = json::parse(&info).unwrap()["chain_name"]
+        .as_str()
+        .unwrap()
+        .to_string();
 
     loop {
         // Read the height first
-        let height = json::parse(&send_command("height".to_string(), vec!["false".to_string()])).unwrap()["height"]
+        let height = json::parse(&send_command(
+            "height".to_string(),
+            vec!["false".to_string()],
+        ))
+        .unwrap()["height"]
             .as_i64()
             .unwrap();
 
-        let readline = rl.readline(&format!("({}) Block:{} (type 'help') >> ", chain_name, height));
+        let readline = rl.readline(&format!(
+            "({}) Block:{} (type 'help') >> ",
+            chain_name, height
+        ));
         match readline {
             Ok(line) => {
                 rl.add_history_entry(line.as_str());
@@ -200,7 +227,9 @@ pub fn start_interactive(command_transmitter: Sender<(String, Vec<String>)>, res
     }
 }
 
-pub fn command_loop(lightclient: Arc<LightClient>) -> (Sender<(String, Vec<String>)>, Receiver<String>) {
+pub fn command_loop(
+    lightclient: Arc<LightClient>,
+) -> (Sender<(String, Vec<String>)>, Receiver<String>) {
     let (command_transmitter, command_receiver) = channel::<(String, Vec<String>)>();
     let (resp_transmitter, resp_receiver) = channel::<String>();
 
@@ -232,7 +261,7 @@ pub fn attempt_recover_seed(_password: Option<String>) {
     // Create a Light Client Config in an attempt to recover the file.
     let _config = LightClientConfig {
         server: "0.0.0.0:0".parse().unwrap(),
-        chain: zingolib::lightclient::lightclient_config::Network::Mainnet,
+        chain: zingoconfig::Network::Mainnet,
         monitor_mempool: false,
         anchor_offset: [0u32; 5],
         data_dir: None,

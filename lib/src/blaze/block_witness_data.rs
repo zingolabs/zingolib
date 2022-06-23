@@ -1,15 +1,13 @@
 use crate::{
     compact_formats::{CompactBlock, CompactTx, TreeState},
     grpc_connector::GrpcConnector,
-    lightclient::{
-        checkpoints::get_all_main_checkpoints,
-        lightclient_config::{LightClientConfig, MAX_REORG},
-    },
+    lightclient::{checkpoints::get_all_main_checkpoints, lightclient_config::LightClientConfig},
     wallet::{
         data::{BlockData, WalletTx, WitnessCache},
         transactions::WalletTxns,
     },
 };
+use zingoconfig::MAX_REORG;
 
 use futures::future::join_all;
 use http::Uri;
@@ -75,7 +73,11 @@ impl BlockAndWitnessData {
         s
     }
 
-    pub async fn setup_sync(&mut self, existing_blocks: Vec<BlockData>, verified_tree: Option<TreeState>) {
+    pub async fn setup_sync(
+        &mut self,
+        existing_blocks: Vec<BlockData>,
+        verified_tree: Option<TreeState>,
+    ) {
         if !existing_blocks.is_empty() {
             if existing_blocks.first().unwrap().height < existing_blocks.last().unwrap().height {
                 panic!("Blocks are in wrong order");
@@ -104,7 +106,11 @@ impl BlockAndWitnessData {
         }
     }
 
-    pub async fn get_ctx_for_nf_at_height(&self, nullifier: &Nullifier, height: u64) -> (CompactTx, u32) {
+    pub async fn get_ctx_for_nf_at_height(
+        &self,
+        nullifier: &Nullifier,
+        height: u64,
+    ) -> (CompactTx, u32) {
         self.wait_for_block(height).await;
 
         let cb = {
@@ -152,14 +158,18 @@ impl BlockAndWitnessData {
         let mut start_trees = vec![];
 
         // Collect all the checkpoints
-        start_trees.extend(get_all_main_checkpoints().into_iter().map(|(h, hash, tree)| {
-            let mut tree_state = TreeState::default();
-            tree_state.height = h;
-            tree_state.hash = hash.to_string();
-            tree_state.tree = tree.to_string();
+        start_trees.extend(
+            get_all_main_checkpoints()
+                .into_iter()
+                .map(|(h, hash, tree)| {
+                    let mut tree_state = TreeState::default();
+                    tree_state.height = h;
+                    tree_state.hash = hash.to_string();
+                    tree_state.tree = tree.to_string();
 
-            tree_state
-        }));
+                    tree_state
+                }),
+        );
 
         // Add all the verification trees as verified, so they can be used as starting points. If any of them fails to verify, then we will
         // fail the whole thing anyway.
@@ -183,9 +193,11 @@ impl BlockAndWitnessData {
             .into_iter()
             .filter_map(|vt| {
                 let height = vt.height;
-                let closest_tree = start_trees
-                    .iter()
-                    .fold(None, |ct, st| if st.height < height { Some(st) } else { ct });
+                let closest_tree =
+                    start_trees.iter().fold(
+                        None,
+                        |ct, st| if st.height < height { Some(st) } else { ct },
+                    );
 
                 if closest_tree.is_some() {
                     Some((vt, closest_tree.unwrap().clone()))
@@ -207,7 +219,8 @@ impl BlockAndWitnessData {
                     if ct.height == vt.height {
                         return true;
                     }
-                    let mut tree = CommitmentTree::<Node>::read(&hex::decode(ct.tree).unwrap()[..]).unwrap();
+                    let mut tree =
+                        CommitmentTree::<Node>::read(&hex::decode(ct.tree).unwrap()[..]).unwrap();
 
                     {
                         let blocks = blocks.read().await;
@@ -241,7 +254,10 @@ impl BlockAndWitnessData {
             })
             .collect();
 
-        let results = join_all(handles).await.into_iter().collect::<Result<Vec<_>, _>>();
+        let results = join_all(handles)
+            .await
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>();
         // If errored out, return false
         if results.is_err() {
             return (false, None);
@@ -268,7 +284,10 @@ impl BlockAndWitnessData {
         }
 
         // Remove all wallet transactions at the height
-        wallet_transactions.write().await.remove_txns_at_height(reorg_height);
+        wallet_transactions
+            .write()
+            .await
+            .remove_txns_at_height(reorg_height);
     }
 
     /// Start a new sync where we ingest all the blocks
@@ -278,7 +297,10 @@ impl BlockAndWitnessData {
         end_block: u64,
         wallet_transactions: Arc<RwLock<WalletTxns>>,
         reorg_transmitter: UnboundedSender<Option<u64>>,
-    ) -> (JoinHandle<Result<u64, String>>, UnboundedSender<CompactBlock>) {
+    ) -> (
+        JoinHandle<Result<u64, String>>,
+        UnboundedSender<CompactBlock>,
+    ) {
         //info!("Starting node and witness sync");
         let batch_size = self.batch_size;
 
@@ -335,8 +357,12 @@ impl BlockAndWitnessData {
 
                     // If there was a reorg, then we need to invalidate the block and its associated transactions
                     if let Some(reorg_height) = reorg_block {
-                        Self::invalidate_block(reorg_height, existing_blocks.clone(), wallet_transactions.clone())
-                            .await;
+                        Self::invalidate_block(
+                            reorg_height,
+                            existing_blocks.clone(),
+                            wallet_transactions.clone(),
+                        )
+                        .await;
                         last_block_expecting = reorg_height;
                     }
                     reorg_transmitter.send(reorg_block).unwrap();
@@ -358,7 +384,9 @@ impl BlockAndWitnessData {
         // Handle: Final
         // Join all the handles
         let h = tokio::spawn(async move {
-            let earliest_block = h0.await.map_err(|e| format!("Error processing blocks: {}", e))??;
+            let earliest_block = h0
+                .await
+                .map_err(|e| format!("Error processing blocks: {}", e))??;
 
             // Return the earlist block that was synced, accounting for all reorgs
             return Ok(earliest_block);
@@ -552,7 +580,9 @@ impl BlockAndWitnessData {
 
             let cb = &blocks.get(pos as usize).unwrap().cb();
             for compact_transaction in &cb.vtx {
-                if !transaction_id_found && WalletTx::new_txid(&compact_transaction.hash) == *transaction_id {
+                if !transaction_id_found
+                    && WalletTx::new_txid(&compact_transaction.hash) == *transaction_id
+                {
                     transaction_id_found = true;
                 }
                 for j in 0..compact_transaction.outputs.len() as u32 {
@@ -588,7 +618,6 @@ mod test {
     use std::sync::Arc;
 
     use crate::blaze::sync_status::SyncStatus;
-    use crate::lightclient::lightclient_config::Network;
     use crate::wallet::transactions::WalletTxns;
     use crate::{
         blaze::test_utils::{FakeCompactBlock, FakeCompactBlockList},
@@ -601,6 +630,7 @@ mod test {
     use tokio::sync::RwLock;
     use tokio::{sync::mpsc::unbounded_channel, task::JoinHandle};
     use zcash_primitives::block::BlockHash;
+    use zingoconfig::Network;
 
     use super::BlockAndWitnessData;
 
@@ -859,8 +889,14 @@ mod test {
 
         // Verify the hashes
         for i in 0..(finished_blks.len() - 1) {
-            assert_eq!(finished_blks[i].cb().prev_hash, finished_blks[i + 1].cb().hash);
-            assert_eq!(finished_blks[i].hash(), finished_blks[i].cb().hash().to_string());
+            assert_eq!(
+                finished_blks[i].cb().prev_hash,
+                finished_blks[i + 1].cb().hash
+            );
+            assert_eq!(
+                finished_blks[i].hash(),
+                finished_blks[i].cb().hash().to_string()
+            );
         }
     }
 }

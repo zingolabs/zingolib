@@ -6,7 +6,9 @@ use std::{
 use log::{error, info, LevelFilter};
 use log4rs::{
     append::rolling_file::{
-        policy::compound::{roll::fixed_window::FixedWindowRoller, trigger::size::SizeTrigger, CompoundPolicy},
+        policy::compound::{
+            roll::fixed_window::FixedWindowRoller, trigger::size::SizeTrigger, CompoundPolicy,
+        },
         RollingFileAppender,
     },
     config::{Appender, Root},
@@ -21,130 +23,18 @@ use zcash_primitives::{
 };
 
 use crate::{grpc_connector::GrpcConnector, lightclient::checkpoints};
+use zingoconfig::Network;
 
 pub const DEFAULT_SERVER: &str = "https://lwdv3.zecwallet.co";
 pub const WALLET_NAME: &str = "zingo-wallet.dat";
 pub const LOGFILE_NAME: &str = "zingo-wallet.debug.log";
 pub const ANCHOR_OFFSET: [u32; 5] = [4, 0, 0, 0, 0];
-pub const MAX_REORG: usize = 100;
-pub const GAP_RULE_UNUSED_ADDRESSES: usize = if cfg!(any(target_os = "ios", target_os = "android")) {
+pub const GAP_RULE_UNUSED_ADDRESSES: usize = if cfg!(any(target_os = "ios", target_os = "android"))
+{
     0
 } else {
     5
 };
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Network {
-    Testnet,
-    Mainnet,
-    FakeMainnet,
-}
-
-impl std::fmt::Display for Network {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use Network::*;
-        let name = match self {
-            Mainnet => "main",
-            Testnet => "test",
-            FakeMainnet => "regtest",
-        };
-        write!(f, "{name}")
-    }
-}
-
-impl Network {
-    pub fn hrp_orchard_spending_key(&self) -> &str {
-        match self {
-            Network::Mainnet => "secret-orchard-sk-main",
-            Network::Testnet => "secret-orchard-sk-test",
-            Network::FakeMainnet => "secret-orchard-sk-main",
-        }
-    }
-    pub fn hrp_unified_full_viewing_key(&self) -> &str {
-        match self {
-            Network::Mainnet => "uview",
-            Network::Testnet => "uviewtest",
-            Network::FakeMainnet => "uview",
-        }
-    }
-    pub fn to_zcash_address_network(&self) -> zcash_address::Network {
-        match self {
-            Network::Testnet => zcash_address::Network::Test,
-            _ => zcash_address::Network::Main,
-        }
-    }
-}
-
-impl Parameters for Network {
-    fn activation_height(&self, nu: NetworkUpgrade) -> Option<zcash_primitives::consensus::BlockHeight> {
-        use Network::*;
-        match self {
-            Mainnet => MAIN_NETWORK.activation_height(nu),
-            Testnet => TEST_NETWORK.activation_height(nu),
-            FakeMainnet => {
-                //Tests don't need to worry about NU5 yet
-                match nu {
-                    NetworkUpgrade::Nu5 => None,
-                    _ => Some(BlockHeight::from_u32(1)),
-                }
-            }
-        }
-    }
-
-    fn coin_type(&self) -> u32 {
-        use Network::*;
-        match self {
-            Mainnet => constants::mainnet::COIN_TYPE,
-            Testnet => constants::testnet::COIN_TYPE,
-            FakeMainnet => constants::mainnet::COIN_TYPE,
-        }
-    }
-
-    fn hrp_sapling_extended_spending_key(&self) -> &str {
-        use Network::*;
-        match self {
-            Mainnet => constants::mainnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
-            Testnet => constants::testnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
-            FakeMainnet => constants::mainnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
-        }
-    }
-
-    fn hrp_sapling_extended_full_viewing_key(&self) -> &str {
-        use Network::*;
-        match self {
-            Mainnet => constants::mainnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
-            Testnet => constants::testnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
-            FakeMainnet => constants::mainnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
-        }
-    }
-
-    fn hrp_sapling_payment_address(&self) -> &str {
-        use Network::*;
-        match self {
-            Mainnet => constants::mainnet::HRP_SAPLING_PAYMENT_ADDRESS,
-            Testnet => constants::testnet::HRP_SAPLING_PAYMENT_ADDRESS,
-            FakeMainnet => constants::mainnet::HRP_SAPLING_PAYMENT_ADDRESS,
-        }
-    }
-
-    fn b58_pubkey_address_prefix(&self) -> [u8; 2] {
-        use Network::*;
-        match self {
-            Mainnet => constants::mainnet::B58_PUBKEY_ADDRESS_PREFIX,
-            Testnet => constants::testnet::B58_PUBKEY_ADDRESS_PREFIX,
-            FakeMainnet => constants::mainnet::B58_PUBKEY_ADDRESS_PREFIX,
-        }
-    }
-
-    fn b58_script_address_prefix(&self) -> [u8; 2] {
-        use Network::*;
-        match self {
-            Mainnet => constants::mainnet::B58_SCRIPT_ADDRESS_PREFIX,
-            Testnet => constants::testnet::B58_SCRIPT_ADDRESS_PREFIX,
-            FakeMainnet => constants::mainnet::B58_SCRIPT_ADDRESS_PREFIX,
-        }
-    }
-}
 
 #[derive(Clone, Debug)]
 pub struct LightClientConfig {
@@ -169,10 +59,16 @@ impl LightClientConfig {
 
     //Convenience wrapper
     pub fn sapling_activation_height(&self) -> u64 {
-        self.chain.activation_height(NetworkUpgrade::Sapling).unwrap().into()
+        self.chain
+            .activation_height(NetworkUpgrade::Sapling)
+            .unwrap()
+            .into()
     }
 
-    pub fn create_on_data_dir(server: http::Uri, data_dir: Option<String>) -> io::Result<(LightClientConfig, u64)> {
+    pub fn create_on_data_dir(
+        server: http::Uri,
+        data_dir: Option<String>,
+    ) -> io::Result<(LightClientConfig, u64)> {
         use std::net::ToSocketAddrs;
 
         let lc = Runtime::new().unwrap().block_on(async move {
@@ -225,7 +121,8 @@ impl LightClientConfig {
             .unwrap();
         let size_limit = 5 * 1024 * 1024; // 5MB as max log file size to roll
         let size_trigger = SizeTrigger::new(size_limit);
-        let compound_policy = CompoundPolicy::new(Box::new(size_trigger), Box::new(fixed_window_roller));
+        let compound_policy =
+            CompoundPolicy::new(Box::new(size_trigger), Box::new(fixed_window_roller));
 
         Config::builder()
             .appender(
@@ -240,7 +137,11 @@ impl LightClientConfig {
                         ),
                     ),
             )
-            .build(Root::builder().appender("logfile").build(LevelFilter::Debug))
+            .build(
+                Root::builder()
+                    .appender("logfile")
+                    .build(LevelFilter::Debug),
+            )
             .map_err(|e| Error::new(ErrorKind::Other, format!("{}", e)))
     }
 
@@ -254,13 +155,15 @@ impl LightClientConfig {
                 zcash_data_location = PathBuf::from(&self.data_dir.as_ref().unwrap());
             } else {
                 if cfg!(target_os = "macos") || cfg!(target_os = "windows") {
-                    zcash_data_location = dirs::data_dir().expect("Couldn't determine app data directory!");
+                    zcash_data_location =
+                        dirs::data_dir().expect("Couldn't determine app data directory!");
                     zcash_data_location.push("Zcash");
                 } else {
                     if dirs::home_dir().is_none() {
                         info!("Couldn't determine home dir!");
                     }
-                    zcash_data_location = dirs::home_dir().expect("Couldn't determine home directory!");
+                    zcash_data_location =
+                        dirs::home_dir().expect("Couldn't determine home directory!");
                     zcash_data_location.push(".zcash");
                 };
 
@@ -336,7 +239,10 @@ impl LightClientConfig {
         let mut backup_file_path = self.get_zcash_data_path().into_path_buf();
         backup_file_path.push(&format!(
             "zingo-wallet.backup.{}.dat",
-            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
         ));
 
         let backup_file_str = backup_file_path.to_string_lossy().to_string();
@@ -358,7 +264,10 @@ impl LightClientConfig {
             return None;
         }
 
-        info!("Getting sapling tree from LightwalletD at height {}", height);
+        info!(
+            "Getting sapling tree from LightwalletD at height {}",
+            height
+        );
         match GrpcConnector::get_sapling_tree(self.server.clone(), height).await {
             Ok(tree_state) => {
                 let hash = tree_state.hash.clone();
@@ -366,9 +275,14 @@ impl LightClientConfig {
                 Some((tree_state.height, hash, tree))
             }
             Err(e) => {
-                error!("Error getting sapling tree:{}\nWill return checkpoint instead.", e);
+                error!(
+                    "Error getting sapling tree:{}\nWill return checkpoint instead.",
+                    e
+                );
                 match checkpoints::get_closest_checkpoint(&self.chain, height) {
-                    Some((height, hash, tree)) => Some((height, hash.to_string(), tree.to_string())),
+                    Some((height, hash, tree)) => {
+                        Some((height, hash.to_string(), tree.to_string()))
+                    }
                     None => None,
                 }
             }

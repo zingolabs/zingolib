@@ -1,6 +1,7 @@
 use log::error;
 use zingo_cli::{
-    attempt_recover_seed, configure_clapapp, report_permission_error, start_interactive, startup, version::VERSION,
+    attempt_recover_seed, configure_clapapp, report_permission_error, start_interactive, startup,
+    version::VERSION,
 };
 use zingolib::lightclient::{self, lightclient_config::LightClientConfig};
 
@@ -33,7 +34,9 @@ pub fn main() {
 
     if seed.is_some() && maybe_birthday.is_none() {
         eprintln!("ERROR!");
-        eprintln!("Please specify the wallet birthday (eg. '--birthday 600000') to restore from seed.");
+        eprintln!(
+            "Please specify the wallet birthday (eg. '--birthday 600000') to restore from seed."
+        );
         eprintln!("This should be the block height where the wallet was created. If you don't remember the block height, you can pass '--birthday 0' to scan from the start of the blockchain.");
         return;
     }
@@ -41,7 +44,10 @@ pub fn main() {
     let birthday = match maybe_birthday.unwrap_or("0").parse::<u64>() {
         Ok(b) => b,
         Err(e) => {
-            eprintln!("Couldn't parse birthday. This should be a block number. Error={}", e);
+            eprintln!(
+                "Couldn't parse birthday. This should be a block number. Error={}",
+                e
+            );
             return;
         }
     };
@@ -59,7 +65,14 @@ pub fn main() {
 
     let nosync = matches.is_present("nosync");
 
-    let startup_chan = startup(server, seed, birthday, maybe_data_dir, !nosync, command.is_none());
+    let startup_chan = startup(
+        server,
+        seed,
+        birthday,
+        maybe_data_dir,
+        !nosync,
+        command.is_none(),
+    );
     let (command_transmitter, resp_receiver) = match startup_chan {
         Ok(c) => c,
         Err(e) => {
@@ -82,7 +95,10 @@ pub fn main() {
         command_transmitter
             .send((
                 command.unwrap().to_string(),
-                params.iter().map(|s| s.to_string()).collect::<Vec<String>>(),
+                params
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect::<Vec<String>>(),
             ))
             .unwrap();
 
@@ -96,7 +112,9 @@ pub fn main() {
         }
 
         // Save before exit
-        command_transmitter.send(("save".to_string(), vec![])).unwrap();
+        command_transmitter
+            .send(("save".to_string(), vec![]))
+            .unwrap();
         resp_receiver.recv().unwrap();
     }
 }

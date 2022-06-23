@@ -26,12 +26,15 @@ use crate::blaze::test_utils::{FakeCompactBlockList, FakeTransaction};
 use crate::lightclient::testmocks;
 
 use crate::compact_formats::{CompactOutput, CompactTx, Empty};
-use crate::lightclient::test_server::{clean_shutdown, create_test_server, mine_pending_blocks, mine_random_blocks};
+use crate::lightclient::test_server::{
+    clean_shutdown, create_test_server, mine_pending_blocks, mine_random_blocks,
+};
 use crate::lightclient::LightClient;
 use crate::wallet::data::{SaplingNoteData, WalletTx};
 
 use super::checkpoints;
-use super::lightclient_config::{LightClientConfig, Network};
+use super::lightclient_config::LightClientConfig;
+use zingoconfig::Network;
 
 #[test]
 fn new_wallet_from_phrase() {
@@ -67,7 +70,8 @@ fn new_wallet_from_phrase() {
         let addresses = lc.do_address().await;
 
         assert_eq!(
-            "zs1q6xk3q783t5k92kjqt2rkuuww8pdw2euzy5rk6jytw97enx8fhpazdv3th4xe7vsk6e9sfpawfg".to_string(),
+            "zs1q6xk3q783t5k92kjqt2rkuuww8pdw2euzy5rk6jytw97enx8fhpazdv3th4xe7vsk6e9sfpawfg"
+                .to_string(),
             addresses["z_addresses"][0]
         );
         assert_eq!(
@@ -97,7 +101,8 @@ fn new_wallet_from_sapling_esk() {
         assert_eq!(addresses["z_addresses"].len(), 1);
         assert_eq!(addresses["t_addresses"].len(), 1);
         assert_eq!(
-            "zs1q6xk3q783t5k92kjqt2rkuuww8pdw2euzy5rk6jytw97enx8fhpazdv3th4xe7vsk6e9sfpawfg".to_string(),
+            "zs1q6xk3q783t5k92kjqt2rkuuww8pdw2euzy5rk6jytw97enx8fhpazdv3th4xe7vsk6e9sfpawfg"
+                .to_string(),
             addresses["z_addresses"][0]
         );
 
@@ -107,7 +112,8 @@ fn new_wallet_from_sapling_esk() {
         let addresses = lc.do_address().await;
         assert_eq!(addresses["z_addresses"].len(), 2);
         assert_ne!(
-            "zs1q6xk3q783t5k92kjqt2rkuuww8pdw2euzy5rk6jytw97enx8fhpazdv3th4xe7vsk6e9sfpawfg".to_string(),
+            "zs1q6xk3q783t5k92kjqt2rkuuww8pdw2euzy5rk6jytw97enx8fhpazdv3th4xe7vsk6e9sfpawfg"
+                .to_string(),
             addresses["z_addresses"][1]
         );
     });
@@ -133,7 +139,8 @@ fn import_orchard_spending_key() {
         let new_address = lc
             .wallet
             .add_imported_orchard_spending_key(
-                "secret-orchard-sk-main10vj29mt2ezeyc8y5ut6knfcdptg3umdsjk4v8zge6fdmt2kepycqs6j2g8".to_string(),
+                "secret-orchard-sk-main10vj29mt2ezeyc8y5ut6knfcdptg3umdsjk4v8zge6fdmt2kepycqs6j2g8"
+                    .to_string(),
                 0,
             )
             .await;
@@ -161,7 +168,8 @@ fn new_wallet_from_zvk() {
         assert_eq!(addresses["z_addresses"].len(), 1);
         assert_eq!(addresses["t_addresses"].len(), 1);
         assert_eq!(
-            "zs1q6xk3q783t5k92kjqt2rkuuww8pdw2euzy5rk6jytw97enx8fhpazdv3th4xe7vsk6e9sfpawfg".to_string(),
+            "zs1q6xk3q783t5k92kjqt2rkuuww8pdw2euzy5rk6jytw97enx8fhpazdv3th4xe7vsk6e9sfpawfg"
+                .to_string(),
             addresses["z_addresses"][0]
         );
 
@@ -171,7 +179,8 @@ fn new_wallet_from_zvk() {
         let addresses = lc.do_address().await;
         assert_eq!(addresses["z_addresses"].len(), 2);
         assert_ne!(
-            "zs1q6xk3q783t5k92kjqt2rkuuww8pdw2euzy5rk6jytw97enx8fhpazdv3th4xe7vsk6e9sfpawfg".to_string(),
+            "zs1q6xk3q783t5k92kjqt2rkuuww8pdw2euzy5rk6jytw97enx8fhpazdv3th4xe7vsk6e9sfpawfg"
+                .to_string(),
             addresses["z_addresses"][1]
         );
     });
@@ -240,8 +249,14 @@ async fn z_incoming_z_outgoing() {
             lc.wallet.keys().read().await.get_all_zaddresses()[0]
         );
         assert_eq!(b["z_addresses"][0]["zbalance"].as_u64().unwrap(), value);
-        assert_eq!(b["z_addresses"][0]["unverified_zbalance"].as_u64().unwrap(), value);
-        assert_eq!(b["z_addresses"][0]["spendable_zbalance"].as_u64().unwrap(), 0);
+        assert_eq!(
+            b["z_addresses"][0]["unverified_zbalance"].as_u64().unwrap(),
+            value
+        );
+        assert_eq!(
+            b["z_addresses"][0]["spendable_zbalance"].as_u64().unwrap(),
+            0
+        );
 
         let list = lc.do_list_transactions(false).await;
         if let JsonValue::Array(list) = list {
@@ -250,7 +265,10 @@ async fn z_incoming_z_outgoing() {
 
             assert_eq!(jv["txid"], txid.to_string());
             assert_eq!(jv["amount"].as_u64().unwrap(), value);
-            assert_eq!(jv["address"], lc.wallet.keys().read().await.get_all_zaddresses()[0]);
+            assert_eq!(
+                jv["address"],
+                lc.wallet.keys().read().await.get_all_zaddresses()[0]
+            );
             assert_eq!(jv["block_height"].as_u64().unwrap(), 11);
         } else {
             panic!("Expecting an array");
@@ -263,8 +281,14 @@ async fn z_incoming_z_outgoing() {
         assert_eq!(b["unverified_zbalance"].as_u64().unwrap(), 0);
         assert_eq!(b["spendable_zbalance"].as_u64().unwrap(), value);
         assert_eq!(b["z_addresses"][0]["zbalance"].as_u64().unwrap(), value);
-        assert_eq!(b["z_addresses"][0]["spendable_zbalance"].as_u64().unwrap(), value);
-        assert_eq!(b["z_addresses"][0]["unverified_zbalance"].as_u64().unwrap(), 0);
+        assert_eq!(
+            b["z_addresses"][0]["spendable_zbalance"].as_u64().unwrap(),
+            value
+        );
+        assert_eq!(
+            b["z_addresses"][0]["unverified_zbalance"].as_u64().unwrap(),
+            0
+        );
 
         // 5. Send z-to-z transaction to external z address with a memo
         let sent_value = 2000;
@@ -281,13 +305,25 @@ async fn z_incoming_z_outgoing() {
         let notes = lc.do_list_notes(true).await;
         // Has a new (unconfirmed) unspent note (the change)
         assert_eq!(notes["unspent_notes"].len(), 1);
-        assert_eq!(notes["unspent_notes"][0]["created_in_txid"], sent_transaction_id);
-        assert_eq!(notes["unspent_notes"][0]["unconfirmed"].as_bool().unwrap(), true);
+        assert_eq!(
+            notes["unspent_notes"][0]["created_in_txid"],
+            sent_transaction_id
+        );
+        assert_eq!(
+            notes["unspent_notes"][0]["unconfirmed"].as_bool().unwrap(),
+            true
+        );
 
         assert_eq!(notes["spent_notes"].len(), 0);
         assert_eq!(notes["pending_notes"].len(), 1);
-        assert_eq!(notes["pending_notes"][0]["created_in_txid"], txid.to_string());
-        assert_eq!(notes["pending_notes"][0]["unconfirmed_spent"], sent_transaction_id);
+        assert_eq!(
+            notes["pending_notes"][0]["created_in_txid"],
+            txid.to_string()
+        );
+        assert_eq!(
+            notes["pending_notes"][0]["unconfirmed_spent"],
+            sent_transaction_id
+        );
         assert_eq!(notes["pending_notes"][0]["spent"].is_null(), true);
         assert_eq!(notes["pending_notes"][0]["spent_at_height"].is_null(), true);
 
@@ -295,7 +331,10 @@ async fn z_incoming_z_outgoing() {
         let list = lc.do_list_transactions(false).await;
 
         assert_eq!(list.len(), 2);
-        let jv = list.members().find(|jv| jv["txid"] == sent_transaction_id).unwrap();
+        let jv = list
+            .members()
+            .find(|jv| jv["txid"] == sent_transaction_id)
+            .unwrap();
 
         assert_eq!(jv["txid"], sent_transaction_id);
         assert_eq!(
@@ -307,7 +346,10 @@ async fn z_incoming_z_outgoing() {
 
         assert_eq!(jv["outgoing_metadata"][0]["address"], EXT_ZADDR.to_string());
         assert_eq!(jv["outgoing_metadata"][0]["memo"], outgoing_memo);
-        assert_eq!(jv["outgoing_metadata"][0]["value"].as_u64().unwrap(), sent_value);
+        assert_eq!(
+            jv["outgoing_metadata"][0]["value"].as_u64().unwrap(),
+            sent_value
+        );
 
         // 7. Mine the sent transaction
         fcbl.add_pending_sends(&data).await;
@@ -316,7 +358,10 @@ async fn z_incoming_z_outgoing() {
         let list = lc.do_list_transactions(false).await;
 
         assert_eq!(list.len(), 2);
-        let jv = list.members().find(|jv| jv["txid"] == sent_transaction_id).unwrap();
+        let jv = list
+            .members()
+            .find(|jv| jv["txid"] == sent_transaction_id)
+            .unwrap();
 
         assert_eq!(jv.contains("unconfirmed"), false);
         assert_eq!(jv["block_height"].as_u64().unwrap(), 17);
@@ -324,22 +369,50 @@ async fn z_incoming_z_outgoing() {
         // 8. Check the notes to see that we have one spent note and one unspent note (change)
         let notes = lc.do_list_notes(true).await;
         assert_eq!(notes["unspent_notes"].len(), 1);
-        assert_eq!(notes["unspent_notes"][0]["created_in_block"].as_u64().unwrap(), 17);
-        assert_eq!(notes["unspent_notes"][0]["created_in_txid"], sent_transaction_id);
+        assert_eq!(
+            notes["unspent_notes"][0]["created_in_block"]
+                .as_u64()
+                .unwrap(),
+            17
+        );
+        assert_eq!(
+            notes["unspent_notes"][0]["created_in_txid"],
+            sent_transaction_id
+        );
         assert_eq!(
             notes["unspent_notes"][0]["value"].as_u64().unwrap(),
             value - sent_value - u64::from(DEFAULT_FEE)
         );
-        assert_eq!(notes["unspent_notes"][0]["is_change"].as_bool().unwrap(), true);
-        assert_eq!(notes["unspent_notes"][0]["spendable"].as_bool().unwrap(), false); // Not yet spendable
+        assert_eq!(
+            notes["unspent_notes"][0]["is_change"].as_bool().unwrap(),
+            true
+        );
+        assert_eq!(
+            notes["unspent_notes"][0]["spendable"].as_bool().unwrap(),
+            false
+        ); // Not yet spendable
 
         assert_eq!(notes["spent_notes"].len(), 1);
-        assert_eq!(notes["spent_notes"][0]["created_in_block"].as_u64().unwrap(), 11);
+        assert_eq!(
+            notes["spent_notes"][0]["created_in_block"]
+                .as_u64()
+                .unwrap(),
+            11
+        );
         assert_eq!(notes["spent_notes"][0]["value"].as_u64().unwrap(), value);
-        assert_eq!(notes["spent_notes"][0]["is_change"].as_bool().unwrap(), false);
-        assert_eq!(notes["spent_notes"][0]["spendable"].as_bool().unwrap(), false); // Already spent
+        assert_eq!(
+            notes["spent_notes"][0]["is_change"].as_bool().unwrap(),
+            false
+        );
+        assert_eq!(
+            notes["spent_notes"][0]["spendable"].as_bool().unwrap(),
+            false
+        ); // Already spent
         assert_eq!(notes["spent_notes"][0]["spent"], sent_transaction_id);
-        assert_eq!(notes["spent_notes"][0]["spent_at_height"].as_u64().unwrap(), 17);
+        assert_eq!(
+            notes["spent_notes"][0]["spent_at_height"].as_u64().unwrap(),
+            17
+        );
 
         // Shutdown everything cleanly
         clean_shutdown(stop_transmitter, h1).await;
@@ -401,7 +474,11 @@ async fn multiple_incoming_same_transaction() {
                 cmu: note.cmu(),
                 ephemeral_key: EphemeralKeyBytes::from(encryptor.epk().to_bytes()),
                 enc_ciphertext: encryptor.encrypt_note_plaintext(),
-                out_ciphertext: encryptor.encrypt_outgoing_plaintext(&cv.commitment().into(), &cmu, &mut rng),
+                out_ciphertext: encryptor.encrypt_outgoing_plaintext(
+                    &cv.commitment().into(),
+                    &cmu,
+                    &mut rng,
+                ),
                 zkproof: [0; GROTH_PROOF_SIZE],
             };
 
@@ -423,8 +500,10 @@ async fn multiple_incoming_same_transaction() {
         compact_transaction.hash = transaction.txid().clone().as_ref().to_vec();
 
         // Add and mine the block
-        fcbl.transactions.push((transaction, fcbl.next_height, vec![]));
-        fcbl.add_empty_block().add_transactions(vec![compact_transaction]);
+        fcbl.transactions
+            .push((transaction, fcbl.next_height, vec![]));
+        fcbl.add_empty_block()
+            .add_transactions(vec![compact_transaction]);
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
         assert_eq!(lc.wallet.last_scanned_height().await, 11);
 
@@ -437,7 +516,10 @@ async fn multiple_incoming_same_transaction() {
 
             for i in 0..4 {
                 assert_eq!(unspent_notes[i]["created_in_block"].as_u64().unwrap(), 11);
-                assert_eq!(unspent_notes[i]["value"].as_u64().unwrap(), value + i as u64);
+                assert_eq!(
+                    unspent_notes[i]["value"].as_u64().unwrap(),
+                    value + i as u64
+                );
                 assert_eq!(unspent_notes[i]["is_change"].as_bool().unwrap(), false);
                 assert_eq!(
                     unspent_notes[i]["address"],
@@ -458,7 +540,10 @@ async fn multiple_incoming_same_transaction() {
                     sorted_transactions[i]["address"],
                     lc.wallet.keys().read().await.get_all_zaddresses()[0]
                 );
-                assert_eq!(sorted_transactions[i]["amount"].as_u64().unwrap(), value + i as u64);
+                assert_eq!(
+                    sorted_transactions[i]["amount"].as_u64().unwrap(),
+                    value + i as u64
+                );
             }
         } else {
             panic!("transactions is not array");
@@ -467,7 +552,10 @@ async fn multiple_incoming_same_transaction() {
         // 3. Send a big transaction, so all the value is spent
         let sent_value = value * 3 + u64::from(DEFAULT_FEE);
         mine_random_blocks(&mut fcbl, &data, &lc, 5).await; // make the funds spentable
-        let sent_transaction_id = lc.test_do_send(vec![(EXT_ZADDR, sent_value, None)]).await.unwrap();
+        let sent_transaction_id = lc
+            .test_do_send(vec![(EXT_ZADDR, sent_value, None)])
+            .await
+            .unwrap();
 
         // 4. Mine the sent transaction
         fcbl.add_pending_sends(&data).await;
@@ -478,7 +566,10 @@ async fn multiple_incoming_same_transaction() {
         let transactions = lc.do_list_transactions(false).await;
         for i in 0..4 {
             assert_eq!(notes["spent_notes"][i]["spent"], sent_transaction_id);
-            assert_eq!(notes["spent_notes"][i]["spent_at_height"].as_u64().unwrap(), 17);
+            assert_eq!(
+                notes["spent_notes"][i]["spent_at_height"].as_u64().unwrap(),
+                17
+            );
         }
         assert_eq!(transactions[4]["txid"], sent_transaction_id);
         assert_eq!(transactions[4]["block_height"], 17 as u32);
@@ -491,10 +582,15 @@ async fn multiple_incoming_same_transaction() {
             EXT_ZADDR.to_string()
         );
         assert_eq!(
-            transactions[4]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
+            transactions[4]["outgoing_metadata"][0]["value"]
+                .as_u64()
+                .unwrap(),
             sent_value
         );
-        assert_eq!(transactions[4]["outgoing_metadata"][0]["memo"].is_null(), true);
+        assert_eq!(
+            transactions[4]["outgoing_metadata"][0]["memo"].is_null(),
+            true
+        );
 
         // Shutdown everything cleanly
         clean_shutdown(stop_transmitter, h1).await;
@@ -593,7 +689,9 @@ async fn z_to_z_scan_together() {
         let witness = IncrementalWitness::from_tree(&tree);
         let nf = note.nf(&extfvk1.fvk.vk, witness.position() as u64);
 
-        let pa = if let Some(RecipientAddress::Shielded(pa)) = RecipientAddress::decode(&config.chain, EXT_ZADDR) {
+        let pa = if let Some(RecipientAddress::Shielded(pa)) =
+            RecipientAddress::decode(&config.chain, EXT_ZADDR)
+        {
             pa
         } else {
             panic!("Couldn't parse address")
@@ -614,8 +712,14 @@ async fn z_to_z_scan_together() {
         assert_eq!(list[1]["block_height"].as_u64().unwrap(), 12);
         assert_eq!(list[1]["txid"], spent_txid.to_string());
         assert_eq!(list[1]["amount"].as_i64().unwrap(), -(value as i64));
-        assert_eq!(list[1]["outgoing_metadata"][0]["address"], EXT_ZADDR.to_string());
-        assert_eq!(list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(), spent_value);
+        assert_eq!(
+            list[1]["outgoing_metadata"][0]["address"],
+            EXT_ZADDR.to_string()
+        );
+        assert_eq!(
+            list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
+            spent_value
+        );
 
         // Shutdown everything cleanly
         clean_shutdown(stop_transmitter, h1).await;
@@ -640,7 +744,8 @@ async fn z_incoming_viewkey() {
         // 2. Create a new Viewkey and import it
         let iextsk = ExtendedSpendingKey::master(&[1u8; 32]);
         let iextfvk = ExtendedFullViewingKey::from(&iextsk);
-        let iaddr = encode_payment_address(config.hrp_sapling_address(), &iextfvk.default_address().1);
+        let iaddr =
+            encode_payment_address(config.hrp_sapling_address(), &iextfvk.default_address().1);
         let addrs = lc
             .do_import_sapling_full_view_key(
                 encode_extended_full_viewing_key(config.hrp_sapling_viewing_key(), &iextfvk),
@@ -660,7 +765,12 @@ async fn z_incoming_viewkey() {
         // 3. Test that we have the transaction
         let list = lc.do_list_transactions(false).await;
         assert_eq!(lc.do_balance().await["zbalance"].as_u64().unwrap(), value);
-        assert_eq!(lc.do_balance().await["spendable_zbalance"].as_u64().unwrap(), 0);
+        assert_eq!(
+            lc.do_balance().await["spendable_zbalance"]
+                .as_u64()
+                .unwrap(),
+            0
+        );
         assert_eq!(list[0]["txid"], txid.to_string());
         assert_eq!(list[0]["amount"].as_u64().unwrap(), value);
         assert_eq!(list[0]["address"], iaddr);
@@ -671,7 +781,12 @@ async fn z_incoming_viewkey() {
         // Test all the same values
         let list = lc.do_list_transactions(false).await;
         assert_eq!(lc.do_balance().await["zbalance"].as_u64().unwrap(), value);
-        assert_eq!(lc.do_balance().await["spendable_zbalance"].as_u64().unwrap(), 0);
+        assert_eq!(
+            lc.do_balance().await["spendable_zbalance"]
+                .as_u64()
+                .unwrap(),
+            0
+        );
         assert_eq!(list[0]["txid"], txid.to_string());
         assert_eq!(list[0]["amount"].as_u64().unwrap(), value);
         assert_eq!(list[0]["address"], iaddr);
@@ -687,12 +802,22 @@ async fn z_incoming_viewkey() {
 
         assert_eq!(sk_addr[0], iaddr);
         assert_eq!(lc.do_balance().await["zbalance"].as_u64().unwrap(), value);
-        assert_eq!(lc.do_balance().await["spendable_zbalance"].as_u64().unwrap(), 0);
+        assert_eq!(
+            lc.do_balance().await["spendable_zbalance"]
+                .as_u64()
+                .unwrap(),
+            0
+        );
 
         // 6. Rescan to make the funds spendable (i.e., update witnesses)
         lc.do_rescan().await.unwrap();
         assert_eq!(lc.do_balance().await["zbalance"].as_u64().unwrap(), value);
-        assert_eq!(lc.do_balance().await["spendable_zbalance"].as_u64().unwrap(), value);
+        assert_eq!(
+            lc.do_balance().await["spendable_zbalance"]
+                .as_u64()
+                .unwrap(),
+            value
+        );
 
         // 7. Spend funds from the now-imported private key.
         let sent_value = 3000;
@@ -712,8 +837,14 @@ async fn z_incoming_viewkey() {
             list[1]["amount"].as_i64().unwrap(),
             -((sent_value + u64::from(DEFAULT_FEE)) as i64)
         );
-        assert_eq!(list[1]["outgoing_metadata"][0]["address"], EXT_ZADDR.to_string());
-        assert_eq!(list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(), sent_value);
+        assert_eq!(
+            list[1]["outgoing_metadata"][0]["address"],
+            EXT_ZADDR.to_string()
+        );
+        assert_eq!(
+            list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
+            sent_value
+        );
 
         // Shutdown everything cleanly
         clean_shutdown(stop_transmitter, h1).await;
@@ -754,7 +885,10 @@ async fn t_incoming_t_outgoing() {
 
         // 4. We can spend the funds immediately, since this is a taddr
         let sent_value = 20_000;
-        let sent_transaction_id = lc.test_do_send(vec![(EXT_TADDR, sent_value, None)]).await.unwrap();
+        let sent_transaction_id = lc
+            .test_do_send(vec![(EXT_TADDR, sent_value, None)])
+            .await
+            .unwrap();
 
         // 5. Test the unconfirmed send.
         let list = lc.do_list_transactions(false).await;
@@ -766,21 +900,43 @@ async fn t_incoming_t_outgoing() {
         );
         assert_eq!(list[1]["unconfirmed"].as_bool().unwrap(), true);
         assert_eq!(list[1]["outgoing_metadata"][0]["address"], EXT_TADDR);
-        assert_eq!(list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(), sent_value);
+        assert_eq!(
+            list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
+            sent_value
+        );
 
         // 7. Mine the sent transaction
         fcbl.add_pending_sends(&data).await;
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
 
         let notes = lc.do_list_notes(true).await;
-        assert_eq!(notes["spent_utxos"][0]["created_in_block"].as_u64().unwrap(), 11);
-        assert_eq!(notes["spent_utxos"][0]["spent_at_height"].as_u64().unwrap(), 12);
+        assert_eq!(
+            notes["spent_utxos"][0]["created_in_block"]
+                .as_u64()
+                .unwrap(),
+            11
+        );
+        assert_eq!(
+            notes["spent_utxos"][0]["spent_at_height"].as_u64().unwrap(),
+            12
+        );
         assert_eq!(notes["spent_utxos"][0]["spent"], sent_transaction_id);
 
         // Change shielded note
-        assert_eq!(notes["unspent_notes"][0]["created_in_block"].as_u64().unwrap(), 12);
-        assert_eq!(notes["unspent_notes"][0]["created_in_txid"], sent_transaction_id);
-        assert_eq!(notes["unspent_notes"][0]["is_change"].as_bool().unwrap(), true);
+        assert_eq!(
+            notes["unspent_notes"][0]["created_in_block"]
+                .as_u64()
+                .unwrap(),
+            12
+        );
+        assert_eq!(
+            notes["unspent_notes"][0]["created_in_txid"],
+            sent_transaction_id
+        );
+        assert_eq!(
+            notes["unspent_notes"][0]["is_change"].as_bool().unwrap(),
+            true
+        );
         assert_eq!(
             notes["unspent_notes"][0]["value"].as_u64().unwrap(),
             value - sent_value - u64::from(DEFAULT_FEE)
@@ -792,7 +948,10 @@ async fn t_incoming_t_outgoing() {
         assert_eq!(list[1]["txid"], sent_transaction_id);
         assert_eq!(list[1]["unconfirmed"].as_bool().unwrap(), false);
         assert_eq!(list[1]["outgoing_metadata"][0]["address"], EXT_TADDR);
-        assert_eq!(list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(), sent_value);
+        assert_eq!(
+            list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
+            sent_value
+        );
 
         // Make sure everything is fine even after the rescan
 
@@ -803,13 +962,27 @@ async fn t_incoming_t_outgoing() {
         assert_eq!(list[1]["txid"], sent_transaction_id);
         assert_eq!(list[1]["unconfirmed"].as_bool().unwrap(), false);
         assert_eq!(list[1]["outgoing_metadata"][0]["address"], EXT_TADDR);
-        assert_eq!(list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(), sent_value);
+        assert_eq!(
+            list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
+            sent_value
+        );
 
         let notes = lc.do_list_notes(true).await;
         // Change shielded note
-        assert_eq!(notes["unspent_notes"][0]["created_in_block"].as_u64().unwrap(), 12);
-        assert_eq!(notes["unspent_notes"][0]["created_in_txid"], sent_transaction_id);
-        assert_eq!(notes["unspent_notes"][0]["is_change"].as_bool().unwrap(), true);
+        assert_eq!(
+            notes["unspent_notes"][0]["created_in_block"]
+                .as_u64()
+                .unwrap(),
+            12
+        );
+        assert_eq!(
+            notes["unspent_notes"][0]["created_in_txid"],
+            sent_transaction_id
+        );
+        assert_eq!(
+            notes["unspent_notes"][0]["is_change"].as_bool().unwrap(),
+            true
+        );
         assert_eq!(
             notes["unspent_notes"][0]["value"].as_u64().unwrap(),
             value - sent_value - u64::from(DEFAULT_FEE)
@@ -870,8 +1043,16 @@ async fn mixed_transaction() {
 
         // 5. Check everything
         assert_eq!(notes["unspent_notes"].len(), 1);
-        assert_eq!(notes["unspent_notes"][0]["created_in_block"].as_u64().unwrap(), 18);
-        assert_eq!(notes["unspent_notes"][0]["is_change"].as_bool().unwrap(), true);
+        assert_eq!(
+            notes["unspent_notes"][0]["created_in_block"]
+                .as_u64()
+                .unwrap(),
+            18
+        );
+        assert_eq!(
+            notes["unspent_notes"][0]["is_change"].as_bool().unwrap(),
+            true
+        );
         assert_eq!(
             notes["unspent_notes"][0]["value"].as_u64().unwrap(),
             tvalue + zvalue - sent_tvalue - sent_zvalue - u64::from(DEFAULT_FEE)
@@ -899,11 +1080,15 @@ async fn mixed_transaction() {
             list[2]["amount"].as_i64().unwrap(),
             0 - (sent_tvalue + sent_zvalue + u64::from(DEFAULT_FEE)) as i64
         );
-        assert_eq!(list[2]["txid"], notes["unspent_notes"][0]["created_in_txid"]);
+        assert_eq!(
+            list[2]["txid"],
+            notes["unspent_notes"][0]["created_in_txid"]
+        );
         assert_eq!(
             list[2]["outgoing_metadata"]
                 .members()
-                .find(|j| j["address"].to_string() == EXT_ZADDR && j["value"].as_u64().unwrap() == sent_zvalue)
+                .find(|j| j["address"].to_string() == EXT_ZADDR
+                    && j["value"].as_u64().unwrap() == sent_zvalue)
                 .unwrap()["memo"]
                 .to_string(),
             sent_zmemo
@@ -1014,7 +1199,11 @@ async fn aborted_resync() {
             .await
             .current
             .get(&WalletTx::new_txid(
-                &hex::decode(sent_transaction_id).unwrap().into_iter().rev().collect(),
+                &hex::decode(sent_transaction_id)
+                    .unwrap()
+                    .into_iter()
+                    .rev()
+                    .collect(),
             ))
             .unwrap()
             .notes
@@ -1029,10 +1218,18 @@ async fn aborted_resync() {
         assert_eq!(witness_before.len(), witness_after.len());
         for i in 0..witness_before.len() {
             let mut before_bytes = vec![];
-            witness_before.get(i).unwrap().write(&mut before_bytes).unwrap();
+            witness_before
+                .get(i)
+                .unwrap()
+                .write(&mut before_bytes)
+                .unwrap();
 
             let mut after_bytes = vec![];
-            witness_after.get(i).unwrap().write(&mut after_bytes).unwrap();
+            witness_after
+                .get(i)
+                .unwrap()
+                .write(&mut after_bytes)
+                .unwrap();
 
             assert_eq!(hex::encode(before_bytes), hex::encode(after_bytes));
         }
@@ -1142,7 +1339,14 @@ async fn recover_at_checkpoint() {
 
         // Check the trees
         assert_eq!(
-            lc.wallet.blocks.read().await.first().map(|b| b.clone()).unwrap().height,
+            lc.wallet
+                .blocks
+                .read()
+                .await
+                .first()
+                .map(|b| b.clone())
+                .unwrap()
+                .height,
             1220110
         );
 
@@ -1162,7 +1366,14 @@ async fn recover_at_checkpoint() {
 
         // Check the trees
         assert_eq!(
-            lc.wallet.blocks.read().await.first().map(|b| b.clone()).unwrap().height,
+            lc.wallet
+                .blocks
+                .read()
+                .await
+                .first()
+                .map(|b| b.clone())
+                .unwrap()
+                .height,
             1220110
         );
         // assert_eq!(
@@ -1314,7 +1525,10 @@ async fn mempool_clearing() {
         let orig_transaction_id = transaction.txid().to_string();
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
         mine_random_blocks(&mut fcbl, &data, &lc, 5).await;
-        assert_eq!(lc.do_last_transaction_id().await["last_txid"], orig_transaction_id);
+        assert_eq!(
+            lc.do_last_transaction_id().await["last_txid"],
+            orig_transaction_id
+        );
 
         // 3. Send z-to-z transaction to external z address with a memo
         let sent_value = 2000;
@@ -1326,8 +1540,16 @@ async fn mempool_clearing() {
             .unwrap();
 
         // 4. The transaction is not yet sent, it is just sitting in the test GRPC server, so remove it from there to make sure it doesn't get mined.
-        assert_eq!(lc.do_last_transaction_id().await["last_txid"], sent_transaction_id);
-        let mut sent_transactions = data.write().await.sent_transactions.drain(..).collect::<Vec<_>>();
+        assert_eq!(
+            lc.do_last_transaction_id().await["last_txid"],
+            sent_transaction_id
+        );
+        let mut sent_transactions = data
+            .write()
+            .await
+            .sent_transactions
+            .drain(..)
+            .collect::<Vec<_>>();
         assert_eq!(sent_transactions.len(), 1);
         let sent_transaction = sent_transactions.remove(0);
 
@@ -1382,8 +1604,14 @@ async fn mempool_clearing() {
 
         // There is 1 unspent note, which is the unconfirmed transaction
         assert_eq!(notes["unspent_notes"].len(), 1);
-        assert_eq!(notes["unspent_notes"][0]["created_in_txid"], sent_transaction_id);
-        assert_eq!(notes["unspent_notes"][0]["unconfirmed"].as_bool().unwrap(), true);
+        assert_eq!(
+            notes["unspent_notes"][0]["created_in_txid"],
+            sent_transaction_id
+        );
+        assert_eq!(
+            notes["unspent_notes"][0]["unconfirmed"].as_bool().unwrap(),
+            true
+        );
         assert_eq!(transactions.len(), 2);
 
         // 7. Mine 100 blocks, so the mempool expires
@@ -1395,8 +1623,14 @@ async fn mempool_clearing() {
 
         // There is now again 1 unspent note, but it is the original (confirmed) note.
         assert_eq!(notes["unspent_notes"].len(), 1);
-        assert_eq!(notes["unspent_notes"][0]["created_in_txid"], orig_transaction_id);
-        assert_eq!(notes["unspent_notes"][0]["unconfirmed"].as_bool().unwrap(), false);
+        assert_eq!(
+            notes["unspent_notes"][0]["created_in_txid"],
+            orig_transaction_id
+        );
+        assert_eq!(
+            notes["unspent_notes"][0]["unconfirmed"].as_bool().unwrap(),
+            false
+        );
         assert_eq!(notes["pending_notes"].len(), 0);
         assert_eq!(transactions.len(), 1);
 
@@ -1510,12 +1744,17 @@ async fn read_write_block_data() {
         let block_bytes: &mut [u8] = &mut [];
         let cb = crate::wallet::data::BlockData::new(block.block);
         cb.write(&mut *block_bytes).unwrap();
-        assert_eq!(cb, crate::wallet::data::BlockData::read(&*block_bytes).unwrap());
+        assert_eq!(
+            cb,
+            crate::wallet::data::BlockData::read(&*block_bytes).unwrap()
+        );
     }
     clean_shutdown(stop_transmitter, h1).await;
 }
 
 pub const EXT_TADDR: &str = "t1NoS6ZgaUTpmjkge2cVpXGcySasdYDrXqh";
-pub const EXT_ZADDR: &str = "zs1va5902apnzlhdu0pw9r9q7ca8s4vnsrp2alr6xndt69jnepn2v2qrj9vg3wfcnjyks5pg65g9dc";
-pub const EXT_ZADDR2: &str = "zs1fxgluwznkzm52ux7jkf4st5znwzqay8zyz4cydnyegt2rh9uhr9458z0nk62fdsssx0cqhy6lyv";
+pub const EXT_ZADDR: &str =
+    "zs1va5902apnzlhdu0pw9r9q7ca8s4vnsrp2alr6xndt69jnepn2v2qrj9vg3wfcnjyks5pg65g9dc";
+pub const EXT_ZADDR2: &str =
+    "zs1fxgluwznkzm52ux7jkf4st5znwzqay8zyz4cydnyegt2rh9uhr9458z0nk62fdsssx0cqhy6lyv";
 pub const TEST_SEED: &str = "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise";
