@@ -9,7 +9,7 @@ use crate::{
     compact_formats::RawTransaction,
     grpc_connector::GrpcConnector,
     lightclient::lightclient_config::MAX_REORG,
-    wallet::{data::WalletTx, keys::Keys, message::Message, now, LightWallet},
+    wallet::{keys::Keys, message::Message, now, LightWallet},
 };
 use futures::future::join_all;
 use json::{array, object, JsonValue};
@@ -891,7 +891,6 @@ impl LightClient {
                         "unconfirmed" => v.unconfirmed,
                         "datetime"     => v.datetime,
                         "txid"         => format!("{}", v.txid),
-                        "zec_price"    => v.zec_price.map(|p| (p * 100.0).round() / 100.0),
                         "amount"       => total_change as i64
                                             - v.total_sapling_value_spent as i64
                                             - v.total_transparent_value_spent as i64,
@@ -909,7 +908,6 @@ impl LightClient {
                         "position"     => i,
                         "txid"         => format!("{}", v.txid),
                         "amount"       => nd.note.value as i64,
-                        "zec_price"    => v.zec_price.map(|p| (p * 100.0).round() / 100.0),
                         "address"      => LightWallet::note_address(self.config.hrp_sapling_address(), nd),
                         "memo"         => LightWallet::memo_str(nd.memo.clone())
                     };
@@ -942,7 +940,6 @@ impl LightClient {
                         "datetime"     => v.datetime,
                         "txid"         => format!("{}", v.txid),
                         "amount"       => total_transparent_received as i64 - v.total_transparent_value_spent as i64,
-                        "zec_price"    => v.zec_price.map(|p| (p * 100.0).round() / 100.0),
                         "address"      => v.utxos.iter().map(|u| u.address.clone()).collect::<Vec<String>>().join(","),
                         "memo"         => None::<String>
                     })
@@ -1189,7 +1186,6 @@ impl LightClient {
                 let h1 = tokio::spawn(async move {
                     let keys = lc1.wallet.keys();
                     let wallet_transactions = lc1.wallet.transactions.clone();
-                    let price = lc1.wallet.price.clone();
 
                     while let Some(rtransaction) = mempool_receiver.recv().await {
                         if let Ok(transaction) = Transaction::read(
@@ -1199,7 +1195,6 @@ impl LightClient {
                                 BlockHeight::from_u32(rtransaction.height as u32),
                             ),
                         ) {
-                            let price = price.read().await.clone();
                             //info!("Mempool attempting to scan {}", tx.txid());
 
                             FetchFullTxns::scan_full_tx(
@@ -1210,7 +1205,6 @@ impl LightClient {
                                 now() as u32,
                                 keys.clone(),
                                 wallet_transactions.clone(),
-                                WalletTx::get_price(now(), &price),
                             )
                             .await;
                         }

@@ -1,7 +1,7 @@
 use std::{convert::TryInto, sync::Arc};
 
 use crate::{
-    compact_formats::{CompactBlock, CompactSaplingOutput, CompactSpend, CompactTx},
+    compact_formats::{CompactBlock, CompactSaplingOutput, CompactSaplingSpend, CompactTx},
     lightclient::test_server::TestServerData,
     wallet::{data::BlockData, keys::ToBase58Check},
 };
@@ -210,7 +210,7 @@ impl FakeTransaction {
     ) {
         let _ = self.add_sapling_output(value, Some(ovk.clone()), to);
 
-        let mut cs = CompactSpend::default();
+        let mut cs = CompactSaplingSpend::default();
         cs.nf = nf.to_vec();
         self.compact_transaction.spends.push(cs);
 
@@ -414,7 +414,7 @@ impl FakeCompactBlockList {
                 .expect("missing sapling bundle")
                 .shielded_spends
             {
-                let mut cs = CompactSpend::default();
+                let mut cs = CompactSaplingSpend::default();
                 cs.nf = spend.nullifier.to_vec();
 
                 compact_transaction.spends.push(cs);

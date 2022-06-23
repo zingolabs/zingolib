@@ -371,10 +371,6 @@ impl WalletTxns {
         wtx
     }
 
-    pub fn set_price(&mut self, txid: &TxId, price: Option<f64>) {
-        price.map(|p| self.current.get_mut(txid).map(|tx| tx.zec_price = Some(p)));
-    }
-
     // Records a TxId as having spent some nullifiers from the wallet.
     pub fn add_new_spent(
         &mut self,

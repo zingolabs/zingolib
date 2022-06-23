@@ -1564,7 +1564,6 @@ async fn mempool_clearing() {
             0,
             lc.wallet.keys(),
             lc.wallet.transactions(),
-            Some(140.5),
         )
         .await;
 

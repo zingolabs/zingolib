@@ -2,13 +2,11 @@ use crate::blaze::test_utils::{tree_to_string, FakeCompactBlockList};
 use crate::compact_formats::compact_tx_streamer_server::CompactTxStreamer;
 use crate::compact_formats::compact_tx_streamer_server::CompactTxStreamerServer;
 use crate::compact_formats::{
-    Address, AddressList, Balance, BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx,
-    Duration, Empty, Exclude, GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList,
-    LightdInfo, PingResponse, PriceRequest, PriceResponse, RawTransaction, SendResponse,
-    TransparentAddressBlockFilter, TreeState, TxFilter,
+    Address, AddressList, Balance, BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx, Duration, Empty, Exclude,
+    GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList, LightdInfo, PingResponse, RawTransaction,
+    SendResponse, TransparentAddressBlockFilter, TreeState, TxFilter,
 };
 use crate::wallet::data::WalletTx;
-use crate::wallet::now;
 use futures::{FutureExt, Stream};
 use rand::rngs::OsRng;
 use rand::Rng;
@@ -439,31 +437,7 @@ impl CompactTxStreamer for TestGRPCService {
         Ok(Response::new(Box::pin(ReceiverStream::new(receiver))))
     }
 
-    async fn get_zec_price(
-        &self,
-        _request: Request<PriceRequest>,
-    ) -> Result<Response<PriceResponse>, Status> {
-        self.get_current_zec_price(Request::new(Empty {})).await
-    }
-
-    async fn get_current_zec_price(
-        &self,
-        _request: Request<Empty>,
-    ) -> Result<Response<PriceResponse>, Status> {
-        Self::wait_random().await;
-
-        let mut res = PriceResponse::default();
-        res.currency = "USD".to_string();
-        res.timestamp = now() as i64;
-        res.price = self.data.read().await.zec_price;
-
-        Ok(Response::new(res))
-    }
-
-    async fn get_transaction(
-        &self,
-        request: Request<TxFilter>,
-    ) -> Result<Response<RawTransaction>, Status> {
+    async fn get_transaction(&self, request: Request<TxFilter>) -> Result<Response<RawTransaction>, Status> {
         Self::wait_random().await;
 
         let transaction_id = WalletTx::new_txid(&request.into_inner().hash);
@@ -546,20 +520,7 @@ impl CompactTxStreamer for TestGRPCService {
         Ok(Response::new(Box::pin(ReceiverStream::new(receiver))))
     }
 
-    type GetAddressTxidsStream =
-        Pin<Box<dyn Stream<Item = Result<RawTransaction, Status>> + Send + Sync>>;
-
-    async fn get_address_txids(
-        &self,
-        request: Request<TransparentAddressBlockFilter>,
-    ) -> Result<Response<Self::GetAddressTxidsStream>, Status> {
-        self.get_taddress_txids(request).await
-    }
-
-    async fn get_taddress_balance(
-        &self,
-        _request: Request<AddressList>,
-    ) -> Result<Response<Balance>, Status> {
+    async fn get_taddress_balance(&self, _request: Request<AddressList>) -> Result<Response<Balance>, Status> {
         todo!()
     }
 
@@ -600,7 +561,7 @@ impl CompactTxStreamer for TestGRPCService {
             let mut ts = TreeState::default();
             ts.height = *height;
             ts.hash = hash.clone();
-            ts.tree = tree.clone();
+            ts.sapling_tree = tree.clone();
 
             return Ok(Response::new(ts));
         }
@@ -656,7 +617,7 @@ impl CompactTxStreamer for TestGRPCService {
         )
         .to_string();
         ts.height = block.height;
-        ts.tree = tree_to_string(&tree);
+        ts.sapling_tree = tree_to_string(&tree);
 
         Ok(Response::new(ts))
     }
