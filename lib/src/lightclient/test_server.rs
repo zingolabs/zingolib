@@ -2,9 +2,10 @@ use crate::blaze::test_utils::{tree_to_string, FakeCompactBlockList};
 use crate::compact_formats::compact_tx_streamer_server::CompactTxStreamer;
 use crate::compact_formats::compact_tx_streamer_server::CompactTxStreamerServer;
 use crate::compact_formats::{
-    Address, AddressList, Balance, BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx, Duration, Empty, Exclude,
-    GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList, LightdInfo, PingResponse, RawTransaction,
-    SendResponse, TransparentAddressBlockFilter, TreeState, TxFilter,
+    Address, AddressList, Balance, BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx,
+    Duration, Empty, Exclude, GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList,
+    LightdInfo, PingResponse, RawTransaction, SendResponse, TransparentAddressBlockFilter,
+    TreeState, TxFilter,
 };
 use crate::wallet::data::WalletTx;
 use futures::{FutureExt, Stream};
@@ -437,7 +438,10 @@ impl CompactTxStreamer for TestGRPCService {
         Ok(Response::new(Box::pin(ReceiverStream::new(receiver))))
     }
 
-    async fn get_transaction(&self, request: Request<TxFilter>) -> Result<Response<RawTransaction>, Status> {
+    async fn get_transaction(
+        &self,
+        request: Request<TxFilter>,
+    ) -> Result<Response<RawTransaction>, Status> {
         Self::wait_random().await;
 
         let transaction_id = WalletTx::new_txid(&request.into_inner().hash);
@@ -520,7 +524,10 @@ impl CompactTxStreamer for TestGRPCService {
         Ok(Response::new(Box::pin(ReceiverStream::new(receiver))))
     }
 
-    async fn get_taddress_balance(&self, _request: Request<AddressList>) -> Result<Response<Balance>, Status> {
+    async fn get_taddress_balance(
+        &self,
+        _request: Request<AddressList>,
+    ) -> Result<Response<Balance>, Status> {
         todo!()
     }
 

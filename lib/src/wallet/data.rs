@@ -671,7 +671,12 @@ impl WalletTx {
         TxId::from_bytes(txid_bytes)
     }
 
-    pub fn new(height: BlockHeight, datetime: u64, transaction_id: &TxId, unconfirmed: bool) -> Self {
+    pub fn new(
+        height: BlockHeight,
+        datetime: u64,
+        transaction_id: &TxId,
+        unconfirmed: bool,
+    ) -> Self {
         WalletTx {
             block: height,
             unconfirmed,
@@ -768,7 +773,9 @@ impl WalletTx {
 
         writer.write_u8(if self.full_tx_scanned { 1 } else { 0 })?;
 
-        Vector::write(&mut writer, &self.spent_nullifiers, |w, n| w.write_all(&n.0))?;
+        Vector::write(&mut writer, &self.spent_nullifiers, |w, n| {
+            w.write_all(&n.0)
+        })?;
 
         Ok(())
     }

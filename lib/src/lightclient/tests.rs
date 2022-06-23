@@ -26,7 +26,9 @@ use crate::blaze::test_utils::{FakeCompactBlockList, FakeTransaction};
 use crate::lightclient::testmocks;
 
 use crate::compact_formats::{CompactSaplingOutput, CompactTx, Empty};
-use crate::lightclient::test_server::{clean_shutdown, create_test_server, mine_pending_blocks, mine_random_blocks};
+use crate::lightclient::test_server::{
+    clean_shutdown, create_test_server, mine_pending_blocks, mine_random_blocks,
+};
 use crate::lightclient::LightClient;
 use crate::wallet::data::{SaplingNoteData, WalletTx};
 

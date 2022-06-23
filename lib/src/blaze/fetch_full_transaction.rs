@@ -543,9 +543,14 @@ impl FetchFullTxns {
             .get_all_orchard_keys_of_type::<orchard::keys::FullViewingKey>();
         if let Some(o_bundle) = transaction.orchard_bundle() {
             for action in o_bundle.actions().iter() {
-                for (i, ivk) in fvks.iter().map(|fvk| (fvk.to_ivk(Scope::External))).enumerate() {
+                for (i, ivk) in fvks
+                    .iter()
+                    .map(|fvk| (fvk.to_ivk(Scope::External)))
+                    .enumerate()
+                {
                     let (note, to, memo_bytes) =
-                        match try_note_decryption(&OrchardDomain::for_action(action), &ivk, action) {
+                        match try_note_decryption(&OrchardDomain::for_action(action), &ivk, action)
+                        {
                             Some(ret) => ret,
                             None => continue,
                         };

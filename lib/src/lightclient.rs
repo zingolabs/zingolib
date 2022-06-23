@@ -8,7 +8,6 @@ use crate::{
     },
     compact_formats::RawTransaction,
     grpc_connector::GrpcConnector,
-    lightclient::lightclient_config::MAX_REORG,
     wallet::{keys::Keys, message::Message, now, LightWallet},
 };
 use futures::future::join_all;

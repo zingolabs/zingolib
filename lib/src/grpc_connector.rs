@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use crate::compact_formats::compact_tx_streamer_client::CompactTxStreamerClient;
 use crate::compact_formats::{
-    BlockId, BlockRange, ChainSpec, CompactBlock, Empty, LightdInfo, RawTransaction, TransparentAddressBlockFilter,
-    TreeState, TxFilter,
+    BlockId, BlockRange, ChainSpec, CompactBlock, Empty, LightdInfo, RawTransaction,
+    TransparentAddressBlockFilter, TreeState, TxFilter,
 };
 use futures::future::join_all;
 use futures::stream::FuturesUnordered;
@@ -338,7 +338,10 @@ impl GrpcConnector {
                 if e.code() == tonic::Code::Unimplemented {
                     // Try the old, legacy API
                     let request = Request::new(args);
-                    client.get_taddress_txids(request).await.map_err(|e| format!("{}", e))?
+                    client
+                        .get_taddress_txids(request)
+                        .await
+                        .map_err(|e| format!("{}", e))?
                 } else {
                     return Err(format!("{}", e));
                 }

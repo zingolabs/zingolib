@@ -158,11 +158,14 @@ impl BlockAndWitnessData {
         let mut start_trees = vec![];
 
         // Collect all the checkpoints
-        start_trees.extend(get_all_main_checkpoints().into_iter().map(|(h, hash, tree)| {
-            let mut tree_state = TreeState::default();
-            tree_state.height = h;
-            tree_state.hash = hash.to_string();
-            tree_state.sapling_tree = tree.to_string();
+        start_trees.extend(
+            get_all_main_checkpoints()
+                .into_iter()
+                .map(|(h, hash, tree)| {
+                    let mut tree_state = TreeState::default();
+                    tree_state.height = h;
+                    tree_state.hash = hash.to_string();
+                    tree_state.sapling_tree = tree.to_string();
 
                     tree_state
                 }),
@@ -216,7 +219,9 @@ impl BlockAndWitnessData {
                     if ct.height == vt.height {
                         return true;
                     }
-                    let mut tree = CommitmentTree::<Node>::read(&hex::decode(ct.sapling_tree).unwrap()[..]).unwrap();
+                    let mut tree =
+                        CommitmentTree::<Node>::read(&hex::decode(ct.sapling_tree).unwrap()[..])
+                            .unwrap();
 
                     {
                         let blocks = blocks.read().await;
