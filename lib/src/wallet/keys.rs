@@ -487,14 +487,14 @@ impl Keys {
             .collect()
     }
 
-    pub fn get_all_zaddresses(&self) -> Vec<String> {
+    pub fn get_all_sapling_addresses(&self) -> Vec<String> {
         self.zkeys
             .iter()
             .map(|zk| encode_payment_address(self.config.hrp_sapling_address(), &zk.zaddress))
             .collect()
     }
 
-    pub fn get_all_oaddresses(&self) -> Vec<String> {
+    pub fn get_all_orchard_addresses(&self) -> Vec<String> {
         self.okeys
             .iter()
             .map(|zk| {

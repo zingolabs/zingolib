@@ -421,7 +421,10 @@ impl FetchFullTxns {
         // Check if any of the nullifiers spent in this transaction are ours. We only need this for unconfirmed transactions,
         // because for transactions in the block, we will check the nullifiers from the blockdata
         if unconfirmed {
-            let unspent_nullifiers = wallet_transactions.read().await.get_unspent_nullifiers();
+            let unspent_nullifiers = wallet_transactions
+                .read()
+                .await
+                .get_unspent_sapling_nullifiers();
             if let Some(s_bundle) = transaction.sapling_bundle() {
                 for s in s_bundle.shielded_spends.iter() {
                     if let Some((nf, value, transaction_id)) = unspent_nullifiers
@@ -443,7 +446,7 @@ impl FetchFullTxns {
         }
         // Collect all our z addresses, to check for change
         let z_addresses: HashSet<String> =
-            HashSet::from_iter(keys.read().await.get_all_zaddresses().into_iter());
+            HashSet::from_iter(keys.read().await.get_all_sapling_addresses().into_iter());
 
         // Collect all our sapling OVKs, to scan for outputs
         let ovks: Vec<_> = keys

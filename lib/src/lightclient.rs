@@ -494,13 +494,13 @@ impl LightClient {
 
     pub async fn do_address(&self) -> JsonValue {
         // Collect z addresses
-        let z_addresses = self.wallet.keys().read().await.get_all_zaddresses();
+        let z_addresses = self.wallet.keys().read().await.get_all_sapling_addresses();
 
         // Collect t addresses
         let t_addresses = self.wallet.keys().read().await.get_all_taddrs();
 
         // Collect o addresses
-        let o_addresses = self.wallet.keys().read().await.get_all_oaddresses();
+        let o_addresses = self.wallet.keys().read().await.get_all_orchard_addresses();
 
         object! {
             "z_addresses" => z_addresses,
@@ -518,7 +518,7 @@ impl LightClient {
     pub async fn do_balance(&self) -> JsonValue {
         // Collect z addresses
         let mut z_addresses = vec![];
-        for zaddress in self.wallet.keys().read().await.get_all_zaddresses() {
+        for zaddress in self.wallet.keys().read().await.get_all_sapling_addresses() {
             z_addresses.push(object! {
                 "address" => zaddress.clone(),
                 "zbalance" =>self.wallet.zbalance(Some(zaddress.clone())).await,
@@ -704,7 +704,7 @@ impl LightClient {
             self.wallet.transactions.read().await.current.iter()
                 .flat_map( |(transaction_id, wtx)| {
                     let spendable_address = spendable_address.clone();
-                    wtx.notes.iter().filter_map(move |nd|
+                    wtx.sapling_notes.iter().filter_map(move |nd|
                         if !all_notes && nd.spent.is_some() {
                             None
                         } else {
@@ -857,7 +857,7 @@ impl LightClient {
                     // If money was spent, create a transaction. For this, we'll subtract
                     // all the change notes + Utxos
                     let total_change = v
-                        .notes
+                        .sapling_notes
                         .iter()
                         .filter(|nd| nd.is_change)
                         .map(|nd| nd.note.value)
@@ -898,7 +898,7 @@ impl LightClient {
                 }
 
                 // For each sapling note that is not a change, add a transaction.
-                transactions.extend(v.notes.iter().filter(|nd| !nd.is_change).enumerate().map(|(i, nd)| {
+                transactions.extend(v.sapling_notes.iter().filter(|nd| !nd.is_change).enumerate().map(|(i, nd)| {
                     let block_height: u32 = v.block.into();
                     let mut o = object! {
                         "block_height" => block_height,
@@ -1600,7 +1600,7 @@ impl LightClient {
                 .keys()
                 .read()
                 .await
-                .get_all_zaddresses()
+                .get_all_sapling_addresses()
                 .get(0)
                 .map(|s| s.clone()))
             .unwrap();

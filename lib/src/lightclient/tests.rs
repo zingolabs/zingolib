@@ -246,7 +246,7 @@ async fn z_incoming_z_outgoing() {
         assert_eq!(b["spendable_zbalance"].as_u64().unwrap(), 0);
         assert_eq!(
             b["z_addresses"][0]["address"],
-            lc.wallet.keys().read().await.get_all_zaddresses()[0]
+            lc.wallet.keys().read().await.get_all_sapling_addresses()[0]
         );
         assert_eq!(b["z_addresses"][0]["zbalance"].as_u64().unwrap(), value);
         assert_eq!(
@@ -267,7 +267,7 @@ async fn z_incoming_z_outgoing() {
             assert_eq!(jv["amount"].as_u64().unwrap(), value);
             assert_eq!(
                 jv["address"],
-                lc.wallet.keys().read().await.get_all_zaddresses()[0]
+                lc.wallet.keys().read().await.get_all_sapling_addresses()[0]
             );
             assert_eq!(jv["block_height"].as_u64().unwrap(), 11);
         } else {
@@ -523,7 +523,7 @@ async fn multiple_incoming_same_transaction() {
                 assert_eq!(unspent_notes[i]["is_change"].as_bool().unwrap(), false);
                 assert_eq!(
                     unspent_notes[i]["address"],
-                    lc.wallet.keys().read().await.get_all_zaddresses()[0]
+                    lc.wallet.keys().read().await.get_all_sapling_addresses()[0]
                 );
             }
         } else {
@@ -538,7 +538,7 @@ async fn multiple_incoming_same_transaction() {
                 assert_eq!(sorted_transactions[i]["block_height"].as_u64().unwrap(), 11);
                 assert_eq!(
                     sorted_transactions[i]["address"],
-                    lc.wallet.keys().read().await.get_all_zaddresses()[0]
+                    lc.wallet.keys().read().await.get_all_sapling_addresses()[0]
                 );
                 assert_eq!(
                     sorted_transactions[i]["amount"].as_u64().unwrap(),
@@ -1174,7 +1174,7 @@ async fn aborted_resync() {
                     .collect(),
             ))
             .unwrap()
-            .notes
+            .sapling_notes
             .get(0)
             .unwrap()
             .witnesses
@@ -1206,7 +1206,7 @@ async fn aborted_resync() {
                     .collect(),
             ))
             .unwrap()
-            .notes
+            .sapling_notes
             .get(0)
             .unwrap()
             .witnesses
@@ -1437,7 +1437,7 @@ async fn witness_clearing() {
             .current
             .get(&txid)
             .unwrap()
-            .notes
+            .sapling_notes
             .get(0)
             .unwrap()
             .witnesses
@@ -1457,7 +1457,7 @@ async fn witness_clearing() {
             .current
             .get(&txid)
             .unwrap()
-            .notes
+            .sapling_notes
             .get(0)
             .unwrap()
             .witnesses
@@ -1474,7 +1474,7 @@ async fn witness_clearing() {
             .current
             .get(&txid)
             .unwrap()
-            .notes
+            .sapling_notes
             .get(0)
             .unwrap()
             .witnesses
@@ -1491,7 +1491,7 @@ async fn witness_clearing() {
             .current
             .get(&txid)
             .unwrap()
-            .notes
+            .sapling_notes
             .get(0)
             .unwrap()
             .witnesses
@@ -1575,7 +1575,7 @@ async fn mempool_clearing() {
             let sapling_notes: Vec<_> = wallet_transactions
                 .current
                 .values()
-                .map(|wallet_tx| &wallet_tx.notes)
+                .map(|wallet_tx| &wallet_tx.sapling_notes)
                 .flatten()
                 .collect();
             assert_ne!(sapling_notes.len(), 0);
