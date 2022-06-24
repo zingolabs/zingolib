@@ -231,7 +231,7 @@ impl TrialDecryptions {
                                 &action,
                             )
                         {
-                            println!("Detected orchard transaction, to {recipient:?},\n note is {note:?}");
+                            //Todo: Send decrypted orchard notes to where they need to go
                         }
                     }
                 }

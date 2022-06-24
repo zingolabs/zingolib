@@ -83,7 +83,6 @@ impl FetchFullTxns {
             let mut workers = FuturesUnordered::new();
 
             while let Some((transaction_id, height)) = transaction_id_receiver.recv().await {
-                println!("\n Sent transaction from block {height}");
                 let config = config.clone();
                 let keys = keys.clone();
                 let wallet_transactions = wallet_transactions.clone();
@@ -562,12 +561,13 @@ impl FetchFullTxns {
             .read()
             .await
             .get_all_orchard_keys_of_type::<orchard::keys::FullViewingKey>();
-        println!("Txid {}", transaction.txid());
-        println!("Height {height}");
-        if let Some(o_bundle) = dbg!(transaction.orchard_bundle()) {
+        if let Some(o_bundle) = transaction.orchard_bundle() {
             for action in o_bundle.actions().iter() {
-                for (i, ivk) in fvks.iter().map(|fvk| (fvk.to_ivk(Scope::External))).enumerate() {
-                    println!("try note decryption: {i}");
+                for (i, ivk) in fvks
+                    .iter()
+                    .map(|fvk| (fvk.to_ivk(Scope::External)))
+                    .enumerate()
+                {
                     let (note, to, memo_bytes) =
                         match try_note_decryption(&OrchardDomain::for_action(action), &ivk, action)
                         {
@@ -575,9 +575,12 @@ impl FetchFullTxns {
                             None => continue,
                         };
                     let memo_bytes = MemoBytes::from_bytes(memo_bytes.as_slice()).unwrap();
-                    let memo = memo_bytes.clone().try_into().unwrap_or(Memo::Future(memo_bytes));
+                    let memo = memo_bytes
+                        .clone()
+                        .try_into()
+                        .unwrap_or(Memo::Future(memo_bytes));
                     println!("Recieved orchard tx with memo {:?}", memo);
-                    //This logic is all sapling specific! Need to implement orchard version
+                    //This logic is all sapling specific! Todo: implement orchard version
                     /*
                     if unconfirmed {
                         wallet_transactions.write().await.add_pending_note(
