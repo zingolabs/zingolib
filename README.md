@@ -9,8 +9,8 @@ This repo provides both a library for zingoproxyclient and zingo-mobile, as well
 * Please use only if you know specifically what you are doing!!
 
 ## WARNING! Lightwallet
-* Using this software (a light wallet) does not offer the full privacy or security of running a full-node zcash client.
-* This software does not provide privacy guarantees against network monitoring of the type or pattern of traffic it generates. That is to say, in some cases, the specifics of use may be able to remain private, but the use of this tool may be apparent to network observers.
+* Using this software (a light wallet) does not offer the full privacy or security of running a full-node zcash client. Because of this, it may be possible to leak information. For example, requests to the server include in which blocks the wallet may find relevant messages or transactions.
+* This software does not provide privacy guarantees against network monitoring of the type or pattern of traffic it generates. For example, the specifics of use may remain private, but the use of this tool itself may be apparent to network observers.
 
 ## Zingo CLI
 `zingo-cli` is a command line Zingo lightwalletd-proxy client. To use it, see "compiling from source" below. Releases are currently only provisional, we will update the README as releases come out.
@@ -22,21 +22,22 @@ This repo provides both a library for zingoproxyclient and zingo-mobile, as well
 
 ### Note Management
 Zingo-CLI does automatic note and utxo management, which means it doesn't allow you to manually select which address to send outgoing transactions from. It follows these principles:
-* Defaults to sending shielded transactions, even if you're sending to a transparent address
-* Sapling funds need at least 5 confirmations before they can be spent
-* Can select funds from multiple shielded addresses in the same transaction
-* Will automatically shield your transparent funds at the first opportunity
-    * When sending an outgoing transaction to a shielded address, Zingo-CLI can decide to use the transaction to additionally shield your transparent funds (i.e., send your transparent funds to your own shielded address in the same transaction)
+* Defaults to sending shielded transactions, even if you're sending to a transparent address.
+* Sapling funds need at least 5 confirmations before they can be spent.
+* Can use funds from multiple shielded addresses in the same transaction.
+* Will automatically shield your transparent funds at the first opportunity: when sending an outgoing transaction to any shielded address, Zingo-CLI will use the transaction to additionally shield your transparent funds. That is, it will send your transparent funds to your own shielded address in the same transaction. The `shield` command performs a similar function, but without sending to a shielded address outside of your wallet.
 
 ## Compiling from source
 
 #### Pre-requisites
 * Rust v1.37 or higher.
-    * Run `rustup update` to get the latest version of Rust if you already have it installed
+    * Run `rustup update` to get the latest version of Rust if you already have it installed.
 * Rustfmt
-    * Run `rustup component add rustfmt` to add rustfmt
+    * Run `rustup component add rustfmt` to add rustfmt.
+* Git
+    * Please install Git. On Debian or Ubuntu, `sudo apt install git`
 * Build tools
-    * Please install the build tools for your platform. On Ubuntu `sudo apt install build-essential gcc`
+    * Please also install the build tools for your platform. On Debian or Ubuntu `sudo apt install build-essential`
 
 ```
 git clone https://github.com/zingolabs/zingolib.git
@@ -53,7 +54,7 @@ This will launch the interactive prompt. Type `help` to get a list of commands.
 
 ## Running in non-interactive mode:
 You can also run `zingo-cli` in non-interactive mode by passing the command you want to run as an argument. For example, `zingo-cli addresses` will list all wallet addresses and exit. 
-Run `zingo-cli help` to see a list of all commands. 
+Run `zingo-cli help` to see a list of all commands.
 
 ## Options
 Here are some CLI arguments you can pass to `zingo-cli`. Please run `zingo-cli --help` for the full list. 
