@@ -19,7 +19,7 @@ use tokio::{
 use zcash_primitives::{
     consensus::BlockHeight,
     sapling::{note_encryption::try_sapling_compact_note_decryption, Nullifier, SaplingIvk},
-    transaction::{Transaction, TxId},
+    transaction::{components::sapling::CompactOutputDescription, Transaction, TxId},
 };
 
 use super::syncdata::BlazeSyncData;
@@ -154,9 +154,14 @@ impl TrialDecryptions {
                     };
 
                     for (i, ivk) in sapling_ivks.iter().enumerate() {
-                        if let Some((note, to)) =
-                            try_sapling_compact_note_decryption(&config.chain, height, &ivk, co)
-                        {
+                        if let Some((note, to)) = try_sapling_compact_note_decryption(
+                            &config.chain,
+                            height,
+                            &ivk,
+                            &CompactOutputDescription::try_from(
+                                zcash_client_backend::proto::compact_formats::CompactSaplingOutput::from(co.clone()))
+                            .unwrap(),
+                        ) {
                             wallet_transaction = true;
 
                             let keys = keys.clone();
@@ -185,7 +190,7 @@ impl TrialDecryptions {
                                 let transaction_id = WalletTx::new_txid(&compact_transaction.hash);
                                 let nullifier = note.nf(&extfvk.fvk.vk, witness.position() as u64);
 
-                                wallet_transactions.write().await.add_new_note(
+                                wallet_transactions.write().await.add_new_sapling_note(
                                     transaction_id.clone(),
                                     height,
                                     false,
@@ -223,14 +228,30 @@ impl TrialDecryptions {
                             todo!("Implement error handling for action parsing")
                         }
                     };
-                    for (i, ivk) in orchard_ivks.iter().enumerate() {
+                    for (i, ivk) in orchard_ivks.iter().cloned().enumerate() {
                         if let Some((note, recipient)) =
                             zcash_note_encryption::try_compact_note_decryption(
                                 &OrchardDomain::for_nullifier(action.nullifier()),
-                                ivk,
+                                &ivk,
                                 &action,
                             )
                         {
+                            let keys = keys.clone();
+                            let bsync_data = bsync_data.clone();
+                            let wallet_transactions = wallet_transactions.clone();
+                            let detected_transaction_id_sender =
+                                detected_transaction_id_sender.clone();
+                            let timestamp = cb.time as u64;
+                            let compact_transaction = compact_transaction.clone();
+
+                            workers.push(tokio::spawn(async move {
+                                let keys = keys.read().await;
+                                let have_orchard_spending_key =
+                                    keys.have_orchard_spending_key(&ivk);
+                                let uri = bsync_data.read().await.uri().clone();
+
+                                Ok(())
+                            }));
                             //Todo: Send decrypted orchard notes to where they need to go
                         }
                     }
