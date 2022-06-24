@@ -9,8 +9,8 @@ This repo provides both a library for zingoproxyclient and zingo-mobile, as well
 * Please use only if you know specifically what you are doing!!
 
 ## WARNING! Lightwallet
-* Using this software (a light wallet) does not offer the full privacy or security of running a full-node zcash client. Because of this, it may be possible to leak information. For example, requests to the server include in which blocks the wallet may find relevant messages or transactions.
-* This software does not provide privacy guarantees against network monitoring of the type or pattern of traffic it generates. For example, the specifics of use may remain private, but the use of this tool itself may be apparent to network observers.
+* Using this software (a light wallet) alone does not offer the full privacy or security of running a full-node zcash node. For example, requests to a server include information about in which blocks the wallet may find messages or transactions relevant to the wallet.
+* This software does not provide any privacy guarantees against network monitoring of the type or pattern of traffic it generates. For example, a user's specific activities using the client may remain private, but the use of the tool itself may be apparent to network observers.
 
 ## Zingo CLI
 `zingo-cli` is a command line Zingo lightwalletd-proxy client. To use it, see "compiling from source" below. Releases are currently only provisional, we will update the README as releases come out.
@@ -18,7 +18,7 @@ This repo provides both a library for zingoproxyclient and zingo-mobile, as well
 ## Privacy 
 * While all the keys and transaction detection happens on the client, the server can learn what blocks contain your shielded transactions.
 * The server also learns other metadata about you like your ip address etc...
-* Also remember that t-addresses don't provide any privacy protection.
+* Also remember that t-addresses are not private on the blockchain.
 
 ### Note Management
 Zingo-CLI does automatic note and utxo management, which means it doesn't allow you to manually select which address to send outgoing transactions from. It follows these principles:
