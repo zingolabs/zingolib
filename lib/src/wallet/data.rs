@@ -30,7 +30,11 @@ impl BlockData {
 
     pub(crate) fn new_with(height: u64, hash: &str) -> Self {
         let mut cb = CompactBlock::default();
-        cb.hash = hex::decode(hash).unwrap().into_iter().rev().collect::<Vec<_>>();
+        cb.hash = hex::decode(hash)
+            .unwrap()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>();
 
         let mut ecb = vec![];
         cb.encode(&mut ecb).unwrap();
@@ -95,7 +99,11 @@ impl BlockData {
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         writer.write_i32::<LittleEndian>(self.height as i32)?;
 
-        let hash_bytes: Vec<_> = hex::decode(self.hash()).unwrap().into_iter().rev().collect();
+        let hash_bytes: Vec<_> = hex::decode(self.hash())
+            .unwrap()
+            .into_iter()
+            .rev()
+            .collect();
         writer.write_all(&hash_bytes[..])?;
 
         CommitmentTree::<Node>::empty().write(&mut writer)?;
@@ -116,7 +124,10 @@ pub(crate) struct WitnessCache {
 
 impl WitnessCache {
     pub fn new(witnesses: Vec<IncrementalWitness<Node>>, top_height: u64) -> Self {
-        Self { witnesses, top_height }
+        Self {
+            witnesses,
+            top_height,
+        }
     }
 
     pub fn empty() -> Self {
@@ -266,7 +277,9 @@ impl SaplingNoteData {
 
         let mut diversifier_bytes = [0u8; 11];
         reader.read_exact(&mut diversifier_bytes)?;
-        let diversifier = Diversifier { 0: diversifier_bytes };
+        let diversifier = Diversifier {
+            0: diversifier_bytes,
+        };
 
         // To recover the note, read the value and r, and then use the payment address
         // to recreate the note
@@ -408,7 +421,9 @@ impl SaplingNoteData {
 
         write_rseed(&mut writer, &self.note.rseed)?;
 
-        Vector::write(&mut writer, &self.witnesses.witnesses, |wr, wi| wi.write(wr))?;
+        Vector::write(&mut writer, &self.witnesses.witnesses, |wr, wi| {
+            wi.write(wr)
+        })?;
         writer.write_u64::<LittleEndian>(self.witnesses.top_height)?;
 
         writer.write_all(&self.nullifier.0)?;
@@ -418,10 +433,14 @@ impl SaplingNoteData {
             w.write_u32::<LittleEndian>(h)
         })?;
 
-        Optional::write(&mut writer, self.unconfirmed_spent, |w, (transaction_id, height)| {
-            w.write_all(transaction_id.as_ref())?;
-            w.write_u32::<LittleEndian>(height)
-        })?;
+        Optional::write(
+            &mut writer,
+            self.unconfirmed_spent,
+            |w, (transaction_id, height)| {
+                w.write_all(transaction_id.as_ref())?;
+                w.write_u32::<LittleEndian>(height)
+            },
+        )?;
 
         Optional::write(&mut writer, self.memo.as_ref(), |w, m| {
             w.write_all(m.encode().as_array())
@@ -542,12 +561,18 @@ impl Utxo {
             w.write_all(transaction_id.as_ref())
         })?;
 
-        Optional::write(&mut writer, self.spent_at_height, |w, s| w.write_i32::<LittleEndian>(s))?;
-
-        Optional::write(&mut writer, self.unconfirmed_spent, |w, (transaction_id, height)| {
-            w.write_all(transaction_id.as_ref())?;
-            w.write_u32::<LittleEndian>(height)
+        Optional::write(&mut writer, self.spent_at_height, |w, s| {
+            w.write_i32::<LittleEndian>(s)
         })?;
+
+        Optional::write(
+            &mut writer,
+            self.unconfirmed_spent,
+            |w, (transaction_id, height)| {
+                w.write_all(transaction_id.as_ref())?;
+                w.write_u32::<LittleEndian>(height)
+            },
+        )?;
 
         Ok(())
     }
@@ -582,7 +607,11 @@ impl OutgoingTxMetadata {
             )),
         }?;
 
-        Ok(OutgoingTxMetadata { address, value, memo })
+        Ok(OutgoingTxMetadata {
+            address,
+            value,
+            memo,
+        })
     }
 
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
@@ -660,7 +689,12 @@ impl WalletTx {
         }
     }
 
-    pub fn new(height: BlockHeight, datetime: u64, transaction_id: &TxId, unconfirmed: bool) -> Self {
+    pub fn new(
+        height: BlockHeight,
+        datetime: u64,
+        transaction_id: &TxId,
+        unconfirmed: bool,
+    ) -> Self {
         WalletTx {
             block: height,
             unconfirmed,
@@ -682,7 +716,11 @@ impl WalletTx {
 
         let block = BlockHeight::from_u32(reader.read_i32::<LittleEndian>()? as u32);
 
-        let unconfirmed = if version <= 20 { false } else { reader.read_u8()? == 1 };
+        let unconfirmed = if version <= 20 {
+            false
+        } else {
+            reader.read_u8()? == 1
+        };
 
         let datetime = if version >= 4 {
             reader.read_u64::<LittleEndian>()?
@@ -761,9 +799,13 @@ impl WalletTx {
 
         writer.write_u8(if self.full_tx_scanned { 1 } else { 0 })?;
 
-        Optional::write(&mut writer, self.zec_price, |w, p| w.write_f64::<LittleEndian>(p))?;
+        Optional::write(&mut writer, self.zec_price, |w, p| {
+            w.write_f64::<LittleEndian>(p)
+        })?;
 
-        Vector::write(&mut writer, &self.spent_nullifiers, |w, n| w.write_all(&n.0))?;
+        Vector::write(&mut writer, &self.spent_nullifiers, |w, n| {
+            w.write_all(&n.0)
+        })?;
 
         Ok(())
     }
@@ -852,7 +894,8 @@ impl WalletZecPriceInfo {
         // Currency is only USD for now
         let currency = "USD".to_string();
 
-        let last_historical_prices_fetched_at = Optional::read(&mut reader, |r| r.read_u64::<LittleEndian>())?;
+        let last_historical_prices_fetched_at =
+            Optional::read(&mut reader, |r| r.read_u64::<LittleEndian>())?;
         let historical_prices_retry_count = reader.read_u64::<LittleEndian>()?;
 
         Ok(Self {
@@ -867,9 +910,11 @@ impl WalletZecPriceInfo {
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
         // We don't write the currency zec price or the currency yet.
-        Optional::write(&mut writer, self.last_historical_prices_fetched_at, |w, t| {
-            w.write_u64::<LittleEndian>(t)
-        })?;
+        Optional::write(
+            &mut writer,
+            self.last_historical_prices_fetched_at,
+            |w, t| w.write_u64::<LittleEndian>(t),
+        )?;
         writer.write_u64::<LittleEndian>(self.historical_prices_retry_count)?;
 
         Ok(())
