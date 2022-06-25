@@ -65,6 +65,8 @@ pub fn main() {
 
     let nosync = matches.is_present("nosync");
 
+    let regtest = matches.is_present("regtest");
+
     let startup_chan = startup(
         server,
         seed,
@@ -72,6 +74,7 @@ pub fn main() {
         maybe_data_dir,
         !nosync,
         command.is_none(),
+        regtest,
     );
     let (command_transmitter, resp_receiver) = match startup_chan {
         Ok(c) => c,

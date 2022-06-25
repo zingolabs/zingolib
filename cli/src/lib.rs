@@ -48,6 +48,11 @@ macro_rules! configure_clapapp {
                 .value_name("data-dir")
                 .help("Absolute path to use as data directory")
                 .takes_value(true))
+            .arg(Arg::with_name("regtest")
+                .long("regtest")
+                .value_name("regtest")
+                .help("Regtest mode")
+                .takes_value(false))
             .arg(Arg::with_name("COMMAND")
                 .help("Command to execute. If a command is not specified, zingo-cli will start in interactive mode.")
                 .required(false)
@@ -88,10 +93,17 @@ pub fn startup(
     data_dir: Option<String>,
     first_sync: bool,
     print_updates: bool,
+    regtest: bool,
 ) -> std::io::Result<(Sender<(String, Vec<String>)>, Receiver<String>)> {
     // Try to get the configuration
     let (config, latest_block_height) =
         LightClientConfig::create_on_data_dir(server.clone(), data_dir)?;
+
+    if regtest {
+        println!("regtest detected!");
+    } else {
+        println!("no regtest detected...");
+    }
 
     let lightclient = match seed {
         Some(phrase) => Arc::new(LightClient::new_from_phrase(
