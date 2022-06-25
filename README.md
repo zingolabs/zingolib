@@ -50,7 +50,7 @@ This will launch the interactive prompt. Type `help` to get a list of commands.
 ## Notes:
 * If you want to run your own server, please see [zingo lightwalletd](https://github.com/zingolabs/lightwalletd), and then run `./zingo-cli --server http://127.0.0.1:9067`
 * The log file is in `~/.zcash/zingo-wallet.debug.log`. Wallet is stored in `~/.zcash/zingo-wallet.dat`
-* Currently, the default, hard-coded `lightwalletd` server is https://lwdv3.zecwallet.co:443/. To change this, you can modify line 25 of `lib/src/lightclient/lightclient_config.rs`
+* Currently, the default, hard-coded `lightwalletd` server is `https://lwdv3.zecwallet.co:443/` To change this, you can modify line 25 of `lib/src/lightclient/lightclient_config.rs` At the time of writing, two other internet-accessible servers are known: `mainnet.lightwalletd.com:9067` by @nighthawk-apps, also used by ECC mobile SDK, and `lightd-main.zcashfr.io:443` by @zcashfr.io We make no claims whatsoever of the speed, quality, availability, or "friendliness" of these servers, including the default.
 
 ## Running in non-interactive mode:
 You can also run `zingo-cli` in non-interactive mode by passing the command you want to run as an argument. For example, `zingo-cli addresses` will list all wallet addresses and exit. 
