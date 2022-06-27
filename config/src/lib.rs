@@ -316,13 +316,8 @@ impl Parameters for Network {
         match self {
             Mainnet => MAIN_NETWORK.activation_height(nu),
             Testnet => TEST_NETWORK.activation_height(nu),
-            _ => {
-                //Tests don't need to worry about NU5 yet
-                match nu {
-                    NetworkUpgrade::Nu5 => None,
-                    _ => Some(BlockHeight::from_u32(1)),
-                }
-            }
+            FakeMainnet => Some(BlockHeight::from_u32(1)),
+            Regtest => Some(BlockHeight::from_u32(1)),
         }
     }
 

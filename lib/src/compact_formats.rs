@@ -1,12 +1,13 @@
 use ff::PrimeField;
 use group::GroupEncoding;
-use orchard::note::ExtractedNoteCommitment;
+use orchard::{note::ExtractedNoteCommitment, note_encryption::OrchardDomain};
 use std::convert::TryInto;
 
-use zcash_note_encryption::COMPACT_NOTE_SIZE;
+use zcash_note_encryption::{EphemeralKeyBytes, ShieldedOutput, COMPACT_NOTE_SIZE};
 use zcash_primitives::{
     block::{BlockHash, BlockHeader},
-    consensus::BlockHeight,
+    consensus::{BlockHeight, Parameters},
+    sapling::note_encryption::SaplingDomain,
 };
 
 tonic::include_proto!("cash.z.wallet.sdk.rpc");
@@ -96,16 +97,26 @@ impl CompactSaplingOutput {
     }
 }
 
-impl From<CompactSaplingOutput>
-    for zcash_client_backend::proto::compact_formats::CompactSaplingOutput
-{
-    fn from(value: CompactSaplingOutput) -> Self {
-        Self {
-            cmu: value.cmu,
-            ephemeralKey: value.epk,
-            ciphertext: value.ciphertext,
-            ..Default::default()
-        }
+impl<P: Parameters> ShieldedOutput<SaplingDomain<P>, COMPACT_NOTE_SIZE> for CompactSaplingOutput {
+    fn ephemeral_key(&self) -> EphemeralKeyBytes {
+        EphemeralKeyBytes(*vec_to_array(&self.epk))
+    }
+    fn cmstar_bytes(&self) -> [u8; 32] {
+        *vec_to_array(&self.cmu)
+    }
+    fn enc_ciphertext(&self) -> &[u8; COMPACT_NOTE_SIZE] {
+        vec_to_array(&self.ciphertext)
+    }
+}
+impl ShieldedOutput<OrchardDomain, COMPACT_NOTE_SIZE> for CompactOrchardAction {
+    fn ephemeral_key(&self) -> EphemeralKeyBytes {
+        EphemeralKeyBytes(*vec_to_array(&self.ephemeral_key))
+    }
+    fn cmstar_bytes(&self) -> [u8; 32] {
+        *vec_to_array(&self.cmx)
+    }
+    fn enc_ciphertext(&self) -> &[u8; COMPACT_NOTE_SIZE] {
+        vec_to_array(&self.ciphertext)
     }
 }
 
@@ -126,4 +137,9 @@ impl TryFrom<&CompactOrchardAction> for orchard::note_encryption::CompactAction 
             <[u8; COMPACT_NOTE_SIZE]>::try_from(value.ciphertext.as_slice())?,
         ))
     }
+}
+
+fn vec_to_array<'a, T, const N: usize>(vec: &'a Vec<T>) -> &'a [T; N] {
+    <&[T; N]>::try_from(&vec[..]).unwrap()
+    //todo: This unwrap is dangerous. Find better solution
 }

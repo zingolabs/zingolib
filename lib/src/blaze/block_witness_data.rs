@@ -7,6 +7,7 @@ use crate::{
         transactions::WalletTxns,
     },
 };
+use zcash_note_encryption::{Domain, ShieldedOutput, COMPACT_NOTE_SIZE};
 use zingoconfig::{ZingoConfig, MAX_REORG};
 
 use futures::future::join_all;
@@ -21,9 +22,9 @@ use tokio::{
     time::sleep,
 };
 use zcash_primitives::{
-    consensus::BlockHeight,
+    consensus::{BlockHeight, NetworkUpgrade, Parameters},
     merkle_tree::{CommitmentTree, IncrementalWitness},
-    sapling::{Node, Nullifier},
+    sapling::{note_encryption::SaplingDomain, Node, Nullifier as SaplingNullifier},
     transaction::TxId,
 };
 
@@ -50,6 +51,7 @@ pub struct BlockAndWitnessData {
     sync_status: Arc<RwLock<SyncStatus>>,
 
     sapling_activation_height: u64,
+    orchard_activation_height: u64,
 }
 
 impl BlockAndWitnessData {
@@ -62,6 +64,11 @@ impl BlockAndWitnessData {
             verified_tree: None,
             sync_status,
             sapling_activation_height: config.sapling_activation_height(),
+            orchard_activation_height: config
+                .chain
+                .activation_height(NetworkUpgrade::Nu5)
+                .unwrap()
+                .into(),
         }
     }
 
@@ -106,9 +113,9 @@ impl BlockAndWitnessData {
         }
     }
 
-    pub async fn get_ctx_for_nf_at_height(
+    pub async fn get_compact_transaction_for_sapling_nullifier_at_height(
         &self,
-        nullifier: &Nullifier,
+        nullifier: &SaplingNullifier,
         height: u64,
     ) -> (CompactTx, u32) {
         self.wait_for_block(height).await;
@@ -422,7 +429,7 @@ impl BlockAndWitnessData {
         }
     }
 
-    pub(crate) async fn is_nf_spent(&self, nf: Nullifier, after_height: u64) -> Option<u64> {
+    pub(crate) async fn is_nf_spent(&self, nf: SaplingNullifier, after_height: u64) -> Option<u64> {
         self.wait_for_block(after_height).await;
 
         {
@@ -457,25 +464,35 @@ impl BlockAndWitnessData {
         }
     }
 
-    pub async fn get_note_witness(
+    async fn get_note_witnesses<D, Spend, TreeGetter, OutputsFromTransaction>(
         &self,
         uri: Uri,
         height: BlockHeight,
         transaction_num: usize,
         output_num: usize,
-    ) -> Result<IncrementalWitness<Node>, String> {
+        tree_getter: TreeGetter,
+        outputs_from_transaction: OutputsFromTransaction,
+        activation_height: u64,
+    ) -> Result<IncrementalWitness<Node>, String>
+    where
+        D: Domain,
+        Spend: ShieldedOutput<D, COMPACT_NOTE_SIZE>,
+        TreeGetter: Fn(&TreeState) -> &String,
+        OutputsFromTransaction: Fn(&CompactTx) -> &Vec<Spend>,
+        [u8; 32]: From<<D as Domain>::ExtractedCommitmentBytes>,
+    {
         // Get the previous block's height, because that block's sapling tree is the tree state at the start
         // of the requested block.
         let prev_height = { u64::from(height) - 1 };
 
         let (cb, mut tree) = {
-            let tree = if prev_height < self.sapling_activation_height {
+            let tree = if prev_height < activation_height {
                 CommitmentTree::empty()
             } else {
                 let tree_state = GrpcConnector::get_sapling_tree(uri, prev_height).await?;
-                let sapling_tree = hex::decode(&tree_state.sapling_tree).unwrap();
+                let tree = hex::decode(tree_getter(&tree_state)).unwrap();
                 self.verification_list.write().await.push(tree_state);
-                CommitmentTree::read(&sapling_tree[..]).map_err(|e| format!("{}", e))?
+                CommitmentTree::read(&tree[..]).map_err(|e| format!("{}", e))?
             };
 
             // Get the current compact block
@@ -499,8 +516,11 @@ impl BlockAndWitnessData {
         // Go over all the outputs. Remember that all the numbers are inclusive, i.e., we have to scan upto and including
         // block_height, transaction_num and output_num
         for (t_num, compact_transaction) in cb.vtx.iter().enumerate() {
-            for (o_num, co) in compact_transaction.outputs.iter().enumerate() {
-                let node = Node::new(co.cmu().unwrap().into());
+            for (o_num, co) in outputs_from_transaction(compact_transaction)
+                .iter()
+                .enumerate()
+            {
+                let node = Node::new(co.cmstar_bytes().into());
                 tree.append(node).unwrap();
                 if t_num == transaction_num && o_num == output_num {
                     return Ok(IncrementalWitness::from_tree(&tree));
@@ -509,6 +529,43 @@ impl BlockAndWitnessData {
         }
 
         Err("Not found!".to_string())
+    }
+    pub async fn get_sapling_note_witnesses(
+        &self,
+        uri: Uri,
+        height: BlockHeight,
+        transaction_num: usize,
+        output_num: usize,
+    ) -> Result<IncrementalWitness<Node>, String> {
+        self.get_note_witnesses::<SaplingDomain<zingoconfig::Network>, crate::compact_formats::CompactSaplingOutput, _, _>(
+            uri,
+            height,
+            transaction_num,
+            output_num,
+            |tree| &tree.sapling_tree,
+            |compact_transaction| &compact_transaction.outputs,
+self.sapling_activation_height
+        )
+        .await
+    }
+
+    pub async fn get_orchard_note_witnesses(
+        &self,
+        uri: Uri,
+        height: BlockHeight,
+        transaction_num: usize,
+        action_num: usize,
+    ) -> Result<IncrementalWitness<Node>, String> {
+        self.get_note_witnesses(
+            uri,
+            height,
+            transaction_num,
+            action_num,
+            |tree| &tree.orchard_tree,
+            |compact_transaction| &compact_transaction.actions,
+            self.orchard_activation_height,
+        )
+        .await
     }
 
     // Stream all the outputs start at the block till the highest block available.

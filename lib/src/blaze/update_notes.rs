@@ -152,7 +152,10 @@ impl UpdateNotes {
                             .read()
                             .await
                             .block_data
-                            .get_ctx_for_nf_at_height(&nf, spent_height)
+                            .get_compact_transaction_for_sapling_nullifier_at_height(
+                                &nf,
+                                spent_height,
+                            )
                             .await;
 
                         let spent_transaction_id = WalletTx::new_txid(&compact_transaction.hash);

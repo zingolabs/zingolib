@@ -5,7 +5,7 @@ use crate::{
 use futures::{stream::FuturesUnordered, StreamExt};
 use log::info;
 use orchard::{
-    keys::IncomingViewingKey as OrchardIvk,
+    keys::{FullViewingKey as OrchardFvk, IncomingViewingKey as OrchardIvk},
     note_encryption::{CompactAction, OrchardDomain},
 };
 use std::sync::Arc;
@@ -19,7 +19,7 @@ use tokio::{
 use zcash_primitives::{
     consensus::BlockHeight,
     sapling::{note_encryption::try_sapling_compact_note_decryption, Nullifier, SaplingIvk},
-    transaction::{components::sapling::CompactOutputDescription, Transaction, TxId},
+    transaction::{Transaction, TxId},
 };
 
 use super::syncdata::BlazeSyncData;
@@ -154,14 +154,9 @@ impl TrialDecryptions {
                     };
 
                     for (i, ivk) in sapling_ivks.iter().enumerate() {
-                        if let Some((note, to)) = try_sapling_compact_note_decryption(
-                            &config.chain,
-                            height,
-                            &ivk,
-                            &CompactOutputDescription::try_from(
-                                zcash_client_backend::proto::compact_formats::CompactSaplingOutput::from(co.clone()))
-                            .unwrap(),
-                        ) {
+                        if let Some((note, to)) =
+                            try_sapling_compact_note_decryption(&config.chain, height, &ivk, co)
+                        {
                             wallet_transaction = true;
 
                             let keys = keys.clone();
@@ -184,7 +179,12 @@ impl TrialDecryptions {
                                     .read()
                                     .await
                                     .block_data
-                                    .get_note_witness(uri, height, transaction_num, output_num)
+                                    .get_sapling_note_witnesses(
+                                        uri,
+                                        height,
+                                        transaction_num,
+                                        output_num,
+                                    )
                                     .await?;
 
                                 let transaction_id = WalletTx::new_txid(&compact_transaction.hash);
@@ -249,6 +249,22 @@ impl TrialDecryptions {
                                 let _have_orchard_spending_key =
                                     keys.have_orchard_spending_key(&ivk);
                                 let _uri = bsync_data.read().await.uri().clone();
+
+                                // Get the witness for the note
+                                let witness = bsync_data
+                                    .read()
+                                    .await
+                                    .block_data
+                                    .get_orchard_note_witnesses(
+                                        uri,
+                                        height,
+                                        transaction_num,
+                                        action_num,
+                                    )
+                                    .await?;
+
+                                let transaction_id = WalletTx::new_txid(&compact_transaction.hash);
+                                let nullifier = fvk.ok().map(|fvk| note.nullifier(&fvk));
 
                                 Ok(())
                             }));
