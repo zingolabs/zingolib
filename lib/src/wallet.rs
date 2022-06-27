@@ -1342,6 +1342,7 @@ impl LightWallet {
                 address::RecipientAddress::Transparent(to) => {
                     builder.add_transparent_output(&to, value)
                 }
+                address::RecipientAddress::Unified(to) => todo!("Add unified address support"),
             } {
                 let e = format!("Error adding output: {:?}", e);
                 error!("{}", e);
