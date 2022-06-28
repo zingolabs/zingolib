@@ -8,12 +8,8 @@ This repo provides both a library for zingoproxyclient and zingo-mobile, as well
 * It should not be relied upon for custody, transfer, or receipt of ZEC!
 * Please use only if you know specifically what you are doing!!
 
-## WARNING! Lightwallet
-* Using this software (a light wallet) does not offer the full privacy or security of running a full-node zcash client.
-* This software does not provide privacy guarantees against network monitoring of the type or pattern of traffic it generates. That is to say, in some cases, the specifics of use may be able to remain private, but the use of this tool may be apparent to network observers.
-
 ## Zingo CLI
-`zingo-cli` is a command line Zingo lightwalletd-proxy client. To use it, see "compiling from source" below. Releases are currently only provisional, we will update the README as releases come out.
+`zingo-cli` is a command line lightwalletd-proxy client. To use it, see "compiling from source" below. Releases are currently only provisional, we will update the README as releases come out.
 
 ## Privacy
 * While all the keys and transaction detection happens on the client, the server can learn what blocks contain your shielded transactions.
