@@ -37,6 +37,8 @@ Zingo-CLI does automatic note and utxo management, which means it doesn't allow 
     * Run `rustup component add rustfmt` to add rustfmt
 * Build tools
     * Please install the build tools for your platform. On Ubuntu `sudo apt install build-essential gcc`
+* Protobuf Compiler
+    * Please install the protobuf compiler for your platform. On Ubuntu `sudo apt install protobuf-compiler`
 
 ```
 git clone https://github.com/zingolabs/zingolib.git
