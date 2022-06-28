@@ -1,13 +1,15 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::compact_formats::compact_tx_streamer_client::CompactTxStreamerClient;
 use crate::compact_formats::{
-    BlockId, BlockRange, ChainSpec, CompactBlock, Empty, LightdInfo, RawTransaction,
-    TransparentAddressBlockFilter, TreeState, TxFilter,
+    BlockId, BlockRange, ChainSpec, CompactBlock, Empty, LightdInfo, PriceRequest, PriceResponse,
+    RawTransaction, TransparentAddressBlockFilter, TreeState, TxFilter,
 };
 use futures::future::join_all;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use log::warn;
 
 use http_body::combinators::UnsyncBoxBody;
 use hyper::{client::HttpConnector, Uri};
@@ -418,6 +420,69 @@ impl GrpcConnector {
             .map_err(|e| format!("Error with response: {:?}", e))?;
 
         Ok(response.into_inner())
+    }
+
+    pub async fn get_current_zec_price(uri: http::Uri) -> Result<PriceResponse, String> {
+        let client = Arc::new(GrpcConnector::new(uri));
+        let mut client = client
+            .get_client()
+            .await
+            .map_err(|e| format!("Error getting client: {:?}", e))?;
+        let request = Request::new(Empty {});
+
+        let response = client
+            .get_current_zec_price(request)
+            .await
+            .map_err(|e| format!("Error with response: {:?}", e))?;
+
+        Ok(response.into_inner())
+    }
+
+    pub async fn get_historical_zec_prices(
+        uri: http::Uri,
+        transaction_ids: Vec<(TxId, u64)>,
+        currency: String,
+    ) -> Result<HashMap<TxId, Option<f64>>, String> {
+        let client = Arc::new(GrpcConnector::new(uri));
+        let mut client = client
+            .get_client()
+            .await
+            .map_err(|e| format!("Error getting client: {:?}", e))?;
+
+        let mut prices = HashMap::new();
+        let mut error_count: u32 = 0;
+
+        for (transaction_id, ts) in transaction_ids {
+            if error_count < 10 {
+                let r = Request::new(PriceRequest {
+                    timestamp: ts,
+                    currency: currency.clone(),
+                });
+                match client.get_zec_price(r).await {
+                    Ok(response) => {
+                        let price_response = response.into_inner();
+                        prices.insert(transaction_id, Some(price_response.price));
+                    }
+                    Err(e) => {
+                        // If the server doesn't support this, bail
+                        if e.code() == tonic::Code::Unimplemented {
+                            return Err(format!("Unsupported by server"));
+                        }
+
+                        // Ignore other errors, these are probably just for the particular date/time
+                        // and will be retried anyway
+                        warn!("Ignoring grpc error: {}", e);
+                        error_count += 1;
+                        prices.insert(transaction_id, None);
+                    }
+                }
+            } else {
+                // If there are too many errors, don't bother querying the server, just return none
+                prices.insert(transaction_id, None);
+            }
+        }
+
+        Ok(prices)
     }
 
     // get_latest_block GRPC call

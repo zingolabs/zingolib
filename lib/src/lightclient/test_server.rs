@@ -4,10 +4,10 @@ use crate::compact_formats::compact_tx_streamer_server::CompactTxStreamerServer;
 use crate::compact_formats::{
     Address, AddressList, Balance, BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx,
     Duration, Empty, Exclude, GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList,
-    LightdInfo, PingResponse, RawTransaction, SendResponse, TransparentAddressBlockFilter,
-    TreeState, TxFilter,
+    LightdInfo, PingResponse, PriceRequest, PriceResponse, RawTransaction, SendResponse,
+    TransparentAddressBlockFilter, TreeState, TxFilter,
 };
-use crate::wallet::data::WalletTx;
+use crate::wallet::{data::WalletTx, now};
 use futures::{FutureExt, Stream};
 use rand::rngs::OsRng;
 use rand::Rng;
@@ -436,6 +436,27 @@ impl CompactTxStreamer for TestGRPCService {
         });
 
         Ok(Response::new(Box::pin(ReceiverStream::new(receiver))))
+    }
+
+    async fn get_zec_price(
+        &self,
+        _request: Request<PriceRequest>,
+    ) -> Result<Response<PriceResponse>, Status> {
+        self.get_current_zec_price(Request::new(Empty {})).await
+    }
+
+    async fn get_current_zec_price(
+        &self,
+        _request: Request<Empty>,
+    ) -> Result<Response<PriceResponse>, Status> {
+        Self::wait_random().await;
+
+        let mut res = PriceResponse::default();
+        res.currency = "USD".to_string();
+        res.timestamp = now() as i64;
+        res.price = self.data.read().await.zec_price;
+
+        Ok(Response::new(res))
     }
 
     async fn get_transaction(

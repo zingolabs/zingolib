@@ -8,7 +8,7 @@ use crate::{
     },
     compact_formats::RawTransaction,
     grpc_connector::GrpcConnector,
-    wallet::{keys::Keys, message::Message, now, LightWallet},
+    wallet::{self, data::WalletTx, keys::Keys, message::Message, now, LightWallet},
 };
 use futures::future::join_all;
 use json::{array, object, JsonValue};
@@ -34,7 +34,7 @@ use zcash_primitives::{
     block::BlockHash,
     consensus::{BlockHeight, BranchId},
     memo::{Memo, MemoBytes},
-    transaction::{components::amount::DEFAULT_FEE, Transaction},
+    transaction::{components::amount::DEFAULT_FEE, Transaction, TxId},
 };
 use zcash_proofs::prover::LocalTxProver;
 use zingoconfig::MAX_REORG;
@@ -630,6 +630,29 @@ impl LightClient {
         self.config.server.clone()
     }
 
+    pub async fn do_zec_price(&self) -> String {
+        let mut price = self.wallet.price.read().await.clone();
+
+        // If there is no price, try to fetch it first.
+        if price.zec_price.is_none() {
+            self.update_current_price().await;
+            price = self.wallet.price.read().await.clone();
+        }
+
+        match price.zec_price {
+            None => return "Error: No price".to_string(),
+            Some((ts, p)) => {
+                let o = object! {
+                    "zec_price" => p,
+                    "fetched_at" =>  ts,
+                    "currency" => price.currency
+                };
+
+                o.pretty(2)
+            }
+        }
+    }
+
     pub async fn do_info(&self) -> String {
         match GrpcConnector::get_info(self.get_server_uri()).await {
             Ok(i) => {
@@ -890,6 +913,7 @@ impl LightClient {
                         "unconfirmed" => v.unconfirmed,
                         "datetime"     => v.datetime,
                         "txid"         => format!("{}", v.txid),
+                        "zec_price"    => v.zec_price.map(|p| (p * 100.0).round() / 100.0),
                         "amount"       => total_change as i64
                                             - v.total_sapling_value_spent as i64
                                             - v.total_transparent_value_spent as i64,
@@ -907,6 +931,7 @@ impl LightClient {
                         "position"     => i,
                         "txid"         => format!("{}", v.txid),
                         "amount"       => nd.note.value as i64,
+                        "zec_price"    => v.zec_price.map(|p| (p * 100.0).round() / 100.0),
                         "address"      => LightWallet::note_address(self.config.hrp_sapling_address(), nd),
                         "memo"         => LightWallet::memo_str(nd.memo.clone())
                     };
@@ -939,6 +964,7 @@ impl LightClient {
                         "datetime"     => v.datetime,
                         "txid"         => format!("{}", v.txid),
                         "amount"       => total_transparent_received as i64 - v.total_transparent_value_spent as i64,
+                        "zec_price"    => v.zec_price.map(|p| (p * 100.0).round() / 100.0),
                         "address"      => v.utxos.iter().map(|u| u.address.clone()).collect::<Vec<String>>().join(","),
                         "memo"         => None::<String>
                     })
@@ -1149,6 +1175,88 @@ impl LightClient {
         response
     }
 
+    async fn update_current_price(&self) {
+        // Get the zec price from the server
+        match GrpcConnector::get_current_zec_price(self.get_server_uri()).await {
+            Ok(p) => {
+                self.wallet.set_latest_zec_price(p.price).await;
+            }
+            Err(s) => error!("Error fetching latest price: {}", s),
+        }
+    }
+
+    // Update the historical prices in the wallet, if any are present.
+    async fn update_historical_prices(&self) {
+        let price = self.wallet.price.read().await.clone();
+
+        // Gather all transactions that need historical prices
+        let transaction_ids_to_fetch = self
+            .wallet
+            .transactions
+            .read()
+            .await
+            .current
+            .iter()
+            .filter_map(|(transaction_id, wtx)| match wtx.zec_price {
+                None => Some((transaction_id.clone(), wtx.datetime)),
+                Some(_) => None,
+            })
+            .collect::<Vec<(TxId, u64)>>();
+
+        if transaction_ids_to_fetch.is_empty() {
+            return;
+        }
+
+        info!(
+            "Fetching historical prices for {} txids",
+            transaction_ids_to_fetch.len()
+        );
+
+        let retry_count_increase = match GrpcConnector::get_historical_zec_prices(
+            self.get_server_uri(),
+            transaction_ids_to_fetch,
+            price.currency,
+        )
+        .await
+        {
+            Ok(prices) => {
+                let mut any_failed = false;
+
+                for (transaction_id, p) in prices {
+                    match p {
+                        None => any_failed = true,
+                        Some(p) => {
+                            // Update the price
+                            // info!("Historical price at txid {} was {}", txid, p);
+                            self.wallet
+                                .transactions
+                                .write()
+                                .await
+                                .current
+                                .get_mut(&transaction_id)
+                                .unwrap()
+                                .zec_price = Some(p);
+                        }
+                    }
+                }
+
+                // If any of the txids failed, increase the retry_count by 1.
+                if any_failed {
+                    1
+                } else {
+                    0
+                }
+            }
+            Err(_) => 1,
+        };
+
+        {
+            let mut p = self.wallet.price.write().await;
+            p.last_historical_prices_fetched_at = Some(wallet::now());
+            p.historical_prices_retry_count += retry_count_increase;
+        }
+    }
+
     pub async fn do_sync_status(&self) -> SyncStatus {
         self.bsync_data
             .read()
@@ -1185,6 +1293,7 @@ impl LightClient {
                 let h1 = tokio::spawn(async move {
                     let keys = lc1.wallet.keys();
                     let wallet_transactions = lc1.wallet.transactions.clone();
+                    let price = lc1.wallet.price.clone();
 
                     while let Some(rtransaction) = mempool_receiver.recv().await {
                         if let Ok(transaction) = Transaction::read(
@@ -1194,6 +1303,7 @@ impl LightClient {
                                 BlockHeight::from_u32(rtransaction.height as u32),
                             ),
                         ) {
+                            let price = price.read().await.clone();
                             //info!("Mempool attempting to scan {}", tx.txid());
 
                             FetchFullTxns::scan_full_tx(
@@ -1204,6 +1314,7 @@ impl LightClient {
                                 now() as u32,
                                 keys.clone(),
                                 wallet_transactions.clone(),
+                                WalletTx::get_price(now(), &price),
                             )
                             .await;
                         }
@@ -1402,6 +1513,9 @@ impl LightClient {
             )
             .await;
 
+        // 2. Update the current price
+        self.update_current_price().await;
+
         // Sapling Tree GRPC Fetcher
         let grpc_connector = GrpcConnector::new(uri.clone());
 
@@ -1551,6 +1665,9 @@ impl LightClient {
             .finish_get_blocks(MAX_REORG)
             .await;
         self.wallet.set_blocks(blocks).await;
+
+        // 2. If sync was successfull, also try to get historical prices
+        self.update_historical_prices().await;
 
         // 3. Mark the sync finished, which will clear the nullifier cache etc...
         bsync_data.read().await.finish().await;

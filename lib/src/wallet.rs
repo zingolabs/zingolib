@@ -1,4 +1,5 @@
 use crate::compact_formats::TreeState;
+use crate::wallet::data::WalletTx;
 use crate::wallet::keys::transparent::WalletTKey;
 use crate::{
     blaze::fetch_full_transaction::FetchFullTxns,
@@ -7,7 +8,7 @@ use crate::{
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::Future;
-use log::{error, info};
+use log::{error, info, warn};
 use orchard::keys::SpendingKey as OrchardSpendingKey;
 use std::{
     cmp,
@@ -39,7 +40,7 @@ use zcash_primitives::{
 };
 
 use self::{
-    data::{BlockData, SaplingNoteData, Utxo},
+    data::{BlockData, SaplingNoteData, Utxo, WalletZecPriceInfo},
     keys::{orchard::WalletOKey, Keys},
     message::Message,
     transactions::WalletTxns,
@@ -163,6 +164,9 @@ pub struct LightWallet {
 
     // Progress of an outgoing transaction
     send_progress: Arc<RwLock<SendProgress>>,
+
+    // The current price of ZEC. (time_fetched, price in USD)
+    pub price: Arc<RwLock<WalletZecPriceInfo>>,
 }
 
 impl LightWallet {
@@ -188,6 +192,7 @@ impl LightWallet {
             birthday: AtomicU64::new(height),
             verified_tree: Arc::new(RwLock::new(None)),
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
+            price: Arc::new(RwLock::new(WalletZecPriceInfo::new())),
         })
     }
 
@@ -278,6 +283,12 @@ impl LightWallet {
             transactions.adjust_spendable_status(spendable_keys);
         }
 
+        let price = if version <= 13 {
+            WalletZecPriceInfo::new()
+        } else {
+            WalletZecPriceInfo::read(&mut reader)?
+        };
+
         let mut lw = Self {
             keys: Arc::new(RwLock::new(keys)),
             transactions: Arc::new(RwLock::new(transactions)),
@@ -287,6 +298,7 @@ impl LightWallet {
             birthday: AtomicU64::new(birthday),
             verified_tree: Arc::new(RwLock::new(verified_tree)),
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
+            price: Arc::new(RwLock::new(price)),
         };
 
         // For old wallets, remove unused addresses
@@ -339,6 +351,9 @@ impl LightWallet {
                 Vector::write(w, &buf, |w, b| w.write_u8(*b))
             },
         )?;
+
+        // Price info
+        self.price.read().await.write(&mut writer)?;
 
         Ok(())
     }
@@ -395,6 +410,16 @@ impl LightWallet {
         } else {
             cmp::min(self.get_first_transaction_block().await, birthday)
         }
+    }
+
+    pub async fn set_latest_zec_price(&self, price: f64) {
+        if price <= 0 as f64 {
+            warn!("Tried to set a bad current zec price {}", price);
+            return;
+        }
+
+        self.price.write().await.zec_price = Some((now(), price));
+        info!("Set current ZEC Price to USD {}", price);
     }
 
     // Get the current sending status.
@@ -1439,6 +1464,8 @@ impl LightWallet {
 
         // Add this transaction to the mempool structure
         {
+            let price = self.price.read().await.clone();
+
             FetchFullTxns::scan_full_tx(
                 self.config.clone(),
                 transaction,
@@ -1447,6 +1474,7 @@ impl LightWallet {
                 now() as u32,
                 self.keys.clone(),
                 self.transactions.clone(),
+                WalletTx::get_price(now(), &price),
             )
             .await;
         }

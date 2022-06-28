@@ -127,6 +127,7 @@ impl FetchFullTxns {
                         block_time,
                         keys,
                         wallet_transactions,
+                        None,
                     )
                     .await;
 
@@ -179,6 +180,7 @@ impl FetchFullTxns {
                     block_time,
                     keys,
                     wallet_transactions,
+                    None,
                 )
                 .await;
             }
@@ -206,6 +208,7 @@ impl FetchFullTxns {
         block_time: u32,
         keys: Arc<RwLock<Keys>>,
         wallet_transactions: Arc<RwLock<WalletTxns>>,
+        price: Option<f64>,
     ) {
         // Remember if this is an outgoing Tx. Useful for when we want to grab the outgoing metadata.
         let mut is_outgoing_transaction = false;
@@ -298,6 +301,14 @@ impl FetchFullTxns {
                 .write()
                 .await
                 .add_outgoing_metadata(&transaction.txid(), outgoing_metadatas);
+        }
+
+        // Update price if available
+        if price.is_some() {
+            wallet_transactions
+                .write()
+                .await
+                .set_price(&transaction.txid(), price);
         }
 
         //info!("Finished Fetching full transaction {}", tx.txid());
