@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use log::{error, info};
 
+use zingoconfig::Network;
 use zingolib::lightclient::lightclient_config::LightClientConfig;
 use zingolib::{commands, lightclient::LightClient};
 
@@ -99,10 +100,14 @@ pub fn startup(
     let (config, latest_block_height) =
         LightClientConfig::create_on_data_dir(server.clone(), data_dir)?;
 
-    if regtest {
-        println!("regtest detected!");
-    } else {
-        println!("no regtest detected...");
+    // check for regtest flag and network in config.
+    if regtest && config.chain == Network::FakeMainnet {
+        println!("regtest detected and network set correctly!");
+    } else if regtest && config.chain != Network::FakeMainnet {
+        println!("Regtest flag detected, but unexpected network set! Exiting.");
+        panic!("Regtest Network Problem");
+    } else if config.chain == Network::FakeMainnet {
+        println!("WARNING! FakeMainnet (regtest network) in use but no regtest flag recognized!");
     }
 
     let lightclient = match seed {

@@ -91,6 +91,7 @@ impl LightClientConfig {
                 chain: match info.chain_name.as_str() {
                     "main" => Network::Mainnet,
                     "test" => Network::Testnet,
+                    "regtest" => Network::FakeMainnet,
                     _ => panic!("Unknown network"),
                 },
                 monitor_mempool: true,
