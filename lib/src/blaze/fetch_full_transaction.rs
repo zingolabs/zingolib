@@ -613,10 +613,9 @@ async fn scan_bundle<K, B, B2, O, D, E>(
     O: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE>,
 {
     let keys = key_reader(&*keys.read().await).clone();
-    let temp: Option<&B> = transaction_to_bundle(transaction);
-    for output in temp
+    for output in transaction_to_bundle(transaction)
         .into_iter()
-        .flat_map(|bundle: &B| bundle_to_output(bundle))
+        .flat_map(|bundle| bundle_to_output(bundle))
     {
         for key in &keys {
             let (note, to, memo_bytes) = match key_to_ivk(key)
