@@ -3,8 +3,8 @@
 This repo provides both a library for zingoproxyclient and zingo-mobile, as well as an included cli application to interact with zcashd via lightwalletd.
 
 ## WARNING! Experimental
-* This is experimental software. 
-* It should not be used in production! 
+* This is experimental software.
+* It should not be used in production!
 * It should not be relied upon for custody, transfer, or receipt of ZEC!
 * Please use only if you know specifically what you are doing!!
 
@@ -15,7 +15,7 @@ This repo provides both a library for zingoproxyclient and zingo-mobile, as well
 ## Zingo CLI
 `zingo-cli` is a command line Zingo lightwalletd-proxy client. To use it, see "compiling from source" below. Releases are currently only provisional, we will update the README as releases come out.
 
-## Privacy 
+## Privacy
 * While all the keys and transaction detection happens on the client, the server can learn what blocks contain your shielded transactions.
 * The server also learns other metadata about you like your ip address etc...
 * Also remember that t-addresses don't provide any privacy protection.
@@ -40,6 +40,7 @@ Zingo-CLI does automatic note and utxo management, which means it doesn't allow 
 
 ```
 git clone https://github.com/zingolabs/zingolib.git
+cd zingolib
 cargo build --release
 ./target/release/zingo-cli
 ```
@@ -52,13 +53,13 @@ This will launch the interactive prompt. Type `help` to get a list of commands.
 * Currently, the default, hard-coded `lightwalletd` server is https://lwdv3.zecwallet.co:443/. To change this, you can modify line 25 of `lib/src/lightclient/lightclient_config.rs`
 
 ## Running in non-interactive mode:
-You can also run `zingo-cli` in non-interactive mode by passing the command you want to run as an argument. For example, `zingo-cli addresses` will list all wallet addresses and exit. 
-Run `zingo-cli help` to see a list of all commands. 
+You can also run `zingo-cli` in non-interactive mode by passing the command you want to run as an argument. For example, `zingo-cli addresses` will list all wallet addresses and exit.
+Run `zingo-cli help` to see a list of all commands.
 
 ## Options
-Here are some CLI arguments you can pass to `zingo-cli`. Please run `zingo-cli --help` for the full list. 
+Here are some CLI arguments you can pass to `zingo-cli`. Please run `zingo-cli --help` for the full list.
 
-* `--server`: Connect to a custom zcash lightwalletd server. 
+* `--server`: Connect to a custom zcash lightwalletd server.
     * Example: `./zingo-cli --server 127.0.0.1:9067`
 * `--seed`: Restore a wallet from a seed phrase. Note that this will fail if there is an existing wallet. Delete (or move) any existing wallet to restore from the 24-word seed phrase
     * Example: `./zingo-cli --seed "twenty four words seed phrase"`
