@@ -591,15 +591,15 @@ impl FetchFullTxns {
 }
 
 async fn scan_bundle<K, B, L, O, D, E>(
-    config: &LightClientConfig,
+    _config: &LightClientConfig,
     transaction: &Transaction,
-    height: BlockHeight,
-    unconfirmed: bool,
-    block_time: u32,
+    _height: BlockHeight,
+    _unconfirmed: bool,
+    _block_time: u32,
     keys: &Arc<RwLock<Keys>>,
-    wallet_transactions: &Arc<RwLock<WalletTxns>>,
-    is_outgoing_transaction: &mut bool,
-    outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
+    _wallet_transactions: &Arc<RwLock<WalletTxns>>,
+    _is_outgoing_transaction: &mut bool,
+    _outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
     key_reader: impl Fn(&Keys) -> &Vec<K>,
     transaction_to_bundle: impl Fn(&Transaction) -> Option<&B>,
     bundle_to_output: impl Fn(&B) -> &L,
@@ -618,7 +618,7 @@ async fn scan_bundle<K, B, L, O, D, E>(
         .flat_map(|bundle| bundle_to_output(bundle))
     {
         for key in &local_keys {
-            let (note, to, memo_bytes) = match key_to_ivk(key)
+            let (_note, _to, memo_bytes) = match key_to_ivk(key)
                 .map(|ivk| try_note_decryption(&output_to_domain(&output), &ivk, output))
             {
                 Ok(Some(ret)) => ret,
