@@ -68,10 +68,16 @@ Here are some CLI arguments you can pass to `zingo-cli`. Please run `zingo-cli -
     * Example: `./zingo-cli --server 127.0.0.1:9067 --data-dir /Users/ZingoRocks/my-test-wallet` will use the provided directory to store `zingo-wallet.dat` and logs. If the provided directory does not exist, it will create it.
 
 ## Regtest
-This documentation to run regtest "manually" is a placeholder until the `--regtest` flag is fully functional.
+Experimental!
+We have recently added support for `Network::Regtest` enum: https://github.com/zcash/librustzcash/blob/main/zcash_primitives/src/constants/regtest.rs
+This has not been sufficiently tested, but now compiles.
 
-The CLI can work in regtest, by locally running a `zcashd` and `lightwalletd`.
+This documentation to run regtest "manually" is a placeholder until flags are more functional.
+We also aim to be able to select any network type with cli flags.
 
+The CLI can work in regtest mode, by locally running a `zcashd` and `lightwalletd`.
+
+For example:
 Create the directories `~/.zcash/zd/` and `~/.zcash/ld`
 `zcashd` works in regtest with the following invocation, run from your `zcash` directory (explicit path, substitute your own username):
 `./src/zcashd --printtoconsole -conf=/home/username/.zcash/zd/zcash.conf --datadir=/home/username/.zcash/zd/`
@@ -108,4 +114,4 @@ Finally, from your `zingolib` directory, with a release build (`cargo build --re
 `./target/release/zingo-cli --regtest --server=127.0.0.1:9067`
 You should see a single line printed out saying `regtest detected and network set correctly!` and the interactive cli application should work with your regtest network!
 
-Tested with `zcash` commit `1e6f46`, `lightwalletd` commit `db2795`, and `zingolib` commit `0b1823`
+Tested with `zcash` commit `1e6f46`, `lightwalletd` commit `db2795`, and `zingolib` commit `8376f6` or better.

@@ -101,13 +101,13 @@ pub fn startup(
         LightClientConfig::create_on_data_dir(server.clone(), data_dir)?;
 
     // check for regtest flag and network in config.
-    if regtest && config.chain == Network::FakeMainnet {
+    if regtest && config.chain == Network::Regtest {
         println!("regtest detected and network set correctly!");
-    } else if regtest && config.chain != Network::FakeMainnet {
+    } else if regtest && config.chain != Network::Regtest {
         println!("Regtest flag detected, but unexpected network set! Exiting.");
         panic!("Regtest Network Problem");
-    } else if config.chain == Network::FakeMainnet {
-        println!("WARNING! FakeMainnet (regtest network) in use but no regtest flag recognized!");
+    } else if config.chain == Network::Regtest {
+        println!("WARNING! regtest network in use but no regtest flag recognized!");
     }
 
     let lightclient = match seed {

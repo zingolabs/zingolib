@@ -91,7 +91,8 @@ impl LightClientConfig {
                 chain: match info.chain_name.as_str() {
                     "main" => Network::Mainnet,
                     "test" => Network::Testnet,
-                    "regtest" => Network::FakeMainnet,
+                    "regtest" => Network::Regtest,
+                    "fakemainnet" => Network::FakeMainnet,
                     _ => panic!("Unknown network"),
                 },
                 monitor_mempool: true,
@@ -168,9 +169,10 @@ impl LightClientConfig {
                 };
 
                 match &self.chain {
-                    Network::Mainnet => {}
                     Network::Testnet => zcash_data_location.push("testnet3"),
-                    Network::FakeMainnet => zcash_data_location.push("regtest"),
+                    Network::Regtest => zcash_data_location.push("regtest"),
+                    Network::Mainnet => {}
+                    Network::FakeMainnet => zcash_data_location.push("fakemainnet"),
                 };
             }
 
@@ -335,8 +337,8 @@ impl LightClientConfig {
 
     pub fn base58_secretkey_prefix(&self) -> [u8; 1] {
         match self.chain {
+            Network::Testnet | Network::Regtest | Network::FakeMainnet => [0xEF],
             Network::Mainnet => [0x80],
-            Network::Testnet | Network::FakeMainnet => [0xEF],
         }
     }
 }
