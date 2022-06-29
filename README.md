@@ -114,4 +114,4 @@ Finally, from your `zingolib` directory, with a release build (`cargo build --re
 `./target/release/zingo-cli --regtest --server=127.0.0.1:9067`
 You should see a single line printed out saying `regtest detected and network set correctly!` and the interactive cli application should work with your regtest network!
 
-Tested with `zcash` commit `1e6f46`, `lightwalletd` commit `db2795`, and `zingolib` commit `8376f6` or better.
+Tested with `zcash` commit `1e6f46`, `lightwalletd` commit `db2795`, and `zingolib` commit `252abe` or better.
