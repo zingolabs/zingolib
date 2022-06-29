@@ -590,35 +590,35 @@ impl FetchFullTxns {
     }
 }
 
-async fn scan_bundle<K, B, B2, O, D, E>(
-    config: &LightClientConfig,
+async fn scan_bundle<K, B, L, O, D, E>(
+    _config: &LightClientConfig,
     transaction: &Transaction,
-    height: BlockHeight,
-    unconfirmed: bool,
-    block_time: u32,
+    _height: BlockHeight,
+    _unconfirmed: bool,
+    _block_time: u32,
     keys: &Arc<RwLock<Keys>>,
-    wallet_transactions: &Arc<RwLock<WalletTxns>>,
-    is_outgoing_transaction: &mut bool,
-    outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
+    _wallet_transactions: &Arc<RwLock<WalletTxns>>,
+    _is_outgoing_transaction: &mut bool,
+    _outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
     key_reader: impl Fn(&Keys) -> &Vec<K>,
     transaction_to_bundle: impl Fn(&Transaction) -> Option<&B>,
-    bundle_to_output: impl Fn(&B) -> &B2,
+    bundle_to_output: impl Fn(&B) -> &L,
     key_to_ivk: impl Fn(&K) -> Result<<D as Domain>::IncomingViewingKey, E>,
     output_to_domain: impl Fn(&O) -> D,
     memo_slice: impl Fn(&D::Memo) -> &[u8],
 ) where
     K: Clone,
-    for<'a> &'a B2: IntoIterator<Item = &'a O>,
+    for<'a> &'a L: IntoIterator<Item = &'a O>,
     D: Domain,
     O: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE>,
 {
-    let keys = key_reader(&*keys.read().await).clone();
+    let local_keys = key_reader(&*keys.read().await).clone();
     for output in transaction_to_bundle(transaction)
         .into_iter()
         .flat_map(|bundle| bundle_to_output(bundle))
     {
-        for key in &keys {
-            let (note, to, memo_bytes) = match key_to_ivk(key)
+        for key in &local_keys {
+            let (_note, _to, memo_bytes) = match key_to_ivk(key)
                 .map(|ivk| try_note_decryption(&output_to_domain(&output), &ivk, output))
             {
                 Ok(Some(ret)) => ret,
@@ -630,7 +630,7 @@ async fn scan_bundle<K, B, B2, O, D, E>(
                 .try_into()
                 .unwrap_or(Memo::Future(memo_bytes));
             println!(
-                "Recieved {} tx with memo {memo:?}",
+                "Received {} tx with memo {memo:?}",
                 std::any::type_name::<D>()
             );
             //When this can work as a full replacement for scan_sapling_bundle, that
