@@ -41,7 +41,10 @@ impl UpdateNotes {
         output_num: Option<u32>,
     ) {
         // Get the data first, so we don't hold on to the lock
-        let wtn = wallet_txns.read().await.get_note_witness(&txid, &nullifier);
+        let wtn = wallet_txns
+            .read()
+            .await
+            .get_sapling_note_witness(&txid, &nullifier);
 
         if let Some((witnesses, created_height)) = wtn {
             if witnesses.len() == 0 {

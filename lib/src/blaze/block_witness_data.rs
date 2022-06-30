@@ -165,7 +165,7 @@ impl BlockAndWitnessData {
                     let mut tree_state = TreeState::default();
                     tree_state.height = h;
                     tree_state.hash = hash.to_string();
-                    tree_state.tree = tree.to_string();
+                    tree_state.sapling_tree = tree.to_string();
 
                     tree_state
                 }),
@@ -220,7 +220,8 @@ impl BlockAndWitnessData {
                         return true;
                     }
                     let mut tree =
-                        CommitmentTree::<Node>::read(&hex::decode(ct.tree).unwrap()[..]).unwrap();
+                        CommitmentTree::<Node>::read(&hex::decode(ct.sapling_tree).unwrap()[..])
+                            .unwrap();
 
                     {
                         let blocks = blocks.read().await;
@@ -249,7 +250,7 @@ impl BlockAndWitnessData {
                     tree.write(&mut buf).unwrap();
 
                     // Return if verified
-                    hex::encode(buf) == vt.tree
+                    hex::encode(buf) == vt.sapling_tree
                 })
             })
             .collect();
@@ -472,7 +473,7 @@ impl BlockAndWitnessData {
                 CommitmentTree::empty()
             } else {
                 let tree_state = GrpcConnector::get_sapling_tree(uri, prev_height).await?;
-                let sapling_tree = hex::decode(&tree_state.tree).unwrap();
+                let sapling_tree = hex::decode(&tree_state.sapling_tree).unwrap();
                 self.verification_list.write().await.push(tree_state);
                 CommitmentTree::read(&sapling_tree[..]).map_err(|e| format!("{}", e))?
             };

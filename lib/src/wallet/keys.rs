@@ -3,6 +3,9 @@ use std::{
     io::{self, Error, ErrorKind, Read, Write},
 };
 
+use ::orchard::keys::{
+    IncomingViewingKey as OrchardIncomingViewingKey, SpendingKey as OrchardSpendingKey,
+};
 use base58::{FromBase58, ToBase58};
 use bip0039::Mnemonic;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -487,14 +490,14 @@ impl Keys {
             .collect()
     }
 
-    pub fn get_all_zaddresses(&self) -> Vec<String> {
+    pub fn get_all_sapling_addresses(&self) -> Vec<String> {
         self.zkeys
             .iter()
             .map(|zk| encode_payment_address(self.config.hrp_sapling_address(), &zk.zaddress))
             .collect()
     }
 
-    pub fn get_all_oaddresses(&self) -> Vec<String> {
+    pub fn get_all_orchard_addresses(&self) -> Vec<String> {
         self.okeys
             .iter()
             .map(|zk| {
@@ -533,6 +536,17 @@ impl Keys {
             .find(|zk| zk.extfvk == *extfvk)
             .map(|zk| zk.have_sapling_spending_key())
             .unwrap_or(false)
+    }
+
+    pub fn have_orchard_spending_key(&self, ivk: &OrchardIncomingViewingKey) -> bool {
+        self.okeys
+            .iter()
+            .find(|orchard_key| {
+                OrchardIncomingViewingKey::try_from(&orchard_key.key).as_ref() == Ok(ivk)
+            })
+            .map(|orchard_key| OrchardSpendingKey::try_from(&orchard_key.key).ok())
+            .flatten()
+            .is_some()
     }
 
     pub fn get_extsk_for_extfvk(

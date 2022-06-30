@@ -4,7 +4,7 @@ use crate::wallet::keys::transparent::WalletTKey;
 use crate::{
     blaze::fetch_full_transaction::FetchFullTxns,
     lightclient::lightclient_config::LightClientConfig,
-    wallet::{data::SpendableNote, keys::sapling::WalletZKey},
+    wallet::{data::SpendableSaplingNote, keys::sapling::WalletZKey},
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::Future;
@@ -367,7 +367,7 @@ impl LightWallet {
             .current
             .iter_mut()
             .for_each(|(_, wtx)| {
-                wtx.notes.iter_mut().for_each(|nd| {
+                wtx.sapling_notes.iter_mut().for_each(|nd| {
                     nd.witnesses.top_height = top_height;
                 });
             });
@@ -777,7 +777,7 @@ impl LightWallet {
             .values()
             .map(|transaction| {
                 transaction
-                    .notes
+                    .sapling_notes
                     .iter()
                     .filter(|nd| match addr.as_ref() {
                         Some(a) => {
@@ -836,7 +836,7 @@ impl LightWallet {
             .values()
             .map(|transaction| {
                 transaction
-                    .notes
+                    .sapling_notes
                     .iter()
                     .filter(|nd| nd.spent.is_none() && nd.unconfirmed_spent.is_none())
                     .filter(|nd| {
@@ -877,7 +877,7 @@ impl LightWallet {
             .map(|transaction| {
                 if transaction.block <= BlockHeight::from_u32(anchor_height) {
                     transaction
-                        .notes
+                        .sapling_notes
                         .iter()
                         .filter(|nd| nd.spent.is_none() && nd.unconfirmed_spent.is_none())
                         .filter(|nd| match addr.as_ref() {
@@ -911,7 +911,7 @@ impl LightWallet {
             .map(|transaction| {
                 if transaction.block <= BlockHeight::from_u32(anchor_height) {
                     transaction
-                        .notes
+                        .sapling_notes
                         .iter()
                         .filter(|nd| nd.spent.is_none() && nd.unconfirmed_spent.is_none())
                         .filter(|nd| {
@@ -969,7 +969,7 @@ impl LightWallet {
     }
 
     pub async fn remove_unused_zaddrs(&self) {
-        let zaddrs = self.keys.read().await.get_all_zaddresses();
+        let zaddrs = self.keys.read().await.get_all_sapling_addresses();
         if zaddrs.len() <= 1 {
             return;
         }
@@ -981,7 +981,7 @@ impl LightWallet {
             .current
             .values()
             .flat_map(|wtx| {
-                wtx.notes.iter().map(|n| {
+                wtx.sapling_notes.iter().map(|n| {
                     let (_, pa) = n.extfvk.default_address();
                     let zaddr = encode_payment_address(self.config.hrp_sapling_address(), &pa);
                     zaddrs
@@ -1045,7 +1045,7 @@ impl LightWallet {
             .current
             .values_mut()
             .for_each(|wtx| {
-                wtx.notes
+                wtx.sapling_notes
                     .iter_mut()
                     .filter(|nd| nd.spent.is_some() && nd.spent.unwrap().1 == 0)
                     .for_each(|nd| {
@@ -1081,7 +1081,7 @@ impl LightWallet {
         target_amount: Amount,
         transparent_only: bool,
         shield_transparenent: bool,
-    ) -> (Vec<SpendableNote>, Vec<Utxo>, Amount) {
+    ) -> (Vec<SpendableSaplingNote>, Vec<Utxo>, Amount) {
         // First, if we are allowed to pick transparent value, pick them all
         let utxos = if transparent_only || shield_transparenent {
             self.get_utxos()
@@ -1115,7 +1115,7 @@ impl LightWallet {
                 .iter()
                 .flat_map(|(transaction_id, transaction)| {
                     transaction
-                        .notes
+                        .sapling_notes
                         .iter()
                         .map(move |note| (*transaction_id, note))
                 })
@@ -1127,7 +1127,12 @@ impl LightWallet {
                     } else {
                         // Get the spending key for the selected fvk, if we have it
                         let extsk = keys.get_extsk_for_extfvk(&note.extfvk);
-                        SpendableNote::from(transaction_id, note, *anchor_offset as usize, &extsk)
+                        SpendableSaplingNote::from(
+                            transaction_id,
+                            note,
+                            *anchor_offset as usize,
+                            &extsk,
+                        )
                     }
                 })
                 .collect::<Vec<_>>();
@@ -1362,6 +1367,7 @@ impl LightWallet {
                 address::RecipientAddress::Transparent(to) => {
                     builder.add_transparent_output(&to, value)
                 }
+                address::RecipientAddress::Unified(to) => todo!("Add unified address support"),
             } {
                 let e = format!("Error adding output: {:?}", e);
                 error!("{}", e);
@@ -1435,7 +1441,7 @@ impl LightWallet {
                     .current
                     .get_mut(&selected.transaction_id)
                     .unwrap()
-                    .notes
+                    .sapling_notes
                     .iter_mut()
                     .find(|nd| nd.nullifier == selected.nullifier)
                     .unwrap();
@@ -1581,7 +1587,7 @@ mod test {
                         .current
                         .get(&txid)
                         .unwrap()
-                        .notes[0]
+                        .sapling_notes[0]
                         .witnesses
                         .last()
                         .unwrap()
@@ -1614,7 +1620,7 @@ mod test {
                         .current
                         .get(&txid)
                         .unwrap()
-                        .notes[0]
+                        .sapling_notes[0]
                         .witnesses
                         .get_from_last(1)
                         .unwrap()
@@ -1639,7 +1645,7 @@ mod test {
                         .current
                         .get(&txid)
                         .unwrap()
-                        .notes[0]
+                        .sapling_notes[0]
                         .witnesses
                         .get_from_last(9)
                         .unwrap()
@@ -1735,7 +1741,7 @@ mod test {
                         .current
                         .get(&txid)
                         .unwrap()
-                        .notes[0]
+                        .sapling_notes[0]
                         .witnesses
                         .last()
                         .unwrap()

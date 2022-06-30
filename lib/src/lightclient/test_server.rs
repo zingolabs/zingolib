@@ -7,8 +7,7 @@ use crate::compact_formats::{
     LightdInfo, PingResponse, PriceRequest, PriceResponse, RawTransaction, SendResponse,
     TransparentAddressBlockFilter, TreeState, TxFilter,
 };
-use crate::wallet::data::WalletTx;
-use crate::wallet::now;
+use crate::wallet::{data::WalletTx, now};
 use futures::{FutureExt, Stream};
 use rand::rngs::OsRng;
 use rand::Rng;
@@ -546,16 +545,6 @@ impl CompactTxStreamer for TestGRPCService {
         Ok(Response::new(Box::pin(ReceiverStream::new(receiver))))
     }
 
-    type GetAddressTxidsStream =
-        Pin<Box<dyn Stream<Item = Result<RawTransaction, Status>> + Send + Sync>>;
-
-    async fn get_address_txids(
-        &self,
-        request: Request<TransparentAddressBlockFilter>,
-    ) -> Result<Response<Self::GetAddressTxidsStream>, Status> {
-        self.get_taddress_txids(request).await
-    }
-
     async fn get_taddress_balance(
         &self,
         _request: Request<AddressList>,
@@ -600,7 +589,7 @@ impl CompactTxStreamer for TestGRPCService {
             let mut ts = TreeState::default();
             ts.height = *height;
             ts.hash = hash.clone();
-            ts.tree = tree.clone();
+            ts.sapling_tree = tree.clone();
 
             return Ok(Response::new(ts));
         }
@@ -656,7 +645,7 @@ impl CompactTxStreamer for TestGRPCService {
         )
         .to_string();
         ts.height = block.height;
-        ts.tree = tree_to_string(&tree);
+        ts.sapling_tree = tree_to_string(&tree);
 
         Ok(Response::new(ts))
     }

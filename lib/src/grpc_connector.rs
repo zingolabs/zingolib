@@ -341,7 +341,7 @@ impl GrpcConnector {
                     // Try the old, legacy API
                     let request = Request::new(args);
                     client
-                        .get_address_txids(request)
+                        .get_taddress_txids(request)
                         .await
                         .map_err(|e| format!("{}", e))?
                 } else {

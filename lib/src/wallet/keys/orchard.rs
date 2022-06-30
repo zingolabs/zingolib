@@ -80,6 +80,22 @@ impl TryFrom<&WalletOKeyInner> for OutgoingViewingKey {
     }
 }
 
+impl TryFrom<&WalletOKeyInner> for IncomingViewingKey {
+    type Error = String;
+    fn try_from(key: &WalletOKeyInner) -> Result<IncomingViewingKey, String> {
+        match key {
+            WalletOKeyInner::ImportedInViewKey(k) => Ok(k.clone()),
+            WalletOKeyInner::ImportedFullViewKey(k) => Ok(k.to_ivk(Scope::External)),
+            WalletOKeyInner::ImportedOutViewKey(k) => {
+                Err(format!("Received ovk {k:?} which does not contain an ivk"))
+            }
+            _ => Ok(FullViewingKey::try_from(key)
+                .unwrap()
+                .to_ivk(Scope::External)),
+        }
+    }
+}
+
 impl PartialEq for WalletOKeyInner {
     fn eq(&self, other: &Self) -> bool {
         use subtle::ConstantTimeEq as _;
@@ -97,7 +113,7 @@ impl PartialEq for WalletOKeyInner {
 impl WalletOKey {
     pub fn new_hdkey(hdkey_num: u32, spending_key: SpendingKey) -> Self {
         let key = WalletOKeyInner::HdKey(spending_key);
-        let address = FullViewingKey::from(&spending_key).address_at(0u64, Scope::Internal);
+        let address = FullViewingKey::from(&spending_key).address_at(0u64, Scope::External);
         let orchard_container = Receiver::Orchard(address.to_raw_address_bytes());
         let unified_address = UnifiedAddress::try_from_items(vec![orchard_container]).unwrap();
 

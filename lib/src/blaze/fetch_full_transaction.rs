@@ -9,6 +9,7 @@ use crate::{
 
 use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
 use log::info;
+use orchard::{keys::IncomingViewingKey as OrchardIvk, note_encryption::OrchardDomain};
 use std::{
     collections::HashSet,
     convert::{TryFrom, TryInto},
@@ -26,11 +27,12 @@ use tokio::{
     task::JoinHandle,
 };
 use zcash_client_backend::encoding::encode_payment_address;
+use zcash_note_encryption::{try_note_decryption, Domain, ShieldedOutput, ENC_CIPHERTEXT_SIZE};
 
 use zcash_primitives::{
     consensus::BlockHeight,
     legacy::TransparentAddress,
-    memo::Memo,
+    memo::{Memo, MemoBytes},
     sapling::note_encryption::{try_sapling_note_decryption, try_sapling_output_recovery},
     transaction::{Transaction, TxId},
 };
@@ -242,8 +244,18 @@ impl FetchFullTxns {
             &mut outgoing_metadatas,
         )
         .await;
-
-        Self::scan_orchard_bundle(&keys).await;
+        Self::scan_orchard_bundle(
+            &config,
+            &transaction,
+            height,
+            unconfirmed,
+            block_time,
+            &keys,
+            &wallet_transactions,
+            &mut is_outgoing_transaction,
+            &mut outgoing_metadatas,
+        )
+        .await;
 
         // Process t-address outputs
         // If this transaction in outgoing, i.e., we recieved sent some money in this transaction, then we need to grab all transparent outputs
@@ -420,7 +432,10 @@ impl FetchFullTxns {
         // Check if any of the nullifiers spent in this transaction are ours. We only need this for unconfirmed transactions,
         // because for transactions in the block, we will check the nullifiers from the blockdata
         if unconfirmed {
-            let unspent_nullifiers = wallet_transactions.read().await.get_unspent_nullifiers();
+            let unspent_nullifiers = wallet_transactions
+                .read()
+                .await
+                .get_unspent_sapling_nullifiers();
             if let Some(s_bundle) = transaction.sapling_bundle() {
                 for s in s_bundle.shielded_spends.iter() {
                     if let Some((nf, value, transaction_id)) = unspent_nullifiers
@@ -442,7 +457,7 @@ impl FetchFullTxns {
         }
         // Collect all our z addresses, to check for change
         let z_addresses: HashSet<String> =
-            HashSet::from_iter(keys.read().await.get_all_zaddresses().into_iter());
+            HashSet::from_iter(keys.read().await.get_all_sapling_addresses().into_iter());
 
         // Collect all our sapling OVKs, to scan for outputs
         let ovks: Vec<_> = keys
@@ -543,11 +558,83 @@ impl FetchFullTxns {
             }
         }
     }
-    async fn scan_orchard_bundle(keys: &Arc<RwLock<Keys>>) {
-        //Todo: Implement this!
-        let fvks = keys
-            .read()
-            .await
-            .get_all_orchard_keys_of_type::<orchard::keys::FullViewingKey>();
+    async fn scan_orchard_bundle(
+        config: &LightClientConfig,
+        transaction: &Transaction,
+        height: BlockHeight,
+        unconfirmed: bool,
+        block_time: u32,
+        keys: &Arc<RwLock<Keys>>,
+        wallet_transactions: &Arc<RwLock<WalletTxns>>,
+        is_outgoing_transaction: &mut bool,
+        outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
+    ) {
+        scan_bundle(
+            config,
+            transaction,
+            height,
+            unconfirmed,
+            block_time,
+            keys,
+            wallet_transactions,
+            is_outgoing_transaction,
+            outgoing_metadatas,
+            Keys::okeys,
+            |t: &Transaction| t.orchard_bundle(),
+            orchard::Bundle::actions,
+            |key| OrchardIvk::try_from(&key.key),
+            OrchardDomain::for_action,
+            <[u8; 512]>::as_slice,
+        )
+        .await;
+    }
+}
+
+async fn scan_bundle<K, B, L, O, D, E>(
+    _config: &LightClientConfig,
+    transaction: &Transaction,
+    _height: BlockHeight,
+    _unconfirmed: bool,
+    _block_time: u32,
+    keys: &Arc<RwLock<Keys>>,
+    _wallet_transactions: &Arc<RwLock<WalletTxns>>,
+    _is_outgoing_transaction: &mut bool,
+    _outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
+    key_reader: impl Fn(&Keys) -> &Vec<K>,
+    transaction_to_bundle: impl Fn(&Transaction) -> Option<&B>,
+    bundle_to_output: impl Fn(&B) -> &L,
+    key_to_ivk: impl Fn(&K) -> Result<<D as Domain>::IncomingViewingKey, E>,
+    output_to_domain: impl Fn(&O) -> D,
+    memo_slice: impl Fn(&D::Memo) -> &[u8],
+) where
+    K: Clone,
+    for<'a> &'a L: IntoIterator<Item = &'a O>,
+    D: Domain,
+    O: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE>,
+{
+    let local_keys = key_reader(&*keys.read().await).clone();
+    for output in transaction_to_bundle(transaction)
+        .into_iter()
+        .flat_map(|bundle| bundle_to_output(bundle))
+    {
+        for key in &local_keys {
+            let (_note, _to, memo_bytes) = match key_to_ivk(key)
+                .map(|ivk| try_note_decryption(&output_to_domain(&output), &ivk, output))
+            {
+                Ok(Some(ret)) => ret,
+                _ => continue,
+            };
+            let memo_bytes = MemoBytes::from_bytes(memo_slice(&memo_bytes)).unwrap();
+            let memo = memo_bytes
+                .clone()
+                .try_into()
+                .unwrap_or(Memo::Future(memo_bytes));
+            println!(
+                "Received {} tx with memo {memo:?}",
+                std::any::type_name::<D>()
+            );
+            //When this can work as a full replacement for scan_sapling_bundle, that
+            //will likely mean the orchard functionality here is complete
+        }
     }
 }

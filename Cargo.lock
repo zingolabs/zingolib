@@ -693,8 +693,8 @@ checksum = "c34f04666d835ff5d62e058c3995147c06f42fe86ff053337632bca83e42702d"
 
 [[package]]
 name = "equihash"
-version = "0.1.0"
-source = "git+https://github.com/zcash/librustzcash?rev=73d9395c9d3c5fa81fc7becd363a2c1a51772a76#73d9395c9d3c5fa81fc7becd363a2c1a51772a76"
+version = "0.2.0"
+source = "git+https://github.com/zcash/librustzcash?rev=8ad60a0fc020ac0338615fd9f242e6eff7b66542#8ad60a0fc020ac0338615fd9f242e6eff7b66542"
 dependencies = [
  "blake2b_simd",
  "byteorder",
@@ -734,7 +734,7 @@ dependencies = [
 [[package]]
 name = "f4jumble"
 version = "0.1.0"
-source = "git+https://github.com/zcash/librustzcash?rev=73d9395c9d3c5fa81fc7becd363a2c1a51772a76#73d9395c9d3c5fa81fc7becd363a2c1a51772a76"
+source = "git+https://github.com/zcash/librustzcash?rev=8ad60a0fc020ac0338615fd9f242e6eff7b66542#8ad60a0fc020ac0338615fd9f242e6eff7b66542"
 dependencies = [
  "blake2b_simd",
 ]
@@ -945,9 +945,9 @@ dependencies = [
 
 [[package]]
 name = "halo2_gadgets"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13f3914f58cc4af5e4fe83d48b02d582be18976bc7e96c3151aa2bf1c98e9f60"
+checksum = "85e10bf9924da1754e443641c9e7f9f00483749f8fb837fde696ef6ed6e2f079"
 dependencies = [
  "arrayvec",
  "bitvec",
@@ -963,9 +963,9 @@ dependencies = [
 
 [[package]]
 name = "halo2_proofs"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e925780549adee8364c7f2b685c753f6f3df23bde520c67416e93bf615933760"
+checksum = "cff771b9a2445cd2545c9ef26d863c290fbb44ae440c825a20eb7156f67a949a"
 dependencies = [
  "blake2b_simd",
  "ff",
@@ -973,6 +973,7 @@ dependencies = [
  "pasta_curves",
  "rand_core",
  "rayon",
+ "tracing",
 ]
 
 [[package]]
@@ -1475,9 +1476,8 @@ checksum = "ff011a302c396a5197692431fc1948019154afc178baf7d8e37367442a4601cf"
 
 [[package]]
 name = "orchard"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f918076e191a68d55c5517a16e075ecfe58fc63ed112408263f3d6194597bfcf"
+version = "0.2.0"
+source = "git+https://github.com/zcash/orchard?rev=597f37a869d2d03bb40b8b8108b88fba984b0842#597f37a869d2d03bb40b8b8108b88fba984b0842"
 dependencies = [
  "aes",
  "bitvec",
@@ -1498,7 +1498,8 @@ dependencies = [
  "reddsa",
  "serde",
  "subtle",
- "zcash_note_encryption 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tracing",
+ "zcash_note_encryption",
 ]
 
 [[package]]
@@ -3252,7 +3253,7 @@ dependencies = [
 [[package]]
 name = "zcash_address"
 version = "0.1.0"
-source = "git+https://github.com/zcash/librustzcash?rev=73d9395c9d3c5fa81fc7becd363a2c1a51772a76#73d9395c9d3c5fa81fc7becd363a2c1a51772a76"
+source = "git+https://github.com/zcash/librustzcash?rev=8ad60a0fc020ac0338615fd9f242e6eff7b66542#8ad60a0fc020ac0338615fd9f242e6eff7b66542"
 dependencies = [
  "bech32 0.8.1",
  "bs58",
@@ -3263,7 +3264,7 @@ dependencies = [
 [[package]]
 name = "zcash_client_backend"
 version = "0.5.0"
-source = "git+https://github.com/zcash/librustzcash?rev=73d9395c9d3c5fa81fc7becd363a2c1a51772a76#73d9395c9d3c5fa81fc7becd363a2c1a51772a76"
+source = "git+https://github.com/zcash/librustzcash?rev=8ad60a0fc020ac0338615fd9f242e6eff7b66542#8ad60a0fc020ac0338615fd9f242e6eff7b66542"
 dependencies = [
  "base64",
  "bech32 0.8.1",
@@ -3275,20 +3276,22 @@ dependencies = [
  "jubjub",
  "log",
  "nom",
+ "orchard",
  "percent-encoding",
  "protobuf",
  "protobuf-codegen-pure",
  "rand_core",
  "subtle",
  "time 0.2.27",
- "zcash_note_encryption 0.1.0 (git+https://github.com/zcash/librustzcash?rev=73d9395c9d3c5fa81fc7becd363a2c1a51772a76)",
+ "zcash_address",
+ "zcash_note_encryption",
  "zcash_primitives",
 ]
 
 [[package]]
 name = "zcash_encoding"
 version = "0.1.0"
-source = "git+https://github.com/zcash/librustzcash?rev=73d9395c9d3c5fa81fc7becd363a2c1a51772a76#73d9395c9d3c5fa81fc7becd363a2c1a51772a76"
+source = "git+https://github.com/zcash/librustzcash?rev=8ad60a0fc020ac0338615fd9f242e6eff7b66542#8ad60a0fc020ac0338615fd9f242e6eff7b66542"
 dependencies = [
  "byteorder",
  "nonempty",
@@ -3297,19 +3300,7 @@ dependencies = [
 [[package]]
 name = "zcash_note_encryption"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33f84ae538f05a8ac74c82527f06b77045ed9553a0871d9db036166a4c344e3a"
-dependencies = [
- "chacha20",
- "chacha20poly1305",
- "rand_core",
- "subtle",
-]
-
-[[package]]
-name = "zcash_note_encryption"
-version = "0.1.0"
-source = "git+https://github.com/zcash/librustzcash?rev=73d9395c9d3c5fa81fc7becd363a2c1a51772a76#73d9395c9d3c5fa81fc7becd363a2c1a51772a76"
+source = "git+https://github.com/zcash/librustzcash?rev=8ad60a0fc020ac0338615fd9f242e6eff7b66542#8ad60a0fc020ac0338615fd9f242e6eff7b66542"
 dependencies = [
  "chacha20",
  "chacha20poly1305",
@@ -3319,8 +3310,8 @@ dependencies = [
 
 [[package]]
 name = "zcash_primitives"
-version = "0.6.0"
-source = "git+https://github.com/zcash/librustzcash?rev=73d9395c9d3c5fa81fc7becd363a2c1a51772a76#73d9395c9d3c5fa81fc7becd363a2c1a51772a76"
+version = "0.7.0"
+source = "git+https://github.com/zcash/librustzcash?rev=8ad60a0fc020ac0338615fd9f242e6eff7b66542#8ad60a0fc020ac0338615fd9f242e6eff7b66542"
 dependencies = [
  "aes",
  "bip0039 0.9.0",
@@ -3351,13 +3342,13 @@ dependencies = [
  "sha2 0.9.9",
  "subtle",
  "zcash_encoding",
- "zcash_note_encryption 0.1.0 (git+https://github.com/zcash/librustzcash?rev=73d9395c9d3c5fa81fc7becd363a2c1a51772a76)",
+ "zcash_note_encryption",
 ]
 
 [[package]]
 name = "zcash_proofs"
-version = "0.6.0"
-source = "git+https://github.com/zcash/librustzcash?rev=73d9395c9d3c5fa81fc7becd363a2c1a51772a76#73d9395c9d3c5fa81fc7becd363a2c1a51772a76"
+version = "0.7.0"
+source = "git+https://github.com/zcash/librustzcash?rev=8ad60a0fc020ac0338615fd9f242e6eff7b66542#8ad60a0fc020ac0338615fd9f242e6eff7b66542"
 dependencies = [
  "bellman",
  "blake2b_simd",
@@ -3465,7 +3456,7 @@ dependencies = [
  "zcash_address",
  "zcash_client_backend",
  "zcash_encoding",
- "zcash_note_encryption 0.1.0 (git+https://github.com/zcash/librustzcash?rev=73d9395c9d3c5fa81fc7becd363a2c1a51772a76)",
+ "zcash_note_encryption",
  "zcash_primitives",
  "zcash_proofs",
  "zingoconfig",
