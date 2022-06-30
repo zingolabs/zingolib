@@ -355,9 +355,8 @@ mod test {
     use rand::{rngs::OsRng, Rng};
     use secp256k1::SecretKey;
 
-    use crate::lightclient::lightclient_config::ZingoConfig;
-
     use super::WalletTKey;
+    use zingoconfig::ZingoConfig;
 
     #[test]
     fn tkey_encode_decode() {

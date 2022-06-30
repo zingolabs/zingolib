@@ -622,7 +622,6 @@ mod test {
     use crate::wallet::transactions::WalletTxns;
     use crate::{
         blaze::test_utils::{FakeCompactBlock, FakeCompactBlockList},
-        lightclient::lightclient_config::ZingoConfig,
         wallet::data::BlockData,
     };
     use futures::future::join_all;
@@ -631,7 +630,7 @@ mod test {
     use tokio::sync::RwLock;
     use tokio::{sync::mpsc::unbounded_channel, task::JoinHandle};
     use zcash_primitives::block::BlockHash;
-    use zingoconfig::Network;
+    use zingoconfig::{Network, ZingoConfig};
 
     use super::BlockAndWitnessData;
 

@@ -337,7 +337,7 @@ pub mod tests {
     };
 
     use super::WalletZKey;
-    use crate::lightclient::lightclient_config::ZingoConfig;
+    use zingoconfig::ZingoConfig;
 
     fn get_config() -> ZingoConfig {
         ZingoConfig {
