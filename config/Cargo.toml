@@ -6,5 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+log4rs = "1.1.1"
+log = "0.4.14"
+http = "0.2.4"
+dirs = "3.0.2"
 zcash_primitives = { git = "https://github.com/zcash/librustzcash", rev = "8ad60a0fc020ac0338615fd9f242e6eff7b66542", features = ["transparent-inputs", "test-dependencies"] }
 zcash_address = { git = "https://github.com/zcash/librustzcash", rev = "8ad60a0fc020ac0338615fd9f242e6eff7b66542"}

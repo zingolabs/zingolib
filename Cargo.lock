@@ -3394,6 +3394,7 @@ dependencies = [
  "log",
  "rustyline",
  "shellwords",
+ "tokio",
  "zingoconfig",
  "zingolib",
 ]
@@ -3402,6 +3403,10 @@ dependencies = [
 name = "zingoconfig"
 version = "0.1.0"
 dependencies = [
+ "dirs",
+ "http",
+ "log",
+ "log4rs",
  "zcash_address",
  "zcash_primitives",
 ]
@@ -3417,7 +3422,6 @@ dependencies = [
  "bls12_381",
  "byteorder",
  "bytes 0.4.12",
- "dirs",
  "ff",
  "futures",
  "group",

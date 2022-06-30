@@ -1,10 +1,7 @@
-use crate::{
-    lightclient::lightclient_config::LightClientConfig,
-    wallet::{
-        data::OutgoingTxMetadata,
-        keys::{Keys, ToBase58Check},
-        transactions::WalletTxns,
-    },
+use crate::wallet::{
+    data::OutgoingTxMetadata,
+    keys::{Keys, ToBase58Check},
+    transactions::WalletTxns,
 };
 
 use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
@@ -38,16 +35,17 @@ use zcash_primitives::{
 };
 
 use super::syncdata::BlazeSyncData;
+use zingoconfig::ZingoConfig;
 
 pub struct FetchFullTxns {
-    config: LightClientConfig,
+    config: ZingoConfig,
     keys: Arc<RwLock<Keys>>,
     wallet_txns: Arc<RwLock<WalletTxns>>,
 }
 
 impl FetchFullTxns {
     pub fn new(
-        config: &LightClientConfig,
+        config: &ZingoConfig,
         keys: Arc<RwLock<Keys>>,
         wallet_txns: Arc<RwLock<WalletTxns>>,
     ) -> Self {
@@ -201,7 +199,7 @@ impl FetchFullTxns {
     }
 
     pub(crate) async fn scan_full_tx(
-        config: LightClientConfig,
+        config: ZingoConfig,
         transaction: Transaction,
         height: BlockHeight,
         unconfirmed: bool,
@@ -315,7 +313,7 @@ impl FetchFullTxns {
     }
 
     async fn scan_transparent_bundle(
-        config: &LightClientConfig,
+        config: &ZingoConfig,
         transaction: &Transaction,
         height: BlockHeight,
         unconfirmed: bool,
@@ -419,7 +417,7 @@ impl FetchFullTxns {
         }
     }
     async fn scan_sapling_bundle(
-        config: &LightClientConfig,
+        config: &ZingoConfig,
         transaction: &Transaction,
         height: BlockHeight,
         unconfirmed: bool,
@@ -559,7 +557,7 @@ impl FetchFullTxns {
         }
     }
     async fn scan_orchard_bundle(
-        config: &LightClientConfig,
+        config: &ZingoConfig,
         transaction: &Transaction,
         height: BlockHeight,
         unconfirmed: bool,
@@ -591,7 +589,7 @@ impl FetchFullTxns {
 }
 
 async fn scan_bundle<K, B, L, O, D, E>(
-    _config: &LightClientConfig,
+    _config: &ZingoConfig,
     transaction: &Transaction,
     _height: BlockHeight,
     _unconfirmed: bool,

@@ -3,7 +3,6 @@ use crate::wallet::data::WalletTx;
 use crate::wallet::keys::transparent::WalletTKey;
 use crate::{
     blaze::fetch_full_transaction::FetchFullTxns,
-    lightclient::lightclient_config::LightClientConfig,
     wallet::{data::SpendableSaplingNote, keys::sapling::WalletZKey},
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -45,6 +44,7 @@ use self::{
     message::Message,
     transactions::WalletTxns,
 };
+use zingoconfig::ZingoConfig;
 
 pub(crate) mod data;
 pub(crate) mod keys;
@@ -157,7 +157,7 @@ pub struct LightWallet {
     pub(crate) wallet_options: Arc<RwLock<WalletOptions>>,
 
     // Non-serialized fields
-    config: LightClientConfig,
+    config: ZingoConfig,
 
     // Heighest verified block
     pub(crate) verified_tree: Arc<RwLock<Option<TreeState>>>,
@@ -175,7 +175,7 @@ impl LightWallet {
     }
 
     pub fn new(
-        config: LightClientConfig,
+        config: ZingoConfig,
         seed_phrase: Option<String>,
         height: u64,
         num_zaddrs: u32,
@@ -196,7 +196,7 @@ impl LightWallet {
         })
     }
 
-    pub async fn read<R: Read>(mut reader: R, config: &LightClientConfig) -> io::Result<Self> {
+    pub async fn read<R: Read>(mut reader: R, config: &ZingoConfig) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
         if version > Self::serialized_version() {
             let e = format!(

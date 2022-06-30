@@ -11,9 +11,8 @@ use zcash_primitives::{
     zip32::{ExtendedFullViewingKey, ExtendedSpendingKey},
 };
 
-use crate::lightclient::lightclient_config::LightClientConfig;
-
 use super::Keys;
+use zingoconfig::ZingoConfig;
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum WalletZKeyType {
@@ -209,7 +208,7 @@ impl WalletZKey {
 
     pub fn unlock(
         &mut self,
-        config: &LightClientConfig,
+        config: &ZingoConfig,
         bip39_seed: &[u8],
         key: &secretbox::Key,
     ) -> io::Result<()> {
@@ -338,10 +337,10 @@ pub mod tests {
     };
 
     use super::WalletZKey;
-    use crate::lightclient::lightclient_config::LightClientConfig;
+    use zingoconfig::ZingoConfig;
 
-    fn get_config() -> LightClientConfig {
-        LightClientConfig {
+    fn get_config() -> ZingoConfig {
+        ZingoConfig {
             server: "0.0.0.0:0".parse().unwrap(),
             chain: zingoconfig::Network::FakeMainnet,
             monitor_mempool: false,

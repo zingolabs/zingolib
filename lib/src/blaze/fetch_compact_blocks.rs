@@ -1,18 +1,15 @@
 use std::{cmp::max, sync::Arc};
 
-use crate::{
-    compact_formats::CompactBlock, grpc_connector::GrpcConnector,
-    lightclient::lightclient_config::LightClientConfig,
-};
+use crate::{compact_formats::CompactBlock, grpc_connector::GrpcConnector};
 use log::info;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-
+use zingoconfig::ZingoConfig;
 pub struct FetchCompactBlocks {
-    config: LightClientConfig,
+    config: ZingoConfig,
 }
 
 impl FetchCompactBlocks {
-    pub fn new(config: &LightClientConfig) -> Self {
+    pub fn new(config: &ZingoConfig) -> Self {
         Self {
             config: config.clone(),
         }

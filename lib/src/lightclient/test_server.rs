@@ -27,9 +27,8 @@ use zcash_primitives::consensus::BranchId;
 use zcash_primitives::merkle_tree::CommitmentTree;
 use zcash_primitives::sapling::Node;
 use zcash_primitives::transaction::{Transaction, TxId};
-use zingoconfig::Network;
+use zingoconfig::{Network, ZingoConfig};
 
-use super::lightclient_config::LightClientConfig;
 use super::LightClient;
 
 pub(crate) const TEST_PEMFILE_PATH: &'static str = "test-data/localhost.pem";
@@ -39,7 +38,7 @@ pub async fn create_test_server(
     https: bool,
 ) -> (
     Arc<RwLock<TestServerData>>,
-    LightClientConfig,
+    ZingoConfig,
     oneshot::Receiver<()>,
     oneshot::Sender<()>,
     JoinHandle<()>,
@@ -80,7 +79,7 @@ pub async fn create_test_server(
     };
     let addr: std::net::SocketAddr = server_port.parse().unwrap();
 
-    let mut config = LightClientConfig::create_unconnected(Network::FakeMainnet, None);
+    let mut config = ZingoConfig::create_unconnected(Network::FakeMainnet, None);
     config.server = uri.replace("127.0.0.1", "localhost").parse().unwrap();
 
     let (service, data) = TestGRPCService::new(config.clone());
@@ -283,13 +282,13 @@ pub struct TestServerData {
     pub blocks: Vec<CompactBlock>,
     pub transactions: HashMap<TxId, (Vec<String>, RawTransaction)>,
     pub sent_transactions: Vec<RawTransaction>,
-    pub config: LightClientConfig,
+    pub config: ZingoConfig,
     pub zec_price: f64,
     pub tree_states: Vec<(u64, String, String)>,
 }
 
 impl TestServerData {
-    pub fn new(config: LightClientConfig) -> Self {
+    pub fn new(config: ZingoConfig) -> Self {
         let data = Self {
             blocks: vec![],
             transactions: HashMap::new(),
@@ -351,7 +350,7 @@ pub struct TestGRPCService {
 }
 
 impl TestGRPCService {
-    pub fn new(config: LightClientConfig) -> (Self, Arc<RwLock<TestServerData>>) {
+    pub fn new(config: ZingoConfig) -> (Self, Arc<RwLock<TestServerData>>) {
         let data = Arc::new(RwLock::new(TestServerData::new(config)));
         let s = Self { data: data.clone() };
 

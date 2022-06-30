@@ -3,8 +3,7 @@ use std::sync::Arc;
 
 use log::{error, info};
 
-use zingoconfig::Network;
-use zingolib::lightclient::lightclient_config::LightClientConfig;
+use zingoconfig::{Network, ZingoConfig};
 use zingolib::{commands, lightclient::LightClient};
 
 pub mod version;
@@ -87,6 +86,57 @@ pub fn report_permission_error() {
     }
 }
 
+use std::io::{ErrorKind, Result};
+use tokio::runtime::Runtime;
+trait ClientAsync {
+    fn create_on_data_dir(
+        server: http::Uri,
+        data_dir: Option<String>,
+    ) -> Result<(ZingoConfig, u64)> {
+        use std::net::ToSocketAddrs;
+
+        let lc = Runtime::new().unwrap().block_on(async move {
+            // Test for a connection first
+            format!("{}:{}", server.host().unwrap(), server.port().unwrap())
+                .to_socket_addrs()?
+                .next()
+                .ok_or(std::io::Error::new(
+                    ErrorKind::ConnectionRefused,
+                    "Couldn't resolve server!",
+                ))?;
+
+            // Do a getinfo first, before opening the wallet
+            let info = zingolib::grpc_connector::GrpcConnector::get_info(server.clone())
+                .await
+                .map_err(|e| std::io::Error::new(ErrorKind::ConnectionRefused, e))?;
+
+            // Create a Light Client Config
+            let config = ZingoConfig {
+                server,
+                chain: match info.chain_name.as_str() {
+                    "main" => Network::Mainnet,
+                    "test" => Network::Testnet,
+                    "regtest" => Network::Regtest,
+                    "fakemainnet" => Network::FakeMainnet,
+                    _ => panic!("Unknown network"),
+                },
+                monitor_mempool: true,
+                anchor_offset: zingoconfig::ANCHOR_OFFSET,
+                data_dir,
+            };
+
+            Ok((config, info.block_height))
+        });
+
+        lc
+    }
+    fn create(server: http::Uri) -> std::io::Result<(ZingoConfig, u64)> {
+        Self::create_on_data_dir(server, None)
+    }
+}
+
+impl ClientAsync for ZingoConfig {}
+
 pub fn startup(
     server: http::Uri,
     seed: Option<String>,
@@ -97,8 +147,7 @@ pub fn startup(
     regtest: bool,
 ) -> std::io::Result<(Sender<(String, Vec<String>)>, Receiver<String>)> {
     // Try to get the configuration
-    let (config, latest_block_height) =
-        LightClientConfig::create_on_data_dir(server.clone(), data_dir)?;
+    let (config, latest_block_height) = ZingoConfig::create_on_data_dir(server.clone(), data_dir)?;
 
     // check for regtest flag and network in config.
     if regtest && config.chain == Network::Regtest {
@@ -274,7 +323,7 @@ pub fn command_loop(
 
 pub fn attempt_recover_seed(_password: Option<String>) {
     // Create a Light Client Config in an attempt to recover the file.
-    let _config = LightClientConfig {
+    let _config = ZingoConfig {
         server: "0.0.0.0:0".parse().unwrap(),
         chain: zingoconfig::Network::Mainnet,
         monitor_mempool: false,
