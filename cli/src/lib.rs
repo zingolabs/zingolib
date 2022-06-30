@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use log::{error, info};
 
+use zingoconfig::Network;
 use zingolib::lightclient::lightclient_config::LightClientConfig;
 use zingolib::{commands, lightclient::LightClient};
 
@@ -48,6 +49,11 @@ macro_rules! configure_clapapp {
                 .value_name("data-dir")
                 .help("Absolute path to use as data directory")
                 .takes_value(true))
+            .arg(Arg::with_name("regtest")
+                .long("regtest")
+                .value_name("regtest")
+                .help("Regtest mode")
+                .takes_value(false))
             .arg(Arg::with_name("COMMAND")
                 .help("Command to execute. If a command is not specified, zingo-cli will start in interactive mode.")
                 .required(false)
@@ -88,10 +94,21 @@ pub fn startup(
     data_dir: Option<String>,
     first_sync: bool,
     print_updates: bool,
+    regtest: bool,
 ) -> std::io::Result<(Sender<(String, Vec<String>)>, Receiver<String>)> {
     // Try to get the configuration
     let (config, latest_block_height) =
         LightClientConfig::create_on_data_dir(server.clone(), data_dir)?;
+
+    // check for regtest flag and network in config.
+    if regtest && config.chain == Network::Regtest {
+        println!("regtest detected and network set correctly!");
+    } else if regtest && config.chain != Network::Regtest {
+        println!("Regtest flag detected, but unexpected network set! Exiting.");
+        panic!("Regtest Network Problem");
+    } else if config.chain == Network::Regtest {
+        println!("WARNING! regtest network in use but no regtest flag recognized!");
+    }
 
     let lightclient = match seed {
         Some(phrase) => Arc::new(LightClient::new_from_phrase(

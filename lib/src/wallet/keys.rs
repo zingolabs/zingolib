@@ -509,8 +509,9 @@ impl Keys {
 
     fn get_network_enum(&self) -> zcash_address::Network {
         match self.config.chain {
-            Network::Mainnet => zcash_address::Network::Main,
             Network::Testnet => zcash_address::Network::Test,
+            Network::Regtest => zcash_address::Network::Regtest,
+            Network::Mainnet => zcash_address::Network::Main,
             Network::FakeMainnet => zcash_address::Network::Main,
         }
     }
@@ -690,8 +691,9 @@ impl Keys {
 
         use zcash_address::unified::Encoding as _;
         newkey.unified_address.encode(&match self.config.chain {
-            Network::Mainnet => zcash_address::Network::Main,
             Network::Testnet => zcash_address::Network::Test,
+            Network::Regtest => zcash_address::Network::Regtest,
+            Network::Mainnet => zcash_address::Network::Main,
             Network::FakeMainnet => zcash_address::Network::Main,
         })
     }
