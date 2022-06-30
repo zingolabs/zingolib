@@ -1,4 +1,3 @@
-use self::lightclient_config::LightClientConfig;
 use crate::{
     blaze::{
         block_witness_data::BlockAndWitnessData, fetch_compact_blocks::FetchCompactBlocks,
@@ -37,10 +36,9 @@ use zcash_primitives::{
     transaction::{components::amount::DEFAULT_FEE, Transaction, TxId},
 };
 use zcash_proofs::prover::LocalTxProver;
-use zingoconfig::MAX_REORG;
+use zingoconfig::{ZingoConfig, MAX_REORG};
 
 pub(crate) mod checkpoints;
-pub mod lightclient_config;
 
 #[derive(Clone, Debug)]
 pub struct WalletStatus {
@@ -60,7 +58,7 @@ impl WalletStatus {
 }
 
 pub struct LightClient {
-    pub(crate) config: LightClientConfig,
+    pub(crate) config: ZingoConfig,
     pub(crate) wallet: LightWallet,
 
     mempool_monitor: std::sync::RwLock<Option<std::thread::JoinHandle<()>>>,
@@ -74,7 +72,7 @@ impl LightClient {
     /// Method to create a test-only version of the LightClient
     #[allow(dead_code)]
     pub async fn test_new(
-        config: &LightClientConfig,
+        config: &ZingoConfig,
         seed_phrase: Option<String>,
         height: u64,
     ) -> io::Result<Self> {
@@ -269,11 +267,7 @@ impl LightClient {
         };
     }
 
-    fn new_wallet(
-        config: &LightClientConfig,
-        latest_block: u64,
-        num_zaddrs: u32,
-    ) -> io::Result<Self> {
+    fn new_wallet(config: &ZingoConfig, latest_block: u64, num_zaddrs: u32) -> io::Result<Self> {
         Runtime::new().unwrap().block_on(async move {
             let l = LightClient {
                 wallet: LightWallet::new(config.clone(), None, latest_block, num_zaddrs)?,
@@ -299,7 +293,7 @@ impl LightClient {
 
     /// Create a brand new wallet with a new seed phrase. Will fail if a wallet file
     /// already exists on disk
-    pub fn new(config: &LightClientConfig, latest_block: u64) -> io::Result<Self> {
+    pub fn new(config: &ZingoConfig, latest_block: u64) -> io::Result<Self> {
         #[cfg(all(not(target_os = "ios"), not(target_os = "android")))]
         {
             if config.wallet_exists() {
@@ -315,7 +309,7 @@ impl LightClient {
 
     pub fn new_from_phrase(
         seed_phrase: String,
-        config: &LightClientConfig,
+        config: &ZingoConfig,
         birthday: u64,
         overwrite: bool,
     ) -> io::Result<Self> {
@@ -376,10 +370,7 @@ impl LightClient {
         lr
     }
 
-    pub fn read_from_buffer<R: Read>(
-        config: &LightClientConfig,
-        mut reader: R,
-    ) -> io::Result<Self> {
+    pub fn read_from_buffer<R: Read>(config: &ZingoConfig, mut reader: R) -> io::Result<Self> {
         let l = Runtime::new().unwrap().block_on(async move {
             let wallet = LightWallet::read(&mut reader, config).await?;
 
@@ -403,7 +394,7 @@ impl LightClient {
         l
     }
 
-    pub fn read_from_disk(config: &LightClientConfig) -> io::Result<Self> {
+    pub fn read_from_disk(config: &ZingoConfig) -> io::Result<Self> {
         let wallet_path = if config.wallet_exists() {
             config.get_wallet_path()
         } else {

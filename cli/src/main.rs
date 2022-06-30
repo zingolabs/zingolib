@@ -3,7 +3,7 @@ use zingo_cli::{
     attempt_recover_seed, configure_clapapp, report_permission_error, start_interactive, startup,
     version::VERSION,
 };
-use zingolib::lightclient::lightclient_config::LightClientConfig;
+use zingoconfig::ZingoConfig;
 
 pub fn main() {
     // Get command line arguments
@@ -52,7 +52,7 @@ pub fn main() {
         }
     };
 
-    let server = LightClientConfig::get_server_or_default(maybe_server);
+    let server = ZingoConfig::get_server_or_default(maybe_server);
 
     // Test to make sure the server has all of scheme, host and port
     if server.scheme_str().is_none() || server.host().is_none() || server.port().is_none() {

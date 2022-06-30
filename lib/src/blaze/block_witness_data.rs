@@ -1,13 +1,13 @@
 use crate::{
     compact_formats::{CompactBlock, CompactTx, TreeState},
     grpc_connector::GrpcConnector,
-    lightclient::{checkpoints::get_all_main_checkpoints, lightclient_config::LightClientConfig},
+    lightclient::checkpoints::get_all_main_checkpoints,
     wallet::{
         data::{BlockData, WalletTx, WitnessCache},
         transactions::WalletTxns,
     },
 };
-use zingoconfig::MAX_REORG;
+use zingoconfig::{ZingoConfig, MAX_REORG};
 
 use futures::future::join_all;
 use http::Uri;
@@ -53,7 +53,7 @@ pub struct BlockAndWitnessData {
 }
 
 impl BlockAndWitnessData {
-    pub fn new(config: &LightClientConfig, sync_status: Arc<RwLock<SyncStatus>>) -> Self {
+    pub fn new(config: &ZingoConfig, sync_status: Arc<RwLock<SyncStatus>>) -> Self {
         Self {
             blocks: Arc::new(RwLock::new(vec![])),
             existing_blocks: Arc::new(RwLock::new(vec![])),
@@ -66,7 +66,7 @@ impl BlockAndWitnessData {
     }
 
     #[cfg(test)]
-    pub fn new_with_batchsize(config: &LightClientConfig, batch_size: u64) -> Self {
+    pub fn new_with_batchsize(config: &ZingoConfig, batch_size: u64) -> Self {
         let mut s = Self::new(config, Arc::new(RwLock::new(SyncStatus::default())));
         s.batch_size = batch_size;
 
@@ -622,7 +622,7 @@ mod test {
     use crate::wallet::transactions::WalletTxns;
     use crate::{
         blaze::test_utils::{FakeCompactBlock, FakeCompactBlockList},
-        lightclient::lightclient_config::LightClientConfig,
+        lightclient::lightclient_config::ZingoConfig,
         wallet::data::BlockData,
     };
     use futures::future::join_all;
@@ -638,7 +638,7 @@ mod test {
     #[tokio::test]
     async fn setup_finish_simple() {
         let mut nw = BlockAndWitnessData::new_with_batchsize(
-            &LightClientConfig::create_unconnected(Network::FakeMainnet, None),
+            &ZingoConfig::create_unconnected(Network::FakeMainnet, None),
             25_000,
         );
 
@@ -655,7 +655,7 @@ mod test {
     #[tokio::test]
     async fn setup_finish_large() {
         let mut nw = BlockAndWitnessData::new_with_batchsize(
-            &LightClientConfig::create_unconnected(Network::FakeMainnet, None),
+            &ZingoConfig::create_unconnected(Network::FakeMainnet, None),
             25_000,
         );
 
@@ -673,7 +673,7 @@ mod test {
 
     #[tokio::test]
     async fn from_sapling_genesis() {
-        let config = LightClientConfig::create_unconnected(Network::FakeMainnet, None);
+        let config = ZingoConfig::create_unconnected(Network::FakeMainnet, None);
 
         let blocks = FakeCompactBlockList::new(200).into_blockdatas();
 
@@ -722,7 +722,7 @@ mod test {
 
     #[tokio::test]
     async fn with_existing_batched() {
-        let config = LightClientConfig::create_unconnected(Network::FakeMainnet, None);
+        let config = ZingoConfig::create_unconnected(Network::FakeMainnet, None);
 
         let mut blocks = FakeCompactBlockList::new(200).into_blockdatas();
 
@@ -778,7 +778,7 @@ mod test {
 
     #[tokio::test]
     async fn with_reorg() {
-        let config = LightClientConfig::create_unconnected(Network::FakeMainnet, None);
+        let config = ZingoConfig::create_unconnected(Network::FakeMainnet, None);
 
         let mut blocks = FakeCompactBlockList::new(100).into_blockdatas();
 
