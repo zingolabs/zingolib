@@ -225,8 +225,38 @@ impl LightClient {
         Ok(())
     }
 
+    pub async fn get_initial_state(&self, height: u64) -> Option<(u64, String, String)> {
+        if height <= self.config.sapling_activation_height() {
+            return None;
+        }
+
+        info!(
+            "Getting sapling tree from LightwalletD at height {}",
+            height
+        );
+        match GrpcConnector::get_sapling_tree(self.config.server.clone(), height).await {
+            Ok(tree_state) => {
+                let hash = tree_state.hash.clone();
+                let tree = tree_state.sapling_tree.clone();
+                Some((tree_state.height, hash, tree))
+            }
+            Err(e) => {
+                error!(
+                    "Error getting sapling tree:{}\nWill return checkpoint instead.",
+                    e
+                );
+                match checkpoints::get_closest_checkpoint(&self.config.chain, height) {
+                    Some((height, hash, tree)) => {
+                        Some((height, hash.to_string(), tree.to_string()))
+                    }
+                    None => None,
+                }
+            }
+        }
+    }
+
     pub async fn set_wallet_initial_state(&self, height: u64) {
-        let state = self.config.get_initial_state(height).await;
+        let state = self.get_initial_state(height).await;
 
         match state {
             Some((height, hash, tree)) => {

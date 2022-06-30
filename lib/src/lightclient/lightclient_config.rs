@@ -201,36 +201,6 @@ impl LightClientConfig {
         log_path.into_boxed_path()
     }
 
-    pub async fn get_initial_state(&self, height: u64) -> Option<(u64, String, String)> {
-        if height <= self.sapling_activation_height() {
-            return None;
-        }
-
-        info!(
-            "Getting sapling tree from LightwalletD at height {}",
-            height
-        );
-        match GrpcConnector::get_sapling_tree(self.server.clone(), height).await {
-            Ok(tree_state) => {
-                let hash = tree_state.hash.clone();
-                let tree = tree_state.sapling_tree.clone();
-                Some((tree_state.height, hash, tree))
-            }
-            Err(e) => {
-                error!(
-                    "Error getting sapling tree:{}\nWill return checkpoint instead.",
-                    e
-                );
-                match checkpoints::get_closest_checkpoint(&self.chain, height) {
-                    Some((height, hash, tree)) => {
-                        Some((height, hash.to_string(), tree.to_string()))
-                    }
-                    None => None,
-                }
-            }
-        }
-    }
-
     pub fn get_server_or_default(server: Option<String>) -> http::Uri {
         match server {
             Some(s) => {
