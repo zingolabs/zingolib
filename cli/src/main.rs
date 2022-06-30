@@ -3,7 +3,7 @@ use zingo_cli::{
     attempt_recover_seed, configure_clapapp, report_permission_error, start_interactive, startup,
     version::VERSION,
 };
-use zingolib::lightclient::{self, lightclient_config::LightClientConfig};
+use zingolib::lightclient::lightclient_config::LightClientConfig;
 
 pub fn main() {
     // Get command line arguments

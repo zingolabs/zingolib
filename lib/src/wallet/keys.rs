@@ -26,12 +26,9 @@ use zcash_primitives::{
     sapling::PaymentAddress,
     zip32::{ChildIndex, ExtendedFullViewingKey, ExtendedSpendingKey},
 };
-use zingoconfig::Network;
+use zingoconfig::{Network, GAP_RULE_UNUSED_ADDRESSES};
 
-use crate::{
-    lightclient::lightclient_config::{LightClientConfig, GAP_RULE_UNUSED_ADDRESSES},
-    wallet::utils,
-};
+use crate::{lightclient::lightclient_config::LightClientConfig, wallet::utils};
 
 use self::{
     orchard::{WalletOKey, WalletOKeyInner},

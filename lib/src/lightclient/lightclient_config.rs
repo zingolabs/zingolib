@@ -16,24 +16,10 @@ use log4rs::{
     filter::threshold::ThresholdFilter,
     Config,
 };
-use tokio::runtime::Runtime;
-use zcash_primitives::{
-    consensus::{BlockHeight, NetworkUpgrade, Parameters, MAIN_NETWORK, TEST_NETWORK},
-    constants,
-};
+use zcash_primitives::consensus::{NetworkUpgrade, Parameters};
 
 use crate::{grpc_connector::GrpcConnector, lightclient::checkpoints};
-use zingoconfig::{Network, DEFAULT_SERVER};
-
-pub const WALLET_NAME: &str = "zingo-wallet.dat";
-pub const LOGFILE_NAME: &str = "zingo-wallet.debug.log";
-pub const ANCHOR_OFFSET: [u32; 5] = [4, 0, 0, 0, 0];
-pub const GAP_RULE_UNUSED_ADDRESSES: usize = if cfg!(any(target_os = "ios", target_os = "android"))
-{
-    0
-} else {
-    5
-};
+use zingoconfig::{Network, DEFAULT_SERVER, LOGFILE_NAME};
 
 #[derive(Clone, Debug)]
 pub struct LightClientConfig {
@@ -62,52 +48,6 @@ impl LightClientConfig {
             .activation_height(NetworkUpgrade::Sapling)
             .unwrap()
             .into()
-    }
-
-    pub fn create_on_data_dir(
-        server: http::Uri,
-        data_dir: Option<String>,
-    ) -> io::Result<(LightClientConfig, u64)> {
-        use std::net::ToSocketAddrs;
-
-        let lc = Runtime::new().unwrap().block_on(async move {
-            // Test for a connection first
-            format!("{}:{}", server.host().unwrap(), server.port().unwrap())
-                .to_socket_addrs()?
-                .next()
-                .ok_or(std::io::Error::new(
-                    ErrorKind::ConnectionRefused,
-                    "Couldn't resolve server!",
-                ))?;
-
-            // Do a getinfo first, before opening the wallet
-            let info = GrpcConnector::get_info(server.clone())
-                .await
-                .map_err(|e| std::io::Error::new(ErrorKind::ConnectionRefused, e))?;
-
-            // Create a Light Client Config
-            let config = LightClientConfig {
-                server,
-                chain: match info.chain_name.as_str() {
-                    "main" => Network::Mainnet,
-                    "test" => Network::Testnet,
-                    "regtest" => Network::Regtest,
-                    "fakemainnet" => Network::FakeMainnet,
-                    _ => panic!("Unknown network"),
-                },
-                monitor_mempool: true,
-                anchor_offset: ANCHOR_OFFSET,
-                data_dir,
-            };
-
-            Ok((config, info.block_height))
-        });
-
-        lc
-    }
-
-    pub fn create(server: http::Uri) -> io::Result<(LightClientConfig, u64)> {
-        Self::create_on_data_dir(server, None)
     }
 
     pub fn set_data_dir(&mut self, dir_str: String) {
@@ -220,7 +160,7 @@ impl LightClientConfig {
 
     pub fn get_wallet_path(&self) -> Box<Path> {
         let mut wallet_location = self.get_zcash_data_path().into_path_buf();
-        wallet_location.push(WALLET_NAME);
+        wallet_location.push(zingoconfig::WALLET_NAME);
 
         wallet_location.into_boxed_path()
     }

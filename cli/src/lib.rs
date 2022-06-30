@@ -87,6 +87,57 @@ pub fn report_permission_error() {
     }
 }
 
+use std::io::{ErrorKind, Result};
+use tokio::runtime::Runtime;
+trait ClientAsync {
+    fn create_on_data_dir(
+        server: http::Uri,
+        data_dir: Option<String>,
+    ) -> Result<(LightClientConfig, u64)> {
+        use std::net::ToSocketAddrs;
+
+        let lc = Runtime::new().unwrap().block_on(async move {
+            // Test for a connection first
+            format!("{}:{}", server.host().unwrap(), server.port().unwrap())
+                .to_socket_addrs()?
+                .next()
+                .ok_or(std::io::Error::new(
+                    ErrorKind::ConnectionRefused,
+                    "Couldn't resolve server!",
+                ))?;
+
+            // Do a getinfo first, before opening the wallet
+            let info = zingolib::grpc_connector::GrpcConnector::get_info(server.clone())
+                .await
+                .map_err(|e| std::io::Error::new(ErrorKind::ConnectionRefused, e))?;
+
+            // Create a Light Client Config
+            let config = LightClientConfig {
+                server,
+                chain: match info.chain_name.as_str() {
+                    "main" => Network::Mainnet,
+                    "test" => Network::Testnet,
+                    "regtest" => Network::Regtest,
+                    "fakemainnet" => Network::FakeMainnet,
+                    _ => panic!("Unknown network"),
+                },
+                monitor_mempool: true,
+                anchor_offset: zingoconfig::ANCHOR_OFFSET,
+                data_dir,
+            };
+
+            Ok((config, info.block_height))
+        });
+
+        lc
+    }
+    fn create(server: http::Uri) -> std::io::Result<(LightClientConfig, u64)> {
+        Self::create_on_data_dir(server, None)
+    }
+}
+
+impl ClientAsync for LightClientConfig {}
+
 pub fn startup(
     server: http::Uri,
     seed: Option<String>,
