@@ -28,13 +28,10 @@ Zingo-CLI does automatic note and utxo management, which means it doesn't allow 
 
 #### Pre-requisites
 * Rust v1.37 or higher.
-    * Run `rustup update` to get the latest version of Rust if you already have it installed
 * Rustfmt
     * Run `rustup component add rustfmt` to add rustfmt
 * Build tools
     * Please install the build tools for your platform. On Ubuntu `sudo apt install build-essential gcc`
-* Protobuf Compiler
-    * Please install the protobuf compiler for your platform. On Ubuntu `sudo apt install protobuf-compiler`
 
 ```
 git clone https://github.com/zingolabs/zingolib.git
@@ -46,7 +43,7 @@ cargo build --release
 This will launch the interactive prompt. Type `help` to get a list of commands.
 
 ## Notes:
-* If you want to run your own server, please see [zingo lightwalletd](https://github.com/zingolabs/lightwalletd), and then run `./zingo-cli --server http://127.0.0.1:9067`
+* If you want to run your own server, please see [zcash lightwalletd](https://github.com/zcash/lightwalletd), and then run `./zingo-cli --server http://127.0.0.1:9067`
 * The log file is in `~/.zcash/zingo-wallet.debug.log`. Wallet is stored in `~/.zcash/zingo-wallet.dat`
 * Currently, the default, hard-coded `lightwalletd` server is https://lwdv3.zecwallet.co:443/. To change this, you can modify line 25 of `lib/src/lightclient/lightclient_config.rs`
 
@@ -112,4 +109,4 @@ Finally, from your `zingolib` directory, with a release build (`cargo build --re
 `./target/release/zingo-cli --regtest --server=127.0.0.1:9067`
 You should see a single line printed out saying `regtest detected and network set correctly!` and the interactive cli application should work with your regtest network!
 
-Tested with `zcash` commit `1e6f46`, `lightwalletd` commit `db2795`, and `zingolib` commit `252abe` or better.
+Tested with `zcash` commit `2df893`, `lightwalletd` commit `db2795`, and `zingolib` commit `34ce3f` or better.
