@@ -30,8 +30,10 @@ Zingo-CLI does automatic note and utxo management, which means it doesn't allow 
 * Rust v1.37 or higher.
 * Rustfmt
     * Run `rustup component add rustfmt` to add rustfmt
+* Git
+    * Please install Git. On Debian or Ubuntu, `sudo apt install git`
 * Build tools
-    * Please install the build tools for your platform. On Ubuntu `sudo apt install build-essential gcc`
+    * Please install the build tools for your platform. On Debian or Ubuntu `sudo apt install build-essential`
 
 ```
 git clone https://github.com/zingolabs/zingolib.git
