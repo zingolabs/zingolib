@@ -1,3 +1,4 @@
+# # Default zingo lib lightwalletd conf YAML for regtest mode # #
 bind-addr: 127.0.0.1:9067
 cache-size: 10
 log-file: ../logs/lwd.log

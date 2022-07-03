@@ -47,7 +47,7 @@ This will launch the interactive prompt. Type `help` to get a list of commands.
 
 ## Notes:
 * If you want to run your own server, please see [zingo lightwalletd](https://github.com/zingolabs/lightwalletd), and then run `./zingo-cli --server http://127.0.0.1:9067`
-* The log file is in `~/.zcash/zingo-wallet.debug.log`. Wallet is stored in `~/.zcash/zingo-wallet.dat`
+* The default log file is in `~/.zcash/zingo-wallet.debug.log`. A default wallet is stored in `~/.zcash/zingo-wallet.dat`
 * Currently, the default, hard-coded `lightwalletd` server is https://lwdv3.zecwallet.co:443/. To change this, you can modify line 25 of `lib/src/lightclient/lightclient_config.rs`
 
 ## Running in non-interactive mode:
@@ -66,61 +66,37 @@ Here are some CLI arguments you can pass to `zingo-cli`. Please run `zingo-cli -
     * Example: `./zingo-cli --server 127.0.0.1:9067 --data-dir /Users/ZingoRocks/my-test-wallet` will use the provided directory to store `zingo-wallet.dat` and logs. If the provided directory does not exist, it will create it.
 
 ## Regtest
+The CLI can work in regtest mode, by locally running a `zcashd` and `lightwalletd`.
+There are pre-made directories in this repo to support ready use of regtest mode. These are found in the `/regtest/` subdirectory.
+
 Experimental!
 We have recently added support for `Network::Regtest` enum: https://github.com/zcash/librustzcash/blob/main/zcash_primitives/src/constants/regtest.rs
 This has not been sufficiently tested, but now compiles.
 
-This documentation to run regtest "manually" is a placeholder until flags are more functional.
-We also aim to be able to select any network type with cli flags.
-
-The CLI can work in regtest mode, by locally running a `zcashd` and `lightwalletd`.
+This documentation to run regtest "manually" is a placeholder until flags are more functional. (https://github.com/zingolabs/zingolib/issues/17)
 
 For example:
-Starting in your `zingolib/` directory.
-`mkdir reg`
-`cd reg`
-Then, copy your compiled `zcashd` `zcash-cli` and `lightwalletd` binaries to this directory.
-Make a stand-in .zcash directory: `mkdir .zc`
-`cd .zc`
-Create these sub-directories: `mkdir zd && mkdir ld`
-`cd zd`
-`touch zcash.conf`
-add the following to the new `zcash.conf` file:
-```
-regtest=1
-nuparams=5ba81b19:1 # Overwinter
-nuparams=76b809bb:1 # Sapling
-nuparams=2bb40e60:1 # Blossom
-nuparams=f5b9230b:1 # Heartwood
-nuparams=e9ff75a6:1 # Canopy
-nuparams=c2d6d0b4:1 # NU5
+Navigate to `zingolib/regtest/bin`
+Copy your compiled `zcashd` `zcash-cli` and `lightwalletd` binaries to this directory.
 
-txindex=1
-insightexplorer=1
-experimentalfeatures=1
-rpcuser=xxxxxx
-rpcpassword=xxxxxx
+There are default config files for these binaries already in place in `/zingolib/regtest/confs/`
 
-rpcport=18232
-rpcallowip=127.0.0.1
-```
-Reset your working directory to your `zingolib/reg/`
+From `/zingolib/regtest/bin/`, `zcashd` works in regtest with the following invocation (with absolute pathes - you will have to adjust to your own path):
+`./zcashd --printtoconsole -conf=/zingolib/regtest/confs/zcash.conf --datadir=/zingolib/regtest/datadir/zcash/ -debuglogfile=/zingolib/regtest/logs/debug.log -debug=1`
 
-`zcashd` works in regtest with the following invocation (with explicit pathes - you will have to adjust to your own path):
-`./zcashd --printtoconsole -conf=/zingolib/.zc/zd/zcash.conf --datadir=/zingolib/.zc/zd/ -debuglogfile=/zingolib/.zc/zd/debug.log -debug=1`
-
-In another terminal instance, working from the same `zingolib/reg/` directory run:
-`./lightwalletd --no-tls-very-insecure --zcash-conf-path ./.zc/zd/zcash.conf --data-dir ./.zc/zd/ --log-file ./.zc/ld/lwd-log --log-level 7`
+From `/zingolib/regtest/bin/`, in another terminal instance, run:
+`./lightwalletd --no-tls-very-insecure --zcash-conf-path ../confs/zcash.conf --config ../confs/lightwalletdconf.yml --data-dir ../datadir/lightwalletd/--log-file ../logs/lwd.log`
 `lightwalletd`'s terminal output will not have clear success, but the log file will show something like:
 `{"app":"lightwalletd","level":"info","msg":"Got sapling height 1 block height 0 chain regtest ..."}`
-which you can view with `tail -f` or your favorite tool.
+...which you can view with `tail -f` or your favorite tool.
 
 You will need to add blocks to your regtest chain if you have not done so previously.
-In still another terminal instance in the `zingolib/reg/` directory, you can run `.zcash-cli -regtest generate 11` to generate 11 blocks.
+In still another terminal instance in the `zingolib/regitest/bin/` directory, you can run `.zcash-cli -regtest generate 11` to generate 11 blocks.
 Please note that by adding more than 100 blocks it is difficult or impossible to rewind the chain. The config means that after the first block all network upgrades should be in place.
 
-Finally, from your `zingolib/` directory, with a release build (`cargo build --release`), you can run:
-`./target/release/zingo-cli --regtest --server=127.0.0.1:9067`
+Finally, from your `zingolib/` directory, with, for example, a release build (`cargo build --release`), you can run:
+`./target/release/zingo-cli --regtest --data-dir regtest/datadir/zingo --server=127.0.0.1:9067`
+
 You should see a single line printed out saying `regtest detected and network set correctly!` and the interactive cli application should work with your regtest network!
 
 Tested with `zcash` commit `2e6a25`, `lightwalletd` commit `db2795`, and `zingolib` commit `ddf8261` or better.
