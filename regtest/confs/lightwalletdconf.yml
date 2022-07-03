@@ -1,7 +1,7 @@
-bind-addr: 0.0.0.0:9067
+bind-addr: 127.0.0.1:9067
 cache-size: 10
-log-file: /dev/stdout
+log-file: ../logs/lwd.log
 log-level: 10
-tls-cert: /secrets/lightwallted/cert.pem
-tls-key: /secrets/lightwallted/cert.key
-zcash-conf-path: /srv/zcashd/zcash.conf
+#tls-cert: /secrets/lightwallted/example-only-cert.pem
+#tls-key: /secrets/lightwallted/example-only-cert.key
+zcash-conf-path: ../conf/zcash.conf
