@@ -1,3 +1,17 @@
+before:
+regtest/
+├── bin
+├── confs
+│   ├── lightwalletdconf.yml
+│   └── zcash.conf
+├── datadir
+│   ├── lightwalletd
+│   ├── zcash
+│   └── zingo
+├── logs
+└── README.md
+
+after:
 tree regtest/
 regtest/
 ├── bin
@@ -19,24 +33,18 @@ regtest/
 │   │       ├── blocks
 │   │       │   ├── blk00000.dat
 │   │       │   ├── index
-│   │       │   │   ├── 000005.ldb
-│   │       │   │   ├── 000008.ldb
-│   │       │   │   ├── 000009.log
+│   │       │   │   ├── 000003.log
 │   │       │   │   ├── CURRENT
 │   │       │   │   ├── LOCK
 │   │       │   │   ├── LOG
-│   │       │   │   ├── LOG.old
-│   │       │   │   └── MANIFEST-000007
+│   │       │   │   └── MANIFEST-000002
 │   │       │   └── rev00000.dat
 │   │       ├── chainstate
-│   │       │   ├── 000005.ldb
-│   │       │   ├── 000008.ldb
-│   │       │   ├── 000009.log
+│   │       │   ├── 000003.log
 │   │       │   ├── CURRENT
 │   │       │   ├── LOCK
 │   │       │   ├── LOG
-│   │       │   ├── LOG.old
-│   │       │   └── MANIFEST-000007
+│   │       │   └── MANIFEST-000002
 │   │       ├── db.log
 │   │       ├── fee_estimates.dat
 │   │       ├── peers.dat
