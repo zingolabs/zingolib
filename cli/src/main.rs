@@ -55,19 +55,76 @@ pub fn main() {
     let regtest = matches.is_present("regtest");
     if regtest {
         println!("matches has detected regtest, moving into custom logic");
-        // let's call uname as a PoC.
-        use std::process::Command;
-        let out = Command::new("uname")
-            .arg("-a")
-            .output()
-            .expect("failed to execute process");
-        let errput = out.stderr;
-        let output = out.stdout;
-        println!("out.status == {}", out.status);
-        println!("out.stderr == {:?}", std::str::from_utf8(&errput));
-        println!("out.stdout == {:?}", std::str::from_utf8(&output));
-        // launch all the things, maybe wait a moment?
-        // what about when there are no blocks?
+        use std::fs::File;
+        use std::io;
+        use std::process::{Command, Stdio};
+        use std::{thread, time};
+        // TODO need to sniff and build directories
+        let zcashd_command = Command::new("./regtest/bin/zcashd")
+            .args([
+                "--printtoconsole",
+                "-conf=/zingolib/regtest/conf/zcash.conf",
+                "--datadir=/zingolib/regtest/datadir/zcash/",
+                // Right now I can't get zcashd to write to debug.log with this flag
+                //"-debuglogfile=/zingolib/regtest/logs/debug.log",
+                //Debug=1 will at least print to stdout
+                "-debug=1",
+            ])
+            // piping stdout off...
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("failed to start zcashd");
+
+        // ...to ... nowhere for now.
+        //let mut zcashd_logfile =
+        //File::create("/zingolib/regtest/logs/ping.log").unwrap();
+
+        // TODO the next line is halting process.. so the actual rust won't run after it, but it works.
+        // looks like BufReader etc is the way...
+        //io::copy(&mut zcashd_command.stdout.unwrap(), &mut zcashd_logfile).unwrap();
+
+        // wait 10 seconds for zcashd to fire up
+        // very generous, plan to tune down
+        let ten_seconds = time::Duration::from_millis(10_000);
+        thread::sleep(ten_seconds);
+
+        // this process does not shut down when rust client shuts down!
+        // TODO Needs a cleanup function, or something.
+        println!("zcashd start section completed");
+
+        let lwd_command = Command::new("./regtest/bin/lightwalletd")
+            .args([
+                "--no-tls-very-insecure",
+                "--zcash-conf-path",
+                "/zingolib/regtest/conf/zcash.conf",
+                "--config",
+                "/zingolib/regtest/conf/lightwalletdconf.yml",
+                "--data-dir",
+                "/zingolib/regtest/datadir/lightwalletd/",
+                "--log-file",
+                "/zingolib/regtest/logs/lwd.log",
+            ])
+            // this will print stdout of lwd process' output also to the zingo-cli stdout
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .expect("failed to start lwd");
+
+        // this client's stdout is less verbose so logging it may not be needed along with the working lwd.log file.
+        //let mut lwd_stdout_logfile =
+        //File::create("/zingolib/regtest/logs/lwd-ping.log").unwrap();
+        // the next line is a halting process..
+        //io::copy(&mut lwd_command.stdout.unwrap(), &mut lwd_stdout_logfile).unwrap();
+
+        // wait 5 seconds for lwd to fire up
+        // very generous, plan to tune down
+        let five_seconds = time::Duration::from_millis(5_000);
+        thread::sleep(five_seconds);
+
+        // this process does not shut down when rust client shuts down!
+        // TODO Needs a cleanup function, or something.
+        println!("lwd start section completed");
     }
 
     let server = ZingoConfig::get_server_or_default(maybe_server);
