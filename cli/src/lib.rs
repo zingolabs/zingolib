@@ -149,7 +149,7 @@ pub fn startup(
     // Try to get the configuration
     let (config, latest_block_height) = ZingoConfig::create_on_data_dir(server.clone(), data_dir)?;
 
-    // check for regtest flag and network in config.
+    // Diagnostic check for regtest flag and network in config, panic if mis-matched.
     if regtest && config.chain == Network::Regtest {
         println!("regtest detected and network set correctly!");
     } else if regtest && config.chain != Network::Regtest {

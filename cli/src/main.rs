@@ -52,6 +52,24 @@ pub fn main() {
         }
     };
 
+    let regtest = matches.is_present("regtest");
+    if regtest {
+        println!("matches has detected regtest, moving into custom logic");
+        // let's call uname as a PoC.
+        use std::process::Command;
+        let out = Command::new("uname")
+            .arg("-a")
+            .output()
+            .expect("failed to execute process");
+        let errput = out.stderr;
+        let output = out.stdout;
+        println!("out.status == {}", out.status);
+        println!("out.stderr == {:?}", std::str::from_utf8(&errput));
+        println!("out.stdout == {:?}", std::str::from_utf8(&output));
+        // launch all the things, maybe wait a moment?
+        // what about when there are no blocks?
+    }
+
     let server = ZingoConfig::get_server_or_default(maybe_server);
 
     // Test to make sure the server has all of scheme, host and port
@@ -64,8 +82,6 @@ pub fn main() {
     }
 
     let nosync = matches.is_present("nosync");
-
-    let regtest = matches.is_present("regtest");
 
     let startup_chan = startup(
         server,
