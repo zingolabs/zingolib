@@ -99,5 +99,5 @@ regtest/
 └── README.md
 
 # Working Commits
-Tested with `zcash` commit `2e6a25`, `lightwalletd` commit `db2795`, and `zingolib` commit `979f82` or better.
+Tested with `zcash` commit `2e6a25`, `lightwalletd` commit `db2795`, and `zingolib` commit `e91866` or better.
 
