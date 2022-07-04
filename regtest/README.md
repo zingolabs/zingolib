@@ -1,7 +1,7 @@
 before:
 regtest/
 ├── bin
-├── confs
+├── conf
 │   ├── lightwalletdconf.yml
 │   └── zcash.conf
 ├── datadir
@@ -18,7 +18,7 @@ regtest/
 │   ├── lightwalletd
 │   ├── zcash-cli
 │   └── zcashd
-├── confs
+├── conf
 │   ├── lightwalletdconf.yml
 │   └── zcash.conf
 ├── datadir
@@ -55,3 +55,4 @@ regtest/
 ├── logs
 │   └── lwd.log
 └── README.md
+
