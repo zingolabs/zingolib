@@ -54,20 +54,105 @@ pub fn main() {
 
     let regtest = matches.is_present("regtest");
     if regtest {
-        println!("matches has detected regtest, moving into custom logic");
+        use std::ffi::OsString;
         use std::fs::File;
         use std::io;
+        use std::path::PathBuf;
         use std::process::{Command, Stdio};
         use std::{thread, time};
-        // TODO need to sniff and build directories
-        let zcashd_command = Command::new("./regtest/bin/zcashd")
+
+        // confirm we are in running from zingolib as an anchor for our directory context
+        let revparse = Command::new("git")
+            .args(["rev-parse", "--show-toplevel"])
+            .output()
+            .expect("no git!? time to quit.");
+
+        let revparse_str = std::str::from_utf8(&revparse.stdout).expect("revparse_str error");
+
+        //if revparse ends in zingolib, use that as the start to build the dir
+        if revparse_str.trim_end().ends_with("zingolib") {
+            // proceed
+        } else {
+            panic!("Zingo-cli's regtest mode must be run within its git tree");
+        }
+
+        // Cross-platform OsString
+        let mut bin_directions = OsString::new();
+        bin_directions.push(revparse_str.trim_end());
+
+        // convert this back into a path for windows compatibile dir building
+        let bin_pathbuf: PathBuf = [
+            bin_directions.clone(),
+            OsString::from("regtest"),
+            OsString::from("bin"),
+        ]
+        .iter()
+        .collect();
+
+        let zcash_conf_pathbuf: PathBuf = [
+            bin_directions.clone(),
+            OsString::from("regtest"),
+            OsString::from("conf"),
+            OsString::from(""),
+        ]
+        .iter()
+        .collect();
+
+        let mut flagged_zcashd_conf: String = "--conf=".to_string();
+        flagged_zcashd_conf.push_str(
+            zcash_conf_pathbuf
+                .to_str()
+                .expect("error making zcash_datadir"),
+        );
+        flagged_zcashd_conf.push_str("zcash.conf");
+
+        // TODO could make this less repetitive to lwd datadir
+        let zcash_datadir_pathbuf: PathBuf = [
+            bin_directions.clone(),
+            OsString::from("regtest"),
+            OsString::from("datadir"),
+            OsString::from("zcash"),
+            OsString::from(""),
+        ]
+        .iter()
+        .collect();
+
+        let mut flagged_datadir: String = "--datadir=".to_string();
+        flagged_datadir.push_str(
+            zcash_datadir_pathbuf
+                .to_str()
+                .expect("error making zcash_datadir"),
+        );
+
+        // currently not used.
+        /*
+                let zcash_logs_pathbuf: PathBuf = [
+                    bin_directions.clone(),
+                    OsString::from("regtest"),
+                    OsString::from("logs"),
+                ]
+                .iter()
+                .collect();
+        */
+
+        let mut zcashd_bin = bin_pathbuf.to_owned();
+        zcashd_bin.push("zcashd");
+
+        // check for file. This might be superfluous considering
+        // .expect() attached to the call, below?
+        if !std::path::Path::is_file(zcashd_bin.as_path()) {
+            panic!("can't find zcashd bin! exiting.");
+        }
+        println!("{}", &flagged_datadir);
+        println!("{}", &flagged_zcashd_conf);
+        let zcashd_command = Command::new(zcashd_bin)
             .args([
                 "--printtoconsole",
-                "-conf=/zingolib/regtest/conf/zcash.conf",
-                "--datadir=/zingolib/regtest/datadir/zcash/",
+                &flagged_zcashd_conf,
+                &flagged_datadir,
                 // Right now I can't get zcashd to write to debug.log with this flag
-                //"-debuglogfile=/zingolib/regtest/logs/debug.log",
-                //Debug=1 will at least print to stdout
+                //"-debuglogfile=.../zingolib/regtest/logs/debug.log",
+                //debug=1 will at least print to stdout
                 "-debug=1",
             ])
             // piping stdout off...
@@ -76,34 +161,92 @@ pub fn main() {
             .spawn()
             .expect("failed to start zcashd");
 
-        // ...to ... nowhere for now.
+        // ... to ... nowhere for now.
         //let mut zcashd_logfile =
         //File::create("/zingolib/regtest/logs/ping.log").unwrap();
-
-        // TODO the next line is halting process.. so the actual rust won't run after it, but it works.
-        // looks like BufReader etc is the way...
+        // TODO the next line is halting the process... spawn a thread for stdout
         //io::copy(&mut zcashd_command.stdout.unwrap(), &mut zcashd_logfile).unwrap();
 
+        println!("zcashd is starting in regtest mode, please standby about 10 seconds...");
         // wait 10 seconds for zcashd to fire up
         // very generous, plan to tune down
         let ten_seconds = time::Duration::from_millis(10_000);
         thread::sleep(ten_seconds);
 
-        // this process does not shut down when rust client shuts down!
-        // TODO Needs a cleanup function, or something.
-        println!("zcashd start section completed");
+        // TODO this process does not shut down when rust client shuts down!
+        // Needs a cleanup function, or something.
+        println!("zcashd start section completed, zcashd should be running.");
+        println!("Standby, lightwalletd is about to start. This should only take a moment.");
 
-        let lwd_command = Command::new("./regtest/bin/lightwalletd")
+        let mut lwd_bin = bin_pathbuf.to_owned();
+        lwd_bin.push("lightwalletd");
+
+        let lwd_conf_pathbuf: PathBuf = [
+            bin_directions.clone(),
+            OsString::from("regtest"),
+            OsString::from("conf"),
+            OsString::from(""),
+        ]
+        .iter()
+        .collect();
+
+        let mut unflagged_lwd_conf: String = String::new();
+        unflagged_lwd_conf.push_str(
+            lwd_conf_pathbuf
+                .to_str()
+                .expect("trouble making flagged_lwd_conf"),
+        );
+        unflagged_lwd_conf.push_str("lightwalletdconf.yml");
+
+        // for lwd config
+        let mut unflagged_zcashd_conf: String = String::new();
+        unflagged_zcashd_conf.push_str(
+            zcash_conf_pathbuf
+                .to_str()
+                .expect("error making zcash_datadir"),
+        );
+        unflagged_zcashd_conf.push_str("zcash.conf");
+
+        let lwd_datadir_pathbuf: PathBuf = [
+            bin_directions.clone(),
+            OsString::from("regtest"),
+            OsString::from("datadir"),
+            OsString::from("lightwalletd"),
+            OsString::from(""),
+        ]
+        .iter()
+        .collect();
+
+        let mut unflagged_lwd_datadir: String = String::new();
+        unflagged_lwd_datadir.push_str(
+            lwd_datadir_pathbuf
+                .to_str()
+                .expect("error making lwd_datadir"),
+        );
+
+        let lwd_logs_pathbuf: PathBuf = [
+            bin_directions.clone(),
+            OsString::from("regtest"),
+            OsString::from("logs"),
+            OsString::from(""),
+        ]
+        .iter()
+        .collect();
+        let mut unflagged_lwd_log: String = String::new();
+        unflagged_lwd_log.push_str(lwd_logs_pathbuf.to_str().expect("error making lwd_datadir"));
+        unflagged_lwd_log.push_str("lwd.log");
+
+        let lwd_command = Command::new(lwd_bin)
             .args([
                 "--no-tls-very-insecure",
                 "--zcash-conf-path",
-                "/zingolib/regtest/conf/zcash.conf",
+                &unflagged_zcashd_conf,
                 "--config",
-                "/zingolib/regtest/conf/lightwalletdconf.yml",
+                &unflagged_lwd_conf,
                 "--data-dir",
-                "/zingolib/regtest/datadir/lightwalletd/",
+                &unflagged_lwd_datadir,
                 "--log-file",
-                "/zingolib/regtest/logs/lwd.log",
+                &unflagged_lwd_log,
             ])
             // this will print stdout of lwd process' output also to the zingo-cli stdout
             .stdout(Stdio::inherit())
@@ -124,7 +267,8 @@ pub fn main() {
 
         // this process does not shut down when rust client shuts down!
         // TODO Needs a cleanup function, or something.
-        println!("lwd start section completed");
+        println!("lwd start section completed, lightwalletd should be running!");
+        println!("Standby, Zingo-cli should be running in regtest mode momentarily...");
     }
 
     let server = ZingoConfig::get_server_or_default(maybe_server);
