@@ -50,12 +50,12 @@ group = "0.12"
 rust-embed = { version = "6.3.0", features = ["debug-embed"] }
 orchard = "0.2.0"
 subtle = "2.4.1"
-zcash_address = { git = "https://github.com/zcash/librustzcash", rev = "8ad60a0fc020ac0338615fd9f242e6eff7b66542"}
-zcash_primitives = { git = "https://github.com/zcash/librustzcash", rev = "8ad60a0fc020ac0338615fd9f242e6eff7b66542", features = ["transparent-inputs", "test-dependencies"] }
-zcash_client_backend = { git = "https://github.com/zcash/librustzcash", rev = "8ad60a0fc020ac0338615fd9f242e6eff7b66542"}
-zcash_proofs = { git = "https://github.com/zcash/librustzcash", rev = "8ad60a0fc020ac0338615fd9f242e6eff7b66542", features = ["multicore"]}
-zcash_encoding = { git = "https://github.com/zcash/librustzcash", rev = "8ad60a0fc020ac0338615fd9f242e6eff7b66542"}
-zcash_note_encryption = { git = "https://github.com/zcash/librustzcash", rev = "8ad60a0fc020ac0338615fd9f242e6eff7b66542", features = ["pre-zip-212"]}
+zcash_address = { git = "https://github.com/zcash/librustzcash", rev = "37fc28634e811fdf8db9274a0080cff17c6b6a09"}
+zcash_primitives = { git = "https://github.com/zcash/librustzcash", rev = "37fc28634e811fdf8db9274a0080cff17c6b6a09", features = ["transparent-inputs", "test-dependencies"] }
+zcash_client_backend = { git = "https://github.com/zcash/librustzcash", rev = "37fc28634e811fdf8db9274a0080cff17c6b6a09"}
+zcash_proofs = { git = "https://github.com/zcash/librustzcash", rev = "37fc28634e811fdf8db9274a0080cff17c6b6a09", features = ["multicore"]}
+zcash_encoding = { git = "https://github.com/zcash/librustzcash", rev = "37fc28634e811fdf8db9274a0080cff17c6b6a09"}
+zcash_note_encryption = { git = "https://github.com/zcash/librustzcash", rev = "37fc28634e811fdf8db9274a0080cff17c6b6a09", features = ["pre-zip-212"]}
 zingoconfig = { path = "../config" }
 
 [dev-dependencies]
