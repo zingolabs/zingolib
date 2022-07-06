@@ -14,6 +14,7 @@ From your `zingolib/` directory, with, for example, a release build (`cargo buil
 `./target/release/zingo-cli --regtest --data-dir regtest/datadir/zingo --server=127.0.0.1:9067`
 This will start `zcashd` and `lightwalletd` and then connect to these tools with an interactive `zingo-cli`.
 It currently takes about 15 seconds to do so, to give the daemons time to boot, but this will be shortened soon.
+
 Also, please note that right now these daemons will still be running when `zingo-cli` shuts down!
 
 You should see several diagnostic messsages, and then:
@@ -21,7 +22,8 @@ You should see several diagnostic messsages, and then:
 Lightclient connecting to http://127.0.0.1:9067/`
 at which point the interactive cli application should work with your regtest network.
 
-lwd's log file will show something like:
+`zcashd`'s stdout logfile should quickly have an output of several dozen lines, and show network upgrade activation parameters at `height=1`.
+`lightwalletd`'s log file will show something like:
 `{"app":"lightwalletd","level":"info","msg":"Got sapling height 1 block height 0 chain regtest ..."}`
 ...which you can view with `tail -f` or your favorite tool.
 
@@ -99,5 +101,5 @@ regtest/
 └── README.md
 
 # Working Commits
-Tested with `zcash` commit `2e6a25`, `lightwalletd` commit `db2795`, and `zingolib` commit `f03d57` or better.
+Tested with `zcash` commit `2e6a25`, `lightwalletd` commit `db2795`, and `zingolib` commit `1bbea8` or better.
 
