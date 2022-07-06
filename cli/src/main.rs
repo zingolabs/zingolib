@@ -67,10 +67,16 @@ pub fn main() {
             .output()
             .expect("no git!? time to quit.");
 
-        let revparse = std::str::from_utf8(&revparse_raw.stdout).expect("revparse_str error");
+        let revparse = std::str::from_utf8(&revparse_raw.stdout).expect("revparse error");
 
-        //if revparse ends in zingolib, use that as the start to build the dir
-        if revparse.trim_end().ends_with("zingolib") {
+        let ident_raw = Command::new("git")
+            .args(["var", "GIT_AUTHOR_IDENT"])
+            .output()
+            .expect("problem ident. cannot invent!");
+
+        let ident = std::str::from_utf8(&ident_raw.stdout).expect("ident error");
+        // stand in for zingolabs.
+        if ident.starts_with("dannasessha <sessha@zingolabs.com>") {
             // proceed
         } else {
             panic!("Zingo-cli's regtest mode must be run within its git tree");
@@ -131,6 +137,7 @@ pub fn main() {
         zcashd_bin.push("zcashd");
 
         // TODO from zingolib as an anchor for our directory context
+        // TODO reorg code, look for all needed bins ASAP
         // check for file. This might be superfluous considering
         // .expect() attached to the call, below?
         if !std::path::Path::is_file(zcashd_bin.as_path()) {
