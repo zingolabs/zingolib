@@ -1,3 +1,5 @@
+use std::thread::spawn;
+
 use log::error;
 use zingo_cli::{
     attempt_recover_seed, configure_clapapp, report_permission_error, start_interactive, startup,
@@ -108,7 +110,6 @@ pub fn main() {
         flagged_zcashd_conf.push_str(zcash_confs.to_str().expect("error making zcash_datadir"));
         flagged_zcashd_conf.push_str("zcash.conf");
 
-        // TODO could make this less repetitive to lwd datadir
         let zcash_datadir: PathBuf = [
             worktree_home.clone(),
             OsString::from("regtest"),
@@ -122,30 +123,28 @@ pub fn main() {
         let mut flagged_datadir: String = "--datadir=".to_string();
         flagged_datadir.push_str(zcash_datadir.to_str().expect("error making zcash_datadir"));
 
-        // currently not used.
-        /*
-                let zcash_logs: PathBuf = [
-                    worktree_home.clone(),
-                    OsString::from("regtest"),
-                    OsString::from("logs"),
-                ]
-                .iter()
-                .collect();
-        */
+        let mut zcash_logs: PathBuf = [
+            worktree_home.clone(),
+            OsString::from("regtest"),
+            OsString::from("logs"),
+            OsString::from(""),
+        ]
+        .iter()
+        .collect();
 
         let mut zcashd_bin = bin_location.to_owned();
         zcashd_bin.push("zcashd");
 
-        // TODO from zingolib as an anchor for our directory context
         // TODO reorg code, look for all needed bins ASAP
         // check for file. This might be superfluous considering
         // .expect() attached to the call, below?
         if !std::path::Path::is_file(zcashd_bin.as_path()) {
             panic!("can't find zcashd bin! exiting.");
         }
+
         println!("zcashd datadir: {}", &flagged_datadir);
         println!("zcashd conf file: {}", &flagged_zcashd_conf);
-        let zcashd_command = Command::new(zcashd_bin)
+        let mut zcashd_command = Command::new(zcashd_bin)
             .args([
                 "--printtoconsole",
                 &flagged_zcashd_conf,
@@ -161,12 +160,19 @@ pub fn main() {
             .spawn()
             .expect("failed to start zcashd");
 
-        // ... to ... nowhere for now.
-        //let mut zcashd_logfile =
-        //File::create("/zingolib/regtest/logs/ping.log").unwrap();
-        // TODO the next line is halting the process... spawn a thread for stdout
-        //io::copy(&mut zcashd_command.stdout.unwrap(), &mut zcashd_logfile).unwrap();
+        // ... to ... here
+        if let Some(mut zcashd_log) = zcashd_command.stdout.take() {
+            std::thread::spawn(move || {
+                let mut zcashd_stdout_log: String = String::new();
+                zcashd_stdout_log.push_str(zcash_logs.to_str().expect("error converting to str"));
+                zcashd_stdout_log.push_str("zcashd_stdout.log");
 
+                let mut zcashd_logfile =
+                    File::create(zcashd_stdout_log).expect("file::create Result error");
+                std::io::copy(&mut zcashd_log, &mut zcashd_logfile)
+                    .expect("io::copy error writing zcashd_studout.log");
+            });
+        }
         println!("zcashd is starting in regtest mode, please standby about 10 seconds...");
         // wait 10 seconds for zcashd to fire up
         // very generous, plan to tune down
@@ -180,6 +186,10 @@ pub fn main() {
 
         let mut lwd_bin = bin_location.to_owned();
         lwd_bin.push("lightwalletd");
+
+        if !std::path::Path::is_file(lwd_bin.as_path()) {
+            panic!("can't find lwd bin! exiting.");
+        }
 
         let lwd_confs: PathBuf = [
             worktree_home.clone(),
