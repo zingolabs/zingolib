@@ -61,36 +61,36 @@ pub fn main() {
         use std::process::{Command, Stdio};
         use std::{thread, time};
 
-        // confirm we are in running from zingolib as an anchor for our directory context
-        let revparse = Command::new("git")
+        // confirm we are in a git directory, get info on it
+        let revparse_raw = Command::new("git")
             .args(["rev-parse", "--show-toplevel"])
             .output()
             .expect("no git!? time to quit.");
 
-        let revparse_str = std::str::from_utf8(&revparse.stdout).expect("revparse_str error");
+        let revparse = std::str::from_utf8(&revparse_raw.stdout).expect("revparse_str error");
 
         //if revparse ends in zingolib, use that as the start to build the dir
-        if revparse_str.trim_end().ends_with("zingolib") {
+        if revparse.trim_end().ends_with("zingolib") {
             // proceed
         } else {
             panic!("Zingo-cli's regtest mode must be run within its git tree");
         }
 
         // Cross-platform OsString
-        let mut bin_directions = OsString::new();
-        bin_directions.push(revparse_str.trim_end());
+        let mut worktree_home = OsString::new();
+        worktree_home.push(revparse.trim_end());
 
         // convert this back into a path for windows compatibile dir building
-        let bin_pathbuf: PathBuf = [
-            bin_directions.clone(),
+        let bin_location: PathBuf = [
+            worktree_home.clone(),
             OsString::from("regtest"),
             OsString::from("bin"),
         ]
         .iter()
         .collect();
 
-        let zcash_conf_pathbuf: PathBuf = [
-            bin_directions.clone(),
+        let zcash_confs: PathBuf = [
+            worktree_home.clone(),
             OsString::from("regtest"),
             OsString::from("conf"),
             OsString::from(""),
@@ -99,16 +99,12 @@ pub fn main() {
         .collect();
 
         let mut flagged_zcashd_conf: String = "--conf=".to_string();
-        flagged_zcashd_conf.push_str(
-            zcash_conf_pathbuf
-                .to_str()
-                .expect("error making zcash_datadir"),
-        );
+        flagged_zcashd_conf.push_str(zcash_confs.to_str().expect("error making zcash_datadir"));
         flagged_zcashd_conf.push_str("zcash.conf");
 
         // TODO could make this less repetitive to lwd datadir
-        let zcash_datadir_pathbuf: PathBuf = [
-            bin_directions.clone(),
+        let zcash_datadir: PathBuf = [
+            worktree_home.clone(),
             OsString::from("regtest"),
             OsString::from("datadir"),
             OsString::from("zcash"),
@@ -118,16 +114,12 @@ pub fn main() {
         .collect();
 
         let mut flagged_datadir: String = "--datadir=".to_string();
-        flagged_datadir.push_str(
-            zcash_datadir_pathbuf
-                .to_str()
-                .expect("error making zcash_datadir"),
-        );
+        flagged_datadir.push_str(zcash_datadir.to_str().expect("error making zcash_datadir"));
 
         // currently not used.
         /*
-                let zcash_logs_pathbuf: PathBuf = [
-                    bin_directions.clone(),
+                let zcash_logs: PathBuf = [
+                    worktree_home.clone(),
                     OsString::from("regtest"),
                     OsString::from("logs"),
                 ]
@@ -135,16 +127,17 @@ pub fn main() {
                 .collect();
         */
 
-        let mut zcashd_bin = bin_pathbuf.to_owned();
+        let mut zcashd_bin = bin_location.to_owned();
         zcashd_bin.push("zcashd");
 
+        // TODO from zingolib as an anchor for our directory context
         // check for file. This might be superfluous considering
         // .expect() attached to the call, below?
         if !std::path::Path::is_file(zcashd_bin.as_path()) {
             panic!("can't find zcashd bin! exiting.");
         }
-        println!("{}", &flagged_datadir);
-        println!("{}", &flagged_zcashd_conf);
+        println!("zcashd datadir: {}", &flagged_datadir);
+        println!("zcashd conf file: {}", &flagged_zcashd_conf);
         let zcashd_command = Command::new(zcashd_bin)
             .args([
                 "--printtoconsole",
@@ -178,11 +171,11 @@ pub fn main() {
         println!("zcashd start section completed, zcashd should be running.");
         println!("Standby, lightwalletd is about to start. This should only take a moment.");
 
-        let mut lwd_bin = bin_pathbuf.to_owned();
+        let mut lwd_bin = bin_location.to_owned();
         lwd_bin.push("lightwalletd");
 
-        let lwd_conf_pathbuf: PathBuf = [
-            bin_directions.clone(),
+        let lwd_confs: PathBuf = [
+            worktree_home.clone(),
             OsString::from("regtest"),
             OsString::from("conf"),
             OsString::from(""),
@@ -191,24 +184,20 @@ pub fn main() {
         .collect();
 
         let mut unflagged_lwd_conf: String = String::new();
-        unflagged_lwd_conf.push_str(
-            lwd_conf_pathbuf
-                .to_str()
-                .expect("trouble making flagged_lwd_conf"),
-        );
+        unflagged_lwd_conf.push_str(lwd_confs.to_str().expect("trouble making flagged_lwd_conf"));
         unflagged_lwd_conf.push_str("lightwalletdconf.yml");
 
         // for lwd config
         let mut unflagged_zcashd_conf: String = String::new();
         unflagged_zcashd_conf.push_str(
-            zcash_conf_pathbuf
+            zcash_confs
                 .to_str()
-                .expect("error making zcash_datadir"),
+                .expect("error making unflagged zcash conf"),
         );
         unflagged_zcashd_conf.push_str("zcash.conf");
 
-        let lwd_datadir_pathbuf: PathBuf = [
-            bin_directions.clone(),
+        let lwd_datadir: PathBuf = [
+            worktree_home.clone(),
             OsString::from("regtest"),
             OsString::from("datadir"),
             OsString::from("lightwalletd"),
@@ -218,14 +207,10 @@ pub fn main() {
         .collect();
 
         let mut unflagged_lwd_datadir: String = String::new();
-        unflagged_lwd_datadir.push_str(
-            lwd_datadir_pathbuf
-                .to_str()
-                .expect("error making lwd_datadir"),
-        );
+        unflagged_lwd_datadir.push_str(lwd_datadir.to_str().expect("error making lwd_datadir"));
 
-        let lwd_logs_pathbuf: PathBuf = [
-            bin_directions.clone(),
+        let lwd_logs: PathBuf = [
+            worktree_home.clone(),
             OsString::from("regtest"),
             OsString::from("logs"),
             OsString::from(""),
@@ -233,7 +218,7 @@ pub fn main() {
         .iter()
         .collect();
         let mut unflagged_lwd_log: String = String::new();
-        unflagged_lwd_log.push_str(lwd_logs_pathbuf.to_str().expect("error making lwd_datadir"));
+        unflagged_lwd_log.push_str(lwd_logs.to_str().expect("error making lwd_datadir"));
         unflagged_lwd_log.push_str("lwd.log");
 
         let lwd_command = Command::new(lwd_bin)

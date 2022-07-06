@@ -66,7 +66,7 @@ Here are some CLI arguments you can pass to `zingo-cli`. Please run `zingo-cli -
     * Example: `./zingo-cli --server 127.0.0.1:9067 --data-dir /Users/ZingoRocks/my-test-wallet` will use the provided directory to store `zingo-wallet.dat` and logs. If the provided directory does not exist, it will create it.
 
 ## Regtest
-There is an experimental feature with which CLI can work in regtest mode, by locally running a `zcashd` and `lightwalletd`.
+There is an experimental feature flag available with `zingo-cli`, in which the cli works in regtest mode, by also locally running `zcashd` and `lightwalletd`.
 
 Please see `zingolib/regtest/README.md` for a detailed explanation.
 
