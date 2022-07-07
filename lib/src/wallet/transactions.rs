@@ -239,7 +239,7 @@ impl WalletTxns {
     pub fn total_funds_spent_in(&self, txid: &TxId) -> u64 {
         self.current
             .get(&txid)
-            .map(|t| t.total_sapling_value_spent + t.total_transparent_value_spent)
+            .map(WalletTx::total_value_spent)
             .unwrap_or(0)
     }
 

@@ -683,6 +683,9 @@ pub struct WalletTx {
     // Total value of all the sapling nullifiers that were spent in this Tx
     pub total_sapling_value_spent: u64,
 
+    // Total value of all the orchard nullifiers that were spent in this Tx
+    pub total_orchard_value_spent: u64,
+
     // Total amount of transparent funds that belong to us that were spent in this Tx.
     pub total_transparent_value_spent: u64,
 
@@ -698,13 +701,24 @@ pub struct WalletTx {
 
 impl WalletTx {
     pub fn serialized_version() -> u64 {
-        return 21;
+        return 22;
     }
 
     pub fn new_txid(txid: &Vec<u8>) -> TxId {
         let mut txid_bytes = [0u8; 32];
         txid_bytes.copy_from_slice(txid);
         TxId::from_bytes(txid_bytes)
+    }
+
+    pub fn total_value_spent(&self) -> u64 {
+        self.value_spent_by_pool().iter().sum()
+    }
+    pub fn value_spent_by_pool(&self) -> [u64; 3] {
+        [
+            self.total_transparent_value_spent,
+            self.total_sapling_value_spent,
+            self.total_orchard_value_spent,
+        ]
     }
 
     pub fn get_price(datetime: u64, price: &WalletZecPriceInfo) -> Option<f64> {
@@ -739,6 +753,7 @@ impl WalletTx {
             utxos: vec![],
             total_transparent_value_spent: 0,
             total_sapling_value_spent: 0,
+            total_orchard_value_spent: 0,
             outgoing_metadata: vec![],
             full_tx_scanned: false,
             zec_price: None,
@@ -772,6 +787,11 @@ impl WalletTx {
 
         let total_sapling_value_spent = reader.read_u64::<LittleEndian>()?;
         let total_transparent_value_spent = reader.read_u64::<LittleEndian>()?;
+        let total_orchard_value_spent = if version >= 22 {
+            reader.read_u64::<LittleEndian>()?
+        } else {
+            0
+        };
 
         // Outgoing metadata was only added in version 2
         let outgoing_metadata = Vector::read(&mut reader, |r| OutgoingTxMetadata::read(r))?;
@@ -805,6 +825,7 @@ impl WalletTx {
             spent_sapling_nullifiers,
             total_sapling_value_spent,
             total_transparent_value_spent,
+            total_orchard_value_spent,
             outgoing_metadata,
             full_tx_scanned,
             zec_price,
@@ -826,8 +847,9 @@ impl WalletTx {
         Vector::write(&mut writer, &self.sapling_notes, |w, nd| nd.write(w))?;
         Vector::write(&mut writer, &self.utxos, |w, u| u.write(w))?;
 
-        writer.write_u64::<LittleEndian>(self.total_sapling_value_spent)?;
-        writer.write_u64::<LittleEndian>(self.total_transparent_value_spent)?;
+        for pool in self.value_spent_by_pool() {
+            writer.write_u64::<LittleEndian>(pool)?;
+        }
 
         // Write the outgoing metadata
         Vector::write(&mut writer, &self.outgoing_metadata, |w, om| om.write(w))?;

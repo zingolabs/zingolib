@@ -897,7 +897,7 @@ impl LightClient {
             .flat_map(|(_k, v)| {
                 let mut transactions: Vec<JsonValue> = vec![];
 
-                if v.total_sapling_value_spent + v.total_transparent_value_spent > 0 {
+                if v.total_value_spent() > 0 {
                     // If money was spent, create a transaction. For this, we'll subtract
                     // all the change notes + Utxos
                     let total_change = v
@@ -935,9 +935,7 @@ impl LightClient {
                         "datetime"     => v.datetime,
                         "txid"         => format!("{}", v.txid),
                         "zec_price"    => v.zec_price.map(|p| (p * 100.0).round() / 100.0),
-                        "amount"       => total_change as i64
-                                            - v.total_sapling_value_spent as i64
-                                            - v.total_transparent_value_spent as i64,
+                        "amount"       => total_change as i64 - v.total_value_spent() as i64,
                         "outgoing_metadata" => outgoing_json,
                     });
                 }
