@@ -290,11 +290,7 @@ impl Network {
         }
     }
     pub fn to_zcash_address_network(&self) -> zcash_address::Network {
-        match self {
-            Network::Testnet => zcash_address::Network::Test,
-            Network::Regtest => zcash_address::Network::Regtest,
-            _ => zcash_address::Network::Main,
-        }
+        self.address_network().unwrap()
     }
 }
 
@@ -388,6 +384,14 @@ impl Parameters for Network {
             Mainnet => constants::mainnet::B58_SCRIPT_ADDRESS_PREFIX,
             FakeMainnet => constants::mainnet::B58_SCRIPT_ADDRESS_PREFIX,
         }
+    }
+
+    fn address_network(&self) -> Option<zcash_address::Network> {
+        Some(match self {
+            Network::Testnet => zcash_address::Network::Test,
+            Network::Regtest => zcash_address::Network::Regtest,
+            _ => zcash_address::Network::Main,
+        })
     }
 }
 
