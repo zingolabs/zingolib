@@ -69,4 +69,3 @@ Here are some CLI arguments you can pass to `zingo-cli`. Please run `zingo-cli -
 There is an experimental feature flag available with `zingo-cli`, in which the cli works in regtest mode, by also locally running `zcashd` and `lightwalletd`.
 
 Please see `zingolib/regtest/README.md` for a detailed explanation.
-
