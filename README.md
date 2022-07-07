@@ -96,7 +96,7 @@ rpcuser=xxxxxx
 rpcpassword=xxxxxx
 
 rpcport=18232
-rpcallowip=0.0.0.0
+rpcallowip=127.0.0.1
 ```
 
 In another terminal instance, navigate to your `lightwalletd` directory, and run
