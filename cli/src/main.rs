@@ -63,26 +63,51 @@ pub fn main() {
         use std::process::{Command, Stdio};
         use std::{thread, time};
 
-        // confirm we are in a git directory, get info on it
-        let revparse_raw = Command::new("git")
-            .args(["rev-parse", "--show-toplevel"])
+        // confirm we are in a git worktree
+        let git_check = Command::new("git")
+            .arg("--help")
             .output()
             .expect("no git!? time to quit.");
 
-        let revparse = std::str::from_utf8(&revparse_raw.stdout).expect("revparse error");
-
-        let ident_raw = Command::new("git")
-            .args(["var", "GIT_AUTHOR_IDENT"])
-            .output()
-            .expect("problem ident. cannot invent!");
-
-        let ident = std::str::from_utf8(&ident_raw.stdout).expect("ident error");
-        // stand in for zingolabs.
-        if ident.starts_with("dannasessha <sessha@zingolabs.com>") {
-            // proceed
-        } else {
-            panic!("Zingo-cli's regtest mode must be run within its git tree");
+        if !std::str::from_utf8(&git_check.stdout)
+            .expect("git --help error")
+            .contains("See 'git help git' for an overview of the system.")
+        {
+            panic!("git check failed!");
         }
+
+        // confirm this worktree is a zingolib repo
+        let git_revlist = Command::new("git")
+            .args(["rev-list", "--max-parents=0", "HEAD"])
+            .output()
+            .expect("problem invoking git rev-list");
+
+        if !std::str::from_utf8(&git_revlist.stdout)
+            .expect("git revlist error")
+            .contains("27e5eedc6b35759f463d43ea341ce66714aa9e01")
+        {
+            panic!("I am not Jack's commit descendant");
+        }
+
+        let git_log = Command::new("git")
+            .args(["--no-pager", "log"])
+            .output()
+            .expect("git log error");
+
+        if !std::str::from_utf8(&git_log.stdout)
+            .expect("git log stdout error")
+            .contains("d50ce9d618c1a2adc478ffbc3ad281512fbb0c15")
+        {
+            panic!("Zingo-cli's regtest mode must be run within its own git worktree");
+        }
+
+        // get the top level directory for this repo worktree
+        let revparse_raw = Command::new("git")
+            .args(["rev-parse", "--show-toplevel"])
+            .output()
+            .expect("problem invoking git rev-parse");
+
+        let revparse = std::str::from_utf8(&revparse_raw.stdout).expect("revparse error");
 
         // Cross-platform OsString
         let mut worktree_home = OsString::new();
