@@ -24,7 +24,7 @@ use tokio::{
 use zcash_primitives::{
     consensus::{BlockHeight, NetworkUpgrade, Parameters},
     merkle_tree::{CommitmentTree, IncrementalWitness},
-    sapling::{note_encryption::SaplingDomain, Node, Nullifier as SaplingNullifier},
+    sapling::{Node, Nullifier as SaplingNullifier},
     transaction::TxId,
 };
 
@@ -537,14 +537,14 @@ impl BlockAndWitnessData {
         transaction_num: usize,
         output_num: usize,
     ) -> Result<IncrementalWitness<Node>, String> {
-        self.get_note_witnesses::<SaplingDomain<zingoconfig::Network>, crate::compact_formats::CompactSaplingOutput, _, _>(
+        self.get_note_witnesses(
             uri,
             height,
             transaction_num,
             output_num,
             |tree| &tree.sapling_tree,
             |compact_transaction| &compact_transaction.outputs,
-self.sapling_activation_height
+            self.sapling_activation_height,
         )
         .await
     }

@@ -6,7 +6,7 @@ use std::convert::TryInto;
 use zcash_note_encryption::{EphemeralKeyBytes, ShieldedOutput, COMPACT_NOTE_SIZE};
 use zcash_primitives::{
     block::{BlockHash, BlockHeader},
-    consensus::{BlockHeight, Parameters},
+    consensus::BlockHeight,
     sapling::note_encryption::SaplingDomain,
 };
 
@@ -97,7 +97,9 @@ impl CompactSaplingOutput {
     }
 }
 
-impl<P: Parameters> ShieldedOutput<SaplingDomain<P>, COMPACT_NOTE_SIZE> for CompactSaplingOutput {
+impl ShieldedOutput<SaplingDomain<zingoconfig::Network>, COMPACT_NOTE_SIZE>
+    for CompactSaplingOutput
+{
     fn ephemeral_key(&self) -> EphemeralKeyBytes {
         EphemeralKeyBytes(*vec_to_array(&self.epk))
     }
