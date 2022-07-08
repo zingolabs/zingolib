@@ -3,7 +3,7 @@ use crate::{
     grpc_connector::GrpcConnector,
     lightclient::checkpoints::get_all_main_checkpoints,
     wallet::{
-        data::{BlockData, WalletTx, WitnessCache},
+        data::{BlockData, WalletNullifier, WalletTx, WitnessCache},
         transactions::WalletTxns,
     },
 };
@@ -23,7 +23,7 @@ use tokio::{
 };
 use zcash_primitives::{
     consensus::{BlockHeight, NetworkUpgrade, Parameters},
-    merkle_tree::{CommitmentTree, IncrementalWitness},
+    merkle_tree::{CommitmentTree, Hashable, IncrementalWitness},
     sapling::{Node, Nullifier as SaplingNullifier},
     transaction::TxId,
 };
@@ -429,28 +429,45 @@ impl BlockAndWitnessData {
         }
     }
 
-    pub(crate) async fn is_nf_spent(&self, nf: SaplingNullifier, after_height: u64) -> Option<u64> {
+    pub(crate) async fn is_nf_spent(&self, nf: WalletNullifier, after_height: u64) -> Option<u64> {
         self.wait_for_block(after_height).await;
 
         {
             // Read Lock
             let blocks = self.blocks.read().await;
             let pos = blocks.first().unwrap().height - after_height;
-            let nf = nf.to_vec();
+            match nf {
+                WalletNullifier::Sapling(nf) => {
+                    let nf = nf.to_vec();
 
-            for i in (0..pos + 1).rev() {
-                let cb = &blocks.get(i as usize).unwrap().cb();
-                for compact_transaction in &cb.vtx {
-                    for cs in &compact_transaction.spends {
-                        if cs.nf == nf {
-                            return Some(cb.height);
+                    for i in (0..pos + 1).rev() {
+                        let cb = &blocks.get(i as usize).unwrap().cb();
+                        for compact_transaction in &cb.vtx {
+                            for cs in &compact_transaction.spends {
+                                if cs.nf == nf {
+                                    return Some(cb.height);
+                                }
+                            }
+                        }
+                    }
+                }
+                WalletNullifier::Orchard(nf) => {
+                    let nf = nf.to_bytes();
+
+                    for i in (0..pos + 1).rev() {
+                        let cb = &blocks.get(i as usize).unwrap().cb();
+                        for compact_transaction in &cb.vtx {
+                            for ca in &compact_transaction.actions {
+                                if ca.nullifier == nf {
+                                    return Some(cb.height);
+                                }
+                            }
                         }
                     }
                 }
             }
+            None
         }
-
-        None
     }
 
     pub async fn get_block_timestamp(&self, height: &BlockHeight) -> u32 {
@@ -569,7 +586,10 @@ impl BlockAndWitnessData {
     }
 
     // Stream all the outputs start at the block till the highest block available.
-    pub(crate) async fn update_witness_after_block(&self, witnesses: WitnessCache) -> WitnessCache {
+    pub(crate) async fn update_witness_after_block<Node: Hashable>(
+        &self,
+        witnesses: WitnessCache<Node>,
+    ) -> WitnessCache<Node> {
         let height = witnesses.top_height + 1;
 
         // Check if we've already synced all the requested blocks
@@ -615,13 +635,13 @@ impl BlockAndWitnessData {
         return WitnessCache::new(fsb.into_vec(), top_block);
     }
 
-    pub(crate) async fn update_witness_after_pos(
+    pub(crate) async fn update_witness_after_pos<Node: Hashable>(
         &self,
         height: &BlockHeight,
         transaction_id: &TxId,
         output_num: u32,
-        witnesses: WitnessCache,
-    ) -> WitnessCache {
+        witnesses: WitnessCache<Node>,
+    ) -> WitnessCache<Node> {
         let height = u64::from(*height);
         self.wait_for_block(height).await;
 
@@ -668,6 +688,20 @@ impl BlockAndWitnessData {
         let witnesses = WitnessCache::new(vec![w], height);
 
         return self.update_witness_after_block(witnesses).await;
+    }
+
+    pub(crate) async fn get_compact_transaction_for_nullifier_at_height(
+        &self,
+        nf: &WalletNullifier,
+        spent_height: u64,
+    ) -> (CompactTx, u32) {
+        match nf {
+            WalletNullifier::Sapling(nf) => {
+                self.get_compact_transaction_for_sapling_nullifier_at_height(nf, spent_height)
+            }
+            WalletNullifier::Orchard(nf) => todo!(),
+        }
+        .await
     }
 }
 

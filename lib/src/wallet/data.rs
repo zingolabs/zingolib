@@ -4,13 +4,13 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use orchard::{
     keys::Diversifier as OrchardDiversifier,
     note::{Note as OrchardNote, Nullifier as OrchardNullifier},
+    tree::MerkleHashOrchard,
 };
 use prost::Message;
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
 use std::usize;
 use zcash_encoding::{Optional, Vector};
-use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::{consensus::BlockHeight, zip32::ExtendedSpendingKey};
 use zcash_primitives::{
     memo::Memo,
@@ -22,6 +22,12 @@ use zcash_primitives::{
     transaction::{components::OutPoint, TxId},
     zip32::ExtendedFullViewingKey,
 };
+use zcash_primitives::{memo::MemoBytes, merkle_tree::Hashable};
+
+pub(crate) enum WalletNullifier {
+    Sapling(SaplingNullifier),
+    Orchard(OrchardNullifier),
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BlockData {
@@ -123,13 +129,13 @@ impl BlockData {
 }
 
 #[derive(Clone)]
-pub(crate) struct WitnessCache {
-    witnesses: Vec<IncrementalWitness<SaplingNode>>,
+pub(crate) struct WitnessCache<Node: Hashable> {
+    witnesses: Vec<IncrementalWitness<Node>>,
     pub(crate) top_height: u64,
 }
 
-impl WitnessCache {
-    pub fn new(witnesses: Vec<IncrementalWitness<SaplingNode>>, top_height: u64) -> Self {
+impl<Node: Hashable> WitnessCache<Node> {
+    pub fn new(witnesses: Vec<IncrementalWitness<Node>>, top_height: u64) -> Self {
         Self {
             witnesses,
             top_height,
@@ -155,20 +161,20 @@ impl WitnessCache {
         self.witnesses.clear();
     }
 
-    pub fn get(&self, i: usize) -> Option<&IncrementalWitness<SaplingNode>> {
+    pub fn get(&self, i: usize) -> Option<&IncrementalWitness<Node>> {
         self.witnesses.get(i)
     }
 
     #[cfg(test)]
-    pub fn get_from_last(&self, i: usize) -> Option<&IncrementalWitness<SaplingNode>> {
+    pub fn get_from_last(&self, i: usize) -> Option<&IncrementalWitness<Node>> {
         self.witnesses.get(self.len() - i - 1)
     }
 
-    pub fn last(&self) -> Option<&IncrementalWitness<SaplingNode>> {
+    pub fn last(&self) -> Option<&IncrementalWitness<Node>> {
         self.witnesses.last()
     }
 
-    pub fn into_fsb(self, fsb: &mut FixedSizeBuffer<IncrementalWitness<SaplingNode>>) {
+    pub fn into_fsb(self, fsb: &mut FixedSizeBuffer<IncrementalWitness<Node>>) {
         self.witnesses.into_iter().for_each(|w| fsb.push(w));
     }
 
@@ -199,7 +205,7 @@ pub struct SaplingNoteData {
     pub note: SaplingNote,
 
     // Witnesses for the last 100 blocks. witnesses.last() is the latest witness
-    pub(crate) witnesses: WitnessCache,
+    pub(crate) witnesses: WitnessCache<SaplingNode>,
     pub(super) nullifier: SaplingNullifier,
     pub spent: Option<(TxId, u32)>, // If this note was confirmed spent
 
