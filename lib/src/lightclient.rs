@@ -1547,8 +1547,8 @@ impl LightClient {
             )
             .await;
 
-        // 2. Update the current price
-        self.update_current_price().await;
+        // 2. Update the current price:: Who's concern is price?
+        //self.update_current_price().await;
 
         // Sapling Tree GRPC Fetcher
         let grpc_connector = GrpcConnector::new(uri.clone());
