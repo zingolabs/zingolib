@@ -1211,9 +1211,9 @@ impl LightClient {
 
     async fn update_current_price(&self) {
         // Get the zec price from the server
-        match GrpcConnector::get_current_zec_price(self.get_server_uri()).await {
-            Ok(p) => {
-                self.wallet.set_latest_zec_price(p.price).await;
+        match get_price_from_gemini().await {
+            Ok(price) => {
+                self.wallet.set_latest_zec_price(price).await;
             }
             Err(s) => error!("Error fetching latest price: {}", s),
         }
