@@ -68,6 +68,19 @@ pub struct LightClient {
     bsync_data: Arc<RwLock<BlazeSyncData>>,
 }
 
+use serde_json::Value;
+async fn get_price_from_gemini() -> Result<f64, reqwest::Error> {
+    let trades = reqwest::get("https://api.gemini.com/v1/trades/zecusd")
+        .await?
+        .json::<Value>()
+        .await?;
+    let total_trades = trades.as_array().expect("Trades weren't arrayable!").len() as f64;
+    let total_prices = trades.as_array().unwrap().iter().fold(0 as f64, |sum, x| {
+        sum + x.get("price").unwrap().as_f64().unwrap()
+    });
+    Ok(total_prices / total_trades)
+}
+
 impl LightClient {
     /// Method to create a test-only version of the LightClient
     #[allow(dead_code)]
