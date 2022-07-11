@@ -24,7 +24,8 @@ use zcash_primitives::{
 };
 use zcash_primitives::{memo::MemoBytes, merkle_tree::Hashable};
 
-pub(crate) enum WalletNullifier {
+#[derive(Clone, Copy, Debug)]
+pub enum WalletNullifier {
     Sapling(SaplingNullifier),
     Orchard(OrchardNullifier),
 }
@@ -194,6 +195,20 @@ impl<Node: Hashable> WitnessCache<Node> {
     //     self.get(i).unwrap().write(&mut buf).unwrap();
     //     return hex::encode(buf);
     // }
+}
+pub(crate) trait FromCommitment {
+    fn from_commitment(from: &[u8; 32]) -> Self;
+}
+
+impl FromCommitment for SaplingNode {
+    fn from_commitment(from: &[u8; 32]) -> Self {
+        Self::new(*from)
+    }
+}
+impl FromCommitment for MerkleHashOrchard {
+    fn from_commitment(from: &[u8; 32]) -> Self {
+        Self::from_bytes(from).unwrap()
+    }
 }
 
 pub struct SaplingNoteData {
@@ -677,6 +692,9 @@ pub struct WalletTx {
     // List of all nullifiers spent in this Tx. These nullifiers belong to the wallet.
     pub spent_sapling_nullifiers: Vec<SaplingNullifier>,
 
+    // List of all nullifiers spent in this Tx. These nullifiers belong to the wallet.
+    pub spent_orchard_nullifiers: Vec<OrchardNullifier>,
+
     // List of all sapling notes received in this tx. Some of these might be change notes.
     pub sapling_notes: Vec<SaplingNoteData>,
 
@@ -754,6 +772,7 @@ impl WalletTx {
             datetime,
             txid: transaction_id.clone(),
             spent_sapling_nullifiers: vec![],
+            spent_orchard_nullifiers: vec![],
             sapling_notes: vec![],
             orchard_notes: vec![],
             utxos: vec![],
@@ -820,6 +839,16 @@ impl WalletTx {
             })?
         };
 
+        let spent_orchard_nullifiers = if version <= 21 {
+            vec![]
+        } else {
+            Vector::read(&mut reader, |r| {
+                let mut n = [0u8; 32];
+                r.read_exact(&mut n)?;
+                Ok(OrchardNullifier::from_bytes(&n).unwrap())
+            })?
+        };
+
         Ok(Self {
             block,
             unconfirmed,
@@ -829,6 +858,7 @@ impl WalletTx {
             orchard_notes: vec![], //Unimplemented
             utxos,
             spent_sapling_nullifiers,
+            spent_orchard_nullifiers,
             total_sapling_value_spent,
             total_transparent_value_spent,
             total_orchard_value_spent,
@@ -869,8 +899,24 @@ impl WalletTx {
         Vector::write(&mut writer, &self.spent_sapling_nullifiers, |w, n| {
             w.write_all(&n.0)
         })?;
+        Vector::write(&mut writer, &self.spent_orchard_nullifiers, |w, n| {
+            w.write_all(&n.to_bytes())
+        })?;
 
         Ok(())
+    }
+
+    pub(super) fn add_spent_nullifier(&mut self, nullifier: WalletNullifier, value: u64) {
+        match nullifier {
+            WalletNullifier::Sapling(nf) => {
+                self.spent_sapling_nullifiers.push(nf);
+                self.total_sapling_value_spent += value;
+            }
+            WalletNullifier::Orchard(nf) => {
+                self.spent_orchard_nullifiers.push(nf);
+                self.total_orchard_value_spent += value;
+            }
+        }
     }
 }
 

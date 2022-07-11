@@ -3,7 +3,7 @@ use crate::{
     grpc_connector::GrpcConnector,
     lightclient::checkpoints::get_all_main_checkpoints,
     wallet::{
-        data::{BlockData, WalletNullifier, WalletTx, WitnessCache},
+        data::{BlockData, FromCommitment, WalletNullifier, WalletTx, WitnessCache},
         transactions::WalletTxns,
     },
 };
@@ -586,7 +586,7 @@ impl BlockAndWitnessData {
     }
 
     // Stream all the outputs start at the block till the highest block available.
-    pub(crate) async fn update_witness_after_block<Node: Hashable>(
+    pub(crate) async fn update_witness_after_block<Node: Hashable + FromCommitment>(
         &self,
         witnesses: WitnessCache<Node>,
     ) -> WitnessCache<Node> {
@@ -613,7 +613,7 @@ impl BlockAndWitnessData {
                 let cb = &blocks.get(i as usize).unwrap().cb();
                 for compact_transaction in &cb.vtx {
                     for co in &compact_transaction.outputs {
-                        let node = Node::new(co.cmu().unwrap().into());
+                        let node = Node::from_commitment(&co.cmu().unwrap().into());
                         w.append(node).unwrap();
                     }
                 }
@@ -635,7 +635,7 @@ impl BlockAndWitnessData {
         return WitnessCache::new(fsb.into_vec(), top_block);
     }
 
-    pub(crate) async fn update_witness_after_pos<Node: Hashable>(
+    pub(crate) async fn update_witness_after_pos<Node: Hashable + FromCommitment>(
         &self,
         height: &BlockHeight,
         transaction_id: &TxId,
@@ -667,7 +667,7 @@ impl BlockAndWitnessData {
                     // If we've already passed the transaction id and output_num, stream the results
                     if transaction_id_found && output_found {
                         let co = compact_transaction.outputs.get(j as usize).unwrap();
-                        let node = Node::new(co.cmu().unwrap().into());
+                        let node = Node::from_commitment(&co.cmu().unwrap().into());
                         w.append(node).unwrap();
                     }
 

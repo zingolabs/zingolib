@@ -5,7 +5,7 @@ use std::{
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use log::error;
-use orchard::note::Nullifier as OrchardNullifier;
+use orchard::{note::Nullifier as OrchardNullifier, tree::MerkleHashOrchard};
 use zcash_encoding::Vector;
 use zcash_primitives::{
     consensus::BlockHeight,
@@ -303,6 +303,19 @@ impl WalletTxns {
         })?
     }
 
+    pub(crate) fn get_orchard_note_witness(
+        &self,
+        txid: &TxId,
+        nullifier: &OrchardNullifier,
+    ) -> Option<(WitnessCache<MerkleHashOrchard>, BlockHeight)> {
+        self.current.get(txid).map(|wtx| {
+            wtx.orchard_notes
+                .iter()
+                .find(|nd| nd.nullifier == *nullifier)
+                .map(|nd| (nd.witnesses.clone(), wtx.block))
+        })?
+    }
+
     pub(crate) fn set_sapling_note_witnesses(
         &mut self,
         txid: &TxId,
@@ -313,6 +326,22 @@ impl WalletTxns {
             .get_mut(txid)
             .unwrap()
             .sapling_notes
+            .iter_mut()
+            .find(|nd| nd.nullifier == *nullifier)
+            .unwrap()
+            .witnesses = witnesses;
+    }
+
+    pub(crate) fn set_orchard_note_witnesses(
+        &mut self,
+        txid: &TxId,
+        nullifier: &OrchardNullifier,
+        witnesses: WitnessCache<MerkleHashOrchard>,
+    ) {
+        self.current
+            .get_mut(txid)
+            .unwrap()
+            .orchard_notes
             .iter_mut()
             .find(|nd| nd.nullifier == *nullifier)
             .unwrap()
@@ -441,45 +470,48 @@ impl WalletTxns {
         source_txid: TxId,
     ) {
         // Record this Tx as having spent some funds
-        {
-            let wtx = self.get_or_create_tx(
-                &txid,
-                BlockHeight::from(height),
-                unconfirmed,
-                timestamp as u64,
-            );
 
-            // Mark the height correctly, in case this was previously a mempool or unconfirmed tx.
-            wtx.block = height;
+        let wtx = self.get_or_create_tx(
+            &txid,
+            BlockHeight::from(height),
+            unconfirmed,
+            timestamp as u64,
+        );
 
-            if wtx
-                .spent_sapling_nullifiers
-                .iter()
-                .find(|nf| **nf == nullifier)
-                .is_none()
-            {
-                wtx.spent_sapling_nullifiers.push(nullifier);
-                wtx.total_sapling_value_spent += value;
+        // Mark the height correctly, in case this was previously a mempool or unconfirmed tx.
+        wtx.block = height;
+
+        match nullifier {
+            WalletNullifier::Sapling(nullifier) => {
+                if wtx
+                    .spent_sapling_nullifiers
+                    .iter()
+                    .find(|nf| **nf == nullifier)
+                    .is_none()
+                {
+                    wtx.add_spent_nullifier(WalletNullifier::Sapling(nullifier), value)
+                }
+
+                // Since this Txid has spent some funds, output notes in this Tx that are sent to us are actually change.
+                self.check_notes_mark_change(&txid);
+
+                // Mark the source note's nullifier as spent
+                if !unconfirmed {
+                    let wtx = self
+                        .current
+                        .get_mut(&source_txid)
+                        .expect("Txid should be present");
+
+                    wtx.sapling_notes
+                        .iter_mut()
+                        .find(|n| n.nullifier == nullifier)
+                        .map(|nd| {
+                            // Record the spent height
+                            nd.spent = Some((txid, height.into()));
+                        });
+                }
             }
-        }
-
-        // Since this Txid has spent some funds, output notes in this Tx that are sent to us are actually change.
-        self.check_notes_mark_change(&txid);
-
-        // Mark the source note's nullifier as spent
-        if !unconfirmed {
-            let wtx = self
-                .current
-                .get_mut(&source_txid)
-                .expect("Txid should be present");
-
-            wtx.sapling_notes
-                .iter_mut()
-                .find(|n| n.nullifier == nullifier)
-                .map(|nd| {
-                    // Record the spent height
-                    nd.spent = Some((txid, height.into()));
-                });
+            WalletNullifier::Orchard(_) => todo!(),
         }
     }
 

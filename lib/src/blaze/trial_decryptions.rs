@@ -1,6 +1,11 @@
 use crate::{
     compact_formats::CompactBlock,
-    wallet::{data::WalletTx, keys::Keys, transactions::WalletTxns, MemoDownloadOption},
+    wallet::{
+        data::{WalletNullifier, WalletTx},
+        keys::Keys,
+        transactions::WalletTxns,
+        MemoDownloadOption,
+    },
 };
 use futures::{stream::FuturesUnordered, StreamExt};
 use log::info;
@@ -42,7 +47,7 @@ impl TrialDecryptions {
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         detected_transaction_id_sender: UnboundedSender<(
             TxId,
-            Nullifier,
+            WalletNullifier,
             BlockHeight,
             Option<u32>,
         )>,
@@ -127,7 +132,7 @@ impl TrialDecryptions {
         wallet_transactions: Arc<RwLock<WalletTxns>>,
         detected_transaction_id_sender: UnboundedSender<(
             TxId,
-            Nullifier,
+            WalletNullifier,
             BlockHeight,
             Option<u32>,
         )>,
@@ -207,7 +212,7 @@ impl TrialDecryptions {
                                 detected_transaction_id_sender
                                     .send((
                                         transaction_id,
-                                        nullifier,
+                                        WalletNullifier::Sapling(nullifier),
                                         height,
                                         Some(output_num as u32),
                                     ))
