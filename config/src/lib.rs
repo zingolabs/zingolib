@@ -223,7 +223,7 @@ impl ZingoConfig {
                 };
                 let uri: http::Uri = s.parse().unwrap();
                 if uri.port().is_none() {
-                    s = s + ":443";
+                    s = s + ":9067";
                 }
                 s
             }
