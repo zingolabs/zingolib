@@ -21,7 +21,7 @@ use zcash_primitives::{
     constants,
 };
 
-pub const DEFAULT_SERVER: &str = "https://lwdv3.zecwallet.co";
+pub const DEFAULT_SERVER: &str = "https://zuul.free2z.cash";
 pub const MAX_REORG: usize = 100;
 pub const WALLET_NAME: &str = "zingo-wallet.dat";
 pub const LOGFILE_NAME: &str = "zingo-wallet.debug.log";
@@ -223,7 +223,7 @@ impl ZingoConfig {
                 };
                 let uri: http::Uri = s.parse().unwrap();
                 if uri.port().is_none() {
-                    s = s + ":443";
+                    s = s + ":9067";
                 }
                 s
             }
