@@ -69,7 +69,18 @@ pub struct LightClient {
 }
 
 use serde_json::Value;
-pub(crate) async fn get_price_from_gemini() -> Result<f64, reqwest::Error> {
+
+fn repr_price_as_f64(from_gemini: &Value) -> f64 {
+    from_gemini
+        .get("price")
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .parse::<f64>()
+        .unwrap()
+}
+
+async fn get_recent_median_price_from_gemini() -> Result<f64, reqwest::Error> {
     let mut trades: Vec<f64> =
         reqwest::get("https://api.gemini.com/v1/trades/zecusd?limit_trades=11")
             .await?
@@ -78,19 +89,59 @@ pub(crate) async fn get_price_from_gemini() -> Result<f64, reqwest::Error> {
             .as_array()
             .unwrap()
             .into_iter()
-            .map(|x| {
-                x.get("price")
-                    .unwrap()
-                    .as_str()
-                    .unwrap()
-                    .parse::<f64>()
-                    .unwrap()
-            })
+            .map(repr_price_as_f64)
             .collect();
     trades.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    dbg!(&trades);
     Ok(trades[5])
 }
 
+async fn get_timestamped_price_from_gemini(timestamp: u64) -> Result<f64, reqwest::Error> {
+    Ok(reqwest::get(format!(
+        "https://api.gemini.com/v1/trades/zecusd?limit_trades=1&since_tid={}",
+        timestamp
+    ))
+    .await?
+    .json::<Value>()
+    .await?
+    .as_array()
+    .unwrap()
+    .into_iter()
+    .map(repr_price_as_f64)
+    .collect::<Vec<f64>>()[0])
+}
+
+use std::collections::HashMap;
+async fn get_historical_zec_prices(
+    uri: http::Uri,
+    transaction_ids: Vec<(TxId, u64)>,
+    currency: String,
+) -> Result<HashMap<TxId, Option<f64>>, String> {
+    let mut prices = HashMap::new();
+    let mut error_count: u32 = 0;
+
+    for (transaction_id, ts) in transaction_ids {
+        if error_count < 10 {
+            match get_timestamped_price_from_gemini(ts).await {
+                Ok(price) => {
+                    prices.insert(transaction_id, Some(price));
+                }
+                Err(e) => {
+                    // Ignore other errors, these are probably just for the particular date/time
+                    // and will be retried anyway
+                    warn!("Ignoring reqwest error: {}", e);
+                    error_count += 1;
+                    prices.insert(transaction_id, None);
+                }
+            }
+        } else {
+            // If there are too many errors, don't bother querying the server, just return none
+            prices.insert(transaction_id, None);
+        }
+    }
+
+    Ok(prices)
+}
 impl LightClient {
     /// Method to create a test-only version of the LightClient
     #[allow(dead_code)]
@@ -1221,7 +1272,7 @@ impl LightClient {
 
     async fn update_current_price(&self) {
         // Get the zec price from the server
-        match get_price_from_gemini().await {
+        match get_recent_median_price_from_gemini().await {
             Ok(price) => {
                 self.wallet.set_latest_zec_price(price).await;
             }
