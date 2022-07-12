@@ -224,7 +224,8 @@ checksum = "c5738be7561b0eeb501ef1d5c5db3f24e01ceb55fededd9b00039aada34966ad"
 [[package]]
 name = "bellman"
 version = "0.13.1"
-source = "git+https://github.com/zingolabs/bellman?rev=c852464b1743d10072ab0521fba939f79da6798e#c852464b1743d10072ab0521fba939f79da6798e"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4dd656ef4fdf7debb6d87d4dd92642fcbcdb78cbf6600c13e25c87e4d1a3807"
 dependencies = [
  "bitvec",
  "blake2s_simd",
@@ -3363,3 +3364,8 @@ dependencies = [
  "zcash_proofs",
  "zingoconfig",
 ]
+
+[[patch.unused]]
+name = "bellman"
+version = "0.13.0"
+source = "git+https://github.com/zingolabs/bellman?rev=712337ea591cb89e031b9f203462d32de00bf7ff#712337ea591cb89e031b9f203462d32de00bf7ff"
