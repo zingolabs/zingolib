@@ -1468,8 +1468,7 @@ checksum = "ff011a302c396a5197692431fc1948019154afc178baf7d8e37367442a4601cf"
 [[package]]
 name = "orchard"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7619db7f917afd9b1139044c595fab1b6166de2db62317794b5f5e34a2104ae1"
+source = "git+https://github.com/zcash/orchard?rev=597f37a869d2d03bb40b8b8108b88fba984b0842#597f37a869d2d03bb40b8b8108b88fba984b0842"
 dependencies = [
  "aes",
  "bitvec",
@@ -1491,7 +1490,7 @@ dependencies = [
  "serde",
  "subtle",
  "tracing",
- "zcash_note_encryption 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zcash_note_encryption",
 ]
 
 [[package]]
@@ -3183,7 +3182,7 @@ dependencies = [
  "subtle",
  "time 0.2.27",
  "zcash_address",
- "zcash_note_encryption 0.1.0 (git+https://github.com/zcash/librustzcash?rev=37fc28634e811fdf8db9274a0080cff17c6b6a09)",
+ "zcash_note_encryption",
  "zcash_primitives",
 ]
 
@@ -3194,18 +3193,6 @@ source = "git+https://github.com/zcash/librustzcash?rev=37fc28634e811fdf8db9274a
 dependencies = [
  "byteorder",
  "nonempty",
-]
-
-[[package]]
-name = "zcash_note_encryption"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33f84ae538f05a8ac74c82527f06b77045ed9553a0871d9db036166a4c344e3a"
-dependencies = [
- "chacha20",
- "chacha20poly1305",
- "rand_core",
- "subtle",
 ]
 
 [[package]]
@@ -3254,7 +3241,7 @@ dependencies = [
  "subtle",
  "zcash_address",
  "zcash_encoding",
- "zcash_note_encryption 0.1.0 (git+https://github.com/zcash/librustzcash?rev=37fc28634e811fdf8db9274a0080cff17c6b6a09)",
+ "zcash_note_encryption",
 ]
 
 [[package]]
@@ -3359,7 +3346,7 @@ dependencies = [
  "zcash_address",
  "zcash_client_backend",
  "zcash_encoding",
- "zcash_note_encryption 0.1.0 (git+https://github.com/zcash/librustzcash?rev=37fc28634e811fdf8db9274a0080cff17c6b6a09)",
+ "zcash_note_encryption",
  "zcash_primitives",
  "zcash_proofs",
  "zingoconfig",

@@ -9,4 +9,7 @@ members = [
 debug = false
 
 [patch.crates-io]
-bellman = { git = "https://github.com/zingolabs/bellman", rev="c852464b1743d10072ab0521fba939f79da6798e" }
+bellman = { git = "https://github.com/zingolabs/bellman", rev="712337ea591cb89e031b9f203462d32de00bf7ff" }
+zcash_note_encryption = { git = "https://github.com/zcash/librustzcash", rev = "37fc28634e811fdf8db9274a0080cff17c6b6a09" }
+zcash_primitives = { git = "https://github.com/zcash/librustzcash", rev = "37fc28634e811fdf8db9274a0080cff17c6b6a09" }
+orchard = { git = "https://github.com/zcash/orchard", rev = "597f37a869d2d03bb40b8b8108b88fba984b0842" }
