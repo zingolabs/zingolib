@@ -4,8 +4,8 @@ use crate::compact_formats::compact_tx_streamer_server::CompactTxStreamerServer;
 use crate::compact_formats::{
     Address, AddressList, Balance, BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx,
     Duration, Empty, Exclude, GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList,
-    LightdInfo, PingResponse, PriceRequest, PriceResponse, RawTransaction, SendResponse,
-    TransparentAddressBlockFilter, TreeState, TxFilter,
+    LightdInfo, PingResponse, RawTransaction, SendResponse, TransparentAddressBlockFilter,
+    TreeState, TxFilter,
 };
 use crate::wallet::{data::WalletTx, now};
 use futures::{FutureExt, Stream};

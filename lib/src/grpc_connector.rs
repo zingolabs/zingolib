@@ -422,59 +422,6 @@ impl GrpcConnector {
         Ok(response.into_inner())
     }
 
-    pub async fn get_current_zec_price(uri: http::Uri) -> Result<f64, String> {
-        crate::lightclient::get_price_from_gemini()
-            .await
-            .map_err(|e| format!("Error with response: {:?}", e))
-    }
-
-    pub async fn get_historical_zec_prices(
-        uri: http::Uri,
-        transaction_ids: Vec<(TxId, u64)>,
-        currency: String,
-    ) -> Result<HashMap<TxId, Option<f64>>, String> {
-        let client = Arc::new(GrpcConnector::new(uri));
-        let mut client = client
-            .get_client()
-            .await
-            .map_err(|e| format!("Error getting client: {:?}", e))?;
-
-        let mut prices = HashMap::new();
-        let mut error_count: u32 = 0;
-
-        for (transaction_id, ts) in transaction_ids {
-            if error_count < 10 {
-                let r = Request::new(PriceRequest {
-                    timestamp: ts,
-                    currency: currency.clone(),
-                });
-                match client.get_zec_price(r).await {
-                    Ok(response) => {
-                        let price_response = response.into_inner();
-                        prices.insert(transaction_id, Some(price_response.price));
-                    }
-                    Err(e) => {
-                        // If the server doesn't support this, bail
-                        if e.code() == tonic::Code::Unimplemented {
-                            return Err(format!("Unsupported by server"));
-                        }
-
-                        // Ignore other errors, these are probably just for the particular date/time
-                        // and will be retried anyway
-                        warn!("Ignoring grpc error: {}", e);
-                        error_count += 1;
-                        prices.insert(transaction_id, None);
-                    }
-                }
-            } else {
-                // If there are too many errors, don't bother querying the server, just return none
-                prices.insert(transaction_id, None);
-            }
-        }
-
-        Ok(prices)
-    }
-
     // get_latest_block GRPC call
     pub async fn get_latest_block(uri: http::Uri) -> Result<BlockId, String> {
         let client = Arc::new(GrpcConnector::new(uri));

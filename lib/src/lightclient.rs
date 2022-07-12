@@ -96,52 +96,6 @@ async fn get_recent_median_price_from_gemini() -> Result<f64, reqwest::Error> {
     Ok(trades[5])
 }
 
-async fn get_timestamped_price_from_gemini(timestamp: u64) -> Result<f64, reqwest::Error> {
-    Ok(reqwest::get(format!(
-        "https://api.gemini.com/v1/trades/zecusd?limit_trades=1&since_tid={}",
-        timestamp
-    ))
-    .await?
-    .json::<Value>()
-    .await?
-    .as_array()
-    .unwrap()
-    .into_iter()
-    .map(repr_price_as_f64)
-    .collect::<Vec<f64>>()[0])
-}
-
-use std::collections::HashMap;
-async fn get_historical_zec_prices(
-    uri: http::Uri,
-    transaction_ids: Vec<(TxId, u64)>,
-    currency: String,
-) -> Result<HashMap<TxId, Option<f64>>, String> {
-    let mut prices = HashMap::new();
-    let mut error_count: u32 = 0;
-
-    for (transaction_id, ts) in transaction_ids {
-        if error_count < 10 {
-            match get_timestamped_price_from_gemini(ts).await {
-                Ok(price) => {
-                    prices.insert(transaction_id, Some(price));
-                }
-                Err(e) => {
-                    // Ignore other errors, these are probably just for the particular date/time
-                    // and will be retried anyway
-                    warn!("Ignoring reqwest error: {}", e);
-                    error_count += 1;
-                    prices.insert(transaction_id, None);
-                }
-            }
-        } else {
-            // If there are too many errors, don't bother querying the server, just return none
-            prices.insert(transaction_id, None);
-        }
-    }
-
-    Ok(prices)
-}
 impl LightClient {
     /// Method to create a test-only version of the LightClient
     #[allow(dead_code)]
@@ -1280,78 +1234,6 @@ impl LightClient {
         }
     }
 
-    // Update the historical prices in the wallet, if any are present.
-    async fn update_historical_prices(&self) {
-        let price = self.wallet.price.read().await.clone();
-
-        // Gather all transactions that need historical prices
-        let transaction_ids_to_fetch = self
-            .wallet
-            .transactions
-            .read()
-            .await
-            .current
-            .iter()
-            .filter_map(|(transaction_id, wtx)| match wtx.zec_price {
-                None => Some((transaction_id.clone(), wtx.datetime)),
-                Some(_) => None,
-            })
-            .collect::<Vec<(TxId, u64)>>();
-
-        if transaction_ids_to_fetch.is_empty() {
-            return;
-        }
-
-        info!(
-            "Fetching historical prices for {} txids",
-            transaction_ids_to_fetch.len()
-        );
-
-        let retry_count_increase = match GrpcConnector::get_historical_zec_prices(
-            self.get_server_uri(),
-            transaction_ids_to_fetch,
-            price.currency,
-        )
-        .await
-        {
-            Ok(prices) => {
-                let mut any_failed = false;
-
-                for (transaction_id, p) in prices {
-                    match p {
-                        None => any_failed = true,
-                        Some(p) => {
-                            // Update the price
-                            // info!("Historical price at txid {} was {}", txid, p);
-                            self.wallet
-                                .transactions
-                                .write()
-                                .await
-                                .current
-                                .get_mut(&transaction_id)
-                                .unwrap()
-                                .zec_price = Some(p);
-                        }
-                    }
-                }
-
-                // If any of the txids failed, increase the retry_count by 1.
-                if any_failed {
-                    1
-                } else {
-                    0
-                }
-            }
-            Err(_) => 1,
-        };
-
-        {
-            let mut p = self.wallet.price.write().await;
-            p.last_historical_prices_fetched_at = Some(wallet::now());
-            p.historical_prices_retry_count += retry_count_increase;
-        }
-    }
-
     pub async fn do_sync_status(&self) -> SyncStatus {
         self.bsync_data
             .read()
@@ -1760,9 +1642,6 @@ impl LightClient {
             .finish_get_blocks(MAX_REORG)
             .await;
         self.wallet.set_blocks(blocks).await;
-
-        // 2. If sync was successfull, also try to get historical prices
-        self.update_historical_prices().await;
 
         // 3. Mark the sync finished, which will clear the nullifier cache etc...
         bsync_data.read().await.finish().await;
