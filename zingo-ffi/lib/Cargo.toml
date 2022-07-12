@@ -9,6 +9,7 @@ edition = "2021"
 [dependencies]
 jni = { version = "0.10.2", default-features = false }
 zingolib = { git="https://github.com/zingolabs/zingolib", default-features=false, branch = "dev" }
+zingoconfig = { git="https://github.com/zingolabs/zingolib", default-features=false, branch = "dev" }
 lazy_static = "1.4.0"
 android_logger = "0.8.6"
 log = "0.4.8"

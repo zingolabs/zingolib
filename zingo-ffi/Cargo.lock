@@ -2050,6 +2050,7 @@ dependencies = [
  "jni 0.10.2",
  "lazy_static",
  "log",
+ "zingoconfig",
  "zingolib",
 ]
 
