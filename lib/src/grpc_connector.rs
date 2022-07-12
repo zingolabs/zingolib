@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::compact_formats::compact_tx_streamer_client::CompactTxStreamerClient;
@@ -9,7 +8,6 @@ use crate::compact_formats::{
 use futures::future::join_all;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
-use log::warn;
 
 use http_body::combinators::UnsyncBoxBody;
 use hyper::{client::HttpConnector, Uri};

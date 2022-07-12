@@ -7,7 +7,7 @@ use crate::{
     },
     compact_formats::RawTransaction,
     grpc_connector::GrpcConnector,
-    wallet::{self, data::WalletTx, keys::Keys, message::Message, now, LightWallet},
+    wallet::{data::WalletTx, keys::Keys, message::Message, now, LightWallet},
 };
 use futures::future::join_all;
 use json::{array, object, JsonValue};
@@ -33,7 +33,7 @@ use zcash_primitives::{
     block::BlockHash,
     consensus::{BlockHeight, BranchId},
     memo::{Memo, MemoBytes},
-    transaction::{components::amount::DEFAULT_FEE, Transaction, TxId},
+    transaction::{components::amount::DEFAULT_FEE, Transaction},
 };
 use zcash_proofs::prover::LocalTxProver;
 use zingoconfig::{ZingoConfig, MAX_REORG};
