@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use crate::compact_formats::compact_tx_streamer_client::CompactTxStreamerClient;
 use crate::compact_formats::{
-    BlockId, BlockRange, ChainSpec, CompactBlock, Empty, LightdInfo, PriceRequest, PriceResponse,
-    RawTransaction, TransparentAddressBlockFilter, TreeState, TxFilter,
+    BlockId, BlockRange, ChainSpec, CompactBlock, Empty, LightdInfo, RawTransaction,
+    TransparentAddressBlockFilter, TreeState, TxFilter,
 };
 use futures::future::join_all;
 use futures::stream::FuturesUnordered;
@@ -422,20 +422,10 @@ impl GrpcConnector {
         Ok(response.into_inner())
     }
 
-    pub async fn get_current_zec_price(uri: http::Uri) -> Result<PriceResponse, String> {
-        let client = Arc::new(GrpcConnector::new(uri));
-        let mut client = client
-            .get_client()
+    pub async fn get_current_zec_price(uri: http::Uri) -> Result<f64, String> {
+        crate::lightclient::get_price_from_gemini()
             .await
-            .map_err(|e| format!("Error getting client: {:?}", e))?;
-        let request = Request::new(Empty {});
-
-        let response = client
-            .get_current_zec_price(request)
-            .await
-            .map_err(|e| format!("Error with response: {:?}", e))?;
-
-        Ok(response.into_inner())
+            .map_err(|e| format!("Error with response: {:?}", e))
     }
 
     pub async fn get_historical_zec_prices(
