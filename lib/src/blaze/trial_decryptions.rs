@@ -23,7 +23,7 @@ use tokio::{
 };
 use zcash_primitives::{
     consensus::BlockHeight,
-    sapling::{note_encryption::try_sapling_compact_note_decryption, Nullifier, SaplingIvk},
+    sapling::{note_encryption::try_sapling_compact_note_decryption, SaplingIvk},
     transaction::{Transaction, TxId},
 };
 
@@ -256,7 +256,7 @@ impl TrialDecryptions {
                                 let _uri = bsync_data.read().await.uri().clone();
 
                                 // Get the witness for the note
-                                let witness = bsync_data
+                                let _witness = bsync_data
                                     .read()
                                     .await
                                     .block_data
@@ -268,8 +268,8 @@ impl TrialDecryptions {
                                     )
                                     .await?;
 
-                                let transaction_id = WalletTx::new_txid(&compact_transaction.hash);
-                                let nullifier = fvk.ok().map(|fvk| note.nullifier(&fvk));
+                                let _transaction_id = WalletTx::new_txid(&compact_transaction.hash);
+                                let _nullifier = fvk.ok().map(|fvk| note.nullifier(&fvk));
 
                                 Ok(())
                             }));

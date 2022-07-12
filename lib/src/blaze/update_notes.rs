@@ -15,7 +15,6 @@ use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle};
 
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::merkle_tree::Hashable;
-use zcash_primitives::sapling::Nullifier as SaplingNullifier;
 use zcash_primitives::transaction::TxId;
 
 use super::syncdata::BlazeSyncData;
