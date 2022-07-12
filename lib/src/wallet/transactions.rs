@@ -5,7 +5,11 @@ use std::{
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use log::error;
-use orchard::{note::Nullifier as OrchardNullifier, tree::MerkleHashOrchard};
+use orchard::{
+    keys::FullViewingKey as OrchardFullViewingKey,
+    note::{Note as OrchardNote, Nullifier as OrchardNullifier},
+    tree::MerkleHashOrchard,
+};
 use zcash_encoding::Vector;
 use zcash_primitives::{
     consensus::BlockHeight,
@@ -647,6 +651,74 @@ impl WalletTxns {
         have_spending_key: bool,
         witness: IncrementalWitness<SaplingNode>,
     ) {
+        self.add_new_note(
+            txid,
+            height,
+            unconfirmed,
+            timestamp,
+            note,
+            to,
+            extfvk,
+            have_spending_key,
+            witness,
+            |n: &SaplingNote, fvk: &ExtendedFullViewingKey, pos| n.nf(&fvk.fvk.vk, pos),
+            |wtx| &mut wtx.sapling_notes,
+            |addr| *addr.diversifier(),
+        )
+    }
+    pub fn add_new_orchard_note(
+        &mut self,
+        txid: TxId,
+        height: BlockHeight,
+        unconfirmed: bool,
+        timestamp: u64,
+        note: OrchardNote,
+        to: orchard::Address,
+        fvk: &OrchardFullViewingKey,
+        have_spending_key: bool,
+        witness: IncrementalWitness<MerkleHashOrchard>,
+    ) {
+        self.add_new_note(
+            txid,
+            height,
+            unconfirmed,
+            timestamp,
+            note,
+            to,
+            fvk,
+            have_spending_key,
+            witness,
+            |n: &OrchardNote, fvk: &OrchardFullViewingKey, _| n.nullifier(&fvk),
+            |wtx| &mut wtx.orchard_notes,
+            |_addr| todo!("Waiting on librustzcash PR"),
+        )
+    }
+
+    fn add_new_note<
+        Address,
+        NullifierFromNote,
+        WtxNotes,
+        NoteData: super::data::NoteData,
+        AddressDiversifier,
+    >(
+        &mut self,
+        txid: TxId,
+        height: BlockHeight,
+        unconfirmed: bool,
+        timestamp: u64,
+        note: NoteData::Note,
+        to: Address,
+        fvk: &NoteData::Fvk,
+        have_spending_key: bool,
+        witness: IncrementalWitness<NoteData::Node>,
+        nullifier_from_note: NullifierFromNote,
+        wtx_notes: WtxNotes,
+        address_diversifier: AddressDiversifier,
+    ) where
+        NullifierFromNote: Fn(&NoteData::Note, &NoteData::Fvk, u64) -> NoteData::Null,
+        WtxNotes: Fn(&mut WalletTx) -> &mut Vec<NoteData>,
+        AddressDiversifier: Fn(&Address) -> NoteData::Div,
+    {
         // Check if this is a change note
         let is_change = self.total_funds_spent_in(&txid) > 0;
 
@@ -654,43 +726,43 @@ impl WalletTxns {
         // Update the block height, in case this was a mempool or unconfirmed tx.
         wtx.block = height;
 
-        let nullifier = note.nf(&extfvk.fvk.vk, witness.position() as u64);
+        let nullifier = nullifier_from_note(&note, &fvk, witness.position() as u64);
         let witnesses = if have_spending_key {
             WitnessCache::new(vec![witness], u64::from(height))
         } else {
             WitnessCache::empty()
         };
 
-        match wtx
-            .sapling_notes
+        match wtx_notes(wtx)
             .iter_mut()
-            .find(|n| n.nullifier == nullifier)
+            .find(|n| n.nullifier() == nullifier)
         {
             None => {
-                let nd = SaplingNoteData {
-                    extfvk: extfvk.clone(),
-                    diversifier: *to.diversifier(),
+                let nd = NoteData::from_parts(
+                    fvk.clone(),
+                    address_diversifier(&to),
                     note,
                     witnesses,
                     nullifier,
-                    spent: None,
-                    unconfirmed_spent: None,
-                    memo: None,
+                    None,
+                    None,
+                    None,
                     is_change,
                     have_spending_key,
-                };
+                );
 
-                wtx.sapling_notes.push(nd);
+                wtx_notes(wtx).push(nd);
 
                 // Also remove any pending notes.
-                wtx.sapling_notes.retain(|n| n.nullifier.0 != [0u8; 32]);
+                use super::data::ToBytes;
+                wtx_notes(wtx).retain(|n| n.nullifier().to_bytes() != [0u8; 32]);
             }
             Some(n) => {
                 // If this note already exists, then just reset the witnesses, because we'll start scanning the witnesses
                 // again after this.
                 // This is likely to happen if the previous wallet wasn't synced properly or was aborted in the middle of a sync,
                 // and has some dangling witnesses
-                n.witnesses = witnesses;
+                *n.witnesses() = witnesses;
             }
         }
     }

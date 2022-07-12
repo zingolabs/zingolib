@@ -7,6 +7,7 @@ use crate::{
         transactions::WalletTxns,
     },
 };
+use orchard::tree::MerkleHashOrchard;
 use zcash_note_encryption::{Domain, ShieldedOutput, COMPACT_NOTE_SIZE};
 use zingoconfig::{ZingoConfig, MAX_REORG};
 
@@ -24,7 +25,7 @@ use tokio::{
 use zcash_primitives::{
     consensus::{BlockHeight, NetworkUpgrade, Parameters},
     merkle_tree::{CommitmentTree, Hashable, IncrementalWitness},
-    sapling::Node,
+    sapling::Node as SaplingNode,
     transaction::TxId,
 };
 
@@ -237,9 +238,10 @@ impl BlockAndWitnessData {
                     if ct.height == vt.height {
                         return true;
                     }
-                    let mut tree =
-                        CommitmentTree::<Node>::read(&hex::decode(ct.sapling_tree).unwrap()[..])
-                            .unwrap();
+                    let mut tree = CommitmentTree::<SaplingNode>::read(
+                        &hex::decode(ct.sapling_tree).unwrap()[..],
+                    )
+                    .unwrap();
 
                     {
                         let blocks = blocks.read().await;
@@ -257,7 +259,7 @@ impl BlockAndWitnessData {
                             let cb = &blocks.get(i as usize).unwrap().cb();
                             for compact_transaction in &cb.vtx {
                                 for co in &compact_transaction.outputs {
-                                    let node = Node::new(co.cmu().unwrap().into());
+                                    let node = SaplingNode::new(co.cmu().unwrap().into());
                                     tree.append(node).unwrap();
                                 }
                             }
@@ -492,7 +494,7 @@ impl BlockAndWitnessData {
         }
     }
 
-    async fn get_note_witnesses<D, Spend, TreeGetter, OutputsFromTransaction>(
+    async fn get_note_witnesses<D, Spend, TreeGetter, OutputsFromTransaction, Node>(
         &self,
         uri: Uri,
         height: BlockHeight,
@@ -505,6 +507,8 @@ impl BlockAndWitnessData {
     where
         D: Domain,
         Spend: ShieldedOutput<D, COMPACT_NOTE_SIZE>,
+        Node: Hashable + FromCommitment,
+        D::ExtractedCommitmentBytes: Into<[u8; 32]>,
         TreeGetter: Fn(&TreeState) -> &String,
         OutputsFromTransaction: Fn(&CompactTx) -> &Vec<Spend>,
         [u8; 32]: From<<D as Domain>::ExtractedCommitmentBytes>,
@@ -548,7 +552,7 @@ impl BlockAndWitnessData {
                 .iter()
                 .enumerate()
             {
-                let node = Node::new(co.cmstar_bytes().into());
+                let node = Node::from_commitment(&co.cmstar_bytes().into());
                 tree.append(node).unwrap();
                 if t_num == transaction_num && o_num == output_num {
                     return Ok(IncrementalWitness::from_tree(&tree));
@@ -564,7 +568,7 @@ impl BlockAndWitnessData {
         height: BlockHeight,
         transaction_num: usize,
         output_num: usize,
-    ) -> Result<IncrementalWitness<Node>, String> {
+    ) -> Result<IncrementalWitness<SaplingNode>, String> {
         self.get_note_witnesses(
             uri,
             height,
@@ -583,7 +587,7 @@ impl BlockAndWitnessData {
         height: BlockHeight,
         transaction_num: usize,
         action_num: usize,
-    ) -> Result<IncrementalWitness<Node>, String> {
+    ) -> Result<IncrementalWitness<MerkleHashOrchard>, String> {
         self.get_note_witnesses(
             uri,
             height,

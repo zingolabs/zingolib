@@ -200,6 +200,22 @@ pub(crate) trait FromCommitment {
     fn from_commitment(from: &[u8; 32]) -> Self;
 }
 
+pub(crate) trait ToBytes<const N: usize> {
+    fn to_bytes(&self) -> [u8; N];
+}
+
+impl ToBytes<32> for SaplingNullifier {
+    fn to_bytes(&self) -> [u8; 32] {
+        self.0
+    }
+}
+
+impl ToBytes<32> for OrchardNullifier {
+    fn to_bytes(&self) -> [u8; 32] {
+        OrchardNullifier::to_bytes(*self)
+    }
+}
+
 impl FromCommitment for SaplingNode {
     fn from_commitment(from: &[u8; 32]) -> Self {
         Self::new(*from)
@@ -209,6 +225,28 @@ impl FromCommitment for MerkleHashOrchard {
     fn from_commitment(from: &[u8; 32]) -> Self {
         Self::from_bytes(from).unwrap()
     }
+}
+
+pub(crate) trait NoteData {
+    type Fvk: Clone;
+    type Div;
+    type Note;
+    type Node: Hashable;
+    type Null: PartialEq + ToBytes<32>;
+    fn from_parts(
+        extfvk: Self::Fvk,
+        diversifier: Self::Div,
+        note: Self::Note,
+        witnesses: WitnessCache<Self::Node>,
+        nullifier: Self::Null,
+        spent: Option<(TxId, u32)>,
+        unconfirmed_spent: Option<(TxId, u32)>,
+        memo: Option<Memo>,
+        is_change: bool,
+        have_spending_key: bool,
+    ) -> Self;
+    fn nullifier(&self) -> Self::Null;
+    fn witnesses(&mut self) -> &mut WitnessCache<Self::Node>;
 }
 
 pub struct SaplingNoteData {
@@ -255,6 +293,89 @@ pub struct OrchardNoteData {
 
     // If the spending key is available in the wallet (i.e., whether to keep witness up-to-date)
     pub have_spending_key: bool,
+}
+
+impl NoteData for SaplingNoteData {
+    type Fvk = ExtendedFullViewingKey;
+    type Div = SaplingDiversifier;
+    type Note = SaplingNote;
+    type Node = SaplingNode;
+    type Null = SaplingNullifier;
+
+    fn from_parts(
+        extfvk: ExtendedFullViewingKey,
+        diversifier: SaplingDiversifier,
+        note: SaplingNote,
+        witnesses: WitnessCache<SaplingNode>,
+        nullifier: SaplingNullifier,
+        spent: Option<(TxId, u32)>,
+        unconfirmed_spent: Option<(TxId, u32)>,
+        memo: Option<Memo>,
+        is_change: bool,
+        have_spending_key: bool,
+    ) -> Self {
+        Self {
+            extfvk,
+            diversifier,
+            note,
+            witnesses,
+            nullifier,
+            spent,
+            unconfirmed_spent,
+            memo,
+            is_change,
+            have_spending_key,
+        }
+    }
+
+    fn nullifier(&self) -> Self::Null {
+        self.nullifier
+    }
+
+    fn witnesses(&mut self) -> &mut WitnessCache<Self::Node> {
+        &mut self.witnesses
+    }
+}
+
+impl NoteData for OrchardNoteData {
+    type Fvk = orchard::keys::FullViewingKey;
+    type Div = orchard::keys::Diversifier;
+    type Note = OrchardNote;
+    type Node = MerkleHashOrchard;
+    type Null = OrchardNullifier;
+
+    fn from_parts(
+        fvk: Self::Fvk,
+        diversifier: Self::Div,
+        note: Self::Note,
+        witnesses: WitnessCache<Self::Node>,
+        nullifier: Self::Null,
+        spent: Option<(TxId, u32)>,
+        unconfirmed_spent: Option<(TxId, u32)>,
+        memo: Option<Memo>,
+        is_change: bool,
+        have_spending_key: bool,
+    ) -> Self {
+        Self {
+            fvk,
+            diversifier,
+            note,
+            witnesses,
+            nullifier,
+            spent,
+            unconfirmed_spent,
+            memo,
+            is_change,
+            have_spending_key,
+        }
+    }
+
+    fn nullifier(&self) -> Self::Null {
+        self.nullifier
+    }
+    fn witnesses(&mut self) -> &mut WitnessCache<Self::Node> {
+        &mut self.witnesses
+    }
 }
 
 impl std::fmt::Debug for SaplingNoteData {
