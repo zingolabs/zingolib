@@ -1643,6 +1643,10 @@ impl LightClient {
             .await;
         self.wallet.set_blocks(blocks).await;
 
+        // 2. If sync was successfull, also try to get historical prices
+        // self.update_historical_prices().await;
+        // zingolabs considers this to be a serious privacy/secuity leak
+
         // 3. Mark the sync finished, which will clear the nullifier cache etc...
         bsync_data.read().await.finish().await;
 
