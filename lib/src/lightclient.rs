@@ -92,7 +92,6 @@ async fn get_recent_median_price_from_gemini() -> Result<f64, reqwest::Error> {
             .map(repr_price_as_f64)
             .collect();
     trades.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    dbg!(&trades);
     Ok(trades[5])
 }
 
