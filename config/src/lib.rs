@@ -307,86 +307,73 @@ impl std::fmt::Display for Network {
     }
 }
 
+use Network::*;
 impl Parameters for Network {
     fn activation_height(
         &self,
         nu: NetworkUpgrade,
     ) -> Option<zcash_primitives::consensus::BlockHeight> {
-        use Network::*;
         match self {
             Mainnet => MAIN_NETWORK.activation_height(nu),
             Testnet => TEST_NETWORK.activation_height(nu),
-            FakeMainnet => Some(BlockHeight::from_u32(1)),
-            Regtest => Some(BlockHeight::from_u32(1)),
+            FakeMainnet | Regtest => Some(BlockHeight::from_u32(1)),
         }
     }
 
     fn coin_type(&self) -> u32 {
-        use Network::*;
         match self {
+            Mainnet | FakeMainnet => constants::mainnet::COIN_TYPE,
             Testnet => constants::testnet::COIN_TYPE,
             Regtest => constants::regtest::COIN_TYPE,
-            Mainnet => constants::mainnet::COIN_TYPE,
-            FakeMainnet => constants::mainnet::COIN_TYPE,
-        }
-    }
-
-    fn hrp_sapling_extended_spending_key(&self) -> &str {
-        use Network::*;
-        match self {
-            Testnet => constants::testnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
-            Regtest => constants::regtest::HRP_SAPLING_EXTENDED_SPENDING_KEY,
-            Mainnet => constants::mainnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
-            FakeMainnet => constants::mainnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
-        }
-    }
-
-    fn hrp_sapling_extended_full_viewing_key(&self) -> &str {
-        use Network::*;
-        match self {
-            Testnet => constants::testnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
-            Regtest => constants::regtest::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
-            Mainnet => constants::mainnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
-            FakeMainnet => constants::mainnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
-        }
-    }
-
-    fn hrp_sapling_payment_address(&self) -> &str {
-        use Network::*;
-        match self {
-            Testnet => constants::testnet::HRP_SAPLING_PAYMENT_ADDRESS,
-            Regtest => constants::regtest::HRP_SAPLING_PAYMENT_ADDRESS,
-            Mainnet => constants::mainnet::HRP_SAPLING_PAYMENT_ADDRESS,
-            FakeMainnet => constants::mainnet::HRP_SAPLING_PAYMENT_ADDRESS,
-        }
-    }
-
-    fn b58_pubkey_address_prefix(&self) -> [u8; 2] {
-        use Network::*;
-        match self {
-            Testnet => constants::testnet::B58_PUBKEY_ADDRESS_PREFIX,
-            Regtest => constants::regtest::B58_PUBKEY_ADDRESS_PREFIX,
-            Mainnet => constants::mainnet::B58_PUBKEY_ADDRESS_PREFIX,
-            FakeMainnet => constants::mainnet::B58_PUBKEY_ADDRESS_PREFIX,
-        }
-    }
-
-    fn b58_script_address_prefix(&self) -> [u8; 2] {
-        use Network::*;
-        match self {
-            Testnet => constants::testnet::B58_SCRIPT_ADDRESS_PREFIX,
-            Regtest => constants::regtest::B58_SCRIPT_ADDRESS_PREFIX,
-            Mainnet => constants::mainnet::B58_SCRIPT_ADDRESS_PREFIX,
-            FakeMainnet => constants::mainnet::B58_SCRIPT_ADDRESS_PREFIX,
         }
     }
 
     fn address_network(&self) -> Option<zcash_address::Network> {
         Some(match self {
-            Network::Testnet => zcash_address::Network::Test,
-            Network::Regtest => zcash_address::Network::Regtest,
-            _ => zcash_address::Network::Main,
+            Mainnet | FakeMainnet => zcash_address::Network::Main,
+            Testnet => zcash_address::Network::Test,
+            Regtest => zcash_address::Network::Regtest,
         })
+    }
+
+    fn hrp_sapling_extended_spending_key(&self) -> &str {
+        match self {
+            Mainnet | FakeMainnet => constants::mainnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
+            Testnet => constants::testnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
+            Regtest => constants::regtest::HRP_SAPLING_EXTENDED_SPENDING_KEY,
+        }
+    }
+
+    fn hrp_sapling_extended_full_viewing_key(&self) -> &str {
+        match self {
+            Mainnet | FakeMainnet => constants::mainnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
+            Testnet => constants::testnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
+            Regtest => constants::regtest::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
+        }
+    }
+
+    fn hrp_sapling_payment_address(&self) -> &str {
+        match self {
+            Mainnet | FakeMainnet => constants::mainnet::HRP_SAPLING_PAYMENT_ADDRESS,
+            Testnet => constants::testnet::HRP_SAPLING_PAYMENT_ADDRESS,
+            Regtest => constants::regtest::HRP_SAPLING_PAYMENT_ADDRESS,
+        }
+    }
+
+    fn b58_pubkey_address_prefix(&self) -> [u8; 2] {
+        match self {
+            Mainnet | FakeMainnet => constants::mainnet::B58_PUBKEY_ADDRESS_PREFIX,
+            Testnet => constants::testnet::B58_PUBKEY_ADDRESS_PREFIX,
+            Regtest => constants::regtest::B58_PUBKEY_ADDRESS_PREFIX,
+        }
+    }
+
+    fn b58_script_address_prefix(&self) -> [u8; 2] {
+        match self {
+            Mainnet | FakeMainnet => constants::mainnet::B58_SCRIPT_ADDRESS_PREFIX,
+            Testnet => constants::testnet::B58_SCRIPT_ADDRESS_PREFIX,
+            Regtest => constants::regtest::B58_SCRIPT_ADDRESS_PREFIX,
+        }
     }
 }
 
