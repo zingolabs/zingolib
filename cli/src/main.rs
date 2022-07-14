@@ -62,6 +62,10 @@ pub fn main() {
         use std::path::PathBuf;
         use std::process::{Command, Stdio};
         use std::{thread, time};
+        use tokio::fs;
+        use tokio::process;
+        use tokio::signal;
+        use tokio::spawn;
 
         // confirm we are in a git worktree
         let git_check = Command::new("git")
@@ -96,7 +100,7 @@ pub fn main() {
 
         if !std::str::from_utf8(&git_log.stdout)
             .expect("git log stdout error")
-            .contains("d50ce9d618c1a2adc478ffbc3ad281512fbb0c15")
+            .contains("e8677475da2676fcfec57615de6330a7cb542cc1")
         {
             panic!("Zingo-cli's regtest mode must be run within its own git worktree");
         }
@@ -113,7 +117,7 @@ pub fn main() {
         let mut worktree_home = OsString::new();
         worktree_home.push(revparse.trim_end());
 
-        // convert this back into a path for windows compatibile dir building
+        // convert this back into a path for windows compatible dir building
         let bin_location: PathBuf = [
             worktree_home.clone(),
             OsString::from("regtest"),
@@ -121,6 +125,12 @@ pub fn main() {
         ]
         .iter()
         .collect();
+
+        let mut zcashd_bin = bin_location.to_owned();
+        zcashd_bin.push("zcashd");
+
+        let mut lwd_bin = bin_location.to_owned();
+        lwd_bin.push("lightwalletd");
 
         let zcash_confs: PathBuf = [
             worktree_home.clone(),
@@ -156,16 +166,6 @@ pub fn main() {
         ]
         .iter()
         .collect();
-
-        let mut zcashd_bin = bin_location.to_owned();
-        zcashd_bin.push("zcashd");
-
-        // TODO reorg code, look for all needed bins ASAP
-        // check for file. This might be superfluous considering
-        // .expect() attached to the call, below?
-        if !std::path::Path::is_file(zcashd_bin.as_path()) {
-            panic!("can't find zcashd bin! exiting.");
-        }
 
         println!("zcashd datadir: {}", &flagged_datadir);
         println!("zcashd conf file: {}", &flagged_zcashd_conf);
@@ -208,13 +208,6 @@ pub fn main() {
         // Needs a cleanup function, or something.
         println!("zcashd start section completed, zcashd should be running.");
         println!("Standby, lightwalletd is about to start. This should only take a moment.");
-
-        let mut lwd_bin = bin_location.to_owned();
-        lwd_bin.push("lightwalletd");
-
-        if !std::path::Path::is_file(lwd_bin.as_path()) {
-            panic!("can't find lwd bin! exiting.");
-        }
 
         let lwd_confs: PathBuf = [
             worktree_home.clone(),
