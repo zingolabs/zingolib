@@ -14,7 +14,8 @@ This repo provides both a library for zingoproxyclient and zingo-mobile, as well
 ## Privacy
 * While all the keys and transaction detection happens on the client, the server can learn what blocks contain your shielded transactions.
 * The server also learns other metadata about you like your ip address etc...
-* Also remember that t-addresses don't provide any privacy protection.
+* Also remember that t-addresses are publically visible on the blockchain.
+* Price information is retrieved from Gemini exchange.
 
 ### Note Management
 Zingo-CLI does automatic note and utxo management, which means it doesn't allow you to manually select which address to send outgoing transactions from. It follows these principles:

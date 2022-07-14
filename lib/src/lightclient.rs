@@ -689,10 +689,10 @@ impl LightClient {
 
         match price.zec_price {
             None => return "Error: No price".to_string(),
-            Some((ts, p)) => {
+            Some((timestamp, p)) => {
                 let o = object! {
                     "zec_price" => p,
-                    "fetched_at" =>  ts,
+                    "fetched_at" =>  timestamp,
                     "currency" => price.currency
                 };
 
