@@ -260,7 +260,8 @@ struct ZecPriceCommand {}
 impl Command for ZecPriceCommand {
     fn help(&self) -> String {
         let mut h = vec![];
-        h.push("Get the latest ZEC price in the wallet's currency (USD)");
+        h.push("Get the latest ZEC price from Gemini exchange's API.");
+        h.push("Currently using USD.");
         h.push("Usage:");
         h.push("zecprice");
         h.push("");
