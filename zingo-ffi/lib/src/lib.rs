@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use base64::{decode, encode};
 
-use zingolib::lightclient::lightclient_config::LightClientConfig;
+use zingoconfig::ZingoConfig;
 use zingolib::{commands, lightclient::LightClient};
 
 // We'll use a MUTEX to store a global lightclient instance,
@@ -22,8 +22,8 @@ pub fn init_new(
     sapling_spend_b64: String,
     data_dir: String,
 ) -> String {
-    let server = LightClientConfig::get_server_or_default(Some(server_uri));
-    let (mut config, latest_block_height) = match LightClientConfig::create(server) {
+    let server = ZingoConfig::get_server_or_default(Some(server_uri));
+    let (mut config, latest_block_height) = match zingolib::create_on_data_dir(server, None) {
         Ok((c, h)) => (c, h),
         Err(e) => {
             return format!("Error: {}", e);
@@ -70,8 +70,8 @@ pub fn init_from_seed(
     sapling_spend_b64: String,
     data_dir: String,
 ) -> String {
-    let server = LightClientConfig::get_server_or_default(Some(server_uri));
-    let (mut config, _latest_block_height) = match LightClientConfig::create(server) {
+    let server = ZingoConfig::get_server_or_default(Some(server_uri));
+    let (mut config, _latest_block_height) = match zingolib::create_on_data_dir(server, None) {
         Ok((c, h)) => (c, h),
         Err(e) => {
             return format!("Error: {}", e);
@@ -117,8 +117,8 @@ pub fn init_from_b64(
     sapling_spend_b64: String,
     data_dir: String,
 ) -> String {
-    let server = LightClientConfig::get_server_or_default(Some(server_uri));
-    let (mut config, _latest_block_height) = match LightClientConfig::create(server) {
+    let server = ZingoConfig::get_server_or_default(Some(server_uri));
+    let (mut config, _latest_block_height) = match zingolib::create_on_data_dir(server, None) {
         Ok((c, h)) => (c, h),
         Err(e) => {
             return format!("Error: {}", e);
