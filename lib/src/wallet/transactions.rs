@@ -6,7 +6,7 @@ use std::{
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use log::error;
 use orchard::{
-    keys::FullViewingKey as OrchardFullViewingKey,
+    keys::{Diversifier as OrchardDiversifier, FullViewingKey as OrchardFullViewingKey},
     note::{Note as OrchardNote, Nullifier as OrchardNullifier},
     tree::MerkleHashOrchard,
 };
@@ -492,7 +492,7 @@ impl WalletTxns {
 
         // Mark the height correctly, in case this was previously a mempool or unconfirmed tx.
         wtx.block = height;
-
+        // Todo: DRY code
         match nullifier {
             WalletNullifier::Sapling(nullifier) => {
                 if wtx
@@ -523,7 +523,35 @@ impl WalletTxns {
                         });
                 }
             }
-            WalletNullifier::Orchard(_) => todo!(),
+            WalletNullifier::Orchard(nullifier) => {
+                if wtx
+                    .spent_orchard_nullifiers
+                    .iter()
+                    .find(|nf| **nf == nullifier)
+                    .is_none()
+                {
+                    wtx.add_spent_nullifier(WalletNullifier::Orchard(nullifier), value)
+                }
+
+                // Since this Txid has spent some funds, output notes in this Tx that are sent to us are actually change.
+                self.check_notes_mark_change(&txid);
+
+                // Mark the source note's nullifier as spent
+                if !unconfirmed {
+                    let wtx = self
+                        .current
+                        .get_mut(&source_txid)
+                        .expect("Txid should be present");
+
+                    wtx.orchard_notes
+                        .iter_mut()
+                        .find(|n| n.nullifier == nullifier)
+                        .map(|nd| {
+                            // Record the spent height
+                            nd.spent = Some((txid, height.into()));
+                        });
+                }
+            }
         }
     }
 
@@ -713,7 +741,7 @@ impl WalletTxns {
             witness,
             |n: &OrchardNote, fvk: &OrchardFullViewingKey, _| n.nullifier(&fvk),
             |wtx| &mut wtx.orchard_notes,
-            |_addr| todo!("Waiting on librustzcash PR"),
+            |addr| OrchardDiversifier::from_bytes(*addr.diversifier().as_array()),
         )
     }
 
