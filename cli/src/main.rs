@@ -1,5 +1,3 @@
-use std::thread::spawn;
-
 use log::error;
 use zingo_cli::{
     attempt_recover_seed, configure_clapapp, report_permission_error, start_interactive, startup,
@@ -58,7 +56,6 @@ pub fn main() {
     if regtest {
         use std::ffi::OsString;
         use std::fs::File;
-        use std::io;
         use std::path::PathBuf;
         use std::process::{Command, Stdio};
         use std::{thread, time};
@@ -148,7 +145,7 @@ pub fn main() {
         let mut flagged_datadir: String = "--datadir=".to_string();
         flagged_datadir.push_str(zcash_datadir.to_str().expect("error making zcash_datadir"));
 
-        let mut zcash_logs: PathBuf = [
+        let zcash_logs: PathBuf = [
             worktree_home.clone(),
             OsString::from("regtest"),
             OsString::from("logs"),
@@ -263,7 +260,7 @@ pub fn main() {
         unflagged_lwd_log.push_str(lwd_logs.to_str().expect("error making lwd_datadir"));
         unflagged_lwd_log.push_str("lwd.log");
 
-        let lwd_command = Command::new(lwd_bin)
+        Command::new(lwd_bin)
             .args([
                 "--no-tls-very-insecure",
                 "--zcash-conf-path",

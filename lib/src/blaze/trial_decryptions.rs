@@ -221,15 +221,15 @@ impl TrialDecryptions {
                         }
                     }
                 }
-                for (action_num, action) in compact_transaction.actions.iter().enumerate() {
+                for (_action_num, action) in compact_transaction.actions.iter().enumerate() {
                     let action = match CompactAction::try_from(action) {
                         Ok(a) => a,
-                        Err(e) => {
+                        Err(_e) => {
                             todo!("Implement error handling for action parsing")
                         }
                     };
-                    for (i, ivk) in orchard_ivks.iter().cloned().enumerate() {
-                        if let Some((note, recipient)) =
+                    for (_i, ivk) in orchard_ivks.iter().cloned().enumerate() {
+                        if let Some((_note, _recipient)) =
                             zcash_note_encryption::try_compact_note_decryption(
                                 &OrchardDomain::for_nullifier(action.nullifier()),
                                 &ivk,
@@ -238,17 +238,17 @@ impl TrialDecryptions {
                         {
                             let keys = keys.clone();
                             let bsync_data = bsync_data.clone();
-                            let wallet_transactions = wallet_transactions.clone();
-                            let detected_transaction_id_sender =
+                            let _wallet_transactions = wallet_transactions.clone();
+                            let _detected_transaction_id_sender =
                                 detected_transaction_id_sender.clone();
-                            let timestamp = cb.time as u64;
-                            let compact_transaction = compact_transaction.clone();
+                            let _timestamp = cb.time as u64;
+                            let _compact_transaction = compact_transaction.clone();
 
                             workers.push(tokio::spawn(async move {
                                 let keys = keys.read().await;
-                                let have_orchard_spending_key =
+                                let _have_orchard_spending_key =
                                     keys.have_orchard_spending_key(&ivk);
-                                let uri = bsync_data.read().await.uri().clone();
+                                let _uri = bsync_data.read().await.uri().clone();
 
                                 Ok(())
                             }));
