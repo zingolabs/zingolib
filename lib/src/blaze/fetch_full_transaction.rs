@@ -595,15 +595,15 @@ impl FetchFullTxns {
 }
 
 async fn scan_bundle<K, B, D, E>(
-    _config: &ZingoConfig,
+    config: &ZingoConfig,
     transaction: &Transaction,
     height: BlockHeight,
     unconfirmed: bool,
     block_time: u32,
     keys: &Arc<RwLock<Keys>>,
     wallet_transactions: &Arc<RwLock<WalletTxns>>,
-    _is_outgoing_transaction: &mut bool,
-    _outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
+    is_outgoing_transaction: &mut bool,
+    outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
     key_reader: impl Fn(&Keys) -> &Vec<K>,
     transaction_to_bundle: impl Fn(&Transaction) -> Option<&B>,
     key_to_ivk: impl Fn(&K) -> Result<<D as Domain>::IncomingViewingKey, E>,
@@ -613,6 +613,7 @@ async fn scan_bundle<K, B, D, E>(
 ) where
     K: Clone,
     D: Domain,
+    D::Note: Clone,
     B::Output: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE>,
     B::Spend: Spend,
     for<'a> &'a B::Spends: IntoIterator<Item = &'a B::Spend>,
@@ -649,14 +650,25 @@ async fn scan_bundle<K, B, D, E>(
         .into_iter()
         .flat_map(|bundle| bundle.outputs().into_iter())
     {
-        for key in &local_keys {
-            let (_note, _to, memo_bytes) = match key_to_ivk(key).map(|ivk| {
+        for (i, key) in local_keys.iter().enumerate() {
+            let (note, to, memo_bytes) = match key_to_ivk(key).map(|ivk| {
                 try_note_decryption::<D, B::Output>(&output_to_domain(&output), &ivk, &output)
             }) {
                 Ok(Some(ret)) => ret,
                 _ => continue,
             };
             let memo_bytes = MemoBytes::from_bytes(memo_slice(&memo_bytes)).unwrap();
+            // info!("A sapling note was received into the wallet in {}", transaction.txid());
+            if unconfirmed {
+                wallet_transactions.write().await.add_pending_note(
+                    transaction.txid(),
+                    height,
+                    block_time as u64,
+                    note.clone(),
+                    to,
+                    &fvks.get(i).unwrap(),
+                );
+            }
             let memo = memo_bytes
                 .clone()
                 .try_into()

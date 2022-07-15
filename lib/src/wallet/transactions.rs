@@ -24,8 +24,9 @@ use zcash_primitives::{
 
 use zingoconfig::MAX_REORG;
 
-use super::data::{
-    OutgoingTxMetadata, SaplingNoteData, Utxo, WalletNullifier, WalletTx, WitnessCache,
+use super::{
+    data::{OutgoingTxMetadata, SaplingNoteData, Utxo, WalletNullifier, WalletTx, WitnessCache},
+    traits::{DomainWalletExt, DomainWalletExtInner, NoteData},
 };
 
 /// List of all transactions in a wallet.
@@ -648,15 +649,19 @@ impl WalletTxns {
         }
     }
 
-    pub fn add_pending_note(
+    pub fn add_pending_note<D>(
         &mut self,
         txid: TxId,
         height: BlockHeight,
         timestamp: u64,
-        note: SaplingNote,
-        to: PaymentAddress,
-        extfvk: &ExtendedFullViewingKey,
-    ) {
+        note: D::Note,
+        to: D::Recipient,
+        fvk: &D::Fvk,
+    ) where
+        D: DomainWalletExt,
+        D: zcash_note_encryption::Domain<Note = <D::WalletNote as NoteData>::Note>,
+        D::WalletNote: NoteData<Fvk = D::Fvk>,
+    {
         // Check if this is a change note
         let is_change = self.total_funds_spent_in(&txid) > 0;
 
@@ -669,20 +674,23 @@ impl WalletTxns {
         // Update the block height, in case this was a mempool or unconfirmed tx.
         wtx.block = height;
 
-        match wtx.sapling_notes.iter_mut().find(|n| n.note == note) {
+        match D::wallet_notes_mut(wtx)
+            .iter_mut()
+            .find(|n| n.note() == &note)
+        {
             None => {
-                let nd = SaplingNoteData {
-                    extfvk: extfvk.clone(),
-                    diversifier: *to.diversifier(),
+                let nd = D::WalletNote::from_parts(
+                    <D::WalletNote as NoteData>::Fvk::clone(fvk),
+                    *to.diversifier(),
                     note,
-                    witnesses: WitnessCache::empty(),
-                    nullifier: SaplingNullifier { 0: [0u8; 32] },
-                    spent: None,
-                    unconfirmed_spent: None,
-                    memo: None,
+                    WitnessCache::empty(),
+                    SaplingNullifier { 0: [0u8; 32] },
+                    None,
+                    None,
+                    None,
                     is_change,
-                    have_spending_key: false,
-                };
+                    false,
+                );
 
                 wtx.sapling_notes.push(nd);
             }
