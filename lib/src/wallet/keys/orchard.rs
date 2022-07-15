@@ -34,6 +34,7 @@ impl WalletOKey {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub(crate) enum WalletOKeyInner {
     HdKey(SpendingKey),

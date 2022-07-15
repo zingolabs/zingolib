@@ -145,6 +145,7 @@ impl Keys {
     pub(crate) fn okeys(&self) -> &Vec<WalletOKey> {
         &self.okeys
     }
+    #[allow(dead_code)]
     pub(crate) fn tkeys(&self) -> &Vec<WalletTKey> {
         &self.tkeys
     }
@@ -154,6 +155,7 @@ impl Keys {
     pub(crate) fn okeys_mut(&mut self) -> &mut Vec<WalletOKey> {
         &mut self.okeys
     }
+    #[allow(dead_code)]
     pub(crate) fn tkeys_mut(&mut self) -> &mut Vec<WalletTKey> {
         &mut self.tkeys
     }
