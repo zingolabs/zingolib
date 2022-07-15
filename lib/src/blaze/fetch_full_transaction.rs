@@ -1,6 +1,7 @@
 use crate::wallet::{
-    data::OutgoingTxMetadata,
-    keys::{Keys, ToBase58Check},
+    data::{OutgoingTxMetadata, WalletNullifier},
+    keys::{orchard::WalletOKey, Keys, ToBase58Check},
+    traits::{Bundle, Spend},
     transactions::WalletTxns,
 };
 
@@ -578,47 +579,80 @@ impl FetchFullTxns {
             is_outgoing_transaction,
             outgoing_metadatas,
             Keys::okeys,
-            |t: &Transaction| t.orchard_bundle(),
-            orchard::Bundle::actions,
-            |key| OrchardIvk::try_from(&key.key),
+            |t: &Transaction| -> Option<_> { t.orchard_bundle() },
+            |key: &WalletOKey| OrchardIvk::try_from(&key.key),
             OrchardDomain::for_action,
             <[u8; 512]>::as_slice,
+            |txns| {
+                txns.get_unspent_orchard_nullifiers()
+                    .into_iter()
+                    .map(|(null, val, txid)| (null, val.inner(), txid))
+                    .collect()
+            },
         )
         .await;
     }
 }
 
-async fn scan_bundle<K, B, L, O, D, E>(
+async fn scan_bundle<K, B, D, E>(
     _config: &ZingoConfig,
     transaction: &Transaction,
-    _height: BlockHeight,
-    _unconfirmed: bool,
-    _block_time: u32,
+    height: BlockHeight,
+    unconfirmed: bool,
+    block_time: u32,
     keys: &Arc<RwLock<Keys>>,
-    _wallet_transactions: &Arc<RwLock<WalletTxns>>,
+    wallet_transactions: &Arc<RwLock<WalletTxns>>,
     _is_outgoing_transaction: &mut bool,
     _outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
     key_reader: impl Fn(&Keys) -> &Vec<K>,
     transaction_to_bundle: impl Fn(&Transaction) -> Option<&B>,
-    bundle_to_output: impl Fn(&B) -> &L,
     key_to_ivk: impl Fn(&K) -> Result<<D as Domain>::IncomingViewingKey, E>,
-    output_to_domain: impl Fn(&O) -> D,
+    output_to_domain: impl Fn(&B::Output) -> D,
     memo_slice: impl Fn(&D::Memo) -> &[u8],
+    get_unspent_nullifiers: impl Fn(&WalletTxns) -> Vec<(<B::Spend as Spend>::Nullifier, u64, TxId)>,
 ) where
     K: Clone,
-    for<'a> &'a L: IntoIterator<Item = &'a O>,
     D: Domain,
-    O: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE>,
+    B::Output: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE>,
+    B::Spend: Spend,
+    for<'a> &'a B::Spends: IntoIterator<Item = &'a B::Spend>,
+    for<'a> &'a B::Outputs: IntoIterator<Item = &'a B::Output>,
+    <B::Spend as Spend>::Nullifier: PartialEq,
+    B: Bundle,
 {
+    // Check if any of the nullifiers spent in this transaction are ours. We only need this for unconfirmed transactions,
+    // because for transactions in the block, we will check the nullifiers from the blockdata
+    if unconfirmed {
+        let unspent_nullifiers = get_unspent_nullifiers(&*wallet_transactions.read().await);
+        for output in transaction_to_bundle(transaction)
+            .into_iter()
+            .flat_map(|bundle| bundle.spends().into_iter())
+        {
+            if let Some((nf, value, transaction_id)) = unspent_nullifiers
+                .iter()
+                .find(|(nf, _, _)| nf == output.nullifier())
+            {
+                wallet_transactions.write().await.add_new_spent(
+                    transaction.txid(),
+                    height,
+                    unconfirmed,
+                    block_time,
+                    B::Spend::wallet_nullifier(nf),
+                    *value,
+                    *transaction_id,
+                );
+            }
+        }
+    }
     let local_keys = key_reader(&*keys.read().await).clone();
     for output in transaction_to_bundle(transaction)
         .into_iter()
-        .flat_map(|bundle| bundle_to_output(bundle))
+        .flat_map(|bundle| bundle.outputs().into_iter())
     {
         for key in &local_keys {
-            let (_note, _to, memo_bytes) = match key_to_ivk(key)
-                .map(|ivk| try_note_decryption(&output_to_domain(&output), &ivk, output))
-            {
+            let (_note, _to, memo_bytes) = match key_to_ivk(key).map(|ivk| {
+                try_note_decryption::<D, B::Output>(&output_to_domain(&output), &ivk, &output)
+            }) {
                 Ok(Some(ret)) => ret,
                 _ => continue,
             };

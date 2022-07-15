@@ -749,7 +749,7 @@ impl WalletTxns {
         Address,
         NullifierFromNote,
         WtxNotes,
-        NoteData: super::data::NoteData,
+        NoteData: super::traits::NoteData,
         AddressDiversifier,
     >(
         &mut self,
@@ -810,7 +810,7 @@ impl WalletTxns {
                 wtx_notes(wtx).push(nd);
 
                 // Also remove any pending notes.
-                use super::data::ToBytes;
+                use super::traits::ToBytes;
                 wtx_notes(wtx).retain(|n| n.nullifier().to_bytes() != [0u8; 32]);
             }
             Some(n) => {

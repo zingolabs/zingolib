@@ -59,6 +59,7 @@ zcash_proofs = { git = "https://github.com/zingolabs/librustzcash", rev = "e5484
 zcash_encoding = { git = "https://github.com/zingolabs/librustzcash", rev = "e5484c96445dbff38cfb4a6e0983ade1bc0d7656"}
 zcash_note_encryption = { git = "https://github.com/zingolabs/librustzcash", rev = "e5484c96445dbff38cfb4a6e0983ade1bc0d7656", features = ["pre-zip-212"]}
 zingoconfig = { path = "../config" }
+nonempty = "0.7.0"
 
 [dev-dependencies]
 portpicker = "0.1.0"

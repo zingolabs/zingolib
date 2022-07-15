@@ -49,6 +49,7 @@ use zingoconfig::ZingoConfig;
 pub(crate) mod data;
 pub(crate) mod keys;
 pub(crate) mod message;
+pub(crate) mod traits;
 pub(crate) mod transactions;
 pub(crate) mod utils;
 
