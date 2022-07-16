@@ -1,6 +1,6 @@
 ## Regtest Mode
 WARNING Experimental!
-The CLI can work in regtest mode, by locally running a `zcashd` and `lightwalletd`.
+The CLI can work in regtest mode, by running a local `lightwalletd` that proxies to a local `zcashd` in "regtest mode".
 This is now working with a simple zingo-cli invocation flag, with a little prior setup.
 
 There are pre-made directories in this repo to support ready use of regtest mode. These are found in the `/regtest/` subdirectory.
@@ -10,8 +10,8 @@ Copy your compiled `zcashd` `zcash-cli` and `lightwalletd` binaries to `zingolib
 
 There are default config files for these binaries already in place in `/zingolib/regtest/conf/` - which can be edited also.
 
-From your `zingolib/` directory, with, for example, a release build (`cargo build --release`), you can run:
-`./target/release/zingo-cli --regtest --data-dir regtest/datadir/zingo --server=127.0.0.1:9067`
+From your `zingolib/` directory, with, for example, a build (`cargo build`), you can run:
+`./target/debug/zingo-cli --regtest --data-dir regtest/datadir/zingo --server=127.0.0.1:9067`
 This will start `zcashd` and `lightwalletd` and then connect to these tools with an interactive `zingo-cli`.
 It currently takes about 15 seconds to do so, to give the daemons time to boot, but this will be shortened soon.
 
