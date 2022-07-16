@@ -8,8 +8,7 @@ use zingoconfig::ZingoConfig;
 pub fn main() {
     // Get command line arguments
     use clap::{App, Arg};
-    let fresh_app = App::new("Zingo CLI");
-    let configured_app = configure_clapapp!(fresh_app);
+    let configured_app = configure_clapapp!(App::new("Zingo CLI"));
     let matches = configured_app.get_matches();
 
     if matches.is_present("recover") {
