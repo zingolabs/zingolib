@@ -24,9 +24,11 @@ use zcash_primitives::{
 
 use zingoconfig::MAX_REORG;
 
+use crate::wallet::traits::FromBytes;
+
 use super::{
-    data::{OutgoingTxMetadata, SaplingNoteData, Utxo, WalletNullifier, WalletTx, WitnessCache},
-    traits::{DomainWalletExt, DomainWalletExtInner, NoteData},
+    data::{OutgoingTxMetadata, Utxo, WalletNullifier, WalletTx, WitnessCache},
+    traits::{DomainWalletExt, NoteData, Recipient},
 };
 
 /// List of all transactions in a wallet.
@@ -649,7 +651,7 @@ impl WalletTxns {
         }
     }
 
-    pub fn add_pending_note<D>(
+    pub(crate) fn add_pending_note<D>(
         &mut self,
         txid: TxId,
         height: BlockHeight,
@@ -660,6 +662,7 @@ impl WalletTxns {
     ) where
         D: DomainWalletExt,
         D: zcash_note_encryption::Domain<Note = <D::WalletNote as NoteData>::Note>,
+        D::Recipient: Recipient<Diversifier = <D::WalletNote as NoteData>::Div>,
         D::WalletNote: NoteData<Fvk = D::Fvk>,
     {
         // Check if this is a change note
@@ -681,10 +684,10 @@ impl WalletTxns {
             None => {
                 let nd = D::WalletNote::from_parts(
                     <D::WalletNote as NoteData>::Fvk::clone(fvk),
-                    *to.diversifier(),
+                    to.diversifier(),
                     note,
                     WitnessCache::empty(),
-                    SaplingNullifier { 0: [0u8; 32] },
+                    <D::WalletNote as NoteData>::Null::from_bytes([0u8; 32]),
                     None,
                     None,
                     None,
@@ -692,7 +695,7 @@ impl WalletTxns {
                     false,
                 );
 
-                wtx.sapling_notes.push(nd);
+                D::WalletNote::wtx_notes_mut(wtx).push(nd);
             }
             Some(_) => {}
         }

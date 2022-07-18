@@ -1,13 +1,16 @@
 use crate::wallet::{
-    data::{OutgoingTxMetadata, WalletNullifier},
+    data::OutgoingTxMetadata,
     keys::{orchard::WalletOKey, Keys, ToBase58Check},
-    traits::{Bundle, Spend},
+    traits::{Bundle, DomainWalletExt, NoteData, Recipient, Spend},
     transactions::WalletTxns,
 };
 
 use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
 use log::info;
-use orchard::{keys::IncomingViewingKey as OrchardIvk, note_encryption::OrchardDomain};
+use orchard::{
+    keys::{FullViewingKey as OrchardFvk, IncomingViewingKey as OrchardIvk},
+    note_encryption::OrchardDomain,
+};
 use std::{
     collections::HashSet,
     convert::{TryFrom, TryInto},
@@ -31,7 +34,9 @@ use zcash_primitives::{
     consensus::BlockHeight,
     legacy::TransparentAddress,
     memo::{Memo, MemoBytes},
-    sapling::note_encryption::{try_sapling_note_decryption, try_sapling_output_recovery},
+    sapling::note_encryption::{
+        try_sapling_note_decryption, try_sapling_output_recovery, SaplingDomain,
+    },
     transaction::{Transaction, TxId},
 };
 
@@ -487,14 +492,17 @@ impl FetchFullTxns {
 
                     // info!("A sapling note was received into the wallet in {}", transaction.txid());
                     if unconfirmed {
-                        wallet_transactions.write().await.add_pending_note(
-                            transaction.txid(),
-                            height,
-                            block_time as u64,
-                            note.clone(),
-                            to,
-                            &extfvks.get(i).unwrap(),
-                        );
+                        wallet_transactions
+                            .write()
+                            .await
+                            .add_pending_note::<SaplingDomain<zingoconfig::Network>>(
+                                transaction.txid(),
+                                height,
+                                block_time as u64,
+                                note.clone(),
+                                to,
+                                &extfvks.get(i).unwrap(),
+                            );
                     }
 
                     let memo = memo_bytes
@@ -580,6 +588,7 @@ impl FetchFullTxns {
             outgoing_metadatas,
             Keys::okeys,
             |t: &Transaction| -> Option<_> { t.orchard_bundle() },
+            |key: &WalletOKey| OrchardFvk::try_from(&key.key),
             |key: &WalletOKey| OrchardIvk::try_from(&key.key),
             OrchardDomain::for_action,
             <[u8; 512]>::as_slice,
@@ -606,14 +615,18 @@ async fn scan_bundle<K, B, D, E>(
     outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
     key_reader: impl Fn(&Keys) -> &Vec<K>,
     transaction_to_bundle: impl Fn(&Transaction) -> Option<&B>,
+    key_to_fvk: impl Fn(&K) -> Result<<D as DomainWalletExt>::Fvk, E>,
     key_to_ivk: impl Fn(&K) -> Result<<D as Domain>::IncomingViewingKey, E>,
     output_to_domain: impl Fn(&B::Output) -> D,
     memo_slice: impl Fn(&D::Memo) -> &[u8],
     get_unspent_nullifiers: impl Fn(&WalletTxns) -> Vec<(<B::Spend as Spend>::Nullifier, u64, TxId)>,
 ) where
     K: Clone,
-    D: Domain,
+    D: DomainWalletExt,
+    D: Domain<Note = <<D as DomainWalletExt>::WalletNote as NoteData>::Note>,
+    D: DomainWalletExt<Fvk = <<D as DomainWalletExt>::WalletNote as NoteData>::Fvk>,
     D::Note: Clone,
+    D::Recipient: Recipient<Diversifier = <<D as DomainWalletExt>::WalletNote as NoteData>::Div>,
     B::Output: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE>,
     B::Spend: Spend,
     for<'a> &'a B::Spends: IntoIterator<Item = &'a B::Spend>,
@@ -658,15 +671,17 @@ async fn scan_bundle<K, B, D, E>(
                 _ => continue,
             };
             let memo_bytes = MemoBytes::from_bytes(memo_slice(&memo_bytes)).unwrap();
-            // info!("A sapling note was received into the wallet in {}", transaction.txid());
             if unconfirmed {
-                wallet_transactions.write().await.add_pending_note(
+                wallet_transactions.write().await.add_pending_note::<D>(
                     transaction.txid(),
                     height,
                     block_time as u64,
                     note.clone(),
                     to,
-                    &fvks.get(i).unwrap(),
+                    &match key_to_fvk(&local_keys.get(i).unwrap()) {
+                        Ok(k) => k,
+                        Err(_) => continue,
+                    },
                 );
             }
             let memo = memo_bytes
