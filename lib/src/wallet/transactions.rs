@@ -229,34 +229,42 @@ impl WalletTxns {
                 // Fetch notes that are before the before_block.
                 wtx.sapling_notes
                     .iter()
-                    .filter_map(move |snd| {
+                    .filter_map(move |sapling_note_description| {
                         if wtx.block <= before_block
-                            && snd.have_spending_key
-                            && snd.witnesses.len() > 0
-                            && snd.spent.is_none()
+                            && sapling_note_description.have_spending_key
+                            && sapling_note_description.witnesses.len() > 0
+                            && sapling_note_description.spent.is_none()
                         {
                             Some((
                                 txid.clone(),
-                                WalletNullifier::Sapling(snd.nullifier.clone()),
+                                WalletNullifier::Sapling(
+                                    sapling_note_description.nullifier.clone(),
+                                ),
                             ))
                         } else {
                             None
                         }
                     })
-                    .chain(wtx.orchard_notes.iter().filter_map(move |ond| {
-                        if wtx.block <= before_block
-                            && ond.have_spending_key
-                            && ond.witnesses.len() > 0
-                            && ond.spent.is_none()
-                        {
-                            Some((
-                                txid.clone(),
-                                WalletNullifier::Orchard(ond.nullifier.clone()),
-                            ))
-                        } else {
-                            None
-                        }
-                    }))
+                    .chain(
+                        wtx.orchard_notes
+                            .iter()
+                            .filter_map(move |orchard_note_description| {
+                                if wtx.block <= before_block
+                                    && orchard_note_description.have_spending_key
+                                    && orchard_note_description.witnesses.len() > 0
+                                    && orchard_note_description.spent.is_none()
+                                {
+                                    Some((
+                                        txid.clone(),
+                                        WalletNullifier::Orchard(
+                                            orchard_note_description.nullifier.clone(),
+                                        ),
+                                    ))
+                                } else {
+                                    None
+                                }
+                            }),
+                    )
             })
             .collect()
     }
