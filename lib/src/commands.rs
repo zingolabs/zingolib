@@ -1341,6 +1341,33 @@ impl Command for QuitCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
+        // before shutting itself down, shut down all child processes..
+        // ...but only if the network being used is regtest.
+        let o = RT.block_on(async move { lightclient.do_info().await });
+        if o.contains("\"chain_name\": \"regtest\",") {
+            use std::process::Command;
+            let pid: u32 = std::process::id();
+            println!("ending pid:{}", pid);
+            let raw_child_processes = Command::new("ps")
+                .args(["--no-headers", "--ppid", &pid.to_string()])
+                .output()
+                .expect("error running ps");
+
+            let owned_child_processes: String = String::from_utf8(raw_child_processes.stdout)
+                .expect("error unwraping stdout of ps");
+            let child_processes = owned_child_processes.split("\n").collect::<Vec<&str>>();
+
+            let mut spawned_pids: Vec<u32> = Vec::new();
+            for child in child_processes {
+                println!("child: {}", &child);
+                if !child.is_empty() {
+                    let ch: Vec<&str> = child.trim_start().split_whitespace().collect();
+                    println!("ch: {}", &ch[0]);
+                    spawned_pids
+                        .push(u32::from_str_radix(ch[0], 10).expect("error with from_str_radix"));
+                }
+            }
+        }
         RT.block_on(async move {
             match lightclient.do_save().await {
                 Ok(_) => "".to_string(),

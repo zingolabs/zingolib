@@ -67,6 +67,9 @@ pub fn main() {
         use tokio::signal;
         use tokio::spawn;
 
+        let pid: u32 = std::process::id();
+        println!("starting PID: {}", pid);
+
         // confirm we are in a git worktree
         let git_check = Command::new("git")
             .arg("--help")
