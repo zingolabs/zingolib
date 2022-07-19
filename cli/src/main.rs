@@ -59,10 +59,6 @@ pub fn main() {
         use std::path::PathBuf;
         use std::process::{Command, Stdio};
         use std::{thread, time};
-        use tokio::fs;
-        use tokio::process;
-        use tokio::signal;
-        use tokio::spawn;
 
         let pid: u32 = std::process::id();
         println!("starting PID: {}", pid);
