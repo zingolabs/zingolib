@@ -1349,7 +1349,6 @@ impl Command for QuitCommand {
 
             // find zingo-cli's PID
             let pid: u32 = std::process::id();
-            println!("ending pid: {}", pid);
 
             // now find all child processes of this PID
             let raw_child_processes = Command::new("ps")
@@ -1365,10 +1364,8 @@ impl Command for QuitCommand {
             let mut spawned_pids: Vec<&str> = Vec::new();
 
             for child in child_processes {
-                println!("child: {}", &child);
                 if !child.is_empty() {
                     let ch: Vec<&str> = child.trim_start().split_whitespace().collect();
-                    println!("ch[0]: {}", &ch[0]);
                     spawned_pids.push(ch[0]);
                 }
             }
