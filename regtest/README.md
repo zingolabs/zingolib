@@ -15,7 +15,7 @@ For example, from your `zingolib/` directory, with a binary produced from `cargo
 This will start `zcashd` and `lightwalletd` and then connect to these tools with an interactive `zingo-cli`.
 It currently takes about 15 seconds to do so, to give the daemons time to boot, but this will be shortened soon.
 
-Also, please note that right now these daemons will still be running when `zingo-cli` shuts down!
+These daemons will be killed when the user exits `zingo-cli` using the `quit` command.
 
 You should see several diagnostic messsages, and then:
 `regtest detected and network set correctly!

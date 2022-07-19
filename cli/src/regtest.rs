@@ -58,7 +58,6 @@ pub(crate) fn launch() {
     let mut worktree_home = OsString::new();
     worktree_home.push(revparse.trim_end());
 
-    // convert this back into a path for windows compatible dir building
     let bin_location: PathBuf = [
         worktree_home.clone(),
         OsString::from("regtest"),
@@ -120,13 +119,11 @@ pub(crate) fn launch() {
             //debug=1 will at least print to stdout
             "-debug=1",
         ])
-        // piping stdout off...
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .expect("failed to start zcashd");
 
-    // ... to ... here
     if let Some(mut zcashd_log) = zcashd_command.stdout.take() {
         std::thread::spawn(move || {
             let mut zcashd_stdout_log: String = String::new();
@@ -145,8 +142,6 @@ pub(crate) fn launch() {
     let ten_seconds = time::Duration::from_millis(10_000);
     thread::sleep(ten_seconds);
 
-    // TODO this process does not shut down when rust client shuts down!
-    // Needs a cleanup function, or something.
     println!("zcashd start section completed, zcashd should be running.");
     println!("Standby, lightwalletd is about to start. This should only take a moment.");
 
@@ -209,7 +204,7 @@ pub(crate) fn launch() {
             "--log-file",
             &unflagged_lwd_log,
         ])
-        // this will print stdout of lwd process' output also to the zingo-cli stdout
+        // this currently prints stdout of lwd process' output also to the zingo-cli stdout
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .spawn()
@@ -226,8 +221,6 @@ pub(crate) fn launch() {
     let five_seconds = time::Duration::from_millis(5_000);
     thread::sleep(five_seconds);
 
-    // this process does not shut down when rust client shuts down!
-    // TODO Needs a cleanup function, or something.
     println!("lwd start section completed, lightwalletd should be running!");
     println!("Standby, Zingo-cli should be running in regtest mode momentarily...");
 }
