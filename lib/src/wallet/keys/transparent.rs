@@ -24,7 +24,7 @@ pub enum WalletTKeyType {
 }
 
 #[derive(Debug, Clone)]
-pub struct WalletTKey {
+pub struct TransparentKey {
     pub(super) keytype: WalletTKeyType,
     locked: bool,
     pub(super) key: Option<secp256k1::SecretKey>,
@@ -38,7 +38,7 @@ pub struct WalletTKey {
     nonce: Option<Vec<u8>>,
 }
 
-impl WalletTKey {
+impl TransparentKey {
     pub fn get_taddr_from_bip39seed(
         config: &ZingoConfig,
         bip39_seed: &[u8],
@@ -75,7 +75,7 @@ impl WalletTKey {
     }
 
     pub fn from_raw(sk: &secp256k1::SecretKey, taddr: &String, num: u32) -> Self {
-        WalletTKey {
+        TransparentKey {
             keytype: WalletTKeyType::HdKey,
             key: Some(sk.clone()),
             address: taddr.clone(),
@@ -102,7 +102,7 @@ impl WalletTKey {
             SecretKey::from_slice(&bytes).map_err(|e| io::Error::new(ErrorKind::InvalidData, e))?;
         let address = Self::address_from_prefix_sk(&config.base58_pubkey_address(), &key);
 
-        Ok(WalletTKey {
+        Ok(TransparentKey {
             keytype: WalletTKeyType::ImportedKey,
             key: Some(key),
             address,
@@ -119,7 +119,7 @@ impl WalletTKey {
         let sk = Self::get_taddr_from_bip39seed(&config, bip39_seed, pos);
         let address = Self::address_from_prefix_sk(&config.base58_pubkey_address(), &sk);
 
-        WalletTKey {
+        TransparentKey {
             keytype: WalletTKeyType::HdKey,
             key: Some(sk),
             address,
@@ -142,7 +142,7 @@ impl WalletTKey {
 
     #[cfg(test)]
     pub fn empty(ta: &String) -> Self {
-        WalletTKey {
+        TransparentKey {
             keytype: WalletTKeyType::HdKey,
             key: None,
             address: ta.clone(),
@@ -197,7 +197,7 @@ impl WalletTKey {
         let enc_key = Optional::read(&mut inp, |r| Vector::read(r, |r| r.read_u8()))?;
         let nonce = Optional::read(&mut inp, |r| Vector::read(r, |r| r.read_u8()))?;
 
-        Ok(WalletTKey {
+        Ok(TransparentKey {
             keytype,
             locked,
             key,
@@ -355,7 +355,7 @@ mod test {
     use rand::{rngs::OsRng, Rng};
     use secp256k1::SecretKey;
 
-    use super::WalletTKey;
+    use super::TransparentKey;
     use zingoconfig::ZingoConfig;
 
     #[test]
@@ -368,15 +368,16 @@ mod test {
             // Gen random key
             OsRng.fill(&mut b);
             let sk = SecretKey::from_slice(&b).unwrap();
-            let address = WalletTKey::address_from_prefix_sk(&config.base58_pubkey_address(), &sk);
-            let wtk = WalletTKey::from_raw(&sk, &address, 0);
+            let address =
+                TransparentKey::address_from_prefix_sk(&config.base58_pubkey_address(), &sk);
+            let wtk = TransparentKey::from_raw(&sk, &address, 0);
 
             // export private key
             let sks = wtk.sk_as_string(&config).unwrap();
             // println!("key:{}", sks);
 
             // Import it back
-            let wtk2 = WalletTKey::from_sk_string(&config, sks).unwrap();
+            let wtk2 = TransparentKey::from_sk_string(&config, sks).unwrap();
 
             // Make sure they're the same
             assert_eq!(wtk.address, wtk2.address);

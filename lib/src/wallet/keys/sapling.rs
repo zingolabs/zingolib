@@ -23,7 +23,7 @@ pub enum WalletZKeyType {
 
 // A struct that holds z-address private keys or view keys
 #[derive(Clone, Debug, PartialEq)]
-pub struct WalletZKey {
+pub struct SaplingKey {
     pub(crate) keytype: WalletZKeyType,
     locked: bool,
     pub(crate) extsk: Option<ExtendedSpendingKey>,
@@ -38,12 +38,12 @@ pub struct WalletZKey {
     nonce: Option<Vec<u8>>,
 }
 
-impl WalletZKey {
+impl SaplingKey {
     pub fn new_hdkey(hdkey_num: u32, extsk: ExtendedSpendingKey) -> Self {
         let extfvk = ExtendedFullViewingKey::from(&extsk);
         let zaddress = extfvk.default_address().1;
 
-        WalletZKey {
+        SaplingKey {
             keytype: WalletZKeyType::HdKey,
             locked: false,
             extsk: Some(extsk),
@@ -58,7 +58,7 @@ impl WalletZKey {
     pub fn new_locked_hdkey(hdkey_num: u32, extfvk: ExtendedFullViewingKey) -> Self {
         let zaddress = extfvk.default_address().1;
 
-        WalletZKey {
+        SaplingKey {
             keytype: WalletZKeyType::HdKey,
             locked: true,
             extsk: None,
@@ -74,7 +74,7 @@ impl WalletZKey {
         let extfvk = ExtendedFullViewingKey::from(&extsk);
         let zaddress = extfvk.default_address().1;
 
-        WalletZKey {
+        SaplingKey {
             keytype: WalletZKeyType::ImportedSpendingKey,
             locked: false,
             extsk: Some(extsk),
@@ -89,7 +89,7 @@ impl WalletZKey {
     pub fn new_imported_viewkey(extfvk: ExtendedFullViewingKey) -> Self {
         let zaddress = extfvk.default_address().1;
 
-        WalletZKey {
+        SaplingKey {
             keytype: WalletZKeyType::ImportedViewKey,
             locked: false,
             extsk: None,
@@ -138,7 +138,7 @@ impl WalletZKey {
         let enc_key = Optional::read(&mut inp, |r| Vector::read(r, |r| r.read_u8()))?;
         let nonce = Optional::read(&mut inp, |r| Vector::read(r, |r| r.read_u8()))?;
 
-        Ok(WalletZKey {
+        Ok(SaplingKey {
             keytype,
             locked,
             extsk,
@@ -317,7 +317,7 @@ impl WalletZKey {
         }
     }
 }
-impl crate::wallet::WalletKey for WalletZKey {
+impl crate::wallet::WalletKey for SaplingKey {
     type Address = PaymentAddress;
     type SpendKey = ExtendedSpendingKey;
     fn address(&self) -> Self::Address {
@@ -338,7 +338,7 @@ pub mod tests {
         decode_extended_full_viewing_key, decode_extended_spending_key, encode_payment_address,
     };
 
-    use super::WalletZKey;
+    use super::SaplingKey;
     use zingoconfig::ZingoConfig;
 
     fn get_config() -> ZingoConfig {
@@ -361,7 +361,7 @@ pub mod tests {
         let esk = decode_extended_spending_key(config.hrp_sapling_private_key(), privkey)
             .unwrap()
             .unwrap();
-        let wzk = WalletZKey::new_imported_sk(esk);
+        let wzk = SaplingKey::new_imported_sk(esk);
         assert_eq!(
             encode_payment_address(config.hrp_sapling_address(), &wzk.zaddress),
             "zs1fxgluwznkzm52ux7jkf4st5znwzqay8zyz4cydnyegt2rh9uhr9458z0nk62fdsssx0cqhy6lyv"
@@ -372,7 +372,7 @@ pub mod tests {
         // Serialize
         wzk.write(&mut v).unwrap();
         // Read it right back
-        let wzk2 = WalletZKey::read(&v[..]).unwrap();
+        let wzk2 = SaplingKey::read(&v[..]).unwrap();
 
         {
             assert_eq!(wzk, wzk2);
@@ -392,7 +392,7 @@ pub mod tests {
         let esk = decode_extended_spending_key(config.hrp_sapling_private_key(), privkey)
             .unwrap()
             .unwrap();
-        let mut wzk = WalletZKey::new_imported_sk(esk);
+        let mut wzk = SaplingKey::new_imported_sk(esk);
         assert_eq!(
             encode_payment_address(config.hrp_sapling_address(), &wzk.zaddress),
             "zs1fxgluwznkzm52ux7jkf4st5znwzqay8zyz4cydnyegt2rh9uhr9458z0nk62fdsssx0cqhy6lyv"
@@ -448,7 +448,7 @@ pub mod tests {
         let extfvk = decode_extended_full_viewing_key(config.hrp_sapling_viewing_key(), viewkey)
             .unwrap()
             .unwrap();
-        let mut wzk = WalletZKey::new_imported_viewkey(extfvk);
+        let mut wzk = SaplingKey::new_imported_viewkey(extfvk);
 
         assert_eq!(
             encode_payment_address(config.hrp_sapling_address(), &wzk.zaddress),

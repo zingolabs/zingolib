@@ -2,7 +2,7 @@ use orchard::keys::{FullViewingKey, IncomingViewingKey, OutgoingViewingKey, Scop
 use zcash_address::unified::{Address as UnifiedAddress, Encoding, Receiver};
 // A struct that holds orchard private keys or view keys
 #[derive(Clone, Debug, PartialEq)]
-pub struct WalletOKey {
+pub struct OrchardKey {
     pub(crate) key: WalletOKeyInner,
     locked: bool,
     pub(crate) unified_address: UnifiedAddress,
@@ -16,7 +16,7 @@ pub struct WalletOKey {
     nonce: Option<Vec<u8>>,
 }
 
-impl WalletOKey {
+impl OrchardKey {
     pub fn new_imported_osk(key: SpendingKey) -> Self {
         Self {
             key: WalletOKeyInner::ImportedSpendingKey(key),
@@ -112,14 +112,14 @@ impl PartialEq for WalletOKeyInner {
         }
     }
 }
-impl WalletOKey {
+impl OrchardKey {
     pub fn new_hdkey(hdkey_num: u32, spending_key: SpendingKey) -> Self {
         let key = WalletOKeyInner::HdKey(spending_key);
         let address = FullViewingKey::from(&spending_key).address_at(0u64, Scope::External);
         let orchard_container = Receiver::Orchard(address.to_raw_address_bytes());
         let unified_address = UnifiedAddress::try_from_items(vec![orchard_container]).unwrap();
 
-        WalletOKey {
+        OrchardKey {
             key,
             locked: false,
             unified_address,
@@ -130,7 +130,7 @@ impl WalletOKey {
     }
 }
 
-impl crate::wallet::WalletKey for WalletOKey {
+impl crate::wallet::WalletKey for OrchardKey {
     type Address = UnifiedAddress;
     type SpendKey = SpendingKey;
     fn address(&self) -> Self::Address {

@@ -1,9 +1,9 @@
 use crate::compact_formats::TreeState;
 use crate::wallet::data::WalletTx;
-use crate::wallet::keys::transparent::WalletTKey;
+use crate::wallet::keys::transparent::TransparentKey;
 use crate::{
     blaze::fetch_full_transaction::FetchFullTxns,
-    wallet::{data::SpendableSaplingNote, keys::sapling::WalletZKey},
+    wallet::{data::SpendableSaplingNote, keys::sapling::SaplingKey},
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::Future;
@@ -40,7 +40,7 @@ use zcash_primitives::{
 
 use self::{
     data::{BlockData, SaplingNoteData, Utxo, WalletZecPriceInfo},
-    keys::{orchard::WalletOKey, Keys},
+    keys::{orchard::OrchardKey, Keys},
     message::Message,
     transactions::WalletTxns,
 };
@@ -495,7 +495,7 @@ impl LightWallet {
                 .to_string();
         }
 
-        let sk = match WalletTKey::from_sk_string(&self.config, sk) {
+        let sk = match TransparentKey::from_sk_string(&self.config, sk) {
             Err(e) => return format!("Error: {}", e),
             Ok(k) => k,
         };
@@ -528,11 +528,11 @@ impl LightWallet {
             decode_extended_spending_key,
             Keys::zkeys,
             Keys::zkeys_mut,
-            |wallet_key: &WalletZKey, new_key: &zcash_primitives::zip32::ExtendedSpendingKey| {
+            |wallet_key: &SaplingKey, new_key: &zcash_primitives::zip32::ExtendedSpendingKey| {
                 wallet_key.extsk.is_some() && wallet_key.extsk.as_ref().unwrap() == &new_key.clone()
             },
             |wk, fvk| &wk.extfvk == fvk,
-            WalletZKey::new_imported_sk,
+            SaplingKey::new_imported_sk,
             |key| encode_payment_address(self.config.hrp_sapling_address(), &key),
         )
         .await
@@ -555,10 +555,10 @@ impl LightWallet {
                     .map(|x: OrchardSpendingKey| x.to_bytes().to_vec())
                     == Some(new_key.to_bytes().to_vec())
             },
-            |wk: &WalletOKey, fvk: &orchard::keys::FullViewingKey| {
+            |wk: &OrchardKey, fvk: &orchard::keys::FullViewingKey| {
                 (&wk.key).try_into().ok() == Some(fvk.clone())
             },
-            WalletOKey::new_imported_osk,
+            OrchardKey::new_imported_osk,
             |address: zcash_address::unified::Address| {
                 address.encode(&self.config.chain.to_zcash_address_network())
             },
@@ -675,7 +675,7 @@ impl LightWallet {
             Keys::zkeys,
             |wallet_key, new_key| wallet_key.extfvk == new_key.clone(),
             |key| async {
-                let newkey = WalletZKey::new_imported_viewkey(key);
+                let newkey = SaplingKey::new_imported_viewkey(key);
                 self.keys().write().await.zkeys.push(newkey.clone());
                 newkey.zaddress
             },

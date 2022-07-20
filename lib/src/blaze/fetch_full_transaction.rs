@@ -1,6 +1,6 @@
 use crate::wallet::{
-    data::OutgoingTxMetadata,
-    keys::{orchard::WalletOKey, Keys, ToBase58Check},
+    data::{OutgoingTxMetadata, SaplingNoteData},
+    keys::{orchard::OrchardKey, Keys, ToBase58Check},
     traits::{Bundle, DomainWalletExt, NoteData, Recipient, Spend},
     transactions::WalletTxns,
 };
@@ -509,11 +509,10 @@ impl FetchFullTxns {
                         .clone()
                         .try_into()
                         .unwrap_or(Memo::Future(memo_bytes));
-                    wallet_transactions.write().await.add_memo_to_note(
-                        &transaction.txid(),
-                        note,
-                        memo,
-                    );
+                    wallet_transactions
+                        .write()
+                        .await
+                        .add_memo_to_note::<SaplingNoteData>(&transaction.txid(), note, memo);
                 }
 
                 // Also scan the output to see if it can be decoded with our OutgoingViewKey
@@ -588,8 +587,8 @@ impl FetchFullTxns {
             outgoing_metadatas,
             Keys::okeys,
             |t: &Transaction| -> Option<_> { t.orchard_bundle() },
-            |key: &WalletOKey| OrchardFvk::try_from(&key.key),
-            |key: &WalletOKey| OrchardIvk::try_from(&key.key),
+            |key: &OrchardKey| OrchardFvk::try_from(&key.key),
+            |key: &OrchardKey| OrchardIvk::try_from(&key.key),
             OrchardDomain::for_action,
             <[u8; 512]>::as_slice,
             |txns| {
@@ -688,10 +687,11 @@ async fn scan_bundle<K, B, D, E>(
                 .clone()
                 .try_into()
                 .unwrap_or(Memo::Future(memo_bytes));
-            println!(
-                "Received {} tx with memo {memo:?}",
-                std::any::type_name::<D>()
-            );
+            wallet_transactions
+                .write()
+                .await
+                .add_memo_to_note::<D::WalletNote>(&transaction.txid(), note, memo);
+            let omds = ovks;
             //When this can work as a full replacement for scan_sapling_bundle, that
             //will likely mean the orchard functionality here is complete
         }

@@ -31,9 +31,9 @@ use zingoconfig::{Network, ZingoConfig, GAP_RULE_UNUSED_ADDRESSES};
 use crate::wallet::utils;
 
 use self::{
-    orchard::{WalletOKey, WalletOKeyInner},
-    sapling::{WalletZKey, WalletZKeyType},
-    transparent::{WalletTKey, WalletTKeyType},
+    orchard::{OrchardKey, WalletOKeyInner},
+    sapling::{SaplingKey, WalletZKeyType},
+    transparent::{TransparentKey, WalletTKeyType},
 };
 
 pub(crate) mod extended_transparent;
@@ -128,31 +128,31 @@ pub struct Keys {
 
     // List of keys, actually in this wallet. This is a combination of HD keys derived from the seed,
     // viewing keys and imported spending keys.
-    pub(crate) zkeys: Vec<WalletZKey>,
+    pub(crate) zkeys: Vec<SaplingKey>,
 
     // Transparent keys. If the wallet is locked, then the secret keys will be encrypted,
     // but the addresses will be present. This Vec contains both wallet and imported tkeys
-    pub(crate) tkeys: Vec<WalletTKey>,
+    pub(crate) tkeys: Vec<TransparentKey>,
 
     // Orchard keys
-    pub(crate) okeys: Vec<WalletOKey>,
+    pub(crate) okeys: Vec<OrchardKey>,
 }
 
 impl Keys {
-    pub(crate) fn zkeys(&self) -> &Vec<WalletZKey> {
+    pub(crate) fn zkeys(&self) -> &Vec<SaplingKey> {
         &self.zkeys
     }
-    pub(crate) fn okeys(&self) -> &Vec<WalletOKey> {
+    pub(crate) fn okeys(&self) -> &Vec<OrchardKey> {
         &self.okeys
     }
     #[allow(dead_code)]
     pub(crate) fn tkeys(&self) -> &Vec<WalletTKey> {
         &self.tkeys
     }
-    pub(crate) fn zkeys_mut(&mut self) -> &mut Vec<WalletZKey> {
+    pub(crate) fn zkeys_mut(&mut self) -> &mut Vec<SaplingKey> {
         &mut self.zkeys
     }
-    pub(crate) fn okeys_mut(&mut self) -> &mut Vec<WalletOKey> {
+    pub(crate) fn okeys_mut(&mut self) -> &mut Vec<OrchardKey> {
         &mut self.okeys
     }
     #[allow(dead_code)]
@@ -208,12 +208,12 @@ impl Keys {
         let bip39_seed = Mnemonic::from_entropy(seed_bytes).unwrap().to_seed("");
 
         // Derive only the first sk and address
-        let tpk = WalletTKey::new_hdkey(config, 0, &bip39_seed);
+        let tpk = TransparentKey::new_hdkey(config, 0, &bip39_seed);
 
         let mut zkeys = vec![];
         for hdkey_num in 0..num_zaddrs {
             let (extsk, _, _) = Self::get_zaddr_from_bip39seed(&config, &bip39_seed, hdkey_num);
-            zkeys.push(WalletZKey::new_hdkey(hdkey_num, extsk));
+            zkeys.push(SaplingKey::new_hdkey(hdkey_num, extsk));
         }
 
         Ok(Self {
@@ -285,7 +285,7 @@ impl Keys {
                     .zip(addresses.iter())
                     .enumerate()
                     .map(|(i, (extfvk, payment_address))| {
-                        let zk = WalletZKey::new_locked_hdkey(i as u32, extfvk.clone());
+                        let zk = SaplingKey::new_locked_hdkey(i as u32, extfvk.clone());
                         if zk.zaddress != *payment_address {
                             Err(io::Error::new(
                                 ErrorKind::InvalidData,
@@ -295,7 +295,7 @@ impl Keys {
                             Ok(zk)
                         }
                     })
-                    .collect::<Vec<io::Result<WalletZKey>>>()
+                    .collect::<Vec<io::Result<SaplingKey>>>()
             } else {
                 // Wallet is unlocked, read the spending keys as well
                 extsks
@@ -303,7 +303,7 @@ impl Keys {
                     .zip(extfvks.into_iter().zip(addresses.iter()))
                     .enumerate()
                     .map(|(i, (extsk, (extfvk, payment_address)))| {
-                        let zk = WalletZKey::new_hdkey(i as u32, extsk);
+                        let zk = SaplingKey::new_hdkey(i as u32, extsk);
                         if zk.zaddress != *payment_address {
                             return Err(io::Error::new(
                                 ErrorKind::InvalidData,
@@ -320,14 +320,14 @@ impl Keys {
 
                         Ok(zk)
                     })
-                    .collect::<Vec<io::Result<WalletZKey>>>()
+                    .collect::<Vec<io::Result<SaplingKey>>>()
             };
 
             // Convert vector of results into result of vector, returning an error if any one of the keys failed the checks above
             zkeys_result.into_iter().collect::<io::Result<_>>()?
         } else {
             // After version 6, we read the WalletZKey structs directly
-            Vector::read(&mut reader, |r| WalletZKey::read(r))?
+            Vector::read(&mut reader, |r| SaplingKey::read(r))?
         };
 
         let tkeys = if version <= 20 {
@@ -346,7 +346,7 @@ impl Keys {
                 tkeys
                     .iter()
                     .map(|sk| {
-                        WalletTKey::address_from_prefix_sk(&config.base58_pubkey_address(), sk)
+                        TransparentKey::address_from_prefix_sk(&config.base58_pubkey_address(), sk)
                     })
                     .collect()
             };
@@ -355,11 +355,11 @@ impl Keys {
                 .iter()
                 .zip(taddresses.iter())
                 .enumerate()
-                .map(|(i, (sk, taddr))| WalletTKey::from_raw(sk, taddr, i as u32))
+                .map(|(i, (sk, taddr))| TransparentKey::from_raw(sk, taddr, i as u32))
                 .collect::<Vec<_>>()
         } else {
             // Read the TKeys
-            Vector::read(&mut reader, |r| WalletTKey::read(r))?
+            Vector::read(&mut reader, |r| TransparentKey::read(r))?
         };
 
         Ok(Self {
@@ -396,7 +396,7 @@ impl Keys {
         let mut seed_bytes = [0u8; 32];
         reader.read_exact(&mut seed_bytes)?;
 
-        let zkeys = Vector::read(&mut reader, |r| WalletZKey::read(r))?;
+        let zkeys = Vector::read(&mut reader, |r| SaplingKey::read(r))?;
 
         let tkeys = if version <= 20 {
             let tkeys = Vector::read(&mut reader, |r| {
@@ -412,11 +412,11 @@ impl Keys {
                 .iter()
                 .zip(taddresses.iter())
                 .enumerate()
-                .map(|(i, (sk, taddr))| WalletTKey::from_raw(sk, taddr, i as u32))
+                .map(|(i, (sk, taddr))| TransparentKey::from_raw(sk, taddr, i as u32))
                 .collect::<Vec<_>>()
         } else {
             // Read the TKeys
-            Vector::read(&mut reader, |r| WalletTKey::read(r))?
+            Vector::read(&mut reader, |r| TransparentKey::read(r))?
         };
 
         Ok(Self {
@@ -654,7 +654,7 @@ impl Keys {
         let (extsk, _, _) = Self::get_zaddr_from_bip39seed(&self.config, bip39_seed, pos);
 
         // let zaddr = encode_payment_address(self.config.hrp_sapling_address(), &address);
-        let newkey = WalletZKey::new_hdkey(pos, extsk);
+        let newkey = SaplingKey::new_hdkey(pos, extsk);
         self.zkeys.push(newkey.clone());
 
         encode_payment_address(self.config.hrp_sapling_address(), &newkey.zaddress)
@@ -685,7 +685,7 @@ impl Keys {
         )
         .unwrap();
 
-        let newkey = WalletOKey::new_hdkey(account, spending_key);
+        let newkey = OrchardKey::new_hdkey(account, spending_key);
         self.okeys.push(newkey.clone());
 
         use zcash_address::unified::Encoding as _;
@@ -714,7 +714,7 @@ impl Keys {
 
         let bip39_seed = &Mnemonic::from_entropy(self.seed).unwrap().to_seed("");
 
-        let key = WalletTKey::new_hdkey(&self.config, pos, bip39_seed);
+        let key = TransparentKey::new_hdkey(&self.config, pos, bip39_seed);
         let address = key.address.clone();
         self.tkeys.push(key);
 

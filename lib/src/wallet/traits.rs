@@ -1,4 +1,7 @@
-use super::data::{OrchardNoteData, SaplingNoteData, WalletNullifier, WalletTx, WitnessCache};
+use super::{
+    data::{OrchardNoteData, SaplingNoteData, WalletNullifier, WalletTx, WitnessCache},
+    keys::sapling::SaplingKey,
+};
 use nonempty::NonEmpty;
 use orchard::{
     bundle::{Authorization as OrchardAuthorization, Bundle as OrchardBundle},
@@ -14,9 +17,9 @@ use zcash_primitives::{
     memo::Memo,
     merkle_tree::Hashable,
     sapling::{
-        keys::FullViewingKey, note_encryption::SaplingDomain, Diversifier as SaplingDiversifier,
-        Node as SaplingNode, Note as SaplingNote, Nullifier as SaplingNullifier,
-        PaymentAddress as SaplingAddress,
+        note_encryption::SaplingDomain, Diversifier as SaplingDiversifier, Node as SaplingNode,
+        Note as SaplingNote, Nullifier as SaplingNullifier, PaymentAddress as SaplingAddress,
+        SaplingIvk,
     },
     transaction::{
         components::{
@@ -179,10 +182,11 @@ pub(crate) trait NoteData: Sized {
         is_change: bool,
         have_spending_key: bool,
     ) -> Self;
+    fn memo_mut(&mut self) -> &mut Option<Memo>;
+    fn note(&self) -> &Self::Note;
     fn nullifier(&self) -> Self::Null;
     fn witnesses(&mut self) -> &mut WitnessCache<Self::Node>;
-    fn note(&self) -> &Self::Note;
-    fn wtx_notes_mut(wallet_transaction: &mut WalletTx) -> &mut Vec<Self>;
+    fn wallet_transaction_notes_mut(wallet_transaction: &mut WalletTx) -> &mut Vec<Self>;
 }
 
 impl NoteData for SaplingNoteData {
@@ -218,6 +222,14 @@ impl NoteData for SaplingNoteData {
         }
     }
 
+    fn memo_mut(&mut self) -> &mut Option<Memo> {
+        &mut self.memo
+    }
+
+    fn note(&self) -> &Self::Note {
+        &self.note
+    }
+
     fn nullifier(&self) -> Self::Null {
         self.nullifier
     }
@@ -226,12 +238,43 @@ impl NoteData for SaplingNoteData {
         &mut self.witnesses
     }
 
-    fn note(&self) -> &Self::Note {
-        &self.note
+    fn wallet_transaction_notes_mut(wallet_transaction: &mut WalletTx) -> &mut Vec<Self> {
+        &mut wallet_transaction.sapling_notes
+    }
+}
+
+pub(crate) trait WalletKey {
+    type Fvk;
+    type Ivk;
+    type Ovk;
+    type Sk;
+    fn fvk(&self) -> &Option<Self::Fvk>;
+    fn ivk(&self) -> &Option<Self::Ivk>;
+    fn ovk(&self) -> &Option<Self::Ovk>;
+    fn sk(&self) -> &Option<Self::Sk>;
+}
+
+impl WalletKey for SaplingKey {
+    type Fvk = SaplingExtendedFullViewingKey;
+
+    type Ivk = SaplingIncomingViewingKey;
+
+    type Ovk = SaplingOutgoingViewingKey;
+
+    type Sk = SaplingExtendedSpendingKey;
+
+    fn fvk(&self) -> &Option<Self::Fvk> {}
+
+    fn ivk(&self) -> &Option<Self::Ivk> {
+        todo!()
     }
 
-    fn wtx_notes_mut(wallet_transaction: &mut WalletTx) -> &mut Vec<Self> {
-        &mut wallet_transaction.sapling_notes
+    fn ovk(&self) -> &Option<Self::Ovk> {
+        todo!()
+    }
+
+    fn sk(&self) -> &Option<Self::Sk> {
+        todo!()
     }
 }
 
@@ -268,17 +311,21 @@ impl NoteData for OrchardNoteData {
         }
     }
 
-    fn nullifier(&self) -> Self::Null {
-        self.nullifier
-    }
-    fn witnesses(&mut self) -> &mut WitnessCache<Self::Node> {
-        &mut self.witnesses
+    fn memo_mut(&mut self) -> &mut Option<Memo> {
+        &mut self.memo
     }
     fn note(&self) -> &Self::Note {
         &self.note
     }
+    fn nullifier(&self) -> Self::Null {
+        self.nullifier
+    }
 
-    fn wtx_notes_mut(wallet_transaction: &mut WalletTx) -> &mut Vec<Self> {
+    fn witnesses(&mut self) -> &mut WitnessCache<Self::Node> {
+        &mut self.witnesses
+    }
+
+    fn wallet_transaction_notes_mut(wallet_transaction: &mut WalletTx) -> &mut Vec<Self> {
         &mut wallet_transaction.orchard_notes
     }
 }

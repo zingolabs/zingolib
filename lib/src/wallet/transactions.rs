@@ -695,7 +695,7 @@ impl WalletTxns {
                     false,
                 );
 
-                D::WalletNote::wtx_notes_mut(wtx).push(nd);
+                D::WalletNote::wallet_transaction_notes_mut(wtx).push(nd);
             }
             Some(_) => {}
         }
@@ -835,12 +835,12 @@ impl WalletTxns {
     }
 
     // Update the memo for a note if it already exists. If the note doesn't exist, then nothing happens.
-    pub fn add_memo_to_note(&mut self, txid: &TxId, note: SaplingNote, memo: Memo) {
+    pub fn add_memo_to_note<Nd: NoteData>(&mut self, txid: &TxId, note: Nd::Note, memo: Memo) {
         self.current.get_mut(txid).map(|wtx| {
-            wtx.sapling_notes
+            Nd::wallet_transaction_notes_mut(wtx)
                 .iter_mut()
-                .find(|n| n.note == note)
-                .map(|n| n.memo = Some(memo));
+                .find(|n| n.note() == &note)
+                .map(|n| *n.memo_mut() = Some(memo));
         });
     }
 
