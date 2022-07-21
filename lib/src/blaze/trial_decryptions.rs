@@ -226,15 +226,15 @@ impl TrialDecryptions {
                         }
                     }
                 }
-                for (_action_num, action) in compact_transaction.actions.iter().enumerate() {
+                for (action_num, action) in compact_transaction.actions.iter().enumerate() {
                     let action = match CompactAction::try_from(action) {
                         Ok(a) => a,
                         Err(_e) => {
                             todo!("Implement error handling for action parsing")
                         }
                     };
-                    for (_i, ivk) in orchard_ivks.iter().cloned().enumerate() {
-                        if let Some((_note, _recipient)) =
+                    for (i, ivk) in orchard_ivks.iter().cloned().enumerate() {
+                        if let Some((note, recipient)) =
                             zcash_note_encryption::try_compact_note_decryption(
                                 &OrchardDomain::for_nullifier(action.nullifier()),
                                 &ivk,
@@ -246,14 +246,15 @@ impl TrialDecryptions {
                             let wallet_transactions = wallet_transactions.clone();
                             let detected_transaction_id_sender =
                                 detected_transaction_id_sender.clone();
-                            let _timestamp = cb.time as u64;
-                            let _compact_transaction = compact_transaction.clone();
+                            let timestamp = cb.time as u64;
+                            let compact_transaction = compact_transaction.clone();
 
                             workers.push(tokio::spawn(async move {
                                 let keys = keys.read().await;
-                                let _have_orchard_spending_key =
+                                let fvk = OrchardFvk::try_from(&keys.okeys[i].key);
+                                let have_orchard_spending_key =
                                     keys.have_orchard_spending_key(&ivk);
-                                let _uri = bsync_data.read().await.uri().clone();
+                                let uri = bsync_data.read().await.uri().clone();
 
                                 // Get the witness for the note
                                 let witness = bsync_data

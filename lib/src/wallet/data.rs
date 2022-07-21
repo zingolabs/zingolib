@@ -281,7 +281,7 @@ pub struct OrchardNoteData {
 
     // Witnesses for the last 100 blocks. witnesses.last() is the latest witness
     #[allow(dead_code)]
-    pub(crate) witnesses: WitnessCache,
+    pub(crate) witnesses: WitnessCache<MerkleHashOrchard>,
     pub(super) nullifier: OrchardNullifier,
     pub spent: Option<(TxId, u32)>, // If this note was confirmed spent
 
