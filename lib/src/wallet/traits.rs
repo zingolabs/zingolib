@@ -1,19 +1,26 @@
 use super::{
     data::{OrchardNoteData, SaplingNoteData, WalletNullifier, WalletTx, WitnessCache},
-    keys::sapling::SaplingKey,
+    keys::{orchard::OrchardKey, sapling::SaplingKey},
 };
 use nonempty::NonEmpty;
 use orchard::{
     bundle::{Authorization as OrchardAuthorization, Bundle as OrchardBundle},
-    keys::{Diversifier as OrchardDiversifier, FullViewingKey as OrchardFullViewingKey},
+    keys::{
+        Diversifier as OrchardDiversifier, FullViewingKey as OrchardFullViewingKey,
+        IncomingViewingKey as OrchardIncomingViewingKey,
+        OutgoingViewingKey as OrchardOutgoingViewingKey, SpendingKey as OrchardSpendingKey,
+    },
     note::{Note as OrchardNote, Nullifier as OrchardNullifier},
     note_encryption::OrchardDomain,
     tree::MerkleHashOrchard,
     Action, Address as OrchardAddress,
 };
-use zcash_note_encryption::Domain;
+use zcash_address::unified::{self, Encoding as _, Receiver};
+use zcash_client_backend::encoding::encode_payment_address;
+use zcash_note_encryption::{Domain, ShieldedOutput, ENC_CIPHERTEXT_SIZE};
 use zcash_primitives::{
     consensus::Parameters,
+    keys::OutgoingViewingKey as SaplingOutgoingViewingKey,
     memo::Memo,
     merkle_tree::Hashable,
     sapling::{
@@ -28,8 +35,12 @@ use zcash_primitives::{
         },
         TxId,
     },
-    zip32::ExtendedFullViewingKey as SaplingExtendedFullViewingKey,
+    zip32::{
+        ExtendedFullViewingKey as SaplingExtendedFullViewingKey,
+        ExtendedSpendingKey as SaplingExtendedSpendingKey,
+    },
 };
+use zingoconfig::Network;
 
 pub(crate) trait ToBytes<const N: usize> {
     fn to_bytes(&self) -> [u8; N];
@@ -44,6 +55,35 @@ impl ToBytes<32> for SaplingNullifier {
 impl ToBytes<32> for OrchardNullifier {
     fn to_bytes(&self) -> [u8; 32] {
         OrchardNullifier::to_bytes(*self)
+    }
+}
+
+impl ToBytes<512> for Memo {
+    fn to_bytes(&self) -> [u8; 512] {
+        *self.encode().as_array()
+    }
+}
+
+impl<const N: usize> ToBytes<N> for [u8; N] {
+    fn to_bytes(&self) -> [u8; N] {
+        *self
+    }
+}
+
+pub(crate) trait ShieldedOutputExt<D: Domain>:
+    ShieldedOutput<D, ENC_CIPHERTEXT_SIZE>
+{
+    fn cv(&self) -> D::ValueCommitment;
+    fn out_ciphertext(&self) -> [u8; 80];
+}
+
+impl<A> ShieldedOutputExt<OrchardDomain> for Action<A> {
+    fn cv(&self) -> orchard::value::ValueCommitment {
+        self.cv_net().clone()
+    }
+
+    fn out_ciphertext(&self) -> [u8; 80] {
+        self.encrypted_note().out_ciphertext
     }
 }
 
@@ -108,6 +148,7 @@ impl<Auth> Spend for Action<Auth> {
 pub(crate) trait Recipient {
     type Diversifier;
     fn diversifier(&self) -> Self::Diversifier;
+    fn encode(&self, chain: Network) -> String;
 }
 
 impl Recipient for OrchardAddress {
@@ -116,6 +157,12 @@ impl Recipient for OrchardAddress {
     fn diversifier(&self) -> Self::Diversifier {
         OrchardAddress::diversifier(&self)
     }
+
+    fn encode(&self, chain: Network) -> String {
+        unified::Address::try_from_items(vec![Receiver::Orchard(self.to_raw_address_bytes())])
+            .unwrap()
+            .encode(&chain.address_network().unwrap())
+    }
 }
 
 impl Recipient for SaplingAddress {
@@ -123,6 +170,10 @@ impl Recipient for SaplingAddress {
 
     fn diversifier(&self) -> Self::Diversifier {
         *SaplingAddress::diversifier(&self)
+    }
+
+    fn encode(&self, chain: Network) -> String {
+        encode_payment_address(chain.hrp_sapling_payment_address(), self)
     }
 }
 
@@ -185,6 +236,7 @@ pub(crate) trait NoteData: Sized {
     fn memo_mut(&mut self) -> &mut Option<Memo>;
     fn note(&self) -> &Self::Note;
     fn nullifier(&self) -> Self::Null;
+    fn value(note: &Self::Note) -> u64;
     fn witnesses(&mut self) -> &mut WitnessCache<Self::Node>;
     fn wallet_transaction_notes_mut(wallet_transaction: &mut WalletTx) -> &mut Vec<Self>;
 }
@@ -234,12 +286,16 @@ impl NoteData for SaplingNoteData {
         self.nullifier
     }
 
-    fn witnesses(&mut self) -> &mut WitnessCache<Self::Node> {
-        &mut self.witnesses
+    fn value(note: &Self::Note) -> u64 {
+        note.value
     }
 
     fn wallet_transaction_notes_mut(wallet_transaction: &mut WalletTx) -> &mut Vec<Self> {
         &mut wallet_transaction.sapling_notes
+    }
+
+    fn witnesses(&mut self) -> &mut WitnessCache<Self::Node> {
+        &mut self.witnesses
     }
 }
 
@@ -248,33 +304,61 @@ pub(crate) trait WalletKey {
     type Ivk;
     type Ovk;
     type Sk;
-    fn fvk(&self) -> &Option<Self::Fvk>;
-    fn ivk(&self) -> &Option<Self::Ivk>;
-    fn ovk(&self) -> &Option<Self::Ovk>;
-    fn sk(&self) -> &Option<Self::Sk>;
+    fn fvk(&self) -> Option<Self::Fvk>;
+    fn ivk(&self) -> Option<Self::Ivk>;
+    fn ovk(&self) -> Option<Self::Ovk>;
+    fn sk(&self) -> Option<Self::Sk>;
 }
 
 impl WalletKey for SaplingKey {
     type Fvk = SaplingExtendedFullViewingKey;
 
-    type Ivk = SaplingIncomingViewingKey;
+    type Ivk = SaplingIvk;
 
     type Ovk = SaplingOutgoingViewingKey;
 
     type Sk = SaplingExtendedSpendingKey;
 
-    fn fvk(&self) -> &Option<Self::Fvk> {}
-
-    fn ivk(&self) -> &Option<Self::Ivk> {
-        todo!()
+    fn fvk(&self) -> Option<Self::Fvk> {
+        Some(self.extfvk.clone())
     }
 
-    fn ovk(&self) -> &Option<Self::Ovk> {
-        todo!()
+    fn ivk(&self) -> Option<Self::Ivk> {
+        Some(self.extfvk.fvk.vk.ivk())
     }
 
-    fn sk(&self) -> &Option<Self::Sk> {
-        todo!()
+    fn ovk(&self) -> Option<Self::Ovk> {
+        Some(self.extfvk.fvk.ovk)
+    }
+
+    fn sk(&self) -> Option<Self::Sk> {
+        self.extsk.clone()
+    }
+}
+
+impl WalletKey for OrchardKey {
+    type Fvk = OrchardFullViewingKey;
+
+    type Ivk = OrchardIncomingViewingKey;
+
+    type Ovk = OrchardOutgoingViewingKey;
+
+    type Sk = OrchardSpendingKey;
+
+    fn fvk(&self) -> Option<Self::Fvk> {
+        (&self.key).try_into().ok()
+    }
+
+    fn ivk(&self) -> Option<Self::Ivk> {
+        (&self.key).try_into().ok()
+    }
+
+    fn ovk(&self) -> Option<Self::Ovk> {
+        (&self.key).try_into().ok()
+    }
+
+    fn sk(&self) -> Option<Self::Sk> {
+        (&self.key).try_into().ok()
     }
 }
 
@@ -321,12 +405,16 @@ impl NoteData for OrchardNoteData {
         self.nullifier
     }
 
-    fn witnesses(&mut self) -> &mut WitnessCache<Self::Node> {
-        &mut self.witnesses
+    fn value(note: &Self::Note) -> u64 {
+        note.value().inner()
     }
 
     fn wallet_transaction_notes_mut(wallet_transaction: &mut WalletTx) -> &mut Vec<Self> {
         &mut wallet_transaction.orchard_notes
+    }
+
+    fn witnesses(&mut self) -> &mut WitnessCache<Self::Node> {
+        &mut self.witnesses
     }
 }
 

@@ -1,7 +1,10 @@
 use crate::wallet::{
     data::{OutgoingTxMetadata, SaplingNoteData},
     keys::{orchard::OrchardKey, Keys, ToBase58Check},
-    traits::{Bundle, DomainWalletExt, NoteData, Recipient, Spend},
+    traits::{
+        self as zingo_traits, NoteData as _, Recipient as _, ShieldedOutputExt as _, Spend as _,
+        ToBytes as _,
+    },
     transactions::WalletTxns,
 };
 
@@ -28,7 +31,9 @@ use tokio::{
     task::JoinHandle,
 };
 use zcash_client_backend::encoding::encode_payment_address;
-use zcash_note_encryption::{try_note_decryption, Domain, ShieldedOutput, ENC_CIPHERTEXT_SIZE};
+use zcash_note_encryption::{
+    try_note_decryption, try_output_recovery_with_ovk, Domain, ShieldedOutput, ENC_CIPHERTEXT_SIZE,
+};
 
 use zcash_primitives::{
     consensus::BlockHeight,
@@ -597,6 +602,7 @@ impl FetchFullTxns {
                     .map(|(null, val, txid)| (null, val.inner(), txid))
                     .collect()
             },
+            Keys::get_all_orchard_addresses,
         )
         .await;
     }
@@ -614,24 +620,25 @@ async fn scan_bundle<K, B, D, E>(
     outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
     key_reader: impl Fn(&Keys) -> &Vec<K>,
     transaction_to_bundle: impl Fn(&Transaction) -> Option<&B>,
-    key_to_fvk: impl Fn(&K) -> Result<<D as DomainWalletExt>::Fvk, E>,
+    key_to_fvk: impl Fn(&K) -> Result<<D as zingo_traits::DomainWalletExt>::Fvk, E>,
     key_to_ivk: impl Fn(&K) -> Result<<D as Domain>::IncomingViewingKey, E>,
     output_to_domain: impl Fn(&B::Output) -> D,
     memo_slice: impl Fn(&D::Memo) -> &[u8],
-    get_unspent_nullifiers: impl Fn(&WalletTxns) -> Vec<(<B::Spend as Spend>::Nullifier, u64, TxId)>,
+    get_unspent_nullifiers: impl Fn(&WalletTxns) -> Vec<(<B::Spend as zingo_traits::Spend>::Nullifier, u64, TxId)>,
+    get_all_addresses: impl Fn(&Keys) -> Vec<String>
 ) where
-    K: Clone,
-    D: DomainWalletExt,
-    D: Domain<Note = <<D as DomainWalletExt>::WalletNote as NoteData>::Note>,
-    D: DomainWalletExt<Fvk = <<D as DomainWalletExt>::WalletNote as NoteData>::Fvk>,
+    K: Clone + zingo_traits::WalletKey<Ovk = <D as Domain>::OutgoingViewingKey>,
+    D: zingo_traits::DomainWalletExt,
+    D: Domain<Note = <<D as zingo_traits::DomainWalletExt>::WalletNote as zingo_traits::NoteData>::Note>,
+    D: zingo_traits::DomainWalletExt<Fvk = <<D as zingo_traits::DomainWalletExt>::WalletNote as zingo_traits::NoteData>::Fvk>,
     D::Note: Clone,
-    D::Recipient: Recipient<Diversifier = <<D as DomainWalletExt>::WalletNote as NoteData>::Div>,
-    B::Output: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE>,
-    B::Spend: Spend,
+    D::Recipient: zingo_traits::Recipient<Diversifier = <<D as zingo_traits::DomainWalletExt>::WalletNote as zingo_traits::NoteData>::Div>,
+    B::Output: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE> + zingo_traits::ShieldedOutputExt<D>,
+    B::Spend: zingo_traits::Spend,
     for<'a> &'a B::Spends: IntoIterator<Item = &'a B::Spend>,
     for<'a> &'a B::Outputs: IntoIterator<Item = &'a B::Output>,
-    <B::Spend as Spend>::Nullifier: PartialEq,
-    B: Bundle,
+    <B::Spend as zingo_traits::Spend>::Nullifier: PartialEq,
+    B: zingo_traits::Bundle, D::Memo: zingo_traits::ToBytes<512>,
 {
     // Check if any of the nullifiers spent in this transaction are ours. We only need this for unconfirmed transactions,
     // because for transactions in the block, we will check the nullifiers from the blockdata
@@ -657,7 +664,8 @@ async fn scan_bundle<K, B, D, E>(
             }
         }
     }
-    let local_keys = key_reader(&*keys.read().await).clone();
+    let read_keys = keys.read().await;
+    let local_keys = key_reader(&*read_keys).clone();
     for output in transaction_to_bundle(transaction)
         .into_iter()
         .flat_map(|bundle| bundle.outputs().into_iter())
@@ -691,9 +699,50 @@ async fn scan_bundle<K, B, D, E>(
                 .write()
                 .await
                 .add_memo_to_note::<D::WalletNote>(&transaction.txid(), note, memo);
-            let omds = ovks;
-            //When this can work as a full replacement for scan_sapling_bundle, that
-            //will likely mean the orchard functionality here is complete
+            outgoing_metadatas.extend(
+                local_keys
+                    .iter()
+                    .filter_map(|key| {
+                        match try_output_recovery_with_ovk::<D, B::Output>(
+                            &output_to_domain(&output),
+                            &key.ovk().unwrap(),
+                            &output,
+                            &output.cv(),
+                            &output.out_ciphertext(),
+                        ) {
+                            Some((note, payment_address, memo_bytes)) => {
+                                // Mark this transaction as an outgoing transaction, so we can grab all outgoing metadata
+                                *is_outgoing_transaction = true;
+                                let address = payment_address.encode(config.chain);
+
+                                // Check if this is change, and if it also doesn't have a memo, don't add
+                                // to the outgoing metadata.
+                                // If this is change (i.e., funds sent to ourself) AND has a memo, then
+                                // presumably the users is writing a memo to themself, so we will add it to
+                                // the outgoing metadata, even though it might be confusing in the UI, but hopefully
+                                // the user can make sense of it.
+                                match Memo::from_bytes(&memo_bytes.to_bytes()) {
+                                    Err(_) => None,
+                                    Ok(memo) => {
+                                        if get_all_addresses(&read_keys).contains(&address)
+                                            && memo == Memo::Empty
+                                        {
+                                            None
+                                        } else {
+                                            Some(OutgoingTxMetadata {
+                                                address,
+                                                value: D::WalletNote::value(&note),
+                                                memo,
+                                            })
+                                        }
+                                    }
+                                }
+                            }
+                            None => None,
+                        }
+                    })
+                    .collect::<Vec<_>>(),
+            );
         }
     }
 }
