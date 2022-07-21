@@ -224,6 +224,7 @@ impl Command for HelpCommand {
                     responses.push(format!("{} - {}", cmd, obj.short_help()));
                 });
 
+                responses.sort();
                 responses.join("\n")
             }
             1 => match get_commands().get(args[0]) {
