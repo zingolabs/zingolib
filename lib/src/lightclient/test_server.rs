@@ -7,7 +7,7 @@ use crate::compact_formats::{
     LightdInfo, PingResponse, RawTransaction, SendResponse, TransparentAddressBlockFilter,
     TreeState, TxFilter,
 };
-use crate::wallet::{data::WalletTx, now};
+use crate::wallet::data::WalletTx;
 use futures::{FutureExt, Stream};
 use rand::rngs::OsRng;
 use rand::Rng;

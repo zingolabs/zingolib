@@ -52,8 +52,8 @@ pub fn main() {
         }
     };
 
-    let regtest = matches.is_present("regtest");
-    if regtest {
+    let regtest_mode_enabled = matches.is_present("regtest");
+    if regtest_mode_enabled {
         use std::ffi::OsString;
         use std::fs::File;
         use std::path::PathBuf;
