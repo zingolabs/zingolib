@@ -21,7 +21,7 @@ use zcash_note_encryption::{Domain, ShieldedOutput, ENC_CIPHERTEXT_SIZE};
 use zcash_primitives::{
     consensus::Parameters,
     keys::OutgoingViewingKey as SaplingOutgoingViewingKey,
-    memo::Memo,
+    memo::{Memo, MemoBytes},
     merkle_tree::Hashable,
     sapling::{
         note_encryption::SaplingDomain, Diversifier as SaplingDiversifier, Node as SaplingNode,
@@ -30,7 +30,9 @@ use zcash_primitives::{
     },
     transaction::{
         components::{
-            sapling::{Authorization as SaplingAuthorization, Bundle as SaplingBundle},
+            sapling::{
+                Authorization as SaplingAuthorization, Bundle as SaplingBundle, GrothProofBytes,
+            },
             OutputDescription, SpendDescription,
         },
         TxId,
@@ -64,6 +66,12 @@ impl ToBytes<512> for Memo {
     }
 }
 
+impl ToBytes<512> for MemoBytes {
+    fn to_bytes(&self) -> [u8; 512] {
+        *self.as_array()
+    }
+}
+
 impl<const N: usize> ToBytes<N> for [u8; N] {
     fn to_bytes(&self) -> [u8; N] {
         *self
@@ -84,6 +92,16 @@ impl<A> ShieldedOutputExt<OrchardDomain> for Action<A> {
 
     fn out_ciphertext(&self) -> [u8; 80] {
         self.encrypted_note().out_ciphertext
+    }
+}
+
+impl ShieldedOutputExt<SaplingDomain<Network>> for OutputDescription<GrothProofBytes> {
+    fn cv(&self) -> <SaplingDomain<Network> as Domain>::ValueCommitment {
+        self.cv
+    }
+
+    fn out_ciphertext(&self) -> [u8; 80] {
+        self.out_ciphertext
     }
 }
 
