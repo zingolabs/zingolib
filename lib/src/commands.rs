@@ -1341,6 +1341,43 @@ impl Command for QuitCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
+        // before shutting down, shut down all child processes..
+        // ...but only if the network being used is regtest.
+        let o = RT.block_on(async move { lightclient.do_info().await });
+        if o.contains("\"chain_name\": \"regtest\",") {
+            use std::process::Command;
+
+            // find zingo-cli's PID
+            let pid: u32 = std::process::id();
+
+            // now find all child processes of this PID
+            let raw_child_processes = Command::new("ps")
+                .args(["--no-headers", "--ppid", &pid.to_string()])
+                .output()
+                .expect("error running ps");
+
+            let owned_child_processes: String = String::from_utf8(raw_child_processes.stdout)
+                .expect("error unwraping stdout of ps");
+            let child_processes = owned_child_processes.split("\n").collect::<Vec<&str>>();
+
+            // &str representation of PIDs
+            let mut spawned_pids: Vec<&str> = Vec::new();
+
+            for child in child_processes {
+                if !child.is_empty() {
+                    let ch: Vec<&str> = child.trim_start().split_whitespace().collect();
+                    spawned_pids.push(ch[0]);
+                }
+            }
+
+            for pid in spawned_pids {
+                Command::new("kill")
+                    .args(["-9", pid])
+                    .output()
+                    .expect("error while killing regtest-spawned processes!");
+            }
+        }
+
         RT.block_on(async move {
             match lightclient.do_save().await {
                 Ok(_) => "".to_string(),

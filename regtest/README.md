@@ -10,12 +10,12 @@ Copy your compiled `zcashd` `zcash-cli` and `lightwalletd` binaries to `zingolib
 
 There are default config files for these binaries already in place in `/zingolib/regtest/conf/` - which can be edited also.
 
-From your `zingolib/` directory, with, for example, a release build (`cargo build --release`), you can run:
-`./target/release/zingo-cli --regtest --data-dir regtest/datadir/zingo --server=127.0.0.1:9067`
+For example, from your `zingolib/` directory, with a binary produced from `cargo build`, you can run:
+`./target/debug/zingo-cli --regtest --data-dir regtest/datadir/zingo --server=127.0.0.1:9067`
 This will start `zcashd` and `lightwalletd` and then connect to these tools with an interactive `zingo-cli`.
 It currently takes about 15 seconds to do so, to give the daemons time to boot, but this will be shortened soon.
 
-Also, please note that right now these daemons will still be running when `zingo-cli` shuts down!
+These daemons will be killed when the user exits `zingo-cli` using the `quit` command.
 
 You should see several diagnostic messsages, and then:
 `regtest detected and network set correctly!
