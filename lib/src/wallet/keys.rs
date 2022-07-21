@@ -146,7 +146,7 @@ impl Keys {
         &self.okeys
     }
     #[allow(dead_code)]
-    pub(crate) fn tkeys(&self) -> &Vec<WalletTKey> {
+    pub(crate) fn tkeys(&self) -> &Vec<TransparentKey> {
         &self.tkeys
     }
     pub(crate) fn zkeys_mut(&mut self) -> &mut Vec<SaplingKey> {
@@ -156,7 +156,7 @@ impl Keys {
         &mut self.okeys
     }
     #[allow(dead_code)]
-    pub(crate) fn tkeys_mut(&mut self) -> &mut Vec<WalletTKey> {
+    pub(crate) fn tkeys_mut(&mut self) -> &mut Vec<TransparentKey> {
         &mut self.tkeys
     }
     pub fn serialized_version() -> u64 {

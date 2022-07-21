@@ -1,5 +1,5 @@
 use crate::wallet::{
-    data::{OutgoingTxMetadata, SaplingNoteData},
+    data::OutgoingTxMetadata,
     keys::{orchard::OrchardKey, sapling::SaplingKey, Keys, ToBase58Check},
     traits::{
         self as zingo_traits, NoteData as _, Recipient as _, ShieldedOutputExt as _, Spend as _,
@@ -17,7 +17,6 @@ use orchard::{
 use std::{
     collections::HashSet,
     convert::{TryFrom, TryInto},
-    iter::FromIterator,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
@@ -30,7 +29,6 @@ use tokio::{
     },
     task::JoinHandle,
 };
-use zcash_client_backend::encoding::encode_payment_address;
 use zcash_note_encryption::{
     try_note_decryption, try_output_recovery_with_ovk, Domain, ShieldedOutput, ENC_CIPHERTEXT_SIZE,
 };
@@ -39,9 +37,7 @@ use zcash_primitives::{
     consensus::BlockHeight,
     legacy::TransparentAddress,
     memo::{Memo, MemoBytes},
-    sapling::note_encryption::{
-        try_sapling_note_decryption, try_sapling_output_recovery, SaplingDomain,
-    },
+    sapling::note_encryption::SaplingDomain,
     transaction::{Transaction, TxId},
 };
 
