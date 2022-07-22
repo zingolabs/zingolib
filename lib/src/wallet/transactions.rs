@@ -507,7 +507,7 @@ impl WalletTxns {
                 // Since this Txid has spent some funds, output notes in this Tx that are sent to us are actually change.
                 self.check_notes_mark_change(&txid);
 
-                // Mark the source note's nullifier as spent
+                // Mark the source note as spent
                 if !unconfirmed {
                     let wtx = self
                         .current
@@ -738,9 +738,9 @@ impl WalletTxns {
         wtx_notes: WtxNotes,
         address_diversifier: AddressDiversifier,
     ) where
-        NullifierFromNote: Fn(&NoteData::Note, &NoteData::Fvk, u64) -> NoteData::Null,
+        NullifierFromNote: Fn(&NoteData::Note, &NoteData::Fvk, u64) -> NoteData::Nullifier,
         WtxNotes: Fn(&mut WalletTx) -> &mut Vec<NoteData>,
-        AddressDiversifier: Fn(&Address) -> NoteData::Div,
+        AddressDiversifier: Fn(&Address) -> NoteData::Diversifier,
     {
         // Check if this is a change note
         let is_change = self.total_funds_spent_in(&txid) > 0;

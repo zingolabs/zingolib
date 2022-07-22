@@ -229,23 +229,23 @@ impl FromCommitment for MerkleHashOrchard {
 
 pub(crate) trait NoteData {
     type Fvk: Clone;
-    type Div;
+    type Diversifier;
     type Note;
     type Node: Hashable;
-    type Null: PartialEq + ToBytes<32>;
+    type Nullifier: PartialEq + ToBytes<32>;
     fn from_parts(
         extfvk: Self::Fvk,
-        diversifier: Self::Div,
+        diversifier: Self::Diversifier,
         note: Self::Note,
         witnesses: WitnessCache<Self::Node>,
-        nullifier: Self::Null,
+        nullifier: Self::Nullifier,
         spent: Option<(TxId, u32)>,
         unconfirmed_spent: Option<(TxId, u32)>,
         memo: Option<Memo>,
         is_change: bool,
         have_spending_key: bool,
     ) -> Self;
-    fn nullifier(&self) -> Self::Null;
+    fn nullifier(&self) -> Self::Nullifier;
     fn witnesses(&mut self) -> &mut WitnessCache<Self::Node>;
 }
 
@@ -297,10 +297,10 @@ pub struct OrchardNoteData {
 
 impl NoteData for SaplingNoteData {
     type Fvk = ExtendedFullViewingKey;
-    type Div = SaplingDiversifier;
+    type Diversifier = SaplingDiversifier;
     type Note = SaplingNote;
     type Node = SaplingNode;
-    type Null = SaplingNullifier;
+    type Nullifier = SaplingNullifier;
 
     fn from_parts(
         extfvk: ExtendedFullViewingKey,
@@ -328,7 +328,7 @@ impl NoteData for SaplingNoteData {
         }
     }
 
-    fn nullifier(&self) -> Self::Null {
+    fn nullifier(&self) -> Self::Nullifier {
         self.nullifier
     }
 
@@ -339,17 +339,17 @@ impl NoteData for SaplingNoteData {
 
 impl NoteData for OrchardNoteData {
     type Fvk = orchard::keys::FullViewingKey;
-    type Div = orchard::keys::Diversifier;
+    type Diversifier = orchard::keys::Diversifier;
     type Note = OrchardNote;
     type Node = MerkleHashOrchard;
-    type Null = OrchardNullifier;
+    type Nullifier = OrchardNullifier;
 
     fn from_parts(
         fvk: Self::Fvk,
-        diversifier: Self::Div,
+        diversifier: Self::Diversifier,
         note: Self::Note,
         witnesses: WitnessCache<Self::Node>,
-        nullifier: Self::Null,
+        nullifier: Self::Nullifier,
         spent: Option<(TxId, u32)>,
         unconfirmed_spent: Option<(TxId, u32)>,
         memo: Option<Memo>,
@@ -370,7 +370,7 @@ impl NoteData for OrchardNoteData {
         }
     }
 
-    fn nullifier(&self) -> Self::Null {
+    fn nullifier(&self) -> Self::Nullifier {
         self.nullifier
     }
     fn witnesses(&mut self) -> &mut WitnessCache<Self::Node> {
