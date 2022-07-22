@@ -440,7 +440,7 @@ impl WalletTxns {
         }
     }
 
-    fn get_or_create_tx(
+    fn get_or_create_transaction_metadata(
         &mut self,
         txid: &TxId,
         height: BlockHeight,
@@ -483,7 +483,7 @@ impl WalletTxns {
     ) {
         // Record this Tx as having spent some funds
 
-        let wtx = self.get_or_create_tx(
+        let wtx = self.get_or_create_transaction_metadata(
             &txid,
             BlockHeight::from(height),
             unconfirmed,
@@ -535,7 +535,12 @@ impl WalletTxns {
         timestamp: u64,
         total_transparent_value_spent: u64,
     ) {
-        let wtx = self.get_or_create_tx(&txid, BlockHeight::from(height), unconfirmed, timestamp);
+        let wtx = self.get_or_create_transaction_metadata(
+            &txid,
+            BlockHeight::from(height),
+            unconfirmed,
+            timestamp,
+        );
         wtx.total_transparent_value_spent = total_transparent_value_spent;
 
         self.check_notes_mark_change(&txid);
@@ -585,7 +590,12 @@ impl WalletTxns {
         output_num: u32,
     ) {
         // Read or create the current TxId
-        let wtx = self.get_or_create_tx(&txid, BlockHeight::from(height), unconfirmed, timestamp);
+        let wtx = self.get_or_create_transaction_metadata(
+            &txid,
+            BlockHeight::from(height),
+            unconfirmed,
+            timestamp,
+        );
 
         // Add this UTXO if it doesn't already exist
         if let Some(utxo) = wtx
@@ -622,7 +632,12 @@ impl WalletTxns {
         // Check if this is a change note
         let is_change = self.total_funds_spent_in(&txid) > 0;
 
-        let wtx = self.get_or_create_tx(&txid, BlockHeight::from(height), true, timestamp);
+        let wtx = self.get_or_create_transaction_metadata(
+            &txid,
+            BlockHeight::from(height),
+            true,
+            timestamp,
+        );
         // Update the block height, in case this was a mempool or unconfirmed tx.
         wtx.block = height;
 
@@ -730,7 +745,12 @@ impl WalletTxns {
         // Check if this is a change note
         let is_change = self.total_funds_spent_in(&txid) > 0;
 
-        let wtx = self.get_or_create_tx(&txid, BlockHeight::from(height), unconfirmed, timestamp);
+        let wtx = self.get_or_create_transaction_metadata(
+            &txid,
+            BlockHeight::from(height),
+            unconfirmed,
+            timestamp,
+        );
         // Update the block height, in case this was a mempool or unconfirmed tx.
         wtx.block = height;
 
