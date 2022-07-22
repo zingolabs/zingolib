@@ -7,7 +7,7 @@ use crate::{
     },
     compact_formats::RawTransaction,
     grpc_connector::GrpcConnector,
-    wallet::{self, data::WalletTx, keys::Keys, message::Message, now, LightWallet},
+    wallet::{data::WalletTx, keys::Keys, message::Message, now, LightWallet},
 };
 use futures::future::join_all;
 use json::{array, object, JsonValue};
@@ -33,7 +33,7 @@ use zcash_primitives::{
     block::BlockHash,
     consensus::{BlockHeight, BranchId},
     memo::{Memo, MemoBytes},
-    transaction::{components::amount::DEFAULT_FEE, Transaction, TxId},
+    transaction::{components::amount::DEFAULT_FEE, Transaction},
 };
 use zcash_proofs::prover::LocalTxProver;
 use zingoconfig::{ZingoConfig, MAX_REORG};
@@ -66,6 +66,33 @@ pub struct LightClient {
     sync_lock: Mutex<()>,
 
     bsync_data: Arc<RwLock<BlazeSyncData>>,
+}
+
+use serde_json::Value;
+
+fn repr_price_as_f64(from_gemini: &Value) -> f64 {
+    from_gemini
+        .get("price")
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .parse::<f64>()
+        .unwrap()
+}
+
+async fn get_recent_median_price_from_gemini() -> Result<f64, reqwest::Error> {
+    let mut trades: Vec<f64> =
+        reqwest::get("https://api.gemini.com/v1/trades/zecusd?limit_trades=11")
+            .await?
+            .json::<Value>()
+            .await?
+            .as_array()
+            .unwrap()
+            .into_iter()
+            .map(repr_price_as_f64)
+            .collect();
+    trades.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    Ok(trades[5])
 }
 
 impl LightClient {
@@ -662,10 +689,10 @@ impl LightClient {
 
         match price.zec_price {
             None => return "Error: No price".to_string(),
-            Some((ts, p)) => {
+            Some((timestamp, p)) => {
                 let o = object! {
                     "zec_price" => p,
-                    "fetched_at" =>  ts,
+                    "fetched_at" =>  timestamp,
                     "currency" => price.currency
                 };
 
@@ -1196,85 +1223,17 @@ impl LightClient {
         response
     }
 
-    async fn update_current_price(&self) {
+    pub(crate) async fn update_current_price(&self) -> String {
         // Get the zec price from the server
-        match GrpcConnector::get_current_zec_price(self.get_server_uri()).await {
-            Ok(p) => {
-                self.wallet.set_latest_zec_price(p.price).await;
+        match get_recent_median_price_from_gemini().await {
+            Ok(price) => {
+                self.wallet.set_latest_zec_price(price).await;
+                return price.to_string();
             }
-            Err(s) => error!("Error fetching latest price: {}", s),
-        }
-    }
-
-    // Update the historical prices in the wallet, if any are present.
-    async fn update_historical_prices(&self) {
-        let price = self.wallet.price.read().await.clone();
-
-        // Gather all transactions that need historical prices
-        let transaction_ids_to_fetch = self
-            .wallet
-            .transactions
-            .read()
-            .await
-            .current
-            .iter()
-            .filter_map(|(transaction_id, wtx)| match wtx.zec_price {
-                None => Some((transaction_id.clone(), wtx.datetime)),
-                Some(_) => None,
-            })
-            .collect::<Vec<(TxId, u64)>>();
-
-        if transaction_ids_to_fetch.is_empty() {
-            return;
-        }
-
-        info!(
-            "Fetching historical prices for {} txids",
-            transaction_ids_to_fetch.len()
-        );
-
-        let retry_count_increase = match GrpcConnector::get_historical_zec_prices(
-            self.get_server_uri(),
-            transaction_ids_to_fetch,
-            price.currency,
-        )
-        .await
-        {
-            Ok(prices) => {
-                let mut any_failed = false;
-
-                for (transaction_id, p) in prices {
-                    match p {
-                        None => any_failed = true,
-                        Some(p) => {
-                            // Update the price
-                            // info!("Historical price at txid {} was {}", txid, p);
-                            self.wallet
-                                .transactions
-                                .write()
-                                .await
-                                .current
-                                .get_mut(&transaction_id)
-                                .unwrap()
-                                .zec_price = Some(p);
-                        }
-                    }
-                }
-
-                // If any of the txids failed, increase the retry_count by 1.
-                if any_failed {
-                    1
-                } else {
-                    0
-                }
+            Err(s) => {
+                error!("Error fetching latest price: {}", s);
+                return s.to_string();
             }
-            Err(_) => 1,
-        };
-
-        {
-            let mut p = self.wallet.price.write().await;
-            p.last_historical_prices_fetched_at = Some(wallet::now());
-            p.historical_prices_retry_count += retry_count_increase;
         }
     }
 
@@ -1534,8 +1493,8 @@ impl LightClient {
             )
             .await;
 
-        // 2. Update the current price
-        self.update_current_price().await;
+        // 2. Update the current price:: Who's concern is price?
+        //self.update_current_price().await;
 
         // Sapling Tree GRPC Fetcher
         let grpc_connector = GrpcConnector::new(uri.clone());
@@ -1688,7 +1647,8 @@ impl LightClient {
         self.wallet.set_blocks(blocks).await;
 
         // 2. If sync was successfull, also try to get historical prices
-        self.update_historical_prices().await;
+        // self.update_historical_prices().await;
+        // zingolabs considers this to be a serious privacy/secuity leak
 
         // 3. Mark the sync finished, which will clear the nullifier cache etc...
         bsync_data.read().await.finish().await;

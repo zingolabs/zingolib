@@ -224,6 +224,7 @@ impl Command for HelpCommand {
                     responses.push(format!("{} - {}", cmd, obj.short_help()));
                 });
 
+                responses.sort();
                 responses.join("\n")
             }
             1 => match get_commands().get(args[0]) {
@@ -260,7 +261,10 @@ struct ZecPriceCommand {}
 impl Command for ZecPriceCommand {
     fn help(&self) -> String {
         let mut h = vec![];
-        h.push("Get the latest ZEC price in the wallet's currency (USD)");
+        h.push("Use UpdateCurrentPriceCommand instead.");
+        h.push("Backwards compatible price fetch");
+        h.push("Get the latest ZEC price from Gemini exchange's API.");
+        h.push("Currently using USD.");
         h.push("Usage:");
         h.push("zecprice");
         h.push("");
@@ -274,6 +278,28 @@ impl Command for ZecPriceCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
         RT.block_on(async move { lightclient.do_zec_price().await })
+    }
+}
+
+struct UpdateCurrentPriceCommand {}
+impl Command for UpdateCurrentPriceCommand {
+    fn help(&self) -> String {
+        let mut h = vec![];
+        h.push("Get the latest ZEC price from Gemini exchange's API.");
+        h.push("Currently using USD.");
+        h.push("Usage:");
+        h.push("zecprice");
+        h.push("");
+
+        h.join("\n")
+    }
+
+    fn short_help(&self) -> String {
+        "Get the latest ZEC price in the wallet's currency (USD)".to_string()
+    }
+
+    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
+        RT.block_on(async move { lightclient.update_current_price().await })
     }
 }
 
@@ -1418,6 +1444,10 @@ pub fn get_commands() -> Box<HashMap<String, Box<dyn Command>>> {
     map.insert("export".to_string(), Box::new(ExportCommand {}));
     map.insert("info".to_string(), Box::new(InfoCommand {}));
     map.insert("zecprice".to_string(), Box::new(ZecPriceCommand {}));
+    map.insert(
+        "updatecurrentprice".to_string(),
+        Box::new(UpdateCurrentPriceCommand {}),
+    );
     map.insert("send".to_string(), Box::new(SendCommand {}));
     map.insert("shield".to_string(), Box::new(ShieldCommand {}));
     map.insert("save".to_string(), Box::new(SaveCommand {}));
