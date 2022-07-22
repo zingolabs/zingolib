@@ -494,7 +494,7 @@ impl BlockAndWitnessData {
         }
     }
 
-    async fn get_note_witness<D, Spend, TreeGetter, OutputsFromTransaction, Node>(
+    async fn get_note_witness<D, Output, TreeGetter, OutputsFromTransaction, Node>(
         &self,
         uri: Uri,
         height: BlockHeight,
@@ -506,11 +506,11 @@ impl BlockAndWitnessData {
     ) -> Result<IncrementalWitness<Node>, String>
     where
         D: Domain,
-        Spend: ShieldedOutput<D, COMPACT_NOTE_SIZE>,
+        Output: ShieldedOutput<D, COMPACT_NOTE_SIZE>,
         Node: Hashable + FromCommitment,
         D::ExtractedCommitmentBytes: Into<[u8; 32]>,
         TreeGetter: Fn(&TreeState) -> &String,
-        OutputsFromTransaction: Fn(&CompactTx) -> &Vec<Spend>,
+        OutputsFromTransaction: Fn(&CompactTx) -> &Vec<Output>,
         [u8; 32]: From<<D as Domain>::ExtractedCommitmentBytes>,
     {
         // Get the previous block's height, because that block's sapling tree is the tree state at the start
