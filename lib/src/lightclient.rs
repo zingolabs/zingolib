@@ -1223,13 +1223,17 @@ impl LightClient {
         response
     }
 
-    async fn update_current_price(&self) {
+    pub(crate) async fn update_current_price(&self) -> String {
         // Get the zec price from the server
         match get_recent_median_price_from_gemini().await {
             Ok(price) => {
                 self.wallet.set_latest_zec_price(price).await;
+                return price.to_string();
             }
-            Err(s) => error!("Error fetching latest price: {}", s),
+            Err(s) => {
+                error!("Error fetching latest price: {}", s);
+                return s.to_string();
+            }
         }
     }
 
