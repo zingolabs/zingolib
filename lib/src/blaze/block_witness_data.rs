@@ -494,7 +494,7 @@ impl BlockAndWitnessData {
         }
     }
 
-    async fn get_note_witnesses<D, Spend, TreeGetter, OutputsFromTransaction, Node>(
+    async fn get_note_witness<D, Spend, TreeGetter, OutputsFromTransaction, Node>(
         &self,
         uri: Uri,
         height: BlockHeight,
@@ -562,14 +562,14 @@ impl BlockAndWitnessData {
 
         Err("Not found!".to_string())
     }
-    pub async fn get_sapling_note_witnesses(
+    pub async fn get_sapling_note_witness(
         &self,
         uri: Uri,
         height: BlockHeight,
         transaction_num: usize,
         output_num: usize,
     ) -> Result<IncrementalWitness<SaplingNode>, String> {
-        self.get_note_witnesses(
+        self.get_note_witness(
             uri,
             height,
             transaction_num,
@@ -581,14 +581,14 @@ impl BlockAndWitnessData {
         .await
     }
 
-    pub async fn get_orchard_note_witnesses(
+    pub async fn get_orchard_note_witness(
         &self,
         uri: Uri,
         height: BlockHeight,
         transaction_num: usize,
         action_num: usize,
     ) -> Result<IncrementalWitness<MerkleHashOrchard>, String> {
-        self.get_note_witnesses(
+        self.get_note_witness(
             uri,
             height,
             transaction_num,

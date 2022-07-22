@@ -184,7 +184,7 @@ impl TrialDecryptions {
                                     .read()
                                     .await
                                     .block_data
-                                    .get_sapling_note_witnesses(
+                                    .get_sapling_note_witness(
                                         uri,
                                         height,
                                         transaction_num,
@@ -261,7 +261,7 @@ impl TrialDecryptions {
                                     .read()
                                     .await
                                     .block_data
-                                    .get_orchard_note_witnesses(
+                                    .get_orchard_note_witness(
                                         uri,
                                         height,
                                         transaction_num,
