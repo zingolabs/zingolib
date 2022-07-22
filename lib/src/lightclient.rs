@@ -98,6 +98,10 @@ impl LightClient {
         Ok(l)
     }
 
+    pub fn set_server(&mut self, server: http::Uri) {
+        self.config.server = server
+    }
+
     fn write_file_if_not_exists(dir: &Box<Path>, name: &str, bytes: &[u8]) -> io::Result<()> {
         let mut file_path = dir.to_path_buf();
         file_path.push(name);
