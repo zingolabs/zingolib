@@ -245,8 +245,8 @@ pub(crate) trait NoteData {
         is_change: bool,
         have_spending_key: bool,
     ) -> Self;
-    fn nullifier(&self) -> Self::Nullifier;
-    fn witnesses(&mut self) -> &mut WitnessCache<Self::Node>;
+    fn get_nullifier(&self) -> Self::Nullifier;
+    fn get_witnesses(&mut self) -> &mut WitnessCache<Self::Node>;
 }
 
 pub struct SaplingNoteData {
@@ -328,11 +328,11 @@ impl NoteData for SaplingNoteData {
         }
     }
 
-    fn nullifier(&self) -> Self::Nullifier {
+    fn get_nullifier(&self) -> Self::Nullifier {
         self.nullifier
     }
 
-    fn witnesses(&mut self) -> &mut WitnessCache<Self::Node> {
+    fn get_witnesses(&mut self) -> &mut WitnessCache<Self::Node> {
         &mut self.witnesses
     }
 }
@@ -370,10 +370,10 @@ impl NoteData for OrchardNoteData {
         }
     }
 
-    fn nullifier(&self) -> Self::Nullifier {
+    fn get_nullifier(&self) -> Self::Nullifier {
         self.nullifier
     }
-    fn witnesses(&mut self) -> &mut WitnessCache<Self::Node> {
+    fn get_witnesses(&mut self) -> &mut WitnessCache<Self::Node> {
         &mut self.witnesses
     }
 }
