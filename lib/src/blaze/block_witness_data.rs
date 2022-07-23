@@ -3,7 +3,7 @@ use crate::{
     grpc_connector::GrpcConnector,
     lightclient::checkpoints::get_all_main_checkpoints,
     wallet::{
-        data::{BlockData, FromCommitment, WalletNullifier, WalletTx, WitnessCache},
+        data::{BlockData, FromBytes, WalletNullifier, WalletTx, WitnessCache},
         transactions::WalletTxns,
     },
 };
@@ -507,7 +507,7 @@ impl BlockAndWitnessData {
     where
         D: Domain,
         Output: ShieldedOutput<D, COMPACT_NOTE_SIZE>,
-        Node: Hashable + FromCommitment,
+        Node: Hashable + FromBytes,
         D::ExtractedCommitmentBytes: Into<[u8; 32]>,
         TreeGetter: Fn(&TreeState) -> &String,
         OutputsFromTransaction: Fn(&CompactTx) -> &Vec<Output>,
@@ -552,7 +552,7 @@ impl BlockAndWitnessData {
                 .iter()
                 .enumerate()
             {
-                let node = Node::from_commitment(&co.cmstar_bytes().into());
+                let node = Node::from_commitment_bytes(&co.cmstar_bytes().into());
                 tree.append(node).unwrap();
                 if t_num == transaction_num && o_num == output_num {
                     return Ok(IncrementalWitness::from_tree(&tree));
@@ -601,7 +601,7 @@ impl BlockAndWitnessData {
     }
 
     // Stream all the outputs start at the block till the highest block available.
-    pub(crate) async fn update_witness_after_block<Node: Hashable + FromCommitment>(
+    pub(crate) async fn update_witness_after_block<Node: Hashable + FromBytes>(
         &self,
         witnesses: WitnessCache<Node>,
     ) -> WitnessCache<Node> {
@@ -628,7 +628,7 @@ impl BlockAndWitnessData {
                 let cb = &blocks.get(i as usize).unwrap().cb();
                 for compact_transaction in &cb.vtx {
                     for co in &compact_transaction.outputs {
-                        let node = Node::from_commitment(&co.cmu().unwrap().into());
+                        let node = Node::from_commitment_bytes(&co.cmu().unwrap().into());
                         w.append(node).unwrap();
                     }
                 }
@@ -650,7 +650,7 @@ impl BlockAndWitnessData {
         return WitnessCache::new(fsb.into_vec(), top_block);
     }
 
-    pub(crate) async fn update_witness_after_pos<Node: Hashable + FromCommitment>(
+    pub(crate) async fn update_witness_after_pos<Node: Hashable + FromBytes>(
         &self,
         height: &BlockHeight,
         transaction_id: &TxId,
@@ -682,7 +682,7 @@ impl BlockAndWitnessData {
                     // If we've already passed the transaction id and output_num, stream the results
                     if transaction_id_found && output_found {
                         let co = compact_transaction.outputs.get(j as usize).unwrap();
-                        let node = Node::from_commitment(&co.cmu().unwrap().into());
+                        let node = Node::from_commitment_bytes(&co.cmu().unwrap().into());
                         w.append(node).unwrap();
                     }
 

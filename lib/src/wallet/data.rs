@@ -196,8 +196,8 @@ impl<Node: Hashable> WitnessCache<Node> {
     //     return hex::encode(buf);
     // }
 }
-pub(crate) trait FromCommitment {
-    fn from_commitment(from: &[u8; 32]) -> Self;
+pub(crate) trait FromBytes {
+    fn from_commitment_bytes(from: &[u8; 32]) -> Self;
 }
 
 pub(crate) trait ToBytes<const N: usize> {
@@ -216,13 +216,13 @@ impl ToBytes<32> for OrchardNullifier {
     }
 }
 
-impl FromCommitment for SaplingNode {
-    fn from_commitment(from: &[u8; 32]) -> Self {
+impl FromBytes for SaplingNode {
+    fn from_commitment_bytes(from: &[u8; 32]) -> Self {
         Self::new(*from)
     }
 }
-impl FromCommitment for MerkleHashOrchard {
-    fn from_commitment(from: &[u8; 32]) -> Self {
+impl FromBytes for MerkleHashOrchard {
+    fn from_commitment_bytes(from: &[u8; 32]) -> Self {
         Self::from_bytes(from).unwrap()
     }
 }
