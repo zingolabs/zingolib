@@ -1,6 +1,7 @@
 pub(crate) fn launch() {
     use std::ffi::OsString;
     use std::fs::File;
+    use std::io::Read;
     use std::path::PathBuf;
     use std::process::{Command, Stdio};
     use std::{thread, time};
@@ -106,6 +107,12 @@ pub(crate) fn launch() {
 
     println!("zcashd datadir: {}", &flagged_datadir);
     println!("zcashd conf file: {}", &flagged_zcashd_conf);
+
+    let mut zcashd_stdout_log: String = String::new();
+    zcashd_stdout_log.push_str(zcash_logs.to_str().expect("error converting to str"));
+    zcashd_stdout_log.push_str("zcashd_stdout.log");
+    let mut zcashd_logfile = File::create(&zcashd_stdout_log).expect("file::create Result error");
+
     let mut zcashd_command = Command::new(zcashd_bin)
         .args([
             "--printtoconsole",
@@ -123,24 +130,32 @@ pub(crate) fn launch() {
 
     if let Some(mut zcashd_log) = zcashd_command.stdout.take() {
         std::thread::spawn(move || {
-            let mut zcashd_stdout_log: String = String::new();
-            zcashd_stdout_log.push_str(zcash_logs.to_str().expect("error converting to str"));
-            zcashd_stdout_log.push_str("zcashd_stdout.log");
-
-            let mut zcashd_logfile =
-                File::create(zcashd_stdout_log).expect("file::create Result error");
             std::io::copy(&mut zcashd_log, &mut zcashd_logfile)
-                .expect("io::copy error writing zcashd_studout.log");
+                .expect("io::copy error writing zcashd_stdout.log");
         });
     }
-    println!("zcashd is starting in regtest mode, please standby about 10 seconds...");
-    // wait 10 seconds for zcashd to fire up
-    // very generous, plan to tune down
-    let ten_seconds = time::Duration::from_millis(10_000);
-    thread::sleep(ten_seconds);
+
+    println!("zcashd is starting in regtest mode, please standby...");
+    let half_second = time::Duration::from_millis(500);
+    thread::sleep(half_second);
+
+    let mut alt = File::open(&zcashd_stdout_log).expect("can't open zcashd log");
+    let mut zcashd_logfile_state = String::new();
+    //now enter loop to find string that indicates daemon is ready for next step
+    loop {
+        alt.read_to_string(&mut zcashd_logfile_state)
+            .expect("problem reading zcashd_logfile into rust string"); // returns result
+        if zcashd_logfile_state.contains("Error:") {
+            panic!("zcashd reporting ERROR! exiting with panic. you may have to shut the daemon down manually.");
+        } else if zcashd_logfile_state.contains("init message: Done loading") {
+            break;
+        } else {
+            thread::sleep(half_second);
+        }
+    }
 
     println!("zcashd start section completed, zcashd should be running.");
-    println!("Standby, lightwalletd is about to start. This should only take a moment.");
+    println!("lightwalletd is about to start. This should only take a moment.");
 
     let lwd_confs: PathBuf = [
         worktree_home.clone(),
@@ -185,11 +200,13 @@ pub(crate) fn launch() {
     ]
     .iter()
     .collect();
-    let mut unflagged_lwd_log: String = String::new();
-    unflagged_lwd_log.push_str(lwd_logs.to_str().expect("error making lwd_datadir"));
-    unflagged_lwd_log.push_str("lwd.log");
 
-    Command::new(lwd_bin)
+    let mut lwd_stdout_log: String = String::new();
+    lwd_stdout_log.push_str(lwd_logs.to_str().expect("error making lwd_datadir"));
+    lwd_stdout_log.push_str("lwd_stdout.log");
+    let mut lwd_logfile = File::create(&lwd_stdout_log).expect("file::create Result error");
+
+    let mut lwd_command = Command::new(lwd_bin)
         .args([
             "--no-tls-very-insecure",
             "--zcash-conf-path",
@@ -199,25 +216,36 @@ pub(crate) fn launch() {
             "--data-dir",
             &unflagged_lwd_datadir,
             "--log-file",
-            &unflagged_lwd_log,
+            &lwd_stdout_log,
         ])
         // this currently prints stdout of lwd process' output also to the zingo-cli stdout
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .expect("failed to start lwd");
 
-    // this client's stdout is less verbose so logging it may not be needed along with the working lwd.log file.
-    //let mut lwd_stdout_logfile =
-    //File::create("/zingolib/regtest/logs/lwd-ping.log").unwrap();
-    // the next line is a halting process..
-    //io::copy(&mut lwd_command.stdout.unwrap(), &mut lwd_stdout_logfile).unwrap();
+    if let Some(mut lwd_log) = lwd_command.stdout.take() {
+        std::thread::spawn(move || {
+            std::io::copy(&mut lwd_log, &mut lwd_logfile)
+                .expect("io::copy error writing lwd_stdout.log");
+        });
+    }
 
-    // wait 5 seconds for lwd to fire up
-    // very generous, plan to tune down
-    let five_seconds = time::Duration::from_millis(5_000);
-    thread::sleep(five_seconds);
+    println!("lightwalletd is now started in regtest mode, please standby...");
 
+    let mut lwd_alt = File::open(&lwd_stdout_log).expect("can't open lwd log");
+    let mut lwd_logfile_state = String::new();
+    //now enter loop to find string that indicates daemon is ready for next step
+    loop {
+        lwd_alt
+            .read_to_string(&mut lwd_logfile_state)
+            .expect("problem reading lwd_logfile into rust string");
+        if lwd_logfile_state.contains("Starting insecure no-TLS (plaintext) server") {
+            break;
+        } else {
+            thread::sleep(half_second);
+        }
+    }
     println!("lwd start section completed, lightwalletd should be running!");
     println!("Standby, Zingo-cli should be running in regtest mode momentarily...");
 }
