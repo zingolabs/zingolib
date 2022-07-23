@@ -445,7 +445,7 @@ impl FetchFullTxns {
                             height,
                             unconfirmed,
                             block_time,
-                            *nf,
+                            crate::wallet::data::WalletNullifier::Sapling(*nf),
                             *value,
                             *transaction_id,
                         );

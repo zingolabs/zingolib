@@ -4,13 +4,13 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use orchard::{
     keys::Diversifier as OrchardDiversifier,
     note::{Note as OrchardNote, Nullifier as OrchardNullifier},
+    tree::MerkleHashOrchard,
 };
 use prost::Message;
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
 use std::usize;
 use zcash_encoding::{Optional, Vector};
-use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::{consensus::BlockHeight, zip32::ExtendedSpendingKey};
 use zcash_primitives::{
     memo::Memo,
@@ -22,6 +22,13 @@ use zcash_primitives::{
     transaction::{components::OutPoint, TxId},
     zip32::ExtendedFullViewingKey,
 };
+use zcash_primitives::{memo::MemoBytes, merkle_tree::Hashable};
+
+#[derive(Clone, Copy, Debug)]
+pub enum WalletNullifier {
+    Sapling(SaplingNullifier),
+    Orchard(OrchardNullifier),
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BlockData {
@@ -123,13 +130,13 @@ impl BlockData {
 }
 
 #[derive(Clone)]
-pub(crate) struct WitnessCache {
-    witnesses: Vec<IncrementalWitness<SaplingNode>>,
+pub(crate) struct WitnessCache<Node: Hashable> {
+    witnesses: Vec<IncrementalWitness<Node>>,
     pub(crate) top_height: u64,
 }
 
-impl WitnessCache {
-    pub fn new(witnesses: Vec<IncrementalWitness<SaplingNode>>, top_height: u64) -> Self {
+impl<Node: Hashable> WitnessCache<Node> {
+    pub fn new(witnesses: Vec<IncrementalWitness<Node>>, top_height: u64) -> Self {
         Self {
             witnesses,
             top_height,
@@ -155,20 +162,20 @@ impl WitnessCache {
         self.witnesses.clear();
     }
 
-    pub fn get(&self, i: usize) -> Option<&IncrementalWitness<SaplingNode>> {
+    pub fn get(&self, i: usize) -> Option<&IncrementalWitness<Node>> {
         self.witnesses.get(i)
     }
 
     #[cfg(test)]
-    pub fn get_from_last(&self, i: usize) -> Option<&IncrementalWitness<SaplingNode>> {
+    pub fn get_from_last(&self, i: usize) -> Option<&IncrementalWitness<Node>> {
         self.witnesses.get(self.len() - i - 1)
     }
 
-    pub fn last(&self) -> Option<&IncrementalWitness<SaplingNode>> {
+    pub fn last(&self) -> Option<&IncrementalWitness<Node>> {
         self.witnesses.last()
     }
 
-    pub fn into_fsb(self, fsb: &mut FixedSizeBuffer<IncrementalWitness<SaplingNode>>) {
+    pub fn into_fsb(self, fsb: &mut FixedSizeBuffer<IncrementalWitness<Node>>) {
         self.witnesses.into_iter().for_each(|w| fsb.push(w));
     }
 
@@ -189,6 +196,58 @@ impl WitnessCache {
     //     return hex::encode(buf);
     // }
 }
+pub(crate) trait FromCommitment {
+    fn from_commitment(from: &[u8; 32]) -> Self;
+}
+
+pub(crate) trait ToBytes<const N: usize> {
+    fn to_bytes(&self) -> [u8; N];
+}
+
+impl ToBytes<32> for SaplingNullifier {
+    fn to_bytes(&self) -> [u8; 32] {
+        self.0
+    }
+}
+
+impl ToBytes<32> for OrchardNullifier {
+    fn to_bytes(&self) -> [u8; 32] {
+        OrchardNullifier::to_bytes(*self)
+    }
+}
+
+impl FromCommitment for SaplingNode {
+    fn from_commitment(from: &[u8; 32]) -> Self {
+        Self::new(*from)
+    }
+}
+impl FromCommitment for MerkleHashOrchard {
+    fn from_commitment(from: &[u8; 32]) -> Self {
+        Self::from_bytes(from).unwrap()
+    }
+}
+
+pub(crate) trait NoteData {
+    type Fvk: Clone;
+    type Diversifier;
+    type Note;
+    type Node: Hashable;
+    type Nullifier: PartialEq + ToBytes<32>;
+    fn from_parts(
+        extfvk: Self::Fvk,
+        diversifier: Self::Diversifier,
+        note: Self::Note,
+        witnesses: WitnessCache<Self::Node>,
+        nullifier: Self::Nullifier,
+        spent: Option<(TxId, u32)>,
+        unconfirmed_spent: Option<(TxId, u32)>,
+        memo: Option<Memo>,
+        is_change: bool,
+        have_spending_key: bool,
+    ) -> Self;
+    fn nullifier(&self) -> Self::Nullifier;
+    fn witnesses(&mut self) -> &mut WitnessCache<Self::Node>;
+}
 
 pub struct SaplingNoteData {
     // Technically, this should be recoverable from the account number,
@@ -199,7 +258,7 @@ pub struct SaplingNoteData {
     pub note: SaplingNote,
 
     // Witnesses for the last 100 blocks. witnesses.last() is the latest witness
-    pub(crate) witnesses: WitnessCache,
+    pub(crate) witnesses: WitnessCache<SaplingNode>,
     pub(super) nullifier: SaplingNullifier,
     pub spent: Option<(TxId, u32)>, // If this note was confirmed spent
 
@@ -222,7 +281,7 @@ pub struct OrchardNoteData {
 
     // Witnesses for the last 100 blocks. witnesses.last() is the latest witness
     #[allow(dead_code)]
-    pub(crate) witnesses: WitnessCache,
+    pub(crate) witnesses: WitnessCache<MerkleHashOrchard>,
     pub(super) nullifier: OrchardNullifier,
     pub spent: Option<(TxId, u32)>, // If this note was confirmed spent
 
@@ -234,6 +293,89 @@ pub struct OrchardNoteData {
 
     // If the spending key is available in the wallet (i.e., whether to keep witness up-to-date)
     pub have_spending_key: bool,
+}
+
+impl NoteData for SaplingNoteData {
+    type Fvk = ExtendedFullViewingKey;
+    type Diversifier = SaplingDiversifier;
+    type Note = SaplingNote;
+    type Node = SaplingNode;
+    type Nullifier = SaplingNullifier;
+
+    fn from_parts(
+        extfvk: ExtendedFullViewingKey,
+        diversifier: SaplingDiversifier,
+        note: SaplingNote,
+        witnesses: WitnessCache<SaplingNode>,
+        nullifier: SaplingNullifier,
+        spent: Option<(TxId, u32)>,
+        unconfirmed_spent: Option<(TxId, u32)>,
+        memo: Option<Memo>,
+        is_change: bool,
+        have_spending_key: bool,
+    ) -> Self {
+        Self {
+            extfvk,
+            diversifier,
+            note,
+            witnesses,
+            nullifier,
+            spent,
+            unconfirmed_spent,
+            memo,
+            is_change,
+            have_spending_key,
+        }
+    }
+
+    fn nullifier(&self) -> Self::Nullifier {
+        self.nullifier
+    }
+
+    fn witnesses(&mut self) -> &mut WitnessCache<Self::Node> {
+        &mut self.witnesses
+    }
+}
+
+impl NoteData for OrchardNoteData {
+    type Fvk = orchard::keys::FullViewingKey;
+    type Diversifier = orchard::keys::Diversifier;
+    type Note = OrchardNote;
+    type Node = MerkleHashOrchard;
+    type Nullifier = OrchardNullifier;
+
+    fn from_parts(
+        fvk: Self::Fvk,
+        diversifier: Self::Diversifier,
+        note: Self::Note,
+        witnesses: WitnessCache<Self::Node>,
+        nullifier: Self::Nullifier,
+        spent: Option<(TxId, u32)>,
+        unconfirmed_spent: Option<(TxId, u32)>,
+        memo: Option<Memo>,
+        is_change: bool,
+        have_spending_key: bool,
+    ) -> Self {
+        Self {
+            fvk,
+            diversifier,
+            note,
+            witnesses,
+            nullifier,
+            spent,
+            unconfirmed_spent,
+            memo,
+            is_change,
+            have_spending_key,
+        }
+    }
+
+    fn nullifier(&self) -> Self::Nullifier {
+        self.nullifier
+    }
+    fn witnesses(&mut self) -> &mut WitnessCache<Self::Node> {
+        &mut self.witnesses
+    }
 }
 
 impl std::fmt::Debug for SaplingNoteData {
@@ -671,6 +813,9 @@ pub struct WalletTx {
     // List of all nullifiers spent in this Tx. These nullifiers belong to the wallet.
     pub spent_sapling_nullifiers: Vec<SaplingNullifier>,
 
+    // List of all nullifiers spent in this Tx. These nullifiers belong to the wallet.
+    pub spent_orchard_nullifiers: Vec<OrchardNullifier>,
+
     // List of all sapling notes received in this tx. Some of these might be change notes.
     pub sapling_notes: Vec<SaplingNoteData>,
 
@@ -682,6 +827,9 @@ pub struct WalletTx {
 
     // Total value of all the sapling nullifiers that were spent in this Tx
     pub total_sapling_value_spent: u64,
+
+    // Total value of all the orchard nullifiers that were spent in this Tx
+    pub total_orchard_value_spent: u64,
 
     // Total amount of transparent funds that belong to us that were spent in this Tx.
     pub total_transparent_value_spent: u64,
@@ -698,13 +846,24 @@ pub struct WalletTx {
 
 impl WalletTx {
     pub fn serialized_version() -> u64 {
-        return 21;
+        return 22;
     }
 
     pub fn new_txid(txid: &Vec<u8>) -> TxId {
         let mut txid_bytes = [0u8; 32];
         txid_bytes.copy_from_slice(txid);
         TxId::from_bytes(txid_bytes)
+    }
+
+    pub fn total_value_spent(&self) -> u64 {
+        self.value_spent_by_pool().iter().sum()
+    }
+    pub fn value_spent_by_pool(&self) -> [u64; 3] {
+        [
+            self.total_transparent_value_spent,
+            self.total_sapling_value_spent,
+            self.total_orchard_value_spent,
+        ]
     }
 
     pub fn get_price(datetime: u64, price: &WalletZecPriceInfo) -> Option<f64> {
@@ -734,11 +893,13 @@ impl WalletTx {
             datetime,
             txid: transaction_id.clone(),
             spent_sapling_nullifiers: vec![],
+            spent_orchard_nullifiers: vec![],
             sapling_notes: vec![],
             orchard_notes: vec![],
             utxos: vec![],
             total_transparent_value_spent: 0,
             total_sapling_value_spent: 0,
+            total_orchard_value_spent: 0,
             outgoing_metadata: vec![],
             full_tx_scanned: false,
             zec_price: None,
@@ -772,6 +933,11 @@ impl WalletTx {
 
         let total_sapling_value_spent = reader.read_u64::<LittleEndian>()?;
         let total_transparent_value_spent = reader.read_u64::<LittleEndian>()?;
+        let total_orchard_value_spent = if version >= 22 {
+            reader.read_u64::<LittleEndian>()?
+        } else {
+            0
+        };
 
         // Outgoing metadata was only added in version 2
         let outgoing_metadata = Vector::read(&mut reader, |r| OutgoingTxMetadata::read(r))?;
@@ -794,6 +960,16 @@ impl WalletTx {
             })?
         };
 
+        let spent_orchard_nullifiers = if version <= 21 {
+            vec![]
+        } else {
+            Vector::read(&mut reader, |r| {
+                let mut n = [0u8; 32];
+                r.read_exact(&mut n)?;
+                Ok(OrchardNullifier::from_bytes(&n).unwrap())
+            })?
+        };
+
         Ok(Self {
             block,
             unconfirmed,
@@ -803,8 +979,10 @@ impl WalletTx {
             orchard_notes: vec![], //Unimplemented
             utxos,
             spent_sapling_nullifiers,
+            spent_orchard_nullifiers,
             total_sapling_value_spent,
             total_transparent_value_spent,
+            total_orchard_value_spent,
             outgoing_metadata,
             full_tx_scanned,
             zec_price,
@@ -826,8 +1004,9 @@ impl WalletTx {
         Vector::write(&mut writer, &self.sapling_notes, |w, nd| nd.write(w))?;
         Vector::write(&mut writer, &self.utxos, |w, u| u.write(w))?;
 
-        writer.write_u64::<LittleEndian>(self.total_sapling_value_spent)?;
-        writer.write_u64::<LittleEndian>(self.total_transparent_value_spent)?;
+        for pool in self.value_spent_by_pool() {
+            writer.write_u64::<LittleEndian>(pool)?;
+        }
 
         // Write the outgoing metadata
         Vector::write(&mut writer, &self.outgoing_metadata, |w, om| om.write(w))?;
@@ -841,8 +1020,24 @@ impl WalletTx {
         Vector::write(&mut writer, &self.spent_sapling_nullifiers, |w, n| {
             w.write_all(&n.0)
         })?;
+        Vector::write(&mut writer, &self.spent_orchard_nullifiers, |w, n| {
+            w.write_all(&n.to_bytes())
+        })?;
 
         Ok(())
+    }
+
+    pub(super) fn add_spent_nullifier(&mut self, nullifier: WalletNullifier, value: u64) {
+        match nullifier {
+            WalletNullifier::Sapling(nf) => {
+                self.spent_sapling_nullifiers.push(nf);
+                self.total_sapling_value_spent += value;
+            }
+            WalletNullifier::Orchard(nf) => {
+                self.spent_orchard_nullifiers.push(nf);
+                self.total_orchard_value_spent += value;
+            }
+        }
     }
 }
 

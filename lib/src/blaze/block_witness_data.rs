@@ -3,10 +3,12 @@ use crate::{
     grpc_connector::GrpcConnector,
     lightclient::checkpoints::get_all_main_checkpoints,
     wallet::{
-        data::{BlockData, WalletTx, WitnessCache},
+        data::{BlockData, FromCommitment, WalletNullifier, WalletTx, WitnessCache},
         transactions::WalletTxns,
     },
 };
+use orchard::tree::MerkleHashOrchard;
+use zcash_note_encryption::{Domain, ShieldedOutput, COMPACT_NOTE_SIZE};
 use zingoconfig::{ZingoConfig, MAX_REORG};
 
 use futures::future::join_all;
@@ -21,9 +23,9 @@ use tokio::{
     time::sleep,
 };
 use zcash_primitives::{
-    consensus::BlockHeight,
-    merkle_tree::{CommitmentTree, IncrementalWitness},
-    sapling::{Node, Nullifier},
+    consensus::{BlockHeight, NetworkUpgrade, Parameters},
+    merkle_tree::{CommitmentTree, Hashable, IncrementalWitness},
+    sapling::Node as SaplingNode,
     transaction::TxId,
 };
 
@@ -50,6 +52,7 @@ pub struct BlockAndWitnessData {
     sync_status: Arc<RwLock<SyncStatus>>,
 
     sapling_activation_height: u64,
+    orchard_activation_height: u64,
 }
 
 impl BlockAndWitnessData {
@@ -62,6 +65,11 @@ impl BlockAndWitnessData {
             verified_tree: None,
             sync_status,
             sapling_activation_height: config.sapling_activation_height(),
+            orchard_activation_height: config
+                .chain
+                .activation_height(NetworkUpgrade::Nu5)
+                .unwrap()
+                .into(),
         }
     }
 
@@ -106,9 +114,9 @@ impl BlockAndWitnessData {
         }
     }
 
-    pub async fn get_ctx_for_nf_at_height(
+    pub async fn get_compact_transaction_for_nullifier_at_height(
         &self,
-        nullifier: &Nullifier,
+        nullifier: &WalletNullifier,
         height: u64,
     ) -> (CompactTx, u32) {
         self.wait_for_block(height).await;
@@ -120,15 +128,26 @@ impl BlockAndWitnessData {
 
             bd.cb()
         };
-
-        for compact_transaction in &cb.vtx {
-            for cs in &compact_transaction.spends {
-                if cs.nf == nullifier.to_vec() {
-                    return (compact_transaction.clone(), cb.time);
+        match nullifier {
+            WalletNullifier::Sapling(nullifier) => {
+                for compact_transaction in &cb.vtx {
+                    for cs in &compact_transaction.spends {
+                        if cs.nf == nullifier.to_vec() {
+                            return (compact_transaction.clone(), cb.time);
+                        }
+                    }
+                }
+            }
+            WalletNullifier::Orchard(nullifier) => {
+                for compact_transaction in &cb.vtx {
+                    for ca in &compact_transaction.actions {
+                        if ca.nullifier == nullifier.to_bytes().to_vec() {
+                            return (compact_transaction.clone(), cb.time);
+                        }
+                    }
                 }
             }
         }
-
         panic!("Tx not found");
     }
 
@@ -219,9 +238,10 @@ impl BlockAndWitnessData {
                     if ct.height == vt.height {
                         return true;
                     }
-                    let mut tree =
-                        CommitmentTree::<Node>::read(&hex::decode(ct.sapling_tree).unwrap()[..])
-                            .unwrap();
+                    let mut tree = CommitmentTree::<SaplingNode>::read(
+                        &hex::decode(ct.sapling_tree).unwrap()[..],
+                    )
+                    .unwrap();
 
                     {
                         let blocks = blocks.read().await;
@@ -239,7 +259,7 @@ impl BlockAndWitnessData {
                             let cb = &blocks.get(i as usize).unwrap().cb();
                             for compact_transaction in &cb.vtx {
                                 for co in &compact_transaction.outputs {
-                                    let node = Node::new(co.cmu().unwrap().into());
+                                    let node = SaplingNode::new(co.cmu().unwrap().into());
                                     tree.append(node).unwrap();
                                 }
                             }
@@ -422,28 +442,45 @@ impl BlockAndWitnessData {
         }
     }
 
-    pub(crate) async fn is_nf_spent(&self, nf: Nullifier, after_height: u64) -> Option<u64> {
+    pub(crate) async fn is_nf_spent(&self, nf: WalletNullifier, after_height: u64) -> Option<u64> {
         self.wait_for_block(after_height).await;
 
         {
             // Read Lock
             let blocks = self.blocks.read().await;
             let pos = blocks.first().unwrap().height - after_height;
-            let nf = nf.to_vec();
+            match nf {
+                WalletNullifier::Sapling(nf) => {
+                    let nf = nf.to_vec();
 
-            for i in (0..pos + 1).rev() {
-                let cb = &blocks.get(i as usize).unwrap().cb();
-                for compact_transaction in &cb.vtx {
-                    for cs in &compact_transaction.spends {
-                        if cs.nf == nf {
-                            return Some(cb.height);
+                    for i in (0..pos + 1).rev() {
+                        let cb = &blocks.get(i as usize).unwrap().cb();
+                        for compact_transaction in &cb.vtx {
+                            for cs in &compact_transaction.spends {
+                                if cs.nf == nf {
+                                    return Some(cb.height);
+                                }
+                            }
+                        }
+                    }
+                }
+                WalletNullifier::Orchard(nf) => {
+                    let nf = nf.to_bytes();
+
+                    for i in (0..pos + 1).rev() {
+                        let cb = &blocks.get(i as usize).unwrap().cb();
+                        for compact_transaction in &cb.vtx {
+                            for ca in &compact_transaction.actions {
+                                if ca.nullifier == nf {
+                                    return Some(cb.height);
+                                }
+                            }
                         }
                     }
                 }
             }
+            None
         }
-
-        None
     }
 
     pub async fn get_block_timestamp(&self, height: &BlockHeight) -> u32 {
@@ -457,25 +494,37 @@ impl BlockAndWitnessData {
         }
     }
 
-    pub async fn get_note_witness(
+    async fn get_note_witness<D, Output, TreeGetter, OutputsFromTransaction, Node>(
         &self,
         uri: Uri,
         height: BlockHeight,
         transaction_num: usize,
         output_num: usize,
-    ) -> Result<IncrementalWitness<Node>, String> {
+        tree_getter: TreeGetter,
+        outputs_from_transaction: OutputsFromTransaction,
+        activation_height: u64,
+    ) -> Result<IncrementalWitness<Node>, String>
+    where
+        D: Domain,
+        Output: ShieldedOutput<D, COMPACT_NOTE_SIZE>,
+        Node: Hashable + FromCommitment,
+        D::ExtractedCommitmentBytes: Into<[u8; 32]>,
+        TreeGetter: Fn(&TreeState) -> &String,
+        OutputsFromTransaction: Fn(&CompactTx) -> &Vec<Output>,
+        [u8; 32]: From<<D as Domain>::ExtractedCommitmentBytes>,
+    {
         // Get the previous block's height, because that block's sapling tree is the tree state at the start
         // of the requested block.
         let prev_height = { u64::from(height) - 1 };
 
         let (cb, mut tree) = {
-            let tree = if prev_height < self.sapling_activation_height {
+            let tree = if prev_height < activation_height {
                 CommitmentTree::empty()
             } else {
                 let tree_state = GrpcConnector::get_sapling_tree(uri, prev_height).await?;
-                let sapling_tree = hex::decode(&tree_state.sapling_tree).unwrap();
+                let tree = hex::decode(tree_getter(&tree_state)).unwrap();
                 self.verification_list.write().await.push(tree_state);
-                CommitmentTree::read(&sapling_tree[..]).map_err(|e| format!("{}", e))?
+                CommitmentTree::read(&tree[..]).map_err(|e| format!("{}", e))?
             };
 
             // Get the current compact block
@@ -499,8 +548,11 @@ impl BlockAndWitnessData {
         // Go over all the outputs. Remember that all the numbers are inclusive, i.e., we have to scan upto and including
         // block_height, transaction_num and output_num
         for (t_num, compact_transaction) in cb.vtx.iter().enumerate() {
-            for (o_num, co) in compact_transaction.outputs.iter().enumerate() {
-                let node = Node::new(co.cmu().unwrap().into());
+            for (o_num, co) in outputs_from_transaction(compact_transaction)
+                .iter()
+                .enumerate()
+            {
+                let node = Node::from_commitment(&co.cmstar_bytes().into());
                 tree.append(node).unwrap();
                 if t_num == transaction_num && o_num == output_num {
                     return Ok(IncrementalWitness::from_tree(&tree));
@@ -510,9 +562,49 @@ impl BlockAndWitnessData {
 
         Err("Not found!".to_string())
     }
+    pub async fn get_sapling_note_witness(
+        &self,
+        uri: Uri,
+        height: BlockHeight,
+        transaction_num: usize,
+        output_num: usize,
+    ) -> Result<IncrementalWitness<SaplingNode>, String> {
+        self.get_note_witness(
+            uri,
+            height,
+            transaction_num,
+            output_num,
+            |tree| &tree.sapling_tree,
+            |compact_transaction| &compact_transaction.outputs,
+            self.sapling_activation_height,
+        )
+        .await
+    }
+
+    pub async fn get_orchard_note_witness(
+        &self,
+        uri: Uri,
+        height: BlockHeight,
+        transaction_num: usize,
+        action_num: usize,
+    ) -> Result<IncrementalWitness<MerkleHashOrchard>, String> {
+        self.get_note_witness(
+            uri,
+            height,
+            transaction_num,
+            action_num,
+            |tree| &tree.orchard_tree,
+            |compact_transaction| &compact_transaction.actions,
+            self.orchard_activation_height,
+        )
+        .await
+    }
 
     // Stream all the outputs start at the block till the highest block available.
-    pub(crate) async fn update_witness_after_block(&self, witnesses: WitnessCache) -> WitnessCache {
+    pub(crate) async fn update_witness_after_block<Node: Hashable + FromCommitment>(
+        &self,
+        witnesses: WitnessCache<Node>,
+    ) -> WitnessCache<Node> {
         let height = witnesses.top_height + 1;
 
         // Check if we've already synced all the requested blocks
@@ -536,7 +628,7 @@ impl BlockAndWitnessData {
                 let cb = &blocks.get(i as usize).unwrap().cb();
                 for compact_transaction in &cb.vtx {
                     for co in &compact_transaction.outputs {
-                        let node = Node::new(co.cmu().unwrap().into());
+                        let node = Node::from_commitment(&co.cmu().unwrap().into());
                         w.append(node).unwrap();
                     }
                 }
@@ -558,13 +650,13 @@ impl BlockAndWitnessData {
         return WitnessCache::new(fsb.into_vec(), top_block);
     }
 
-    pub(crate) async fn update_witness_after_pos(
+    pub(crate) async fn update_witness_after_pos<Node: Hashable + FromCommitment>(
         &self,
         height: &BlockHeight,
         transaction_id: &TxId,
         output_num: u32,
-        witnesses: WitnessCache,
-    ) -> WitnessCache {
+        witnesses: WitnessCache<Node>,
+    ) -> WitnessCache<Node> {
         let height = u64::from(*height);
         self.wait_for_block(height).await;
 
@@ -590,7 +682,7 @@ impl BlockAndWitnessData {
                     // If we've already passed the transaction id and output_num, stream the results
                     if transaction_id_found && output_found {
                         let co = compact_transaction.outputs.get(j as usize).unwrap();
-                        let node = Node::new(co.cmu().unwrap().into());
+                        let node = Node::from_commitment(&co.cmu().unwrap().into());
                         w.append(node).unwrap();
                     }
 
