@@ -136,21 +136,21 @@ pub(crate) fn launch() {
     }
 
     println!("zcashd is starting in regtest mode, please standby...");
-    let half_second = time::Duration::from_millis(500);
-    thread::sleep(half_second);
+    let check_interval = time::Duration::from_millis(100);
 
-    let mut alt = File::open(&zcashd_stdout_log).expect("can't open zcashd log");
+    let mut zcashd_log_open = File::open(&zcashd_stdout_log).expect("can't open zcashd log");
     let mut zcashd_logfile_state = String::new();
     //now enter loop to find string that indicates daemon is ready for next step
     loop {
-        alt.read_to_string(&mut zcashd_logfile_state)
+        zcashd_log_open
+            .read_to_string(&mut zcashd_logfile_state)
             .expect("problem reading zcashd_logfile into rust string"); // returns result
         if zcashd_logfile_state.contains("Error:") {
             panic!("zcashd reporting ERROR! exiting with panic. you may have to shut the daemon down manually.");
         } else if zcashd_logfile_state.contains("init message: Done loading") {
             break;
         } else {
-            thread::sleep(half_second);
+            thread::sleep(check_interval);
         }
     }
 
@@ -233,17 +233,17 @@ pub(crate) fn launch() {
 
     println!("lightwalletd is now started in regtest mode, please standby...");
 
-    let mut lwd_alt = File::open(&lwd_stdout_log).expect("can't open lwd log");
+    let mut lwd_log_opened = File::open(&lwd_stdout_log).expect("can't open lwd log");
     let mut lwd_logfile_state = String::new();
     //now enter loop to find string that indicates daemon is ready for next step
     loop {
-        lwd_alt
+        lwd_log_opened
             .read_to_string(&mut lwd_logfile_state)
             .expect("problem reading lwd_logfile into rust string");
         if lwd_logfile_state.contains("Starting insecure no-TLS (plaintext) server") {
             break;
         } else {
-            thread::sleep(half_second);
+            thread::sleep(check_interval);
         }
     }
     println!("lwd start section completed, lightwalletd should be running!");
