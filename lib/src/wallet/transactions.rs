@@ -763,7 +763,7 @@ impl WalletTxns {
 
         match wtx_notes(wtx)
             .iter_mut()
-            .find(|n| n.get_nullifier() == nullifier)
+            .find(|n| n.nullifier() == nullifier)
         {
             None => {
                 let nd = NoteData::from_parts(
@@ -783,14 +783,14 @@ impl WalletTxns {
 
                 // Also remove any pending notes.
                 use super::data::ToBytes;
-                wtx_notes(wtx).retain(|n| n.get_nullifier().to_bytes() != [0u8; 32]);
+                wtx_notes(wtx).retain(|n| n.nullifier().to_bytes() != [0u8; 32]);
             }
             Some(n) => {
                 // If this note already exists, then just reset the witnesses, because we'll start scanning the witnesses
                 // again after this.
                 // This is likely to happen if the previous wallet wasn't synced properly or was aborted in the middle of a sync,
                 // and has some dangling witnesses
-                *n.get_witnesses() = witnesses;
+                *n.witnesses() = witnesses;
             }
         }
     }
