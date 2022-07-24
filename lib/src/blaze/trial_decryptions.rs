@@ -1,11 +1,16 @@
 use crate::{
     compact_formats::CompactBlock,
-    wallet::{data::WalletTx, keys::Keys, transactions::WalletTxns, MemoDownloadOption},
+    wallet::{
+        data::{WalletNullifier, WalletTx},
+        keys::Keys,
+        transactions::WalletTxns,
+        MemoDownloadOption,
+    },
 };
 use futures::{stream::FuturesUnordered, StreamExt};
 use log::info;
 use orchard::{
-    keys::IncomingViewingKey as OrchardIvk,
+    keys::{FullViewingKey as OrchardFvk, IncomingViewingKey as OrchardIvk},
     note_encryption::{CompactAction, OrchardDomain},
 };
 use std::sync::Arc;
@@ -18,8 +23,8 @@ use tokio::{
 };
 use zcash_primitives::{
     consensus::BlockHeight,
-    sapling::{note_encryption::try_sapling_compact_note_decryption, Nullifier, SaplingIvk},
-    transaction::{components::sapling::CompactOutputDescription, Transaction, TxId},
+    sapling::{note_encryption::try_sapling_compact_note_decryption, SaplingIvk},
+    transaction::{Transaction, TxId},
 };
 
 use super::syncdata::BlazeSyncData;
@@ -42,7 +47,7 @@ impl TrialDecryptions {
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         detected_transaction_id_sender: UnboundedSender<(
             TxId,
-            Nullifier,
+            WalletNullifier,
             BlockHeight,
             Option<u32>,
         )>,
@@ -127,7 +132,7 @@ impl TrialDecryptions {
         wallet_transactions: Arc<RwLock<WalletTxns>>,
         detected_transaction_id_sender: UnboundedSender<(
             TxId,
-            Nullifier,
+            WalletNullifier,
             BlockHeight,
             Option<u32>,
         )>,
@@ -154,14 +159,9 @@ impl TrialDecryptions {
                     };
 
                     for (i, ivk) in sapling_ivks.iter().enumerate() {
-                        if let Some((note, to)) = try_sapling_compact_note_decryption(
-                            &config.chain,
-                            height,
-                            &ivk,
-                            &CompactOutputDescription::try_from(
-                                zcash_client_backend::proto::compact_formats::CompactSaplingOutput::from(co.clone()))
-                            .unwrap(),
-                        ) {
+                        if let Some((note, to)) =
+                            try_sapling_compact_note_decryption(&config.chain, height, &ivk, co)
+                        {
                             wallet_transaction = true;
 
                             let keys = keys.clone();
@@ -184,7 +184,12 @@ impl TrialDecryptions {
                                     .read()
                                     .await
                                     .block_data
-                                    .get_note_witness(uri, height, transaction_num, output_num)
+                                    .get_sapling_note_witness(
+                                        uri,
+                                        height,
+                                        transaction_num,
+                                        output_num,
+                                    )
                                     .await?;
 
                                 let transaction_id = WalletTx::new_txid(&compact_transaction.hash);
@@ -207,7 +212,7 @@ impl TrialDecryptions {
                                 detected_transaction_id_sender
                                     .send((
                                         transaction_id,
-                                        nullifier,
+                                        WalletNullifier::Sapling(nullifier),
                                         height,
                                         Some(output_num as u32),
                                     ))
@@ -221,15 +226,15 @@ impl TrialDecryptions {
                         }
                     }
                 }
-                for (_action_num, action) in compact_transaction.actions.iter().enumerate() {
+                for (action_num, action) in compact_transaction.actions.iter().enumerate() {
                     let action = match CompactAction::try_from(action) {
                         Ok(a) => a,
                         Err(_e) => {
                             todo!("Implement error handling for action parsing")
                         }
                     };
-                    for (_i, ivk) in orchard_ivks.iter().cloned().enumerate() {
-                        if let Some((_note, _recipient)) =
+                    for (i, ivk) in orchard_ivks.iter().cloned().enumerate() {
+                        if let Some((note, recipient)) =
                             zcash_note_encryption::try_compact_note_decryption(
                                 &OrchardDomain::for_nullifier(action.nullifier()),
                                 &ivk,
@@ -238,21 +243,69 @@ impl TrialDecryptions {
                         {
                             let keys = keys.clone();
                             let bsync_data = bsync_data.clone();
-                            let _wallet_transactions = wallet_transactions.clone();
-                            let _detected_transaction_id_sender =
+                            let wallet_transactions = wallet_transactions.clone();
+                            let detected_transaction_id_sender =
                                 detected_transaction_id_sender.clone();
-                            let _timestamp = cb.time as u64;
-                            let _compact_transaction = compact_transaction.clone();
+                            let timestamp = cb.time as u64;
+                            let compact_transaction = compact_transaction.clone();
 
                             workers.push(tokio::spawn(async move {
                                 let keys = keys.read().await;
-                                let _have_orchard_spending_key =
+                                let fvk = OrchardFvk::try_from(&keys.okeys[i].key);
+                                let have_orchard_spending_key =
                                     keys.have_orchard_spending_key(&ivk);
-                                let _uri = bsync_data.read().await.uri().clone();
+                                let uri = bsync_data.read().await.uri().clone();
 
-                                Ok(())
+                                // Get the witness for the note
+                                let witness = bsync_data
+                                    .read()
+                                    .await
+                                    .block_data
+                                    .get_orchard_note_witness(
+                                        uri,
+                                        height,
+                                        transaction_num,
+                                        action_num,
+                                    )
+                                    .await?;
+
+                                let transaction_id = WalletTx::new_txid(&compact_transaction.hash);
+
+                                if let Ok(ref fvk) = &fvk {
+                                    let nullifier = note.nullifier(fvk);
+                                    wallet_transactions.write().await.add_new_orchard_note(
+                                        transaction_id.clone(),
+                                        height,
+                                        false,
+                                        timestamp,
+                                        note,
+                                        recipient,
+                                        &fvk,
+                                        have_orchard_spending_key,
+                                        witness,
+                                    );
+
+                                    info!("Trial decrypt Detected txid {}", &transaction_id);
+
+                                    detected_transaction_id_sender
+                                        .send((
+                                            transaction_id,
+                                            WalletNullifier::Orchard(nullifier),
+                                            height,
+                                            Some(action_num as u32),
+                                        ))
+                                        .unwrap();
+                                } else {
+                                    eprintln!(
+                                        "Transaction decryption without fvks not yet supported"
+                                    );
+                                }
+
+                                Ok::<_, String>(())
                             }));
-                            //Todo: Send decrypted orchard notes to where they need to go
+
+                            // No need to try the other ivks if we found one
+                            break;
                         }
                     }
                 }

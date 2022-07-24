@@ -1,5 +1,9 @@
+use crate::wallet::data::{FromCommitment, WitnessCache};
 use crate::wallet::MemoDownloadOption;
-use crate::wallet::{data::WalletTx, transactions::WalletTxns};
+use crate::wallet::{
+    data::{WalletNullifier, WalletTx},
+    transactions::WalletTxns,
+};
 use std::sync::Arc;
 
 use futures::stream::FuturesUnordered;
@@ -10,7 +14,7 @@ use tokio::sync::{mpsc::unbounded_channel, RwLock};
 use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle};
 
 use zcash_primitives::consensus::BlockHeight;
-use zcash_primitives::sapling::Nullifier;
+use zcash_primitives::merkle_tree::Hashable;
 use zcash_primitives::transaction::TxId;
 
 use super::syncdata::BlazeSyncData;
@@ -37,14 +41,48 @@ impl UpdateNotes {
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         wallet_txns: Arc<RwLock<WalletTxns>>,
         txid: TxId,
-        nullifier: Nullifier,
+        nullifier: WalletNullifier,
         output_num: Option<u32>,
     ) {
+        match nullifier {
+            WalletNullifier::Sapling(n) => {
+                Self::update_witnesses_inner(
+                    bsync_data,
+                    wallet_txns,
+                    txid,
+                    n,
+                    output_num,
+                    WalletTxns::get_sapling_note_witness,
+                    WalletTxns::set_sapling_note_witnesses,
+                )
+                .await
+            }
+            WalletNullifier::Orchard(n) => {
+                Self::update_witnesses_inner(
+                    bsync_data,
+                    wallet_txns,
+                    txid,
+                    n,
+                    output_num,
+                    WalletTxns::get_orchard_note_witness,
+                    WalletTxns::set_orchard_note_witnesses,
+                )
+                .await
+            }
+        }
+    }
+
+    async fn update_witnesses_inner<T, N: Hashable + FromCommitment>(
+        bsync_data: Arc<RwLock<BlazeSyncData>>,
+        wallet_txns: Arc<RwLock<WalletTxns>>,
+        txid: TxId,
+        nullifier: T,
+        output_num: Option<u32>,
+        witness_getter: impl Fn(&WalletTxns, &TxId, &T) -> Option<(WitnessCache<N>, BlockHeight)>,
+        witness_setter: impl Fn(&mut WalletTxns, &TxId, &T, WitnessCache<N>),
+    ) {
         // Get the data first, so we don't hold on to the lock
-        let wtn = wallet_txns
-            .read()
-            .await
-            .get_sapling_note_witness(&txid, &nullifier);
+        let wtn = witness_getter(&*wallet_txns.read().await, &txid, &nullifier);
 
         if let Some((witnesses, created_height)) = wtn {
             if witnesses.len() == 0 {
@@ -73,10 +111,12 @@ impl UpdateNotes {
 
             //info!("Finished updating witnesses for {}", txid);
 
-            wallet_txns
-                .write()
-                .await
-                .set_note_witnesses(&txid, &nullifier, witnesses);
+            witness_setter(
+                &mut *wallet_txns.write().await,
+                &txid,
+                &nullifier,
+                witnesses,
+            );
         }
     }
 
@@ -87,14 +127,14 @@ impl UpdateNotes {
     ) -> (
         JoinHandle<Result<(), String>>,
         oneshot::Sender<u64>,
-        UnboundedSender<(TxId, Nullifier, BlockHeight, Option<u32>)>,
+        UnboundedSender<(TxId, WalletNullifier, BlockHeight, Option<u32>)>,
     ) {
         //info!("Starting Note Update processing");
         let download_memos = bsync_data.read().await.wallet_options.download_memos;
 
         // Create a new channel where we'll be notified of TxIds that are to be processed
         let (transmitter, mut receiver) =
-            unbounded_channel::<(TxId, Nullifier, BlockHeight, Option<u32>)>();
+            unbounded_channel::<(TxId, WalletNullifier, BlockHeight, Option<u32>)>();
 
         // Aside from the incoming Txns, we also need to update the notes that are currently in the wallet
         let wallet_transactions = self.wallet_txns.clone();
@@ -152,7 +192,7 @@ impl UpdateNotes {
                             .read()
                             .await
                             .block_data
-                            .get_ctx_for_nf_at_height(&nf, spent_height)
+                            .get_compact_transaction_for_nullifier_at_height(&nf, spent_height)
                             .await;
 
                         let spent_transaction_id = WalletTx::new_txid(&compact_transaction.hash);
