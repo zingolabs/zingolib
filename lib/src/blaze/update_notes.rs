@@ -1,4 +1,4 @@
-use crate::wallet::data::{FromCommitment, WitnessCache};
+use crate::wallet::data::{FromBytes, WitnessCache};
 use crate::wallet::MemoDownloadOption;
 use crate::wallet::{
     data::{WalletNullifier, WalletTx},
@@ -72,7 +72,7 @@ impl UpdateNotes {
         }
     }
 
-    async fn update_witnesses_inner<T, N: Hashable + FromCommitment>(
+    async fn update_witnesses_inner<T, N: Hashable + FromBytes>(
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         wallet_txns: Arc<RwLock<WalletTxns>>,
         txid: TxId,
