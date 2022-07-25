@@ -196,8 +196,8 @@ impl<Node: Hashable> WitnessCache<Node> {
     //     return hex::encode(buf);
     // }
 }
-pub(crate) trait FromBytes {
-    fn from_commitment_bytes(from: &[u8; 32]) -> Self;
+pub(crate) trait FromCommitment {
+    fn from_commitment(from: &[u8; 32]) -> Self;
 }
 
 pub(crate) trait ToBytes<const N: usize> {
@@ -216,13 +216,13 @@ impl ToBytes<32> for OrchardNullifier {
     }
 }
 
-impl FromBytes for SaplingNode {
-    fn from_commitment_bytes(from: &[u8; 32]) -> Self {
+impl FromCommitment for SaplingNode {
+    fn from_commitment(from: &[u8; 32]) -> Self {
         Self::new(*from)
     }
 }
-impl FromBytes for MerkleHashOrchard {
-    fn from_commitment_bytes(from: &[u8; 32]) -> Self {
+impl FromCommitment for MerkleHashOrchard {
+    fn from_commitment(from: &[u8; 32]) -> Self {
         Self::from_bytes(from).unwrap()
     }
 }
@@ -245,8 +245,8 @@ pub(crate) trait NoteData {
         is_change: bool,
         have_spending_key: bool,
     ) -> Self;
-    fn get_nullifier(&self) -> Self::Nullifier;
-    fn get_witnesses(&mut self) -> &mut WitnessCache<Self::Node>;
+    fn nullifier(&self) -> Self::Nullifier;
+    fn witnesses(&mut self) -> &mut WitnessCache<Self::Node>;
 }
 
 pub struct SaplingNoteData {
@@ -328,11 +328,11 @@ impl NoteData for SaplingNoteData {
         }
     }
 
-    fn get_nullifier(&self) -> Self::Nullifier {
+    fn nullifier(&self) -> Self::Nullifier {
         self.nullifier
     }
 
-    fn get_witnesses(&mut self) -> &mut WitnessCache<Self::Node> {
+    fn witnesses(&mut self) -> &mut WitnessCache<Self::Node> {
         &mut self.witnesses
     }
 }
@@ -370,10 +370,10 @@ impl NoteData for OrchardNoteData {
         }
     }
 
-    fn get_nullifier(&self) -> Self::Nullifier {
+    fn nullifier(&self) -> Self::Nullifier {
         self.nullifier
     }
-    fn get_witnesses(&mut self) -> &mut WitnessCache<Self::Node> {
+    fn witnesses(&mut self) -> &mut WitnessCache<Self::Node> {
         &mut self.witnesses
     }
 }
