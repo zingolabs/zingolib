@@ -235,16 +235,16 @@ impl<A: OrchardAuthorization, V> Bundle for OrchardBundle<A, V> {
 
 pub(crate) trait NoteData: Sized {
     type Fvk: Clone;
-    type Div;
+    type Diversifier;
     type Note: PartialEq;
     type Node: Hashable;
-    type Null: PartialEq + ToBytes<32> + FromBytes<32>;
+    type Nullifier: PartialEq + ToBytes<32> + FromBytes<32>;
     fn from_parts(
         extfvk: Self::Fvk,
-        diversifier: Self::Div,
+        diversifier: Self::Diversifier,
         note: Self::Note,
         witnesses: WitnessCache<Self::Node>,
-        nullifier: Self::Null,
+        nullifier: Self::Nullifier,
         spent: Option<(TxId, u32)>,
         unconfirmed_spent: Option<(TxId, u32)>,
         memo: Option<Memo>,
@@ -253,7 +253,7 @@ pub(crate) trait NoteData: Sized {
     ) -> Self;
     fn memo_mut(&mut self) -> &mut Option<Memo>;
     fn note(&self) -> &Self::Note;
-    fn nullifier(&self) -> Self::Null;
+    fn nullifier(&self) -> Self::Nullifier;
     fn value(note: &Self::Note) -> u64;
     fn witnesses(&mut self) -> &mut WitnessCache<Self::Node>;
     fn wallet_transaction_notes_mut(wallet_transaction: &mut WalletTx) -> &mut Vec<Self>;
@@ -261,10 +261,10 @@ pub(crate) trait NoteData: Sized {
 
 impl NoteData for SaplingNoteData {
     type Fvk = SaplingExtendedFullViewingKey;
-    type Div = SaplingDiversifier;
+    type Diversifier = SaplingDiversifier;
     type Note = SaplingNote;
     type Node = SaplingNode;
-    type Null = SaplingNullifier;
+    type Nullifier = SaplingNullifier;
 
     fn from_parts(
         extfvk: SaplingExtendedFullViewingKey,
@@ -300,7 +300,7 @@ impl NoteData for SaplingNoteData {
         &self.note
     }
 
-    fn nullifier(&self) -> Self::Null {
+    fn nullifier(&self) -> Self::Nullifier {
         self.nullifier
     }
 
@@ -382,17 +382,17 @@ impl WalletKey for OrchardKey {
 
 impl NoteData for OrchardNoteData {
     type Fvk = OrchardFullViewingKey;
-    type Div = OrchardDiversifier;
+    type Diversifier = OrchardDiversifier;
     type Note = OrchardNote;
     type Node = MerkleHashOrchard;
-    type Null = OrchardNullifier;
+    type Nullifier = OrchardNullifier;
 
     fn from_parts(
         fvk: Self::Fvk,
-        diversifier: Self::Div,
+        diversifier: Self::Diversifier,
         note: Self::Note,
         witnesses: WitnessCache<Self::Node>,
-        nullifier: Self::Null,
+        nullifier: Self::Nullifier,
         spent: Option<(TxId, u32)>,
         unconfirmed_spent: Option<(TxId, u32)>,
         memo: Option<Memo>,
@@ -419,7 +419,7 @@ impl NoteData for OrchardNoteData {
     fn note(&self) -> &Self::Note {
         &self.note
     }
-    fn nullifier(&self) -> Self::Null {
+    fn nullifier(&self) -> Self::Nullifier {
         self.nullifier
     }
 

@@ -662,7 +662,7 @@ impl WalletTxns {
     ) where
         D: DomainWalletExt,
         D: zcash_note_encryption::Domain<Note = <D::WalletNote as NoteData>::Note>,
-        D::Recipient: Recipient<Diversifier = <D::WalletNote as NoteData>::Div>,
+        D::Recipient: Recipient<Diversifier = <D::WalletNote as NoteData>::Diversifier>,
         D::WalletNote: NoteData<Fvk = D::Fvk>,
     {
         // Check if this is a change note
@@ -687,7 +687,7 @@ impl WalletTxns {
                     to.diversifier(),
                     note,
                     WitnessCache::empty(),
-                    <D::WalletNote as NoteData>::Null::from_bytes([0u8; 32]),
+                    <D::WalletNote as NoteData>::Nullifier::from_bytes([0u8; 32]),
                     None,
                     None,
                     None,

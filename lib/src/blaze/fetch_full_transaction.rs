@@ -519,7 +519,7 @@ async fn scan_bundle<K, B, D, E>(
     D: zingo_traits::DomainWalletExt<Fvk = <<D as zingo_traits::DomainWalletExt>::WalletNote as zingo_traits::NoteData>::Fvk>,
     D::Note: Clone,
     D::OutgoingViewingKey: std::fmt::Debug,
-    D::Recipient: zingo_traits::Recipient<Diversifier = <<D as zingo_traits::DomainWalletExt>::WalletNote as zingo_traits::NoteData>::Div>,
+    D::Recipient: zingo_traits::Recipient<Diversifier = <<D as zingo_traits::DomainWalletExt>::WalletNote as zingo_traits::NoteData>::Diversifier>,
     B::Output: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE> + zingo_traits::ShieldedOutputExt<D>,
     B::Spend: zingo_traits::Spend,
     for<'a> &'a B::Spends: IntoIterator<Item = &'a B::Spend>,
