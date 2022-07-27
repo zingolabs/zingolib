@@ -595,7 +595,7 @@ async fn scan_bundle<K, B, D, E>(
                         &output_to_domain(&output),
                         &key.ovk().unwrap(),
                         &output,
-                        &output.cv(),
+                        &output.value_commitment(),
                         &output.out_ciphertext(),
                     ) {
                         Some((note, payment_address, memo_bytes)) => {

@@ -81,12 +81,12 @@ impl<const N: usize> ToBytes<N> for [u8; N] {
 pub(crate) trait ShieldedOutputExt<D: Domain>:
     ShieldedOutput<D, ENC_CIPHERTEXT_SIZE>
 {
-    fn cv(&self) -> D::ValueCommitment;
+    fn value_commitment(&self) -> D::ValueCommitment;
     fn out_ciphertext(&self) -> [u8; 80];
 }
 
 impl<A> ShieldedOutputExt<OrchardDomain> for Action<A> {
-    fn cv(&self) -> orchard::value::ValueCommitment {
+    fn value_commitment(&self) -> orchard::value::ValueCommitment {
         self.cv_net().clone()
     }
 
@@ -96,7 +96,7 @@ impl<A> ShieldedOutputExt<OrchardDomain> for Action<A> {
 }
 
 impl ShieldedOutputExt<SaplingDomain<Network>> for OutputDescription<GrothProofBytes> {
-    fn cv(&self) -> <SaplingDomain<Network> as Domain>::ValueCommitment {
+    fn value_commitment(&self) -> <SaplingDomain<Network> as Domain>::ValueCommitment {
         self.cv
     }
 
