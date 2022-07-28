@@ -1,6 +1,7 @@
 pub(crate) fn launch() {
     use std::ffi::OsString;
     use std::fs::File;
+    use std::io::BufWriter;
     use std::io::Read;
     use std::path::PathBuf;
     use std::process::{Command, Stdio};
@@ -128,31 +129,79 @@ pub(crate) fn launch() {
         .spawn()
         .expect("failed to start zcashd");
 
+    // try a buff instead?
+
+    // Do writing here.
+
+    let check_interval = time::Duration::from_millis(100);
+    let mut _zcashd_logfile_state = String::new();
+    println!("{}", "just before isomethingloop");
+
     if let Some(mut zcashd_log) = zcashd_command.stdout.take() {
+        println!("{:?}", zcashd_log);
+        let mut buf = BufWriter::new(Vec::new());
+
+        let stup = std::io::copy(&mut zcashd_log, &mut buf).expect("io::copy error writing to buf");
+        println!("{}", stup.to_string());
         std::thread::spawn(move || {
             std::io::copy(&mut zcashd_log, &mut zcashd_logfile)
                 .expect("io::copy error writing zcashd_stdout.log");
         });
-    }
+        /*
+            if let Some(mut zcashd_log) = zcashd_command.stdout.take() {
+                let mut buf = BufWriter::new(Vec::new());
+                std::io::copy(&mut zcashd_log, &mut buf).expect("io::copy error writing to buf");
+                std::thread::spawn(move || {
+                    std::io::copy(&mut zcashd_log, &mut zcashd_logfile)
+                        .expect("io::copy error writing zcashd_stdout.log");
+                });
+        */
+        println!("{}", "just before loop");
+        loop {
+            println!("{}", "starting loop");
+            let bytes = buf.buffer();
+            //.expect("problem unwrapping buf");
+            let mut veccy = Vec::new();
+            for b in bytes {
+                veccy.push(b.clone());
+            }
 
-    println!("zcashd is starting in regtest mode, please standby...");
-    let check_interval = time::Duration::from_millis(100);
-
-    let mut zcashd_log_open = File::open(&zcashd_stdout_log).expect("can't open zcashd log");
-    let mut zcashd_logfile_state = String::new();
-    //now enter loop to find string that indicates daemon is ready for next step
-    loop {
-        zcashd_log_open
-            .read_to_string(&mut zcashd_logfile_state)
-            .expect("problem reading zcashd_logfile into rust string"); // returns result
-        if zcashd_logfile_state.contains("Error:") {
-            panic!("zcashd reporting ERROR! exiting with panic. you may have to shut the daemon down manually.");
-        } else if zcashd_logfile_state.contains("init message: Done loading") {
-            break;
-        } else {
-            thread::sleep(check_interval);
+            println!("{:?}", String::from_utf8(veccy).unwrap());
+            let string = String::new();
+            //let string = String::from_utf8(veccy).expect("problem unwrapping bytes");
+            //    zcashd_log_open
+            //      .read_to_string(&mut zcashd_logfile_state)
+            //    .expect("problem reading zcashd_logfile into rust string"); // returns result
+            println!("{}", &string);
+            if string.contains("Error:") {
+                panic!("zcashd reporting ERROR! exiting with panic. you may have to shut the daemon down manually.");
+            } else if string.contains("init message: Done loading") {
+                break;
+            } else {
+                thread::sleep(check_interval);
+            }
         }
+    } else {
+        panic!("stdout is none");
     }
+    println!("zcashd is starting in regtest mode, please standby...");
+
+    /*
+        let mut zcashd_log_open = File::open(&zcashd_stdout_log).expect("can't open zcashd log");
+        //now enter loop to find string that indicates daemon is ready for next step
+        loop {
+            zcashd_log_open
+                .read_to_string(&mut zcashd_logfile_state)
+                .expect("problem reading zcashd_logfile into rust string"); // returns result
+            if zcashd_logfile_state.contains("Error:") {
+                panic!("zcashd reporting ERROR! exiting with panic. you may have to shut the daemon down manually.");
+            } else if zcashd_logfile_state.contains("init message: Done loading") {
+                break;
+            } else {
+                thread::sleep(check_interval);
+            }
+        }
+    */
 
     println!("zcashd start section completed, zcashd should be running.");
     println!("lightwalletd is about to start. This should only take a moment.");
