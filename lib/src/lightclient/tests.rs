@@ -193,7 +193,7 @@ async fn basic_no_wallet_transactions() {
         ready_receiver.await.unwrap();
 
         let uri = config.server.clone();
-        let mut client = crate::grpc_connector::GrpcConnector::new(uri)
+        let mut client = crate::grpc_connector::GrpcConnector::new(uri.read().unwrap().clone())
             .get_client()
             .await
             .unwrap();

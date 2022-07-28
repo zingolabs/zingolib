@@ -5,6 +5,7 @@ use json::object;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 use std::convert::TryInto;
+use std::str::FromStr;
 use tokio::runtime::Runtime;
 use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
 
@@ -18,6 +19,39 @@ pub trait Command {
     fn short_help(&self) -> String;
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String;
+}
+
+struct ChangeServerCommand {}
+impl Command for ChangeServerCommand {
+    fn help(&self) -> String {
+        let mut h = vec![];
+        h.push("Change the lightwalletd server to receive blockchain data from");
+        h.push("Usage:");
+        h.push("changeserver [server_uri]");
+        h.push("");
+        h.push("Example:");
+        h.push("changeserver https://zuul.free2z.cash:9067");
+
+        h.join("\n")
+    }
+
+    fn short_help(&self) -> String {
+        "Change lightwalletd server".to_string()
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+        match args.len() {
+            1 => match http::Uri::from_str(args[0]) {
+                Ok(uri) => {
+                    lightclient.set_server(uri);
+                    "server set"
+                }
+                Err(_) => "invalid server uri",
+            }
+            .to_string(),
+            _ => self.help(),
+        }
+    }
 }
 
 struct SyncCommand {}
@@ -1430,6 +1464,7 @@ pub fn get_commands() -> Box<HashMap<String, Box<dyn Command>>> {
         "decryptmessage".to_string(),
         Box::new(DecryptMessageCommand {}),
     );
+    map.insert("changeserver".to_string(), Box::new(ChangeServerCommand {}));
     map.insert("rescan".to_string(), Box::new(RescanCommand {}));
     map.insert("clear".to_string(), Box::new(ClearCommand {}));
     map.insert("help".to_string(), Box::new(HelpCommand {}));

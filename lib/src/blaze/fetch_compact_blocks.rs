@@ -21,7 +21,9 @@ impl FetchCompactBlocks {
         start_block: u64,
         end_block: u64,
     ) -> Result<(), String> {
-        let grpc_client = Arc::new(GrpcConnector::new(self.config.server.clone()));
+        let grpc_client = Arc::new(GrpcConnector::new(
+            self.config.server.read().unwrap().clone(),
+        ));
         const STEP: u64 = 10_000;
 
         // We need the `rev()` here because rust ranges can only go up
