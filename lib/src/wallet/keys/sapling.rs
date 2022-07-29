@@ -331,6 +331,8 @@ impl crate::wallet::WalletKey for WalletZKey {
 
 #[cfg(test)]
 pub mod tests {
+    use std::sync::{Arc, RwLock};
+
     use sodiumoxide::crypto::secretbox;
     use zcash_client_backend::encoding::{
         decode_extended_full_viewing_key, decode_extended_spending_key, encode_payment_address,
@@ -341,7 +343,7 @@ pub mod tests {
 
     fn get_config() -> ZingoConfig {
         ZingoConfig {
-            server: "0.0.0.0:0".parse().unwrap(),
+            server: Arc::new(RwLock::new("0.0.0.0:0".parse().unwrap())),
             chain: zingoconfig::Network::FakeMainnet,
             monitor_mempool: false,
             anchor_offset: [0u32; 5],

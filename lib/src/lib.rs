@@ -12,7 +12,10 @@ pub mod wallet;
 #[derive(RustEmbed)]
 #[folder = "zcash-params/"]
 pub struct SaplingParams;
-use std::io::{ErrorKind, Result};
+use std::{
+    io::{ErrorKind, Result},
+    sync::{Arc, RwLock},
+};
 use tokio::runtime::Runtime;
 use zingoconfig::{Network, ZingoConfig};
 
@@ -39,7 +42,7 @@ pub fn create_on_data_dir(
 
         // Create a Light Client Config
         let config = ZingoConfig {
-            server,
+            server: Arc::new(RwLock::new(server)),
             chain: match info.chain_name.as_str() {
                 "main" => Network::Mainnet,
                 "test" => Network::Testnet,

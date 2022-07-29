@@ -121,12 +121,12 @@ impl LightClient {
         l.set_wallet_initial_state(height).await;
 
         info!("Created new wallet!");
-        info!("Created LightClient to {}", &config.server);
+        info!("Created LightClient to {}", &config.server.read().unwrap());
         Ok(l)
     }
 
-    pub fn set_server(&mut self, server: http::Uri) {
-        self.config.server = server
+    pub fn set_server(&self, server: http::Uri) {
+        *self.config.server.write().unwrap() = server
     }
 
     fn write_file_if_not_exists(dir: &Box<Path>, name: &str, bytes: &[u8]) -> io::Result<()> {
@@ -263,7 +263,9 @@ impl LightClient {
             "Getting sapling tree from LightwalletD at height {}",
             height
         );
-        match GrpcConnector::get_sapling_tree(self.config.server.clone(), height).await {
+        match GrpcConnector::get_sapling_tree(self.config.server.read().unwrap().clone(), height)
+            .await
+        {
             Ok(tree_state) => {
                 let hash = tree_state.hash.clone();
                 let tree = tree_state.sapling_tree.clone();
@@ -311,7 +313,7 @@ impl LightClient {
             l.set_wallet_initial_state(latest_block).await;
 
             info!("Created new wallet with a new seed!");
-            info!("Created LightClient to {}", &config.server);
+            info!("Created LightClient to {}", &config.server.read().unwrap());
 
             // Save
             l.do_save()
@@ -396,7 +398,7 @@ impl LightClient {
             })
         };
 
-        info!("Created LightClient to {}", &config.server);
+        info!("Created LightClient to {}", &config.server.read().unwrap());
 
         lr
     }
@@ -417,7 +419,7 @@ impl LightClient {
                 "Read wallet with birthday {}",
                 lc.wallet.get_birthday().await
             );
-            info!("Created LightClient to {}", &config.server);
+            info!("Created LightClient to {}", &config.server.read().unwrap());
 
             Ok(lc)
         });
@@ -455,7 +457,7 @@ impl LightClient {
                 "Read wallet with birthday {}",
                 lc.wallet.get_birthday().await
             );
-            info!("Created LightClient to {}", &config.server);
+            info!("Created LightClient to {}", &config.server.read().unwrap());
 
             Ok(lc)
         });
@@ -679,7 +681,7 @@ impl LightClient {
     }
 
     pub fn get_server_uri(&self) -> http::Uri {
-        self.config.server.clone()
+        self.config.server.read().unwrap().clone()
     }
 
     pub async fn do_zec_price(&self) -> String {
@@ -1303,6 +1305,7 @@ impl LightClient {
                     }
                 });
 
+                let uri = uri.read().unwrap().clone();
                 let h2 = tokio::spawn(async move {
                     loop {
                         //info!("Monitoring mempool");
@@ -1391,8 +1394,8 @@ impl LightClient {
         // The top of the wallet
         let last_scanned_height = self.wallet.last_scanned_height().await;
 
-        let uri = self.config.server.clone();
-        let latest_blockid = GrpcConnector::get_latest_block(uri.clone()).await?;
+        let uri = self.config.server.read().unwrap().clone();
+        let latest_blockid = GrpcConnector::get_latest_block(uri).await?;
         if latest_blockid.height < last_scanned_height {
             let w = format!(
                 "Server's latest block({}) is behind ours({})",
@@ -1499,7 +1502,7 @@ impl LightClient {
         //self.update_current_price().await;
 
         // Sapling Tree GRPC Fetcher
-        let grpc_connector = GrpcConnector::new(uri.clone());
+        let grpc_connector = GrpcConnector::new(uri.read().unwrap().clone());
 
         // A signal to detect reorgs, and if so, ask the block_fetcher to fetch new blocks.
         let (reorg_transmitter, reorg_receiver) = unbounded_channel();

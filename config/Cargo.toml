@@ -12,3 +12,4 @@ http = "0.2.4"
 dirs = "3.0.2"
 zcash_primitives = { git = "https://github.com/zcash/librustzcash", rev = "37fc28634e811fdf8db9274a0080cff17c6b6a09", features = ["transparent-inputs", "test-dependencies"] }
 zcash_address = { git = "https://github.com/zcash/librustzcash", rev = "37fc28634e811fdf8db9274a0080cff17c6b6a09"}
+tokio = { version = "1.6.0", features = ["full"] }

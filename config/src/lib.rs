@@ -1,6 +1,7 @@
 use std::{
     io::{self, Error, ErrorKind},
     path::{Path, PathBuf},
+    sync::{Arc, RwLock},
 };
 
 use log::{info, LevelFilter};
@@ -35,7 +36,7 @@ pub const GAP_RULE_UNUSED_ADDRESSES: usize = if cfg!(any(target_os = "ios", targ
 
 #[derive(Clone, Debug)]
 pub struct ZingoConfig {
-    pub server: http::Uri,
+    pub server: Arc<RwLock<http::Uri>>,
     pub chain: Network,
     pub anchor_offset: [u32; 5],
     pub monitor_mempool: bool,
@@ -46,7 +47,7 @@ impl ZingoConfig {
     // Create an unconnected (to any server) config to test for local wallet etc...
     pub fn create_unconnected(chain: Network, dir: Option<String>) -> ZingoConfig {
         ZingoConfig {
-            server: http::Uri::default(),
+            server: Arc::new(RwLock::new(http::Uri::default())),
             chain,
             monitor_mempool: false,
             anchor_offset: [4u32; 5],
