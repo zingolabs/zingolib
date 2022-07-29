@@ -1,22 +1,20 @@
 use crate::wallet::{
     data::OutgoingTxMetadata,
-    keys::{orchard::OrchardKey, sapling::SaplingKey, Keys, ToBase58Check},
+    keys::{Keys, ToBase58Check},
     traits::{
-        self as zingo_traits, NoteData as _, Recipient as _, ShieldedOutputExt as _, Spend as _,
-        ToBytes as _,
+        self as zingo_traits, Bundle as _, DomainWalletExt, NoteData as _, Recipient as _,
+        ShieldedOutputExt as _, Spend as _, ToBytes as _, UnspentFromWalletTxns as _,
+        WalletKey as _,
     },
     transactions::WalletTxns,
 };
 
 use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
 use log::info;
-use orchard::{
-    keys::{FullViewingKey as OrchardFvk, IncomingViewingKey as OrchardIvk},
-    note_encryption::OrchardDomain,
-};
+use orchard::note_encryption::OrchardDomain;
 use std::{
     collections::HashSet,
-    convert::{TryFrom, TryInto},
+    convert::TryInto,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
@@ -29,7 +27,7 @@ use tokio::{
     },
     task::JoinHandle,
 };
-use zcash_note_encryption::{try_note_decryption, try_output_recovery_with_ovk, Domain};
+use zcash_note_encryption::{try_note_decryption, try_output_recovery_with_ovk};
 
 use zcash_primitives::{
     consensus::BlockHeight,
@@ -40,7 +38,7 @@ use zcash_primitives::{
 };
 
 use super::syncdata::BlazeSyncData;
-use zingoconfig::ZingoConfig;
+use zingoconfig::{Network, ZingoConfig};
 
 pub struct FetchFullTxns {
     config: ZingoConfig,
@@ -432,7 +430,7 @@ impl FetchFullTxns {
         is_outgoing_transaction: &mut bool,
         outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
     ) {
-        scan_bundle(
+        scan_bundle::<SaplingDomain<Network>>(
             config,
             transaction,
             height,
@@ -442,14 +440,6 @@ impl FetchFullTxns {
             wallet_transactions,
             is_outgoing_transaction,
             outgoing_metadatas,
-            Keys::zkeys,
-            |t: &Transaction| -> Option<_> { t.sapling_bundle() },
-            |key: &SaplingKey| Ok::<_, std::convert::Infallible>(key.extfvk.clone()),
-            |key: &SaplingKey| Ok(key.extfvk.fvk.vk.ivk()),
-            |_| SaplingDomain::for_height(config.chain, height),
-            MemoBytes::as_slice,
-            |txns| txns.get_unspent_sapling_nullifiers(),
-            Keys::get_all_sapling_addresses,
         )
         .await
     }
@@ -464,7 +454,7 @@ impl FetchFullTxns {
         is_outgoing_transaction: &mut bool,
         outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
     ) {
-        scan_bundle(
+        scan_bundle::<OrchardDomain>(
             config,
             transaction,
             height,
@@ -474,25 +464,12 @@ impl FetchFullTxns {
             wallet_transactions,
             is_outgoing_transaction,
             outgoing_metadatas,
-            Keys::okeys,
-            |t: &Transaction| -> Option<_> { t.orchard_bundle() },
-            |key: &OrchardKey| OrchardFvk::try_from(&key.key),
-            |key: &OrchardKey| OrchardIvk::try_from(&key.key),
-            OrchardDomain::for_action,
-            <[u8; 512]>::as_slice,
-            |txns| {
-                txns.get_unspent_orchard_nullifiers()
-                    .into_iter()
-                    .map(|(null, val, txid)| (null, val.inner(), txid))
-                    .collect()
-            },
-            Keys::get_all_orchard_addresses,
         )
         .await;
     }
 }
 
-async fn scan_bundle<K, B, D, E>(
+async fn scan_bundle<D>(
     config: &ZingoConfig,
     transaction: &Transaction,
     height: BlockHeight,
@@ -502,35 +479,40 @@ async fn scan_bundle<K, B, D, E>(
     wallet_transactions: &Arc<RwLock<WalletTxns>>,
     is_outgoing_transaction: &mut bool,
     outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
-    key_reader: impl Fn(&Keys) -> &Vec<K>,
-    transaction_to_bundle: impl Fn(&Transaction) -> Option<&B>,
-    key_to_fvk: impl Fn(&K) -> Result<<D as zingo_traits::DomainWalletExt>::Fvk, E>,
-    key_to_ivk: impl Fn(&K) -> Result<<D as Domain>::IncomingViewingKey, E>,
-    output_to_domain: impl Fn(&B::Output) -> D,
-    memo_slice: impl Fn(&D::Memo) -> &[u8],
-    get_unspent_nullifiers: impl Fn(
-        &WalletTxns,
-    )
-        -> Vec<(<B::Spend as zingo_traits::Spend>::Nullifier, u64, TxId)>,
-    get_all_addresses: impl Fn(&Keys) -> Vec<String>,
 ) where
-    K: Clone + zingo_traits::WalletKey<Ovk = <D as Domain>::OutgoingViewingKey>,
-    D: zingo_traits::DomainWalletExt,
+    D: zingo_traits::DomainWalletExt<Network>,
     D::Note: Clone + PartialEq,
     D::OutgoingViewingKey: std::fmt::Debug,
     D::Recipient: zingo_traits::Recipient,
-    for<'a> &'a B::Spends: IntoIterator<Item = &'a B::Spend>,
-    for<'a> &'a B::Outputs: IntoIterator<Item = &'a B::Output>,
-    B: zingo_traits::Bundle<D>,
+    for<'a> &'a <<D as DomainWalletExt<Network>>::Bundle as zingo_traits::Bundle<D, Network>>::Spends:
+        IntoIterator<
+            Item = &'a <<D as DomainWalletExt<Network>>::Bundle as zingo_traits::Bundle<
+                D,
+                Network,
+            >>::Spend,
+        >,
+    for<'a> &'a <<D as DomainWalletExt<Network>>::Bundle as zingo_traits::Bundle<D, Network>>::Outputs:
+        IntoIterator<
+            Item = &'a <<D as DomainWalletExt<Network>>::Bundle as zingo_traits::Bundle<
+                D,
+                Network,
+            >>::Output,
+        >,
     D::Memo: zingo_traits::ToBytes<512>,
 {
     // Check if any of the nullifiers spent in this transaction are ours. We only need this for unconfirmed transactions,
     // because for transactions in the block, we will check the nullifiers from the blockdata
     if unconfirmed {
-        let unspent_nullifiers = get_unspent_nullifiers(&*wallet_transactions.read().await);
-        for output in transaction_to_bundle(transaction)
-            .into_iter()
-            .flat_map(|bundle| bundle.spends().into_iter())
+        let unspent_nullifiers =
+            <<D as DomainWalletExt<Network>>::WalletNote as zingo_traits::NoteData>::Nullifier::unspent_from_wallet_txns(
+                &*wallet_transactions.read().await,
+            );
+        for output in <<D as DomainWalletExt<Network>>::Bundle as zingo_traits::Bundle<
+            D,
+            Network,
+        >>::from_transaction(transaction)
+        .into_iter()
+        .flat_map(|bundle| bundle.spends().into_iter())
         {
             if let Some((nf, value, transaction_id)) = unspent_nullifiers
                 .iter()
@@ -541,7 +523,7 @@ async fn scan_bundle<K, B, D, E>(
                     height,
                     unconfirmed,
                     block_time,
-                    B::Spend::wallet_nullifier(nf),
+                    <<D as DomainWalletExt<Network>>::Bundle as zingo_traits::Bundle<D, Network>>::Spend::wallet_nullifier(nf),
                     *value,
                     *transaction_id,
                 );
@@ -549,19 +531,25 @@ async fn scan_bundle<K, B, D, E>(
         }
     }
     let read_keys = keys.read().await;
-    let local_keys = key_reader(&*read_keys).clone();
-    for output in transaction_to_bundle(transaction)
+    let local_keys = D::Key::get_keys(&*read_keys).clone();
+    for output in
+        <<D as DomainWalletExt<Network>>::Bundle as zingo_traits::Bundle<D, Network>>::from_transaction(
+            transaction,
+        )
         .into_iter()
         .flat_map(|bundle| bundle.outputs().into_iter())
     {
         for (i, key) in local_keys.iter().enumerate() {
-            let (note, to, memo_bytes) = match key_to_ivk(key).map(|ivk| {
-                try_note_decryption::<D, B::Output>(&output_to_domain(&output), &ivk, &output)
+            let (note, to, memo_bytes) = match key.ivk().map(|ivk| {
+                try_note_decryption::<
+                    D,
+                    <<D as DomainWalletExt<Network>>::Bundle as zingo_traits::Bundle<D, Network>>::Output,
+                >(&output.domain(height, config.chain), &ivk, &output)
             }) {
-                Ok(Some(ret)) => ret,
+                Some(Some(ret)) => ret,
                 _ => continue,
             };
-            let memo_bytes = MemoBytes::from_bytes(memo_slice(&memo_bytes)).unwrap();
+            let memo_bytes = MemoBytes::from_bytes(&memo_bytes.to_bytes()).unwrap();
             if unconfirmed {
                 wallet_transactions.write().await.add_pending_note::<D>(
                     transaction.txid(),
@@ -569,9 +557,9 @@ async fn scan_bundle<K, B, D, E>(
                     block_time as u64,
                     note.clone(),
                     to,
-                    &match key_to_fvk(&local_keys.get(i).unwrap()) {
-                        Ok(k) => k,
-                        Err(_) => continue,
+                    &match &local_keys.get(i).unwrap().fvk() {
+                        Some(k) => k.clone(),
+                        None => continue,
                     },
                 );
             }
@@ -588,8 +576,14 @@ async fn scan_bundle<K, B, D, E>(
             local_keys
                 .iter()
                 .filter_map(|key| {
-                    match try_output_recovery_with_ovk::<D, B::Output>(
-                        &output_to_domain(&output),
+                    match try_output_recovery_with_ovk::<
+                        D,
+                        <<D as DomainWalletExt<Network>>::Bundle as zingo_traits::Bundle<
+                            D,
+                            Network,
+                        >>::Output,
+                    >(
+                        &output.domain(height, config.chain),
                         &key.ovk().unwrap(),
                         &output,
                         &output.value_commitment(),
@@ -609,7 +603,7 @@ async fn scan_bundle<K, B, D, E>(
                             match Memo::from_bytes(&memo_bytes.to_bytes()) {
                                 Err(_) => None,
                                 Ok(memo) => {
-                                    if get_all_addresses(&read_keys).contains(&address)
+                                    if D::Key::get_addresses(&read_keys).contains(&address)
                                         && memo == Memo::Empty
                                     {
                                         None

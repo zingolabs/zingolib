@@ -1,10 +1,11 @@
 use super::{
     data::{OrchardNoteData, SaplingNoteData, WalletNullifier, WalletTx, WitnessCache},
-    keys::{orchard::OrchardKey, sapling::SaplingKey},
+    keys::{orchard::OrchardKey, sapling::SaplingKey, Keys},
+    transactions::WalletTxns,
 };
 use nonempty::NonEmpty;
 use orchard::{
-    bundle::{Authorization as OrchardAuthorization, Bundle as OrchardBundle},
+    bundle::{Authorized as OrchardAuthorized, Bundle as OrchardBundle},
     keys::{
         Diversifier as OrchardDiversifier, FullViewingKey as OrchardFullViewingKey,
         IncomingViewingKey as OrchardIncomingViewingKey,
@@ -12,6 +13,7 @@ use orchard::{
     },
     note::{Note as OrchardNote, Nullifier as OrchardNullifier},
     note_encryption::OrchardDomain,
+    primitives::redpallas::{Signature, SpendAuth},
     tree::MerkleHashOrchard,
     Action, Address as OrchardAddress,
 };
@@ -19,7 +21,7 @@ use zcash_address::unified::{self, Encoding as _, Receiver};
 use zcash_client_backend::encoding::encode_payment_address;
 use zcash_note_encryption::{Domain, ShieldedOutput, ENC_CIPHERTEXT_SIZE};
 use zcash_primitives::{
-    consensus::Parameters,
+    consensus::{BlockHeight, Parameters},
     keys::OutgoingViewingKey as SaplingOutgoingViewingKey,
     memo::{Memo, MemoBytes},
     merkle_tree::Hashable,
@@ -31,11 +33,12 @@ use zcash_primitives::{
     transaction::{
         components::{
             sapling::{
-                Authorization as SaplingAuthorization, Bundle as SaplingBundle, GrothProofBytes,
+                Authorization as SaplingAuthorization, Authorized as SaplingAuthorized,
+                Bundle as SaplingBundle, GrothProofBytes,
             },
-            OutputDescription, SpendDescription,
+            Amount, OutputDescription, SpendDescription,
         },
-        TxId,
+        Transaction, TxId,
     },
     zip32::{
         ExtendedFullViewingKey as SaplingExtendedFullViewingKey,
@@ -78,30 +81,39 @@ impl<const N: usize> ToBytes<N> for [u8; N] {
     }
 }
 
-pub(crate) trait ShieldedOutputExt<D: Domain>:
+pub(crate) trait ShieldedOutputExt<P: Parameters, D: Domain>:
     ShieldedOutput<D, ENC_CIPHERTEXT_SIZE>
 {
-    fn value_commitment(&self) -> D::ValueCommitment;
+    fn domain(&self, height: BlockHeight, parameters: P) -> D;
     fn out_ciphertext(&self) -> [u8; 80];
+    fn value_commitment(&self) -> D::ValueCommitment;
 }
 
-impl<A> ShieldedOutputExt<OrchardDomain> for Action<A> {
-    fn value_commitment(&self) -> orchard::value::ValueCommitment {
-        self.cv_net().clone()
+impl<A, P: Parameters> ShieldedOutputExt<P, OrchardDomain> for Action<A> {
+    fn domain(&self, _block_height: BlockHeight, _parameters: P) -> OrchardDomain {
+        OrchardDomain::for_action(self)
     }
 
     fn out_ciphertext(&self) -> [u8; 80] {
         self.encrypted_note().out_ciphertext
     }
+
+    fn value_commitment(&self) -> orchard::value::ValueCommitment {
+        self.cv_net().clone()
+    }
 }
 
-impl ShieldedOutputExt<SaplingDomain<Network>> for OutputDescription<GrothProofBytes> {
-    fn value_commitment(&self) -> <SaplingDomain<Network> as Domain>::ValueCommitment {
-        self.cv
+impl<P: Parameters> ShieldedOutputExt<P, SaplingDomain<P>> for OutputDescription<GrothProofBytes> {
+    fn domain(&self, height: BlockHeight, parameters: P) -> SaplingDomain<P> {
+        SaplingDomain::for_height(parameters, height)
     }
 
     fn out_ciphertext(&self) -> [u8; 80] {
         self.out_ciphertext
+    }
+
+    fn value_commitment(&self) -> <SaplingDomain<Network> as Domain>::ValueCommitment {
+        self.cv
     }
 }
 
@@ -138,7 +150,7 @@ impl FromCommitment for MerkleHashOrchard {
 }
 
 pub(crate) trait Spend {
-    type Nullifier: PartialEq;
+    type Nullifier: PartialEq + FromBytes<32> + UnspentFromWalletTxns;
     fn nullifier(&self) -> &Self::Nullifier;
     fn wallet_nullifier(_: &Self::Nullifier) -> WalletNullifier;
 }
@@ -195,49 +207,73 @@ impl Recipient for SaplingAddress {
     }
 }
 
-pub(crate) trait Bundle<D: DomainWalletExt>
+pub(crate) trait Bundle<D: DomainWalletExt<P>, P: Parameters>
 where
     D::Recipient: Recipient,
     D::Note: PartialEq,
 {
     type Spend: Spend;
-    type Output: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE> + ShieldedOutputExt<D>;
+    type Output: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE> + ShieldedOutputExt<P, D>;
     type Spends: IntoIterator<Item = Self::Spend>;
     type Outputs: IntoIterator<Item = Self::Output>;
-    fn spends(&self) -> &Self::Spends;
+    fn from_transaction(transaction: &Transaction) -> Option<&Self>;
     fn outputs(&self) -> &Self::Outputs;
+    fn spends(&self) -> &Self::Spends;
 }
 
-impl<A: SaplingAuthorization> Bundle<SaplingDomain<Network>> for SaplingBundle<A>
-where
-    OutputDescription<<A as SaplingAuthorization>::Proof>:
-        ShieldedOutputExt<SaplingDomain<Network>>,
-{
-    type Spend = SpendDescription<A>;
-    type Output = OutputDescription<A::Proof>;
+impl<P: Parameters> Bundle<SaplingDomain<P>, P> for SaplingBundle<SaplingAuthorized> {
+    type Spend = SpendDescription<SaplingAuthorized>;
+    type Output = OutputDescription<GrothProofBytes>;
     type Spends = Vec<Self::Spend>;
     type Outputs = Vec<Self::Output>;
-    fn spends(&self) -> &Self::Spends {
-        &self.shielded_spends
+    fn from_transaction(transaction: &Transaction) -> Option<&Self> {
+        transaction.sapling_bundle()
     }
 
     fn outputs(&self) -> &Self::Outputs {
         &self.shielded_outputs
     }
+
+    fn spends(&self) -> &Self::Spends {
+        &self.shielded_spends
+    }
 }
 
-impl<A: OrchardAuthorization, V> Bundle<OrchardDomain> for OrchardBundle<A, V> {
-    type Spend = Action<A::SpendAuth>;
-    type Output = Action<A::SpendAuth>;
+impl<P: Parameters> Bundle<OrchardDomain, P> for OrchardBundle<OrchardAuthorized, Amount> {
+    type Spend = Action<Signature<SpendAuth>>;
+    type Output = Action<Signature<SpendAuth>>;
     type Spends = NonEmpty<Self::Spend>;
     type Outputs = NonEmpty<Self::Output>;
 
-    fn spends(&self) -> &Self::Spends {
-        self.actions()
+    fn from_transaction(transaction: &Transaction) -> Option<&Self> {
+        transaction.orchard_bundle()
     }
 
     fn outputs(&self) -> &Self::Outputs {
         self.actions()
+    }
+
+    fn spends(&self) -> &Self::Spends {
+        self.actions()
+    }
+}
+
+pub(crate) trait UnspentFromWalletTxns
+where
+    Self: Sized,
+{
+    fn unspent_from_wallet_txns(transactions: &WalletTxns) -> Vec<(Self, u64, TxId)>;
+}
+
+impl UnspentFromWalletTxns for SaplingNullifier {
+    fn unspent_from_wallet_txns(transactions: &WalletTxns) -> Vec<(Self, u64, TxId)> {
+        transactions.get_unspent_sapling_nullifiers()
+    }
+}
+
+impl UnspentFromWalletTxns for OrchardNullifier {
+    fn unspent_from_wallet_txns(transactions: &WalletTxns) -> Vec<(Self, u64, TxId)> {
+        transactions.get_unspent_orchard_nullifiers()
     }
 }
 
@@ -246,7 +282,7 @@ pub(crate) trait NoteData: Sized {
     type Diversifier;
     type Note: PartialEq;
     type Node: Hashable;
-    type Nullifier: PartialEq + ToBytes<32> + FromBytes<32>;
+    type Nullifier: PartialEq + ToBytes<32> + FromBytes<32> + UnspentFromWalletTxns;
     fn from_parts(
         extfvk: Self::Fvk,
         diversifier: Self::Diversifier,
@@ -325,12 +361,17 @@ impl NoteData for SaplingNoteData {
     }
 }
 
-pub(crate) trait WalletKey {
+pub(crate) trait WalletKey
+where
+    Self: Sized,
+{
     type Fvk;
     type Ivk;
     type Ovk;
     type Sk;
     fn fvk(&self) -> Option<Self::Fvk>;
+    fn get_keys(keys: &Keys) -> &Vec<Self>;
+    fn get_addresses(keys: &Keys) -> Vec<String>;
     fn ivk(&self) -> Option<Self::Ivk>;
     fn ovk(&self) -> Option<Self::Ovk>;
     fn sk(&self) -> Option<Self::Sk>;
@@ -347,6 +388,14 @@ impl WalletKey for SaplingKey {
 
     fn fvk(&self) -> Option<Self::Fvk> {
         Some(self.extfvk.clone())
+    }
+
+    fn get_keys(keys: &Keys) -> &Vec<Self> {
+        keys.zkeys()
+    }
+
+    fn get_addresses(keys: &Keys) -> Vec<String> {
+        keys.get_all_sapling_addresses()
     }
 
     fn ivk(&self) -> Option<Self::Ivk> {
@@ -373,6 +422,14 @@ impl WalletKey for OrchardKey {
 
     fn fvk(&self) -> Option<Self::Fvk> {
         (&self.key).try_into().ok()
+    }
+
+    fn get_keys(keys: &Keys) -> &Vec<Self> {
+        keys.okeys()
+    }
+
+    fn get_addresses(keys: &Keys) -> Vec<String> {
+        keys.get_all_orchard_addresses()
     }
 
     fn ivk(&self) -> Option<Self::Ivk> {
@@ -444,35 +501,53 @@ impl NoteData for OrchardNoteData {
     }
 }
 
-pub(crate) trait DomainWalletExt: Domain
+pub(crate) trait DomainWalletExt<P: Parameters>: Domain
 where
+    Self: Sized,
     Self::Note: PartialEq,
     Self::Recipient: Recipient,
+    Self::Note: PartialEq,
 {
     type Fvk: Clone;
     type WalletNote: NoteData<
         Fvk = Self::Fvk,
         Note = <Self as Domain>::Note,
         Diversifier = <<Self as Domain>::Recipient as Recipient>::Diversifier,
+        Nullifier = <<<Self as DomainWalletExt<P>>::Bundle as Bundle<Self, P>>::Spend as Spend>::Nullifier,
     >;
+    type Key: WalletKey<
+            Ovk = <Self as Domain>::OutgoingViewingKey,
+            Ivk = <Self as Domain>::IncomingViewingKey,
+            Fvk = <Self as DomainWalletExt<P>>::Fvk,
+        > + Clone;
+
+    type Bundle: Bundle<Self, P>;
 
     fn wallet_notes_mut(_: &mut WalletTx) -> &mut Vec<Self::WalletNote>;
 }
 
-impl<P: Parameters> DomainWalletExt for SaplingDomain<P> {
+impl<P: Parameters> DomainWalletExt<P> for SaplingDomain<P> {
     type Fvk = SaplingExtendedFullViewingKey;
 
     type WalletNote = SaplingNoteData;
+
+    type Key = SaplingKey;
+
+    type Bundle = SaplingBundle<SaplingAuthorized>;
 
     fn wallet_notes_mut(transaction: &mut WalletTx) -> &mut Vec<Self::WalletNote> {
         &mut transaction.sapling_notes
     }
 }
 
-impl DomainWalletExt for OrchardDomain {
+impl<P: Parameters> DomainWalletExt<P> for OrchardDomain {
     type Fvk = OrchardFullViewingKey;
 
     type WalletNote = OrchardNoteData;
+
+    type Key = OrchardKey;
+
+    type Bundle = OrchardBundle<OrchardAuthorized, Amount>;
 
     fn wallet_notes_mut(transaction: &mut WalletTx) -> &mut Vec<Self::WalletNote> {
         &mut transaction.orchard_notes

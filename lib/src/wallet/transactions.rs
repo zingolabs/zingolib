@@ -22,7 +22,7 @@ use zcash_primitives::{
     zip32::ExtendedFullViewingKey,
 };
 
-use zingoconfig::MAX_REORG;
+use zingoconfig::{Network, MAX_REORG};
 
 use crate::wallet::traits::FromBytes;
 
@@ -291,16 +291,20 @@ impl WalletTxns {
             .collect()
     }
 
-    pub fn get_unspent_orchard_nullifiers(
-        &self,
-    ) -> Vec<(OrchardNullifier, orchard::value::NoteValue, TxId)> {
+    pub fn get_unspent_orchard_nullifiers(&self) -> Vec<(OrchardNullifier, u64, TxId)> {
         self.current
             .iter()
             .flat_map(|(_, wtx)| {
                 wtx.orchard_notes
                     .iter()
                     .filter(|nd| nd.spent.is_none())
-                    .map(move |nd| (nd.nullifier.clone(), nd.note.value(), wtx.txid.clone()))
+                    .map(move |nd| {
+                        (
+                            nd.nullifier.clone(),
+                            nd.note.value().inner(),
+                            wtx.txid.clone(),
+                        )
+                    })
             })
             .collect()
     }
@@ -660,7 +664,7 @@ impl WalletTxns {
         to: D::Recipient,
         fvk: &D::Fvk,
     ) where
-        D: DomainWalletExt,
+        D: DomainWalletExt<Network>,
         D::Note: PartialEq,
         D::Recipient: Recipient,
     {
