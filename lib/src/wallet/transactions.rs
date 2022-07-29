@@ -661,9 +661,8 @@ impl WalletTxns {
         fvk: &D::Fvk,
     ) where
         D: DomainWalletExt,
-        D: zcash_note_encryption::Domain<Note = <D::WalletNote as NoteData>::Note>,
-        D::Recipient: Recipient<Diversifier = <D::WalletNote as NoteData>::Diversifier>,
-        D::WalletNote: NoteData<Fvk = D::Fvk>,
+        D::Note: PartialEq,
+        D::Recipient: Recipient,
     {
         // Check if this is a change note
         let is_change = self.total_funds_spent_in(&txid) > 0;

@@ -29,9 +29,7 @@ use tokio::{
     },
     task::JoinHandle,
 };
-use zcash_note_encryption::{
-    try_note_decryption, try_output_recovery_with_ovk, Domain, ShieldedOutput, ENC_CIPHERTEXT_SIZE,
-};
+use zcash_note_encryption::{try_note_decryption, try_output_recovery_with_ovk, Domain};
 
 use zcash_primitives::{
     consensus::BlockHeight,
@@ -510,22 +508,21 @@ async fn scan_bundle<K, B, D, E>(
     key_to_ivk: impl Fn(&K) -> Result<<D as Domain>::IncomingViewingKey, E>,
     output_to_domain: impl Fn(&B::Output) -> D,
     memo_slice: impl Fn(&D::Memo) -> &[u8],
-    get_unspent_nullifiers: impl Fn(&WalletTxns) -> Vec<(<B::Spend as zingo_traits::Spend>::Nullifier, u64, TxId)>,
-    get_all_addresses: impl Fn(&Keys) -> Vec<String>
+    get_unspent_nullifiers: impl Fn(
+        &WalletTxns,
+    )
+        -> Vec<(<B::Spend as zingo_traits::Spend>::Nullifier, u64, TxId)>,
+    get_all_addresses: impl Fn(&Keys) -> Vec<String>,
 ) where
     K: Clone + zingo_traits::WalletKey<Ovk = <D as Domain>::OutgoingViewingKey>,
     D: zingo_traits::DomainWalletExt,
-    D: Domain<Note = <<D as zingo_traits::DomainWalletExt>::WalletNote as zingo_traits::NoteData>::Note>,
-    D: zingo_traits::DomainWalletExt<Fvk = <<D as zingo_traits::DomainWalletExt>::WalletNote as zingo_traits::NoteData>::Fvk>,
-    D::Note: Clone,
+    D::Note: Clone + PartialEq,
     D::OutgoingViewingKey: std::fmt::Debug,
-    D::Recipient: zingo_traits::Recipient<Diversifier = <<D as zingo_traits::DomainWalletExt>::WalletNote as zingo_traits::NoteData>::Diversifier>,
-    B::Output: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE> + zingo_traits::ShieldedOutputExt<D>,
-    B::Spend: zingo_traits::Spend,
+    D::Recipient: zingo_traits::Recipient,
     for<'a> &'a B::Spends: IntoIterator<Item = &'a B::Spend>,
     for<'a> &'a B::Outputs: IntoIterator<Item = &'a B::Output>,
-    <B::Spend as zingo_traits::Spend>::Nullifier: PartialEq,
-    B: zingo_traits::Bundle, D::Memo: zingo_traits::ToBytes<512>,
+    B: zingo_traits::Bundle<D>,
+    D::Memo: zingo_traits::ToBytes<512>,
 {
     // Check if any of the nullifiers spent in this transaction are ours. We only need this for unconfirmed transactions,
     // because for transactions in the block, we will check the nullifiers from the blockdata

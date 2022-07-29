@@ -138,7 +138,7 @@ impl FromCommitment for MerkleHashOrchard {
 }
 
 pub(crate) trait Spend {
-    type Nullifier;
+    type Nullifier: PartialEq;
     fn nullifier(&self) -> &Self::Nullifier;
     fn wallet_nullifier(_: &Self::Nullifier) -> WalletNullifier;
 }
@@ -195,16 +195,24 @@ impl Recipient for SaplingAddress {
     }
 }
 
-pub(crate) trait Bundle {
-    type Spend;
-    type Output;
+pub(crate) trait Bundle<D: DomainWalletExt>
+where
+    D::Recipient: Recipient,
+    D::Note: PartialEq,
+{
+    type Spend: Spend;
+    type Output: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE> + ShieldedOutputExt<D>;
     type Spends: IntoIterator<Item = Self::Spend>;
     type Outputs: IntoIterator<Item = Self::Output>;
     fn spends(&self) -> &Self::Spends;
     fn outputs(&self) -> &Self::Outputs;
 }
 
-impl<A: SaplingAuthorization> Bundle for SaplingBundle<A> {
+impl<A: SaplingAuthorization> Bundle<SaplingDomain<Network>> for SaplingBundle<A>
+where
+    OutputDescription<<A as SaplingAuthorization>::Proof>:
+        ShieldedOutputExt<SaplingDomain<Network>>,
+{
     type Spend = SpendDescription<A>;
     type Output = OutputDescription<A::Proof>;
     type Spends = Vec<Self::Spend>;
@@ -218,7 +226,7 @@ impl<A: SaplingAuthorization> Bundle for SaplingBundle<A> {
     }
 }
 
-impl<A: OrchardAuthorization, V> Bundle for OrchardBundle<A, V> {
+impl<A: OrchardAuthorization, V> Bundle<OrchardDomain> for OrchardBundle<A, V> {
     type Spend = Action<A::SpendAuth>;
     type Output = Action<A::SpendAuth>;
     type Spends = NonEmpty<Self::Spend>;
@@ -436,9 +444,17 @@ impl NoteData for OrchardNoteData {
     }
 }
 
-pub(crate) trait DomainWalletExt: Domain {
+pub(crate) trait DomainWalletExt: Domain
+where
+    Self::Note: PartialEq,
+    Self::Recipient: Recipient,
+{
     type Fvk: Clone;
-    type WalletNote: NoteData;
+    type WalletNote: NoteData<
+        Fvk = Self::Fvk,
+        Note = <Self as Domain>::Note,
+        Diversifier = <<Self as Domain>::Recipient as Recipient>::Diversifier,
+    >;
 
     fn wallet_notes_mut(_: &mut WalletTx) -> &mut Vec<Self::WalletNote>;
 }
