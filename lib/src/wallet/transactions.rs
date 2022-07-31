@@ -24,11 +24,9 @@ use zcash_primitives::{
 
 use zingoconfig::{Network, MAX_REORG};
 
-use crate::wallet::traits::FromBytes;
-
 use super::{
     data::{OutgoingTxMetadata, Utxo, WalletNullifier, WalletTx, WitnessCache},
-    traits::{DomainWalletExt, NoteData, Recipient},
+    traits::{DomainWalletExt, FromBytes, NoteData, Recipient},
 };
 
 /// List of all transactions in a wallet.
