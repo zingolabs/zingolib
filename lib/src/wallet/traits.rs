@@ -47,6 +47,7 @@ use zcash_primitives::{
 };
 use zingoconfig::Network;
 
+/// This provides a uniform `.to_bytes` to types that might require it in a generic context.
 pub(crate) trait ToBytes<const N: usize> {
     fn to_bytes(&self) -> [u8; N];
 }
@@ -81,10 +82,14 @@ impl<const N: usize> ToBytes<N> for [u8; N] {
     }
 }
 
+/// Exposes the out_ciphertext, domain, and value_commitment in addition to the
+/// required methods of ShieldedOutput
 pub(crate) trait ShieldedOutputExt<P: Parameters, D: Domain>:
     ShieldedOutput<D, ENC_CIPHERTEXT_SIZE>
 {
     fn domain(&self, height: BlockHeight, parameters: P) -> D;
+    /// A decryption key for `enc_ciphertext`.  `out_ciphertext` is _itself_  decryptable
+    /// with the `OutgoingCipherKey` "`ock`".
     fn out_ciphertext(&self) -> [u8; 80];
     fn value_commitment(&self) -> D::ValueCommitment;
 }
