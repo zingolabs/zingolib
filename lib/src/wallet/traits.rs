@@ -218,7 +218,7 @@ where
     D::Note: PartialEq,
 {
     type Spend: Spend;
-    type Output: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE> + ShieldedOutputExt<P, D>;
+    type Output: ShieldedOutputExt<P, D>;
     type Spends: IntoIterator<Item = Self::Spend>;
     type Outputs: IntoIterator<Item = Self::Output>;
     fn from_transaction(transaction: &Transaction) -> Option<&Self>;
