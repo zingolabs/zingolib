@@ -1,3 +1,5 @@
+use std::fmt::Error;
+
 pub(crate) fn git_check() {
     use std::process::Command;
     // confirm we are in a git worktree
@@ -42,6 +44,7 @@ pub(crate) fn git_check() {
 pub(crate) async fn launch() -> Result<(), Box<dyn std::error::Error>> {
     use std::ffi::OsString;
     use std::fs::File;
+    use tokio::runtime::Runtime;
     use tokio::time::sleep;
     use tokio::time::timeout;
     use tokio::time::Duration;
@@ -165,11 +168,14 @@ pub(crate) async fn launch() -> Result<(), Box<dyn std::error::Error>> {
     let mut zd_reader = BufReader::new(zd_stdout).lines();
 
     // TODO launches... runtime forever?
-    tokio::spawn(async move {
-        let zd_status = zd_child.wait().await.expect("zd_status error");
-        println!("child zd_status was: {}", zd_status);
-    });
-
+    let rt = Runtime::new().expect("error building runtime in regtest mode");
+    rt.spawn(async move {
+        let zd_id = zd_child
+            .id()
+            .expect("problem getting spawned zcashd process id!");
+        println!("started zcashd process: {}", zd_id);
+        //let zd_status = zd_child.wait().await.expect("zd_status error");
+        //println!("child zd_status was: {}", zd_status);
     while let Some(line) = zd_reader.next_line().await? {
         println!("Line: {}", line);
         // check for match = blocking
@@ -188,6 +194,11 @@ pub(crate) async fn launch() -> Result<(), Box<dyn std::error::Error>> {
             .await
             .expect("problem during zwd write_all: logging stdout to file");
     }
+        Result::<(), std::io::Error>::Ok(())
+    });
+
+    //make this its own function to be called in the spawn?
+    //need this to carry on forever...
     println!("pre timeout");
 
     const CHECK_INTERVAL: Duration = time::Duration::from_millis(100);
