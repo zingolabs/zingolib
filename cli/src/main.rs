@@ -1,5 +1,6 @@
 mod regtest;
 use log::error;
+use tokio::runtime::Runtime;
 use zingo_cli::{
     attempt_recover_seed, configure_clapapp, report_permission_error, start_interactive, startup,
     version::VERSION,
@@ -55,8 +56,13 @@ pub fn main() {
 
     let regtest_mode_enabled = matches.is_present("regtest");
     if regtest_mode_enabled {
-        regtest::launch()
-        // do the regtest
+        regtest::git_check();
+        let runtime = Runtime::new().expect("problem creating runtime");
+        runtime.block_on(async {
+            regtest::launch()
+                .await
+                .expect("regtest::launch() errored out");
+        });
     }
 
     let server = ZingoConfig::get_server_or_default(maybe_server);
