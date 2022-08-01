@@ -1,12 +1,5 @@
-pub(crate) fn launch() {
-    use std::ffi::OsString;
-    use std::fs::File;
-    use std::io::BufWriter;
-    use std::io::Read;
-    use std::path::PathBuf;
-    use std::process::{Command, Stdio};
-    use std::{thread, time};
-
+pub(crate) fn git_check() {
+    use std::process::Command;
     // confirm we are in a git worktree
     let git_check = Command::new("git")
         .arg("--help")
@@ -40,22 +33,52 @@ pub(crate) fn launch() {
 
     if !std::str::from_utf8(&git_log.stdout)
         .expect("git log stdout error")
-        .contains("e8677475da2676fcfec57615de6330a7cb542cc1")
+        .contains("bb5774128dd3b88a78e13a2129769d1aced7b884")
     {
         panic!("Zingo-cli's regtest mode must be run within its own git worktree");
     }
+}
+
+pub(crate) async fn launch() -> Result<(), Box<dyn std::error::Error>> {
+    use std::ffi::OsString;
+    use std::fs::File;
+    use tokio::time::sleep;
+    use tokio::time::timeout;
+    use tokio::time::Duration;
+    //use tokio::fs::File;
+    //use std::io::BufWriter;
+    //use std::io::Read;
+    use std::path::PathBuf;
+    use std::process::Stdio;
+    use std::{thread, time};
+    use tokio::io::{copy, AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::process::Command;
+
+    pub struct DaemonsReady {
+        zcashd: bool,
+        lightwalletd: bool,
+    }
+
+    let mut daemon_ready = DaemonsReady {
+        zcashd: false,
+        lightwalletd: false,
+    };
 
     // get the top level directory for this repo worktree
     let revparse_raw = Command::new("git")
         .args(["rev-parse", "--show-toplevel"])
-        .output()
-        .expect("problem invoking git rev-parse");
+        .output();
+    //.expect("problem invoking git rev-parse");
 
-    let revparse = std::str::from_utf8(&revparse_raw.stdout).expect("revparse error");
+    //let revparse = std::str::from_utf8(&revparse_raw.stdout).expect("revparse error");
+    //let revparse = std::str::from_utf8(&(revparse_raw.await?).stdout).expect("revparse error");
+    let revparse: String =
+        String::from_utf8(revparse_raw.await?.stdout).expect("revparse into string failed");
+    //let revparse = revparse_raw.await?;
 
     // Cross-platform OsString
     let mut worktree_home = OsString::new();
-    worktree_home.push(revparse.trim_end());
+    worktree_home.push(&revparse.trim_end());
 
     let bin_location: PathBuf = [
         worktree_home.clone(),
@@ -112,9 +135,11 @@ pub(crate) fn launch() {
     let mut zcashd_stdout_log: String = String::new();
     zcashd_stdout_log.push_str(zcash_logs.to_str().expect("error converting to str"));
     zcashd_stdout_log.push_str("zcashd_stdout.log");
-    let mut zcashd_logfile = File::create(&zcashd_stdout_log).expect("file::create Result error");
+    //TODO try direct tokio fs
+    let std_zcashd_logfile = File::create(&zcashd_stdout_log).expect("file::create Result error");
+    let mut zcashd_logfile = tokio::fs::File::from_std(std_zcashd_logfile);
 
-    let mut zcashd_command = Command::new(zcashd_bin)
+    let mut zd_child = Command::new(zcashd_bin)
         .args([
             "--printtoconsole",
             &flagged_zcashd_conf,
@@ -127,81 +152,63 @@ pub(crate) fn launch() {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("failed to start zcashd");
+        .expect("failed starting zcashd");
+    //zcashd_command.stdout(Stdio::piped());
+    //zcashd_command.stderr(Stdio::piped());
+    //let child = zcashd_command.spawn().expect("failed to start zcashd");
 
-    // try a buff instead?
+    let zd_stdout = zd_child.stdout.take().expect("zd child stdout not taken!");
+    // TODO stderr
 
-    // Do writing here.
+    // TODO redundant?
+    //let mut alt_zd_reader = BufReader::new(zd_stdout);
+    let mut zd_reader = BufReader::new(zd_stdout).lines();
 
-    let check_interval = time::Duration::from_millis(100);
-    let mut _zcashd_logfile_state = String::new();
-    println!("{}", "just before isomethingloop");
+    // TODO launches... runtime forever?
+    tokio::spawn(async move {
+        let zd_status = zd_child.wait().await.expect("zd_status error");
+        println!("child zd_status was: {}", zd_status);
+    });
 
-    if let Some(mut zcashd_log) = zcashd_command.stdout.take() {
-        println!("{:?}", zcashd_log);
-        let mut buf = BufWriter::new(Vec::new());
-
-        let stup = std::io::copy(&mut zcashd_log, &mut buf).expect("io::copy error writing to buf");
-        println!("{}", stup.to_string());
-        std::thread::spawn(move || {
-            std::io::copy(&mut zcashd_log, &mut zcashd_logfile)
-                .expect("io::copy error writing zcashd_stdout.log");
-        });
-        /*
-            if let Some(mut zcashd_log) = zcashd_command.stdout.take() {
-                let mut buf = BufWriter::new(Vec::new());
-                std::io::copy(&mut zcashd_log, &mut buf).expect("io::copy error writing to buf");
-                std::thread::spawn(move || {
-                    std::io::copy(&mut zcashd_log, &mut zcashd_logfile)
-                        .expect("io::copy error writing zcashd_stdout.log");
-                });
-        */
-        println!("{}", "just before loop");
-        loop {
-            println!("{}", "starting loop");
-            let bytes = buf.buffer();
-            //.expect("problem unwrapping buf");
-            let mut veccy = Vec::new();
-            for b in bytes {
-                veccy.push(b.clone());
-            }
-
-            println!("{:?}", String::from_utf8(veccy).unwrap());
-            let string = String::new();
-            //let string = String::from_utf8(veccy).expect("problem unwrapping bytes");
-            //    zcashd_log_open
-            //      .read_to_string(&mut zcashd_logfile_state)
-            //    .expect("problem reading zcashd_logfile into rust string"); // returns result
-            println!("{}", &string);
-            if string.contains("Error:") {
-                panic!("zcashd reporting ERROR! exiting with panic. you may have to shut the daemon down manually.");
-            } else if string.contains("init message: Done loading") {
-                break;
-            } else {
-                thread::sleep(check_interval);
-            }
+    while let Some(line) = zd_reader.next_line().await? {
+        println!("Line: {}", line);
+        // check for match = blocking
+        // write to file, continuous.
+        if line.contains("Error:") {
+            panic!("zcashd reporting ERROR! exiting with panic. you may have to shut the daemon down manually.");
+        } else if line.contains("init message: Done loading") {
+            println!("MATCHED zcashd done loading");
+            daemon_ready.zcashd = true;
+            println!("zcashd daemonready: {}", &daemon_ready.zcashd);
+            // need to create blocking check every check_interval
         }
-    } else {
-        panic!("stdout is none");
+        zcashd_logfile
+            // TODO re-add new lines?
+            .write_all(line.as_bytes())
+            .await
+            .expect("problem during zwd write_all: logging stdout to file");
     }
-    println!("zcashd is starting in regtest mode, please standby...");
+    println!("pre timeout");
 
-    /*
-        let mut zcashd_log_open = File::open(&zcashd_stdout_log).expect("can't open zcashd log");
-        //now enter loop to find string that indicates daemon is ready for next step
+    const CHECK_INTERVAL: Duration = time::Duration::from_millis(100);
+    async fn zd_ready(dr: &DaemonsReady) {
         loop {
-            zcashd_log_open
-                .read_to_string(&mut zcashd_logfile_state)
-                .expect("problem reading zcashd_logfile into rust string"); // returns result
-            if zcashd_logfile_state.contains("Error:") {
-                panic!("zcashd reporting ERROR! exiting with panic. you may have to shut the daemon down manually.");
-            } else if zcashd_logfile_state.contains("init message: Done loading") {
+            if dr.zcashd == true {
                 break;
             } else {
-                thread::sleep(check_interval);
+                println!("sleeping");
+                sleep(CHECK_INTERVAL).await;
             }
         }
-    */
+    }
+
+    // 30 seconds maximum wait time
+    // TODO set higher once confirmed working?
+    println!("pre timeout");
+    if let Err(_) = timeout(Duration::from_secs(30), zd_ready(&daemon_ready)).await {
+        println!("TIMEOUT!!!!!");
+    }
+    println!("past timeout");
 
     println!("zcashd start section completed, zcashd should be running.");
     println!("lightwalletd is about to start. This should only take a moment.");
@@ -253,9 +260,10 @@ pub(crate) fn launch() {
     let mut lwd_stdout_log: String = String::new();
     lwd_stdout_log.push_str(lwd_logs.to_str().expect("error making lwd_datadir"));
     lwd_stdout_log.push_str("lwd_stdout.log");
-    let mut lwd_logfile = File::create(&lwd_stdout_log).expect("file::create Result error");
+    let std_lwd_logfile = File::create(&lwd_stdout_log).expect("file::create Result error");
+    let mut lwd_logfile = tokio::fs::File::from_std(std_lwd_logfile);
 
-    let mut lwd_command = Command::new(lwd_bin)
+    let mut lwd_child = Command::new(lwd_bin)
         .args([
             "--no-tls-very-insecure",
             "--zcash-conf-path",
@@ -273,28 +281,58 @@ pub(crate) fn launch() {
         .spawn()
         .expect("failed to start lwd");
 
-    if let Some(mut lwd_log) = lwd_command.stdout.take() {
-        std::thread::spawn(move || {
-            std::io::copy(&mut lwd_log, &mut lwd_logfile)
-                .expect("io::copy error writing lwd_stdout.log");
-        });
-    }
+    let lwd_stdout = lwd_child
+        .stdout
+        .take()
+        .expect("lwd child stdout not taken!");
+    // TODO stderr
+
+    // TODO redundant?
+    //let mut alt_zd_reader = BufReader::new(zd_stdout);
+    let mut lwd_reader = BufReader::new(lwd_stdout).lines();
+
+    // TODO launches... runtime forever?
+    tokio::spawn(async move {
+        let lwd_status = lwd_child.wait().await.expect("lwd_status error");
+        println!("child zd_status was: {}", lwd_status);
+    });
 
     println!("lightwalletd is now started in regtest mode, please standby...");
-
-    let mut lwd_log_opened = File::open(&lwd_stdout_log).expect("can't open lwd log");
-    let mut lwd_logfile_state = String::new();
-    //now enter loop to find string that indicates daemon is ready for next step
-    loop {
-        lwd_log_opened
-            .read_to_string(&mut lwd_logfile_state)
-            .expect("problem reading lwd_logfile into rust string");
-        if lwd_logfile_state.contains("Starting insecure no-TLS (plaintext) server") {
-            break;
-        } else {
-            thread::sleep(check_interval);
+    while let Some(lwd_line) = lwd_reader.next_line().await? {
+        println!("LWD Line: {}", lwd_line);
+        // write to file, continuous.
+        if lwd_line.contains("Lightwalletd died")
+            || lwd_line.contains("FATAL")
+            || lwd_line.contains("error")
+        {
+            panic!("lwd reporting ERROR! exiting with panic. you may have to shut the daemons down manually.");
+        } else if lwd_line.contains("Starting insecure no-TLS (plaintext) server") {
+            println!("MATCHED lwd done loading");
+            daemon_ready.lightwalletd = true;
+        }
+        lwd_logfile
+            .write_all(lwd_line.as_bytes())
+            .await
+            .expect("problem with lwd write_all: logging stdout to file");
+    }
+    async fn lwd_ready(dr: &DaemonsReady) {
+        loop {
+            if dr.lightwalletd == true {
+                break;
+            } else {
+                println!("sleeping");
+                sleep(CHECK_INTERVAL).await;
+            }
         }
     }
+
+    // 30 seconds maximum wait time
+    // TODO set higher once confirmed working?
+    if let Err(_) = timeout(Duration::from_secs(30), lwd_ready(&daemon_ready)).await {
+        println!("TIMEOUT!!!!!");
+    }
+    println!("past lwd timeout");
     println!("lwd start section completed, lightwalletd should be running!");
     println!("Standby, Zingo-cli should be running in regtest mode momentarily...");
+    Ok(())
 }
