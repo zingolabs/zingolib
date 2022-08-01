@@ -3657,7 +3657,6 @@ dependencies = [
  "http",
  "log",
  "log4rs",
- "tokio",
  "zcash_address",
  "zcash_primitives",
 ]
