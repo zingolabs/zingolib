@@ -773,21 +773,20 @@ impl LightWallet {
         }
     }
 
-    pub async fn zbalance(&self, addr: Option<String>) -> u64 {
+    pub async fn shielded_balance<K: traits::NoteAndMetadata>(&self, addr: Option<String>) -> u64 {
         self.transactions
             .read()
             .await
             .current
             .values()
             .map(|transaction| {
-                transaction
-                    .sapling_notes
+                K::wallet_transaction_notes(transaction)
                     .iter()
                     .filter(|nd| match addr.as_ref() {
                         Some(a) => {
                             *a == encode_payment_address(
                                 self.config.hrp_sapling_address(),
-                                &nd.extfvk.fvk.vk.to_payment_address(nd.diversifier).unwrap(),
+                                &nd.fvk().diversified_address(nd.diversifier).unwrap(),
                             )
                         }
                         None => true,

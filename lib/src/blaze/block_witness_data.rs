@@ -553,10 +553,13 @@ impl BlockAndWitnessData {
                 .iter()
                 .enumerate()
             {
-                let node = Node::from_commitment(&co.cmstar_bytes().into());
-                tree.append(node).unwrap();
-                if t_num == transaction_num && o_num == output_num {
-                    return Ok(IncrementalWitness::from_tree(&tree));
+                if let Some(node) = Node::from_commitment(&co.cmstar_bytes().into()).into() {
+                    tree.append(node).unwrap();
+                    if t_num == transaction_num && o_num == output_num {
+                        return Ok(IncrementalWitness::from_tree(&tree));
+                    }
+                } else {
+                    eprintln!("invalid node hash")
                 }
             }
         }
@@ -629,8 +632,12 @@ impl BlockAndWitnessData {
                 let cb = &blocks.get(i as usize).unwrap().cb();
                 for compact_transaction in &cb.vtx {
                     for co in &compact_transaction.outputs {
-                        let node = Node::from_commitment(&co.cmu().unwrap().into());
-                        w.append(node).unwrap();
+                        if let Some(node) = Node::from_commitment(&co.cmu().unwrap().into()).into()
+                        {
+                            w.append(node).unwrap();
+                        } else {
+                            eprintln!("Bad node hash")
+                        }
                     }
                 }
 
@@ -679,12 +686,34 @@ impl BlockAndWitnessData {
                 {
                     transaction_id_found = true;
                 }
+                //Todo! Genericize this, instead of always searching both sapling and orchard outputs/actions
                 for j in 0..compact_transaction.outputs.len() as u32 {
                     // If we've already passed the transaction id and output_num, stream the results
                     if transaction_id_found && output_found {
-                        let co = compact_transaction.outputs.get(j as usize).unwrap();
-                        let node = Node::from_commitment(&co.cmu().unwrap().into());
+                        let compact_output = compact_transaction.outputs.get(j as usize).unwrap();
+                        let node =
+                            Node::from_commitment(&compact_output.cmu().unwrap().into()).unwrap();
                         w.append(node).unwrap();
+                    }
+
+                    // Mark as found if we reach the transaction id and output_num. Starting with the next output,
+                    // we'll stream all the data to the requester
+                    if !output_found && transaction_id_found && j == output_num {
+                        output_found = true;
+                    }
+                }
+                for j in 0..compact_transaction.actions.len() as u32 {
+                    // If we've already passed the transaction id and output_num, stream the results
+                    if transaction_id_found && output_found {
+                        let compact_action = compact_transaction.actions.get(j as usize).unwrap();
+                        if let Some(node) =
+                            Node::from_commitment(compact_action.cmx.as_slice().try_into().unwrap())
+                                .into()
+                        {
+                            w.append(node).unwrap();
+                        } else {
+                            eprintln!("Invalid node hash {:?}", compact_action.cmx);
+                        }
                     }
 
                     // Mark as found if we reach the transaction id and output_num. Starting with the next output,
