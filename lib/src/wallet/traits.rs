@@ -1,3 +1,4 @@
+//! Provides unifying interfaces for transaction management across Sapling and Orchard
 use super::{
     data::{OrchardNoteData, SaplingNoteData, WalletNullifier, WalletTx, WitnessCache},
     keys::{orchard::OrchardKey, sapling::SaplingKey, Keys},
@@ -212,15 +213,22 @@ impl Recipient for SaplingAddress {
     }
 }
 
+/// A set of transmission abstractions within a transaction, that are specific to a particular
+/// domain. In the Orchard Domain bundles comprise Actions each of which contains
+/// both a Spend and an Output (though either or both may be dummies). Sapling transmissions,
+/// as implemented, contain a 1:1 ratio of Spends and Outputs.
 pub(crate) trait Bundle<D: DomainWalletExt<P>, P: Parameters>
 where
     D::Recipient: Recipient,
     D::Note: PartialEq,
 {
+    /// An expenditure of an ?external? output, such that its value is distributed among *this* transaction's outputs.
     type Spend: Spend;
+    /// A value store that is completely emptied by transfer of its contents to another output.
     type Output: ShieldedOutputExt<P, D>;
     type Spends: IntoIterator<Item = Self::Spend>;
     type Outputs: IntoIterator<Item = Self::Output>;
+    /// An extractive process that returns domain specific information from a transaction.
     fn from_transaction(transaction: &Transaction) -> Option<&Self>;
     fn outputs(&self) -> &Self::Outputs;
     fn spends(&self) -> &Self::Spends;
@@ -255,10 +263,12 @@ impl<P: Parameters> Bundle<OrchardDomain, P> for OrchardBundle<OrchardAuthorized
     }
 
     fn outputs(&self) -> &Self::Outputs {
+        //! In orchard each action contains an output and a spend.
         self.actions()
     }
 
     fn spends(&self) -> &Self::Spends {
+        //! In orchard each action contains an output and a spend.
         self.actions()
     }
 }
