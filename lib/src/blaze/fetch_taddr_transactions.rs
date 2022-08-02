@@ -165,7 +165,7 @@ mod test {
     use crate::compact_formats::RawTransaction;
     use zcash_primitives::transaction::Transaction;
 
-    use crate::wallet::keys::transparent::WalletTKey;
+    use crate::wallet::keys::transparent::TransparentKey;
     use crate::wallet::keys::Keys;
 
     use super::FetchTaddrTransactions;
@@ -177,7 +177,7 @@ mod test {
         let gened_taddrs: Vec<_> = (0..5).into_iter().map(|n| format!("taddr{}", n)).collect();
         keys.tkeys = gened_taddrs
             .iter()
-            .map(|ta| WalletTKey::empty(ta))
+            .map(|ta| TransparentKey::empty(ta))
             .collect::<Vec<_>>();
 
         let ftt = FetchTaddrTransactions::new(Arc::new(RwLock::new(keys)));
