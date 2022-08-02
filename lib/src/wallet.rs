@@ -38,6 +38,7 @@ use zcash_primitives::{
     },
 };
 
+use self::traits::WalletKey;
 use self::{
     data::{BlockData, SaplingNoteData, Utxo, WalletZecPriceInfo},
     keys::{orchard::OrchardKey, Keys},
@@ -568,19 +569,19 @@ impl LightWallet {
 
     async fn add_imported_spend_key<
         WKey: WalletKey + Clone,
-        ViewKey: for<'a> From<&'a WKey::SpendKey>,
+        ViewKey: for<'a> From<&'a WKey::Sk>,
         DecodeError: std::fmt::Display,
     >(
         &self,
         key: &str,
         hrp: &str,
         birthday: u64,
-        decoder: impl Fn(&str, &str) -> Result<Option<WKey::SpendKey>, DecodeError>,
+        decoder: impl Fn(&str, &str) -> Result<Option<WKey::Sk>, DecodeError>,
         key_finder: impl Fn(&Keys) -> &Vec<WKey>,
         key_finder_mut: impl Fn(&mut Keys) -> &mut Vec<WKey>,
-        key_matcher: impl Fn(&WKey, &WKey::SpendKey) -> bool,
+        key_matcher: impl Fn(&WKey, &WKey::Sk) -> bool,
         find_view_key: impl Fn(&WKey, &ViewKey) -> bool,
-        key_importer: impl Fn(WKey::SpendKey) -> WKey,
+        key_importer: impl Fn(WKey::Sk) -> WKey,
         encode_address: impl Fn(WKey::Address) -> String,
     ) -> String {
         let address_getter = |decoded_key| {
@@ -642,12 +643,12 @@ impl LightWallet {
         self.adjust_wallet_birthday(birthday);
         encode_address(address_getter(decoded_key).await)
     }
-    async fn update_view_key<WKey: WalletKey + Clone, ViewKey: for<'a> From<&'a WKey::SpendKey>>(
+    async fn update_view_key<WKey: WalletKey + Clone, ViewKey: for<'a> From<&'a WKey::Sk>>(
         &self,
-        decoded_key: WKey::SpendKey,
+        decoded_key: WKey::Sk,
         key_finder_mut: impl Fn(&mut Keys) -> &mut Vec<WKey>,
         find_view_key: impl Fn(&WKey, &ViewKey) -> bool,
-        key_importer: impl Fn(WKey::SpendKey) -> WKey,
+        key_importer: impl Fn(WKey::Sk) -> WKey,
     ) -> WKey::Address {
         let fvk = ViewKey::from(&decoded_key);
         let mut write_keys = self.keys.write().await;
@@ -1522,12 +1523,6 @@ fn decode_orchard_spending_key(
         }
         Err(e) => Err(e.to_string()),
     }
-}
-trait WalletKey {
-    type Address;
-    type SpendKey;
-    fn address(&self) -> Self::Address;
-    fn set_spend_key_for_view_key(&mut self, key: Self::SpendKey);
 }
 
 #[cfg(test)]

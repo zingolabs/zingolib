@@ -603,7 +603,7 @@ async fn scan_bundle<D>(
                             match Memo::from_bytes(&memo_bytes.to_bytes()) {
                                 Err(_) => None,
                                 Ok(memo) => {
-                                    if D::Key::get_addresses(&read_keys).contains(&address)
+                                    if D::Key::addresses_from_keys(&read_keys).contains(&address)
                                         && memo == Memo::Empty
                                     {
                                         None

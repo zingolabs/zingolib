@@ -129,15 +129,3 @@ impl OrchardKey {
         }
     }
 }
-
-impl crate::wallet::WalletKey for OrchardKey {
-    type Address = UnifiedAddress;
-    type SpendKey = SpendingKey;
-    fn address(&self) -> Self::Address {
-        self.unified_address.clone()
-    }
-
-    fn set_spend_key_for_view_key(&mut self, key: Self::SpendKey) {
-        self.key = WalletOKeyInner::ImportedSpendingKey(key)
-    }
-}

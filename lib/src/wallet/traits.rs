@@ -370,73 +370,81 @@ pub(crate) trait WalletKey
 where
     Self: Sized,
 {
+    type Sk;
     type Fvk;
     type Ivk;
     type Ovk;
-    type Sk;
+    type Address;
+    fn sk(&self) -> Option<Self::Sk>;
     fn fvk(&self) -> Option<Self::Fvk>;
-    fn get_keys(keys: &Keys) -> &Vec<Self>;
-    fn get_addresses(keys: &Keys) -> Vec<String>;
     fn ivk(&self) -> Option<Self::Ivk>;
     fn ovk(&self) -> Option<Self::Ovk>;
-    fn sk(&self) -> Option<Self::Sk>;
+    fn address(&self) -> Self::Address;
+    fn addresses_from_keys(keys: &Keys) -> Vec<String>;
+    fn get_keys(keys: &Keys) -> &Vec<Self>;
+    fn set_spend_key_for_view_key(&mut self, key: Self::Sk);
 }
 
 impl WalletKey for SaplingKey {
+    type Sk = SaplingExtendedSpendingKey;
+
     type Fvk = SaplingExtendedFullViewingKey;
 
     type Ivk = SaplingIvk;
 
     type Ovk = SaplingOutgoingViewingKey;
 
-    type Sk = SaplingExtendedSpendingKey;
+    type Address = SaplingAddress;
+
+    fn sk(&self) -> Option<Self::Sk> {
+        self.extsk.clone()
+    }
 
     fn fvk(&self) -> Option<Self::Fvk> {
         Some(self.extfvk.clone())
+    }
+
+    fn ivk(&self) -> Option<Self::Ivk> {
+        Some(self.extfvk.fvk.vk.ivk())
+    }
+    fn ovk(&self) -> Option<Self::Ovk> {
+        Some(self.extfvk.fvk.ovk)
+    }
+    fn address(&self) -> Self::Address {
+        self.zaddress.clone()
+    }
+
+    fn addresses_from_keys(keys: &Keys) -> Vec<String> {
+        keys.get_all_sapling_addresses()
     }
 
     fn get_keys(keys: &Keys) -> &Vec<Self> {
         keys.zkeys()
     }
 
-    fn get_addresses(keys: &Keys) -> Vec<String> {
-        keys.get_all_sapling_addresses()
-    }
-
-    fn ivk(&self) -> Option<Self::Ivk> {
-        Some(self.extfvk.fvk.vk.ivk())
-    }
-
-    fn ovk(&self) -> Option<Self::Ovk> {
-        Some(self.extfvk.fvk.ovk)
-    }
-
-    fn sk(&self) -> Option<Self::Sk> {
-        self.extsk.clone()
+    fn set_spend_key_for_view_key(&mut self, key: Self::Sk) {
+        self.extsk = Some(key);
+        self.keytype = super::keys::sapling::WalletZKeyType::ImportedSpendingKey;
     }
 }
 
 impl WalletKey for OrchardKey {
+    type Sk = OrchardSpendingKey;
+
     type Fvk = OrchardFullViewingKey;
 
     type Ivk = OrchardIncomingViewingKey;
 
     type Ovk = OrchardOutgoingViewingKey;
 
-    type Sk = OrchardSpendingKey;
+    type Address = zcash_address::unified::Address;
 
+    fn sk(&self) -> Option<Self::Sk> {
+        (&self.key).try_into().ok()
+    }
     fn fvk(&self) -> Option<Self::Fvk> {
         (&self.key).try_into().ok()
     }
-
-    fn get_keys(keys: &Keys) -> &Vec<Self> {
-        keys.okeys()
-    }
-
-    fn get_addresses(keys: &Keys) -> Vec<String> {
-        keys.get_all_orchard_addresses()
-    }
-
     fn ivk(&self) -> Option<Self::Ivk> {
         (&self.key).try_into().ok()
     }
@@ -445,8 +453,20 @@ impl WalletKey for OrchardKey {
         (&self.key).try_into().ok()
     }
 
-    fn sk(&self) -> Option<Self::Sk> {
-        (&self.key).try_into().ok()
+    fn address(&self) -> Self::Address {
+        self.unified_address.clone()
+    }
+
+    fn addresses_from_keys(keys: &Keys) -> Vec<String> {
+        keys.get_all_orchard_addresses()
+    }
+
+    fn get_keys(keys: &Keys) -> &Vec<Self> {
+        keys.okeys()
+    }
+
+    fn set_spend_key_for_view_key(&mut self, key: Self::Sk) {
+        self.key = super::keys::orchard::WalletOKeyInner::ImportedSpendingKey(key)
     }
 }
 
