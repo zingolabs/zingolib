@@ -530,6 +530,12 @@ async fn scan_bundle<D>(
             }
         }
     }
+    // The preceding updates the wallet_transactions with presumptive new "spent" nullifiers.  I continue to find the notion
+    // of a "spent" nullifier to be problematic.
+    // Issues:
+    //     1. There's more than one way to be "spent".
+    //     2. It's possible for a "nullifier" to be in the wallet's spent list, but never in the global ledger.
+    //     <https://github.com/zingolabs/zingolib/issues/65>
     let read_keys = keys.read().await;
     let local_keys = D::Key::get_keys(&*read_keys).clone();
     for output in
