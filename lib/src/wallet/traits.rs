@@ -123,6 +123,7 @@ impl<P: Parameters> ShieldedOutputExt<P, SaplingDomain<P>> for OutputDescription
     }
 }
 
+/// Provides a standard `from_bytes` interface to be used generically
 pub(crate) trait FromBytes<const N: usize> {
     fn from_bytes(bytes: [u8; N]) -> Self;
 }
@@ -140,6 +141,7 @@ impl FromBytes<32> for OrchardNullifier {
     }
 }
 
+/// As with `FromBytes`, provision of a generic interface
 pub(crate) trait FromCommitment {
     fn from_commitment(from: &[u8; 32]) -> Self;
 }
@@ -155,6 +157,7 @@ impl FromCommitment for MerkleHashOrchard {
     }
 }
 
+/// The component that transfers value.  In the common case, from one output to another.
 pub(crate) trait Spend {
     type Nullifier: PartialEq + FromBytes<32> + UnspentFromWalletTxns;
     fn nullifier(&self) -> &Self::Nullifier;
@@ -181,6 +184,9 @@ impl<Auth> Spend for Action<Auth> {
     }
 }
 
+///  Recipients provide the means to generate a Receiver.  A Receiver contains the information necessary
+///  to transfer an asset to the generating Recipient.
+///  <https://zips.z.cash/zip-0316#terminology>
 pub(crate) trait Recipient {
     type Diversifier;
     fn diversifier(&self) -> Self::Diversifier;
@@ -273,6 +279,7 @@ impl<P: Parameters> Bundle<OrchardDomain, P> for OrchardBundle<OrchardAuthorized
     }
 }
 
+/// TODO: Documentation neeeeeds help!!!!  XXXX
 pub(crate) trait UnspentFromWalletTxns
 where
     Self: Sized,
@@ -292,6 +299,7 @@ impl UnspentFromWalletTxns for OrchardNullifier {
     }
 }
 
+///  Complete note contents, and additional metadata.
 pub(crate) trait NoteData: Sized {
     type Fvk: Clone;
     type Diversifier;
@@ -376,6 +384,7 @@ impl NoteData for SaplingNoteData {
     }
 }
 
+/// A cross Domain interface to the hierarchy of capabilities deriveable from a SpendKey
 pub(crate) trait WalletKey
 where
     Self: Sized,
@@ -536,6 +545,9 @@ impl NoteData for OrchardNoteData {
     }
 }
 
+/// An interface that provides a generic mechanism for the generation of a mutable vector of Notes
+/// a `WalletNote` is a rich data structure that implements the NoteData trait which provides all
+/// of the information in the note, as well as note metadata.
 pub(crate) trait DomainWalletExt<P: Parameters>: Domain
 where
     Self: Sized,
