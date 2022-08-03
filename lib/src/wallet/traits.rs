@@ -1,6 +1,8 @@
 //! Provides unifying interfaces for transaction management across Sapling and Orchard
 use super::{
-    data::{OrchardNoteData, SaplingNoteData, WalletNullifier, WalletTx, WitnessCache},
+    data::{
+        OrchardNoteAndMetadata, SaplingNoteAndMetadata, WalletNullifier, WalletTx, WitnessCache,
+    },
     keys::{orchard::OrchardKey, sapling::SaplingKey, Keys},
     transactions::WalletTxns,
 };
@@ -300,7 +302,7 @@ impl UnspentFromWalletTxns for OrchardNullifier {
 }
 
 ///  Complete note contents, and additional metadata.
-pub(crate) trait NoteData: Sized {
+pub(crate) trait NoteAndMetadata: Sized {
     type Fvk: Clone;
     type Diversifier;
     type Note: PartialEq;
@@ -326,7 +328,7 @@ pub(crate) trait NoteData: Sized {
     fn wallet_transaction_notes_mut(wallet_transaction: &mut WalletTx) -> &mut Vec<Self>;
 }
 
-impl NoteData for SaplingNoteData {
+impl NoteAndMetadata for SaplingNoteAndMetadata {
     type Fvk = SaplingExtendedFullViewingKey;
     type Diversifier = SaplingDiversifier;
     type Note = SaplingNote;
@@ -489,7 +491,7 @@ impl WalletKey for OrchardKey {
     }
 }
 
-impl NoteData for OrchardNoteData {
+impl NoteAndMetadata for OrchardNoteAndMetadata {
     type Fvk = OrchardFullViewingKey;
     type Diversifier = OrchardDiversifier;
     type Note = OrchardNote;
@@ -556,7 +558,7 @@ where
     Self::Note: PartialEq,
 {
     type Fvk: Clone;
-    type WalletNote: NoteData<
+    type WalletNote: NoteAndMetadata<
         Fvk = Self::Fvk,
         Note = <Self as Domain>::Note,
         Diversifier = <<Self as Domain>::Recipient as Recipient>::Diversifier,
@@ -576,7 +578,7 @@ where
 impl<P: Parameters> DomainWalletExt<P> for SaplingDomain<P> {
     type Fvk = SaplingExtendedFullViewingKey;
 
-    type WalletNote = SaplingNoteData;
+    type WalletNote = SaplingNoteAndMetadata;
 
     type Key = SaplingKey;
 
@@ -590,7 +592,7 @@ impl<P: Parameters> DomainWalletExt<P> for SaplingDomain<P> {
 impl<P: Parameters> DomainWalletExt<P> for OrchardDomain {
     type Fvk = OrchardFullViewingKey;
 
-    type WalletNote = OrchardNoteData;
+    type WalletNote = OrchardNoteAndMetadata;
 
     type Key = OrchardKey;
 

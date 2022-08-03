@@ -40,7 +40,7 @@ use zcash_primitives::{
 
 use self::traits::WalletKey;
 use self::{
-    data::{BlockData, SaplingNoteData, Utxo, WalletZecPriceInfo},
+    data::{BlockData, SaplingNoteAndMetadata, Utxo, WalletZecPriceInfo},
     keys::{orchard::OrchardKey, Keys},
     message::Message,
     transactions::WalletTxns,
@@ -394,7 +394,7 @@ impl LightWallet {
         self.blocks.read().await.iter().map(|b| b.clone()).collect()
     }
 
-    pub fn note_address(hrp: &str, note: &SaplingNoteData) -> Option<String> {
+    pub fn note_address(hrp: &str, note: &SaplingNoteAndMetadata) -> Option<String> {
         match note.extfvk.fvk.vk.to_payment_address(note.diversifier) {
             Some(pa) => Some(encode_payment_address(hrp, &pa)),
             None => None,

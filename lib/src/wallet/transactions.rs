@@ -26,7 +26,7 @@ use zingoconfig::{Network, MAX_REORG};
 
 use super::{
     data::{OutgoingTxMetadata, Utxo, WalletNullifier, WalletTx, WitnessCache},
-    traits::{DomainWalletExt, FromBytes, NoteData, Recipient},
+    traits::{DomainWalletExt, FromBytes, NoteAndMetadata, Recipient},
 };
 
 /// List of all transactions in a wallet.
@@ -684,11 +684,11 @@ impl WalletTxns {
         {
             None => {
                 let nd = D::WalletNote::from_parts(
-                    <D::WalletNote as NoteData>::Fvk::clone(fvk),
+                    <D::WalletNote as NoteAndMetadata>::Fvk::clone(fvk),
                     to.diversifier(),
                     note,
                     WitnessCache::empty(),
-                    <D::WalletNote as NoteData>::Nullifier::from_bytes([0u8; 32]),
+                    <D::WalletNote as NoteAndMetadata>::Nullifier::from_bytes([0u8; 32]),
                     None,
                     None,
                     None,
@@ -761,7 +761,7 @@ impl WalletTxns {
         Address,
         NullifierFromNote,
         WtxNotes,
-        NoteData: super::traits::NoteData,
+        NoteData: super::traits::NoteAndMetadata,
         AddressDiversifier,
     >(
         &mut self,
@@ -836,7 +836,7 @@ impl WalletTxns {
     }
 
     // Update the memo for a note if it already exists. If the note doesn't exist, then nothing happens.
-    pub(crate) fn add_memo_to_note<Nd: NoteData>(
+    pub(crate) fn add_memo_to_note<Nd: NoteAndMetadata>(
         &mut self,
         txid: &TxId,
         note: Nd::Note,

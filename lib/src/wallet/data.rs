@@ -196,7 +196,7 @@ impl<Node: Hashable> WitnessCache<Node> {
     //     return hex::encode(buf);
     // }
 }
-pub struct SaplingNoteData {
+pub struct SaplingNoteAndMetadata {
     // Technically, this should be recoverable from the account number,
     // but we're going to refactor this in the future, so I'll write it again here.
     pub(super) extfvk: ExtendedFullViewingKey,
@@ -219,7 +219,7 @@ pub struct SaplingNoteData {
     pub have_spending_key: bool,
 }
 
-pub struct OrchardNoteData {
+pub struct OrchardNoteAndMetadata {
     #[allow(dead_code)]
     pub(super) fvk: orchard::keys::FullViewingKey,
 
@@ -241,7 +241,7 @@ pub struct OrchardNoteData {
     pub have_spending_key: bool,
 }
 
-impl std::fmt::Debug for SaplingNoteData {
+impl std::fmt::Debug for SaplingNoteAndMetadata {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SaplingNoteData")
             .field("extfvk", &self.extfvk)
@@ -292,7 +292,7 @@ fn write_rseed<W: Write>(mut writer: W, rseed: &Rseed) -> io::Result<()> {
     }
 }
 
-impl SaplingNoteData {
+impl SaplingNoteAndMetadata {
     fn serialized_version() -> u64 {
         20
     }
@@ -428,7 +428,7 @@ impl SaplingNoteData {
             reader.read_u8()? > 0
         };
 
-        Ok(SaplingNoteData {
+        Ok(SaplingNoteAndMetadata {
             extfvk,
             diversifier,
             note,
@@ -680,10 +680,10 @@ pub struct WalletTx {
     pub spent_orchard_nullifiers: Vec<OrchardNullifier>,
 
     // List of all sapling notes received in this tx. Some of these might be change notes.
-    pub sapling_notes: Vec<SaplingNoteData>,
+    pub sapling_notes: Vec<SaplingNoteAndMetadata>,
 
     // List of all sapling notes received in this tx. Some of these might be change notes.
-    pub orchard_notes: Vec<OrchardNoteData>,
+    pub orchard_notes: Vec<OrchardNoteAndMetadata>,
 
     // List of all Utxos received in this Tx. Some of these might be change notes
     pub utxos: Vec<Utxo>,
@@ -791,7 +791,7 @@ impl WalletTx {
 
         let transaction_id = TxId::from_bytes(transaction_id_bytes);
 
-        let sapling_notes = Vector::read(&mut reader, |r| SaplingNoteData::read(r))?;
+        let sapling_notes = Vector::read(&mut reader, |r| SaplingNoteAndMetadata::read(r))?;
         let utxos = Vector::read(&mut reader, |r| Utxo::read(r))?;
 
         let total_sapling_value_spent = reader.read_u64::<LittleEndian>()?;
@@ -916,7 +916,7 @@ pub struct SpendableSaplingNote {
 impl SpendableSaplingNote {
     pub fn from(
         transaction_id: TxId,
-        nd: &SaplingNoteData,
+        nd: &SaplingNoteAndMetadata,
         anchor_offset: usize,
         extsk: &Option<ExtendedSpendingKey>,
     ) -> Option<Self> {

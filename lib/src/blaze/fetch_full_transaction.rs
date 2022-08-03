@@ -2,7 +2,7 @@ use crate::wallet::{
     data::OutgoingTxMetadata,
     keys::{Keys, ToBase58Check},
     traits::{
-        self as zingo_traits, Bundle as _, DomainWalletExt, NoteData as _, Recipient as _,
+        self as zingo_traits, Bundle as _, DomainWalletExt, NoteAndMetadata as _, Recipient as _,
         ShieldedOutputExt as _, Spend as _, ToBytes as _, UnspentFromWalletTxns as _,
         WalletKey as _,
     },
@@ -504,7 +504,7 @@ async fn scan_bundle<D>(
     // because for transactions in the block, we will check the nullifiers from the blockdata
     if unconfirmed {
         let unspent_nullifiers =
-            <<D as DomainWalletExt<Network>>::WalletNote as zingo_traits::NoteData>::Nullifier::unspent_from_wallet_txns(
+            <<D as DomainWalletExt<Network>>::WalletNote as zingo_traits::NoteAndMetadata>::Nullifier::unspent_from_wallet_txns(
                 &*wallet_transactions.read().await,
             );
         for output in <<D as DomainWalletExt<Network>>::Bundle as zingo_traits::Bundle<
