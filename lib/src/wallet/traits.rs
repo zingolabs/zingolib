@@ -192,7 +192,7 @@ impl<Auth> Spend for Action<Auth> {
 pub(crate) trait Recipient {
     type Diversifier;
     fn diversifier(&self) -> Self::Diversifier;
-    fn encode(&self, chain: Network) -> String;
+    fn b32encode_for_network(&self, chain: Network) -> String;
 }
 
 impl Recipient for OrchardAddress {
@@ -202,7 +202,7 @@ impl Recipient for OrchardAddress {
         OrchardAddress::diversifier(&self)
     }
 
-    fn encode(&self, chain: Network) -> String {
+    fn b32encode_for_network(&self, chain: Network) -> String {
         unified::Address::try_from_items(vec![Receiver::Orchard(self.to_raw_address_bytes())])
             .unwrap()
             .encode(&chain.address_network().unwrap())
@@ -216,7 +216,7 @@ impl Recipient for SaplingAddress {
         *SaplingAddress::diversifier(&self)
     }
 
-    fn encode(&self, chain: Network) -> String {
+    fn b32encode_for_network(&self, chain: Network) -> String {
         encode_payment_address(chain.hrp_sapling_payment_address(), self)
     }
 }

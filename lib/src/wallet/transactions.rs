@@ -836,7 +836,7 @@ impl WalletTxns {
     }
 
     // Update the memo for a note if it already exists. If the note doesn't exist, then nothing happens.
-    pub(crate) fn add_memo_to_note<Nd: NoteAndMetadata>(
+    pub(crate) fn add_memo_to_note_metadata<Nd: NoteAndMetadata>(
         &mut self,
         txid: &TxId,
         note: Nd::Note,

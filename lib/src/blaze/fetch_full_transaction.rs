@@ -552,7 +552,7 @@ async fn scan_bundle<D>(
                     <<D as DomainWalletExt<Network>>::Bundle as zingo_traits::Bundle<D, Network>>::Output,
                 >(&output.domain(height, config.chain), &ivk, &output)});
             let (note, to, memo_bytes) = match decrypt_attempt {
-                Some(Some(ret)) => ret,
+                Some(Some(plaintext)) => plaintext,
                 _ => continue,
             };
             let memo_bytes = MemoBytes::from_bytes(&memo_bytes.to_bytes()).unwrap();
@@ -565,7 +565,7 @@ async fn scan_bundle<D>(
                     to,
                     &match &key.fvk() {
                         Some(k) => k.clone(),
-                        None => continue, // TODO:  Handle this case more carefully.
+                        None => todo!("Handle this case more carefully. How should we handle missing fvks?"), 
                     },
                 );
             }
@@ -576,7 +576,7 @@ async fn scan_bundle<D>(
             wallet_transactions
                 .write()
                 .await
-                .add_memo_to_note::<D::WalletNote>(&transaction.txid(), note, memo);
+                .add_memo_to_note_metadata::<D::WalletNote>(&transaction.txid(), note, memo);
         }
         outgoing_metadatas.extend(
             domain_specific_keys
@@ -598,12 +598,12 @@ async fn scan_bundle<D>(
                         Some((note, payment_address, memo_bytes)) => {
                             // Mark this transaction as an outgoing transaction, so we can grab all outgoing metadata
                             *is_outgoing_transaction = true;
-                            let address = payment_address.encode(config.chain);
+                            let address = payment_address.b32encode_for_network(config.chain);
 
                             // Check if this is change, and if it also doesn't have a memo, don't add
                             // to the outgoing metadata.
                             // If this is change (i.e., funds sent to ourself) AND has a memo, then
-                            // presumably the users is writing a memo to themself, so we will add it to
+                            // presumably the user is writing a memo to themself, so we will add it to
                             // the outgoing metadata, even though it might be confusing in the UI, but hopefully
                             // the user can make sense of it.
                             match Memo::from_bytes(&memo_bytes.to_bytes()) {
