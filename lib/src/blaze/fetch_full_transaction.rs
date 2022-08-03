@@ -536,8 +536,8 @@ async fn scan_bundle<D>(
     //     1. There's more than one way to be "spent".
     //     2. It's possible for a "nullifier" to be in the wallet's spent list, but never in the global ledger.
     //     <https://github.com/zingolabs/zingolib/issues/65>
-    let read_keys = keys.read().await;
-    let local_keys = D::Key::get_keys(&*read_keys).clone();
+    let all_wallet_keys = keys.read().await;
+    let domain_specific_keys = D::Key::get_keys(&*all_wallet_keys).clone();
     for output in
         <<D as DomainWalletExt<Network>>::Bundle as zingo_traits::Bundle<D, Network>>::from_transaction(
             transaction,
@@ -545,13 +545,13 @@ async fn scan_bundle<D>(
         .into_iter()
         .flat_map(|bundle| bundle.outputs().into_iter())
     {
-        for (i, key) in local_keys.iter().enumerate() {
-            let (note, to, memo_bytes) = match key.ivk().map(|ivk| {
+        for key in domain_specific_keys.iter() {
+            let decrypt_attempt = key.ivk().map(|ivk| {
                 try_note_decryption::<
                     D,
                     <<D as DomainWalletExt<Network>>::Bundle as zingo_traits::Bundle<D, Network>>::Output,
-                >(&output.domain(height, config.chain), &ivk, &output)
-            }) {
+                >(&output.domain(height, config.chain), &ivk, &output)});
+            let (note, to, memo_bytes) = match decrypt_attempt {
                 Some(Some(ret)) => ret,
                 _ => continue,
             };
@@ -563,9 +563,9 @@ async fn scan_bundle<D>(
                     block_time as u64,
                     note.clone(),
                     to,
-                    &match &local_keys.get(i).unwrap().fvk() {
+                    &match &key.fvk() {
                         Some(k) => k.clone(),
-                        None => continue,
+                        None => continue, // TODO:  Handle this case more carefully.
                     },
                 );
             }
@@ -579,7 +579,7 @@ async fn scan_bundle<D>(
                 .add_memo_to_note::<D::WalletNote>(&transaction.txid(), note, memo);
         }
         outgoing_metadatas.extend(
-            local_keys
+            domain_specific_keys
                 .iter()
                 .filter_map(|key| {
                     match try_output_recovery_with_ovk::<
@@ -609,7 +609,7 @@ async fn scan_bundle<D>(
                             match Memo::from_bytes(&memo_bytes.to_bytes()) {
                                 Err(_) => None,
                                 Ok(memo) => {
-                                    if D::Key::addresses_from_keys(&read_keys).contains(&address)
+                                    if D::Key::addresses_from_keys(&all_wallet_keys).contains(&address)
                                         && memo == Memo::Empty
                                     {
                                         None
