@@ -24,6 +24,10 @@ use zcash_primitives::{
 };
 use zcash_primitives::{memo::MemoBytes, merkle_tree::Hashable};
 
+/// This type is motivated by the IPC architecture where (currently) channels traffic in
+/// `(TxId, WalletNullifier, BlockHeight, Option<u32>)`.  This enum permits a single channel
+/// type to handle nullifiers from different domains.
+/// <https://github.com/zingolabs/zingolib/issues/64>
 #[derive(Clone, Copy, Debug)]
 pub enum WalletNullifier {
     Sapling(SaplingNullifier),
