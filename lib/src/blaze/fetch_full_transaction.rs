@@ -504,7 +504,7 @@ async fn scan_bundle<D>(
     // because for transactions in the block, we will check the nullifiers from the blockdata
     if unconfirmed {
         let unspent_nullifiers =
-            <<D as DomainWalletExt<Network>>::WalletNote as zingo_traits::NoteAndMetadata>::Nullifier::unspent_from_wallet_txns(
+            <<D as DomainWalletExt<Network>>::WalletNote as zingo_traits::NoteAndMetadata>::Nullifier::get_nullifiers_of_unspent_notes_from_wallet(
                 &*wallet_transactions.read().await,
             );
         for output in <<D as DomainWalletExt<Network>>::Bundle as zingo_traits::Bundle<

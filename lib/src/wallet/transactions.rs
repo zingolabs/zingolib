@@ -277,7 +277,7 @@ impl WalletTxns {
             .unwrap_or(0)
     }
 
-    pub fn get_unspent_sapling_nullifiers(&self) -> Vec<(SaplingNullifier, u64, TxId)> {
+    pub fn get_nullifiers_of_unspent_sapling_notes(&self) -> Vec<(SaplingNullifier, u64, TxId)> {
         self.current
             .iter()
             .flat_map(|(_, wtx)| {
@@ -289,7 +289,7 @@ impl WalletTxns {
             .collect()
     }
 
-    pub fn get_unspent_orchard_nullifiers(&self) -> Vec<(OrchardNullifier, u64, TxId)> {
+    pub fn get_nullifiers_of_unspent_orchard_notes(&self) -> Vec<(OrchardNullifier, u64, TxId)> {
         self.current
             .iter()
             .flat_map(|(_, wtx)| {

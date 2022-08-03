@@ -286,18 +286,24 @@ pub(crate) trait UnspentFromWalletTxns
 where
     Self: Sized,
 {
-    fn unspent_from_wallet_txns(transactions: &WalletTxns) -> Vec<(Self, u64, TxId)>;
+    fn get_nullifiers_of_unspent_notes_from_wallet(
+        transactions: &WalletTxns,
+    ) -> Vec<(Self, u64, TxId)>;
 }
 
 impl UnspentFromWalletTxns for SaplingNullifier {
-    fn unspent_from_wallet_txns(transactions: &WalletTxns) -> Vec<(Self, u64, TxId)> {
-        transactions.get_unspent_sapling_nullifiers()
+    fn get_nullifiers_of_unspent_notes_from_wallet(
+        transactions: &WalletTxns,
+    ) -> Vec<(Self, u64, TxId)> {
+        transactions.get_nullifiers_of_unspent_sapling_notes()
     }
 }
 
 impl UnspentFromWalletTxns for OrchardNullifier {
-    fn unspent_from_wallet_txns(transactions: &WalletTxns) -> Vec<(Self, u64, TxId)> {
-        transactions.get_unspent_orchard_nullifiers()
+    fn get_nullifiers_of_unspent_notes_from_wallet(
+        transactions: &WalletTxns,
+    ) -> Vec<(Self, u64, TxId)> {
+        transactions.get_nullifiers_of_unspent_orchard_notes()
     }
 }
 
