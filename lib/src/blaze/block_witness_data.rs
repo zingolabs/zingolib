@@ -3,7 +3,8 @@ use crate::{
     grpc_connector::GrpcConnector,
     lightclient::checkpoints::get_all_main_checkpoints,
     wallet::{
-        data::{BlockData, FromCommitment, WalletNullifier, WalletTx, WitnessCache},
+        data::{BlockData, WalletNullifier, WalletTx, WitnessCache},
+        traits::FromCommitment,
         transactions::WalletTxns,
     },
 };

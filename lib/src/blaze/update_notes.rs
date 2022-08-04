@@ -1,4 +1,5 @@
-use crate::wallet::data::{FromCommitment, WitnessCache};
+use crate::wallet::data::WitnessCache;
+use crate::wallet::traits::FromCommitment;
 use crate::wallet::MemoDownloadOption;
 use crate::wallet::{
     data::{WalletNullifier, WalletTx},

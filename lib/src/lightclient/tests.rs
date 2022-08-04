@@ -30,7 +30,7 @@ use crate::lightclient::test_server::{
     clean_shutdown, create_test_server, mine_pending_blocks, mine_random_blocks,
 };
 use crate::lightclient::LightClient;
-use crate::wallet::data::{SaplingNoteData, WalletTx};
+use crate::wallet::data::{SaplingNoteAndMetadata, WalletTx};
 
 use super::checkpoints;
 use zingoconfig::{Network, ZingoConfig};
@@ -1584,7 +1584,7 @@ async fn mempool_clearing() {
                 note.write(&mut note_bytes).unwrap();
                 assert_eq!(
                     format!("{:#?}", note),
-                    format!("{:#?}", SaplingNoteData::read(&*note_bytes).unwrap())
+                    format!("{:#?}", SaplingNoteAndMetadata::read(&*note_bytes).unwrap())
                 );
             }
         }

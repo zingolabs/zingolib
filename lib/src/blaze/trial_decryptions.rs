@@ -297,7 +297,7 @@ impl TrialDecryptions {
                                         .unwrap();
                                 } else {
                                     eprintln!(
-                                        "Transaction decryption without fvks not yet supported"
+                                        "TODO: Transaction decryption without fvks not yet supported"
                                     );
                                 }
 

@@ -6,7 +6,7 @@ use std::{
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use log::error;
 use orchard::{
-    keys::FullViewingKey as OrchardFullViewingKey,
+    keys::{Diversifier as OrchardDiversifier, FullViewingKey as OrchardFullViewingKey},
     note::{Note as OrchardNote, Nullifier as OrchardNullifier},
     tree::MerkleHashOrchard,
 };
@@ -22,10 +22,11 @@ use zcash_primitives::{
     zip32::ExtendedFullViewingKey,
 };
 
-use zingoconfig::MAX_REORG;
+use zingoconfig::{Network, MAX_REORG};
 
-use super::data::{
-    OutgoingTxMetadata, SaplingNoteData, Utxo, WalletNullifier, WalletTx, WitnessCache,
+use super::{
+    data::{OutgoingTxMetadata, Utxo, WalletNullifier, WalletTx, WitnessCache},
+    traits::{DomainWalletExt, FromBytes, NoteAndMetadata, Recipient},
 };
 
 /// List of all transactions in a wallet.
@@ -276,7 +277,7 @@ impl WalletTxns {
             .unwrap_or(0)
     }
 
-    pub fn get_unspent_sapling_nullifiers(&self) -> Vec<(SaplingNullifier, u64, TxId)> {
+    pub fn get_nullifiers_of_unspent_sapling_notes(&self) -> Vec<(SaplingNullifier, u64, TxId)> {
         self.current
             .iter()
             .flat_map(|(_, wtx)| {
@@ -288,16 +289,20 @@ impl WalletTxns {
             .collect()
     }
 
-    pub fn get_unspent_orchard_nullifiers(
-        &self,
-    ) -> Vec<(OrchardNullifier, orchard::value::NoteValue, TxId)> {
+    pub fn get_nullifiers_of_unspent_orchard_notes(&self) -> Vec<(OrchardNullifier, u64, TxId)> {
         self.current
             .iter()
             .flat_map(|(_, wtx)| {
                 wtx.orchard_notes
                     .iter()
                     .filter(|nd| nd.spent.is_none())
-                    .map(move |nd| (nd.nullifier.clone(), nd.note.value(), wtx.txid.clone()))
+                    .map(move |nd| {
+                        (
+                            nd.nullifier.clone(),
+                            nd.note.value().inner(),
+                            wtx.txid.clone(),
+                        )
+                    })
             })
             .collect()
     }
@@ -492,7 +497,7 @@ impl WalletTxns {
 
         // Mark the height correctly, in case this was previously a mempool or unconfirmed tx.
         wtx.block = height;
-
+        // Todo: DRY code
         match nullifier {
             WalletNullifier::Sapling(nullifier) => {
                 if wtx
@@ -523,7 +528,35 @@ impl WalletTxns {
                         });
                 }
             }
-            WalletNullifier::Orchard(_) => todo!(),
+            WalletNullifier::Orchard(nullifier) => {
+                if wtx
+                    .spent_orchard_nullifiers
+                    .iter()
+                    .find(|nf| **nf == nullifier)
+                    .is_none()
+                {
+                    wtx.add_spent_nullifier(WalletNullifier::Orchard(nullifier), value)
+                }
+
+                // Since this Txid has spent some funds, output notes in this Tx that are sent to us are actually change.
+                self.check_notes_mark_change(&txid);
+
+                // Mark the source note's nullifier as spent
+                if !unconfirmed {
+                    let wtx = self
+                        .current
+                        .get_mut(&source_txid)
+                        .expect("Txid should be present");
+
+                    wtx.orchard_notes
+                        .iter_mut()
+                        .find(|n| n.nullifier == nullifier)
+                        .map(|nd| {
+                            // Record the spent height
+                            nd.spent = Some((txid, height.into()));
+                        });
+                }
+            }
         }
     }
 
@@ -620,15 +653,19 @@ impl WalletTxns {
         }
     }
 
-    pub fn add_pending_note(
+    pub(crate) fn add_pending_note<D>(
         &mut self,
         txid: TxId,
         height: BlockHeight,
         timestamp: u64,
-        note: SaplingNote,
-        to: PaymentAddress,
-        extfvk: &ExtendedFullViewingKey,
-    ) {
+        note: D::Note,
+        to: D::Recipient,
+        fvk: &D::Fvk,
+    ) where
+        D: DomainWalletExt<Network>,
+        D::Note: PartialEq,
+        D::Recipient: Recipient,
+    {
         // Check if this is a change note
         let is_change = self.total_funds_spent_in(&txid) > 0;
 
@@ -641,22 +678,25 @@ impl WalletTxns {
         // Update the block height, in case this was a mempool or unconfirmed tx.
         wtx.block = height;
 
-        match wtx.sapling_notes.iter_mut().find(|n| n.note == note) {
+        match D::wallet_notes_mut(wtx)
+            .iter_mut()
+            .find(|n| n.note() == &note)
+        {
             None => {
-                let nd = SaplingNoteData {
-                    extfvk: extfvk.clone(),
-                    diversifier: *to.diversifier(),
+                let nd = D::WalletNote::from_parts(
+                    <D::WalletNote as NoteAndMetadata>::Fvk::clone(fvk),
+                    to.diversifier(),
                     note,
-                    witnesses: WitnessCache::empty(),
-                    nullifier: SaplingNullifier { 0: [0u8; 32] },
-                    spent: None,
-                    unconfirmed_spent: None,
-                    memo: None,
+                    WitnessCache::empty(),
+                    <D::WalletNote as NoteAndMetadata>::Nullifier::from_bytes([0u8; 32]),
+                    None,
+                    None,
+                    None,
                     is_change,
-                    have_spending_key: false,
-                };
+                    false,
+                );
 
-                wtx.sapling_notes.push(nd);
+                D::WalletNote::wallet_transaction_notes_mut(wtx).push(nd);
             }
             Some(_) => {}
         }
@@ -713,7 +753,7 @@ impl WalletTxns {
             witness,
             |n: &OrchardNote, fvk: &OrchardFullViewingKey, _| n.nullifier(&fvk),
             |wtx| &mut wtx.orchard_notes,
-            |_addr| todo!("Waiting on librustzcash PR"),
+            |addr| OrchardDiversifier::from_bytes(*addr.diversifier().as_array()),
         )
     }
 
@@ -721,7 +761,7 @@ impl WalletTxns {
         Address,
         NullifierFromNote,
         WtxNotes,
-        NoteData: super::data::NoteData,
+        NoteData: super::traits::NoteAndMetadata,
         AddressDiversifier,
     >(
         &mut self,
@@ -782,7 +822,7 @@ impl WalletTxns {
                 wtx_notes(wtx).push(nd);
 
                 // Also remove any pending notes.
-                use super::data::ToBytes;
+                use super::traits::ToBytes;
                 wtx_notes(wtx).retain(|n| n.nullifier().to_bytes() != [0u8; 32]);
             }
             Some(n) => {
@@ -796,12 +836,17 @@ impl WalletTxns {
     }
 
     // Update the memo for a note if it already exists. If the note doesn't exist, then nothing happens.
-    pub fn add_memo_to_note(&mut self, txid: &TxId, note: SaplingNote, memo: Memo) {
+    pub(crate) fn add_memo_to_note_metadata<Nd: NoteAndMetadata>(
+        &mut self,
+        txid: &TxId,
+        note: Nd::Note,
+        memo: Memo,
+    ) {
         self.current.get_mut(txid).map(|wtx| {
-            wtx.sapling_notes
+            Nd::wallet_transaction_notes_mut(wtx)
                 .iter_mut()
-                .find(|n| n.note == note)
-                .map(|n| n.memo = Some(memo));
+                .find(|n| n.note() == &note)
+                .map(|n| *n.memo_mut() = Some(memo));
         });
     }
 
