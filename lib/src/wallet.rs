@@ -38,7 +38,6 @@ use zcash_primitives::{
     },
 };
 
-use self::traits::WalletKey;
 use self::{
     data::{BlockData, SaplingNoteAndMetadata, Utxo, WalletZecPriceInfo},
     keys::{orchard::OrchardKey, Keys},
@@ -568,21 +567,21 @@ impl LightWallet {
     }
 
     async fn add_imported_spend_key<
-        WKey: WalletKey + Clone,
-        ViewKey: for<'a> From<&'a WKey::Sk>,
+        WalletKey: self::traits::WalletKey + Clone,
+        ViewKey: for<'a> From<&'a WalletKey::Sk>,
         DecodeError: std::fmt::Display,
     >(
         &self,
         key: &str,
         hrp: &str,
         birthday: u64,
-        decoder: impl Fn(&str, &str) -> Result<Option<WKey::Sk>, DecodeError>,
-        key_finder: impl Fn(&Keys) -> &Vec<WKey>,
-        key_finder_mut: impl Fn(&mut Keys) -> &mut Vec<WKey>,
-        key_matcher: impl Fn(&WKey, &WKey::Sk) -> bool,
-        find_view_key: impl Fn(&WKey, &ViewKey) -> bool,
-        key_importer: impl Fn(WKey::Sk) -> WKey,
-        encode_address: impl Fn(WKey::Address) -> String,
+        decoder: impl Fn(&str, &str) -> Result<Option<WalletKey::Sk>, DecodeError>,
+        key_finder: impl Fn(&Keys) -> &Vec<WalletKey>,
+        key_finder_mut: impl Fn(&mut Keys) -> &mut Vec<WalletKey>,
+        key_matcher: impl Fn(&WalletKey, &WalletKey::Sk) -> bool,
+        find_view_key: impl Fn(&WalletKey, &ViewKey) -> bool,
+        key_importer: impl Fn(WalletKey::Sk) -> WalletKey,
+        encode_address: impl Fn(WalletKey::Address) -> String,
     ) -> String {
         let address_getter = |decoded_key| {
             self.update_view_key(decoded_key, key_finder_mut, find_view_key, key_importer)
@@ -601,19 +600,19 @@ impl LightWallet {
     }
     async fn add_imported_key<
         KeyType,
-        WKey: WalletKey + Clone,
+        WalletKey: self::traits::WalletKey + Clone,
         DecodeError: std::fmt::Display,
-        Fut: Future<Output = WKey::Address>,
+        Fut: Future<Output = WalletKey::Address>,
     >(
         &self,
         key: &str,
         hrp: &str,
         birthday: u64,
         decoder: impl Fn(&str, &str) -> Result<Option<KeyType>, DecodeError>,
-        key_finder: impl Fn(&Keys) -> &Vec<WKey>,
-        key_matcher: impl Fn(&WKey, &KeyType) -> bool,
+        key_finder: impl Fn(&Keys) -> &Vec<WalletKey>,
+        key_matcher: impl Fn(&WalletKey, &KeyType) -> bool,
         address_getter: impl FnOnce(KeyType) -> Fut,
-        encode_address: impl Fn(WKey::Address) -> String,
+        encode_address: impl Fn(WalletKey::Address) -> String,
     ) -> String {
         if self.keys.read().await.encrypted {
             return "Error: Can't import spending key while wallet is encrypted".to_string();
@@ -643,13 +642,16 @@ impl LightWallet {
         self.adjust_wallet_birthday(birthday);
         encode_address(address_getter(decoded_key).await)
     }
-    async fn update_view_key<WKey: WalletKey + Clone, ViewKey: for<'a> From<&'a WKey::Sk>>(
+    async fn update_view_key<
+        WalletKey: self::traits::WalletKey + Clone,
+        ViewKey: for<'a> From<&'a WalletKey::Sk>,
+    >(
         &self,
-        decoded_key: WKey::Sk,
-        key_finder_mut: impl Fn(&mut Keys) -> &mut Vec<WKey>,
-        find_view_key: impl Fn(&WKey, &ViewKey) -> bool,
-        key_importer: impl Fn(WKey::Sk) -> WKey,
-    ) -> WKey::Address {
+        decoded_key: WalletKey::Sk,
+        key_finder_mut: impl Fn(&mut Keys) -> &mut Vec<WalletKey>,
+        find_view_key: impl Fn(&WalletKey, &ViewKey) -> bool,
+        key_importer: impl Fn(WalletKey::Sk) -> WalletKey,
+    ) -> WalletKey::Address {
         let fvk = ViewKey::from(&decoded_key);
         let mut write_keys = self.keys.write().await;
         let write_keys = key_finder_mut(&mut *write_keys);
