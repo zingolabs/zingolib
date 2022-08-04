@@ -1,12 +1,5 @@
-pub(crate) fn launch() {
-    use std::ffi::OsString;
-    use std::fs::File;
-    use std::io::Read;
-    use std::path::PathBuf;
-    use std::process::{Command, Stdio};
-    use std::{thread, time};
-
-    // confirm we are in a git worktree
+fn git_selfcheck() {
+    use std::process::Command;
     let git_check = Command::new("git")
         .arg("--help")
         .output()
@@ -43,6 +36,25 @@ pub(crate) fn launch() {
     {
         panic!("Zingo-cli's regtest mode must be run within its own git worktree");
     }
+}
+
+fn get_top_level_dir() {
+    //TODO
+}
+
+pub(crate) fn launch() {
+    use std::ffi::OsString;
+    use std::fs::File;
+    use std::io::Read;
+    use std::path::PathBuf;
+    use std::process::{Command, Stdio};
+    use std::{thread, time};
+
+    //check for git itself and that we are working within a zingolib repo
+    git_selfcheck();
+
+    let _ = get_top_level_dir();
+    // confirm we are in a git worktree
 
     // get the top level directory for this repo worktree
     let revparse_raw = Command::new("git")
@@ -241,11 +253,13 @@ pub(crate) fn launch() {
             .read_to_string(&mut lwd_logfile_state)
             .expect("problem reading lwd_logfile into rust string");
         if lwd_logfile_state.contains("Starting insecure no-TLS (plaintext) server") {
+            println!("lwd start section completed, lightwalletd should be running!");
+            println!("Standby, Zingo-cli should be running in regtest mode momentarily...");
+            // we need to sleep because even after the last message is detected, lwd needs a moment to become ready for regtest mode
+            thread::sleep(check_interval);
             break;
         } else {
             thread::sleep(check_interval);
         }
     }
-    println!("lwd start section completed, lightwalletd should be running!");
-    println!("Standby, Zingo-cli should be running in regtest mode momentarily...");
 }
