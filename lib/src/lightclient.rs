@@ -575,7 +575,7 @@ impl LightClient {
         for zaddress in self.wallet.keys().read().await.get_all_sapling_addresses() {
             z_addresses.push(object! {
                 "address" => zaddress.clone(),
-                "zbalance" =>self.wallet.shielded_balance(Some(zaddress.clone())).await,
+                "zbalance" =>self.wallet.shielded_balance::<crate::wallet::data::SaplingNoteData>(Some(zaddress.clone())).await,
                 "verified_zbalance"  =>self.wallet.verified_zbalance(Some(zaddress.clone())).await,
                 "spendable_zbalance" =>self.wallet.spendable_zbalance(Some(zaddress.clone())).await,
                 "unverified_zbalance"   => self.wallet.unverified_zbalance(Some(zaddress.clone())).await
@@ -583,10 +583,10 @@ impl LightClient {
         }
 
         let mut o_addresses = vec![];
-        for oaddress in self.wallet.keys().read().await.get_all_sapling_addresses() {
+        for oaddress in self.wallet.keys().read().await.get_all_orchard_addresses() {
             o_addresses.push(object! {
                 "address" => oaddress.clone(),
-                "obalance" =>self.wallet.shielded_balance(Some(oaddress.clone())).await,
+                "obalance" =>self.wallet.shielded_balance::<crate::wallet::data::OrchardNoteData>(Some(oaddress.clone())).await,
                 "verified_obalance"  =>self.wallet.verified_zbalance(Some(oaddress.clone())).await,
                 "spendable_obalance" =>self.wallet.spendable_zbalance(Some(oaddress.clone())).await,
                 "unverified_obalance"   => self.wallet.unverified_zbalance(Some(oaddress.clone())).await
@@ -605,8 +605,9 @@ impl LightClient {
             });
         }
 
+        // TODO:  Think about exposing an interface that references the Orchard Pool.
         object! {
-            "zbalance"           => self.wallet.shielded_balance(None).await,
+            "zbalance"           => self.wallet.shielded_balance::<crate::wallet::data::SaplingNoteData>(None).await,
             "verified_zbalance"  => self.wallet.verified_zbalance(None).await,
             "spendable_zbalance" => self.wallet.spendable_zbalance(None).await,
             "unverified_zbalance"   => self.wallet.unverified_zbalance(None).await,
