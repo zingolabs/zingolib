@@ -788,7 +788,10 @@ impl LightWallet {
                     .iter()
                     .filter(|nd| match addr.as_ref() {
                         Some(a) => {
+                            let diversified_address =
+                                &nd.fvk().diversified_address(*nd.diversifier()).unwrap();
                             *a == encode_payment_address(
+                                // TODO: Find a generic replacement of this sapling-specific function
                                 self.config.hrp_sapling_address(),
                                 &nd.fvk().diversified_address(nd.diversifier).unwrap(),
                             )

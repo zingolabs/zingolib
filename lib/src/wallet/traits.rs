@@ -646,7 +646,7 @@ pub(crate) trait Diversifiable {
 impl Diversifiable for SaplingExtendedFullViewingKey {
     type Note = SaplingNoteData;
 
-    type Address = SaplingAddress;
+    type Address = zcash_primitives::sapling::PaymentAddress;
 
     fn diversified_address(
         &self,
@@ -658,7 +658,7 @@ impl Diversifiable for SaplingExtendedFullViewingKey {
 
 impl Diversifiable for OrchardFullViewingKey {
     type Note = OrchardNoteData;
-    type Address = OrchardAddress;
+    type Address = orchard::Address;
 
     fn diversified_address(
         &self,
