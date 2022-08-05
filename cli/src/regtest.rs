@@ -94,24 +94,22 @@ pub(crate) fn launch() {
             .expect("Surprisingly failure to repr as &str"),
     );
 
-    let mut flagged_datadir: String = "--datadir=".to_string();
-    flagged_datadir.push_str(zcashd_datadir.to_str().expect("error making zcash_datadir"));
-
-    println!("zcashd datadir: {}", &flagged_datadir);
-    println!("zcashd conf file: {}", &flagged_zcashd_conf);
-
     let zcashd_stdout_log = dbg!(zcashd_logs.join("stdout.log"));
     let mut zcashd_logfile = File::create(&zcashd_stdout_log).expect("file::create Result error");
-    dbg!(&zcashd_logfile);
 
-    dbg!(&zcashd_bin);
-    dbg!(&flagged_zcashd_conf);
-    dbg!(&flagged_datadir);
     let mut zcashd_command = Command::new(zcashd_bin)
         .args([
             "--printtoconsole",
-            &flagged_zcashd_conf,
-            &flagged_datadir,
+            format!(
+                "--conf={}",
+                zcashd_config.to_str().expect("Unexpected string!")
+            )
+            .as_str(),
+            format!(
+                "--data={}",
+                zcashd_datadir.to_str().expect("Unexpected string!")
+            )
+            .as_str(),
             // Right now I can't get zcashd to write to debug.log with this flag
             //"-debuglogfile=.../zingolib/regtest/logs/debug.log",
             //debug=1 will at least print to stdout
