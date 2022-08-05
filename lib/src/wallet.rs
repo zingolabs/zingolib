@@ -800,7 +800,7 @@ impl LightWallet {
                     })
                     .map(|nd| {
                         if nd.spent.is_none() && nd.unconfirmed_spent.is_none() {
-                            nd.note.value
+                            <K as traits::NoteData>::value(<K as traits::NoteData>::note(nd))
                         } else {
                             0
                         }
