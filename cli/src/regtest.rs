@@ -42,89 +42,63 @@ fn git_selfcheck() {
 }
 
 ///  Simple helper to succinctly reference to the project root dir.
-fn get_top_level_dir() -> String {
+use std::path::{Path, PathBuf};
+fn get_top_level_dir() -> PathBuf {
     let revparse_raw = Command::new("git")
         .args(["rev-parse", "--show-toplevel"])
         .output()
         .expect("problem invoking git rev-parse");
-    std::str::from_utf8(&revparse_raw.stdout)
-        .expect("revparse error")
-        .to_string()
+    Path::new(
+        std::str::from_utf8(&revparse_raw.stdout)
+            .expect("revparse error")
+            .trim(),
+    )
+    .to_path_buf()
+}
+fn get_regtest_dir() -> PathBuf {
+    get_top_level_dir().join("regtest")
 }
 
 pub(crate) fn launch() {
-    use std::ffi::OsString;
     use std::fs::File;
     use std::io::Read;
-    use std::path::PathBuf;
     use std::process::Stdio;
     use std::{thread, time};
 
     //check for git itself and that we are working within a zingolib repo
     git_selfcheck();
 
-    let _ = get_top_level_dir();
-    // confirm we are in a git worktree
+    dbg!(get_top_level_dir());
+    let confs_dir = dbg!(get_regtest_dir().join("conf"));
+    let bin_location = dbg!(get_regtest_dir().join("bin"));
+    let logs = dbg!(get_regtest_dir().join("logs"));
+    let datadir = dbg!(get_regtest_dir().join("data"));
+    let zcashd_datadir = dbg!(datadir.join("zcashd"));
+    let lightwalletd_logs = dbg!(logs.join("lightwalletd"));
+    let zcashd_logs = dbg!(logs.join("zcashd"));
+    let lightwalletd_datadir = dbg!(datadir.join("lightwalletd"));
 
-    // Cross-platform OsString
-    let mut worktree_home = OsString::new();
-    worktree_home.push(get_top_level_dir().trim_end());
-
-    let bin_location: PathBuf = [
-        worktree_home.clone(),
-        OsString::from("regtest"),
-        OsString::from("bin"),
-    ]
-    .iter()
-    .collect();
-
+    panic!();
     let mut zcashd_bin = bin_location.to_owned();
     zcashd_bin.push("zcashd");
 
     let mut lwd_bin = bin_location.to_owned();
     lwd_bin.push("lightwalletd");
 
-    let zcash_confs: PathBuf = [
-        worktree_home.clone(),
-        OsString::from("regtest"),
-        OsString::from("conf"),
-        OsString::from(""),
-    ]
-    .iter()
-    .collect();
-
     let mut flagged_zcashd_conf: String = "--conf=".to_string();
-    flagged_zcashd_conf.push_str(zcash_confs.to_str().expect("error making zcash_datadir"));
+    flagged_zcashd_conf.push_str(confs_dir.to_str().expect("error making zcash_datadir"));
     flagged_zcashd_conf.push_str("zcash.conf");
 
-    let zcash_datadir: PathBuf = [
-        worktree_home.clone(),
-        OsString::from("regtest"),
-        OsString::from("datadir"),
-        OsString::from("zcash"),
-        OsString::from(""),
-    ]
-    .iter()
-    .collect();
-
     let mut flagged_datadir: String = "--datadir=".to_string();
-    flagged_datadir.push_str(zcash_datadir.to_str().expect("error making zcash_datadir"));
-
-    let zcash_logs: PathBuf = [
-        worktree_home.clone(),
-        OsString::from("regtest"),
-        OsString::from("logs"),
-        OsString::from(""),
-    ]
-    .iter()
-    .collect();
+    flagged_datadir.push_str(zcashd_datadir.to_str().expect("error making zcash_datadir"));
 
     println!("zcashd datadir: {}", &flagged_datadir);
     println!("zcashd conf file: {}", &flagged_zcashd_conf);
 
     let mut zcashd_stdout_log: String = String::new();
-    zcashd_stdout_log.push_str(zcash_logs.to_str().expect("error converting to str"));
+    zcashd_stdout_log.push_str(zcashd_logs.to_str().expect("error converting to str"));
     zcashd_stdout_log.push_str("zcashd_stdout.log");
+    dbg!(&zcashd_stdout_log);
     let mut zcashd_logfile = File::create(&zcashd_stdout_log).expect("file::create Result error");
 
     let mut zcashd_command = Command::new(zcashd_bin)
@@ -171,52 +145,32 @@ pub(crate) fn launch() {
     println!("zcashd start section completed, zcashd should be running.");
     println!("lightwalletd is about to start. This should only take a moment.");
 
-    let lwd_confs: PathBuf = [
-        worktree_home.clone(),
-        OsString::from("regtest"),
-        OsString::from("conf"),
-        OsString::from(""),
-    ]
-    .iter()
-    .collect();
-
     let mut unflagged_lwd_conf: String = String::new();
-    unflagged_lwd_conf.push_str(lwd_confs.to_str().expect("trouble making flagged_lwd_conf"));
+    unflagged_lwd_conf.push_str(confs_dir.to_str().expect("trouble making flagged_lwd_conf"));
     unflagged_lwd_conf.push_str("lightwalletdconf.yml");
 
     // for lwd config
     let mut unflagged_zcashd_conf: String = String::new();
     unflagged_zcashd_conf.push_str(
-        zcash_confs
+        confs_dir
             .to_str()
             .expect("error making unflagged zcash conf"),
     );
     unflagged_zcashd_conf.push_str("zcash.conf");
 
-    let lwd_datadir: PathBuf = [
-        worktree_home.clone(),
-        OsString::from("regtest"),
-        OsString::from("datadir"),
-        OsString::from("lightwalletd"),
-        OsString::from(""),
-    ]
-    .iter()
-    .collect();
-
     let mut unflagged_lwd_datadir: String = String::new();
-    unflagged_lwd_datadir.push_str(lwd_datadir.to_str().expect("error making lwd_datadir"));
-
-    let lwd_logs: PathBuf = [
-        worktree_home.clone(),
-        OsString::from("regtest"),
-        OsString::from("logs"),
-        OsString::from(""),
-    ]
-    .iter()
-    .collect();
+    unflagged_lwd_datadir.push_str(
+        lightwalletd_datadir
+            .to_str()
+            .expect("error making lightwalletd_datadir"),
+    );
 
     let mut lwd_stdout_log: String = String::new();
-    lwd_stdout_log.push_str(lwd_logs.to_str().expect("error making lwd_datadir"));
+    lwd_stdout_log.push_str(
+        lightwalletd_logs
+            .to_str()
+            .expect("error making lwd_datadir"),
+    );
     lwd_stdout_log.push_str("lwd_stdout.log");
     let mut lwd_logfile = File::create(&lwd_stdout_log).expect("file::create Result error");
 
