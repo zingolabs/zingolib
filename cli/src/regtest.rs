@@ -1,5 +1,8 @@
+use std::ffi::OsString;
+use std::path::{PathBuf, MAIN_SEPARATOR};
+use std::process::Command;
+
 fn git_selfcheck() {
-    use std::process::Command;
     let git_check = Command::new("git")
         .arg("--help")
         .output()
@@ -38,24 +41,7 @@ fn git_selfcheck() {
     }
 }
 
-fn get_top_level_dir() {
-    //TODO
-}
-
-pub(crate) fn launch() {
-    use std::ffi::OsString;
-    use std::fs::File;
-    use std::io::Read;
-    use std::path::PathBuf;
-    use std::process::{Command, Stdio};
-    use std::{thread, time};
-
-    //check for git itself and that we are working within a zingolib repo
-    git_selfcheck();
-
-    let _ = get_top_level_dir();
-    // confirm we are in a git worktree
-
+fn get_regtest_dir() -> OsString {
     // get the top level directory for this repo worktree
     let revparse_raw = Command::new("git")
         .args(["rev-parse", "--show-toplevel"])
@@ -65,26 +51,40 @@ pub(crate) fn launch() {
     let revparse = std::str::from_utf8(&revparse_raw.stdout).expect("revparse error");
 
     // Cross-platform OsString
-    let mut worktree_home = OsString::new();
-    worktree_home.push(revparse.trim_end());
+    let mut regtest_home = OsString::new();
+    regtest_home.push(revparse.trim_end());
+    // TODO add tokeney slash thing here however the fuck you do that in this type
+    regtest_home.push(&MAIN_SEPARATOR.to_string());
+    regtest_home.push("regtest");
+    regtest_home
+}
 
-    let bin_location: PathBuf = [
-        worktree_home.clone(),
-        OsString::from("regtest"),
-        OsString::from("bin"),
-    ]
-    .iter()
-    .collect();
+pub(crate) fn launch() {
+    use std::fs::File;
+    use std::io::Read;
+    use std::process::Stdio;
+    use std::{thread, time};
 
-    let mut zcashd_bin = bin_location.to_owned();
-    zcashd_bin.push("zcashd");
+    // check for git itself and that we are working within a zingolib repo
+    git_selfcheck();
 
-    let mut lwd_bin = bin_location.to_owned();
-    lwd_bin.push("lightwalletd");
+    let regtest_dir: OsString = get_regtest_dir();
+    println!("regtest_dir: {:?}", regtest_dir.clone());
+
+    let mut bin_location: OsString = regtest_dir.clone();
+    bin_location.push(&MAIN_SEPARATOR.to_string());
+    bin_location.push("bin");
+
+    let zcashd_bin: PathBuf = [bin_location.clone(), OsString::from("zcashd")]
+        .iter()
+        .collect();
+
+    let lwd_bin: PathBuf = [bin_location.clone(), OsString::from("lightwalletd")]
+        .iter()
+        .collect();
 
     let zcash_confs: PathBuf = [
-        worktree_home.clone(),
-        OsString::from("regtest"),
+        regtest_dir.clone(),
         OsString::from("conf"),
         OsString::from(""),
     ]
@@ -96,8 +96,7 @@ pub(crate) fn launch() {
     flagged_zcashd_conf.push_str("zcash.conf");
 
     let zcash_datadir: PathBuf = [
-        worktree_home.clone(),
-        OsString::from("regtest"),
+        regtest_dir.clone(),
         OsString::from("datadir"),
         OsString::from("zcash"),
         OsString::from(""),
@@ -109,8 +108,7 @@ pub(crate) fn launch() {
     flagged_datadir.push_str(zcash_datadir.to_str().expect("error making zcash_datadir"));
 
     let zcash_logs: PathBuf = [
-        worktree_home.clone(),
-        OsString::from("regtest"),
+        regtest_dir.clone(),
         OsString::from("logs"),
         OsString::from(""),
     ]
@@ -170,8 +168,7 @@ pub(crate) fn launch() {
     println!("lightwalletd is about to start. This should only take a moment.");
 
     let lwd_confs: PathBuf = [
-        worktree_home.clone(),
-        OsString::from("regtest"),
+        regtest_dir.clone(),
         OsString::from("conf"),
         OsString::from(""),
     ]
@@ -192,8 +189,7 @@ pub(crate) fn launch() {
     unflagged_zcashd_conf.push_str("zcash.conf");
 
     let lwd_datadir: PathBuf = [
-        worktree_home.clone(),
-        OsString::from("regtest"),
+        regtest_dir.clone(),
         OsString::from("datadir"),
         OsString::from("lightwalletd"),
         OsString::from(""),
@@ -205,8 +201,7 @@ pub(crate) fn launch() {
     unflagged_lwd_datadir.push_str(lwd_datadir.to_str().expect("error making lwd_datadir"));
 
     let lwd_logs: PathBuf = [
-        worktree_home.clone(),
-        OsString::from("regtest"),
+        regtest_dir.clone(),
         OsString::from("logs"),
         OsString::from(""),
     ]
