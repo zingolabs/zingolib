@@ -1,5 +1,8 @@
+use std::process::Command;
+///  Enforce strict expectations for tool use with current zingolib.  Relaxing these restrictions will facilitate
+///  use in other projects.  For example, this version of regtest will only run within a git repo that is historically
+///  descended from 27e5eedc6b35759f463d43ea341ce66714aa9e01.
 fn git_selfcheck() {
-    use std::process::Command;
     let git_check = Command::new("git")
         .arg("--help")
         .output()
@@ -38,8 +41,15 @@ fn git_selfcheck() {
     }
 }
 
-fn get_top_level_dir() {
-    //TODO
+///  Simple helper to succinctly reference to the project root dir.
+fn get_top_level_dir() -> String {
+    let revparse_raw = Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .expect("problem invoking git rev-parse");
+    std::str::from_utf8(&revparse_raw.stdout)
+        .expect("revparse error")
+        .to_string()
 }
 
 pub(crate) fn launch() {
@@ -47,7 +57,7 @@ pub(crate) fn launch() {
     use std::fs::File;
     use std::io::Read;
     use std::path::PathBuf;
-    use std::process::{Command, Stdio};
+    use std::process::Stdio;
     use std::{thread, time};
 
     //check for git itself and that we are working within a zingolib repo
@@ -56,17 +66,9 @@ pub(crate) fn launch() {
     let _ = get_top_level_dir();
     // confirm we are in a git worktree
 
-    // get the top level directory for this repo worktree
-    let revparse_raw = Command::new("git")
-        .args(["rev-parse", "--show-toplevel"])
-        .output()
-        .expect("problem invoking git rev-parse");
-
-    let revparse = std::str::from_utf8(&revparse_raw.stdout).expect("revparse error");
-
     // Cross-platform OsString
     let mut worktree_home = OsString::new();
-    worktree_home.push(revparse.trim_end());
+    worktree_home.push(get_top_level_dir().trim_end());
 
     let bin_location: PathBuf = [
         worktree_home.clone(),
