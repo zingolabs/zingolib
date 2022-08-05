@@ -68,10 +68,11 @@ pub(crate) fn launch() {
     //check for git itself and that we are working within a zingolib repo
     git_selfcheck();
 
-    let confs_dir = get_regtest_dir().join("conf");
-    let bin_location = get_regtest_dir().join("bin");
-    let logs = get_regtest_dir().join("logs");
-    let datadir = get_regtest_dir().join("data");
+    let regtest_dir = get_regtest_dir();
+    let confs_dir = regtest_dir.join("conf");
+    let bin_location = regtest_dir.join("bin");
+    let logs = regtest_dir.join("logs");
+    let datadir = regtest_dir.join("data");
     let zcashd_datadir = datadir.join("zcashd");
     let zcashd_logs = logs.join("zcashd");
     let zcashd_config = confs_dir.join("zcash.conf");
