@@ -91,7 +91,7 @@ pub(crate) fn launch() {
     flagged_zcashd_conf.push_str(
         zcashd_config
             .to_str()
-            .expect("Surprisingly failure to repr as &str"),
+            .expect("Surprising failure to repr as &str"),
     );
 
     let zcashd_stdout_log = zcashd_logs.join("stdout.log");
@@ -141,9 +141,8 @@ pub(crate) fn launch() {
             panic!("zcashd reporting ERROR! exiting with panic. you may have to shut the daemon down manually.");
         } else if zcashd_logfile_state.contains("init message: Done loading") {
             break;
-        } else {
-            thread::sleep(check_interval);
         }
+        thread::sleep(check_interval);
     }
 
     println!("zcashd start section completed, zcashd should be running.");
@@ -190,10 +189,8 @@ pub(crate) fn launch() {
             println!("lwd start section completed, lightwalletd should be running!");
             println!("Standby, Zingo-cli should be running in regtest mode momentarily...");
             // we need to sleep because even after the last message is detected, lwd needs a moment to become ready for regtest mode
-            thread::sleep(check_interval);
             break;
-        } else {
-            thread::sleep(check_interval);
         }
+        thread::sleep(check_interval);
     }
 }
