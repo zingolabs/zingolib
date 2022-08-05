@@ -774,7 +774,10 @@ impl LightWallet {
         }
     }
 
-    pub async fn shielded_balance<K: traits::NoteAndMetadata>(&self, addr: Option<String>) -> u64 {
+    pub async fn shielded_balance<K>(&self, addr: Option<String>) -> u64
+    where
+        K: traits::NoteAndMetadata,
+    {
         self.transactions
             .read()
             .await

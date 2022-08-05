@@ -329,7 +329,7 @@ pub(crate) trait NoteAndMetadata: Sized {
         have_spending_key: bool,
     ) -> Self;
     fn fvk(&self) -> &Self::Fvk;
-    fn diversifier(&self) -> &Self::Diversifier;
+    fn diversifier(&self) -> &<<Self::Fvk as Diversifiable>::Note as NoteData>::Diversifier;
     fn memo_mut(&mut self) -> &mut Option<Memo>;
     fn note(&self) -> &Self::Note;
     fn nullifier(&self) -> Self::Nullifier;
