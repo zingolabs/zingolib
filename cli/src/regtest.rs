@@ -74,11 +74,11 @@ pub(crate) fn launch() {
     let logs = dbg!(get_regtest_dir().join("logs"));
     let datadir = dbg!(get_regtest_dir().join("data"));
     let zcashd_datadir = dbg!(datadir.join("zcashd"));
-    let lightwalletd_logs = dbg!(logs.join("lightwalletd"));
     let zcashd_logs = dbg!(logs.join("zcashd"));
+    let zcashd_config = dbg!(confs_dir.join("zcash.conf"));
+    let lightwalletd_logs = dbg!(logs.join("lightwalletd"));
     let lightwalletd_datadir = dbg!(datadir.join("lightwalletd"));
 
-    panic!();
     let mut zcashd_bin = bin_location.to_owned();
     zcashd_bin.push("zcashd");
 
@@ -86,8 +86,11 @@ pub(crate) fn launch() {
     lwd_bin.push("lightwalletd");
 
     let mut flagged_zcashd_conf: String = "--conf=".to_string();
-    flagged_zcashd_conf.push_str(confs_dir.to_str().expect("error making zcash_datadir"));
-    flagged_zcashd_conf.push_str("zcash.conf");
+    flagged_zcashd_conf.push_str(
+        zcashd_config
+            .to_str()
+            .expect("Surprisingly failure to repr as &str"),
+    );
 
     let mut flagged_datadir: String = "--datadir=".to_string();
     flagged_datadir.push_str(zcashd_datadir.to_str().expect("error making zcash_datadir"));
@@ -95,12 +98,13 @@ pub(crate) fn launch() {
     println!("zcashd datadir: {}", &flagged_datadir);
     println!("zcashd conf file: {}", &flagged_zcashd_conf);
 
-    let mut zcashd_stdout_log: String = String::new();
-    zcashd_stdout_log.push_str(zcashd_logs.to_str().expect("error converting to str"));
-    zcashd_stdout_log.push_str("zcashd_stdout.log");
-    dbg!(&zcashd_stdout_log);
+    let zcashd_stdout_log = dbg!(zcashd_logs.join("stdout.log"));
     let mut zcashd_logfile = File::create(&zcashd_stdout_log).expect("file::create Result error");
+    dbg!(&zcashd_logfile);
 
+    dbg!(&zcashd_bin);
+    dbg!(&flagged_zcashd_conf);
+    dbg!(&flagged_datadir);
     let mut zcashd_command = Command::new(zcashd_bin)
         .args([
             "--printtoconsole",
@@ -116,9 +120,9 @@ pub(crate) fn launch() {
         .spawn()
         .expect("failed to start zcashd");
 
-    if let Some(mut zcashd_log) = zcashd_command.stdout.take() {
+    if let Some(mut zcashd_stdout_data) = zcashd_command.stdout.take() {
         std::thread::spawn(move || {
-            std::io::copy(&mut zcashd_log, &mut zcashd_logfile)
+            std::io::copy(&mut zcashd_stdout_data, &mut zcashd_logfile)
                 .expect("io::copy error writing zcashd_stdout.log");
         });
     }
@@ -143,6 +147,7 @@ pub(crate) fn launch() {
     }
 
     println!("zcashd start section completed, zcashd should be running.");
+    panic!();
     println!("lightwalletd is about to start. This should only take a moment.");
 
     let mut unflagged_lwd_conf: String = String::new();
