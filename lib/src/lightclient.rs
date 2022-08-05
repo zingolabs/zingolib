@@ -571,25 +571,25 @@ impl LightClient {
 
     pub async fn do_balance(&self) -> JsonValue {
         // Collect z addresses
-        let mut z_addresses = vec![];
-        for zaddress in self.wallet.keys().read().await.get_all_sapling_addresses() {
-            z_addresses.push(object! {
-                "address" => zaddress.clone(),
-                "sapling_balance" =>self.wallet.sapling_balance(Some(zaddress.clone())).await,
-                "verified_sapling_balance"  =>self.wallet.verified_sapling_balance(Some(zaddress.clone())).await,
-                "spendable_sapling_balance" =>self.wallet.spendable_sapling_balance(Some(zaddress.clone())).await,
-                "unverified_sapling_balance"   => self.wallet.unverified_sapling_balance(Some(zaddress.clone())).await
+        let mut sapling_addresses = vec![];
+        for sapling_address in self.wallet.keys().read().await.get_all_sapling_addresses() {
+            sapling_addresses.push(object! {
+                "address"                     => sapling_address.clone(),
+                "sapling_balance"             => self.wallet.sapling_balance(Some(sapling_address.clone())).await,
+                "verified_sapling_balance"    => self.wallet.verified_sapling_balance(Some(sapling_address.clone())).await,
+                "spendable_sapling_balance"   => self.wallet.spendable_sapling_balance(Some(sapling_address.clone())).await,
+                "unverified_sapling_balance"  => self.wallet.unverified_sapling_balance(Some(sapling_address.clone())).await
             });
         }
 
-        let mut o_addresses = vec![];
-        for oaddress in self.wallet.keys().read().await.get_all_orchard_addresses() {
-            o_addresses.push(object! {
-                "address" => oaddress.clone(),
-                "orchard_balance" =>self.wallet.orchard_balance(Some(oaddress.clone())).await,
-                "verified_orchard_balance"  =>self.wallet.verified_sapling_balance(Some(oaddress.clone())).await,
-                "spendable_orchard_balance" =>self.wallet.spendable_sapling_balance(Some(oaddress.clone())).await,
-                "unverified_orchard_balance"   => self.wallet.unverified_sapling_balance(Some(oaddress.clone())).await
+        let mut orchard_addresses = vec![];
+        for orchard_address in self.wallet.keys().read().await.get_all_orchard_addresses() {
+            orchard_addresses.push(object! {
+                "address"                     => orchard_address.clone(),
+                "orchard_balance"             => self.wallet.orchard_balance(Some(orchard_address.clone())).await,
+                "verified_orchard_balance"    => self.wallet.verified_orchard_balance(Some(orchard_address.clone())).await,
+                "spendable_orchard_balance"   => self.wallet.spendable_orchard_balance(Some(orchard_address.clone())).await,
+                "unverified_orchard_balance"  => self.wallet.unverified_orchard_balance(Some(orchard_address.clone())).await
             });
         }
 
@@ -600,20 +600,25 @@ impl LightClient {
             let balance = self.wallet.tbalance(Some(taddress.clone())).await;
 
             t_addresses.push(object! {
-                "address" => taddress,
-                "balance" => balance,
+                "address"                     => taddress,
+                "balance"                     => balance,
             });
         }
 
         // TODO:  Think about exposing an interface that references the Orchard Pool.
         object! {
-            "sapling_balance"           => self.wallet.sapling_balance(None).await,
-            "verified_sapling_balance"  => self.wallet.verified_sapling_balance(None).await,
-            "spendable_sapling_balance" => self.wallet.spendable_sapling_balance(None).await,
-            "unverified_sapling_balance"   => self.wallet.unverified_sapling_balance(None).await,
-            "transparent_balance"           => self.wallet.tbalance(None).await,
-            "sapling_addresses"        => z_addresses,
-            "transparent_addresses"        => t_addresses,
+            "sapling_balance"                 => self.wallet.sapling_balance(None).await,
+            "verified_sapling_balance"        => self.wallet.verified_sapling_balance(None).await,
+            "spendable_sapling_balance"       => self.wallet.spendable_sapling_balance(None).await,
+            "unverified_sapling_balance"      => self.wallet.unverified_sapling_balance(None).await,
+                "orchard_balance"             => self.wallet.orchard_balance(None).await,
+                "verified_orchard_balance"    => self.wallet.verified_orchard_balance(None).await,
+                "spendable_orchard_balance"   => self.wallet.spendable_orchard_balance(None).await,
+                "unverified_orchard_balance"  => self.wallet.unverified_orchard_balance(None).await,
+            "transparent_balance"             => self.wallet.tbalance(None).await,
+            "sapling_addresses"               => sapling_addresses,
+            "orchard_addresses"               => orchard_addresses,
+            "transparent_addresses"           => t_addresses,
         }
     }
 

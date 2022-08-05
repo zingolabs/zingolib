@@ -38,6 +38,7 @@ use zcash_primitives::{
     },
 };
 
+use self::traits::NoteAndMetadata;
 use self::{
     data::{BlockData, OrchardNoteAndMetadata, SaplingNoteAndMetadata, Utxo, WalletZecPriceInfo},
     keys::{orchard::OrchardKey, Keys},
@@ -784,11 +785,10 @@ impl LightWallet {
             .await
     }
 
-    //TODO: verified/unverified zbanace functions don't match this interface
     async fn shielded_balance<NnMd>(
         &self,
         addr: Option<String>,
-        filters: &[fn(&&NnMd) -> bool],
+        filters: &[Box<dyn Fn(&&NnMd, &WalletTx) -> bool + '_>],
     ) -> u64
     where
         NnMd: traits::NoteAndMetadata,
@@ -813,7 +813,8 @@ impl LightWallet {
                         }),
                 );
                 for filter in filters {
-                    filtered_notes = Box::new(filtered_notes.filter(filter))
+                    filtered_notes =
+                        Box::new(filtered_notes.filter(|nnmd| filter(nnmd, transaction)))
                 }
                 filtered_notes
                     .map(|nd| {
@@ -857,111 +858,74 @@ impl LightWallet {
 
         let keys = self.keys.read().await;
 
-        self.transactions
-            .read()
-            .await
-            .current
-            .values()
-            .map(|transaction| {
-                transaction
-                    .sapling_notes
-                    .iter()
-                    .filter(|nd| nd.spent.is_none() && nd.unconfirmed_spent.is_none())
-                    .filter(|nd| {
-                        // Check to see if we have this note's spending key.
-                        keys.have_sapling_spending_key(&nd.extfvk)
-                    })
-                    .filter(|nd| match addr.clone() {
-                        Some(a) => {
-                            a == encode_payment_address(
-                                self.config.hrp_sapling_address(),
-                                &nd.extfvk.fvk.vk.to_payment_address(nd.diversifier).unwrap(),
-                            )
-                        }
-                        None => true,
-                    })
-                    .map(|nd| {
-                        if transaction.block <= BlockHeight::from_u32(anchor_height) {
-                            // If confirmed, then unconfirmed is 0
-                            0
-                        } else {
-                            // If confirmed but dont have anchor yet, it is unconfirmed
-                            nd.note.value
-                        }
-                    })
-                    .sum::<u64>()
-            })
-            .sum::<u64>()
+        let filters: &[Box<dyn Fn(&&SaplingNoteAndMetadata, &WalletTx) -> bool>] = &[
+            Box::new(|nd: &&SaplingNoteAndMetadata, _| {
+                // Check to see if we have this note's spending key.
+                keys.have_sapling_spending_key(&nd.extfvk)
+            }),
+            Box::new(|_, transaction: &WalletTx| {
+                transaction.block > BlockHeight::from_u32(anchor_height)
+            }),
+        ];
+        self.shielded_balance(addr, filters).await
     }
 
-    pub async fn verified_sapling_balance(&self, addr: Option<String>) -> u64 {
-        let anchor_height = self.get_anchor_height().await;
-
-        self.transactions
-            .read()
-            .await
-            .current
-            .values()
-            .map(|transaction| {
-                if transaction.block <= BlockHeight::from_u32(anchor_height) {
-                    transaction
-                        .sapling_notes
-                        .iter()
-                        .filter(|nd| nd.spent.is_none() && nd.unconfirmed_spent.is_none())
-                        .filter(|nd| match addr.as_ref() {
-                            Some(a) => {
-                                *a == encode_payment_address(
-                                    self.config.hrp_sapling_address(),
-                                    &nd.extfvk.fvk.vk.to_payment_address(nd.diversifier).unwrap(),
-                                )
-                            }
-                            None => true,
-                        })
-                        .map(|nd| nd.note.value)
-                        .sum::<u64>()
-                } else {
-                    0
-                }
-            })
-            .sum::<u64>()
-    }
-
-    pub async fn spendable_sapling_balance(&self, addr: Option<String>) -> u64 {
+    pub async fn unverified_orchard_balance(&self, addr: Option<String>) -> u64 {
         let anchor_height = self.get_anchor_height().await;
 
         let keys = self.keys.read().await;
 
-        self.transactions
-            .read()
-            .await
-            .current
-            .values()
-            .map(|transaction| {
-                if transaction.block <= BlockHeight::from_u32(anchor_height) {
-                    transaction
-                        .sapling_notes
-                        .iter()
-                        .filter(|nd| nd.spent.is_none() && nd.unconfirmed_spent.is_none())
-                        .filter(|nd| {
-                            // Check to see if we have this note's spending key and witnesses
-                            keys.have_sapling_spending_key(&nd.extfvk) && nd.witnesses.len() > 0
-                        })
-                        .filter(|nd| match addr.as_ref() {
-                            Some(a) => {
-                                *a == encode_payment_address(
-                                    self.config.hrp_sapling_address(),
-                                    &nd.extfvk.fvk.vk.to_payment_address(nd.diversifier).unwrap(),
-                                )
-                            }
-                            None => true,
-                        })
-                        .map(|nd| nd.note.value)
-                        .sum::<u64>()
-                } else {
-                    0
-                }
-            })
-            .sum::<u64>()
+        let filters: &[Box<dyn Fn(&&OrchardNoteAndMetadata, &WalletTx) -> bool>] = &[
+            Box::new(|nd, _| {
+                // Check to see if we have this note's spending key.
+                keys.have_orchard_spending_key(&nd.fvk.to_ivk(orchard::keys::Scope::External))
+            }),
+            Box::new(|_, transaction: &WalletTx| {
+                transaction.block > BlockHeight::from_u32(anchor_height)
+            }),
+        ];
+        self.shielded_balance(addr, filters).await
+    }
+
+    pub async fn verified_sapling_balance(&self, addr: Option<String>) -> u64 {
+        self.verified_balance::<SaplingNoteAndMetadata>(addr).await
+    }
+
+    pub async fn verified_orchard_balance(&self, addr: Option<String>) -> u64 {
+        self.verified_balance::<OrchardNoteAndMetadata>(addr).await
+    }
+
+    async fn verified_balance<NnMd: NoteAndMetadata>(&self, addr: Option<String>) -> u64 {
+        let anchor_height = self.get_anchor_height().await;
+        let filters: &[Box<dyn Fn(&&NnMd, &WalletTx) -> bool>] = &[Box::new(|_, transaction| {
+            transaction.block <= BlockHeight::from_u32(anchor_height)
+        })];
+        self.shielded_balance::<NnMd>(addr, filters).await
+    }
+
+    pub async fn spendable_sapling_balance(&self, addr: Option<String>) -> u64 {
+        let anchor_height = self.get_anchor_height().await;
+        let keys = self.keys.read().await;
+        let filters: &[Box<dyn Fn(&&SaplingNoteAndMetadata, &WalletTx) -> bool>] = &[
+            Box::new(|_, transaction| transaction.block <= BlockHeight::from_u32(anchor_height)),
+            Box::new(|nnmd, _| {
+                keys.have_sapling_spending_key(&nnmd.extfvk) && nnmd.witnesses.len() > 0
+            }),
+        ];
+        self.shielded_balance(addr, filters).await
+    }
+
+    pub async fn spendable_orchard_balance(&self, addr: Option<String>) -> u64 {
+        let anchor_height = self.get_anchor_height().await;
+        let keys = self.keys.read().await;
+        let filters: &[Box<dyn Fn(&&OrchardNoteAndMetadata, &WalletTx) -> bool>] = &[
+            Box::new(|_, transaction| transaction.block <= BlockHeight::from_u32(anchor_height)),
+            Box::new(|nnmd, _| {
+                keys.have_orchard_spending_key(&nnmd.fvk.to_ivk(orchard::keys::Scope::External))
+                    && nnmd.witnesses.len() > 0
+            }),
+        ];
+        self.shielded_balance(addr, filters).await
     }
 
     pub async fn remove_unused_taddrs(&self) {
