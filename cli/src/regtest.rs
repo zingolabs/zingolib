@@ -68,18 +68,17 @@ pub(crate) fn launch() {
     //check for git itself and that we are working within a zingolib repo
     git_selfcheck();
 
-    dbg!(get_top_level_dir());
-    let confs_dir = dbg!(get_regtest_dir().join("conf"));
-    let bin_location = dbg!(get_regtest_dir().join("bin"));
-    let logs = dbg!(get_regtest_dir().join("logs"));
-    let datadir = dbg!(get_regtest_dir().join("data"));
-    let zcashd_datadir = dbg!(datadir.join("zcashd"));
-    let zcashd_logs = dbg!(logs.join("zcashd"));
-    let zcashd_config = dbg!(confs_dir.join("zcash.conf"));
-    let lightwalletd_config = dbg!(confs_dir.join("lightwalletd.yaml"));
-    let lightwalletd_logs = dbg!(logs.join("lightwalletd"));
-    let lwd_stdout_log = lightwalletd_logs.join("stdout.log");
-    let lightwalletd_datadir = dbg!(datadir.join("lightwalletd"));
+    let confs_dir = get_regtest_dir().join("conf");
+    let bin_location = get_regtest_dir().join("bin");
+    let logs = get_regtest_dir().join("logs");
+    let datadir = get_regtest_dir().join("data");
+    let zcashd_datadir = datadir.join("zcashd");
+    let zcashd_logs = logs.join("zcashd");
+    let zcashd_config = confs_dir.join("zcash.conf");
+    let lightwalletd_config = confs_dir.join("lightwalletd.yaml");
+    let lightwalletd_logs = logs.join("lightwalletd");
+    let lightwalletd_stdout_log = lightwalletd_logs.join("stdout.log");
+    let lightwalletd_datadir = datadir.join("lightwalletd");
 
     let mut zcashd_bin = bin_location.to_owned();
     zcashd_bin.push("zcashd");
@@ -94,7 +93,7 @@ pub(crate) fn launch() {
             .expect("Surprisingly failure to repr as &str"),
     );
 
-    let zcashd_stdout_log = dbg!(zcashd_logs.join("stdout.log"));
+    let zcashd_stdout_log = zcashd_logs.join("stdout.log");
     let mut zcashd_logfile = File::create(&zcashd_stdout_log).expect("file::create Result error");
 
     let mut zcashd_command = Command::new(zcashd_bin)
@@ -147,49 +146,22 @@ pub(crate) fn launch() {
     }
 
     println!("zcashd start section completed, zcashd should be running.");
-    panic!();
     println!("lightwalletd is about to start. This should only take a moment.");
 
-    let mut unflagged_lwd_conf: String = String::new();
-    unflagged_lwd_conf.push_str(confs_dir.to_str().expect("trouble making flagged_lwd_conf"));
-    unflagged_lwd_conf.push_str("lightwalletdconf.yml");
-
-    // for lwd config
-    let mut unflagged_zcashd_conf: String = String::new();
-    unflagged_zcashd_conf.push_str(
-        confs_dir
-            .to_str()
-            .expect("error making unflagged zcash conf"),
-    );
-    unflagged_zcashd_conf.push_str("zcash.conf");
-
-    let mut unflagged_lwd_datadir: String = String::new();
-    unflagged_lwd_datadir.push_str(
-        lightwalletd_datadir
-            .to_str()
-            .expect("error making lightwalletd_datadir"),
-    );
-
-    let mut lwd_stdout_log: String = String::new();
-    lwd_stdout_log.push_str(
-        lightwalletd_logs
-            .to_str()
-            .expect("error making lwd_datadir"),
-    );
-    lwd_stdout_log.push_str("lwd_stdout.log");
-    let mut lwd_logfile = File::create(&lwd_stdout_log).expect("file::create Result error");
+    let mut lwd_logfile =
+        File::create(&lightwalletd_stdout_log).expect("file::create Result error");
 
     let mut lwd_command = Command::new(lwd_bin)
         .args([
             "--no-tls-very-insecure",
             "--zcash-conf-path",
-            &unflagged_zcashd_conf,
+            &zcashd_config.to_str().expect("String repr fail!"),
             "--config",
-            &unflagged_lwd_conf,
+            &lightwalletd_config.to_str().expect("String repr fail!"),
             "--data-dir",
-            &unflagged_lwd_datadir,
+            &lightwalletd_datadir.to_str().expect("String fail!"),
             "--log-file",
-            &lwd_stdout_log,
+            &lightwalletd_stdout_log.to_str().expect("Repr fail!"),
         ])
         // this currently prints stdout of lwd process' output also to the zingo-cli stdout
         .stdout(Stdio::piped())
@@ -206,7 +178,7 @@ pub(crate) fn launch() {
 
     println!("lightwalletd is now started in regtest mode, please standby...");
 
-    let mut lwd_log_opened = File::open(&lwd_stdout_log).expect("can't open lwd log");
+    let mut lwd_log_opened = File::open(&lightwalletd_stdout_log).expect("can't open lwd log");
     let mut lwd_logfile_state = String::new();
     //now enter loop to find string that indicates daemon is ready for next step
     loop {
