@@ -54,12 +54,14 @@ pub fn main() {
     };
 
     let regtest_mode_enabled = matches.is_present("regtest");
+    let server;
     if regtest_mode_enabled {
-        regtest::launch()
+        server = ZingoConfig::get_server_or_default(Some("http://127.0.0.1".to_string()));
+        regtest::launch();
         // do the regtest
+    } else {
+        server = ZingoConfig::get_server_or_default(maybe_server);
     }
-
-    let server = ZingoConfig::get_server_or_default(maybe_server);
 
     // Test to make sure the server has all of scheme, host and port
     if server.scheme_str().is_none() || server.host().is_none() || server.port().is_none() {
