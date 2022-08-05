@@ -310,9 +310,8 @@ impl UnspentFromWalletTxns for OrchardNullifier {
     }
 }
 
-///  Complete note contents, and additional metadata.
 pub(crate) trait NoteAndMetadata: Sized {
-    type Fvk: Clone;
+    type Fvk: Clone + Diversifiable;
     type Diversifier;
     type Note: PartialEq;
     type Node: Hashable;
@@ -635,28 +634,36 @@ impl<P: Parameters> DomainWalletExt<P> for OrchardDomain {
     }
 }
 
-trait Diversifiable {
-    type Diversifier;
+pub(crate) trait Diversifiable {
+    type Note: NoteData;
     type Address;
-    fn diversified_address(&self, div: Self::Diversifier) -> Option<Self::Address>;
+    fn diversified_address(
+        &self,
+        div: <Self::Note as NoteData>::Diversifier,
+    ) -> Option<Self::Address>;
 }
 
 impl Diversifiable for SaplingExtendedFullViewingKey {
-    type Diversifier = SaplingDiversifier;
+    type Note = SaplingNoteData;
 
     type Address = SaplingAddress;
 
-    fn diversified_address(&self, div: Self::Diversifier) -> Option<Self::Address> {
+    fn diversified_address(
+        &self,
+        div: <<zcash_primitives::zip32::ExtendedFullViewingKey as Diversifiable>::Note as NoteData>::Diversifier,
+    ) -> Option<Self::Address> {
         self.fvk.vk.to_payment_address(div)
     }
 }
 
 impl Diversifiable for OrchardFullViewingKey {
-    type Diversifier = OrchardDiversifier;
-
+    type Note = OrchardNoteData;
     type Address = OrchardAddress;
 
-    fn diversified_address(&self, div: Self::Diversifier) -> Option<Self::Address> {
+    fn diversified_address(
+        &self,
+        div: <<orchard::keys::FullViewingKey as Diversifiable>::Note as NoteData>::Diversifier,
+    ) -> Option<Self::Address> {
         Some(self.address(div, orchard::keys::Scope::External))
     }
 }

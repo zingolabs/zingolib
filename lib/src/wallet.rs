@@ -170,6 +170,7 @@ pub struct LightWallet {
     pub price: Arc<RwLock<WalletZecPriceInfo>>,
 }
 
+use crate::wallet::traits::Diversifiable as _;
 impl LightWallet {
     pub fn serialized_version() -> u64 {
         return 24;
