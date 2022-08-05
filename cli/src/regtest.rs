@@ -76,7 +76,9 @@ pub(crate) fn launch() {
     let zcashd_datadir = dbg!(datadir.join("zcashd"));
     let zcashd_logs = dbg!(logs.join("zcashd"));
     let zcashd_config = dbg!(confs_dir.join("zcash.conf"));
+    let lightwalletd_config = dbg!(confs_dir.join("lightwalletd.yaml"));
     let lightwalletd_logs = dbg!(logs.join("lightwalletd"));
+    let lwd_stdout_log = lightwalletd_logs.join("stdout.log");
     let lightwalletd_datadir = dbg!(datadir.join("lightwalletd"));
 
     let mut zcashd_bin = bin_location.to_owned();
