@@ -817,7 +817,7 @@ impl Command for SendCommand {
                 let fee = u64::from(DEFAULT_FEE);
                 let all_zbalance = lightclient
                     .wallet
-                    .verified_zbalance(None)
+                    .verified_sapling_balance(None)
                     .await
                     .checked_sub(fee);
 
@@ -864,7 +864,7 @@ impl Command for SendCommand {
                             let fee = u64::from(DEFAULT_FEE);
                             match lightclient
                                 .wallet
-                                .verified_zbalance(None)
+                                .verified_sapling_balance(None)
                                 .await
                                 .checked_sub(fee)
                             {

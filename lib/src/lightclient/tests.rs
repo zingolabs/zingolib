@@ -71,11 +71,11 @@ fn new_wallet_from_phrase() {
         assert_eq!(
             "zs1q6xk3q783t5k92kjqt2rkuuww8pdw2euzy5rk6jytw97enx8fhpazdv3th4xe7vsk6e9sfpawfg"
                 .to_string(),
-            addresses["z_addresses"][0]
+            addresses["sapling_addresses"][0]
         );
         assert_eq!(
             "t1eQ63fwkQ4n4Eo5uCrPGaAV8FWB2tmx7ui".to_string(),
-            addresses["t_addresses"][0]
+            addresses["transparent_addresses"][0]
         );
         println!("z {}", lc.do_export(None).await.unwrap().pretty(2));
     });
@@ -97,23 +97,23 @@ fn new_wallet_from_sapling_esk() {
     let lc = LightClient::new_from_phrase(sk.to_string(), &config, 0, false).unwrap();
     Runtime::new().unwrap().block_on(async move {
         let addresses = lc.do_address().await;
-        assert_eq!(addresses["z_addresses"].len(), 1);
-        assert_eq!(addresses["t_addresses"].len(), 1);
+        assert_eq!(addresses["sapling_addresses"].len(), 1);
+        assert_eq!(addresses["transparent_addresses"].len(), 1);
         assert_eq!(
             "zs1q6xk3q783t5k92kjqt2rkuuww8pdw2euzy5rk6jytw97enx8fhpazdv3th4xe7vsk6e9sfpawfg"
                 .to_string(),
-            addresses["z_addresses"][0]
+            addresses["sapling_addresses"][0]
         );
 
         // New address should be derived from the seed
         lc.do_new_address("z").await.unwrap();
 
         let addresses = lc.do_address().await;
-        assert_eq!(addresses["z_addresses"].len(), 2);
+        assert_eq!(addresses["sapling_addresses"].len(), 2);
         assert_ne!(
             "zs1q6xk3q783t5k92kjqt2rkuuww8pdw2euzy5rk6jytw97enx8fhpazdv3th4xe7vsk6e9sfpawfg"
                 .to_string(),
-            addresses["z_addresses"][1]
+            addresses["sapling_addresses"][1]
         );
     });
 }
@@ -164,23 +164,23 @@ fn new_wallet_from_zvk() {
 
     Runtime::new().unwrap().block_on(async move {
         let addresses = lc.do_address().await;
-        assert_eq!(addresses["z_addresses"].len(), 1);
-        assert_eq!(addresses["t_addresses"].len(), 1);
+        assert_eq!(addresses["sapling_addresses"].len(), 1);
+        assert_eq!(addresses["transparent_addresses"].len(), 1);
         assert_eq!(
             "zs1q6xk3q783t5k92kjqt2rkuuww8pdw2euzy5rk6jytw97enx8fhpazdv3th4xe7vsk6e9sfpawfg"
                 .to_string(),
-            addresses["z_addresses"][0]
+            addresses["sapling_addresses"][0]
         );
 
         // New address should be derived from the seed
         lc.do_new_address("z").await.unwrap();
 
         let addresses = lc.do_address().await;
-        assert_eq!(addresses["z_addresses"].len(), 2);
+        assert_eq!(addresses["sapling_addresses"].len(), 2);
         assert_ne!(
             "zs1q6xk3q783t5k92kjqt2rkuuww8pdw2euzy5rk6jytw97enx8fhpazdv3th4xe7vsk6e9sfpawfg"
                 .to_string(),
-            addresses["z_addresses"][1]
+            addresses["sapling_addresses"][1]
         );
     });
 }
@@ -216,7 +216,7 @@ async fn basic_no_wallet_transactions() {
 }
 
 #[tokio::test]
-async fn z_incoming_z_outgoing() {
+async fn sapling_incoming_sapling_outgoing() {
     for https in [true, false] {
         let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(https).await;
 
@@ -240,20 +240,29 @@ async fn z_incoming_z_outgoing() {
 
         // 3. Check the balance is correct, and we recieved the incoming transaction from outside
         let b = lc.do_balance().await;
-        assert_eq!(b["zbalance"].as_u64().unwrap(), value);
-        assert_eq!(b["unverified_zbalance"].as_u64().unwrap(), value);
-        assert_eq!(b["spendable_zbalance"].as_u64().unwrap(), 0);
+        assert_eq!(b["sapling_balance"].as_u64().unwrap(), value);
+        assert_eq!(b["unverified_sapling_balance"].as_u64().unwrap(), value);
+        assert_eq!(b["spendable_sapling_balance"].as_u64().unwrap(), 0);
         assert_eq!(
-            b["z_addresses"][0]["address"],
+            b["sapling_addresses"][0]["address"],
             lc.wallet.keys().read().await.get_all_sapling_addresses()[0]
         );
-        assert_eq!(b["z_addresses"][0]["zbalance"].as_u64().unwrap(), value);
         assert_eq!(
-            b["z_addresses"][0]["unverified_zbalance"].as_u64().unwrap(),
+            b["sapling_addresses"][0]["sapling_balance"]
+                .as_u64()
+                .unwrap(),
             value
         );
         assert_eq!(
-            b["z_addresses"][0]["spendable_zbalance"].as_u64().unwrap(),
+            b["sapling_addresses"][0]["unverified_sapling_balance"]
+                .as_u64()
+                .unwrap(),
+            value
+        );
+        assert_eq!(
+            b["sapling_addresses"][0]["spendable_sapling_balance"]
+                .as_u64()
+                .unwrap(),
             0
         );
 
@@ -276,16 +285,25 @@ async fn z_incoming_z_outgoing() {
         // 4. Then add another 5 blocks, so the funds will become confirmed
         mine_random_blocks(&mut fcbl, &data, &lc, 5).await;
         let b = lc.do_balance().await;
-        assert_eq!(b["zbalance"].as_u64().unwrap(), value);
-        assert_eq!(b["unverified_zbalance"].as_u64().unwrap(), 0);
-        assert_eq!(b["spendable_zbalance"].as_u64().unwrap(), value);
-        assert_eq!(b["z_addresses"][0]["zbalance"].as_u64().unwrap(), value);
+        assert_eq!(b["sapling_balance"].as_u64().unwrap(), value);
+        assert_eq!(b["unverified_sapling_balance"].as_u64().unwrap(), 0);
+        assert_eq!(b["spendable_sapling_balance"].as_u64().unwrap(), value);
         assert_eq!(
-            b["z_addresses"][0]["spendable_zbalance"].as_u64().unwrap(),
+            b["sapling_addresses"][0]["sapling_balance"]
+                .as_u64()
+                .unwrap(),
             value
         );
         assert_eq!(
-            b["z_addresses"][0]["unverified_zbalance"].as_u64().unwrap(),
+            b["sapling_addresses"][0]["spendable_sapling_balance"]
+                .as_u64()
+                .unwrap(),
+            value
+        );
+        assert_eq!(
+            b["sapling_addresses"][0]["unverified_sapling_balance"]
+                .as_u64()
+                .unwrap(),
             0
         );
 
@@ -597,7 +615,7 @@ async fn multiple_incoming_same_transaction() {
 }
 
 #[tokio::test]
-async fn z_incoming_multiz_outgoing() {
+async fn sapling_incoming_multisapling_outgoing() {
     for https in [true, false] {
         let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(https).await;
 
@@ -653,7 +671,7 @@ async fn z_incoming_multiz_outgoing() {
 }
 
 #[tokio::test]
-async fn z_to_z_scan_together() {
+async fn sapling_to_sapling_scan_together() {
     // Create an incoming transaction, and then send that transaction, and scan everything together, to make sure it works.
     for https in [true, false] {
         let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(https).await;
@@ -726,7 +744,7 @@ async fn z_to_z_scan_together() {
 }
 
 #[tokio::test]
-async fn z_incoming_viewkey() {
+async fn sapling_incoming_viewkey() {
     for https in [true, false] {
         let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(https).await;
 
@@ -738,7 +756,10 @@ async fn z_incoming_viewkey() {
         // 1. Mine 10 blocks
         mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
         assert_eq!(lc.wallet.last_scanned_height().await, 10);
-        assert_eq!(lc.do_balance().await["zbalance"].as_u64().unwrap(), 0);
+        assert_eq!(
+            lc.do_balance().await["sapling_balance"].as_u64().unwrap(),
+            0
+        );
 
         // 2. Create a new Viewkey and import it
         let iextsk = ExtendedSpendingKey::master(&[1u8; 32]);
@@ -763,9 +784,12 @@ async fn z_incoming_viewkey() {
 
         // 3. Test that we have the transaction
         let list = lc.do_list_transactions(false).await;
-        assert_eq!(lc.do_balance().await["zbalance"].as_u64().unwrap(), value);
         assert_eq!(
-            lc.do_balance().await["spendable_zbalance"]
+            lc.do_balance().await["sapling_balance"].as_u64().unwrap(),
+            value
+        );
+        assert_eq!(
+            lc.do_balance().await["spendable_sapling_balance"]
                 .as_u64()
                 .unwrap(),
             0
@@ -779,9 +803,12 @@ async fn z_incoming_viewkey() {
         lc.do_rescan().await.unwrap();
         // Test all the same values
         let list = lc.do_list_transactions(false).await;
-        assert_eq!(lc.do_balance().await["zbalance"].as_u64().unwrap(), value);
         assert_eq!(
-            lc.do_balance().await["spendable_zbalance"]
+            lc.do_balance().await["sapling_balance"].as_u64().unwrap(),
+            value
+        );
+        assert_eq!(
+            lc.do_balance().await["spendable_sapling_balance"]
                 .as_u64()
                 .unwrap(),
             0
@@ -800,9 +827,12 @@ async fn z_incoming_viewkey() {
             .unwrap();
 
         assert_eq!(sk_addr[0], iaddr);
-        assert_eq!(lc.do_balance().await["zbalance"].as_u64().unwrap(), value);
         assert_eq!(
-            lc.do_balance().await["spendable_zbalance"]
+            lc.do_balance().await["sapling_balance"].as_u64().unwrap(),
+            value
+        );
+        assert_eq!(
+            lc.do_balance().await["spendable_sapling_balance"]
                 .as_u64()
                 .unwrap(),
             0
@@ -810,9 +840,12 @@ async fn z_incoming_viewkey() {
 
         // 6. Rescan to make the funds spendable (i.e., update witnesses)
         lc.do_rescan().await.unwrap();
-        assert_eq!(lc.do_balance().await["zbalance"].as_u64().unwrap(), value);
         assert_eq!(
-            lc.do_balance().await["spendable_zbalance"]
+            lc.do_balance().await["sapling_balance"].as_u64().unwrap(),
+            value
+        );
+        assert_eq!(
+            lc.do_balance().await["spendable_sapling_balance"]
                 .as_u64()
                 .unwrap(),
             value
@@ -1659,16 +1692,16 @@ async fn mempool_and_balance() {
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
 
         let bal = lc.do_balance().await;
-        assert_eq!(bal["zbalance"].as_u64().unwrap(), value);
-        assert_eq!(bal["verified_zbalance"].as_u64().unwrap(), 0);
-        assert_eq!(bal["unverified_zbalance"].as_u64().unwrap(), value);
+        assert_eq!(bal["sapling_balance"].as_u64().unwrap(), value);
+        assert_eq!(bal["verified_sapling_balance"].as_u64().unwrap(), 0);
+        assert_eq!(bal["unverified_sapling_balance"].as_u64().unwrap(), value);
 
         // 3. Mine 10 blocks
         mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
         let bal = lc.do_balance().await;
-        assert_eq!(bal["zbalance"].as_u64().unwrap(), value);
-        assert_eq!(bal["verified_zbalance"].as_u64().unwrap(), value);
-        assert_eq!(bal["unverified_zbalance"].as_u64().unwrap(), 0);
+        assert_eq!(bal["sapling_balance"].as_u64().unwrap(), value);
+        assert_eq!(bal["verified_sapling_balance"].as_u64().unwrap(), value);
+        assert_eq!(bal["unverified_sapling_balance"].as_u64().unwrap(), 0);
 
         // 4. Spend the funds
         let sent_value = 2000;
@@ -1683,26 +1716,26 @@ async fn mempool_and_balance() {
 
         // Even though the transaction is not mined (in the mempool) the balances should be updated to reflect the spent funds
         let new_bal = value - (sent_value + u64::from(DEFAULT_FEE));
-        assert_eq!(bal["zbalance"].as_u64().unwrap(), new_bal);
-        assert_eq!(bal["verified_zbalance"].as_u64().unwrap(), 0);
-        assert_eq!(bal["unverified_zbalance"].as_u64().unwrap(), new_bal);
+        assert_eq!(bal["sapling_balance"].as_u64().unwrap(), new_bal);
+        assert_eq!(bal["verified_sapling_balance"].as_u64().unwrap(), 0);
+        assert_eq!(bal["unverified_sapling_balance"].as_u64().unwrap(), new_bal);
 
         // 5. Mine the pending block, but the balances should remain the same.
         fcbl.add_pending_sends(&data).await;
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
 
         let bal = lc.do_balance().await;
-        assert_eq!(bal["zbalance"].as_u64().unwrap(), new_bal);
-        assert_eq!(bal["verified_zbalance"].as_u64().unwrap(), 0);
-        assert_eq!(bal["unverified_zbalance"].as_u64().unwrap(), new_bal);
+        assert_eq!(bal["sapling_balance"].as_u64().unwrap(), new_bal);
+        assert_eq!(bal["verified_sapling_balance"].as_u64().unwrap(), 0);
+        assert_eq!(bal["unverified_sapling_balance"].as_u64().unwrap(), new_bal);
 
         // 6. Mine 10 more blocks, making the funds verified and spendable.
         mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
         let bal = lc.do_balance().await;
 
-        assert_eq!(bal["zbalance"].as_u64().unwrap(), new_bal);
-        assert_eq!(bal["verified_zbalance"].as_u64().unwrap(), new_bal);
-        assert_eq!(bal["unverified_zbalance"].as_u64().unwrap(), 0);
+        assert_eq!(bal["sapling_balance"].as_u64().unwrap(), new_bal);
+        assert_eq!(bal["verified_sapling_balance"].as_u64().unwrap(), new_bal);
+        assert_eq!(bal["unverified_sapling_balance"].as_u64().unwrap(), 0);
 
         // Shutdown everything cleanly
         clean_shutdown(stop_transmitter, h1).await;

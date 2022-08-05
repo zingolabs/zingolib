@@ -775,17 +775,23 @@ impl LightWallet {
     }
 
     pub async fn sapling_balance(&self, addr: Option<String>) -> u64 {
-        self.shielded_balance::<SaplingNoteAndMetadata>(addr).await
+        self.shielded_balance::<SaplingNoteAndMetadata>(addr, &[])
+            .await
     }
 
     pub async fn orchard_balance(&self, addr: Option<String>) -> u64 {
-        self.shielded_balance::<OrchardNoteAndMetadata>(addr).await
+        self.shielded_balance::<OrchardNoteAndMetadata>(addr, &[])
+            .await
     }
 
     //TODO: verified/unverified zbanace functions don't match this interface
-    async fn shielded_balance<K>(&self, addr: Option<String>) -> u64
+    async fn shielded_balance<NnMd>(
+        &self,
+        addr: Option<String>,
+        filters: &[fn(&&NnMd) -> bool],
+    ) -> u64
     where
-        K: traits::NoteAndMetadata,
+        NnMd: traits::NoteAndMetadata,
     {
         self.transactions
             .read()
@@ -793,20 +799,26 @@ impl LightWallet {
             .current
             .values()
             .map(|transaction| {
-                K::wallet_transaction_notes(transaction)
-                    .iter()
-                    .filter(|nd| match addr.as_ref() {
-                        Some(a) => {
-                            use self::traits::Recipient as _;
-                            let diversified_address =
-                                &nd.fvk().diversified_address(*nd.diversifier()).unwrap();
-                            *a == diversified_address.b32encode_for_network(self.config.chain)
-                        }
-                        None => true,
-                    })
+                let mut filtered_notes: Box<dyn Iterator<Item = &NnMd>> = Box::new(
+                    NnMd::wallet_transaction_notes(transaction)
+                        .iter()
+                        .filter(|nd| match addr.as_ref() {
+                            Some(a) => {
+                                use self::traits::Recipient as _;
+                                let diversified_address =
+                                    &nd.fvk().diversified_address(*nd.diversifier()).unwrap();
+                                *a == diversified_address.b32encode_for_network(self.config.chain)
+                            }
+                            None => true,
+                        }),
+                );
+                for filter in filters {
+                    filtered_notes = Box::new(filtered_notes.filter(filter))
+                }
+                filtered_notes
                     .map(|nd| {
                         if nd.spent().is_none() && nd.unconfirmed_spent().is_none() {
-                            <K as traits::NoteAndMetadata>::value(nd.note())
+                            <NnMd as traits::NoteAndMetadata>::value(nd.note())
                         } else {
                             0
                         }
@@ -840,7 +852,7 @@ impl LightWallet {
             .sum::<u64>()
     }
 
-    pub async fn unverified_zbalance(&self, addr: Option<String>) -> u64 {
+    pub async fn unverified_sapling_balance(&self, addr: Option<String>) -> u64 {
         let anchor_height = self.get_anchor_height().await;
 
         let keys = self.keys.read().await;
@@ -882,7 +894,7 @@ impl LightWallet {
             .sum::<u64>()
     }
 
-    pub async fn verified_zbalance(&self, addr: Option<String>) -> u64 {
+    pub async fn verified_sapling_balance(&self, addr: Option<String>) -> u64 {
         let anchor_height = self.get_anchor_height().await;
 
         self.transactions
@@ -914,7 +926,7 @@ impl LightWallet {
             .sum::<u64>()
     }
 
-    pub async fn spendable_zbalance(&self, addr: Option<String>) -> u64 {
+    pub async fn spendable_sapling_balance(&self, addr: Option<String>) -> u64 {
         let anchor_height = self.get_anchor_height().await;
 
         let keys = self.keys.read().await;
