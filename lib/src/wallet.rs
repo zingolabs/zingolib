@@ -39,7 +39,7 @@ use zcash_primitives::{
 };
 
 use self::{
-    data::{BlockData, SaplingNoteAndMetadata, Utxo, WalletZecPriceInfo},
+    data::{BlockData, OrchardNoteAndMetadata, SaplingNoteAndMetadata, Utxo, WalletZecPriceInfo},
     keys::{orchard::OrchardKey, Keys},
     message::Message,
     transactions::WalletTxns,
@@ -774,7 +774,16 @@ impl LightWallet {
         }
     }
 
-    pub async fn shielded_balance<K>(&self, addr: Option<String>) -> u64
+    pub async fn sapling_balance(&self, addr: Option<String>) -> u64 {
+        self.shielded_balance::<SaplingNoteAndMetadata>(addr).await
+    }
+
+    pub async fn orchard_balance(&self, addr: Option<String>) -> u64 {
+        self.shielded_balance::<OrchardNoteAndMetadata>(addr).await
+    }
+
+    //TODO: verified/unverified zbanace functions don't match this interface
+    async fn shielded_balance<K>(&self, addr: Option<String>) -> u64
     where
         K: traits::NoteAndMetadata,
     {
@@ -788,19 +797,16 @@ impl LightWallet {
                     .iter()
                     .filter(|nd| match addr.as_ref() {
                         Some(a) => {
+                            use self::traits::Recipient as _;
                             let diversified_address =
                                 &nd.fvk().diversified_address(*nd.diversifier()).unwrap();
-                            *a == encode_payment_address(
-                                // TODO: Find a generic replacement of this sapling-specific function
-                                self.config.hrp_sapling_address(),
-                                &nd.fvk().diversified_address(nd.diversifier).unwrap(),
-                            )
+                            *a == diversified_address.b32encode_for_network(self.config.chain)
                         }
                         None => true,
                     })
                     .map(|nd| {
-                        if nd.spent.is_none() && nd.unconfirmed_spent.is_none() {
-                            <K as traits::NoteData>::value(<K as traits::NoteData>::note(nd))
+                        if nd.spent().is_none() && nd.unconfirmed_spent().is_none() {
+                            <K as traits::NoteAndMetadata>::value(nd.note())
                         } else {
                             0
                         }
