@@ -598,7 +598,7 @@ async fn scan_bundle<D>(
                         Some((note, payment_address, memo_bytes)) => {
                             // Mark this transaction as an outgoing transaction, so we can grab all outgoing metadata
                             *is_outgoing_transaction = true;
-                            let address = payment_address.b32encode_for_network(config.chain);
+                            let address = payment_address.b32encode_for_network(&config.chain);
 
                             // Check if this is change, and if it also doesn't have a memo, don't add
                             // to the outgoing metadata.

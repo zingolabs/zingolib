@@ -17,7 +17,6 @@ use std::{
     time::SystemTime,
 };
 use tokio::sync::RwLock;
-use zcash_address::unified::Encoding;
 use zcash_client_backend::{
     address,
     encoding::{
@@ -395,11 +394,13 @@ impl LightWallet {
         self.blocks.read().await.iter().map(|b| b.clone()).collect()
     }
 
-    pub fn note_address(hrp: &str, note: &SaplingNoteAndMetadata) -> Option<String> {
-        match note.extfvk.fvk.vk.to_payment_address(note.diversifier) {
-            Some(pa) => Some(encode_payment_address(hrp, &pa)),
-            None => None,
-        }
+    pub(crate) fn note_address<NnMd: NoteAndMetadata>(
+        network: &zingoconfig::Network,
+        note: &NnMd,
+    ) -> Option<String> {
+        note.fvk()
+            .diversified_address(*note.diversifier())
+            .map(|address| traits::Recipient::b32encode_for_network(&address, network))
     }
 
     pub async fn set_download_memo(&self, value: MemoDownloadOption) {
@@ -561,9 +562,7 @@ impl LightWallet {
                 (&wk.key).try_into().ok() == Some(fvk.clone())
             },
             OrchardKey::new_imported_osk,
-            |address: zcash_address::unified::Address| {
-                address.encode(&self.config.chain.to_zcash_address_network())
-            },
+            |address: address::UnifiedAddress| address.encode(&self.config.chain),
         )
         .await
     }
@@ -807,7 +806,7 @@ impl LightWallet {
                                 use self::traits::Recipient as _;
                                 let diversified_address =
                                     &nd.fvk().diversified_address(*nd.diversifier()).unwrap();
-                                *a == diversified_address.b32encode_for_network(self.config.chain)
+                                *a == diversified_address.b32encode_for_network(&self.config.chain)
                             }
                             None => true,
                         }),

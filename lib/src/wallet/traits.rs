@@ -195,7 +195,7 @@ impl<Auth> Spend for Action<Auth> {
 pub(crate) trait Recipient {
     type Diversifier;
     fn diversifier(&self) -> Self::Diversifier;
-    fn b32encode_for_network(&self, chain: Network) -> String;
+    fn b32encode_for_network(&self, chain: &Network) -> String;
 }
 
 impl Recipient for OrchardAddress {
@@ -205,7 +205,7 @@ impl Recipient for OrchardAddress {
         OrchardAddress::diversifier(&self)
     }
 
-    fn b32encode_for_network(&self, chain: Network) -> String {
+    fn b32encode_for_network(&self, chain: &Network) -> String {
         unified::Address::try_from_items(vec![Receiver::Orchard(self.to_raw_address_bytes())])
             .expect("Could not create UA from orchard address")
             .encode(&chain.address_network().unwrap())
@@ -219,7 +219,7 @@ impl Recipient for SaplingAddress {
         *SaplingAddress::diversifier(&self)
     }
 
-    fn b32encode_for_network(&self, chain: Network) -> String {
+    fn b32encode_for_network(&self, chain: &Network) -> String {
         encode_payment_address(chain.hrp_sapling_payment_address(), self)
     }
 }
@@ -328,8 +328,10 @@ pub(crate) trait NoteAndMetadata: Sized {
         is_change: bool,
         have_spending_key: bool,
     ) -> Self;
+    fn is_change(&self) -> bool;
     fn fvk(&self) -> &Self::Fvk;
     fn diversifier(&self) -> &<<Self::Fvk as Diversifiable>::Note as NoteAndMetadata>::Diversifier;
+    fn memo(&self) -> &Option<Memo>;
     fn memo_mut(&mut self) -> &mut Option<Memo>;
     fn note(&self) -> &Self::Note;
     fn nullifier(&self) -> Self::Nullifier;
@@ -374,12 +376,20 @@ impl NoteAndMetadata for SaplingNoteAndMetadata {
         }
     }
 
+    fn is_change(&self) -> bool {
+        self.is_change
+    }
+
     fn fvk(&self) -> &Self::Fvk {
         &self.extfvk
     }
 
     fn diversifier(&self) -> &Self::Diversifier {
         &self.diversifier
+    }
+
+    fn memo(&self) -> &Option<Memo> {
+        &self.memo
     }
 
     fn memo_mut(&mut self) -> &mut Option<Memo> {
@@ -452,11 +462,18 @@ impl NoteAndMetadata for OrchardNoteAndMetadata {
         }
     }
 
+    fn is_change(&self) -> bool {
+        self.is_change
+    }
+
     fn fvk(&self) -> &Self::Fvk {
         &self.fvk
     }
     fn diversifier(&self) -> &Self::Diversifier {
         &self.diversifier
+    }
+    fn memo(&self) -> &Option<Memo> {
+        &self.memo
     }
     fn memo_mut(&mut self) -> &mut Option<Memo> {
         &mut self.memo
@@ -566,7 +583,7 @@ impl WalletKey for OrchardKey {
 
     type Ovk = OrchardOutgoingViewingKey;
 
-    type Address = zcash_address::unified::Address;
+    type Address = zcash_client_backend::address::UnifiedAddress;
 
     fn sk(&self) -> Option<Self::Sk> {
         (&self.key).try_into().ok()
