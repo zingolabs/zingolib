@@ -165,7 +165,7 @@ impl Keys {
 
     #[cfg(test)]
     pub fn new_empty() -> Self {
-        let config = ZingoConfig::create_unconnected(Network::FakeMainnet, None);
+        let config = ZingoConfig::create_unconnected(zingoconfig::Network::FakeMainnet, None);
         Self {
             config,
             encrypted: false,
