@@ -830,7 +830,7 @@ impl WalletTxns {
                 // again after this.
                 // This is likely to happen if the previous wallet wasn't synced properly or was aborted in the middle of a sync,
                 // and has some dangling witnesses
-                *n.witnesses() = witnesses;
+                *n.witnesses_mut() = witnesses;
             }
         }
     }

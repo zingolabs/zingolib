@@ -635,8 +635,6 @@ impl BlockAndWitnessData {
                         if let Some(node) = Node::from_commitment(&co.cmu().unwrap().into()).into()
                         {
                             w.append(node).unwrap();
-                        } else {
-                            eprintln!("Bad node hash")
                         }
                     }
                 }
