@@ -2,9 +2,8 @@ use crate::wallet::{
     data::OutgoingTxMetadata,
     keys::{Keys, ToBase58Check},
     traits::{
-        self as zingo_traits, Bundle as _, DomainWalletExt, NoteAndMetadata as _, Recipient as _,
-        ShieldedOutputExt as _, Spend as _, ToBytes as _, UnspentFromWalletTxns as _,
-        WalletKey as _,
+        self as zingo_traits, Bundle as _, DomainWalletExt, NoteAndMetadata as _, Nullifier as _,
+        Recipient as _, ShieldedOutputExt as _, Spend as _, ToBytes as _, WalletKey as _,
     },
     transactions::WalletTxns,
 };

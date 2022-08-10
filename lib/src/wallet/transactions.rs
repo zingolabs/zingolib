@@ -25,8 +25,11 @@ use zcash_primitives::{
 use zingoconfig::{Network, MAX_REORG};
 
 use super::{
-    data::{OutgoingTxMetadata, Utxo, WalletNullifier, WalletTx, WitnessCache},
-    traits::{DomainWalletExt, FromBytes, NoteAndMetadata, Recipient},
+    data::{
+        OrchardNoteAndMetadata, OutgoingTxMetadata, SaplingNoteAndMetadata, Utxo, WalletNullifier,
+        WalletTx, WitnessCache,
+    },
+    traits::{DomainWalletExt, FromBytes, NoteAndMetadata, Nullifier, Recipient},
 };
 
 /// List of all transactions in a wallet.
@@ -486,8 +489,41 @@ impl WalletTxns {
         value: u64,
         source_txid: TxId,
     ) {
-        // Record this Tx as having spent some funds
+        match nullifier {
+            WalletNullifier::Orchard(nullifier) => self
+                .add_new_spent_internal::<OrchardNoteAndMetadata>(
+                    txid,
+                    height,
+                    unconfirmed,
+                    timestamp,
+                    nullifier,
+                    value,
+                    source_txid,
+                ),
+            WalletNullifier::Sapling(nullifier) => self
+                .add_new_spent_internal::<SaplingNoteAndMetadata>(
+                    txid,
+                    height,
+                    unconfirmed,
+                    timestamp,
+                    nullifier,
+                    value,
+                    source_txid,
+                ),
+        }
+    }
 
+    fn add_new_spent_internal<NnMd: NoteAndMetadata>(
+        &mut self,
+        txid: TxId,
+        height: BlockHeight,
+        unconfirmed: bool,
+        timestamp: u32,
+        nullifier: NnMd::Nullifier,
+        value: u64,
+        source_txid: TxId,
+    ) {
+        // Record this Tx as having spent some funds
         let wtx = self.get_or_create_transaction_metadata(
             &txid,
             BlockHeight::from(height),
@@ -497,66 +533,31 @@ impl WalletTxns {
 
         // Mark the height correctly, in case this was previously a mempool or unconfirmed tx.
         wtx.block = height;
-        // Todo: DRY code
-        match nullifier {
-            WalletNullifier::Sapling(nullifier) => {
-                if wtx
-                    .spent_sapling_nullifiers
-                    .iter()
-                    .find(|nf| **nf == nullifier)
-                    .is_none()
-                {
-                    wtx.add_spent_nullifier(WalletNullifier::Sapling(nullifier), value)
-                }
+        if NnMd::Nullifier::get_nullifiers_spent_in_transaction(wtx)
+            .iter()
+            .find(|nf| **nf == nullifier)
+            .is_none()
+        {
+            wtx.add_spent_nullifier(nullifier.to_wallet_nullifier(), value)
+        }
 
-                // Since this Txid has spent some funds, output notes in this Tx that are sent to us are actually change.
-                self.check_notes_mark_change(&txid);
+        // Since this Txid has spent some funds, output notes in this Tx that are sent to us are actually change.
+        self.check_notes_mark_change(&txid);
 
-                // Mark the source note as spent
-                if !unconfirmed {
-                    let wtx = self
-                        .current
-                        .get_mut(&source_txid)
-                        .expect("Txid should be present");
+        // Mark the source note as spent
+        if !unconfirmed {
+            let wtx = self
+                .current
+                .get_mut(&source_txid)
+                .expect("Txid should be present");
 
-                    wtx.sapling_notes
-                        .iter_mut()
-                        .find(|n| n.nullifier == nullifier)
-                        .map(|nd| {
-                            // Record the spent height
-                            nd.spent = Some((txid, height.into()));
-                        });
-                }
-            }
-            WalletNullifier::Orchard(nullifier) => {
-                if wtx
-                    .spent_orchard_nullifiers
-                    .iter()
-                    .find(|nf| **nf == nullifier)
-                    .is_none()
-                {
-                    wtx.add_spent_nullifier(WalletNullifier::Orchard(nullifier), value)
-                }
-
-                // Since this Txid has spent some funds, output notes in this Tx that are sent to us are actually change.
-                self.check_notes_mark_change(&txid);
-
-                // Mark the source note's nullifier as spent
-                if !unconfirmed {
-                    let wtx = self
-                        .current
-                        .get_mut(&source_txid)
-                        .expect("Txid should be present");
-
-                    wtx.orchard_notes
-                        .iter_mut()
-                        .find(|n| n.nullifier == nullifier)
-                        .map(|nd| {
-                            // Record the spent height
-                            nd.spent = Some((txid, height.into()));
-                        });
-                }
-            }
+            NnMd::wallet_transaction_notes_mut(wtx)
+                .iter_mut()
+                .find(|n| n.nullifier() == nullifier)
+                .map(|nd| {
+                    // Record the spent height
+                    *nd.spent_mut() = Some((txid, height.into()));
+                });
         }
     }
 

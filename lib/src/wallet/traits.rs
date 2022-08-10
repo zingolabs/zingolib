@@ -193,7 +193,7 @@ impl FromCommitment for MerkleHashOrchard {
 
 /// The component that transfers value.  In the common case, from one output to another.
 pub(crate) trait Spend {
-    type Nullifier: PartialEq + FromBytes<32> + UnspentFromWalletTxns;
+    type Nullifier: Nullifier;
     fn nullifier(&self) -> &Self::Nullifier;
     fn wallet_nullifier(_: &Self::Nullifier) -> WalletNullifier;
 }
@@ -338,28 +338,43 @@ impl<P: Parameters> Bundle<OrchardDomain, P> for OrchardBundle<OrchardAuthorized
 }
 
 /// TODO: Documentation neeeeeds help!!!!  XXXX
-pub(crate) trait UnspentFromWalletTxns
-where
-    Self: Sized,
-{
+pub(crate) trait Nullifier: PartialEq + Copy + Sized + ToBytes<32> + FromBytes<32> {
     fn get_nullifiers_of_unspent_notes_from_wallet(
         transactions: &WalletTxns,
     ) -> Vec<(Self, u64, TxId)>;
+    fn get_nullifiers_spent_in_transaction(transaction: &WalletTx) -> &Vec<Self>;
+    fn to_wallet_nullifier(&self) -> WalletNullifier;
 }
 
-impl UnspentFromWalletTxns for SaplingNullifier {
+impl Nullifier for SaplingNullifier {
     fn get_nullifiers_of_unspent_notes_from_wallet(
         transactions: &WalletTxns,
     ) -> Vec<(Self, u64, TxId)> {
         transactions.get_nullifiers_of_unspent_sapling_notes()
     }
+
+    fn get_nullifiers_spent_in_transaction(transaction: &WalletTx) -> &Vec<Self> {
+        &transaction.spent_sapling_nullifiers
+    }
+
+    fn to_wallet_nullifier(&self) -> WalletNullifier {
+        WalletNullifier::Sapling(*self)
+    }
 }
 
-impl UnspentFromWalletTxns for OrchardNullifier {
+impl Nullifier for OrchardNullifier {
     fn get_nullifiers_of_unspent_notes_from_wallet(
         transactions: &WalletTxns,
     ) -> Vec<(Self, u64, TxId)> {
         transactions.get_nullifiers_of_unspent_orchard_notes()
+    }
+
+    fn get_nullifiers_spent_in_transaction(transaction: &WalletTx) -> &Vec<Self> {
+        &transaction.spent_orchard_nullifiers
+    }
+
+    fn to_wallet_nullifier(&self) -> WalletNullifier {
+        WalletNullifier::Orchard(*self)
     }
 }
 
@@ -368,7 +383,7 @@ pub(crate) trait NoteAndMetadata: Sized {
     type Diversifier: Copy + FromBytes<11> + ToBytes<11>;
     type Note: PartialEq + ReadableWriteable<(Self::Fvk, Self::Diversifier)>;
     type Node: Hashable + FromCommitment;
-    type Nullifier: PartialEq + ToBytes<32> + FromBytes<32> + UnspentFromWalletTxns;
+    type Nullifier: Nullifier;
     const GET_NOTE_WITNESSES: fn(
         &WalletTxns,
         &TxId,
@@ -401,6 +416,7 @@ pub(crate) trait NoteAndMetadata: Sized {
     fn nullifier(&self) -> Self::Nullifier;
     fn value(note: &Self::Note) -> u64;
     fn spent(&self) -> &Option<(TxId, u32)>;
+    fn spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
     fn unconfirmed_spent(&self) -> &Option<(TxId, u32)>;
     fn witnesses(&self) -> &WitnessCache<Self::Node>;
     fn witnesses_mut(&mut self) -> &mut WitnessCache<Self::Node>;
@@ -489,6 +505,10 @@ impl NoteAndMetadata for SaplingNoteAndMetadata {
 
     fn spent(&self) -> &Option<(TxId, u32)> {
         &self.spent
+    }
+
+    fn spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
+        &mut self.spent
     }
 
     fn unconfirmed_spent(&self) -> &Option<(TxId, u32)> {
@@ -592,6 +612,10 @@ impl NoteAndMetadata for OrchardNoteAndMetadata {
 
     fn spent(&self) -> &Option<(TxId, u32)> {
         &self.spent
+    }
+
+    fn spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
+        &mut self.spent
     }
 
     fn unconfirmed_spent(&self) -> &Option<(TxId, u32)> {
