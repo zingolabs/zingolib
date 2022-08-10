@@ -612,7 +612,6 @@ impl LightClient {
             });
         }
 
-        // TODO:  Think about exposing an interface that references the Orchard Pool.
         object! {
             "sapling_balance"                 => self.wallet.sapling_balance(None).await,
             "verified_sapling_balance"        => self.wallet.verified_sapling_balance(None).await,

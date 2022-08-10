@@ -1,5 +1,4 @@
-use crate::wallet::data::WitnessCache;
-use crate::wallet::traits::FromCommitment;
+use crate::wallet::traits::{DomainWalletExt, NoteAndMetadata};
 use crate::wallet::MemoDownloadOption;
 use crate::wallet::{
     data::{WalletNullifier, WalletTx},
@@ -9,13 +8,14 @@ use std::sync::Arc;
 
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use orchard::note_encryption::OrchardDomain;
 use tokio::join;
 use tokio::sync::oneshot;
 use tokio::sync::{mpsc::unbounded_channel, RwLock};
 use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle};
 
 use zcash_primitives::consensus::BlockHeight;
-use zcash_primitives::merkle_tree::Hashable;
+use zcash_primitives::sapling::note_encryption::SaplingDomain;
 use zcash_primitives::transaction::TxId;
 
 use super::syncdata::BlazeSyncData;
@@ -47,43 +47,40 @@ impl UpdateNotes {
     ) {
         match nullifier {
             WalletNullifier::Sapling(n) => {
-                Self::update_witnesses_inner(
+                Self::update_witnesses_inner::<SaplingDomain<zingoconfig::Network>>(
                     bsync_data,
                     wallet_txns,
                     txid,
                     n,
                     output_num,
-                    WalletTxns::get_sapling_note_witness,
-                    WalletTxns::set_sapling_note_witnesses,
                 )
                 .await
             }
             WalletNullifier::Orchard(n) => {
-                Self::update_witnesses_inner(
+                Self::update_witnesses_inner::<OrchardDomain>(
                     bsync_data,
                     wallet_txns,
                     txid,
                     n,
                     output_num,
-                    WalletTxns::get_orchard_note_witness,
-                    WalletTxns::set_orchard_note_witnesses,
                 )
                 .await
             }
         }
     }
 
-    async fn update_witnesses_inner<T, N: Hashable + FromCommitment>(
+    async fn update_witnesses_inner<D: DomainWalletExt<zingoconfig::Network>>(
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         wallet_txns: Arc<RwLock<WalletTxns>>,
         txid: TxId,
-        nullifier: T,
+        nullifier: <D::WalletNote as NoteAndMetadata>::Nullifier,
         output_num: Option<u32>,
-        witness_getter: impl Fn(&WalletTxns, &TxId, &T) -> Option<(WitnessCache<N>, BlockHeight)>,
-        witness_setter: impl Fn(&mut WalletTxns, &TxId, &T, WitnessCache<N>),
-    ) {
+    ) where
+        D::Note: PartialEq,
+        D::Recipient: crate::wallet::traits::Recipient,
+    {
         // Get the data first, so we don't hold on to the lock
-        let wtn = witness_getter(&*wallet_txns.read().await, &txid, &nullifier);
+        let wtn = D::WalletNote::GET_NOTE_WITNESSES(&*wallet_txns.read().await, &txid, &nullifier);
 
         if let Some((witnesses, created_height)) = wtn {
             if witnesses.len() == 0 {
@@ -97,7 +94,7 @@ impl UpdateNotes {
                     .read()
                     .await
                     .block_data
-                    .update_witness_after_pos(&created_height, &txid, output_num, witnesses)
+                    .update_witness_after_pos::<D>(&created_height, &txid, output_num, witnesses)
                     .await
             } else {
                 // If the output_num was not present, then this is an existing note, and it needs
@@ -112,8 +109,8 @@ impl UpdateNotes {
 
             //info!("Finished updating witnesses for {}", txid);
 
-            witness_setter(
-                &mut *wallet_txns.write().await,
+            D::WalletNote::SET_NOTE_WITNESSES(
+                &mut *(*wallet_txns).write().await,
                 &txid,
                 &nullifier,
                 witnesses,

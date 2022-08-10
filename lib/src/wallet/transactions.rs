@@ -307,7 +307,7 @@ impl WalletTxns {
             .collect()
     }
 
-    pub(crate) fn get_sapling_note_witness(
+    pub(crate) fn get_sapling_note_witnesses(
         &self,
         txid: &TxId,
         nullifier: &SaplingNullifier,
@@ -320,7 +320,7 @@ impl WalletTxns {
         })?
     }
 
-    pub(crate) fn get_orchard_note_witness(
+    pub(crate) fn get_orchard_note_witnesses(
         &self,
         txid: &TxId,
         nullifier: &OrchardNullifier,

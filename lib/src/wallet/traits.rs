@@ -8,6 +8,7 @@ use super::{
     keys::{orchard::OrchardKey, sapling::SaplingKey, Keys},
     transactions::WalletTxns,
 };
+use crate::compact_formats::{vec_to_array, CompactOrchardAction, CompactSaplingOutput, CompactTx};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use nonempty::NonEmpty;
 use orchard::{
@@ -252,6 +253,30 @@ impl Recipient for SaplingAddress {
     }
 }
 
+pub(crate) trait CompactOutput: Sized {
+    fn from_compact_transaction(compact_transaction: &CompactTx) -> &Vec<Self>;
+    fn cmstar(&self) -> &[u8; 32];
+}
+
+impl CompactOutput for CompactSaplingOutput {
+    fn from_compact_transaction(compact_transaction: &CompactTx) -> &Vec<CompactSaplingOutput> {
+        &compact_transaction.outputs
+    }
+
+    fn cmstar(&self) -> &[u8; 32] {
+        vec_to_array(&self.cmu)
+    }
+}
+
+impl CompactOutput for CompactOrchardAction {
+    fn from_compact_transaction(compact_transaction: &CompactTx) -> &Vec<CompactOrchardAction> {
+        &compact_transaction.actions
+    }
+    fn cmstar(&self) -> &[u8; 32] {
+        vec_to_array(&self.cmx)
+    }
+}
+
 /// A set of transmission abstractions within a transaction, that are specific to a particular
 /// domain. In the Orchard Domain bundles comprise Actions each of which contains
 /// both a Spend and an Output (though either or both may be dummies). Sapling transmissions,
@@ -342,8 +367,19 @@ pub(crate) trait NoteAndMetadata: Sized {
     type Fvk: Clone + Diversifiable + ReadableWriteable<()>;
     type Diversifier: Copy + FromBytes<11> + ToBytes<11>;
     type Note: PartialEq + ReadableWriteable<(Self::Fvk, Self::Diversifier)>;
-    type Node: Hashable;
+    type Node: Hashable + FromCommitment;
     type Nullifier: PartialEq + ToBytes<32> + FromBytes<32> + UnspentFromWalletTxns;
+    const GET_NOTE_WITNESSES: fn(
+        &WalletTxns,
+        &TxId,
+        &Self::Nullifier,
+    ) -> Option<(WitnessCache<Self::Node>, BlockHeight)>;
+    const SET_NOTE_WITNESSES: fn(
+        &mut WalletTxns,
+        &TxId,
+        &Self::Nullifier,
+        WitnessCache<Self::Node>,
+    );
     fn from_parts(
         extfvk: Self::Fvk,
         diversifier: Self::Diversifier,
@@ -379,6 +415,19 @@ impl NoteAndMetadata for SaplingNoteAndMetadata {
     type Note = SaplingNote;
     type Node = SaplingNode;
     type Nullifier = SaplingNullifier;
+
+    const GET_NOTE_WITNESSES: fn(
+        &WalletTxns,
+        &TxId,
+        &Self::Nullifier,
+    ) -> Option<(WitnessCache<Self::Node>, BlockHeight)> = WalletTxns::get_sapling_note_witnesses;
+
+    const SET_NOTE_WITNESSES: fn(
+        &mut WalletTxns,
+        &TxId,
+        &Self::Nullifier,
+        WitnessCache<Self::Node>,
+    ) = WalletTxns::set_sapling_note_witnesses;
 
     fn from_parts(
         extfvk: SaplingExtendedFullViewingKey,
@@ -474,6 +523,19 @@ impl NoteAndMetadata for OrchardNoteAndMetadata {
     type Node = MerkleHashOrchard;
     type Nullifier = OrchardNullifier;
 
+    const GET_NOTE_WITNESSES: fn(
+        &WalletTxns,
+        &TxId,
+        &Self::Nullifier,
+    ) -> Option<(WitnessCache<Self::Node>, BlockHeight)> = WalletTxns::get_orchard_note_witnesses;
+
+    const SET_NOTE_WITNESSES: fn(
+        &mut WalletTxns,
+        &TxId,
+        &Self::Nullifier,
+        WitnessCache<Self::Node>,
+    ) = WalletTxns::set_orchard_note_witnesses;
+
     fn from_parts(
         fvk: Self::Fvk,
         diversifier: Self::Diversifier,
@@ -503,11 +565,9 @@ impl NoteAndMetadata for OrchardNoteAndMetadata {
     fn is_change(&self) -> bool {
         self.is_change
     }
-
     fn fvk(&self) -> &Self::Fvk {
         &self.fvk
     }
-
     fn diversifier(&self) -> &Self::Diversifier {
         &self.diversifier
     }
@@ -517,9 +577,11 @@ impl NoteAndMetadata for OrchardNoteAndMetadata {
     fn memo_mut(&mut self) -> &mut Option<Memo> {
         &mut self.memo
     }
+
     fn note(&self) -> &Self::Note {
         &self.note
     }
+
     fn nullifier(&self) -> Self::Nullifier {
         self.nullifier
     }
@@ -670,6 +732,7 @@ where
     Self::Note: PartialEq,
 {
     type Fvk: Clone;
+    type CompactOutput: CompactOutput;
     type WalletNote: NoteAndMetadata<
         Fvk = Self::Fvk,
         Note = <Self as Domain>::Note,
@@ -690,6 +753,8 @@ where
 impl<P: Parameters> DomainWalletExt<P> for SaplingDomain<P> {
     type Fvk = SaplingExtendedFullViewingKey;
 
+    type CompactOutput = CompactSaplingOutput;
+
     type WalletNote = SaplingNoteAndMetadata;
 
     type Key = SaplingKey;
@@ -703,6 +768,8 @@ impl<P: Parameters> DomainWalletExt<P> for SaplingDomain<P> {
 
 impl<P: Parameters> DomainWalletExt<P> for OrchardDomain {
     type Fvk = OrchardFullViewingKey;
+
+    type CompactOutput = CompactOrchardAction;
 
     type WalletNote = OrchardNoteAndMetadata;
 

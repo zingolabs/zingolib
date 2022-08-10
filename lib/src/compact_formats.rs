@@ -141,7 +141,7 @@ impl TryFrom<&CompactOrchardAction> for orchard::note_encryption::CompactAction 
     }
 }
 
-fn vec_to_array<'a, T, const N: usize>(vec: &'a Vec<T>) -> &'a [T; N] {
+pub(crate) fn vec_to_array<'a, T, const N: usize>(vec: &'a Vec<T>) -> &'a [T; N] {
     <&[T; N]>::try_from(&vec[..]).unwrap()
     //todo: This unwrap is dangerous. Find better solution
 }

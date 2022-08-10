@@ -4,7 +4,7 @@ use crate::{
     lightclient::checkpoints::get_all_main_checkpoints,
     wallet::{
         data::{BlockData, WalletNullifier, WalletTx, WitnessCache},
-        traits::FromCommitment,
+        traits::{DomainWalletExt, FromCommitment, NoteAndMetadata},
         transactions::WalletTxns,
     },
 };
@@ -656,13 +656,18 @@ impl BlockAndWitnessData {
         return WitnessCache::new(fsb.into_vec(), top_block);
     }
 
-    pub(crate) async fn update_witness_after_pos<Node: Hashable + FromCommitment>(
+    pub(crate) async fn update_witness_after_pos<D: DomainWalletExt<zingoconfig::Network>>(
         &self,
         height: &BlockHeight,
         transaction_id: &TxId,
         output_num: u32,
-        witnesses: WitnessCache<Node>,
-    ) -> WitnessCache<Node> {
+        witnesses: WitnessCache<<D::WalletNote as NoteAndMetadata>::Node>,
+    ) -> WitnessCache<<D::WalletNote as NoteAndMetadata>::Node>
+    where
+        D::Recipient: crate::wallet::traits::Recipient,
+        D::Note: PartialEq,
+        <D::WalletNote as NoteAndMetadata>::Node: FromCommitment,
+    {
         let height = u64::from(*height);
         self.wait_for_block(height).await;
 
@@ -684,34 +689,17 @@ impl BlockAndWitnessData {
                 {
                     transaction_id_found = true;
                 }
-                //Todo! Genericize this, instead of always searching both sapling and orchard outputs/actions
-                for j in 0..compact_transaction.outputs.len() as u32 {
+                use crate::wallet::traits::CompactOutput as _;
+                let outputs = D::CompactOutput::from_compact_transaction(compact_transaction);
+                for j in 0..outputs.len() as u32 {
                     // If we've already passed the transaction id and output_num, stream the results
                     if transaction_id_found && output_found {
-                        let compact_output = compact_transaction.outputs.get(j as usize).unwrap();
-                        let node =
-                            Node::from_commitment(&compact_output.cmu().unwrap().into()).unwrap();
+                        let compact_output = outputs.get(j as usize).unwrap();
+                        let node = <D::WalletNote as NoteAndMetadata>::Node::from_commitment(
+                            &compact_output.cmstar(),
+                        )
+                        .unwrap();
                         w.append(node).unwrap();
-                    }
-
-                    // Mark as found if we reach the transaction id and output_num. Starting with the next output,
-                    // we'll stream all the data to the requester
-                    if !output_found && transaction_id_found && j == output_num {
-                        output_found = true;
-                    }
-                }
-                for j in 0..compact_transaction.actions.len() as u32 {
-                    // If we've already passed the transaction id and output_num, stream the results
-                    if transaction_id_found && output_found {
-                        let compact_action = compact_transaction.actions.get(j as usize).unwrap();
-                        if let Some(node) =
-                            Node::from_commitment(compact_action.cmx.as_slice().try_into().unwrap())
-                                .into()
-                        {
-                            w.append(node).unwrap();
-                        } else {
-                            eprintln!("Invalid node hash {:?}", compact_action.cmx);
-                        }
                     }
 
                     // Mark as found if we reach the transaction id and output_num. Starting with the next output,
