@@ -30,7 +30,7 @@ use crate::lightclient::test_server::{
     clean_shutdown, create_test_server, mine_pending_blocks, mine_random_blocks,
 };
 use crate::lightclient::LightClient;
-use crate::wallet::data::{SaplingNoteAndMetadata, WalletTx};
+use crate::wallet::data::{SaplingNoteAndMetadata, TransactionMetadata};
 use crate::wallet::traits::ReadableWriteable;
 
 use super::checkpoints;
@@ -1199,7 +1199,7 @@ async fn aborted_resync() {
             .read()
             .await
             .current
-            .get(&WalletTx::new_txid(
+            .get(&TransactionMetadata::new_txid(
                 &hex::decode(sent_transaction_id.clone())
                     .unwrap()
                     .into_iter()
@@ -1231,7 +1231,7 @@ async fn aborted_resync() {
             .read()
             .await
             .current
-            .get(&WalletTx::new_txid(
+            .get(&TransactionMetadata::new_txid(
                 &hex::decode(sent_transaction_id)
                     .unwrap()
                     .into_iter()

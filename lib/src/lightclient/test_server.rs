@@ -7,7 +7,7 @@ use crate::compact_formats::{
     LightdInfo, PingResponse, RawTransaction, SendResponse, TransparentAddressBlockFilter,
     TreeState, TxFilter,
 };
-use crate::wallet::data::WalletTx;
+use crate::wallet::data::TransactionMetadata;
 use futures::{FutureExt, Stream};
 use rand::rngs::OsRng;
 use rand::Rng;
@@ -249,7 +249,8 @@ pub async fn mine_pending_blocks(
     for (t, _h, taddrs) in v.iter_mut() {
         if let Some(t_bundle) = t.transparent_bundle() {
             for vin in &t_bundle.vin {
-                let prev_transaction_id = WalletTx::new_txid(&vin.prevout.hash().to_vec());
+                let prev_transaction_id =
+                    TransactionMetadata::new_txid(&vin.prevout.hash().to_vec());
                 if let Some(wtx) = lc
                     .wallet
                     .transactions
@@ -443,7 +444,7 @@ impl CompactTxStreamer for TestGRPCService {
     ) -> Result<Response<RawTransaction>, Status> {
         Self::wait_random().await;
 
-        let transaction_id = WalletTx::new_txid(&request.into_inner().hash);
+        let transaction_id = TransactionMetadata::new_txid(&request.into_inner().hash);
         match self.data.read().await.transactions.get(&transaction_id) {
             Some((_taddrs, transaction)) => Ok(Response::new(transaction.clone())),
             None => Err(Status::invalid_argument(format!(

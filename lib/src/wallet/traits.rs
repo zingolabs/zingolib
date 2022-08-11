@@ -3,10 +3,11 @@ use std::io::{self, Read, Write};
 
 use super::{
     data::{
-        OrchardNoteAndMetadata, SaplingNoteAndMetadata, WalletNullifier, WalletTx, WitnessCache,
+        OrchardNoteAndMetadata, SaplingNoteAndMetadata, TransactionMetadata, WalletNullifier,
+        WitnessCache,
     },
     keys::{orchard::OrchardKey, sapling::SaplingKey, Keys},
-    transactions::WalletTxns,
+    transactions::TransactionMetadataSet,
 };
 use crate::compact_formats::{vec_to_array, CompactOrchardAction, CompactSaplingOutput, CompactTx};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -339,22 +340,24 @@ impl<P: Parameters> Bundle<OrchardDomain, P> for OrchardBundle<OrchardAuthorized
 
 /// TODO: Documentation neeeeeds help!!!!  XXXX
 pub(crate) trait Nullifier: PartialEq + Copy + Sized + ToBytes<32> + FromBytes<32> {
-    fn get_nullifiers_of_unspent_notes_from_wallet(
-        transactions: &WalletTxns,
+    fn get_nullifiers_of_unspent_notes_from_transaction_set(
+        transaction_metadata_set: &TransactionMetadataSet,
     ) -> Vec<(Self, u64, TxId)>;
-    fn get_nullifiers_spent_in_transaction(transaction: &WalletTx) -> &Vec<Self>;
+    fn get_nullifiers_spent_in_transaction(transaction: &TransactionMetadata) -> &Vec<Self>;
     fn to_wallet_nullifier(&self) -> WalletNullifier;
 }
 
 impl Nullifier for SaplingNullifier {
-    fn get_nullifiers_of_unspent_notes_from_wallet(
-        transactions: &WalletTxns,
+    fn get_nullifiers_of_unspent_notes_from_transaction_set(
+        transaction_metadata_set: &TransactionMetadataSet,
     ) -> Vec<(Self, u64, TxId)> {
-        transactions.get_nullifiers_of_unspent_sapling_notes()
+        transaction_metadata_set.get_nullifiers_of_unspent_sapling_notes()
     }
 
-    fn get_nullifiers_spent_in_transaction(transaction: &WalletTx) -> &Vec<Self> {
-        &transaction.spent_sapling_nullifiers
+    fn get_nullifiers_spent_in_transaction(
+        transaction_metadata_set: &TransactionMetadata,
+    ) -> &Vec<Self> {
+        &transaction_metadata_set.spent_sapling_nullifiers
     }
 
     fn to_wallet_nullifier(&self) -> WalletNullifier {
@@ -363,13 +366,13 @@ impl Nullifier for SaplingNullifier {
 }
 
 impl Nullifier for OrchardNullifier {
-    fn get_nullifiers_of_unspent_notes_from_wallet(
-        transactions: &WalletTxns,
+    fn get_nullifiers_of_unspent_notes_from_transaction_set(
+        transactions: &TransactionMetadataSet,
     ) -> Vec<(Self, u64, TxId)> {
         transactions.get_nullifiers_of_unspent_orchard_notes()
     }
 
-    fn get_nullifiers_spent_in_transaction(transaction: &WalletTx) -> &Vec<Self> {
+    fn get_nullifiers_spent_in_transaction(transaction: &TransactionMetadata) -> &Vec<Self> {
         &transaction.spent_orchard_nullifiers
     }
 
@@ -385,12 +388,12 @@ pub(crate) trait NoteAndMetadata: Sized {
     type Node: Hashable + FromCommitment;
     type Nullifier: Nullifier;
     const GET_NOTE_WITNESSES: fn(
-        &WalletTxns,
+        &TransactionMetadataSet,
         &TxId,
         &Self::Nullifier,
     ) -> Option<(WitnessCache<Self::Node>, BlockHeight)>;
     const SET_NOTE_WITNESSES: fn(
-        &mut WalletTxns,
+        &mut TransactionMetadataSet,
         &TxId,
         &Self::Nullifier,
         WitnessCache<Self::Node>,
@@ -421,8 +424,10 @@ pub(crate) trait NoteAndMetadata: Sized {
     fn witnesses(&self) -> &WitnessCache<Self::Node>;
     fn witnesses_mut(&mut self) -> &mut WitnessCache<Self::Node>;
     fn have_spending_key(&self) -> bool;
-    fn wallet_transaction_notes_mut(wallet_transaction: &mut WalletTx) -> &mut Vec<Self>;
-    fn wallet_transaction_notes(wallet_transaction: &WalletTx) -> &Vec<Self>;
+    fn transaction_metadata_notes(wallet_transaction: &TransactionMetadata) -> &Vec<Self>;
+    fn transaction_metadata_notes_mut(
+        wallet_transaction: &mut TransactionMetadata,
+    ) -> &mut Vec<Self>;
 }
 
 impl NoteAndMetadata for SaplingNoteAndMetadata {
@@ -433,17 +438,18 @@ impl NoteAndMetadata for SaplingNoteAndMetadata {
     type Nullifier = SaplingNullifier;
 
     const GET_NOTE_WITNESSES: fn(
-        &WalletTxns,
+        &TransactionMetadataSet,
         &TxId,
         &Self::Nullifier,
-    ) -> Option<(WitnessCache<Self::Node>, BlockHeight)> = WalletTxns::get_sapling_note_witnesses;
+    ) -> Option<(WitnessCache<Self::Node>, BlockHeight)> =
+        TransactionMetadataSet::get_sapling_note_witnesses;
 
     const SET_NOTE_WITNESSES: fn(
-        &mut WalletTxns,
+        &mut TransactionMetadataSet,
         &TxId,
         &Self::Nullifier,
         WitnessCache<Self::Node>,
-    ) = WalletTxns::set_sapling_note_witnesses;
+    ) = TransactionMetadataSet::set_sapling_note_witnesses;
 
     fn from_parts(
         extfvk: SaplingExtendedFullViewingKey,
@@ -527,12 +533,14 @@ impl NoteAndMetadata for SaplingNoteAndMetadata {
         self.have_spending_key
     }
 
-    fn wallet_transaction_notes_mut(wallet_transaction: &mut WalletTx) -> &mut Vec<Self> {
-        &mut wallet_transaction.sapling_notes
+    fn transaction_metadata_notes(wallet_transaction: &TransactionMetadata) -> &Vec<Self> {
+        &wallet_transaction.sapling_notes
     }
 
-    fn wallet_transaction_notes(wallet_transaction: &WalletTx) -> &Vec<Self> {
-        &wallet_transaction.sapling_notes
+    fn transaction_metadata_notes_mut(
+        wallet_transaction: &mut TransactionMetadata,
+    ) -> &mut Vec<Self> {
+        &mut wallet_transaction.sapling_notes
     }
 }
 
@@ -544,17 +552,18 @@ impl NoteAndMetadata for OrchardNoteAndMetadata {
     type Nullifier = OrchardNullifier;
 
     const GET_NOTE_WITNESSES: fn(
-        &WalletTxns,
+        &TransactionMetadataSet,
         &TxId,
         &Self::Nullifier,
-    ) -> Option<(WitnessCache<Self::Node>, BlockHeight)> = WalletTxns::get_orchard_note_witnesses;
+    ) -> Option<(WitnessCache<Self::Node>, BlockHeight)> =
+        TransactionMetadataSet::get_orchard_note_witnesses;
 
     const SET_NOTE_WITNESSES: fn(
-        &mut WalletTxns,
+        &mut TransactionMetadataSet,
         &TxId,
         &Self::Nullifier,
         WitnessCache<Self::Node>,
-    ) = WalletTxns::set_orchard_note_witnesses;
+    ) = TransactionMetadataSet::set_orchard_note_witnesses;
 
     fn from_parts(
         fvk: Self::Fvk,
@@ -634,12 +643,14 @@ impl NoteAndMetadata for OrchardNoteAndMetadata {
         self.have_spending_key
     }
 
-    fn wallet_transaction_notes_mut(wallet_transaction: &mut WalletTx) -> &mut Vec<Self> {
-        &mut wallet_transaction.orchard_notes
+    fn transaction_metadata_notes(wallet_transaction: &TransactionMetadata) -> &Vec<Self> {
+        &wallet_transaction.orchard_notes
     }
 
-    fn wallet_transaction_notes(wallet_transaction: &WalletTx) -> &Vec<Self> {
-        &wallet_transaction.orchard_notes
+    fn transaction_metadata_notes_mut(
+        wallet_transaction: &mut TransactionMetadata,
+    ) -> &mut Vec<Self> {
+        &mut wallet_transaction.orchard_notes
     }
 }
 
@@ -771,7 +782,7 @@ where
 
     type Bundle: Bundle<Self, P>;
 
-    fn wallet_notes_mut(_: &mut WalletTx) -> &mut Vec<Self::WalletNote>;
+    fn wallet_notes_mut(_: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote>;
 }
 
 impl<P: Parameters> DomainWalletExt<P> for SaplingDomain<P> {
@@ -785,7 +796,7 @@ impl<P: Parameters> DomainWalletExt<P> for SaplingDomain<P> {
 
     type Bundle = SaplingBundle<SaplingAuthorized>;
 
-    fn wallet_notes_mut(transaction: &mut WalletTx) -> &mut Vec<Self::WalletNote> {
+    fn wallet_notes_mut(transaction: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote> {
         &mut transaction.sapling_notes
     }
 }
@@ -801,7 +812,7 @@ impl<P: Parameters> DomainWalletExt<P> for OrchardDomain {
 
     type Bundle = OrchardBundle<OrchardAuthorized, Amount>;
 
-    fn wallet_notes_mut(transaction: &mut WalletTx) -> &mut Vec<Self::WalletNote> {
+    fn wallet_notes_mut(transaction: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote> {
         &mut transaction.orchard_notes
     }
 }

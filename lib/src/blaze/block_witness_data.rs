@@ -3,9 +3,9 @@ use crate::{
     grpc_connector::GrpcConnector,
     lightclient::checkpoints::get_all_main_checkpoints,
     wallet::{
-        data::{BlockData, WalletNullifier, WalletTx, WitnessCache},
+        data::{BlockData, TransactionMetadata, WalletNullifier, WitnessCache},
         traits::{DomainWalletExt, FromCommitment, NoteAndMetadata},
-        transactions::WalletTxns,
+        transactions::TransactionMetadataSet,
     },
 };
 use orchard::tree::MerkleHashOrchard;
@@ -297,7 +297,7 @@ impl BlockAndWitnessData {
     pub async fn invalidate_block(
         reorg_height: u64,
         existing_blocks: Arc<RwLock<Vec<BlockData>>>,
-        wallet_transactions: Arc<RwLock<WalletTxns>>,
+        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
     ) {
         // First, pop the first block (which is the top block) in the existing_blocks.
         let top_wallet_block = existing_blocks.write().await.drain(0..1).next().unwrap();
@@ -306,7 +306,7 @@ impl BlockAndWitnessData {
         }
 
         // Remove all wallet transactions at the height
-        wallet_transactions
+        transaction_metadata_set
             .write()
             .await
             .remove_txns_at_height(reorg_height);
@@ -317,7 +317,7 @@ impl BlockAndWitnessData {
         &self,
         start_block: u64,
         end_block: u64,
-        wallet_transactions: Arc<RwLock<WalletTxns>>,
+        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
         reorg_transmitter: UnboundedSender<Option<u64>>,
     ) -> (
         JoinHandle<Result<u64, String>>,
@@ -382,7 +382,7 @@ impl BlockAndWitnessData {
                         Self::invalidate_block(
                             reorg_height,
                             existing_blocks.clone(),
-                            wallet_transactions.clone(),
+                            transaction_metadata_set.clone(),
                         )
                         .await;
                         last_block_expecting = reorg_height;
@@ -685,7 +685,7 @@ impl BlockAndWitnessData {
             let cb = &blocks.get(pos as usize).unwrap().cb();
             for compact_transaction in &cb.vtx {
                 if !transaction_id_found
-                    && WalletTx::new_txid(&compact_transaction.hash) == *transaction_id
+                    && TransactionMetadata::new_txid(&compact_transaction.hash) == *transaction_id
                 {
                     transaction_id_found = true;
                 }
@@ -727,7 +727,7 @@ mod test {
     use std::sync::Arc;
 
     use crate::blaze::sync_status::SyncStatus;
-    use crate::wallet::transactions::WalletTxns;
+    use crate::wallet::transactions::TransactionMetadataSet;
     use crate::{
         blaze::test_utils::{FakeCompactBlock, FakeCompactBlockList},
         wallet::data::BlockData,
@@ -800,7 +800,7 @@ mod test {
             .start(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(WalletTxns::new())),
+                Arc::new(RwLock::new(TransactionMetadataSet::new())),
                 reorg_transmitter,
             )
             .await;
@@ -851,7 +851,7 @@ mod test {
             .start(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(WalletTxns::new())),
+                Arc::new(RwLock::new(TransactionMetadataSet::new())),
                 reorg_transmitter,
             )
             .await;
@@ -947,7 +947,7 @@ mod test {
             .start(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(WalletTxns::new())),
+                Arc::new(RwLock::new(TransactionMetadataSet::new())),
                 reorg_transmitter,
             )
             .await;

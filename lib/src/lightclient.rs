@@ -8,7 +8,7 @@ use crate::{
     compact_formats::RawTransaction,
     grpc_connector::GrpcConnector,
     wallet::{
-        data::{OrchardNoteAndMetadata, SaplingNoteAndMetadata, WalletTx},
+        data::{OrchardNoteAndMetadata, SaplingNoteAndMetadata, TransactionMetadata},
         keys::Keys,
         message::Message,
         now,
@@ -1033,19 +1033,19 @@ impl LightClient {
 
     fn add_wallet_notes_in_transaction_to_list<'a, 'b>(
         &'a self,
-        wallet_transaction: &'b WalletTx,
+        transaction_metadata: &'b TransactionMetadata,
         include_memo_hex: &'b bool,
     ) -> impl Iterator<Item = JsonValue> + 'b
     where
         'a: 'b,
     {
         self.add_wallet_notes_in_transaction_to_list_inner::<'a, 'b, SaplingNoteAndMetadata>(
-            wallet_transaction,
+            transaction_metadata,
             include_memo_hex,
         )
         .chain(
             self.add_wallet_notes_in_transaction_to_list_inner::<'a, 'b, OrchardNoteAndMetadata>(
-                wallet_transaction,
+                transaction_metadata,
                 include_memo_hex,
             ),
         )
@@ -1053,23 +1053,23 @@ impl LightClient {
 
     fn add_wallet_notes_in_transaction_to_list_inner<'a, 'b, NnMd>(
         &'a self,
-        wallet_transaction: &'b WalletTx,
+        transaction_metadata: &'b TransactionMetadata,
         include_memo_hex: &'b bool,
     ) -> impl Iterator<Item = JsonValue> + 'b
     where
         'a: 'b,
         NnMd: NoteAndMetadata + 'b,
     {
-        NnMd::wallet_transaction_notes(&wallet_transaction).iter().filter(|nd| !nd.is_change()).enumerate().map(|(i, nd)| {
-                    let block_height: u32 = wallet_transaction.block.into();
+        NnMd::transaction_metadata_notes(&transaction_metadata).iter().filter(|nd| !nd.is_change()).enumerate().map(|(i, nd)| {
+                    let block_height: u32 = transaction_metadata.block.into();
                     let mut o = object! {
                         "block_height" => block_height,
-                        "unconfirmed" => wallet_transaction.unconfirmed,
-                        "datetime"     => wallet_transaction.datetime,
+                        "unconfirmed" => transaction_metadata.unconfirmed,
+                        "datetime"     => transaction_metadata.datetime,
                         "position"     => i,
-                        "txid"         => format!("{}", wallet_transaction.txid),
+                        "txid"         => format!("{}", transaction_metadata.txid),
                         "amount"       => NnMd::value(nd.note()) as i64,
-                        "zec_price"    => wallet_transaction.zec_price.map(|p| (p * 100.0).round() / 100.0),
+                        "zec_price"    => transaction_metadata.zec_price.map(|p| (p * 100.0).round() / 100.0),
                         "address"      => LightWallet::note_address(&self.config.chain, nd),
                         "memo"         => LightWallet::memo_str(nd.memo().clone())
                     };
@@ -1353,7 +1353,7 @@ impl LightClient {
                                 now() as u32,
                                 keys.clone(),
                                 wallet_transactions.clone(),
-                                WalletTx::get_price(now(), &price),
+                                TransactionMetadata::get_price(now(), &price),
                             )
                             .await;
                         }

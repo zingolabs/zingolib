@@ -1,8 +1,8 @@
 use crate::wallet::traits::{DomainWalletExt, NoteAndMetadata};
 use crate::wallet::MemoDownloadOption;
 use crate::wallet::{
-    data::{WalletNullifier, WalletTx},
-    transactions::WalletTxns,
+    data::{TransactionMetadata, WalletNullifier},
+    transactions::TransactionMetadataSet,
 };
 use std::sync::Arc;
 
@@ -30,17 +30,19 @@ use super::syncdata::BlazeSyncData;
 /// If No, then:
 ///    - Update the witness for this note
 pub struct UpdateNotes {
-    wallet_txns: Arc<RwLock<WalletTxns>>,
+    transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
 }
 
 impl UpdateNotes {
-    pub fn new(wallet_txns: Arc<RwLock<WalletTxns>>) -> Self {
-        Self { wallet_txns }
+    pub fn new(wallet_txns: Arc<RwLock<TransactionMetadataSet>>) -> Self {
+        Self {
+            transaction_metadata_set: wallet_txns,
+        }
     }
 
     async fn update_witnesses(
         bsync_data: Arc<RwLock<BlazeSyncData>>,
-        wallet_txns: Arc<RwLock<WalletTxns>>,
+        wallet_txns: Arc<RwLock<TransactionMetadataSet>>,
         txid: TxId,
         nullifier: WalletNullifier,
         output_num: Option<u32>,
@@ -71,7 +73,7 @@ impl UpdateNotes {
 
     async fn update_witnesses_inner<D: DomainWalletExt<zingoconfig::Network>>(
         bsync_data: Arc<RwLock<BlazeSyncData>>,
-        wallet_txns: Arc<RwLock<WalletTxns>>,
+        wallet_txns: Arc<RwLock<TransactionMetadataSet>>,
         txid: TxId,
         nullifier: <D::WalletNote as NoteAndMetadata>::Nullifier,
         output_num: Option<u32>,
@@ -135,7 +137,7 @@ impl UpdateNotes {
             unbounded_channel::<(TxId, WalletNullifier, BlockHeight, Option<u32>)>();
 
         // Aside from the incoming Txns, we also need to update the notes that are currently in the wallet
-        let wallet_transactions = self.wallet_txns.clone();
+        let wallet_transactions = self.transaction_metadata_set.clone();
         let transmitter_existing = transmitter.clone();
 
         let (blocks_done_transmitter, blocks_done_receiver) = oneshot::channel::<u64>();
@@ -166,7 +168,7 @@ impl UpdateNotes {
             Ok(())
         });
 
-        let wallet_transactions = self.wallet_txns.clone();
+        let wallet_transactions = self.transaction_metadata_set.clone();
         let h1 = tokio::spawn(async move {
             let mut workers = FuturesUnordered::new();
 
@@ -193,7 +195,8 @@ impl UpdateNotes {
                             .get_compact_transaction_for_nullifier_at_height(&nf, spent_height)
                             .await;
 
-                        let spent_transaction_id = WalletTx::new_txid(&compact_transaction.hash);
+                        let spent_transaction_id =
+                            TransactionMetadata::new_txid(&compact_transaction.hash);
                         let spent_at_height = BlockHeight::from_u32(spent_height as u32);
 
                         // Mark this note as being spent

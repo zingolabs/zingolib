@@ -1,9 +1,9 @@
 use crate::{
     compact_formats::CompactBlock,
     wallet::{
-        data::{WalletNullifier, WalletTx},
+        data::{TransactionMetadata, WalletNullifier},
         keys::Keys,
-        transactions::WalletTxns,
+        transactions::TransactionMetadataSet,
         MemoDownloadOption,
     },
 };
@@ -31,14 +31,17 @@ use super::syncdata::BlazeSyncData;
 
 pub struct TrialDecryptions {
     keys: Arc<RwLock<Keys>>,
-    wallet_transactions: Arc<RwLock<WalletTxns>>,
+    transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
 }
 
 impl TrialDecryptions {
-    pub fn new(keys: Arc<RwLock<Keys>>, wallet_transactions: Arc<RwLock<WalletTxns>>) -> Self {
+    pub fn new(
+        keys: Arc<RwLock<Keys>>,
+        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+    ) -> Self {
         Self {
             keys,
-            wallet_transactions,
+            transaction_metadata_set,
         }
     }
 
@@ -62,7 +65,7 @@ impl TrialDecryptions {
         let (transmitter, mut receiver) = unbounded_channel::<CompactBlock>();
 
         let keys = self.keys.clone();
-        let wallet_transactions = self.wallet_transactions.clone();
+        let transaction_metadata_set = self.transaction_metadata_set.clone();
 
         let h = tokio::spawn(async move {
             let mut workers = FuturesUnordered::new();
@@ -85,7 +88,7 @@ impl TrialDecryptions {
                     let keys = keys.clone();
                     let sapling_ivks = sapling_ivks.clone();
                     let orchard_ivks = orchard_ivks.clone();
-                    let wallet_transactions = wallet_transactions.clone();
+                    let transaction_metadata_set = transaction_metadata_set.clone();
                     let bsync_data = bsync_data.clone();
                     let detected_transaction_id_sender = detected_transaction_id_sender.clone();
 
@@ -95,7 +98,7 @@ impl TrialDecryptions {
                         bsync_data,
                         sapling_ivks,
                         orchard_ivks,
-                        wallet_transactions,
+                        transaction_metadata_set,
                         detected_transaction_id_sender,
                         full_transaction_fetcher.clone(),
                     )));
@@ -108,7 +111,7 @@ impl TrialDecryptions {
                 bsync_data,
                 sapling_ivks,
                 orchard_ivks,
-                wallet_transactions,
+                transaction_metadata_set,
                 detected_transaction_id_sender,
                 full_transaction_fetcher,
             )));
@@ -129,7 +132,7 @@ impl TrialDecryptions {
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         sapling_ivks: Arc<Vec<SaplingIvk>>,
         orchard_ivks: Arc<Vec<OrchardIvk>>,
-        wallet_transactions: Arc<RwLock<WalletTxns>>,
+        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
         detected_transaction_id_sender: UnboundedSender<(
             TxId,
             WalletNullifier,
@@ -151,7 +154,7 @@ impl TrialDecryptions {
             let height = BlockHeight::from_u32(cb.height as u32);
 
             for (transaction_num, compact_transaction) in cb.vtx.iter().enumerate() {
-                let mut wallet_transaction = false;
+                let mut transaction_metadata = false;
 
                 for (output_num, co) in compact_transaction.outputs.iter().enumerate() {
                     if let Err(_) = co.epk() {
@@ -162,11 +165,11 @@ impl TrialDecryptions {
                         if let Some((note, to)) =
                             try_sapling_compact_note_decryption(&config.chain, height, &ivk, co)
                         {
-                            wallet_transaction = true;
+                            transaction_metadata = true;
 
                             let keys = keys.clone();
                             let bsync_data = bsync_data.clone();
-                            let wallet_transactions = wallet_transactions.clone();
+                            let transaction_metadata_set = transaction_metadata_set.clone();
                             let detected_transaction_id_sender =
                                 detected_transaction_id_sender.clone();
                             let timestamp = cb.time as u64;
@@ -192,10 +195,11 @@ impl TrialDecryptions {
                                     )
                                     .await?;
 
-                                let transaction_id = WalletTx::new_txid(&compact_transaction.hash);
+                                let transaction_id =
+                                    TransactionMetadata::new_txid(&compact_transaction.hash);
                                 let nullifier = note.nf(&extfvk.fvk.vk, witness.position() as u64);
 
-                                wallet_transactions.write().await.add_new_sapling_note(
+                                transaction_metadata_set.write().await.add_new_sapling_note(
                                     transaction_id.clone(),
                                     height,
                                     false,
@@ -243,7 +247,7 @@ impl TrialDecryptions {
                         {
                             let keys = keys.clone();
                             let bsync_data = bsync_data.clone();
-                            let wallet_transactions = wallet_transactions.clone();
+                            let transaction_metadata_set = transaction_metadata_set.clone();
                             let detected_transaction_id_sender =
                                 detected_transaction_id_sender.clone();
                             let timestamp = cb.time as u64;
@@ -269,11 +273,11 @@ impl TrialDecryptions {
                                     )
                                     .await?;
 
-                                let transaction_id = WalletTx::new_txid(&compact_transaction.hash);
+                                let transaction_id = TransactionMetadata::new_txid(&compact_transaction.hash);
 
                                 if let Ok(ref fvk) = &fvk {
                                     let nullifier = note.nullifier(fvk);
-                                    wallet_transactions.write().await.add_new_orchard_note(
+                                    transaction_metadata_set.write().await.add_new_orchard_note(
                                         transaction_id.clone(),
                                         height,
                                         false,
@@ -311,8 +315,8 @@ impl TrialDecryptions {
                 }
 
                 // Check option to see if we are fetching all transactions.
-                if !wallet_transaction && download_memos == MemoDownloadOption::AllMemos {
-                    let transaction_id = WalletTx::new_txid(&compact_transaction.hash);
+                if !transaction_metadata && download_memos == MemoDownloadOption::AllMemos {
+                    let transaction_id = TransactionMetadata::new_txid(&compact_transaction.hash);
                     let (transmitter, receiver) = oneshot::channel();
                     full_transaction_fetcher
                         .send((transaction_id, transmitter))

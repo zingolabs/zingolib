@@ -26,8 +26,8 @@ use zingoconfig::{Network, MAX_REORG};
 
 use super::{
     data::{
-        OrchardNoteAndMetadata, OutgoingTxMetadata, SaplingNoteAndMetadata, Utxo, WalletNullifier,
-        WalletTx, WitnessCache,
+        OrchardNoteAndMetadata, OutgoingTxMetadata, SaplingNoteAndMetadata, TransactionMetadata,
+        Utxo, WalletNullifier, WitnessCache,
     },
     traits::{DomainWalletExt, FromBytes, NoteAndMetadata, Nullifier, Recipient},
 };
@@ -35,12 +35,12 @@ use super::{
 /// List of all transactions in a wallet.
 /// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
 /// this struct are threadsafe/locked properly.
-pub struct WalletTxns {
-    pub(crate) current: HashMap<TxId, WalletTx>,
+pub struct TransactionMetadataSet {
+    pub(crate) current: HashMap<TxId, TransactionMetadata>,
     pub(crate) last_txid: Option<TxId>,
 }
 
-impl WalletTxns {
+impl TransactionMetadataSet {
     pub fn serialized_version() -> u64 {
         return 21;
     }
@@ -57,10 +57,15 @@ impl WalletTxns {
             let mut txid_bytes = [0u8; 32];
             r.read_exact(&mut txid_bytes)?;
 
-            Ok((TxId::from_bytes(txid_bytes), WalletTx::read(r).unwrap()))
+            Ok((
+                TxId::from_bytes(txid_bytes),
+                TransactionMetadata::read(r).unwrap(),
+            ))
         })?;
 
-        let txs = txs_tuples.into_iter().collect::<HashMap<TxId, WalletTx>>();
+        let txs = txs_tuples
+            .into_iter()
+            .collect::<HashMap<TxId, TransactionMetadata>>();
 
         Ok(Self {
             current: txs,
@@ -81,10 +86,15 @@ impl WalletTxns {
             let mut txid_bytes = [0u8; 32];
             r.read_exact(&mut txid_bytes)?;
 
-            Ok((TxId::from_bytes(txid_bytes), WalletTx::read(r).unwrap()))
+            Ok((
+                TxId::from_bytes(txid_bytes),
+                TransactionMetadata::read(r).unwrap(),
+            ))
         })?;
 
-        let current = txs_tuples.into_iter().collect::<HashMap<TxId, WalletTx>>();
+        let current = txs_tuples
+            .into_iter()
+            .collect::<HashMap<TxId, TransactionMetadata>>();
         let last_txid = current
             .values()
             .fold(None, |c: Option<(TxId, BlockHeight)>, w| {
@@ -100,9 +110,9 @@ impl WalletTxns {
             Vector::read(&mut reader, |r| {
                 let mut txid_bytes = [0u8; 32];
                 r.read_exact(&mut txid_bytes)?;
-                let wtx = WalletTx::read(r)?;
+                let transaction_metadata = TransactionMetadata::read(r)?;
 
-                Ok((TxId::from_bytes(txid_bytes), wtx))
+                Ok((TxId::from_bytes(txid_bytes), transaction_metadata))
             })?
             .into_iter()
             .collect()
@@ -120,10 +130,13 @@ impl WalletTxns {
         // The hashmap, write as a set of tuples. Store them sorted so that wallets are
         // deterministically saved
         {
-            let mut txns = self.current.iter().collect::<Vec<(&TxId, &WalletTx)>>();
-            txns.sort_by(|a, b| a.0.partial_cmp(b.0).unwrap());
+            let mut transaction_metadatas = self
+                .current
+                .iter()
+                .collect::<Vec<(&TxId, &TransactionMetadata)>>();
+            transaction_metadatas.sort_by(|a, b| a.0.partial_cmp(b.0).unwrap());
 
-            Vector::write(&mut writer, &txns, |w, (k, v)| {
+            Vector::write(&mut writer, &transaction_metadatas, |w, (k, v)| {
                 w.write_all(k.as_ref())?;
                 v.write(w)
             })?;
@@ -276,7 +289,7 @@ impl WalletTxns {
     pub fn total_funds_spent_in(&self, txid: &TxId) -> u64 {
         self.current
             .get(&txid)
-            .map(WalletTx::total_value_spent)
+            .map(TransactionMetadata::total_value_spent)
             .unwrap_or(0)
     }
 
@@ -454,11 +467,11 @@ impl WalletTxns {
         height: BlockHeight,
         unconfirmed: bool,
         datetime: u64,
-    ) -> &'_ mut WalletTx {
+    ) -> &'_ mut TransactionMetadata {
         if !self.current.contains_key(&txid) {
             self.current.insert(
                 txid.clone(),
-                WalletTx::new(BlockHeight::from(height), datetime, &txid, unconfirmed),
+                TransactionMetadata::new(BlockHeight::from(height), datetime, &txid, unconfirmed),
             );
             self.last_txid = Some(txid.clone());
         }
@@ -551,7 +564,7 @@ impl WalletTxns {
                 .get_mut(&source_txid)
                 .expect("Txid should be present");
 
-            NnMd::wallet_transaction_notes_mut(wtx)
+            NnMd::transaction_metadata_notes_mut(wtx)
                 .iter_mut()
                 .find(|n| n.nullifier() == nullifier)
                 .map(|nd| {
@@ -697,7 +710,7 @@ impl WalletTxns {
                     false,
                 );
 
-                D::WalletNote::wallet_transaction_notes_mut(wtx).push(nd);
+                D::WalletNote::transaction_metadata_notes_mut(wtx).push(nd);
             }
             Some(_) => {}
         }
@@ -780,7 +793,7 @@ impl WalletTxns {
         address_diversifier: AddressDiversifier,
     ) where
         NullifierFromNote: Fn(&NoteData::Note, &NoteData::Fvk, u64) -> NoteData::Nullifier,
-        WtxNotes: Fn(&mut WalletTx) -> &mut Vec<NoteData>,
+        WtxNotes: Fn(&mut TransactionMetadata) -> &mut Vec<NoteData>,
         AddressDiversifier: Fn(&Address) -> NoteData::Diversifier,
     {
         // Check if this is a change note
@@ -844,7 +857,7 @@ impl WalletTxns {
         memo: Memo,
     ) {
         self.current.get_mut(txid).map(|wtx| {
-            Nd::wallet_transaction_notes_mut(wtx)
+            Nd::transaction_metadata_notes_mut(wtx)
                 .iter_mut()
                 .find(|n| n.note() == &note)
                 .map(|n| *n.memo_mut() = Some(memo));

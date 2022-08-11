@@ -1,5 +1,5 @@
 use crate::compact_formats::TreeState;
-use crate::wallet::data::WalletTx;
+use crate::wallet::data::TransactionMetadata;
 use crate::wallet::keys::transparent::TransparentKey;
 use crate::{
     blaze::fetch_full_transaction::FetchFullTxns,
@@ -42,7 +42,7 @@ use self::{
     data::{BlockData, OrchardNoteAndMetadata, SaplingNoteAndMetadata, Utxo, WalletZecPriceInfo},
     keys::{orchard::OrchardKey, Keys},
     message::Message,
-    transactions::WalletTxns,
+    transactions::TransactionMetadataSet,
 };
 use zingoconfig::ZingoConfig;
 
@@ -152,7 +152,7 @@ pub struct LightWallet {
     pub(super) blocks: Arc<RwLock<Vec<BlockData>>>,
 
     // List of all transactions
-    pub(crate) transactions: Arc<RwLock<WalletTxns>>,
+    pub(crate) transactions: Arc<RwLock<TransactionMetadataSet>>,
 
     // Wallet options
     pub(crate) wallet_options: Arc<RwLock<WalletOptions>>,
@@ -187,7 +187,7 @@ impl LightWallet {
 
         Ok(Self {
             keys: Arc::new(RwLock::new(keys)),
-            transactions: Arc::new(RwLock::new(WalletTxns::new())),
+            transactions: Arc::new(RwLock::new(TransactionMetadataSet::new())),
             blocks: Arc::new(RwLock::new(vec![])),
             wallet_options: Arc::new(RwLock::new(WalletOptions::default())),
             config,
@@ -224,9 +224,9 @@ impl LightWallet {
         }
 
         let mut transactions = if version <= 14 {
-            WalletTxns::read_old(&mut reader)
+            TransactionMetadataSet::read_old(&mut reader)
         } else {
-            WalletTxns::read(&mut reader)
+            TransactionMetadataSet::read(&mut reader)
         }?;
 
         let chain_name = utils::read_string(&mut reader)?;
@@ -379,7 +379,7 @@ impl LightWallet {
         self.keys.clone()
     }
 
-    pub fn transactions(&self) -> Arc<RwLock<WalletTxns>> {
+    pub fn transactions(&self) -> Arc<RwLock<TransactionMetadataSet>> {
         self.transactions.clone()
     }
 
@@ -787,7 +787,7 @@ impl LightWallet {
     async fn shielded_balance<NnMd>(
         &self,
         addr: Option<String>,
-        filters: &[Box<dyn Fn(&&NnMd, &WalletTx) -> bool + '_>],
+        filters: &[Box<dyn Fn(&&NnMd, &TransactionMetadata) -> bool + '_>],
     ) -> u64
     where
         NnMd: traits::NoteAndMetadata,
@@ -799,7 +799,7 @@ impl LightWallet {
             .values()
             .map(|transaction| {
                 let mut filtered_notes: Box<dyn Iterator<Item = &NnMd>> = Box::new(
-                    NnMd::wallet_transaction_notes(transaction)
+                    NnMd::transaction_metadata_notes(transaction)
                         .iter()
                         .filter(|nd| match addr.as_ref() {
                             Some(a) => {
@@ -857,12 +857,12 @@ impl LightWallet {
 
         let keys = self.keys.read().await;
 
-        let filters: &[Box<dyn Fn(&&SaplingNoteAndMetadata, &WalletTx) -> bool>] = &[
+        let filters: &[Box<dyn Fn(&&SaplingNoteAndMetadata, &TransactionMetadata) -> bool>] = &[
             Box::new(|nd: &&SaplingNoteAndMetadata, _| {
                 // Check to see if we have this note's spending key.
                 keys.have_sapling_spending_key(&nd.extfvk)
             }),
-            Box::new(|_, transaction: &WalletTx| {
+            Box::new(|_, transaction: &TransactionMetadata| {
                 transaction.block > BlockHeight::from_u32(anchor_height)
             }),
         ];
@@ -874,12 +874,12 @@ impl LightWallet {
 
         let keys = self.keys.read().await;
 
-        let filters: &[Box<dyn Fn(&&OrchardNoteAndMetadata, &WalletTx) -> bool>] = &[
+        let filters: &[Box<dyn Fn(&&OrchardNoteAndMetadata, &TransactionMetadata) -> bool>] = &[
             Box::new(|nd, _| {
                 // Check to see if we have this note's spending key.
                 keys.have_orchard_spending_key(&nd.fvk.to_ivk(orchard::keys::Scope::External))
             }),
-            Box::new(|_, transaction: &WalletTx| {
+            Box::new(|_, transaction: &TransactionMetadata| {
                 transaction.block > BlockHeight::from_u32(anchor_height)
             }),
         ];
@@ -896,16 +896,17 @@ impl LightWallet {
 
     async fn verified_balance<NnMd: NoteAndMetadata>(&self, addr: Option<String>) -> u64 {
         let anchor_height = self.get_anchor_height().await;
-        let filters: &[Box<dyn Fn(&&NnMd, &WalletTx) -> bool>] = &[Box::new(|_, transaction| {
-            transaction.block <= BlockHeight::from_u32(anchor_height)
-        })];
+        let filters: &[Box<dyn Fn(&&NnMd, &TransactionMetadata) -> bool>] =
+            &[Box::new(|_, transaction| {
+                transaction.block <= BlockHeight::from_u32(anchor_height)
+            })];
         self.shielded_balance::<NnMd>(addr, filters).await
     }
 
     pub async fn spendable_sapling_balance(&self, addr: Option<String>) -> u64 {
         let anchor_height = self.get_anchor_height().await;
         let keys = self.keys.read().await;
-        let filters: &[Box<dyn Fn(&&SaplingNoteAndMetadata, &WalletTx) -> bool>] = &[
+        let filters: &[Box<dyn Fn(&&SaplingNoteAndMetadata, &TransactionMetadata) -> bool>] = &[
             Box::new(|_, transaction| transaction.block <= BlockHeight::from_u32(anchor_height)),
             Box::new(|nnmd, _| {
                 keys.have_sapling_spending_key(&nnmd.extfvk) && nnmd.witnesses.len() > 0
@@ -917,7 +918,7 @@ impl LightWallet {
     pub async fn spendable_orchard_balance(&self, addr: Option<String>) -> u64 {
         let anchor_height = self.get_anchor_height().await;
         let keys = self.keys.read().await;
-        let filters: &[Box<dyn Fn(&&OrchardNoteAndMetadata, &WalletTx) -> bool>] = &[
+        let filters: &[Box<dyn Fn(&&OrchardNoteAndMetadata, &TransactionMetadata) -> bool>] = &[
             Box::new(|_, transaction| transaction.block <= BlockHeight::from_u32(anchor_height)),
             Box::new(|nnmd, _| {
                 keys.have_orchard_spending_key(&nnmd.fvk.to_ivk(orchard::keys::Scope::External))
@@ -1465,7 +1466,7 @@ impl LightWallet {
                 now() as u32,
                 self.keys.clone(),
                 self.transactions.clone(),
-                WalletTx::get_price(now(), &price),
+                TransactionMetadata::get_price(now(), &price),
             )
             .await;
         }

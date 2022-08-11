@@ -464,7 +464,7 @@ impl OutgoingTxMetadata {
     }
 }
 
-pub struct WalletTx {
+pub struct TransactionMetadata {
     // Block in which this tx was included
     pub block: BlockHeight,
 
@@ -512,7 +512,7 @@ pub struct WalletTx {
     pub zec_price: Option<f64>,
 }
 
-impl WalletTx {
+impl TransactionMetadata {
     pub fn serialized_version() -> u64 {
         return 23;
     }
@@ -555,7 +555,7 @@ impl WalletTx {
         transaction_id: &TxId,
         unconfirmed: bool,
     ) -> Self {
-        WalletTx {
+        TransactionMetadata {
             block: height,
             unconfirmed,
             datetime,
