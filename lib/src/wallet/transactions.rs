@@ -6,8 +6,9 @@ use std::{
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use log::error;
 use orchard::{
-    keys::{Diversifier as OrchardDiversifier, FullViewingKey as OrchardFullViewingKey},
+    keys::FullViewingKey as OrchardFullViewingKey,
     note::{Note as OrchardNote, Nullifier as OrchardNullifier},
+    note_encryption::OrchardDomain,
     tree::MerkleHashOrchard,
 };
 use zcash_encoding::Vector;
@@ -16,7 +17,8 @@ use zcash_primitives::{
     memo::Memo,
     merkle_tree::IncrementalWitness,
     sapling::{
-        Node as SaplingNode, Note as SaplingNote, Nullifier as SaplingNullifier, PaymentAddress,
+        note_encryption::SaplingDomain, Node as SaplingNode, Note as SaplingNote,
+        Nullifier as SaplingNullifier, PaymentAddress,
     },
     transaction::{components::TxOut, TxId},
     zip32::ExtendedFullViewingKey,
@@ -728,7 +730,7 @@ impl TransactionMetadataSet {
         have_spending_key: bool,
         witness: IncrementalWitness<SaplingNode>,
     ) {
-        self.add_new_note(
+        self.add_new_note::<SaplingDomain<zingoconfig::Network>>(
             txid,
             height,
             unconfirmed,
@@ -738,9 +740,6 @@ impl TransactionMetadataSet {
             extfvk,
             have_spending_key,
             witness,
-            |n: &SaplingNote, fvk: &ExtendedFullViewingKey, pos| n.nf(&fvk.fvk.vk, pos),
-            |wtx| &mut wtx.sapling_notes,
-            |addr| *addr.diversifier(),
         )
     }
     pub fn add_new_orchard_note(
@@ -755,7 +754,7 @@ impl TransactionMetadataSet {
         have_spending_key: bool,
         witness: IncrementalWitness<MerkleHashOrchard>,
     ) {
-        self.add_new_note(
+        self.add_new_note::<OrchardDomain>(
             txid,
             height,
             unconfirmed,
@@ -765,36 +764,23 @@ impl TransactionMetadataSet {
             fvk,
             have_spending_key,
             witness,
-            |n: &OrchardNote, fvk: &OrchardFullViewingKey, _| n.nullifier(&fvk),
-            |wtx| &mut wtx.orchard_notes,
-            |addr| OrchardDiversifier::from_bytes(*addr.diversifier().as_array()),
         )
     }
 
-    fn add_new_note<
-        Address,
-        NullifierFromNote,
-        WtxNotes,
-        NoteData: super::traits::NoteAndMetadata,
-        AddressDiversifier,
-    >(
+    fn add_new_note<D: DomainWalletExt<zingoconfig::Network>>(
         &mut self,
         txid: TxId,
         height: BlockHeight,
         unconfirmed: bool,
         timestamp: u64,
-        note: NoteData::Note,
-        to: Address,
-        fvk: &NoteData::Fvk,
+        note: <D::WalletNote as NoteAndMetadata>::Note,
+        to: D::Recipient,
+        fvk: &<D::WalletNote as NoteAndMetadata>::Fvk,
         have_spending_key: bool,
-        witness: IncrementalWitness<NoteData::Node>,
-        nullifier_from_note: NullifierFromNote,
-        wtx_notes: WtxNotes,
-        address_diversifier: AddressDiversifier,
+        witness: IncrementalWitness<<D::WalletNote as NoteAndMetadata>::Node>,
     ) where
-        NullifierFromNote: Fn(&NoteData::Note, &NoteData::Fvk, u64) -> NoteData::Nullifier,
-        WtxNotes: Fn(&mut TransactionMetadata) -> &mut Vec<NoteData>,
-        AddressDiversifier: Fn(&Address) -> NoteData::Diversifier,
+        D::Note: PartialEq,
+        D::Recipient: Recipient,
     {
         // Check if this is a change note
         let is_change = self.total_funds_spent_in(&txid) > 0;
@@ -808,21 +794,25 @@ impl TransactionMetadataSet {
         // Update the block height, in case this was a mempool or unconfirmed tx.
         wtx.block = height;
 
-        let nullifier = nullifier_from_note(&note, &fvk, witness.position() as u64);
+        let nullifier = D::WalletNote::get_nullifier_from_note_fvk_and_witness_position(
+            &note,
+            &fvk,
+            witness.position() as u64,
+        );
         let witnesses = if have_spending_key {
             WitnessCache::new(vec![witness], u64::from(height))
         } else {
             WitnessCache::empty()
         };
 
-        match wtx_notes(wtx)
+        match D::WalletNote::transaction_metadata_notes_mut(wtx)
             .iter_mut()
             .find(|n| n.nullifier() == nullifier)
         {
             None => {
-                let nd = NoteData::from_parts(
+                let nd = D::WalletNote::from_parts(
                     fvk.clone(),
-                    address_diversifier(&to),
+                    D::Recipient::diversifier(&to),
                     note,
                     witnesses,
                     nullifier,
@@ -833,11 +823,12 @@ impl TransactionMetadataSet {
                     have_spending_key,
                 );
 
-                wtx_notes(wtx).push(nd);
+                D::WalletNote::transaction_metadata_notes_mut(wtx).push(nd);
 
                 // Also remove any pending notes.
                 use super::traits::ToBytes;
-                wtx_notes(wtx).retain(|n| n.nullifier().to_bytes() != [0u8; 32]);
+                D::WalletNote::transaction_metadata_notes_mut(wtx)
+                    .retain(|n| n.nullifier().to_bytes() != [0u8; 32]);
             }
             Some(n) => {
                 // If this note already exists, then just reset the witnesses, because we'll start scanning the witnesses

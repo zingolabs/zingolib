@@ -418,6 +418,11 @@ pub(crate) trait NoteAndMetadata: Sized {
     fn memo(&self) -> &Option<Memo>;
     fn memo_mut(&mut self) -> &mut Option<Memo>;
     fn note(&self) -> &Self::Note;
+    fn get_nullifier_from_note_fvk_and_witness_position(
+        note: &Self::Note,
+        fvk: &Self::Fvk,
+        position: u64,
+    ) -> Self::Nullifier;
     fn nullifier(&self) -> Self::Nullifier;
     fn value(note: &Self::Note) -> u64;
     fn spent(&self) -> &Option<(TxId, u32)>;
@@ -501,6 +506,14 @@ impl NoteAndMetadata for SaplingNoteAndMetadata {
 
     fn note(&self) -> &Self::Note {
         &self.note
+    }
+
+    fn get_nullifier_from_note_fvk_and_witness_position(
+        note: &Self::Note,
+        extfvk: &Self::Fvk,
+        position: u64,
+    ) -> Self::Nullifier {
+        note.nf(&extfvk.fvk.vk, position)
     }
 
     fn nullifier(&self) -> Self::Nullifier {
@@ -611,6 +624,14 @@ impl NoteAndMetadata for OrchardNoteAndMetadata {
 
     fn note(&self) -> &Self::Note {
         &self.note
+    }
+
+    fn get_nullifier_from_note_fvk_and_witness_position(
+        note: &Self::Note,
+        fvk: &Self::Fvk,
+        _position: u64,
+    ) -> Self::Nullifier {
+        note.nullifier(fvk)
     }
 
     fn nullifier(&self) -> Self::Nullifier {
@@ -766,7 +787,6 @@ where
     Self: Sized,
     Self::Note: PartialEq,
     Self::Recipient: Recipient,
-    Self::Note: PartialEq,
 {
     type Fvk: Clone;
     type CompactOutput: CompactOutput;
