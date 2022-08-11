@@ -9,7 +9,9 @@ use super::{
     keys::{orchard::OrchardKey, sapling::SaplingKey, Keys},
     transactions::TransactionMetadataSet,
 };
-use crate::compact_formats::{vec_to_array, CompactOrchardAction, CompactSaplingOutput, CompactTx};
+use crate::compact_formats::{
+    vec_to_array, CompactOrchardAction, CompactSaplingOutput, CompactTx, TreeState,
+};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use nonempty::NonEmpty;
 use orchard::{
@@ -783,6 +785,7 @@ where
     type Bundle: Bundle<Self, P>;
 
     fn wallet_notes_mut(_: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote>;
+    fn get_tree(tree_state: &TreeState) -> &String;
 }
 
 impl<P: Parameters> DomainWalletExt<P> for SaplingDomain<P> {
@@ -799,6 +802,10 @@ impl<P: Parameters> DomainWalletExt<P> for SaplingDomain<P> {
     fn wallet_notes_mut(transaction: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote> {
         &mut transaction.sapling_notes
     }
+
+    fn get_tree(tree_state: &TreeState) -> &String {
+        &tree_state.sapling_tree
+    }
 }
 
 impl<P: Parameters> DomainWalletExt<P> for OrchardDomain {
@@ -814,6 +821,10 @@ impl<P: Parameters> DomainWalletExt<P> for OrchardDomain {
 
     fn wallet_notes_mut(transaction: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote> {
         &mut transaction.orchard_notes
+    }
+
+    fn get_tree(tree_state: &TreeState) -> &String {
+        &tree_state.orchard_tree
     }
 }
 

@@ -8,8 +8,8 @@ use crate::{
         transactions::TransactionMetadataSet,
     },
 };
-use orchard::tree::MerkleHashOrchard;
-use zcash_note_encryption::{Domain, ShieldedOutput, COMPACT_NOTE_SIZE};
+use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
+use zcash_note_encryption::Domain;
 use zingoconfig::{ZingoConfig, MAX_REORG};
 
 use futures::future::join_all;
@@ -26,7 +26,7 @@ use tokio::{
 use zcash_primitives::{
     consensus::{BlockHeight, NetworkUpgrade, Parameters},
     merkle_tree::{CommitmentTree, Hashable, IncrementalWitness},
-    sapling::Node as SaplingNode,
+    sapling::{note_encryption::SaplingDomain, Node as SaplingNode},
     transaction::TxId,
 };
 
@@ -495,24 +495,20 @@ impl BlockAndWitnessData {
         }
     }
 
-    async fn get_note_witness<D, Output, TreeGetter, OutputsFromTransaction, Node>(
+    async fn get_note_witness<D>(
         &self,
         uri: Uri,
         height: BlockHeight,
         transaction_num: usize,
         output_num: usize,
-        tree_getter: TreeGetter,
-        outputs_from_transaction: OutputsFromTransaction,
         activation_height: u64,
-    ) -> Result<IncrementalWitness<Node>, String>
+    ) -> Result<IncrementalWitness<<D::WalletNote as NoteAndMetadata>::Node>, String>
     where
-        D: Domain,
-        Output: ShieldedOutput<D, COMPACT_NOTE_SIZE>,
-        Node: Hashable + FromCommitment,
+        D: DomainWalletExt<zingoconfig::Network>,
+        D::Note: PartialEq,
         D::ExtractedCommitmentBytes: Into<[u8; 32]>,
-        TreeGetter: Fn(&TreeState) -> &String,
-        OutputsFromTransaction: Fn(&CompactTx) -> &Vec<Output>,
         [u8; 32]: From<<D as Domain>::ExtractedCommitmentBytes>,
+        D::Recipient: crate::wallet::traits::Recipient,
     {
         // Get the previous block's height, because that block's sapling tree is the tree state at the start
         // of the requested block.
@@ -523,8 +519,10 @@ impl BlockAndWitnessData {
                 CommitmentTree::empty()
             } else {
                 let tree_state = GrpcConnector::get_sapling_tree(uri, prev_height).await?;
-                let tree = hex::decode(tree_getter(&tree_state)).unwrap();
-                self.verification_list.write().await.push(tree_state);
+                let tree = hex::decode(D::get_tree(&tree_state)).unwrap();
+                RwLock::write(&self.verification_list)
+                    .await
+                    .push(tree_state);
                 CommitmentTree::read(&tree[..]).map_err(|e| format!("{}", e))?
             };
 
@@ -534,7 +532,7 @@ impl BlockAndWitnessData {
                 self.wait_for_block(height).await;
 
                 {
-                    let mut blocks = self.blocks.write().await;
+                    let mut blocks = RwLock::write(&self.blocks).await;
 
                     let pos = blocks.first().unwrap().height - height;
                     let bd = blocks.get_mut(pos as usize).unwrap();
@@ -549,11 +547,14 @@ impl BlockAndWitnessData {
         // Go over all the outputs. Remember that all the numbers are inclusive, i.e., we have to scan upto and including
         // block_height, transaction_num and output_num
         for (t_num, compact_transaction) in cb.vtx.iter().enumerate() {
-            for (o_num, co) in outputs_from_transaction(compact_transaction)
+            use crate::wallet::traits::CompactOutput as _;
+            for (o_num, co) in D::CompactOutput::from_compact_transaction(compact_transaction)
                 .iter()
                 .enumerate()
             {
-                if let Some(node) = Node::from_commitment(&co.cmstar_bytes().into()).into() {
+                if let Some(node) =
+                    <D::WalletNote as NoteAndMetadata>::Node::from_commitment(&co.cmstar()).into()
+                {
                     tree.append(node).unwrap();
                     if t_num == transaction_num && o_num == output_num {
                         return Ok(IncrementalWitness::from_tree(&tree));
@@ -573,13 +574,11 @@ impl BlockAndWitnessData {
         transaction_num: usize,
         output_num: usize,
     ) -> Result<IncrementalWitness<SaplingNode>, String> {
-        self.get_note_witness(
+        self.get_note_witness::<SaplingDomain<zingoconfig::Network>>(
             uri,
             height,
             transaction_num,
             output_num,
-            |tree| &tree.sapling_tree,
-            |compact_transaction| &compact_transaction.outputs,
             self.sapling_activation_height,
         )
         .await
@@ -592,13 +591,11 @@ impl BlockAndWitnessData {
         transaction_num: usize,
         action_num: usize,
     ) -> Result<IncrementalWitness<MerkleHashOrchard>, String> {
-        self.get_note_witness(
+        self.get_note_witness::<OrchardDomain>(
             uri,
             height,
             transaction_num,
             action_num,
-            |tree| &tree.orchard_tree,
-            |compact_transaction| &compact_transaction.actions,
             self.orchard_activation_height,
         )
         .await

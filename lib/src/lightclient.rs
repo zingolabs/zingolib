@@ -1762,7 +1762,6 @@ impl LightClient {
                 .get(0)
                 .map(|s| s.clone()))
             .unwrap();
-        let branch_id = self.consensus_branch_id().await;
 
         let result = {
             let _lock = self.sync_lock.lock().await;
@@ -1772,7 +1771,6 @@ impl LightClient {
 
             self.wallet
                 .send_to_address(
-                    branch_id,
                     prover,
                     true,
                     vec![(&addr, tbal - fee, None)],
@@ -1786,19 +1784,8 @@ impl LightClient {
         result.map(|(transaction_id, _)| transaction_id)
     }
 
-    async fn consensus_branch_id(&self) -> u32 {
-        let height = self.wallet.last_scanned_height().await;
-
-        let branch: BranchId =
-            BranchId::for_height(&self.config.chain, BlockHeight::from_u32(height as u32));
-        let branch_id: u32 = u32::from(branch);
-
-        branch_id
-    }
-
     pub async fn do_send(&self, addrs: Vec<(&str, u64, Option<String>)>) -> Result<String, String> {
         // First, get the concensus branch ID
-        let branch_id = self.consensus_branch_id().await;
         info!("Creating transaction");
 
         let result = {
@@ -1808,7 +1795,7 @@ impl LightClient {
             let prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
 
             self.wallet
-                .send_to_address(branch_id, prover, false, addrs, |transaction_bytes| {
+                .send_to_address(prover, false, addrs, |transaction_bytes| {
                     GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
                 })
                 .await
@@ -1823,7 +1810,6 @@ impl LightClient {
         addrs: Vec<(&str, u64, Option<String>)>,
     ) -> Result<String, String> {
         // First, get the concensus branch ID
-        let branch_id = self.consensus_branch_id().await;
         info!("Creating transaction");
 
         let result = {
@@ -1831,7 +1817,7 @@ impl LightClient {
             let prover = crate::blaze::test_utils::FakeTransactionProver {};
 
             self.wallet
-                .send_to_address(branch_id, prover, false, addrs, |transaction_bytes| {
+                .send_to_address(prover, false, addrs, |transaction_bytes| {
                     GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
                 })
                 .await

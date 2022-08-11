@@ -1161,7 +1161,6 @@ impl LightWallet {
 
     pub async fn send_to_address<F, Fut, P: TxProver>(
         &self,
-        consensus_branch_id: u32,
         prover: P,
         transparent_only: bool,
         tos: Vec<(&str, u64, Option<String>)>,
@@ -1176,13 +1175,7 @@ impl LightWallet {
 
         // Call the internal function
         match self
-            .send_to_address_internal(
-                consensus_branch_id,
-                prover,
-                transparent_only,
-                tos,
-                broadcast_fn,
-            )
+            .send_to_address_internal(prover, transparent_only, tos, broadcast_fn)
             .await
         {
             Ok((transaction_id, raw_transaction)) => {
@@ -1198,7 +1191,6 @@ impl LightWallet {
 
     async fn send_to_address_internal<F, Fut, P: TxProver>(
         &self,
-        #[allow(unused_variables)] consensus_branch_id: u32,
         prover: P,
         transparent_only: bool,
         tos: Vec<(&str, u64, Option<String>)>,
