@@ -1322,44 +1322,48 @@ async fn aborted_resync() {
 #[tokio::test]
 async fn no_change() {
     for https in [true, false] {
-        let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(https).await;
-
-        ready_receiver.await.unwrap();
-
-        let lc = LightClient::test_new(&config, None, 0).await.unwrap();
-        let mut fcbl = FakeCompactBlockList::new(0);
-
-        // 1. Mine 10 blocks
-        mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
-        assert_eq!(lc.wallet.last_scanned_height().await, 10);
-
+        let TenBlockFCBLScenario {
+            data,
+            stop_transmitter,
+            test_server_handle,
+            lightclient,
+            mut fake_compactblock_list,
+            ..
+        } = setup_ten_block_fcbl_scenario(https).await;
         // 2. Send an incoming transaction to fill the wallet
-        let extfvk1 = lc.wallet.keys().read().await.get_all_sapling_extfvks()[0].clone();
+        let extfvk1 = lightclient
+            .wallet
+            .keys()
+            .read()
+            .await
+            .get_all_sapling_extfvks()[0]
+            .clone();
         let zvalue = 100_000;
-        let (_ztransaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, zvalue);
-        mine_pending_blocks(&mut fcbl, &data, &lc).await;
-        mine_random_blocks(&mut fcbl, &data, &lc, 5).await;
+        let (_ztransaction, _height, _) =
+            fake_compactblock_list.add_transaction_paying(&extfvk1, zvalue);
+        mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
+        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 5).await;
 
         // 3. Send an incoming t-address transaction
-        let sk = lc.wallet.keys().read().await.tkeys[0].clone();
+        let sk = lightclient.wallet.keys().read().await.tkeys[0].clone();
         let pk = sk.pubkey().unwrap();
         let taddr = sk.address;
         let tvalue = 200_000;
 
         let mut fake_transaction = FakeTransaction::new(true);
         fake_transaction.add_t_output(&pk, taddr.clone(), tvalue);
-        let (_t_transaction, _) = fcbl.add_fake_transaction(fake_transaction);
-        mine_pending_blocks(&mut fcbl, &data, &lc).await;
+        let (_t_transaction, _) = fake_compactblock_list.add_fake_transaction(fake_transaction);
+        mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
         // 4. Send a transaction to both external t-addr and external z addr and mine it
         let sent_zvalue = tvalue + zvalue - u64::from(DEFAULT_FEE);
         let tos = vec![(EXT_ZADDR, sent_zvalue, None)];
-        let sent_transaction_id = lc.test_do_send(tos).await.unwrap();
+        let sent_transaction_id = lightclient.test_do_send(tos).await.unwrap();
 
-        fcbl.add_pending_sends(&data).await;
-        mine_pending_blocks(&mut fcbl, &data, &lc).await;
+        fake_compactblock_list.add_pending_sends(&data).await;
+        mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
-        let notes = lc.do_list_notes(true).await;
+        let notes = lightclient.do_list_notes(true).await;
         assert_eq!(notes["unspent_notes"].len(), 0);
         assert_eq!(notes["pending_notes"].len(), 0);
         assert_eq!(notes["utxos"].len(), 0);
@@ -1371,7 +1375,7 @@ async fn no_change() {
         assert_eq!(notes["spent_utxos"][0]["spent"], sent_transaction_id);
 
         // Shutdown everything cleanly
-        clean_shutdown(stop_transmitter, h1).await;
+        clean_shutdown(stop_transmitter, test_server_handle).await;
     }
 }
 
