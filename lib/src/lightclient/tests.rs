@@ -932,30 +932,29 @@ async fn sapling_incoming_viewkey() {
 #[tokio::test]
 async fn t_incoming_t_outgoing() {
     for https in [true, false] {
-        let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(https).await;
-
-        ready_receiver.await.unwrap();
-
-        let lc = LightClient::test_new(&config, None, 0).await.unwrap();
-        let mut fcbl = FakeCompactBlockList::new(0);
-
-        // 1. Mine 10 blocks
-        mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
+        let TenBlockFCBLScenario {
+            data,
+            stop_transmitter,
+            test_server_handle,
+            lightclient,
+            mut fake_compactblock_list,
+            ..
+        } = setup_ten_block_fcbl_scenario(https).await;
 
         // 2. Get an incoming transaction to a t address
-        let sk = lc.wallet.keys().read().await.tkeys[0].clone();
+        let sk = lightclient.wallet.keys().read().await.tkeys[0].clone();
         let pk = sk.pubkey().unwrap();
         let taddr = sk.address;
         let value = 100_000;
 
         let mut fake_transaction = FakeTransaction::new(true);
         fake_transaction.add_t_output(&pk, taddr.clone(), value);
-        let (transaction, _) = fcbl.add_fake_transaction(fake_transaction);
+        let (transaction, _) = fake_compactblock_list.add_fake_transaction(fake_transaction);
         let txid = transaction.txid();
-        mine_pending_blocks(&mut fcbl, &data, &lc).await;
+        mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
         // 3. Test the list
-        let list = lc.do_list_transactions(false).await;
+        let list = lightclient.do_list_transactions(false).await;
         assert_eq!(list[0]["block_height"].as_u64().unwrap(), 11);
         assert_eq!(list[0]["txid"], txid.to_string());
         assert_eq!(list[0]["address"], taddr);
@@ -963,13 +962,13 @@ async fn t_incoming_t_outgoing() {
 
         // 4. We can spend the funds immediately, since this is a taddr
         let sent_value = 20_000;
-        let sent_transaction_id = lc
+        let sent_transaction_id = lightclient
             .test_do_send(vec![(EXT_TADDR, sent_value, None)])
             .await
             .unwrap();
 
         // 5. Test the unconfirmed send.
-        let list = lc.do_list_transactions(false).await;
+        let list = lightclient.do_list_transactions(false).await;
         assert_eq!(list[1]["block_height"].as_u64().unwrap(), 12);
         assert_eq!(list[1]["txid"], sent_transaction_id);
         assert_eq!(
@@ -984,10 +983,10 @@ async fn t_incoming_t_outgoing() {
         );
 
         // 7. Mine the sent transaction
-        fcbl.add_pending_sends(&data).await;
-        mine_pending_blocks(&mut fcbl, &data, &lc).await;
+        fake_compactblock_list.add_pending_sends(&data).await;
+        mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
-        let notes = lc.do_list_notes(true).await;
+        let notes = lightclient.do_list_notes(true).await;
         assert_eq!(
             notes["spent_utxos"][0]["created_in_block"]
                 .as_u64()
@@ -1020,7 +1019,7 @@ async fn t_incoming_t_outgoing() {
             value - sent_value - u64::from(DEFAULT_FEE)
         );
 
-        let list = lc.do_list_transactions(false).await;
+        let list = lightclient.do_list_transactions(false).await;
 
         assert_eq!(list[1]["block_height"].as_u64().unwrap(), 12);
         assert_eq!(list[1]["txid"], sent_transaction_id);
@@ -1033,9 +1032,9 @@ async fn t_incoming_t_outgoing() {
 
         // Make sure everything is fine even after the rescan
 
-        lc.do_rescan().await.unwrap();
+        lightclient.do_rescan().await.unwrap();
 
-        let list = lc.do_list_transactions(false).await;
+        let list = lightclient.do_list_transactions(false).await;
         assert_eq!(list[1]["block_height"].as_u64().unwrap(), 12);
         assert_eq!(list[1]["txid"], sent_transaction_id);
         assert_eq!(list[1]["unconfirmed"].as_bool().unwrap(), false);
@@ -1045,7 +1044,7 @@ async fn t_incoming_t_outgoing() {
             sent_value
         );
 
-        let notes = lc.do_list_notes(true).await;
+        let notes = lightclient.do_list_notes(true).await;
         // Change shielded note
         assert_eq!(
             notes["unspent_notes"][0]["created_in_block"]
@@ -1067,7 +1066,7 @@ async fn t_incoming_t_outgoing() {
         );
 
         // Shutdown everything cleanly
-        clean_shutdown(stop_transmitter, h1).await;
+        clean_shutdown(stop_transmitter, test_server_handle).await;
     }
 }
 
