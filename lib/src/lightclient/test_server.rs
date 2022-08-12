@@ -214,6 +214,37 @@ pub async fn create_test_server(
     (data, config, ready_receiver, stop_transmitter, h1)
 }
 
+pub struct TenBlockFCBLScenario {
+    data: Arc<RwLock<TestServerData>>,
+    config: ZingoConfig,
+    stop_transmitter: oneshot::Sender<()>,
+    test_server_handle: JoinHandle<()>,
+    lightclient: LightClient,
+    fake_compactblock_list: FakeCompactBlockList,
+}
+
+pub async fn setup_ten_block_fcbl_scenario(transport_security: bool) -> TenBlockFCBLScenario {
+    let (data, config, ready_receiver, stop_transmitter, test_server_handle) =
+        create_test_server(transport_security).await;
+    ready_receiver.await.unwrap();
+
+    let lightclient = LightClient::test_new(&config, None, 0).await.unwrap();
+
+    let mut fake_compactblock_list = FakeCompactBlockList::new(0);
+
+    // 1. Mine 10 blocks
+    mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 10).await;
+    assert_eq!(lightclient.wallet.last_scanned_height().await, 10);
+    TenBlockFCBLScenario {
+        data,
+        config,
+        stop_transmitter,
+        test_server_handle,
+        lightclient,
+        fake_compactblock_list,
+    }
+}
+
 pub async fn clean_shutdown(
     stop_transmitter: oneshot::Sender<()>,
     server_thread_handle: JoinHandle<()>,

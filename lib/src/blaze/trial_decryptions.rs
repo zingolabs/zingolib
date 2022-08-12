@@ -126,6 +126,8 @@ impl TrialDecryptions {
         return (h, transmitter);
     }
 
+    /// Trial decryption is invoked by spend-or-view key holders to detect notes addressed to shielded addresses derived from
+    /// the spend key.
     async fn trial_decrypt_batch(
         cbs: Vec<CompactBlock>,
         keys: Arc<RwLock<Keys>>,

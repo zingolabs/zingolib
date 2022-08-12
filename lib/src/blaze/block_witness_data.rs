@@ -530,7 +530,7 @@ impl BlockAndWitnessData {
                 CommitmentTree::read(&tree[..]).map_err(|e| format!("{}", e))?
             };
 
-            // Get the current compact block
+            // Get the compact block for the supplied height
             let cb = {
                 let height = u64::from(height);
                 self.wait_for_block(height).await;
