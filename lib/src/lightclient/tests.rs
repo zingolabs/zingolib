@@ -1735,31 +1735,35 @@ async fn mempool_clearing() {
 #[tokio::test]
 async fn mempool_and_balance() {
     for https in [true, false] {
-        let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(https).await;
-
-        ready_receiver.await.unwrap();
-
-        let lc = LightClient::test_new(&config, None, 0).await.unwrap();
-        let mut fcbl = FakeCompactBlockList::new(0);
-
-        // 1. Mine 10 blocks
-        mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
-        assert_eq!(lc.wallet.last_scanned_height().await, 10);
-
+        let TenBlockFCBLScenario {
+            data,
+            stop_transmitter,
+            test_server_handle,
+            lightclient,
+            mut fake_compactblock_list,
+            ..
+        } = setup_ten_block_fcbl_scenario(https).await;
         // 2. Send an incoming transaction to fill the wallet
-        let extfvk1 = lc.wallet.keys().read().await.get_all_sapling_extfvks()[0].clone();
+        let extfvk1 = lightclient
+            .wallet
+            .keys()
+            .read()
+            .await
+            .get_all_sapling_extfvks()[0]
+            .clone();
         let value = 100_000;
-        let (_transaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, value);
-        mine_pending_blocks(&mut fcbl, &data, &lc).await;
+        let (_transaction, _height, _) =
+            fake_compactblock_list.add_transaction_paying(&extfvk1, value);
+        mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
-        let bal = lc.do_balance().await;
+        let bal = lightclient.do_balance().await;
         assert_eq!(bal["sapling_balance"].as_u64().unwrap(), value);
         assert_eq!(bal["verified_sapling_balance"].as_u64().unwrap(), 0);
         assert_eq!(bal["unverified_sapling_balance"].as_u64().unwrap(), value);
 
         // 3. Mine 10 blocks
-        mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
-        let bal = lc.do_balance().await;
+        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 10).await;
+        let bal = lightclient.do_balance().await;
         assert_eq!(bal["sapling_balance"].as_u64().unwrap(), value);
         assert_eq!(bal["verified_sapling_balance"].as_u64().unwrap(), value);
         assert_eq!(bal["unverified_sapling_balance"].as_u64().unwrap(), 0);
@@ -1768,12 +1772,12 @@ async fn mempool_and_balance() {
         let sent_value = 2000;
         let outgoing_memo = "Outgoing Memo".to_string();
 
-        let _sent_transaction_id = lc
+        let _sent_transaction_id = lightclient
             .test_do_send(vec![(EXT_ZADDR, sent_value, Some(outgoing_memo.clone()))])
             .await
             .unwrap();
 
-        let bal = lc.do_balance().await;
+        let bal = lightclient.do_balance().await;
 
         // Even though the transaction is not mined (in the mempool) the balances should be updated to reflect the spent funds
         let new_bal = value - (sent_value + u64::from(DEFAULT_FEE));
@@ -1782,24 +1786,24 @@ async fn mempool_and_balance() {
         assert_eq!(bal["unverified_sapling_balance"].as_u64().unwrap(), new_bal);
 
         // 5. Mine the pending block, but the balances should remain the same.
-        fcbl.add_pending_sends(&data).await;
-        mine_pending_blocks(&mut fcbl, &data, &lc).await;
+        fake_compactblock_list.add_pending_sends(&data).await;
+        mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
-        let bal = lc.do_balance().await;
+        let bal = lightclient.do_balance().await;
         assert_eq!(bal["sapling_balance"].as_u64().unwrap(), new_bal);
         assert_eq!(bal["verified_sapling_balance"].as_u64().unwrap(), 0);
         assert_eq!(bal["unverified_sapling_balance"].as_u64().unwrap(), new_bal);
 
         // 6. Mine 10 more blocks, making the funds verified and spendable.
-        mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
-        let bal = lc.do_balance().await;
+        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 10).await;
+        let bal = lightclient.do_balance().await;
 
         assert_eq!(bal["sapling_balance"].as_u64().unwrap(), new_bal);
         assert_eq!(bal["verified_sapling_balance"].as_u64().unwrap(), new_bal);
         assert_eq!(bal["unverified_sapling_balance"].as_u64().unwrap(), 0);
 
         // Shutdown everything cleanly
-        clean_shutdown(stop_transmitter, h1).await;
+        clean_shutdown(stop_transmitter, test_server_handle).await;
     }
 }
 
