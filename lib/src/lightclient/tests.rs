@@ -187,6 +187,36 @@ fn new_wallet_from_zvk() {
 
 #[tokio::test]
 async fn basic_no_wallet_transactions() {
+    let expected_lightdinfo_before_blockmining = "LightdInfo ".to_string()
+        + "{ version: \"Test GRPC Server\","
+        + " vendor: \"\","
+        + " taddr_support: true,"
+        + " chain_name: \"fakemainnet\","
+        + " sapling_activation_height: 1,"
+        + " consensus_branch_id: \"\","
+        + " block_height: 0,"
+        + " git_commit: \"\","
+        + " branch: \"\","
+        + " build_date: \"\","
+        + " build_user: \"\","
+        + " estimated_height: 0,"
+        + " zcashd_build: \"\","
+        + " zcashd_subversion: \"\" }";
+    let expected_lightdinfo_after_blockmining = "LightdInfo ".to_string()
+        + "{ version: \"Test GRPC Server\","
+        + " vendor: \"\","
+        + " taddr_support: true,"
+        + " chain_name: \"fakemainnet\","
+        + " sapling_activation_height: 1,"
+        + " consensus_branch_id: \"\","
+        + " block_height: 10,"
+        + " git_commit: \"\","
+        + " branch: \"\","
+        + " build_date: \"\","
+        + " build_user: \"\","
+        + " estimated_height: 0,"
+        + " zcashd_build: \"\","
+        + " zcashd_subversion: \"\" }";
     for https in [true, false] {
         let (data, config, ready_receiver, stop_transmitter, test_server_handle) =
             create_test_server(https).await;
@@ -197,36 +227,32 @@ async fn basic_no_wallet_transactions() {
             .await
             .unwrap();
 
-        let r = client
-            .get_lightd_info(Request::new(Empty {}))
-            .await
-            .unwrap()
-            .into_inner();
-        assert_eq!(
-            format!("{:?}", r),
-            "LightdInfo ".to_string()
-                + "{ version: \"Test GRPC Server\","
-                + " vendor: \"\","
-                + " taddr_support: true,"
-                + " chain_name: \"fakemainnet\","
-                + " sapling_activation_height: 1,"
-                + " consensus_branch_id: \"\","
-                + " block_height: 0,"
-                + " git_commit: \"\","
-                + " branch: \"\","
-                + " build_date: \"\","
-                + " build_user: \"\","
-                + " estimated_height: 0,"
-                + " zcashd_build: \"\","
-                + " zcashd_subversion: \"\" }"
-        );
-
+        //let info_getter = &mut client.get_lightd_info(Request::new(Empty {}));
         ready_receiver.await.unwrap();
         let lightclient = LightClient::test_new(&config, None, 0).await.unwrap();
         let mut fake_compactblock_list = FakeCompactBlockList::new(0);
 
+        let observed_pre_answer = format!(
+            "{:?}",
+            client
+                .get_lightd_info(Request::new(Empty {}))
+                .await
+                .unwrap()
+                .into_inner()
+        );
+        assert_eq!(observed_pre_answer, expected_lightdinfo_before_blockmining);
         assert_eq!(lightclient.wallet.last_scanned_height().await, 0);
+        // Change system under test state (generating random blocks)
         mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 10).await;
+        let observed_post_answer = format!(
+            "{:?}",
+            client
+                .get_lightd_info(Request::new(Empty {}))
+                .await
+                .unwrap()
+                .into_inner()
+        );
+        assert_eq!(observed_post_answer, expected_lightdinfo_after_blockmining);
         assert_eq!(lightclient.wallet.last_scanned_height().await, 10);
 
         let r = client
