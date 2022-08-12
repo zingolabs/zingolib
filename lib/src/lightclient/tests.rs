@@ -186,7 +186,7 @@ fn new_wallet_from_zvk() {
 }
 
 #[tokio::test]
-async fn basic_no_wallet_transactions() {
+async fn test_direct_grpc_and_lightclient_blockchain_height_agreement() {
     let expected_lightdinfo_before_blockmining = "LightdInfo ".to_string()
         + "{ version: \"Test GRPC Server\","
         + " vendor: \"\","
@@ -254,30 +254,6 @@ async fn basic_no_wallet_transactions() {
         );
         assert_eq!(observed_post_answer, expected_lightdinfo_after_blockmining);
         assert_eq!(lightclient.wallet.last_scanned_height().await, 10);
-
-        let r = client
-            .get_lightd_info(Request::new(Empty {}))
-            .await
-            .unwrap()
-            .into_inner();
-        assert_eq!(
-            format!("{:?}", r),
-            "LightdInfo ".to_string()
-                + "{ version: \"Test GRPC Server\","
-                + " vendor: \"\","
-                + " taddr_support: true,"
-                + " chain_name: \"fakemainnet\","
-                + " sapling_activation_height: 1,"
-                + " consensus_branch_id: \"\","
-                + " block_height: 10,"
-                + " git_commit: \"\","
-                + " branch: \"\","
-                + " build_date: \"\","
-                + " build_user: \"\","
-                + " estimated_height: 0,"
-                + " zcashd_build: \"\","
-                + " zcashd_subversion: \"\" }"
-        );
         clean_shutdown(stop_transmitter, test_server_handle).await;
     }
 }
