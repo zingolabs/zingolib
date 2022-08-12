@@ -1,7 +1,6 @@
 use ff::{Field, PrimeField};
 use group::GroupEncoding;
 use json::JsonValue;
-use log::info;
 use rand::rngs::OsRng;
 use tokio::runtime::Runtime;
 use tonic::Request;
@@ -1192,38 +1191,38 @@ async fn mixed_transaction() {
 #[tokio::test]
 async fn aborted_resync() {
     for https in [true, false] {
-        let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(https).await;
-
-        ready_receiver.await.unwrap();
-
-        let lc = LightClient::test_new(&config, None, 0).await.unwrap();
-        let mut fcbl = FakeCompactBlockList::new(0);
-
-        info!("About to mine!");
-
-        // 1. Mine 10 blocks
-        mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
-        assert_eq!(lc.wallet.last_scanned_height().await, 10);
-
-        info!("Mined!");
-
+        let TenBlockFCBLScenario {
+            data,
+            stop_transmitter,
+            test_server_handle,
+            lightclient,
+            mut fake_compactblock_list,
+            ..
+        } = setup_ten_block_fcbl_scenario(https).await;
         // 2. Send an incoming transaction to fill the wallet
-        let extfvk1 = lc.wallet.keys().read().await.get_all_sapling_extfvks()[0].clone();
+        let extfvk1 = lightclient
+            .wallet
+            .keys()
+            .read()
+            .await
+            .get_all_sapling_extfvks()[0]
+            .clone();
         let zvalue = 100_000;
-        let (_ztransaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, zvalue);
-        mine_pending_blocks(&mut fcbl, &data, &lc).await;
-        mine_random_blocks(&mut fcbl, &data, &lc, 5).await;
+        let (_ztransaction, _height, _) =
+            fake_compactblock_list.add_transaction_paying(&extfvk1, zvalue);
+        mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
+        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 5).await;
 
         // 3. Send an incoming t-address transaction
-        let sk = lc.wallet.keys().read().await.tkeys[0].clone();
+        let sk = lightclient.wallet.keys().read().await.tkeys[0].clone();
         let pk = sk.pubkey().unwrap();
         let taddr = sk.address;
         let tvalue = 200_000;
 
         let mut fake_transaction = FakeTransaction::new(true);
         fake_transaction.add_t_output(&pk, taddr.clone(), tvalue);
-        let (_ttransaction, _) = fcbl.add_fake_transaction(fake_transaction);
-        mine_pending_blocks(&mut fcbl, &data, &lc).await;
+        let (_ttransaction, _) = fake_compactblock_list.add_fake_transaction(fake_transaction);
+        mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
         // 4. Send a transaction to both external t-addr and external z addr and mine it
         let sent_zvalue = 80_000;
@@ -1233,15 +1232,15 @@ async fn aborted_resync() {
             (EXT_ZADDR, sent_zvalue, Some(sent_zmemo.clone())),
             (EXT_TADDR, sent_tvalue, None),
         ];
-        let sent_transaction_id = lc.test_do_send(tos).await.unwrap();
+        let sent_transaction_id = lightclient.test_do_send(tos).await.unwrap();
 
-        fcbl.add_pending_sends(&data).await;
-        mine_pending_blocks(&mut fcbl, &data, &lc).await;
-        mine_random_blocks(&mut fcbl, &data, &lc, 5).await;
+        fake_compactblock_list.add_pending_sends(&data).await;
+        mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
+        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 5).await;
 
-        let notes_before = lc.do_list_notes(true).await;
-        let list_before = lc.do_list_transactions(false).await;
-        let witness_before = lc
+        let notes_before = lightclient.do_list_notes(true).await;
+        let list_before = lightclient.do_list_transactions(false).await;
+        let witness_before = lightclient
             .wallet
             .transactions
             .read()
@@ -1263,17 +1262,17 @@ async fn aborted_resync() {
 
         // 5. Now, we'll manually remove some of the blocks in the wallet, pretending that the sync was aborted in the middle.
         // We'll remove the top 20 blocks, so now the wallet only has the first 3 blocks
-        lc.wallet.blocks.write().await.drain(0..20);
-        assert_eq!(lc.wallet.last_scanned_height().await, 3);
+        lightclient.wallet.blocks.write().await.drain(0..20);
+        assert_eq!(lightclient.wallet.last_scanned_height().await, 3);
 
         // 6. Do a sync again
-        lc.do_sync(true).await.unwrap();
-        assert_eq!(lc.wallet.last_scanned_height().await, 23);
+        lightclient.do_sync(true).await.unwrap();
+        assert_eq!(lightclient.wallet.last_scanned_height().await, 23);
 
         // 7. Should be exactly the same
-        let notes_after = lc.do_list_notes(true).await;
-        let list_after = lc.do_list_transactions(false).await;
-        let witness_after = lc
+        let notes_after = lightclient.do_list_notes(true).await;
+        let list_after = lightclient.do_list_transactions(false).await;
+        let witness_after = lightclient
             .wallet
             .transactions
             .read()
@@ -1316,7 +1315,7 @@ async fn aborted_resync() {
         }
 
         // Shutdown everything cleanly
-        clean_shutdown(stop_transmitter, h1).await;
+        clean_shutdown(stop_transmitter, test_server_handle).await;
     }
 }
 
