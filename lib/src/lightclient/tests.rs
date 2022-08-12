@@ -203,7 +203,24 @@ async fn basic_no_wallet_transactions() {
             .await
             .unwrap()
             .into_inner();
-        assert_eq!(format!("{:?}", r), "LightdInfo { version: \"Test GRPC Server\", vendor: \"\", taddr_support: true, chain_name: \"fakemainnet\", sapling_activation_height: 1, consensus_branch_id: \"\", block_height: 0, git_commit: \"\", branch: \"\", build_date: \"\", build_user: \"\", estimated_height: 0, zcashd_build: \"\", zcashd_subversion: \"\" }".to_string());
+        assert_eq!(
+            format!("{:?}", r),
+            "LightdInfo ".to_string()
+                + "{ version: \"Test GRPC Server\","
+                + " vendor: \"\","
+                + " taddr_support: true,"
+                + " chain_name: \"fakemainnet\","
+                + " sapling_activation_height: 1,"
+                + " consensus_branch_id: \"\","
+                + " block_height: 0,"
+                + " git_commit: \"\","
+                + " branch: \"\","
+                + " build_date: \"\","
+                + " build_user: \"\","
+                + " estimated_height: 0,"
+                + " zcashd_build: \"\","
+                + " zcashd_subversion: \"\" }"
+        );
 
         let lc = LightClient::test_new(&config, None, 0).await.unwrap();
         let mut fcbl = FakeCompactBlockList::new(0);
