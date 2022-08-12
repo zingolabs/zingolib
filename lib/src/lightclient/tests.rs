@@ -454,20 +454,22 @@ async fn sapling_incoming_sapling_outgoing() {
 #[tokio::test]
 async fn multiple_incoming_same_transaction() {
     for https in [true, false] {
-        let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(https).await;
+        let TenBlockFCBLScenario {
+            data,
+            stop_transmitter,
+            test_server_handle,
+            lightclient,
+            mut fake_compactblock_list,
+        } = setup_ten_block_fcbl_scenario(https).await;
 
-        ready_receiver.await.unwrap();
-
-        let lc = LightClient::test_new(&config, None, 0).await.unwrap();
-        let mut fcbl = FakeCompactBlockList::new(0);
-
-        let extfvk1 = lc.wallet.keys().read().await.get_all_sapling_extfvks()[0].clone();
+        let extfvk1 = lightclient
+            .wallet
+            .keys()
+            .read()
+            .await
+            .get_all_sapling_extfvks()[0]
+            .clone();
         let value = 100_000;
-
-        // 1. Mine 10 blocks
-        mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
-        assert_eq!(lc.wallet.last_scanned_height().await, 10);
-
         // 2. Construct the Fake transaction.
         let to = extfvk1.default_address().1;
 
@@ -532,16 +534,20 @@ async fn multiple_incoming_same_transaction() {
         compact_transaction.hash = transaction.txid().clone().as_ref().to_vec();
 
         // Add and mine the block
-        fcbl.transactions
-            .push((transaction, fcbl.next_height, vec![]));
-        fcbl.add_empty_block()
+        fake_compactblock_list.transactions.push((
+            transaction,
+            fake_compactblock_list.next_height,
+            vec![],
+        ));
+        fake_compactblock_list
+            .add_empty_block()
             .add_transactions(vec![compact_transaction]);
-        mine_pending_blocks(&mut fcbl, &data, &lc).await;
-        assert_eq!(lc.wallet.last_scanned_height().await, 11);
+        mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
+        assert_eq!(lightclient.wallet.last_scanned_height().await, 11);
 
         // 2. Check the notes - that we recieved 4 notes
-        let notes = lc.do_list_notes(true).await;
-        let transactions = lc.do_list_transactions(false).await;
+        let notes = lightclient.do_list_notes(true).await;
+        let transactions = lightclient.do_list_transactions(false).await;
 
         if let JsonValue::Array(mut unspent_notes) = notes["unspent_notes"].clone() {
             unspent_notes.sort_by_cached_key(|j| j["value"].as_u64().unwrap());
@@ -555,7 +561,12 @@ async fn multiple_incoming_same_transaction() {
                 assert_eq!(unspent_notes[i]["is_change"].as_bool().unwrap(), false);
                 assert_eq!(
                     unspent_notes[i]["address"],
-                    lc.wallet.keys().read().await.get_all_sapling_addresses()[0]
+                    lightclient
+                        .wallet
+                        .keys()
+                        .read()
+                        .await
+                        .get_all_sapling_addresses()[0]
                 );
             }
         } else {
@@ -570,7 +581,12 @@ async fn multiple_incoming_same_transaction() {
                 assert_eq!(sorted_transactions[i]["block_height"].as_u64().unwrap(), 11);
                 assert_eq!(
                     sorted_transactions[i]["address"],
-                    lc.wallet.keys().read().await.get_all_sapling_addresses()[0]
+                    lightclient
+                        .wallet
+                        .keys()
+                        .read()
+                        .await
+                        .get_all_sapling_addresses()[0]
                 );
                 assert_eq!(
                     sorted_transactions[i]["amount"].as_u64().unwrap(),
@@ -583,19 +599,19 @@ async fn multiple_incoming_same_transaction() {
 
         // 3. Send a big transaction, so all the value is spent
         let sent_value = value * 3 + u64::from(DEFAULT_FEE);
-        mine_random_blocks(&mut fcbl, &data, &lc, 5).await; // make the funds spentable
-        let sent_transaction_id = lc
+        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 5).await; // make the funds spentable
+        let sent_transaction_id = lightclient
             .test_do_send(vec![(EXT_ZADDR, sent_value, None)])
             .await
             .unwrap();
 
         // 4. Mine the sent transaction
-        fcbl.add_pending_sends(&data).await;
-        mine_pending_blocks(&mut fcbl, &data, &lc).await;
+        fake_compactblock_list.add_pending_sends(&data).await;
+        mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
         // 5. Check the notes - that we spent all 4 notes
-        let notes = lc.do_list_notes(true).await;
-        let transactions = lc.do_list_transactions(false).await;
+        let notes = lightclient.do_list_notes(true).await;
+        let transactions = lightclient.do_list_transactions(false).await;
         for i in 0..4 {
             assert_eq!(notes["spent_notes"][i]["spent"], sent_transaction_id);
             assert_eq!(
@@ -625,7 +641,7 @@ async fn multiple_incoming_same_transaction() {
         );
 
         // Shutdown everything cleanly
-        clean_shutdown(stop_transmitter, h1).await;
+        clean_shutdown(stop_transmitter, test_server_handle).await;
     }
 }
 

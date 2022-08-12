@@ -222,6 +222,9 @@ pub struct TenBlockFCBLScenario {
     pub fake_compactblock_list: FakeCompactBlockList,
 }
 
+/// This scenario is used as the start state for 14 separate tests!
+/// They are:
+///
 pub async fn setup_ten_block_fcbl_scenario(transport_security: bool) -> TenBlockFCBLScenario {
     let (data, config, ready_receiver, stop_transmitter, test_server_handle) =
         create_test_server(transport_security).await;
