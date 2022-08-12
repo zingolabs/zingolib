@@ -1593,27 +1593,30 @@ async fn witness_clearing() {
 #[tokio::test]
 async fn mempool_clearing() {
     for https in [true, false] {
-        let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(https).await;
-
-        ready_receiver.await.unwrap();
-
-        let lc = LightClient::test_new(&config, None, 0).await.unwrap();
-        //lc.init_logging().unwrap();
-        let mut fcbl = FakeCompactBlockList::new(0);
-
-        // 1. Mine 10 blocks
-        mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
-        assert_eq!(lc.wallet.last_scanned_height().await, 10);
-
+        let TenBlockFCBLScenario {
+            data,
+            stop_transmitter,
+            test_server_handle,
+            lightclient,
+            mut fake_compactblock_list,
+            config,
+        } = setup_ten_block_fcbl_scenario(https).await;
         // 2. Send an incoming transaction to fill the wallet
-        let extfvk1 = lc.wallet.keys().read().await.get_all_sapling_extfvks()[0].clone();
+        let extfvk1 = lightclient
+            .wallet
+            .keys()
+            .read()
+            .await
+            .get_all_sapling_extfvks()[0]
+            .clone();
         let value = 100_000;
-        let (transaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, value);
+        let (transaction, _height, _) =
+            fake_compactblock_list.add_transaction_paying(&extfvk1, value);
         let orig_transaction_id = transaction.txid().to_string();
-        mine_pending_blocks(&mut fcbl, &data, &lc).await;
-        mine_random_blocks(&mut fcbl, &data, &lc, 5).await;
+        mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
+        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 5).await;
         assert_eq!(
-            lc.do_last_transaction_id().await["last_txid"],
+            lightclient.do_last_transaction_id().await["last_txid"],
             orig_transaction_id
         );
 
@@ -1621,14 +1624,14 @@ async fn mempool_clearing() {
         let sent_value = 2000;
         let outgoing_memo = "Outgoing Memo".to_string();
 
-        let sent_transaction_id = lc
+        let sent_transaction_id = lightclient
             .test_do_send(vec![(EXT_ZADDR, sent_value, Some(outgoing_memo.clone()))])
             .await
             .unwrap();
 
         // 4. The transaction is not yet sent, it is just sitting in the test GRPC server, so remove it from there to make sure it doesn't get mined.
         assert_eq!(
-            lc.do_last_transaction_id().await["last_txid"],
+            lightclient.do_last_transaction_id().await["last_txid"],
             sent_transaction_id
         );
         let mut sent_transactions = data
@@ -1641,8 +1644,8 @@ async fn mempool_clearing() {
         let sent_transaction = sent_transactions.remove(0);
 
         // 5. At this point, the raw transaction is already been parsed, but we'll parse it again just to make sure it doesn't create any duplicates.
-        let notes_before = lc.do_list_notes(true).await;
-        let transactions_before = lc.do_list_transactions(false).await;
+        let notes_before = lightclient.do_list_notes(true).await;
+        let transactions_before = lightclient.do_list_transactions(false).await;
 
         let transaction = Transaction::read(&sent_transaction.data[..], BranchId::Sapling).unwrap();
         FetchFullTxns::scan_full_tx(
@@ -1651,14 +1654,14 @@ async fn mempool_clearing() {
             BlockHeight::from_u32(17),
             true,
             0,
-            lc.wallet.keys(),
-            lc.wallet.transactions(),
+            lightclient.wallet.keys(),
+            lightclient.wallet.transactions(),
             None,
         )
         .await;
 
         {
-            let transactions_reader = lc.wallet.transactions.clone();
+            let transactions_reader = lightclient.wallet.transactions.clone();
             let wallet_transactions = transactions_reader.read().await;
             let sapling_notes: Vec<_> = wallet_transactions
                 .current
@@ -1679,18 +1682,18 @@ async fn mempool_clearing() {
                 );
             }
         }
-        let notes_after = lc.do_list_notes(true).await;
-        let transactions_after = lc.do_list_transactions(false).await;
+        let notes_after = lightclient.do_list_notes(true).await;
+        let transactions_after = lightclient.do_list_transactions(false).await;
 
         assert_eq!(notes_before.pretty(2), notes_after.pretty(2));
         assert_eq!(transactions_before.pretty(2), transactions_after.pretty(2));
 
         // 6. Mine 10 blocks, the unconfirmed transaction should still be there.
-        mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
-        assert_eq!(lc.wallet.last_scanned_height().await, 26);
+        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 10).await;
+        assert_eq!(lightclient.wallet.last_scanned_height().await, 26);
 
-        let notes = lc.do_list_notes(true).await;
-        let transactions = lc.do_list_transactions(false).await;
+        let notes = lightclient.do_list_notes(true).await;
+        let transactions = lightclient.do_list_transactions(false).await;
 
         // There is 1 unspent note, which is the unconfirmed transaction
         assert_eq!(notes["unspent_notes"].len(), 1);
@@ -1705,11 +1708,11 @@ async fn mempool_clearing() {
         assert_eq!(transactions.len(), 2);
 
         // 7. Mine 100 blocks, so the mempool expires
-        mine_random_blocks(&mut fcbl, &data, &lc, 100).await;
-        assert_eq!(lc.wallet.last_scanned_height().await, 126);
+        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 100).await;
+        assert_eq!(lightclient.wallet.last_scanned_height().await, 126);
 
-        let notes = lc.do_list_notes(true).await;
-        let transactions = lc.do_list_transactions(false).await;
+        let notes = lightclient.do_list_notes(true).await;
+        let transactions = lightclient.do_list_transactions(false).await;
 
         // There is now again 1 unspent note, but it is the original (confirmed) note.
         assert_eq!(notes["unspent_notes"].len(), 1);
@@ -1725,7 +1728,7 @@ async fn mempool_clearing() {
         assert_eq!(transactions.len(), 1);
 
         // Shutdown everything cleanly
-        clean_shutdown(stop_transmitter, h1).await;
+        clean_shutdown(stop_transmitter, test_server_handle).await;
     }
 }
 
