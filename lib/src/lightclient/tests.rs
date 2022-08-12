@@ -783,18 +783,18 @@ async fn sapling_to_sapling_scan_together() {
 #[tokio::test]
 async fn sapling_incoming_viewkey() {
     for https in [true, false] {
-        let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(https).await;
-
-        ready_receiver.await.unwrap();
-
-        let lc = LightClient::test_new(&config, None, 0).await.unwrap();
-        let mut fcbl = FakeCompactBlockList::new(0);
-
-        // 1. Mine 10 blocks
-        mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
-        assert_eq!(lc.wallet.last_scanned_height().await, 10);
+        let TenBlockFCBLScenario {
+            data,
+            stop_transmitter,
+            test_server_handle,
+            lightclient,
+            mut fake_compactblock_list,
+            config,
+        } = setup_ten_block_fcbl_scenario(https).await;
         assert_eq!(
-            lc.do_balance().await["sapling_balance"].as_u64().unwrap(),
+            lightclient.do_balance().await["sapling_balance"]
+                .as_u64()
+                .unwrap(),
             0
         );
 
@@ -803,7 +803,7 @@ async fn sapling_incoming_viewkey() {
         let iextfvk = ExtendedFullViewingKey::from(&iextsk);
         let iaddr =
             encode_payment_address(config.hrp_sapling_address(), &iextfvk.default_address().1);
-        let addrs = lc
+        let addrs = lightclient
             .do_import_sapling_full_view_key(
                 encode_extended_full_viewing_key(config.hrp_sapling_viewing_key(), &iextfvk),
                 1,
@@ -814,19 +814,22 @@ async fn sapling_incoming_viewkey() {
         assert_eq!(addrs[0], iaddr);
 
         let value = 100_000;
-        let (transaction, _height, _) = fcbl.add_transaction_paying(&iextfvk, value);
+        let (transaction, _height, _) =
+            fake_compactblock_list.add_transaction_paying(&iextfvk, value);
         let txid = transaction.txid();
-        mine_pending_blocks(&mut fcbl, &data, &lc).await;
-        mine_random_blocks(&mut fcbl, &data, &lc, 5).await;
+        mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
+        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 5).await;
 
         // 3. Test that we have the transaction
-        let list = lc.do_list_transactions(false).await;
+        let list = lightclient.do_list_transactions(false).await;
         assert_eq!(
-            lc.do_balance().await["sapling_balance"].as_u64().unwrap(),
+            lightclient.do_balance().await["sapling_balance"]
+                .as_u64()
+                .unwrap(),
             value
         );
         assert_eq!(
-            lc.do_balance().await["spendable_sapling_balance"]
+            lightclient.do_balance().await["spendable_sapling_balance"]
                 .as_u64()
                 .unwrap(),
             0
@@ -836,16 +839,18 @@ async fn sapling_incoming_viewkey() {
         assert_eq!(list[0]["address"], iaddr);
 
         // 4. Also do a rescan, just for fun
-        mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
-        lc.do_rescan().await.unwrap();
+        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 10).await;
+        lightclient.do_rescan().await.unwrap();
         // Test all the same values
-        let list = lc.do_list_transactions(false).await;
+        let list = lightclient.do_list_transactions(false).await;
         assert_eq!(
-            lc.do_balance().await["sapling_balance"].as_u64().unwrap(),
+            lightclient.do_balance().await["sapling_balance"]
+                .as_u64()
+                .unwrap(),
             value
         );
         assert_eq!(
-            lc.do_balance().await["spendable_sapling_balance"]
+            lightclient.do_balance().await["spendable_sapling_balance"]
                 .as_u64()
                 .unwrap(),
             0
@@ -855,7 +860,7 @@ async fn sapling_incoming_viewkey() {
         assert_eq!(list[0]["address"], iaddr);
 
         // 5. Import the corresponding spending key.
-        let sk_addr = lc
+        let sk_addr = lightclient
             .do_import_sapling_spend_key(
                 encode_extended_spending_key(config.hrp_sapling_private_key(), &iextsk),
                 1,
@@ -865,24 +870,28 @@ async fn sapling_incoming_viewkey() {
 
         assert_eq!(sk_addr[0], iaddr);
         assert_eq!(
-            lc.do_balance().await["sapling_balance"].as_u64().unwrap(),
+            lightclient.do_balance().await["sapling_balance"]
+                .as_u64()
+                .unwrap(),
             value
         );
         assert_eq!(
-            lc.do_balance().await["spendable_sapling_balance"]
+            lightclient.do_balance().await["spendable_sapling_balance"]
                 .as_u64()
                 .unwrap(),
             0
         );
 
         // 6. Rescan to make the funds spendable (i.e., update witnesses)
-        lc.do_rescan().await.unwrap();
+        lightclient.do_rescan().await.unwrap();
         assert_eq!(
-            lc.do_balance().await["sapling_balance"].as_u64().unwrap(),
+            lightclient.do_balance().await["sapling_balance"]
+                .as_u64()
+                .unwrap(),
             value
         );
         assert_eq!(
-            lc.do_balance().await["spendable_sapling_balance"]
+            lightclient.do_balance().await["spendable_sapling_balance"]
                 .as_u64()
                 .unwrap(),
             value
@@ -892,15 +901,15 @@ async fn sapling_incoming_viewkey() {
         let sent_value = 3000;
         let outgoing_memo = "Outgoing Memo".to_string();
 
-        let sent_transaction_id = lc
+        let sent_transaction_id = lightclient
             .test_do_send(vec![(EXT_ZADDR, sent_value, Some(outgoing_memo.clone()))])
             .await
             .unwrap();
-        fcbl.add_pending_sends(&data).await;
-        mine_pending_blocks(&mut fcbl, &data, &lc).await;
+        fake_compactblock_list.add_pending_sends(&data).await;
+        mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
         // 8. Make sure transaction is present
-        let list = lc.do_list_transactions(false).await;
+        let list = lightclient.do_list_transactions(false).await;
         assert_eq!(list[1]["txid"], sent_transaction_id);
         assert_eq!(
             list[1]["amount"].as_i64().unwrap(),
@@ -916,7 +925,7 @@ async fn sapling_incoming_viewkey() {
         );
 
         // Shutdown everything cleanly
-        clean_shutdown(stop_transmitter, h1).await;
+        clean_shutdown(stop_transmitter, test_server_handle).await;
     }
 }
 
