@@ -1827,22 +1827,24 @@ fn test_read_wallet_from_buffer() {
 
 #[tokio::test]
 async fn read_write_block_data() {
-    let TenBlockFCBLScenario {
-        stop_transmitter,
-        test_server_handle,
-        fake_compactblock_list,
-        ..
-    } = setup_ten_block_fcbl_scenario(true).await;
-    for block in fake_compactblock_list.blocks {
-        let block_bytes: &mut [u8] = &mut [];
-        let cb = crate::wallet::data::BlockData::new(block.block);
-        cb.write(&mut *block_bytes).unwrap();
-        assert_eq!(
-            cb,
-            crate::wallet::data::BlockData::read(&*block_bytes).unwrap()
-        );
+    for https in [true, false] {
+        let TenBlockFCBLScenario {
+            stop_transmitter,
+            test_server_handle,
+            fake_compactblock_list,
+            ..
+        } = setup_ten_block_fcbl_scenario(https).await;
+        for block in fake_compactblock_list.blocks {
+            let block_bytes: &mut [u8] = &mut [];
+            let cb = crate::wallet::data::BlockData::new(block.block);
+            cb.write(&mut *block_bytes).unwrap();
+            assert_eq!(
+                cb,
+                crate::wallet::data::BlockData::read(&*block_bytes).unwrap()
+            );
+        }
+        clean_shutdown(stop_transmitter, test_server_handle).await;
     }
-    clean_shutdown(stop_transmitter, test_server_handle).await;
 }
 
 pub const EXT_TADDR: &str = "t1NoS6ZgaUTpmjkge2cVpXGcySasdYDrXqh";
