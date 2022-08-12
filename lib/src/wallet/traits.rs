@@ -3,7 +3,7 @@ use std::io::{self, Read, Write};
 
 use super::{
     data::{
-        OrchardNoteAndMetadata, SaplingNoteAndMetadata, TransactionMetadata, WalletNullifier,
+        ChannelNullifier, OrchardNoteAndMetadata, SaplingNoteAndMetadata, TransactionMetadata,
         WitnessCache,
     },
     keys::{orchard::OrchardKey, sapling::SaplingKey, Keys},
@@ -198,7 +198,7 @@ impl FromCommitment for MerkleHashOrchard {
 pub(crate) trait Spend {
     type Nullifier: Nullifier;
     fn nullifier(&self) -> &Self::Nullifier;
-    fn wallet_nullifier(_: &Self::Nullifier) -> WalletNullifier;
+    fn wallet_nullifier(_: &Self::Nullifier) -> ChannelNullifier;
 }
 
 impl<Auth: SaplingAuthorization> Spend for SpendDescription<Auth> {
@@ -206,8 +206,8 @@ impl<Auth: SaplingAuthorization> Spend for SpendDescription<Auth> {
     fn nullifier(&self) -> &Self::Nullifier {
         &self.nullifier
     }
-    fn wallet_nullifier(null: &Self::Nullifier) -> WalletNullifier {
-        WalletNullifier::Sapling(*null)
+    fn wallet_nullifier(null: &Self::Nullifier) -> ChannelNullifier {
+        ChannelNullifier::Sapling(*null)
     }
 }
 
@@ -216,8 +216,8 @@ impl<Auth> Spend for Action<Auth> {
     fn nullifier(&self) -> &Self::Nullifier {
         self.nullifier()
     }
-    fn wallet_nullifier(null: &Self::Nullifier) -> WalletNullifier {
-        WalletNullifier::Orchard(*null)
+    fn wallet_nullifier(null: &Self::Nullifier) -> ChannelNullifier {
+        ChannelNullifier::Orchard(*null)
     }
 }
 
@@ -346,7 +346,7 @@ pub(crate) trait Nullifier: PartialEq + Copy + Sized + ToBytes<32> + FromBytes<3
         transaction_metadata_set: &TransactionMetadataSet,
     ) -> Vec<(Self, u64, TxId)>;
     fn get_nullifiers_spent_in_transaction(transaction: &TransactionMetadata) -> &Vec<Self>;
-    fn to_wallet_nullifier(&self) -> WalletNullifier;
+    fn to_wallet_nullifier(&self) -> ChannelNullifier;
 }
 
 impl Nullifier for SaplingNullifier {
@@ -362,8 +362,8 @@ impl Nullifier for SaplingNullifier {
         &transaction_metadata_set.spent_sapling_nullifiers
     }
 
-    fn to_wallet_nullifier(&self) -> WalletNullifier {
-        WalletNullifier::Sapling(*self)
+    fn to_wallet_nullifier(&self) -> ChannelNullifier {
+        ChannelNullifier::Sapling(*self)
     }
 }
 
@@ -378,8 +378,8 @@ impl Nullifier for OrchardNullifier {
         &transaction.spent_orchard_nullifiers
     }
 
-    fn to_wallet_nullifier(&self) -> WalletNullifier {
-        WalletNullifier::Orchard(*self)
+    fn to_wallet_nullifier(&self) -> ChannelNullifier {
+        ChannelNullifier::Orchard(*self)
     }
 }
 

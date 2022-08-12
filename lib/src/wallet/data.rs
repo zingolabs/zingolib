@@ -31,7 +31,7 @@ use super::traits::ReadableWriteable;
 /// type to handle nullifiers from different domains.
 /// <https://github.com/zingolabs/zingolib/issues/64>
 #[derive(Clone, Copy, Debug)]
-pub enum WalletNullifier {
+pub enum ChannelNullifier {
     Sapling(SaplingNullifier),
     Orchard(OrchardNullifier),
 }
@@ -701,13 +701,13 @@ impl TransactionMetadata {
         Ok(())
     }
 
-    pub(super) fn add_spent_nullifier(&mut self, nullifier: WalletNullifier, value: u64) {
+    pub(super) fn add_spent_nullifier(&mut self, nullifier: ChannelNullifier, value: u64) {
         match nullifier {
-            WalletNullifier::Sapling(nf) => {
+            ChannelNullifier::Sapling(nf) => {
                 self.spent_sapling_nullifiers.push(nf);
                 self.total_sapling_value_spent += value;
             }
-            WalletNullifier::Orchard(nf) => {
+            ChannelNullifier::Orchard(nf) => {
                 self.spent_orchard_nullifiers.push(nf);
                 self.total_orchard_value_spent += value;
             }

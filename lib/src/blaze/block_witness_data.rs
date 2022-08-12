@@ -3,7 +3,7 @@ use crate::{
     grpc_connector::GrpcConnector,
     lightclient::checkpoints::get_all_main_checkpoints,
     wallet::{
-        data::{BlockData, TransactionMetadata, WalletNullifier, WitnessCache},
+        data::{BlockData, ChannelNullifier, TransactionMetadata, WitnessCache},
         traits::{DomainWalletExt, FromCommitment, NoteAndMetadata},
         transactions::TransactionMetadataSet,
     },
@@ -117,7 +117,7 @@ impl BlockAndWitnessData {
 
     pub async fn get_compact_transaction_for_nullifier_at_height(
         &self,
-        nullifier: &WalletNullifier,
+        nullifier: &ChannelNullifier,
         height: u64,
     ) -> (CompactTx, u32) {
         self.wait_for_block(height).await;
@@ -130,7 +130,7 @@ impl BlockAndWitnessData {
             bd.cb()
         };
         match nullifier {
-            WalletNullifier::Sapling(nullifier) => {
+            ChannelNullifier::Sapling(nullifier) => {
                 for compact_transaction in &cb.vtx {
                     for cs in &compact_transaction.spends {
                         if cs.nf == nullifier.to_vec() {
@@ -139,7 +139,7 @@ impl BlockAndWitnessData {
                     }
                 }
             }
-            WalletNullifier::Orchard(nullifier) => {
+            ChannelNullifier::Orchard(nullifier) => {
                 for compact_transaction in &cb.vtx {
                     for ca in &compact_transaction.actions {
                         if ca.nullifier == nullifier.to_bytes().to_vec() {
@@ -443,7 +443,7 @@ impl BlockAndWitnessData {
         }
     }
 
-    pub(crate) async fn is_nf_spent(&self, nf: WalletNullifier, after_height: u64) -> Option<u64> {
+    pub(crate) async fn is_nf_spent(&self, nf: ChannelNullifier, after_height: u64) -> Option<u64> {
         self.wait_for_block(after_height).await;
 
         {
@@ -451,7 +451,7 @@ impl BlockAndWitnessData {
             let blocks = self.blocks.read().await;
             let pos = blocks.first().unwrap().height - after_height;
             match nf {
-                WalletNullifier::Sapling(nf) => {
+                ChannelNullifier::Sapling(nf) => {
                     let nf = nf.to_vec();
 
                     for i in (0..pos + 1).rev() {
@@ -465,7 +465,7 @@ impl BlockAndWitnessData {
                         }
                     }
                 }
-                WalletNullifier::Orchard(nf) => {
+                ChannelNullifier::Orchard(nf) => {
                     let nf = nf.to_bytes();
 
                     for i in (0..pos + 1).rev() {
@@ -510,7 +510,7 @@ impl BlockAndWitnessData {
         [u8; 32]: From<<D as Domain>::ExtractedCommitmentBytes>,
         D::Recipient: crate::wallet::traits::Recipient,
     {
-        // Get the previous block's height, because that block's sapling tree is the tree state at the start
+        // Get the previous block's height, because that block's sapling commitment tree is the tree state at the start
         // of the requested block.
         let prev_height = { u64::from(height) - 1 };
 

@@ -28,8 +28,8 @@ use zingoconfig::{Network, MAX_REORG};
 
 use super::{
     data::{
-        OrchardNoteAndMetadata, OutgoingTxMetadata, SaplingNoteAndMetadata, TransactionMetadata,
-        Utxo, WalletNullifier, WitnessCache,
+        ChannelNullifier, OrchardNoteAndMetadata, OutgoingTxMetadata, SaplingNoteAndMetadata,
+        TransactionMetadata, Utxo, WitnessCache,
     },
     traits::{DomainWalletExt, FromBytes, NoteAndMetadata, Nullifier, Recipient},
 };
@@ -238,7 +238,7 @@ impl TransactionMetadataSet {
         &self.last_txid
     }
 
-    pub fn get_notes_for_updating(&self, before_block: u64) -> Vec<(TxId, WalletNullifier)> {
+    pub fn get_notes_for_updating(&self, before_block: u64) -> Vec<(TxId, ChannelNullifier)> {
         let before_block = BlockHeight::from_u32(before_block as u32);
 
         self.current
@@ -256,7 +256,7 @@ impl TransactionMetadataSet {
                         {
                             Some((
                                 txid.clone(),
-                                WalletNullifier::Sapling(
+                                ChannelNullifier::Sapling(
                                     sapling_note_description.nullifier.clone(),
                                 ),
                             ))
@@ -275,7 +275,7 @@ impl TransactionMetadataSet {
                                 {
                                     Some((
                                         txid.clone(),
-                                        WalletNullifier::Orchard(
+                                        ChannelNullifier::Orchard(
                                             orchard_note_description.nullifier.clone(),
                                         ),
                                     ))
@@ -417,12 +417,12 @@ impl TransactionMetadataSet {
     pub fn mark_txid_nf_spent(
         &mut self,
         txid: TxId,
-        nullifier: &WalletNullifier,
+        nullifier: &ChannelNullifier,
         spent_txid: &TxId,
         spent_at_height: BlockHeight,
     ) -> u64 {
         match nullifier {
-            WalletNullifier::Sapling(nf) => {
+            ChannelNullifier::Sapling(nf) => {
                 let mut note_data = self
                     .current
                     .get_mut(&txid)
@@ -435,7 +435,7 @@ impl TransactionMetadataSet {
                 note_data.unconfirmed_spent = None;
                 note_data.note.value
             }
-            WalletNullifier::Orchard(nf) => {
+            ChannelNullifier::Orchard(nf) => {
                 let mut note_data = self
                     .current
                     .get_mut(&txid)
@@ -500,12 +500,12 @@ impl TransactionMetadataSet {
         height: BlockHeight,
         unconfirmed: bool,
         timestamp: u32,
-        nullifier: WalletNullifier,
+        nullifier: ChannelNullifier,
         value: u64,
         source_txid: TxId,
     ) {
         match nullifier {
-            WalletNullifier::Orchard(nullifier) => self
+            ChannelNullifier::Orchard(nullifier) => self
                 .add_new_spent_internal::<OrchardNoteAndMetadata>(
                     txid,
                     height,
@@ -515,7 +515,7 @@ impl TransactionMetadataSet {
                     value,
                     source_txid,
                 ),
-            WalletNullifier::Sapling(nullifier) => self
+            ChannelNullifier::Sapling(nullifier) => self
                 .add_new_spent_internal::<SaplingNoteAndMetadata>(
                     txid,
                     height,

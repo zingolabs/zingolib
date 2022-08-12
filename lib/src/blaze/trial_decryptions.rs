@@ -1,7 +1,7 @@
 use crate::{
     compact_formats::CompactBlock,
     wallet::{
-        data::{TransactionMetadata, WalletNullifier},
+        data::{ChannelNullifier, TransactionMetadata},
         keys::Keys,
         transactions::TransactionMetadataSet,
         MemoDownloadOption,
@@ -50,7 +50,7 @@ impl TrialDecryptions {
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         detected_transaction_id_sender: UnboundedSender<(
             TxId,
-            WalletNullifier,
+            ChannelNullifier,
             BlockHeight,
             Option<u32>,
         )>,
@@ -135,7 +135,7 @@ impl TrialDecryptions {
         transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
         detected_transaction_id_sender: UnboundedSender<(
             TxId,
-            WalletNullifier,
+            ChannelNullifier,
             BlockHeight,
             Option<u32>,
         )>,
@@ -216,7 +216,7 @@ impl TrialDecryptions {
                                 detected_transaction_id_sender
                                     .send((
                                         transaction_id,
-                                        WalletNullifier::Sapling(nullifier),
+                                        ChannelNullifier::Sapling(nullifier),
                                         height,
                                         Some(output_num as u32),
                                     ))
@@ -294,7 +294,7 @@ impl TrialDecryptions {
                                     detected_transaction_id_sender
                                         .send((
                                             transaction_id,
-                                            WalletNullifier::Orchard(nullifier),
+                                            ChannelNullifier::Orchard(nullifier),
                                             height,
                                             Some(action_num as u32),
                                         ))
