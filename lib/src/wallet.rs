@@ -1512,13 +1512,10 @@ mod test {
     use zcash_primitives::transaction::components::Amount;
 
     use crate::{
-        blaze::test_utils::{incw_to_string, FakeCompactBlockList, FakeTransaction},
-        lightclient::{
-            test_server::{
-                clean_shutdown, create_test_server, mine_pending_blocks, mine_random_blocks,
-                setup_ten_block_fcbl_scenario, TenBlockFCBLScenario,
-            },
-            LightClient,
+        blaze::test_utils::{incw_to_string, FakeTransaction},
+        lightclient::test_server::{
+            clean_shutdown, mine_pending_blocks, mine_random_blocks, setup_ten_block_fcbl_scenario,
+            TenBlockFCBLScenario,
         },
     };
 
@@ -1705,33 +1702,38 @@ mod test {
     #[tokio::test]
     async fn multi_z_note_selection() {
         for https in [true, false] {
-            let (data, config, ready_receiver, stop_transmitter, h1) =
-                create_test_server(https).await;
-            ready_receiver.await.unwrap();
-
-            let mut lc = LightClient::test_new(&config, None, 0).await.unwrap();
-
-            let mut fcbl = FakeCompactBlockList::new(0);
-
-            // 1. Mine 10 blocks
-            mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
-            assert_eq!(lc.wallet.last_scanned_height().await, 10);
-
+            let TenBlockFCBLScenario {
+                data,
+                stop_transmitter,
+                test_server_handle,
+                mut lightclient,
+                mut fake_compactblock_list,
+                ..
+            } = setup_ten_block_fcbl_scenario(https).await;
             // 2. Send an incoming transaction to fill the wallet
-            let extfvk1 = lc.wallet.keys().read().await.get_all_sapling_extfvks()[0].clone();
+            let extfvk1 = lightclient
+                .wallet
+                .keys()
+                .read()
+                .await
+                .get_all_sapling_extfvks()[0]
+                .clone();
             let value1 = 100_000;
-            let (transaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, value1);
+            let (transaction, _height, _) =
+                fake_compactblock_list.add_transaction_paying(&extfvk1, value1);
             let txid = transaction.txid();
-            mine_pending_blocks(&mut fcbl, &data, &lc).await;
+            mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
-            assert_eq!(lc.wallet.last_scanned_height().await, 11);
+            assert_eq!(lightclient.wallet.last_scanned_height().await, 11);
 
             // 3. With one confirmation, we should be able to select the note
             let amt = Amount::from_u64(10_000).unwrap();
             // Reset the anchor offsets
-            lc.wallet.config.anchor_offset = [9, 4, 2, 1, 0];
-            let (notes, utxos, selected) =
-                lc.wallet.select_notes_and_utxos(amt, false, false).await;
+            lightclient.wallet.config.anchor_offset = [9, 4, 2, 1, 0];
+            let (notes, utxos, selected) = lightclient
+                .wallet
+                .select_notes_and_utxos(amt, false, false)
+                .await;
             assert!(selected >= amt);
             assert_eq!(notes.len(), 1);
             assert_eq!(notes[0].note.value, value1);
@@ -1739,7 +1741,8 @@ mod test {
             assert_eq!(
                 incw_to_string(&notes[0].witness),
                 incw_to_string(
-                    lc.wallet
+                    lightclient
+                        .wallet
                         .transactions
                         .read()
                         .await
@@ -1754,17 +1757,20 @@ mod test {
             );
 
             // Mine 5 blocks
-            mine_random_blocks(&mut fcbl, &data, &lc, 5).await;
+            mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 5).await;
 
             // 4. Send another incoming transaction.
             let value2 = 200_000;
-            let (_transaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, value2);
-            mine_pending_blocks(&mut fcbl, &data, &lc).await;
+            let (_transaction, _height, _) =
+                fake_compactblock_list.add_transaction_paying(&extfvk1, value2);
+            mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
             // Now, try to select a small amount, it should prefer the older note
             let amt = Amount::from_u64(10_000).unwrap();
-            let (notes, utxos, selected) =
-                lc.wallet.select_notes_and_utxos(amt, false, false).await;
+            let (notes, utxos, selected) = lightclient
+                .wallet
+                .select_notes_and_utxos(amt, false, false)
+                .await;
             assert!(selected >= amt);
             assert_eq!(notes.len(), 1);
             assert_eq!(notes[0].note.value, value1);
@@ -1772,14 +1778,16 @@ mod test {
 
             // Selecting a bigger amount should select both notes
             let amt = Amount::from_u64(value1 + value2).unwrap();
-            let (notes, utxos, selected) =
-                lc.wallet.select_notes_and_utxos(amt, false, false).await;
+            let (notes, utxos, selected) = lightclient
+                .wallet
+                .select_notes_and_utxos(amt, false, false)
+                .await;
             assert!(selected == amt);
             assert_eq!(notes.len(), 2);
             assert_eq!(utxos.len(), 0);
 
             // Shutdown everything cleanly
-            clean_shutdown(stop_transmitter, h1).await;
+            clean_shutdown(stop_transmitter, test_server_handle).await;
         }
     }
 }
