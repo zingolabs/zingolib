@@ -1827,17 +1827,13 @@ fn test_read_wallet_from_buffer() {
 
 #[tokio::test]
 async fn read_write_block_data() {
-    let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(true).await;
-
-    ready_receiver.await.unwrap();
-
-    let lc = LightClient::test_new(&config, None, 0).await.unwrap();
-    let mut fcbl = FakeCompactBlockList::new(0);
-
-    // 1. Mine 10 blocks
-    mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
-    assert_eq!(lc.wallet.last_scanned_height().await, 10);
-    for block in fcbl.blocks {
+    let TenBlockFCBLScenario {
+        stop_transmitter,
+        test_server_handle,
+        fake_compactblock_list,
+        ..
+    } = setup_ten_block_fcbl_scenario(true).await;
+    for block in fake_compactblock_list.blocks {
         let block_bytes: &mut [u8] = &mut [];
         let cb = crate::wallet::data::BlockData::new(block.block);
         cb.write(&mut *block_bytes).unwrap();
@@ -1846,7 +1842,7 @@ async fn read_write_block_data() {
             crate::wallet::data::BlockData::read(&*block_bytes).unwrap()
         );
     }
-    clean_shutdown(stop_transmitter, h1).await;
+    clean_shutdown(stop_transmitter, test_server_handle).await;
 }
 
 pub const EXT_TADDR: &str = "t1NoS6ZgaUTpmjkge2cVpXGcySasdYDrXqh";
