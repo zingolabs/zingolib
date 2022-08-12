@@ -270,9 +270,7 @@ impl LightClient {
             "Getting sapling tree from LightwalletD at height {}",
             height
         );
-        match GrpcConnector::get_sapling_tree(self.config.server.read().unwrap().clone(), height)
-            .await
-        {
+        match GrpcConnector::get_trees(self.config.server.read().unwrap().clone(), height).await {
             Ok(tree_state) => {
                 let hash = tree_state.hash.clone();
                 let tree = tree_state.sapling_tree.clone();

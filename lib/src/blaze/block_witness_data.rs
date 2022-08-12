@@ -418,14 +418,15 @@ impl BlockAndWitnessData {
     }
 
     async fn wait_for_first_block(&self) -> u64 {
-        while self.blocks.read().await.is_empty() {
-            yield_now().await;
-            sleep(Duration::from_millis(100)).await;
-
-            //info!("Waiting for first block, blocks are empty!");
+        loop {
+            match self.blocks.read().await.first() {
+                None => {
+                    yield_now().await;
+                    sleep(Duration::from_millis(100)).await;
+                }
+                Some(blocks) => return blocks.height,
+            }
         }
-
-        self.blocks.read().await.first().unwrap().height
     }
 
     async fn wait_for_block(&self, height: u64) {
@@ -494,7 +495,9 @@ impl BlockAndWitnessData {
             blocks.get(pos as usize).unwrap().cb().time
         }
     }
-
+    /// This function handled Orchard and Sapling domains.
+    /// This function takes data from the Untrusted Malicious Proxy, and uses it to construct a witness locally.  I am
+    /// currently of the opinion that this function should be factored into separate concerns.
     async fn get_note_witness<D>(
         &self,
         uri: Uri,
@@ -510,15 +513,16 @@ impl BlockAndWitnessData {
         [u8; 32]: From<<D as Domain>::ExtractedCommitmentBytes>,
         D::Recipient: crate::wallet::traits::Recipient,
     {
-        // Get the previous block's height, because that block's sapling commitment tree is the tree state at the start
+        // Get the previous block's height, because that block's commitment trees are the states at the start
         // of the requested block.
         let prev_height = { u64::from(height) - 1 };
 
         let (cb, mut tree) = {
+            // In the edge case of a transition to a new network epoch, there is no previous tree.
             let tree = if prev_height < activation_height {
                 CommitmentTree::empty()
             } else {
-                let tree_state = GrpcConnector::get_sapling_tree(uri, prev_height).await?;
+                let tree_state = GrpcConnector::get_trees(uri, prev_height).await?;
                 let tree = hex::decode(D::get_tree(&tree_state)).unwrap();
                 RwLock::write(&self.verification_list)
                     .await
