@@ -226,6 +226,7 @@ async fn sapling_incoming_sapling_outgoing() {
             test_server_handle,
             lightclient,
             mut fake_compactblock_list,
+            ..
         } = setup_ten_block_fcbl_scenario(https).await;
         // 2. Send an incoming transaction to fill the wallet
         let extfvk1 = lightclient
@@ -460,6 +461,7 @@ async fn multiple_incoming_same_transaction() {
             test_server_handle,
             lightclient,
             mut fake_compactblock_list,
+            ..
         } = setup_ten_block_fcbl_scenario(https).await;
 
         let extfvk1 = lightclient
@@ -648,23 +650,27 @@ async fn multiple_incoming_same_transaction() {
 #[tokio::test]
 async fn sapling_incoming_multisapling_outgoing() {
     for https in [true, false] {
-        let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(https).await;
-
-        ready_receiver.await.unwrap();
-
-        let lc = LightClient::test_new(&config, None, 0).await.unwrap();
-        let mut fcbl = FakeCompactBlockList::new(0);
-
-        // 1. Mine 10 blocks
-        mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
-        assert_eq!(lc.wallet.last_scanned_height().await, 10);
-
+        let TenBlockFCBLScenario {
+            data,
+            stop_transmitter,
+            test_server_handle,
+            lightclient,
+            mut fake_compactblock_list,
+            ..
+        } = setup_ten_block_fcbl_scenario(https).await;
         // 2. Send an incoming transaction to fill the wallet
-        let extfvk1 = lc.wallet.keys().read().await.get_all_sapling_extfvks()[0].clone();
+        let extfvk1 = lightclient
+            .wallet
+            .keys()
+            .read()
+            .await
+            .get_all_sapling_extfvks()[0]
+            .clone();
         let value = 100_000;
-        let (_transaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, value);
-        mine_pending_blocks(&mut fcbl, &data, &lc).await;
-        mine_random_blocks(&mut fcbl, &data, &lc, 5).await;
+        let (_transaction, _height, _) =
+            fake_compactblock_list.add_transaction_paying(&extfvk1, value);
+        mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
+        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 5).await;
 
         // 3. send a transaction to multiple addresses
         let tos = vec![
@@ -672,12 +678,12 @@ async fn sapling_incoming_multisapling_outgoing() {
             (EXT_ZADDR, 2, Some("ext1-2".to_string())),
             (EXT_ZADDR2, 20, Some("ext2-20".to_string())),
         ];
-        let sent_transaction_id = lc.test_do_send(tos.clone()).await.unwrap();
-        fcbl.add_pending_sends(&data).await;
-        mine_pending_blocks(&mut fcbl, &data, &lc).await;
+        let sent_transaction_id = lightclient.test_do_send(tos.clone()).await.unwrap();
+        fake_compactblock_list.add_pending_sends(&data).await;
+        mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
         // 4. Check the outgoing transaction list
-        let list = lc.do_list_transactions(false).await;
+        let list = lightclient.do_list_transactions(false).await;
 
         assert_eq!(list[1]["block_height"].as_u64().unwrap(), 17);
         assert_eq!(list[1]["txid"], sent_transaction_id);
@@ -697,7 +703,7 @@ async fn sapling_incoming_multisapling_outgoing() {
         }
 
         // Shutdown everything cleanly
-        clean_shutdown(stop_transmitter, h1).await;
+        clean_shutdown(stop_transmitter, test_server_handle).await;
     }
 }
 

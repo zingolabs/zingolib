@@ -1531,6 +1531,7 @@ mod test {
                 test_server_handle,
                 mut lightclient,
                 mut fake_compactblock_list,
+                ..
             } = setup_ten_block_fcbl_scenario(https).await;
             // 2. Send an incoming transaction to fill the wallet
             let extfvk1 = lightclient

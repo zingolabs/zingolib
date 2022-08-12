@@ -220,6 +220,7 @@ pub struct TenBlockFCBLScenario {
     pub test_server_handle: JoinHandle<()>,
     pub lightclient: LightClient,
     pub fake_compactblock_list: FakeCompactBlockList,
+    pub config: ZingoConfig,
 }
 
 /// This scenario is used as the start state for 14 separate tests!
@@ -243,6 +244,7 @@ pub async fn setup_ten_block_fcbl_scenario(transport_security: bool) -> TenBlock
         test_server_handle,
         lightclient,
         fake_compactblock_list,
+        config,
     }
 }
 
