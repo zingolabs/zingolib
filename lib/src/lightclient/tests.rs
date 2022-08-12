@@ -1483,37 +1483,40 @@ async fn recover_at_checkpoint() {
 #[tokio::test]
 async fn witness_clearing() {
     for https in [true, false] {
-        let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(https).await;
-
-        ready_receiver.await.unwrap();
-
-        let lc = LightClient::test_new(&config, None, 0).await.unwrap();
-        //lc.init_logging().unwrap();
-        let mut fcbl = FakeCompactBlockList::new(0);
-
-        // 1. Mine 10 blocks
-        mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
-        assert_eq!(lc.wallet.last_scanned_height().await, 10);
-
+        let TenBlockFCBLScenario {
+            data,
+            stop_transmitter,
+            test_server_handle,
+            lightclient,
+            mut fake_compactblock_list,
+            ..
+        } = setup_ten_block_fcbl_scenario(https).await;
         // 2. Send an incoming transaction to fill the wallet
-        let extfvk1 = lc.wallet.keys().read().await.get_all_sapling_extfvks()[0].clone();
+        let extfvk1 = lightclient
+            .wallet
+            .keys()
+            .read()
+            .await
+            .get_all_sapling_extfvks()[0]
+            .clone();
         let value = 100_000;
-        let (transaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, value);
+        let (transaction, _height, _) =
+            fake_compactblock_list.add_transaction_paying(&extfvk1, value);
         let txid = transaction.txid();
-        mine_pending_blocks(&mut fcbl, &data, &lc).await;
-        mine_random_blocks(&mut fcbl, &data, &lc, 5).await;
+        mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
+        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 5).await;
 
         // 3. Send z-to-z transaction to external z address with a memo
         let sent_value = 2000;
         let outgoing_memo = "Outgoing Memo".to_string();
 
-        let _sent_transaction_id = lc
+        let _sent_transaction_id = lightclient
             .test_do_send(vec![(EXT_ZADDR, sent_value, Some(outgoing_memo.clone()))])
             .await
             .unwrap();
 
         // transaction is not yet mined, so witnesses should still be there
-        let witnesses = lc
+        let witnesses = lightclient
             .wallet
             .transactions()
             .read()
@@ -1529,11 +1532,11 @@ async fn witness_clearing() {
         assert_eq!(witnesses.len(), 6);
 
         // 4. Mine the sent transaction
-        fcbl.add_pending_sends(&data).await;
-        mine_pending_blocks(&mut fcbl, &data, &lc).await;
+        fake_compactblock_list.add_pending_sends(&data).await;
+        mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
         // transaction is now mined, but witnesses should still be there because not 100 blocks yet (i.e., could get reorged)
-        let witnesses = lc
+        let witnesses = lightclient
             .wallet
             .transactions()
             .read()
@@ -1549,8 +1552,8 @@ async fn witness_clearing() {
         assert_eq!(witnesses.len(), 6);
 
         // 5. Mine 50 blocks, witness should still be there
-        mine_random_blocks(&mut fcbl, &data, &lc, 50).await;
-        let witnesses = lc
+        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 50).await;
+        let witnesses = lightclient
             .wallet
             .transactions()
             .read()
@@ -1566,8 +1569,8 @@ async fn witness_clearing() {
         assert_eq!(witnesses.len(), 6);
 
         // 5. Mine 100 blocks, witness should now disappear
-        mine_random_blocks(&mut fcbl, &data, &lc, 100).await;
-        let witnesses = lc
+        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 100).await;
+        let witnesses = lightclient
             .wallet
             .transactions()
             .read()
@@ -1583,7 +1586,7 @@ async fn witness_clearing() {
         assert_eq!(witnesses.len(), 0);
 
         // Shutdown everything cleanly
-        clean_shutdown(stop_transmitter, h1).await;
+        clean_shutdown(stop_transmitter, test_server_handle).await;
     }
 }
 
