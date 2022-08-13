@@ -678,74 +678,72 @@ async fn sapling_incoming_multisapling_outgoing() {
 #[tokio::test]
 async fn sapling_to_sapling_scan_together() {
     // Create an incoming transaction, and then send that transaction, and scan everything together, to make sure it works.
-    for https in [true, false] {
-        let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(https).await;
+    let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(true).await;
 
-        ready_receiver.await.unwrap();
+    ready_receiver.await.unwrap();
 
-        let lc = LightClient::test_new(&config, None, 0).await.unwrap();
-        let mut fcbl = FakeCompactBlockList::new(0);
+    let lc = LightClient::test_new(&config, None, 0).await.unwrap();
+    let mut fcbl = FakeCompactBlockList::new(0);
 
-        // 1. Start with 10 blocks that are unmined
-        fcbl.add_blocks(10);
+    // 1. Start with 10 blocks that are unmined
+    fcbl.add_blocks(10);
 
-        // 2. Send an incoming transaction to fill the wallet
-        let extfvk1 = lc.wallet.keys().read().await.get_all_sapling_extfvks()[0].clone();
-        let value = 100_000;
-        let (transaction, _height, note) = fcbl.add_transaction_paying(&extfvk1, value);
-        let txid = transaction.txid();
+    // 2. Send an incoming transaction to fill the wallet
+    let extfvk1 = dbg!(lc.wallet.keys().read().await.get_all_sapling_extfvks()[0].clone());
+    let value = 100_000;
+    let (transaction, _height, note) = fcbl.add_transaction_paying(&extfvk1, value);
+    let txid = transaction.txid();
 
-        // 3. Calculate witness so we can get the nullifier without it getting mined
-        let tree = fcbl
-            .blocks
-            .iter()
-            .fold(CommitmentTree::<Node>::empty(), |mut tree, fcb| {
-                for transaction in &fcb.block.vtx {
-                    for co in &transaction.outputs {
-                        tree.append(Node::new(co.cmu().unwrap().into())).unwrap();
-                    }
+    // 3. Calculate witness so we can get the nullifier without it getting mined
+    let tree = fcbl
+        .blocks
+        .iter()
+        .fold(CommitmentTree::<Node>::empty(), |mut tree, fcb| {
+            for transaction in &fcb.block.vtx {
+                for co in &transaction.outputs {
+                    tree.append(Node::new(co.cmu().unwrap().into())).unwrap();
                 }
+            }
 
-                tree
-            });
-        let witness = IncrementalWitness::from_tree(&tree);
-        let nf = note.nf(&extfvk1.fvk.vk, witness.position() as u64);
+            tree
+        });
+    let witness = IncrementalWitness::from_tree(&tree);
+    let nf = note.nf(&extfvk1.fvk.vk, witness.position() as u64);
 
-        let pa = if let Some(RecipientAddress::Shielded(pa)) =
-            RecipientAddress::decode(&config.chain, EXT_ZADDR)
-        {
-            pa
-        } else {
-            panic!("Couldn't parse address")
-        };
-        let spent_value = 250;
-        let spent_txid = fcbl
-            .add_transaction_spending(&nf, spent_value, &extfvk1.fvk.ovk, &pa)
-            .txid();
-        // 4. Mine the blocks and sync the lightwallet
-        mine_pending_blocks(&mut fcbl, &data, &lc).await;
+    let pa = if let Some(RecipientAddress::Shielded(pa)) =
+        RecipientAddress::decode(&config.chain, EXT_ZADDR)
+    {
+        pa
+    } else {
+        panic!("Couldn't parse address")
+    };
+    let spent_value = 250;
+    let spent_txid = fcbl
+        .add_transaction_spending(&nf, spent_value, &extfvk1.fvk.ovk, &pa)
+        .txid();
+    // 4. Mine the blocks and sync the lightwallet
+    mine_pending_blocks(&mut fcbl, &data, &lc).await;
 
-        // 5. Check the transaction list to make sure we got all transactions
-        let list = lc.do_list_transactions(false).await;
+    // 5. Check the transaction list to make sure we got all transactions
+    let list = lc.do_list_transactions(false).await;
 
-        assert_eq!(list[0]["block_height"].as_u64().unwrap(), 11);
-        assert_eq!(list[0]["txid"], txid.to_string());
+    assert_eq!(list[0]["block_height"].as_u64().unwrap(), 11);
+    assert_eq!(list[0]["txid"], txid.to_string());
 
-        assert_eq!(list[1]["block_height"].as_u64().unwrap(), 12);
-        assert_eq!(list[1]["txid"], spent_txid.to_string());
-        assert_eq!(list[1]["amount"].as_i64().unwrap(), -(value as i64));
-        assert_eq!(
-            list[1]["outgoing_metadata"][0]["address"],
-            EXT_ZADDR.to_string()
-        );
-        assert_eq!(
-            list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
-            spent_value
-        );
+    assert_eq!(list[1]["block_height"].as_u64().unwrap(), 12);
+    assert_eq!(list[1]["txid"], spent_txid.to_string());
+    assert_eq!(list[1]["amount"].as_i64().unwrap(), -(value as i64));
+    assert_eq!(
+        list[1]["outgoing_metadata"][0]["address"],
+        EXT_ZADDR.to_string()
+    );
+    assert_eq!(
+        list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
+        spent_value
+    );
 
-        // Shutdown everything cleanly
-        clean_shutdown(stop_transmitter, h1).await;
-    }
+    // Shutdown everything cleanly
+    clean_shutdown(stop_transmitter, h1).await;
 }
 
 #[tokio::test]
