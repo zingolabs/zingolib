@@ -221,7 +221,7 @@ impl FakeTransaction {
     // Add a new transaction into the block, paying the given address the amount.
     // Returns the nullifier of the new note.
     pub fn add_transaction_paying(&mut self, extfvk: &ExtendedFullViewingKey, value: u64) -> Note {
-        let to = dbg!(extfvk.default_address()).1;
+        let to = extfvk.default_address().1;
         self.add_sapling_output(value, None, &to)
     }
 
