@@ -3,7 +3,6 @@ use group::GroupEncoding;
 use json::JsonValue;
 use rand::rngs::OsRng;
 use tokio::runtime::Runtime;
-use tonic::Request;
 use zcash_client_backend::address::RecipientAddress;
 
 use zcash_client_backend::encoding::{
@@ -24,7 +23,7 @@ use crate::blaze::fetch_full_transaction::FetchFullTxns;
 use crate::blaze::test_utils::{FakeCompactBlockList, FakeTransaction};
 use crate::lightclient::testmocks;
 
-use crate::compact_formats::{CompactSaplingOutput, CompactTx, Empty};
+use crate::compact_formats::{CompactSaplingOutput, CompactTx};
 use crate::lightclient::test_server::{
     clean_shutdown, create_test_server, mine_pending_blocks, mine_random_blocks,
 };
