@@ -185,6 +185,8 @@ fn new_wallet_from_zvk() {
     });
 }
 
+///  This serves as a useful check on the correct behavior of our widely
+//   used `setup_ten_block_fcbl_scenario`.
 #[tokio::test]
 async fn test_direct_grpc_and_lightclient_blockchain_height_agreement() {
     let expected_lightdinfo_before_blockmining = "LightdInfo ".to_string()
