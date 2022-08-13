@@ -221,10 +221,8 @@ impl FakeTransaction {
     // Add a new transaction into the block, paying the given address the amount.
     // Returns the nullifier of the new note.
     pub fn add_transaction_paying(&mut self, extfvk: &ExtendedFullViewingKey, value: u64) -> Note {
-        let to = extfvk.default_address().1;
-        let note = self.add_sapling_output(value, None, &to);
-
-        note
+        let to = dbg!(extfvk.default_address()).1;
+        self.add_sapling_output(value, None, &to)
     }
 
     // Add a t output which will be paid to the given PubKey
@@ -480,7 +478,7 @@ impl FakeCompactBlockList {
         transaction
     }
 
-    // Add a new transaction into the block, paying the given address the amount.
+    // Add a new transaction into the ??block??, paying the given address the amount.
     // Returns the nullifier of the new note.
     pub fn add_transaction_paying(
         &mut self,
