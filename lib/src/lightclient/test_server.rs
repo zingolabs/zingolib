@@ -247,6 +247,80 @@ pub async fn setup_ten_block_fcbl_scenario(transport_security: bool) -> TenBlock
         config,
     }
 }
+///  This serves as a useful check on the correct behavior of our widely
+//   used `setup_ten_block_fcbl_scenario`.
+#[tokio::test]
+async fn test_direct_grpc_and_lightclient_blockchain_height_agreement() {
+    let expected_lightdinfo_before_blockmining = "LightdInfo ".to_string()
+        + "{ version: \"Test GRPC Server\","
+        + " vendor: \"\","
+        + " taddr_support: true,"
+        + " chain_name: \"fakemainnet\","
+        + " sapling_activation_height: 1,"
+        + " consensus_branch_id: \"\","
+        + " block_height: 0,"
+        + " git_commit: \"\","
+        + " branch: \"\","
+        + " build_date: \"\","
+        + " build_user: \"\","
+        + " estimated_height: 0,"
+        + " zcashd_build: \"\","
+        + " zcashd_subversion: \"\" }";
+    let expected_lightdinfo_after_blockmining = "LightdInfo ".to_string()
+        + "{ version: \"Test GRPC Server\","
+        + " vendor: \"\","
+        + " taddr_support: true,"
+        + " chain_name: \"fakemainnet\","
+        + " sapling_activation_height: 1,"
+        + " consensus_branch_id: \"\","
+        + " block_height: 10,"
+        + " git_commit: \"\","
+        + " branch: \"\","
+        + " build_date: \"\","
+        + " build_user: \"\","
+        + " estimated_height: 0,"
+        + " zcashd_build: \"\","
+        + " zcashd_subversion: \"\" }";
+    for https in [true, false] {
+        let (data, config, ready_receiver, stop_transmitter, test_server_handle) =
+            create_test_server(https).await;
+
+        let uri = config.server.clone();
+        let mut client = crate::grpc_connector::GrpcConnector::new(uri.read().unwrap().clone())
+            .get_client()
+            .await
+            .unwrap();
+
+        //let info_getter = &mut client.get_lightd_info(Request::new(Empty {}));
+        ready_receiver.await.unwrap();
+        let lightclient = LightClient::test_new(&config, None, 0).await.unwrap();
+        let mut fake_compactblock_list = FakeCompactBlockList::new(0);
+
+        let observed_pre_answer = format!(
+            "{:?}",
+            client
+                .get_lightd_info(Request::new(Empty {}))
+                .await
+                .unwrap()
+                .into_inner()
+        );
+        assert_eq!(observed_pre_answer, expected_lightdinfo_before_blockmining);
+        assert_eq!(lightclient.wallet.last_scanned_height().await, 0);
+        // Change system under test state (generating random blocks)
+        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 10).await;
+        let observed_post_answer = format!(
+            "{:?}",
+            client
+                .get_lightd_info(Request::new(Empty {}))
+                .await
+                .unwrap()
+                .into_inner()
+        );
+        assert_eq!(observed_post_answer, expected_lightdinfo_after_blockmining);
+        assert_eq!(lightclient.wallet.last_scanned_height().await, 10);
+        clean_shutdown(stop_transmitter, test_server_handle).await;
+    }
+}
 
 pub async fn clean_shutdown(
     stop_transmitter: oneshot::Sender<()>,
