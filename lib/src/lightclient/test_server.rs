@@ -344,12 +344,12 @@ pub async fn mine_random_blocks(
 
 pub async fn mine_pending_blocks(
     fcbl: &mut FakeCompactBlockList,
-    data: &Arc<RwLock<TestServerData>>,
+    testserver_payload: &Arc<RwLock<TestServerData>>,
     lc: &LightClient,
 ) {
     let cbs = fcbl.into_compact_blocks();
 
-    data.write().await.add_blocks(cbs.clone());
+    testserver_payload.write().await.add_blocks(cbs.clone());
     let mut v = fcbl.into_transactions();
 
     // Add all the t-addr spend's t-addresses into the maps, so the test grpc server
@@ -381,7 +381,7 @@ pub async fn mine_pending_blocks(
         }
     }
 
-    data.write().await.add_transactions(v);
+    testserver_payload.write().await.add_transactions(v);
 
     lc.do_sync(true).await.unwrap();
 }
