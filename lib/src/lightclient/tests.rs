@@ -683,9 +683,19 @@ async fn sapling_to_sapling_scan_together() {
     // 1. create a spend key: SpendK_S
     // 2. derive a Shielded Payment Address from SpendK_S: SPA_KS
     // 3. construct a Block Reward Transaction where SPA_KS receives a block reward: BRT
+    // 4. publish BRT
+    // 5. optionally mine a block including BRT <-- There are two separate tests to run
+    // 6. optionally mine sufficient subsequent blocks to "validate" BRT
     // Recipient Setup:
     // 1. create a spend key: "SpendK_R"
     // 2. from SpendK_R derive a Shielded Payment Address: SPA_R
+    // Test Procedure:
+    // 1. construct a transaction "spending" from a SpendK_S output to SPA_R
+    // 2. publish the transaction to the mempool
+    // 3. mine a block
+    // Constraints:
+    // 1. SpendK_S controls start - spend funds
+    // 2. SpendK_R controls 0 + spend funds
     let (data, config, ready_receiver, stop_transmitter, test_server_handle) =
         create_test_server(true).await;
 
