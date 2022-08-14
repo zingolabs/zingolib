@@ -704,9 +704,6 @@ async fn sapling_to_sapling_scan_together() {
     let lightclient = LightClient::test_new(&config, None, 0).await.unwrap();
     let mut fake_compactblock_list = FakeCompactBlockList::new(0);
 
-    // 1. Start with 10 blocks that are unmined
-    fake_compactblock_list.add_blocks(10);
-
     // 2. Send an incoming transaction to fill the wallet
     let extfvk1 = lightclient
         .wallet
@@ -753,10 +750,10 @@ async fn sapling_to_sapling_scan_together() {
     // 5. Check the transaction list to make sure we got all transactions
     let list = lightclient.do_list_transactions(false).await;
 
-    assert_eq!(list[0]["block_height"].as_u64().unwrap(), 11);
+    assert_eq!(list[0]["block_height"].as_u64().unwrap(), 1);
     assert_eq!(list[0]["txid"], txid.to_string());
 
-    assert_eq!(list[1]["block_height"].as_u64().unwrap(), 12);
+    assert_eq!(list[1]["block_height"].as_u64().unwrap(), 2);
     assert_eq!(list[1]["txid"], spent_txid.to_string());
     assert_eq!(list[1]["amount"].as_i64().unwrap(), -(value as i64));
     assert_eq!(
