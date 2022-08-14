@@ -678,6 +678,14 @@ async fn sapling_incoming_multisapling_outgoing() {
 #[tokio::test]
 async fn sapling_to_sapling_scan_together() {
     // Create an incoming transaction, and then send that transaction, and scan everything together, to make sure it works.
+    // (For this test, the Sapling Domain is assumed in all cases.)
+    // Sender Setup:
+    // 1. create a spend key: SpendK_S
+    // 2. derive a Shielded Payment Address from SpendK_S: SPA_KS
+    // 3. construct a Block Reward Transaction where SPA_KS receives a block reward: BRT
+    // Recipient Setup:
+    // 1. create a spend key: "SpendK_R"
+    // 2. from SpendK_R derive a Shielded Payment Address: SPA_R
     let (data, config, ready_receiver, stop_transmitter, test_server_handle) =
         create_test_server(true).await;
 
