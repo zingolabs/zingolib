@@ -1,7 +1,7 @@
 use std::process::Command;
 ///  Enforce strict expectations for tool use with current zingolib.  Relaxing these restrictions will facilitate
 ///  use in other projects.  For example, this version of regtest will only run within a git repo that is historically
-///  descended from 27e5eedc6b35759f463d43ea341ce66714aa9e01.
+///  descended from 27e5eedc6b35759f463d43ea341ce66714aa9e01 (ie, I am Jack's commit descendant.)
 fn git_selfcheck() {
     let git_check = Command::new("git")
         .arg("--help")
@@ -41,7 +41,7 @@ fn git_selfcheck() {
     }
 }
 
-///  Simple helper to succinctly reference to the project root dir.
+///  Simple helper to succinctly reference the project root dir.
 use std::path::{Path, PathBuf};
 fn get_top_level_dir() -> PathBuf {
     let revparse_raw = Command::new("git")
@@ -72,14 +72,14 @@ pub(crate) fn launch() {
     let confs_dir = regtest_dir.join("conf");
     let bin_location = regtest_dir.join("bin");
     let logs = regtest_dir.join("logs");
-    let datadir = regtest_dir.join("data");
-    let zcashd_datadir = datadir.join("zcashd");
+    let data_dir = regtest_dir.join("data");
+    let zcashd_datadir = data_dir.join("zcashd");
     let zcashd_logs = logs.join("zcashd");
     let zcashd_config = confs_dir.join("zcash.conf");
     let lightwalletd_config = confs_dir.join("lightwalletd.yaml");
     let lightwalletd_logs = logs.join("lightwalletd");
     let lightwalletd_stdout_log = lightwalletd_logs.join("stdout.log");
-    let lightwalletd_datadir = datadir.join("lightwalletd");
+    let lightwalletd_datadir = data_dir.join("lightwalletd");
 
     let mut zcashd_bin = bin_location.to_owned();
     zcashd_bin.push("zcashd");
@@ -106,13 +106,13 @@ pub(crate) fn launch() {
             )
             .as_str(),
             format!(
-                "--data={}",
+                "--datadir={}",
                 zcashd_datadir.to_str().expect("Unexpected string!")
             )
             .as_str(),
-            // Right now I can't get zcashd to write to debug.log with this flag
-            //"-debuglogfile=.../zingolib/regtest/logs/debug.log",
-            //debug=1 will at least print to stdout
+            // Currently zcashd will not write to debug.log with the following flag
+            // "-debuglogfile=.../zingolib/regtest/logs/debug.log",
+            // debug=1 will at least print to stdout
             "-debug=1",
         ])
         .stdout(Stdio::piped())
@@ -128,15 +128,16 @@ pub(crate) fn launch() {
     }
 
     println!("zcashd is starting in regtest mode, please standby...");
-    let check_interval = time::Duration::from_millis(100);
+    let check_interval = time::Duration::from_millis(150);
 
     let mut zcashd_log_open = File::open(&zcashd_stdout_log).expect("can't open zcashd log");
     let mut zcashd_logfile_state = String::new();
+
     //now enter loop to find string that indicates daemon is ready for next step
     loop {
         zcashd_log_open
             .read_to_string(&mut zcashd_logfile_state)
-            .expect("problem reading zcashd_logfile into rust string"); // returns result
+            .expect("problem reading zcashd_logfile into rust string");
         if zcashd_logfile_state.contains("Error:") {
             panic!("zcashd reporting ERROR! exiting with panic. you may have to shut the daemon down manually.");
         } else if zcashd_logfile_state.contains("init message: Done loading") {
@@ -145,7 +146,7 @@ pub(crate) fn launch() {
         thread::sleep(check_interval);
     }
 
-    println!("zcashd start section completed, zcashd should be running.");
+    println!("zcashd start section completed, zcashd reports it is done loading.");
     println!("lightwalletd is about to start. This should only take a moment.");
 
     let mut lwd_logfile =
@@ -155,15 +156,22 @@ pub(crate) fn launch() {
         .args([
             "--no-tls-very-insecure",
             "--zcash-conf-path",
-            &zcashd_config.to_str().expect("String repr fail!"),
+            &zcashd_config
+                .to_str()
+                .expect("zcashd_config PathBuf to str fail!"),
             "--config",
-            &lightwalletd_config.to_str().expect("String repr fail!"),
+            &lightwalletd_config
+                .to_str()
+                .expect("lightwalletd_config PathBuf to str fail!"),
             "--data-dir",
-            &lightwalletd_datadir.to_str().expect("String fail!"),
+            &lightwalletd_datadir
+                .to_str()
+                .expect("lightwalletd_datadir PathBuf to str fail!"),
             "--log-file",
-            &lightwalletd_stdout_log.to_str().expect("Repr fail!"),
+            &lightwalletd_stdout_log
+                .to_str()
+                .expect("lightwalletd_stdout_log PathBuf to str fail!"),
         ])
-        // this currently prints stdout of lwd process' output also to the zingo-cli stdout
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -180,6 +188,7 @@ pub(crate) fn launch() {
 
     let mut lwd_log_opened = File::open(&lightwalletd_stdout_log).expect("can't open lwd log");
     let mut lwd_logfile_state = String::new();
+
     //now enter loop to find string that indicates daemon is ready for next step
     loop {
         lwd_log_opened
@@ -188,9 +197,9 @@ pub(crate) fn launch() {
         if lwd_logfile_state.contains("Starting insecure no-TLS (plaintext) server") {
             println!("lwd start section completed, lightwalletd should be running!");
             println!("Standby, Zingo-cli should be running in regtest mode momentarily...");
-            // we need to sleep because even after the last message is detected, lwd needs a moment to become ready for regtest mode
             break;
         }
+        // we need to sleep because even after the last message is detected, lwd needs a moment to become ready for regtest mode
         thread::sleep(check_interval);
     }
 }
