@@ -374,7 +374,7 @@ impl FakeCompactBlockList {
             next_height: 1,
         };
 
-        s.add_n_tworandtx_blocks(len);
+        s.create_and_append_randtx_blocks(len);
 
         s
     }
@@ -506,7 +506,10 @@ impl FakeCompactBlockList {
     }
 
     // Populate arg number of blocks with 2 rand compact txs each
-    pub fn add_n_tworandtx_blocks(&mut self, number_of_twotx_blocks_toadd: u64) -> &mut Self {
+    pub fn create_and_append_randtx_blocks(
+        &mut self,
+        number_of_twotx_blocks_toadd: u64,
+    ) -> &mut Self {
         let nexth = self.next_height;
 
         for i in nexth..(nexth + number_of_twotx_blocks_toadd) {

@@ -699,7 +699,7 @@ async fn sapling_to_sapling_scan_together() {
     // Constraints:
     // 1. SpendK_S controls start - spend funds
     // 2. SpendK_R controls 0 + spend funds
-    let (data, config, ready_receiver, stop_transmitter, test_server_handle) =
+    let (testserver_state, config, ready_receiver, stop_transmitter, test_server_handle) =
         create_test_server(true).await;
 
     ready_receiver.await.unwrap();
@@ -748,7 +748,7 @@ async fn sapling_to_sapling_scan_together() {
         .add_transaction_spending(&nf, spent_value, &extfvk1.fvk.ovk, &pa)
         .txid();
     // 4. Mine the blocks and sync the lightwallet
-    mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
+    mine_pending_blocks(&mut fake_compactblock_list, &testserver_state, &lightclient).await;
 
     // 5. Check the transaction list to make sure we got all transactions
     let list = lightclient.do_list_transactions(false).await;
@@ -1403,7 +1403,9 @@ async fn recover_at_checkpoint() {
             let blk = fcbl.add_empty_block();
             blk.block.prev_hash = hex::decode(hash).unwrap().into_iter().rev().collect();
         }
-        let cbs = fcbl.add_n_tworandtx_blocks(109).into_compact_blocks();
+        let cbs = fcbl
+            .create_and_append_randtx_blocks(109)
+            .into_compact_blocks();
         data.write().await.add_blocks(cbs.clone());
 
         // 4. Test1: create a new lightclient, restoring at exactly the checkpoint

@@ -334,27 +334,27 @@ pub async fn clean_shutdown(
 
 pub async fn mine_numblocks_each_with_two_sap_txs(
     fcbl: &mut FakeCompactBlockList,
-    testserver_payload: &Arc<RwLock<TestServerData>>,
+    testserver_state: &Arc<RwLock<TestServerData>>,
     lc: &LightClient,
     num: u64,
 ) {
-    testserver_payload
-        .write()
-        .await
-        .add_blocks(fcbl.add_n_tworandtx_blocks(num).into_compact_blocks());
+    testserver_state.write().await.add_blocks(
+        fcbl.create_and_append_randtx_blocks(num)
+            .into_compact_blocks(),
+    );
     lc.do_sync(true).await.unwrap();
 }
 
 pub async fn mine_pending_blocks(
     fcbl: &mut FakeCompactBlockList,
-    testserver_payload: &Arc<RwLock<TestServerData>>,
+    testserver_state: &Arc<RwLock<TestServerData>>,
     lc: &LightClient,
 ) {
-    testserver_payload
+    testserver_state
         .write()
         .await
         .add_blocks(fcbl.into_compact_blocks());
-    testserver_payload
+    testserver_state
         .write()
         .await
         .add_transactions(fcbl.into_transactions());
