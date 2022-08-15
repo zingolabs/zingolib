@@ -317,7 +317,7 @@ impl FakeCompactBlock {
 
     // Add a new transaction into the block, paying the given address the amount.
     // Returns the nullifier of the new note.
-    pub fn add_random_transaction(&mut self, num_outputs: usize) {
+    pub fn add_random_sapling_transaction(&mut self, num_outputs: usize) {
         let xsk_m = ExtendedSpendingKey::master(&[1u8; 32]);
         let extfvk = ExtendedFullViewingKey::from(&xsk_m);
 
@@ -517,7 +517,7 @@ impl FakeCompactBlockList {
 
             // Add 2 transactions, each with some random Compact Outputs to this block
             for _ in 0..2 {
-                b.add_random_transaction(2);
+                b.add_random_sapling_transaction(2);
             }
 
             self.blocks.push(b);
