@@ -206,7 +206,7 @@ async fn sapling_incoming_sapling_outgoing() {
             .clone();
         let value = 100_000;
         let (transaction, _height, _) =
-            fake_compactblock_list.add_transaction_paying(&extfvk1, value);
+            fake_compactblock_list.conjure_funds_for_key(&extfvk1, value);
         let txid = transaction.txid();
         mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
@@ -638,7 +638,7 @@ async fn sapling_incoming_multisapling_outgoing() {
             .clone();
         let value = 100_000;
         let (_transaction, _height, _) =
-            fake_compactblock_list.add_transaction_paying(&extfvk1, value);
+            fake_compactblock_list.conjure_funds_for_key(&extfvk1, value);
         mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
         mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5)
             .await;
@@ -717,7 +717,7 @@ async fn sapling_to_sapling_scan_together() {
         .clone();
     let value = 100_000;
     let (transaction, _height, note) =
-        fake_compactblock_list.add_transaction_paying(&extfvk1, value);
+        fake_compactblock_list.conjure_funds_for_key(&extfvk1, value);
     let txid = transaction.txid();
 
     // 3. Calculate witness so we can get the nullifier without it getting mined
@@ -807,7 +807,7 @@ async fn sapling_incoming_viewkey() {
 
         let value = 100_000;
         let (transaction, _height, _) =
-            fake_compactblock_list.add_transaction_paying(&iextfvk, value);
+            fake_compactblock_list.conjure_funds_for_key(&iextfvk, value);
         let txid = transaction.txid();
         mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
         mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5)
@@ -1085,7 +1085,7 @@ async fn mixed_transaction() {
             .clone();
         let zvalue = 100_000;
         let (_ztransaction, _height, _) =
-            fake_compactblock_list.add_transaction_paying(&extfvk1, zvalue);
+            fake_compactblock_list.conjure_funds_for_key(&extfvk1, zvalue);
         mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
         mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5)
             .await;
@@ -1205,7 +1205,7 @@ async fn aborted_resync() {
             .clone();
         let zvalue = 100_000;
         let (_ztransaction, _height, _) =
-            fake_compactblock_list.add_transaction_paying(&extfvk1, zvalue);
+            fake_compactblock_list.conjure_funds_for_key(&extfvk1, zvalue);
         mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
         mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5)
             .await;
@@ -1338,7 +1338,7 @@ async fn no_change() {
             .clone();
         let zvalue = 100_000;
         let (_ztransaction, _height, _) =
-            fake_compactblock_list.add_transaction_paying(&extfvk1, zvalue);
+            fake_compactblock_list.conjure_funds_for_key(&extfvk1, zvalue);
         mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
         mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5)
             .await;
@@ -1502,7 +1502,7 @@ async fn witness_clearing() {
             .clone();
         let value = 100_000;
         let (transaction, _height, _) =
-            fake_compactblock_list.add_transaction_paying(&extfvk1, value);
+            fake_compactblock_list.conjure_funds_for_key(&extfvk1, value);
         let txid = transaction.txid();
         mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
         mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5)
@@ -1615,7 +1615,7 @@ async fn mempool_clearing() {
             .clone();
         let value = 100_000;
         let (transaction, _height, _) =
-            fake_compactblock_list.add_transaction_paying(&extfvk1, value);
+            fake_compactblock_list.conjure_funds_for_key(&extfvk1, value);
         let orig_transaction_id = transaction.txid().to_string();
         mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
         mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5)
@@ -1760,7 +1760,7 @@ async fn mempool_and_balance() {
             .clone();
         let value = 100_000;
         let (_transaction, _height, _) =
-            fake_compactblock_list.add_transaction_paying(&extfvk1, value);
+            fake_compactblock_list.conjure_funds_for_key(&extfvk1, value);
         mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
         let bal = lightclient.do_balance().await;

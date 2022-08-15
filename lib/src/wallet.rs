@@ -1540,7 +1540,7 @@ mod test {
                 .clone();
             let value = 100_000;
             let (transaction, _height, _) =
-                fake_compactblock_list.add_transaction_paying(&extfvk1, value);
+                fake_compactblock_list.conjure_funds_for_key(&extfvk1, value);
             let txid = transaction.txid();
             mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
@@ -1732,7 +1732,7 @@ mod test {
                 .clone();
             let value1 = 100_000;
             let (transaction, _height, _) =
-                fake_compactblock_list.add_transaction_paying(&extfvk1, value1);
+                fake_compactblock_list.conjure_funds_for_key(&extfvk1, value1);
             let txid = transaction.txid();
             mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
@@ -1780,7 +1780,7 @@ mod test {
             // 4. Send another incoming transaction.
             let value2 = 200_000;
             let (_transaction, _height, _) =
-                fake_compactblock_list.add_transaction_paying(&extfvk1, value2);
+                fake_compactblock_list.conjure_funds_for_key(&extfvk1, value2);
             mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
             // Now, try to select a small amount, it should prefer the older note
