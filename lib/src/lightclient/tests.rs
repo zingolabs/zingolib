@@ -724,9 +724,10 @@ async fn sapling_to_sapling_scan_together() {
     let tree = fake_compactblock_list.blocks.iter().fold(
         CommitmentTree::<Node>::empty(),
         |mut tree, fcb| {
-            for transaction in &fcb.block.vtx {
-                for co in &transaction.outputs {
-                    tree.append(Node::new(co.cmu().unwrap().into())).unwrap();
+            for compact_tx in &fcb.block.vtx {
+                for compact_output in &compact_tx.outputs {
+                    tree.append(Node::new(compact_output.cmu().unwrap().into()))
+                        .unwrap();
                 }
             }
 
