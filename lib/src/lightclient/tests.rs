@@ -1394,7 +1394,7 @@ async fn recover_at_checkpoint() {
             let blk = fcbl.add_empty_block();
             blk.block.prev_hash = hex::decode(hash).unwrap().into_iter().rev().collect();
         }
-        let cbs = fcbl.add_blocks(109).into_compact_blocks();
+        let cbs = fcbl.add_n_tworandtx_blocks(109).into_compact_blocks();
         data.write().await.add_blocks(cbs.clone());
 
         // 4. Test1: create a new lightclient, restoring at exactly the checkpoint

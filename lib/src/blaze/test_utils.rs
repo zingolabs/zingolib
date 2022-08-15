@@ -374,7 +374,7 @@ impl FakeCompactBlockList {
             next_height: 1,
         };
 
-        s.add_blocks(len);
+        s.add_n_tworandtx_blocks(len);
 
         s
     }
@@ -505,10 +505,11 @@ impl FakeCompactBlockList {
         self.blocks.last_mut().unwrap()
     }
 
-    pub fn add_blocks(&mut self, len: u64) -> &mut Self {
+    // Populate arg number of blocks with 2 rand compact txs each
+    pub fn add_n_tworandtx_blocks(&mut self, number_of_twotx_blocks_toadd: u64) -> &mut Self {
         let nexth = self.next_height;
 
-        for i in nexth..(nexth + len) {
+        for i in nexth..(nexth + number_of_twotx_blocks_toadd) {
             let mut b = FakeCompactBlock::new(i, self.prev_hash);
 
             self.next_height = i + 1;

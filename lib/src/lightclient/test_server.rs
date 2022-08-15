@@ -332,13 +332,13 @@ pub async fn clean_shutdown(
 
 pub async fn mine_random_blocks(
     fcbl: &mut FakeCompactBlockList,
-    data: &Arc<RwLock<TestServerData>>,
+    testserver_payload: &Arc<RwLock<TestServerData>>,
     lc: &LightClient,
     num: u64,
 ) {
-    let cbs = fcbl.add_blocks(num).into_compact_blocks();
+    let cbs = fcbl.add_n_tworandtx_blocks(num).into_compact_blocks();
 
-    data.write().await.add_blocks(cbs.clone());
+    testserver_payload.write().await.add_blocks(cbs.clone());
     lc.do_sync(true).await.unwrap();
 }
 
