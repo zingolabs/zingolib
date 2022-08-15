@@ -348,40 +348,11 @@ pub async fn mine_pending_blocks(
     lc: &LightClient,
 ) {
     let cbs = fcbl.into_compact_blocks();
-
     testserver_payload.write().await.add_blocks(cbs.clone());
-    let mut v = fcbl.into_transactions();
-
-    // Add all the t-addr spend's t-addresses into the maps, so the test grpc server
-    // knows to serve this transaction when the transactions for this particular taddr are requested.
-    for (t, _h, taddrs) in v.iter_mut() {
-        if let Some(t_bundle) = t.transparent_bundle() {
-            for vin in &t_bundle.vin {
-                let prev_transaction_id =
-                    TransactionMetadata::new_txid(&vin.prevout.hash().to_vec());
-                if let Some(wtx) = lc
-                    .wallet
-                    .transactions
-                    .read()
-                    .await
-                    .current
-                    .get(&prev_transaction_id)
-                {
-                    if let Some(utxo) = wtx
-                        .utxos
-                        .iter()
-                        .find(|u| u.output_index as u32 == vin.prevout.n())
-                    {
-                        if !taddrs.contains(&utxo.address) {
-                            taddrs.push(utxo.address.clone());
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    testserver_payload.write().await.add_transactions(v);
+    testserver_payload
+        .write()
+        .await
+        .add_transactions(fcbl.into_transactions());
 
     lc.do_sync(true).await.unwrap();
 }
