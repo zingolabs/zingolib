@@ -236,7 +236,8 @@ pub async fn setup_ten_block_fcbl_scenario(transport_security: bool) -> TenBlock
     let mut fake_compactblock_list = FakeCompactBlockList::new(0);
 
     // 1. Mine 10 blocks
-    mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 10).await;
+    mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 10)
+        .await;
     assert_eq!(lightclient.wallet.last_scanned_height().await, 10);
     TenBlockFCBLScenario {
         data,
@@ -307,7 +308,8 @@ async fn test_direct_grpc_and_lightclient_blockchain_height_agreement() {
         assert_eq!(observed_pre_answer, expected_lightdinfo_before_blockmining);
         assert_eq!(lightclient.wallet.last_scanned_height().await, 0);
         // Change system under test state (generating random blocks)
-        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 10).await;
+        mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 10)
+            .await;
         let observed_post_answer = format!(
             "{:?}",
             client
@@ -330,7 +332,7 @@ pub async fn clean_shutdown(
     server_thread_handle.await.unwrap();
 }
 
-pub async fn mine_random_blocks(
+pub async fn mine_numblocks_each_with_two_sap_txs(
     fcbl: &mut FakeCompactBlockList,
     testserver_payload: &Arc<RwLock<TestServerData>>,
     lc: &LightClient,

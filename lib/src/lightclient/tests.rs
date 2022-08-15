@@ -25,7 +25,7 @@ use crate::lightclient::testmocks;
 
 use crate::compact_formats::{CompactSaplingOutput, CompactTx};
 use crate::lightclient::test_server::{
-    clean_shutdown, create_test_server, mine_pending_blocks, mine_random_blocks,
+    clean_shutdown, create_test_server, mine_numblocks_each_with_two_sap_txs, mine_pending_blocks,
 };
 use crate::lightclient::LightClient;
 use crate::wallet::data::{SaplingNoteAndMetadata, TransactionMetadata};
@@ -267,7 +267,8 @@ async fn sapling_incoming_sapling_outgoing() {
         }
 
         // 4. Then add another 5 blocks, so the funds will become confirmed
-        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 5).await;
+        mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5)
+            .await;
         let b = lightclient.do_balance().await;
         assert_eq!(b["sapling_balance"].as_u64().unwrap(), value);
         assert_eq!(b["unverified_sapling_balance"].as_u64().unwrap(), 0);
@@ -569,7 +570,8 @@ async fn multiple_incoming_same_transaction() {
 
         // 3. Send a big transaction, so all the value is spent
         let sent_value = value * 3 + u64::from(DEFAULT_FEE);
-        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 5).await; // make the funds spentable
+        mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5)
+            .await; // make the funds spentable
         let sent_transaction_id = lightclient
             .test_do_send(vec![(EXT_ZADDR, sent_value, None)])
             .await
@@ -638,7 +640,8 @@ async fn sapling_incoming_multisapling_outgoing() {
         let (_transaction, _height, _) =
             fake_compactblock_list.add_transaction_paying(&extfvk1, value);
         mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
-        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 5).await;
+        mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5)
+            .await;
 
         // 3. send a transaction to multiple addresses
         let tos = vec![
@@ -807,7 +810,8 @@ async fn sapling_incoming_viewkey() {
             fake_compactblock_list.add_transaction_paying(&iextfvk, value);
         let txid = transaction.txid();
         mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
-        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 5).await;
+        mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5)
+            .await;
 
         // 3. Test that we have the transaction
         let list = lightclient.do_list_transactions(false).await;
@@ -828,7 +832,8 @@ async fn sapling_incoming_viewkey() {
         assert_eq!(list[0]["address"], iaddr);
 
         // 4. Also do a rescan, just for fun
-        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 10).await;
+        mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 10)
+            .await;
         lightclient.do_rescan().await.unwrap();
         // Test all the same values
         let list = lightclient.do_list_transactions(false).await;
@@ -1082,7 +1087,8 @@ async fn mixed_transaction() {
         let (_ztransaction, _height, _) =
             fake_compactblock_list.add_transaction_paying(&extfvk1, zvalue);
         mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
-        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 5).await;
+        mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5)
+            .await;
 
         // 3. Send an incoming t-address transaction
         let sk = lightclient.wallet.keys().read().await.tkeys[0].clone();
@@ -1201,7 +1207,8 @@ async fn aborted_resync() {
         let (_ztransaction, _height, _) =
             fake_compactblock_list.add_transaction_paying(&extfvk1, zvalue);
         mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
-        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 5).await;
+        mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5)
+            .await;
 
         // 3. Send an incoming t-address transaction
         let sk = lightclient.wallet.keys().read().await.tkeys[0].clone();
@@ -1226,7 +1233,8 @@ async fn aborted_resync() {
 
         fake_compactblock_list.add_pending_sends(&data).await;
         mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
-        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 5).await;
+        mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5)
+            .await;
 
         let notes_before = lightclient.do_list_notes(true).await;
         let list_before = lightclient.do_list_transactions(false).await;
@@ -1332,7 +1340,8 @@ async fn no_change() {
         let (_ztransaction, _height, _) =
             fake_compactblock_list.add_transaction_paying(&extfvk1, zvalue);
         mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
-        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 5).await;
+        mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5)
+            .await;
 
         // 3. Send an incoming t-address transaction
         let sk = lightclient.wallet.keys().read().await.tkeys[0].clone();
@@ -1494,7 +1503,8 @@ async fn witness_clearing() {
             fake_compactblock_list.add_transaction_paying(&extfvk1, value);
         let txid = transaction.txid();
         mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
-        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 5).await;
+        mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5)
+            .await;
 
         // 3. Send z-to-z transaction to external z address with a memo
         let sent_value = 2000;
@@ -1542,7 +1552,8 @@ async fn witness_clearing() {
         assert_eq!(witnesses.len(), 6);
 
         // 5. Mine 50 blocks, witness should still be there
-        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 50).await;
+        mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 50)
+            .await;
         let witnesses = lightclient
             .wallet
             .transactions()
@@ -1559,7 +1570,8 @@ async fn witness_clearing() {
         assert_eq!(witnesses.len(), 6);
 
         // 5. Mine 100 blocks, witness should now disappear
-        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 100).await;
+        mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 100)
+            .await;
         let witnesses = lightclient
             .wallet
             .transactions()
@@ -1604,7 +1616,8 @@ async fn mempool_clearing() {
             fake_compactblock_list.add_transaction_paying(&extfvk1, value);
         let orig_transaction_id = transaction.txid().to_string();
         mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
-        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 5).await;
+        mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5)
+            .await;
         assert_eq!(
             lightclient.do_last_transaction_id().await["last_txid"],
             orig_transaction_id
@@ -1679,7 +1692,8 @@ async fn mempool_clearing() {
         assert_eq!(transactions_before.pretty(2), transactions_after.pretty(2));
 
         // 6. Mine 10 blocks, the unconfirmed transaction should still be there.
-        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 10).await;
+        mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 10)
+            .await;
         assert_eq!(lightclient.wallet.last_scanned_height().await, 26);
 
         let notes = lightclient.do_list_notes(true).await;
@@ -1698,7 +1712,8 @@ async fn mempool_clearing() {
         assert_eq!(transactions.len(), 2);
 
         // 7. Mine 100 blocks, so the mempool expires
-        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 100).await;
+        mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 100)
+            .await;
         assert_eq!(lightclient.wallet.last_scanned_height().await, 126);
 
         let notes = lightclient.do_list_notes(true).await;
@@ -1752,7 +1767,8 @@ async fn mempool_and_balance() {
         assert_eq!(bal["unverified_sapling_balance"].as_u64().unwrap(), value);
 
         // 3. Mine 10 blocks
-        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 10).await;
+        mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 10)
+            .await;
         let bal = lightclient.do_balance().await;
         assert_eq!(bal["sapling_balance"].as_u64().unwrap(), value);
         assert_eq!(bal["verified_sapling_balance"].as_u64().unwrap(), value);
@@ -1785,7 +1801,8 @@ async fn mempool_and_balance() {
         assert_eq!(bal["unverified_sapling_balance"].as_u64().unwrap(), new_bal);
 
         // 6. Mine 10 more blocks, making the funds verified and spendable.
-        mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 10).await;
+        mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 10)
+            .await;
         let bal = lightclient.do_balance().await;
 
         assert_eq!(bal["sapling_balance"].as_u64().unwrap(), new_bal);

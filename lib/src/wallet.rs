@@ -1514,8 +1514,8 @@ mod test {
     use crate::{
         blaze::test_utils::{incw_to_string, FakeTransaction},
         lightclient::test_server::{
-            clean_shutdown, mine_pending_blocks, mine_random_blocks, setup_ten_block_fcbl_scenario,
-            TenBlockFCBLScenario,
+            clean_shutdown, mine_numblocks_each_with_two_sap_txs, mine_pending_blocks,
+            setup_ten_block_fcbl_scenario, TenBlockFCBLScenario,
         },
     };
 
@@ -1586,7 +1586,13 @@ mod test {
             assert_eq!(utxos.len(), 0);
 
             // Mine 1 block, then it should be selectable
-            mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 1).await;
+            mine_numblocks_each_with_two_sap_txs(
+                &mut fake_compactblock_list,
+                &data,
+                &lightclient,
+                1,
+            )
+            .await;
 
             let (notes, utxos, selected) = lightclient
                 .wallet
@@ -1615,7 +1621,13 @@ mod test {
             );
 
             // Mine 15 blocks, then selecting the note should result in witness only 10 blocks deep
-            mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 15).await;
+            mine_numblocks_each_with_two_sap_txs(
+                &mut fake_compactblock_list,
+                &data,
+                &lightclient,
+                15,
+            )
+            .await;
             lightclient.wallet.config.anchor_offset = [9, 4, 2, 1, 1];
             let (notes, utxos, selected) = lightclient
                 .wallet
@@ -1757,7 +1769,13 @@ mod test {
             );
 
             // Mine 5 blocks
-            mine_random_blocks(&mut fake_compactblock_list, &data, &lightclient, 5).await;
+            mine_numblocks_each_with_two_sap_txs(
+                &mut fake_compactblock_list,
+                &data,
+                &lightclient,
+                5,
+            )
+            .await;
 
             // 4. Send another incoming transaction.
             let value2 = 200_000;
