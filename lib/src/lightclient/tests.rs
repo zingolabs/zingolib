@@ -707,7 +707,7 @@ async fn sapling_to_sapling_scan_together() {
     let lightclient = LightClient::test_new(&config, None, 0).await.unwrap();
     let mut fake_compactblock_list = FakeCompactBlockList::new(0);
 
-    // 2. Send an incoming transaction to fill the wallet
+    // 2. Send an incoming sapling transaction to fill the wallet
     let extfvk1 = lightclient
         .wallet
         .keys()

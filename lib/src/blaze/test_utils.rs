@@ -482,7 +482,7 @@ impl FakeCompactBlockList {
     // Returns the nullifier of the new note.
     // This fake_compactblock_list method:
     // 1. creates a fake transaction
-    // 2. passes that transaction to self.add_fake_transaction/
+    // 2. passes that transaction to self.add_fake_transaction
     pub fn add_transaction_paying(
         &mut self,
         extfvk: &ExtendedFullViewingKey,
