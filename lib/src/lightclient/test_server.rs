@@ -336,9 +336,10 @@ pub async fn mine_random_blocks(
     lc: &LightClient,
     num: u64,
 ) {
-    let cbs = fcbl.add_n_tworandtx_blocks(num).into_compact_blocks();
-
-    testserver_payload.write().await.add_blocks(cbs.clone());
+    testserver_payload
+        .write()
+        .await
+        .add_blocks(fcbl.add_n_tworandtx_blocks(num).into_compact_blocks());
     lc.do_sync(true).await.unwrap();
 }
 
@@ -347,8 +348,10 @@ pub async fn mine_pending_blocks(
     testserver_payload: &Arc<RwLock<TestServerData>>,
     lc: &LightClient,
 ) {
-    let cbs = fcbl.into_compact_blocks();
-    testserver_payload.write().await.add_blocks(cbs.clone());
+    testserver_payload
+        .write()
+        .await
+        .add_blocks(fcbl.into_compact_blocks());
     testserver_payload
         .write()
         .await
