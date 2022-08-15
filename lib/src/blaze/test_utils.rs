@@ -77,7 +77,7 @@ pub fn list_all_witness_nodes(cb: &CompactBlock) -> Vec<Node> {
 
 pub struct FakeTransaction {
     pub compact_transaction: CompactTx,
-    pub td: TransactionData<zcash_primitives::transaction::Authorized>,
+    pub data: TransactionData<zcash_primitives::transaction::Authorized>,
     pub taddrs_involved: Vec<String>,
 }
 
@@ -120,7 +120,7 @@ impl FakeTransaction {
         );
         Self {
             compact_transaction: CompactTx::default(),
-            td: fake_transaction_data,
+            data: fake_transaction_data,
             taddrs_involved: vec![],
         }
     }
@@ -183,19 +183,19 @@ impl FakeTransaction {
         cout.epk = epk;
         cout.ciphertext = enc_ciphertext[..52].to_vec();
 
-        let mut added_sapling_bundle = self.td.sapling_bundle().unwrap().clone();
+        let mut added_sapling_bundle = self.data.sapling_bundle().unwrap().clone();
         added_sapling_bundle.shielded_outputs.push(od);
         let new_td = TransactionData::from_parts(
-            self.td.version(),
-            self.td.consensus_branch_id(),
-            self.td.lock_time(),
-            self.td.expiry_height(),
-            self.td.transparent_bundle().map(Clone::clone),
-            self.td.sprout_bundle().map(Clone::clone),
+            self.data.version(),
+            self.data.consensus_branch_id(),
+            self.data.lock_time(),
+            self.data.expiry_height(),
+            self.data.transparent_bundle().map(Clone::clone),
+            self.data.sprout_bundle().map(Clone::clone),
             Some(added_sapling_bundle),
-            self.td.orchard_bundle().map(Clone::clone),
+            self.data.orchard_bundle().map(Clone::clone),
         );
-        self.td = new_td;
+        self.data = new_td;
         self.compact_transaction.outputs.push(cout);
 
         note
@@ -232,7 +232,7 @@ impl FakeTransaction {
 
         let taddr_bytes = hash160.finalize();
         let mut added_transparent_bundle = self
-            .td
+            .data
             .transparent_bundle()
             .unwrap_or(&components::transparent::Bundle {
                 vin: vec![],
@@ -246,43 +246,43 @@ impl FakeTransaction {
         });
 
         let new_td = TransactionData::from_parts(
-            self.td.version(),
-            self.td.consensus_branch_id(),
-            self.td.lock_time(),
-            self.td.expiry_height(),
+            self.data.version(),
+            self.data.consensus_branch_id(),
+            self.data.lock_time(),
+            self.data.expiry_height(),
             Some(added_transparent_bundle),
-            self.td.sprout_bundle().map(Clone::clone),
-            self.td.sapling_bundle().map(Clone::clone),
-            self.td.orchard_bundle().map(Clone::clone),
+            self.data.sprout_bundle().map(Clone::clone),
+            self.data.sapling_bundle().map(Clone::clone),
+            self.data.orchard_bundle().map(Clone::clone),
         );
-        self.td = new_td;
+        self.data = new_td;
         self.taddrs_involved.push(taddr)
     }
 
     // Spend the given utxo
     pub fn add_t_input(&mut self, transaction_id: TxId, n: u32, taddr: String) {
-        let mut added_transparent_bundle = self.td.transparent_bundle().unwrap().clone();
+        let mut added_transparent_bundle = self.data.transparent_bundle().unwrap().clone();
         added_transparent_bundle.vin.push(TxIn {
             prevout: OutPoint::new(*(transaction_id.as_ref()), n),
             script_sig: Script { 0: vec![] },
             sequence: 0,
         });
         let new_td = TransactionData::from_parts(
-            self.td.version(),
-            self.td.consensus_branch_id(),
-            self.td.lock_time(),
-            self.td.expiry_height(),
+            self.data.version(),
+            self.data.consensus_branch_id(),
+            self.data.lock_time(),
+            self.data.expiry_height(),
             Some(added_transparent_bundle),
-            Some(self.td.sprout_bundle().unwrap().clone()),
-            Some(self.td.sapling_bundle().unwrap().clone()),
-            Some(self.td.orchard_bundle().unwrap().clone()),
+            Some(self.data.sprout_bundle().unwrap().clone()),
+            Some(self.data.sapling_bundle().unwrap().clone()),
+            Some(self.data.orchard_bundle().unwrap().clone()),
         );
-        self.td = new_td;
+        self.data = new_td;
         self.taddrs_involved.push(taddr);
     }
 
     pub fn into_transaction(mut self) -> (CompactTx, Transaction, Vec<String>) {
-        let transaction = self.td.freeze().unwrap();
+        let transaction = self.data.freeze().unwrap();
         let txid = transaction.txid().clone();
         self.compact_transaction.hash = Vec::from(*(txid.as_ref()));
 
@@ -480,6 +480,9 @@ impl FakeCompactBlockList {
 
     // Add a new transaction into the ??block??, paying the given address the amount.
     // Returns the nullifier of the new note.
+    // This fake_compactblock_list method:
+    // 1. creates a fake transaction
+    // 2. passes that transaction to self.add_fake_transaction/
     pub fn add_transaction_paying(
         &mut self,
         extfvk: &ExtendedFullViewingKey,
