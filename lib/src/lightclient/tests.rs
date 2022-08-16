@@ -737,6 +737,7 @@ async fn sapling_to_sapling_scan_together() {
     let witness = IncrementalWitness::from_tree(&tree);
     let nf = note.nf(&clientextfvk1.fvk.vk, witness.position() as u64);
 
+    //  Create recipient to receive funds from Mock User
     let pa = if let Some(RecipientAddress::Shielded(pa)) =
         RecipientAddress::decode(&config.chain, EXT_ZADDR)
     {
