@@ -463,7 +463,7 @@ impl FakeCompactBlockList {
         (&self.transactions.last().unwrap().0, height)
     }
 
-    pub fn add_transaction_spending(
+    pub fn create_spend_transaction_from_ovk(
         &mut self,
         nf: &Nullifier,
         value: u64,
@@ -483,7 +483,7 @@ impl FakeCompactBlockList {
     // This fake_compactblock_list method:
     // 1. creates a fake transaction
     // 2. passes that transaction to self.add_fake_transaction
-    pub fn conjure_funds_for_key(
+    pub fn create_coinbase_transaction(
         &mut self,
         extfvk: &ExtendedFullViewingKey,
         value: u64,
