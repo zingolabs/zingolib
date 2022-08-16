@@ -79,6 +79,7 @@ pub(crate) fn launch() {
     let lightwalletd_config = confs_dir.join("lightwalletd.yaml");
     let lightwalletd_logs = logs.join("lightwalletd");
     let lightwalletd_stdout_log = lightwalletd_logs.join("stdout.log");
+    let lightwalletd_stderr_log = lightwalletd_logs.join("stderr.log");
     let lightwalletd_datadir = data_dir.join("lightwalletd");
 
     let mut zcashd_bin = bin_location.to_owned();
@@ -151,6 +152,8 @@ pub(crate) fn launch() {
 
     let mut lwd_logfile =
         File::create(&lightwalletd_stdout_log).expect("file::create Result error");
+    let mut lwd_err_logfile =
+        File::create(&lightwalletd_stderr_log).expect("file::create Result error");
 
     let mut lwd_command = Command::new(lwd_bin)
         .args([
@@ -181,6 +184,13 @@ pub(crate) fn launch() {
         std::thread::spawn(move || {
             std::io::copy(&mut lwd_log, &mut lwd_logfile)
                 .expect("io::copy error writing lwd_stdout.log");
+        });
+    }
+
+    if let Some(mut lwd_err_log) = lwd_command.stderr.take() {
+        std::thread::spawn(move || {
+            std::io::copy(&mut lwd_err_log, &mut lwd_err_logfile)
+                .expect("io::copy error writing lwd_stderr.log");
         });
     }
 
