@@ -464,6 +464,8 @@ impl FakeCompactBlockList {
     }
 
     pub fn create_spend_transaction_from_ovk(
+        // TODO:  Deprecate this function in favor of a replacement to generates spends
+        // using a spend authority.
         &mut self,
         nf: &Nullifier,
         value: u64,

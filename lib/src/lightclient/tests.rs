@@ -708,16 +708,19 @@ async fn sapling_to_sapling_scan_together() {
     let mut fake_compactblock_list = FakeCompactBlockList::new(0);
 
     // 2. Send an incoming sapling transaction to fill the wallet
-    let clientextfvk1 = lightclient
-        .wallet
-        .keys()
-        .read()
-        .await
-        .get_all_sapling_extfvks()[0]
-        .clone();
+    let (mockuser_spendkey, mockuser_extfvk) = {
+        let keys_readlock = lightclient.wallet.keys();
+        let lock = keys_readlock.read().await;
+        let mockuser_extfvk = lock.get_all_sapling_extfvks()[0].clone();
+        (
+            lock.get_extsk_for_extfvk(&lock.get_all_sapling_extfvks()[0])
+                .unwrap(),
+            mockuser_extfvk,
+        )
+    };
     let value = 100_000;
-    let (transaction, _height, note) =
-        fake_compactblock_list.create_coinbase_transaction(&clientextfvk1, value);
+    let (transaction, _height, note) = fake_compactblock_list // NOTE: Extracting fvk this way for future proof.
+        .create_coinbase_transaction(&ExtendedFullViewingKey::from(&mockuser_spendkey), value);
     let txid = transaction.txid();
 
     // 3. Calculate witness so we can get the nullifier without it getting mined
@@ -735,7 +738,7 @@ async fn sapling_to_sapling_scan_together() {
         },
     ); // Shall we make this into a test_utils helper fn?
     let witness = IncrementalWitness::from_tree(&tree);
-    let nf = note.nf(&clientextfvk1.fvk.vk, witness.position() as u64);
+    let nf = note.nf(&mockuser_extfvk.fvk.vk, witness.position() as u64);
 
     //  Create recipient to receive funds from Mock User
     let pa = if let Some(RecipientAddress::Shielded(pa)) =
@@ -747,7 +750,7 @@ async fn sapling_to_sapling_scan_together() {
     };
     let spent_value = 250;
     let spent_txid = fake_compactblock_list
-        .create_spend_transaction_from_ovk(&nf, spent_value, &clientextfvk1.fvk.ovk, &pa)
+        .create_spend_transaction_from_ovk(&nf, spent_value, &mockuser_extfvk.fvk.ovk, &pa)
         .txid();
     // 4. Mine the blocks and sync the lightwallet
     mine_pending_blocks(&mut fake_compactblock_list, &testserver_state, &lightclient).await;
