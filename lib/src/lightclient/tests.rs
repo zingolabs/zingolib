@@ -749,10 +749,15 @@ async fn sapling_to_sapling_scan_together() {
         panic!("Couldn't parse address")
     };
     let spent_value = 250;
+
+    // Construct transaction to wallet-external recipient-address.
     let spent_txid = fake_compactblock_list
         .create_spend_transaction_from_ovk(&nf, spent_value, &mockuser_extfvk.fvk.ovk, &pa)
         .txid();
-    // 4. Mine the blocks and sync the lightwallet
+
+    // 4. Mine the blocks and sync the lightwallet, that is, execute transactions:
+    //     * from coinbase to mockuser_spendauthority
+    //     * from mockuser_spendauthority to external address
     mine_pending_blocks(&mut fake_compactblock_list, &testserver_state, &lightclient).await;
 
     // 5. Check the transaction list to make sure we got all transactions
