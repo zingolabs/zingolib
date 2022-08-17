@@ -39,6 +39,24 @@ use zcash_primitives::{
 };
 use zcash_proofs::sapling::SaplingProvingContext;
 
+// This function can be used by TestServerData, or other test code
+// TODO: Replace with actual lightclient functionality
+pub fn tree_from_cblocks(
+    compactblock_list: &Vec<crate::blaze::test_utils::FakeCompactBlock>,
+) -> CommitmentTree<Node> {
+    compactblock_list
+        .iter()
+        .fold(CommitmentTree::<Node>::empty(), |mut tree, fcb| {
+            for compact_tx in &fcb.block.vtx {
+                for compact_output in &compact_tx.outputs {
+                    tree.append(Node::new(compact_output.cmu().unwrap().into()))
+                        .unwrap();
+                }
+            }
+
+            tree
+        })
+}
 pub fn random_u8_32() -> [u8; 32] {
     let mut b = [0u8; 32];
     OsRng.fill_bytes(&mut b);

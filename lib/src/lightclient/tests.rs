@@ -11,9 +11,9 @@ use zcash_client_backend::encoding::{
 use zcash_note_encryption::EphemeralKeyBytes;
 use zcash_primitives::consensus::{BlockHeight, BranchId, TestNetwork};
 use zcash_primitives::memo::Memo;
-use zcash_primitives::merkle_tree::{CommitmentTree, IncrementalWitness};
+use zcash_primitives::merkle_tree::IncrementalWitness;
 use zcash_primitives::sapling::note_encryption::sapling_note_encryption;
-use zcash_primitives::sapling::{Node, Note, Rseed, ValueCommitment};
+use zcash_primitives::sapling::{Note, Rseed, ValueCommitment};
 use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
 use zcash_primitives::transaction::components::{OutputDescription, GROTH_PROOF_SIZE};
 use zcash_primitives::transaction::Transaction;
@@ -677,22 +677,6 @@ async fn sapling_incoming_multisapling_outgoing() {
         clean_shutdown(stop_transmitter, test_server_handle).await;
     }
 }
-fn tree_from_cblocks(
-    compactblock_list: &Vec<crate::blaze::test_utils::FakeCompactBlock>,
-) -> CommitmentTree<Node> {
-    compactblock_list
-        .iter()
-        .fold(CommitmentTree::<Node>::empty(), |mut tree, fcb| {
-            for compact_tx in &fcb.block.vtx {
-                for compact_output in &compact_tx.outputs {
-                    tree.append(Node::new(compact_output.cmu().unwrap().into()))
-                        .unwrap();
-                }
-            }
-
-            tree
-        })
-}
 #[tokio::test]
 async fn sapling_to_sapling_scan_together() {
     // Create an incoming transaction, and then send that transaction, and scan everything together, to make sure it works.
@@ -739,7 +723,7 @@ async fn sapling_to_sapling_scan_together() {
     let txid = transaction.txid();
 
     // 3. Calculate witness so we can get the nullifier without it getting mined
-    let tree = tree_from_cblocks(&fake_compactblock_list.blocks);
+    let tree = crate::blaze::test_utils::tree_from_cblocks(&fake_compactblock_list.blocks);
     let witness = IncrementalWitness::from_tree(&tree);
     let nf = note.nf(&mockuser_extfvk.fvk.vk, witness.position() as u64);
 
