@@ -1700,7 +1700,7 @@ impl LightClient {
             .read()
             .await
             .block_data
-            .finish_get_blocks(MAX_REORG)
+            .drain_fresh_existing_blocks_into_blocks(MAX_REORG)
             .await;
         self.wallet.set_blocks(blocks).await;
 
