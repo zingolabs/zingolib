@@ -739,7 +739,8 @@ async fn sapling_to_sapling_scan_together() {
     let txid = transaction.txid();
 
     // 3. Calculate witness so we can get the nullifier without it getting mined
-    let witness = IncrementalWitness::from_tree(&tree_from_cblocks(&fake_compactblock_list.blocks));
+    let tree = tree_from_cblocks(&fake_compactblock_list.blocks);
+    let witness = IncrementalWitness::from_tree(&tree);
     let nf = note.nf(&mockuser_extfvk.fvk.vk, witness.position() as u64);
 
     //  Create recipient to receive funds from Mock User
