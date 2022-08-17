@@ -110,7 +110,10 @@ impl BlockAndWitnessData {
     ///   self.blocks.len() < num the new self.blocks is:
     ///    self.blocks_original + ((the `num` - self.blocks_original.len()) highest
     ///     self.existing_blocks.  
-    pub async fn drain_fresh_existing_blocks_into_blocks(&self, num: usize) -> Vec<BlockData> {
+    pub async fn drain_existingblocks_into_blocks_with_truncation(
+        &self,
+        num: usize,
+    ) -> Vec<BlockData> {
         self.verification_list.write().await.clear();
 
         {
@@ -767,7 +770,7 @@ mod test {
         let blks = vec![BlockData::new(cb)];
 
         nw.setup_sync(blks.clone(), None).await;
-        let finished_blks = nw.drain_fresh_existing_blocks_into_blocks(1).await;
+        let finished_blks = nw.drain_existingblocks_into_blocks_with_truncation(1).await;
 
         assert_eq!(blks[0].hash(), finished_blks[0].hash());
         assert_eq!(blks[0].height, finished_blks[0].height);
@@ -785,7 +788,7 @@ mod test {
             .setup_sync(existing_blocks.clone(), None)
             .await;
         let finished_blks = scenario_bawd
-            .drain_fresh_existing_blocks_into_blocks(100)
+            .drain_existingblocks_into_blocks_with_truncation(100)
             .await;
 
         assert_eq!(finished_blks.len(), 12);
@@ -809,7 +812,9 @@ mod test {
 
         let existing_blocks = FakeCompactBlockList::new(200).into_blockdatas();
         nw.setup_sync(existing_blocks.clone(), None).await;
-        let finished_blks = nw.drain_fresh_existing_blocks_into_blocks(100).await;
+        let finished_blks = nw
+            .drain_existingblocks_into_blocks_with_truncation(100)
+            .await;
 
         assert_eq!(finished_blks.len(), 100);
 
@@ -918,7 +923,9 @@ mod test {
             .unwrap()
             .unwrap();
 
-        let finished_blks = nw.drain_fresh_existing_blocks_into_blocks(100).await;
+        let finished_blks = nw
+            .drain_existingblocks_into_blocks_with_truncation(100)
+            .await;
         assert_eq!(finished_blks.len(), 100);
         assert_eq!(finished_blks.first().unwrap().height, start_block);
         assert_eq!(finished_blks.last().unwrap().height, start_block - 100 + 1);
@@ -1031,7 +1038,9 @@ mod test {
             .unwrap()
             .unwrap();
 
-        let finished_blks = nw.drain_fresh_existing_blocks_into_blocks(100).await;
+        let finished_blks = nw
+            .drain_existingblocks_into_blocks_with_truncation(100)
+            .await;
         assert_eq!(finished_blks.len(), 100);
         assert_eq!(finished_blks.first().unwrap().height, start_block);
         assert_eq!(finished_blks.last().unwrap().height, start_block - 100 + 1);
