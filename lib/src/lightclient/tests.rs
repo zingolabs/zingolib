@@ -677,7 +677,22 @@ async fn sapling_incoming_multisapling_outgoing() {
         clean_shutdown(stop_transmitter, test_server_handle).await;
     }
 }
+fn tree_from_cblocks(
+    compactblock_list: &Vec<crate::blaze::test_utils::FakeCompactBlock>,
+) -> CommitmentTree<Node> {
+    compactblock_list
+        .iter()
+        .fold(CommitmentTree::<Node>::empty(), |mut tree, fcb| {
+            for compact_tx in &fcb.block.vtx {
+                for compact_output in &compact_tx.outputs {
+                    tree.append(Node::new(compact_output.cmu().unwrap().into()))
+                        .unwrap();
+                }
+            }
 
+            tree
+        })
+}
 #[tokio::test]
 async fn sapling_to_sapling_scan_together() {
     // Create an incoming transaction, and then send that transaction, and scan everything together, to make sure it works.
@@ -724,20 +739,7 @@ async fn sapling_to_sapling_scan_together() {
     let txid = transaction.txid();
 
     // 3. Calculate witness so we can get the nullifier without it getting mined
-    let tree = fake_compactblock_list.blocks.iter().fold(
-        CommitmentTree::<Node>::empty(),
-        |mut tree, fcb| {
-            for compact_tx in &fcb.block.vtx {
-                for compact_output in &compact_tx.outputs {
-                    tree.append(Node::new(compact_output.cmu().unwrap().into()))
-                        .unwrap();
-                }
-            }
-
-            tree
-        },
-    ); // Shall we make this into a test_utils helper fn?
-    let witness = IncrementalWitness::from_tree(&tree);
+    let witness = IncrementalWitness::from_tree(&tree_from_cblocks(&fake_compactblock_list.blocks));
     let nf = note.nf(&mockuser_extfvk.fvk.vk, witness.position() as u64);
 
     //  Create recipient to receive funds from Mock User
