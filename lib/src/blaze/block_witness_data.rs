@@ -564,23 +564,25 @@ impl BlockAndWitnessData {
             (cb, tree)
         };
 
-        // Go over all the outputs. Remember that all the numbers are inclusive, i.e., we have to scan upto and including
-        // block_height, transaction_num and output_num
+        // Go over all the outputs. Remember that all the numbers are inclusive,
+        // i.e., we have to scan upto and including block_height,
+        // transaction_num and output_num
         for (t_num, compact_transaction) in cb.vtx.iter().enumerate() {
             use crate::wallet::traits::CompactOutput as _;
-            for (o_num, co) in D::CompactOutput::from_compact_transaction(compact_transaction)
-                .iter()
-                .enumerate()
+            for (o_num, compactoutput) in
+                D::CompactOutput::from_compact_transaction(compact_transaction)
+                    .iter()
+                    .enumerate()
             {
-                if let Some(node) =
-                    <D::WalletNote as NoteAndMetadata>::Node::from_commitment(&co.cmstar()).into()
+                if let Some(node) = <D::WalletNote as NoteAndMetadata>::Node::from_commitment(
+                    &compactoutput.cmstar(),
+                )
+                .into()
                 {
                     tree.append(node).unwrap();
                     if t_num == transaction_num && o_num == output_num {
                         return Ok(IncrementalWitness::from_tree(&tree));
                     }
-                } else {
-                    eprintln!("invalid node hash")
                 }
             }
         }
