@@ -783,22 +783,28 @@ mod test {
             25_000,
         );
 
-        let existing_blocks = FakeCompactBlockList::new(12).into_blockdatas();
-        scenario_bawd
-            .setup_sync(existing_blocks.clone(), None)
-            .await;
-        let finished_blks = scenario_bawd
-            .drain_existingblocks_into_blocks_with_truncation(100)
-            .await;
+        for numblocks in [0, 1, 2, 10] {
+            let existing_blocks = FakeCompactBlockList::new(numblocks).into_blockdatas();
+            scenario_bawd
+                .setup_sync(existing_blocks.clone(), None)
+                .await;
+            assert_eq!(
+                scenario_bawd.existing_blocks.read().await.len(),
+                numblocks as usize
+            );
+            let finished_blks = scenario_bawd
+                .drain_existingblocks_into_blocks_with_truncation(100)
+                .await;
+            assert_eq!(scenario_bawd.existing_blocks.read().await.len(), 0);
+            assert_eq!(finished_blks.len(), numblocks as usize);
 
-        assert_eq!(finished_blks.len(), 12);
-
-        for (i, finished_blk) in finished_blks.iter().enumerate() {
-            assert_eq!(existing_blocks[i].hash(), finished_blk.hash());
-            assert_eq!(existing_blocks[i].height, finished_blk.height);
-            if i > 0 {
-                // Prove that height decreases as index increases
-                assert_eq!(finished_blk.height, finished_blks[i - 1].height - 1);
+            for (i, finished_blk) in finished_blks.iter().enumerate() {
+                assert_eq!(existing_blocks[i].hash(), finished_blk.hash());
+                assert_eq!(existing_blocks[i].height, finished_blk.height);
+                if i > 0 {
+                    // Prove that height decreases as index increases
+                    assert_eq!(finished_blk.height, finished_blks[i - 1].height - 1);
+                }
             }
         }
     }
