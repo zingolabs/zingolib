@@ -552,10 +552,10 @@ impl BlockAndWitnessData {
                 self.wait_for_block(height).await;
 
                 {
-                    let mut blocks = RwLock::write(&self.blocks).await;
+                    let blocks = RwLock::read(&self.blocks).await;
 
                     let pos = blocks.first().unwrap().height - height;
-                    let bd = blocks.get_mut(pos as usize).unwrap();
+                    let bd = blocks.get(pos as usize).unwrap();
 
                     bd.cb()
                 }
