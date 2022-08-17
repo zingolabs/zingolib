@@ -33,14 +33,15 @@ use zcash_primitives::{
 use super::{fixed_size_buffer::FixedSizeBuffer, sync_status::SyncStatus};
 
 pub struct BlockAndWitnessData {
-    // List of all blocks and their hashes/commitment trees. Stored from smallest block height to tallest block height
+    // List of all blocks and their hashes/commitment trees.
+    // Stored with the tallest block first, and the shortest last.
     blocks: Arc<RwLock<Vec<BlockData>>>,
 
     // List of existing blocks in the wallet. Used for reorgs
     existing_blocks: Arc<RwLock<Vec<BlockData>>>,
 
-    // List of sapling tree states that were fetched from the server, which need to be verified before we return from the
-    // function
+    // List of sapling tree states that were fetched from the server,
+    // which need to be verified before we return from the function.
     verification_list: Arc<RwLock<Vec<TreeState>>>,
 
     // How many blocks to process at a time.
@@ -101,8 +102,8 @@ impl BlockAndWitnessData {
         self.existing_blocks.write().await.extend(existing_blocks);
     }
 
-    // Finish up the sync. This method will delete all the elements in the blocks, and return
-    // the top `num` blocks
+    /// Finish up the sync. This method will delete all the elements
+    /// in the blocks, and return the top `num` blocks.
     pub async fn finish_get_blocks(&self, num: usize) -> Vec<BlockData> {
         self.verification_list.write().await.clear();
 
@@ -336,9 +337,10 @@ impl BlockAndWitnessData {
         sync_status.write().await.blocks_total = start_block - end_block + 1;
 
         // Handle 0:
-        // Process the incoming compact blocks, collect them into `BlockData` and pass them on
-        // for further processing.
-        // We also trigger the node commitment tree update every `batch_size` blocks using the Sapling tree fetched
+        // Process the incoming compact blocks, collect them into `BlockData` and
+        // pass them on for further processing.
+        // We also trigger the node commitment tree update every `batch_size` blocks
+        // using the Sapling tree fetched
         // from the server temporarily, but we verify it before we return it
 
         let h0: JoinHandle<Result<u64, String>> = tokio::spawn(async move {
@@ -429,10 +431,15 @@ impl BlockAndWitnessData {
         }
     }
 
-    async fn wait_for_block(&self, height: u64) {
+    /// This fn waits for some other actor to decrease the height of the
+    /// last block, until it crosses the threshold of the `threshold_height` parameter.
+    /// That is:
+    ///   `self.blocks.read().await.last().unwrap().height`
+    /// _must_ eventually be less that height for this fn to return.
+    async fn wait_for_block(&self, threshold_height: u64) {
         self.wait_for_first_block().await;
 
-        while self.blocks.read().await.last().unwrap().height > height {
+        while self.blocks.read().await.last().unwrap().height > threshold_height {
             yield_now().await;
             sleep(Duration::from_millis(100)).await;
 
@@ -495,7 +502,7 @@ impl BlockAndWitnessData {
             blocks.get(pos as usize).unwrap().cb().time
         }
     }
-    /// This function handled Orchard and Sapling domains.
+    /// This function handles Orchard and Sapling domains.
     /// This function takes data from the Untrusted Malicious Proxy, and uses it to construct a witness locally.  I am
     /// currently of the opinion that this function should be factored into separate concerns.
     async fn get_note_witness<D>(
@@ -758,6 +765,31 @@ mod test {
 
         assert_eq!(blks[0].hash(), finished_blks[0].hash());
         assert_eq!(blks[0].height, finished_blks[0].height);
+    }
+
+    #[tokio::test]
+    async fn verify_block_and_witness_data_blocks_order() {
+        let mut scenario_bawd = BlockAndWitnessData::new_with_batchsize(
+            &ZingoConfig::create_unconnected(Network::FakeMainnet, None),
+            25_000,
+        );
+
+        let existing_blocks = FakeCompactBlockList::new(12).into_blockdatas();
+        scenario_bawd
+            .setup_sync(existing_blocks.clone(), None)
+            .await;
+        let finished_blks = scenario_bawd.finish_get_blocks(100).await;
+
+        assert_eq!(finished_blks.len(), 12);
+
+        for (i, finished_blk) in finished_blks.iter().enumerate() {
+            assert_eq!(existing_blocks[i].hash(), finished_blk.hash());
+            assert_eq!(existing_blocks[i].height, finished_blk.height);
+            if i > 0 {
+                // Prove that height decreases as index increases
+                assert_eq!(finished_blk.height, finished_blks[i - 1].height - 1);
+            }
+        }
     }
 
     #[tokio::test]
