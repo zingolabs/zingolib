@@ -123,13 +123,6 @@ pub(crate) fn launch() {
     let mut lwd_bin = bin_location.to_owned();
     lwd_bin.push("lightwalletd");
 
-    let mut flagged_zcashd_conf: String = "--conf=".to_string();
-    flagged_zcashd_conf.push_str(
-        zcashd_config
-            .to_str()
-            .expect("Surprising failure to repr as &str"),
-    );
-
     if let Some(mut zcashd_stdout_data) = zcashd_command.stdout.take() {
         std::thread::spawn(move || {
             std::io::copy(&mut zcashd_stdout_data, &mut zcashd_logfile)
