@@ -1,9 +1,9 @@
-use std::process::Command;
+use std::fs::File;
 ///  Enforce strict expectations for tool use with current zingolib.  Relaxing these restrictions will facilitate
 ///  use in other projects.  For example, this version of regtest will only run within a git repo that is historically
 ///  descended from 27e5eedc6b35759f463d43ea341ce66714aa9e01 (ie, I am Jack's commit descendant.)
 fn git_selfcheck() {
-    let git_check = Command::new("git")
+    let git_check = std::process::Command::new("git")
         .arg("--help")
         .output()
         .expect("no git!? time to quit.");
@@ -16,7 +16,7 @@ fn git_selfcheck() {
     }
 
     // confirm this worktree is a zingolib repo
-    let git_revlist = Command::new("git")
+    let git_revlist = std::process::Command::new("git")
         .args(["rev-list", "--max-parents=0", "HEAD"])
         .output()
         .expect("problem invoking git rev-list");
@@ -28,7 +28,7 @@ fn git_selfcheck() {
         panic!("I am not Jack's commit descendant");
     }
 
-    let git_log = Command::new("git")
+    let git_log = std::process::Command::new("git")
         .args(["--no-pager", "log"])
         .output()
         .expect("git log error");
@@ -44,7 +44,7 @@ fn git_selfcheck() {
 ///  Simple helper to succinctly reference the project root dir.
 use std::path::{Path, PathBuf};
 fn get_top_level_dir() -> PathBuf {
-    let revparse_raw = Command::new("git")
+    let revparse_raw = std::process::Command::new("git")
         .args(["rev-parse", "--show-toplevel"])
         .output()
         .expect("problem invoking git rev-parse");
@@ -59,10 +59,45 @@ fn get_regtest_dir() -> PathBuf {
     get_top_level_dir().join("regtest")
 }
 
+fn config_zcashd_for_launch(
+    bin_loc: &PathBuf,
+    zcashd_logs: &PathBuf,
+    zcashd_config: &PathBuf,
+    zcashd_datadir: &PathBuf,
+) -> (std::process::Child, File, PathBuf) {
+    let mut zcashd_bin = bin_loc.to_owned();
+    zcashd_bin.push("zcashd");
+    let zcashd_stdout_log = zcashd_logs.join("stdout.log");
+    (
+        std::process::Command::new(zcashd_bin)
+            .args([
+                "--printtoconsole",
+                format!(
+                    "--conf={}",
+                    zcashd_config.to_str().expect("Unexpected string!")
+                )
+                .as_str(),
+                format!(
+                    "--datadir={}",
+                    zcashd_datadir.to_str().expect("Unexpected string!")
+                )
+                .as_str(),
+                // Currently zcashd will not write to debug.log with the following flag
+                // "-debuglogfile=.../zingolib/regtest/logs/debug.log",
+                // debug=1 will at least print to stdout
+                "-debug=1",
+            ])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("failed to start zcashd"),
+        File::create(&zcashd_stdout_log).expect("file::create Result error"),
+        zcashd_stdout_log,
+    )
+}
+
 pub(crate) fn launch() {
-    use std::fs::File;
     use std::io::Read;
-    use std::process::Stdio;
     use std::{thread, time};
 
     //check for git itself and that we are working within a zingolib repo
@@ -82,8 +117,8 @@ pub(crate) fn launch() {
     let lightwalletd_stderr_log = lightwalletd_logs.join("stderr.log");
     let lightwalletd_datadir = data_dir.join("lightwalletd");
 
-    let mut zcashd_bin = bin_location.to_owned();
-    zcashd_bin.push("zcashd");
+    let (mut zcashd_command, mut zcashd_logfile, zcashd_stdout_log) =
+        config_zcashd_for_launch(&bin_location, &zcashd_logs, &zcashd_config, &zcashd_datadir);
 
     let mut lwd_bin = bin_location.to_owned();
     lwd_bin.push("lightwalletd");
@@ -94,32 +129,6 @@ pub(crate) fn launch() {
             .to_str()
             .expect("Surprising failure to repr as &str"),
     );
-
-    let zcashd_stdout_log = zcashd_logs.join("stdout.log");
-    let mut zcashd_logfile = File::create(&zcashd_stdout_log).expect("file::create Result error");
-
-    let mut zcashd_command = Command::new(zcashd_bin)
-        .args([
-            "--printtoconsole",
-            format!(
-                "--conf={}",
-                zcashd_config.to_str().expect("Unexpected string!")
-            )
-            .as_str(),
-            format!(
-                "--datadir={}",
-                zcashd_datadir.to_str().expect("Unexpected string!")
-            )
-            .as_str(),
-            // Currently zcashd will not write to debug.log with the following flag
-            // "-debuglogfile=.../zingolib/regtest/logs/debug.log",
-            // debug=1 will at least print to stdout
-            "-debug=1",
-        ])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("failed to start zcashd");
 
     if let Some(mut zcashd_stdout_data) = zcashd_command.stdout.take() {
         std::thread::spawn(move || {
@@ -155,7 +164,7 @@ pub(crate) fn launch() {
     let mut lwd_err_logfile =
         File::create(&lightwalletd_stderr_log).expect("file::create Result error");
 
-    let mut lwd_command = Command::new(lwd_bin)
+    let mut lwd_command = std::process::Command::new(lwd_bin)
         .args([
             "--no-tls-very-insecure",
             "--zcash-conf-path",
@@ -175,8 +184,8 @@ pub(crate) fn launch() {
                 .to_str()
                 .expect("lightwalletd_stdout_log PathBuf to str fail!"),
         ])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
         .spawn()
         .expect("failed to start lwd");
 
