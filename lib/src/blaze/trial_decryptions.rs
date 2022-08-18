@@ -129,7 +129,7 @@ impl TrialDecryptions {
     /// Trial decryption is invoked by spend-or-view key holders to detect notes addressed to shielded addresses derived from
     /// the spend key.
     async fn trial_decrypt_batch(
-        cbs: Vec<CompactBlock>,
+        compact_blocks: Vec<CompactBlock>,
         keys: Arc<RwLock<Keys>>,
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         sapling_ivks: Arc<Vec<SaplingIvk>>,
@@ -147,26 +147,29 @@ impl TrialDecryptions {
         )>,
     ) -> Result<(), String> {
         let config = keys.read().await.config().clone();
-        let blk_count = cbs.len();
+        let blk_count = compact_blocks.len();
         let mut workers = FuturesUnordered::new();
 
         let download_memos = bsync_data.read().await.wallet_options.download_memos;
 
-        for cb in cbs {
-            let height = BlockHeight::from_u32(cb.height as u32);
+        for compact_block in compact_blocks {
+            let height = BlockHeight::from_u32(compact_block.height as u32);
 
-            for (transaction_num, compact_transaction) in cb.vtx.iter().enumerate() {
+            for (transaction_num, compact_transaction) in compact_block.vtx.iter().enumerate() {
                 let mut transaction_metadata = false;
 
-                for (output_num, co) in compact_transaction.outputs.iter().enumerate() {
-                    if let Err(_) = co.epk() {
+                for (output_num, compact_output) in compact_transaction.outputs.iter().enumerate() {
+                    if let Err(_) = compact_output.epk() {
                         continue;
                     };
 
                     for (i, ivk) in sapling_ivks.iter().enumerate() {
-                        if let Some((note, to)) =
-                            try_sapling_compact_note_decryption(&config.chain, height, &ivk, co)
-                        {
+                        if let Some((note, to)) = try_sapling_compact_note_decryption(
+                            &config.chain,
+                            height,
+                            &ivk,
+                            compact_output,
+                        ) {
                             transaction_metadata = true;
 
                             let keys = keys.clone();
@@ -174,7 +177,7 @@ impl TrialDecryptions {
                             let transaction_metadata_set = transaction_metadata_set.clone();
                             let detected_transaction_id_sender =
                                 detected_transaction_id_sender.clone();
-                            let timestamp = cb.time as u64;
+                            let timestamp = compact_block.time as u64;
                             let compact_transaction = compact_transaction.clone();
 
                             workers.push(tokio::spawn(async move {
@@ -252,7 +255,7 @@ impl TrialDecryptions {
                             let transaction_metadata_set = transaction_metadata_set.clone();
                             let detected_transaction_id_sender =
                                 detected_transaction_id_sender.clone();
-                            let timestamp = cb.time as u64;
+                            let timestamp = compact_block.time as u64;
                             let compact_transaction = compact_transaction.clone();
 
                             workers.push(tokio::spawn(async move {
