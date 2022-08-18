@@ -1,18 +1,19 @@
 use crate::{
-    compact_formats::CompactBlock,
+    compact_formats::{CompactBlock, CompactTx},
     wallet::{
         data::{ChannelNullifier, TransactionMetadata},
         keys::Keys,
+        traits::{
+            CompactOutput as _, DomainWalletExt, NoteAndMetadata as _, Nullifier as _,
+            WalletKey as _,
+        },
         transactions::TransactionMetadataSet,
         MemoDownloadOption,
     },
 };
 use futures::{stream::FuturesUnordered, StreamExt};
 use log::info;
-use orchard::{
-    keys::{FullViewingKey as OrchardFvk, IncomingViewingKey as OrchardIvk},
-    note_encryption::{CompactAction, OrchardDomain},
-};
+use orchard::{keys::IncomingViewingKey as OrchardIvk, note_encryption::OrchardDomain};
 use std::sync::Arc;
 use tokio::{
     sync::{
@@ -21,9 +22,10 @@ use tokio::{
     },
     task::JoinHandle,
 };
+use zcash_note_encryption::{try_compact_note_decryption, Domain};
 use zcash_primitives::{
-    consensus::BlockHeight,
-    sapling::{note_encryption::try_sapling_compact_note_decryption, SaplingIvk},
+    consensus::{BlockHeight, Parameters},
+    sapling::{note_encryption::SaplingDomain, SaplingIvk},
     transaction::{Transaction, TxId},
 };
 
@@ -158,166 +160,35 @@ impl TrialDecryptions {
             for (transaction_num, compact_transaction) in compact_block.vtx.iter().enumerate() {
                 let mut transaction_metadata = false;
 
-                for (output_num, compact_output) in compact_transaction.outputs.iter().enumerate() {
-                    if let Err(_) = compact_output.epk() {
-                        continue;
-                    };
+                Self::trial_decrypt_domain_specific_outputs::<SaplingDomain<zingoconfig::Network>>(
+                    &mut transaction_metadata,
+                    &compact_transaction,
+                    transaction_num,
+                    &compact_block,
+                    sapling_ivks.to_vec(),
+                    height,
+                    &config,
+                    &keys,
+                    &bsync_data,
+                    &transaction_metadata_set,
+                    &detected_transaction_id_sender,
+                    &workers,
+                );
 
-                    for (i, ivk) in sapling_ivks.iter().enumerate() {
-                        if let Some((note, to)) = try_sapling_compact_note_decryption(
-                            &config.chain,
-                            height,
-                            &ivk,
-                            compact_output,
-                        ) {
-                            transaction_metadata = true;
-
-                            let keys = keys.clone();
-                            let bsync_data = bsync_data.clone();
-                            let transaction_metadata_set = transaction_metadata_set.clone();
-                            let detected_transaction_id_sender =
-                                detected_transaction_id_sender.clone();
-                            let timestamp = compact_block.time as u64;
-                            let compact_transaction = compact_transaction.clone();
-
-                            workers.push(tokio::spawn(async move {
-                                let keys = keys.read().await;
-                                let extfvk = keys.zkeys[i].extfvk();
-                                let have_sapling_spending_key =
-                                    keys.have_sapling_spending_key(extfvk);
-                                let uri = bsync_data.read().await.uri().clone();
-
-                                // Get the witness for the note
-                                let witness = bsync_data
-                                    .read()
-                                    .await
-                                    .block_data
-                                    .get_sapling_note_witness(
-                                        uri,
-                                        height,
-                                        transaction_num,
-                                        output_num,
-                                    )
-                                    .await?;
-
-                                let transaction_id =
-                                    TransactionMetadata::new_txid(&compact_transaction.hash);
-                                let nullifier = note.nf(&extfvk.fvk.vk, witness.position() as u64);
-
-                                transaction_metadata_set.write().await.add_new_sapling_note(
-                                    transaction_id.clone(),
-                                    height,
-                                    false,
-                                    timestamp,
-                                    note,
-                                    to,
-                                    &extfvk,
-                                    have_sapling_spending_key,
-                                    witness,
-                                );
-
-                                info!("Trial decrypt Detected txid {}", &transaction_id);
-
-                                detected_transaction_id_sender
-                                    .send((
-                                        transaction_id,
-                                        ChannelNullifier::Sapling(nullifier),
-                                        height,
-                                        Some(output_num as u32),
-                                    ))
-                                    .unwrap();
-
-                                Ok::<_, String>(())
-                            }));
-
-                            // No need to try the other ivks if we found one
-                            break;
-                        }
-                    }
-                }
-                for (action_num, action) in compact_transaction.actions.iter().enumerate() {
-                    let action = match CompactAction::try_from(action) {
-                        Ok(a) => a,
-                        Err(_e) => {
-                            todo!("Implement error handling for action parsing")
-                        }
-                    };
-                    for (i, ivk) in orchard_ivks.iter().cloned().enumerate() {
-                        if let Some((note, recipient)) =
-                            zcash_note_encryption::try_compact_note_decryption(
-                                &OrchardDomain::for_nullifier(action.nullifier()),
-                                &ivk,
-                                &action,
-                            )
-                        {
-                            let keys = keys.clone();
-                            let bsync_data = bsync_data.clone();
-                            let transaction_metadata_set = transaction_metadata_set.clone();
-                            let detected_transaction_id_sender =
-                                detected_transaction_id_sender.clone();
-                            let timestamp = compact_block.time as u64;
-                            let compact_transaction = compact_transaction.clone();
-
-                            workers.push(tokio::spawn(async move {
-                                let keys = keys.read().await;
-                                let fvk = OrchardFvk::try_from(&keys.okeys[i].key);
-                                let have_orchard_spending_key =
-                                    keys.have_orchard_spending_key(&ivk);
-                                let uri = bsync_data.read().await.uri().clone();
-
-                                // Get the witness for the note
-                                let witness = bsync_data
-                                    .read()
-                                    .await
-                                    .block_data
-                                    .get_orchard_note_witness(
-                                        uri,
-                                        height,
-                                        transaction_num,
-                                        action_num,
-                                    )
-                                    .await?;
-
-                                let transaction_id = TransactionMetadata::new_txid(&compact_transaction.hash);
-
-                                if let Ok(ref fvk) = &fvk {
-                                    let nullifier = note.nullifier(fvk);
-                                    transaction_metadata_set.write().await.add_new_orchard_note(
-                                        transaction_id.clone(),
-                                        height,
-                                        false,
-                                        timestamp,
-                                        note,
-                                        recipient,
-                                        &fvk,
-                                        have_orchard_spending_key,
-                                        witness,
-                                    );
-
-                                    info!("Trial decrypt Detected txid {}", &transaction_id);
-
-                                    detected_transaction_id_sender
-                                        .send((
-                                            transaction_id,
-                                            ChannelNullifier::Orchard(nullifier),
-                                            height,
-                                            Some(action_num as u32),
-                                        ))
-                                        .unwrap();
-                                } else {
-                                    eprintln!(
-                                        "TODO: Transaction decryption without fvks not yet supported"
-                                    );
-                                }
-
-                                Ok::<_, String>(())
-                            }));
-
-                            // No need to try the other ivks if we found one
-                            break;
-                        }
-                    }
-                }
+                Self::trial_decrypt_domain_specific_outputs::<OrchardDomain>(
+                    &mut transaction_metadata,
+                    &compact_transaction,
+                    transaction_num,
+                    &compact_block,
+                    orchard_ivks.to_vec(),
+                    height,
+                    &config,
+                    &keys,
+                    &bsync_data,
+                    &transaction_metadata_set,
+                    &detected_transaction_id_sender,
+                    &workers,
+                );
 
                 // Check option to see if we are fetching all transactions.
                 if !transaction_metadata && download_memos == MemoDownloadOption::AllMemos {
@@ -350,5 +221,120 @@ impl TrialDecryptions {
 
         // Return a nothing-value
         Ok::<(), String>(())
+    }
+    fn trial_decrypt_domain_specific_outputs<D>(
+        transaction_metadata: &mut bool,
+        compact_transaction: &CompactTx,
+        transaction_num: usize,
+        compact_block: &CompactBlock,
+        ivks: Vec<D::IncomingViewingKey>,
+        height: BlockHeight,
+        config: &zingoconfig::ZingoConfig,
+        keys: &Arc<RwLock<Keys>>,
+        bsync_data: &Arc<RwLock<BlazeSyncData>>,
+        transaction_metadata_set: &Arc<RwLock<TransactionMetadataSet>>,
+        detected_transaction_id_sender: &UnboundedSender<(
+            TxId,
+            ChannelNullifier,
+            BlockHeight,
+            Option<u32>,
+        )>,
+        workers: &FuturesUnordered<JoinHandle<Result<(), String>>>,
+    ) where
+        D: DomainWalletExt<zingoconfig::Network>,
+        <D as Domain>::Recipient: crate::wallet::traits::Recipient + Send + 'static,
+        <D as Domain>::Note: PartialEq + Send + 'static,
+        [u8; 32]: From<<D as Domain>::ExtractedCommitmentBytes>,
+    {
+        for (output_num, compact_output) in
+            D::CompactOutput::from_compact_transaction(&compact_transaction)
+                .iter()
+                .enumerate()
+        {
+            //This is checking for empty/invalid epks.
+            //I think it's safe to remove, as vec_to_array will return a zeroed
+            //epk if it's not present, and zeroed/invalid epks will cause
+            //try_compact_note_decryption to fail
+            //. TODO: Remove this comment after review
+            /* if let Err(_) = compact_output.epk() {
+                continue;
+            };*/
+            for (i, ivk) in ivks.iter().enumerate() {
+                if let Some((note, to)) = try_compact_note_decryption(
+                    &compact_output.domain(config.chain, height),
+                    &ivk,
+                    compact_output,
+                ) {
+                    *transaction_metadata = true;
+
+                    let keys = keys.clone();
+                    let bsync_data = bsync_data.clone();
+                    let transaction_metadata_set = transaction_metadata_set.clone();
+                    let detected_transaction_id_sender = detected_transaction_id_sender.clone();
+                    let timestamp = compact_block.time as u64;
+                    let compact_transaction = compact_transaction.clone();
+                    let config = config.clone();
+
+                    workers.push(tokio::spawn(async move {
+                        let keys = keys.read().await;
+                        let wallet_key = &D::Key::get_keys(&*keys)[i];
+                        let fvk = wallet_key.fvk().unwrap();
+                        let have_spending_key = wallet_key.sk().is_some();
+                        let uri = bsync_data.read().await.uri().clone();
+
+                        // Get the witness for the note
+                        let witness = bsync_data
+                            .read()
+                            .await
+                            .block_data
+                            .get_note_witness::<D>(
+                                uri,
+                                height,
+                                transaction_num,
+                                output_num,
+                                config.chain.activation_height(D::NU).unwrap().into(),
+                            )
+                            .await?;
+
+                        let transaction_id =
+                            TransactionMetadata::new_txid(&compact_transaction.hash);
+                        let nullifier =
+                            D::WalletNote::get_nullifier_from_note_fvk_and_witness_position(
+                                &note,
+                                &fvk,
+                                witness.position() as u64,
+                            );
+
+                        transaction_metadata_set.write().await.add_new_note::<D>(
+                            transaction_id.clone(),
+                            height,
+                            false,
+                            timestamp,
+                            note,
+                            to,
+                            &fvk,
+                            have_spending_key,
+                            witness,
+                        );
+
+                        info!("Trial decrypt Detected txid {}", &transaction_id);
+
+                        detected_transaction_id_sender
+                            .send((
+                                transaction_id,
+                                nullifier.to_channel_nullifier(),
+                                height,
+                                Some(output_num as u32),
+                            ))
+                            .unwrap();
+
+                        Ok::<_, String>(())
+                    }));
+
+                    // No need to try the other ivks if we found one
+                    break;
+                }
+            }
+        }
     }
 }

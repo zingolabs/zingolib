@@ -6,7 +6,7 @@ use std::convert::TryInto;
 use zcash_note_encryption::{EphemeralKeyBytes, ShieldedOutput, COMPACT_NOTE_SIZE};
 use zcash_primitives::{
     block::{BlockHash, BlockHeader},
-    consensus::BlockHeight,
+    consensus::{BlockHeight, Parameters},
     sapling::note_encryption::SaplingDomain,
 };
 
@@ -97,9 +97,7 @@ impl CompactSaplingOutput {
     }
 }
 
-impl ShieldedOutput<SaplingDomain<zingoconfig::Network>, COMPACT_NOTE_SIZE>
-    for CompactSaplingOutput
-{
+impl<P: Parameters> ShieldedOutput<SaplingDomain<P>, COMPACT_NOTE_SIZE> for CompactSaplingOutput {
     fn ephemeral_key(&self) -> EphemeralKeyBytes {
         EphemeralKeyBytes(*vec_to_array(&self.epk))
     }
@@ -141,7 +139,7 @@ impl TryFrom<&CompactOrchardAction> for orchard::note_encryption::CompactAction 
     }
 }
 
-pub(crate) fn vec_to_array<'a, T, const N: usize>(vec: &'a Vec<T>) -> &'a [T; N] {
-    <&[T; N]>::try_from(&vec[..]).unwrap()
-    //todo: This unwrap is dangerous. Find better solution
+pub(crate) fn vec_to_array<'a, const N: usize>(vec: &'a Vec<u8>) -> &'a [u8; N] {
+    <&[u8; N]>::try_from(&vec[..]).unwrap_or_else(|_| &[0; N])
+    //todo: This default feels dangerous. Find better solution
 }

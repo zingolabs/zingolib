@@ -514,7 +514,7 @@ impl BlockAndWitnessData {
     /// This function handles Orchard and Sapling domains.
     /// This function takes data from the Untrusted Malicious Proxy, and uses it to construct a witness locally.  I am
     /// currently of the opinion that this function should be factored into separate concerns.
-    async fn get_note_witness<D>(
+    pub(crate) async fn get_note_witness<D>(
         &self,
         uri: Uri,
         height: BlockHeight,

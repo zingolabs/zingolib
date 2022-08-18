@@ -553,7 +553,7 @@ impl TransactionMetadataSet {
             .find(|nf| **nf == nullifier)
             .is_none()
         {
-            wtx.add_spent_nullifier(nullifier.to_wallet_nullifier(), value)
+            wtx.add_spent_nullifier(nullifier.to_channel_nullifier(), value)
         }
 
         // Since this Txid has spent some funds, output notes in this Tx that are sent to us are actually change.
@@ -767,7 +767,7 @@ impl TransactionMetadataSet {
         )
     }
 
-    fn add_new_note<D: DomainWalletExt<zingoconfig::Network>>(
+    pub(crate) fn add_new_note<D: DomainWalletExt<zingoconfig::Network>>(
         &mut self,
         txid: TxId,
         height: BlockHeight,

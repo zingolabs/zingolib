@@ -31,9 +31,9 @@ use subtle::CtOption;
 use zcash_address::unified::{self, Encoding as _, Receiver};
 use zcash_client_backend::encoding::encode_payment_address;
 use zcash_encoding::{Optional, Vector};
-use zcash_note_encryption::{Domain, ShieldedOutput, ENC_CIPHERTEXT_SIZE};
+use zcash_note_encryption::{Domain, ShieldedOutput, COMPACT_NOTE_SIZE, ENC_CIPHERTEXT_SIZE};
 use zcash_primitives::{
-    consensus::{BlockHeight, Parameters},
+    consensus::{BlockHeight, NetworkUpgrade, Parameters},
     keys::OutgoingViewingKey as SaplingOutgoingViewingKey,
     memo::{Memo, MemoBytes},
     merkle_tree::{Hashable, IncrementalWitness},
@@ -256,12 +256,18 @@ impl Recipient for SaplingAddress {
     }
 }
 
-pub(crate) trait CompactOutput: Sized {
+pub(crate) trait CompactOutput<D: DomainWalletExt<P>, P: Parameters>:
+    Sized + ShieldedOutput<D, COMPACT_NOTE_SIZE>
+where
+    D::Recipient: Recipient,
+    <D as Domain>::Note: PartialEq,
+{
     fn from_compact_transaction(compact_transaction: &CompactTx) -> &Vec<Self>;
     fn cmstar(&self) -> &[u8; 32];
+    fn domain(&self, parameters: P, height: BlockHeight) -> D;
 }
 
-impl CompactOutput for CompactSaplingOutput {
+impl<P: Parameters> CompactOutput<SaplingDomain<P>, P> for CompactSaplingOutput {
     fn from_compact_transaction(compact_transaction: &CompactTx) -> &Vec<CompactSaplingOutput> {
         &compact_transaction.outputs
     }
@@ -269,14 +275,24 @@ impl CompactOutput for CompactSaplingOutput {
     fn cmstar(&self) -> &[u8; 32] {
         vec_to_array(&self.cmu)
     }
+
+    fn domain(&self, parameters: P, height: BlockHeight) -> SaplingDomain<P> {
+        SaplingDomain::for_height(parameters, height)
+    }
 }
 
-impl CompactOutput for CompactOrchardAction {
+impl<P: Parameters> CompactOutput<OrchardDomain, P> for CompactOrchardAction {
     fn from_compact_transaction(compact_transaction: &CompactTx) -> &Vec<CompactOrchardAction> {
         &compact_transaction.actions
     }
     fn cmstar(&self) -> &[u8; 32] {
         vec_to_array(&self.cmx)
+    }
+
+    fn domain(&self, _parameters: P, _heightt: BlockHeight) -> OrchardDomain {
+        OrchardDomain::for_nullifier(
+            OrchardNullifier::from_bytes(vec_to_array(&self.nullifier)).unwrap(),
+        )
     }
 }
 
@@ -341,12 +357,14 @@ impl<P: Parameters> Bundle<OrchardDomain, P> for OrchardBundle<OrchardAuthorized
 }
 
 /// TODO: Documentation neeeeeds help!!!!  XXXX
-pub(crate) trait Nullifier: PartialEq + Copy + Sized + ToBytes<32> + FromBytes<32> {
+pub(crate) trait Nullifier:
+    PartialEq + Copy + Sized + ToBytes<32> + FromBytes<32> + Send
+{
     fn get_nullifiers_of_unspent_notes_from_transaction_set(
         transaction_metadata_set: &TransactionMetadataSet,
     ) -> Vec<(Self, u64, TxId)>;
     fn get_nullifiers_spent_in_transaction(transaction: &TransactionMetadata) -> &Vec<Self>;
-    fn to_wallet_nullifier(&self) -> ChannelNullifier;
+    fn to_channel_nullifier(&self) -> ChannelNullifier;
 }
 
 impl Nullifier for SaplingNullifier {
@@ -362,7 +380,7 @@ impl Nullifier for SaplingNullifier {
         &transaction_metadata_set.spent_sapling_nullifiers
     }
 
-    fn to_wallet_nullifier(&self) -> ChannelNullifier {
+    fn to_channel_nullifier(&self) -> ChannelNullifier {
         ChannelNullifier::Sapling(*self)
     }
 }
@@ -378,16 +396,16 @@ impl Nullifier for OrchardNullifier {
         &transaction.spent_orchard_nullifiers
     }
 
-    fn to_wallet_nullifier(&self) -> ChannelNullifier {
+    fn to_channel_nullifier(&self) -> ChannelNullifier {
         ChannelNullifier::Orchard(*self)
     }
 }
 
 pub(crate) trait NoteAndMetadata: Sized {
-    type Fvk: Clone + Diversifiable + ReadableWriteable<()>;
+    type Fvk: Clone + Diversifiable + ReadableWriteable<()> + Send;
     type Diversifier: Copy + FromBytes<11> + ToBytes<11>;
     type Note: PartialEq + ReadableWriteable<(Self::Fvk, Self::Diversifier)>;
-    type Node: Hashable + FromCommitment;
+    type Node: Hashable + FromCommitment + Send;
     type Nullifier: Nullifier;
     const GET_NOTE_WITNESSES: fn(
         &TransactionMetadataSet,
@@ -788,8 +806,10 @@ where
     Self::Note: PartialEq,
     Self::Recipient: Recipient,
 {
-    type Fvk: Clone;
-    type CompactOutput: CompactOutput;
+    const NU: NetworkUpgrade;
+
+    type Fvk: Clone + Send;
+    type CompactOutput: CompactOutput<Self, P>;
     type WalletNote: NoteAndMetadata<
         Fvk = Self::Fvk,
         Note = <Self as Domain>::Note,
@@ -800,7 +820,9 @@ where
             Ovk = <Self as Domain>::OutgoingViewingKey,
             Ivk = <Self as Domain>::IncomingViewingKey,
             Fvk = <Self as DomainWalletExt<P>>::Fvk,
-        > + Clone;
+        > + Clone
+        + Send
+        + Sync;
 
     type Bundle: Bundle<Self, P>;
 
@@ -809,6 +831,8 @@ where
 }
 
 impl<P: Parameters> DomainWalletExt<P> for SaplingDomain<P> {
+    const NU: NetworkUpgrade = NetworkUpgrade::Sapling;
+
     type Fvk = SaplingExtendedFullViewingKey;
 
     type CompactOutput = CompactSaplingOutput;
@@ -829,6 +853,8 @@ impl<P: Parameters> DomainWalletExt<P> for SaplingDomain<P> {
 }
 
 impl<P: Parameters> DomainWalletExt<P> for OrchardDomain {
+    const NU: NetworkUpgrade = NetworkUpgrade::Nu5;
+
     type Fvk = OrchardFullViewingKey;
 
     type CompactOutput = CompactOrchardAction;
