@@ -11,11 +11,12 @@ Copy your compiled `zcashd` `zcash-cli` and `lightwalletd` binaries to `zingolib
 There are default config files for these binaries already in place in `/zingolib/regtest/conf/` - which can be edited also.
 
 For example, from your `zingolib/` directory, with a binary produced from `cargo build`, you can run:
-`./target/debug/zingo-cli --regtest --data-dir regtest/datadir/zingo --server=127.0.0.1:9067`
+`./target/debug/zingo-cli --regtest --data-dir regtest/data/zingo --server=127.0.0.1:9067`
 This will start `zcashd` and `lightwalletd` and then connect to these tools with an interactive `zingo-cli`.
-It currently takes about 15 seconds to do so, to give the daemons time to boot, but this will be shortened soon.
+It currently takes a few seconds to do so, even on a fast machine, to give the daemons time to boot.
 
 These daemons will be killed when the user exits `zingo-cli` using the `quit` command.
+If there is an issue starting or shutting down regtest mode, it's possible you will have to shut down the daemons manually.
 
 You should see several diagnostic messsages, and then:
 `regtest detected and network set correctly!
@@ -28,7 +29,7 @@ at which point the interactive cli application should work with your regtest net
 ...which you can view with `tail -f` or your favorite tool.
 
 You may need to add blocks to your regtest chain if you have not done so previously.
-In still another terminal instance in the `zingolib/regitest/bin/` directory, you can run `.zcash-cli -regtest generate 11` to generate 11 blocks.
+In still another terminal instance in the `zingolib/regtest/bin/` directory, you can run `.zcash-cli -regtest generate 11` to generate 11 blocks.
 Please note that by adding more than 100 blocks it is difficult or impossible to rewind the chain. The config means that after the first block all network upgrades should be in place.
 Other `zcash-cli` commands should work similarly.
 
@@ -49,7 +50,7 @@ regtest/
 ├── conf
 │   ├── lightwalletdconf.yml
 │   └── zcash.conf
-├── datadir
+├── data
 │   ├── lightwalletd
 │   ├── zcash
 │   └── zingo
