@@ -65,32 +65,33 @@ fn config_zcashd_for_launch(
     zcashd_config: &PathBuf,
     zcashd_datadir: &PathBuf,
 ) -> (std::process::Child, File, PathBuf) {
-    let mut zcashd_bin = bin_loc.to_owned();
+    let mut zcashd_bin = bin_loc.clone();
     zcashd_bin.push("zcashd");
     let zcashd_stdout_log = zcashd_logs.join("stdout.log");
+    let mut command = std::process::Command::new(zcashd_bin);
+    command
+        .args([
+            "--printtoconsole",
+            format!(
+                "--conf={}",
+                zcashd_config.to_str().expect("Unexpected string!")
+            )
+            .as_str(),
+            format!(
+                "--datadir={}",
+                zcashd_datadir.to_str().expect("Unexpected string!")
+            )
+            .as_str(),
+            // Currently zcashd will not write to debug.log with the following flag
+            // "-debuglogfile=.../zingolib/regtest/logs/debug.log",
+            // debug=1 will at least print to stdout
+            "-debug=1",
+        ])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let child = command.spawn().expect("failed to start zcashd");
     (
-        std::process::Command::new(zcashd_bin)
-            .args([
-                "--printtoconsole",
-                format!(
-                    "--conf={}",
-                    zcashd_config.to_str().expect("Unexpected string!")
-                )
-                .as_str(),
-                format!(
-                    "--datadir={}",
-                    zcashd_datadir.to_str().expect("Unexpected string!")
-                )
-                .as_str(),
-                // Currently zcashd will not write to debug.log with the following flag
-                // "-debuglogfile=.../zingolib/regtest/logs/debug.log",
-                // debug=1 will at least print to stdout
-                "-debug=1",
-            ])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .expect("failed to start zcashd"),
+        child,
         File::create(&zcashd_stdout_log).expect("file::create Result error"),
         zcashd_stdout_log,
     )
