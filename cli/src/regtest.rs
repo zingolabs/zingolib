@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::fs::File;
 ///  Enforce strict expectations for tool use with current zingolib.  Relaxing these restrictions will facilitate
 ///  use in other projects.  For example, this version of regtest will only run within a git repo that is historically
@@ -89,6 +90,27 @@ fn config_zcashd_for_launch(
         ])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
+    assert_eq!(command.get_args().len(), 4usize);
+    assert_eq!(
+        &command.get_args().into_iter().collect::<Vec<&OsStr>>()[0]
+            .to_str()
+            .unwrap(),
+        &"--printtoconsole"
+    );
+    assert!(&command.get_args().into_iter().collect::<Vec<&OsStr>>()[1]
+        .to_str()
+        .unwrap()
+        .starts_with("--conf="));
+    assert!(&command.get_args().into_iter().collect::<Vec<&OsStr>>()[2]
+        .to_str()
+        .unwrap()
+        .starts_with("--datadir="));
+    assert_eq!(
+        &command.get_args().into_iter().collect::<Vec<&OsStr>>()[3]
+            .to_str()
+            .unwrap(),
+        &"-debug=1"
+    );
     let child = command.spawn().expect("failed to start zcashd");
     (
         child,
@@ -118,6 +140,14 @@ pub(crate) fn launch() {
     let lightwalletd_stderr_log = lightwalletd_logs.join("stderr.log");
     let lightwalletd_datadir = data_dir.join("lightwalletd");
 
+    assert!(&zcashd_config
+        .to_str()
+        .unwrap()
+        .ends_with("/regtest/conf/zcash.conf"));
+    assert!(&zcashd_datadir
+        .to_str()
+        .unwrap()
+        .ends_with("/regtest/data/zcashd"));
     let (mut zcashd_command, mut zcashd_logfile, zcashd_stdout_log) =
         config_zcashd_for_launch(&bin_location, &zcashd_logs, &zcashd_config, &zcashd_datadir);
 
