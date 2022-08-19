@@ -1,6 +1,8 @@
-//! The blockchain and proxied transformations do not contain any public information about
-//! transaction recipients, therefore clients must attempt to decrypt each note with each
-//! key to determine if they are the recipient.  This process is called: `trial_decryption`.
+//! The zcash blockchain and proxied transformations derived from it, do not contain any public
+//! information about transaction recipients. Therefore clients must attempt to decrypt each
+//! note with each of their keys to determine if they are the recipient.
+//! This process is called: `trial_decryption`.
+
 use crate::{
     compact_formats::{CompactBlock, CompactTx},
     wallet::{
@@ -50,6 +52,8 @@ impl TrialDecryptions {
         }
     }
 
+    /// Pass keys and data store to dedicated trial_decrpytion *management* thread,
+    /// the *management* thread in turns spawns per-1000-cb trial decryption threads.
     pub async fn start(
         &self,
         bsync_data: Arc<RwLock<BlazeSyncData>>,
@@ -72,7 +76,7 @@ impl TrialDecryptions {
         let keys = self.keys.clone();
         let transaction_metadata_set = self.transaction_metadata_set.clone();
 
-        let h = tokio::spawn(async move {
+        let management_thread_handle = tokio::spawn(async move {
             let mut workers = FuturesUnordered::new();
             let mut cbs = vec![];
 
@@ -128,7 +132,7 @@ impl TrialDecryptions {
             //info!("Finished final trial decryptions");
         });
 
-        return (h, transmitter);
+        return (management_thread_handle, transmitter);
     }
 
     /// Trial decryption is invoked by spend-or-view key holders to detect notes addressed to shielded addresses derived from
