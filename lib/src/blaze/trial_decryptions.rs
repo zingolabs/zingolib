@@ -202,7 +202,9 @@ impl TrialDecryptions {
                 );
 
                 // Check option to see if we are fetching all transactions.
-                // Submits an unbatched request for a specific transaction.
+                // grabs all memos regardless of decryption status.
+                // Note the memos are immediately discarded.
+                // Perhaps this obfuscates the memos of interest?
                 if !transaction_metadata && download_memos == MemoDownloadOption::AllMemos {
                     let transaction_id = TransactionMetadata::new_txid(&compact_transaction.hash);
                     let (transmitter, receiver) = oneshot::channel();
