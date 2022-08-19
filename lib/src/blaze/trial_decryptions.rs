@@ -1,3 +1,6 @@
+//! The blockchain and proxied transformations do not contain any public information about
+//! transaction recipients, therefore clients must attempt to decrypt each note with each
+//! key to determine if they are the recipient.  This process is called: `trial_decryption`.
 use crate::{
     compact_formats::{CompactBlock, CompactTx},
     wallet::{
