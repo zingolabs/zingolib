@@ -94,6 +94,8 @@ impl TrialDecryptions {
                 cbs.push(cb);
 
                 if cbs.len() >= 1_000 {
+                    // We seem to have enough to delegate to a new thread.
+                    // Why 1000?
                     let keys = keys.clone();
                     let sapling_ivks = sapling_ivks.clone();
                     let orchard_ivks = orchard_ivks.clone();
@@ -102,7 +104,7 @@ impl TrialDecryptions {
                     let detected_transaction_id_sender = detected_transaction_id_sender.clone();
 
                     workers.push(tokio::spawn(Self::trial_decrypt_batch(
-                        cbs.split_off(0),
+                        cbs.split_off(0), // This allocates all received cbs to the spawn.
                         keys,
                         bsync_data,
                         sapling_ivks,
@@ -114,6 +116,7 @@ impl TrialDecryptions {
                 }
             }
 
+            // Finish off the remaining < 1000 cbs
             workers.push(tokio::spawn(Self::trial_decrypt_batch(
                 cbs,
                 keys,
@@ -128,15 +131,16 @@ impl TrialDecryptions {
             while let Some(r) = workers.next().await {
                 r.unwrap().unwrap();
             }
-
-            //info!("Finished final trial decryptions");
         });
 
         return (management_thread_handle, transmitter);
     }
 
-    /// Trial decryption is invoked by spend-or-view key holders to detect notes addressed to shielded addresses derived from
-    /// the spend key.
+    /// Trial decryption is invoked by spend-or-view key holders to detect
+    /// notes addressed to shielded addresses derived from the spend key.
+    /// In the case that the User has requested Memos, and transaction_metadata
+    /// remains false throughout domain-specific decryptions, a memo-specific
+    /// thread is spawned.
     async fn trial_decrypt_batch(
         compact_blocks: Vec<CompactBlock>,
         keys: Arc<RwLock<Keys>>,
@@ -198,6 +202,7 @@ impl TrialDecryptions {
                 );
 
                 // Check option to see if we are fetching all transactions.
+                // Submits an unbatched request for a specific transaction.
                 if !transaction_metadata && download_memos == MemoDownloadOption::AllMemos {
                     let transaction_id = TransactionMetadata::new_txid(&compact_transaction.hash);
                     let (transmitter, receiver) = oneshot::channel();
@@ -258,21 +263,13 @@ impl TrialDecryptions {
                 .iter()
                 .enumerate()
         {
-            //This is checking for empty/invalid epks.
-            //I think it's safe to remove, as vec_to_array will return a zeroed
-            //epk if it's not present, and zeroed/invalid epks will cause
-            //try_compact_note_decryption to fail
-            //. TODO: Remove this comment after review
-            /* if let Err(_) = compact_output.epk() {
-                continue;
-            };*/
             for (i, ivk) in ivks.iter().enumerate() {
                 if let Some((note, to)) = try_compact_note_decryption(
                     &compact_output.domain(config.chain, height),
                     &ivk,
                     compact_output,
                 ) {
-                    *transaction_metadata = true;
+                    *transaction_metadata = true; // i.e. we got metadata
 
                     let keys = keys.clone();
                     let bsync_data = bsync_data.clone();
