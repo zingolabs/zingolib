@@ -2,7 +2,7 @@ use crate::blaze::fixed_size_buffer::FixedSizeBuffer;
 use crate::compact_formats::CompactBlock;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use orchard::{
-    keys::Diversifier as OrchardDiversifier,
+    keys::{Diversifier as OrchardDiversifier, SpendingKey as OrchardSpendingKey},
     note::{Note as OrchardNote, Nullifier as OrchardNullifier},
     tree::MerkleHashOrchard,
 };
@@ -747,6 +747,49 @@ impl SpendableSaplingNote {
                 note: nd.note.clone(),
                 witness: w.clone(),
                 extsk: extsk.clone().unwrap(),
+            })
+        } else {
+            None
+        }
+    }
+}
+
+pub enum SpendableNote {
+    Sapling(SpendableSaplingNote),
+    Orchard(SpendableOrchardNote),
+}
+
+pub struct SpendableOrchardNote {
+    pub transaction_id: TxId,
+    pub nullifier: OrchardNullifier,
+    pub diversifier: OrchardDiversifier,
+    pub note: OrchardNote,
+    pub witness: IncrementalWitness<MerkleHashOrchard>,
+    pub sk: OrchardSpendingKey,
+}
+
+impl SpendableOrchardNote {
+    pub fn from(
+        transaction_id: TxId,
+        nd: &OrchardNoteAndMetadata,
+        anchor_offset: usize,
+        sk: &Option<OrchardSpendingKey>,
+    ) -> Option<Self> {
+        // Include only notes that haven't been spent, or haven't been included in an unconfirmed spend yet.
+        if nd.spent.is_none()
+            && nd.unconfirmed_spent.is_none()
+            && sk.is_some()
+            && nd.witnesses.len() >= (anchor_offset + 1)
+        {
+            let witness = nd.witnesses.get(nd.witnesses.len() - anchor_offset - 1);
+
+            witness.map(|w| SpendableOrchardNote {
+                transaction_id,
+                nullifier: nd.nullifier,
+                diversifier: nd.diversifier,
+                note: nd.note.clone(),
+                witness: w.clone(),
+                sk: sk.clone().unwrap(),
             })
         } else {
             None

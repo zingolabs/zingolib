@@ -35,6 +35,7 @@ use zcash_primitives::{
     },
 };
 
+use self::data::SpendableOrchardNote;
 use self::traits::NoteAndMetadata;
 use self::{
     data::{BlockData, OrchardNoteAndMetadata, SaplingNoteAndMetadata, Utxo, WalletZecPriceInfo},
@@ -1178,7 +1179,12 @@ impl LightWallet {
         target_amount: Amount,
         transparent_only: bool,
         shield_transparenent: bool,
-    ) -> (Vec<SpendableSaplingNote>, Vec<Utxo>, Amount) {
+    ) -> (
+        Vec<SpendableOrchardNote>,
+        Vec<SpendableSaplingNote>,
+        Vec<Utxo>,
+        Amount,
+    ) {
         // First, if we are allowed to pick transparent value, pick them all
         let utxos = if transparent_only || shield_transparenent {
             self.get_utxos()
@@ -1198,7 +1204,7 @@ impl LightWallet {
 
         // If we are allowed only transparent funds or we've selected enough then return
         if transparent_only || transparent_value_selected >= target_amount {
-            return (vec![], utxos, transparent_value_selected);
+            return (vec![], vec![], utxos, transparent_value_selected);
         }
 
         // Start collecting sapling funds at every allowed offset
@@ -1237,7 +1243,7 @@ impl LightWallet {
             candidate_notes.sort_by(|a, b| b.note.value.cmp(&a.note.value));
 
             // Select the minimum number of notes required to satisfy the target value
-            let notes = candidate_notes
+            let sapling_notes = candidate_notes
                 .into_iter()
                 .scan(Amount::zero(), |running_total, spendable| {
                     if *running_total >= (target_amount - transparent_value_selected).unwrap() {
@@ -1248,13 +1254,14 @@ impl LightWallet {
                     }
                 })
                 .collect::<Vec<_>>();
-            let sapling_value_selected = notes.iter().fold(Amount::zero(), |prev, sn| {
+            let sapling_value_selected = sapling_notes.iter().fold(Amount::zero(), |prev, sn| {
                 (prev + Amount::from_u64(sn.note.value).unwrap()).unwrap()
             });
 
             if (sapling_value_selected + transparent_value_selected).unwrap() >= target_amount {
                 return (
-                    notes,
+                    vec![],
+                    sapling_notes,
                     utxos,
                     (sapling_value_selected + transparent_value_selected).unwrap(),
                 );
@@ -1262,7 +1269,7 @@ impl LightWallet {
         }
 
         // If we can't select enough, then we need to return empty handed
-        (vec![], vec![], Amount::zero())
+        (vec![], vec![], vec![], Amount::zero())
     }
 
     pub async fn send_to_address<F, Fut, P: TxProver>(
@@ -1365,7 +1372,7 @@ impl LightWallet {
             .await
             .get_taddr_to_sk_map();
 
-        let (notes, utxos, selected_value) = self
+        let (_orchard_notes, sapling_notes, utxos, selected_value) = self
             .select_notes_and_utxos(target_amount, transparent_only, true)
             .await;
         if selected_value < target_amount {
@@ -1382,7 +1389,7 @@ impl LightWallet {
         println!(
             "{}: Adding {} notes and {} utxos",
             now() - start_time,
-            notes.len(),
+            sapling_notes.len(),
             utxos.len()
         );
 
@@ -1413,7 +1420,7 @@ impl LightWallet {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("{:?}", e))?;
 
-        for selected in notes.iter() {
+        for selected in sapling_notes.iter() {
             if let Err(e) = builder.add_sapling_spend(
                 selected.extsk.clone(),
                 selected.diversifier,
@@ -1429,7 +1436,7 @@ impl LightWallet {
         // If no Sapling notes were added, add the change address manually. That is,
         // send the change to our sapling address manually. Note that if a sapling note was spent,
         // the builder will automatically send change to that address
-        if notes.len() == 0 {
+        if sapling_notes.len() == 0 {
             builder.send_change_to(
                 self.transaction_context.keys.read().await.zkeys[0]
                     .extfvk
@@ -1507,7 +1514,7 @@ impl LightWallet {
             let mut p = self.send_progress.write().await;
             p.is_send_in_progress = true;
             p.progress = 0;
-            p.total = notes.len() as u32 + total_z_recepients;
+            p.total = sapling_notes.len() as u32 + total_z_recepients;
         }
 
         println!("{}: Building transaction", now() - start_time);
@@ -1547,7 +1554,7 @@ impl LightWallet {
                 .transaction_metadata_set
                 .write()
                 .await;
-            for selected in notes {
+            for selected in sapling_notes {
                 let mut spent_note = transactions
                     .current
                     .get_mut(&selected.transaction_id)
