@@ -7,6 +7,7 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::Future;
 use log::{error, info, warn};
 use orchard::keys::SpendingKey as OrchardSpendingKey;
+use orchard::note_encryption::OrchardDomain;
 use std::{
     cmp,
     collections::HashMap,
@@ -1194,33 +1195,61 @@ impl LightWallet {
             return (vec![], vec![], utxos, transparent_value_selected);
         }
 
-        let sapling_candidates = self
-            .get_all_domain_specific_notes::<SaplingDomain<zingoconfig::Network>>()
-            .await;
+        let mut sapling_value_selected = Amount::zero();
+        let mut sapling_notes = vec![];
         // Select the minimum number of notes required to satisfy the target value
-
-        for candidate_set in sapling_candidates {
-            let sapling_notes = candidate_set
-                .into_iter()
-                .scan(Amount::zero(), |running_total, spendable| {
-                    if *running_total >= (target_amount - transparent_value_selected).unwrap() {
-                        None
-                    } else {
-                        *running_total += Amount::from_u64(spendable.note.value).unwrap();
-                        Some(spendable)
-                    }
-                })
-                .collect::<Vec<_>>();
-            let sapling_value_selected = sapling_notes.iter().fold(Amount::zero(), |prev, sn| {
-                (prev + Amount::from_u64(sn.note.value).unwrap()).unwrap()
-            });
-
-            if (sapling_value_selected + transparent_value_selected).unwrap() >= target_amount {
+        if prefer_orchard_over_sapling {
+            let sapling_candidates = self
+                .get_all_domain_specific_notes::<SaplingDomain<zingoconfig::Network>>()
+                .await;
+            (sapling_notes, sapling_value_selected) =
+                Self::add_notes_to_total::<SaplingDomain<zingoconfig::Network>>(
+                    sapling_candidates,
+                    (target_amount - transparent_value_selected).unwrap(),
+                );
+            if transparent_value_selected + sapling_value_selected >= Some(target_amount) {
                 return (
                     vec![],
                     sapling_notes,
                     utxos,
-                    (sapling_value_selected + transparent_value_selected).unwrap(),
+                    (transparent_value_selected + sapling_value_selected).unwrap(),
+                );
+            }
+        }
+        let orchard_candidates = self.get_all_domain_specific_notes::<OrchardDomain>().await;
+        let (orchard_notes, orchard_value_selected) = Self::add_notes_to_total::<OrchardDomain>(
+            orchard_candidates,
+            (target_amount - transparent_value_selected - sapling_value_selected).unwrap(),
+        );
+        if transparent_value_selected + sapling_value_selected + orchard_value_selected
+            >= Some(target_amount)
+        {
+            return (
+                orchard_notes,
+                sapling_notes,
+                utxos,
+                (transparent_value_selected + sapling_value_selected + orchard_value_selected)
+                    .unwrap(),
+            );
+        }
+        if !prefer_orchard_over_sapling {
+            let sapling_candidates = self
+                .get_all_domain_specific_notes::<SaplingDomain<zingoconfig::Network>>()
+                .await;
+            (sapling_notes, sapling_value_selected) =
+                Self::add_notes_to_total::<SaplingDomain<zingoconfig::Network>>(
+                    sapling_candidates,
+                    (target_amount - transparent_value_selected).unwrap(),
+                );
+            if transparent_value_selected + sapling_value_selected + orchard_value_selected
+                >= Some(target_amount)
+            {
+                return (
+                    orchard_notes,
+                    sapling_notes,
+                    utxos,
+                    (transparent_value_selected + sapling_value_selected + orchard_value_selected)
+                        .unwrap(),
                 );
             }
         }
@@ -1275,6 +1304,46 @@ impl LightWallet {
                 candidate_notes
             })
             .collect()
+    }
+
+    fn add_notes_to_total<D: DomainWalletExt<zingoconfig::Network>>(
+        candidates: Vec<Vec<D::SpendableNote>>,
+        target_amount: Amount,
+    ) -> (Vec<D::SpendableNote>, Amount)
+    where
+        D::Note: PartialEq + Clone,
+        D::Recipient: traits::Recipient,
+    {
+        let mut notes = vec![];
+        let mut value_selected = Amount::zero();
+        let mut candidates = candidates.into_iter();
+        loop {
+            if let Some(candidate_set) = candidates.next() {
+                notes = candidate_set
+                    .into_iter()
+                    .scan(Amount::zero(), |running_total, spendable| {
+                        if *running_total >= target_amount {
+                            None
+                        } else {
+                            *running_total +=
+                                Amount::from_u64(D::WalletNote::value_from_note(&spendable.note()))
+                                    .unwrap();
+                            Some(spendable)
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                value_selected = notes.iter().fold(Amount::zero(), |prev, sn| {
+                    (prev + Amount::from_u64(D::WalletNote::value_from_note(&sn.note())).unwrap())
+                        .unwrap()
+                });
+
+                if value_selected >= target_amount {
+                    break (notes, value_selected);
+                }
+            } else {
+                break (notes, value_selected);
+            }
+        }
     }
 
     pub async fn send_to_address<F, Fut, P: TxProver>(
