@@ -25,6 +25,7 @@ use zcash_client_backend::{
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
 use zcash_primitives::memo::MemoBytes;
+use zcash_primitives::merkle_tree::CommitmentTree;
 use zcash_primitives::sapling::note_encryption::SaplingDomain;
 use zcash_primitives::transaction::builder::Progress;
 use zcash_primitives::{
@@ -1443,8 +1444,6 @@ impl LightWallet {
             None => return Err("No blocks in wallet to target, please sync first".to_string()),
         };
 
-        let mut builder = Builder::new(self.transaction_context.config.chain, target_height);
-
         // Create a map from address -> sk for all taddrs, so we can spend from the
         // right address
         let address_to_sk = self
@@ -1454,7 +1453,7 @@ impl LightWallet {
             .await
             .get_taddr_to_sk_map();
 
-        let (_orchard_notes, sapling_notes, utxos, selected_value) = self
+        let (orchard_notes, sapling_notes, utxos, selected_value) = self
             .select_notes_and_utxos(
                 target_amount,
                 transparent_only,
@@ -1472,10 +1471,34 @@ impl LightWallet {
             return Err(e);
         }
 
-        // Create the transaction
+        let orchard_anchor = if let Some(note) = orchard_notes.get(0) {
+            note.witness.root()
+        } else {
+            //TODO: Get the orchard anchor from somewhere that leaks less information than the latest block
+            CommitmentTree::read(
+                &hex::decode(
+                    &self
+                        .verified_tree
+                        .read()
+                        .await
+                        .as_ref()
+                        .unwrap()
+                        .orchard_tree,
+                )
+                .unwrap()[..],
+            )
+            .unwrap()
+            .root()
+        };
+        let mut builder = Builder::with_orchard_anchor(
+            self.transaction_context.config.chain,
+            target_height,
+            orchard::Anchor::from(orchard_anchor),
+        );
         println!(
-            "{}: Adding {} notes and {} utxos",
+            "{}: Adding {} sapling notes, {} orchard notes, and {} utxos",
             now() - start_time,
+            orchard_notes.len(),
             sapling_notes.len(),
             utxos.len()
         );
@@ -1520,6 +1543,26 @@ impl LightWallet {
             }
         }
 
+        for selected in orchard_notes.iter() {
+            let path = selected.witness.path().unwrap();
+            if let Err(e) = builder.add_orchard_spend(
+                selected.sk.clone(),
+                selected.note.clone(),
+                orchard::tree::MerklePath::from((
+                    incrementalmerkletree::Position::from(path.position as usize),
+                    path.auth_path
+                        .iter()
+                        .map(|(node, _)| node.clone())
+                        .collect(),
+                )),
+            ) {
+                let e = format!("Error adding note: {:?}", e);
+                error!("{}", e);
+                return Err(e);
+            }
+        }
+
+        //TODO: Send change to orchard instead of sapling
         // If no Sapling notes were added, add the change address manually. That is,
         // send the change to our sapling address manually. Note that if a sapling note was spent,
         // the builder will automatically send change to that address
@@ -1568,7 +1611,7 @@ impl LightWallet {
                 address::RecipientAddress::Transparent(to) => {
                     builder.add_transparent_output(&to, value)
                 }
-                address::RecipientAddress::Unified(_to) => todo!("Add unified address support"),
+                address::RecipientAddress::Unified(to) => todo!("Add unified address support"),
             } {
                 let e = format!("Error adding output: {:?}", e);
                 error!("{}", e);

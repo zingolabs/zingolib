@@ -52,6 +52,7 @@ group = "0.12"
 rust-embed = { version = "6.3.0", features = ["debug-embed"] }
 orchard = "0.2.0"
 subtle = "2.4.1"
+incrementalmerkletree = "0.3.0"
 zcash_address = { git = "https://github.com/zingolabs/librustzcash", rev = "e5484c96445dbff38cfb4a6e0983ade1bc0d7656"}
 zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", rev = "e5484c96445dbff38cfb4a6e0983ade1bc0d7656", features = ["transparent-inputs", "test-dependencies"] }
 zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash", rev = "e5484c96445dbff38cfb4a6e0983ade1bc0d7656"}
