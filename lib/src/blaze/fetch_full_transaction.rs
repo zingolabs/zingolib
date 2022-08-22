@@ -471,7 +471,7 @@ impl TransactionContext {
                                         } else {
                                             Some(OutgoingTxMetadata {
                                                 address,
-                                                value: D::WalletNote::value(&note),
+                                                value: D::WalletNote::value_from_note(&note),
                                                 memo,
                                             })
                                         }

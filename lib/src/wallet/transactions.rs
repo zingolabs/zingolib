@@ -679,7 +679,7 @@ impl TransactionMetadataSet {
         fvk: &D::Fvk,
     ) where
         D: DomainWalletExt<Network>,
-        D::Note: PartialEq,
+        D::Note: PartialEq + Clone,
         D::Recipient: Recipient,
     {
         // Check if this is a change note
@@ -779,7 +779,7 @@ impl TransactionMetadataSet {
         have_spending_key: bool,
         witness: IncrementalWitness<<D::WalletNote as NoteAndMetadata>::Node>,
     ) where
-        D::Note: PartialEq,
+        D::Note: PartialEq + Clone,
         D::Recipient: Recipient,
     {
         // Check if this is a change note

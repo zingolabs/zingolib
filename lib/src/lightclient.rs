@@ -35,7 +35,12 @@ use tokio::{
     task::yield_now,
     time::sleep,
 };
-use zcash_client_backend::encoding::{decode_payment_address, encode_payment_address};
+
+use orchard::keys::{FullViewingKey as OrchardFullViewingKey, SpendingKey as OrchardSpendingKey};
+use zcash_client_backend::{
+    address::UnifiedAddress,
+    encoding::{decode_payment_address, encode_payment_address},
+};
 use zcash_primitives::{
     block::BlockHash,
     consensus::{BlockHeight, BranchId},
@@ -1066,7 +1071,7 @@ impl LightClient {
                         "datetime"     => transaction_metadata.datetime,
                         "position"     => i,
                         "txid"         => format!("{}", transaction_metadata.txid),
-                        "amount"       => NnMd::value(nd.note()) as i64,
+                        "amount"       => nd.value() as i64,
                         "zec_price"    => transaction_metadata.zec_price.map(|p| (p * 100.0).round() / 100.0),
                         "address"      => LightWallet::note_address(&self.config.chain, nd),
                         "memo"         => LightWallet::memo_str(nd.memo().clone())
@@ -1765,15 +1770,32 @@ impl LightClient {
         }
 
         let addr = address
-            .or(self
-                .wallet
-                .keys()
-                .read()
-                .await
-                .get_all_sapling_addresses()
-                .get(0)
-                .map(|s| s.clone()))
-            .unwrap();
+            .or({
+                let keys = self.wallet.keys();
+                let readlocked_keys = keys.read().await;
+                UnifiedAddress::from_receivers(
+                    readlocked_keys
+                        .get_all_orchard_keys_of_type::<OrchardSpendingKey>()
+                        .iter()
+                        .map(|orchard_sk| {
+                            OrchardFullViewingKey::from(orchard_sk)
+                                .address_at(0u32, orchard::keys::Scope::Internal)
+                        })
+                        .next(),
+                    readlocked_keys
+                        .zkeys
+                        .iter()
+                        .filter(|sapling_key| sapling_key.extsk.is_some())
+                        .map(|sapling_key| sapling_key.zaddress.clone())
+                        .next(),
+                    None,
+                )
+                .map(|ua| ua.encode(&self.config.chain))
+            })
+            .ok_or(String::from(
+                "No sapling or orchard spend authority in wallet. \n
+                    please generate a shielded address and try again, or supply a target address",
+            ))?;
 
         let result = {
             let _lock = self.sync_lock.lock().await;
@@ -1784,6 +1806,7 @@ impl LightClient {
             self.wallet
                 .send_to_address(
                     prover,
+                    true,
                     true,
                     vec![(&addr, tbal - fee, None)],
                     |transaction_bytes| {
@@ -1796,6 +1819,7 @@ impl LightClient {
         result.map(|(transaction_id, _)| transaction_id)
     }
 
+    //TODO: Add migrate_sapling_to_orchard argument
     pub async fn do_send(&self, addrs: Vec<(&str, u64, Option<String>)>) -> Result<String, String> {
         // First, get the concensus branch ID
         info!("Creating transaction");
@@ -1807,7 +1831,7 @@ impl LightClient {
             let prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
 
             self.wallet
-                .send_to_address(prover, false, addrs, |transaction_bytes| {
+                .send_to_address(prover, false, false, addrs, |transaction_bytes| {
                     GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
                 })
                 .await
@@ -1816,6 +1840,7 @@ impl LightClient {
         result.map(|(transaction_id, _)| transaction_id)
     }
 
+    //TODO: Add migrate_sapling_to_orchard argument
     #[cfg(test)]
     pub async fn test_do_send(
         &self,
@@ -1829,7 +1854,7 @@ impl LightClient {
             let prover = crate::blaze::test_utils::FakeTransactionProver {};
 
             self.wallet
-                .send_to_address(prover, false, addrs, |transaction_bytes| {
+                .send_to_address(prover, false, false, addrs, |transaction_bytes| {
                     GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
                 })
                 .await
