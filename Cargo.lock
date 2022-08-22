@@ -3684,6 +3684,7 @@ dependencies = [
  "http-body",
  "hyper",
  "hyper-rustls",
+ "incrementalmerkletree",
  "json",
  "jubjub",
  "lazy_static",
