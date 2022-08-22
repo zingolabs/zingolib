@@ -1779,7 +1779,7 @@ impl LightClient {
                         .iter()
                         .map(|orchard_sk| {
                             OrchardFullViewingKey::from(orchard_sk)
-                                .address_at(0u32, orchard::keys::Scope::Internal)
+                                .address_at(0u32, orchard::keys::Scope::External)
                         })
                         .next(),
                     readlocked_keys
@@ -1794,7 +1794,7 @@ impl LightClient {
             })
             .ok_or(String::from(
                 "No sapling or orchard spend authority in wallet. \n
-                    please generate a shielded address and try again, or supply a target address",
+                    please generate a shielded address and try again, or supply a destination address",
             ))?;
 
         let result = {
