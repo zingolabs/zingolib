@@ -136,7 +136,7 @@ impl BlockData {
 }
 
 #[derive(Clone)]
-pub(crate) struct WitnessCache<Node: Hashable> {
+pub struct WitnessCache<Node: Hashable> {
     pub(crate) witnesses: Vec<IncrementalWitness<Node>>,
     pub(crate) top_height: u64,
 }
@@ -181,7 +181,7 @@ impl<Node: Hashable> WitnessCache<Node> {
         self.witnesses.last()
     }
 
-    pub fn into_fsb(self, fsb: &mut FixedSizeBuffer<IncrementalWitness<Node>>) {
+    pub(crate) fn into_fsb(self, fsb: &mut FixedSizeBuffer<IncrementalWitness<Node>>) {
         self.witnesses.into_iter().for_each(|w| fsb.push(w));
     }
 
@@ -725,40 +725,6 @@ pub struct SpendableSaplingNote {
     pub extsk: ExtendedSpendingKey,
 }
 
-impl SpendableSaplingNote {
-    pub fn from(
-        transaction_id: TxId,
-        nd: &SaplingNoteAndMetadata,
-        anchor_offset: usize,
-        extsk: &Option<ExtendedSpendingKey>,
-    ) -> Option<Self> {
-        // Include only notes that haven't been spent, or haven't been included in an unconfirmed spend yet.
-        if nd.spent.is_none()
-            && nd.unconfirmed_spent.is_none()
-            && extsk.is_some()
-            && nd.witnesses.len() >= (anchor_offset + 1)
-        {
-            let witness = nd.witnesses.get(nd.witnesses.len() - anchor_offset - 1);
-
-            witness.map(|w| SpendableSaplingNote {
-                transaction_id,
-                nullifier: nd.nullifier,
-                diversifier: nd.diversifier,
-                note: nd.note.clone(),
-                witness: w.clone(),
-                extsk: extsk.clone().unwrap(),
-            })
-        } else {
-            None
-        }
-    }
-}
-
-pub enum SpendableNote {
-    Sapling(SpendableSaplingNote),
-    Orchard(SpendableOrchardNote),
-}
-
 pub struct SpendableOrchardNote {
     pub transaction_id: TxId,
     pub nullifier: OrchardNullifier,
@@ -766,35 +732,6 @@ pub struct SpendableOrchardNote {
     pub note: OrchardNote,
     pub witness: IncrementalWitness<MerkleHashOrchard>,
     pub sk: OrchardSpendingKey,
-}
-
-impl SpendableOrchardNote {
-    pub fn from(
-        transaction_id: TxId,
-        nd: &OrchardNoteAndMetadata,
-        anchor_offset: usize,
-        sk: &Option<OrchardSpendingKey>,
-    ) -> Option<Self> {
-        // Include only notes that haven't been spent, or haven't been included in an unconfirmed spend yet.
-        if nd.spent.is_none()
-            && nd.unconfirmed_spent.is_none()
-            && sk.is_some()
-            && nd.witnesses.len() >= (anchor_offset + 1)
-        {
-            let witness = nd.witnesses.get(nd.witnesses.len() - anchor_offset - 1);
-
-            witness.map(|w| SpendableOrchardNote {
-                transaction_id,
-                nullifier: nd.nullifier,
-                diversifier: nd.diversifier,
-                note: nd.note.clone(),
-                witness: w.clone(),
-                sk: sk.clone().unwrap(),
-            })
-        } else {
-            None
-        }
-    }
 }
 
 // Struct that tracks the latest and historical price of ZEC in the wallet

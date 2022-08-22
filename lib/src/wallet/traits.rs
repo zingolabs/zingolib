@@ -3,8 +3,8 @@ use std::io::{self, Read, Write};
 
 use super::{
     data::{
-        ChannelNullifier, OrchardNoteAndMetadata, SaplingNoteAndMetadata, TransactionMetadata,
-        WitnessCache,
+        ChannelNullifier, OrchardNoteAndMetadata, SaplingNoteAndMetadata, SpendableOrchardNote,
+        SpendableSaplingNote, TransactionMetadata, WitnessCache,
     },
     keys::{orchard::OrchardKey, sapling::SaplingKey, Keys},
     transactions::TransactionMetadataSet,
@@ -62,7 +62,7 @@ use zcash_primitives::{
 use zingoconfig::Network;
 
 /// This provides a uniform `.to_bytes` to types that might require it in a generic context.
-pub(crate) trait ToBytes<const N: usize> {
+pub trait ToBytes<const N: usize> {
     fn to_bytes(&self) -> [u8; N];
 }
 
@@ -110,7 +110,7 @@ impl<const N: usize> ToBytes<N> for [u8; N] {
 
 /// Exposes the out_ciphertext, domain, and value_commitment in addition to the
 /// required methods of ShieldedOutput
-pub(crate) trait ShieldedOutputExt<P: Parameters, D: Domain>:
+pub trait ShieldedOutputExt<P: Parameters, D: Domain>:
     ShieldedOutput<D, ENC_CIPHERTEXT_SIZE>
 {
     fn domain(&self, height: BlockHeight, parameters: P) -> D;
@@ -149,7 +149,7 @@ impl<P: Parameters> ShieldedOutputExt<P, SaplingDomain<P>> for OutputDescription
 }
 
 /// Provides a standard `from_bytes` interface to be used generically
-pub(crate) trait FromBytes<const N: usize> {
+pub trait FromBytes<const N: usize> {
     fn from_bytes(bytes: [u8; N]) -> Self;
 }
 
@@ -178,7 +178,7 @@ impl FromBytes<11> for OrchardDiversifier {
     }
 }
 
-pub(crate) trait FromCommitment
+pub trait FromCommitment
 where
     Self: Sized,
 {
@@ -197,7 +197,7 @@ impl FromCommitment for MerkleHashOrchard {
 }
 
 /// The component that transfers value.  In the common case, from one output to another.
-pub(crate) trait Spend {
+pub trait Spend {
     type Nullifier: Nullifier;
     fn nullifier(&self) -> &Self::Nullifier;
     fn wallet_nullifier(_: &Self::Nullifier) -> ChannelNullifier;
@@ -226,8 +226,8 @@ impl<Auth> Spend for Action<Auth> {
 ///  Recipients provide the means to generate a Receiver.  A Receiver contains the information necessary
 ///  to transfer an asset to the generating Recipient.
 ///  <https://zips.z.cash/zip-0316#terminology>
-pub(crate) trait Recipient {
-    type Diversifier;
+pub trait Recipient {
+    type Diversifier: Copy;
     fn diversifier(&self) -> Self::Diversifier;
     fn b32encode_for_network(&self, chain: &Network) -> String;
 }
@@ -258,11 +258,11 @@ impl Recipient for SaplingAddress {
     }
 }
 
-pub(crate) trait CompactOutput<D: DomainWalletExt<P>, P: Parameters>:
+pub trait CompactOutput<D: DomainWalletExt<P>, P: Parameters>:
     Sized + ShieldedOutput<D, COMPACT_NOTE_SIZE> + Clone
 where
     D::Recipient: Recipient,
-    <D as Domain>::Note: PartialEq,
+    <D as Domain>::Note: PartialEq + Clone,
 {
     fn from_compact_transaction(compact_transaction: &CompactTx) -> &Vec<Self>;
     fn cmstar(&self) -> &[u8; 32];
@@ -302,10 +302,10 @@ impl<P: Parameters> CompactOutput<OrchardDomain, P> for CompactOrchardAction {
 /// domain. In the Orchard Domain bundles comprise Actions each of which contains
 /// both a Spend and an Output (though either or both may be dummies). Sapling transmissions,
 /// as implemented, contain a 1:1 ratio of Spends and Outputs.
-pub(crate) trait Bundle<D: DomainWalletExt<P>, P: Parameters>
+pub trait Bundle<D: DomainWalletExt<P>, P: Parameters>
 where
     D::Recipient: Recipient,
-    D::Note: PartialEq,
+    D::Note: PartialEq + Clone,
 {
     /// An expenditure of an ?external? output, such that its value is distributed among *this* transaction's outputs.
     type Spend: Spend;
@@ -359,9 +359,7 @@ impl<P: Parameters> Bundle<OrchardDomain, P> for OrchardBundle<OrchardAuthorized
 }
 
 /// TODO: Documentation neeeeeds help!!!!  XXXX
-pub(crate) trait Nullifier:
-    PartialEq + Copy + Sized + ToBytes<32> + FromBytes<32> + Send
-{
+pub trait Nullifier: PartialEq + Copy + Sized + ToBytes<32> + FromBytes<32> + Send {
     fn get_nullifiers_of_unspent_notes_from_transaction_set(
         transaction_metadata_set: &TransactionMetadataSet,
     ) -> Vec<(Self, u64, TxId)>;
@@ -403,10 +401,10 @@ impl Nullifier for OrchardNullifier {
     }
 }
 
-pub(crate) trait NoteAndMetadata: Sized {
+pub trait NoteAndMetadata: Sized {
     type Fvk: Clone + Diversifiable + ReadableWriteable<()> + Send;
     type Diversifier: Copy + FromBytes<11> + ToBytes<11>;
-    type Note: PartialEq + ReadableWriteable<(Self::Fvk, Self::Diversifier)>;
+    type Note: PartialEq + ReadableWriteable<(Self::Fvk, Self::Diversifier)> + Clone;
     type Node: Hashable + FromCommitment + Send;
     type Nullifier: Nullifier;
     const GET_NOTE_WITNESSES: fn(
@@ -444,7 +442,7 @@ pub(crate) trait NoteAndMetadata: Sized {
         position: u64,
     ) -> Self::Nullifier;
     fn nullifier(&self) -> Self::Nullifier;
-    fn value(note: &Self::Note) -> u64;
+    fn value_from_note(note: &Self::Note) -> u64;
     fn spent(&self) -> &Option<(TxId, u32)>;
     fn spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
     fn unconfirmed_spent(&self) -> &Option<(TxId, u32)>;
@@ -455,6 +453,10 @@ pub(crate) trait NoteAndMetadata: Sized {
     fn transaction_metadata_notes_mut(
         wallet_transaction: &mut TransactionMetadata,
     ) -> &mut Vec<Self>;
+    ///Convenience function
+    fn value(&self) -> u64 {
+        Self::value_from_note(self.note())
+    }
 }
 
 impl NoteAndMetadata for SaplingNoteAndMetadata {
@@ -540,7 +542,7 @@ impl NoteAndMetadata for SaplingNoteAndMetadata {
         self.nullifier
     }
 
-    fn value(note: &Self::Note) -> u64 {
+    fn value_from_note(note: &Self::Note) -> u64 {
         note.value
     }
 
@@ -658,7 +660,7 @@ impl NoteAndMetadata for OrchardNoteAndMetadata {
         self.nullifier
     }
 
-    fn value(note: &Self::Note) -> u64 {
+    fn value_from_note(note: &Self::Note) -> u64 {
         note.value().inner()
     }
 
@@ -698,15 +700,15 @@ impl NoteAndMetadata for OrchardNoteAndMetadata {
 }
 
 /// A cross Domain interface to the hierarchy of capabilities deriveable from a SpendKey
-pub(crate) trait WalletKey
+pub trait WalletKey
 where
     Self: Sized,
 {
-    type Sk;
-    type Fvk;
+    type Sk: Clone;
+    type Fvk: PartialEq;
     type Ivk;
     type Ovk;
-    type Address;
+    type Address: PartialEq;
     fn sk(&self) -> Option<Self::Sk>;
     fn fvk(&self) -> Option<Self::Fvk>;
     fn ivk(&self) -> Option<Self::Ivk>;
@@ -802,15 +804,15 @@ impl WalletKey for OrchardKey {
     }
 }
 
-pub(crate) trait DomainWalletExt<P: Parameters>: Domain + BatchDomain
+pub trait DomainWalletExt<P: Parameters>: Domain + BatchDomain
 where
     Self: Sized,
-    Self::Note: PartialEq,
+    Self::Note: PartialEq + Clone,
     Self::Recipient: Recipient,
 {
     const NU: NetworkUpgrade;
 
-    type Fvk: Clone + Send;
+    type Fvk: Clone + Send + Diversifiable<Note = Self::WalletNote> + PartialEq;
     type CompactOutput: CompactOutput<Self, P>;
     type WalletNote: NoteAndMetadata<
         Fvk = Self::Fvk,
@@ -818,6 +820,7 @@ where
         Diversifier = <<Self as Domain>::Recipient as Recipient>::Diversifier,
         Nullifier = <<<Self as DomainWalletExt<P>>::Bundle as Bundle<Self, P>>::Spend as Spend>::Nullifier,
     >;
+    type SpendableNote: SpendableNote<P, Self>;
     type Key: WalletKey<
             Ovk = <Self as Domain>::OutgoingViewingKey,
             Ivk = <Self as Domain>::IncomingViewingKey,
@@ -841,6 +844,8 @@ impl<P: Parameters> DomainWalletExt<P> for SaplingDomain<P> {
 
     type WalletNote = SaplingNoteAndMetadata;
 
+    type SpendableNote = SpendableSaplingNote;
+
     type Key = SaplingKey;
 
     type Bundle = SaplingBundle<SaplingAuthorized>;
@@ -863,6 +868,8 @@ impl<P: Parameters> DomainWalletExt<P> for OrchardDomain {
 
     type WalletNote = OrchardNoteAndMetadata;
 
+    type SpendableNote = SpendableOrchardNote;
+
     type Key = OrchardKey;
 
     type Bundle = OrchardBundle<OrchardAuthorized, Amount>;
@@ -876,7 +883,7 @@ impl<P: Parameters> DomainWalletExt<P> for OrchardDomain {
     }
 }
 
-pub(crate) trait Diversifiable {
+pub trait Diversifiable {
     type Note: NoteAndMetadata;
     type Address: Recipient;
     fn diversified_address(
@@ -907,6 +914,147 @@ impl Diversifiable for OrchardFullViewingKey {
         div: <<orchard::keys::FullViewingKey as Diversifiable>::Note as NoteAndMetadata>::Diversifier,
     ) -> Option<Self::Address> {
         Some(self.address(div, orchard::keys::Scope::External))
+    }
+}
+
+pub trait SpendableNote<P, D>
+where
+    P: Parameters,
+    D: DomainWalletExt<P, SpendableNote = Self>,
+    <D as Domain>::Recipient: Recipient,
+    <D as Domain>::Note: PartialEq + Clone,
+    Self: Sized,
+{
+    fn from(
+        transaction_id: TxId,
+        nd: &D::WalletNote,
+        anchor_offset: usize,
+        sk: &Option<<D::Key as WalletKey>::Sk>,
+    ) -> Option<Self> {
+        // Include only notes that haven't been spent, or haven't been included in an unconfirmed spend yet.
+        if nd.spent().is_none()
+            && nd.unconfirmed_spent().is_none()
+            && sk.is_some()
+            && nd.witnesses().len() >= (anchor_offset + 1)
+        {
+            let witness = nd.witnesses().get(nd.witnesses().len() - anchor_offset - 1);
+
+            witness.map(|w| {
+                Self::from_parts_unchecked(
+                    transaction_id,
+                    nd.nullifier(),
+                    *nd.diversifier(),
+                    nd.note().clone(),
+                    w.clone(),
+                    sk.clone().unwrap(),
+                )
+            })
+        } else {
+            None
+        }
+    }
+    ///This checks needed are shared between domains, and thus are performed in the
+    ///default impl of `from`. This function's only caller should be `Self::from`
+    fn from_parts_unchecked(
+        transaction_id: TxId,
+        nullifier: <D::WalletNote as NoteAndMetadata>::Nullifier,
+        diversifier: <D::WalletNote as NoteAndMetadata>::Diversifier,
+        note: D::Note,
+        witness: IncrementalWitness<<D::WalletNote as NoteAndMetadata>::Node>,
+        sk: <D::Key as WalletKey>::Sk,
+    ) -> Self;
+    fn transaction_id(&self) -> TxId;
+    fn nullifier(&self) -> <D::WalletNote as NoteAndMetadata>::Nullifier;
+    fn diversifier(&self) -> <D::WalletNote as NoteAndMetadata>::Diversifier;
+    fn note(&self) -> &D::Note;
+    fn witness(&self) -> &IncrementalWitness<<D::WalletNote as NoteAndMetadata>::Node>;
+    fn sk(&self) -> &<D::Key as WalletKey>::Sk;
+}
+
+impl<P: Parameters> SpendableNote<P, SaplingDomain<P>> for SpendableSaplingNote {
+    fn from_parts_unchecked(
+        transaction_id: TxId,
+        nullifier: SaplingNullifier,
+        diversifier: SaplingDiversifier,
+        note: SaplingNote,
+        witness: IncrementalWitness<SaplingNode>,
+        extsk: SaplingExtendedSpendingKey,
+    ) -> Self {
+        SpendableSaplingNote {
+            transaction_id,
+            nullifier,
+            diversifier,
+            note,
+            witness,
+            extsk,
+        }
+    }
+
+    fn transaction_id(&self) -> TxId {
+        self.transaction_id
+    }
+
+    fn nullifier(&self) -> SaplingNullifier {
+        self.nullifier
+    }
+
+    fn diversifier(&self) -> SaplingDiversifier {
+        self.diversifier
+    }
+
+    fn note(&self) -> &SaplingNote {
+        &self.note
+    }
+
+    fn witness(&self) -> &IncrementalWitness<SaplingNode> {
+        &self.witness
+    }
+
+    fn sk(&self) -> &SaplingExtendedSpendingKey {
+        &self.extsk
+    }
+}
+
+impl<P: Parameters> SpendableNote<P, OrchardDomain> for SpendableOrchardNote {
+    fn from_parts_unchecked(
+        transaction_id: TxId,
+        nullifier: OrchardNullifier,
+        diversifier: OrchardDiversifier,
+        note: OrchardNote,
+        witness: IncrementalWitness<MerkleHashOrchard>,
+        sk: OrchardSpendingKey,
+    ) -> Self {
+        SpendableOrchardNote {
+            transaction_id,
+            nullifier,
+            diversifier,
+            note,
+            witness,
+            sk,
+        }
+    }
+    fn transaction_id(&self) -> TxId {
+        self.transaction_id
+    }
+
+    fn nullifier(&self) -> OrchardNullifier {
+        self.nullifier
+    }
+
+    fn diversifier(&self) -> OrchardDiversifier {
+        self.diversifier
+    }
+
+    fn note(&self) -> &orchard::Note {
+        &self.note
+    }
+
+    fn witness(&self) -> &IncrementalWitness<MerkleHashOrchard> {
+        &self.witness
+    }
+
+    fn sk(&self) -> &OrchardSpendingKey {
+        &self.sk
     }
 }
 
