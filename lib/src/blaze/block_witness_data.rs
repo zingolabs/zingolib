@@ -525,7 +525,7 @@ impl BlockAndWitnessData {
     ) -> Result<IncrementalWitness<<D::WalletNote as NoteAndMetadata>::Node>, String>
     where
         D: DomainWalletExt<zingoconfig::Network>,
-        D::Note: PartialEq,
+        D::Note: PartialEq + Clone,
         D::ExtractedCommitmentBytes: Into<[u8; 32]>,
         [u8; 32]: From<<D as Domain>::ExtractedCommitmentBytes>,
         D::Recipient: crate::wallet::traits::Recipient,
@@ -687,7 +687,7 @@ impl BlockAndWitnessData {
     ) -> WitnessCache<<D::WalletNote as NoteAndMetadata>::Node>
     where
         D::Recipient: crate::wallet::traits::Recipient,
-        D::Note: PartialEq,
+        D::Note: PartialEq + Clone,
         <D::WalletNote as NoteAndMetadata>::Node: FromCommitment,
     {
         let height = u64::from(*height);

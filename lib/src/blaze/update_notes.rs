@@ -78,7 +78,7 @@ impl UpdateNotes {
         nullifier: <D::WalletNote as NoteAndMetadata>::Nullifier,
         output_num: Option<u32>,
     ) where
-        D::Note: PartialEq,
+        D::Note: PartialEq + Clone,
         D::Recipient: crate::wallet::traits::Recipient,
     {
         // Get the data first, so we don't hold on to the lock
