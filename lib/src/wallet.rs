@@ -22,7 +22,9 @@ use zcash_client_backend::{
     },
 };
 use zcash_encoding::{Optional, Vector};
+use zcash_note_encryption::Domain;
 use zcash_primitives::memo::MemoBytes;
+use zcash_primitives::sapling::note_encryption::SaplingDomain;
 use zcash_primitives::transaction::builder::Progress;
 use zcash_primitives::{
     consensus::BlockHeight,
@@ -36,7 +38,7 @@ use zcash_primitives::{
 };
 
 use self::data::SpendableOrchardNote;
-use self::traits::NoteAndMetadata;
+use self::traits::{DomainWalletExt, NoteAndMetadata, SpendableNote};
 use self::{
     data::{BlockData, OrchardNoteAndMetadata, SaplingNoteAndMetadata, Utxo, WalletZecPriceInfo},
     keys::{orchard::OrchardKey, Keys},
@@ -895,7 +897,7 @@ impl LightWallet {
                 filtered_notes
                     .map(|notedata| {
                         if notedata.spent().is_none() && notedata.unconfirmed_spent().is_none() {
-                            <NnMd as traits::NoteAndMetadata>::value(notedata.note())
+                            <NnMd as traits::NoteAndMetadata>::value(notedata)
                         } else {
                             0
                         }
@@ -1179,6 +1181,7 @@ impl LightWallet {
         target_amount: Amount,
         transparent_only: bool,
         shield_transparenent: bool,
+        prefer_orchard_over_sapling: bool,
     ) -> (
         Vec<SpendableOrchardNote>,
         Vec<SpendableSaplingNote>,
@@ -1207,43 +1210,13 @@ impl LightWallet {
             return (vec![], vec![], utxos, transparent_value_selected);
         }
 
-        // Start collecting sapling funds at every allowed offset
-        for anchor_offset in &self.transaction_context.config.anchor_offset {
-            let keys = self.transaction_context.keys.read().await;
-            let mut candidate_notes = self
-                .transaction_context
-                .transaction_metadata_set
-                .read()
-                .await
-                .current
-                .iter()
-                .flat_map(|(transaction_id, transaction)| {
-                    transaction
-                        .sapling_notes
-                        .iter()
-                        .map(move |note| (*transaction_id, note))
-                })
-                .filter(|(_, note)| note.note.value > 0)
-                .filter_map(|(transaction_id, note)| {
-                    // Filter out notes that are already spent
-                    if note.spent.is_some() || note.unconfirmed_spent.is_some() {
-                        None
-                    } else {
-                        // Get the spending key for the selected fvk, if we have it
-                        let extsk = keys.get_extsk_for_extfvk(&note.extfvk);
-                        SpendableSaplingNote::from(
-                            transaction_id,
-                            note,
-                            *anchor_offset as usize,
-                            &extsk,
-                        )
-                    }
-                })
-                .collect::<Vec<_>>();
-            candidate_notes.sort_by(|a, b| b.note.value.cmp(&a.note.value));
+        let sapling_candidates = self
+            .get_all_domain_specific_notes::<SaplingDomain<zingoconfig::Network>>()
+            .await;
+        // Select the minimum number of notes required to satisfy the target value
 
-            // Select the minimum number of notes required to satisfy the target value
-            let sapling_notes = candidate_notes
+        for candidate_set in sapling_candidates {
+            let sapling_notes = candidate_set
                 .into_iter()
                 .scan(Amount::zero(), |running_total, spendable| {
                     if *running_total >= (target_amount - transparent_value_selected).unwrap() {
@@ -1272,10 +1245,59 @@ impl LightWallet {
         (vec![], vec![], vec![], Amount::zero())
     }
 
+    async fn get_all_domain_specific_notes<D>(&self) -> Vec<Vec<D::SpendableNote>>
+    where
+        D: DomainWalletExt<zingoconfig::Network>,
+        <D as Domain>::Recipient: traits::Recipient,
+        <D as Domain>::Note: PartialEq + Clone,
+    {
+        let keys_arc = self.keys();
+        let keys = keys_arc.read().await;
+        let notes_arc = self.transactions();
+        let notes = notes_arc.read().await;
+        self.transaction_context
+            .config
+            .anchor_offset
+            .iter()
+            .map(|anchor_offset| {
+                let mut candidate_notes = notes
+                    .current
+                    .iter()
+                    .flat_map(|(transaction_id, transaction)| {
+                        D::WalletNote::transaction_metadata_notes(transaction)
+                            .iter()
+                            .map(move |note| (*transaction_id, note))
+                    })
+                    .filter(|(_, note)| note.value() > 0)
+                    .filter_map(|(transaction_id, note)| {
+                        // Filter out notes that are already spent
+                        if note.spent().is_some() || note.unconfirmed_spent().is_some() {
+                            None
+                        } else {
+                            // Get the spending key for the selected fvk, if we have it
+                            let extsk = keys.get_sk_for_fvk::<D>(&note.fvk());
+                            SpendableNote::from(
+                                transaction_id,
+                                note,
+                                *anchor_offset as usize,
+                                &extsk,
+                            )
+                        }
+                    })
+                    .collect::<Vec<D::SpendableNote>>();
+                candidate_notes.sort_by_key(|spendable_note| {
+                    D::WalletNote::value_from_note(&spendable_note.note())
+                });
+                candidate_notes
+            })
+            .collect()
+    }
+
     pub async fn send_to_address<F, Fut, P: TxProver>(
         &self,
         prover: P,
         transparent_only: bool,
+        migrate_sapling_to_orchard: bool,
         tos: Vec<(&str, u64, Option<String>)>,
         broadcast_fn: F,
     ) -> Result<(String, Vec<u8>), String>
@@ -1288,7 +1310,13 @@ impl LightWallet {
 
         // Call the internal function
         match self
-            .send_to_address_internal(prover, transparent_only, tos, broadcast_fn)
+            .send_to_address_internal(
+                prover,
+                transparent_only,
+                migrate_sapling_to_orchard,
+                tos,
+                broadcast_fn,
+            )
             .await
         {
             Ok((transaction_id, raw_transaction)) => {
@@ -1306,6 +1334,7 @@ impl LightWallet {
         &self,
         prover: P,
         transparent_only: bool,
+        migrate_sapling_to_orchard: bool,
         tos: Vec<(&str, u64, Option<String>)>,
         broadcast_fn: F,
     ) -> Result<(String, Vec<u8>), String>
@@ -1373,7 +1402,12 @@ impl LightWallet {
             .get_taddr_to_sk_map();
 
         let (_orchard_notes, sapling_notes, utxos, selected_value) = self
-            .select_notes_and_utxos(target_amount, transparent_only, true)
+            .select_notes_and_utxos(
+                target_amount,
+                transparent_only,
+                true,
+                migrate_sapling_to_orchard,
+            )
             .await;
         if selected_value < target_amount {
             let e = format!(

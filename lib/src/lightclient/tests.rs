@@ -12,7 +12,7 @@ use zcash_note_encryption::EphemeralKeyBytes;
 use zcash_primitives::consensus::{BlockHeight, BranchId, TestNetwork};
 use zcash_primitives::memo::Memo;
 use zcash_primitives::merkle_tree::IncrementalWitness;
-use zcash_primitives::sapling::note_encryption::sapling_note_encryption;
+use zcash_primitives::sapling::note_encryption::{sapling_note_encryption, SaplingDomain};
 use zcash_primitives::sapling::{Note, Rseed, ValueCommitment};
 use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
 use zcash_primitives::transaction::components::{OutputDescription, GROTH_PROOF_SIZE};
@@ -688,7 +688,7 @@ async fn sapling_to_sapling_scan_together() {
         let lock = keys_readlock.read().await;
         let mockuser_extfvk = lock.get_all_sapling_extfvks()[0].clone();
         (
-            lock.get_extsk_for_extfvk(&lock.get_all_sapling_extfvks()[0])
+            lock.get_sk_for_fvk::<SaplingDomain<Network>>(&lock.get_all_sapling_extfvks()[0])
                 .unwrap(),
             mockuser_extfvk,
         )

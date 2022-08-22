@@ -268,7 +268,7 @@ impl TrialDecryptions {
     ) where
         D: DomainWalletExt<zingoconfig::Network>,
         <D as Domain>::Recipient: crate::wallet::traits::Recipient + Send + 'static,
-        <D as Domain>::Note: PartialEq + Send + 'static,
+        <D as Domain>::Note: PartialEq + Send + 'static + Clone,
         [u8; 32]: From<<D as Domain>::ExtractedCommitmentBytes>,
     {
         let outputs = D::CompactOutput::from_compact_transaction(&compact_transaction)

@@ -21,6 +21,7 @@ use zcash_client_backend::{
     },
 };
 use zcash_encoding::Vector;
+use zcash_note_encryption::Domain;
 use zcash_primitives::{
     legacy::TransparentAddress,
     sapling::PaymentAddress,
@@ -35,6 +36,8 @@ use self::{
     sapling::{SaplingKey, WalletZKeyType},
     transparent::{TransparentKey, WalletTKeyType},
 };
+
+use super::traits::{DomainWalletExt, WalletKey};
 
 pub(crate) mod extended_transparent;
 pub(crate) mod orchard;
@@ -546,14 +549,16 @@ impl Keys {
             .is_some()
     }
 
-    pub fn get_extsk_for_extfvk(
-        &self,
-        extfvk: &ExtendedFullViewingKey,
-    ) -> Option<ExtendedSpendingKey> {
-        self.zkeys
+    pub fn get_sk_for_fvk<D>(&self, fvk: &D::Fvk) -> Option<<D::Key as WalletKey>::Sk>
+    where
+        D: DomainWalletExt<zingoconfig::Network>,
+        <D as Domain>::Recipient: super::traits::Recipient,
+        <D as Domain>::Note: PartialEq + Clone,
+    {
+        D::Key::get_keys(self)
             .iter()
-            .find(|zk| zk.extfvk == *extfvk)
-            .map(|zk| zk.extsk.clone())
+            .find(|wallet_key| wallet_key.fvk().as_ref() == Some(fvk))
+            .map(|wallet_key| wallet_key.sk())
             .flatten()
     }
 
