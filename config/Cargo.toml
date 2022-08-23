@@ -10,5 +10,5 @@ log4rs = "1.1.1"
 log = "0.4.14"
 http = "0.2.4"
 dirs = "3.0.2"
-zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", rev = "e5484c96445dbff38cfb4a6e0983ade1bc0d7656", features = ["transparent-inputs", "test-dependencies"] }
-zcash_address = { git = "https://github.com/zingolabs/librustzcash", rev = "e5484c96445dbff38cfb4a6e0983ade1bc0d7656"}
+zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", rev = "8a3334121add5167aed39adb45319e2743697050", features = ["transparent-inputs", "test-dependencies"] }
+zcash_address = { git = "https://github.com/zingolabs/librustzcash", rev = "8a3334121add5167aed39adb45319e2743697050"}
