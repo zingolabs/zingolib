@@ -792,7 +792,7 @@ impl LightWallet {
     where
         NnMd: traits::NoteAndMetadata,
     {
-        let filter_notes_by_address = |notedata: &&NnMd| match target_addr.as_ref() {
+        let filter_notes_by_target_addr = |notedata: &&NnMd| match target_addr.as_ref() {
             Some(addr) => {
                 use self::traits::Recipient as _;
                 let diversified_address = &notedata
@@ -812,16 +812,17 @@ impl LightWallet {
                 let mut filtered_notes: Box<dyn Iterator<Item = &NnMd>> = Box::new(
                     NnMd::transaction_metadata_notes(transaction)
                         .iter()
-                        .filter(filter_notes_by_address),
+                        .filter(filter_notes_by_target_addr),
                 );
+                // All filters in iterator are applied, by this loop
                 for filtering_fn in filters {
                     filtered_notes =
                         Box::new(filtered_notes.filter(|nnmd| filtering_fn(nnmd, transaction)))
                 }
                 filtered_notes
-                    .map(|nd| {
-                        if nd.spent().is_none() && nd.unconfirmed_spent().is_none() {
-                            <NnMd as traits::NoteAndMetadata>::value(nd.note())
+                    .map(|notedata| {
+                        if notedata.spent().is_none() && notedata.unconfirmed_spent().is_none() {
+                            <NnMd as traits::NoteAndMetadata>::value(notedata.note())
                         } else {
                             0
                         }
