@@ -24,6 +24,7 @@ use zcash_client_backend::{
 };
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
+use zcash_primitives::consensus::Parameters;
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::merkle_tree::CommitmentTree;
 use zcash_primitives::sapling::note_encryption::SaplingDomain;
@@ -1475,21 +1476,23 @@ impl LightWallet {
         let orchard_anchor = if let Some(note) = orchard_notes.get(0) {
             note.witness.root()
         } else {
-            //TODO: Get the orchard anchor from somewhere that leaks less information than the latest block
-            CommitmentTree::read(
-                &hex::decode(
-                    &self
-                        .verified_tree
-                        .read()
-                        .await
-                        .as_ref()
-                        .unwrap()
-                        .orchard_tree,
-                )
-                .unwrap()[..],
+            //TODO: Get the orchard anchor in a better way than making a GRPC call to
+            //get the tree_state of the first orchard block
+            let tree = crate::grpc_connector::GrpcConnector::get_trees(
+                self.config.server.read().unwrap().clone(),
+                u64::from(
+                    self.config
+                        .chain
+                        .activation_height(zcash_primitives::consensus::NetworkUpgrade::Nu5)
+                        .unwrap(),
+                ),
             )
+            .await
             .unwrap()
-            .root()
+            .orchard_tree;
+            CommitmentTree::read(&hex::decode(&tree).unwrap()[..])
+                .unwrap()
+                .root()
         };
         let mut builder = Builder::with_orchard_anchor(
             self.transaction_context.config.chain,
