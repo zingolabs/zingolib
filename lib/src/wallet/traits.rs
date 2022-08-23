@@ -1155,12 +1155,13 @@ impl ReadableWriteable<(OrchardFullViewingKey, OrchardDiversifier)> for OrchardN
             "Nullifier not for note",
         ))?;
 
-        Ok(OrchardNote::from_parts(
+        Option::from(OrchardNote::from_parts(
             fvk.address(diversifier, orchard::keys::Scope::External),
             orchard::value::NoteValue::from_raw(value),
             nullifier,
             random_seed,
         ))
+        .ok_or(io::Error::new(io::ErrorKind::InvalidInput, "Invalid note"))
     }
 
     fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
