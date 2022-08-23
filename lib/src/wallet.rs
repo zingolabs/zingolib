@@ -183,7 +183,7 @@ pub struct LightWallet {
     pub(crate) transaction_context: TransactionContext,
 }
 
-use crate::wallet::traits::Diversifiable as _;
+use crate::wallet::traits::{Diversifiable as _, WalletKey};
 impl LightWallet {
     pub fn serialized_version() -> u64 {
         return 24;
@@ -1584,21 +1584,14 @@ impl LightWallet {
         // the builder will automatically send change to that address
         if sapling_notes.len() == 0 {
             builder.send_change_to(
-                self.transaction_context.keys.read().await.zkeys[0]
-                    .extfvk
-                    .fvk
-                    .ovk,
-                self.transaction_context.keys.read().await.zkeys[0]
-                    .zaddress
-                    .clone(),
+                self.keys().read().await.zkeys[0].extfvk.fvk.ovk,
+                self.keys().read().await.zkeys[0].zaddress.clone(),
             );
         }
 
         // We'll use the first ovk to encrypt outgoing transactions
-        let ovk = self.transaction_context.keys.read().await.zkeys[0]
-            .extfvk
-            .fvk
-            .ovk;
+        let sapling_ovk = self.keys().read().await.zkeys[0].extfvk.fvk.ovk;
+        let orchard_ovk = self.keys().read().await.okeys[0].ovk().unwrap();
         let mut total_z_recepients = 0u32;
         for (to, value, memo) in recepients {
             // Compute memo if it exists
@@ -1622,12 +1615,31 @@ impl LightWallet {
             if let Err(e) = match to {
                 address::RecipientAddress::Shielded(to) => {
                     total_z_recepients += 1;
-                    builder.add_sapling_output(Some(ovk), to.clone(), value, encoded_memo)
+                    builder.add_sapling_output(Some(sapling_ovk), to.clone(), value, encoded_memo)
                 }
                 address::RecipientAddress::Transparent(to) => {
                     builder.add_transparent_output(&to, value)
                 }
-                address::RecipientAddress::Unified(to) => todo!("Add unified address support"),
+                address::RecipientAddress::Unified(ua) => {
+                    if let Some(orchard_addr) = ua.orchard() {
+                        builder.add_orchard_output(
+                            Some(orchard_ovk.clone()),
+                            orchard_addr.clone(),
+                            u64::from(value),
+                            encoded_memo,
+                        )
+                    } else if let Some(sapling_addr) = ua.sapling() {
+                        total_z_recepients += 1;
+                        builder.add_sapling_output(
+                            Some(sapling_ovk),
+                            sapling_addr.clone(),
+                            value,
+                            encoded_memo,
+                        )
+                    } else {
+                        return Err("Received UA with no Orchard or Sapling receiver".to_string());
+                    }
+                }
             } {
                 let e = format!("Error adding output: {:?}", e);
                 error!("{}", e);
@@ -1706,6 +1718,18 @@ impl LightWallet {
                     .get_mut(&selected.transaction_id)
                     .unwrap()
                     .sapling_notes
+                    .iter_mut()
+                    .find(|nd| nd.nullifier == selected.nullifier)
+                    .unwrap();
+                spent_note.unconfirmed_spent = Some((transaction.txid(), u32::from(target_height)));
+            }
+            // Mark orchard notes as unconfirmed spent
+            for selected in orchard_notes {
+                let mut spent_note = transactions
+                    .current
+                    .get_mut(&selected.transaction_id)
+                    .unwrap()
+                    .orchard_notes
                     .iter_mut()
                     .find(|nd| nd.nullifier == selected.nullifier)
                     .unwrap();
