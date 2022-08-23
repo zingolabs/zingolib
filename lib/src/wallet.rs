@@ -1486,6 +1486,7 @@ impl LightWallet {
             error!("{}", e);
             return Err(e);
         }
+        println!("Selected notes worth {}", u64::from(selected_value));
 
         let orchard_anchor = if let Some(note) = orchard_notes.get(0) {
             note.witness.root()
@@ -1547,6 +1548,7 @@ impl LightWallet {
             .map_err(|e| format!("{:?}", e))?;
 
         for selected in sapling_notes.iter() {
+            println!("Adding sapling spend");
             if let Err(e) = builder.add_sapling_spend(
                 selected.extsk.clone(),
                 selected.diversifier,
@@ -1560,6 +1562,7 @@ impl LightWallet {
         }
 
         for selected in orchard_notes.iter() {
+            println!("Adding orchard spend");
             let path = selected.witness.path().unwrap();
             if let Err(e) = builder.add_orchard_spend(
                 selected.sk.clone(),
