@@ -2,11 +2,10 @@ use crate::wallet::{
     data::OutgoingTxMetadata,
     keys::{Keys, ToBase58Check},
     traits::{
-        self as zingo_traits, Bundle as _, DomainWalletExt, NoteAndMetadata as _, Recipient as _,
-        ShieldedOutputExt as _, Spend as _, ToBytes as _, UnspentFromWalletTxns as _,
-        WalletKey as _,
+        self as zingo_traits, Bundle as _, DomainWalletExt, NoteAndMetadata as _, Nullifier as _,
+        Recipient as _, ShieldedOutputExt as _, Spend as _, ToBytes as _, WalletKey as _,
     },
-    transactions::WalletTxns,
+    transactions::TransactionMetadataSet,
 };
 
 use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
@@ -43,19 +42,19 @@ use zingoconfig::{Network, ZingoConfig};
 pub struct FetchFullTxns {
     config: ZingoConfig,
     keys: Arc<RwLock<Keys>>,
-    wallet_txns: Arc<RwLock<WalletTxns>>,
+    transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
 }
 
 impl FetchFullTxns {
     pub fn new(
         config: &ZingoConfig,
         keys: Arc<RwLock<Keys>>,
-        wallet_txns: Arc<RwLock<WalletTxns>>,
+        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
     ) -> Self {
         Self {
             config: config.clone(),
             keys,
-            wallet_txns,
+            transaction_metadata_set,
         }
     }
 
@@ -68,7 +67,7 @@ impl FetchFullTxns {
         UnboundedSender<(TxId, BlockHeight)>,
         UnboundedSender<(Transaction, BlockHeight)>,
     ) {
-        let wallet_transactions = self.wallet_txns.clone();
+        let wallet_transactions = self.transaction_metadata_set.clone();
         let keys = self.keys.clone();
         let config = self.config.clone();
 
@@ -152,7 +151,7 @@ impl FetchFullTxns {
             Ok(())
         });
 
-        let wallet_transactions = self.wallet_txns.clone();
+        let wallet_transactions = self.transaction_metadata_set.clone();
         let keys = self.keys.clone();
         let config = self.config.clone();
 
@@ -208,7 +207,7 @@ impl FetchFullTxns {
         unconfirmed: bool,
         block_time: u32,
         keys: Arc<RwLock<Keys>>,
-        wallet_transactions: Arc<RwLock<WalletTxns>>,
+        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
         price: Option<f64>,
     ) {
         // Remember if this is an outgoing Tx. Useful for when we want to grab the outgoing metadata.
@@ -226,7 +225,7 @@ impl FetchFullTxns {
             unconfirmed,
             block_time,
             &keys,
-            &wallet_transactions,
+            &transaction_metadata_set,
             &mut is_outgoing_transaction,
             &taddrs_set,
         )
@@ -240,7 +239,7 @@ impl FetchFullTxns {
             unconfirmed,
             block_time,
             &keys,
-            &wallet_transactions,
+            &transaction_metadata_set,
             &mut is_outgoing_transaction,
             &mut outgoing_metadatas,
         )
@@ -252,7 +251,7 @@ impl FetchFullTxns {
             unconfirmed,
             block_time,
             &keys,
-            &wallet_transactions,
+            &transaction_metadata_set,
             &mut is_outgoing_transaction,
             &mut outgoing_metadatas,
         )
@@ -261,7 +260,7 @@ impl FetchFullTxns {
         // Process t-address outputs
         // If this transaction in outgoing, i.e., we recieved sent some money in this transaction, then we need to grab all transparent outputs
         // that don't belong to us as the outgoing metadata
-        if wallet_transactions
+        if transaction_metadata_set
             .read()
             .await
             .total_funds_spent_in(&transaction.txid())
@@ -291,14 +290,14 @@ impl FetchFullTxns {
             // Also, if this is an outgoing transaction, then mark all the *incoming* sapling notes to this transaction as change.
             // Note that this is also done in `WalletTxns::add_new_spent`, but that doesn't take into account transparent spends,
             // so we'll do it again here.
-            wallet_transactions
+            transaction_metadata_set
                 .write()
                 .await
                 .check_notes_mark_change(&transaction.txid());
         }
 
         if !outgoing_metadatas.is_empty() {
-            wallet_transactions
+            transaction_metadata_set
                 .write()
                 .await
                 .add_outgoing_metadata(&transaction.txid(), outgoing_metadatas);
@@ -306,7 +305,7 @@ impl FetchFullTxns {
 
         // Update price if available
         if price.is_some() {
-            wallet_transactions
+            transaction_metadata_set
                 .write()
                 .await
                 .set_price(&transaction.txid(), price);
@@ -322,7 +321,7 @@ impl FetchFullTxns {
         unconfirmed: bool,
         block_time: u32,
         keys: &Arc<RwLock<Keys>>,
-        wallet_transactions: &Arc<RwLock<WalletTxns>>,
+        transaction_metadata_set: &Arc<RwLock<TransactionMetadataSet>>,
         is_outgoing_transaction: &mut bool,
         taddrs_set: &HashSet<String>,
     ) {
@@ -335,7 +334,7 @@ impl FetchFullTxns {
                             hash.to_base58check(&config.base58_pubkey_address(), &[]);
                         if taddrs_set.contains(&output_taddr) {
                             // This is our address. Add this as an output to the txid
-                            wallet_transactions.write().await.add_new_taddr_output(
+                            transaction_metadata_set.write().await.add_new_taddr_output(
                                 transaction.txid(),
                                 output_taddr.clone(),
                                 height.into(),
@@ -361,7 +360,7 @@ impl FetchFullTxns {
         let mut spent_utxos = vec![];
 
         {
-            let current = &wallet_transactions.read().await.current;
+            let current = &transaction_metadata_set.read().await.current;
             if let Some(t_bundle) = transaction.transparent_bundle() {
                 for vin in t_bundle.vin.iter() {
                     // Find the prev txid that was spent
@@ -398,7 +397,7 @@ impl FetchFullTxns {
             // Mark that this Tx spent some funds
             *is_outgoing_transaction = true;
 
-            wallet_transactions.write().await.mark_txid_utxo_spent(
+            transaction_metadata_set.write().await.mark_txid_utxo_spent(
                 prev_transaction_id,
                 prev_n,
                 transaction_id,
@@ -410,7 +409,7 @@ impl FetchFullTxns {
         if total_transparent_value_spent > 0 {
             *is_outgoing_transaction = true;
 
-            wallet_transactions.write().await.add_taddr_spent(
+            transaction_metadata_set.write().await.add_taddr_spent(
                 transaction.txid(),
                 height,
                 unconfirmed,
@@ -426,7 +425,7 @@ impl FetchFullTxns {
         unconfirmed: bool,
         block_time: u32,
         keys: &Arc<RwLock<Keys>>,
-        wallet_transactions: &Arc<RwLock<WalletTxns>>,
+        transaction_metadata_set: &Arc<RwLock<TransactionMetadataSet>>,
         is_outgoing_transaction: &mut bool,
         outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
     ) {
@@ -437,7 +436,7 @@ impl FetchFullTxns {
             unconfirmed,
             block_time,
             keys,
-            wallet_transactions,
+            transaction_metadata_set,
             is_outgoing_transaction,
             outgoing_metadatas,
         )
@@ -450,7 +449,7 @@ impl FetchFullTxns {
         unconfirmed: bool,
         block_time: u32,
         keys: &Arc<RwLock<Keys>>,
-        wallet_transactions: &Arc<RwLock<WalletTxns>>,
+        transaction_metadata_set: &Arc<RwLock<TransactionMetadataSet>>,
         is_outgoing_transaction: &mut bool,
         outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
     ) {
@@ -461,7 +460,7 @@ impl FetchFullTxns {
             unconfirmed,
             block_time,
             keys,
-            wallet_transactions,
+            transaction_metadata_set,
             is_outgoing_transaction,
             outgoing_metadatas,
         )
@@ -476,7 +475,7 @@ async fn scan_bundle<D>(
     unconfirmed: bool,
     block_time: u32,
     keys: &Arc<RwLock<Keys>>,
-    wallet_transactions: &Arc<RwLock<WalletTxns>>,
+    transaction_metadata_set: &Arc<RwLock<TransactionMetadataSet>>,
     is_outgoing_transaction: &mut bool,
     outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
 ) where
@@ -504,8 +503,8 @@ async fn scan_bundle<D>(
     // because for transactions in the block, we will check the nullifiers from the blockdata
     if unconfirmed {
         let unspent_nullifiers =
-            <<D as DomainWalletExt<Network>>::WalletNote as zingo_traits::NoteAndMetadata>::Nullifier::get_nullifiers_of_unspent_notes_from_wallet(
-                &*wallet_transactions.read().await,
+            <<D as DomainWalletExt<Network>>::WalletNote as zingo_traits::NoteAndMetadata>::Nullifier::get_nullifiers_of_unspent_notes_from_transaction_set(
+                &*transaction_metadata_set.read().await,
             );
         for output in <<D as DomainWalletExt<Network>>::Bundle as zingo_traits::Bundle<
             D,
@@ -518,7 +517,7 @@ async fn scan_bundle<D>(
                 .iter()
                 .find(|(nf, _, _)| nf == output.nullifier())
             {
-                wallet_transactions.write().await.add_new_spent(
+                transaction_metadata_set.write().await.add_new_spent(
                     transaction.txid(),
                     height,
                     unconfirmed,
@@ -557,7 +556,7 @@ async fn scan_bundle<D>(
             };
             let memo_bytes = MemoBytes::from_bytes(&memo_bytes.to_bytes()).unwrap();
             if unconfirmed {
-                wallet_transactions.write().await.add_pending_note::<D>(
+                transaction_metadata_set.write().await.add_pending_note::<D>(
                     transaction.txid(),
                     height,
                     block_time as u64,
@@ -573,7 +572,7 @@ async fn scan_bundle<D>(
                 .clone()
                 .try_into()
                 .unwrap_or(Memo::Future(memo_bytes));
-            wallet_transactions
+            transaction_metadata_set
                 .write()
                 .await
                 .add_memo_to_note_metadata::<D::WalletNote>(&transaction.txid(), note, memo);
@@ -598,7 +597,7 @@ async fn scan_bundle<D>(
                         Some((note, payment_address, memo_bytes)) => {
                             // Mark this transaction as an outgoing transaction, so we can grab all outgoing metadata
                             *is_outgoing_transaction = true;
-                            let address = payment_address.b32encode_for_network(config.chain);
+                            let address = payment_address.b32encode_for_network(&config.chain);
 
                             // Check if this is change, and if it also doesn't have a memo, don't add
                             // to the outgoing metadata.

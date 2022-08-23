@@ -24,12 +24,14 @@ use zcash_primitives::{
 };
 use zcash_primitives::{memo::MemoBytes, merkle_tree::Hashable};
 
+use super::traits::ReadableWriteable;
+
 /// This type is motivated by the IPC architecture where (currently) channels traffic in
 /// `(TxId, WalletNullifier, BlockHeight, Option<u32>)`.  This enum permits a single channel
 /// type to handle nullifiers from different domains.
 /// <https://github.com/zingolabs/zingolib/issues/64>
 #[derive(Clone, Copy, Debug)]
-pub enum WalletNullifier {
+pub enum ChannelNullifier {
     Sapling(SaplingNullifier),
     Orchard(OrchardNullifier),
 }
@@ -135,7 +137,7 @@ impl BlockData {
 
 #[derive(Clone)]
 pub(crate) struct WitnessCache<Node: Hashable> {
-    witnesses: Vec<IncrementalWitness<Node>>,
+    pub(crate) witnesses: Vec<IncrementalWitness<Node>>,
     pub(crate) top_height: u64,
 }
 
@@ -224,7 +226,6 @@ pub struct SaplingNoteAndMetadata {
 }
 
 pub struct OrchardNoteAndMetadata {
-    #[allow(dead_code)]
     pub(super) fvk: orchard::keys::FullViewingKey,
 
     pub diversifier: OrchardDiversifier,
@@ -268,7 +269,7 @@ impl std::fmt::Debug for SaplingNoteAndMetadata {
 }
 
 // Reading a note also needs the corresponding address to read from.
-fn read_rseed<R: Read>(mut reader: R) -> io::Result<Rseed> {
+pub(crate) fn read_sapling_rseed<R: Read>(mut reader: R) -> io::Result<Rseed> {
     let note_type = reader.read_u8()?;
 
     let mut r_bytes: [u8; 32] = [0; 32];
@@ -283,7 +284,7 @@ fn read_rseed<R: Read>(mut reader: R) -> io::Result<Rseed> {
     Ok(r)
 }
 
-fn write_rseed<W: Write>(mut writer: W, rseed: &Rseed) -> io::Result<()> {
+pub(crate) fn write_sapling_rseed<W: Write>(mut writer: W, rseed: &Rseed) -> io::Result<()> {
     let note_type = match rseed {
         Rseed::BeforeZip212(_) => 1,
         Rseed::AfterZip212(_) => 2,
@@ -293,206 +294,6 @@ fn write_rseed<W: Write>(mut writer: W, rseed: &Rseed) -> io::Result<()> {
     match rseed {
         Rseed::BeforeZip212(fr) => writer.write_all(&fr.to_bytes()),
         Rseed::AfterZip212(b) => writer.write_all(b),
-    }
-}
-
-impl SaplingNoteAndMetadata {
-    fn serialized_version() -> u64 {
-        20
-    }
-
-    // Reading a note also needs the corresponding address to read from.
-    pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
-        let version = reader.read_u64::<LittleEndian>()?;
-
-        let _account = if version <= 5 {
-            reader.read_u64::<LittleEndian>()?
-        } else {
-            0
-        };
-
-        let extfvk = ExtendedFullViewingKey::read(&mut reader)?;
-
-        let mut diversifier_bytes = [0u8; 11];
-        reader.read_exact(&mut diversifier_bytes)?;
-        let diversifier = SaplingDiversifier {
-            0: diversifier_bytes,
-        };
-
-        // To recover the note, read the value and r, and then use the payment address
-        // to recreate the note
-        let (value, rseed) = if version <= 3 {
-            let value = reader.read_u64::<LittleEndian>()?;
-
-            let mut r_bytes: [u8; 32] = [0; 32];
-            reader.read_exact(&mut r_bytes)?;
-
-            let r = jubjub::Fr::from_bytes(&r_bytes).unwrap();
-
-            (value, Rseed::BeforeZip212(r))
-        } else {
-            let value = reader.read_u64::<LittleEndian>()?;
-            let rseed = read_rseed(&mut reader)?;
-
-            (value, rseed)
-        };
-
-        let maybe_note = extfvk
-            .fvk
-            .vk
-            .to_payment_address(diversifier)
-            .unwrap()
-            .create_note(value, rseed);
-
-        let note = match maybe_note {
-            Some(n) => Ok(n),
-            None => Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Couldn't create the note for the address",
-            )),
-        }?;
-
-        let witnesses_vec =
-            Vector::read(&mut reader, |r| IncrementalWitness::<SaplingNode>::read(r))?;
-        let top_height = if version < 20 {
-            0
-        } else {
-            reader.read_u64::<LittleEndian>()?
-        };
-        let witnesses = WitnessCache::new(witnesses_vec, top_height);
-
-        let mut nullifier = [0u8; 32];
-        reader.read_exact(&mut nullifier)?;
-        let nullifier = SaplingNullifier(nullifier);
-
-        // Note that this is only the spent field, we ignore the unconfirmed_spent field.
-        // The reason is that unconfirmed spents are only in memory, and we need to get the actual value of spent
-        // from the blockchain anyway.
-        let spent = if version <= 5 {
-            let spent = Optional::read(&mut reader, |r| {
-                let mut transaction_id_bytes = [0u8; 32];
-                r.read_exact(&mut transaction_id_bytes)?;
-                Ok(TxId::from_bytes(transaction_id_bytes))
-            })?;
-
-            let spent_at_height = if version >= 2 {
-                Optional::read(&mut reader, |r| r.read_i32::<LittleEndian>())?
-            } else {
-                None
-            };
-
-            if spent.is_some() && spent_at_height.is_some() {
-                Some((spent.unwrap(), spent_at_height.unwrap() as u32))
-            } else {
-                None
-            }
-        } else {
-            Optional::read(&mut reader, |r| {
-                let mut transaction_id_bytes = [0u8; 32];
-                r.read_exact(&mut transaction_id_bytes)?;
-                let height = r.read_u32::<LittleEndian>()?;
-                Ok((TxId::from_bytes(transaction_id_bytes), height))
-            })?
-        };
-
-        let unconfirmed_spent = if version <= 4 {
-            None
-        } else {
-            Optional::read(&mut reader, |r| {
-                let mut transaction_bytes = [0u8; 32];
-                r.read_exact(&mut transaction_bytes)?;
-
-                let height = r.read_u32::<LittleEndian>()?;
-                Ok((TxId::from_bytes(transaction_bytes), height))
-            })?
-        };
-
-        let memo = Optional::read(&mut reader, |r| {
-            let mut memo_bytes = [0u8; 512];
-            r.read_exact(&mut memo_bytes)?;
-
-            // Attempt to read memo, first as text, else as arbitrary 512 bytes
-            match MemoBytes::from_bytes(&memo_bytes) {
-                Ok(mb) => match Memo::try_from(mb.clone()) {
-                    Ok(m) => Ok(m),
-                    Err(_) => Ok(Memo::Future(mb)),
-                },
-                Err(e) => Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    format!("Couldn't create memo: {}", e),
-                )),
-            }
-        })?;
-
-        let is_change: bool = reader.read_u8()? > 0;
-
-        let have_spending_key = if version <= 2 {
-            true // Will get populated in the lightwallet::read() method, for now assume true
-        } else {
-            reader.read_u8()? > 0
-        };
-
-        Ok(SaplingNoteAndMetadata {
-            extfvk,
-            diversifier,
-            note,
-            witnesses,
-            nullifier,
-            spent,
-            unconfirmed_spent,
-            memo,
-            is_change,
-            have_spending_key,
-        })
-    }
-
-    pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
-        // Write a version number first, so we can later upgrade this if needed.
-        writer.write_u64::<LittleEndian>(Self::serialized_version())?;
-
-        self.extfvk.write(&mut writer)?;
-
-        writer.write_all(&self.diversifier.0)?;
-
-        // Writing the note means writing the note.value and note.r. The Note is recoverable
-        // from these 2 values and the Payment address.
-        writer.write_u64::<LittleEndian>(self.note.value)?;
-
-        write_rseed(&mut writer, &self.note.rseed)?;
-
-        Vector::write(&mut writer, &self.witnesses.witnesses, |wr, wi| {
-            wi.write(wr)
-        })?;
-        writer.write_u64::<LittleEndian>(self.witnesses.top_height)?;
-
-        writer.write_all(&self.nullifier.0)?;
-
-        Optional::write(&mut writer, self.spent, |w, (transaction_id, h)| {
-            w.write_all(transaction_id.as_ref())?;
-            w.write_u32::<LittleEndian>(h)
-        })?;
-
-        Optional::write(
-            &mut writer,
-            self.unconfirmed_spent,
-            |w, (transaction_id, height)| {
-                w.write_all(transaction_id.as_ref())?;
-                w.write_u32::<LittleEndian>(height)
-            },
-        )?;
-
-        Optional::write(&mut writer, self.memo.as_ref(), |w, m| {
-            w.write_all(m.encode().as_array())
-        })?;
-
-        writer.write_u8(if self.is_change { 1 } else { 0 })?;
-
-        writer.write_u8(if self.have_spending_key { 1 } else { 0 })?;
-
-        // Note that we don't write the unconfirmed_spent field, because if the wallet is restarted,
-        // we don't want to be beholden to any expired transactions
-
-        Ok(())
     }
 }
 
@@ -663,7 +464,7 @@ impl OutgoingTxMetadata {
     }
 }
 
-pub struct WalletTx {
+pub struct TransactionMetadata {
     // Block in which this tx was included
     pub block: BlockHeight,
 
@@ -711,9 +512,9 @@ pub struct WalletTx {
     pub zec_price: Option<f64>,
 }
 
-impl WalletTx {
+impl TransactionMetadata {
     pub fn serialized_version() -> u64 {
-        return 22;
+        return 23;
     }
 
     pub fn new_txid(txid: &Vec<u8>) -> TxId {
@@ -754,7 +555,7 @@ impl WalletTx {
         transaction_id: &TxId,
         unconfirmed: bool,
     ) -> Self {
-        WalletTx {
+        TransactionMetadata {
             block: height,
             unconfirmed,
             datetime,
@@ -795,7 +596,12 @@ impl WalletTx {
 
         let transaction_id = TxId::from_bytes(transaction_id_bytes);
 
-        let sapling_notes = Vector::read(&mut reader, |r| SaplingNoteAndMetadata::read(r))?;
+        let sapling_notes = Vector::read(&mut reader, |r| SaplingNoteAndMetadata::read(r, ()))?;
+        let orchard_notes = if version > 22 {
+            Vector::read(&mut reader, |r| OrchardNoteAndMetadata::read(r, ()))?
+        } else {
+            vec![]
+        };
         let utxos = Vector::read(&mut reader, |r| Utxo::read(r))?;
 
         let total_sapling_value_spent = reader.read_u64::<LittleEndian>()?;
@@ -843,7 +649,7 @@ impl WalletTx {
             datetime,
             txid: transaction_id,
             sapling_notes,
-            orchard_notes: vec![], //Unimplemented
+            orchard_notes,
             utxos,
             spent_sapling_nullifiers,
             spent_orchard_nullifiers,
@@ -869,6 +675,7 @@ impl WalletTx {
         writer.write_all(self.txid.as_ref())?;
 
         Vector::write(&mut writer, &self.sapling_notes, |w, nd| nd.write(w))?;
+        Vector::write(&mut writer, &self.orchard_notes, |w, nd| nd.write(w))?;
         Vector::write(&mut writer, &self.utxos, |w, u| u.write(w))?;
 
         for pool in self.value_spent_by_pool() {
@@ -894,13 +701,13 @@ impl WalletTx {
         Ok(())
     }
 
-    pub(super) fn add_spent_nullifier(&mut self, nullifier: WalletNullifier, value: u64) {
+    pub(super) fn add_spent_nullifier(&mut self, nullifier: ChannelNullifier, value: u64) {
         match nullifier {
-            WalletNullifier::Sapling(nf) => {
+            ChannelNullifier::Sapling(nf) => {
                 self.spent_sapling_nullifiers.push(nf);
                 self.total_sapling_value_spent += value;
             }
-            WalletNullifier::Orchard(nf) => {
+            ChannelNullifier::Orchard(nf) => {
                 self.spent_orchard_nullifiers.push(nf);
                 self.total_orchard_value_spent += value;
             }

@@ -7,7 +7,7 @@ use crate::compact_formats::{
     LightdInfo, PingResponse, RawTransaction, SendResponse, TransparentAddressBlockFilter,
     TreeState, TxFilter,
 };
-use crate::wallet::data::WalletTx;
+use crate::wallet::data::TransactionMetadata;
 use futures::{FutureExt, Stream};
 use rand::rngs::OsRng;
 use rand::Rng;
@@ -214,6 +214,116 @@ pub async fn create_test_server(
     (data, config, ready_receiver, stop_transmitter, h1)
 }
 
+pub struct TenBlockFCBLScenario {
+    pub data: Arc<RwLock<TestServerData>>,
+    pub stop_transmitter: oneshot::Sender<()>,
+    pub test_server_handle: JoinHandle<()>,
+    pub lightclient: LightClient,
+    pub fake_compactblock_list: FakeCompactBlockList,
+    pub config: ZingoConfig,
+}
+
+/// This scenario is used as the start state for 14 separate tests!
+/// They are:
+///
+pub async fn setup_ten_block_fcbl_scenario(transport_security: bool) -> TenBlockFCBLScenario {
+    let (data, config, ready_receiver, stop_transmitter, test_server_handle) =
+        create_test_server(transport_security).await;
+    ready_receiver.await.unwrap();
+
+    let lightclient = LightClient::test_new(&config, None, 0).await.unwrap();
+
+    let mut fake_compactblock_list = FakeCompactBlockList::new(0);
+
+    // 1. Mine 10 blocks
+    mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 10)
+        .await;
+    assert_eq!(lightclient.wallet.last_scanned_height().await, 10);
+    TenBlockFCBLScenario {
+        data,
+        stop_transmitter,
+        test_server_handle,
+        lightclient,
+        fake_compactblock_list,
+        config,
+    }
+}
+///  This serves as a useful check on the correct behavior of our widely
+//   used `setup_ten_block_fcbl_scenario`.
+#[tokio::test]
+async fn test_direct_grpc_and_lightclient_blockchain_height_agreement() {
+    let expected_lightdinfo_before_blockmining = "LightdInfo ".to_string()
+        + "{ version: \"Test GRPC Server\","
+        + " vendor: \"\","
+        + " taddr_support: true,"
+        + " chain_name: \"fakemainnet\","
+        + " sapling_activation_height: 1,"
+        + " consensus_branch_id: \"\","
+        + " block_height: 0,"
+        + " git_commit: \"\","
+        + " branch: \"\","
+        + " build_date: \"\","
+        + " build_user: \"\","
+        + " estimated_height: 0,"
+        + " zcashd_build: \"\","
+        + " zcashd_subversion: \"\" }";
+    let expected_lightdinfo_after_blockmining = "LightdInfo ".to_string()
+        + "{ version: \"Test GRPC Server\","
+        + " vendor: \"\","
+        + " taddr_support: true,"
+        + " chain_name: \"fakemainnet\","
+        + " sapling_activation_height: 1,"
+        + " consensus_branch_id: \"\","
+        + " block_height: 10,"
+        + " git_commit: \"\","
+        + " branch: \"\","
+        + " build_date: \"\","
+        + " build_user: \"\","
+        + " estimated_height: 0,"
+        + " zcashd_build: \"\","
+        + " zcashd_subversion: \"\" }";
+    for https in [true, false] {
+        let (data, config, ready_receiver, stop_transmitter, test_server_handle) =
+            create_test_server(https).await;
+
+        let uri = config.server.clone();
+        let mut client = crate::grpc_connector::GrpcConnector::new(uri.read().unwrap().clone())
+            .get_client()
+            .await
+            .unwrap();
+
+        //let info_getter = &mut client.get_lightd_info(Request::new(Empty {}));
+        ready_receiver.await.unwrap();
+        let lightclient = LightClient::test_new(&config, None, 0).await.unwrap();
+        let mut fake_compactblock_list = FakeCompactBlockList::new(0);
+
+        let observed_pre_answer = format!(
+            "{:?}",
+            client
+                .get_lightd_info(Request::new(Empty {}))
+                .await
+                .unwrap()
+                .into_inner()
+        );
+        assert_eq!(observed_pre_answer, expected_lightdinfo_before_blockmining);
+        assert_eq!(lightclient.wallet.last_scanned_height().await, 0);
+        // Change system under test state (generating random blocks)
+        mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 10)
+            .await;
+        let observed_post_answer = format!(
+            "{:?}",
+            client
+                .get_lightd_info(Request::new(Empty {}))
+                .await
+                .unwrap()
+                .into_inner()
+        );
+        assert_eq!(observed_post_answer, expected_lightdinfo_after_blockmining);
+        assert_eq!(lightclient.wallet.last_scanned_height().await, 10);
+        clean_shutdown(stop_transmitter, test_server_handle).await;
+    }
+}
+
 pub async fn clean_shutdown(
     stop_transmitter: oneshot::Sender<()>,
     server_thread_handle: JoinHandle<()>,
@@ -222,57 +332,32 @@ pub async fn clean_shutdown(
     server_thread_handle.await.unwrap();
 }
 
-pub async fn mine_random_blocks(
+pub async fn mine_numblocks_each_with_two_sap_txs(
     fcbl: &mut FakeCompactBlockList,
-    data: &Arc<RwLock<TestServerData>>,
+    testserver_state: &Arc<RwLock<TestServerData>>,
     lc: &LightClient,
     num: u64,
 ) {
-    let cbs = fcbl.add_blocks(num).into_compact_blocks();
-
-    data.write().await.add_blocks(cbs.clone());
+    testserver_state.write().await.add_blocks(
+        fcbl.create_and_append_randtx_blocks(num)
+            .into_compact_blocks(),
+    );
     lc.do_sync(true).await.unwrap();
 }
 
 pub async fn mine_pending_blocks(
     fcbl: &mut FakeCompactBlockList,
-    data: &Arc<RwLock<TestServerData>>,
+    testserver_state: &Arc<RwLock<TestServerData>>,
     lc: &LightClient,
 ) {
-    let cbs = fcbl.into_compact_blocks();
-
-    data.write().await.add_blocks(cbs.clone());
-    let mut v = fcbl.into_transactions();
-
-    // Add all the t-addr spend's t-addresses into the maps, so the test grpc server
-    // knows to serve this transaction when the transactions for this particular taddr are requested.
-    for (t, _h, taddrs) in v.iter_mut() {
-        if let Some(t_bundle) = t.transparent_bundle() {
-            for vin in &t_bundle.vin {
-                let prev_transaction_id = WalletTx::new_txid(&vin.prevout.hash().to_vec());
-                if let Some(wtx) = lc
-                    .wallet
-                    .transactions
-                    .read()
-                    .await
-                    .current
-                    .get(&prev_transaction_id)
-                {
-                    if let Some(utxo) = wtx
-                        .utxos
-                        .iter()
-                        .find(|u| u.output_index as u32 == vin.prevout.n())
-                    {
-                        if !taddrs.contains(&utxo.address) {
-                            taddrs.push(utxo.address.clone());
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    data.write().await.add_transactions(v);
+    testserver_state
+        .write()
+        .await
+        .add_blocks(fcbl.into_compact_blocks());
+    testserver_state
+        .write()
+        .await
+        .add_transactions(fcbl.into_transactions());
 
     lc.do_sync(true).await.unwrap();
 }
@@ -443,7 +528,7 @@ impl CompactTxStreamer for TestGRPCService {
     ) -> Result<Response<RawTransaction>, Status> {
         Self::wait_random().await;
 
-        let transaction_id = WalletTx::new_txid(&request.into_inner().hash);
+        let transaction_id = TransactionMetadata::new_txid(&request.into_inner().hash);
         match self.data.read().await.transactions.get(&transaction_id) {
             Some((_taddrs, transaction)) => Ok(Response::new(transaction.clone())),
             None => Err(Status::invalid_argument(format!(

@@ -137,7 +137,7 @@ impl GrpcConnector {
             let uri = uri.clone();
             while let Some((height, result_transmitter)) = receiver.recv().await {
                 result_transmitter
-                    .send(Self::get_sapling_tree(uri.clone(), height).await)
+                    .send(Self::get_trees(uri.clone(), height).await)
                     .unwrap()
             }
         });
@@ -401,7 +401,7 @@ impl GrpcConnector {
         Ok(())
     }
 
-    pub async fn get_sapling_tree(uri: http::Uri, height: u64) -> Result<TreeState, String> {
+    pub async fn get_trees(uri: http::Uri, height: u64) -> Result<TreeState, String> {
         let client = Arc::new(GrpcConnector::new(uri));
         let mut client = client
             .get_client()

@@ -1,5 +1,5 @@
 use crate::compact_formats::TreeState;
-use crate::wallet::data::WalletTx;
+use crate::wallet::data::TransactionMetadata;
 use crate::wallet::keys::transparent::TransparentKey;
 use crate::{
     blaze::fetch_full_transaction::FetchFullTxns,
@@ -17,7 +17,6 @@ use std::{
     time::SystemTime,
 };
 use tokio::sync::RwLock;
-use zcash_address::unified::Encoding;
 use zcash_client_backend::{
     address,
     encoding::{
@@ -38,11 +37,12 @@ use zcash_primitives::{
     },
 };
 
+use self::traits::NoteAndMetadata;
 use self::{
-    data::{BlockData, SaplingNoteAndMetadata, Utxo, WalletZecPriceInfo},
+    data::{BlockData, OrchardNoteAndMetadata, SaplingNoteAndMetadata, Utxo, WalletZecPriceInfo},
     keys::{orchard::OrchardKey, Keys},
     message::Message,
-    transactions::WalletTxns,
+    transactions::TransactionMetadataSet,
 };
 use zingoconfig::ZingoConfig;
 
@@ -152,7 +152,7 @@ pub struct LightWallet {
     pub(super) blocks: Arc<RwLock<Vec<BlockData>>>,
 
     // List of all transactions
-    pub(crate) transactions: Arc<RwLock<WalletTxns>>,
+    pub(crate) transactions: Arc<RwLock<TransactionMetadataSet>>,
 
     // Wallet options
     pub(crate) wallet_options: Arc<RwLock<WalletOptions>>,
@@ -170,6 +170,7 @@ pub struct LightWallet {
     pub price: Arc<RwLock<WalletZecPriceInfo>>,
 }
 
+use crate::wallet::traits::Diversifiable as _;
 impl LightWallet {
     pub fn serialized_version() -> u64 {
         return 24;
@@ -186,7 +187,7 @@ impl LightWallet {
 
         Ok(Self {
             keys: Arc::new(RwLock::new(keys)),
-            transactions: Arc::new(RwLock::new(WalletTxns::new())),
+            transactions: Arc::new(RwLock::new(TransactionMetadataSet::new())),
             blocks: Arc::new(RwLock::new(vec![])),
             wallet_options: Arc::new(RwLock::new(WalletOptions::default())),
             config,
@@ -223,9 +224,9 @@ impl LightWallet {
         }
 
         let mut transactions = if version <= 14 {
-            WalletTxns::read_old(&mut reader)
+            TransactionMetadataSet::read_old(&mut reader)
         } else {
-            WalletTxns::read(&mut reader)
+            TransactionMetadataSet::read(&mut reader)
         }?;
 
         let chain_name = utils::read_string(&mut reader)?;
@@ -378,7 +379,7 @@ impl LightWallet {
         self.keys.clone()
     }
 
-    pub fn transactions(&self) -> Arc<RwLock<WalletTxns>> {
+    pub fn transactions(&self) -> Arc<RwLock<TransactionMetadataSet>> {
         self.transactions.clone()
     }
 
@@ -393,11 +394,13 @@ impl LightWallet {
         self.blocks.read().await.iter().map(|b| b.clone()).collect()
     }
 
-    pub fn note_address(hrp: &str, note: &SaplingNoteAndMetadata) -> Option<String> {
-        match note.extfvk.fvk.vk.to_payment_address(note.diversifier) {
-            Some(pa) => Some(encode_payment_address(hrp, &pa)),
-            None => None,
-        }
+    pub(crate) fn note_address<NnMd: NoteAndMetadata>(
+        network: &zingoconfig::Network,
+        note: &NnMd,
+    ) -> Option<String> {
+        note.fvk()
+            .diversified_address(*note.diversifier())
+            .map(|address| traits::Recipient::b32encode_for_network(&address, network))
     }
 
     pub async fn set_download_memo(&self, value: MemoDownloadOption) {
@@ -559,9 +562,7 @@ impl LightWallet {
                 (&wk.key).try_into().ok() == Some(fvk.clone())
             },
             OrchardKey::new_imported_osk,
-            |address: zcash_address::unified::Address| {
-                address.encode(&self.config.chain.to_zcash_address_network())
-            },
+            |address: address::UnifiedAddress| address.encode(&self.config.chain),
         )
         .await
     }
@@ -773,28 +774,55 @@ impl LightWallet {
         }
     }
 
-    pub async fn zbalance(&self, addr: Option<String>) -> u64 {
+    pub async fn sapling_balance(&self, addr: Option<String>) -> u64 {
+        self.shielded_balance::<SaplingNoteAndMetadata>(addr, &[])
+            .await
+    }
+
+    pub async fn orchard_balance(&self, addr: Option<String>) -> u64 {
+        self.shielded_balance::<OrchardNoteAndMetadata>(addr, &[])
+            .await
+    }
+
+    async fn shielded_balance<NnMd>(
+        &self,
+        target_addr: Option<String>,
+        filters: &[Box<dyn Fn(&&NnMd, &TransactionMetadata) -> bool + '_>],
+    ) -> u64
+    where
+        NnMd: traits::NoteAndMetadata,
+    {
+        let filter_notes_by_target_addr = |notedata: &&NnMd| match target_addr.as_ref() {
+            Some(addr) => {
+                use self::traits::Recipient as _;
+                let diversified_address = &notedata
+                    .fvk()
+                    .diversified_address(*notedata.diversifier())
+                    .unwrap();
+                *addr == diversified_address.b32encode_for_network(&self.config.chain)
+            }
+            None => true, // If the addr is none, then get all addrs.
+        };
         self.transactions
             .read()
             .await
             .current
             .values()
             .map(|transaction| {
-                transaction
-                    .sapling_notes
-                    .iter()
-                    .filter(|nd| match addr.as_ref() {
-                        Some(a) => {
-                            *a == encode_payment_address(
-                                self.config.hrp_sapling_address(),
-                                &nd.extfvk.fvk.vk.to_payment_address(nd.diversifier).unwrap(),
-                            )
-                        }
-                        None => true,
-                    })
-                    .map(|nd| {
-                        if nd.spent.is_none() && nd.unconfirmed_spent.is_none() {
-                            nd.note.value
+                let mut filtered_notes: Box<dyn Iterator<Item = &NnMd>> = Box::new(
+                    NnMd::transaction_metadata_notes(transaction)
+                        .iter()
+                        .filter(filter_notes_by_target_addr),
+                );
+                // All filters in iterator are applied, by this loop
+                for filtering_fn in filters {
+                    filtered_notes =
+                        Box::new(filtered_notes.filter(|nnmd| filtering_fn(nnmd, transaction)))
+                }
+                filtered_notes
+                    .map(|notedata| {
+                        if notedata.spent().is_none() && notedata.unconfirmed_spent().is_none() {
+                            <NnMd as traits::NoteAndMetadata>::value(notedata.note())
                         } else {
                             0
                         }
@@ -828,116 +856,84 @@ impl LightWallet {
             .sum::<u64>()
     }
 
-    pub async fn unverified_zbalance(&self, addr: Option<String>) -> u64 {
+    /// The following functions use a filter/map functional approach to
+    /// expressively unpack different kinds of transaction data.
+    pub async fn unverified_sapling_balance(&self, target_addr: Option<String>) -> u64 {
         let anchor_height = self.get_anchor_height().await;
 
         let keys = self.keys.read().await;
 
-        self.transactions
-            .read()
-            .await
-            .current
-            .values()
-            .map(|transaction| {
-                transaction
-                    .sapling_notes
-                    .iter()
-                    .filter(|nd| nd.spent.is_none() && nd.unconfirmed_spent.is_none())
-                    .filter(|nd| {
-                        // Check to see if we have this note's spending key.
-                        keys.have_sapling_spending_key(&nd.extfvk)
-                    })
-                    .filter(|nd| match addr.clone() {
-                        Some(a) => {
-                            a == encode_payment_address(
-                                self.config.hrp_sapling_address(),
-                                &nd.extfvk.fvk.vk.to_payment_address(nd.diversifier).unwrap(),
-                            )
-                        }
-                        None => true,
-                    })
-                    .map(|nd| {
-                        if transaction.block <= BlockHeight::from_u32(anchor_height) {
-                            // If confirmed, then unconfirmed is 0
-                            0
-                        } else {
-                            // If confirmed but dont have anchor yet, it is unconfirmed
-                            nd.note.value
-                        }
-                    })
-                    .sum::<u64>()
-            })
-            .sum::<u64>()
+        let filters: &[Box<dyn Fn(&&SaplingNoteAndMetadata, &TransactionMetadata) -> bool>] = &[
+            Box::new(|notedata: &&SaplingNoteAndMetadata, _| {
+                // Check to see if we have this note's spending key.
+                keys.have_sapling_spending_key(&notedata.extfvk)
+            }),
+            Box::new(|_, transaction: &TransactionMetadata| {
+                transaction.block > BlockHeight::from_u32(anchor_height)
+            }),
+        ];
+        self.shielded_balance(target_addr, filters).await
     }
 
-    pub async fn verified_zbalance(&self, addr: Option<String>) -> u64 {
-        let anchor_height = self.get_anchor_height().await;
-
-        self.transactions
-            .read()
-            .await
-            .current
-            .values()
-            .map(|transaction| {
-                if transaction.block <= BlockHeight::from_u32(anchor_height) {
-                    transaction
-                        .sapling_notes
-                        .iter()
-                        .filter(|nd| nd.spent.is_none() && nd.unconfirmed_spent.is_none())
-                        .filter(|nd| match addr.as_ref() {
-                            Some(a) => {
-                                *a == encode_payment_address(
-                                    self.config.hrp_sapling_address(),
-                                    &nd.extfvk.fvk.vk.to_payment_address(nd.diversifier).unwrap(),
-                                )
-                            }
-                            None => true,
-                        })
-                        .map(|nd| nd.note.value)
-                        .sum::<u64>()
-                } else {
-                    0
-                }
-            })
-            .sum::<u64>()
-    }
-
-    pub async fn spendable_zbalance(&self, addr: Option<String>) -> u64 {
+    pub async fn unverified_orchard_balance(&self, target_addr: Option<String>) -> u64 {
         let anchor_height = self.get_anchor_height().await;
 
         let keys = self.keys.read().await;
 
-        self.transactions
-            .read()
+        let filters: &[Box<dyn Fn(&&OrchardNoteAndMetadata, &TransactionMetadata) -> bool>] = &[
+            Box::new(|notedata, _| {
+                // Check to see if we have this note's spending key.
+                keys.have_orchard_spending_key(&notedata.fvk.to_ivk(orchard::keys::Scope::External))
+            }),
+            Box::new(|_, transaction: &TransactionMetadata| {
+                transaction.block > BlockHeight::from_u32(anchor_height)
+            }),
+        ];
+        self.shielded_balance(target_addr, filters).await
+    }
+
+    pub async fn verified_sapling_balance(&self, target_addr: Option<String>) -> u64 {
+        self.verified_balance::<SaplingNoteAndMetadata>(target_addr)
             .await
-            .current
-            .values()
-            .map(|transaction| {
-                if transaction.block <= BlockHeight::from_u32(anchor_height) {
-                    transaction
-                        .sapling_notes
-                        .iter()
-                        .filter(|nd| nd.spent.is_none() && nd.unconfirmed_spent.is_none())
-                        .filter(|nd| {
-                            // Check to see if we have this note's spending key and witnesses
-                            keys.have_sapling_spending_key(&nd.extfvk) && nd.witnesses.len() > 0
-                        })
-                        .filter(|nd| match addr.as_ref() {
-                            Some(a) => {
-                                *a == encode_payment_address(
-                                    self.config.hrp_sapling_address(),
-                                    &nd.extfvk.fvk.vk.to_payment_address(nd.diversifier).unwrap(),
-                                )
-                            }
-                            None => true,
-                        })
-                        .map(|nd| nd.note.value)
-                        .sum::<u64>()
-                } else {
-                    0
-                }
-            })
-            .sum::<u64>()
+    }
+
+    pub async fn verified_orchard_balance(&self, target_addr: Option<String>) -> u64 {
+        self.verified_balance::<OrchardNoteAndMetadata>(target_addr)
+            .await
+    }
+
+    async fn verified_balance<NnMd: NoteAndMetadata>(&self, target_addr: Option<String>) -> u64 {
+        let anchor_height = self.get_anchor_height().await;
+        let filters: &[Box<dyn Fn(&&NnMd, &TransactionMetadata) -> bool>] =
+            &[Box::new(|_, transaction| {
+                transaction.block <= BlockHeight::from_u32(anchor_height)
+            })];
+        self.shielded_balance::<NnMd>(target_addr, filters).await
+    }
+
+    pub async fn spendable_sapling_balance(&self, target_addr: Option<String>) -> u64 {
+        let anchor_height = self.get_anchor_height().await;
+        let keys = self.keys.read().await;
+        let filters: &[Box<dyn Fn(&&SaplingNoteAndMetadata, &TransactionMetadata) -> bool>] = &[
+            Box::new(|_, transaction| transaction.block <= BlockHeight::from_u32(anchor_height)),
+            Box::new(|nnmd, _| {
+                keys.have_sapling_spending_key(&nnmd.extfvk) && nnmd.witnesses.len() > 0
+            }),
+        ];
+        self.shielded_balance(target_addr, filters).await
+    }
+
+    pub async fn spendable_orchard_balance(&self, target_addr: Option<String>) -> u64 {
+        let anchor_height = self.get_anchor_height().await;
+        let keys = self.keys.read().await;
+        let filters: &[Box<dyn Fn(&&OrchardNoteAndMetadata, &TransactionMetadata) -> bool>] = &[
+            Box::new(|_, transaction| transaction.block <= BlockHeight::from_u32(anchor_height)),
+            Box::new(|nnmd, _| {
+                keys.have_orchard_spending_key(&nnmd.fvk.to_ivk(orchard::keys::Scope::External))
+                    && nnmd.witnesses.len() > 0
+            }),
+        ];
+        self.shielded_balance(target_addr, filters).await
     }
 
     pub async fn remove_unused_taddrs(&self) {
@@ -1173,7 +1169,6 @@ impl LightWallet {
 
     pub async fn send_to_address<F, Fut, P: TxProver>(
         &self,
-        consensus_branch_id: u32,
         prover: P,
         transparent_only: bool,
         tos: Vec<(&str, u64, Option<String>)>,
@@ -1188,13 +1183,7 @@ impl LightWallet {
 
         // Call the internal function
         match self
-            .send_to_address_internal(
-                consensus_branch_id,
-                prover,
-                transparent_only,
-                tos,
-                broadcast_fn,
-            )
+            .send_to_address_internal(prover, transparent_only, tos, broadcast_fn)
             .await
         {
             Ok((transaction_id, raw_transaction)) => {
@@ -1210,7 +1199,6 @@ impl LightWallet {
 
     async fn send_to_address_internal<F, Fut, P: TxProver>(
         &self,
-        #[allow(unused_variables)] consensus_branch_id: u32,
         prover: P,
         transparent_only: bool,
         tos: Vec<(&str, u64, Option<String>)>,
@@ -1478,7 +1466,7 @@ impl LightWallet {
                 now() as u32,
                 self.keys.clone(),
                 self.transactions.clone(),
-                WalletTx::get_price(now(), &price),
+                TransactionMetadata::get_price(now(), &price),
             )
             .await;
         }
@@ -1532,45 +1520,48 @@ mod test {
     use zcash_primitives::transaction::components::Amount;
 
     use crate::{
-        blaze::test_utils::{incw_to_string, FakeCompactBlockList, FakeTransaction},
-        lightclient::{
-            test_server::{
-                clean_shutdown, create_test_server, mine_pending_blocks, mine_random_blocks,
-            },
-            LightClient,
+        blaze::test_utils::{incw_to_string, FakeTransaction},
+        lightclient::test_server::{
+            clean_shutdown, mine_numblocks_each_with_two_sap_txs, mine_pending_blocks,
+            setup_ten_block_fcbl_scenario, TenBlockFCBLScenario,
         },
     };
 
     #[tokio::test]
     async fn z_t_note_selection() {
         for https in [true, false] {
-            let (data, config, ready_receiver, stop_transmitter, h1) =
-                create_test_server(https).await;
-            ready_receiver.await.unwrap();
-
-            let mut lc = LightClient::test_new(&config, None, 0).await.unwrap();
-
-            let mut fcbl = FakeCompactBlockList::new(0);
-
-            // 1. Mine 10 blocks
-            mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
-            assert_eq!(lc.wallet.last_scanned_height().await, 10);
-
+            let TenBlockFCBLScenario {
+                data,
+                stop_transmitter,
+                test_server_handle,
+                mut lightclient,
+                mut fake_compactblock_list,
+                ..
+            } = setup_ten_block_fcbl_scenario(https).await;
             // 2. Send an incoming transaction to fill the wallet
-            let extfvk1 = lc.wallet.keys().read().await.get_all_sapling_extfvks()[0].clone();
+            let extfvk1 = lightclient
+                .wallet
+                .keys()
+                .read()
+                .await
+                .get_all_sapling_extfvks()[0]
+                .clone();
             let value = 100_000;
-            let (transaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, value);
+            let (transaction, _height, _) =
+                fake_compactblock_list.create_coinbase_transaction(&extfvk1, value);
             let txid = transaction.txid();
-            mine_pending_blocks(&mut fcbl, &data, &lc).await;
+            mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
-            assert_eq!(lc.wallet.last_scanned_height().await, 11);
+            assert_eq!(lightclient.wallet.last_scanned_height().await, 11);
 
             // 3. With one confirmation, we should be able to select the note
             let amt = Amount::from_u64(10_000).unwrap();
             // Reset the anchor offsets
-            lc.wallet.config.anchor_offset = [9, 4, 2, 1, 0];
-            let (notes, utxos, selected) =
-                lc.wallet.select_notes_and_utxos(amt, false, false).await;
+            lightclient.wallet.config.anchor_offset = [9, 4, 2, 1, 0];
+            let (notes, utxos, selected) = lightclient
+                .wallet
+                .select_notes_and_utxos(amt, false, false)
+                .await;
             assert!(selected >= amt);
             assert_eq!(notes.len(), 1);
             assert_eq!(notes[0].note.value, value);
@@ -1578,7 +1569,8 @@ mod test {
             assert_eq!(
                 incw_to_string(&notes[0].witness),
                 incw_to_string(
-                    lc.wallet
+                    lightclient
+                        .wallet
                         .transactions
                         .read()
                         .await
@@ -1593,17 +1585,27 @@ mod test {
             );
 
             // With min anchor_offset at 1, we can't select any notes
-            lc.wallet.config.anchor_offset = [9, 4, 2, 1, 1];
-            let (notes, utxos, _selected) =
-                lc.wallet.select_notes_and_utxos(amt, false, false).await;
+            lightclient.wallet.config.anchor_offset = [9, 4, 2, 1, 1];
+            let (notes, utxos, _selected) = lightclient
+                .wallet
+                .select_notes_and_utxos(amt, false, false)
+                .await;
             assert_eq!(notes.len(), 0);
             assert_eq!(utxos.len(), 0);
 
             // Mine 1 block, then it should be selectable
-            mine_random_blocks(&mut fcbl, &data, &lc, 1).await;
+            mine_numblocks_each_with_two_sap_txs(
+                &mut fake_compactblock_list,
+                &data,
+                &lightclient,
+                1,
+            )
+            .await;
 
-            let (notes, utxos, selected) =
-                lc.wallet.select_notes_and_utxos(amt, false, false).await;
+            let (notes, utxos, selected) = lightclient
+                .wallet
+                .select_notes_and_utxos(amt, false, false)
+                .await;
             assert!(selected >= amt);
             assert_eq!(notes.len(), 1);
             assert_eq!(notes[0].note.value, value);
@@ -1611,7 +1613,8 @@ mod test {
             assert_eq!(
                 incw_to_string(&notes[0].witness),
                 incw_to_string(
-                    lc.wallet
+                    lightclient
+                        .wallet
                         .transactions
                         .read()
                         .await
@@ -1626,9 +1629,18 @@ mod test {
             );
 
             // Mine 15 blocks, then selecting the note should result in witness only 10 blocks deep
-            mine_random_blocks(&mut fcbl, &data, &lc, 15).await;
-            lc.wallet.config.anchor_offset = [9, 4, 2, 1, 1];
-            let (notes, utxos, selected) = lc.wallet.select_notes_and_utxos(amt, false, true).await;
+            mine_numblocks_each_with_two_sap_txs(
+                &mut fake_compactblock_list,
+                &data,
+                &lightclient,
+                15,
+            )
+            .await;
+            lightclient.wallet.config.anchor_offset = [9, 4, 2, 1, 1];
+            let (notes, utxos, selected) = lightclient
+                .wallet
+                .select_notes_and_utxos(amt, false, true)
+                .await;
             assert!(selected >= amt);
             assert_eq!(notes.len(), 1);
             assert_eq!(notes[0].note.value, value);
@@ -1636,7 +1648,8 @@ mod test {
             assert_eq!(
                 incw_to_string(&notes[0].witness),
                 incw_to_string(
-                    lc.wallet
+                    lightclient
+                        .wallet
                         .transactions
                         .read()
                         .await
@@ -1652,79 +1665,95 @@ mod test {
 
             // Trying to select a large amount will fail
             let amt = Amount::from_u64(1_000_000).unwrap();
-            let (notes, utxos, _selected) =
-                lc.wallet.select_notes_and_utxos(amt, false, false).await;
+            let (notes, utxos, _selected) = lightclient
+                .wallet
+                .select_notes_and_utxos(amt, false, false)
+                .await;
             assert_eq!(notes.len(), 0);
             assert_eq!(utxos.len(), 0);
 
             // 4. Get an incoming transaction to a t address
-            let sk = lc.wallet.keys().read().await.tkeys[0].clone();
+            let sk = lightclient.wallet.keys().read().await.tkeys[0].clone();
             let pk = sk.pubkey().unwrap();
             let taddr = sk.address;
             let tvalue = 100_000;
 
             let mut fake_transaction = FakeTransaction::new(true);
             fake_transaction.add_t_output(&pk, taddr.clone(), tvalue);
-            let (_ttransaction, _) = fcbl.add_fake_transaction(fake_transaction);
-            mine_pending_blocks(&mut fcbl, &data, &lc).await;
+            let (_ttransaction, _) = fake_compactblock_list.add_fake_transaction(fake_transaction);
+            mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
             // Trying to select a large amount will now succeed
             let amt = Amount::from_u64(value + tvalue - 10_000).unwrap();
-            let (notes, utxos, selected) = lc.wallet.select_notes_and_utxos(amt, false, true).await;
+            let (notes, utxos, selected) = lightclient
+                .wallet
+                .select_notes_and_utxos(amt, false, true)
+                .await;
             assert_eq!(selected, Amount::from_u64(value + tvalue).unwrap());
             assert_eq!(notes.len(), 1);
             assert_eq!(utxos.len(), 1);
 
             // If we set transparent-only = true, only the utxo should be selected
             let amt = Amount::from_u64(tvalue - 10_000).unwrap();
-            let (notes, utxos, selected) = lc.wallet.select_notes_and_utxos(amt, true, true).await;
+            let (notes, utxos, selected) = lightclient
+                .wallet
+                .select_notes_and_utxos(amt, true, true)
+                .await;
             assert_eq!(selected, Amount::from_u64(tvalue).unwrap());
             assert_eq!(notes.len(), 0);
             assert_eq!(utxos.len(), 1);
 
             // Set min confs to 5, so the sapling note will not be selected
-            lc.wallet.config.anchor_offset = [9, 4, 4, 4, 4];
+            lightclient.wallet.config.anchor_offset = [9, 4, 4, 4, 4];
             let amt = Amount::from_u64(tvalue - 10_000).unwrap();
-            let (notes, utxos, selected) = lc.wallet.select_notes_and_utxos(amt, false, true).await;
+            let (notes, utxos, selected) = lightclient
+                .wallet
+                .select_notes_and_utxos(amt, false, true)
+                .await;
             assert_eq!(selected, Amount::from_u64(tvalue).unwrap());
             assert_eq!(notes.len(), 0);
             assert_eq!(utxos.len(), 1);
 
             // Shutdown everything cleanly
-            clean_shutdown(stop_transmitter, h1).await;
+            clean_shutdown(stop_transmitter, test_server_handle).await;
         }
     }
 
     #[tokio::test]
     async fn multi_z_note_selection() {
         for https in [true, false] {
-            let (data, config, ready_receiver, stop_transmitter, h1) =
-                create_test_server(https).await;
-            ready_receiver.await.unwrap();
-
-            let mut lc = LightClient::test_new(&config, None, 0).await.unwrap();
-
-            let mut fcbl = FakeCompactBlockList::new(0);
-
-            // 1. Mine 10 blocks
-            mine_random_blocks(&mut fcbl, &data, &lc, 10).await;
-            assert_eq!(lc.wallet.last_scanned_height().await, 10);
-
+            let TenBlockFCBLScenario {
+                data,
+                stop_transmitter,
+                test_server_handle,
+                mut lightclient,
+                mut fake_compactblock_list,
+                ..
+            } = setup_ten_block_fcbl_scenario(https).await;
             // 2. Send an incoming transaction to fill the wallet
-            let extfvk1 = lc.wallet.keys().read().await.get_all_sapling_extfvks()[0].clone();
+            let extfvk1 = lightclient
+                .wallet
+                .keys()
+                .read()
+                .await
+                .get_all_sapling_extfvks()[0]
+                .clone();
             let value1 = 100_000;
-            let (transaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, value1);
+            let (transaction, _height, _) =
+                fake_compactblock_list.create_coinbase_transaction(&extfvk1, value1);
             let txid = transaction.txid();
-            mine_pending_blocks(&mut fcbl, &data, &lc).await;
+            mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
-            assert_eq!(lc.wallet.last_scanned_height().await, 11);
+            assert_eq!(lightclient.wallet.last_scanned_height().await, 11);
 
             // 3. With one confirmation, we should be able to select the note
             let amt = Amount::from_u64(10_000).unwrap();
             // Reset the anchor offsets
-            lc.wallet.config.anchor_offset = [9, 4, 2, 1, 0];
-            let (notes, utxos, selected) =
-                lc.wallet.select_notes_and_utxos(amt, false, false).await;
+            lightclient.wallet.config.anchor_offset = [9, 4, 2, 1, 0];
+            let (notes, utxos, selected) = lightclient
+                .wallet
+                .select_notes_and_utxos(amt, false, false)
+                .await;
             assert!(selected >= amt);
             assert_eq!(notes.len(), 1);
             assert_eq!(notes[0].note.value, value1);
@@ -1732,7 +1761,8 @@ mod test {
             assert_eq!(
                 incw_to_string(&notes[0].witness),
                 incw_to_string(
-                    lc.wallet
+                    lightclient
+                        .wallet
                         .transactions
                         .read()
                         .await
@@ -1747,17 +1777,26 @@ mod test {
             );
 
             // Mine 5 blocks
-            mine_random_blocks(&mut fcbl, &data, &lc, 5).await;
+            mine_numblocks_each_with_two_sap_txs(
+                &mut fake_compactblock_list,
+                &data,
+                &lightclient,
+                5,
+            )
+            .await;
 
             // 4. Send another incoming transaction.
             let value2 = 200_000;
-            let (_transaction, _height, _) = fcbl.add_transaction_paying(&extfvk1, value2);
-            mine_pending_blocks(&mut fcbl, &data, &lc).await;
+            let (_transaction, _height, _) =
+                fake_compactblock_list.create_coinbase_transaction(&extfvk1, value2);
+            mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
             // Now, try to select a small amount, it should prefer the older note
             let amt = Amount::from_u64(10_000).unwrap();
-            let (notes, utxos, selected) =
-                lc.wallet.select_notes_and_utxos(amt, false, false).await;
+            let (notes, utxos, selected) = lightclient
+                .wallet
+                .select_notes_and_utxos(amt, false, false)
+                .await;
             assert!(selected >= amt);
             assert_eq!(notes.len(), 1);
             assert_eq!(notes[0].note.value, value1);
@@ -1765,14 +1804,16 @@ mod test {
 
             // Selecting a bigger amount should select both notes
             let amt = Amount::from_u64(value1 + value2).unwrap();
-            let (notes, utxos, selected) =
-                lc.wallet.select_notes_and_utxos(amt, false, false).await;
+            let (notes, utxos, selected) = lightclient
+                .wallet
+                .select_notes_and_utxos(amt, false, false)
+                .await;
             assert!(selected == amt);
             assert_eq!(notes.len(), 2);
             assert_eq!(utxos.len(), 0);
 
             // Shutdown everything cleanly
-            clean_shutdown(stop_transmitter, h1).await;
+            clean_shutdown(stop_transmitter, test_server_handle).await;
         }
     }
 }

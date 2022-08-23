@@ -6,8 +6,9 @@ use std::{
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use log::error;
 use orchard::{
-    keys::{Diversifier as OrchardDiversifier, FullViewingKey as OrchardFullViewingKey},
+    keys::FullViewingKey as OrchardFullViewingKey,
     note::{Note as OrchardNote, Nullifier as OrchardNullifier},
+    note_encryption::OrchardDomain,
     tree::MerkleHashOrchard,
 };
 use zcash_encoding::Vector;
@@ -16,7 +17,8 @@ use zcash_primitives::{
     memo::Memo,
     merkle_tree::IncrementalWitness,
     sapling::{
-        Node as SaplingNode, Note as SaplingNote, Nullifier as SaplingNullifier, PaymentAddress,
+        note_encryption::SaplingDomain, Node as SaplingNode, Note as SaplingNote,
+        Nullifier as SaplingNullifier, PaymentAddress,
     },
     transaction::{components::TxOut, TxId},
     zip32::ExtendedFullViewingKey,
@@ -25,19 +27,22 @@ use zcash_primitives::{
 use zingoconfig::{Network, MAX_REORG};
 
 use super::{
-    data::{OutgoingTxMetadata, Utxo, WalletNullifier, WalletTx, WitnessCache},
-    traits::{DomainWalletExt, FromBytes, NoteAndMetadata, Recipient},
+    data::{
+        ChannelNullifier, OrchardNoteAndMetadata, OutgoingTxMetadata, SaplingNoteAndMetadata,
+        TransactionMetadata, Utxo, WitnessCache,
+    },
+    traits::{DomainWalletExt, FromBytes, NoteAndMetadata, Nullifier, Recipient},
 };
 
 /// List of all transactions in a wallet.
 /// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
 /// this struct are threadsafe/locked properly.
-pub struct WalletTxns {
-    pub(crate) current: HashMap<TxId, WalletTx>,
+pub struct TransactionMetadataSet {
+    pub(crate) current: HashMap<TxId, TransactionMetadata>,
     pub(crate) last_txid: Option<TxId>,
 }
 
-impl WalletTxns {
+impl TransactionMetadataSet {
     pub fn serialized_version() -> u64 {
         return 21;
     }
@@ -54,10 +59,15 @@ impl WalletTxns {
             let mut txid_bytes = [0u8; 32];
             r.read_exact(&mut txid_bytes)?;
 
-            Ok((TxId::from_bytes(txid_bytes), WalletTx::read(r).unwrap()))
+            Ok((
+                TxId::from_bytes(txid_bytes),
+                TransactionMetadata::read(r).unwrap(),
+            ))
         })?;
 
-        let txs = txs_tuples.into_iter().collect::<HashMap<TxId, WalletTx>>();
+        let txs = txs_tuples
+            .into_iter()
+            .collect::<HashMap<TxId, TransactionMetadata>>();
 
         Ok(Self {
             current: txs,
@@ -78,10 +88,15 @@ impl WalletTxns {
             let mut txid_bytes = [0u8; 32];
             r.read_exact(&mut txid_bytes)?;
 
-            Ok((TxId::from_bytes(txid_bytes), WalletTx::read(r).unwrap()))
+            Ok((
+                TxId::from_bytes(txid_bytes),
+                TransactionMetadata::read(r).unwrap(),
+            ))
         })?;
 
-        let current = txs_tuples.into_iter().collect::<HashMap<TxId, WalletTx>>();
+        let current = txs_tuples
+            .into_iter()
+            .collect::<HashMap<TxId, TransactionMetadata>>();
         let last_txid = current
             .values()
             .fold(None, |c: Option<(TxId, BlockHeight)>, w| {
@@ -97,9 +112,9 @@ impl WalletTxns {
             Vector::read(&mut reader, |r| {
                 let mut txid_bytes = [0u8; 32];
                 r.read_exact(&mut txid_bytes)?;
-                let wtx = WalletTx::read(r)?;
+                let transaction_metadata = TransactionMetadata::read(r)?;
 
-                Ok((TxId::from_bytes(txid_bytes), wtx))
+                Ok((TxId::from_bytes(txid_bytes), transaction_metadata))
             })?
             .into_iter()
             .collect()
@@ -117,10 +132,13 @@ impl WalletTxns {
         // The hashmap, write as a set of tuples. Store them sorted so that wallets are
         // deterministically saved
         {
-            let mut txns = self.current.iter().collect::<Vec<(&TxId, &WalletTx)>>();
-            txns.sort_by(|a, b| a.0.partial_cmp(b.0).unwrap());
+            let mut transaction_metadatas = self
+                .current
+                .iter()
+                .collect::<Vec<(&TxId, &TransactionMetadata)>>();
+            transaction_metadatas.sort_by(|a, b| a.0.partial_cmp(b.0).unwrap());
 
-            Vector::write(&mut writer, &txns, |w, (k, v)| {
+            Vector::write(&mut writer, &transaction_metadatas, |w, (k, v)| {
                 w.write_all(k.as_ref())?;
                 v.write(w)
             })?;
@@ -220,7 +238,7 @@ impl WalletTxns {
         &self.last_txid
     }
 
-    pub fn get_notes_for_updating(&self, before_block: u64) -> Vec<(TxId, WalletNullifier)> {
+    pub fn get_notes_for_updating(&self, before_block: u64) -> Vec<(TxId, ChannelNullifier)> {
         let before_block = BlockHeight::from_u32(before_block as u32);
 
         self.current
@@ -238,7 +256,7 @@ impl WalletTxns {
                         {
                             Some((
                                 txid.clone(),
-                                WalletNullifier::Sapling(
+                                ChannelNullifier::Sapling(
                                     sapling_note_description.nullifier.clone(),
                                 ),
                             ))
@@ -257,7 +275,7 @@ impl WalletTxns {
                                 {
                                     Some((
                                         txid.clone(),
-                                        WalletNullifier::Orchard(
+                                        ChannelNullifier::Orchard(
                                             orchard_note_description.nullifier.clone(),
                                         ),
                                     ))
@@ -273,7 +291,7 @@ impl WalletTxns {
     pub fn total_funds_spent_in(&self, txid: &TxId) -> u64 {
         self.current
             .get(&txid)
-            .map(WalletTx::total_value_spent)
+            .map(TransactionMetadata::total_value_spent)
             .unwrap_or(0)
     }
 
@@ -307,7 +325,7 @@ impl WalletTxns {
             .collect()
     }
 
-    pub(crate) fn get_sapling_note_witness(
+    pub(crate) fn get_sapling_note_witnesses(
         &self,
         txid: &TxId,
         nullifier: &SaplingNullifier,
@@ -320,7 +338,7 @@ impl WalletTxns {
         })?
     }
 
-    pub(crate) fn get_orchard_note_witness(
+    pub(crate) fn get_orchard_note_witnesses(
         &self,
         txid: &TxId,
         nullifier: &OrchardNullifier,
@@ -399,12 +417,12 @@ impl WalletTxns {
     pub fn mark_txid_nf_spent(
         &mut self,
         txid: TxId,
-        nullifier: &WalletNullifier,
+        nullifier: &ChannelNullifier,
         spent_txid: &TxId,
         spent_at_height: BlockHeight,
     ) -> u64 {
         match nullifier {
-            WalletNullifier::Sapling(nf) => {
+            ChannelNullifier::Sapling(nf) => {
                 let mut note_data = self
                     .current
                     .get_mut(&txid)
@@ -417,7 +435,7 @@ impl WalletTxns {
                 note_data.unconfirmed_spent = None;
                 note_data.note.value
             }
-            WalletNullifier::Orchard(nf) => {
+            ChannelNullifier::Orchard(nf) => {
                 let mut note_data = self
                     .current
                     .get_mut(&txid)
@@ -451,11 +469,11 @@ impl WalletTxns {
         height: BlockHeight,
         unconfirmed: bool,
         datetime: u64,
-    ) -> &'_ mut WalletTx {
+    ) -> &'_ mut TransactionMetadata {
         if !self.current.contains_key(&txid) {
             self.current.insert(
                 txid.clone(),
-                WalletTx::new(BlockHeight::from(height), datetime, &txid, unconfirmed),
+                TransactionMetadata::new(BlockHeight::from(height), datetime, &txid, unconfirmed),
             );
             self.last_txid = Some(txid.clone());
         }
@@ -482,12 +500,45 @@ impl WalletTxns {
         height: BlockHeight,
         unconfirmed: bool,
         timestamp: u32,
-        nullifier: WalletNullifier,
+        nullifier: ChannelNullifier,
+        value: u64,
+        source_txid: TxId,
+    ) {
+        match nullifier {
+            ChannelNullifier::Orchard(nullifier) => self
+                .add_new_spent_internal::<OrchardNoteAndMetadata>(
+                    txid,
+                    height,
+                    unconfirmed,
+                    timestamp,
+                    nullifier,
+                    value,
+                    source_txid,
+                ),
+            ChannelNullifier::Sapling(nullifier) => self
+                .add_new_spent_internal::<SaplingNoteAndMetadata>(
+                    txid,
+                    height,
+                    unconfirmed,
+                    timestamp,
+                    nullifier,
+                    value,
+                    source_txid,
+                ),
+        }
+    }
+
+    fn add_new_spent_internal<NnMd: NoteAndMetadata>(
+        &mut self,
+        txid: TxId,
+        height: BlockHeight,
+        unconfirmed: bool,
+        timestamp: u32,
+        nullifier: NnMd::Nullifier,
         value: u64,
         source_txid: TxId,
     ) {
         // Record this Tx as having spent some funds
-
         let wtx = self.get_or_create_transaction_metadata(
             &txid,
             BlockHeight::from(height),
@@ -497,66 +548,31 @@ impl WalletTxns {
 
         // Mark the height correctly, in case this was previously a mempool or unconfirmed tx.
         wtx.block = height;
-        // Todo: DRY code
-        match nullifier {
-            WalletNullifier::Sapling(nullifier) => {
-                if wtx
-                    .spent_sapling_nullifiers
-                    .iter()
-                    .find(|nf| **nf == nullifier)
-                    .is_none()
-                {
-                    wtx.add_spent_nullifier(WalletNullifier::Sapling(nullifier), value)
-                }
+        if NnMd::Nullifier::get_nullifiers_spent_in_transaction(wtx)
+            .iter()
+            .find(|nf| **nf == nullifier)
+            .is_none()
+        {
+            wtx.add_spent_nullifier(nullifier.to_channel_nullifier(), value)
+        }
 
-                // Since this Txid has spent some funds, output notes in this Tx that are sent to us are actually change.
-                self.check_notes_mark_change(&txid);
+        // Since this Txid has spent some funds, output notes in this Tx that are sent to us are actually change.
+        self.check_notes_mark_change(&txid);
 
-                // Mark the source note as spent
-                if !unconfirmed {
-                    let wtx = self
-                        .current
-                        .get_mut(&source_txid)
-                        .expect("Txid should be present");
+        // Mark the source note as spent
+        if !unconfirmed {
+            let wtx = self
+                .current
+                .get_mut(&source_txid)
+                .expect("Txid should be present");
 
-                    wtx.sapling_notes
-                        .iter_mut()
-                        .find(|n| n.nullifier == nullifier)
-                        .map(|nd| {
-                            // Record the spent height
-                            nd.spent = Some((txid, height.into()));
-                        });
-                }
-            }
-            WalletNullifier::Orchard(nullifier) => {
-                if wtx
-                    .spent_orchard_nullifiers
-                    .iter()
-                    .find(|nf| **nf == nullifier)
-                    .is_none()
-                {
-                    wtx.add_spent_nullifier(WalletNullifier::Orchard(nullifier), value)
-                }
-
-                // Since this Txid has spent some funds, output notes in this Tx that are sent to us are actually change.
-                self.check_notes_mark_change(&txid);
-
-                // Mark the source note's nullifier as spent
-                if !unconfirmed {
-                    let wtx = self
-                        .current
-                        .get_mut(&source_txid)
-                        .expect("Txid should be present");
-
-                    wtx.orchard_notes
-                        .iter_mut()
-                        .find(|n| n.nullifier == nullifier)
-                        .map(|nd| {
-                            // Record the spent height
-                            nd.spent = Some((txid, height.into()));
-                        });
-                }
-            }
+            NnMd::transaction_metadata_notes_mut(wtx)
+                .iter_mut()
+                .find(|n| n.nullifier() == nullifier)
+                .map(|nd| {
+                    // Record the spent height
+                    *nd.spent_mut() = Some((txid, height.into()));
+                });
         }
     }
 
@@ -696,7 +712,7 @@ impl WalletTxns {
                     false,
                 );
 
-                D::WalletNote::wallet_transaction_notes_mut(wtx).push(nd);
+                D::WalletNote::transaction_metadata_notes_mut(wtx).push(nd);
             }
             Some(_) => {}
         }
@@ -714,7 +730,7 @@ impl WalletTxns {
         have_spending_key: bool,
         witness: IncrementalWitness<SaplingNode>,
     ) {
-        self.add_new_note(
+        self.add_new_note::<SaplingDomain<zingoconfig::Network>>(
             txid,
             height,
             unconfirmed,
@@ -724,9 +740,6 @@ impl WalletTxns {
             extfvk,
             have_spending_key,
             witness,
-            |n: &SaplingNote, fvk: &ExtendedFullViewingKey, pos| n.nf(&fvk.fvk.vk, pos),
-            |wtx| &mut wtx.sapling_notes,
-            |addr| *addr.diversifier(),
         )
     }
     pub fn add_new_orchard_note(
@@ -741,7 +754,7 @@ impl WalletTxns {
         have_spending_key: bool,
         witness: IncrementalWitness<MerkleHashOrchard>,
     ) {
-        self.add_new_note(
+        self.add_new_note::<OrchardDomain>(
             txid,
             height,
             unconfirmed,
@@ -751,36 +764,23 @@ impl WalletTxns {
             fvk,
             have_spending_key,
             witness,
-            |n: &OrchardNote, fvk: &OrchardFullViewingKey, _| n.nullifier(&fvk),
-            |wtx| &mut wtx.orchard_notes,
-            |addr| OrchardDiversifier::from_bytes(*addr.diversifier().as_array()),
         )
     }
 
-    fn add_new_note<
-        Address,
-        NullifierFromNote,
-        WtxNotes,
-        NoteData: super::traits::NoteAndMetadata,
-        AddressDiversifier,
-    >(
+    pub(crate) fn add_new_note<D: DomainWalletExt<zingoconfig::Network>>(
         &mut self,
         txid: TxId,
         height: BlockHeight,
         unconfirmed: bool,
         timestamp: u64,
-        note: NoteData::Note,
-        to: Address,
-        fvk: &NoteData::Fvk,
+        note: <D::WalletNote as NoteAndMetadata>::Note,
+        to: D::Recipient,
+        fvk: &<D::WalletNote as NoteAndMetadata>::Fvk,
         have_spending_key: bool,
-        witness: IncrementalWitness<NoteData::Node>,
-        nullifier_from_note: NullifierFromNote,
-        wtx_notes: WtxNotes,
-        address_diversifier: AddressDiversifier,
+        witness: IncrementalWitness<<D::WalletNote as NoteAndMetadata>::Node>,
     ) where
-        NullifierFromNote: Fn(&NoteData::Note, &NoteData::Fvk, u64) -> NoteData::Nullifier,
-        WtxNotes: Fn(&mut WalletTx) -> &mut Vec<NoteData>,
-        AddressDiversifier: Fn(&Address) -> NoteData::Diversifier,
+        D::Note: PartialEq,
+        D::Recipient: Recipient,
     {
         // Check if this is a change note
         let is_change = self.total_funds_spent_in(&txid) > 0;
@@ -794,21 +794,25 @@ impl WalletTxns {
         // Update the block height, in case this was a mempool or unconfirmed tx.
         wtx.block = height;
 
-        let nullifier = nullifier_from_note(&note, &fvk, witness.position() as u64);
+        let nullifier = D::WalletNote::get_nullifier_from_note_fvk_and_witness_position(
+            &note,
+            &fvk,
+            witness.position() as u64,
+        );
         let witnesses = if have_spending_key {
             WitnessCache::new(vec![witness], u64::from(height))
         } else {
             WitnessCache::empty()
         };
 
-        match wtx_notes(wtx)
+        match D::WalletNote::transaction_metadata_notes_mut(wtx)
             .iter_mut()
             .find(|n| n.nullifier() == nullifier)
         {
             None => {
-                let nd = NoteData::from_parts(
+                let nd = D::WalletNote::from_parts(
                     fvk.clone(),
-                    address_diversifier(&to),
+                    D::Recipient::diversifier(&to),
                     note,
                     witnesses,
                     nullifier,
@@ -819,18 +823,19 @@ impl WalletTxns {
                     have_spending_key,
                 );
 
-                wtx_notes(wtx).push(nd);
+                D::WalletNote::transaction_metadata_notes_mut(wtx).push(nd);
 
                 // Also remove any pending notes.
                 use super::traits::ToBytes;
-                wtx_notes(wtx).retain(|n| n.nullifier().to_bytes() != [0u8; 32]);
+                D::WalletNote::transaction_metadata_notes_mut(wtx)
+                    .retain(|n| n.nullifier().to_bytes() != [0u8; 32]);
             }
             Some(n) => {
                 // If this note already exists, then just reset the witnesses, because we'll start scanning the witnesses
                 // again after this.
                 // This is likely to happen if the previous wallet wasn't synced properly or was aborted in the middle of a sync,
                 // and has some dangling witnesses
-                *n.witnesses() = witnesses;
+                *n.witnesses_mut() = witnesses;
             }
         }
     }
@@ -843,7 +848,7 @@ impl WalletTxns {
         memo: Memo,
     ) {
         self.current.get_mut(txid).map(|wtx| {
-            Nd::wallet_transaction_notes_mut(wtx)
+            Nd::transaction_metadata_notes_mut(wtx)
                 .iter_mut()
                 .find(|n| n.note() == &note)
                 .map(|n| *n.memo_mut() = Some(memo));

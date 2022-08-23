@@ -39,6 +39,24 @@ use zcash_primitives::{
 };
 use zcash_proofs::sapling::SaplingProvingContext;
 
+// This function can be used by TestServerData, or other test code
+// TODO: Replace with actual lightclient functionality
+pub fn tree_from_cblocks(
+    compactblock_list: &Vec<crate::blaze::test_utils::FakeCompactBlock>,
+) -> CommitmentTree<Node> {
+    compactblock_list
+        .iter()
+        .fold(CommitmentTree::<Node>::empty(), |mut tree, fcb| {
+            for compact_tx in &fcb.block.vtx {
+                for compact_output in &compact_tx.outputs {
+                    tree.append(Node::new(compact_output.cmu().unwrap().into()))
+                        .unwrap();
+                }
+            }
+
+            tree
+        })
+}
 pub fn random_u8_32() -> [u8; 32] {
     let mut b = [0u8; 32];
     OsRng.fill_bytes(&mut b);
@@ -77,7 +95,7 @@ pub fn list_all_witness_nodes(cb: &CompactBlock) -> Vec<Node> {
 
 pub struct FakeTransaction {
     pub compact_transaction: CompactTx,
-    pub td: TransactionData<zcash_primitives::transaction::Authorized>,
+    pub data: TransactionData<zcash_primitives::transaction::Authorized>,
     pub taddrs_involved: Vec<String>,
 }
 
@@ -120,7 +138,7 @@ impl FakeTransaction {
         );
         Self {
             compact_transaction: CompactTx::default(),
-            td: fake_transaction_data,
+            data: fake_transaction_data,
             taddrs_involved: vec![],
         }
     }
@@ -183,19 +201,19 @@ impl FakeTransaction {
         cout.epk = epk;
         cout.ciphertext = enc_ciphertext[..52].to_vec();
 
-        let mut added_sapling_bundle = self.td.sapling_bundle().unwrap().clone();
+        let mut added_sapling_bundle = self.data.sapling_bundle().unwrap().clone();
         added_sapling_bundle.shielded_outputs.push(od);
         let new_td = TransactionData::from_parts(
-            self.td.version(),
-            self.td.consensus_branch_id(),
-            self.td.lock_time(),
-            self.td.expiry_height(),
-            self.td.transparent_bundle().map(Clone::clone),
-            self.td.sprout_bundle().map(Clone::clone),
+            self.data.version(),
+            self.data.consensus_branch_id(),
+            self.data.lock_time(),
+            self.data.expiry_height(),
+            self.data.transparent_bundle().map(Clone::clone),
+            self.data.sprout_bundle().map(Clone::clone),
             Some(added_sapling_bundle),
-            self.td.orchard_bundle().map(Clone::clone),
+            self.data.orchard_bundle().map(Clone::clone),
         );
-        self.td = new_td;
+        self.data = new_td;
         self.compact_transaction.outputs.push(cout);
 
         note
@@ -222,9 +240,7 @@ impl FakeTransaction {
     // Returns the nullifier of the new note.
     pub fn add_transaction_paying(&mut self, extfvk: &ExtendedFullViewingKey, value: u64) -> Note {
         let to = extfvk.default_address().1;
-        let note = self.add_sapling_output(value, None, &to);
-
-        note
+        self.add_sapling_output(value, None, &to)
     }
 
     // Add a t output which will be paid to the given PubKey
@@ -234,7 +250,7 @@ impl FakeTransaction {
 
         let taddr_bytes = hash160.finalize();
         let mut added_transparent_bundle = self
-            .td
+            .data
             .transparent_bundle()
             .unwrap_or(&components::transparent::Bundle {
                 vin: vec![],
@@ -248,43 +264,43 @@ impl FakeTransaction {
         });
 
         let new_td = TransactionData::from_parts(
-            self.td.version(),
-            self.td.consensus_branch_id(),
-            self.td.lock_time(),
-            self.td.expiry_height(),
+            self.data.version(),
+            self.data.consensus_branch_id(),
+            self.data.lock_time(),
+            self.data.expiry_height(),
             Some(added_transparent_bundle),
-            self.td.sprout_bundle().map(Clone::clone),
-            self.td.sapling_bundle().map(Clone::clone),
-            self.td.orchard_bundle().map(Clone::clone),
+            self.data.sprout_bundle().map(Clone::clone),
+            self.data.sapling_bundle().map(Clone::clone),
+            self.data.orchard_bundle().map(Clone::clone),
         );
-        self.td = new_td;
+        self.data = new_td;
         self.taddrs_involved.push(taddr)
     }
 
     // Spend the given utxo
     pub fn add_t_input(&mut self, transaction_id: TxId, n: u32, taddr: String) {
-        let mut added_transparent_bundle = self.td.transparent_bundle().unwrap().clone();
+        let mut added_transparent_bundle = self.data.transparent_bundle().unwrap().clone();
         added_transparent_bundle.vin.push(TxIn {
             prevout: OutPoint::new(*(transaction_id.as_ref()), n),
             script_sig: Script { 0: vec![] },
             sequence: 0,
         });
         let new_td = TransactionData::from_parts(
-            self.td.version(),
-            self.td.consensus_branch_id(),
-            self.td.lock_time(),
-            self.td.expiry_height(),
+            self.data.version(),
+            self.data.consensus_branch_id(),
+            self.data.lock_time(),
+            self.data.expiry_height(),
             Some(added_transparent_bundle),
-            Some(self.td.sprout_bundle().unwrap().clone()),
-            Some(self.td.sapling_bundle().unwrap().clone()),
-            Some(self.td.orchard_bundle().unwrap().clone()),
+            Some(self.data.sprout_bundle().unwrap().clone()),
+            Some(self.data.sapling_bundle().unwrap().clone()),
+            Some(self.data.orchard_bundle().unwrap().clone()),
         );
-        self.td = new_td;
+        self.data = new_td;
         self.taddrs_involved.push(taddr);
     }
 
     pub fn into_transaction(mut self) -> (CompactTx, Transaction, Vec<String>) {
-        let transaction = self.td.freeze().unwrap();
+        let transaction = self.data.freeze().unwrap();
         let txid = transaction.txid().clone();
         self.compact_transaction.hash = Vec::from(*(txid.as_ref()));
 
@@ -319,7 +335,7 @@ impl FakeCompactBlock {
 
     // Add a new transaction into the block, paying the given address the amount.
     // Returns the nullifier of the new note.
-    pub fn add_random_transaction(&mut self, num_outputs: usize) {
+    pub fn add_random_sapling_transaction(&mut self, num_outputs: usize) {
         let xsk_m = ExtendedSpendingKey::master(&[1u8; 32]);
         let extfvk = ExtendedFullViewingKey::from(&xsk_m);
 
@@ -376,7 +392,7 @@ impl FakeCompactBlockList {
             next_height: 1,
         };
 
-        s.add_blocks(len);
+        s.create_and_append_randtx_blocks(len);
 
         s
     }
@@ -465,7 +481,9 @@ impl FakeCompactBlockList {
         (&self.transactions.last().unwrap().0, height)
     }
 
-    pub fn add_transaction_spending(
+    pub fn create_spend_transaction_from_ovk(
+        // TODO:  Deprecate this function in favor of a replacement to generates spends
+        // using a spend authority.
         &mut self,
         nf: &Nullifier,
         value: u64,
@@ -480,9 +498,12 @@ impl FakeCompactBlockList {
         transaction
     }
 
-    // Add a new transaction into the block, paying the given address the amount.
+    // Add a new transaction into the ??block??, paying the given address the amount.
     // Returns the nullifier of the new note.
-    pub fn add_transaction_paying(
+    // This fake_compactblock_list method:
+    // 1. creates a fake transaction
+    // 2. passes that transaction to self.add_fake_transaction
+    pub fn create_coinbase_transaction(
         &mut self,
         extfvk: &ExtendedFullViewingKey,
         value: u64,
@@ -504,10 +525,14 @@ impl FakeCompactBlockList {
         self.blocks.last_mut().unwrap()
     }
 
-    pub fn add_blocks(&mut self, len: u64) -> &mut Self {
+    // Populate arg number of blocks with 2 rand compact txs each
+    pub fn create_and_append_randtx_blocks(
+        &mut self,
+        number_of_twotx_blocks_toadd: u64,
+    ) -> &mut Self {
         let nexth = self.next_height;
 
-        for i in nexth..(nexth + len) {
+        for i in nexth..(nexth + number_of_twotx_blocks_toadd) {
             let mut b = FakeCompactBlock::new(i, self.prev_hash);
 
             self.next_height = i + 1;
@@ -515,7 +540,7 @@ impl FakeCompactBlockList {
 
             // Add 2 transactions, each with some random Compact Outputs to this block
             for _ in 0..2 {
-                b.add_random_transaction(2);
+                b.add_random_sapling_transaction(2);
             }
 
             self.blocks.push(b);

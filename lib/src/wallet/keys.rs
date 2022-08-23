@@ -26,7 +26,7 @@ use zcash_primitives::{
     sapling::PaymentAddress,
     zip32::{ChildIndex, ExtendedFullViewingKey, ExtendedSpendingKey},
 };
-use zingoconfig::{Network, ZingoConfig, GAP_RULE_UNUSED_ADDRESSES};
+use zingoconfig::{ZingoConfig, GAP_RULE_UNUSED_ADDRESSES};
 
 use crate::wallet::utils;
 
@@ -160,12 +160,12 @@ impl Keys {
         &mut self.tkeys
     }
     pub fn serialized_version() -> u64 {
-        return 21;
+        return 22;
     }
 
     #[cfg(test)]
     pub fn new_empty() -> Self {
-        let config = ZingoConfig::create_unconnected(Network::FakeMainnet, None);
+        let config = ZingoConfig::create_unconnected(zingoconfig::Network::FakeMainnet, None);
         Self {
             config,
             encrypted: false,
@@ -398,6 +398,12 @@ impl Keys {
 
         let zkeys = Vector::read(&mut reader, |r| SaplingKey::read(r))?;
 
+        let okeys = if version > 21 {
+            Vector::read(&mut reader, |r| OrchardKey::read(r))?
+        } else {
+            vec![]
+        };
+
         let tkeys = if version <= 20 {
             let tkeys = Vector::read(&mut reader, |r| {
                 let mut tpk_bytes = [0u8; 32];
@@ -428,7 +434,7 @@ impl Keys {
             seed: seed_bytes,
             zkeys,
             tkeys,
-            okeys: vec![],
+            okeys,
         })
     }
 
@@ -451,8 +457,11 @@ impl Keys {
         // Flush after writing the seed, so in case of a disaster, we can still recover the seed.
         writer.flush()?;
 
-        // Write all the wallet's keys
+        // Write all the wallet's sapling keys
         Vector::write(&mut writer, &self.zkeys, |w, zk| zk.write(w))?;
+
+        // Write all the wallet's orchard keys
+        Vector::write(&mut writer, &self.okeys, |w, ok| ok.write(w))?;
 
         // Write the transparent private keys
         Vector::write(&mut writer, &self.tkeys, |w, sk| sk.write(w))?;
@@ -499,20 +508,8 @@ impl Keys {
     pub fn get_all_orchard_addresses(&self) -> Vec<String> {
         self.okeys
             .iter()
-            .map(|zk| {
-                use zcash_address::unified::Encoding as _;
-                zk.unified_address.encode(&self.get_network_enum())
-            })
+            .map(|zk| zk.unified_address.encode(&self.config.chain))
             .collect()
-    }
-
-    fn get_network_enum(&self) -> zcash_address::Network {
-        match self.config.chain {
-            Network::Testnet => zcash_address::Network::Test,
-            Network::Regtest => zcash_address::Network::Regtest,
-            Network::Mainnet => zcash_address::Network::Main,
-            Network::FakeMainnet => zcash_address::Network::Main,
-        }
     }
 
     pub fn get_all_spendable_zaddresses(&self) -> Vec<String> {
@@ -688,13 +685,7 @@ impl Keys {
         let newkey = OrchardKey::new_hdkey(account, spending_key);
         self.okeys.push(newkey.clone());
 
-        use zcash_address::unified::Encoding as _;
-        newkey.unified_address.encode(&match self.config.chain {
-            Network::Testnet => zcash_address::Network::Test,
-            Network::Regtest => zcash_address::Network::Regtest,
-            Network::Mainnet => zcash_address::Network::Main,
-            Network::FakeMainnet => zcash_address::Network::Main,
-        })
+        newkey.unified_address.encode(&self.config.chain)
     }
     /// Add a new t address to the wallet. This will derive a new address from the seed
     /// at the next position.
@@ -772,17 +763,13 @@ impl Keys {
                         Ufvk::try_from_items(vec![zcash_address::unified::Fvk::Orchard(
                             viewing_key.to_bytes(),
                         )])
-                        .map(|vk| vk.encode(&self.get_network_enum()))
+                        .map(|vk| vk.encode(&self.config.chain.to_zcash_address_network()))
                         .unwrap_or_else(|e| e.to_string())
                     }
                     Err(_) => "".to_string(),
                 };
 
-                (
-                    k.unified_address.encode(&self.get_network_enum()),
-                    pkey,
-                    vkey,
-                )
+                (k.unified_address.encode(&self.config.chain), pkey, vkey)
             })
             .collect::<Vec<(String, String, String)>>();
 

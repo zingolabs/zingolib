@@ -3,13 +3,13 @@ use crate::{
     grpc_connector::GrpcConnector,
     lightclient::checkpoints::get_all_main_checkpoints,
     wallet::{
-        data::{BlockData, WalletNullifier, WalletTx, WitnessCache},
-        traits::FromCommitment,
-        transactions::WalletTxns,
+        data::{BlockData, ChannelNullifier, TransactionMetadata, WitnessCache},
+        traits::{DomainWalletExt, FromCommitment, NoteAndMetadata},
+        transactions::TransactionMetadataSet,
     },
 };
-use orchard::tree::MerkleHashOrchard;
-use zcash_note_encryption::{Domain, ShieldedOutput, COMPACT_NOTE_SIZE};
+use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
+use zcash_note_encryption::Domain;
 use zingoconfig::{ZingoConfig, MAX_REORG};
 
 use futures::future::join_all;
@@ -26,21 +26,22 @@ use tokio::{
 use zcash_primitives::{
     consensus::{BlockHeight, NetworkUpgrade, Parameters},
     merkle_tree::{CommitmentTree, Hashable, IncrementalWitness},
-    sapling::Node as SaplingNode,
+    sapling::{note_encryption::SaplingDomain, Node as SaplingNode},
     transaction::TxId,
 };
 
 use super::{fixed_size_buffer::FixedSizeBuffer, sync_status::SyncStatus};
 
 pub struct BlockAndWitnessData {
-    // List of all blocks and their hashes/commitment trees. Stored from smallest block height to tallest block height
+    // List of all blocks and their hashes/commitment trees.
+    // Stored with the tallest block first, and the shortest last.
     blocks: Arc<RwLock<Vec<BlockData>>>,
 
     // List of existing blocks in the wallet. Used for reorgs
     existing_blocks: Arc<RwLock<Vec<BlockData>>>,
 
-    // List of sapling tree states that were fetched from the server, which need to be verified before we return from the
-    // function
+    // List of sapling tree states that were fetched from the server,
+    // which need to be verified before we return from the function.
     verification_list: Arc<RwLock<Vec<TreeState>>>,
 
     // How many blocks to process at a time.
@@ -101,9 +102,18 @@ impl BlockAndWitnessData {
         self.existing_blocks.write().await.extend(existing_blocks);
     }
 
-    // Finish up the sync. This method will delete all the elements in the blocks, and return
-    // the top `num` blocks
-    pub async fn finish_get_blocks(&self, num: usize) -> Vec<BlockData> {
+    /// Finish up the sync. This method will delete all the elements
+    /// in the existing_blocks, and return up to `num` blocks and optionally
+    /// formerly "existing"_blocks if `num` is large enough.
+    /// Examples:
+    ///   self.blocks.len() >= num all existing_blocks are discarded
+    ///   self.blocks.len() < num the new self.blocks is:
+    ///    self.blocks_original + ((the `num` - self.blocks_original.len()) highest
+    ///     self.existing_blocks.  
+    pub async fn drain_existingblocks_into_blocks_with_truncation(
+        &self,
+        num: usize,
+    ) -> Vec<BlockData> {
         self.verification_list.write().await.clear();
 
         {
@@ -117,7 +127,7 @@ impl BlockAndWitnessData {
 
     pub async fn get_compact_transaction_for_nullifier_at_height(
         &self,
-        nullifier: &WalletNullifier,
+        nullifier: &ChannelNullifier,
         height: u64,
     ) -> (CompactTx, u32) {
         self.wait_for_block(height).await;
@@ -130,7 +140,7 @@ impl BlockAndWitnessData {
             bd.cb()
         };
         match nullifier {
-            WalletNullifier::Sapling(nullifier) => {
+            ChannelNullifier::Sapling(nullifier) => {
                 for compact_transaction in &cb.vtx {
                     for cs in &compact_transaction.spends {
                         if cs.nf == nullifier.to_vec() {
@@ -139,7 +149,7 @@ impl BlockAndWitnessData {
                     }
                 }
             }
-            WalletNullifier::Orchard(nullifier) => {
+            ChannelNullifier::Orchard(nullifier) => {
                 for compact_transaction in &cb.vtx {
                     for ca in &compact_transaction.actions {
                         if ca.nullifier == nullifier.to_bytes().to_vec() {
@@ -297,7 +307,7 @@ impl BlockAndWitnessData {
     pub async fn invalidate_block(
         reorg_height: u64,
         existing_blocks: Arc<RwLock<Vec<BlockData>>>,
-        wallet_transactions: Arc<RwLock<WalletTxns>>,
+        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
     ) {
         // First, pop the first block (which is the top block) in the existing_blocks.
         let top_wallet_block = existing_blocks.write().await.drain(0..1).next().unwrap();
@@ -306,7 +316,7 @@ impl BlockAndWitnessData {
         }
 
         // Remove all wallet transactions at the height
-        wallet_transactions
+        transaction_metadata_set
             .write()
             .await
             .remove_txns_at_height(reorg_height);
@@ -317,7 +327,7 @@ impl BlockAndWitnessData {
         &self,
         start_block: u64,
         end_block: u64,
-        wallet_transactions: Arc<RwLock<WalletTxns>>,
+        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
         reorg_transmitter: UnboundedSender<Option<u64>>,
     ) -> (
         JoinHandle<Result<u64, String>>,
@@ -336,9 +346,10 @@ impl BlockAndWitnessData {
         sync_status.write().await.blocks_total = start_block - end_block + 1;
 
         // Handle 0:
-        // Process the incoming compact blocks, collect them into `BlockData` and pass them on
-        // for further processing.
-        // We also trigger the node commitment tree update every `batch_size` blocks using the Sapling tree fetched
+        // Process the incoming compact blocks, collect them into `BlockData` and
+        // pass them on for further processing.
+        // We also trigger the node commitment tree update every `batch_size` blocks
+        // using the Sapling tree fetched
         // from the server temporarily, but we verify it before we return it
 
         let h0: JoinHandle<Result<u64, String>> = tokio::spawn(async move {
@@ -382,7 +393,7 @@ impl BlockAndWitnessData {
                         Self::invalidate_block(
                             reorg_height,
                             existing_blocks.clone(),
-                            wallet_transactions.clone(),
+                            transaction_metadata_set.clone(),
                         )
                         .await;
                         last_block_expecting = reorg_height;
@@ -418,20 +429,26 @@ impl BlockAndWitnessData {
     }
 
     async fn wait_for_first_block(&self) -> u64 {
-        while self.blocks.read().await.is_empty() {
-            yield_now().await;
-            sleep(Duration::from_millis(100)).await;
-
-            //info!("Waiting for first block, blocks are empty!");
+        loop {
+            match self.blocks.read().await.first() {
+                None => {
+                    yield_now().await;
+                    sleep(Duration::from_millis(100)).await;
+                }
+                Some(blocks) => return blocks.height,
+            }
         }
-
-        self.blocks.read().await.first().unwrap().height
     }
 
-    async fn wait_for_block(&self, height: u64) {
+    /// This fn waits for some other actor to decrease the height of the
+    /// last block, until it crosses the threshold of the `threshold_height` parameter.
+    /// That is:
+    ///   `self.blocks.read().await.last().unwrap().height`
+    /// _must_ eventually be less that height for this fn to return.
+    async fn wait_for_block(&self, threshold_height: u64) {
         self.wait_for_first_block().await;
 
-        while self.blocks.read().await.last().unwrap().height > height {
+        while self.blocks.read().await.last().unwrap().height > threshold_height {
             yield_now().await;
             sleep(Duration::from_millis(100)).await;
 
@@ -443,7 +460,7 @@ impl BlockAndWitnessData {
         }
     }
 
-    pub(crate) async fn is_nf_spent(&self, nf: WalletNullifier, after_height: u64) -> Option<u64> {
+    pub(crate) async fn is_nf_spent(&self, nf: ChannelNullifier, after_height: u64) -> Option<u64> {
         self.wait_for_block(after_height).await;
 
         {
@@ -451,7 +468,7 @@ impl BlockAndWitnessData {
             let blocks = self.blocks.read().await;
             let pos = blocks.first().unwrap().height - after_height;
             match nf {
-                WalletNullifier::Sapling(nf) => {
+                ChannelNullifier::Sapling(nf) => {
                     let nf = nf.to_vec();
 
                     for i in (0..pos + 1).rev() {
@@ -465,7 +482,7 @@ impl BlockAndWitnessData {
                         }
                     }
                 }
-                WalletNullifier::Orchard(nf) => {
+                ChannelNullifier::Orchard(nf) => {
                     let nf = nf.to_bytes();
 
                     for i in (0..pos + 1).rev() {
@@ -494,50 +511,51 @@ impl BlockAndWitnessData {
             blocks.get(pos as usize).unwrap().cb().time
         }
     }
-
-    async fn get_note_witness<D, Output, TreeGetter, OutputsFromTransaction, Node>(
+    /// This function handles Orchard and Sapling domains.
+    /// This function takes data from the Untrusted Malicious Proxy, and uses it to construct a witness locally.  I am
+    /// currently of the opinion that this function should be factored into separate concerns.
+    pub(crate) async fn get_note_witness<D>(
         &self,
         uri: Uri,
         height: BlockHeight,
         transaction_num: usize,
         output_num: usize,
-        tree_getter: TreeGetter,
-        outputs_from_transaction: OutputsFromTransaction,
         activation_height: u64,
-    ) -> Result<IncrementalWitness<Node>, String>
+    ) -> Result<IncrementalWitness<<D::WalletNote as NoteAndMetadata>::Node>, String>
     where
-        D: Domain,
-        Output: ShieldedOutput<D, COMPACT_NOTE_SIZE>,
-        Node: Hashable + FromCommitment,
+        D: DomainWalletExt<zingoconfig::Network>,
+        D::Note: PartialEq,
         D::ExtractedCommitmentBytes: Into<[u8; 32]>,
-        TreeGetter: Fn(&TreeState) -> &String,
-        OutputsFromTransaction: Fn(&CompactTx) -> &Vec<Output>,
         [u8; 32]: From<<D as Domain>::ExtractedCommitmentBytes>,
+        D::Recipient: crate::wallet::traits::Recipient,
     {
-        // Get the previous block's height, because that block's sapling tree is the tree state at the start
+        // Get the previous block's height, because that block's commitment trees are the states at the start
         // of the requested block.
         let prev_height = { u64::from(height) - 1 };
 
         let (cb, mut tree) = {
+            // In the edge case of a transition to a new network epoch, there is no previous tree.
             let tree = if prev_height < activation_height {
                 CommitmentTree::empty()
             } else {
-                let tree_state = GrpcConnector::get_sapling_tree(uri, prev_height).await?;
-                let tree = hex::decode(tree_getter(&tree_state)).unwrap();
-                self.verification_list.write().await.push(tree_state);
+                let tree_state = GrpcConnector::get_trees(uri, prev_height).await?;
+                let tree = hex::decode(D::get_tree(&tree_state)).unwrap();
+                RwLock::write(&self.verification_list)
+                    .await
+                    .push(tree_state);
                 CommitmentTree::read(&tree[..]).map_err(|e| format!("{}", e))?
             };
 
-            // Get the current compact block
+            // Get the compact block for the supplied height
             let cb = {
                 let height = u64::from(height);
                 self.wait_for_block(height).await;
 
                 {
-                    let mut blocks = self.blocks.write().await;
+                    let blocks = RwLock::read(&self.blocks).await;
 
                     let pos = blocks.first().unwrap().height - height;
-                    let bd = blocks.get_mut(pos as usize).unwrap();
+                    let bd = blocks.get(pos as usize).unwrap();
 
                     bd.cb()
                 }
@@ -546,17 +564,25 @@ impl BlockAndWitnessData {
             (cb, tree)
         };
 
-        // Go over all the outputs. Remember that all the numbers are inclusive, i.e., we have to scan upto and including
-        // block_height, transaction_num and output_num
+        // Go over all the outputs. Remember that all the numbers are inclusive,
+        // i.e., we have to scan upto and including block_height,
+        // transaction_num and output_num
         for (t_num, compact_transaction) in cb.vtx.iter().enumerate() {
-            for (o_num, co) in outputs_from_transaction(compact_transaction)
-                .iter()
-                .enumerate()
+            use crate::wallet::traits::CompactOutput as _;
+            for (o_num, compactoutput) in
+                D::CompactOutput::from_compact_transaction(compact_transaction)
+                    .iter()
+                    .enumerate()
             {
-                let node = Node::from_commitment(&co.cmstar_bytes().into());
-                tree.append(node).unwrap();
-                if t_num == transaction_num && o_num == output_num {
-                    return Ok(IncrementalWitness::from_tree(&tree));
+                if let Some(node) = <D::WalletNote as NoteAndMetadata>::Node::from_commitment(
+                    &compactoutput.cmstar(),
+                )
+                .into()
+                {
+                    tree.append(node).unwrap();
+                    if t_num == transaction_num && o_num == output_num {
+                        return Ok(IncrementalWitness::from_tree(&tree));
+                    }
                 }
             }
         }
@@ -570,13 +596,11 @@ impl BlockAndWitnessData {
         transaction_num: usize,
         output_num: usize,
     ) -> Result<IncrementalWitness<SaplingNode>, String> {
-        self.get_note_witness(
+        self.get_note_witness::<SaplingDomain<zingoconfig::Network>>(
             uri,
             height,
             transaction_num,
             output_num,
-            |tree| &tree.sapling_tree,
-            |compact_transaction| &compact_transaction.outputs,
             self.sapling_activation_height,
         )
         .await
@@ -589,13 +613,11 @@ impl BlockAndWitnessData {
         transaction_num: usize,
         action_num: usize,
     ) -> Result<IncrementalWitness<MerkleHashOrchard>, String> {
-        self.get_note_witness(
+        self.get_note_witness::<OrchardDomain>(
             uri,
             height,
             transaction_num,
             action_num,
-            |tree| &tree.orchard_tree,
-            |compact_transaction| &compact_transaction.actions,
             self.orchard_activation_height,
         )
         .await
@@ -629,8 +651,10 @@ impl BlockAndWitnessData {
                 let cb = &blocks.get(i as usize).unwrap().cb();
                 for compact_transaction in &cb.vtx {
                     for co in &compact_transaction.outputs {
-                        let node = Node::from_commitment(&co.cmu().unwrap().into());
-                        w.append(node).unwrap();
+                        if let Some(node) = Node::from_commitment(&co.cmu().unwrap().into()).into()
+                        {
+                            w.append(node).unwrap();
+                        }
                     }
                 }
 
@@ -651,13 +675,18 @@ impl BlockAndWitnessData {
         return WitnessCache::new(fsb.into_vec(), top_block);
     }
 
-    pub(crate) async fn update_witness_after_pos<Node: Hashable + FromCommitment>(
+    pub(crate) async fn update_witness_after_pos<D: DomainWalletExt<zingoconfig::Network>>(
         &self,
         height: &BlockHeight,
         transaction_id: &TxId,
         output_num: u32,
-        witnesses: WitnessCache<Node>,
-    ) -> WitnessCache<Node> {
+        witnesses: WitnessCache<<D::WalletNote as NoteAndMetadata>::Node>,
+    ) -> WitnessCache<<D::WalletNote as NoteAndMetadata>::Node>
+    where
+        D::Recipient: crate::wallet::traits::Recipient,
+        D::Note: PartialEq,
+        <D::WalletNote as NoteAndMetadata>::Node: FromCommitment,
+    {
         let height = u64::from(*height);
         self.wait_for_block(height).await;
 
@@ -675,15 +704,20 @@ impl BlockAndWitnessData {
             let cb = &blocks.get(pos as usize).unwrap().cb();
             for compact_transaction in &cb.vtx {
                 if !transaction_id_found
-                    && WalletTx::new_txid(&compact_transaction.hash) == *transaction_id
+                    && TransactionMetadata::new_txid(&compact_transaction.hash) == *transaction_id
                 {
                     transaction_id_found = true;
                 }
-                for j in 0..compact_transaction.outputs.len() as u32 {
+                use crate::wallet::traits::CompactOutput as _;
+                let outputs = D::CompactOutput::from_compact_transaction(compact_transaction);
+                for j in 0..outputs.len() as u32 {
                     // If we've already passed the transaction id and output_num, stream the results
                     if transaction_id_found && output_found {
-                        let co = compact_transaction.outputs.get(j as usize).unwrap();
-                        let node = Node::from_commitment(&co.cmu().unwrap().into());
+                        let compact_output = outputs.get(j as usize).unwrap();
+                        let node = <D::WalletNote as NoteAndMetadata>::Node::from_commitment(
+                            &compact_output.cmstar(),
+                        )
+                        .unwrap();
                         w.append(node).unwrap();
                     }
 
@@ -712,7 +746,7 @@ mod test {
     use std::sync::Arc;
 
     use crate::blaze::sync_status::SyncStatus;
-    use crate::wallet::transactions::WalletTxns;
+    use crate::wallet::transactions::TransactionMetadataSet;
     use crate::{
         blaze::test_utils::{FakeCompactBlock, FakeCompactBlockList},
         wallet::data::BlockData,
@@ -738,10 +772,43 @@ mod test {
         let blks = vec![BlockData::new(cb)];
 
         nw.setup_sync(blks.clone(), None).await;
-        let finished_blks = nw.finish_get_blocks(1).await;
+        let finished_blks = nw.drain_existingblocks_into_blocks_with_truncation(1).await;
 
         assert_eq!(blks[0].hash(), finished_blks[0].hash());
         assert_eq!(blks[0].height, finished_blks[0].height);
+    }
+
+    #[tokio::test]
+    async fn verify_block_and_witness_data_blocks_order() {
+        let mut scenario_bawd = BlockAndWitnessData::new_with_batchsize(
+            &ZingoConfig::create_unconnected(Network::FakeMainnet, None),
+            25_000,
+        );
+
+        for numblocks in [0, 1, 2, 10] {
+            let existing_blocks = FakeCompactBlockList::new(numblocks).into_blockdatas();
+            scenario_bawd
+                .setup_sync(existing_blocks.clone(), None)
+                .await;
+            assert_eq!(
+                scenario_bawd.existing_blocks.read().await.len(),
+                numblocks as usize
+            );
+            let finished_blks = scenario_bawd
+                .drain_existingblocks_into_blocks_with_truncation(100)
+                .await;
+            assert_eq!(scenario_bawd.existing_blocks.read().await.len(), 0);
+            assert_eq!(finished_blks.len(), numblocks as usize);
+
+            for (i, finished_blk) in finished_blks.iter().enumerate() {
+                assert_eq!(existing_blocks[i].hash(), finished_blk.hash());
+                assert_eq!(existing_blocks[i].height, finished_blk.height);
+                if i > 0 {
+                    // Prove that height decreases as index increases
+                    assert_eq!(finished_blk.height, finished_blks[i - 1].height - 1);
+                }
+            }
+        }
     }
 
     #[tokio::test]
@@ -753,7 +820,9 @@ mod test {
 
         let existing_blocks = FakeCompactBlockList::new(200).into_blockdatas();
         nw.setup_sync(existing_blocks.clone(), None).await;
-        let finished_blks = nw.finish_get_blocks(100).await;
+        let finished_blks = nw
+            .drain_existingblocks_into_blocks_with_truncation(100)
+            .await;
 
         assert_eq!(finished_blks.len(), 100);
 
@@ -785,7 +854,7 @@ mod test {
             .start(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(WalletTxns::new())),
+                Arc::new(RwLock::new(TransactionMetadataSet::new())),
                 reorg_transmitter,
             )
             .await;
@@ -836,7 +905,7 @@ mod test {
             .start(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(WalletTxns::new())),
+                Arc::new(RwLock::new(TransactionMetadataSet::new())),
                 reorg_transmitter,
             )
             .await;
@@ -862,7 +931,9 @@ mod test {
             .unwrap()
             .unwrap();
 
-        let finished_blks = nw.finish_get_blocks(100).await;
+        let finished_blks = nw
+            .drain_existingblocks_into_blocks_with_truncation(100)
+            .await;
         assert_eq!(finished_blks.len(), 100);
         assert_eq!(finished_blks.first().unwrap().height, start_block);
         assert_eq!(finished_blks.last().unwrap().height, start_block - 100 + 1);
@@ -932,7 +1003,7 @@ mod test {
             .start(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(WalletTxns::new())),
+                Arc::new(RwLock::new(TransactionMetadataSet::new())),
                 reorg_transmitter,
             )
             .await;
@@ -975,7 +1046,9 @@ mod test {
             .unwrap()
             .unwrap();
 
-        let finished_blks = nw.finish_get_blocks(100).await;
+        let finished_blks = nw
+            .drain_existingblocks_into_blocks_with_truncation(100)
+            .await;
         assert_eq!(finished_blks.len(), 100);
         assert_eq!(finished_blks.first().unwrap().height, start_block);
         assert_eq!(finished_blks.last().unwrap().height, start_block - 100 + 1);
