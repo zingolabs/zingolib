@@ -348,9 +348,7 @@ pub mod tests {
         // Priv Key's address is "zs1fxgluwznkzm52ux7jkf4st5znwzqay8zyz4cydnyegt2rh9uhr9458z0nk62fdsssx0cqhy6lyv"
         let privkey = "secret-extended-key-main1q0p44m9zqqqqpqyxfvy5w2vq6ahvxyrwsk2w4h2zleun4cft4llmnsjlv77lhuuknv6x9jgu5g2clf3xq0wz9axxxq8klvv462r5pa32gjuj5uhxnvps6wsrdg6xll05unwks8qpgp4psmvy5e428uxaggn4l29duk82k3sv3njktaaj453fdmfmj2fup8rls4egqxqtj2p5a3yt4070khn99vzxj5ag5qjngc4v2kq0ctl9q2rpc2phu4p3e26egu9w88mchjf83sqgh3cev";
 
-        let esk = decode_extended_spending_key(config.hrp_sapling_private_key(), privkey)
-            .unwrap()
-            .unwrap();
+        let esk = decode_extended_spending_key(config.hrp_sapling_private_key(), privkey).unwrap();
         let wzk = SaplingKey::new_imported_sk(esk);
         assert_eq!(
             encode_payment_address(config.hrp_sapling_address(), &wzk.zaddress),
@@ -379,9 +377,7 @@ pub mod tests {
         // Priv Key's address is "zs1fxgluwznkzm52ux7jkf4st5znwzqay8zyz4cydnyegt2rh9uhr9458z0nk62fdsssx0cqhy6lyv"
         let privkey = "secret-extended-key-main1q0p44m9zqqqqpqyxfvy5w2vq6ahvxyrwsk2w4h2zleun4cft4llmnsjlv77lhuuknv6x9jgu5g2clf3xq0wz9axxxq8klvv462r5pa32gjuj5uhxnvps6wsrdg6xll05unwks8qpgp4psmvy5e428uxaggn4l29duk82k3sv3njktaaj453fdmfmj2fup8rls4egqxqtj2p5a3yt4070khn99vzxj5ag5qjngc4v2kq0ctl9q2rpc2phu4p3e26egu9w88mchjf83sqgh3cev";
 
-        let esk = decode_extended_spending_key(config.hrp_sapling_private_key(), privkey)
-            .unwrap()
-            .unwrap();
+        let esk = decode_extended_spending_key(config.hrp_sapling_private_key(), privkey).unwrap();
         let mut wzk = SaplingKey::new_imported_sk(esk);
         assert_eq!(
             encode_payment_address(config.hrp_sapling_address(), &wzk.zaddress),
@@ -435,9 +431,8 @@ pub mod tests {
         // Priv Key's address is "zs1va5902apnzlhdu0pw9r9q7ca8s4vnsrp2alr6xndt69jnepn2v2qrj9vg3wfcnjyks5pg65g9dc"
         let viewkey = "zxviews1qvvx7cqdqyqqpqqte7292el2875kw2fgvnkmlmrufyszlcy8xgstwarnumqye3tr3d9rr3ydjm9zl9464majh4pa3ejkfy779dm38sfnkar67et7ykxkk0z9rfsmf9jclfj2k85xt2exkg4pu5xqyzyxzlqa6x3p9wrd7pwdq2uvyg0sal6zenqgfepsdp8shestvkzxuhm846r2h3m4jvsrpmxl8pfczxq87886k0wdasppffjnd2eh47nlmkdvrk6rgyyl0ekh3ycqtvvje";
 
-        let extfvk = decode_extended_full_viewing_key(config.hrp_sapling_viewing_key(), viewkey)
-            .unwrap()
-            .unwrap();
+        let extfvk =
+            decode_extended_full_viewing_key(config.hrp_sapling_viewing_key(), viewkey).unwrap();
         let mut wzk = SaplingKey::new_imported_viewkey(extfvk);
 
         assert_eq!(

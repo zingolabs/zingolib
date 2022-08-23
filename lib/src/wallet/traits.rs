@@ -535,7 +535,7 @@ impl NoteAndMetadata for SaplingNoteAndMetadata {
         extfvk: &Self::Fvk,
         position: u64,
     ) -> Self::Nullifier {
-        note.nf(&extfvk.fvk.vk, position)
+        note.nf(&extfvk.fvk.vk.nk, position)
     }
 
     fn nullifier(&self) -> Self::Nullifier {
