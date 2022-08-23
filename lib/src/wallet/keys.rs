@@ -996,7 +996,8 @@ impl Keys {
 
     pub fn is_shielded_address(addr: &String, config: &ZingoConfig) -> bool {
         match address::RecipientAddress::decode(&config.chain, addr) {
-            Some(address::RecipientAddress::Shielded(_)) => true,
+            Some(address::RecipientAddress::Shielded(_))
+            | Some(address::RecipientAddress::Unified(_)) => true,
             _ => false,
         }
     }
