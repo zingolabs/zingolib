@@ -574,7 +574,7 @@ impl LightWallet {
             &sk,
             self.transaction_context.config.hrp_sapling_private_key(),
             birthday,
-            decode_extended_spending_key,
+            |k, hrp| decode_extended_spending_key(k, hrp).map(Some),
             Keys::zkeys,
             Keys::zkeys_mut,
             |wallet_key: &SaplingKey, new_key: &zcash_primitives::zip32::ExtendedSpendingKey| {
@@ -728,7 +728,7 @@ impl LightWallet {
             &vk,
             self.transaction_context.config.hrp_sapling_viewing_key(),
             birthday,
-            decode_extended_full_viewing_key,
+            |k, hrp| decode_extended_full_viewing_key(k, hrp).map(Some),
             Keys::zkeys,
             |wallet_key, new_key| wallet_key.extfvk == new_key.clone(),
             |key| async {
