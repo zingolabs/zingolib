@@ -786,12 +786,23 @@ impl LightWallet {
 
     async fn shielded_balance<NnMd>(
         &self,
-        addr: Option<String>,
+        target_addr: Option<String>,
         filters: &[Box<dyn Fn(&&NnMd, &TransactionMetadata) -> bool + '_>],
     ) -> u64
     where
         NnMd: traits::NoteAndMetadata,
     {
+        let filter_notes_by_address = |notedata: &&NnMd| match target_addr.as_ref() {
+            Some(addr) => {
+                use self::traits::Recipient as _;
+                let diversified_address = &notedata
+                    .fvk()
+                    .diversified_address(*notedata.diversifier())
+                    .unwrap();
+                *addr == diversified_address.b32encode_for_network(&self.config.chain)
+            }
+            None => true, // If the addr is none, then get all addrs.
+        };
         self.transactions
             .read()
             .await
@@ -801,19 +812,11 @@ impl LightWallet {
                 let mut filtered_notes: Box<dyn Iterator<Item = &NnMd>> = Box::new(
                     NnMd::transaction_metadata_notes(transaction)
                         .iter()
-                        .filter(|nd| match addr.as_ref() {
-                            Some(a) => {
-                                use self::traits::Recipient as _;
-                                let diversified_address =
-                                    &nd.fvk().diversified_address(*nd.diversifier()).unwrap();
-                                *a == diversified_address.b32encode_for_network(&self.config.chain)
-                            }
-                            None => true,
-                        }),
+                        .filter(filter_notes_by_address),
                 );
-                for filter in filters {
+                for filtering_fn in filters {
                     filtered_notes =
-                        Box::new(filtered_notes.filter(|nnmd| filter(nnmd, transaction)))
+                        Box::new(filtered_notes.filter(|nnmd| filtering_fn(nnmd, transaction)))
                 }
                 filtered_notes
                     .map(|nd| {
@@ -852,58 +855,62 @@ impl LightWallet {
             .sum::<u64>()
     }
 
-    pub async fn unverified_sapling_balance(&self, addr: Option<String>) -> u64 {
+    /// The following functions use a filter/map functional approach to
+    /// expressively unpack different kinds of transaction data.
+    pub async fn unverified_sapling_balance(&self, target_addr: Option<String>) -> u64 {
         let anchor_height = self.get_anchor_height().await;
 
         let keys = self.keys.read().await;
 
         let filters: &[Box<dyn Fn(&&SaplingNoteAndMetadata, &TransactionMetadata) -> bool>] = &[
-            Box::new(|nd: &&SaplingNoteAndMetadata, _| {
+            Box::new(|notedata: &&SaplingNoteAndMetadata, _| {
                 // Check to see if we have this note's spending key.
-                keys.have_sapling_spending_key(&nd.extfvk)
+                keys.have_sapling_spending_key(&notedata.extfvk)
             }),
             Box::new(|_, transaction: &TransactionMetadata| {
                 transaction.block > BlockHeight::from_u32(anchor_height)
             }),
         ];
-        self.shielded_balance(addr, filters).await
+        self.shielded_balance(target_addr, filters).await
     }
 
-    pub async fn unverified_orchard_balance(&self, addr: Option<String>) -> u64 {
+    pub async fn unverified_orchard_balance(&self, target_addr: Option<String>) -> u64 {
         let anchor_height = self.get_anchor_height().await;
 
         let keys = self.keys.read().await;
 
         let filters: &[Box<dyn Fn(&&OrchardNoteAndMetadata, &TransactionMetadata) -> bool>] = &[
-            Box::new(|nd, _| {
+            Box::new(|notedata, _| {
                 // Check to see if we have this note's spending key.
-                keys.have_orchard_spending_key(&nd.fvk.to_ivk(orchard::keys::Scope::External))
+                keys.have_orchard_spending_key(&notedata.fvk.to_ivk(orchard::keys::Scope::External))
             }),
             Box::new(|_, transaction: &TransactionMetadata| {
                 transaction.block > BlockHeight::from_u32(anchor_height)
             }),
         ];
-        self.shielded_balance(addr, filters).await
+        self.shielded_balance(target_addr, filters).await
     }
 
-    pub async fn verified_sapling_balance(&self, addr: Option<String>) -> u64 {
-        self.verified_balance::<SaplingNoteAndMetadata>(addr).await
+    pub async fn verified_sapling_balance(&self, target_addr: Option<String>) -> u64 {
+        self.verified_balance::<SaplingNoteAndMetadata>(target_addr)
+            .await
     }
 
-    pub async fn verified_orchard_balance(&self, addr: Option<String>) -> u64 {
-        self.verified_balance::<OrchardNoteAndMetadata>(addr).await
+    pub async fn verified_orchard_balance(&self, target_addr: Option<String>) -> u64 {
+        self.verified_balance::<OrchardNoteAndMetadata>(target_addr)
+            .await
     }
 
-    async fn verified_balance<NnMd: NoteAndMetadata>(&self, addr: Option<String>) -> u64 {
+    async fn verified_balance<NnMd: NoteAndMetadata>(&self, target_addr: Option<String>) -> u64 {
         let anchor_height = self.get_anchor_height().await;
         let filters: &[Box<dyn Fn(&&NnMd, &TransactionMetadata) -> bool>] =
             &[Box::new(|_, transaction| {
                 transaction.block <= BlockHeight::from_u32(anchor_height)
             })];
-        self.shielded_balance::<NnMd>(addr, filters).await
+        self.shielded_balance::<NnMd>(target_addr, filters).await
     }
 
-    pub async fn spendable_sapling_balance(&self, addr: Option<String>) -> u64 {
+    pub async fn spendable_sapling_balance(&self, target_addr: Option<String>) -> u64 {
         let anchor_height = self.get_anchor_height().await;
         let keys = self.keys.read().await;
         let filters: &[Box<dyn Fn(&&SaplingNoteAndMetadata, &TransactionMetadata) -> bool>] = &[
@@ -912,10 +919,10 @@ impl LightWallet {
                 keys.have_sapling_spending_key(&nnmd.extfvk) && nnmd.witnesses.len() > 0
             }),
         ];
-        self.shielded_balance(addr, filters).await
+        self.shielded_balance(target_addr, filters).await
     }
 
-    pub async fn spendable_orchard_balance(&self, addr: Option<String>) -> u64 {
+    pub async fn spendable_orchard_balance(&self, target_addr: Option<String>) -> u64 {
         let anchor_height = self.get_anchor_height().await;
         let keys = self.keys.read().await;
         let filters: &[Box<dyn Fn(&&OrchardNoteAndMetadata, &TransactionMetadata) -> bool>] = &[
@@ -925,7 +932,7 @@ impl LightWallet {
                     && nnmd.witnesses.len() > 0
             }),
         ];
-        self.shielded_balance(addr, filters).await
+        self.shielded_balance(target_addr, filters).await
     }
 
     pub async fn remove_unused_taddrs(&self) {
