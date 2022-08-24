@@ -148,11 +148,12 @@ pub(crate) fn launch() {
         .to_str()
         .unwrap()
         .ends_with("/regtest/data/zcashd"));
+    println!(
+        "zcashd bin: {:?} logs:{:?} config:{:?} datadir:{:?}",
+        &bin_location, &zcashd_logs, &zcashd_config, &zcashd_datadir
+    );
     let (mut zcashd_command, mut zcashd_logfile, zcashd_stdout_log) =
         config_zcashd_for_launch(&bin_location, &zcashd_logs, &zcashd_config, &zcashd_datadir);
-
-    let mut lwd_bin = bin_location.to_owned();
-    lwd_bin.push("lightwalletd");
 
     if let Some(mut zcashd_stdout_data) = zcashd_command.stdout.take() {
         std::thread::spawn(move || {
@@ -187,6 +188,9 @@ pub(crate) fn launch() {
         File::create(&lightwalletd_stdout_log).expect("file::create Result error");
     let mut lwd_err_logfile =
         File::create(&lightwalletd_stderr_log).expect("file::create Result error");
+
+    let mut lwd_bin = bin_location.to_owned();
+    lwd_bin.push("lightwalletd");
 
     let mut lwd_command = std::process::Command::new(lwd_bin)
         .args([

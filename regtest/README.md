@@ -29,7 +29,8 @@ at which point the interactive cli application should work with your regtest net
 ...which you can view with `tail -f` or your favorite tool.
 
 You may need to add blocks to your regtest chain if you have not done so previously.
-In still another terminal instance in the `zingolib/regtest/bin/` directory, you can run `.zcash-cli -regtest generate 11` to generate 11 blocks.
+In still another terminal instance in the `zingolib/regtest/bin/` directory, you can run 
+`./zcash-cli -regtest -rpcuser=xxxxxx -rpcpassword=xxxxxx generate 11` to generate 11 blocks.
 Please note that by adding more than 100 blocks it is difficult or impossible to rewind the chain. The config means that after the first block all network upgrades should be in place.
 Other `zcash-cli` commands should work similarly.
 
