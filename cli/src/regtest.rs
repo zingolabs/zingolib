@@ -134,14 +134,14 @@ pub(crate) fn launch() {
     let bin_location = regtest_dir.join("bin");
     let logs = regtest_dir.join("logs");
     let data_dir = regtest_dir.join("data");
-    let zcashd_datadir = data_dir.clone(); //.join("zcashd");
+    let zcashd_datadir = data_dir.join("zcashd");
     let zcashd_logs = logs.join("zcashd");
     let zcashd_config = confs_dir.join("zcash.conf");
     let lightwalletd_config = confs_dir.join("lightwalletd.yaml");
     let lightwalletd_logs = logs.join("lightwalletd");
     let lightwalletd_stdout_log = lightwalletd_logs.join("stdout.log");
     let lightwalletd_stderr_log = lightwalletd_logs.join("stderr.log");
-    let lightwalletd_datadir = data_dir.clone(); // .join("lightwalletd");
+    let lightwalletd_datadir = data_dir.join("lightwalletd");
 
     /*    assert!(&zcashd_config
         .to_str()
