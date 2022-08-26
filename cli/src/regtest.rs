@@ -1,4 +1,4 @@
-use std::fs::{self, File};
+use std::fs::File;
 ///  Enforce strict expectations for tool use with current zingolib.  Relaxing these restrictions will facilitate
 ///  use in other projects.  For example, this version of regtest will only run within a git repo that is historically
 ///  descended from 27e5eedc6b35759f463d43ea341ce66714aa9e01 (ie, I am Jack's commit descendant.)
@@ -65,11 +65,11 @@ fn config_zcashd_for_launch(
     zcashd_config: &PathBuf,
     zcashd_datadir: &PathBuf,
 ) -> (std::process::Child, File, PathBuf) {
+    use std::ffi::OsStr;
     let mut zcashd_bin = bin_loc.clone();
     zcashd_bin.push("zcashd");
     let zcashd_stdout_log = zcashd_logs.join("stdout.log");
     let mut command = std::process::Command::new(zcashd_bin);
-    println!("canonicalize: {:?}", fs::canonicalize(&zcashd_datadir));
     command
         .args([
             "--printtoconsole",
@@ -85,12 +85,12 @@ fn config_zcashd_for_launch(
             .as_str(),
             // Currently zcashd will not write to debug.log with the following flag
             // "-debuglogfile=.../zingolib/regtest/logs/debug.log",
-            // debug=1 will at least print to stdout
+            // debug=1 will print verbose debugging information to stdout
+            // to then be logged to a file
             "-debug=1",
         ])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
-    /*
     assert_eq!(command.get_args().len(), 4usize);
     assert_eq!(
         &command.get_args().into_iter().collect::<Vec<&OsStr>>()[0]
@@ -112,8 +112,6 @@ fn config_zcashd_for_launch(
             .unwrap(),
         &"-debug=1"
     );
-    */
-    println!("command {:?}", &command);
     let child = command.spawn().expect("failed to start zcashd");
     (
         child,
@@ -143,7 +141,7 @@ pub(crate) fn launch() {
     let lightwalletd_stderr_log = lightwalletd_logs.join("stderr.log");
     let lightwalletd_datadir = data_dir.join("lightwalletd");
 
-    /*    assert!(&zcashd_config
+    assert!(&zcashd_config
         .to_str()
         .unwrap()
         .ends_with("/regtest/conf/zcash.conf"));
@@ -151,16 +149,10 @@ pub(crate) fn launch() {
         .to_str()
         .unwrap()
         .ends_with("/regtest/data/zcashd"));
-    */
-    println!(
-        "zcashd bin: {:?} logs:{:?} config:{:?} datadir:{:?}",
-        &bin_location, &zcashd_logs, &zcashd_config, &zcashd_datadir
-    );
     let (mut zcashd_command, mut zcashd_logfile, zcashd_stdout_log) =
         config_zcashd_for_launch(&bin_location, &zcashd_logs, &zcashd_config, &zcashd_datadir);
 
     if let Some(mut zcashd_stdout_data) = zcashd_command.stdout.take() {
-        println!("zcashd_command stdout taken");
         std::thread::spawn(move || {
             std::io::copy(&mut zcashd_stdout_data, &mut zcashd_logfile)
                 .expect("io::copy error writing zcashd_stdout.log");
@@ -168,7 +160,7 @@ pub(crate) fn launch() {
     }
 
     println!("zcashd is starting in regtest mode, please standby...");
-    let check_interval = time::Duration::from_millis(1000);
+    let check_interval = time::Duration::from_millis(500);
     // adding sleep to test timing
     thread::sleep(check_interval);
 
@@ -199,11 +191,6 @@ pub(crate) fn launch() {
     let mut lwd_bin = bin_location.to_owned();
     lwd_bin.push("lightwalletd");
 
-    println!("lwd_bin: {:?}", &lwd_bin);
-    println!("zcashd_config: {:?}", &zcashd_config);
-    println!("lightwalletd_config: {:?}", &lightwalletd_config);
-    println!("lightwalletd_datadir: {:?}", &lightwalletd_datadir);
-    println!("lightwalletd_stdout_log: {:?}", &lightwalletd_stdout_log);
     let mut lwd_command = std::process::Command::new(lwd_bin)
         .args([
             "--no-tls-very-insecure",
