@@ -1,4 +1,3 @@
-use std::ffi::OsStr;
 use std::fs::File;
 ///  Enforce strict expectations for tool use with current zingolib.  Relaxing these restrictions will facilitate
 ///  use in other projects.  For example, this version of regtest will only run within a git repo that is historically
@@ -66,6 +65,7 @@ fn config_zcashd_for_launch(
     zcashd_config: &PathBuf,
     zcashd_datadir: &PathBuf,
 ) -> (std::process::Child, File, PathBuf) {
+    use std::ffi::OsStr;
     let mut zcashd_bin = bin_loc.clone();
     zcashd_bin.push("zcashd");
     let zcashd_stdout_log = zcashd_logs.join("stdout.log");
@@ -85,7 +85,8 @@ fn config_zcashd_for_launch(
             .as_str(),
             // Currently zcashd will not write to debug.log with the following flag
             // "-debuglogfile=.../zingolib/regtest/logs/debug.log",
-            // debug=1 will at least print to stdout
+            // debug=1 will print verbose debugging information to stdout
+            // to then be logged to a file
             "-debug=1",
         ])
         .stdout(std::process::Stdio::piped())
@@ -151,9 +152,6 @@ pub(crate) fn launch() {
     let (mut zcashd_command, mut zcashd_logfile, zcashd_stdout_log) =
         config_zcashd_for_launch(&bin_location, &zcashd_logs, &zcashd_config, &zcashd_datadir);
 
-    let mut lwd_bin = bin_location.to_owned();
-    lwd_bin.push("lightwalletd");
-
     if let Some(mut zcashd_stdout_data) = zcashd_command.stdout.take() {
         std::thread::spawn(move || {
             std::io::copy(&mut zcashd_stdout_data, &mut zcashd_logfile)
@@ -162,7 +160,9 @@ pub(crate) fn launch() {
     }
 
     println!("zcashd is starting in regtest mode, please standby...");
-    let check_interval = time::Duration::from_millis(150);
+    let check_interval = time::Duration::from_millis(500);
+    // adding sleep to test timing
+    thread::sleep(check_interval);
 
     let mut zcashd_log_open = File::open(&zcashd_stdout_log).expect("can't open zcashd log");
     let mut zcashd_logfile_state = String::new();
@@ -187,6 +187,9 @@ pub(crate) fn launch() {
         File::create(&lightwalletd_stdout_log).expect("file::create Result error");
     let mut lwd_err_logfile =
         File::create(&lightwalletd_stderr_log).expect("file::create Result error");
+
+    let mut lwd_bin = bin_location.to_owned();
+    lwd_bin.push("lightwalletd");
 
     let mut lwd_command = std::process::Command::new(lwd_bin)
         .args([

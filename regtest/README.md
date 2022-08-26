@@ -1,7 +1,7 @@
 ## Regtest Mode
 WARNING Experimental!
 The CLI can work in regtest mode, by locally running a `zcashd` and `lightwalletd`.
-This is now working with a simple zingo-cli invocation flag, with a little prior setup.
+This is now working with a simple `zingo-cli` invocation flag, with a little prior setup.
 
 There are pre-made directories in this repo to support ready use of regtest mode. These are found in the `/regtest/` subdirectory.
 
@@ -28,8 +28,14 @@ at which point the interactive cli application should work with your regtest net
 `{"app":"lightwalletd","level":"info","msg":"Got sapling height 1 block height 0 chain regtest ..."}`
 ...which you can view with `tail -f` or your favorite tool.
 
-You may need to add blocks to your regtest chain if you have not done so previously.
-In still another terminal instance in the `zingolib/regtest/bin/` directory, you can run `.zcash-cli -regtest generate 11` to generate 11 blocks.
+Because regtest mode has an inability to cope with an initial state without any blocks we have included an initial state of one block made from `zcashd` in the `zingolib` git repo.
+Additionally, any blocks added while zcashd is running are not recorded / retained upon subsequent runs.
+Network parameters are all set to activate at block 1, and so all network upgrades should neccessarily be enacted when using Regtest Mode when using this branch.
+
+Once regtest mode is running, you can manipulate the simulated chain with `zcash-cli`.
+
+For example, in still another terminal instance in the `zingolib/regtest/bin/` directory, you can run 
+`./zcash-cli -regtest -rpcuser=xxxxxx -rpcpassword=xxxxxx generate 11` to generate 11 blocks.
 Please note that by adding more than 100 blocks it is difficult or impossible to rewind the chain. The config means that after the first block all network upgrades should be in place.
 Other `zcash-cli` commands should work similarly.
 
@@ -102,5 +108,5 @@ regtest/
 └── README.md
 
 # Working Commits
-Tested with `zcash` commit `2e6a25`, `lightwalletd` commit `db2795`, and `zingolib` commit `1bbea8` or better.
+Tested with `zcash` commit `d6d209`, `lightwalletd` commit `f53511c`, and `zingolib` commit `90a74dd` or better.
 
