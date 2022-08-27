@@ -310,7 +310,7 @@ where
     /// An expenditure of an ?external? output, such that its value is distributed among *this* transaction's outputs.
     type Spend: Spend;
     /// A value store that is completely emptied by transfer of its contents to another output.
-    type Output: ShieldedOutputExt<P, D>;
+    type Output: ShieldedOutputExt<P, D> + Clone;
     type Spends: IntoIterator<Item = Self::Spend>;
     type Outputs: IntoIterator<Item = Self::Output>;
     /// An extractive process that returns domain specific information from a transaction.

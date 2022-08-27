@@ -26,7 +26,7 @@ use tokio::{
     },
     task::JoinHandle,
 };
-use zcash_note_encryption::{try_note_decryption, try_output_recovery_with_ovk};
+use zcash_note_encryption::try_output_recovery_with_ovk;
 
 use zcash_primitives::{
     consensus::BlockHeight,
@@ -537,46 +537,53 @@ async fn scan_bundle<D>(
     //     <https://github.com/zingolabs/zingolib/issues/65>
     let all_wallet_keys = keys.read().await;
     let domain_specific_keys = D::Key::get_keys(&*all_wallet_keys).clone();
-    for output in
+    let outputs =
         <<D as DomainWalletExt<Network>>::Bundle as zingo_traits::Bundle<D, Network>>::from_transaction(
             transaction,
         )
         .into_iter()
-        .flat_map(|bundle| bundle.outputs().into_iter())
-    {
-        for key in domain_specific_keys.iter() {
-            let decrypt_attempt = key.ivk().map(|ivk| {
-                try_note_decryption::<
-                    D,
-                    <<D as DomainWalletExt<Network>>::Bundle as zingo_traits::Bundle<D, Network>>::Output,
-                >(&output.domain(height, config.chain), &ivk, &output)});
-            let (note, to, memo_bytes) = match decrypt_attempt {
-                Some(Some(plaintext)) => plaintext,
-                _ => continue,
-            };
-            let memo_bytes = MemoBytes::from_bytes(&memo_bytes.to_bytes()).unwrap();
-            if unconfirmed {
-                transaction_metadata_set.write().await.add_pending_note::<D>(
-                    transaction.txid(),
-                    height,
-                    block_time as u64,
-                    note.clone(),
-                    to,
-                    &match &key.fvk() {
-                        Some(k) => k.clone(),
-                        None => todo!("Handle this case more carefully. How should we handle missing fvks?"), 
-                    },
-                );
+        .flat_map(|bundle| bundle.outputs().into_iter()).map(|output| (output.domain(height, config.chain), output.clone())).collect::<Vec<_>>();
+
+    for key in domain_specific_keys.iter() {
+        if let Some(ivk) = key.ivk() {
+            let mut decrypt_attempts =
+                zcash_note_encryption::batch::try_note_decryption(&[ivk], &outputs).into_iter();
+            while let Some(decrypt_attempt) = decrypt_attempts.next() {
+                let (note, to, memo_bytes) = match decrypt_attempt {
+                    Some(plaintext) => plaintext,
+                    _ => continue,
+                };
+                let memo_bytes = MemoBytes::from_bytes(&memo_bytes.to_bytes()).unwrap();
+                if unconfirmed {
+                    transaction_metadata_set
+                        .write()
+                        .await
+                        .add_pending_note::<D>(
+                            transaction.txid(),
+                            height,
+                            block_time as u64,
+                            note.clone(),
+                            to,
+                            &match &key.fvk() {
+                                Some(k) => k.clone(),
+                                None => todo!(
+                            "Handle this case more carefully. How should we handle missing fvks?"
+                        ),
+                            },
+                        );
+                }
+                let memo = memo_bytes
+                    .clone()
+                    .try_into()
+                    .unwrap_or(Memo::Future(memo_bytes));
+                transaction_metadata_set
+                    .write()
+                    .await
+                    .add_memo_to_note_metadata::<D::WalletNote>(&transaction.txid(), note, memo);
             }
-            let memo = memo_bytes
-                .clone()
-                .try_into()
-                .unwrap_or(Memo::Future(memo_bytes));
-            transaction_metadata_set
-                .write()
-                .await
-                .add_memo_to_note_metadata::<D::WalletNote>(&transaction.txid(), note, memo);
         }
+    }
+    for (_domain, output) in outputs {
         outgoing_metadatas.extend(
             domain_specific_keys
                 .iter()
@@ -608,7 +615,8 @@ async fn scan_bundle<D>(
                             match Memo::from_bytes(&memo_bytes.to_bytes()) {
                                 Err(_) => None,
                                 Ok(memo) => {
-                                    if D::Key::addresses_from_keys(&all_wallet_keys).contains(&address)
+                                    if D::Key::addresses_from_keys(&all_wallet_keys)
+                                        .contains(&address)
                                         && memo == Memo::Empty
                                     {
                                         None
