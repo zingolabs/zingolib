@@ -112,7 +112,10 @@ fn config_zcashd_for_launch(
             .unwrap(),
         &"-debug=1"
     );
+
     let child = command.spawn().expect("failed to start zcashd");
+    println!("zcashd is starting in regtest mode, please standby...");
+
     (
         child,
         File::create(&zcashd_stdout_log).expect("file::create Result error"),
@@ -159,13 +162,10 @@ pub(crate) fn launch() {
         });
     }
 
-    println!("zcashd is starting in regtest mode, please standby...");
-    let check_interval = time::Duration::from_millis(500);
-    // adding sleep to test timing
-    thread::sleep(check_interval);
-
     let mut zcashd_log_open = File::open(&zcashd_stdout_log).expect("can't open zcashd log");
     let mut zcashd_logfile_state = String::new();
+
+    let check_interval = time::Duration::from_millis(500);
 
     //now enter loop to find string that indicates daemon is ready for next step
     loop {
