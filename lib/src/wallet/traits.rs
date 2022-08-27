@@ -31,7 +31,9 @@ use subtle::CtOption;
 use zcash_address::unified::{self, Encoding as _, Receiver};
 use zcash_client_backend::encoding::encode_payment_address;
 use zcash_encoding::{Optional, Vector};
-use zcash_note_encryption::{Domain, ShieldedOutput, COMPACT_NOTE_SIZE, ENC_CIPHERTEXT_SIZE};
+use zcash_note_encryption::{
+    BatchDomain, Domain, ShieldedOutput, COMPACT_NOTE_SIZE, ENC_CIPHERTEXT_SIZE,
+};
 use zcash_primitives::{
     consensus::{BlockHeight, NetworkUpgrade, Parameters},
     keys::OutgoingViewingKey as SaplingOutgoingViewingKey,
@@ -257,7 +259,7 @@ impl Recipient for SaplingAddress {
 }
 
 pub(crate) trait CompactOutput<D: DomainWalletExt<P>, P: Parameters>:
-    Sized + ShieldedOutput<D, COMPACT_NOTE_SIZE>
+    Sized + ShieldedOutput<D, COMPACT_NOTE_SIZE> + Clone
 where
     D::Recipient: Recipient,
     <D as Domain>::Note: PartialEq,
@@ -800,7 +802,7 @@ impl WalletKey for OrchardKey {
     }
 }
 
-pub(crate) trait DomainWalletExt<P: Parameters>: Domain
+pub(crate) trait DomainWalletExt<P: Parameters>: Domain + BatchDomain
 where
     Self: Sized,
     Self::Note: PartialEq,

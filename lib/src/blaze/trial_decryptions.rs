@@ -27,7 +27,7 @@ use tokio::{
     },
     task::JoinHandle,
 };
-use zcash_note_encryption::{try_compact_note_decryption, Domain};
+use zcash_note_encryption::Domain;
 use zcash_primitives::{
     consensus::{BlockHeight, Parameters},
     sapling::{note_encryption::SaplingDomain, SaplingIvk},
@@ -260,86 +260,78 @@ impl TrialDecryptions {
         <D as Domain>::Note: PartialEq + Send + 'static,
         [u8; 32]: From<<D as Domain>::ExtractedCommitmentBytes>,
     {
-        for (output_num, compact_output) in
-            D::CompactOutput::from_compact_transaction(&compact_transaction)
-                .iter()
-                .enumerate()
-        {
-            for (i, ivk) in ivks.iter().enumerate() {
-                if let Some((note, to)) = try_compact_note_decryption(
-                    &compact_output.domain(config.chain, height),
-                    &ivk,
-                    compact_output,
-                ) {
-                    *transaction_metadata = true; // i.e. we got metadata
+        let outputs = D::CompactOutput::from_compact_transaction(&compact_transaction)
+            .into_iter()
+            .map(|output| (output.domain(config.chain, height), output.clone()))
+            .collect::<Vec<_>>();
+        let maybe_decrypted_outputs =
+            zcash_note_encryption::batch::try_compact_note_decryption(&ivks, &outputs);
+        let outputs_len = outputs.len();
+        for maybe_decrypted_output in maybe_decrypted_outputs.into_iter().enumerate() {
+            if let (i, Some((note, to))) = maybe_decrypted_output {
+                *transaction_metadata = true; // i.e. we got metadata
 
-                    let keys = keys.clone();
-                    let bsync_data = bsync_data.clone();
-                    let transaction_metadata_set = transaction_metadata_set.clone();
-                    let detected_transaction_id_sender = detected_transaction_id_sender.clone();
-                    let timestamp = compact_block.time as u64;
-                    let compact_transaction = compact_transaction.clone();
-                    let config = config.clone();
+                let keys = keys.clone();
+                let bsync_data = bsync_data.clone();
+                let transaction_metadata_set = transaction_metadata_set.clone();
+                let detected_transaction_id_sender = detected_transaction_id_sender.clone();
+                let timestamp = compact_block.time as u64;
+                let compact_transaction = compact_transaction.clone();
+                let config = config.clone();
 
-                    workers.push(tokio::spawn(async move {
-                        let keys = keys.read().await;
-                        let wallet_key = &D::Key::get_keys(&*keys)[i];
-                        let fvk = wallet_key.fvk().unwrap();
-                        let have_spending_key = wallet_key.sk().is_some();
-                        let uri = bsync_data.read().await.uri().clone();
+                workers.push(tokio::spawn(async move {
+                    let keys = keys.read().await;
+                    let wallet_key = &D::Key::get_keys(&*keys)[i / outputs_len];
+                    let fvk = wallet_key.fvk().unwrap();
+                    let have_spending_key = wallet_key.sk().is_some();
+                    let uri = bsync_data.read().await.uri().clone();
 
-                        // Get the witness for the note
-                        let witness = bsync_data
-                            .read()
-                            .await
-                            .block_data
-                            .get_note_witness::<D>(
-                                uri,
-                                height,
-                                transaction_num,
-                                output_num,
-                                config.chain.activation_height(D::NU).unwrap().into(),
-                            )
-                            .await?;
-
-                        let transaction_id =
-                            TransactionMetadata::new_txid(&compact_transaction.hash);
-                        let nullifier =
-                            D::WalletNote::get_nullifier_from_note_fvk_and_witness_position(
-                                &note,
-                                &fvk,
-                                witness.position() as u64,
-                            );
-
-                        transaction_metadata_set.write().await.add_new_note::<D>(
-                            transaction_id.clone(),
+                    // Get the witness for the note
+                    let witness = bsync_data
+                        .read()
+                        .await
+                        .block_data
+                        .get_note_witness::<D>(
+                            uri,
                             height,
-                            false,
-                            timestamp,
-                            note,
-                            to,
-                            &fvk,
-                            have_spending_key,
-                            witness,
-                        );
+                            transaction_num,
+                            i % outputs_len,
+                            config.chain.activation_height(D::NU).unwrap().into(),
+                        )
+                        .await?;
 
-                        info!("Trial decrypt Detected txid {}", &transaction_id);
+                    let transaction_id = TransactionMetadata::new_txid(&compact_transaction.hash);
+                    let nullifier = D::WalletNote::get_nullifier_from_note_fvk_and_witness_position(
+                        &note,
+                        &fvk,
+                        witness.position() as u64,
+                    );
 
-                        detected_transaction_id_sender
-                            .send((
-                                transaction_id,
-                                nullifier.to_channel_nullifier(),
-                                height,
-                                Some(output_num as u32),
-                            ))
-                            .unwrap();
+                    transaction_metadata_set.write().await.add_new_note::<D>(
+                        transaction_id.clone(),
+                        height,
+                        false,
+                        timestamp,
+                        note,
+                        to,
+                        &fvk,
+                        have_spending_key,
+                        witness,
+                    );
 
-                        Ok::<_, String>(())
-                    }));
+                    info!("Trial decrypt Detected txid {}", &transaction_id);
 
-                    // No need to try the other ivks if we found one
-                    break;
-                }
+                    detected_transaction_id_sender
+                        .send((
+                            transaction_id,
+                            nullifier.to_channel_nullifier(),
+                            height,
+                            Some((i % outputs_len) as u32),
+                        ))
+                        .unwrap();
+
+                    Ok::<_, String>(())
+                }));
             }
         }
     }
