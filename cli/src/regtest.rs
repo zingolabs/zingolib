@@ -169,7 +169,7 @@ fn prepare_working_directories(
         .arg(vector_subdir)
         .arg(destination_subdir)
         .output()
-        .expect("problem with rm zingofile");
+        .expect("problem with cp -r regtest first block vectors");
 }
 
 fn zcashd_launch(
