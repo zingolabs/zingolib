@@ -59,7 +59,7 @@ fn get_regtest_dir() -> PathBuf {
     get_top_level_dir().join("regtest")
 }
 
-fn config_zcashd_for_launch(
+fn zcashd_launch(
     bin_loc: &PathBuf,
     zcashd_logs: &PathBuf,
     zcashd_config: &PathBuf,
@@ -153,7 +153,7 @@ pub(crate) fn launch() {
         .unwrap()
         .ends_with("/regtest/data/zcashd"));
     let (mut zcashd_command, mut zcashd_logfile, zcashd_stdout_log) =
-        config_zcashd_for_launch(&bin_location, &zcashd_logs, &zcashd_config, &zcashd_datadir);
+        zcashd_launch(&bin_location, &zcashd_logs, &zcashd_config, &zcashd_datadir);
 
     if let Some(mut zcashd_stdout_data) = zcashd_command.stdout.take() {
         std::thread::spawn(move || {
