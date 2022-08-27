@@ -1,4 +1,6 @@
 regtest/data/zcashd/regtest/
+regtest/data/lightwalletd/
+regtest/data/zingo/
 target
 lib/target
 cli/target

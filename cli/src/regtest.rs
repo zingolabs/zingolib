@@ -59,6 +59,39 @@ fn get_regtest_dir() -> PathBuf {
     get_top_level_dir().join("regtest")
 }
 
+fn prepare_working_directories(
+    rtestvectors_dir: &PathBuf,
+    zcd_datadir: &PathBuf,
+    lwd_datadir: &PathBuf,
+    zing_datadir: &PathBuf,
+) {
+    let one = std::process::Command::new("ls")
+        .arg(rtestvectors_dir)
+        .output()
+        .expect("ls trubs");
+    println!("one stdout: {:?}", String::from_utf8(one.stdout).unwrap());
+    let two = std::process::Command::new("ls")
+        .arg(zcd_datadir)
+        .output()
+        .expect("ls trubs");
+    println!("two stdout: {:?}", String::from_utf8(two.stdout).unwrap());
+    let three = std::process::Command::new("ls")
+        .arg(lwd_datadir)
+        .output()
+        .expect("ls trubs");
+    println!(
+        "three stdout: {:?}",
+        String::from_utf8(three.stdout).unwrap()
+    );
+    let four = std::process::Command::new("ls")
+        .arg(zing_datadir)
+        .output()
+        .expect("ls trubs");
+    println!("four stdout: {:?}", String::from_utf8(four.stdout).unwrap());
+    // nuke old dirs
+    // then move from rtest
+}
+
 fn zcashd_launch(
     bin_loc: &PathBuf,
     zcashd_logs: &PathBuf,
@@ -91,6 +124,7 @@ fn zcashd_launch(
         ])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
+
     assert_eq!(command.get_args().len(), 4usize);
     assert_eq!(
         &command.get_args().into_iter().collect::<Vec<&OsStr>>()[0]
@@ -135,6 +169,7 @@ pub(crate) fn launch() {
     let bin_location = regtest_dir.join("bin");
     let logs = regtest_dir.join("logs");
     let data_dir = regtest_dir.join("data");
+    let regtestvectors = data_dir.join("regtestvectors");
     let zcashd_datadir = data_dir.join("zcashd");
     let zcashd_logs = logs.join("zcashd");
     let zcashd_config = confs_dir.join("zcash.conf");
@@ -143,6 +178,7 @@ pub(crate) fn launch() {
     let lightwalletd_stdout_log = lightwalletd_logs.join("stdout.log");
     let lightwalletd_stderr_log = lightwalletd_logs.join("stderr.log");
     let lightwalletd_datadir = data_dir.join("lightwalletd");
+    let zingo_datadir = data_dir.join("zingo");
 
     assert!(&zcashd_config
         .to_str()
@@ -152,6 +188,14 @@ pub(crate) fn launch() {
         .to_str()
         .unwrap()
         .ends_with("/regtest/data/zcashd"));
+
+    prepare_working_directories(
+        &regtestvectors,
+        &zcashd_datadir,
+        &lightwalletd_datadir,
+        &zingo_datadir,
+    );
+
     let (mut zcashd_command, mut zcashd_logfile, zcashd_stdout_log) =
         zcashd_launch(&bin_location, &zcashd_logs, &zcashd_config, &zcashd_datadir);
 
