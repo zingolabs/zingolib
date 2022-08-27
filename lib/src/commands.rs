@@ -1408,11 +1408,11 @@ impl Command for QuitCommand {
             use std::process::Command;
 
             // find zingo-cli's PID
-            let pid: u32 = std::process::id();
+            let cli_pid: u32 = std::process::id();
 
             // now find all child processes of this PID
             let raw_child_processes = Command::new("ps")
-                .args(["--no-headers", "--ppid", &pid.to_string()])
+                .args(["--no-headers", "--ppid", &cli_pid.to_string()])
                 .output()
                 .expect("error running ps");
 
