@@ -1,3 +1,4 @@
+regtest/data/zcashd/regtest/
 target
 lib/target
 cli/target
