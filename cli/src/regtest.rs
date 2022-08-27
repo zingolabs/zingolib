@@ -161,6 +161,15 @@ fn prepare_working_directories(
         String::from_utf8(fourt.stdout).unwrap()
     );
     // then move from rtest....
+    // add regtest dir
+    let vector_subdir = rtestvectors_dir.join("regtest");
+    let destination_subdir = zcd_datadir.join("regtest");
+    std::process::Command::new("cp")
+        .arg("-r")
+        .arg(vector_subdir)
+        .arg(destination_subdir)
+        .output()
+        .expect("problem with rm zingofile");
 }
 
 fn zcashd_launch(
