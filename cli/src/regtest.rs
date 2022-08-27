@@ -63,7 +63,7 @@ fn prepare_working_directories(
     rtestvectors_dir: &PathBuf,
     zcd_datadir: &PathBuf,
     lwd_datadir: &PathBuf,
-    zing_datadir: &PathBuf,
+    zingo_datadir: &PathBuf,
 ) {
     let one = std::process::Command::new("ls")
         .arg(rtestvectors_dir)
@@ -84,12 +84,83 @@ fn prepare_working_directories(
         String::from_utf8(three.stdout).unwrap()
     );
     let four = std::process::Command::new("ls")
-        .arg(zing_datadir)
+        .arg(zingo_datadir)
         .output()
         .expect("ls trubs");
     println!("four stdout: {:?}", String::from_utf8(four.stdout).unwrap());
-    // nuke old dirs
-    // then move from rtest
+
+    // rm old dirs
+    let zcd_subdir = zcd_datadir.join("regtest");
+
+    assert!(&zcd_subdir
+        .to_str()
+        .unwrap()
+        .ends_with("/regtest/data/zcashd/regtest"));
+
+    std::process::Command::new("rm")
+        .arg("-r")
+        .arg(zcd_subdir)
+        .output()
+        .expect("problem with rm zcd subdir");
+
+    let twot = std::process::Command::new("ls")
+        .arg(zcd_datadir)
+        .output()
+        .expect("ls trubs");
+    println!("twot stdout: {:?}", String::from_utf8(twot.stdout).unwrap());
+
+    let lwd_subdir = lwd_datadir.join("db");
+
+    assert!(&lwd_subdir
+        .to_str()
+        .unwrap()
+        .ends_with("/regtest/data/lightwalletd/db"));
+
+    std::process::Command::new("rm")
+        .arg("-r")
+        .arg(lwd_subdir)
+        .output()
+        .expect("problem with rm lwd subdir");
+
+    let threet = std::process::Command::new("ls")
+        .arg(lwd_datadir)
+        .output()
+        .expect("ls trubs");
+    println!(
+        "three stdout: {:?}",
+        String::from_utf8(threet.stdout).unwrap()
+    );
+
+    let zingo_file_one = zingo_datadir.join("zingo-wallet.dat");
+    let zingo_file_two = zingo_datadir.join("zingo-wallet.debug.log");
+
+    assert!(&zingo_file_one
+        .to_str()
+        .unwrap()
+        .ends_with("/regtest/data/zingo/zingo-wallet.dat"));
+    assert!(&zingo_file_two
+        .to_str()
+        .unwrap()
+        .ends_with("/regtest/data/zingo/zingo-wallet.debug.log"));
+
+    std::process::Command::new("rm")
+        .arg(zingo_file_one)
+        .output()
+        .expect("problem with rm zingofile");
+    std::process::Command::new("rm")
+        .arg(zingo_file_two)
+        .output()
+        .expect("problem with rm zingofile");
+
+    let fourt = std::process::Command::new("ls")
+        .arg(zingo_datadir)
+        .output()
+        .expect("ls trubs");
+    println!(
+        "four stdout: {:?}",
+        String::from_utf8(fourt.stdout).unwrap()
+    );
+    // then move from rtest....
 }
 
 fn zcashd_launch(
