@@ -60,36 +60,12 @@ fn get_regtest_dir() -> PathBuf {
 }
 
 fn prepare_working_directories(
-    rtestvectors_dir: &PathBuf,
+    vector_subdir: &PathBuf,
     zcd_datadir: &PathBuf,
     lwd_datadir: &PathBuf,
     zingo_datadir: &PathBuf,
 ) {
-    let one = std::process::Command::new("ls")
-        .arg(rtestvectors_dir)
-        .output()
-        .expect("ls trubs");
-    println!("one stdout: {:?}", String::from_utf8(one.stdout).unwrap());
-    let two = std::process::Command::new("ls")
-        .arg(zcd_datadir)
-        .output()
-        .expect("ls trubs");
-    println!("two stdout: {:?}", String::from_utf8(two.stdout).unwrap());
-    let three = std::process::Command::new("ls")
-        .arg(lwd_datadir)
-        .output()
-        .expect("ls trubs");
-    println!(
-        "three stdout: {:?}",
-        String::from_utf8(three.stdout).unwrap()
-    );
-    let four = std::process::Command::new("ls")
-        .arg(zingo_datadir)
-        .output()
-        .expect("ls trubs");
-    println!("four stdout: {:?}", String::from_utf8(four.stdout).unwrap());
-
-    // rm old dirs
+    // remove contents of existing data directories
     let zcd_subdir = zcd_datadir.join("regtest");
 
     assert!(&zcd_subdir
@@ -103,12 +79,6 @@ fn prepare_working_directories(
         .output()
         .expect("problem with rm zcd subdir");
 
-    let twot = std::process::Command::new("ls")
-        .arg(zcd_datadir)
-        .output()
-        .expect("ls trubs");
-    println!("twot stdout: {:?}", String::from_utf8(twot.stdout).unwrap());
-
     let lwd_subdir = lwd_datadir.join("db");
 
     assert!(&lwd_subdir
@@ -121,15 +91,6 @@ fn prepare_working_directories(
         .arg(lwd_subdir)
         .output()
         .expect("problem with rm lwd subdir");
-
-    let threet = std::process::Command::new("ls")
-        .arg(lwd_datadir)
-        .output()
-        .expect("ls trubs");
-    println!(
-        "three stdout: {:?}",
-        String::from_utf8(threet.stdout).unwrap()
-    );
 
     let zingo_file_one = zingo_datadir.join("zingo-wallet.dat");
     let zingo_file_two = zingo_datadir.join("zingo-wallet.debug.log");
@@ -152,18 +113,9 @@ fn prepare_working_directories(
         .output()
         .expect("problem with rm zingofile");
 
-    let fourt = std::process::Command::new("ls")
-        .arg(zingo_datadir)
-        .output()
-        .expect("ls trubs");
-    println!(
-        "four stdout: {:?}",
-        String::from_utf8(fourt.stdout).unwrap()
-    );
-    // then move from rtest....
-    // add regtest dir
-    let vector_subdir = rtestvectors_dir.join("regtest");
+    // copy contents from regtestvector directory to working zcashd data directory
     let destination_subdir = zcd_datadir.join("regtest");
+
     std::process::Command::new("cp")
         .arg("-r")
         .arg(vector_subdir)
@@ -249,7 +201,7 @@ pub(crate) fn launch() {
     let bin_location = regtest_dir.join("bin");
     let logs = regtest_dir.join("logs");
     let data_dir = regtest_dir.join("data");
-    let regtestvectors = data_dir.join("regtestvectors");
+    let regtestvectors = data_dir.join("regtestvectors").join("regtest");
     let zcashd_datadir = data_dir.join("zcashd");
     let zcashd_logs = logs.join("zcashd");
     let zcashd_config = confs_dir.join("zcash.conf");
