@@ -1527,6 +1527,30 @@ mod test {
         },
     };
 
+    mod bench_select_notes_and_utxos {
+        use super::*;
+        #[tokio::test]
+        async fn funds_0_needed_1() {
+            let TenBlockFCBLScenario { lightclient, .. } =
+                setup_ten_block_fcbl_scenario(true).await;
+            let sufficient_funds = lightclient
+                .wallet
+                .select_notes_and_utxos(Amount::from_u64(1).unwrap(), false, false)
+                .await;
+            assert_eq!(Amount::from_u64(0).unwrap(), sufficient_funds.2);
+        }
+        #[tokio::test]
+        async fn funds_1_needed_1() {
+            let TenBlockFCBLScenario { lightclient, .. } =
+                setup_ten_block_fcbl_scenario(true).await;
+            let sufficient_funds = lightclient
+                .wallet
+                .select_notes_and_utxos(Amount::from_u64(1).unwrap(), false, false)
+                .await;
+            dbg!("{}", sufficient_funds.2);
+        }
+    }
+
     #[tokio::test]
     async fn z_t_note_selection() {
         let NBlockFCBLScenario {
