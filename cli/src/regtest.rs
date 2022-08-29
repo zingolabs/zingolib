@@ -59,7 +59,72 @@ fn get_regtest_dir() -> PathBuf {
     get_top_level_dir().join("regtest")
 }
 
-fn config_zcashd_for_launch(
+fn prepare_working_directories(
+    vector_subdir: &PathBuf,
+    zcd_datadir: &PathBuf,
+    lwd_datadir: &PathBuf,
+    zingo_datadir: &PathBuf,
+) {
+    // remove contents of existing data directories
+    let zcd_subdir = zcd_datadir.join("regtest");
+
+    assert!(&zcd_subdir
+        .to_str()
+        .unwrap()
+        .ends_with("/regtest/data/zcashd/regtest"));
+
+    std::process::Command::new("rm")
+        .arg("-r")
+        .arg(zcd_subdir)
+        .output()
+        .expect("problem with rm zcd subdir");
+
+    let lwd_subdir = lwd_datadir.join("db");
+
+    assert!(&lwd_subdir
+        .to_str()
+        .unwrap()
+        .ends_with("/regtest/data/lightwalletd/db"));
+
+    std::process::Command::new("rm")
+        .arg("-r")
+        .arg(lwd_subdir)
+        .output()
+        .expect("problem with rm lwd subdir");
+
+    let zingo_file_one = zingo_datadir.join("zingo-wallet.dat");
+    let zingo_file_two = zingo_datadir.join("zingo-wallet.debug.log");
+
+    assert!(&zingo_file_one
+        .to_str()
+        .unwrap()
+        .ends_with("/regtest/data/zingo/zingo-wallet.dat"));
+    assert!(&zingo_file_two
+        .to_str()
+        .unwrap()
+        .ends_with("/regtest/data/zingo/zingo-wallet.debug.log"));
+
+    std::process::Command::new("rm")
+        .arg(zingo_file_one)
+        .output()
+        .expect("problem with rm zingofile");
+    std::process::Command::new("rm")
+        .arg(zingo_file_two)
+        .output()
+        .expect("problem with rm zingofile");
+
+    // copy contents from regtestvector directory to working zcashd data directory
+    let destination_subdir = zcd_datadir.join("regtest");
+
+    std::process::Command::new("cp")
+        .arg("-r")
+        .arg(vector_subdir)
+        .arg(destination_subdir)
+        .output()
+        .expect("problem with cp -r regtest first block vectors");
+}
+
+fn zcashd_launch(
     bin_loc: &PathBuf,
     zcashd_logs: &PathBuf,
     zcashd_config: &PathBuf,
@@ -91,6 +156,7 @@ fn config_zcashd_for_launch(
         ])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
+
     assert_eq!(command.get_args().len(), 4usize);
     assert_eq!(
         &command.get_args().into_iter().collect::<Vec<&OsStr>>()[0]
@@ -112,7 +178,10 @@ fn config_zcashd_for_launch(
             .unwrap(),
         &"-debug=1"
     );
+
     let child = command.spawn().expect("failed to start zcashd");
+    println!("zcashd is starting in regtest mode, please standby...");
+
     (
         child,
         File::create(&zcashd_stdout_log).expect("file::create Result error"),
@@ -132,6 +201,7 @@ pub(crate) fn launch() {
     let bin_location = regtest_dir.join("bin");
     let logs = regtest_dir.join("logs");
     let data_dir = regtest_dir.join("data");
+    let regtestvectors = data_dir.join("regtestvectors").join("regtest");
     let zcashd_datadir = data_dir.join("zcashd");
     let zcashd_logs = logs.join("zcashd");
     let zcashd_config = confs_dir.join("zcash.conf");
@@ -140,6 +210,7 @@ pub(crate) fn launch() {
     let lightwalletd_stdout_log = lightwalletd_logs.join("stdout.log");
     let lightwalletd_stderr_log = lightwalletd_logs.join("stderr.log");
     let lightwalletd_datadir = data_dir.join("lightwalletd");
+    let zingo_datadir = data_dir.join("zingo");
 
     assert!(&zcashd_config
         .to_str()
@@ -149,8 +220,16 @@ pub(crate) fn launch() {
         .to_str()
         .unwrap()
         .ends_with("/regtest/data/zcashd"));
+
+    prepare_working_directories(
+        &regtestvectors,
+        &zcashd_datadir,
+        &lightwalletd_datadir,
+        &zingo_datadir,
+    );
+
     let (mut zcashd_command, mut zcashd_logfile, zcashd_stdout_log) =
-        config_zcashd_for_launch(&bin_location, &zcashd_logs, &zcashd_config, &zcashd_datadir);
+        zcashd_launch(&bin_location, &zcashd_logs, &zcashd_config, &zcashd_datadir);
 
     if let Some(mut zcashd_stdout_data) = zcashd_command.stdout.take() {
         std::thread::spawn(move || {
@@ -159,13 +238,10 @@ pub(crate) fn launch() {
         });
     }
 
-    println!("zcashd is starting in regtest mode, please standby...");
-    let check_interval = time::Duration::from_millis(500);
-    // adding sleep to test timing
-    thread::sleep(check_interval);
-
     let mut zcashd_log_open = File::open(&zcashd_stdout_log).expect("can't open zcashd log");
     let mut zcashd_logfile_state = String::new();
+
+    let check_interval = time::Duration::from_millis(500);
 
     //now enter loop to find string that indicates daemon is ready for next step
     loop {
