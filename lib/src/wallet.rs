@@ -1492,23 +1492,7 @@ impl LightWallet {
         let orchard_anchor = if let Some(note) = orchard_notes.get(0) {
             note.witness.root()
         } else {
-            //TODO: Get the orchard anchor in a better way than making a GRPC call to
-            //get the tree_state of the first orchard block
-            let tree = crate::grpc_connector::GrpcConnector::get_trees(
-                self.config.server.read().unwrap().clone(),
-                u64::from(
-                    self.config
-                        .chain
-                        .activation_height(zcash_primitives::consensus::NetworkUpgrade::Nu5)
-                        .unwrap(),
-                ),
-            )
-            .await
-            .unwrap()
-            .orchard_tree;
-            CommitmentTree::read(&hex::decode(&tree).unwrap()[..])
-                .unwrap()
-                .root()
+            CommitmentTree::empty().root()
         };
         let mut builder = Builder::with_orchard_anchor(
             self.transaction_context.config.chain,
@@ -1597,7 +1581,14 @@ impl LightWallet {
 
         // We'll use the first ovk to encrypt outgoing transactions
         let sapling_ovk = self.keys().read().await.zkeys[0].extfvk.fvk.ovk;
-        let orchard_ovk = self.keys().read().await.okeys[0].ovk().unwrap();
+        let orchard_ovk = self
+            .keys()
+            .read()
+            .await
+            .okeys
+            .get(0)
+            .and_then(OrchardKey::ovk);
+
         let mut total_z_recepients = 0u32;
         for (to, value, memo) in recepients {
             // Compute memo if it exists
@@ -1629,7 +1620,7 @@ impl LightWallet {
                 address::RecipientAddress::Unified(ua) => {
                     if let Some(orchard_addr) = ua.orchard() {
                         builder.add_orchard_output(
-                            Some(orchard_ovk.clone()),
+                            orchard_ovk.clone(),
                             orchard_addr.clone(),
                             u64::from(value),
                             encoded_memo,
