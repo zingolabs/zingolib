@@ -179,7 +179,8 @@ fn zcashd_launch(
         &"-debug=1"
     );
 
-    let child = command.spawn().expect("failed to start zcashd");
+    let child = command.spawn()
+        .expect("failed to start zcashd. It's possible the zcashd binary is not in the /zingolib/regtest/bin/ directory, see /regtest/README.md");
     println!("zcashd is starting in regtest mode, please standby...");
 
     (
@@ -290,7 +291,7 @@ pub(crate) fn launch() {
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
-        .expect("failed to start lwd");
+        .expect("failed to start lightwalletd. It's possible the lightwalletd binary is not in the /zingolib/regtest/bin/ directory, see /regtest/README.md");
 
     if let Some(mut lwd_log) = lwd_command.stdout.take() {
         std::thread::spawn(move || {
