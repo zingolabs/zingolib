@@ -1599,10 +1599,9 @@ mod test {
             use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
             let (_, _, _) = fake_compactblock_list
                 .create_coinbase_transaction(&extended_fvk, 1 + u64::from(DEFAULT_FEE));
-            fake_compactblock_list.add_empty_block();
-            fake_compactblock_list.add_empty_block();
-            fake_compactblock_list.add_empty_block();
-            fake_compactblock_list.add_empty_block();
+            for _ in 0..=3 {
+                fake_compactblock_list.add_empty_block();
+            }
             mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
             assert_eq!(
                 lightclient
