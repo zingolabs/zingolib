@@ -580,7 +580,7 @@ impl LightClient {
         for sapling_address in self.wallet.keys().read().await.get_all_sapling_addresses() {
             sapling_addresses.push(object! {
                 "address"                     => sapling_address.clone(),
-                "sapling_balance"             => self.wallet.sapling_balance(Some(sapling_address.clone())).await,
+                "sapling_balance"             => self.wallet.maybe_verified_sapling_balance(Some(sapling_address.clone())).await,
                 "verified_sapling_balance"    => self.wallet.verified_sapling_balance(Some(sapling_address.clone())).await,
                 "spendable_sapling_balance"   => self.wallet.spendable_sapling_balance(Some(sapling_address.clone())).await,
                 "unverified_sapling_balance"  => self.wallet.unverified_sapling_balance(Some(sapling_address.clone())).await
@@ -591,7 +591,7 @@ impl LightClient {
         for orchard_address in self.wallet.keys().read().await.get_all_orchard_addresses() {
             orchard_addresses.push(object! {
                 "address"                     => orchard_address.clone(),
-                "orchard_balance"             => self.wallet.orchard_balance(Some(orchard_address.clone())).await,
+                "orchard_balance"             => self.wallet.maybe_verified_orchard_balance(Some(orchard_address.clone())).await,
                 "verified_orchard_balance"    => self.wallet.verified_orchard_balance(Some(orchard_address.clone())).await,
                 "spendable_orchard_balance"   => self.wallet.spendable_orchard_balance(Some(orchard_address.clone())).await,
                 "unverified_orchard_balance"  => self.wallet.unverified_orchard_balance(Some(orchard_address.clone())).await
@@ -611,11 +611,11 @@ impl LightClient {
         }
 
         object! {
-            "sapling_balance"                 => self.wallet.sapling_balance(None).await,
+            "sapling_balance"                 => self.wallet.maybe_verified_sapling_balance(None).await,
             "verified_sapling_balance"        => self.wallet.verified_sapling_balance(None).await,
             "spendable_sapling_balance"       => self.wallet.spendable_sapling_balance(None).await,
             "unverified_sapling_balance"      => self.wallet.unverified_sapling_balance(None).await,
-            "orchard_balance"                 => self.wallet.orchard_balance(None).await,
+            "orchard_balance"                 => self.wallet.maybe_verified_orchard_balance(None).await,
             "verified_orchard_balance"        => self.wallet.verified_orchard_balance(None).await,
             "spendable_orchard_balance"       => self.wallet.spendable_orchard_balance(None).await,
             "unverified_orchard_balance"      => self.wallet.unverified_orchard_balance(None).await,
