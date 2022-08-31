@@ -773,3 +773,30 @@ impl CompactTxStreamer for TestGRPCService {
         todo!()
     }
 }
+
+//fn test_name(){
+//    scenario!(numberofblock, testfunction, param1, param2);
+//}
+macro_rules! scenario_test {
+    (#[tokio::test]
+     async fn $test_name:ident()
+        $implementation:block
+    ) => {
+        #[tokio::test]
+        async fn $test_name() {
+            let scenario = setup_ten_block_fcbl_scenario(true).await;
+            $implementation
+            clean_shutdown(scenario.stop_transmitter, scenario.test_server_handle).await;
+        }
+    };
+}
+#[cfg(test)]
+mod with_macro {
+    use super::*;
+    scenario_test! {
+        #[tokio::test]
+        async fn check_anchor_offset() {
+            dbg!("foo");
+        }
+    }
+}
