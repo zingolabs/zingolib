@@ -1523,297 +1523,278 @@ mod test {
         blaze::test_utils::{incw_to_string, FakeTransaction},
         lightclient::test_server::{
             clean_shutdown, mine_numblocks_each_with_two_sap_txs, mine_pending_blocks,
-            setup_ten_block_fcbl_scenario, TenBlockFCBLScenario,
+            setup_n_block_fcbl_scenario, NBlockFCBLScenario,
         },
     };
 
     #[tokio::test]
     async fn z_t_note_selection() {
-        for https in [true, false] {
-            let TenBlockFCBLScenario {
-                data,
-                stop_transmitter,
-                test_server_handle,
-                mut lightclient,
-                mut fake_compactblock_list,
-                ..
-            } = setup_ten_block_fcbl_scenario(https).await;
-            // 2. Send an incoming transaction to fill the wallet
-            let extfvk1 = lightclient
-                .wallet
-                .keys()
-                .read()
-                .await
-                .get_all_sapling_extfvks()[0]
-                .clone();
-            let value = 100_000;
-            let (transaction, _height, _) =
-                fake_compactblock_list.create_coinbase_transaction(&extfvk1, value);
-            let txid = transaction.txid();
-            mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
+        let NBlockFCBLScenario {
+            data,
+            stop_transmitter,
+            test_server_handle,
+            mut lightclient,
+            mut fake_compactblock_list,
+            ..
+        } = setup_n_block_fcbl_scenario(10).await;
+        // 2. Send an incoming transaction to fill the wallet
+        let extfvk1 = lightclient
+            .wallet
+            .keys()
+            .read()
+            .await
+            .get_all_sapling_extfvks()[0]
+            .clone();
+        let value = 100_000;
+        let (transaction, _height, _) =
+            fake_compactblock_list.create_coinbase_transaction(&extfvk1, value);
+        let txid = transaction.txid();
+        mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
-            assert_eq!(lightclient.wallet.last_scanned_height().await, 11);
+        assert_eq!(lightclient.wallet.last_scanned_height().await, 11);
 
-            // 3. With one confirmation, we should be able to select the note
-            let amt = Amount::from_u64(10_000).unwrap();
-            // Reset the anchor offsets
-            lightclient.wallet.config.anchor_offset = [9, 4, 2, 1, 0];
-            let (notes, utxos, selected) = lightclient
-                .wallet
-                .select_notes_and_utxos(amt, false, false)
-                .await;
-            assert!(selected >= amt);
-            assert_eq!(notes.len(), 1);
-            assert_eq!(notes[0].note.value, value);
-            assert_eq!(utxos.len(), 0);
-            assert_eq!(
-                incw_to_string(&notes[0].witness),
-                incw_to_string(
-                    lightclient
-                        .wallet
-                        .transactions
-                        .read()
-                        .await
-                        .current
-                        .get(&txid)
-                        .unwrap()
-                        .sapling_notes[0]
-                        .witnesses
-                        .last()
-                        .unwrap()
-                )
-            );
-
-            // With min anchor_offset at 1, we can't select any notes
-            lightclient.wallet.config.anchor_offset = [9, 4, 2, 1, 1];
-            let (notes, utxos, _selected) = lightclient
-                .wallet
-                .select_notes_and_utxos(amt, false, false)
-                .await;
-            assert_eq!(notes.len(), 0);
-            assert_eq!(utxos.len(), 0);
-
-            // Mine 1 block, then it should be selectable
-            mine_numblocks_each_with_two_sap_txs(
-                &mut fake_compactblock_list,
-                &data,
-                &lightclient,
-                1,
+        // 3. With one confirmation, we should be able to select the note
+        let amt = Amount::from_u64(10_000).unwrap();
+        // Reset the anchor offsets
+        lightclient.wallet.config.anchor_offset = [9, 4, 2, 1, 0];
+        let (notes, utxos, selected) = lightclient
+            .wallet
+            .select_notes_and_utxos(amt, false, false)
+            .await;
+        assert!(selected >= amt);
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].note.value, value);
+        assert_eq!(utxos.len(), 0);
+        assert_eq!(
+            incw_to_string(&notes[0].witness),
+            incw_to_string(
+                lightclient
+                    .wallet
+                    .transactions
+                    .read()
+                    .await
+                    .current
+                    .get(&txid)
+                    .unwrap()
+                    .sapling_notes[0]
+                    .witnesses
+                    .last()
+                    .unwrap()
             )
+        );
+
+        // With min anchor_offset at 1, we can't select any notes
+        lightclient.wallet.config.anchor_offset = [9, 4, 2, 1, 1];
+        let (notes, utxos, _selected) = lightclient
+            .wallet
+            .select_notes_and_utxos(amt, false, false)
+            .await;
+        assert_eq!(notes.len(), 0);
+        assert_eq!(utxos.len(), 0);
+
+        // Mine 1 block, then it should be selectable
+        mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 1)
             .await;
 
-            let (notes, utxos, selected) = lightclient
-                .wallet
-                .select_notes_and_utxos(amt, false, false)
-                .await;
-            assert!(selected >= amt);
-            assert_eq!(notes.len(), 1);
-            assert_eq!(notes[0].note.value, value);
-            assert_eq!(utxos.len(), 0);
-            assert_eq!(
-                incw_to_string(&notes[0].witness),
-                incw_to_string(
-                    lightclient
-                        .wallet
-                        .transactions
-                        .read()
-                        .await
-                        .current
-                        .get(&txid)
-                        .unwrap()
-                        .sapling_notes[0]
-                        .witnesses
-                        .get_from_last(1)
-                        .unwrap()
-                )
-            );
-
-            // Mine 15 blocks, then selecting the note should result in witness only 10 blocks deep
-            mine_numblocks_each_with_two_sap_txs(
-                &mut fake_compactblock_list,
-                &data,
-                &lightclient,
-                15,
-            )
+        let (notes, utxos, selected) = lightclient
+            .wallet
+            .select_notes_and_utxos(amt, false, false)
             .await;
-            lightclient.wallet.config.anchor_offset = [9, 4, 2, 1, 1];
-            let (notes, utxos, selected) = lightclient
-                .wallet
-                .select_notes_and_utxos(amt, false, true)
-                .await;
-            assert!(selected >= amt);
-            assert_eq!(notes.len(), 1);
-            assert_eq!(notes[0].note.value, value);
-            assert_eq!(utxos.len(), 0);
-            assert_eq!(
-                incw_to_string(&notes[0].witness),
-                incw_to_string(
-                    lightclient
-                        .wallet
-                        .transactions
-                        .read()
-                        .await
-                        .current
-                        .get(&txid)
-                        .unwrap()
-                        .sapling_notes[0]
-                        .witnesses
-                        .get_from_last(9)
-                        .unwrap()
-                )
-            );
+        assert!(selected >= amt);
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].note.value, value);
+        assert_eq!(utxos.len(), 0);
+        assert_eq!(
+            incw_to_string(&notes[0].witness),
+            incw_to_string(
+                lightclient
+                    .wallet
+                    .transactions
+                    .read()
+                    .await
+                    .current
+                    .get(&txid)
+                    .unwrap()
+                    .sapling_notes[0]
+                    .witnesses
+                    .get_from_last(1)
+                    .unwrap()
+            )
+        );
 
-            // Trying to select a large amount will fail
-            let amt = Amount::from_u64(1_000_000).unwrap();
-            let (notes, utxos, _selected) = lightclient
-                .wallet
-                .select_notes_and_utxos(amt, false, false)
-                .await;
-            assert_eq!(notes.len(), 0);
-            assert_eq!(utxos.len(), 0);
+        // Mine 15 blocks, then selecting the note should result in witness only 10 blocks deep
+        mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 15)
+            .await;
+        lightclient.wallet.config.anchor_offset = [9, 4, 2, 1, 1];
+        let (notes, utxos, selected) = lightclient
+            .wallet
+            .select_notes_and_utxos(amt, false, true)
+            .await;
+        assert!(selected >= amt);
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].note.value, value);
+        assert_eq!(utxos.len(), 0);
+        assert_eq!(
+            incw_to_string(&notes[0].witness),
+            incw_to_string(
+                lightclient
+                    .wallet
+                    .transactions
+                    .read()
+                    .await
+                    .current
+                    .get(&txid)
+                    .unwrap()
+                    .sapling_notes[0]
+                    .witnesses
+                    .get_from_last(9)
+                    .unwrap()
+            )
+        );
 
-            // 4. Get an incoming transaction to a t address
-            let sk = lightclient.wallet.keys().read().await.tkeys[0].clone();
-            let pk = sk.pubkey().unwrap();
-            let taddr = sk.address;
-            let tvalue = 100_000;
+        // Trying to select a large amount will fail
+        let amt = Amount::from_u64(1_000_000).unwrap();
+        let (notes, utxos, _selected) = lightclient
+            .wallet
+            .select_notes_and_utxos(amt, false, false)
+            .await;
+        assert_eq!(notes.len(), 0);
+        assert_eq!(utxos.len(), 0);
 
-            let mut fake_transaction = FakeTransaction::new(true);
-            fake_transaction.add_t_output(&pk, taddr.clone(), tvalue);
-            let (_ttransaction, _) = fake_compactblock_list.add_fake_transaction(fake_transaction);
-            mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
+        // 4. Get an incoming transaction to a t address
+        let sk = lightclient.wallet.keys().read().await.tkeys[0].clone();
+        let pk = sk.pubkey().unwrap();
+        let taddr = sk.address;
+        let tvalue = 100_000;
 
-            // Trying to select a large amount will now succeed
-            let amt = Amount::from_u64(value + tvalue - 10_000).unwrap();
-            let (notes, utxos, selected) = lightclient
-                .wallet
-                .select_notes_and_utxos(amt, false, true)
-                .await;
-            assert_eq!(selected, Amount::from_u64(value + tvalue).unwrap());
-            assert_eq!(notes.len(), 1);
-            assert_eq!(utxos.len(), 1);
+        let mut fake_transaction = FakeTransaction::new(true);
+        fake_transaction.add_t_output(&pk, taddr.clone(), tvalue);
+        let (_ttransaction, _) = fake_compactblock_list.add_fake_transaction(fake_transaction);
+        mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
-            // If we set transparent-only = true, only the utxo should be selected
-            let amt = Amount::from_u64(tvalue - 10_000).unwrap();
-            let (notes, utxos, selected) = lightclient
-                .wallet
-                .select_notes_and_utxos(amt, true, true)
-                .await;
-            assert_eq!(selected, Amount::from_u64(tvalue).unwrap());
-            assert_eq!(notes.len(), 0);
-            assert_eq!(utxos.len(), 1);
+        // Trying to select a large amount will now succeed
+        let amt = Amount::from_u64(value + tvalue - 10_000).unwrap();
+        let (notes, utxos, selected) = lightclient
+            .wallet
+            .select_notes_and_utxos(amt, false, true)
+            .await;
+        assert_eq!(selected, Amount::from_u64(value + tvalue).unwrap());
+        assert_eq!(notes.len(), 1);
+        assert_eq!(utxos.len(), 1);
 
-            // Set min confs to 5, so the sapling note will not be selected
-            lightclient.wallet.config.anchor_offset = [9, 4, 4, 4, 4];
-            let amt = Amount::from_u64(tvalue - 10_000).unwrap();
-            let (notes, utxos, selected) = lightclient
-                .wallet
-                .select_notes_and_utxos(amt, false, true)
-                .await;
-            assert_eq!(selected, Amount::from_u64(tvalue).unwrap());
-            assert_eq!(notes.len(), 0);
-            assert_eq!(utxos.len(), 1);
+        // If we set transparent-only = true, only the utxo should be selected
+        let amt = Amount::from_u64(tvalue - 10_000).unwrap();
+        let (notes, utxos, selected) = lightclient
+            .wallet
+            .select_notes_and_utxos(amt, true, true)
+            .await;
+        assert_eq!(selected, Amount::from_u64(tvalue).unwrap());
+        assert_eq!(notes.len(), 0);
+        assert_eq!(utxos.len(), 1);
 
-            // Shutdown everything cleanly
-            clean_shutdown(stop_transmitter, test_server_handle).await;
-        }
+        // Set min confs to 5, so the sapling note will not be selected
+        lightclient.wallet.config.anchor_offset = [9, 4, 4, 4, 4];
+        let amt = Amount::from_u64(tvalue - 10_000).unwrap();
+        let (notes, utxos, selected) = lightclient
+            .wallet
+            .select_notes_and_utxos(amt, false, true)
+            .await;
+        assert_eq!(selected, Amount::from_u64(tvalue).unwrap());
+        assert_eq!(notes.len(), 0);
+        assert_eq!(utxos.len(), 1);
+
+        // Shutdown everything cleanly
+        clean_shutdown(stop_transmitter, test_server_handle).await;
     }
 
     #[tokio::test]
     async fn multi_z_note_selection() {
-        for https in [true, false] {
-            let TenBlockFCBLScenario {
-                data,
-                stop_transmitter,
-                test_server_handle,
-                mut lightclient,
-                mut fake_compactblock_list,
-                ..
-            } = setup_ten_block_fcbl_scenario(https).await;
-            // 2. Send an incoming transaction to fill the wallet
-            let extfvk1 = lightclient
-                .wallet
-                .keys()
-                .read()
-                .await
-                .get_all_sapling_extfvks()[0]
-                .clone();
-            let value1 = 100_000;
-            let (transaction, _height, _) =
-                fake_compactblock_list.create_coinbase_transaction(&extfvk1, value1);
-            let txid = transaction.txid();
-            mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
+        let NBlockFCBLScenario {
+            data,
+            stop_transmitter,
+            test_server_handle,
+            mut lightclient,
+            mut fake_compactblock_list,
+            ..
+        } = setup_n_block_fcbl_scenario(10).await;
+        // 2. Send an incoming transaction to fill the wallet
+        let extfvk1 = lightclient
+            .wallet
+            .keys()
+            .read()
+            .await
+            .get_all_sapling_extfvks()[0]
+            .clone();
+        let value1 = 100_000;
+        let (transaction, _height, _) =
+            fake_compactblock_list.create_coinbase_transaction(&extfvk1, value1);
+        let txid = transaction.txid();
+        mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
-            assert_eq!(lightclient.wallet.last_scanned_height().await, 11);
+        assert_eq!(lightclient.wallet.last_scanned_height().await, 11);
 
-            // 3. With one confirmation, we should be able to select the note
-            let amt = Amount::from_u64(10_000).unwrap();
-            // Reset the anchor offsets
-            lightclient.wallet.config.anchor_offset = [9, 4, 2, 1, 0];
-            let (notes, utxos, selected) = lightclient
-                .wallet
-                .select_notes_and_utxos(amt, false, false)
-                .await;
-            assert!(selected >= amt);
-            assert_eq!(notes.len(), 1);
-            assert_eq!(notes[0].note.value, value1);
-            assert_eq!(utxos.len(), 0);
-            assert_eq!(
-                incw_to_string(&notes[0].witness),
-                incw_to_string(
-                    lightclient
-                        .wallet
-                        .transactions
-                        .read()
-                        .await
-                        .current
-                        .get(&txid)
-                        .unwrap()
-                        .sapling_notes[0]
-                        .witnesses
-                        .last()
-                        .unwrap()
-                )
-            );
-
-            // Mine 5 blocks
-            mine_numblocks_each_with_two_sap_txs(
-                &mut fake_compactblock_list,
-                &data,
-                &lightclient,
-                5,
+        // 3. With one confirmation, we should be able to select the note
+        let amt = Amount::from_u64(10_000).unwrap();
+        // Reset the anchor offsets
+        lightclient.wallet.config.anchor_offset = [9, 4, 2, 1, 0];
+        let (notes, utxos, selected) = lightclient
+            .wallet
+            .select_notes_and_utxos(amt, false, false)
+            .await;
+        assert!(selected >= amt);
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].note.value, value1);
+        assert_eq!(utxos.len(), 0);
+        assert_eq!(
+            incw_to_string(&notes[0].witness),
+            incw_to_string(
+                lightclient
+                    .wallet
+                    .transactions
+                    .read()
+                    .await
+                    .current
+                    .get(&txid)
+                    .unwrap()
+                    .sapling_notes[0]
+                    .witnesses
+                    .last()
+                    .unwrap()
             )
+        );
+
+        // Mine 5 blocks
+        mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5)
             .await;
 
-            // 4. Send another incoming transaction.
-            let value2 = 200_000;
-            let (_transaction, _height, _) =
-                fake_compactblock_list.create_coinbase_transaction(&extfvk1, value2);
-            mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
+        // 4. Send another incoming transaction.
+        let value2 = 200_000;
+        let (_transaction, _height, _) =
+            fake_compactblock_list.create_coinbase_transaction(&extfvk1, value2);
+        mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
-            // Now, try to select a small amount, it should prefer the older note
-            let amt = Amount::from_u64(10_000).unwrap();
-            let (notes, utxos, selected) = lightclient
-                .wallet
-                .select_notes_and_utxos(amt, false, false)
-                .await;
-            assert!(selected >= amt);
-            assert_eq!(notes.len(), 1);
-            assert_eq!(notes[0].note.value, value1);
-            assert_eq!(utxos.len(), 0);
+        // Now, try to select a small amount, it should prefer the older note
+        let amt = Amount::from_u64(10_000).unwrap();
+        let (notes, utxos, selected) = lightclient
+            .wallet
+            .select_notes_and_utxos(amt, false, false)
+            .await;
+        assert!(selected >= amt);
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].note.value, value1);
+        assert_eq!(utxos.len(), 0);
 
-            // Selecting a bigger amount should select both notes
-            let amt = Amount::from_u64(value1 + value2).unwrap();
-            let (notes, utxos, selected) = lightclient
-                .wallet
-                .select_notes_and_utxos(amt, false, false)
-                .await;
-            assert!(selected == amt);
-            assert_eq!(notes.len(), 2);
-            assert_eq!(utxos.len(), 0);
+        // Selecting a bigger amount should select both notes
+        let amt = Amount::from_u64(value1 + value2).unwrap();
+        let (notes, utxos, selected) = lightclient
+            .wallet
+            .select_notes_and_utxos(amt, false, false)
+            .await;
+        assert!(selected == amt);
+        assert_eq!(notes.len(), 2);
+        assert_eq!(utxos.len(), 0);
 
-            // Shutdown everything cleanly
-            clean_shutdown(stop_transmitter, test_server_handle).await;
-        }
+        // Shutdown everything cleanly
+        clean_shutdown(stop_transmitter, test_server_handle).await;
     }
 }
