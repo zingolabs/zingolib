@@ -1531,12 +1531,12 @@ mod test {
         use super::*;
         #[tokio::test]
         async fn insufficient_funds_0_present_needed_1() {
-            let TenBlockFCBLScenario {
+            let NBlockFCBLScenario {
                 lightclient,
                 stop_transmitter,
                 test_server_handle,
                 ..
-            } = setup_ten_block_fcbl_scenario(true).await;
+            } = setup_n_block_fcbl_scenario(10).await;
             let sufficient_funds = lightclient
                 .wallet
                 .select_notes_and_utxos(Amount::from_u64(1).unwrap(), false, false)
@@ -1547,14 +1547,14 @@ mod test {
         }
         #[tokio::test]
         async fn insufficient_funds_1_present_needed_1() {
-            let TenBlockFCBLScenario {
+            let NBlockFCBLScenario {
                 lightclient,
                 stop_transmitter,
                 test_server_handle,
                 mut fake_compactblock_list,
                 data,
                 ..
-            } = setup_ten_block_fcbl_scenario(true).await;
+            } = setup_n_block_fcbl_scenario(10).await;
             let extended_fvk = lightclient
                 .wallet
                 .keys()
@@ -1581,14 +1581,14 @@ mod test {
         }
         #[tokio::test]
         async fn sufficient_funds_1_plus_txfee_present_needed_1() {
-            let TenBlockFCBLScenario {
+            let NBlockFCBLScenario {
                 lightclient,
                 stop_transmitter,
                 test_server_handle,
                 mut fake_compactblock_list,
                 data,
                 ..
-            } = setup_ten_block_fcbl_scenario(true).await;
+            } = setup_n_block_fcbl_scenario(10).await;
             let extended_fvk = lightclient
                 .wallet
                 .keys()

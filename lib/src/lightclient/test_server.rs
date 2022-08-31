@@ -779,13 +779,14 @@ impl CompactTxStreamer for TestGRPCService {
 //}
 macro_rules! scenario_test {
     ($scenario:ident,
+     $numblocks:tt,
      #[tokio::test]
      async fn $test_name:ident()
         $implementation:block
     ) => {
         #[tokio::test]
         async fn $test_name() {
-            let $scenario = setup_ten_block_fcbl_scenario(true).await;
+            let $scenario = setup_n_block_fcbl_scenario($numblocks).await;
             $implementation
             clean_shutdown($scenario.stop_transmitter, $scenario.test_server_handle).await;
         }
@@ -796,9 +797,10 @@ mod with_macro {
     use super::*;
     scenario_test! {
         scenario_handle,
+        10,
         #[tokio::test]
         async fn check_anchor_offset() {
-            assert_eq!(scenario_handle.lightclient.wallet.get_anchor_height().await, 1);
+            assert_eq!(scenario_handle.lightclient.wallet.get_anchor_height().await, 10-4);
         }
     }
 }
