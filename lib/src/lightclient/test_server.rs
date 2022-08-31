@@ -773,10 +773,7 @@ impl CompactTxStreamer for TestGRPCService {
         todo!()
     }
 }
-
-//fn test_name(){
-//    scenario!(numberofblock, testfunction, param1, param2);
-//}
+#[macro_export]
 macro_rules! scenario_test {
     ($scenario:ident,
      $numblocks:tt,

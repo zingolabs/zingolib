@@ -1525,26 +1525,26 @@ mod test {
             clean_shutdown, mine_numblocks_each_with_two_sap_txs, mine_pending_blocks,
             setup_n_block_fcbl_scenario, NBlockFCBLScenario,
         },
+        scenario_test,
     };
 
     mod bench_select_notes_and_utxos {
         use super::*;
-        #[tokio::test]
-        async fn insufficient_funds_0_present_needed_1() {
-            let NBlockFCBLScenario {
-                lightclient,
-                stop_transmitter,
-                test_server_handle,
-                ..
-            } = setup_n_block_fcbl_scenario(10).await;
-            let sufficient_funds = lightclient
-                .wallet
-                .select_notes_and_utxos(Amount::from_u64(1).unwrap(), false, false)
-                .await;
-            assert_eq!(Amount::from_u64(0).unwrap(), sufficient_funds.2);
-            // Shutdown everything cleanly
-            clean_shutdown(stop_transmitter, test_server_handle).await;
+        scenario_test! {
+            scenario_handle,
+            10,
+            #[tokio::test]
+            async fn insufficient_funds_0_present_needed_1() {
+                let sufficient_funds = scenario_handle.lightclient
+                    .wallet
+                    .select_notes_and_utxos(Amount::from_u64(1).unwrap(), false, false)
+                    .await;
+                assert_eq!(Amount::from_u64(0).unwrap(), sufficient_funds.2);
+            }
         }
+        scenario_test! {
+            scenario_handle,
+            10,
         #[tokio::test]
         async fn insufficient_funds_1_present_needed_1() {
             let NBlockFCBLScenario {
@@ -1576,8 +1576,7 @@ mod test {
                 .select_notes_and_utxos(Amount::from_u64(1).unwrap(), false, false)
                 .await;
             assert_eq!(Amount::from_u64(0).unwrap(), sufficient_funds.2);
-            // Shutdown everything cleanly
-            clean_shutdown(stop_transmitter, test_server_handle).await;
+           }
         }
         #[tokio::test]
         async fn sufficient_funds_1_plus_txfee_present_needed_1() {
