@@ -1530,21 +1530,17 @@ mod test {
 
     mod bench_select_notes_and_utxos {
         use super::*;
-        scenario_test! {
-            scenario_handle,
-            10,
+        crate::scenario_test! { data, stop_transmitter, test_server_handle, lightclient, fake_compactblock_list, config, 10,
             #[tokio::test]
             async fn insufficient_funds_0_present_needed_1() {
-                let sufficient_funds = scenario_handle.lightclient
+                let sufficient_funds = lightclient
                     .wallet
                     .select_notes_and_utxos(Amount::from_u64(1).unwrap(), false, false)
                     .await;
                 assert_eq!(Amount::from_u64(0).unwrap(), sufficient_funds.2);
             }
         }
-        scenario_test! {
-            scenario_handle,
-            10,
+        crate::scenario_test! { data, stop_transmitter, test_server_handle, lightclient, fake_compactblock_list, config, 10,
         #[tokio::test]
         async fn insufficient_funds_1_present_needed_1() {
             let NBlockFCBLScenario {

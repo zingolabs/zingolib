@@ -1,6 +1,11 @@
 #[macro_export]
 macro_rules! scenario_test {
-    ($scenario:ident,
+    ($data:ident,
+     $stop_transmitter:ident,
+     $test_server_handle:ident,
+     $lightclient:ident,
+     $fake_compactblock_list:ident,
+     $config:ident,
      $numblocks:tt,
      #[tokio::test]
      async fn $test_name:ident()
@@ -8,9 +13,16 @@ macro_rules! scenario_test {
     ) => {
         #[tokio::test]
         async fn $test_name() {
-            let $scenario = setup_n_block_fcbl_scenario($numblocks).await;
+            let NBlockFCBLScenario {
+                $data,
+                $stop_transmitter,
+                $test_server_handle,
+                $lightclient,
+                $fake_compactblock_list,
+                $config
+            } = setup_n_block_fcbl_scenario($numblocks).await;
             $implementation
-            clean_shutdown($scenario.stop_transmitter, $scenario.test_server_handle).await;
+            clean_shutdown($stop_transmitter, $test_server_handle).await;
         }
     };
 }

@@ -776,12 +776,10 @@ impl CompactTxStreamer for TestGRPCService {
 #[cfg(test)]
 mod with_macro {
     use super::*;
-    crate::scenario_test! {
-        scenario_handle,
-        10,
+    crate::scenario_test! { data, stop_transmitter, test_server_handle, lightclient, fake_compactblock_list, config, 10,
         #[tokio::test]
         async fn check_anchor_offset() {
-            assert_eq!(scenario_handle.lightclient.wallet.get_anchor_height().await, 10-4);
+            assert_eq!(lightclient.wallet.get_anchor_height().await, 10-4);
         }
     }
 }
