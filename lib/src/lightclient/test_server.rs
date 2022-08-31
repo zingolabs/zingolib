@@ -328,7 +328,10 @@ async fn test_direct_grpc_and_lightclient_blockchain_height_agreement() {
         clean_shutdown(stop_transmitter, test_server_handle).await;
     }
 }
-
+/// stop_transmitter: issues the shutdown to the server thread
+/// server_thread_handle: this is Ready when the server thread exits
+/// The first command initiates shutdown the second ensures that the
+/// server thread has exited before the clean_shutdown returns
 pub async fn clean_shutdown(
     stop_transmitter: oneshot::Sender<()>,
     server_thread_handle: JoinHandle<()>,
@@ -776,7 +779,7 @@ impl CompactTxStreamer for TestGRPCService {
 #[cfg(test)]
 mod with_macro {
     use super::*;
-    crate::scenario_test! { data, stop_transmitter, test_server_handle, lightclient, fake_compactblock_list, config, 10,
+    crate::scenario_test! { data, lightclient, fake_compactblock_list, config, 10,
         #[tokio::test]
         async fn check_anchor_offset() {
             assert_eq!(lightclient.wallet.get_anchor_height().await, 10-4);
