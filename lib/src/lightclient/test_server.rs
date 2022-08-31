@@ -214,7 +214,7 @@ pub async fn create_test_server(
     (data, config, ready_receiver, stop_transmitter, h1)
 }
 
-pub struct TenBlockFCBLScenario {
+pub struct NBlockFCBLScenario {
     pub data: Arc<RwLock<TestServerData>>,
     pub stop_transmitter: oneshot::Sender<()>,
     pub test_server_handle: JoinHandle<()>,
@@ -226,9 +226,9 @@ pub struct TenBlockFCBLScenario {
 /// This scenario is used as the start state for 14 separate tests!
 /// They are:
 ///
-pub async fn setup_ten_block_fcbl_scenario(transport_security: bool) -> TenBlockFCBLScenario {
+pub async fn setup_n_block_fcbl_scenario(initial_num_two_tx_blocks: u64) -> NBlockFCBLScenario {
     let (data, config, ready_receiver, stop_transmitter, test_server_handle) =
-        create_test_server(transport_security).await;
+        create_test_server(true).await;
     ready_receiver.await.unwrap();
 
     let lightclient = LightClient::test_new(&config, None, 0).await.unwrap();
@@ -236,10 +236,15 @@ pub async fn setup_ten_block_fcbl_scenario(transport_security: bool) -> TenBlock
     let mut fake_compactblock_list = FakeCompactBlockList::new(0);
 
     // 1. Mine 10 blocks
-    mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 10)
-        .await;
+    mine_numblocks_each_with_two_sap_txs(
+        &mut fake_compactblock_list,
+        &data,
+        &lightclient,
+        initial_num_two_tx_blocks,
+    )
+    .await;
     assert_eq!(lightclient.wallet.last_scanned_height().await, 10);
-    TenBlockFCBLScenario {
+    NBlockFCBLScenario {
         data,
         stop_transmitter,
         test_server_handle,
