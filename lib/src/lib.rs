@@ -1,5 +1,6 @@
 #[macro_use]
 extern crate rust_embed;
+mod test_framework;
 
 pub mod blaze;
 pub mod commands;
