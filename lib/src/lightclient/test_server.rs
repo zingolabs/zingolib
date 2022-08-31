@@ -1,3 +1,4 @@
+use crate::apply_scenario;
 use crate::blaze::test_utils::{tree_to_string, FakeCompactBlockList};
 use crate::compact_formats::compact_tx_streamer_server::CompactTxStreamer;
 use crate::compact_formats::compact_tx_streamer_server::CompactTxStreamerServer;
@@ -216,8 +217,6 @@ pub async fn create_test_server(
 
 pub struct NBlockFCBLScenario {
     pub data: Arc<RwLock<TestServerData>>,
-    pub stop_transmitter: oneshot::Sender<()>,
-    pub test_server_handle: JoinHandle<()>,
     pub lightclient: LightClient,
     pub fake_compactblock_list: FakeCompactBlockList,
     pub config: ZingoConfig,
@@ -226,7 +225,9 @@ pub struct NBlockFCBLScenario {
 /// This scenario is used as the start state for 14 separate tests!
 /// They are:
 ///
-pub async fn setup_n_block_fcbl_scenario(initial_num_two_tx_blocks: u64) -> NBlockFCBLScenario {
+pub async fn setup_n_block_fcbl_scenario(
+    initial_num_two_tx_blocks: u64,
+) -> (NBlockFCBLScenario, oneshot::Sender<()>, JoinHandle<()>) {
     let (data, config, ready_receiver, stop_transmitter, test_server_handle) =
         create_test_server(true).await;
     ready_receiver.await.unwrap();
@@ -244,14 +245,16 @@ pub async fn setup_n_block_fcbl_scenario(initial_num_two_tx_blocks: u64) -> NBlo
     )
     .await;
     assert_eq!(lightclient.wallet.last_scanned_height().await, 10);
-    NBlockFCBLScenario {
-        data,
+    (
+        NBlockFCBLScenario {
+            data,
+            lightclient,
+            fake_compactblock_list,
+            config,
+        },
         stop_transmitter,
         test_server_handle,
-        lightclient,
-        fake_compactblock_list,
-        config,
-    }
+    )
 }
 ///  This serves as a useful check on the correct behavior of our widely
 //   used `setup_ten_block_fcbl_scenario`.
@@ -328,7 +331,10 @@ async fn test_direct_grpc_and_lightclient_blockchain_height_agreement() {
         clean_shutdown(stop_transmitter, test_server_handle).await;
     }
 }
-
+/// stop_transmitter: issues the shutdown to the server thread
+/// server_thread_handle: this is Ready when the server thread exits
+/// The first command initiates shutdown the second ensures that the
+/// server thread has exited before the clean_shutdown returns
 pub async fn clean_shutdown(
     stop_transmitter: oneshot::Sender<()>,
     server_thread_handle: JoinHandle<()>,
@@ -772,4 +778,9 @@ impl CompactTxStreamer for TestGRPCService {
     ) -> Result<tonic::Response<Self::GetMempoolStreamStream>, tonic::Status> {
         todo!()
     }
+}
+apply_scenario! {check_anchor_offset 10}
+async fn check_anchor_offset(scenario: NBlockFCBLScenario) {
+    let NBlockFCBLScenario { lightclient, .. } = scenario;
+    assert_eq!(lightclient.wallet.get_anchor_height().await, 10 - 4);
 }
