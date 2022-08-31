@@ -5,9 +5,9 @@ macro_rules! apply_scenario {
             fn_name = scenario_, $test_name {
                 #[tokio::test]
                 async fn fn_name() {
-                    let mut scenario = $crate::lightclient::test_server::setup_n_block_fcbl_scenario($numblocks).await;
-                    $test_name(&mut scenario).await;
-                    clean_shutdown(scenario.stop_transmitter, scenario.test_server_handle).await;
+                    let (scenario, stop_transmitter, test_server_handle) = $crate::lightclient::test_server::setup_n_block_fcbl_scenario($numblocks).await;
+                    $test_name(scenario).await;
+                    clean_shutdown(stop_transmitter, test_server_handle).await;
                 }
             }
         );

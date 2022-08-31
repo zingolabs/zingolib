@@ -217,8 +217,6 @@ pub async fn create_test_server(
 
 pub struct NBlockFCBLScenario {
     pub data: Arc<RwLock<TestServerData>>,
-    pub stop_transmitter: oneshot::Sender<()>,
-    pub test_server_handle: JoinHandle<()>,
     pub lightclient: LightClient,
     pub fake_compactblock_list: FakeCompactBlockList,
     pub config: ZingoConfig,
@@ -227,7 +225,9 @@ pub struct NBlockFCBLScenario {
 /// This scenario is used as the start state for 14 separate tests!
 /// They are:
 ///
-pub async fn setup_n_block_fcbl_scenario(initial_num_two_tx_blocks: u64) -> NBlockFCBLScenario {
+pub async fn setup_n_block_fcbl_scenario(
+    initial_num_two_tx_blocks: u64,
+) -> (NBlockFCBLScenario, oneshot::Sender<()>, JoinHandle<()>) {
     let (data, config, ready_receiver, stop_transmitter, test_server_handle) =
         create_test_server(true).await;
     ready_receiver.await.unwrap();
@@ -245,14 +245,16 @@ pub async fn setup_n_block_fcbl_scenario(initial_num_two_tx_blocks: u64) -> NBlo
     )
     .await;
     assert_eq!(lightclient.wallet.last_scanned_height().await, 10);
-    NBlockFCBLScenario {
-        data,
+    (
+        NBlockFCBLScenario {
+            data,
+            lightclient,
+            fake_compactblock_list,
+            config,
+        },
         stop_transmitter,
         test_server_handle,
-        lightclient,
-        fake_compactblock_list,
-        config,
-    }
+    )
 }
 ///  This serves as a useful check on the correct behavior of our widely
 //   used `setup_ten_block_fcbl_scenario`.
@@ -778,7 +780,7 @@ impl CompactTxStreamer for TestGRPCService {
     }
 }
 apply_scenario! {check_anchor_offset 10}
-async fn check_anchor_offset(scenario: &mut NBlockFCBLScenario) {
+async fn check_anchor_offset(scenario: NBlockFCBLScenario) {
     let NBlockFCBLScenario { lightclient, .. } = scenario;
     assert_eq!(lightclient.wallet.get_anchor_height().await, 10 - 4);
 }

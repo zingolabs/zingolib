@@ -1520,17 +1520,18 @@ mod test {
     use zcash_primitives::transaction::components::Amount;
 
     use crate::{
+        apply_scenario,
         blaze::test_utils::{incw_to_string, FakeTransaction},
         lightclient::test_server::{
             clean_shutdown, mine_numblocks_each_with_two_sap_txs, mine_pending_blocks,
-            setup_n_block_fcbl_scenario, NBlockFCBLScenario,
+            NBlockFCBLScenario,
         },
     };
 
     mod bench_select_notes_and_utxos {
         use super::*;
         crate::apply_scenario! {insufficient_funds_0_present_needed_1 10}
-        async fn insufficient_funds_0_present_needed_1(scenario: &mut NBlockFCBLScenario) {
+        async fn insufficient_funds_0_present_needed_1(scenario: NBlockFCBLScenario) {
             let NBlockFCBLScenario { lightclient, .. } = scenario;
             let sufficient_funds = lightclient
                 .wallet
@@ -1540,11 +1541,11 @@ mod test {
         }
 
         crate::apply_scenario! {insufficient_funds_1_present_needed_1 10}
-        async fn insufficient_funds_1_present_needed_1(scenario: &mut NBlockFCBLScenario) {
+        async fn insufficient_funds_1_present_needed_1(scenario: NBlockFCBLScenario) {
             let NBlockFCBLScenario {
                 lightclient,
                 data,
-                ref mut fake_compactblock_list,
+                mut fake_compactblock_list,
                 ..
             } = scenario;
             let extended_fvk = lightclient
@@ -1555,7 +1556,7 @@ mod test {
                 .get_all_sapling_extfvks()[0]
                 .clone();
             let (_, _, _) = fake_compactblock_list.create_coinbase_transaction(&extended_fvk, 1);
-            mine_pending_blocks(fake_compactblock_list, &data, &lightclient).await;
+            mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
             assert_eq!(
                 lightclient
                     .wallet
@@ -1570,13 +1571,11 @@ mod test {
             assert_eq!(Amount::from_u64(0).unwrap(), sufficient_funds.2);
         }
         crate::apply_scenario! {insufficient_funds_1_plus_txfee_present_needed_1 10}
-        async fn insufficient_funds_1_plus_txfee_present_needed_1(
-            scenario: &mut NBlockFCBLScenario,
-        ) {
+        async fn insufficient_funds_1_plus_txfee_present_needed_1(scenario: NBlockFCBLScenario) {
             let NBlockFCBLScenario {
                 lightclient,
                 data,
-                ref mut fake_compactblock_list,
+                mut fake_compactblock_list,
                 ..
             } = scenario;
             let extended_fvk = lightclient
@@ -1592,7 +1591,7 @@ mod test {
             for _ in 0..=3 {
                 fake_compactblock_list.add_empty_block();
             }
-            mine_pending_blocks(fake_compactblock_list, &data, &lightclient).await;
+            mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
             assert_eq!(
                 lightclient
                     .wallet
@@ -1607,16 +1606,14 @@ mod test {
             assert_eq!(Amount::from_u64(1_001).unwrap(), sufficient_funds.2);
         }
     }
-    #[tokio::test]
-    async fn z_t_note_selection() {
+    apply_scenario! {z_t_note_selection 10}
+    async fn z_t_note_selection(scenario: NBlockFCBLScenario) {
         let NBlockFCBLScenario {
             data,
-            stop_transmitter,
-            test_server_handle,
             mut lightclient,
             mut fake_compactblock_list,
             ..
-        } = setup_n_block_fcbl_scenario(10).await;
+        } = scenario;
         // 2. Send an incoming transaction to fill the wallet
         let extfvk1 = lightclient
             .wallet
@@ -1782,21 +1779,16 @@ mod test {
         assert_eq!(selected, Amount::from_u64(tvalue).unwrap());
         assert_eq!(notes.len(), 0);
         assert_eq!(utxos.len(), 1);
-
-        // Shutdown everything cleanly
-        clean_shutdown(stop_transmitter, test_server_handle).await;
     }
 
-    #[tokio::test]
-    async fn multi_z_note_selection() {
+    apply_scenario! {multi_z_note_selection 10}
+    async fn multi_z_note_selection(scenario: NBlockFCBLScenario) {
         let NBlockFCBLScenario {
             data,
-            stop_transmitter,
-            test_server_handle,
             mut lightclient,
             mut fake_compactblock_list,
             ..
-        } = setup_n_block_fcbl_scenario(10).await;
+        } = scenario;
         // 2. Send an incoming transaction to fill the wallet
         let extfvk1 = lightclient
             .wallet
@@ -1873,8 +1865,5 @@ mod test {
         assert!(selected == amt);
         assert_eq!(notes.len(), 2);
         assert_eq!(utxos.len(), 0);
-
-        // Shutdown everything cleanly
-        clean_shutdown(stop_transmitter, test_server_handle).await;
     }
 }

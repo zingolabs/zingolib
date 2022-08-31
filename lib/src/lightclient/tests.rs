@@ -27,7 +27,6 @@ use crate::lightclient::testmocks;
 use crate::compact_formats::{CompactSaplingOutput, CompactTx};
 use crate::lightclient::test_server::{
     clean_shutdown, create_test_server, mine_numblocks_each_with_two_sap_txs, mine_pending_blocks,
-    setup_n_block_fcbl_scenario,
 };
 use crate::lightclient::LightClient;
 use crate::wallet::data::{SaplingNoteAndMetadata, TransactionMetadata};
@@ -188,11 +187,11 @@ fn new_wallet_from_zvk() {
 }
 
 apply_scenario! {sapling_incoming_sapling_outgoing 10}
-async fn sapling_incoming_sapling_outgoing(scenario: &mut NBlockFCBLScenario) {
+async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
     let NBlockFCBLScenario {
         data,
         lightclient,
-        ref mut fake_compactblock_list,
+        mut fake_compactblock_list,
         ..
     } = scenario;
     // 2. Send an incoming transaction to fill the wallet
@@ -207,7 +206,7 @@ async fn sapling_incoming_sapling_outgoing(scenario: &mut NBlockFCBLScenario) {
     let (transaction, _height, _) =
         fake_compactblock_list.create_coinbase_transaction(&extfvk1, value);
     let txid = transaction.txid();
-    mine_pending_blocks(fake_compactblock_list, &data, &lightclient).await;
+    mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
     assert_eq!(lightclient.wallet.last_scanned_height().await, 11);
 
@@ -266,7 +265,7 @@ async fn sapling_incoming_sapling_outgoing(scenario: &mut NBlockFCBLScenario) {
     }
 
     // 4. Then add another 5 blocks, so the funds will become confirmed
-    mine_numblocks_each_with_two_sap_txs(fake_compactblock_list, &data, &lightclient, 5).await;
+    mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
     let b = lightclient.do_balance().await;
     assert_eq!(b["sapling_balance"].as_u64().unwrap(), value);
     assert_eq!(b["unverified_sapling_balance"].as_u64().unwrap(), 0);
@@ -353,7 +352,7 @@ async fn sapling_incoming_sapling_outgoing(scenario: &mut NBlockFCBLScenario) {
 
     // 7. Mine the sent transaction
     fake_compactblock_list.add_pending_sends(&data).await;
-    mine_pending_blocks(fake_compactblock_list, &data, &lightclient).await;
+    mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
     let list = lightclient.do_list_transactions(false).await;
 
@@ -415,16 +414,14 @@ async fn sapling_incoming_sapling_outgoing(scenario: &mut NBlockFCBLScenario) {
     );
 }
 
-#[tokio::test]
-async fn multiple_incoming_same_transaction() {
+apply_scenario! {multiple_incoming_same_transaction 10}
+async fn multiple_incoming_same_transaction(scenario: NBlockFCBLScenario) {
     let NBlockFCBLScenario {
         data,
-        stop_transmitter,
-        test_server_handle,
         lightclient,
         mut fake_compactblock_list,
         ..
-    } = setup_n_block_fcbl_scenario(10).await;
+    } = scenario;
 
     let extfvk1 = lightclient
         .wallet
@@ -603,21 +600,16 @@ async fn multiple_incoming_same_transaction() {
         transactions[4]["outgoing_metadata"][0]["memo"].is_null(),
         true
     );
-
-    // Shutdown everything cleanly
-    clean_shutdown(stop_transmitter, test_server_handle).await;
 }
 
-#[tokio::test]
-async fn sapling_incoming_multisapling_outgoing() {
+apply_scenario! {sapling_incoming_multisapling_outgoing 10}
+async fn sapling_incoming_multisapling_outgoing(scenario: NBlockFCBLScenario) {
     let NBlockFCBLScenario {
         data,
-        stop_transmitter,
-        test_server_handle,
         lightclient,
         mut fake_compactblock_list,
         ..
-    } = setup_n_block_fcbl_scenario(10).await;
+    } = scenario;
     // 2. Send an incoming transaction to fill the wallet
     let extfvk1 = lightclient
         .wallet
@@ -661,9 +653,6 @@ async fn sapling_incoming_multisapling_outgoing() {
         assert_eq!(jv["memo"], *memo.as_ref().unwrap());
         assert_eq!(jv["address"], addr.to_string());
     }
-
-    // Shutdown everything cleanly
-    clean_shutdown(stop_transmitter, test_server_handle).await;
 }
 #[tokio::test]
 async fn sapling_to_sapling_scan_together() {
@@ -753,20 +742,18 @@ async fn sapling_to_sapling_scan_together() {
         spent_value
     );
 
-    // Shutdown everything cleanly
     clean_shutdown(stop_transmitter, test_server_handle).await;
 }
 
-#[tokio::test]
-async fn sapling_incoming_viewkey() {
+apply_scenario! {sapling_incoming_viewkey 10}
+async fn sapling_incoming_viewkey(scenario: NBlockFCBLScenario) {
     let NBlockFCBLScenario {
         data,
-        stop_transmitter,
-        test_server_handle,
+        config,
         lightclient,
         mut fake_compactblock_list,
-        config,
-    } = setup_n_block_fcbl_scenario(10).await;
+        ..
+    } = scenario;
     assert_eq!(
         lightclient.do_balance().await["sapling_balance"]
             .as_u64()
@@ -899,22 +886,16 @@ async fn sapling_incoming_viewkey() {
         list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
         sent_value
     );
-
-    // Shutdown everything cleanly
-    clean_shutdown(stop_transmitter, test_server_handle).await;
 }
 
-#[tokio::test]
-async fn t_incoming_t_outgoing() {
+apply_scenario! {t_incoming_t_outgoing 10}
+async fn t_incoming_t_outgoing(scenario: NBlockFCBLScenario) {
     let NBlockFCBLScenario {
         data,
-        stop_transmitter,
-        test_server_handle,
         lightclient,
         mut fake_compactblock_list,
         ..
-    } = setup_n_block_fcbl_scenario(10).await;
-
+    } = scenario;
     // 2. Get an incoming transaction to a t address
     let sk = lightclient.wallet.keys().read().await.tkeys[0].clone();
     let pk = sk.pubkey().unwrap();
@@ -1038,21 +1019,16 @@ async fn t_incoming_t_outgoing() {
         notes["unspent_notes"][0]["value"].as_u64().unwrap(),
         value - sent_value - u64::from(DEFAULT_FEE)
     );
-
-    // Shutdown everything cleanly
-    clean_shutdown(stop_transmitter, test_server_handle).await;
 }
 
-#[tokio::test]
-async fn mixed_transaction() {
+apply_scenario! {mixed_transaction 10}
+async fn mixed_transaction(scenario: NBlockFCBLScenario) {
     let NBlockFCBLScenario {
         data,
-        stop_transmitter,
-        test_server_handle,
         lightclient,
         mut fake_compactblock_list,
         ..
-    } = setup_n_block_fcbl_scenario(10).await;
+    } = scenario;
     // 2. Send an incoming transaction to fill the wallet
     let extfvk1 = lightclient
         .wallet
@@ -1155,21 +1131,16 @@ async fn mixed_transaction() {
             .unwrap(),
         sent_tvalue
     );
-
-    // Shutdown everything cleanly
-    clean_shutdown(stop_transmitter, test_server_handle).await;
 }
 
-#[tokio::test]
-async fn aborted_resync() {
+apply_scenario! {aborted_resync 10}
+async fn aborted_resync(scenario: NBlockFCBLScenario) {
     let NBlockFCBLScenario {
         data,
-        stop_transmitter,
-        test_server_handle,
         lightclient,
         mut fake_compactblock_list,
         ..
-    } = setup_n_block_fcbl_scenario(10).await;
+    } = scenario;
     // 2. Send an incoming transaction to fill the wallet
     let extfvk1 = lightclient
         .wallet
@@ -1284,21 +1255,16 @@ async fn aborted_resync() {
 
         assert_eq!(hex::encode(before_bytes), hex::encode(after_bytes));
     }
-
-    // Shutdown everything cleanly
-    clean_shutdown(stop_transmitter, test_server_handle).await;
 }
 
-#[tokio::test]
-async fn no_change() {
+apply_scenario! {no_change 10}
+async fn no_change(scenario: NBlockFCBLScenario) {
     let NBlockFCBLScenario {
         data,
-        stop_transmitter,
-        test_server_handle,
         lightclient,
         mut fake_compactblock_list,
         ..
-    } = setup_n_block_fcbl_scenario(10).await;
+    } = scenario;
     // 2. Send an incoming transaction to fill the wallet
     let extfvk1 = lightclient
         .wallet
@@ -1342,9 +1308,6 @@ async fn no_change() {
     assert_eq!(notes["spent_utxos"].len(), 1);
     assert_eq!(notes["spent_notes"][0]["spent"], sent_transaction_id);
     assert_eq!(notes["spent_utxos"][0]["spent"], sent_transaction_id);
-
-    // Shutdown everything cleanly
-    clean_shutdown(stop_transmitter, test_server_handle).await;
 }
 
 #[tokio::test]
@@ -1448,16 +1411,14 @@ async fn recover_at_checkpoint() {
     clean_shutdown(stop_transmitter, h1).await;
 }
 
-#[tokio::test]
-async fn witness_clearing() {
+apply_scenario! {witness_clearing 10}
+async fn witness_clearing(scenario: NBlockFCBLScenario) {
     let NBlockFCBLScenario {
         data,
-        stop_transmitter,
-        test_server_handle,
         lightclient,
         mut fake_compactblock_list,
         ..
-    } = setup_n_block_fcbl_scenario(10).await;
+    } = scenario;
     // 2. Send an incoming transaction to fill the wallet
     let extfvk1 = lightclient
         .wallet
@@ -1553,21 +1514,17 @@ async fn witness_clearing() {
         .witnesses
         .clone();
     assert_eq!(witnesses.len(), 0);
-
-    // Shutdown everything cleanly
-    clean_shutdown(stop_transmitter, test_server_handle).await;
 }
 
-#[tokio::test]
-async fn mempool_clearing() {
+apply_scenario! {mempool_clearing 10}
+async fn mempool_clearing(scenario: NBlockFCBLScenario) {
     let NBlockFCBLScenario {
         data,
-        stop_transmitter,
-        test_server_handle,
+        config,
         lightclient,
         mut fake_compactblock_list,
-        config,
-    } = setup_n_block_fcbl_scenario(10).await;
+        ..
+    } = scenario;
     // 2. Send an incoming transaction to fill the wallet
     let extfvk1 = lightclient
         .wallet
@@ -1616,7 +1573,7 @@ async fn mempool_clearing() {
 
     let transaction = Transaction::read(&sent_transaction.data[..], BranchId::Sapling).unwrap();
     FetchFullTxns::scan_full_tx(
-        config,
+        config.clone(),
         transaction,
         BlockHeight::from_u32(17),
         true,
@@ -1695,21 +1652,16 @@ async fn mempool_clearing() {
     );
     assert_eq!(notes["pending_notes"].len(), 0);
     assert_eq!(transactions.len(), 1);
-
-    // Shutdown everything cleanly
-    clean_shutdown(stop_transmitter, test_server_handle).await;
 }
-
-#[tokio::test]
-async fn mempool_and_balance() {
+apply_scenario! {mempool_and_balance 10}
+async fn mempool_and_balance(scenario: NBlockFCBLScenario) {
     let NBlockFCBLScenario {
         data,
-        stop_transmitter,
-        test_server_handle,
         lightclient,
         mut fake_compactblock_list,
         ..
-    } = setup_n_block_fcbl_scenario(10).await;
+    } = scenario;
+
     // 2. Send an incoming transaction to fill the wallet
     let extfvk1 = lightclient
         .wallet
@@ -1770,9 +1722,6 @@ async fn mempool_and_balance() {
     assert_eq!(bal["sapling_balance"].as_u64().unwrap(), new_bal);
     assert_eq!(bal["verified_sapling_balance"].as_u64().unwrap(), new_bal);
     assert_eq!(bal["unverified_sapling_balance"].as_u64().unwrap(), 0);
-
-    // Shutdown everything cleanly
-    clean_shutdown(stop_transmitter, test_server_handle).await;
 }
 
 #[test]
@@ -1793,15 +1742,13 @@ fn test_read_wallet_from_buffer() {
     });
 }
 
-#[tokio::test]
-async fn read_write_block_data() {
+apply_scenario! {read_write_block_data 10}
+async fn read_write_block_data(scenario: NBlockFCBLScenario) {
     let NBlockFCBLScenario {
-        stop_transmitter,
-        test_server_handle,
-        fake_compactblock_list,
+        mut fake_compactblock_list,
         ..
-    } = setup_n_block_fcbl_scenario(10).await;
-    for block in fake_compactblock_list.blocks {
+    } = scenario;
+    for block in fake_compactblock_list.blocks.drain(..) {
         let block_bytes: &mut [u8] = &mut [];
         let cb = crate::wallet::data::BlockData::new(block.block);
         cb.write(&mut *block_bytes).unwrap();
@@ -1810,7 +1757,6 @@ async fn read_write_block_data() {
             crate::wallet::data::BlockData::read(&*block_bytes).unwrap()
         );
     }
-    clean_shutdown(stop_transmitter, test_server_handle).await;
 }
 
 pub const EXT_TADDR: &str = "t1NoS6ZgaUTpmjkge2cVpXGcySasdYDrXqh";
