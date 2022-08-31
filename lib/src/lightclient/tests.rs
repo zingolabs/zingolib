@@ -19,6 +19,7 @@ use zcash_primitives::transaction::components::{OutputDescription, GROTH_PROOF_S
 use zcash_primitives::transaction::Transaction;
 use zcash_primitives::zip32::{ExtendedFullViewingKey, ExtendedSpendingKey};
 
+use crate::apply_scenario;
 use crate::blaze::fetch_full_transaction::FetchFullTxns;
 use crate::blaze::test_utils::{FakeCompactBlockList, FakeTransaction};
 use crate::lightclient::testmocks;
@@ -26,12 +27,14 @@ use crate::lightclient::testmocks;
 use crate::compact_formats::{CompactSaplingOutput, CompactTx};
 use crate::lightclient::test_server::{
     clean_shutdown, create_test_server, mine_numblocks_each_with_two_sap_txs, mine_pending_blocks,
+    setup_n_block_fcbl_scenario,
 };
 use crate::lightclient::LightClient;
 use crate::wallet::data::{SaplingNoteAndMetadata, TransactionMetadata};
 use crate::wallet::traits::ReadableWriteable;
 
 use super::checkpoints;
+use super::test_server::NBlockFCBLScenario;
 use zingoconfig::{Network, ZingoConfig};
 
 #[test]
@@ -184,17 +187,14 @@ fn new_wallet_from_zvk() {
     });
 }
 
-use crate::lightclient::test_server::{setup_n_block_fcbl_scenario, NBlockFCBLScenario};
-#[tokio::test]
-async fn sapling_incoming_sapling_outgoing() {
+apply_scenario! {sapling_incoming_sapling_outgoing 10}
+async fn sapling_incoming_sapling_outgoing(scenario: &mut NBlockFCBLScenario) {
     let NBlockFCBLScenario {
         data,
-        stop_transmitter,
-        test_server_handle,
         lightclient,
-        mut fake_compactblock_list,
+        ref mut fake_compactblock_list,
         ..
-    } = setup_n_block_fcbl_scenario(10).await;
+    } = scenario;
     // 2. Send an incoming transaction to fill the wallet
     let extfvk1 = lightclient
         .wallet
@@ -207,7 +207,7 @@ async fn sapling_incoming_sapling_outgoing() {
     let (transaction, _height, _) =
         fake_compactblock_list.create_coinbase_transaction(&extfvk1, value);
     let txid = transaction.txid();
-    mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
+    mine_pending_blocks(fake_compactblock_list, &data, &lightclient).await;
 
     assert_eq!(lightclient.wallet.last_scanned_height().await, 11);
 
@@ -266,7 +266,7 @@ async fn sapling_incoming_sapling_outgoing() {
     }
 
     // 4. Then add another 5 blocks, so the funds will become confirmed
-    mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
+    mine_numblocks_each_with_two_sap_txs(fake_compactblock_list, &data, &lightclient, 5).await;
     let b = lightclient.do_balance().await;
     assert_eq!(b["sapling_balance"].as_u64().unwrap(), value);
     assert_eq!(b["unverified_sapling_balance"].as_u64().unwrap(), 0);
@@ -353,7 +353,7 @@ async fn sapling_incoming_sapling_outgoing() {
 
     // 7. Mine the sent transaction
     fake_compactblock_list.add_pending_sends(&data).await;
-    mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
+    mine_pending_blocks(fake_compactblock_list, &data, &lightclient).await;
 
     let list = lightclient.do_list_transactions(false).await;
 
@@ -413,9 +413,6 @@ async fn sapling_incoming_sapling_outgoing() {
         notes["spent_notes"][0]["spent_at_height"].as_u64().unwrap(),
         17
     );
-
-    // Shutdown everything cleanly
-    clean_shutdown(stop_transmitter, test_server_handle).await;
 }
 
 #[tokio::test]

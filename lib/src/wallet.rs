@@ -1525,32 +1525,28 @@ mod test {
             clean_shutdown, mine_numblocks_each_with_two_sap_txs, mine_pending_blocks,
             setup_n_block_fcbl_scenario, NBlockFCBLScenario,
         },
-        scenario_test,
     };
 
     mod bench_select_notes_and_utxos {
         use super::*;
-        crate::scenario_test! { lightclient, fake_compactblock_list, config, 10,
-            #[tokio::test]
-            async fn insufficient_funds_0_present_needed_1() {
-                let sufficient_funds = lightclient
-                    .wallet
-                    .select_notes_and_utxos(Amount::from_u64(1).unwrap(), false, false)
-                    .await;
-                assert_eq!(Amount::from_u64(0).unwrap(), sufficient_funds.2);
-            }
+        crate::apply_scenario! {insufficient_funds_0_present_needed_1 10}
+        async fn insufficient_funds_0_present_needed_1(scenario: &mut NBlockFCBLScenario) {
+            let NBlockFCBLScenario { lightclient, .. } = scenario;
+            let sufficient_funds = lightclient
+                .wallet
+                .select_notes_and_utxos(Amount::from_u64(1).unwrap(), false, false)
+                .await;
+            assert_eq!(Amount::from_u64(0).unwrap(), sufficient_funds.2);
         }
-        crate::scenario_test! { lightclient, fake_compactblock_list, config, 10,
-        #[tokio::test]
-        async fn insufficient_funds_1_present_needed_1() {
+
+        crate::apply_scenario! {insufficient_funds_1_present_needed_1 10}
+        async fn insufficient_funds_1_present_needed_1(scenario: &mut NBlockFCBLScenario) {
             let NBlockFCBLScenario {
                 lightclient,
-                stop_transmitter,
-                test_server_handle,
-                mut fake_compactblock_list,
                 data,
+                ref mut fake_compactblock_list,
                 ..
-            } = setup_n_block_fcbl_scenario(10).await;
+            } = scenario;
             let extended_fvk = lightclient
                 .wallet
                 .keys()
@@ -1559,7 +1555,7 @@ mod test {
                 .get_all_sapling_extfvks()[0]
                 .clone();
             let (_, _, _) = fake_compactblock_list.create_coinbase_transaction(&extended_fvk, 1);
-            mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
+            mine_pending_blocks(fake_compactblock_list, &data, &lightclient).await;
             assert_eq!(
                 lightclient
                     .wallet
@@ -1572,18 +1568,17 @@ mod test {
                 .select_notes_and_utxos(Amount::from_u64(1).unwrap(), false, false)
                 .await;
             assert_eq!(Amount::from_u64(0).unwrap(), sufficient_funds.2);
-           }
         }
-        #[tokio::test]
-        async fn sufficient_funds_1_plus_txfee_present_needed_1() {
+        crate::apply_scenario! {insufficient_funds_1_plus_txfee_present_needed_1 10}
+        async fn insufficient_funds_1_plus_txfee_present_needed_1(
+            scenario: &mut NBlockFCBLScenario,
+        ) {
             let NBlockFCBLScenario {
                 lightclient,
-                stop_transmitter,
-                test_server_handle,
-                mut fake_compactblock_list,
                 data,
+                ref mut fake_compactblock_list,
                 ..
-            } = setup_n_block_fcbl_scenario(10).await;
+            } = scenario;
             let extended_fvk = lightclient
                 .wallet
                 .keys()
@@ -1597,7 +1592,7 @@ mod test {
             for _ in 0..=3 {
                 fake_compactblock_list.add_empty_block();
             }
-            mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
+            mine_pending_blocks(fake_compactblock_list, &data, &lightclient).await;
             assert_eq!(
                 lightclient
                     .wallet
@@ -1610,11 +1605,8 @@ mod test {
                 .select_notes_and_utxos(Amount::from_u64(1).unwrap(), false, false)
                 .await;
             assert_eq!(Amount::from_u64(1_001).unwrap(), sufficient_funds.2);
-            // Shutdown everything cleanly
-            clean_shutdown(stop_transmitter, test_server_handle).await;
         }
     }
-
     #[tokio::test]
     async fn z_t_note_selection() {
         let NBlockFCBLScenario {

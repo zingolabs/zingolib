@@ -1,3 +1,4 @@
+use crate::apply_scenario;
 use crate::blaze::test_utils::{tree_to_string, FakeCompactBlockList};
 use crate::compact_formats::compact_tx_streamer_server::CompactTxStreamer;
 use crate::compact_formats::compact_tx_streamer_server::CompactTxStreamerServer;
@@ -776,13 +777,8 @@ impl CompactTxStreamer for TestGRPCService {
         todo!()
     }
 }
-#[cfg(test)]
-mod with_macro {
-    use super::*;
-    crate::scenario_test! { data, lightclient, fake_compactblock_list, config, 10,
-        #[tokio::test]
-        async fn check_anchor_offset() {
-            assert_eq!(lightclient.wallet.get_anchor_height().await, 10-4);
-        }
-    }
+apply_scenario! {check_anchor_offset 10}
+async fn check_anchor_offset(scenario: &mut NBlockFCBLScenario) {
+    let NBlockFCBLScenario { lightclient, .. } = scenario;
+    assert_eq!(lightclient.wallet.get_anchor_height().await, 10 - 4);
 }
