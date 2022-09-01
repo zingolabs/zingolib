@@ -468,14 +468,15 @@ impl FetchFullTxns {
     }
 }
 
+/// Core
 async fn scan_bundle<D>(
     config: &ZingoConfig,
     transaction: &Transaction,
-    height: BlockHeight,
-    unconfirmed: bool,
+    transaction_block_height: BlockHeight,
+    unconfirmed: bool, // TODO: This is true when called by wallet.send_to_address_internal, investigate.
     block_time: u32,
     keys: &Arc<RwLock<Keys>>,
-    transaction_metadata_set: &Arc<RwLock<TransactionMetadataSet>>,
+    transaction_metadata_set: &Arc<RwLock<TransactionMetadataSet>>, // WHATNAME?
     is_outgoing_transaction: &mut bool,
     outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
 ) where
@@ -499,7 +500,7 @@ async fn scan_bundle<D>(
         >,
     D::Memo: zingo_traits::ToBytes<512>,
 {
-    // Check if any of the nullifiers spent in this transaction are ours. We only need this for unconfirmed transactions,
+    // Check if any of the nullifiers generated in this transaction are ours. We only need this for unconfirmed transactions,
     // because for transactions in the block, we will check the nullifiers from the blockdata
     if unconfirmed {
         let unspent_nullifiers =
@@ -519,7 +520,7 @@ async fn scan_bundle<D>(
             {
                 transaction_metadata_set.write().await.add_new_spent(
                     transaction.txid(),
-                    height,
+                    transaction_block_height,
                     unconfirmed,
                     block_time,
                     <<D as DomainWalletExt<Network>>::Bundle as zingo_traits::Bundle<D, Network>>::Spend::wallet_nullifier(nf),
@@ -542,7 +543,7 @@ async fn scan_bundle<D>(
             transaction,
         )
         .into_iter()
-        .flat_map(|bundle| bundle.outputs().into_iter()).map(|output| (output.domain(height, config.chain), output.clone())).collect::<Vec<_>>();
+        .flat_map(|bundle| bundle.outputs().into_iter()).map(|output| (output.domain(transaction_block_height, config.chain), output.clone())).collect::<Vec<_>>();
 
     for key in domain_specific_keys.iter() {
         if let Some(ivk) = key.ivk() {
@@ -560,7 +561,7 @@ async fn scan_bundle<D>(
                         .await
                         .add_pending_note::<D>(
                             transaction.txid(),
-                            height,
+                            transaction_block_height,
                             block_time as u64,
                             note.clone(),
                             to,
@@ -595,7 +596,7 @@ async fn scan_bundle<D>(
                             Network,
                         >>::Output,
                     >(
-                        &output.domain(height, config.chain),
+                        &output.domain(transaction_block_height, config.chain),
                         &key.ovk().unwrap(),
                         &output,
                         &output.value_commitment(),

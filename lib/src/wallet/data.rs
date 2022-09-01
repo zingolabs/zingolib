@@ -540,6 +540,7 @@ impl TransactionMetadata {
             Some((t, p)) => {
                 // If the price was fetched within 24 hours of this Tx, we use the "current" price
                 // else, we mark it as None, for the historical price fetcher to get
+                // TODO:  Investigate the state of "the historical price fetcher".
                 if (t as i64 - datetime as i64).abs() < 24 * 60 * 60 {
                     Some(p)
                 } else {
