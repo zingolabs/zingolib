@@ -1282,7 +1282,7 @@ checksum = "292a948cd991e376cf75541fe5b97a1081d713c618b4f1b9500f8844e49eb565"
 [[package]]
 name = "libsodium-sys"
 version = "0.2.8"
-source = "git+https://github.com/juanky201271/sodiumoxide?rev=2d27dc5784b7dc8a97c6fb34bc07208326fa7d30#2d27dc5784b7dc8a97c6fb34bc07208326fa7d30"
+source = "git+https://github.com/juanky201271/sodiumoxide?rev=d4113ff5feecc95c7d61be95d2786df5849514d8#d4113ff5feecc95c7d61be95d2786df5849514d8"
 dependencies = [
  "cc",
  "libc",
@@ -2460,7 +2460,7 @@ dependencies = [
 [[package]]
 name = "sodiumoxide"
 version = "0.2.8"
-source = "git+https://github.com/juanky201271/sodiumoxide?rev=2d27dc5784b7dc8a97c6fb34bc07208326fa7d30#2d27dc5784b7dc8a97c6fb34bc07208326fa7d30"
+source = "git+https://github.com/juanky201271/sodiumoxide?rev=d4113ff5feecc95c7d61be95d2786df5849514d8#d4113ff5feecc95c7d61be95d2786df5849514d8"
 dependencies = [
  "ed25519",
  "libc",
@@ -3460,7 +3460,7 @@ dependencies = [
 [[package]]
 name = "zingoconfig"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#964f12bfea38c499329c6e57545d923293c9268a"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#1d2bf3764460dcdd208d1543c47f00b6106e0a18"
 dependencies = [
  "dirs",
  "http",
@@ -3473,7 +3473,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.1.1"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#964f12bfea38c499329c6e57545d923293c9268a"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#1d2bf3764460dcdd208d1543c47f00b6106e0a18"
 dependencies = [
  "base58",
  "base64 0.13.0",
