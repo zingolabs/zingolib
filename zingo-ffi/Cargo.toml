@@ -13,4 +13,4 @@ bellman = { git = "https://github.com/zingolabs/bellman", rev="c852464b1743d1007
 zcash_note_encryption = { git = "https://github.com/zingolabs/librustzcash", rev = "e5484c96445dbff38cfb4a6e0983ade1bc0d7656" }
 zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", rev = "e5484c96445dbff38cfb4a6e0983ade1bc0d7656" }
 orchard = { git = "https://github.com/zingolabs/orchard", rev = "48b7dac551a9af6c194632e6a9f0ff5fb7918dcc" }
-sodiumoxide = { git = "https://github.com/juanky201271/sodiumoxide", rev = "35ae73ae6e25dc15066b5c0f769d1ce9d042f6e0"}
+sodiumoxide = { git = "https://github.com/juanky201271/sodiumoxide", rev = "1c2efe5707d06d40850ee4b4edef20b27c7fdbc4"}
