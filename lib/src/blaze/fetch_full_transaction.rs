@@ -500,6 +500,7 @@ async fn scan_bundle<D>(
         >,
     D::Memo: zingo_traits::ToBytes<512>,
 {
+    type FnGenBundle<I> = <I as DomainWalletExt<Network>>::Bundle;
     // Check if any of the nullifiers generated in this transaction are ours. We only need this for unconfirmed transactions,
     // because for transactions in the block, we will check the nullifiers from the blockdata
     if unconfirmed {
@@ -507,12 +508,10 @@ async fn scan_bundle<D>(
             <<D as DomainWalletExt<Network>>::WalletNote as zingo_traits::NoteAndMetadata>::Nullifier::get_nullifiers_of_unspent_notes_from_transaction_set(
                 &*transaction_metadata_set.read().await,
             );
-        for output in <<D as DomainWalletExt<Network>>::Bundle as zingo_traits::Bundle<
-            D,
-            Network,
-        >>::from_transaction(transaction)
-        .into_iter()
-        .flat_map(|bundle| bundle.spends().into_iter())
+        for output in
+            <FnGenBundle<D> as zingo_traits::Bundle<D, Network>>::from_transaction(transaction)
+                .into_iter()
+                .flat_map(|bundle| bundle.spends().into_iter())
         {
             if let Some((nf, value, transaction_id)) = unspent_nullifiers
                 .iter()
@@ -523,7 +522,9 @@ async fn scan_bundle<D>(
                     transaction_block_height,
                     unconfirmed,
                     block_time,
-                    <<D as DomainWalletExt<Network>>::Bundle as zingo_traits::Bundle<D, Network>>::Spend::wallet_nullifier(nf),
+                    <FnGenBundle<D> as zingo_traits::Bundle<D, Network>>::Spend::wallet_nullifier(
+                        nf,
+                    ),
                     *value,
                     *transaction_id,
                 );
@@ -539,11 +540,16 @@ async fn scan_bundle<D>(
     let all_wallet_keys = keys.read().await;
     let domain_specific_keys = D::Key::get_keys(&*all_wallet_keys).clone();
     let outputs =
-        <<D as DomainWalletExt<Network>>::Bundle as zingo_traits::Bundle<D, Network>>::from_transaction(
-            transaction,
-        )
-        .into_iter()
-        .flat_map(|bundle| bundle.outputs().into_iter()).map(|output| (output.domain(transaction_block_height, config.chain), output.clone())).collect::<Vec<_>>();
+        <FnGenBundle<D> as zingo_traits::Bundle<D, Network>>::from_transaction(transaction)
+            .into_iter()
+            .flat_map(|bundle| bundle.outputs().into_iter())
+            .map(|output| {
+                (
+                    output.domain(transaction_block_height, config.chain),
+                    output.clone(),
+                )
+            })
+            .collect::<Vec<_>>();
 
     for key in domain_specific_keys.iter() {
         if let Some(ivk) = key.ivk() {
@@ -591,10 +597,7 @@ async fn scan_bundle<D>(
                 .filter_map(|key| {
                     match try_output_recovery_with_ovk::<
                         D,
-                        <<D as DomainWalletExt<Network>>::Bundle as zingo_traits::Bundle<
-                            D,
-                            Network,
-                        >>::Output,
+                        <FnGenBundle<D> as zingo_traits::Bundle<D, Network>>::Output,
                     >(
                         &output.domain(transaction_block_height, config.chain),
                         &key.ovk().unwrap(),
