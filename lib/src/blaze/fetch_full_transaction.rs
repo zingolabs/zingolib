@@ -539,7 +539,7 @@ async fn scan_bundle<D>(
     //     <https://github.com/zingolabs/zingolib/issues/65>
     let all_wallet_keys = keys.read().await;
     let domain_specific_keys = D::Key::get_keys(&*all_wallet_keys).clone();
-    let outputs =
+    let domain_tagged_outputs =
         <FnGenBundle<D> as zingo_traits::Bundle<D, Network>>::from_transaction(transaction)
             .into_iter()
             .flat_map(|bundle| bundle.outputs().into_iter())
@@ -554,7 +554,8 @@ async fn scan_bundle<D>(
     for key in domain_specific_keys.iter() {
         if let Some(ivk) = key.ivk() {
             let mut decrypt_attempts =
-                zcash_note_encryption::batch::try_note_decryption(&[ivk], &outputs).into_iter();
+                zcash_note_encryption::batch::try_note_decryption(&[ivk], &domain_tagged_outputs)
+                    .into_iter();
             while let Some(decrypt_attempt) = decrypt_attempts.next() {
                 let (note, to, memo_bytes) = match decrypt_attempt {
                     Some(plaintext) => plaintext,
@@ -590,7 +591,7 @@ async fn scan_bundle<D>(
             }
         }
     }
-    for (_domain, output) in outputs {
+    for (_domain, output) in domain_tagged_outputs {
         outgoing_metadatas.extend(
             domain_specific_keys
                 .iter()
