@@ -20,7 +20,6 @@ use zcash_primitives::transaction::Transaction;
 use zcash_primitives::zip32::{ExtendedFullViewingKey, ExtendedSpendingKey};
 
 use crate::apply_scenario;
-use crate::blaze::fetch_full_transaction::FetchFullTxns;
 use crate::blaze::test_utils::{FakeCompactBlockList, FakeTransaction};
 use crate::lightclient::testmocks;
 
@@ -1184,7 +1183,8 @@ async fn aborted_resync(scenario: NBlockFCBLScenario) {
     let list_before = lightclient.do_list_transactions(false).await;
     let witness_before = lightclient
         .wallet
-        .transactions
+        .transaction_context
+        .transaction_metadata_set
         .read()
         .await
         .current
@@ -1216,7 +1216,8 @@ async fn aborted_resync(scenario: NBlockFCBLScenario) {
     let list_after = lightclient.do_list_transactions(false).await;
     let witness_after = lightclient
         .wallet
-        .transactions
+        .transaction_context
+        .transaction_metadata_set
         .read()
         .await
         .current
@@ -1520,7 +1521,6 @@ apply_scenario! {mempool_clearing 10}
 async fn mempool_clearing(scenario: NBlockFCBLScenario) {
     let NBlockFCBLScenario {
         data,
-        config,
         lightclient,
         mut fake_compactblock_list,
         ..
@@ -1572,20 +1572,18 @@ async fn mempool_clearing(scenario: NBlockFCBLScenario) {
     let transactions_before = lightclient.do_list_transactions(false).await;
 
     let transaction = Transaction::read(&sent_transaction.data[..], BranchId::Sapling).unwrap();
-    FetchFullTxns::scan_full_tx(
-        config.clone(),
-        transaction,
-        BlockHeight::from_u32(17),
-        true,
-        0,
-        lightclient.wallet.keys(),
-        lightclient.wallet.transactions(),
-        None,
-    )
-    .await;
+    lightclient
+        .wallet
+        .transaction_context
+        .scan_full_tx(transaction, BlockHeight::from_u32(17), true, 0, None)
+        .await;
 
     {
-        let transactions_reader = lightclient.wallet.transactions.clone();
+        let transactions_reader = lightclient
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .clone();
         let wallet_transactions = transactions_reader.read().await;
         let sapling_notes: Vec<_> = wallet_transactions
             .current
