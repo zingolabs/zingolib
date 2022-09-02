@@ -41,9 +41,9 @@ use zingoconfig::{Network, ZingoConfig};
 
 #[derive(Clone)]
 pub struct TransactionContext {
-    config: ZingoConfig,
-    keys: Arc<RwLock<Keys>>,
-    transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+    pub(crate) config: ZingoConfig,
+    pub(crate) keys: Arc<RwLock<Keys>>,
+    pub(crate) transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
 }
 
 impl TransactionContext {

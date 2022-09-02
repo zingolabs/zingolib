@@ -23,7 +23,6 @@ use zcash_client_backend::{
 };
 use zcash_encoding::{Optional, Vector};
 use zcash_primitives::memo::MemoBytes;
-use zcash_primitives::transaction;
 use zcash_primitives::transaction::builder::Progress;
 use zcash_primitives::{
     consensus::BlockHeight,
@@ -160,7 +159,7 @@ pub struct LightWallet {
     pub price: Arc<RwLock<WalletZecPriceInfo>>,
 
     // Local data to the proxy to specify transactions to fetch.
-    transaction_context: TransactionContext,
+    pub(crate) transaction_context: TransactionContext,
 }
 
 use crate::wallet::traits::Diversifiable as _;
@@ -288,16 +287,19 @@ impl LightWallet {
             WalletZecPriceInfo::read(&mut reader)?
         };
 
+        let transaction_context = TransactionContext::new(
+            &config,
+            Arc::new(RwLock::new(keys)),
+            Arc::new(RwLock::new(transactions)),
+        );
         let mut lw = Self {
-            keys: Arc::new(RwLock::new(keys)),
-            transactions: Arc::new(RwLock::new(transactions)),
             blocks: Arc::new(RwLock::new(blocks)),
-            config: config.clone(),
             wallet_options: Arc::new(RwLock::new(wallet_options)),
             birthday: AtomicU64::new(birthday),
             verified_tree: Arc::new(RwLock::new(verified_tree)),
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(price)),
+            transaction_context,
         };
 
         // For old wallets, remove unused addresses
@@ -314,7 +316,9 @@ impl LightWallet {
     }
 
     pub async fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
-        if self.keys.read().await.encrypted && self.keys.read().await.unlocked {
+        if self.transaction_context.keys.read().await.encrypted
+            && self.transaction_context.keys.read().await.unlocked
+        {
             return Err(Error::new(
                 ErrorKind::InvalidInput,
                 format!("Cannot write while wallet is unlocked while encrypted."),
@@ -325,13 +329,24 @@ impl LightWallet {
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
         // Write all the keys
-        self.keys.read().await.write(&mut writer)?;
+        self.transaction_context
+            .keys
+            .read()
+            .await
+            .write(&mut writer)?;
 
         Vector::write(&mut writer, &self.blocks.read().await, |w, b| b.write(w))?;
 
-        self.transactions.read().await.write(&mut writer)?;
+        self.transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .write(&mut writer)?;
 
-        utils::write_string(&mut writer, &self.config.chain.to_string())?;
+        utils::write_string(
+            &mut writer,
+            &self.transaction_context.config.chain.to_string(),
+        )?;
 
         self.wallet_options.read().await.write(&mut writer)?;
 
@@ -360,7 +375,8 @@ impl LightWallet {
     // Before version 20, witnesses didn't store their height, so we need to update them.
     pub async fn set_witness_block_heights(&mut self) {
         let top_height = self.last_scanned_height().await;
-        self.transactions
+        self.transaction_context
+            .transaction_metadata_set
             .write()
             .await
             .current
@@ -373,11 +389,11 @@ impl LightWallet {
     }
 
     pub fn keys(&self) -> Arc<RwLock<Keys>> {
-        self.keys.clone()
+        self.transaction_context.keys.clone()
     }
 
     pub fn transactions(&self) -> Arc<RwLock<TransactionMetadataSet>> {
-        self.transactions.clone()
+        self.transaction_context.transaction_metadata_set.clone()
     }
 
     pub async fn set_blocks(&self, new_blocks: Vec<BlockData>) {
@@ -454,11 +470,15 @@ impl LightWallet {
     }
 
     pub async fn is_unlocked_for_spending(&self) -> bool {
-        self.keys.read().await.is_unlocked_for_spending()
+        self.transaction_context
+            .keys
+            .read()
+            .await
+            .is_unlocked_for_spending()
     }
 
     pub async fn is_encrypted(&self) -> bool {
-        self.keys.read().await.is_encrypted()
+        self.transaction_context.keys.read().await.is_encrypted()
     }
 
     // Get the first block that this wallet has a transaction in. This is often used as the wallet's "birthday"
@@ -467,7 +487,8 @@ impl LightWallet {
     pub async fn get_first_transaction_block(&self) -> u64 {
         // Find the first transaction
         let earliest_block = self
-            .transactions
+            .transaction_context
+            .transaction_metadata_set
             .read()
             .await
             .current
@@ -477,25 +498,31 @@ impl LightWallet {
 
         let birthday = self.birthday.load(std::sync::atomic::Ordering::SeqCst);
         earliest_block // Returns optional, so if there's no transactions, it'll get the activation height
-            .unwrap_or(cmp::max(birthday, self.config.sapling_activation_height()))
+            .unwrap_or(cmp::max(
+                birthday,
+                self.transaction_context.config.sapling_activation_height(),
+            ))
     }
 
     fn adjust_wallet_birthday(&self, new_birthday: u64) {
         let mut wallet_birthday = self.birthday.load(std::sync::atomic::Ordering::SeqCst);
         if new_birthday < wallet_birthday {
-            wallet_birthday = cmp::max(new_birthday, self.config.sapling_activation_height());
+            wallet_birthday = cmp::max(
+                new_birthday,
+                self.transaction_context.config.sapling_activation_height(),
+            );
             self.birthday
                 .store(wallet_birthday, std::sync::atomic::Ordering::SeqCst);
         }
     }
 
     pub async fn add_imported_tk(&self, sk: String) -> String {
-        if self.keys.read().await.encrypted {
+        if self.transaction_context.keys.read().await.encrypted {
             return "Error: Can't import transparent address key while wallet is encrypted"
                 .to_string();
         }
 
-        let sk = match TransparentKey::from_sk_string(&self.config, sk) {
+        let sk = match TransparentKey::from_sk_string(&self.transaction_context.config, sk) {
             Err(e) => return format!("Error: {}", e),
             Ok(k) => k,
         };
@@ -503,6 +530,7 @@ impl LightWallet {
         let address = sk.address.clone();
 
         if self
+            .transaction_context
             .keys
             .read()
             .await
@@ -514,7 +542,7 @@ impl LightWallet {
             return "Error: Key already exists".to_string();
         }
 
-        self.keys.write().await.tkeys.push(sk);
+        self.transaction_context.keys.write().await.tkeys.push(sk);
         return address;
     }
 
@@ -523,7 +551,7 @@ impl LightWallet {
     pub async fn add_imported_sapling_extsk(&self, sk: String, birthday: u64) -> String {
         self.add_imported_spend_key(
             &sk,
-            self.config.hrp_sapling_private_key(),
+            self.transaction_context.config.hrp_sapling_private_key(),
             birthday,
             decode_extended_spending_key,
             Keys::zkeys,
@@ -533,7 +561,9 @@ impl LightWallet {
             },
             |wk, fvk| &wk.extfvk == fvk,
             SaplingKey::new_imported_sk,
-            |key| encode_payment_address(self.config.hrp_sapling_address(), &key),
+            |key| {
+                encode_payment_address(self.transaction_context.config.hrp_sapling_address(), &key)
+            },
         )
         .await
     }
@@ -543,7 +573,10 @@ impl LightWallet {
     pub async fn add_imported_orchard_spending_key(&self, osk: String, birthday: u64) -> String {
         self.add_imported_spend_key(
             &osk,
-            self.config.chain.hrp_orchard_spending_key(),
+            self.transaction_context
+                .config
+                .chain
+                .hrp_orchard_spending_key(),
             birthday,
             decode_orchard_spending_key,
             Keys::okeys,
@@ -559,7 +592,9 @@ impl LightWallet {
                 (&wk.key).try_into().ok() == Some(fvk.clone())
             },
             OrchardKey::new_imported_osk,
-            |address: address::UnifiedAddress| address.encode(&self.config.chain),
+            |address: address::UnifiedAddress| {
+                address.encode(&self.transaction_context.config.chain)
+            },
         )
         .await
     }
@@ -612,7 +647,7 @@ impl LightWallet {
         address_getter: impl FnOnce(KeyType) -> Fut,
         encode_address: impl Fn(WalletKey::Address) -> String,
     ) -> String {
-        if self.keys.read().await.encrypted {
+        if self.transaction_context.keys.read().await.encrypted {
             return "Error: Can't import spending key while wallet is encrypted".to_string();
         }
         let decoded_key = match decoder(hrp, key) {
@@ -630,7 +665,7 @@ impl LightWallet {
                 )
             }
         };
-        if key_finder(&*self.keys.read().await)
+        if key_finder(&*self.transaction_context.keys.read().await)
             .iter()
             .any(|k| key_matcher(k, &decoded_key))
         {
@@ -651,7 +686,7 @@ impl LightWallet {
         key_importer: impl Fn(WalletKey::Sk) -> WalletKey,
     ) -> WalletKey::Address {
         let fvk = ViewKey::from(&decoded_key);
-        let mut write_keys = self.keys.write().await;
+        let mut write_keys = self.transaction_context.keys.write().await;
         let write_keys = key_finder_mut(&mut *write_keys);
         let maybe_existing_key = write_keys.iter_mut().find(|k| find_view_key(k, &fvk));
         // If the viewing key exists, and is now being upgraded to the spending key, replace it in-place
@@ -670,17 +705,27 @@ impl LightWallet {
     pub async fn add_imported_sapling_extfvk(&self, vk: String, birthday: u64) -> String {
         self.add_imported_key(
             &vk,
-            self.config.hrp_sapling_viewing_key(),
+            self.transaction_context.config.hrp_sapling_viewing_key(),
             birthday,
             decode_extended_full_viewing_key,
             Keys::zkeys,
             |wallet_key, new_key| wallet_key.extfvk == new_key.clone(),
             |key| async {
                 let newkey = SaplingKey::new_imported_viewkey(key);
-                self.keys().write().await.zkeys.push(newkey.clone());
+                self.transaction_context
+                    .keys
+                    .write()
+                    .await
+                    .zkeys
+                    .push(newkey.clone());
                 newkey.zaddress
             },
-            |address| encode_payment_address(self.config.hrp_sapling_address(), &address),
+            |address| {
+                encode_payment_address(
+                    self.transaction_context.config.hrp_sapling_address(),
+                    &address,
+                )
+            },
         )
         .await
     }
@@ -690,7 +735,11 @@ impl LightWallet {
     /// and the wallet will need to be rescanned
     pub async fn clear_all(&self) {
         self.blocks.write().await.clear();
-        self.transactions.write().await.clear();
+        self.transaction_context
+            .transaction_metadata_set
+            .write()
+            .await
+            .clear();
     }
 
     pub async fn set_initial_block(&self, height: u64, hash: &str, _sapling_tree: &str) -> bool {
@@ -710,7 +759,7 @@ impl LightWallet {
             .await
             .first()
             .map(|block| block.height)
-            .unwrap_or(self.config.sapling_activation_height() - 1)
+            .unwrap_or(self.transaction_context.config.sapling_activation_height() - 1)
     }
 
     pub async fn last_scanned_hash(&self) -> String {
@@ -746,7 +795,14 @@ impl LightWallet {
                 // Select an anchor ANCHOR_OFFSET back from the target block,
                 // unless that would be before the earliest block we have.
                 let anchor_height = cmp::max(
-                    target_height.saturating_sub(*self.config.anchor_offset.last().unwrap()),
+                    target_height.saturating_sub(
+                        *self
+                            .transaction_context
+                            .config
+                            .anchor_offset
+                            .last()
+                            .unwrap(),
+                    ),
                     min_height,
                 );
 
@@ -796,11 +852,14 @@ impl LightWallet {
                     .fvk()
                     .diversified_address(*notedata.diversifier())
                     .unwrap();
-                *addr == diversified_address.b32encode_for_network(&self.config.chain)
+                *addr
+                    == diversified_address
+                        .b32encode_for_network(&self.transaction_context.config.chain)
             }
             None => true, // If the addr is none, then get all addrs.
         };
-        self.transactions
+        self.transaction_context
+            .transaction_metadata_set
             .read()
             .await
             .current
@@ -831,7 +890,8 @@ impl LightWallet {
 
     // Get all (unspent) utxos. Unconfirmed spent utxos are included
     pub async fn get_utxos(&self) -> Vec<Utxo> {
-        self.transactions
+        self.transaction_context
+            .transaction_metadata_set
             .read()
             .await
             .current
@@ -858,7 +918,7 @@ impl LightWallet {
     pub async fn unverified_sapling_balance(&self, target_addr: Option<String>) -> u64 {
         let anchor_height = self.get_anchor_height().await;
 
-        let keys = self.keys.read().await;
+        let keys = self.transaction_context.keys.read().await;
 
         let filters: &[Box<dyn Fn(&&SaplingNoteAndMetadata, &TransactionMetadata) -> bool>] = &[
             Box::new(|notedata: &&SaplingNoteAndMetadata, _| {
@@ -875,7 +935,7 @@ impl LightWallet {
     pub async fn unverified_orchard_balance(&self, target_addr: Option<String>) -> u64 {
         let anchor_height = self.get_anchor_height().await;
 
-        let keys = self.keys.read().await;
+        let keys = self.transaction_context.keys.read().await;
 
         let filters: &[Box<dyn Fn(&&OrchardNoteAndMetadata, &TransactionMetadata) -> bool>] = &[
             Box::new(|notedata, _| {
@@ -910,7 +970,7 @@ impl LightWallet {
 
     pub async fn spendable_sapling_balance(&self, target_addr: Option<String>) -> u64 {
         let anchor_height = self.get_anchor_height().await;
-        let keys = self.keys.read().await;
+        let keys = self.transaction_context.keys.read().await;
         let filters: &[Box<dyn Fn(&&SaplingNoteAndMetadata, &TransactionMetadata) -> bool>] = &[
             Box::new(|_, transaction| transaction.block <= BlockHeight::from_u32(anchor_height)),
             Box::new(|nnmd, _| {
@@ -922,7 +982,7 @@ impl LightWallet {
 
     pub async fn spendable_orchard_balance(&self, target_addr: Option<String>) -> u64 {
         let anchor_height = self.get_anchor_height().await;
-        let keys = self.keys.read().await;
+        let keys = self.transaction_context.keys.read().await;
         let filters: &[Box<dyn Fn(&&OrchardNoteAndMetadata, &TransactionMetadata) -> bool>] = &[
             Box::new(|_, transaction| transaction.block <= BlockHeight::from_u32(anchor_height)),
             Box::new(|nnmd, _| {
@@ -934,13 +994,14 @@ impl LightWallet {
     }
 
     pub async fn remove_unused_taddrs(&self) {
-        let taddrs = self.keys.read().await.get_all_taddrs();
+        let taddrs = self.transaction_context.keys.read().await.get_all_taddrs();
         if taddrs.len() <= 1 {
             return;
         }
 
         let highest_account = self
-            .transactions
+            .transaction_context
+            .transaction_metadata_set
             .read()
             .await
             .current
@@ -961,18 +1022,29 @@ impl LightWallet {
 
         if highest_account.unwrap() == 0 {
             // Remove unused addresses
-            self.keys.write().await.tkeys.truncate(1);
+            self.transaction_context
+                .keys
+                .write()
+                .await
+                .tkeys
+                .truncate(1);
         }
     }
 
     pub async fn remove_unused_zaddrs(&self) {
-        let zaddrs = self.keys.read().await.get_all_sapling_addresses();
+        let zaddrs = self
+            .transaction_context
+            .keys
+            .read()
+            .await
+            .get_all_sapling_addresses();
         if zaddrs.len() <= 1 {
             return;
         }
 
         let highest_account = self
-            .transactions
+            .transaction_context
+            .transaction_metadata_set
             .read()
             .await
             .current
@@ -980,7 +1052,10 @@ impl LightWallet {
             .flat_map(|wtx| {
                 wtx.sapling_notes.iter().map(|n| {
                     let (_, pa) = n.extfvk.default_address();
-                    let zaddr = encode_payment_address(self.config.hrp_sapling_address(), &pa);
+                    let zaddr = encode_payment_address(
+                        self.transaction_context.config.hrp_sapling_address(),
+                        &pa,
+                    );
                     zaddrs
                         .iter()
                         .position(|za| *za == zaddr)
@@ -995,13 +1070,19 @@ impl LightWallet {
 
         if highest_account.unwrap() == 0 {
             // Remove unused addresses
-            self.keys().write().await.zkeys.truncate(1);
+            self.transaction_context
+                .keys
+                .write()
+                .await
+                .zkeys
+                .truncate(1);
         }
     }
 
     pub async fn decrypt_message(&self, enc: Vec<u8>) -> Option<Message> {
         // Collect all the ivks in the wallet
         let ivks: Vec<_> = self
+            .transaction_context
             .keys
             .read()
             .await
@@ -1027,7 +1108,8 @@ impl LightWallet {
     pub async fn fix_spent_at_height(&self) {
         // First, build an index of all the transaction_ids and the heights at which they were spent.
         let spent_transaction_id_map: HashMap<_, _> = self
-            .transactions
+            .transaction_context
+            .transaction_metadata_set
             .read()
             .await
             .current
@@ -1036,7 +1118,8 @@ impl LightWallet {
             .collect();
 
         // Go over all the sapling notes that might need updating
-        self.transactions
+        self.transaction_context
+            .transaction_metadata_set
             .write()
             .await
             .current
@@ -1056,7 +1139,8 @@ impl LightWallet {
             });
 
         // Go over all the Utxos that might need updating
-        self.transactions
+        self.transaction_context
+            .transaction_metadata_set
             .write()
             .await
             .current
@@ -1102,10 +1186,11 @@ impl LightWallet {
         }
 
         // Start collecting sapling funds at every allowed offset
-        for anchor_offset in &self.config.anchor_offset {
-            let keys = self.keys.read().await;
+        for anchor_offset in &self.transaction_context.config.anchor_offset {
+            let keys = self.transaction_context.keys.read().await;
             let mut candidate_notes = self
-                .transactions
+                .transaction_context
+                .transaction_metadata_set
                 .read()
                 .await
                 .current
@@ -1205,7 +1290,7 @@ impl LightWallet {
         F: Fn(Box<[u8]>) -> Fut,
         Fut: Future<Output = Result<String, String>>,
     {
-        if !self.keys.read().await.unlocked {
+        if !self.transaction_context.keys.read().await.unlocked {
             return Err("Cannot spend while wallet is locked".to_string());
         }
 
@@ -1225,7 +1310,10 @@ impl LightWallet {
         let recepients = tos
             .iter()
             .map(|to| {
-                let ra = match address::RecipientAddress::decode(&self.config.chain, to.0) {
+                let ra = match address::RecipientAddress::decode(
+                    &self.transaction_context.config.chain,
+                    to.0,
+                ) {
                     Some(to) => to,
                     None => {
                         let e = format!("Invalid recipient address: '{}'", to.0);
@@ -1250,11 +1338,16 @@ impl LightWallet {
             None => return Err("No blocks in wallet to target, please sync first".to_string()),
         };
 
-        let mut builder = Builder::new(self.config.chain, target_height);
+        let mut builder = Builder::new(self.transaction_context.config.chain, target_height);
 
         // Create a map from address -> sk for all taddrs, so we can spend from the
         // right address
-        let address_to_sk = self.keys.read().await.get_taddr_to_sk_map();
+        let address_to_sk = self
+            .transaction_context
+            .keys
+            .read()
+            .await
+            .get_taddr_to_sk_map();
 
         let (notes, utxos, selected_value) = self
             .select_notes_and_utxos(target_amount, transparent_only, true)
@@ -1262,7 +1355,8 @@ impl LightWallet {
         if selected_value < target_amount {
             let e = format!(
                 "Insufficient verified funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent.",
-                u64::from(selected_value), u64::from(target_amount), self.config.anchor_offset.last().unwrap() + 1
+                u64::from(selected_value), u64::from(target_amount), self.transaction_context.config
+                .anchor_offset.last().unwrap() + 1
             );
             error!("{}", e);
             return Err(e);
@@ -1321,13 +1415,21 @@ impl LightWallet {
         // the builder will automatically send change to that address
         if notes.len() == 0 {
             builder.send_change_to(
-                self.keys.read().await.zkeys[0].extfvk.fvk.ovk,
-                self.keys.read().await.zkeys[0].zaddress.clone(),
+                self.transaction_context.keys.read().await.zkeys[0]
+                    .extfvk
+                    .fvk
+                    .ovk,
+                self.transaction_context.keys.read().await.zkeys[0]
+                    .zaddress
+                    .clone(),
             );
         }
 
         // We'll use the first ovk to encrypt outgoing transactions
-        let ovk = self.keys.read().await.zkeys[0].extfvk.fvk.ovk;
+        let ovk = self.transaction_context.keys.read().await.zkeys[0]
+            .extfvk
+            .fvk
+            .ovk;
         let mut total_z_recepients = 0u32;
         for (to, value, memo) in recepients {
             // Compute memo if it exists
@@ -1424,7 +1526,11 @@ impl LightWallet {
         // Mark notes as spent.
         {
             // Mark sapling notes as unconfirmed spent
-            let mut transactions = self.transactions.write().await;
+            let mut transactions = self
+                .transaction_context
+                .transaction_metadata_set
+                .write()
+                .await;
             for selected in notes {
                 let mut spent_note = transactions
                     .current
@@ -1455,36 +1561,38 @@ impl LightWallet {
         {
             let price = self.price.read().await.clone();
 
-            FetchFullTxns::scan_full_tx(
-                self.config.clone(),
-                transaction,
-                target_height.into(),
-                true,
-                now() as u32,
-                self.keys.clone(),
-                self.transactions.clone(),
-                TransactionMetadata::get_price(now(), &price),
-            )
-            .await;
+            self.transaction_context
+                .scan_full_tx(
+                    transaction,
+                    target_height.into(),
+                    true,
+                    now() as u32,
+                    TransactionMetadata::get_price(now(), &price),
+                )
+                .await;
         }
 
         Ok((transaction_id, raw_transaction))
     }
 
     pub async fn encrypt(&self, passwd: String) -> io::Result<()> {
-        self.keys.write().await.encrypt(passwd)
+        self.transaction_context.keys.write().await.encrypt(passwd)
     }
 
     pub async fn lock(&self) -> io::Result<()> {
-        self.keys.write().await.lock()
+        self.transaction_context.keys.write().await.lock()
     }
 
     pub async fn unlock(&self, passwd: String) -> io::Result<()> {
-        self.keys.write().await.unlock(passwd)
+        self.transaction_context.keys.write().await.unlock(passwd)
     }
 
     pub async fn remove_encryption(&self, passwd: String) -> io::Result<()> {
-        self.keys.write().await.remove_encryption(passwd)
+        self.transaction_context
+            .keys
+            .write()
+            .await
+            .remove_encryption(passwd)
     }
 }
 fn decode_orchard_spending_key(
@@ -1630,7 +1738,7 @@ mod test {
         // 3. With one confirmation, we should be able to select the note
         let amt = Amount::from_u64(10_000).unwrap();
         // Reset the anchor offsets
-        lightclient.wallet.config.anchor_offset = [9, 4, 2, 1, 0];
+        lightclient.wallet.transaction_context.config.anchor_offset = [9, 4, 2, 1, 0];
         let (notes, utxos, selected) = lightclient
             .wallet
             .select_notes_and_utxos(amt, false, false)
@@ -1644,7 +1752,8 @@ mod test {
             incw_to_string(
                 lightclient
                     .wallet
-                    .transactions
+                    .transaction_context
+                    .transaction_metadata_set
                     .read()
                     .await
                     .current
@@ -1658,7 +1767,7 @@ mod test {
         );
 
         // With min anchor_offset at 1, we can't select any notes
-        lightclient.wallet.config.anchor_offset = [9, 4, 2, 1, 1];
+        lightclient.wallet.transaction_context.config.anchor_offset = [9, 4, 2, 1, 1];
         let (notes, utxos, _selected) = lightclient
             .wallet
             .select_notes_and_utxos(amt, false, false)
@@ -1683,7 +1792,8 @@ mod test {
             incw_to_string(
                 lightclient
                     .wallet
-                    .transactions
+                    .transaction_context
+                    .transaction_metadata_set
                     .read()
                     .await
                     .current
@@ -1699,7 +1809,7 @@ mod test {
         // Mine 15 blocks, then selecting the note should result in witness only 10 blocks deep
         mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 15)
             .await;
-        lightclient.wallet.config.anchor_offset = [9, 4, 2, 1, 1];
+        lightclient.wallet.transaction_context.config.anchor_offset = [9, 4, 2, 1, 1];
         let (notes, utxos, selected) = lightclient
             .wallet
             .select_notes_and_utxos(amt, false, true)
@@ -1713,7 +1823,8 @@ mod test {
             incw_to_string(
                 lightclient
                     .wallet
-                    .transactions
+                    .transaction_context
+                    .transaction_metadata_set
                     .read()
                     .await
                     .current
@@ -1767,7 +1878,7 @@ mod test {
         assert_eq!(utxos.len(), 1);
 
         // Set min confs to 5, so the sapling note will not be selected
-        lightclient.wallet.config.anchor_offset = [9, 4, 4, 4, 4];
+        lightclient.wallet.transaction_context.config.anchor_offset = [9, 4, 4, 4, 4];
         let amt = Amount::from_u64(tvalue - 10_000).unwrap();
         let (notes, utxos, selected) = lightclient
             .wallet
@@ -1805,7 +1916,7 @@ mod test {
         // 3. With one confirmation, we should be able to select the note
         let amt = Amount::from_u64(10_000).unwrap();
         // Reset the anchor offsets
-        lightclient.wallet.config.anchor_offset = [9, 4, 2, 1, 0];
+        lightclient.wallet.transaction_context.config.anchor_offset = [9, 4, 2, 1, 0];
         let (notes, utxos, selected) = lightclient
             .wallet
             .select_notes_and_utxos(amt, false, false)
@@ -1819,7 +1930,8 @@ mod test {
             incw_to_string(
                 lightclient
                     .wallet
-                    .transactions
+                    .transaction_context
+                    .transaction_metadata_set
                     .read()
                     .await
                     .current
