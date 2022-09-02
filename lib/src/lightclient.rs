@@ -1329,7 +1329,7 @@ impl LightClient {
 
                 let h1 = tokio::spawn(async move {
                     let keys = lc1.wallet.keys();
-                    let wallet_transactions = lc1.wallet.transactions.clone();
+                    let transaction_metadata_set = lc1.wallet.transactions.clone();
                     let price = lc1.wallet.price.clone();
 
                     while let Some(rtransaction) = mempool_receiver.recv().await {
@@ -1343,17 +1343,15 @@ impl LightClient {
                             let price = price.read().await.clone();
                             //info!("Mempool attempting to scan {}", tx.txid());
 
-                            TransactionContext::scan_full_tx(
-                                config.clone(),
-                                transaction,
-                                BlockHeight::from_u32(rtransaction.height as u32),
-                                true,
-                                now() as u32,
-                                keys.clone(),
-                                wallet_transactions.clone(),
-                                TransactionMetadata::get_price(now(), &price),
-                            )
-                            .await;
+                            TransactionContext::new(&config, keys, transaction_metadata_set)
+                                .scan_full_tx(
+                                    transaction,
+                                    BlockHeight::from_u32(rtransaction.height as u32),
+                                    true,
+                                    now() as u32,
+                                    TransactionMetadata::get_price(now(), &price),
+                                )
+                                .await;
                         }
                     }
                 });

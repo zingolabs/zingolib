@@ -39,6 +39,7 @@ use zcash_primitives::{
 use super::syncdata::BlazeSyncData;
 use zingoconfig::{Network, ZingoConfig};
 
+#[derive(Clone)]
 pub struct TransactionContext {
     config: ZingoConfig,
     keys: Arc<RwLock<Keys>>,
@@ -59,57 +60,46 @@ impl TransactionContext {
     }
 
     pub(crate) async fn scan_full_tx(
-        config: ZingoConfig,
+        &self,
         transaction: Transaction,
         height: BlockHeight,
         unconfirmed: bool,
         block_time: u32,
-        keys: Arc<RwLock<Keys>>,
-        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
         price: Option<f64>,
     ) {
         // Remember if this is an outgoing Tx. Useful for when we want to grab the outgoing metadata.
         let mut is_outgoing_transaction = false;
 
         // Collect our t-addresses for easy checking
-        let taddrs = keys.read().await.get_all_taddrs();
+        let taddrs = self.keys.read().await.get_all_taddrs();
         let taddrs_set: HashSet<_> = taddrs.iter().map(|t| t.clone()).collect();
 
         //todo: investigate scanning all bundles simultaneously
-        Self::scan_transparent_bundle(
-            &config,
+        self.scan_transparent_bundle(
             &transaction,
             height,
             unconfirmed,
             block_time,
-            &keys,
-            &transaction_metadata_set,
             &mut is_outgoing_transaction,
             &taddrs_set,
         )
         .await;
 
         let mut outgoing_metadatas = vec![];
-        Self::scan_sapling_bundle(
-            &config,
+        self.scan_sapling_bundle(
             &transaction,
             height,
             unconfirmed,
             block_time,
-            &keys,
-            &transaction_metadata_set,
             &mut is_outgoing_transaction,
             &mut outgoing_metadatas,
         )
         .await;
-        Self::scan_orchard_bundle(
-            &config,
+        self.scan_orchard_bundle(
             &transaction,
             height,
             unconfirmed,
             block_time,
-            &keys,
-            &transaction_metadata_set,
             &mut is_outgoing_transaction,
             &mut outgoing_metadatas,
         )
@@ -118,7 +108,8 @@ impl TransactionContext {
         // Process t-address outputs
         // If this transaction in outgoing, i.e., we recieved sent some money in this transaction, then we need to grab all transparent outputs
         // that don't belong to us as the outgoing metadata
-        if transaction_metadata_set
+        if self
+            .transaction_metadata_set
             .read()
             .await
             .total_funds_spent_in(&transaction.txid())
@@ -130,7 +121,8 @@ impl TransactionContext {
         if is_outgoing_transaction {
             if let Some(t_bundle) = transaction.transparent_bundle() {
                 for vout in &t_bundle.vout {
-                    let taddr = keys
+                    let taddr = self
+                        .keys
                         .read()
                         .await
                         .address_from_pubkeyhash(vout.script_pubkey.address());
@@ -148,14 +140,14 @@ impl TransactionContext {
             // Also, if this is an outgoing transaction, then mark all the *incoming* sapling notes to this transaction as change.
             // Note that this is also done in `WalletTxns::add_new_spent`, but that doesn't take into account transparent spends,
             // so we'll do it again here.
-            transaction_metadata_set
+            self.transaction_metadata_set
                 .write()
                 .await
                 .check_notes_mark_change(&transaction.txid());
         }
 
         if !outgoing_metadatas.is_empty() {
-            transaction_metadata_set
+            self.transaction_metadata_set
                 .write()
                 .await
                 .add_outgoing_metadata(&transaction.txid(), outgoing_metadatas);
@@ -163,7 +155,7 @@ impl TransactionContext {
 
         // Update price if available
         if price.is_some() {
-            transaction_metadata_set
+            self.transaction_metadata_set
                 .write()
                 .await
                 .set_price(&transaction.txid(), price);
@@ -173,13 +165,11 @@ impl TransactionContext {
     }
 
     async fn scan_transparent_bundle(
-        config: &ZingoConfig,
+        &self,
         transaction: &Transaction,
         height: BlockHeight,
         unconfirmed: bool,
         block_time: u32,
-        keys: &Arc<RwLock<Keys>>,
-        transaction_metadata_set: &Arc<RwLock<TransactionMetadataSet>>,
         is_outgoing_transaction: &mut bool,
         taddrs_set: &HashSet<String>,
     ) {
@@ -189,21 +179,24 @@ impl TransactionContext {
                 match vout.script_pubkey.address() {
                     Some(TransparentAddress::PublicKey(hash)) => {
                         let output_taddr =
-                            hash.to_base58check(&config.base58_pubkey_address(), &[]);
+                            hash.to_base58check(&self.config.base58_pubkey_address(), &[]);
                         if taddrs_set.contains(&output_taddr) {
                             // This is our address. Add this as an output to the txid
-                            transaction_metadata_set.write().await.add_new_taddr_output(
-                                transaction.txid(),
-                                output_taddr.clone(),
-                                height.into(),
-                                unconfirmed,
-                                block_time as u64,
-                                &vout,
-                                n as u32,
-                            );
+                            self.transaction_metadata_set
+                                .write()
+                                .await
+                                .add_new_taddr_output(
+                                    transaction.txid(),
+                                    output_taddr.clone(),
+                                    height.into(),
+                                    unconfirmed,
+                                    block_time as u64,
+                                    &vout,
+                                    n as u32,
+                                );
 
                             // Ensure that we add any new HD addresses
-                            keys.write().await.ensure_hd_taddresses(&output_taddr);
+                            self.keys.write().await.ensure_hd_taddresses(&output_taddr);
                         }
                     }
                     _ => {}
@@ -218,7 +211,7 @@ impl TransactionContext {
         let mut spent_utxos = vec![];
 
         {
-            let current = &transaction_metadata_set.read().await.current;
+            let current = &self.transaction_metadata_set.read().await.current;
             if let Some(t_bundle) = transaction.transparent_bundle() {
                 for vin in t_bundle.vin.iter() {
                     // Find the prev txid that was spent
@@ -255,19 +248,17 @@ impl TransactionContext {
             // Mark that this Tx spent some funds
             *is_outgoing_transaction = true;
 
-            transaction_metadata_set.write().await.mark_txid_utxo_spent(
-                prev_transaction_id,
-                prev_n,
-                transaction_id,
-                height.into(),
-            );
+            self.transaction_metadata_set
+                .write()
+                .await
+                .mark_txid_utxo_spent(prev_transaction_id, prev_n, transaction_id, height.into());
         }
 
         // If this transaction spent value, add the spent amount to the TxID
         if total_transparent_value_spent > 0 {
             *is_outgoing_transaction = true;
 
-            transaction_metadata_set.write().await.add_taddr_spent(
+            self.transaction_metadata_set.write().await.add_taddr_spent(
                 transaction.txid(),
                 height,
                 unconfirmed,
@@ -277,48 +268,38 @@ impl TransactionContext {
         }
     }
     async fn scan_sapling_bundle(
-        config: &ZingoConfig,
+        &self,
         transaction: &Transaction,
         height: BlockHeight,
         unconfirmed: bool,
         block_time: u32,
-        keys: &Arc<RwLock<Keys>>,
-        transaction_metadata_set: &Arc<RwLock<TransactionMetadataSet>>,
         is_outgoing_transaction: &mut bool,
         outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
     ) {
-        scan_bundle::<SaplingDomain<Network>>(
-            config,
+        self.scan_bundle::<SaplingDomain<Network>>(
             transaction,
             height,
             unconfirmed,
             block_time,
-            keys,
-            transaction_metadata_set,
             is_outgoing_transaction,
             outgoing_metadatas,
         )
         .await
     }
     async fn scan_orchard_bundle(
-        config: &ZingoConfig,
+        &self,
         transaction: &Transaction,
         height: BlockHeight,
         unconfirmed: bool,
         block_time: u32,
-        keys: &Arc<RwLock<Keys>>,
-        transaction_metadata_set: &Arc<RwLock<TransactionMetadataSet>>,
         is_outgoing_transaction: &mut bool,
         outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
     ) {
-        scan_bundle::<OrchardDomain>(
-            config,
+        self.scan_bundle::<OrchardDomain>(
             transaction,
             height,
             unconfirmed,
             block_time,
-            keys,
-            transaction_metadata_set,
             is_outgoing_transaction,
             outgoing_metadatas,
         )
@@ -327,13 +308,11 @@ impl TransactionContext {
 
     /// Core
     async fn scan_bundle<D>(
-        config: &ZingoConfig,
+        &self,
         transaction: &Transaction,
         transaction_block_height: BlockHeight,
         unconfirmed: bool, // TODO: This is true when called by wallet.send_to_address_internal, investigate.
         block_time: u32,
-        keys: &Arc<RwLock<Keys>>,
-        transaction_metadata_set: &Arc<RwLock<TransactionMetadataSet>>, // WHATNAME?
         is_outgoing_transaction: &mut bool,
         outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
     ) where
@@ -363,7 +342,7 @@ impl TransactionContext {
         if unconfirmed {
             let unspent_nullifiers =
             <<D as DomainWalletExt<Network>>::WalletNote as zingo_traits::NoteAndMetadata>::Nullifier::get_nullifiers_of_unspent_notes_from_transaction_set(
-                &*transaction_metadata_set.read().await,
+                &*self.transaction_metadata_set.read().await,
             );
             for output in
                 <FnGenBundle<D> as zingo_traits::Bundle<D, Network>>::from_transaction(transaction)
@@ -374,7 +353,7 @@ impl TransactionContext {
                     .iter()
                     .find(|(nf, _, _)| nf == output.nullifier())
                 {
-                    transaction_metadata_set.write().await.add_new_spent(
+                    self.transaction_metadata_set.write().await.add_new_spent(
                     transaction.txid(),
                     transaction_block_height,
                     unconfirmed,
@@ -394,7 +373,7 @@ impl TransactionContext {
         //     1. There's more than one way to be "spent".
         //     2. It's possible for a "nullifier" to be in the wallet's spent list, but never in the global ledger.
         //     <https://github.com/zingolabs/zingolib/issues/65>
-        let all_wallet_keys = keys.read().await;
+        let all_wallet_keys = self.keys.read().await;
         let domain_specific_keys = D::Key::get_keys(&*all_wallet_keys).clone();
         let domain_tagged_outputs =
             <FnGenBundle<D> as zingo_traits::Bundle<D, Network>>::from_transaction(transaction)
@@ -402,7 +381,7 @@ impl TransactionContext {
                 .flat_map(|bundle| bundle.outputs().into_iter())
                 .map(|output| {
                     (
-                        output.domain(transaction_block_height, config.chain),
+                        output.domain(transaction_block_height, self.config.chain),
                         output.clone(),
                     )
                 })
@@ -422,7 +401,7 @@ impl TransactionContext {
                     };
                     let memo_bytes = MemoBytes::from_bytes(&memo_bytes.to_bytes()).unwrap();
                     if unconfirmed {
-                        transaction_metadata_set
+                        self.transaction_metadata_set
                             .write()
                             .await
                             .add_pending_note::<D>(
@@ -443,7 +422,7 @@ impl TransactionContext {
                         .clone()
                         .try_into()
                         .unwrap_or(Memo::Future(memo_bytes));
-                    transaction_metadata_set
+                    self.transaction_metadata_set
                         .write()
                         .await
                         .add_memo_to_note_metadata::<D::WalletNote>(
@@ -463,7 +442,7 @@ impl TransactionContext {
                             D,
                             <FnGenBundle<D> as zingo_traits::Bundle<D, Network>>::Output,
                         >(
-                            &output.domain(transaction_block_height, config.chain),
+                            &output.domain(transaction_block_height, self.config.chain),
                             &key.ovk().unwrap(),
                             &output,
                             &output.value_commitment(),
@@ -472,7 +451,8 @@ impl TransactionContext {
                             Some((note, payment_address, memo_bytes)) => {
                                 // Mark this transaction as an outgoing transaction, so we can grab all outgoing metadata
                                 *is_outgoing_transaction = true;
-                                let address = payment_address.b32encode_for_network(&config.chain);
+                                let address =
+                                    payment_address.b32encode_for_network(&self.config.chain);
 
                                 // Check if this is change, and if it also doesn't have a memo, don't add
                                 // to the outgoing metadata.
@@ -516,9 +496,7 @@ pub async fn start(
     UnboundedSender<(TxId, BlockHeight)>,
     UnboundedSender<(Transaction, BlockHeight)>,
 ) {
-    let wallet_transactions = self.transaction_metadata_set.clone();
-    let keys = self.keys.clone();
-    let config = self.config.clone();
+    let local_transaction_context = transaction_context.clone();
 
     let start_height = bsync_data.read().await.sync_status.read().await.start_block;
     let end_height = bsync_data.read().await.sync_status.read().await.end_block;
@@ -532,9 +510,7 @@ pub async fn start(
         let mut workers = FuturesUnordered::new();
 
         while let Some((transaction_id, height)) = transaction_id_receiver.recv().await {
-            let config = config.clone();
-            let keys = keys.clone();
-            let wallet_transactions = wallet_transactions.clone();
+            let per_txid_iter_context = local_transaction_context.clone();
             let block_time = bsync_data_i
                 .read()
                 .await
@@ -568,17 +544,9 @@ pub async fn start(
                     last_progress.store(progress, Ordering::SeqCst);
                 }
 
-                Self::scan_full_tx(
-                    config,
-                    transaction,
-                    height,
-                    false,
-                    block_time,
-                    keys,
-                    wallet_transactions,
-                    None,
-                )
-                .await;
+                per_txid_iter_context
+                    .scan_full_tx(transaction, height, false, block_time, None)
+                    .await;
 
                 Ok::<_, String>(())
             }));
@@ -600,10 +568,7 @@ pub async fn start(
         Ok(())
     });
 
-    let wallet_transactions = self.transaction_metadata_set.clone();
-    let keys = self.keys.clone();
-    let config = self.config.clone();
-
+    let transaction_context = transaction_context.clone(); // TODO: Delete and study error.
     let (transaction_transmitter, mut transaction_receiver) =
         unbounded_channel::<(Transaction, BlockHeight)>();
 
@@ -611,27 +576,15 @@ pub async fn start(
         let bsync_data = bsync_data.clone();
 
         while let Some((transaction, height)) = transaction_receiver.recv().await {
-            let config = config.clone();
-            let keys = keys.clone();
-            let wallet_transactions = wallet_transactions.clone();
-
             let block_time = bsync_data
                 .read()
                 .await
                 .block_data
                 .get_block_timestamp(&height)
                 .await;
-            Self::scan_full_tx(
-                config,
-                transaction,
-                height,
-                false,
-                block_time,
-                keys,
-                wallet_transactions,
-                None,
-            )
-            .await;
+            transaction_context
+                .scan_full_tx(transaction, height, false, block_time, None)
+                .await;
         }
 
         //info!("Finished full_tx scanning all txns");

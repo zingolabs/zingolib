@@ -1,10 +1,8 @@
+use crate::blaze::fetch_full_transaction::TransactionContext;
 use crate::compact_formats::TreeState;
 use crate::wallet::data::TransactionMetadata;
 use crate::wallet::keys::transparent::TransparentKey;
-use crate::{
-    blaze::fetch_full_transaction::FetchFullTxns,
-    wallet::{data::SpendableSaplingNote, keys::sapling::SaplingKey},
-};
+use crate::wallet::{data::SpendableSaplingNote, keys::sapling::SaplingKey};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::Future;
 use log::{error, info, warn};
@@ -25,6 +23,7 @@ use zcash_client_backend::{
 };
 use zcash_encoding::{Optional, Vector};
 use zcash_primitives::memo::MemoBytes;
+use zcash_primitives::transaction;
 use zcash_primitives::transaction::builder::Progress;
 use zcash_primitives::{
     consensus::BlockHeight,
@@ -168,6 +167,9 @@ pub struct LightWallet {
 
     // The current price of ZEC. (time_fetched, price in USD)
     pub price: Arc<RwLock<WalletZecPriceInfo>>,
+
+    // Local data to the proxy to specify transactions to fetch.
+    transaction_context: TransactionContext,
 }
 
 use crate::wallet::traits::Diversifiable as _;
@@ -184,7 +186,8 @@ impl LightWallet {
     ) -> io::Result<Self> {
         let keys = Keys::new(&config, seed_phrase, num_zaddrs)
             .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
-
+        let transaction_metadata_set = Arc::new(RwLock::new(TransactionMetadataSet::new()));
+        let transaction_context = TransactionContext::new(&config, keys, transaction_metadata_set);
         Ok(Self {
             keys: Arc::new(RwLock::new(keys)),
             transactions: Arc::new(RwLock::new(TransactionMetadataSet::new())),
