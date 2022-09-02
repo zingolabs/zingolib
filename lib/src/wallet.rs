@@ -140,9 +140,6 @@ impl WalletOptions {
 }
 
 pub struct LightWallet {
-    // All the keys in the wallet
-    keys: Arc<RwLock<Keys>>,
-
     // The block at which this wallet was born. Rescans
     // will start from here.
     birthday: AtomicU64,
@@ -150,14 +147,8 @@ pub struct LightWallet {
     // The last 100 blocks, used if something gets re-orged
     pub(super) blocks: Arc<RwLock<Vec<BlockData>>>,
 
-    // List of all transactions
-    pub(crate) transactions: Arc<RwLock<TransactionMetadataSet>>,
-
     // Wallet options
     pub(crate) wallet_options: Arc<RwLock<WalletOptions>>,
-
-    // Non-serialized fields
-    config: ZingoConfig,
 
     // Heighest verified block
     pub(crate) verified_tree: Arc<RwLock<Option<TreeState>>>,
@@ -186,18 +177,21 @@ impl LightWallet {
     ) -> io::Result<Self> {
         let keys = Keys::new(&config, seed_phrase, num_zaddrs)
             .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
+
         let transaction_metadata_set = Arc::new(RwLock::new(TransactionMetadataSet::new()));
-        let transaction_context = TransactionContext::new(&config, keys, transaction_metadata_set);
+        let transaction_context = TransactionContext::new(
+            &config,
+            Arc::new(RwLock::new(keys)),
+            transaction_metadata_set,
+        );
         Ok(Self {
-            keys: Arc::new(RwLock::new(keys)),
-            transactions: Arc::new(RwLock::new(TransactionMetadataSet::new())),
             blocks: Arc::new(RwLock::new(vec![])),
             wallet_options: Arc::new(RwLock::new(WalletOptions::default())),
-            config,
             birthday: AtomicU64::new(height),
             verified_tree: Arc::new(RwLock::new(None)),
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(WalletZecPriceInfo::new())),
+            transaction_context,
         })
     }
 
