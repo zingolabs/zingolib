@@ -1,9 +1,9 @@
 use crate::{
     blaze::{
         block_witness_data::BlockAndWitnessData, fetch_compact_blocks::FetchCompactBlocks,
-        fetch_full_transaction::FetchFullTxns, fetch_taddr_transactions::FetchTaddrTransactions,
-        sync_status::SyncStatus, syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions,
-        update_notes::UpdateNotes,
+        fetch_full_transaction::TransactionContext,
+        fetch_taddr_transactions::FetchTaddrTransactions, sync_status::SyncStatus,
+        syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions, update_notes::UpdateNotes,
     },
     compact_formats::RawTransaction,
     grpc_connector::GrpcConnector,
@@ -1343,7 +1343,7 @@ impl LightClient {
                             let price = price.read().await.clone();
                             //info!("Mempool attempting to scan {}", tx.txid());
 
-                            FetchFullTxns::scan_full_tx(
+                            TransactionContext::scan_full_tx(
                                 config.clone(),
                                 transaction,
                                 BlockHeight::from_u32(rtransaction.height as u32),
@@ -1582,19 +1582,19 @@ impl LightClient {
         let (taddr_fetcher_handle, taddr_fetcher_transmitter) =
             grpc_connector.start_taddr_transaction_fetcher().await;
 
-        // The processor to fetch the full transactions, and decode the memos and the outgoing metadata
-        let fetch_full_transaction_processor =
-            FetchFullTxns::new(&self.config, self.wallet.keys(), self.wallet.transactions());
+        // Local state necessary for a transaction fetch
+        let transaction_context =
+            TransactionContext::new(&self.config, self.wallet.keys(), self.wallet.transactions());
         let (
             fetch_full_transactions_handle,
             fetch_full_transaction_transmitter,
             fetch_taddr_transactions_transmitter,
-        ) = fetch_full_transaction_processor
-            .start(
-                full_transaction_fetcher_transmitter.clone(),
-                bsync_data.clone(),
-            )
-            .await;
+        ) = crate::blaze::fetch_full_transaction::start(
+            transaction_context,
+            full_transaction_fetcher_transmitter.clone(),
+            bsync_data.clone(),
+        )
+        .await;
 
         // The processor to process Transactions detected by the trial decryptions processor
         let update_notes_processor = UpdateNotes::new(self.wallet.transactions());
