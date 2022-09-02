@@ -60,7 +60,6 @@ fn get_regtest_dir() -> PathBuf {
 }
 
 fn prepare_working_directories(
-    vector_subdir: &PathBuf,
     zcd_datadir: &PathBuf,
     lwd_datadir: &PathBuf,
     zingo_datadir: &PathBuf,
@@ -204,7 +203,7 @@ fn generate_initial_block(
         .output()
 }
 
-pub(crate) fn launch() {
+pub(crate) fn launch(clean_regtest_data: bool) {
     use std::io::Read;
     use std::{thread, time};
 
@@ -216,7 +215,6 @@ pub(crate) fn launch() {
     let bin_location = regtest_dir.join("bin");
     let logs = regtest_dir.join("logs");
     let data_dir = regtest_dir.join("data");
-    let regtestvectors = data_dir.join("regtestvectors").join("regtest");
     let zcashd_datadir = data_dir.join("zcashd");
     let zcashd_logs = logs.join("zcashd");
     let zcashd_config = confs_dir.join("zcash.conf");
@@ -236,12 +234,9 @@ pub(crate) fn launch() {
         .unwrap()
         .ends_with("/regtest/data/zcashd"));
 
-    prepare_working_directories(
-        &regtestvectors,
-        &zcashd_datadir,
-        &lightwalletd_datadir,
-        &zingo_datadir,
-    );
+    if clean_regtest_data {
+        prepare_working_directories(&zcashd_datadir, &lightwalletd_datadir, &zingo_datadir);
+    }
 
     let (mut zcashd_command, mut zcashd_logfile, zcashd_stdout_log) =
         zcashd_launch(&bin_location, &zcashd_logs, &zcashd_config, &zcashd_datadir);
@@ -272,23 +267,27 @@ pub(crate) fn launch() {
     }
 
     println!("zcashd start section completed, zcashd reports it is done loading.");
-    println!("Generating initial block");
 
-    let generate_output = generate_initial_block(&bin_location, &zcashd_config);
+    if clean_regtest_data {
+        println!("Generating initial block");
+        let generate_output = generate_initial_block(&bin_location, &zcashd_config);
 
-    match generate_output {
-        Ok(output) => println!(
-            "generated block {}",
-            std::str::from_utf8(&output.stdout).unwrap()
-        ),
-        Err(e) => {
-            println!("generating initial block returned error {e}");
-            println!("exiting!");
-            zcashd_command
-                .kill()
-                .expect("Stop! Stop! Zcash is already dead!");
-            panic!("")
+        match generate_output {
+            Ok(output) => println!(
+                "generated block {}",
+                std::str::from_utf8(&output.stdout).unwrap()
+            ),
+            Err(e) => {
+                println!("generating initial block returned error {e}");
+                println!("exiting!");
+                zcashd_command
+                    .kill()
+                    .expect("Stop! Stop! Zcash is already dead!");
+                panic!("")
+            }
         }
+    } else {
+        println!("Keeping old regtest data")
     }
     println!("lightwalletd is about to start. This should only take a moment.");
 
