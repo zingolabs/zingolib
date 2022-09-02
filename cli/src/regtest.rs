@@ -114,14 +114,13 @@ fn prepare_working_directories(
         .expect("problem with rm zingofile");
 
     // copy contents from regtestvector directory to working zcashd data directory
-    let destination_subdir = zcd_datadir.join("regtest");
+    let destination_subdir = zcd_datadir.join("regtest").join("*");
 
-    std::process::Command::new("cp")
+    std::process::Command::new("rm")
         .arg("-r")
-        .arg(vector_subdir)
         .arg(destination_subdir)
         .output()
-        .expect("problem with cp -r regtest first block vectors");
+        .expect("problem with rm -r contents of regtest dir");
 }
 
 fn zcashd_launch(
@@ -188,6 +187,21 @@ fn zcashd_launch(
         File::create(&zcashd_stdout_log).expect("file::create Result error"),
         zcashd_stdout_log,
     )
+}
+
+fn generate_initial_block(
+    bin_loc: &PathBuf,
+    zcashd_config: &PathBuf,
+) -> Result<std::process::Output, std::io::Error> {
+    let cli_bin = bin_loc.join("zcash-cli");
+    let config_str = zcashd_config.to_str().expect("Path to string failure!");
+    std::process::Command::new(cli_bin)
+        .args([
+            format!("-conf={config_str}"),
+            "generate".to_string(),
+            "1".to_string(),
+        ])
+        .output()
 }
 
 pub(crate) fn launch() {
@@ -258,6 +272,24 @@ pub(crate) fn launch() {
     }
 
     println!("zcashd start section completed, zcashd reports it is done loading.");
+    println!("Generating initial block");
+
+    let generate_output = generate_initial_block(&bin_location, &zcashd_config);
+
+    match generate_output {
+        Ok(output) => println!(
+            "generated block {}",
+            std::str::from_utf8(&output.stdout).unwrap()
+        ),
+        Err(e) => {
+            println!("generating initial block returned error {e}");
+            println!("exiting!");
+            zcashd_command
+                .kill()
+                .expect("Stop! Stop! Zcash is already dead!");
+            panic!("")
+        }
+    }
     println!("lightwalletd is about to start. This should only take a moment.");
 
     let mut lwd_logfile =
