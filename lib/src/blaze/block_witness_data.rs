@@ -25,12 +25,14 @@ use tokio::{
 };
 use zcash_primitives::{
     consensus::{BlockHeight, NetworkUpgrade, Parameters},
-    merkle_tree::{CommitmentTree, Hashable, IncrementalWitness},
+    merkle_tree::{CommitmentTree, IncrementalWitness},
     sapling::{note_encryption::SaplingDomain, Node as SaplingNode},
     transaction::TxId,
 };
 
 use super::{fixed_size_buffer::FixedSizeBuffer, sync_status::SyncStatus};
+
+type Node<D> = <<D as DomainWalletExt<zingoconfig::Network>>::WalletNote as NoteAndMetadata>::Node;
 
 #[allow(dead_code)]
 pub struct BlockAndWitnessData {
@@ -627,10 +629,14 @@ impl BlockAndWitnessData {
     }
 
     // Stream all the outputs start at the block till the highest block available.
-    pub(crate) async fn update_witness_after_block<Node: Hashable + FromCommitment>(
+    pub(crate) async fn update_witness_after_block<D: DomainWalletExt<zingoconfig::Network>>(
         &self,
-        witnesses: WitnessCache<Node>,
-    ) -> WitnessCache<Node> {
+        witnesses: WitnessCache<Node<D>>,
+    ) -> WitnessCache<Node<D>>
+    where
+        <D as Domain>::Recipient: crate::wallet::traits::Recipient,
+        <D as Domain>::Note: PartialEq + Clone,
+    {
         let height = witnesses.top_height + 1;
 
         // Check if we've already synced all the requested blocks
@@ -653,9 +659,9 @@ impl BlockAndWitnessData {
             for i in (0..pos + 1).rev() {
                 let cb = &blocks.get(i as usize).unwrap().cb();
                 for compact_transaction in &cb.vtx {
-                    for co in &compact_transaction.outputs {
-                        if let Some(node) = Node::from_commitment(&co.cmu().unwrap().into()).into()
-                        {
+                    use crate::wallet::traits::CompactOutput as _;
+                    for co in D::CompactOutput::from_compact_transaction(compact_transaction) {
+                        if let Some(node) = Node::<D>::from_commitment(&co.cmstar()).into() {
                             w.append(node).unwrap();
                         }
                     }
@@ -740,7 +746,7 @@ impl BlockAndWitnessData {
         // Replace the last witness in the vector with the newly computed one.
         let witnesses = WitnessCache::new(vec![w], height);
 
-        return self.update_witness_after_block(witnesses).await;
+        return self.update_witness_after_block::<D>(witnesses).await;
     }
 }
 
