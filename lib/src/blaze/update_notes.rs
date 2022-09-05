@@ -105,7 +105,7 @@ impl UpdateNotes {
                     .read()
                     .await
                     .block_data
-                    .update_witness_after_block(witnesses)
+                    .update_witness_after_block::<D>(witnesses)
                     .await
             };
 
