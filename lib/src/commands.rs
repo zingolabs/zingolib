@@ -1432,7 +1432,7 @@ impl Command for QuitCommand {
 
             for pid in spawned_pids {
                 Command::new("kill")
-                    .args(["-9", pid])
+                    .arg(pid)
                     .output()
                     .expect("error while killing regtest-spawned processes!");
             }
