@@ -1476,7 +1476,14 @@ impl LightWallet {
         let orchard_anchor = if let Some(note) = orchard_notes.get(0) {
             note.witness.root()
         } else {
-            CommitmentTree::empty().root()
+            if let Some(tree_state) = &*self.verified_tree.read().await {
+                let ref orchard_tree = tree_state.orchard_tree;
+                CommitmentTree::read(hex::decode(orchard_tree).unwrap().as_slice())
+                    .unwrap()
+                    .root()
+            } else {
+                return Err("No last known verified tree".to_string());
+            }
         };
         let mut builder = Builder::with_orchard_anchor(
             self.transaction_context.config.chain,
@@ -1486,8 +1493,8 @@ impl LightWallet {
         println!(
             "{}: Adding {} sapling notes, {} orchard notes, and {} utxos",
             now() - start_time,
-            orchard_notes.len(),
             sapling_notes.len(),
+            orchard_notes.len(),
             utxos.len()
         );
 
