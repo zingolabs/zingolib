@@ -7,6 +7,7 @@ use clap::{self, Arg};
 use zingoconfig::{Network, ZingoConfig};
 use zingolib::{commands, create_on_data_dir, lightclient::LightClient};
 
+pub mod regtest;
 pub mod version;
 
 pub fn configure_app() -> clap::App<'static, 'static> {

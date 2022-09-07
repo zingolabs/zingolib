@@ -203,7 +203,7 @@ fn generate_initial_block(
         .output()
 }
 
-pub(crate) fn launch(clean_regtest_data: bool) {
+pub fn launch(clean_regtest_data: bool) {
     use std::io::Read;
     use std::{thread, time};
 

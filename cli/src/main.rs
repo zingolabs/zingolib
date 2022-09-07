@@ -1,7 +1,7 @@
-mod regtest;
 use log::error;
 use zingo_cli::{
-    attempt_recover_seed, configure_app, report_permission_error, start_interactive, startup,
+    attempt_recover_seed, configure_app, regtest, report_permission_error, start_interactive,
+    startup,
 };
 use zingoconfig::ZingoConfig;
 
