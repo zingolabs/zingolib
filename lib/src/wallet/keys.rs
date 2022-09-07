@@ -45,6 +45,7 @@ pub(crate) mod extended_transparent;
 pub(crate) mod orchard;
 pub(crate) mod sapling;
 pub(crate) mod transparent;
+pub(crate) mod unified;
 
 /// Sha256(Sha256(value))
 pub fn double_sha256(payload: &[u8]) -> Vec<u8> {
