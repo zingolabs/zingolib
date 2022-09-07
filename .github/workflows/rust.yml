@@ -12,10 +12,6 @@ jobs:
     with:
       path: |
         ~/.cargo/bin/
-        ~/.cargo/registry/index/
-        ~/.cargo/registry/cache/
-        ~/.cargo/git/db/
-        target/
       key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       build:
       name: Build on ${{ matrix.os }}
