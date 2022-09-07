@@ -65,7 +65,8 @@ pub fn configure_app() -> clap::App<'static> {
             .arg(Arg::with_name("PARAMS")
                 .help("Params to execute command with. Run the 'help' command to get usage help.")
                 .required(false)
-                .multiple(true))
+                .multiple(true)
+                .index(2))
 }
 
 /// This function is only tested against Linux.
