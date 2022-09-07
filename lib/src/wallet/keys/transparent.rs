@@ -8,10 +8,7 @@ use sodiumoxide::crypto::secretbox;
 use zcash_encoding::{Optional, Vector};
 
 use crate::wallet::{
-    keys::{
-        extended_transparent::{ExtendedPrivKey, KeyIndex},
-        FromBase58Check, ToBase58Check,
-    },
+    keys::{extended_transparent::ExtendedPrivKey, FromBase58Check, ToBase58Check},
     utils,
 };
 
@@ -44,23 +41,7 @@ impl TransparentKey {
         bip39_seed: &[u8],
         pos: u32,
     ) -> secp256k1::SecretKey {
-        assert_eq!(bip39_seed.len(), 64);
-
-        let ext_t_key = ExtendedPrivKey::with_seed(bip39_seed).unwrap();
-        ext_t_key
-            .derive_private_key(KeyIndex::hardened_from_normalize_index(44).unwrap())
-            .unwrap()
-            .derive_private_key(
-                KeyIndex::hardened_from_normalize_index(config.get_coin_type()).unwrap(),
-            )
-            .unwrap()
-            .derive_private_key(KeyIndex::hardened_from_normalize_index(0).unwrap())
-            .unwrap()
-            .derive_private_key(KeyIndex::Normal(0))
-            .unwrap()
-            .derive_private_key(KeyIndex::Normal(pos))
-            .unwrap()
-            .private_key
+        ExtendedPrivKey::get_ext_taddr_from_bip39seed(config, bip39_seed, pos).private_key
     }
 
     pub fn address_from_prefix_sk(prefix: &[u8; 2], sk: &secp256k1::SecretKey) -> String {

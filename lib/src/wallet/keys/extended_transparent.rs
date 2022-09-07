@@ -1,6 +1,7 @@
 use lazy_static::lazy_static;
 use ring::hmac::{self, Context, Key};
 use secp256k1::{Error, PublicKey, Secp256k1, SecretKey, SignOnly};
+use zingoconfig::ZingoConfig;
 
 lazy_static! {
     static ref SECP256K1_SIGN_ONLY: Secp256k1<SignOnly> = Secp256k1::signing_only();
@@ -78,6 +79,25 @@ impl ExtendedPrivKey {
             private_key,
             chain_code: chain_code.to_vec(),
         })
+    }
+
+    pub fn get_ext_taddr_from_bip39seed(config: &ZingoConfig, bip39_seed: &[u8], pos: u32) -> Self {
+        assert_eq!(bip39_seed.len(), 64);
+
+        let ext_t_key = ExtendedPrivKey::with_seed(bip39_seed).unwrap();
+        ext_t_key
+            .derive_private_key(KeyIndex::hardened_from_normalize_index(44).unwrap())
+            .unwrap()
+            .derive_private_key(
+                KeyIndex::hardened_from_normalize_index(config.get_coin_type()).unwrap(),
+            )
+            .unwrap()
+            .derive_private_key(KeyIndex::hardened_from_normalize_index(0).unwrap())
+            .unwrap()
+            .derive_private_key(KeyIndex::Normal(0))
+            .unwrap()
+            .derive_private_key(KeyIndex::Normal(pos))
+            .unwrap()
     }
 
     fn sign_hardended_key(&self, index: u32) -> ring::hmac::Tag {
