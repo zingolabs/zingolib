@@ -10,12 +10,12 @@ use zingolib::{commands, create_on_data_dir, lightclient::LightClient};
 pub mod regtest;
 pub mod version;
 
-pub fn configure_app() -> clap::App<'static, 'static> {
+pub fn configure_app() -> clap::App<'static> {
     clap::App::new("Zingo CLI").version(version::VERSION)
             .arg(Arg::with_name("nosync")
                 .help("By default, zingo-cli will sync the wallet at startup. Pass --nosync to prevent the automatic sync at startup.")
                 .long("nosync")
-                .short("n")
+                .short('n')
                 .takes_value(false))
             .arg(Arg::with_name("recover")
                 .long("recover")
@@ -26,7 +26,7 @@ pub fn configure_app() -> clap::App<'static, 'static> {
                 .help("When recovering seed, specify a password for the encrypted wallet")
                 .takes_value(true))
             .arg(Arg::with_name("seed")
-                .short("s")
+                .short('s')
                 .long("seed")
                 .value_name("seed_phrase")
                 .help("Create a new wallet with the given 24-word seed phrase. Will fail if wallet already exists")
@@ -65,7 +65,8 @@ pub fn configure_app() -> clap::App<'static, 'static> {
             .arg(Arg::with_name("PARAMS")
                 .help("Params to execute command with. Run the 'help' command to get usage help.")
                 .required(false)
-                .multiple(true))
+                .multiple(true)
+                .index(2))
 }
 
 /// This function is only tested against Linux.
