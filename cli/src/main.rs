@@ -1,16 +1,13 @@
-mod regtest;
 use log::error;
 use zingo_cli::{
-    attempt_recover_seed, configure_clapapp, report_permission_error, start_interactive, startup,
-    version::VERSION,
+    attempt_recover_seed, configure_app, regtest, report_permission_error, start_interactive,
+    startup,
 };
 use zingoconfig::ZingoConfig;
 
 pub fn main() {
     // Get command line arguments
-    use clap::{App, Arg};
-    let fresh_app = App::new("Zingo CLI");
-    let configured_app = configure_clapapp!(fresh_app);
+    let configured_app = configure_app();
     let matches = configured_app.get_matches();
 
     if matches.is_present("recover") {

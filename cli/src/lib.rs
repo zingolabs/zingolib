@@ -3,15 +3,15 @@ use std::sync::{Arc, RwLock};
 
 use log::{error, info};
 
+use clap::{self, Arg};
 use zingoconfig::{Network, ZingoConfig};
 use zingolib::{commands, create_on_data_dir, lightclient::LightClient};
 
+pub mod regtest;
 pub mod version;
 
-#[macro_export]
-macro_rules! configure_clapapp {
-    ( $freshapp: expr ) => {
-    $freshapp.version(VERSION)
+pub fn configure_app() -> clap::App<'static, 'static> {
+    clap::App::new("Zingo CLI").version(version::VERSION)
             .arg(Arg::with_name("nosync")
                 .help("By default, zingo-cli will sync the wallet at startup. Pass --nosync to prevent the automatic sync at startup.")
                 .long("nosync")
@@ -66,7 +66,6 @@ macro_rules! configure_clapapp {
                 .help("Params to execute command with. Run the 'help' command to get usage help.")
                 .required(false)
                 .multiple(true))
-    };
 }
 
 /// This function is only tested against Linux.
