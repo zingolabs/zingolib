@@ -60,7 +60,6 @@ fn get_regtest_dir() -> PathBuf {
 }
 
 fn prepare_working_directories(
-    vector_subdir: &PathBuf,
     zcd_datadir: &PathBuf,
     lwd_datadir: &PathBuf,
     zingo_datadir: &PathBuf,
@@ -114,14 +113,13 @@ fn prepare_working_directories(
         .expect("problem with rm zingofile");
 
     // copy contents from regtestvector directory to working zcashd data directory
-    let destination_subdir = zcd_datadir.join("regtest");
+    let destination_subdir = zcd_datadir.join("regtest").join("*");
 
-    std::process::Command::new("cp")
+    std::process::Command::new("rm")
         .arg("-r")
-        .arg(vector_subdir)
         .arg(destination_subdir)
         .output()
-        .expect("problem with cp -r regtest first block vectors");
+        .expect("problem with rm -r contents of regtest dir");
 }
 
 fn zcashd_launch(
@@ -190,7 +188,22 @@ fn zcashd_launch(
     )
 }
 
-pub(crate) fn launch() {
+fn generate_initial_block(
+    bin_loc: &PathBuf,
+    zcashd_config: &PathBuf,
+) -> Result<std::process::Output, std::io::Error> {
+    let cli_bin = bin_loc.join("zcash-cli");
+    let config_str = zcashd_config.to_str().expect("Path to string failure!");
+    std::process::Command::new(cli_bin)
+        .args([
+            format!("-conf={config_str}"),
+            "generate".to_string(),
+            "1".to_string(),
+        ])
+        .output()
+}
+
+pub(crate) fn launch(clean_regtest_data: bool) {
     use std::io::Read;
     use std::{thread, time};
 
@@ -202,7 +215,6 @@ pub(crate) fn launch() {
     let bin_location = regtest_dir.join("bin");
     let logs = regtest_dir.join("logs");
     let data_dir = regtest_dir.join("data");
-    let regtestvectors = data_dir.join("regtestvectors").join("regtest");
     let zcashd_datadir = data_dir.join("zcashd");
     let zcashd_logs = logs.join("zcashd");
     let zcashd_config = confs_dir.join("zcash.conf");
@@ -222,12 +234,9 @@ pub(crate) fn launch() {
         .unwrap()
         .ends_with("/regtest/data/zcashd"));
 
-    prepare_working_directories(
-        &regtestvectors,
-        &zcashd_datadir,
-        &lightwalletd_datadir,
-        &zingo_datadir,
-    );
+    if clean_regtest_data {
+        prepare_working_directories(&zcashd_datadir, &lightwalletd_datadir, &zingo_datadir);
+    }
 
     let (mut zcashd_command, mut zcashd_logfile, zcashd_stdout_log) =
         zcashd_launch(&bin_location, &zcashd_logs, &zcashd_config, &zcashd_datadir);
@@ -258,6 +267,28 @@ pub(crate) fn launch() {
     }
 
     println!("zcashd start section completed, zcashd reports it is done loading.");
+
+    if clean_regtest_data {
+        println!("Generating initial block");
+        let generate_output = generate_initial_block(&bin_location, &zcashd_config);
+
+        match generate_output {
+            Ok(output) => println!(
+                "generated block {}",
+                std::str::from_utf8(&output.stdout).unwrap()
+            ),
+            Err(e) => {
+                println!("generating initial block returned error {e}");
+                println!("exiting!");
+                zcashd_command
+                    .kill()
+                    .expect("Stop! Stop! Zcash is already dead!");
+                panic!("")
+            }
+        }
+    } else {
+        println!("Keeping old regtest data")
+    }
     println!("lightwalletd is about to start. This should only take a moment.");
 
     let mut lwd_logfile =

@@ -16,7 +16,7 @@ This means, by default, any blocks added while zcashd is running are not retaine
 The default config includes all network upgrades set to block height 1, therefore all network upgrades are active by default in regtest mode.
 
 # Usage example:
-You must copy your compiled `zcashd` and `lightwalletd` binaries to `zingolib/regtest/bin/` or set up symlinks, etc. `zcash-cli` is also needed if you wish
+You must copy your compiled `zcashd`, `zcash-cli` and `lightwalletd` binaries to `zingolib/regtest/bin/` or set up symlinks, etc. `zcash-cli` is also needed if you wish
 to interact with your `zcashd` instance while it is running.
 
 Run `cargo build` to produce the `zingo-cli` binary.

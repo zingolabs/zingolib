@@ -54,8 +54,9 @@ pub fn main() {
     };
 
     let regtest_mode_enabled = matches.is_present("regtest");
+    let clean_regtest_data = !matches.is_present("no-clean");
     let server = if regtest_mode_enabled {
-        regtest::launch();
+        regtest::launch(clean_regtest_data);
         ZingoConfig::get_server_or_default(Some("http://127.0.0.1".to_string()))
         // do the regtest
     } else {
