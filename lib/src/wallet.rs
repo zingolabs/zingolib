@@ -24,7 +24,6 @@ use zcash_client_backend::{
 };
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
-use zcash_primitives::consensus::Parameters;
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::merkle_tree::CommitmentTree;
 use zcash_primitives::sapling::note_encryption::SaplingDomain;
@@ -1837,9 +1836,9 @@ mod test {
             let NBlockFCBLScenario { lightclient, .. } = scenario;
             let sufficient_funds = lightclient
                 .wallet
-                .select_notes_and_utxos(Amount::from_u64(1).unwrap(), false, false)
+                .select_notes_and_utxos(Amount::from_u64(1).unwrap(), false, false, false)
                 .await;
-            assert_eq!(Amount::from_u64(0).unwrap(), sufficient_funds.2);
+            assert_eq!(Amount::from_u64(0).unwrap(), sufficient_funds.3);
         }
 
         crate::apply_scenario! {insufficient_funds_1_present_needed_1 10}
@@ -1868,9 +1867,9 @@ mod test {
             );
             let sufficient_funds = lightclient
                 .wallet
-                .select_notes_and_utxos(Amount::from_u64(1).unwrap(), false, false)
+                .select_notes_and_utxos(Amount::from_u64(1).unwrap(), false, false, false)
                 .await;
-            assert_eq!(Amount::from_u64(0).unwrap(), sufficient_funds.2);
+            assert_eq!(Amount::from_u64(0).unwrap(), sufficient_funds.3);
         }
         crate::apply_scenario! {insufficient_funds_1_plus_txfee_present_needed_1 10}
         async fn insufficient_funds_1_plus_txfee_present_needed_1(scenario: NBlockFCBLScenario) {
@@ -1903,9 +1902,9 @@ mod test {
             );
             let sufficient_funds = lightclient
                 .wallet
-                .select_notes_and_utxos(Amount::from_u64(1).unwrap(), false, false)
+                .select_notes_and_utxos(Amount::from_u64(1).unwrap(), false, false, false)
                 .await;
-            assert_eq!(Amount::from_u64(1_001).unwrap(), sufficient_funds.2);
+            assert_eq!(Amount::from_u64(1_001).unwrap(), sufficient_funds.3);
         }
     }
     apply_scenario! {z_t_note_selection 10}
@@ -1936,16 +1935,16 @@ mod test {
         let amt = Amount::from_u64(10_000).unwrap();
         // Reset the anchor offsets
         lightclient.wallet.transaction_context.config.anchor_offset = [9, 4, 2, 1, 0];
-        let (notes, utxos, selected) = lightclient
+        let (_orchard_notes, sapling_notes, utxos, selected) = lightclient
             .wallet
-            .select_notes_and_utxos(amt, false, false)
+            .select_notes_and_utxos(amt, false, false, false)
             .await;
         assert!(selected >= amt);
-        assert_eq!(notes.len(), 1);
-        assert_eq!(notes[0].note.value, value);
+        assert_eq!(sapling_notes.len(), 1);
+        assert_eq!(sapling_notes[0].note.value, value);
         assert_eq!(utxos.len(), 0);
         assert_eq!(
-            incw_to_string(&notes[0].witness),
+            incw_to_string(&sapling_notes[0].witness),
             incw_to_string(
                 lightclient
                     .wallet
@@ -1965,27 +1964,27 @@ mod test {
 
         // With min anchor_offset at 1, we can't select any notes
         lightclient.wallet.transaction_context.config.anchor_offset = [9, 4, 2, 1, 1];
-        let (notes, utxos, _selected) = lightclient
+        let (_orchard_notes, sapling_notes, utxos, _selected) = lightclient
             .wallet
-            .select_notes_and_utxos(amt, false, false)
+            .select_notes_and_utxos(amt, false, false, false)
             .await;
-        assert_eq!(notes.len(), 0);
+        assert_eq!(sapling_notes.len(), 0);
         assert_eq!(utxos.len(), 0);
 
         // Mine 1 block, then it should be selectable
         mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 1)
             .await;
 
-        let (notes, utxos, selected) = lightclient
+        let (_orchard_notes, sapling_notes, utxos, selected) = lightclient
             .wallet
-            .select_notes_and_utxos(amt, false, false)
+            .select_notes_and_utxos(amt, false, false, false)
             .await;
         assert!(selected >= amt);
-        assert_eq!(notes.len(), 1);
-        assert_eq!(notes[0].note.value, value);
+        assert_eq!(sapling_notes.len(), 1);
+        assert_eq!(sapling_notes[0].note.value, value);
         assert_eq!(utxos.len(), 0);
         assert_eq!(
-            incw_to_string(&notes[0].witness),
+            incw_to_string(&sapling_notes[0].witness),
             incw_to_string(
                 lightclient
                     .wallet
@@ -2007,16 +2006,16 @@ mod test {
         mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 15)
             .await;
         lightclient.wallet.transaction_context.config.anchor_offset = [9, 4, 2, 1, 1];
-        let (notes, utxos, selected) = lightclient
+        let (_orchard_notes, sapling_notes, utxos, selected) = lightclient
             .wallet
-            .select_notes_and_utxos(amt, false, true)
+            .select_notes_and_utxos(amt, false, true, false)
             .await;
         assert!(selected >= amt);
-        assert_eq!(notes.len(), 1);
-        assert_eq!(notes[0].note.value, value);
+        assert_eq!(sapling_notes.len(), 1);
+        assert_eq!(sapling_notes[0].note.value, value);
         assert_eq!(utxos.len(), 0);
         assert_eq!(
-            incw_to_string(&notes[0].witness),
+            incw_to_string(&sapling_notes[0].witness),
             incw_to_string(
                 lightclient
                     .wallet
@@ -2036,11 +2035,11 @@ mod test {
 
         // Trying to select a large amount will fail
         let amt = Amount::from_u64(1_000_000).unwrap();
-        let (notes, utxos, _selected) = lightclient
+        let (_orchard_notes, sapling_notes, utxos, _selected) = lightclient
             .wallet
-            .select_notes_and_utxos(amt, false, false)
+            .select_notes_and_utxos(amt, false, false, false)
             .await;
-        assert_eq!(notes.len(), 0);
+        assert_eq!(sapling_notes.len(), 0);
         assert_eq!(utxos.len(), 0);
 
         // 4. Get an incoming transaction to a t address
@@ -2056,33 +2055,33 @@ mod test {
 
         // Trying to select a large amount will now succeed
         let amt = Amount::from_u64(value + tvalue - 10_000).unwrap();
-        let (notes, utxos, selected) = lightclient
+        let (_orchard_notes, sapling_notes, utxos, selected) = lightclient
             .wallet
-            .select_notes_and_utxos(amt, false, true)
+            .select_notes_and_utxos(amt, false, true, false)
             .await;
         assert_eq!(selected, Amount::from_u64(value + tvalue).unwrap());
-        assert_eq!(notes.len(), 1);
+        assert_eq!(sapling_notes.len(), 1);
         assert_eq!(utxos.len(), 1);
 
         // If we set transparent-only = true, only the utxo should be selected
         let amt = Amount::from_u64(tvalue - 10_000).unwrap();
-        let (notes, utxos, selected) = lightclient
+        let (_orchard_notes, sapling_notes, utxos, selected) = lightclient
             .wallet
-            .select_notes_and_utxos(amt, true, true)
+            .select_notes_and_utxos(amt, true, true, false)
             .await;
         assert_eq!(selected, Amount::from_u64(tvalue).unwrap());
-        assert_eq!(notes.len(), 0);
+        assert_eq!(sapling_notes.len(), 0);
         assert_eq!(utxos.len(), 1);
 
         // Set min confs to 5, so the sapling note will not be selected
         lightclient.wallet.transaction_context.config.anchor_offset = [9, 4, 4, 4, 4];
         let amt = Amount::from_u64(tvalue - 10_000).unwrap();
-        let (notes, utxos, selected) = lightclient
+        let (_orchard_notes, sapling_notes, utxos, selected) = lightclient
             .wallet
-            .select_notes_and_utxos(amt, false, true)
+            .select_notes_and_utxos(amt, false, true, false)
             .await;
         assert_eq!(selected, Amount::from_u64(tvalue).unwrap());
-        assert_eq!(notes.len(), 0);
+        assert_eq!(sapling_notes.len(), 0);
         assert_eq!(utxos.len(), 1);
     }
 
@@ -2114,16 +2113,16 @@ mod test {
         let amt = Amount::from_u64(10_000).unwrap();
         // Reset the anchor offsets
         lightclient.wallet.transaction_context.config.anchor_offset = [9, 4, 2, 1, 0];
-        let (notes, utxos, selected) = lightclient
+        let (_orchard_notes, sapling_notes, utxos, selected) = lightclient
             .wallet
-            .select_notes_and_utxos(amt, false, false)
+            .select_notes_and_utxos(amt, false, false, false)
             .await;
         assert!(selected >= amt);
-        assert_eq!(notes.len(), 1);
-        assert_eq!(notes[0].note.value, value1);
+        assert_eq!(sapling_notes.len(), 1);
+        assert_eq!(sapling_notes[0].note.value, value1);
         assert_eq!(utxos.len(), 0);
         assert_eq!(
-            incw_to_string(&notes[0].witness),
+            incw_to_string(&sapling_notes[0].witness),
             incw_to_string(
                 lightclient
                     .wallet
@@ -2153,23 +2152,23 @@ mod test {
 
         // Now, try to select a small amount, it should prefer the older note
         let amt = Amount::from_u64(10_000).unwrap();
-        let (notes, utxos, selected) = lightclient
+        let (_orchard_notes, sapling_notes, utxos, selected) = lightclient
             .wallet
-            .select_notes_and_utxos(amt, false, false)
+            .select_notes_and_utxos(amt, false, false, false)
             .await;
         assert!(selected >= amt);
-        assert_eq!(notes.len(), 1);
-        assert_eq!(notes[0].note.value, value1);
+        assert_eq!(sapling_notes.len(), 1);
+        assert_eq!(sapling_notes[0].note.value, value1);
         assert_eq!(utxos.len(), 0);
 
         // Selecting a bigger amount should select both notes
         let amt = Amount::from_u64(value1 + value2).unwrap();
-        let (notes, utxos, selected) = lightclient
+        let (_orchard_notes, sapling_notes, utxos, selected) = lightclient
             .wallet
-            .select_notes_and_utxos(amt, false, false)
+            .select_notes_and_utxos(amt, false, false, false)
             .await;
         assert!(selected == amt);
-        assert_eq!(notes.len(), 2);
+        assert_eq!(sapling_notes.len(), 2);
         assert_eq!(utxos.len(), 0);
     }
     const FINAL_ROOT: &'static str =
