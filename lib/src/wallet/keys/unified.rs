@@ -31,7 +31,7 @@ pub struct ReceiverSelection {
 }
 
 impl UnifiedSpendAuthority {
-    pub async fn new_address(
+    pub fn new_address(
         &mut self,
         desired_receivers: ReceiverSelection,
     ) -> Result<UnifiedAddress, String> {
