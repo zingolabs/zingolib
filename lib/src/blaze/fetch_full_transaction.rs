@@ -395,7 +395,7 @@ impl TransactionContext {
                 )
                 .into_iter();
                 while let Some(decrypt_attempt) = decrypt_attempts.next() {
-                    let (note, to, memo_bytes) = match decrypt_attempt {
+                    let ((note, to, memo_bytes), _ivk_num) = match decrypt_attempt {
                         Some(plaintext) => plaintext,
                         _ => continue,
                     };
