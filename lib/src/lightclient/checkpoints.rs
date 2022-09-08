@@ -25,6 +25,8 @@ fn get_test_checkpoint(height: u64) -> Option<(u64, &'static str, &'static str)>
     find_checkpoint(height, &checkpoints)
 }
 
+/// Note that all checkpoints are pre-orchard activation, and their fields are:
+/// height, hash, sapling_tree. Will need to be restructured when post-orchard points are added
 pub const fn get_all_main_checkpoints() -> [(u64, &'static str, &'static str); 21] {
     [
         (610000, "000000000218882f481e3b49ca3df819734b8d74aac91f69e848d7499b34b472",

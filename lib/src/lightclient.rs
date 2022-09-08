@@ -1664,14 +1664,8 @@ impl LightClient {
 
         // 3. Verify all the downloaded data
         let block_data = bsync_data.clone();
-        let verify_handle = tokio::spawn(async move {
-            block_data
-                .read()
-                .await
-                .block_data
-                .verify_sapling_tree()
-                .await
-        });
+        let verify_handle =
+            tokio::spawn(async move { block_data.read().await.block_data.verify_trees().await });
 
         // Wait for everything to finish
 
