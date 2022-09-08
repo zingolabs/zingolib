@@ -273,7 +273,7 @@ impl TrialDecryptions {
             zcash_note_encryption::batch::try_compact_note_decryption(&ivks, &outputs);
         let outputs_len = outputs.len();
         for maybe_decrypted_output in maybe_decrypted_outputs.into_iter().enumerate() {
-            if let (i, Some((note, to))) = maybe_decrypted_output {
+            if let (i, Some(((note, to), _ivk_num))) = maybe_decrypted_output {
                 *transaction_metadata = true; // i.e. we got metadata
 
                 let keys = keys.clone();
