@@ -11,6 +11,8 @@ jobs:
   build:
     name: Build on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    env:
+      RUSTFLAGS: -D warnings
     strategy:
       matrix:
         os: [ubuntu-22.04]
@@ -37,3 +39,4 @@ jobs:
         uses:                   codecov/codecov-action@v2
         with:
           fail_ci_if_error:     true
+          fail_ci_if_warn:      true

@@ -32,6 +32,7 @@ use zcash_primitives::{
 
 use super::{fixed_size_buffer::FixedSizeBuffer, sync_status::SyncStatus};
 
+#[allow(dead_code)]
 pub struct BlockAndWitnessData {
     // List of all blocks and their hashes/commitment trees.
     // Stored with the tallest block first, and the shortest last.
@@ -589,6 +590,7 @@ impl BlockAndWitnessData {
 
         Err("Not found!".to_string())
     }
+    #[allow(dead_code)]
     pub async fn get_sapling_note_witness(
         &self,
         uri: Uri,
@@ -606,6 +608,7 @@ impl BlockAndWitnessData {
         .await
     }
 
+    #[allow(dead_code)]
     pub async fn get_orchard_note_witness(
         &self,
         uri: Uri,
