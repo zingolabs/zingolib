@@ -1,5 +1,5 @@
 use crate::{
-    compact_formats::{CompactBlock, CompactTx, TreeState},
+    compact_formats::{vec_to_array, CompactBlock, CompactTx, TreeState},
     grpc_connector::GrpcConnector,
     lightclient::checkpoints::get_all_main_checkpoints,
     wallet::{
@@ -8,7 +8,9 @@ use crate::{
         transactions::TransactionMetadataSet,
     },
 };
-use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
+use orchard::{
+    note::ExtractedNoteCommitment, note_encryption::OrchardDomain, tree::MerkleHashOrchard,
+};
 use zcash_note_encryption::Domain;
 use zingoconfig::{ZingoConfig, MAX_REORG};
 
@@ -166,7 +168,7 @@ impl BlockAndWitnessData {
     }
 
     // Verify all the downloaded tree states
-    pub async fn verify_sapling_tree(&self) -> (bool, Option<TreeState>) {
+    pub async fn verify_trees(&self) -> (bool, Option<TreeState>) {
         // Verify only on the last batch
         {
             let sync_status = self.sync_status.read().await;
@@ -252,8 +254,12 @@ impl BlockAndWitnessData {
                     if ct.height == vt.height {
                         return true;
                     }
-                    let mut tree = CommitmentTree::<SaplingNode>::read(
+                    let mut sapling_tree = CommitmentTree::<SaplingNode>::read(
                         &hex::decode(ct.sapling_tree).unwrap()[..],
+                    )
+                    .unwrap();
+                    let mut orchard_tree = CommitmentTree::<MerkleHashOrchard>::read(
+                        &hex::decode(ct.orchard_tree).unwrap()[..],
                     )
                     .unwrap();
 
@@ -274,17 +280,27 @@ impl BlockAndWitnessData {
                             for compact_transaction in &cb.vtx {
                                 for co in &compact_transaction.outputs {
                                     let node = SaplingNode::new(co.cmu().unwrap().into());
-                                    tree.append(node).unwrap();
+                                    sapling_tree.append(node).unwrap();
+                                }
+                                for ca in &compact_transaction.actions {
+                                    let node = MerkleHashOrchard::from_cmx(
+                                        &ExtractedNoteCommitment::from_bytes(vec_to_array(&ca.cmx))
+                                            .unwrap(),
+                                    );
+                                    orchard_tree.append(node).unwrap();
                                 }
                             }
                         }
                     }
                     // Verify that the verification_tree can be calculated from the start tree
-                    let mut buf = vec![];
-                    tree.write(&mut buf).unwrap();
+                    let mut sapling_buf = vec![];
+                    sapling_tree.write(&mut sapling_buf).unwrap();
+                    let mut orchard_buf = vec![];
+                    orchard_tree.write(&mut orchard_buf).unwrap();
 
                     // Return if verified
-                    hex::encode(buf) == vt.sapling_tree
+                    (hex::encode(sapling_buf) == vt.sapling_tree)
+                        && (hex::encode(orchard_buf) == vt.orchard_tree)
                 })
             })
             .collect();
