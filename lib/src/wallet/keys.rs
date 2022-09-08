@@ -37,6 +37,7 @@ use self::{
     orchard::{OrchardKey, WalletOKeyInner},
     sapling::{SaplingKey, WalletZKeyType},
     transparent::{TransparentKey, WalletTKeyType},
+    unified::UnifiedSpendAuthority,
 };
 
 use super::traits::{DomainWalletExt, WalletKey};
@@ -133,6 +134,10 @@ pub struct Keys {
 
     seed: [u8; 32], // Seed phrase for this wallet. If wallet is locked, this is 0
 
+    // Unified spending keys derived from the wallet seed. This will eventually replace
+    // all other HD keys.
+    pub(crate) unified_keys: Vec<UnifiedSpendAuthority>,
+
     // List of keys, actually in this wallet. This is a combination of HD keys derived from the seed,
     // viewing keys and imported spending keys.
     pub(crate) zkeys: Vec<SaplingKey>,
@@ -183,6 +188,7 @@ impl Keys {
             zkeys: vec![],
             tkeys: vec![],
             okeys: vec![],
+            unified_keys: vec![],
         }
     }
 
@@ -214,6 +220,8 @@ impl Keys {
         // we need to get the 64 byte bip39 entropy
         let bip39_seed = Mnemonic::from_entropy(seed_bytes).unwrap().to_seed("");
 
+        let unified_keys = vec![UnifiedSpendAuthority::new_from_seed(config, &bip39_seed, 0)];
+
         // Derive only the first sk and address
         let tpk = TransparentKey::new_hdkey(config, 0, &bip39_seed);
 
@@ -230,6 +238,7 @@ impl Keys {
             enc_seed: [0; 48],
             nonce: vec![],
             seed: seed_bytes,
+            unified_keys,
             zkeys,
             tkeys: vec![tpk],
             okeys: vec![],
@@ -377,6 +386,7 @@ impl Keys {
             enc_seed,
             nonce,
             seed: seed_bytes,
+            unified_keys: vec![],
             zkeys,
             tkeys,
             okeys: vec![],
@@ -443,6 +453,7 @@ impl Keys {
             enc_seed,
             nonce,
             seed: seed_bytes,
+            unified_keys: vec![], // TODO: Read/write these
             zkeys,
             tkeys,
             okeys,
