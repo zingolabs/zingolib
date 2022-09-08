@@ -1,9 +1,9 @@
 use crate::{
     blaze::{
         block_witness_data::BlockAndWitnessData, fetch_compact_blocks::FetchCompactBlocks,
-        fetch_full_transaction::FetchFullTxns, fetch_taddr_transactions::FetchTaddrTransactions,
-        sync_status::SyncStatus, syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions,
-        update_notes::UpdateNotes,
+        fetch_full_transaction::TransactionContext,
+        fetch_taddr_transactions::FetchTaddrTransactions, sync_status::SyncStatus,
+        syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions, update_notes::UpdateNotes,
     },
     compact_formats::RawTransaction,
     grpc_connector::GrpcConnector,
@@ -799,7 +799,7 @@ impl LightClient {
                 .collect();
 
             // Collect Sapling notes
-            self.wallet.transactions.read().await.current.iter()
+            self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
                 .flat_map( |(transaction_id, wtx)| {
                     let spendable_address = spendable_address.clone();
                     wtx.sapling_notes.iter().filter_map(move |nd|
@@ -844,7 +844,7 @@ impl LightClient {
         let mut pending_utxos: Vec<JsonValue> = vec![];
 
         {
-            self.wallet.transactions.read().await.current.iter()
+            self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
                 .flat_map( |(transaction_id, wtx)| {
                     wtx.utxos.iter().filter_map(move |utxo|
                         if !all_notes && utxo.spent.is_some() {
@@ -943,7 +943,7 @@ impl LightClient {
         // Create a list of TransactionItems from wallet transactions
         let mut transaction_list = self
             .wallet
-            .transactions
+            .transaction_context.transaction_metadata_set
             .read()
             .await
             .current
@@ -1329,7 +1329,11 @@ impl LightClient {
 
                 let h1 = tokio::spawn(async move {
                     let keys = lc1.wallet.keys();
-                    let wallet_transactions = lc1.wallet.transactions.clone();
+                    let transaction_metadata_set = lc1
+                        .wallet
+                        .transaction_context
+                        .transaction_metadata_set
+                        .clone();
                     let price = lc1.wallet.price.clone();
 
                     while let Some(rtransaction) = mempool_receiver.recv().await {
@@ -1343,14 +1347,16 @@ impl LightClient {
                             let price = price.read().await.clone();
                             //info!("Mempool attempting to scan {}", tx.txid());
 
-                            FetchFullTxns::scan_full_tx(
-                                config.clone(),
+                            TransactionContext::new(
+                                &config,
+                                keys.clone(),
+                                transaction_metadata_set.clone(),
+                            )
+                            .scan_full_tx(
                                 transaction,
                                 BlockHeight::from_u32(rtransaction.height as u32),
                                 true,
                                 now() as u32,
-                                keys.clone(),
-                                wallet_transactions.clone(),
                                 TransactionMetadata::get_price(now(), &price),
                             )
                             .await;
@@ -1469,7 +1475,10 @@ impl LightClient {
                 BlockAndWitnessData::invalidate_block(
                     last_scanned_height,
                     self.wallet.blocks.clone(),
-                    self.wallet.transactions.clone(),
+                    self.wallet
+                        .transaction_context
+                        .transaction_metadata_set
+                        .clone(),
                 )
                 .await;
             }
@@ -1582,19 +1591,19 @@ impl LightClient {
         let (taddr_fetcher_handle, taddr_fetcher_transmitter) =
             grpc_connector.start_taddr_transaction_fetcher().await;
 
-        // The processor to fetch the full transactions, and decode the memos and the outgoing metadata
-        let fetch_full_transaction_processor =
-            FetchFullTxns::new(&self.config, self.wallet.keys(), self.wallet.transactions());
+        // Local state necessary for a transaction fetch
+        let transaction_context =
+            TransactionContext::new(&self.config, self.wallet.keys(), self.wallet.transactions());
         let (
             fetch_full_transactions_handle,
             fetch_full_transaction_transmitter,
             fetch_taddr_transactions_transmitter,
-        ) = fetch_full_transaction_processor
-            .start(
-                full_transaction_fetcher_transmitter.clone(),
-                bsync_data.clone(),
-            )
-            .await;
+        ) = crate::blaze::fetch_full_transaction::start(
+            transaction_context,
+            full_transaction_fetcher_transmitter.clone(),
+            bsync_data.clone(),
+        )
+        .await;
 
         // The processor to process Transactions detected by the trial decryptions processor
         let update_notes_processor = UpdateNotes::new(self.wallet.transactions());
