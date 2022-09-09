@@ -790,6 +790,14 @@ async fn sapling_incoming_viewkey(scenario: NBlockFCBLScenario) {
             .unwrap(),
         value
     );
+
+    log::info!("{}", lightclient.do_balance().await);
+    assert!(!lightclient
+        .wallet
+        .keys()
+        .read()
+        .await
+        .have_sapling_spending_key(&iextfvk));
     assert_eq!(
         lightclient.do_balance().await["spendable_sapling_balance"]
             .as_u64()

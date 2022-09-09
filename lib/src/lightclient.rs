@@ -1669,8 +1669,6 @@ impl LightClient {
 
         // 3. Verify all the downloaded data
         let block_data = bsync_data.clone();
-        let verify_handle =
-            tokio::spawn(async move { block_data.read().await.block_data.verify_trees().await });
 
         // Wait for everything to finish
 
@@ -1699,8 +1697,11 @@ impl LightClient {
         .map(|r| r.map_err(|e| format!("{}", e))?)
         .collect::<Result<(), String>>()?;
 
+        let verify_handle =
+            tokio::spawn(async move { block_data.read().await.block_data.verify_trees().await });
         let (verified, heighest_tree) = verify_handle.await.map_err(|e| e.to_string())?;
         info!("Sapling tree verification {}", verified);
+        info!("highest tree exists: {}", heighest_tree.is_some());
         if !verified {
             return Err("Sapling Tree Verification Failed".to_string());
         }
