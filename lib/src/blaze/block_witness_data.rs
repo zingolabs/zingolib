@@ -8,6 +8,7 @@ use crate::{
         transactions::TransactionMetadataSet,
     },
 };
+use log::info;
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
 use zcash_note_encryption::Domain;
 use zingoconfig::{Network, ZingoConfig, MAX_REORG};
@@ -44,7 +45,7 @@ pub struct BlockAndWitnessData {
 
     // List of sapling tree states that were fetched from the server,
     // which need to be verified before we return from the function.
-    verification_list: Arc<RwLock<Vec<TreeState>>>,
+    pub verification_list: Arc<RwLock<Vec<TreeState>>>,
 
     // How many blocks to process at a time.
     batch_size: u64,
@@ -165,6 +166,7 @@ impl BlockAndWitnessData {
     }
 
     // Verify all the downloaded tree states
+    #[tracing::instrument(skip(self))]
     pub async fn verify_trees(&self) -> (bool, Option<TreeState>) {
         // Verify only on the last batch
         {
@@ -176,6 +178,7 @@ impl BlockAndWitnessData {
 
         // If there's nothing to verify, return
         if self.verification_list.read().await.is_empty() {
+            info!("nothing to verify, returning");
             return (true, None);
         }
 
@@ -258,7 +261,7 @@ impl BlockAndWitnessData {
                     let mut orchard_tree = CommitmentTree::<MerkleHashOrchard>::read(
                         &hex::decode(ct.orchard_tree).unwrap()[..],
                     )
-                    .unwrap();
+                    .unwrap_or(CommitmentTree::empty());
 
                     {
                         let blocks = blocks.read().await;
@@ -550,9 +553,6 @@ impl BlockAndWitnessData {
             } else {
                 let tree_state = GrpcConnector::get_trees(uri, prev_height).await?;
                 let tree = hex::decode(D::get_tree(&tree_state)).unwrap();
-                RwLock::write(&self.verification_list)
-                    .await
-                    .push(tree_state);
                 CommitmentTree::read(&tree[..]).map_err(|e| format!("{}", e))?
             };
 
