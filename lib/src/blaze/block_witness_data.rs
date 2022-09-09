@@ -8,6 +8,7 @@ use crate::{
         transactions::TransactionMetadataSet,
     },
 };
+use log::info;
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
 use zcash_note_encryption::Domain;
 use zingoconfig::{Network, ZingoConfig, MAX_REORG};
@@ -177,6 +178,7 @@ impl BlockAndWitnessData {
 
         // If there's nothing to verify, return
         if self.verification_list.read().await.is_empty() {
+            info!("nothing to verify, returning");
             return (true, None);
         }
 
