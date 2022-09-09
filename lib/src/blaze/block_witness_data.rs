@@ -1,5 +1,5 @@
 use crate::{
-    compact_formats::{vec_to_array, CompactBlock, CompactTx, TreeState},
+    compact_formats::{CompactBlock, CompactTx, TreeState},
     grpc_connector::GrpcConnector,
     lightclient::checkpoints::get_all_main_checkpoints,
     wallet::{
@@ -8,11 +8,9 @@ use crate::{
         transactions::TransactionMetadataSet,
     },
 };
-use orchard::{
-    note::ExtractedNoteCommitment, note_encryption::OrchardDomain, tree::MerkleHashOrchard,
-};
+use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
 use zcash_note_encryption::Domain;
-use zingoconfig::{ZingoConfig, MAX_REORG};
+use zingoconfig::{Network, ZingoConfig, MAX_REORG};
 
 use futures::future::join_all;
 use http::Uri;
@@ -278,17 +276,11 @@ impl BlockAndWitnessData {
                         for i in (end_pos..start_pos + 1).rev() {
                             let cb = &blocks.get(i as usize).unwrap().cb();
                             for compact_transaction in &cb.vtx {
-                                for co in &compact_transaction.outputs {
-                                    let node = SaplingNode::new(co.cmu().unwrap().into());
-                                    sapling_tree.append(node).unwrap();
-                                }
-                                for ca in &compact_transaction.actions {
-                                    let node = MerkleHashOrchard::from_cmx(
-                                        &ExtractedNoteCommitment::from_bytes(vec_to_array(&ca.cmx))
-                                            .unwrap(),
-                                    );
-                                    orchard_tree.append(node).unwrap();
-                                }
+                                update_trees_with_compact_transaction(
+                                    &mut sapling_tree,
+                                    &mut orchard_tree,
+                                    compact_transaction,
+                                )
                             }
                         }
                     }
@@ -1089,5 +1081,31 @@ mod test {
                 finished_blks[i].cb().hash().to_string()
             );
         }
+    }
+}
+
+pub fn update_trees_with_compact_transaction(
+    sapling_tree: &mut CommitmentTree<SaplingNode>,
+    orchard_tree: &mut CommitmentTree<MerkleHashOrchard>,
+    compact_transaction: &CompactTx,
+) {
+    update_tree_with_compact_transaction::<SaplingDomain<Network>>(
+        sapling_tree,
+        compact_transaction,
+    );
+    update_tree_with_compact_transaction::<OrchardDomain>(orchard_tree, compact_transaction);
+}
+
+pub fn update_tree_with_compact_transaction<D: DomainWalletExt<Network>>(
+    tree: &mut CommitmentTree<Node<D>>,
+    compact_transaction: &CompactTx,
+) where
+    <D as Domain>::Recipient: crate::wallet::traits::Recipient,
+    <D as Domain>::Note: PartialEq + Clone,
+{
+    use crate::wallet::traits::CompactOutput;
+    for output in D::CompactOutput::from_compact_transaction(&compact_transaction) {
+        let node = Node::<D>::from_commitment(output.cmstar()).unwrap();
+        tree.append(node).unwrap()
     }
 }
