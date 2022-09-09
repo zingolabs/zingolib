@@ -28,6 +28,7 @@ use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 use zcash_primitives::block::BlockHash;
 use zcash_primitives::consensus::BranchId;
+use zcash_primitives::merkle_tree::CommitmentTree;
 use zcash_primitives::transaction::{Transaction, TxId};
 use zingoconfig::{Network, ZingoConfig};
 
@@ -67,6 +68,7 @@ pub async fn create_test_server(
             ])
             .output()
             .unwrap();
+        tracing_subscriber::fmt::init();
     });
     let (ready_transmitter, ready_receiver) = oneshot::channel();
     let (stop_transmitter, stop_receiver) = oneshot::channel();
@@ -436,6 +438,30 @@ impl TestServerData {
         }
 
         for blk in cbs.into_iter().rev() {
+            let mut sapling_tree = self
+                .tree_states
+                .last()
+                .map(|trees| trees.sapling_tree.clone())
+                .unwrap_or(CommitmentTree::empty());
+            let mut orchard_tree = self
+                .tree_states
+                .last()
+                .map(|trees| trees.orchard_tree.clone())
+                .unwrap_or(CommitmentTree::empty());
+            for transaction in &blk.vtx {
+                update_trees_with_compact_transaction(
+                    &mut sapling_tree,
+                    &mut orchard_tree,
+                    transaction,
+                )
+            }
+            let tree_states = BlockCommitmentTrees {
+                block_height: blk.height,
+                block_hash: BlockHash::from_slice(&blk.hash).to_string(),
+                sapling_tree,
+                orchard_tree,
+            };
+            self.tree_states.push(tree_states);
             self.blocks.insert(0, blk);
         }
     }

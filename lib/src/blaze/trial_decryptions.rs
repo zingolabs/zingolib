@@ -5,6 +5,7 @@
 
 use crate::{
     compact_formats::{CompactBlock, CompactTx},
+    grpc_connector::GrpcConnector,
     wallet::{
         data::{ChannelNullifier, TransactionMetadata},
         keys::Keys,
@@ -171,6 +172,12 @@ impl TrialDecryptions {
 
         for compact_block in compact_blocks {
             let height = BlockHeight::from_u32(compact_block.height as u32);
+            info!("trial decrypting block {}", height);
+            let uri = config.server.read().unwrap().clone();
+            let tree_state = GrpcConnector::get_trees(uri, compact_block.height).await?;
+            RwLock::write(&bsync_data.read().await.block_data.verification_list)
+                .await
+                .push(tree_state);
 
             for (transaction_num, compact_transaction) in compact_block.vtx.iter().enumerate() {
                 if let Some(filter) = transaction_size_filter {
