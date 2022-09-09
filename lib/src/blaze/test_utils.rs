@@ -7,6 +7,7 @@ use crate::{
 };
 use ff::{Field, PrimeField};
 use group::GroupEncoding;
+use orchard::tree::MerkleHashOrchard;
 use prost::Message;
 use rand::{rngs::OsRng, RngCore};
 use secp256k1::PublicKey;
@@ -23,11 +24,11 @@ use zcash_primitives::{
     memo::Memo,
     merkle_tree::{CommitmentTree, Hashable, IncrementalWitness, MerklePath},
     sapling::{
+        self,
         note_encryption::{sapling_note_encryption, SaplingDomain},
         prover::TxProver,
         redjubjub::Signature,
-        Diversifier, Node, Note, Nullifier, PaymentAddress, ProofGenerationKey, Rseed,
-        ValueCommitment,
+        Diversifier, Note, Nullifier, PaymentAddress, ProofGenerationKey, Rseed, ValueCommitment,
     },
     transaction::{
         components::{
@@ -41,21 +42,34 @@ use zcash_proofs::sapling::SaplingProvingContext;
 
 // This function can be used by TestServerData, or other test code
 // TODO: Replace with actual lightclient functionality
-pub fn tree_from_cblocks(
+pub fn trees_from_cblocks(
     compactblock_list: &Vec<crate::blaze::test_utils::FakeCompactBlock>,
-) -> CommitmentTree<Node> {
-    compactblock_list
-        .iter()
-        .fold(CommitmentTree::<Node>::empty(), |mut tree, fcb| {
-            for compact_tx in &fcb.block.vtx {
-                for compact_output in &compact_tx.outputs {
-                    tree.append(Node::new(compact_output.cmu().unwrap().into()))
-                        .unwrap();
-                }
-            }
-
-            tree
-        })
+) -> (
+    Vec<CommitmentTree<sapling::Node>>,
+    Vec<CommitmentTree<MerkleHashOrchard>>,
+) {
+    let mut sapling_trees = Vec::new();
+    let mut orchard_trees = Vec::new();
+    for block in compactblock_list {
+        let mut sapling_tree = sapling_trees
+            .last()
+            .map(Clone::clone)
+            .unwrap_or_else(|| CommitmentTree::empty());
+        let mut orchard_tree = orchard_trees
+            .last()
+            .map(Clone::clone)
+            .unwrap_or_else(|| CommitmentTree::empty());
+        for compact_transaction in &block.block.vtx {
+            update_trees_with_compact_transaction(
+                &mut sapling_tree,
+                &mut orchard_tree,
+                &compact_transaction,
+            )
+        }
+        sapling_trees.push(sapling_tree);
+        orchard_trees.push(orchard_tree);
+    }
+    (sapling_trees, orchard_trees)
 }
 pub fn random_u8_32() -> [u8; 32] {
     let mut b = [0u8; 32];
@@ -64,29 +78,29 @@ pub fn random_u8_32() -> [u8; 32] {
     b
 }
 
-pub fn tree_to_string(tree: &CommitmentTree<Node>) -> String {
+pub fn tree_to_string(tree: &CommitmentTree<sapling::Node>) -> String {
     let mut b1 = vec![];
     tree.write(&mut b1).unwrap();
     hex::encode(b1)
 }
 
-pub fn incw_to_string(inc_witness: &IncrementalWitness<Node>) -> String {
+pub fn incw_to_string(inc_witness: &IncrementalWitness<sapling::Node>) -> String {
     let mut b1 = vec![];
     inc_witness.write(&mut b1).unwrap();
     hex::encode(b1)
 }
 
-pub fn node_to_string(n: &Node) -> String {
+pub fn node_to_string(n: &sapling::Node) -> String {
     let mut b1 = vec![];
     n.write(&mut b1).unwrap();
     hex::encode(b1)
 }
 
-pub fn list_all_witness_nodes(cb: &CompactBlock) -> Vec<Node> {
+pub fn list_all_witness_nodes(cb: &CompactBlock) -> Vec<sapling::Node> {
     let mut nodes = vec![];
     for transaction in &cb.vtx {
         for co in &transaction.outputs {
-            nodes.push(Node::new(co.cmu().unwrap().into()))
+            nodes.push(sapling::Node::new(co.cmu().unwrap().into()))
         }
     }
 
@@ -99,12 +113,14 @@ pub struct FakeTransaction {
     pub taddrs_involved: Vec<String>,
 }
 
-use zcash_primitives::transaction::components::sapling;
-fn sapling_bundle() -> Option<sapling::Bundle<sapling::Authorized>> {
-    let authorization = sapling::Authorized {
+use zcash_primitives::transaction::components::sapling as sapling_transaction;
+
+use super::block_witness_data::update_trees_with_compact_transaction;
+fn sapling_bundle() -> Option<sapling_transaction::Bundle<sapling_transaction::Authorized>> {
+    let authorization = sapling_transaction::Authorized {
         binding_sig: Signature::read(&vec![0u8; 64][..]).expect("Signature read error!"),
     };
-    Some(sapling::Bundle {
+    Some(sapling_transaction::Bundle {
         shielded_spends: vec![],
         shielded_outputs: vec![],
         value_balance: Amount::zero(),
@@ -588,7 +604,7 @@ impl TxProver for FakeTransactionProver {
         ar: jubjub::Fr,
         value: u64,
         _anchor: bls12_381::Scalar,
-        _merkle_path: MerklePath<Node>,
+        _merkle_path: MerklePath<sapling::Node>,
     ) -> Result<
         (
             [u8; GROTH_PROOF_SIZE],
