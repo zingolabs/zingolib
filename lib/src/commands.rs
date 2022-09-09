@@ -1089,6 +1089,12 @@ impl Command for SetOptionCommand {
                         )
                     }
                 },
+                "transaction_filter_threshold" => match option_value.parse() {
+                    Ok(number) => {
+                        *lightclient.config.max_transaction_size.write().unwrap() = number
+                    }
+                    Err(e) => return format!("Error {e}, couldn't parse {option_value} as number"),
+                },
                 _ => return format!("Error: Couldn't understand {}", option_name),
             }
 
@@ -1132,10 +1138,16 @@ impl Command for GetOptionCommand {
                     .await
                     .download_memos
                 {
-                    MemoDownloadOption::NoMemos => "none",
-                    MemoDownloadOption::WalletMemos => "wallet",
-                    MemoDownloadOption::AllMemos => "all",
+                    MemoDownloadOption::NoMemos => "none".to_string(),
+                    MemoDownloadOption::WalletMemos => "wallet".to_string(),
+                    MemoDownloadOption::AllMemos => "all".to_string(),
                 },
+                "transaction_filter_threshold" => lightclient
+                    .config
+                    .max_transaction_size
+                    .read()
+                    .unwrap()
+                    .to_string(),
                 _ => return format!("Error: Couldn't understand {}", option_name),
             };
 

@@ -169,6 +169,11 @@ impl TrialDecryptions {
             let height = BlockHeight::from_u32(compact_block.height as u32);
 
             for (transaction_num, compact_transaction) in compact_block.vtx.iter().enumerate() {
+                if compact_transaction.outputs.len() + compact_transaction.actions.len()
+                    > *config.max_transaction_size.read().unwrap()
+                {
+                    break;
+                }
                 let mut transaction_metadata = false;
 
                 Self::trial_decrypt_domain_specific_outputs::<SaplingDomain<zingoconfig::Network>>(
