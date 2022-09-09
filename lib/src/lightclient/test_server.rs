@@ -1,5 +1,8 @@
 use crate::apply_scenario;
-use crate::blaze::test_utils::{tree_to_string, FakeCompactBlockList};
+use crate::blaze::block_witness_data::{
+    update_trees_with_compact_transaction, BlockCommitmentTrees,
+};
+use crate::blaze::test_utils::FakeCompactBlockList;
 use crate::compact_formats::compact_tx_streamer_server::CompactTxStreamer;
 use crate::compact_formats::compact_tx_streamer_server::CompactTxStreamerServer;
 use crate::compact_formats::{
@@ -25,8 +28,6 @@ use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 use zcash_primitives::block::BlockHash;
 use zcash_primitives::consensus::BranchId;
-use zcash_primitives::merkle_tree::CommitmentTree;
-use zcash_primitives::sapling::Node;
 use zcash_primitives::transaction::{Transaction, TxId};
 use zingoconfig::{Network, ZingoConfig};
 
@@ -380,7 +381,7 @@ pub struct TestServerData {
     pub sent_transactions: Vec<RawTransaction>,
     pub config: ZingoConfig,
     pub zec_price: f64,
-    pub tree_states: Vec<(u64, String, String)>,
+    pub tree_states: Vec<BlockCommitmentTrees>,
 }
 
 impl TestServerData {
@@ -652,20 +653,16 @@ impl CompactTxStreamer for TestGRPCService {
         println!("Getting tree state at {}", block.height);
 
         // See if it is manually set.
-        if let Some((height, hash, tree)) = self
+        if let Some(tree_state) = self
             .data
             .read()
             .await
             .tree_states
             .iter()
-            .find(|(h, _, _)| *h == block.height)
+            .find(|trees| trees.block_height == block.height)
+            .map(BlockCommitmentTrees::to_tree_state)
         {
-            let mut ts = TreeState::default();
-            ts.height = *height;
-            ts.hash = hash.clone();
-            ts.sapling_tree = tree.clone();
-
-            return Ok(Response::new(ts));
+            return Ok(Response::new(tree_state));
         }
 
         let start_block = self
@@ -677,17 +674,17 @@ impl CompactTxStreamer for TestGRPCService {
             .map(|b| b.height - 1)
             .unwrap_or(0);
 
-        let start_tree = self
+        let start_trees = self
             .data
             .read()
             .await
             .tree_states
             .iter()
-            .find(|(h, _, _)| *h == start_block)
-            .map(|(_, _, t)| CommitmentTree::<Node>::read(&hex::decode(t).unwrap()[..]).unwrap())
-            .unwrap_or(CommitmentTree::<Node>::empty());
+            .find(|trees| trees.block_height == start_block)
+            .map(Clone::clone)
+            .unwrap_or(BlockCommitmentTrees::empty());
 
-        let tree = self
+        let mut trees = self
             .data
             .read()
             .await
@@ -695,18 +692,19 @@ impl CompactTxStreamer for TestGRPCService {
             .iter()
             .rev()
             .take_while(|cb| cb.height <= block.height)
-            .fold(start_tree, |mut tree, cb| {
+            .fold(start_trees, |mut trees, cb| {
                 for transaction in &cb.vtx {
-                    for co in &transaction.outputs {
-                        tree.append(Node::new(co.cmu().unwrap().into())).unwrap();
-                    }
+                    update_trees_with_compact_transaction(
+                        &mut trees.sapling_tree,
+                        &mut trees.orchard_tree,
+                        transaction,
+                    )
                 }
 
-                tree
+                trees
             });
 
-        let mut ts = TreeState::default();
-        ts.hash = BlockHash::from_slice(
+        trees.block_hash = BlockHash::from_slice(
             &self
                 .data
                 .read()
@@ -718,10 +716,9 @@ impl CompactTxStreamer for TestGRPCService {
                 .hash[..],
         )
         .to_string();
-        ts.height = block.height;
-        ts.sapling_tree = tree_to_string(&tree);
+        trees.block_height = block.height;
 
-        Ok(Response::new(ts))
+        Ok(Response::new(trees.to_tree_state()))
     }
 
     async fn get_address_utxos(

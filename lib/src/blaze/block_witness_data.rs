@@ -25,7 +25,7 @@ use tokio::{
 };
 use zcash_primitives::{
     consensus::{BlockHeight, NetworkUpgrade, Parameters},
-    merkle_tree::{CommitmentTree, IncrementalWitness},
+    merkle_tree::{CommitmentTree, Hashable, IncrementalWitness},
     sapling::{note_encryption::SaplingDomain, Node as SaplingNode},
     transaction::TxId,
 };
@@ -34,7 +34,6 @@ use super::{fixed_size_buffer::FixedSizeBuffer, sync_status::SyncStatus};
 
 type Node<D> = <<D as DomainWalletExt<zingoconfig::Network>>::WalletNote as NoteAndMetadata>::Node;
 
-#[allow(dead_code)]
 pub struct BlockAndWitnessData {
     // List of all blocks and their hashes/commitment trees.
     // Stored with the tallest block first, and the shortest last.
@@ -758,6 +757,81 @@ impl BlockAndWitnessData {
     }
 }
 
+/// The sapling tree and orchard tree for a given block height, with the block hash.
+/// The hash is likely used for reorgs.
+#[derive(Debug, Clone)]
+pub struct BlockCommitmentTrees {
+    pub block_height: u64,
+    pub block_hash: String,
+    pub sapling_tree: CommitmentTree<SaplingNode>,
+    pub orchard_tree: CommitmentTree<MerkleHashOrchard>,
+}
+
+impl BlockCommitmentTrees {
+    pub fn to_tree_state(&self) -> TreeState {
+        TreeState {
+            height: self.block_height,
+            hash: self.block_hash.clone(),
+            sapling_tree: tree_to_string(&self.sapling_tree),
+            orchard_tree: tree_to_string(&self.orchard_tree),
+            // We don't care about the rest of these fields
+            ..Default::default()
+        }
+    }
+    pub fn empty() -> Self {
+        Self {
+            block_height: 0,
+            block_hash: "".to_string(),
+            sapling_tree: CommitmentTree::empty(),
+            orchard_tree: CommitmentTree::empty(),
+        }
+    }
+    pub fn from_pre_orchard_checkpoint(
+        block_height: u64,
+        block_hash: String,
+        sapling_tree: String,
+    ) -> Self {
+        Self {
+            block_height,
+            block_hash,
+            sapling_tree: CommitmentTree::read(&*hex::decode(sapling_tree).unwrap()).unwrap(),
+            orchard_tree: CommitmentTree::empty(),
+        }
+    }
+}
+
+pub fn tree_to_string<Node: Hashable>(tree: &CommitmentTree<Node>) -> String {
+    let mut b1 = vec![];
+    tree.write(&mut b1).unwrap();
+    hex::encode(b1)
+}
+
+pub fn update_trees_with_compact_transaction(
+    sapling_tree: &mut CommitmentTree<SaplingNode>,
+    orchard_tree: &mut CommitmentTree<MerkleHashOrchard>,
+    compact_transaction: &CompactTx,
+) {
+    update_tree_with_compact_transaction::<SaplingDomain<Network>>(
+        sapling_tree,
+        compact_transaction,
+    );
+    update_tree_with_compact_transaction::<OrchardDomain>(orchard_tree, compact_transaction);
+}
+
+pub fn update_tree_with_compact_transaction<D: DomainWalletExt<Network>>(
+    tree: &mut CommitmentTree<Node<D>>,
+    compact_transaction: &CompactTx,
+) where
+    <D as Domain>::Recipient: crate::wallet::traits::Recipient,
+    <D as Domain>::Note: PartialEq + Clone,
+{
+    use crate::wallet::traits::CompactOutput;
+    for output in D::CompactOutput::from_compact_transaction(&compact_transaction) {
+        let node = Node::<D>::from_commitment(output.cmstar()).unwrap();
+        tree.append(node).unwrap()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::sync::Arc;
@@ -1081,31 +1155,5 @@ mod test {
                 finished_blks[i].cb().hash().to_string()
             );
         }
-    }
-}
-
-pub fn update_trees_with_compact_transaction(
-    sapling_tree: &mut CommitmentTree<SaplingNode>,
-    orchard_tree: &mut CommitmentTree<MerkleHashOrchard>,
-    compact_transaction: &CompactTx,
-) {
-    update_tree_with_compact_transaction::<SaplingDomain<Network>>(
-        sapling_tree,
-        compact_transaction,
-    );
-    update_tree_with_compact_transaction::<OrchardDomain>(orchard_tree, compact_transaction);
-}
-
-pub fn update_tree_with_compact_transaction<D: DomainWalletExt<Network>>(
-    tree: &mut CommitmentTree<Node<D>>,
-    compact_transaction: &CompactTx,
-) where
-    <D as Domain>::Recipient: crate::wallet::traits::Recipient,
-    <D as Domain>::Note: PartialEq + Clone,
-{
-    use crate::wallet::traits::CompactOutput;
-    for output in D::CompactOutput::from_compact_transaction(&compact_transaction) {
-        let node = Node::<D>::from_commitment(output.cmstar()).unwrap();
-        tree.append(node).unwrap()
     }
 }

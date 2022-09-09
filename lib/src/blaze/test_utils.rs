@@ -78,12 +78,6 @@ pub fn random_u8_32() -> [u8; 32] {
     b
 }
 
-pub fn tree_to_string<Node: Hashable>(tree: &CommitmentTree<Node>) -> String {
-    let mut b1 = vec![];
-    tree.write(&mut b1).unwrap();
-    hex::encode(b1)
-}
-
 pub fn incw_to_string<Node: Hashable>(inc_witness: &IncrementalWitness<Node>) -> String {
     let mut b1 = vec![];
     inc_witness.write(&mut b1).unwrap();
