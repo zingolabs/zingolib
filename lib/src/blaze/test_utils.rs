@@ -78,24 +78,26 @@ pub fn random_u8_32() -> [u8; 32] {
     b
 }
 
-pub fn tree_to_string(tree: &CommitmentTree<sapling::Node>) -> String {
+pub fn tree_to_string<Node: Hashable>(tree: &CommitmentTree<Node>) -> String {
     let mut b1 = vec![];
     tree.write(&mut b1).unwrap();
     hex::encode(b1)
 }
 
-pub fn incw_to_string(inc_witness: &IncrementalWitness<sapling::Node>) -> String {
+pub fn incw_to_string<Node: Hashable>(inc_witness: &IncrementalWitness<Node>) -> String {
     let mut b1 = vec![];
     inc_witness.write(&mut b1).unwrap();
     hex::encode(b1)
 }
 
-pub fn node_to_string(n: &sapling::Node) -> String {
+pub fn node_to_string<Node: Hashable>(n: &Node) -> String {
     let mut b1 = vec![];
     n.write(&mut b1).unwrap();
     hex::encode(b1)
 }
 
+///TODO: Is this used? This is probably covered by
+/// block_witness_data::update_tree_with_compact_transaction, consider deletion
 pub fn list_all_witness_nodes(cb: &CompactBlock) -> Vec<sapling::Node> {
     let mut nodes = vec![];
     for transaction in &cb.vtx {
