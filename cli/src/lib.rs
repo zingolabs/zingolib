@@ -302,16 +302,20 @@ pub struct CLIRunner {
     command: Option<String>,
     regtest_mode_enabled: bool,
 }
-impl CLIRunner {
-    fn short_circuit_on_help() {
-        std::process::exit(0x0100);
+use commands::ShortCircuitedCommand;
+fn short_circuit_on_help(params: Vec<String>) {
+    for h in commands::HelpCommand::exec_without_lc(params).lines() {
+        println!("{}", h);
     }
+    std::process::exit(0x0100);
+}
+impl CLIRunner {
     fn new() -> Self {
         let configured_app = configure_app();
         let matches = configured_app.get_matches();
         let command = matches.value_of("COMMAND");
         // Begin short_circuit section
-        let params = matches
+        let params: Vec<String> = matches
             .values_of("PARAMS")
             .map(|v| v.collect())
             .or(Some(vec![]))
@@ -321,7 +325,7 @@ impl CLIRunner {
             .collect();
         let command = if let Some(refstr) = command {
             if refstr == "help" {
-                CLIRunner::short_circuit_on_help();
+                short_circuit_on_help(params.clone());
             }
             Some(refstr.to_string())
         } else {

@@ -22,7 +22,7 @@ pub trait Command {
 }
 
 pub trait ShortCircuitedCommand {
-    fn exec_without_lc(&self, _args: &[&str]) -> String;
+    fn exec_without_lc(args: Vec<String>) -> String;
 }
 struct ChangeServerCommand {}
 impl Command for ChangeServerCommand {
@@ -230,7 +230,7 @@ impl Command for ClearCommand {
     }
 }
 
-struct HelpCommand {}
+pub struct HelpCommand {}
 impl Command for HelpCommand {
     fn help(&self) -> String {
         let mut h = vec![];
@@ -273,7 +273,7 @@ impl Command for HelpCommand {
     }
 }
 impl ShortCircuitedCommand for HelpCommand {
-    fn exec_without_lc(&self, args: &[&str]) -> String {
+    fn exec_without_lc(args: Vec<String>) -> String {
         let mut responses = vec![];
 
         // Print a list of all commands
@@ -287,11 +287,11 @@ impl ShortCircuitedCommand for HelpCommand {
                 responses.sort();
                 responses.join("\n")
             }
-            1 => match get_commands().get(args[0]) {
+            1 => match get_commands().get(&args[0]) {
                 Some(cmd) => cmd.help(),
                 None => format!("Command {} not found", args[0]),
             },
-            _ => self.help(),
+            _ => panic!("Unexpected number of parameters."),
         }
     }
 }
