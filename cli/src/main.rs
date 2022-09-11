@@ -15,6 +15,24 @@ pub fn main() {
         attempt_recover_seed(matches.value_of("password").map(|s| s.to_string()));
         return;
     }
+    let seed = matches.value_of("seed").map(|s| s.to_string());
+    let maybe_birthday = matches.value_of("birthday");
+    if seed.is_some() && maybe_birthday.is_none() {
+        eprintln!("ERROR!");
+        eprintln!(
+            "Please specify the wallet birthday (eg. '--birthday 600000') to restore from seed."
+        );
+        panic!("This should be the block height where the wallet was created. If you don't remember the block height, you can pass '--birthday 0' to scan from the start of the blockchain.");
+    }
+    let birthday = match maybe_birthday.unwrap_or("0").parse::<u64>() {
+        Ok(b) => b,
+        Err(e) => {
+            panic!(
+                "Couldn't parse birthday. This should be a block number. Error={}",
+                e
+            );
+        }
+    };
 
     let command = matches.value_of("COMMAND");
     let params = matches
@@ -26,29 +44,6 @@ pub fn main() {
     let maybe_server = matches.value_of("server").map(|s| s.to_string());
 
     let maybe_data_dir = matches.value_of("data-dir").map(|s| s.to_string());
-
-    let seed = matches.value_of("seed").map(|s| s.to_string());
-    let maybe_birthday = matches.value_of("birthday");
-
-    if seed.is_some() && maybe_birthday.is_none() {
-        eprintln!("ERROR!");
-        eprintln!(
-            "Please specify the wallet birthday (eg. '--birthday 600000') to restore from seed."
-        );
-        eprintln!("This should be the block height where the wallet was created. If you don't remember the block height, you can pass '--birthday 0' to scan from the start of the blockchain.");
-        return;
-    }
-
-    let birthday = match maybe_birthday.unwrap_or("0").parse::<u64>() {
-        Ok(b) => b,
-        Err(e) => {
-            eprintln!(
-                "Couldn't parse birthday. This should be a block number. Error={}",
-                e
-            );
-            return;
-        }
-    };
 
     let regtest_mode_enabled = matches.is_present("regtest");
     let clean_regtest_data = !matches.is_present("no-clean");
@@ -62,11 +57,10 @@ pub fn main() {
 
     // Test to make sure the server has all of scheme, host and port
     if server.scheme_str().is_none() || server.host().is_none() || server.port().is_none() {
-        eprintln!(
+        panic!(
             "Please provide the --server parameter as [scheme]://[host]:[port].\nYou provided: {}",
             server
         );
-        return;
     }
 
     let nosync = matches.is_present("nosync");
@@ -92,7 +86,7 @@ pub fn main() {
                     _ => {}
                 }
             };
-            return;
+            panic!();
         }
     };
 
