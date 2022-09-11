@@ -22,7 +22,11 @@ to interact with your `zcashd` instance while it is running.
 Run `cargo build` to produce the `zingo-cli` binary.
 
 From your `zingolib/` directory, you can run:
-`./target/debug/zingo-cli --regtest --data-dir regtest/data/zingo --server=127.0.0.1:9067`
+`./target/debug/zingo-cli --regtest`
+
+This will start an interactive session. Individual commands can be passed to zingolib (via the cli), for example:
+
+`./target/debug/zingo-cli --regtest help`
 
 This will start `zcashd` and `lightwalletd` and then connect to these tools with an interactive `zingo-cli`.
 It currently takes a few seconds to do so, even on a fast machine, to give the daemons time to boot.
