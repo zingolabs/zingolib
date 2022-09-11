@@ -311,6 +311,14 @@ impl CLIRunner {
         let matches = configured_app.get_matches();
         let command = matches.value_of("COMMAND");
         // Begin short_circuit section
+        let params = matches
+            .values_of("PARAMS")
+            .map(|v| v.collect())
+            .or(Some(vec![]))
+            .unwrap()
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         let command = if let Some(refstr) = command {
             if refstr == "help" {
                 CLIRunner::short_circuit_on_help();
@@ -339,13 +347,6 @@ impl CLIRunner {
             }
         };
 
-        let params = matches
-            .values_of("PARAMS")
-            .map(|v| v.collect())
-            .or(Some(vec![]))
-            .unwrap();
-
-        let params = params.iter().map(|s| s.to_string()).collect();
         let maybe_server = matches.value_of("server").map(|s| s.to_string());
 
         let maybe_data_dir = matches.value_of("data-dir").map(|s| s.to_string());
