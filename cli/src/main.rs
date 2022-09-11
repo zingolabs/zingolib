@@ -6,7 +6,7 @@ use zingo_cli::{
     startup,
 };
 use zingoconfig::ZingoConfig;
-struct Matches {
+struct CLIRunner {
     params: Vec<String>,
     password: Option<String>,
     recover: bool,
@@ -18,7 +18,7 @@ struct Matches {
     command: Option<String>,
     regtest_mode_enabled: bool,
 }
-impl Matches {
+impl CLIRunner {
     fn new() -> Self {
         let configured_app = configure_app();
         let matches = configured_app.get_matches();
@@ -74,6 +74,11 @@ impl Matches {
 
         let sync = !matches.is_present("nosync");
         let password = matches.value_of("password").map(|s| s.to_string());
+        let command = if let Some(refstr) = command {
+            Some(refstr.to_string())
+        } else {
+            None
+        };
         Self {
             params,
             password,
@@ -83,7 +88,7 @@ impl Matches {
             birthday,
             maybe_data_dir,
             sync,
-            command: Some(command.unwrap().to_string()),
+            command,
             regtest_mode_enabled,
         }
     }
@@ -155,5 +160,12 @@ impl Matches {
             resp_receiver.recv().unwrap();
         }
     }
+    fn run_cli() {
+        let cli_runner = CLIRunner::new();
+        cli_runner.check_recover();
+        cli_runner.dispatch_command_or_start_interactive();
+    }
 }
-pub fn main() {}
+pub fn main() {
+    CLIRunner::run_cli();
+}
