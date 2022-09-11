@@ -303,9 +303,22 @@ pub struct CLIRunner {
     regtest_mode_enabled: bool,
 }
 impl CLIRunner {
+    fn short_circuit_on_help() {
+        std::process::exit(0x0100);
+    }
     fn new() -> Self {
         let configured_app = configure_app();
         let matches = configured_app.get_matches();
+        let command = matches.value_of("COMMAND");
+        // Begin short_circuit section
+        let command = if let Some(refstr) = command {
+            if refstr == "help" {
+                CLIRunner::short_circuit_on_help();
+            }
+            Some(refstr.to_string())
+        } else {
+            None
+        };
         let recover = matches.is_present("recover");
         let seed = matches.value_of("seed").map(|s| s.to_string());
         let maybe_birthday = matches.value_of("birthday");
@@ -326,7 +339,6 @@ impl CLIRunner {
             }
         };
 
-        let command = matches.value_of("COMMAND");
         let params = matches
             .values_of("PARAMS")
             .map(|v| v.collect())
@@ -358,11 +370,6 @@ impl CLIRunner {
 
         let sync = !matches.is_present("nosync");
         let password = matches.value_of("password").map(|s| s.to_string());
-        let command = if let Some(refstr) = command {
-            Some(refstr.to_string())
-        } else {
-            None
-        };
         Self {
             params,
             password,
