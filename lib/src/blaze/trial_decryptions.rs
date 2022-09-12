@@ -278,9 +278,8 @@ impl TrialDecryptions {
             .collect::<Vec<_>>();
         let maybe_decrypted_outputs =
             zcash_note_encryption::batch::try_compact_note_decryption(&ivks, &outputs);
-        let outputs_len = outputs.len();
         for maybe_decrypted_output in maybe_decrypted_outputs.into_iter().enumerate() {
-            if let (i, Some(((note, to), _ivk_num))) = maybe_decrypted_output {
+            if let (i, Some(((note, to), ivk_num))) = maybe_decrypted_output {
                 *transaction_metadata = true; // i.e. we got metadata
 
                 let keys = keys.clone();
@@ -293,7 +292,7 @@ impl TrialDecryptions {
 
                 workers.push(tokio::spawn(async move {
                     let keys = keys.read().await;
-                    let wallet_key = &D::Key::get_keys(&*keys)[i / outputs_len];
+                    let wallet_key = &D::Key::get_keys(&*keys)[ivk_num];
                     let fvk = wallet_key.fvk().unwrap();
                     let have_spending_key = wallet_key.sk().is_some();
                     let uri = bsync_data.read().await.uri().clone();
@@ -307,7 +306,7 @@ impl TrialDecryptions {
                             uri,
                             height,
                             transaction_num,
-                            i % outputs_len,
+                            i,
                             config.chain.activation_height(D::NU).unwrap().into(),
                         )
                         .await?;
@@ -338,7 +337,7 @@ impl TrialDecryptions {
                             transaction_id,
                             nullifier.to_channel_nullifier(),
                             height,
-                            Some((i % outputs_len) as u32),
+                            Some((i) as u32),
                         ))
                         .unwrap();
 
