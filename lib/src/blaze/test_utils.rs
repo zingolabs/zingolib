@@ -231,6 +231,39 @@ impl FakeTransaction {
         note
     }
 
+    fn add_orchard_output(
+        &mut self,
+        value: u64,
+        ovk: Option<orchard::keys::OutgoingViewingKey>,
+        to: orchard::Address,
+    ) -> orchard::Note {
+        let mut rng = OsRng;
+        let mut randomness = [0; 32];
+        rng.fill_bytes(&mut randomness);
+
+        let dummy_nullifier = Self::make_dummy_nullifier();
+
+        let note = orchard::Note::from_parts(
+            to,
+            orchard::value::NoteValue::from_raw(value),
+            dummy_nullifier,
+            orchard::note::RandomSeed::from_bytes(randomness, &dummy_nullifier).unwrap(),
+        );
+        todo!()
+    }
+
+    pub fn make_dummy_nullifier() -> orchard::note::Nullifier {
+        let mut rng = OsRng;
+        loop {
+            let mut randomness = [0; 32];
+            rng.fill_bytes(&mut randomness);
+            if let Some(nullifier) = Option::from(orchard::note::Nullifier::from_bytes(&randomness))
+            {
+                return nullifier;
+            }
+        }
+    }
+
     pub fn add_transaction_spending(
         &mut self,
         nf: &Nullifier,
@@ -250,7 +283,11 @@ impl FakeTransaction {
 
     // Add a new transaction into the block, paying the given address the amount.
     // Returns the nullifier of the new note.
-    pub fn add_transaction_paying(&mut self, extfvk: &ExtendedFullViewingKey, value: u64) -> Note {
+    pub fn add_sapling_transaction_paying(
+        &mut self,
+        extfvk: &ExtendedFullViewingKey,
+        value: u64,
+    ) -> Note {
         let to = extfvk.default_address().1;
         self.add_sapling_output(value, None, &to)
     }
@@ -515,13 +552,13 @@ impl FakeCompactBlockList {
     // This fake_compactblock_list method:
     // 1. creates a fake transaction
     // 2. passes that transaction to self.add_fake_transaction
-    pub fn create_coinbase_transaction(
+    pub fn create_sapling_coinbase_transaction(
         &mut self,
         extfvk: &ExtendedFullViewingKey,
         value: u64,
     ) -> (&Transaction, u64, Note) {
         let mut fake_transaction = FakeTransaction::new(false);
-        let note = fake_transaction.add_transaction_paying(extfvk, value);
+        let note = fake_transaction.add_sapling_transaction_paying(extfvk, value);
 
         let (transaction, height) = self.add_fake_transaction(fake_transaction);
 

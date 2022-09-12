@@ -204,7 +204,7 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
         .clone();
     let value = 100_000;
     let (transaction, _height, _) =
-        fake_compactblock_list.create_coinbase_transaction(&extfvk1, value);
+        fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, value);
     let txid = transaction.txid();
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
@@ -414,6 +414,24 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
     );
 }
 
+apply_scenario! {orchard_incoming 10}
+async fn orchard_incoming(scenario: NBlockFCBLScenario) {
+    let NBlockFCBLScenario {
+        data,
+        lightclient,
+        fake_compactblock_list,
+        config,
+    } = scenario;
+
+    lightclient.do_new_address("o");
+    let fvk = lightclient
+        .wallet
+        .keys()
+        .read()
+        .await
+        .get_all_orchard_keys_of_type::<orchard::keys::FullViewingKey>();
+}
+
 apply_scenario! {multiple_incoming_same_transaction 10}
 async fn multiple_incoming_same_transaction(scenario: NBlockFCBLScenario) {
     let NBlockFCBLScenario {
@@ -620,7 +638,7 @@ async fn sapling_incoming_multisapling_outgoing(scenario: NBlockFCBLScenario) {
         .clone();
     let value = 100_000;
     let (_transaction, _height, _) =
-        fake_compactblock_list.create_coinbase_transaction(&extfvk1, value);
+        fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, value);
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
     mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
 
@@ -696,7 +714,10 @@ async fn sapling_to_sapling_scan_together() {
     };
     let value = 100_000;
     let (transaction, _height, note) = fake_compactblock_list // NOTE: Extracting fvk this way for future proof.
-        .create_coinbase_transaction(&ExtendedFullViewingKey::from(&mockuser_spendkey), value);
+        .create_sapling_coinbase_transaction(
+            &ExtendedFullViewingKey::from(&mockuser_spendkey),
+            value,
+        );
     let txid = transaction.txid();
 
     // 3. Calculate witness so we can get the nullifier without it getting mined
@@ -777,7 +798,7 @@ async fn sapling_incoming_viewkey(scenario: NBlockFCBLScenario) {
 
     let value = 100_000;
     let (transaction, _height, _) =
-        fake_compactblock_list.create_coinbase_transaction(&iextfvk, value);
+        fake_compactblock_list.create_sapling_coinbase_transaction(&iextfvk, value);
     let txid = transaction.txid();
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
     mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
@@ -1047,7 +1068,7 @@ async fn mixed_transaction(scenario: NBlockFCBLScenario) {
         .clone();
     let zvalue = 100_000;
     let (_ztransaction, _height, _) =
-        fake_compactblock_list.create_coinbase_transaction(&extfvk1, zvalue);
+        fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, zvalue);
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
     mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
 
@@ -1159,7 +1180,7 @@ async fn aborted_resync(scenario: NBlockFCBLScenario) {
         .clone();
     let zvalue = 100_000;
     let (_ztransaction, _height, _) =
-        fake_compactblock_list.create_coinbase_transaction(&extfvk1, zvalue);
+        fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, zvalue);
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
     mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
 
@@ -1285,7 +1306,7 @@ async fn no_change(scenario: NBlockFCBLScenario) {
         .clone();
     let zvalue = 100_000;
     let (_ztransaction, _height, _) =
-        fake_compactblock_list.create_coinbase_transaction(&extfvk1, zvalue);
+        fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, zvalue);
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
     mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
 
@@ -1443,7 +1464,7 @@ async fn witness_clearing(scenario: NBlockFCBLScenario) {
         .clone();
     let value = 100_000;
     let (transaction, _height, _) =
-        fake_compactblock_list.create_coinbase_transaction(&extfvk1, value);
+        fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, value);
     let txid = transaction.txid();
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
     mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
@@ -1548,7 +1569,7 @@ async fn mempool_clearing(scenario: NBlockFCBLScenario) {
         .clone();
     let value = 100_000;
     let (transaction, _height, _) =
-        fake_compactblock_list.create_coinbase_transaction(&extfvk1, value);
+        fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, value);
     let orig_transaction_id = transaction.txid().to_string();
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
     mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
@@ -1683,7 +1704,7 @@ async fn mempool_and_balance(scenario: NBlockFCBLScenario) {
         .clone();
     let value = 100_000;
     let (_transaction, _height, _) =
-        fake_compactblock_list.create_coinbase_transaction(&extfvk1, value);
+        fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, value);
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
     let bal = lightclient.do_balance().await;
