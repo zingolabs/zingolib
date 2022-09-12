@@ -1840,7 +1840,8 @@ mod test {
                 .await
                 .get_all_sapling_extfvks()[0]
                 .clone();
-            let (_, _, _) = fake_compactblock_list.create_coinbase_transaction(&extended_fvk, 1);
+            let (_, _, _) =
+                fake_compactblock_list.create_sapling_coinbase_transaction(&extended_fvk, 1);
             mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
             assert_eq!(
                 lightclient
@@ -1872,7 +1873,7 @@ mod test {
                 .clone();
             use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
             let (_, _, _) = fake_compactblock_list
-                .create_coinbase_transaction(&extended_fvk, 1 + u64::from(DEFAULT_FEE));
+                .create_sapling_coinbase_transaction(&extended_fvk, 1 + u64::from(DEFAULT_FEE));
             for _ in 0..=3 {
                 fake_compactblock_list.add_empty_block();
             }
@@ -1909,7 +1910,7 @@ mod test {
             .clone();
         let value = 100_000;
         let (transaction, _height, _) =
-            fake_compactblock_list.create_coinbase_transaction(&extfvk1, value);
+            fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, value);
         let txid = transaction.txid();
         mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
@@ -2087,7 +2088,7 @@ mod test {
             .clone();
         let value1 = 100_000;
         let (transaction, _height, _) =
-            fake_compactblock_list.create_coinbase_transaction(&extfvk1, value1);
+            fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, value1);
         let txid = transaction.txid();
         mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
@@ -2131,7 +2132,7 @@ mod test {
         // 4. Send another incoming transaction.
         let value2 = 200_000;
         let (_transaction, _height, _) =
-            fake_compactblock_list.create_coinbase_transaction(&extfvk1, value2);
+            fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, value2);
         mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
         // Now, try to select a small amount, it should prefer the older note
