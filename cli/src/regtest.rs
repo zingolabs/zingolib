@@ -1,45 +1,4 @@
 use std::fs::File;
-///  Enforce strict expectations for tool use with current zingolib.  Relaxing these restrictions will facilitate
-///  use in other projects.  For example, this version of regtest will only run within a git repo that is historically
-///  descended from 27e5eedc6b35759f463d43ea341ce66714aa9e01 (ie, I am Jack's commit descendant.)
-fn git_selfcheck() {
-    let git_check = std::process::Command::new("git")
-        .arg("--help")
-        .output()
-        .expect("no git!? time to quit.");
-
-    if !std::str::from_utf8(&git_check.stdout)
-        .expect("git --help error")
-        .contains("See 'git help git' for an overview of the system.")
-    {
-        panic!("git check failed!");
-    }
-
-    // confirm this worktree is a zingolib repo
-    let git_revlist = std::process::Command::new("git")
-        .args(["rev-list", "--max-parents=0", "HEAD"])
-        .output()
-        .expect("problem invoking git rev-list");
-
-    if !std::str::from_utf8(&git_revlist.stdout)
-        .expect("git revlist error")
-        .contains("27e5eedc6b35759f463d43ea341ce66714aa9e01")
-    {
-        panic!("I am not Jack's commit descendant");
-    }
-
-    let git_log = std::process::Command::new("git")
-        .args(["--no-pager", "log"])
-        .output()
-        .expect("git log error");
-
-    if !std::str::from_utf8(&git_log.stdout)
-        .expect("git log stdout error")
-        .contains("e8677475da2676fcfec57615de6330a7cb542cc1")
-    {
-        panic!("Zingo-cli's regtest mode must be run within its own git worktree");
-    }
-}
 
 ///  Simple helper to succinctly reference the project root dir.
 use std::path::{Path, PathBuf};
@@ -206,9 +165,6 @@ fn generate_initial_block(
 pub fn launch(clean_regtest_data: bool) {
     use std::io::Read;
     use std::{thread, time};
-
-    //check for git itself and that we are working within a zingolib repo
-    git_selfcheck();
 
     let regtest_dir = get_regtest_dir();
     let confs_dir = regtest_dir.join("conf");
