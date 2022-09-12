@@ -356,8 +356,7 @@ impl CLIRunner {
         let clean_regtest_data = !matches.is_present("no-clean");
         let mut maybe_server = matches.value_of("server").map(|s| s.to_string());
         let regtest_manager = if matches.is_present("regtest") {
-            let rm = regtest::RegtestManager::new();
-            rm.launch(clean_regtest_data);
+            let rm = regtest::RegtestManager::launch(clean_regtest_data);
             maybe_server = Some("http://127.0.0.1".to_string());
             Some(rm)
         } else {

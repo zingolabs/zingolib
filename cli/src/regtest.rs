@@ -179,9 +179,10 @@ pub struct RegtestManager {
     lightwalletd_stderr_log: PathBuf,
     lightwalletd_datadir: PathBuf,
     zingo_datadir: PathBuf,
+    zcashd_pid: u32,
 }
 impl RegtestManager {
-    pub fn new() -> Self {
+    pub fn launch(clean_regtest_data: bool) -> Self {
         let regtest_dir = get_regtest_dir();
         let confs_dir = regtest_dir.join("conf");
         let bin_location = regtest_dir.join("bin");
@@ -197,53 +198,25 @@ impl RegtestManager {
         let lightwalletd_datadir = data_dir.join("lightwalletd");
         let zingo_datadir = data_dir.join("zingo");
 
-        RegtestManager {
-            regtest_dir,
-            confs_dir,
-            bin_location,
-            logs,
-            data_dir,
-            zcashd_datadir,
-            zcashd_logs,
-            zcashd_config,
-            lightwalletd_config,
-            lightwalletd_logs,
-            lightwalletd_stdout_log,
-            lightwalletd_stderr_log,
-            lightwalletd_datadir,
-            zingo_datadir,
-        }
-    }
-
-    pub fn launch(&self, clean_regtest_data: bool) {
         use std::io::Read;
         use std::{thread, time};
-        assert!(&self
-            .zcashd_config
+        assert!(&zcashd_config
             .to_str()
             .unwrap()
             .ends_with("/regtest/conf/zcash.conf"));
-        assert!(&self
-            .zcashd_datadir
+        assert!(&zcashd_datadir
             .to_str()
             .unwrap()
             .ends_with("/regtest/data/zcashd"));
 
         if clean_regtest_data {
-            prepare_working_directories(
-                &self.zcashd_datadir,
-                &self.lightwalletd_datadir,
-                &self.zingo_datadir,
-            );
+            prepare_working_directories(&zcashd_datadir, &lightwalletd_datadir, &zingo_datadir);
         }
 
-        let (mut zcashd_command, mut zcashd_logfile, zcashd_stdout_log) = zcashd_launch(
-            &self.bin_location,
-            &self.zcashd_logs,
-            &self.zcashd_config,
-            &self.zcashd_datadir,
-        );
+        let (mut zcashd_command, mut zcashd_logfile, zcashd_stdout_log) =
+            zcashd_launch(&bin_location, &zcashd_logs, &zcashd_config, &zcashd_datadir);
 
+        let zcashd_pid = zcashd_command.id();
         if let Some(mut zcashd_stdout_data) = zcashd_command.stdout.take() {
             std::thread::spawn(move || {
                 std::io::copy(&mut zcashd_stdout_data, &mut zcashd_logfile)
@@ -273,7 +246,7 @@ impl RegtestManager {
 
         if clean_regtest_data {
             println!("Generating initial block");
-            let generate_output = generate_initial_block(&self.bin_location, &self.zcashd_config);
+            let generate_output = generate_initial_block(&bin_location, &zcashd_config);
 
             match generate_output {
                 Ok(output) => println!(
@@ -295,30 +268,30 @@ impl RegtestManager {
         println!("lightwalletd is about to start. This should only take a moment.");
 
         let mut lwd_logfile =
-            File::create(&self.lightwalletd_stdout_log).expect("file::create Result error");
+            File::create(&lightwalletd_stdout_log).expect("file::create Result error");
         let mut lwd_err_logfile =
-            File::create(&self.lightwalletd_stderr_log).expect("file::create Result error");
+            File::create(&lightwalletd_stderr_log).expect("file::create Result error");
 
-        let mut lwd_bin = self.bin_location.to_owned();
+        let mut lwd_bin = bin_location.to_owned();
         lwd_bin.push("lightwalletd");
 
         let mut lwd_command = std::process::Command::new(lwd_bin)
         .args([
             "--no-tls-very-insecure",
             "--zcash-conf-path",
-            &self.zcashd_config
+            &zcashd_config
                 .to_str()
                 .expect("zcashd_config PathBuf to str fail!"),
             "--config",
-            &self.lightwalletd_config
+            &lightwalletd_config
                 .to_str()
                 .expect("lightwalletd_config PathBuf to str fail!"),
             "--data-dir",
-            &self.lightwalletd_datadir
+            &lightwalletd_datadir
                 .to_str()
                 .expect("lightwalletd_datadir PathBuf to str fail!"),
             "--log-file",
-            &self.lightwalletd_stdout_log
+            &lightwalletd_stdout_log
                 .to_str()
                 .expect("lightwalletd_stdout_log PathBuf to str fail!"),
         ])
@@ -343,8 +316,7 @@ impl RegtestManager {
 
         println!("lightwalletd is now started in regtest mode, please standby...");
 
-        let mut lwd_log_opened =
-            File::open(&self.lightwalletd_stdout_log).expect("can't open lwd log");
+        let mut lwd_log_opened = File::open(&lightwalletd_stdout_log).expect("can't open lwd log");
         let mut lwd_logfile_state = String::new();
 
         //now enter loop to find string that indicates daemon is ready for next step
@@ -359,6 +331,23 @@ impl RegtestManager {
             }
             // we need to sleep because even after the last message is detected, lwd needs a moment to become ready for regtest mode
             thread::sleep(check_interval);
+        }
+        RegtestManager {
+            regtest_dir,
+            confs_dir,
+            bin_location,
+            logs,
+            data_dir,
+            zcashd_datadir,
+            zcashd_logs,
+            zcashd_config,
+            lightwalletd_config,
+            lightwalletd_logs,
+            lightwalletd_stdout_log,
+            lightwalletd_stderr_log,
+            lightwalletd_datadir,
+            zingo_datadir,
+            zcashd_pid,
         }
     }
 }
