@@ -162,6 +162,7 @@ fn generate_initial_block(
         .output()
 }
 
+#[derive(Clone)]
 #[allow(dead_code)]
 pub struct RegtestManager {
     regtest_dir: PathBuf,

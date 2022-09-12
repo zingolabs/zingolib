@@ -98,15 +98,15 @@ pub fn startup(
     data_dir: Option<String>,
     first_sync: bool,
     print_updates: bool,
-    regtest: bool,
+    regtest_manager: Option<regtest::RegtestManager>,
 ) -> std::io::Result<(Sender<(String, Vec<String>)>, Receiver<String>)> {
     // Try to get the configuration
     let (config, latest_block_height) = create_on_data_dir(server.clone(), data_dir)?;
 
     // Diagnostic check for regtest flag and network in config, panic if mis-matched.
-    if regtest && config.chain == Network::Regtest {
+    if regtest_manager.is_some() && config.chain == Network::Regtest {
         println!("regtest detected and network set correctly!");
-    } else if regtest && config.chain != Network::Regtest {
+    } else if regtest_manager.is_some() && config.chain != Network::Regtest {
         println!("Regtest flag detected, but unexpected network set! Exiting.");
         panic!("Regtest Network Problem");
     } else if config.chain == Network::Regtest {
@@ -300,7 +300,7 @@ pub struct CLIRunner {
     maybe_data_dir: Option<String>,
     sync: bool,
     command: Option<String>,
-    regtest_mode_enabled: bool,
+    regtest_manager: Option<regtest::RegtestManager>,
 }
 use commands::ShortCircuitedCommand;
 fn short_circuit_on_help(params: Vec<String>) {
@@ -351,19 +351,19 @@ impl CLIRunner {
             }
         };
 
-        let maybe_server = matches.value_of("server").map(|s| s.to_string());
-
         let maybe_data_dir = matches.value_of("data-dir").map(|s| s.to_string());
 
-        let regtest_mode_enabled = matches.is_present("regtest");
         let clean_regtest_data = !matches.is_present("no-clean");
-        let server = if regtest_mode_enabled {
-            (regtest::RegtestManager::new()).launch(clean_regtest_data);
-            ZingoConfig::get_server_or_default(Some("http://127.0.0.1".to_string()))
-            // do the regtest
+        let mut maybe_server = matches.value_of("server").map(|s| s.to_string());
+        let regtest_manager = if matches.is_present("regtest") {
+            let rm = regtest::RegtestManager::new();
+            rm.launch(clean_regtest_data);
+            maybe_server = Some("http://127.0.0.1".to_string());
+            Some(rm)
         } else {
-            ZingoConfig::get_server_or_default(maybe_server)
+            None
         };
+        let server = ZingoConfig::get_server_or_default(maybe_server);
 
         // Test to make sure the server has all of scheme, host and port
         if server.scheme_str().is_none() || server.host().is_none() || server.port().is_none() {
@@ -385,7 +385,7 @@ impl CLIRunner {
             maybe_data_dir,
             sync,
             command,
-            regtest_mode_enabled,
+            regtest_manager,
         }
     }
     fn check_recover(&self) {
@@ -403,7 +403,7 @@ impl CLIRunner {
             self.maybe_data_dir.clone(),
             self.sync,
             self.command.is_none(),
-            self.regtest_mode_enabled,
+            self.regtest_manager.clone(),
         );
         match startup_chan {
             Ok(c) => c,
