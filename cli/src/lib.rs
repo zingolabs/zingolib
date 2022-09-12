@@ -301,6 +301,8 @@ pub struct CLIRunner {
     sync: bool,
     command: Option<String>,
     regtest_manager: Option<regtest::RegtestManager>,
+    zcashd_child: Option<std::process::Child>,
+    lightwalletd_child: Option<std::process::Child>,
 }
 use commands::ShortCircuitedCommand;
 fn short_circuit_on_help(params: Vec<String>) {
@@ -355,9 +357,13 @@ impl CLIRunner {
 
         let clean_regtest_data = !matches.is_present("no-clean");
         let mut maybe_server = matches.value_of("server").map(|s| s.to_string());
+        let mut zcashd_child = None;
+        let mut lightwalletd_child = None;
         let regtest_manager = if matches.is_present("regtest") {
-            let rm = regtest::RegtestManager::launch(clean_regtest_data);
+            let (rm, zcdc, lwdc) = regtest::RegtestManager::launch(clean_regtest_data);
             maybe_server = Some("http://127.0.0.1".to_string());
+            zcashd_child = Some(zcdc);
+            lightwalletd_child = Some(lwdc);
             Some(rm)
         } else {
             None
@@ -385,6 +391,8 @@ impl CLIRunner {
             sync,
             command,
             regtest_manager,
+            zcashd_child,
+            lightwalletd_child,
         }
     }
     fn check_recover(&self) {
@@ -420,7 +428,7 @@ impl CLIRunner {
             }
         }
     }
-    fn dispatch_command_or_start_interactive(&self) {
+    fn dispatch_command_or_start_interactive(mut self) {
         let (command_transmitter, resp_receiver) = self.start_cli_service();
         if self.command.is_none() {
             start_interactive(command_transmitter, resp_receiver);
@@ -453,6 +461,27 @@ impl CLIRunner {
                 .send(("save".to_string(), vec![]))
                 .unwrap();
             resp_receiver.recv().unwrap();
+            dbg!(&self.lightwalletd_child);
+            self.lightwalletd_child
+                .take()
+                .unwrap()
+                .kill()
+                .expect("Die lightwalletdd...    DIE!!!");
+            self.lightwalletd_child
+                .take()
+                .unwrap()
+                .wait()
+                .expect("Die lightwalletdd...    DIE!!!");
+            self.zcashd_child
+                .take()
+                .unwrap()
+                .kill()
+                .expect("Die zcashd...    DIE!!!");
+            self.zcashd_child
+                .take()
+                .unwrap()
+                .wait()
+                .expect("Die zcashd...    DIE!!!");
         }
     }
     pub fn run_cli() {

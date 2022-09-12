@@ -2,6 +2,7 @@ use std::fs::File;
 
 ///  Simple helper to succinctly reference the project root dir.
 use std::path::{Path, PathBuf};
+use std::process::Child;
 fn get_top_level_dir() -> PathBuf {
     let revparse_raw = std::process::Command::new("git")
         .args(["rev-parse", "--show-toplevel"])
@@ -179,10 +180,9 @@ pub struct RegtestManager {
     lightwalletd_stderr_log: PathBuf,
     lightwalletd_datadir: PathBuf,
     zingo_datadir: PathBuf,
-    zcashd_pid: u32,
 }
 impl RegtestManager {
-    pub fn launch(clean_regtest_data: bool) -> Self {
+    pub fn launch(clean_regtest_data: bool) -> (Self, Child, Child) {
         let regtest_dir = get_regtest_dir();
         let confs_dir = regtest_dir.join("conf");
         let bin_location = regtest_dir.join("bin");
@@ -216,7 +216,6 @@ impl RegtestManager {
         let (mut zcashd_command, mut zcashd_logfile, zcashd_stdout_log) =
             zcashd_launch(&bin_location, &zcashd_logs, &zcashd_config, &zcashd_datadir);
 
-        let zcashd_pid = zcashd_command.id();
         if let Some(mut zcashd_stdout_data) = zcashd_command.stdout.take() {
             std::thread::spawn(move || {
                 std::io::copy(&mut zcashd_stdout_data, &mut zcashd_logfile)
@@ -332,22 +331,25 @@ impl RegtestManager {
             // we need to sleep because even after the last message is detected, lwd needs a moment to become ready for regtest mode
             thread::sleep(check_interval);
         }
-        RegtestManager {
-            regtest_dir,
-            confs_dir,
-            bin_location,
-            logs,
-            data_dir,
-            zcashd_datadir,
-            zcashd_logs,
-            zcashd_config,
-            lightwalletd_config,
-            lightwalletd_logs,
-            lightwalletd_stdout_log,
-            lightwalletd_stderr_log,
-            lightwalletd_datadir,
-            zingo_datadir,
-            zcashd_pid,
-        }
+        (
+            RegtestManager {
+                regtest_dir,
+                confs_dir,
+                bin_location,
+                logs,
+                data_dir,
+                zcashd_datadir,
+                zcashd_logs,
+                zcashd_config,
+                lightwalletd_config,
+                lightwalletd_logs,
+                lightwalletd_stdout_log,
+                lightwalletd_stderr_log,
+                lightwalletd_datadir,
+                zingo_datadir,
+            },
+            zcashd_command,
+            lwd_command,
+        )
     }
 }
