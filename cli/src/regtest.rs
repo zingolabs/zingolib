@@ -217,7 +217,6 @@ impl RegtestManager {
     pub fn launch(&self, clean_regtest_data: bool) {
         use std::io::Read;
         use std::{thread, time};
-        RegtestManager::new();
         assert!(&self
             .zcashd_config
             .to_str()
