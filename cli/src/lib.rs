@@ -280,7 +280,7 @@ pub fn command_loop(
 
 pub fn attempt_recover_seed(_password: Option<String>) {
     // Create a Light Client Config in an attempt to recover the file.
-    let _config = ZingoConfig {
+    ZingoConfig {
         server: Arc::new(RwLock::new("0.0.0.0:0".parse().unwrap())),
         chain: zingoconfig::Network::Mainnet,
         monitor_mempool: false,
