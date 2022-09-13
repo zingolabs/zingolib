@@ -1818,11 +1818,16 @@ fn decode_orchard_spending_key(
 
 #[cfg(test)]
 mod test {
-    use zcash_primitives::transaction::components::Amount;
+    use orchard::tree::MerkleHashOrchard;
+    use zcash_primitives::{
+        merkle_tree::{CommitmentTree, Hashable},
+        transaction::components::Amount,
+    };
 
     use crate::{
         apply_scenario,
         blaze::test_utils::{incw_to_string, FakeTransaction},
+        compact_formats::vec_to_array,
         lightclient::test_server::{
             clean_shutdown, mine_numblocks_each_with_two_sap_txs, mine_pending_blocks,
             NBlockFCBLScenario,
@@ -2172,7 +2177,54 @@ mod test {
         assert_eq!(sapling_notes.len(), 2);
         assert_eq!(utxos.len(), 0);
     }
-    const FINAL_ROOT: &'static str =
-        "1d44048a01f1c7a8958dd2927912f1c02ad10ed916877e1fd2c0a07764850a60";
-    const      TREE_STATE: &'static str = "01a682706317caa5aec999385ac580445ff4eff6347e4a3c844ac18fcb5fe9bf1c01cca6f37237f27037fa7f8fe5ec8d2cc251b791cfb9cdd08cd1215229fa9435221f0001590d3e7e3f4cd572274f79f4a95b41fa72ed9b42a7c6dbcaec9637eaf368ac0e0000018843337920418307fa7699d506bb0f47a79aea7f6fe8efc1e25b9dde8966e22f013b5a8ef020d8b30fa8beb8406dd30b2a1944755f5549713e4fe24de78ab72e12000001a46523754a6d3fbc3226d6221dafca357d930e183297a0ba1cfa2db5d0500e1f01b6fd291e9d6068bc24e99aefe49f8f29836ed1223deabc23871f1a1288f9240300016fc552915a0d5bc5c0c0cdf29453edf081d9a2de396535e6084770c38dcff838019518d88883e466a41ca67d6b986739fb2f601d77bb957398ed899de70b2a9f0801cd4871c1f545e7f5d844cc65fb00b8a162e316c3d1a435b00c435032b732c4280000000000000000000000000000000000";
+
+    #[test]
+    fn anchor_from_tree_works() {
+        // These commitment values copied from zcash/orchard, and were originally derived from the bundle
+        // data that was generated for testing commitment tree construction inside of zcashd here.
+        // https://github.com/zcash/zcash/blob/ecec1f9769a5e37eb3f7fd89a4fcfb35bc28eed7/src/test/data/merkle_roots_orchard.h
+
+        let commitments = [
+            [
+                0x68, 0x13, 0x5c, 0xf4, 0x99, 0x33, 0x22, 0x90, 0x99, 0xa4, 0x4e, 0xc9, 0x9a, 0x75,
+                0xe1, 0xe1, 0xcb, 0x46, 0x40, 0xf9, 0xb5, 0xbd, 0xec, 0x6b, 0x32, 0x23, 0x85, 0x6f,
+                0xea, 0x16, 0x39, 0x0a,
+            ],
+            [
+                0x78, 0x31, 0x50, 0x08, 0xfb, 0x29, 0x98, 0xb4, 0x30, 0xa5, 0x73, 0x1d, 0x67, 0x26,
+                0x20, 0x7d, 0xc0, 0xf0, 0xec, 0x81, 0xea, 0x64, 0xaf, 0x5c, 0xf6, 0x12, 0x95, 0x69,
+                0x01, 0xe7, 0x2f, 0x0e,
+            ],
+            [
+                0xee, 0x94, 0x88, 0x05, 0x3a, 0x30, 0xc5, 0x96, 0xb4, 0x30, 0x14, 0x10, 0x5d, 0x34,
+                0x77, 0xe6, 0xf5, 0x78, 0xc8, 0x92, 0x40, 0xd1, 0xd1, 0xee, 0x17, 0x43, 0xb7, 0x7b,
+                0xb6, 0xad, 0xc4, 0x0a,
+            ],
+            [
+                0x9d, 0xdc, 0xe7, 0xf0, 0x65, 0x01, 0xf3, 0x63, 0x76, 0x8c, 0x5b, 0xca, 0x3f, 0x26,
+                0x46, 0x60, 0x83, 0x4d, 0x4d, 0xf4, 0x46, 0xd1, 0x3e, 0xfc, 0xd7, 0xc6, 0xf1, 0x7b,
+                0x16, 0x7a, 0xac, 0x1a,
+            ],
+            [
+                0xbd, 0x86, 0x16, 0x81, 0x1c, 0x6f, 0x5f, 0x76, 0x9e, 0xa4, 0x53, 0x9b, 0xba, 0xff,
+                0x0f, 0x19, 0x8a, 0x6c, 0xdf, 0x3b, 0x28, 0x0d, 0xd4, 0x99, 0x26, 0x16, 0x3b, 0xd5,
+                0x3f, 0x53, 0xa1, 0x21,
+            ],
+        ];
+        let mut orchard_tree = CommitmentTree::empty();
+        for commitment in commitments {
+            orchard_tree
+                .append(MerkleHashOrchard::from_bytes(&commitment).unwrap())
+                .unwrap()
+        }
+        // This value was produced by the Python test vector generation code implemented here:
+        // https://github.com/zcash-hackworks/zcash-test-vectors/blob/f4d756410c8f2456f5d84cedf6dac6eb8c068eed/orchard_merkle_tree.py
+        let anchor = [
+            0xc8, 0x75, 0xbe, 0x2d, 0x60, 0x87, 0x3f, 0x8b, 0xcd, 0xeb, 0x91, 0x28, 0x2e, 0x64,
+            0x2e, 0x0c, 0xc6, 0x5f, 0xf7, 0xd0, 0x64, 0x2d, 0x13, 0x7b, 0x28, 0xcf, 0x28, 0xcc,
+            0x9c, 0x52, 0x7f, 0x0e,
+        ];
+        let anchor = orchard::Anchor::from(MerkleHashOrchard::from_bytes(&anchor).unwrap());
+        assert_eq!(orchard::Anchor::from(orchard_tree.root()), anchor);
+    }
 }
