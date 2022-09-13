@@ -221,7 +221,7 @@ impl BlockAndWitnessData {
         }
 
         // sort
-        start_trees.sort_by_cached_key(|ts| ts.height);
+        start_trees.sort_unstable_by_key(|ts| ts.height);
 
         // Now, for each tree state that we need to verify, find the closest one
         let tree_pairs = verification_list
@@ -539,7 +539,6 @@ impl BlockAndWitnessData {
         D: DomainWalletExt<zingoconfig::Network>,
         D::Note: PartialEq + Clone,
         D::ExtractedCommitmentBytes: Into<[u8; 32]>,
-        [u8; 32]: From<<D as Domain>::ExtractedCommitmentBytes>,
         D::Recipient: crate::wallet::traits::Recipient,
     {
         // Get the previous block's height, because that block's commitment trees are the states at the start
