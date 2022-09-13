@@ -12,6 +12,7 @@ use orchard::{
     tree::MerkleHashOrchard,
 };
 use zcash_encoding::Vector;
+use zcash_note_encryption::Domain;
 use zcash_primitives::{
     consensus::BlockHeight,
     memo::Memo,
@@ -162,29 +163,13 @@ impl TransactionMetadataSet {
         });
     }
 
+    // We also need to update any note data and utxos in existing transactions that
+    // were spent in any of the txids that were removed
     pub fn remove_txids(&mut self, txids_to_remove: Vec<TxId>) {
         for txid in &txids_to_remove {
             self.current.remove(&txid);
         }
-
-        // We also need to update any sapling note data and utxos in existing transactions that
-        // were spent in any of the txids that were removed
         self.current.values_mut().for_each(|wtx| {
-            // Update notes to rollback any spent notes
-            wtx.sapling_notes.iter_mut().for_each(|nd| {
-                // Mark note as unspent if the txid being removed spent it.
-                if nd.spent.is_some() && txids_to_remove.contains(&nd.spent.unwrap().0) {
-                    nd.spent = None;
-                }
-
-                // Remove unconfirmed spends too
-                if nd.unconfirmed_spent.is_some()
-                    && txids_to_remove.contains(&nd.unconfirmed_spent.unwrap().0)
-                {
-                    nd.unconfirmed_spent = None;
-                }
-            });
-
             // Update UTXOs to rollback any spent utxos
             wtx.utxos.iter_mut().for_each(|utxo| {
                 if utxo.spent.is_some() && txids_to_remove.contains(&utxo.spent.unwrap()) {
@@ -198,6 +183,33 @@ impl TransactionMetadataSet {
                     utxo.unconfirmed_spent = None;
                 }
             })
+        });
+        self.remove_domain_specific_txids::<SaplingDomain<Network>>(&txids_to_remove);
+        self.remove_domain_specific_txids::<OrchardDomain>(&txids_to_remove);
+    }
+
+    fn remove_domain_specific_txids<D: DomainWalletExt<Network>>(
+        &mut self,
+        txids_to_remove: &Vec<TxId>,
+    ) where
+        <D as Domain>::Recipient: Recipient,
+        <D as Domain>::Note: PartialEq + Clone,
+    {
+        self.current.values_mut().for_each(|wtx| {
+            // Update notes to rollback any spent notes
+            D::wallet_notes_mut(wtx).iter_mut().for_each(|nd| {
+                // Mark note as unspent if the txid being removed spent it.
+                if nd.spent().is_some() && txids_to_remove.contains(&nd.spent().unwrap().0) {
+                    *nd.spent_mut() = None;
+                }
+
+                // Remove unconfirmed spends too
+                if nd.unconfirmed_spent().is_some()
+                    && txids_to_remove.contains(&nd.unconfirmed_spent().unwrap().0)
+                {
+                    *nd.unconfirmed_spent_mut() = None;
+                }
+            });
         });
     }
 
@@ -228,6 +240,9 @@ impl TransactionMetadataSet {
                     // The latest witness is at the last() position, so just pop() it.
                     // We should be checking if there is a witness at all, but if there is none, it is an
                     // empty vector, for which pop() is a no-op.
+                    let _discard = nd.witnesses.pop(u64::from(reorg_height));
+                }
+                for nd in tx.orchard_notes.iter_mut() {
                     let _discard = nd.witnesses.pop(u64::from(reorg_height));
                 }
             }

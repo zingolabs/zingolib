@@ -446,6 +446,7 @@ pub trait NoteAndMetadata: Sized {
     fn spent(&self) -> &Option<(TxId, u32)>;
     fn spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
     fn unconfirmed_spent(&self) -> &Option<(TxId, u32)>;
+    fn unconfirmed_spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
     fn witnesses(&self) -> &WitnessCache<Self::Node>;
     fn witnesses_mut(&mut self) -> &mut WitnessCache<Self::Node>;
     fn have_spending_key(&self) -> bool;
@@ -556,6 +557,10 @@ impl NoteAndMetadata for SaplingNoteAndMetadata {
 
     fn unconfirmed_spent(&self) -> &Option<(TxId, u32)> {
         &self.unconfirmed_spent
+    }
+
+    fn unconfirmed_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
+        &mut self.unconfirmed_spent
     }
 
     fn witnesses(&self) -> &WitnessCache<Self::Node> {
@@ -674,6 +679,10 @@ impl NoteAndMetadata for OrchardNoteAndMetadata {
 
     fn unconfirmed_spent(&self) -> &Option<(TxId, u32)> {
         &self.unconfirmed_spent
+    }
+
+    fn unconfirmed_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
+        &mut self.unconfirmed_spent
     }
 
     fn witnesses(&self) -> &WitnessCache<Self::Node> {
