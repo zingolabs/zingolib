@@ -91,6 +91,17 @@ pub fn report_permission_error() {
     }
 }
 
+/// If the regtest flag was passed but a non regtest nework is selected
+/// exit immediately and vice versa.
+fn regtest_config_check(regtest_manager: &Option<regtest::RegtestManager>, chain: &Network) {
+    if regtest_manager.is_some() && chain == &Network::Regtest {
+        println!("regtest detected and network set correctly!");
+    } else if regtest_manager.is_some() && chain != &Network::Regtest {
+        panic!("Regtest flag detected, but unexpected network set! Exiting.");
+    } else if chain == &Network::Regtest {
+        panic!("WARNING! regtest network in use but no regtest flag recognized!");
+    }
+}
 pub fn startup(
     server: http::Uri,
     seed: Option<String>,
@@ -102,16 +113,7 @@ pub fn startup(
 ) -> std::io::Result<(Sender<(String, Vec<String>)>, Receiver<String>)> {
     // Try to get the configuration
     let (config, latest_block_height) = create_on_data_dir(server.clone(), data_dir)?;
-
-    // Diagnostic check for regtest flag and network in config, panic if mis-matched.
-    if regtest_manager.is_some() && config.chain == Network::Regtest {
-        println!("regtest detected and network set correctly!");
-    } else if regtest_manager.is_some() && config.chain != Network::Regtest {
-        println!("Regtest flag detected, but unexpected network set! Exiting.");
-        panic!("Regtest Network Problem");
-    } else if config.chain == Network::Regtest {
-        println!("WARNING! regtest network in use but no regtest flag recognized!");
-    }
+    regtest_config_check(&regtest_manager, &config.chain);
 
     let lightclient = match seed {
         Some(phrase) => Arc::new(LightClient::new_from_phrase(
