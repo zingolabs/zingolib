@@ -21,6 +21,9 @@ pub trait Command {
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String;
 }
 
+pub trait ShortCircuitedCommand {
+    fn exec_without_lc(args: Vec<String>) -> String;
+}
 struct ChangeServerCommand {}
 impl Command for ChangeServerCommand {
     fn help(&self) -> String {
@@ -227,7 +230,7 @@ impl Command for ClearCommand {
     }
 }
 
-struct HelpCommand {}
+pub struct HelpCommand {}
 impl Command for HelpCommand {
     fn help(&self) -> String {
         let mut h = vec![];
@@ -269,7 +272,29 @@ impl Command for HelpCommand {
         }
     }
 }
+impl ShortCircuitedCommand for HelpCommand {
+    fn exec_without_lc(args: Vec<String>) -> String {
+        let mut responses = vec![];
 
+        // Print a list of all commands
+        match args.len() {
+            0 => {
+                responses.push(format!("Available commands:"));
+                get_commands().iter().for_each(|(cmd, obj)| {
+                    responses.push(format!("{} - {}", cmd, obj.short_help()));
+                });
+
+                responses.sort();
+                responses.join("\n")
+            }
+            1 => match get_commands().get(&args[0]) {
+                Some(cmd) => cmd.help(),
+                None => format!("Command {} not found", args[0]),
+            },
+            _ => panic!("Unexpected number of parameters."),
+        }
+    }
+}
 struct InfoCommand {}
 impl Command for InfoCommand {
     fn help(&self) -> String {

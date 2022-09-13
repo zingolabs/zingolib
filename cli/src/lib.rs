@@ -98,15 +98,15 @@ pub fn startup(
     data_dir: Option<String>,
     first_sync: bool,
     print_updates: bool,
-    regtest: bool,
+    regtest_manager: Option<regtest::RegtestManager>,
 ) -> std::io::Result<(Sender<(String, Vec<String>)>, Receiver<String>)> {
     // Try to get the configuration
     let (config, latest_block_height) = create_on_data_dir(server.clone(), data_dir)?;
 
     // Diagnostic check for regtest flag and network in config, panic if mis-matched.
-    if regtest && config.chain == Network::Regtest {
+    if regtest_manager.is_some() && config.chain == Network::Regtest {
         println!("regtest detected and network set correctly!");
-    } else if regtest && config.chain != Network::Regtest {
+    } else if regtest_manager.is_some() && config.chain != Network::Regtest {
         println!("Regtest flag detected, but unexpected network set! Exiting.");
         panic!("Regtest Network Problem");
     } else if config.chain == Network::Regtest {
@@ -280,7 +280,7 @@ pub fn command_loop(
 
 pub fn attempt_recover_seed(_password: Option<String>) {
     // Create a Light Client Config in an attempt to recover the file.
-    let _config = ZingoConfig {
+    ZingoConfig {
         server: Arc::new(RwLock::new("0.0.0.0:0".parse().unwrap())),
         chain: zingoconfig::Network::Mainnet,
         monitor_mempool: false,
@@ -288,4 +288,224 @@ pub fn attempt_recover_seed(_password: Option<String>) {
         anchor_offset: [0u32; 5],
         data_dir: None,
     };
+}
+
+pub struct CLIRunner {
+    params: Vec<String>,
+    password: Option<String>,
+    recover: bool,
+    server: http::Uri,
+    seed: Option<String>,
+    birthday: u64,
+    maybe_data_dir: Option<String>,
+    sync: bool,
+    command: Option<String>,
+    regtest_manager: Option<regtest::RegtestManager>,
+    zcashd_child: Option<std::process::Child>,
+    lightwalletd_child: Option<std::process::Child>,
+}
+use commands::ShortCircuitedCommand;
+fn short_circuit_on_help(params: Vec<String>) {
+    for h in commands::HelpCommand::exec_without_lc(params).lines() {
+        println!("{}", h);
+    }
+    std::process::exit(0x0100);
+}
+use std::string::String;
+#[derive(Debug)]
+enum CLIRunError {
+    BirthdaylessSeed(String),
+    InvalidBirthday(String),
+    MalformedServerURL(String),
+}
+/// This type manages setup of the zingo-cli utility among its responsibilities:
+///  * parse arguments with standard clap: https://crates.io/crates/clap
+///  * behave correctly as a function of each parameter that may have been passed
+///      * add details of above here
+///  * handle parameters as efficiently as possible.
+///      * If a ShortCircuitCommand
+///    is specified, then the system should execute only logic necessary to support that command,
+///    in other words "help" the ShortCitcuitCommand _MUST_ not launch either zcashd or lightwalletd
+impl CLIRunner {
+    fn new() -> Result<Self, CLIRunError> {
+        let configured_app = configure_app();
+        let matches = configured_app.get_matches();
+        let command = matches.value_of("COMMAND");
+        // Begin short_circuit section
+        let params: Vec<String> = matches
+            .values_of("PARAMS")
+            .map(|v| v.collect())
+            .or(Some(vec![]))
+            .unwrap()
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let command = if let Some(refstr) = command {
+            if refstr == "help" {
+                short_circuit_on_help(params.clone());
+            }
+            Some(refstr.to_string())
+        } else {
+            None
+        };
+        let recover = matches.is_present("recover");
+        let seed = matches.value_of("seed").map(|s| s.to_string());
+        let maybe_birthday = matches.value_of("birthday");
+        if seed.is_some() && maybe_birthday.is_none() {
+            eprintln!("ERROR!");
+            eprintln!(
+            "Please specify the wallet birthday (eg. '--birthday 600000') to restore from seed."
+        );
+            return Err(CLIRunError::BirthdaylessSeed(
+                "This should be the block height where the wallet was created.\
+If you don't remember the block height, you can pass '--birthday 0'\
+to scan from the start of the blockchain."
+                    .to_string(),
+            ));
+        }
+        let birthday = match maybe_birthday.unwrap_or("0").parse::<u64>() {
+            Ok(b) => b,
+            Err(e) => {
+                return Err(CLIRunError::InvalidBirthday(format!(
+                    "Couldn't parse birthday. This should be a block number. Error={}",
+                    e
+                )));
+            }
+        };
+
+        let maybe_data_dir = matches.value_of("data-dir").map(|s| s.to_string());
+
+        let clean_regtest_data = !matches.is_present("no-clean");
+        let mut maybe_server = matches.value_of("server").map(|s| s.to_string());
+        let mut zcashd_child = None;
+        let mut lightwalletd_child = None;
+        let regtest_manager = if matches.is_present("regtest") {
+            let (rm, zcdc, lwdc) = regtest::RegtestManager::launch(clean_regtest_data);
+            maybe_server = Some("http://127.0.0.1".to_string());
+            zcashd_child = Some(zcdc);
+            lightwalletd_child = Some(lwdc);
+            Some(rm)
+        } else {
+            None
+        };
+        let server = ZingoConfig::get_server_or_default(maybe_server);
+
+        // Test to make sure the server has all of scheme, host and port
+        if server.scheme_str().is_none() || server.host().is_none() || server.port().is_none() {
+            return Err(CLIRunError::MalformedServerURL(format!(
+                "Please provide the --server parameter as [scheme]://[host]:[port].\nYou provided: {}",
+                server )));
+        }
+
+        let sync = !matches.is_present("nosync");
+        let password = matches.value_of("password").map(|s| s.to_string());
+        Ok(Self {
+            params,
+            password,
+            recover,
+            server,
+            seed,
+            birthday,
+            maybe_data_dir,
+            sync,
+            command,
+            regtest_manager,
+            zcashd_child,
+            lightwalletd_child,
+        })
+    }
+    fn check_recover(&self) {
+        if self.recover {
+            // Create a Light Client Config in an attempt to recover the file.
+            attempt_recover_seed(self.password.clone());
+            std::process::exit(0x0100);
+        }
+    }
+    fn start_cli_service(&self) -> (Sender<(String, Vec<String>)>, Receiver<String>) {
+        let startup_chan = startup(
+            self.server.clone(),
+            self.seed.clone(),
+            self.birthday,
+            self.maybe_data_dir.clone(),
+            self.sync,
+            self.command.is_none(),
+            self.regtest_manager.clone(),
+        );
+        match startup_chan {
+            Ok(c) => c,
+            Err(e) => {
+                let emsg = format!("Error during startup:{}\nIf you repeatedly run into this issue, you might have to restore your wallet from your seed phrase.", e);
+                eprintln!("{}", emsg);
+                error!("{}", emsg);
+                if cfg!(target_os = "unix") {
+                    match e.raw_os_error() {
+                        Some(13) => report_permission_error(),
+                        _ => {}
+                    }
+                };
+                panic!();
+            }
+        }
+    }
+    fn dispatch_command_or_start_interactive(mut self) {
+        let (command_transmitter, resp_receiver) = self.start_cli_service();
+        if self.command.is_none() {
+            start_interactive(command_transmitter, resp_receiver);
+        } else {
+            command_transmitter
+                .send((
+                    self.command.clone().unwrap().to_string(),
+                    self.params
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect::<Vec<String>>(),
+                ))
+                .unwrap();
+
+            match resp_receiver.recv() {
+                Ok(s) => println!("{}", s),
+                Err(e) => {
+                    let e = format!(
+                        "Error executing command {}: {}",
+                        self.command.clone().unwrap(),
+                        e
+                    );
+                    eprintln!("{}", e);
+                    error!("{}", e);
+                }
+            }
+
+            // Save before exit
+            command_transmitter
+                .send(("save".to_string(), vec![]))
+                .unwrap();
+            resp_receiver.recv().unwrap();
+            dbg!(&self.lightwalletd_child);
+            self.lightwalletd_child
+                .take()
+                .unwrap()
+                .kill()
+                .expect("Die lightwalletdd...    DIE!!!");
+            self.lightwalletd_child
+                .take()
+                .unwrap()
+                .wait()
+                .expect("Die lightwalletdd...    DIE!!!");
+            self.zcashd_child
+                .take()
+                .unwrap()
+                .kill()
+                .expect("Die zcashd...    DIE!!!");
+            self.zcashd_child
+                .take()
+                .unwrap()
+                .wait()
+                .expect("Die zcashd...    DIE!!!");
+        }
+    }
+    pub fn run_cli() {
+        let cli_runner = CLIRunner::new().unwrap();
+        cli_runner.check_recover();
+        cli_runner.dispatch_command_or_start_interactive();
+    }
 }

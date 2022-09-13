@@ -1,48 +1,8 @@
 use std::fs::File;
-///  Enforce strict expectations for tool use with current zingolib.  Relaxing these restrictions will facilitate
-///  use in other projects.  For example, this version of regtest will only run within a git repo that is historically
-///  descended from 27e5eedc6b35759f463d43ea341ce66714aa9e01 (ie, I am Jack's commit descendant.)
-fn git_selfcheck() {
-    let git_check = std::process::Command::new("git")
-        .arg("--help")
-        .output()
-        .expect("no git!? time to quit.");
-
-    if !std::str::from_utf8(&git_check.stdout)
-        .expect("git --help error")
-        .contains("See 'git help git' for an overview of the system.")
-    {
-        panic!("git check failed!");
-    }
-
-    // confirm this worktree is a zingolib repo
-    let git_revlist = std::process::Command::new("git")
-        .args(["rev-list", "--max-parents=0", "HEAD"])
-        .output()
-        .expect("problem invoking git rev-list");
-
-    if !std::str::from_utf8(&git_revlist.stdout)
-        .expect("git revlist error")
-        .contains("27e5eedc6b35759f463d43ea341ce66714aa9e01")
-    {
-        panic!("I am not Jack's commit descendant");
-    }
-
-    let git_log = std::process::Command::new("git")
-        .args(["--no-pager", "log"])
-        .output()
-        .expect("git log error");
-
-    if !std::str::from_utf8(&git_log.stdout)
-        .expect("git log stdout error")
-        .contains("e8677475da2676fcfec57615de6330a7cb542cc1")
-    {
-        panic!("Zingo-cli's regtest mode must be run within its own git worktree");
-    }
-}
 
 ///  Simple helper to succinctly reference the project root dir.
 use std::path::{Path, PathBuf};
+use std::process::Child;
 fn get_top_level_dir() -> PathBuf {
     let revparse_raw = std::process::Command::new("git")
         .args(["rev-parse", "--show-toplevel"])
@@ -203,103 +163,118 @@ fn generate_initial_block(
         .output()
 }
 
-pub fn launch(clean_regtest_data: bool) {
-    use std::io::Read;
-    use std::{thread, time};
+#[derive(Clone)]
+#[allow(dead_code)]
+pub struct RegtestManager {
+    regtest_dir: PathBuf,
+    confs_dir: PathBuf,
+    bin_location: PathBuf,
+    logs: PathBuf,
+    data_dir: PathBuf,
+    zcashd_datadir: PathBuf,
+    zcashd_logs: PathBuf,
+    zcashd_config: PathBuf,
+    lightwalletd_config: PathBuf,
+    lightwalletd_logs: PathBuf,
+    lightwalletd_stdout_log: PathBuf,
+    lightwalletd_stderr_log: PathBuf,
+    lightwalletd_datadir: PathBuf,
+    zingo_datadir: PathBuf,
+}
+impl RegtestManager {
+    pub fn launch(clean_regtest_data: bool) -> (Self, Child, Child) {
+        let regtest_dir = get_regtest_dir();
+        let confs_dir = regtest_dir.join("conf");
+        let bin_location = regtest_dir.join("bin");
+        let logs = regtest_dir.join("logs");
+        let data_dir = regtest_dir.join("data");
+        let zcashd_datadir = data_dir.join("zcashd");
+        let zcashd_logs = logs.join("zcashd");
+        let zcashd_config = confs_dir.join("zcash.conf");
+        let lightwalletd_config = confs_dir.join("lightwalletd.yaml");
+        let lightwalletd_logs = logs.join("lightwalletd");
+        let lightwalletd_stdout_log = lightwalletd_logs.join("stdout.log");
+        let lightwalletd_stderr_log = lightwalletd_logs.join("stderr.log");
+        let lightwalletd_datadir = data_dir.join("lightwalletd");
+        let zingo_datadir = data_dir.join("zingo");
 
-    //check for git itself and that we are working within a zingolib repo
-    git_selfcheck();
+        use std::io::Read;
+        use std::{thread, time};
+        assert!(&zcashd_config
+            .to_str()
+            .unwrap()
+            .ends_with("/regtest/conf/zcash.conf"));
+        assert!(&zcashd_datadir
+            .to_str()
+            .unwrap()
+            .ends_with("/regtest/data/zcashd"));
 
-    let regtest_dir = get_regtest_dir();
-    let confs_dir = regtest_dir.join("conf");
-    let bin_location = regtest_dir.join("bin");
-    let logs = regtest_dir.join("logs");
-    let data_dir = regtest_dir.join("data");
-    let zcashd_datadir = data_dir.join("zcashd");
-    let zcashd_logs = logs.join("zcashd");
-    let zcashd_config = confs_dir.join("zcash.conf");
-    let lightwalletd_config = confs_dir.join("lightwalletd.yaml");
-    let lightwalletd_logs = logs.join("lightwalletd");
-    let lightwalletd_stdout_log = lightwalletd_logs.join("stdout.log");
-    let lightwalletd_stderr_log = lightwalletd_logs.join("stderr.log");
-    let lightwalletd_datadir = data_dir.join("lightwalletd");
-    let zingo_datadir = data_dir.join("zingo");
-
-    assert!(&zcashd_config
-        .to_str()
-        .unwrap()
-        .ends_with("/regtest/conf/zcash.conf"));
-    assert!(&zcashd_datadir
-        .to_str()
-        .unwrap()
-        .ends_with("/regtest/data/zcashd"));
-
-    if clean_regtest_data {
-        prepare_working_directories(&zcashd_datadir, &lightwalletd_datadir, &zingo_datadir);
-    }
-
-    let (mut zcashd_command, mut zcashd_logfile, zcashd_stdout_log) =
-        zcashd_launch(&bin_location, &zcashd_logs, &zcashd_config, &zcashd_datadir);
-
-    if let Some(mut zcashd_stdout_data) = zcashd_command.stdout.take() {
-        std::thread::spawn(move || {
-            std::io::copy(&mut zcashd_stdout_data, &mut zcashd_logfile)
-                .expect("io::copy error writing zcashd_stdout.log");
-        });
-    }
-
-    let mut zcashd_log_open = File::open(&zcashd_stdout_log).expect("can't open zcashd log");
-    let mut zcashd_logfile_state = String::new();
-
-    let check_interval = time::Duration::from_millis(500);
-
-    //now enter loop to find string that indicates daemon is ready for next step
-    loop {
-        zcashd_log_open
-            .read_to_string(&mut zcashd_logfile_state)
-            .expect("problem reading zcashd_logfile into rust string");
-        if zcashd_logfile_state.contains("Error:") {
-            panic!("zcashd reporting ERROR! exiting with panic. you may have to shut the daemon down manually.");
-        } else if zcashd_logfile_state.contains("init message: Done loading") {
-            break;
+        if clean_regtest_data {
+            prepare_working_directories(&zcashd_datadir, &lightwalletd_datadir, &zingo_datadir);
         }
-        thread::sleep(check_interval);
-    }
 
-    println!("zcashd start section completed, zcashd reports it is done loading.");
+        let (mut zcashd_command, mut zcashd_logfile, zcashd_stdout_log) =
+            zcashd_launch(&bin_location, &zcashd_logs, &zcashd_config, &zcashd_datadir);
 
-    if clean_regtest_data {
-        println!("Generating initial block");
-        let generate_output = generate_initial_block(&bin_location, &zcashd_config);
+        if let Some(mut zcashd_stdout_data) = zcashd_command.stdout.take() {
+            std::thread::spawn(move || {
+                std::io::copy(&mut zcashd_stdout_data, &mut zcashd_logfile)
+                    .expect("io::copy error writing zcashd_stdout.log");
+            });
+        }
 
-        match generate_output {
-            Ok(output) => println!(
-                "generated block {}",
-                std::str::from_utf8(&output.stdout).unwrap()
-            ),
-            Err(e) => {
-                println!("generating initial block returned error {e}");
-                println!("exiting!");
-                zcashd_command
-                    .kill()
-                    .expect("Stop! Stop! Zcash is already dead!");
-                panic!("")
+        let mut zcashd_log_open = File::open(&zcashd_stdout_log).expect("can't open zcashd log");
+        let mut zcashd_logfile_state = String::new();
+
+        let check_interval = time::Duration::from_millis(500);
+
+        //now enter loop to find string that indicates daemon is ready for next step
+        loop {
+            zcashd_log_open
+                .read_to_string(&mut zcashd_logfile_state)
+                .expect("problem reading zcashd_logfile into rust string");
+            if zcashd_logfile_state.contains("Error:") {
+                panic!("zcashd reporting ERROR! exiting with panic. you may have to shut the daemon down manually.");
+            } else if zcashd_logfile_state.contains("init message: Done loading") {
+                break;
             }
+            thread::sleep(check_interval);
         }
-    } else {
-        println!("Keeping old regtest data")
-    }
-    println!("lightwalletd is about to start. This should only take a moment.");
 
-    let mut lwd_logfile =
-        File::create(&lightwalletd_stdout_log).expect("file::create Result error");
-    let mut lwd_err_logfile =
-        File::create(&lightwalletd_stderr_log).expect("file::create Result error");
+        println!("zcashd start section completed, zcashd reports it is done loading.");
 
-    let mut lwd_bin = bin_location.to_owned();
-    lwd_bin.push("lightwalletd");
+        if clean_regtest_data {
+            println!("Generating initial block");
+            let generate_output = generate_initial_block(&bin_location, &zcashd_config);
 
-    let mut lwd_command = std::process::Command::new(lwd_bin)
+            match generate_output {
+                Ok(output) => println!(
+                    "generated block {}",
+                    std::str::from_utf8(&output.stdout).unwrap()
+                ),
+                Err(e) => {
+                    println!("generating initial block returned error {e}");
+                    println!("exiting!");
+                    zcashd_command
+                        .kill()
+                        .expect("Stop! Stop! Zcash is already dead!");
+                    panic!("")
+                }
+            }
+        } else {
+            println!("Keeping old regtest data")
+        }
+        println!("lightwalletd is about to start. This should only take a moment.");
+
+        let mut lwd_logfile =
+            File::create(&lightwalletd_stdout_log).expect("file::create Result error");
+        let mut lwd_err_logfile =
+            File::create(&lightwalletd_stderr_log).expect("file::create Result error");
+
+        let mut lwd_bin = bin_location.to_owned();
+        lwd_bin.push("lightwalletd");
+
+        let mut lwd_command = std::process::Command::new(lwd_bin)
         .args([
             "--no-tls-very-insecure",
             "--zcash-conf-path",
@@ -324,36 +299,57 @@ pub fn launch(clean_regtest_data: bool) {
         .spawn()
         .expect("failed to start lightwalletd. It's possible the lightwalletd binary is not in the /zingolib/regtest/bin/ directory, see /regtest/README.md");
 
-    if let Some(mut lwd_log) = lwd_command.stdout.take() {
-        std::thread::spawn(move || {
-            std::io::copy(&mut lwd_log, &mut lwd_logfile)
-                .expect("io::copy error writing lwd_stdout.log");
-        });
-    }
-
-    if let Some(mut lwd_err_log) = lwd_command.stderr.take() {
-        std::thread::spawn(move || {
-            std::io::copy(&mut lwd_err_log, &mut lwd_err_logfile)
-                .expect("io::copy error writing lwd_stderr.log");
-        });
-    }
-
-    println!("lightwalletd is now started in regtest mode, please standby...");
-
-    let mut lwd_log_opened = File::open(&lightwalletd_stdout_log).expect("can't open lwd log");
-    let mut lwd_logfile_state = String::new();
-
-    //now enter loop to find string that indicates daemon is ready for next step
-    loop {
-        lwd_log_opened
-            .read_to_string(&mut lwd_logfile_state)
-            .expect("problem reading lwd_logfile into rust string");
-        if lwd_logfile_state.contains("Starting insecure no-TLS (plaintext) server") {
-            println!("lwd start section completed, lightwalletd should be running!");
-            println!("Standby, Zingo-cli should be running in regtest mode momentarily...");
-            break;
+        if let Some(mut lwd_log) = lwd_command.stdout.take() {
+            std::thread::spawn(move || {
+                std::io::copy(&mut lwd_log, &mut lwd_logfile)
+                    .expect("io::copy error writing lwd_stdout.log");
+            });
         }
-        // we need to sleep because even after the last message is detected, lwd needs a moment to become ready for regtest mode
-        thread::sleep(check_interval);
+
+        if let Some(mut lwd_err_log) = lwd_command.stderr.take() {
+            std::thread::spawn(move || {
+                std::io::copy(&mut lwd_err_log, &mut lwd_err_logfile)
+                    .expect("io::copy error writing lwd_stderr.log");
+            });
+        }
+
+        println!("lightwalletd is now started in regtest mode, please standby...");
+
+        let mut lwd_log_opened = File::open(&lightwalletd_stdout_log).expect("can't open lwd log");
+        let mut lwd_logfile_state = String::new();
+
+        //now enter loop to find string that indicates daemon is ready for next step
+        loop {
+            lwd_log_opened
+                .read_to_string(&mut lwd_logfile_state)
+                .expect("problem reading lwd_logfile into rust string");
+            if lwd_logfile_state.contains("Starting insecure no-TLS (plaintext) server") {
+                println!("lwd start section completed, lightwalletd should be running!");
+                println!("Standby, Zingo-cli should be running in regtest mode momentarily...");
+                break;
+            }
+            // we need to sleep because even after the last message is detected, lwd needs a moment to become ready for regtest mode
+            thread::sleep(check_interval);
+        }
+        (
+            RegtestManager {
+                regtest_dir,
+                confs_dir,
+                bin_location,
+                logs,
+                data_dir,
+                zcashd_datadir,
+                zcashd_logs,
+                zcashd_config,
+                lightwalletd_config,
+                lightwalletd_logs,
+                lightwalletd_stdout_log,
+                lightwalletd_stderr_log,
+                lightwalletd_datadir,
+                zingo_datadir,
+            },
+            zcashd_command,
+            lwd_command,
+        )
     }
 }
