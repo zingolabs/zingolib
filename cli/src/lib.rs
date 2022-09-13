@@ -356,18 +356,20 @@ impl CLIRunner {
             eprintln!(
             "Please specify the wallet birthday (eg. '--birthday 600000') to restore from seed."
         );
-            //panic!("This should be the block height where the wallet was created. If you don't remember the block height, you can pass '--birthday 0' to scan from the start of the blockchain.");
-            return Err(CLIRunError::BirthdaylessSeed);
+            return Err(CLIRunError::BirthdaylessSeed(
+                "This should be the block height where the wallet was created.\
+If you don't remember the block height, you can pass '--birthday 0'\
+to scan from the start of the blockchain."
+                    .to_string(),
+            ));
         }
         let birthday = match maybe_birthday.unwrap_or("0").parse::<u64>() {
             Ok(b) => b,
-            #[allow(unused_variables)]
             Err(e) => {
-                //panic!(
-                //    "Couldn't parse birthday. This should be a block number. Error={}",
-                //    e
-                //);
-                return Err(CLIRunError::InvalidBirthday);
+                return Err(CLIRunError::InvalidBirthday(format!(
+                    "Couldn't parse birthday. This should be a block number. Error={}",
+                    e
+                )));
             }
         };
 
@@ -390,11 +392,10 @@ impl CLIRunner {
 
         // Test to make sure the server has all of scheme, host and port
         if server.scheme_str().is_none() || server.host().is_none() || server.port().is_none() {
-            //panic!(
-            //"Please provide the --server parameter as [scheme]://[host]:[port].\nYou provided: {}",
-            //server
-            return Err(CLIRunError::MalformedServerURL);
-        };
+            return Err(CLIRunError::MalformedServerURL(format!(
+                "Please provide the --server parameter as [scheme]://[host]:[port].\nYou provided: {}",
+                server )));
+        }
 
         let sync = !matches.is_present("nosync");
         let password = matches.value_of("password").map(|s| s.to_string());
