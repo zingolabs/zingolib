@@ -311,8 +311,22 @@ fn short_circuit_on_help(params: Vec<String>) {
     }
     std::process::exit(0x0100);
 }
+#[derive(Debug)]
+enum CLIRunError {
+    BirthdaylessSeed,
+    InvalidBirthday,
+    MalformedServerURL,
+}
+/// This type manages setup of the zingo-cli utility among its responsibilities:
+///  * parse arguments with standard clap: https://crates.io/crates/clap
+///  * behave correctly as a function of each parameter that may have been passed
+///      * add details of above here
+///  * handle parameters as efficiently as possible.
+///      * If a ShortCircuitCommand
+///    is specified, then the system should execute only logic necessary to support that command,
+///    in other words "help" the ShortCitcuitCommand _MUST_ not launch either zcashd or lightwalletd
 impl CLIRunner {
-    fn new() -> Self {
+    fn new() -> Result<Self, CLIRunError> {
         let configured_app = configure_app();
         let matches = configured_app.get_matches();
         let command = matches.value_of("COMMAND");
@@ -341,15 +355,18 @@ impl CLIRunner {
             eprintln!(
             "Please specify the wallet birthday (eg. '--birthday 600000') to restore from seed."
         );
-            panic!("This should be the block height where the wallet was created. If you don't remember the block height, you can pass '--birthday 0' to scan from the start of the blockchain.");
+            //panic!("This should be the block height where the wallet was created. If you don't remember the block height, you can pass '--birthday 0' to scan from the start of the blockchain.");
+            return Err(CLIRunError::BirthdaylessSeed);
         }
         let birthday = match maybe_birthday.unwrap_or("0").parse::<u64>() {
             Ok(b) => b,
+            #[allow(unused_variables)]
             Err(e) => {
-                panic!(
-                    "Couldn't parse birthday. This should be a block number. Error={}",
-                    e
-                );
+                //panic!(
+                //    "Couldn't parse birthday. This should be a block number. Error={}",
+                //    e
+                //);
+                return Err(CLIRunError::InvalidBirthday);
             }
         };
 
@@ -372,15 +389,15 @@ impl CLIRunner {
 
         // Test to make sure the server has all of scheme, host and port
         if server.scheme_str().is_none() || server.host().is_none() || server.port().is_none() {
-            panic!(
-            "Please provide the --server parameter as [scheme]://[host]:[port].\nYou provided: {}",
-            server
-        );
-        }
+            //panic!(
+            //"Please provide the --server parameter as [scheme]://[host]:[port].\nYou provided: {}",
+            //server
+            return Err(CLIRunError::MalformedServerURL);
+        };
 
         let sync = !matches.is_present("nosync");
         let password = matches.value_of("password").map(|s| s.to_string());
-        Self {
+        Ok(Self {
             params,
             password,
             recover,
@@ -393,7 +410,7 @@ impl CLIRunner {
             regtest_manager,
             zcashd_child,
             lightwalletd_child,
-        }
+        })
     }
     fn check_recover(&self) {
         if self.recover {
@@ -485,7 +502,7 @@ impl CLIRunner {
         }
     }
     pub fn run_cli() {
-        let cli_runner = CLIRunner::new();
+        let cli_runner = CLIRunner::new().unwrap();
         cli_runner.check_recover();
         cli_runner.dispatch_command_or_start_interactive();
     }
