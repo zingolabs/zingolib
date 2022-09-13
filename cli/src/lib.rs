@@ -311,11 +311,12 @@ fn short_circuit_on_help(params: Vec<String>) {
     }
     std::process::exit(0x0100);
 }
+use std::string::String;
 #[derive(Debug)]
 enum CLIRunError {
-    BirthdaylessSeed,
-    InvalidBirthday,
-    MalformedServerURL,
+    BirthdaylessSeed(String),
+    InvalidBirthday(String),
+    MalformedServerURL(String),
 }
 /// This type manages setup of the zingo-cli utility among its responsibilities:
 ///  * parse arguments with standard clap: https://crates.io/crates/clap
