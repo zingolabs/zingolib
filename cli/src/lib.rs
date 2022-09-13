@@ -379,6 +379,9 @@ to scan from the start of the blockchain."
         let mut maybe_server = matches.value_of("server").map(|s| s.to_string());
         let mut zcashd_child = None;
         let mut lightwalletd_child = None;
+        // Regtest specific launch:
+        //   * spawn zcashd in regtest mode
+        //   * spawn lighwalletd and connect it to zcashd
         let regtest_manager = if matches.is_present("regtest") {
             let (rm, zcdc, lwdc) = regtest::RegtestManager::launch(clean_regtest_data);
             maybe_server = Some("http://127.0.0.1".to_string());
@@ -448,6 +451,7 @@ to scan from the start of the blockchain."
         }
     }
     fn dispatch_command_or_start_interactive(mut self) {
+        self.check_recover();
         let (command_transmitter, resp_receiver) = self.start_cli_service();
         if self.command.is_none() {
             start_interactive(command_transmitter, resp_receiver);
@@ -505,7 +509,6 @@ to scan from the start of the blockchain."
     }
     pub fn run_cli() {
         let cli_runner = CLIRunner::new().unwrap();
-        cli_runner.check_recover();
         cli_runner.dispatch_command_or_start_interactive();
     }
 }
