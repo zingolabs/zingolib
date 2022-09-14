@@ -13,7 +13,7 @@ fn prove_scenario_is_built() {}
 
 fn setup_scenario_with_imported_mineto_zaddr() -> (RegtestManager, ChildProcessHandler, LightClient)
 {
-    let sapling_key = include_str!("privkey").to_string();
+    let sapling_key = include_str!("sapling_regtest_secret_extended_key").to_string();
     let mut regtest_manager = RegtestManager::new();
     let mut example_config = PathBuf::from(
         String::from_utf8(Command::new("pwd").output().unwrap().stdout)

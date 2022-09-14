@@ -432,7 +432,7 @@ to scan from the start of the blockchain."
             }
         }
     }
-    fn dispatch_command_or_start_interactive(mut self) {
+    fn dispatch_command_or_start_interactive(self) {
         self.check_recover();
         let (command_transmitter, resp_receiver) = self.start_cli_service();
         if self.command.is_none() {
