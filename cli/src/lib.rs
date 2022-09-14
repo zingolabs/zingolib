@@ -420,8 +420,7 @@ to scan from the start of the blockchain."
         }
     }
     fn start_cli_service(&self) -> (Sender<(String, Vec<String>)>, Receiver<String>) {
-        let startup_chan = self.startup();
-        match startup_chan {
+        match self.startup() {
             Ok(c) => c,
             Err(e) => {
                 let emsg = format!("Error during startup:{}\nIf you repeatedly run into this issue, you might have to restore your wallet from your seed phrase.", e);
