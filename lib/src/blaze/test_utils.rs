@@ -231,7 +231,8 @@ impl FakeTransaction {
         note
     }
 
-    fn add_orchard_output(
+    // Hopefully this can be removed, and regtest integration testing will fill this roll
+    /*fn add_orchard_output(
         &mut self,
         value: u64,
         ovk: Option<orchard::keys::OutgoingViewingKey>,
@@ -262,7 +263,7 @@ impl FakeTransaction {
                 return nullifier;
             }
         }
-    }
+    }*/
 
     pub fn add_transaction_spending(
         &mut self,

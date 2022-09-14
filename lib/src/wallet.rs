@@ -1819,15 +1819,11 @@ fn decode_orchard_spending_key(
 #[cfg(test)]
 mod test {
     use orchard::tree::MerkleHashOrchard;
-    use zcash_primitives::{
-        merkle_tree::{CommitmentTree, Hashable},
-        transaction::components::Amount,
-    };
+    use zcash_primitives::{merkle_tree::CommitmentTree, transaction::components::Amount};
 
     use crate::{
         apply_scenario,
         blaze::test_utils::{incw_to_string, FakeTransaction},
-        compact_formats::vec_to_array,
         lightclient::test_server::{
             clean_shutdown, mine_numblocks_each_with_two_sap_txs, mine_pending_blocks,
             NBlockFCBLScenario,
