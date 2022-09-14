@@ -19,21 +19,6 @@ fn get_regtest_dir() -> PathBuf {
     get_top_level_dir().join("regtest")
 }
 
-fn generate_initial_block(
-    bin_loc: &PathBuf,
-    zcashd_config: &PathBuf,
-) -> Result<std::process::Output, std::io::Error> {
-    let cli_bin = bin_loc.join("zcash-cli");
-    let config_str = zcashd_config.to_str().expect("Path to string failure!");
-    std::process::Command::new(cli_bin)
-        .args([
-            format!("-conf={config_str}"),
-            "generate".to_string(),
-            "1".to_string(),
-        ])
-        .output()
-}
-
 #[derive(Clone)]
 #[allow(dead_code)]
 pub struct RegtestManager {
@@ -54,7 +39,7 @@ pub struct RegtestManager {
     zingo_datadir: PathBuf,
 }
 ///  We use the `ChildProcessHandler` to handle the children of generated in scenario testing
-struct ChildProcessHandler {
+pub struct ChildProcessHandler {
     zcashd: Child,
     lightwalletd: Child,
 }
@@ -103,6 +88,20 @@ impl RegtestManager {
         }
     }
 
+    fn generate_initial_block(&self) -> Result<std::process::Output, std::io::Error> {
+        let cli_bin = &self.bin_location.join("zcash-cli");
+        let config_str = &self
+            .zcashd_config
+            .to_str()
+            .expect("Path to string failure!");
+        std::process::Command::new(cli_bin)
+            .args([
+                format!("-conf={config_str}"),
+                "generate".to_string(),
+                "1".to_string(),
+            ])
+            .output()
+    }
     fn prepare_working_directories(&self) {
         // remove contents of existing data directories
         let zcd_subdir = &self.zcashd_datadir.join("regtest");
@@ -163,7 +162,7 @@ impl RegtestManager {
     }
     fn zcashd_launch(&self) -> (std::process::Child, File) {
         use std::ffi::OsStr;
-        let mut zcashd_bin = &self.bin_location.clone();
+        let zcashd_bin = &mut self.bin_location.clone();
         zcashd_bin.push("zcashd");
         let mut command = std::process::Command::new(zcashd_bin);
         command
@@ -224,8 +223,7 @@ impl RegtestManager {
             &self.prepare_working_directories();
         }
 
-        let (mut zcashd_command, mut zcashd_logfile, zcashd_stdout_log) =
-            zcashd_launch(&bin_location, &zcashd_logs, &zcashd_config, &zcashd_datadir);
+        let (mut zcashd_command, mut zcashd_logfile) = self.zcashd_launch();
 
         if let Some(mut zcashd_stdout_data) = zcashd_command.stdout.take() {
             std::thread::spawn(move || {
@@ -234,29 +232,29 @@ impl RegtestManager {
             });
         }
 
-        let mut zcashd_log_open = File::open(&zcashd_stdout_log).expect("can't open zcashd log");
+        let mut zcashd_log_open =
+            File::open(&self.zcashd_stdout_log).expect("can't open zcashd log");
         let mut zcashd_logfile_state = String::new();
 
-        let check_interval = time::Duration::from_millis(500);
+        let check_interval = std::time::Duration::from_millis(500);
 
         //now enter loop to find string that indicates daemon is ready for next step
         loop {
-            zcashd_log_open
-                .read_to_string(&mut zcashd_logfile_state)
+            std::io::Read::read_to_string(&mut zcashd_log_open, &mut zcashd_logfile_state)
                 .expect("problem reading zcashd_logfile into rust string");
             if zcashd_logfile_state.contains("Error:") {
                 panic!("zcashd reporting ERROR! exiting with panic. you may have to shut the daemon down manually.");
             } else if zcashd_logfile_state.contains("init message: Done loading") {
                 break;
             }
-            thread::sleep(check_interval);
+            std::thread::sleep(check_interval);
         }
 
         println!("zcashd start section completed, zcashd reports it is done loading.");
 
         if clean_regtest_data {
             println!("Generating initial block");
-            let generate_output = generate_initial_block(&bin_location, &zcashd_config);
+            let generate_output = &self.generate_initial_block();
 
             match generate_output {
                 Ok(output) => println!(
@@ -278,30 +276,30 @@ impl RegtestManager {
         println!("lightwalletd is about to start. This should only take a moment.");
 
         let mut lwd_logfile =
-            File::create(&lightwalletd_stdout_log).expect("file::create Result error");
+            File::create(&self.lightwalletd_stdout_log).expect("file::create Result error");
         let mut lwd_err_logfile =
-            File::create(&lightwalletd_stderr_log).expect("file::create Result error");
+            File::create(&self.lightwalletd_stderr_log).expect("file::create Result error");
 
-        let mut lwd_bin = bin_location.to_owned();
+        let lwd_bin = &mut self.bin_location.to_owned();
         lwd_bin.push("lightwalletd");
 
         let mut lwd_command = std::process::Command::new(lwd_bin)
         .args([
             "--no-tls-very-insecure",
             "--zcash-conf-path",
-            &zcashd_config
+            &self.zcashd_config
                 .to_str()
                 .expect("zcashd_config PathBuf to str fail!"),
             "--config",
-            &lightwalletd_config
+            &self.lightwalletd_config
                 .to_str()
                 .expect("lightwalletd_config PathBuf to str fail!"),
             "--data-dir",
-            &lightwalletd_datadir
+            &self.lightwalletd_datadir
                 .to_str()
                 .expect("lightwalletd_datadir PathBuf to str fail!"),
             "--log-file",
-            &lightwalletd_stdout_log
+            &self.lightwalletd_stdout_log
                 .to_str()
                 .expect("lightwalletd_stdout_log PathBuf to str fail!"),
         ])
@@ -326,13 +324,13 @@ impl RegtestManager {
 
         println!("lightwalletd is now started in regtest mode, please standby...");
 
-        let mut lwd_log_opened = File::open(&lightwalletd_stdout_log).expect("can't open lwd log");
+        let mut lwd_log_opened =
+            File::open(&self.lightwalletd_stdout_log).expect("can't open lwd log");
         let mut lwd_logfile_state = String::new();
 
         //now enter loop to find string that indicates daemon is ready for next step
         loop {
-            lwd_log_opened
-                .read_to_string(&mut lwd_logfile_state)
+            std::io::Read::read_to_string(&mut lwd_log_opened, &mut lwd_logfile_state)
                 .expect("problem reading lwd_logfile into rust string");
             if lwd_logfile_state.contains("Starting insecure no-TLS (plaintext) server") {
                 println!("lwd start section completed, lightwalletd should be running!");
@@ -340,7 +338,7 @@ impl RegtestManager {
                 break;
             }
             // we need to sleep because even after the last message is detected, lwd needs a moment to become ready for regtest mode
-            thread::sleep(check_interval);
+            std::thread::sleep(check_interval);
         }
         ChildProcessHandler {
             zcashd: zcashd_command,
