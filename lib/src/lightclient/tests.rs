@@ -414,24 +414,6 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
     );
 }
 
-apply_scenario! {orchard_incoming 10}
-async fn orchard_incoming(scenario: NBlockFCBLScenario) {
-    let NBlockFCBLScenario {
-        data,
-        lightclient,
-        fake_compactblock_list,
-        config,
-    } = scenario;
-
-    lightclient.do_new_address("o");
-    let fvk = lightclient
-        .wallet
-        .keys()
-        .read()
-        .await
-        .get_all_orchard_keys_of_type::<orchard::keys::FullViewingKey>();
-}
-
 apply_scenario! {multiple_incoming_same_transaction 10}
 async fn multiple_incoming_same_transaction(scenario: NBlockFCBLScenario) {
     let NBlockFCBLScenario {
