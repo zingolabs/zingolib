@@ -82,72 +82,6 @@ fn prepare_working_directories(
         .expect("problem with rm -r contents of regtest dir");
 }
 
-fn zcashd_launch(
-    bin_loc: &PathBuf,
-    zcashd_logs: &PathBuf,
-    zcashd_config: &PathBuf,
-    zcashd_datadir: &PathBuf,
-) -> (std::process::Child, File, PathBuf) {
-    use std::ffi::OsStr;
-    let mut zcashd_bin = bin_loc.clone();
-    zcashd_bin.push("zcashd");
-    let zcashd_stdout_log = zcashd_logs.join("stdout.log");
-    let mut command = std::process::Command::new(zcashd_bin);
-    command
-        .args([
-            "--printtoconsole",
-            format!(
-                "--conf={}",
-                zcashd_config.to_str().expect("Unexpected string!")
-            )
-            .as_str(),
-            format!(
-                "--datadir={}",
-                zcashd_datadir.to_str().expect("Unexpected string!")
-            )
-            .as_str(),
-            // Currently zcashd will not write to debug.log with the following flag
-            // "-debuglogfile=.../zingolib/regtest/logs/debug.log",
-            // debug=1 will print verbose debugging information to stdout
-            // to then be logged to a file
-            "-debug=1",
-        ])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-
-    assert_eq!(command.get_args().len(), 4usize);
-    assert_eq!(
-        &command.get_args().into_iter().collect::<Vec<&OsStr>>()[0]
-            .to_str()
-            .unwrap(),
-        &"--printtoconsole"
-    );
-    assert!(&command.get_args().into_iter().collect::<Vec<&OsStr>>()[1]
-        .to_str()
-        .unwrap()
-        .starts_with("--conf="));
-    assert!(&command.get_args().into_iter().collect::<Vec<&OsStr>>()[2]
-        .to_str()
-        .unwrap()
-        .starts_with("--datadir="));
-    assert_eq!(
-        &command.get_args().into_iter().collect::<Vec<&OsStr>>()[3]
-            .to_str()
-            .unwrap(),
-        &"-debug=1"
-    );
-
-    let child = command.spawn()
-        .expect("failed to start zcashd. It's possible the zcashd binary is not in the /zingolib/regtest/bin/ directory, see /regtest/README.md");
-    println!("zcashd is starting in regtest mode, please standby...");
-
-    (
-        child,
-        File::create(&zcashd_stdout_log).expect("file::create Result error"),
-        zcashd_stdout_log,
-    )
-}
-
 fn generate_initial_block(
     bin_loc: &PathBuf,
     zcashd_config: &PathBuf,
@@ -173,6 +107,7 @@ pub struct RegtestManager {
     data_dir: PathBuf,
     zcashd_datadir: PathBuf,
     zcashd_logs: PathBuf,
+    zcashd_stdout_log: PathBuf,
     zcashd_config: PathBuf,
     lightwalletd_config: PathBuf,
     lightwalletd_logs: PathBuf,
@@ -196,6 +131,7 @@ impl RegtestManager {
         let data_dir = regtest_dir.join("data");
         let zcashd_datadir = data_dir.join("zcashd");
         let zcashd_logs = logs.join("zcashd");
+        let zcashd_stdout_log = zcashd_logs.join("stdout.log");
         let zcashd_config = confs_dir.join("zcash.conf");
         let lightwalletd_config = confs_dir.join("lightwalletd.yaml");
         let lightwalletd_logs = logs.join("lightwalletd");
@@ -203,7 +139,6 @@ impl RegtestManager {
         let lightwalletd_stderr_log = lightwalletd_logs.join("stderr.log");
         let lightwalletd_datadir = data_dir.join("lightwalletd");
         let zingo_datadir = data_dir.join("zingo");
-
         assert!(&zcashd_config
             .to_str()
             .unwrap()
@@ -220,6 +155,7 @@ impl RegtestManager {
             data_dir,
             zcashd_datadir,
             zcashd_logs,
+            zcashd_stdout_log,
             zcashd_config,
             lightwalletd_config,
             lightwalletd_logs,
@@ -229,9 +165,72 @@ impl RegtestManager {
             zingo_datadir,
         }
     }
-    pub fn launch(clean_regtest_data: bool) -> ChildProcessHandler {
+
+    fn zcashd_launch(&self) -> (std::process::Child, File) {
+        use std::ffi::OsStr;
+        let mut zcashd_bin = &self.bin_location.clone();
+        zcashd_bin.push("zcashd");
+        let mut command = std::process::Command::new(zcashd_bin);
+        command
+            .args([
+                "--printtoconsole",
+                format!(
+                    "--conf={}",
+                    &self.zcashd_config.to_str().expect("Unexpected string!")
+                )
+                .as_str(),
+                format!(
+                    "--datadir={}",
+                    &self.zcashd_datadir.to_str().expect("Unexpected string!")
+                )
+                .as_str(),
+                // Currently zcashd will not write to debug.log with the following flag
+                // "-debuglogfile=.../zingolib/regtest/logs/debug.log",
+                // debug=1 will print verbose debugging information to stdout
+                // to then be logged to a file
+                "-debug=1",
+            ])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+
+        assert_eq!(command.get_args().len(), 4usize);
+        assert_eq!(
+            &command.get_args().into_iter().collect::<Vec<&OsStr>>()[0]
+                .to_str()
+                .unwrap(),
+            &"--printtoconsole"
+        );
+        assert!(&command.get_args().into_iter().collect::<Vec<&OsStr>>()[1]
+            .to_str()
+            .unwrap()
+            .starts_with("--conf="));
+        assert!(&command.get_args().into_iter().collect::<Vec<&OsStr>>()[2]
+            .to_str()
+            .unwrap()
+            .starts_with("--datadir="));
+        assert_eq!(
+            &command.get_args().into_iter().collect::<Vec<&OsStr>>()[3]
+                .to_str()
+                .unwrap(),
+            &"-debug=1"
+        );
+
+        let child = command.spawn()
+        .expect("failed to start zcashd. It's possible the zcashd binary is not in the /zingolib/regtest/bin/ directory, see /regtest/README.md");
+        println!("zcashd is starting in regtest mode, please standby...");
+
+        (
+            child,
+            File::create(&self.zcashd_stdout_log).expect("file::create Result error"),
+        )
+    }
+    pub fn launch(&self, clean_regtest_data: bool) -> ChildProcessHandler {
         if clean_regtest_data {
-            prepare_working_directories(&zcashd_datadir, &lightwalletd_datadir, &zingo_datadir);
+            prepare_working_directories(
+                &self.zcashd_datadir,
+                &self.lightwalletd_datadir,
+                &self.zingo_datadir,
+            );
         }
 
         let (mut zcashd_command, mut zcashd_logfile, zcashd_stdout_log) =
