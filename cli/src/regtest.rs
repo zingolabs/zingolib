@@ -36,7 +36,7 @@ pub struct RegtestManager {
     lightwalletd_stdout_log: PathBuf,
     lightwalletd_stderr_log: PathBuf,
     lightwalletd_datadir: PathBuf,
-    zingo_datadir: PathBuf,
+    pub zingo_datadir: PathBuf,
 }
 ///  We use the `ChildProcessHandler` to handle the children of generated in scenario testing
 pub struct ChildProcessHandler {
