@@ -220,7 +220,7 @@ impl RegtestManager {
     }
     pub fn launch(&self, clean_regtest_data: bool) -> ChildProcessHandler {
         if clean_regtest_data {
-            &self.prepare_working_directories();
+            self.prepare_working_directories();
         }
 
         let (mut zcashd_command, mut zcashd_logfile) = self.zcashd_launch();
