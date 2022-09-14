@@ -766,7 +766,9 @@ pub struct BlockCommitmentTrees {
     pub orchard_tree: CommitmentTree<MerkleHashOrchard>,
 }
 
+// The following four allow(unused) functions are currently only called in test code
 impl BlockCommitmentTrees {
+    #[allow(unused)]
     pub fn to_tree_state(&self) -> TreeState {
         TreeState {
             height: self.block_height,
@@ -777,6 +779,7 @@ impl BlockCommitmentTrees {
             ..Default::default()
         }
     }
+    #[allow(unused)]
     pub fn empty() -> Self {
         Self {
             block_height: 0,
@@ -785,6 +788,7 @@ impl BlockCommitmentTrees {
             orchard_tree: CommitmentTree::empty(),
         }
     }
+    #[allow(unused)]
     pub fn from_pre_orchard_checkpoint(
         block_height: u64,
         block_hash: String,
@@ -799,6 +803,7 @@ impl BlockCommitmentTrees {
     }
 }
 
+#[allow(unused)]
 pub fn tree_to_string<Node: Hashable>(tree: &CommitmentTree<Node>) -> String {
     let mut b1 = vec![];
     tree.write(&mut b1).unwrap();
