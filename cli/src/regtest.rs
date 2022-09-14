@@ -43,6 +43,13 @@ pub struct ChildProcessHandler {
     zcashd: Child,
     lightwalletd: Child,
 }
+impl Drop for ChildProcessHandler {
+    #[allow(unused_must_use)]
+    fn drop(&mut self) {
+        self.zcashd.kill();
+        self.lightwalletd.kill();
+    }
+}
 enum ChildProcessHandlerLaunchErrors {}
 impl RegtestManager {
     pub fn new() -> Self {
