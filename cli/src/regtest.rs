@@ -19,69 +19,6 @@ fn get_regtest_dir() -> PathBuf {
     get_top_level_dir().join("regtest")
 }
 
-fn prepare_working_directories(
-    zcd_datadir: &PathBuf,
-    lwd_datadir: &PathBuf,
-    zingo_datadir: &PathBuf,
-) {
-    // remove contents of existing data directories
-    let zcd_subdir = zcd_datadir.join("regtest");
-
-    assert!(&zcd_subdir
-        .to_str()
-        .unwrap()
-        .ends_with("/regtest/data/zcashd/regtest"));
-
-    std::process::Command::new("rm")
-        .arg("-r")
-        .arg(zcd_subdir)
-        .output()
-        .expect("problem with rm zcd subdir");
-
-    let lwd_subdir = lwd_datadir.join("db");
-
-    assert!(&lwd_subdir
-        .to_str()
-        .unwrap()
-        .ends_with("/regtest/data/lightwalletd/db"));
-
-    std::process::Command::new("rm")
-        .arg("-r")
-        .arg(lwd_subdir)
-        .output()
-        .expect("problem with rm lwd subdir");
-
-    let zingo_file_one = zingo_datadir.join("zingo-wallet.dat");
-    let zingo_file_two = zingo_datadir.join("zingo-wallet.debug.log");
-
-    assert!(&zingo_file_one
-        .to_str()
-        .unwrap()
-        .ends_with("/regtest/data/zingo/zingo-wallet.dat"));
-    assert!(&zingo_file_two
-        .to_str()
-        .unwrap()
-        .ends_with("/regtest/data/zingo/zingo-wallet.debug.log"));
-
-    std::process::Command::new("rm")
-        .arg(zingo_file_one)
-        .output()
-        .expect("problem with rm zingofile");
-    std::process::Command::new("rm")
-        .arg(zingo_file_two)
-        .output()
-        .expect("problem with rm zingofile");
-
-    // copy contents from regtestvector directory to working zcashd data directory
-    let destination_subdir = zcd_datadir.join("regtest").join("*");
-
-    std::process::Command::new("rm")
-        .arg("-r")
-        .arg(destination_subdir)
-        .output()
-        .expect("problem with rm -r contents of regtest dir");
-}
-
 fn generate_initial_block(
     bin_loc: &PathBuf,
     zcashd_config: &PathBuf,
@@ -166,6 +103,64 @@ impl RegtestManager {
         }
     }
 
+    fn prepare_working_directories(&self) {
+        // remove contents of existing data directories
+        let zcd_subdir = &self.zcashd_datadir.join("regtest");
+
+        assert!(&zcd_subdir
+            .to_str()
+            .unwrap()
+            .ends_with("/regtest/data/zcashd/regtest"));
+
+        std::process::Command::new("rm")
+            .arg("-r")
+            .arg(zcd_subdir)
+            .output()
+            .expect("problem with rm zcd subdir");
+
+        let lwd_subdir = &self.lightwalletd_datadir.join("db");
+
+        assert!(&lwd_subdir
+            .to_str()
+            .unwrap()
+            .ends_with("/regtest/data/lightwalletd/db"));
+
+        std::process::Command::new("rm")
+            .arg("-r")
+            .arg(lwd_subdir)
+            .output()
+            .expect("problem with rm lwd subdir");
+
+        let zingo_file_one = &self.zingo_datadir.join("zingo-wallet.dat");
+        let zingo_file_two = &self.zingo_datadir.join("zingo-wallet.debug.log");
+
+        assert!(&zingo_file_one
+            .to_str()
+            .unwrap()
+            .ends_with("/regtest/data/zingo/zingo-wallet.dat"));
+        assert!(&zingo_file_two
+            .to_str()
+            .unwrap()
+            .ends_with("/regtest/data/zingo/zingo-wallet.debug.log"));
+
+        std::process::Command::new("rm")
+            .arg(zingo_file_one)
+            .output()
+            .expect("problem with rm zingofile");
+        std::process::Command::new("rm")
+            .arg(zingo_file_two)
+            .output()
+            .expect("problem with rm zingofile");
+
+        // copy contents from regtestvector directory to working zcashd data directory
+        let destination_subdir = &self.zcashd_datadir.join("regtest").join("*");
+
+        std::process::Command::new("rm")
+            .arg("-r")
+            .arg(destination_subdir)
+            .output()
+            .expect("problem with rm -r contents of regtest dir");
+    }
     fn zcashd_launch(&self) -> (std::process::Child, File) {
         use std::ffi::OsStr;
         let mut zcashd_bin = &self.bin_location.clone();
@@ -226,11 +221,7 @@ impl RegtestManager {
     }
     pub fn launch(&self, clean_regtest_data: bool) -> ChildProcessHandler {
         if clean_regtest_data {
-            prepare_working_directories(
-                &self.zcashd_datadir,
-                &self.lightwalletd_datadir,
-                &self.zingo_datadir,
-            );
+            &self.prepare_working_directories();
         }
 
         let (mut zcashd_command, mut zcashd_logfile, zcashd_stdout_log) =
