@@ -102,65 +102,6 @@ fn regtest_config_check(regtest_manager: &Option<regtest::RegtestManager>, chain
         panic!("WARNING! regtest network in use but no regtest flag recognized!");
     }
 }
-pub fn startup(
-    server: http::Uri,
-    seed: Option<String>,
-    birthday: u64,
-    data_dir: Option<String>,
-    first_sync: bool,
-    print_updates: bool,
-    regtest_manager: Option<regtest::RegtestManager>,
-) -> std::io::Result<(Sender<(String, Vec<String>)>, Receiver<String>)> {
-    // Try to get the configuration
-    let (config, latest_block_height) = create_on_data_dir(server.clone(), data_dir)?;
-    regtest_config_check(&regtest_manager, &config.chain);
-
-    let lightclient = match seed {
-        Some(phrase) => Arc::new(LightClient::new_from_phrase(
-            phrase, &config, birthday, false,
-        )?),
-        None => {
-            if config.wallet_exists() {
-                Arc::new(LightClient::read_from_disk(&config)?)
-            } else {
-                println!("Creating a new wallet");
-                // Create a wallet with height - 100, to protect against reorgs
-                Arc::new(LightClient::new(
-                    &config,
-                    latest_block_height.saturating_sub(100),
-                )?)
-            }
-        }
-    };
-
-    // Initialize logging
-    lightclient.init_logging()?;
-
-    // Print startup Messages
-    info!(""); // Blank line
-    info!("Starting Zingo-CLI");
-    info!("Light Client config {:?}", config);
-
-    if print_updates {
-        println!(
-            "Lightclient connecting to {}",
-            config.server.read().unwrap()
-        );
-    }
-
-    // At startup, run a sync.
-    if first_sync {
-        let update = commands::do_user_command("sync", &vec![], lightclient.as_ref());
-        if print_updates {
-            println!("{}", update);
-        }
-    }
-
-    // Start the command loop
-    let (command_transmitter, resp_receiver) = command_loop(lightclient.clone());
-
-    Ok((command_transmitter, resp_receiver))
-}
 
 pub fn start_interactive(
     command_transmitter: Sender<(String, Vec<String>)>,
@@ -419,6 +360,58 @@ to scan from the start of the blockchain."
             lightwalletd_child,
         })
     }
+
+    pub fn startup(&self) -> std::io::Result<(Sender<(String, Vec<String>)>, Receiver<String>)> {
+        // Try to get the configuration
+        let (config, latest_block_height) =
+            create_on_data_dir(self.server.clone(), self.maybe_data_dir.clone())?;
+        regtest_config_check(&self.regtest_manager, &config.chain);
+
+        let lightclient = match self.seed.clone() {
+            Some(phrase) => Arc::new(LightClient::new_from_phrase(
+                phrase,
+                &config,
+                self.birthday,
+                false,
+            )?),
+            None => {
+                if config.wallet_exists() {
+                    Arc::new(LightClient::read_from_disk(&config)?)
+                } else {
+                    println!("Creating a new wallet");
+                    // Create a wallet with height - 100, to protect against reorgs
+                    Arc::new(LightClient::new(
+                        &config,
+                        latest_block_height.saturating_sub(100),
+                    )?)
+                }
+            }
+        };
+
+        // Initialize logging
+        lightclient.init_logging()?;
+
+        // Print startup Messages
+        info!(""); // Blank line
+        info!("Starting Zingo-CLI");
+        info!("Light Client config {:?}", config);
+
+        println!(
+            "Lightclient connecting to {}",
+            config.server.read().unwrap()
+        );
+
+        // At startup, run a sync.
+        if self.sync {
+            let update = commands::do_user_command("sync", &vec![], lightclient.as_ref());
+            println!("{}", update);
+        }
+
+        // Start the command loop
+        let (command_transmitter, resp_receiver) = command_loop(lightclient.clone());
+
+        Ok((command_transmitter, resp_receiver))
+    }
     fn check_recover(&self) {
         if self.recover {
             // Create a Light Client Config in an attempt to recover the file.
@@ -427,15 +420,7 @@ to scan from the start of the blockchain."
         }
     }
     fn start_cli_service(&self) -> (Sender<(String, Vec<String>)>, Receiver<String>) {
-        let startup_chan = startup(
-            self.server.clone(),
-            self.seed.clone(),
-            self.birthday,
-            self.maybe_data_dir.clone(),
-            self.sync,
-            self.command.is_none(),
-            self.regtest_manager.clone(),
-        );
+        let startup_chan = self.startup();
         match startup_chan {
             Ok(c) => c,
             Err(e) => {
