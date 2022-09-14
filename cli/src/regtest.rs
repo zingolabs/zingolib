@@ -30,7 +30,7 @@ pub struct RegtestManager {
     zcashd_datadir: PathBuf,
     zcashd_logs: PathBuf,
     zcashd_stdout_log: PathBuf,
-    zcashd_config: PathBuf,
+    pub zcashd_config: PathBuf,
     lightwalletd_config: PathBuf,
     lightwalletd_logs: PathBuf,
     lightwalletd_stdout_log: PathBuf,
@@ -88,7 +88,10 @@ impl RegtestManager {
         }
     }
 
-    fn generate_initial_block(&self) -> Result<std::process::Output, std::io::Error> {
+    pub fn generate_n_blocks(
+        &self,
+        num_blocks: u32,
+    ) -> Result<std::process::Output, std::io::Error> {
         let cli_bin = &self.bin_location.join("zcash-cli");
         let config_str = &self
             .zcashd_config
@@ -98,7 +101,7 @@ impl RegtestManager {
             .args([
                 format!("-conf={config_str}"),
                 "generate".to_string(),
-                "1".to_string(),
+                num_blocks.to_string(),
             ])
             .output()
     }
@@ -254,7 +257,7 @@ impl RegtestManager {
 
         if clean_regtest_data {
             println!("Generating initial block");
-            let generate_output = &self.generate_initial_block();
+            let generate_output = &self.generate_n_blocks(1);
 
             match generate_output {
                 Ok(output) => println!(
