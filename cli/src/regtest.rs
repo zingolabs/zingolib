@@ -181,8 +181,14 @@ pub struct RegtestManager {
     lightwalletd_datadir: PathBuf,
     zingo_datadir: PathBuf,
 }
+///  We use the `ChildProcessHandler` to handle the children of generated in scenario testing
+struct ChildProcessHandler {
+    zcashd: Child,
+    lightwalletd: Child,
+}
+enum ChildProcessHandlerLaunchErrors {}
 impl RegtestManager {
-    pub fn launch(clean_regtest_data: bool) -> (Self, Child, Child) {
+    pub fn new() -> Self {
         let regtest_dir = get_regtest_dir();
         let confs_dir = regtest_dir.join("conf");
         let bin_location = regtest_dir.join("bin");
@@ -198,8 +204,6 @@ impl RegtestManager {
         let lightwalletd_datadir = data_dir.join("lightwalletd");
         let zingo_datadir = data_dir.join("zingo");
 
-        use std::io::Read;
-        use std::{thread, time};
         assert!(&zcashd_config
             .to_str()
             .unwrap()
@@ -208,7 +212,24 @@ impl RegtestManager {
             .to_str()
             .unwrap()
             .ends_with("/regtest/data/zcashd"));
-
+        RegtestManager {
+            regtest_dir,
+            confs_dir,
+            bin_location,
+            logs,
+            data_dir,
+            zcashd_datadir,
+            zcashd_logs,
+            zcashd_config,
+            lightwalletd_config,
+            lightwalletd_logs,
+            lightwalletd_stdout_log,
+            lightwalletd_stderr_log,
+            lightwalletd_datadir,
+            zingo_datadir,
+        }
+    }
+    pub fn launch(clean_regtest_data: bool) -> ChildProcessHandler {
         if clean_regtest_data {
             prepare_working_directories(&zcashd_datadir, &lightwalletd_datadir, &zingo_datadir);
         }
@@ -331,25 +352,9 @@ impl RegtestManager {
             // we need to sleep because even after the last message is detected, lwd needs a moment to become ready for regtest mode
             thread::sleep(check_interval);
         }
-        (
-            RegtestManager {
-                regtest_dir,
-                confs_dir,
-                bin_location,
-                logs,
-                data_dir,
-                zcashd_datadir,
-                zcashd_logs,
-                zcashd_config,
-                lightwalletd_config,
-                lightwalletd_logs,
-                lightwalletd_stdout_log,
-                lightwalletd_stderr_log,
-                lightwalletd_datadir,
-                zingo_datadir,
-            },
-            zcashd_command,
-            lwd_command,
-        )
+        ChildProcessHandler {
+            zcashd: zcashd_command,
+            lightwalletd: lwd_command,
+        }
     }
 }
