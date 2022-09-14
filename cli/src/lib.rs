@@ -70,7 +70,7 @@ pub fn configure_app() -> clap::App<'static> {
 }
 
 /// This function is only tested against Linux.
-pub fn report_permission_error() {
+fn report_permission_error() {
     let user = std::env::var("USER").expect("Unexpected error reading value of $USER!");
     let home = std::env::var("HOME").expect("Unexpected error reading value of $HOME!");
     let current_executable =
@@ -103,7 +103,7 @@ fn regtest_config_check(regtest_manager: &Option<regtest::RegtestManager>, chain
     }
 }
 
-pub fn start_interactive(
+fn start_interactive(
     command_transmitter: Sender<(String, Vec<String>)>,
     resp_receiver: Receiver<String>,
 ) {
