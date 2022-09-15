@@ -245,7 +245,7 @@ pub struct CLIRunner {
     sync: bool,
     command: Option<String>,
     regtest_manager: Option<regtest::RegtestManager>,
-    child_process_handler: Option<Result<ChildProcessHandler, LaunchChildProcessError>>,
+    child_process_handler: Option<ChildProcessHandler>,
 }
 use commands::ShortCircuitedCommand;
 fn short_circuit_on_help(params: Vec<String>) {
@@ -260,6 +260,13 @@ enum CLIRunError {
     BirthdaylessSeed(String),
     InvalidBirthday(String),
     MalformedServerURL(String),
+    ChildLaunchError(regtest::LaunchChildProcessError),
+}
+
+impl From<regtest::LaunchChildProcessError> for CLIRunError {
+    fn from(underlyingerror: regtest::LaunchChildProcessError) -> Self {
+        Self::ChildLaunchError(underlyingerror)
+    }
 }
 /// This type manages setup of the zingo-cli utility among its responsibilities:
 ///  * parse arguments with standard clap: https://crates.io/crates/clap
@@ -326,7 +333,7 @@ to scan from the start of the blockchain."
         //   * spawn lighwalletd and connect it to zcashd
         let regtest_manager = if matches.is_present("regtest") {
             let regtest_manager = regtest::RegtestManager::new();
-            child_process_handler = Some(regtest_manager.launch(clean_regtest_data));
+            child_process_handler = Some(regtest_manager.launch(clean_regtest_data)?);
             maybe_server = Some("http://127.0.0.1".to_string());
             Some(regtest_manager)
         } else {

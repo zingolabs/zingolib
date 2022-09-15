@@ -25,7 +25,7 @@ fn setup_scenario_with_imported_mineto_zaddr() -> (RegtestManager, ChildProcessH
     example_config.push("examples");
     example_config.push("zcash.conf");
     regtest_manager.zcashd_config = dbg!(example_config);
-    let child_process_handler = regtest_manager.launch(true);
+    let child_process_handler = regtest_manager.launch(true).unwrap();
     let server = ZingoConfig::get_server_or_default(Some("http://127.0.0.1".to_string()));
     let (config, _height) = create_on_data_dir(
         server,

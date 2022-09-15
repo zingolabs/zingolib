@@ -50,6 +50,7 @@ impl Drop for ChildProcessHandler {
         self.lightwalletd.kill();
     }
 }
+#[derive(Debug)]
 pub enum LaunchChildProcessError {
     ZcashdState {
         errorcode: std::process::ExitStatus,
