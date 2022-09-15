@@ -4,6 +4,7 @@ use std::sync::{Arc, RwLock};
 use log::{error, info};
 
 use clap::{self, Arg};
+use regtest::ChildProcessHandler;
 use zingoconfig::{Network, ZingoConfig};
 use zingolib::{commands, create_on_data_dir, lightclient::LightClient};
 
@@ -244,8 +245,8 @@ pub struct CLIRunner {
     sync: bool,
     command: Option<String>,
     regtest_manager: Option<regtest::RegtestManager>,
-    zcashd_child: Option<std::process::Child>,
-    lightwalletd_child: Option<std::process::Child>,
+    #[allow(dead_code)] // This field is defined so that it can be used in Drop::drop
+    child_process_handler: Option<ChildProcessHandler>,
 }
 use commands::ShortCircuitedCommand;
 fn short_circuit_on_help(params: Vec<String>) {
@@ -260,6 +261,13 @@ enum CLIRunError {
     BirthdaylessSeed(String),
     InvalidBirthday(String),
     MalformedServerURL(String),
+    ChildLaunchError(regtest::LaunchChildProcessError),
+}
+
+impl From<regtest::LaunchChildProcessError> for CLIRunError {
+    fn from(underlyingerror: regtest::LaunchChildProcessError) -> Self {
+        Self::ChildLaunchError(underlyingerror)
+    }
 }
 /// This type manages setup of the zingo-cli utility among its responsibilities:
 ///  * parse arguments with standard clap: https://crates.io/crates/clap
@@ -320,17 +328,15 @@ to scan from the start of the blockchain."
 
         let clean_regtest_data = !matches.is_present("no-clean");
         let mut maybe_server = matches.value_of("server").map(|s| s.to_string());
-        let mut zcashd_child = None;
-        let mut lightwalletd_child = None;
+        let mut child_process_handler = None;
         // Regtest specific launch:
         //   * spawn zcashd in regtest mode
         //   * spawn lighwalletd and connect it to zcashd
         let regtest_manager = if matches.is_present("regtest") {
-            let (rm, zcdc, lwdc) = regtest::RegtestManager::launch(clean_regtest_data);
+            let regtest_manager = regtest::RegtestManager::new();
+            child_process_handler = Some(regtest_manager.launch(clean_regtest_data)?);
             maybe_server = Some("http://127.0.0.1".to_string());
-            zcashd_child = Some(zcdc);
-            lightwalletd_child = Some(lwdc);
-            Some(rm)
+            Some(regtest_manager)
         } else {
             None
         };
@@ -356,8 +362,7 @@ to scan from the start of the blockchain."
             sync,
             command,
             regtest_manager,
-            zcashd_child,
-            lightwalletd_child,
+            child_process_handler,
         })
     }
 
@@ -436,7 +441,7 @@ to scan from the start of the blockchain."
             }
         }
     }
-    fn dispatch_command_or_start_interactive(mut self) {
+    fn dispatch_command_or_start_interactive(self) {
         self.check_recover();
         let (command_transmitter, resp_receiver) = self.start_cli_service();
         if self.command.is_none() {
@@ -470,27 +475,6 @@ to scan from the start of the blockchain."
                 .send(("save".to_string(), vec![]))
                 .unwrap();
             resp_receiver.recv().unwrap();
-            dbg!(&self.lightwalletd_child);
-            self.lightwalletd_child
-                .take()
-                .unwrap()
-                .kill()
-                .expect("Die lightwalletdd...    DIE!!!");
-            self.lightwalletd_child
-                .take()
-                .unwrap()
-                .wait()
-                .expect("Die lightwalletdd...    DIE!!!");
-            self.zcashd_child
-                .take()
-                .unwrap()
-                .kill()
-                .expect("Die zcashd...    DIE!!!");
-            self.zcashd_child
-                .take()
-                .unwrap()
-                .wait()
-                .expect("Die zcashd...    DIE!!!");
         }
     }
     pub fn run_cli() {
