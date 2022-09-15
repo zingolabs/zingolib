@@ -7,7 +7,7 @@ use zingoconfig::ZingoConfig;
 use zingolib::{create_on_data_dir, lightclient::LightClient};
 
 fn main() {
-    mine_sapling_to_self()
+    send_mined_sapling_to_orchard()
 }
 #[test]
 fn prove_scenario_is_built() {}
@@ -47,4 +47,28 @@ fn mine_sapling_to_self() {
 
     let balance = runtime.block_on(client.do_balance());
     assert_eq!(balance["sapling_balance"], 625000000);
+}
+
+fn send_mined_sapling_to_orchard() {
+    let (regtest_manager, _child_process_handler, client) =
+        setup_scenario_with_imported_mineto_zaddr();
+    regtest_manager.generate_n_blocks(5).unwrap();
+    let runtime = Runtime::new().unwrap();
+    runtime.block_on(client.do_sync(true)).unwrap();
+
+    let o_addr = runtime.block_on(client.do_new_address("o")).unwrap()[0].take();
+    println!("{o_addr}");
+    let send_status = runtime
+        .block_on(client.do_send(vec![(
+            o_addr.to_string().as_str(),
+            5000,
+            Some("Scenario test: engage!".to_string()),
+        )]))
+        .unwrap();
+
+    regtest_manager.generate_n_blocks(2).unwrap();
+
+    let balance = runtime.block_on(client.do_balance());
+    assert_eq!(balance["unverified_orchard_balance"], 5000);
+    assert_eq!(balance["verified_orchard_balance"], 0);
 }
