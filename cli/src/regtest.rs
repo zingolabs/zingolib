@@ -1,5 +1,6 @@
 use std::fs::File;
 
+use std::io::Read;
 ///  Simple helper to succinctly reference the project root dir.
 use std::path::{Path, PathBuf};
 use std::process::Child;
@@ -54,8 +55,8 @@ impl Drop for ChildProcessHandler {
 pub enum LaunchChildProcessError {
     ZcashdState {
         errorcode: std::process::ExitStatus,
-        stdout: Option<std::process::ChildStdout>,
-        stderr: Option<std::process::ChildStderr>,
+        stdout: String,
+        stderr: String,
     },
 }
 impl RegtestManager {
@@ -262,10 +263,19 @@ impl RegtestManager {
         loop {
             match zcashd_handle.try_wait() {
                 Ok(Some(exit_status)) => {
+                    let mut stdout = String::new();
+                    zcashd_log_open.read_to_string(&mut stdout).unwrap();
+                    let mut stderr = String::new();
+                    zcashd_handle
+                        .stderr
+                        .as_mut()
+                        .unwrap()
+                        .read_to_string(&mut stderr)
+                        .unwrap();
                     return Err(LaunchChildProcessError::ZcashdState {
                         errorcode: exit_status, //"zcashd exited with code: {exitcode:?}".to_string(),
-                        stdout: zcashd_handle.stdout,
-                        stderr: zcashd_handle.stderr,
+                        stdout,
+                        stderr,
                     });
                 }
                 Ok(None) => (),
