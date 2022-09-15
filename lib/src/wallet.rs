@@ -1648,7 +1648,7 @@ impl LightWallet {
 
         let progress_handle = tokio::spawn(async move {
             while let Some(r) = receiver2.recv().await {
-                println!("Progress: {}", r);
+                println!("{}: Progress: {r}", now() - start_time);
                 progress.write().await.progress = r;
             }
 
