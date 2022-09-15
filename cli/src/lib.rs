@@ -4,7 +4,7 @@ use std::sync::{Arc, RwLock};
 use log::{error, info};
 
 use clap::{self, Arg};
-use regtest::{ChildProcessHandler, LaunchChildProcessError};
+use regtest::ChildProcessHandler;
 use zingoconfig::{Network, ZingoConfig};
 use zingolib::{commands, create_on_data_dir, lightclient::LightClient};
 
@@ -245,6 +245,7 @@ pub struct CLIRunner {
     sync: bool,
     command: Option<String>,
     regtest_manager: Option<regtest::RegtestManager>,
+    #[allow(dead_code)] // This field is defined so that it can be used in Drop::drop
     child_process_handler: Option<ChildProcessHandler>,
 }
 use commands::ShortCircuitedCommand;
