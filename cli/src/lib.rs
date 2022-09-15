@@ -4,6 +4,7 @@ use std::sync::{Arc, RwLock};
 use log::{error, info};
 
 use clap::{self, Arg};
+use regtest::{ChildProcessHandler, LaunchChildProcessError};
 use zingoconfig::{Network, ZingoConfig};
 use zingolib::{commands, create_on_data_dir, lightclient::LightClient};
 
@@ -244,7 +245,7 @@ pub struct CLIRunner {
     sync: bool,
     command: Option<String>,
     regtest_manager: Option<regtest::RegtestManager>,
-    child_process_handler: Option<regtest::ChildProcessHandler>,
+    child_process_handler: Option<Result<ChildProcessHandler, LaunchChildProcessError>>,
 }
 use commands::ShortCircuitedCommand;
 fn short_circuit_on_help(params: Vec<String>) {

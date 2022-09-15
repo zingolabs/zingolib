@@ -50,7 +50,13 @@ impl Drop for ChildProcessHandler {
         self.lightwalletd.kill();
     }
 }
-enum ChildProcessHandlerLaunchErrors {}
+pub enum LaunchChildProcessError {
+    ZcashdState {
+        errorcode: std::process::ExitStatus,
+        stdout: Option<std::process::ChildStdout>,
+        stderr: Option<std::process::ChildStderr>,
+    },
+}
 impl RegtestManager {
     pub fn new() -> Self {
         let regtest_dir = get_regtest_dir();
@@ -228,14 +234,17 @@ impl RegtestManager {
             File::create(&self.zcashd_stdout_log).expect("file::create Result error"),
         )
     }
-    pub fn launch(&self, clean_regtest_data: bool) -> ChildProcessHandler {
+    pub fn launch(
+        &self,
+        clean_regtest_data: bool,
+    ) -> Result<ChildProcessHandler, LaunchChildProcessError> {
         if clean_regtest_data {
             self.prepare_working_directories();
         }
 
-        let (mut zcashd_command, mut zcashd_logfile) = self.zcashd_launch();
+        let (mut zcashd_handle, mut zcashd_logfile) = self.zcashd_launch();
 
-        if let Some(mut zcashd_stdout_data) = zcashd_command.stdout.take() {
+        if let Some(mut zcashd_stdout_data) = zcashd_handle.stdout.take() {
             std::thread::spawn(move || {
                 std::io::copy(&mut zcashd_stdout_data, &mut zcashd_logfile)
                     .expect("io::copy error writing zcashd_stdout.log");
@@ -250,9 +259,13 @@ impl RegtestManager {
 
         //now enter loop to find string that indicates daemon is ready for next step
         loop {
-            match zcashd_command.try_wait() {
-                Ok(Some(code)) => {
-                    panic!("zcashd exited with code: {code:?}")
+            match zcashd_handle.try_wait() {
+                Ok(Some(exit_status)) => {
+                    return Err(LaunchChildProcessError::ZcashdState {
+                        errorcode: exit_status, //"zcashd exited with code: {exitcode:?}".to_string(),
+                        stdout: zcashd_handle.stdout,
+                        stderr: zcashd_handle.stderr,
+                    });
                 }
                 Ok(None) => (),
                 Err(e) => {
@@ -283,7 +296,7 @@ impl RegtestManager {
                 Err(e) => {
                     println!("generating initial block returned error {e}");
                     println!("exiting!");
-                    zcashd_command
+                    zcashd_handle
                         .kill()
                         .expect("Stop! Stop! Zcash is already dead!");
                     panic!("")
@@ -302,7 +315,7 @@ impl RegtestManager {
         let lwd_bin = &mut self.bin_location.to_owned();
         lwd_bin.push("lightwalletd");
 
-        let mut lwd_command = std::process::Command::new(lwd_bin)
+        let mut lightwalletd_child = std::process::Command::new(lwd_bin)
         .args([
             "--no-tls-very-insecure",
             "--zcash-conf-path",
@@ -327,14 +340,14 @@ impl RegtestManager {
         .spawn()
         .expect("failed to start lightwalletd. It's possible the lightwalletd binary is not in the /zingolib/regtest/bin/ directory, see /regtest/README.md");
 
-        if let Some(mut lwd_log) = lwd_command.stdout.take() {
+        if let Some(mut lwd_log) = lightwalletd_child.stdout.take() {
             std::thread::spawn(move || {
                 std::io::copy(&mut lwd_log, &mut lwd_logfile)
                     .expect("io::copy error writing lwd_stdout.log");
             });
         }
 
-        if let Some(mut lwd_err_log) = lwd_command.stderr.take() {
+        if let Some(mut lwd_err_log) = lightwalletd_child.stderr.take() {
             std::thread::spawn(move || {
                 std::io::copy(&mut lwd_err_log, &mut lwd_err_logfile)
                     .expect("io::copy error writing lwd_stderr.log");
@@ -359,9 +372,9 @@ impl RegtestManager {
             // we need to sleep because even after the last message is detected, lwd needs a moment to become ready for regtest mode
             std::thread::sleep(check_interval);
         }
-        ChildProcessHandler {
-            zcashd: zcashd_command,
-            lightwalletd: lwd_command,
-        }
+        Ok(ChildProcessHandler {
+            zcashd: zcashd_handle,
+            lightwalletd: lightwalletd_child,
+        })
     }
 }
