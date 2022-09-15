@@ -3,7 +3,7 @@ use std::fs::File;
 ///  Simple helper to succinctly reference the project root dir.
 use std::path::{Path, PathBuf};
 use std::process::Child;
-fn get_top_level_dir() -> PathBuf {
+fn get_git_rootdir() -> PathBuf {
     let revparse_raw = std::process::Command::new("git")
         .args(["rev-parse", "--show-toplevel"])
         .output()
@@ -16,7 +16,7 @@ fn get_top_level_dir() -> PathBuf {
     .to_path_buf()
 }
 fn get_regtest_dir() -> PathBuf {
-    get_top_level_dir().join("regtest")
+    get_git_rootdir().join("regtest")
 }
 
 #[derive(Clone)]
