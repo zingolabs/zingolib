@@ -178,13 +178,12 @@ impl BlockAndWitnessData {
 
         // If there's nothing to verify, return
         if self.verification_list.read().await.is_empty() {
-            info!("nothing to verify, returning");
             return (true, None);
         }
 
         // Sort and de-dup the verification list
         let mut verification_list = self.verification_list.write().await.split_off(0);
-        verification_list.sort_by_cached_key(|ts| ts.height);
+        verification_list.sort_unstable_by_key(|ts| ts.height);
         verification_list.dedup_by_key(|ts| ts.height);
 
         // Remember the highest tree that will be verified, and return that.
