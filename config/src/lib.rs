@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 use std::{
     io::{self, Error, ErrorKind},
     path::{Path, PathBuf},

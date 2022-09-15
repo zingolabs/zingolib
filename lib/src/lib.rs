@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 #[macro_use]
 extern crate rust_embed;
 mod test_framework;

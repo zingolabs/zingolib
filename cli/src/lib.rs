@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, RwLock};
 
