@@ -250,6 +250,15 @@ impl RegtestManager {
 
         //now enter loop to find string that indicates daemon is ready for next step
         loop {
+            match zcashd_command.try_wait() {
+                Ok(Some(code)) => {
+                    panic!("zcashd exited with code: {code:?}")
+                }
+                Ok(None) => (),
+                Err(e) => {
+                    panic!("Unexpected Error: {e}")
+                }
+            };
             std::io::Read::read_to_string(&mut zcashd_log_open, &mut zcashd_logfile_state)
                 .expect("problem reading zcashd_logfile into rust string");
             if zcashd_logfile_state.contains("Error:") {
