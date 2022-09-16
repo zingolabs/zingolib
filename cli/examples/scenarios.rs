@@ -12,7 +12,10 @@ fn prove_scenario_is_built() {}
 
 fn setup_scenario_with_imported_mineto_zaddr() -> (RegtestManager, ChildProcessHandler, LightClient)
 {
-    let sapling_key = include_str!("sapling_regtest_secret_extended_key").to_string();
+    // This key is registered to receive block rewards by:
+    //  (1) existing accesibly for test code in: cli/examples/mineraddress_sapling_spendingkey
+    //  (2) corresponding to the address registered as the "mineraddress" field in cli/examples/zcash.conf
+    let coinbase_spendkey = include_str!("mineraddress_sapling_spendingkey").to_string();
     let mut regtest_manager = RegtestManager::new();
     let mut example_config = zingo_cli::regtest::get_git_rootdir();
     example_config.push("cli/examples/zcash.conf");
@@ -24,7 +27,7 @@ fn setup_scenario_with_imported_mineto_zaddr() -> (RegtestManager, ChildProcessH
         Some(regtest_manager.zingo_datadir.to_string_lossy().to_string()),
     )
     .unwrap();
-    let client = LightClient::new_from_phrase(sapling_key, &config, 0, false).unwrap();
+    let client = LightClient::new_from_phrase(coinbase_spendkey, &config, 0, false).unwrap();
     (regtest_manager, child_process_handler, client)
 }
 
