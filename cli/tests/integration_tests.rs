@@ -22,7 +22,7 @@ fn create_zcash_conf_path(base: &str) -> std::path::PathBuf {
 ///  (1) existing accesibly for test code in: cli/examples/mineraddress_sapling_spendingkey
 ///  (2) corresponding to the address registered as the "mineraddress" field in cli/examples/zcash.conf
 fn coinbasebacked_spendcapable_setup() -> (RegtestManager, ChildProcessHandler, LightClient) {
-    tracing_subscriber::fmt::init();
+    //tracing_subscriber::fmt::init();
     let coinbase_spendkey = include_str!("data/mineraddress_sapling_spendingkey").to_string();
     let mut regtest_manager = RegtestManager::new();
     regtest_manager.zcashd_config = create_zcash_conf_path("externalwallet_coinbaseaddress.conf");
@@ -40,6 +40,7 @@ fn coinbasebacked_spendcapable_setup() -> (RegtestManager, ChildProcessHandler, 
     )
 }
 
+#[ignore]
 #[test]
 fn mine_sapling_to_self_b() {
     let (regtest_manager, _child_process_handler, client) = coinbasebacked_spendcapable_setup();
