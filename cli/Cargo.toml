@@ -15,6 +15,3 @@ tokio =  { version = "1.6.0", features = ["full"] }
 zingolib = { path = "../lib/" }
 zingoconfig = { path = "../config/" }
 tracing-subscriber = "0.3.15"
-
-[[example]]
-name = "scenarios"
