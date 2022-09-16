@@ -14,6 +14,7 @@ fn create_zcash_conf_path(base: &str) -> std::path::PathBuf {
     config.push("data");
     config.push(base);
 
+    let port = portpicker::pick_unused_port();
     let contents = data::fill_conf_template(data::SAPLING_ADDRESS_FROM_SPEND_AUTH, "18232");
     let mut output =
         std::fs::File::create(&mut config).expect("How could path {config} be missing?");
