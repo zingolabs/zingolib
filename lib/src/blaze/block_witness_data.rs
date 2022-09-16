@@ -8,7 +8,6 @@ use crate::{
         transactions::TransactionMetadataSet,
     },
 };
-use log::info;
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
 use zcash_note_encryption::Domain;
 use zingoconfig::{Network, ZingoConfig, MAX_REORG};

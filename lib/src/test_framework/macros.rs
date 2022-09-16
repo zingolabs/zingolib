@@ -1,3 +1,4 @@
+/// We use this macro to remove repetitive test set-up and teardown in the zingolib unit tests.
 #[macro_export]
 macro_rules! apply_scenario {
     ($test_name:ident $numblocks:literal) => {

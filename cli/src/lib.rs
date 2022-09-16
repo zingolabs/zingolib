@@ -270,7 +270,7 @@ impl From<regtest::LaunchChildProcessError> for CLIRunError {
     }
 }
 /// This type manages setup of the zingo-cli utility among its responsibilities:
-///  * parse arguments with standard clap: https://crates.io/crates/clap
+///  * parse arguments with standard clap: <https://crates.io/crates/clap>
 ///  * behave correctly as a function of each parameter that may have been passed
 ///      * add details of above here
 ///  * handle parameters as efficiently as possible.
