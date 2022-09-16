@@ -30,7 +30,7 @@ fn setup_scenario_with_imported_mineto_zaddr() -> (RegtestManager, ChildProcessH
     (
         regtest_manager,
         child_process_handler,
-        LightClient::new_from_phrase(coinbase_spendkey, &config, 0, false).unwrap(),
+        LightClient::create_with_capable_wallet(coinbase_spendkey, &config, 0, false).unwrap(),
     )
 }
 
