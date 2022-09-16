@@ -27,8 +27,11 @@ fn setup_scenario_with_imported_mineto_zaddr() -> (RegtestManager, ChildProcessH
         Some(regtest_manager.zingo_datadir.to_string_lossy().to_string()),
     )
     .unwrap();
-    let client = LightClient::new_from_phrase(coinbase_spendkey, &config, 0, false).unwrap();
-    (regtest_manager, child_process_handler, client)
+    (
+        regtest_manager,
+        child_process_handler,
+        LightClient::new_from_phrase(coinbase_spendkey, &config, 0, false).unwrap(),
+    )
 }
 
 fn mine_sapling_to_self() {
