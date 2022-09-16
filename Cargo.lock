@@ -3707,6 +3707,7 @@ dependencies = [
  "http",
  "json",
  "log",
+ "portpicker",
  "rustyline",
  "shellwords",
  "tokio",
