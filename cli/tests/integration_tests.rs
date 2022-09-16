@@ -7,11 +7,14 @@ use zingo_cli::regtest::{ChildProcessHandler, RegtestManager};
 use zingoconfig::ZingoConfig;
 use zingolib::{create_zingoconf_with_datadir, lightclient::LightClient};
 
+#[ignore]
 #[test]
 fn snarf_data() {
-    dbg!(data::ZCASHD_TEMPLATE);
     dbg!(data::SECRET_SPEND_AUTH_SAPLING);
-    dbg!(data::SAPLING_ADDRESS_FROM_SPEND_AUTH);
+    dbg!(format!("{}", data::ZCASHD_TEMPLATE));
+    dbg!(data::fill_conf_template(
+        data::SAPLING_ADDRESS_FROM_SPEND_AUTH
+    ));
 }
 
 fn create_zcash_conf_path(base: &str) -> std::path::PathBuf {
@@ -21,7 +24,7 @@ fn create_zcash_conf_path(base: &str) -> std::path::PathBuf {
     config.push("data");
     config.push(base);
 
-    let contents = data::ZCASHD_TEMPLATE;
+    let contents = data::fill_conf_template(data::SAPLING_ADDRESS_FROM_SPEND_AUTH);
     let mut output =
         std::fs::File::create(&mut config).expect("How could path {config} be missing?");
     std::io::Write::write(&mut output, contents.as_bytes()).expect("Couldn't write {contents}!");
@@ -52,6 +55,7 @@ fn coinbasebacked_spendcapable_setup() -> (RegtestManager, ChildProcessHandler, 
     )
 }
 
+#[ignore]
 #[test]
 fn mine_sapling_to_self_b() {
     let (regtest_manager, _child_process_handler, client) = coinbasebacked_spendcapable_setup();
@@ -64,7 +68,6 @@ fn mine_sapling_to_self_b() {
     assert_eq!(balance["sapling_balance"], 625000000);
 }
 
-#[ignore]
 #[test]
 fn mine_sapling_to_self_a() {
     let (regtest_manager, _child_process_handler, client) = coinbasebacked_spendcapable_setup();
