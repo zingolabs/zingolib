@@ -39,7 +39,20 @@ fn coinbasebacked_spendcapable_setup() -> (RegtestManager, ChildProcessHandler, 
 }
 
 #[test]
-fn mine_sapling_to_self() {
+fn mine_sapling_to_self_b() {
+    let (regtest_manager, _child_process_handler, client) = coinbasebacked_spendcapable_setup();
+    regtest_manager.generate_n_blocks(5).unwrap();
+    let runtime = Runtime::new().unwrap();
+
+    runtime.block_on(client.do_sync(true)).unwrap();
+
+    let balance = runtime.block_on(client.do_balance());
+    assert_eq!(balance["sapling_balance"], 625000000);
+}
+
+#[ignore]
+#[test]
+fn mine_sapling_to_self_a() {
     let (regtest_manager, _child_process_handler, client) = coinbasebacked_spendcapable_setup();
     regtest_manager.generate_n_blocks(5).unwrap();
     let runtime = Runtime::new().unwrap();
