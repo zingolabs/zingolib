@@ -23,7 +23,6 @@ use zcash_primitives::{
     constants,
 };
 
-pub const MAX_TRANSACTION_SIZE_DEFAULT: usize = 500;
 pub const DEFAULT_SERVER: &str = "https://zuul.free2z.cash";
 pub const MAX_REORG: usize = 100;
 pub const WALLET_NAME: &str = "zingo-wallet.dat";
@@ -40,7 +39,6 @@ pub const GAP_RULE_UNUSED_ADDRESSES: usize = if cfg!(any(target_os = "ios", targ
 pub struct ZingoConfig {
     pub server: Arc<RwLock<http::Uri>>,
     pub chain: Network,
-    pub max_transaction_size: Arc<RwLock<usize>>,
     pub anchor_offset: [u32; 5],
     pub monitor_mempool: bool,
     pub data_dir: Option<String>,
@@ -52,7 +50,6 @@ impl ZingoConfig {
         ZingoConfig {
             server: Arc::new(RwLock::new(http::Uri::default())),
             chain,
-            max_transaction_size: Arc::new(RwLock::new(MAX_TRANSACTION_SIZE_DEFAULT)),
             monitor_mempool: false,
             anchor_offset: [4u32; 5],
             data_dir: dir,
