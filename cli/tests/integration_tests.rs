@@ -7,16 +7,6 @@ use zingo_cli::regtest::{ChildProcessHandler, RegtestManager};
 use zingoconfig::ZingoConfig;
 use zingolib::{create_zingoconf_with_datadir, lightclient::LightClient};
 
-#[ignore]
-#[test]
-fn snarf_data() {
-    dbg!(data::SECRET_SPEND_AUTH_SAPLING);
-    dbg!(format!("{}", data::ZCASHD_TEMPLATE));
-    dbg!(data::fill_conf_template(
-        data::SAPLING_ADDRESS_FROM_SPEND_AUTH
-    ));
-}
-
 fn create_zcash_conf_path(base: &str) -> std::path::PathBuf {
     let mut config = zingo_cli::regtest::get_git_rootdir();
     config.push("cli");
@@ -24,7 +14,7 @@ fn create_zcash_conf_path(base: &str) -> std::path::PathBuf {
     config.push("data");
     config.push(base);
 
-    let contents = data::fill_conf_template(data::SAPLING_ADDRESS_FROM_SPEND_AUTH);
+    let contents = data::fill_conf_template(data::SAPLING_ADDRESS_FROM_SPEND_AUTH, "18232");
     let mut output =
         std::fs::File::create(&mut config).expect("How could path {config} be missing?");
     std::io::Write::write(&mut output, contents.as_bytes()).expect("Couldn't write {contents}!");
