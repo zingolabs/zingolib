@@ -63,6 +63,7 @@ impl TrialDecryptions {
             BlockHeight,
             Option<u32>,
         )>,
+        transaction_size_filter: Option<u32>,
         full_transaction_fetcher: UnboundedSender<(
             TxId,
             oneshot::Sender<Result<Transaction, String>>,
@@ -110,6 +111,7 @@ impl TrialDecryptions {
                         sapling_ivks,
                         orchard_ivks,
                         transaction_metadata_set,
+                        transaction_size_filter,
                         detected_transaction_id_sender,
                         full_transaction_fetcher.clone(),
                     )));
@@ -124,6 +126,7 @@ impl TrialDecryptions {
                 sapling_ivks,
                 orchard_ivks,
                 transaction_metadata_set,
+                transaction_size_filter,
                 detected_transaction_id_sender,
                 full_transaction_fetcher,
             )));
@@ -148,6 +151,7 @@ impl TrialDecryptions {
         sapling_ivks: Arc<Vec<SaplingIvk>>,
         orchard_ivks: Arc<Vec<OrchardIvk>>,
         transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+        transaction_size_filter: Option<u32>,
         detected_transaction_id_sender: UnboundedSender<(
             TxId,
             ChannelNullifier,
@@ -169,10 +173,12 @@ impl TrialDecryptions {
             let height = BlockHeight::from_u32(compact_block.height as u32);
 
             for (transaction_num, compact_transaction) in compact_block.vtx.iter().enumerate() {
-                if compact_transaction.outputs.len() + compact_transaction.actions.len()
-                    > *config.max_transaction_size.read().unwrap()
-                {
-                    break;
+                if let Some(filter) = transaction_size_filter {
+                    if compact_transaction.outputs.len() + compact_transaction.actions.len()
+                        > filter as usize
+                    {
+                        break;
+                    }
                 }
                 let mut transaction_metadata = false;
 

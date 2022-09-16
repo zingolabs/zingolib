@@ -45,7 +45,6 @@ pub fn create_on_data_dir(
         // Create a Light Client Config
         let config = ZingoConfig {
             server: Arc::new(RwLock::new(server)),
-            max_transaction_size: Arc::new(RwLock::new(zingoconfig::MAX_TRANSACTION_SIZE_DEFAULT)),
             chain: match info.chain_name.as_str() {
                 "main" => Network::Mainnet,
                 "test" => Network::Testnet,

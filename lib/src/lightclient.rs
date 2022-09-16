@@ -1619,6 +1619,11 @@ impl LightClient {
             .start(
                 bsync_data.clone(),
                 detected_transactions_transmitter,
+                self.wallet
+                    .wallet_options
+                    .read()
+                    .await
+                    .transaction_size_filter,
                 full_transaction_fetcher_transmitter,
             )
             .await;
