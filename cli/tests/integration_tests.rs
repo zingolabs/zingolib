@@ -7,12 +7,24 @@ use zingo_cli::regtest::{ChildProcessHandler, RegtestManager};
 use zingoconfig::ZingoConfig;
 use zingolib::{create_zingoconf_with_datadir, lightclient::LightClient};
 
+#[test]
+fn snarf_data() {
+    dbg!(data::ZCASHD_TEMPLATE);
+    dbg!(data::SECRET_SPEND_AUTH_SAPLING);
+    dbg!(data::SAPLING_ADDRESS_FROM_SPEND_AUTH);
+}
+
 fn create_zcash_conf_path(base: &str) -> std::path::PathBuf {
     let mut config = zingo_cli::regtest::get_git_rootdir();
     config.push("cli");
     config.push("tests");
     config.push("data");
     config.push(base);
+
+    let contents = data::ZCASHD_TEMPLATE;
+    let mut output =
+        std::fs::File::create(&mut config).expect("How could path {config} be missing?");
+    std::io::Write::write(&mut output, contents.as_bytes()).expect("Couldn't write {contents}!");
     config
 }
 /// Many scenarios need to start with spendable funds.  This setup provides
@@ -40,7 +52,6 @@ fn coinbasebacked_spendcapable_setup() -> (RegtestManager, ChildProcessHandler, 
     )
 }
 
-#[ignore]
 #[test]
 fn mine_sapling_to_self_b() {
     let (regtest_manager, _child_process_handler, client) = coinbasebacked_spendcapable_setup();
