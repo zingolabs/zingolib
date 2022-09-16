@@ -16,16 +16,9 @@ fn setup_scenario_with_imported_mineto_zaddr() -> (RegtestManager, ChildProcessH
 {
     let sapling_key = include_str!("sapling_regtest_secret_extended_key").to_string();
     let mut regtest_manager = RegtestManager::new();
-    let mut example_config = PathBuf::from(
-        String::from_utf8(Command::new("pwd").output().unwrap().stdout)
-            .unwrap()
-            .strip_suffix('\n')
-            .unwrap(),
-    );
-    example_config.push("cli");
-    example_config.push("examples");
-    example_config.push("zcash.conf");
-    regtest_manager.zcashd_config = dbg!(example_config);
+    let mut example_config = zingo_cli::regtest::get_git_rootdir();
+    example_config.push("cli/examples/zcash.conf");
+    regtest_manager.zcashd_config = example_config;
     let child_process_handler = regtest_manager.launch(true).unwrap();
     let server = ZingoConfig::get_server_or_default(Some("http://127.0.0.1".to_string()));
     let (config, _height) = create_on_data_dir(
