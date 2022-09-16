@@ -296,9 +296,6 @@ impl BlockAndWitnessData {
 
                 for i in (end_pos..start_pos + 1).rev() {
                     let cb = &blocks.get(i as usize).unwrap().cb();
-                    if cb.height == 7 {
-                        dbg!(hex::encode(&*prost::Message::encode_to_vec(cb)));
-                    };
                     for compact_transaction in &cb.vtx {
                         update_trees_with_compact_transaction(
                             &mut sapling_tree,
@@ -315,8 +312,8 @@ impl BlockAndWitnessData {
             orchard_tree.write(&mut orchard_buf).unwrap();
 
             // Return if verified
-            (hex::encode(sapling_buf) == dbg!(vt.height, vt.sapling_tree).1)
-                && (hex::encode(orchard_buf) == dbg!(vt.height, vt.orchard_tree).1)
+            (hex::encode(sapling_buf) == vt.sapling_tree)
+                && (hex::encode(orchard_buf) == vt.orchard_tree)
         })
     }
     // Invalidate the block (and wallet transactions associated with it) at the given block height

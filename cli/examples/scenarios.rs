@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-use std::{path::PathBuf, process::Command, time::Duration};
+use std::time::Duration;
 
 use tokio::{runtime::Runtime, time::sleep};
 use zingo_cli::regtest::{ChildProcessHandler, RegtestManager};
@@ -29,7 +29,6 @@ fn create_zcash_conf_path(base: &str) -> std::path::PathBuf {
 fn coinbasebacked_spendcapable_setup() -> (RegtestManager, ChildProcessHandler, LightClient) {
     tracing_subscriber::fmt::init();
     let coinbase_spendkey = include_str!("mineraddress_sapling_spendingkey").to_string();
-    let sapling_key = include_str!("sapling_regtest_secret_extended_key").to_string();
     let mut regtest_manager = RegtestManager::new();
     regtest_manager.zcashd_config = create_zcash_conf_path("externalwallet_coinbaseaddress.conf");
     let child_process_handler = regtest_manager.launch(true).unwrap();
