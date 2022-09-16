@@ -244,57 +244,7 @@ impl BlockAndWitnessData {
         let blocks = self.blocks.clone();
         let handles: Vec<JoinHandle<bool>> = tree_pairs
             .into_iter()
-            .map(|(vt, ct)| {
-                let blocks = blocks.clone();
-                tokio::spawn(async move {
-                    assert!(ct.height <= vt.height);
-
-                    if ct.height == vt.height {
-                        return true;
-                    }
-                    let mut sapling_tree = CommitmentTree::<SaplingNode>::read(
-                        &hex::decode(ct.sapling_tree).unwrap()[..],
-                    )
-                    .unwrap();
-                    let mut orchard_tree = CommitmentTree::<MerkleHashOrchard>::read(
-                        &hex::decode(ct.orchard_tree).unwrap()[..],
-                    )
-                    .unwrap_or(CommitmentTree::empty());
-
-                    {
-                        let blocks = blocks.read().await;
-
-                        let top_block = blocks.first().unwrap().height;
-                        let start_pos = (top_block - ct.height - 1) as usize;
-                        let end_pos = (top_block - vt.height) as usize;
-
-                        if start_pos >= blocks.len() || end_pos >= blocks.len() {
-                            // Blocks are not in the current sync, which means this has already been verified
-                            return true;
-                        }
-
-                        for i in (end_pos..start_pos + 1).rev() {
-                            let cb = &blocks.get(i as usize).unwrap().cb();
-                            for compact_transaction in &cb.vtx {
-                                update_trees_with_compact_transaction(
-                                    &mut sapling_tree,
-                                    &mut orchard_tree,
-                                    compact_transaction,
-                                )
-                            }
-                        }
-                    }
-                    // Verify that the verification_tree can be calculated from the start tree
-                    let mut sapling_buf = vec![];
-                    sapling_tree.write(&mut sapling_buf).unwrap();
-                    let mut orchard_buf = vec![];
-                    orchard_tree.write(&mut orchard_buf).unwrap();
-
-                    // Return if verified
-                    (hex::encode(sapling_buf) == vt.sapling_tree)
-                        && (hex::encode(orchard_buf) == vt.orchard_tree)
-                })
-            })
+            .map(|(vt, ct)| Self::verify_tree_pair(blocks.clone(), vt, ct))
             .collect();
 
         let results = join_all(handles)
@@ -314,6 +264,61 @@ impl BlockAndWitnessData {
         return (true, heighest_tree);
     }
 
+    fn verify_tree_pair(
+        blocks: Arc<RwLock<Vec<BlockData>>>,
+        vt: TreeState,
+        ct: TreeState,
+    ) -> JoinHandle<bool> {
+        tokio::spawn(async move {
+            assert!(ct.height <= vt.height);
+
+            if ct.height == vt.height {
+                return true;
+            }
+            let mut sapling_tree =
+                CommitmentTree::<SaplingNode>::read(&hex::decode(ct.sapling_tree).unwrap()[..])
+                    .unwrap();
+            let mut orchard_tree = CommitmentTree::<MerkleHashOrchard>::read(
+                &hex::decode(ct.orchard_tree).unwrap()[..],
+            )
+            .unwrap_or(CommitmentTree::empty());
+
+            {
+                let blocks = blocks.read().await;
+                let top_block = blocks.first().unwrap().height;
+                let start_pos = (top_block - ct.height - 1) as usize;
+                let end_pos = (top_block - vt.height) as usize;
+
+                if start_pos >= blocks.len() || end_pos >= blocks.len() {
+                    // Blocks are not in the current sync, which means this has already been verified
+                    return true;
+                }
+
+                for i in (end_pos..start_pos + 1).rev() {
+                    let cb = &blocks.get(i as usize).unwrap().cb();
+                    if cb.height == 7 {
+                        dbg!(hex::encode(&*prost::Message::encode_to_vec(cb)));
+                    };
+                    for compact_transaction in &cb.vtx {
+                        update_trees_with_compact_transaction(
+                            &mut sapling_tree,
+                            &mut orchard_tree,
+                            compact_transaction,
+                        )
+                    }
+                }
+            }
+            // Verify that the verification_tree can be calculated from the start tree
+            let mut sapling_buf = vec![];
+            sapling_tree.write(&mut sapling_buf).unwrap();
+            let mut orchard_buf = vec![];
+            orchard_tree.write(&mut orchard_buf).unwrap();
+
+            // Return if verified
+            (hex::encode(sapling_buf) == dbg!(vt.height, vt.sapling_tree).1)
+                && (hex::encode(orchard_buf) == dbg!(vt.height, vt.orchard_tree).1)
+        })
+    }
     // Invalidate the block (and wallet transactions associated with it) at the given block height
     pub async fn invalidate_block(
         reorg_height: u64,
@@ -839,20 +844,24 @@ mod test {
     use std::sync::Arc;
 
     use crate::blaze::sync_status::SyncStatus;
+    use crate::compact_formats::CompactBlock;
     use crate::wallet::transactions::TransactionMetadataSet;
     use crate::{
         blaze::test_utils::{FakeCompactBlock, FakeCompactBlockList},
         wallet::data::BlockData,
     };
     use futures::future::join_all;
+    use orchard::tree::MerkleHashOrchard;
     use rand::rngs::OsRng;
     use rand::RngCore;
     use tokio::sync::RwLock;
     use tokio::{sync::mpsc::unbounded_channel, task::JoinHandle};
     use zcash_primitives::block::BlockHash;
+    use zcash_primitives::merkle_tree::CommitmentTree;
+    use zcash_primitives::sapling;
     use zingoconfig::{Network, ZingoConfig};
 
-    use super::BlockAndWitnessData;
+    use super::*;
 
     #[tokio::test]
     async fn setup_finish_simple() {
@@ -1157,5 +1166,58 @@ mod test {
                 finished_blks[i].cb().hash().to_string()
             );
         }
+    }
+
+    const SAPLING_START: &'static str = "01f2e6144dbd45cf3faafd337fe59916fe5659b4932a4a008b535b8912a8f5c0000131ac2795ef458f5223f929680085935ebd5cb84d4849b3813b03aeb80d812241020001bcc10bd2116f34cd46d0dedef75c489d6ef9b6b551c0521e3b2e56b7f641fb01";
+    const ORCHARD_START: &'static str = "000000";
+    const SAPLING_END: &'static str = "01ea571adc215d4eac2925efafd854c76a8afc69f07d49155febaa46f979c6616d0003000001dc4b3f1381533d99b536252aaba09b08fa1c1ddc0687eb4ede716e6a5fbfb003";
+    const ORCHARD_END: &'static str = "011e9dcd34e245194b66dff86b1cabaa87b29e96df711e4fff72da64e88656090001c3bf930865f0c2139ce1548b0bfabd8341943571e8af619043d84d12b51355071f00000000000000000000000000000000000000000000000000000000000000";
+    const BLOCK: &'static str = "10071a209bf92fdc55b77cbae5d13d49b4d64374ebe7ac3c5579134100e600bc01208d052220b84a8818a26321dca19ad1007d4bb99fafa07b048a0b471b1a4bbd0199ea3c0828d2fe9299063a4612203bc5bbb7df345e336288a7ffe8fac6f7dcb4ee6e4d3b4e852bcd7d52fef8d66a2a220a20d2f3948ed5e06345446d753d2688cdb1d949e0fed1e0f271e04197d0c63251023ace0308011220d151d78dec5dcf5e0308f7bfbf00d80be27081766d2cb5070c22b4556aadc88122220a20bd5312efa676f7000e5d660f01bfd946fd11102af75e7f969a0d84931e16f3532a220a20601ed4084186c4499a1bb5000490582649da2df8f2ba3e749a07c5c0aaeb9f0e2a220a20ea571adc215d4eac2925efafd854c76a8afc69f07d49155febaa46f979c6616d329c010a2062faac36e47bf420b90379b7c96cc5956daa0deedb4ed392928ba588fa5aac1012201e9dcd34e245194b66dff86b1cabaa87b29e96df711e4fff72da64e8865609001a20f5153d2a8ee2e211a7966b52e6bb3b089f32f8c55a57df1f245e6f1ec3356b982234e26e07bfb0d3c0bae348a6196ba3f069e3a1861fa4da1895ab4ad86ece7934231f6490c6e26b63298d8464560b41b2941add03ac329c010a2028ac227306fb680dc501ba9c8c51312b29b2eb79d61e5645f5486039462a620b1220c3bf930865f0c2139ce1548b0bfabd8341943571e8af619043d84d12b51355071a200803db70afdeb80b0f47a703df68c62e007e162b8b983b6f2f5df8d7b24c18a322342b1f151f67048590976a3a69e1d8a6c7408c3489bd81696cad15a9ac0a92d20f1b17ebf717f52695aeaf123aaab0ac406d6afd4a";
+
+    fn decode_block() -> CompactBlock {
+        <CompactBlock as prost::Message>::decode(&*hex::decode(BLOCK).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn orchard_starts_empty() {
+        let empty_tree =
+            CommitmentTree::<MerkleHashOrchard>::read(&*hex::decode(ORCHARD_START).unwrap())
+                .unwrap();
+        assert_eq!(empty_tree, CommitmentTree::<MerkleHashOrchard>::empty());
+    }
+
+    #[test]
+    fn get_sapling_end_from_start_plus_block() {
+        let mut start_tree =
+            CommitmentTree::<sapling::Node>::read(&*hex::decode(SAPLING_START).unwrap()).unwrap();
+        let cb = decode_block();
+
+        for compact_transaction in &cb.vtx {
+            super::update_tree_with_compact_transaction::<SaplingDomain<Network>>(
+                &mut start_tree,
+                compact_transaction,
+            )
+        }
+        let end_tree =
+            CommitmentTree::<sapling::Node>::read(&*hex::decode(SAPLING_END).unwrap()).unwrap();
+        assert_eq!(start_tree, end_tree);
+    }
+
+    #[test]
+    fn get_orchard_end_from_start_plus_block() {
+        let mut start_tree =
+            CommitmentTree::<MerkleHashOrchard>::read(&*hex::decode(ORCHARD_START).unwrap())
+                .unwrap();
+        let cb = decode_block();
+
+        for compact_transaction in &cb.vtx {
+            super::update_tree_with_compact_transaction::<OrchardDomain>(
+                &mut start_tree,
+                compact_transaction,
+            )
+        }
+        let end_tree =
+            CommitmentTree::<MerkleHashOrchard>::read(&*hex::decode(ORCHARD_END).unwrap()).unwrap();
+        assert_eq!(start_tree, end_tree);
     }
 }
