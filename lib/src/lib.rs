@@ -21,7 +21,7 @@ use std::{
 use tokio::runtime::Runtime;
 use zingoconfig::{Network, ZingoConfig};
 
-pub fn create_on_data_dir(
+pub fn create_zingoconf_with_datadir(
     server: http::Uri,
     data_dir: Option<String>,
 ) -> Result<(ZingoConfig, u64)> {

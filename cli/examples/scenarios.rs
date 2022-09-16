@@ -2,7 +2,7 @@
 use tokio::runtime::Runtime;
 use zingo_cli::regtest::{ChildProcessHandler, RegtestManager};
 use zingoconfig::ZingoConfig;
-use zingolib::{create_on_data_dir, lightclient::LightClient};
+use zingolib::{create_zingoconf_with_datadir, lightclient::LightClient};
 
 fn main() {
     send_mined_sapling_to_orchard()
@@ -21,9 +21,9 @@ fn setup_scenario_with_imported_mineto_zaddr() -> (RegtestManager, ChildProcessH
     example_config.push("cli/examples/zcash.conf");
     regtest_manager.zcashd_config = example_config;
     let child_process_handler = regtest_manager.launch(true).unwrap();
-    let server = ZingoConfig::get_server_or_default(Some("http://127.0.0.1".to_string()));
-    let (config, _height) = create_on_data_dir(
-        server,
+    let server_id = ZingoConfig::get_server_or_default(Some("http://127.0.0.1".to_string()));
+    let (config, _height) = create_zingoconf_with_datadir(
+        server_id,
         Some(regtest_manager.zingo_datadir.to_string_lossy().to_string()),
     )
     .unwrap();

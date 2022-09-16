@@ -7,7 +7,7 @@ use log::{error, info};
 use clap::{self, Arg};
 use regtest::ChildProcessHandler;
 use zingoconfig::{Network, ZingoConfig};
-use zingolib::{commands, create_on_data_dir, lightclient::LightClient};
+use zingolib::{commands, create_zingoconf_with_datadir, lightclient::LightClient};
 
 pub mod regtest;
 pub mod version;
@@ -370,7 +370,7 @@ to scan from the start of the blockchain."
     pub fn startup(&self) -> std::io::Result<(Sender<(String, Vec<String>)>, Receiver<String>)> {
         // Try to get the configuration
         let (config, latest_block_height) =
-            create_on_data_dir(self.server.clone(), self.maybe_data_dir.clone())?;
+            create_zingoconf_with_datadir(self.server.clone(), self.maybe_data_dir.clone())?;
         regtest_config_check(&self.regtest_manager, &config.chain);
 
         let lightclient = match self.seed.clone() {
