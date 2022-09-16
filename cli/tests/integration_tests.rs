@@ -6,17 +6,10 @@ use zingo_cli::regtest::{ChildProcessHandler, RegtestManager};
 use zingoconfig::ZingoConfig;
 use zingolib::{create_zingoconf_with_datadir, lightclient::LightClient};
 
-fn main() {
-    send_mined_sapling_to_orchard()
-}
-
-#[test]
-fn prove_scenario_is_built() {}
-
 fn create_zcash_conf_path(base: &str) -> std::path::PathBuf {
     let mut config = zingo_cli::regtest::get_git_rootdir();
     config.push("cli");
-    config.push("examples");
+    config.push("tests");
     config.push(base);
     config
 }
@@ -45,6 +38,7 @@ fn coinbasebacked_spendcapable_setup() -> (RegtestManager, ChildProcessHandler, 
     )
 }
 
+#[test]
 fn mine_sapling_to_self() {
     let (regtest_manager, _child_process_handler, client) = coinbasebacked_spendcapable_setup();
     regtest_manager.generate_n_blocks(5).unwrap();
@@ -56,6 +50,8 @@ fn mine_sapling_to_self() {
     assert_eq!(balance["sapling_balance"], 625000000);
 }
 
+#[ignore]
+#[test]
 fn send_mined_sapling_to_orchard() {
     let (regtest_manager, _child_process_handler, client) = coinbasebacked_spendcapable_setup();
     regtest_manager.generate_n_blocks(5).unwrap();
