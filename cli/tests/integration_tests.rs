@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 use std::time::Duration;
 
+mod data;
 use tokio::{runtime::Runtime, time::sleep};
 use zingo_cli::regtest::{ChildProcessHandler, RegtestManager};
 use zingoconfig::ZingoConfig;
