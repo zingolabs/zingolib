@@ -14,7 +14,7 @@ fn create_zcash_conf_path(base: &str) -> std::path::PathBuf {
     config.push("data");
     config.push(base);
 
-    let port = portpicker::pick_unused_port();
+    let _port = portpicker::pick_unused_port();
     let contents = data::fill_conf_template(data::SAPLING_ADDRESS_FROM_SPEND_AUTH, "18232");
     let mut output =
         std::fs::File::create(&mut config).expect("How could path {config} be missing?");
@@ -46,7 +46,6 @@ fn coinbasebacked_spendcapable_setup() -> (RegtestManager, ChildProcessHandler, 
     )
 }
 
-#[ignore]
 #[test]
 fn mine_sapling_to_self_b() {
     let (regtest_manager, _child_process_handler, client) = coinbasebacked_spendcapable_setup();
@@ -59,6 +58,7 @@ fn mine_sapling_to_self_b() {
     assert_eq!(balance["sapling_balance"], 625000000);
 }
 
+#[ignore]
 #[test]
 fn mine_sapling_to_self_a() {
     let (regtest_manager, _child_process_handler, client) = coinbasebacked_spendcapable_setup();
