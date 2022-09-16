@@ -1,6 +1,4 @@
 #![forbid(unsafe_code)]
-use std::{path::PathBuf, process::Command};
-
 use tokio::runtime::Runtime;
 use zingo_cli::regtest::{ChildProcessHandler, RegtestManager};
 use zingoconfig::ZingoConfig;
