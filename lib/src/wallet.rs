@@ -102,23 +102,27 @@ pub enum MemoDownloadOption {
 #[derive(Debug, Clone, Copy)]
 pub struct WalletOptions {
     pub(crate) download_memos: MemoDownloadOption,
+    pub(crate) transaction_size_filter: Option<u32>,
 }
+
+pub const MAX_TRANSACTION_SIZE_DEFAULT: u32 = 500;
 
 impl Default for WalletOptions {
     fn default() -> Self {
         WalletOptions {
             download_memos: MemoDownloadOption::WalletMemos,
+            transaction_size_filter: Some(MAX_TRANSACTION_SIZE_DEFAULT),
         }
     }
 }
 
 impl WalletOptions {
     pub fn serialized_version() -> u64 {
-        return 1;
+        return 2;
     }
 
     pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
-        let _version = reader.read_u64::<LittleEndian>()?;
+        let version = reader.read_u64::<LittleEndian>()?;
 
         let download_memos = match reader.read_u8()? {
             0 => MemoDownloadOption::NoMemos,
@@ -132,14 +136,26 @@ impl WalletOptions {
             }
         };
 
-        Ok(Self { download_memos })
+        let transaction_size_filter = if version > 1 {
+            Optional::read(reader, |mut r| r.read_u32::<LittleEndian>())?
+        } else {
+            Some(500)
+        };
+
+        Ok(Self {
+            download_memos,
+            transaction_size_filter,
+        })
     }
 
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         // Write the version
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
-        writer.write_u8(self.download_memos as u8)
+        writer.write_u8(self.download_memos as u8)?;
+        Optional::write(writer, self.transaction_size_filter, |mut w, filter| {
+            w.write_u32::<LittleEndian>(filter)
+        })
     }
 }
 

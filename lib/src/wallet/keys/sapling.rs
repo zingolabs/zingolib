@@ -334,7 +334,6 @@ pub mod tests {
         ZingoConfig {
             server: Arc::new(RwLock::new("0.0.0.0:0".parse().unwrap())),
             chain: zingoconfig::Network::FakeMainnet,
-            max_transaction_size: Arc::new(RwLock::new(zingoconfig::MAX_TRANSACTION_SIZE_DEFAULT)),
             monitor_mempool: false,
             anchor_offset: [0u32; 5],
             data_dir: None,

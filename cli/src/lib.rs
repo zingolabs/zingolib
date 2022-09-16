@@ -229,7 +229,6 @@ pub fn attempt_recover_seed(_password: Option<String>) {
         server: Arc::new(RwLock::new("0.0.0.0:0".parse().unwrap())),
         chain: zingoconfig::Network::Mainnet,
         monitor_mempool: false,
-        max_transaction_size: Arc::new(RwLock::new(zingoconfig::MAX_TRANSACTION_SIZE_DEFAULT)),
         anchor_offset: [0u32; 5],
         data_dir: None,
     };
