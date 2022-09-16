@@ -350,8 +350,8 @@ impl LightClient {
         Self::new_wallet(config, latest_block, 1)
     }
 
-    pub fn new_from_phrase(
-        seed_phrase: String,
+    pub fn create_with_capable_wallet(
+        key_or_seedphrase: String,
         config: &ZingoConfig,
         birthday: u64,
         overwrite: bool,
@@ -368,16 +368,16 @@ impl LightClient {
             }
         }
         println!(
-            "Seed: {seed_phrase}\nhrp_view: {}",
+            "Seed: {key_or_seedphrase}\nhrp_view: {}",
             config.hrp_sapling_viewing_key()
         );
 
-        let lr = if seed_phrase.starts_with(config.hrp_sapling_private_key())
-            || seed_phrase.starts_with(config.hrp_sapling_viewing_key())
+        let lr = if key_or_seedphrase.starts_with(config.hrp_sapling_private_key())
+            || key_or_seedphrase.starts_with(config.hrp_sapling_viewing_key())
         {
             let lc = Self::new_wallet(config, birthday, 0)?;
             Runtime::new().unwrap().block_on(async move {
-                lc.do_import_key(seed_phrase, birthday)
+                lc.do_import_key(key_or_seedphrase, birthday)
                     .await
                     .map_err(|e| io::Error::new(ErrorKind::InvalidData, e))?;
 
@@ -385,12 +385,12 @@ impl LightClient {
 
                 Ok(lc)
             })
-        } else if seed_phrase.starts_with(config.chain.hrp_orchard_spending_key()) {
+        } else if key_or_seedphrase.starts_with(config.chain.hrp_orchard_spending_key()) {
             todo!()
         } else {
             Runtime::new().unwrap().block_on(async move {
                 let l = LightClient {
-                    wallet: LightWallet::new(config.clone(), Some(seed_phrase), birthday, 1)?,
+                    wallet: LightWallet::new(config.clone(), Some(key_or_seedphrase), birthday, 1)?,
                     config: config.clone(),
                     mempool_monitor: std::sync::RwLock::new(None),
                     sync_lock: Mutex::new(()),
