@@ -20,6 +20,10 @@ fn get_regtest_dir() -> PathBuf {
     get_git_rootdir().join("regtest")
 }
 
+///  To manage the state associated a "regtest" run this type:
+///   * sets up paths to config and log directories
+///   * optionally receives parameters that allow configs to be set in nonstandard
+///     locations.  We use this to input configs for the integration_tests
 #[derive(Clone)]
 #[allow(dead_code)]
 pub struct RegtestManager {
