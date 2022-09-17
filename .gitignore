@@ -11,3 +11,4 @@ cli/target
 lib/test-data/*
 !lib/test-data/README
 !lib/test-data/openssl_cfg
+tests/data/externalwallet_coinbaseaddress.conf
