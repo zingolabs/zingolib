@@ -236,6 +236,9 @@ impl RegtestManager {
             File::create(&self.zcashd_stdout_log).expect("file::create Result error"),
         )
     }
+    /// Once the expected filesystem setup is complete attempt to launch the children
+    /// lightwalletd and zcashd.  Child processes are killed during drop of their
+    /// "ChildProcessHandler" container
     pub fn launch(
         &self,
         clean_regtest_data: bool,
@@ -318,7 +321,7 @@ impl RegtestManager {
         }
         println!("lightwalletd is about to start. This should only take a moment.");
 
-        let mut lwd_logfile =
+        let mut lightwalletd_logfile =
             File::create(&self.lightwalletd_stdout_log).expect("file::create Result error");
         let mut lwd_err_logfile =
             File::create(&self.lightwalletd_stderr_log).expect("file::create Result error");
@@ -353,7 +356,7 @@ impl RegtestManager {
 
         if let Some(mut lwd_log) = lightwalletd_child.stdout.take() {
             std::thread::spawn(move || {
-                std::io::copy(&mut lwd_log, &mut lwd_logfile)
+                std::io::copy(&mut lwd_log, &mut lightwalletd_logfile)
                     .expect("io::copy error writing lwd_stdout.log");
             });
         }
