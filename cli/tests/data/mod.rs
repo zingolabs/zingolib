@@ -5,7 +5,7 @@ pub const SAPLING_ADDRESS_FROM_SPEND_AUTH: &str = "\
 zregtestsapling1fkc26vpg566hgnx33n5uvgye4neuxt4358k68atnx78l5tg2dewdycesmr4m5pn56ffzsa7lyj6";
 
 pub fn fillout_zcashd_configtemplate(mineraddress: &str, rpcport: &str) -> String {
-    return format!("\
+    format!("\
 ### Blockchain Configuration
 regtest=1
 nuparams=5ba81b19:1 # Overwinter
@@ -36,7 +36,19 @@ rpcallowip=127.0.0.1
 
 ### Zcashd Help provides documentation of the following:
 mineraddress={mineraddress}
-minetolocalwallet=0 # This is set to false so that we can mine to a wallet, other than the zcashd wallet.");
+minetolocalwallet=0 # This is set to false so that we can mine to a wallet, other than the zcashd wallet.")
 }
 
-//pub fn fillout_lightwalletd_configtemplate(zcashconf: &str, bindaddr: )
+pub fn fillout_lightwalletd_configtemplate() -> String {
+    format! {"\
+# # Default zingo lib lightwalletd conf YAML for regtest mode # #
+bind-addr: 127.0.0.1:9067
+cache-size: 10
+log-file: ../logs/lwd.log
+log-level: 10
+zcash-conf-path: ../conf/zcash.conf
+
+# example config for TLS
+#tls-cert: /secrets/lightwallted/example-only-cert.pem
+#tls-key: /secrets/lightwallted/example-only-cert.key"}
+}
