@@ -4,7 +4,7 @@ secret-extended-key-regtest1qwxwxvvsqqqqpqpscrwl4x0sahmtm7j3wgl2q4n44c8wzkdf5q04
 pub const SAPLING_ADDRESS_FROM_SPEND_AUTH: &str = "\
 zregtestsapling1fkc26vpg566hgnx33n5uvgye4neuxt4358k68atnx78l5tg2dewdycesmr4m5pn56ffzsa7lyj6";
 
-pub fn fill_conf_template(mineraddress: &str, rpcport: &str) -> String {
+pub fn fillout_zcashd_configtemplate(mineraddress: &str, rpcport: &str) -> String {
     return format!("\
 ### Blockchain Configuration
 regtest=1
@@ -38,3 +38,5 @@ rpcallowip=127.0.0.1
 mineraddress={mineraddress}
 minetolocalwallet=0 # This is set to false so that we can mine to a wallet, other than the zcashd wallet.");
 }
+
+//pub fn fillout_lightwalletd_configtemplate(zcashconf: &str, bindaddr: )
