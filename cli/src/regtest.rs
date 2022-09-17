@@ -60,7 +60,7 @@ pub enum LaunchChildProcessError {
     },
 }
 impl RegtestManager {
-    pub fn new() -> Self {
+    pub fn new(zcashdconfname: Option<PathBuf>, lightwalletdconfname: Option<PathBuf>) -> Self {
         let regtest_dir = get_regtest_dir();
         let confs_dir = regtest_dir.join("conf");
         let bin_location = regtest_dir.join("bin");
@@ -69,21 +69,23 @@ impl RegtestManager {
         let zcashd_datadir = data_dir.join("zcashd");
         let zcashd_logs = logs.join("zcashd");
         let zcashd_stdout_log = zcashd_logs.join("stdout.log");
-        let zcashd_config = confs_dir.join("zcash.conf");
-        let lightwalletd_config = confs_dir.join("lightwalletd.yaml");
+        let zcashd_config;
+        if let Some(confpath) = zcashdconfname {
+            zcashd_config = confpath;
+        } else {
+            zcashd_config = confs_dir.join("zcash.conf");
+        }
+        let lightwalletd_config;
+        if let Some(confpath) = lightwalletdconfname {
+            lightwalletd_config = confpath;
+        } else {
+            lightwalletd_config = confs_dir.join("lightwalletd.yaml");
+        }
         let lightwalletd_logs = logs.join("lightwalletd");
         let lightwalletd_stdout_log = lightwalletd_logs.join("stdout.log");
         let lightwalletd_stderr_log = lightwalletd_logs.join("stderr.log");
         let lightwalletd_datadir = data_dir.join("lightwalletd");
         let zingo_datadir = data_dir.join("zingo");
-        assert!(&zcashd_config
-            .to_str()
-            .unwrap()
-            .ends_with("/regtest/conf/zcash.conf"));
-        assert!(&zcashd_datadir
-            .to_str()
-            .unwrap()
-            .ends_with("/regtest/data/zcashd"));
         RegtestManager {
             regtest_dir,
             confs_dir,
