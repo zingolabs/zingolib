@@ -30,8 +30,12 @@ fn create_zcash_conf_path(base: &str) -> std::path::PathBuf {
 fn coinbasebacked_spendcapable_setup() -> (RegtestManager, ChildProcessHandler, LightClient) {
     //tracing_subscriber::fmt::init();
     let coinbase_spendkey = include_str!("data/mineraddress_sapling_spendingkey").to_string();
-    let mut regtest_manager = RegtestManager::new();
-    regtest_manager.zcashd_config = create_zcash_conf_path("externalwallet_coinbaseaddress.conf");
+    let regtest_manager = RegtestManager::new(
+        Some(create_zcash_conf_path(
+            "externalwallet_coinbaseaddress.conf",
+        )),
+        None,
+    );
     let child_process_handler = regtest_manager.launch(true).unwrap();
     let server_id = ZingoConfig::get_server_or_default(Some("http://127.0.0.1".to_string()));
     let (config, _height) = create_zingoconf_with_datadir(
