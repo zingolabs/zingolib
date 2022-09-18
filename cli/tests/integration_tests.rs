@@ -7,7 +7,7 @@ use zingo_cli::regtest::{ChildProcessHandler, RegtestManager};
 use zingoconfig::ZingoConfig;
 use zingolib::{create_zingoconf_with_datadir, lightclient::LightClient};
 
-fn create_zcash_conf_path(base: &str) -> std::path::PathBuf {
+fn create_zcash_conf(base: &str) -> std::path::PathBuf {
     let mut config = zingo_cli::regtest::get_git_rootdir();
     config.push("cli");
     config.push("tests");
@@ -34,9 +34,7 @@ fn coinbasebacked_spendcapable_setup() -> (RegtestManager, ChildProcessHandler, 
     //tracing_subscriber::fmt::init();
     let coinbase_spendkey = include_str!("data/mineraddress_sapling_spendingkey").to_string();
     let regtest_manager = RegtestManager::new(
-        Some(create_zcash_conf_path(
-            "externalwallet_coinbaseaddress.conf",
-        )),
+        Some(create_zcash_conf("externalwallet_coinbaseaddress.conf")),
         None,
     );
     let child_process_handler = regtest_manager.launch(true).unwrap();
