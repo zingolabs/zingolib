@@ -32,19 +32,26 @@ impl TestConfigGenerator {
             address_to_fund,
             dbg!(format!("{:?}", self.zcashd_chain_port).as_str()),
         );
-        let mut output = std::fs::File::create(&self.zcash_conf_location)
-            .expect("How could path {config} be missing?");
-        std::io::Write::write(&mut output, contents.as_bytes())
-            .expect("Couldn't write {contents}!");
-        self.zcash_conf_location.clone()
+        self.write_contents_and_return_path("zcash", contents)
     }
     fn create_lightwalletd_conf(&self) -> std::path::PathBuf {
         let contents = data::config_template_fillers::lightwalletd::basic();
-        let mut output = std::fs::File::create(&self.lightwalletd_conf_location)
-            .expect("How could path {config} be missing?");
+        self.write_contents_and_return_path("lightwalletd", contents)
+    }
+    fn write_contents_and_return_path(
+        &self,
+        configtype: &str,
+        contents: String,
+    ) -> std::path::PathBuf {
+        let loc = match configtype {
+            "zcash" => &self.zcash_conf_location,
+            "lightwalletd" => &self.lightwalletd_conf_location,
+            _ => panic!("Unepexted configtype!"),
+        };
+        let mut output = std::fs::File::create(&loc).expect("How could path {config} be missing?");
         std::io::Write::write(&mut output, contents.as_bytes())
             .expect("Couldn't write {contents}!");
-        self.lightwalletd_conf_location.clone()
+        loc.clone()
     }
 }
 fn generate_configured_regtest_manager(
