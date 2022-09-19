@@ -329,13 +329,14 @@ impl RegtestManager {
 
         let mut lightwalletd_logfile =
             File::create(&self.lightwalletd_stdout_log).expect("file::create Result error");
-        let mut lwd_err_logfile =
+        let mut lightwalletd_err_logfile =
             File::create(&self.lightwalletd_stderr_log).expect("file::create Result error");
 
-        let lwd_bin = &mut self.bin_location.to_owned();
-        lwd_bin.push("lightwalletd");
+        let lightwalletd_bin = &mut self.bin_location.to_owned();
+        lightwalletd_bin.push("lightwalletd");
 
-        let mut lightwalletd_child = std::process::Command::new(lwd_bin)
+        dbg!(&self.lightwalletd_config);
+        let mut lightwalletd_child = std::process::Command::new(lightwalletd_bin)
         .args([
             "--no-tls-very-insecure",
             "--zcash-conf-path",
@@ -369,7 +370,7 @@ impl RegtestManager {
 
         if let Some(mut lwd_err_log) = lightwalletd_child.stderr.take() {
             std::thread::spawn(move || {
-                std::io::copy(&mut lwd_err_log, &mut lwd_err_logfile)
+                std::io::copy(&mut lwd_err_log, &mut lightwalletd_err_logfile)
                     .expect("io::copy error writing lwd_stderr.log");
             });
         }
