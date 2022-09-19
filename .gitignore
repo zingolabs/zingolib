@@ -13,3 +13,4 @@ lib/test-data/*
 !lib/test-data/openssl_cfg
 cli/tests/data/externalwallet_coinbaseaddress.conf
 cli/tests/data/lightwalletd.yml
+cli/tests/data/basic_zcashd.conf
