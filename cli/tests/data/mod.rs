@@ -1,10 +1,10 @@
-pub const SECRET_SPEND_AUTH_SAPLING: &str = "\
+pub const _SECRET_SPEND_AUTH_SAPLING: &str = "\
 secret-extended-key-regtest1qwxwxvvsqqqqpqpscrwl4x0sahmtm7j3wgl2q4n44c8wzkdf5q04wue4wpjsvtw9js33wjet4582cwkhwnrgu82nzps7v7mnk3htzac0qaskl4vjlacs8xstgfedq0yhp8t2t8k8r28telx77vkc9jx506wcl7yxvucwjys2rk59627kv92kgqp8nqujmmt3vnln7ytlwjm53euylkyruft54lg34c7ne2w6sc9c2wam3yne5t2jvh7458hezwyfaxljxvunqwwlancespz6n";
 
 pub const SAPLING_ADDRESS_FROM_SPEND_AUTH: &str = "\
 zregtestsapling1fkc26vpg566hgnx33n5uvgye4neuxt4358k68atnx78l5tg2dewdycesmr4m5pn56ffzsa7lyj6";
 
-pub fn fillout_zcashd_configtemplate(mineraddress: &str, rpcport: &str) -> String {
+pub fn fillout_funded_zcashd_configtemplate(mineraddress: &str, rpcport: &str) -> String {
     format!("\
 ### Blockchain Configuration
 regtest=1
