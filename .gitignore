@@ -12,3 +12,4 @@ lib/test-data/*
 !lib/test-data/README
 !lib/test-data/openssl_cfg
 cli/tests/data/externalwallet_coinbaseaddress.conf
+cli/tests/data/lightwalletd.yml
