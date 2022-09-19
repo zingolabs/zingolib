@@ -24,18 +24,31 @@ fn create_zcash_conf(base: &str) -> std::path::PathBuf {
     std::io::Write::write(&mut output, contents.as_bytes()).expect("Couldn't write {contents}!");
     config
 }
+fn create_lightwalletd_conf(base: &str) -> std::path::PathBuf {
+    let mut config = zingo_cli::regtest::get_git_rootdir();
+    config.push("cli");
+    config.push("tests");
+    config.push("data");
+    config.push(base);
+
+    let contents = data::fillout_lightwalletd_configtemplate();
+    let mut output =
+        std::fs::File::create(&mut config).expect("How could path {config} be missing?");
+    std::io::Write::write(&mut output, contents.as_bytes()).expect("Couldn't write {contents}!");
+    config
+}
 /// Many scenarios need to start with spendable funds.  This setup provides
 /// 1 block worth of coinbase to a preregistered spend capability.
 ///
 /// This key is registered to receive block rewards by:
-///  (1) existing accesibly for test code in: cli/examples/mineraddress_sapling_spendingkey
+///  (1) existing accessibly for test code in: cli/examples/mineraddress_sapling_spendingkey
 ///  (2) corresponding to the address registered as the "mineraddress" field in cli/examples/zcash.conf
 fn coinbasebacked_spendcapable_setup() -> (RegtestManager, ChildProcessHandler, LightClient) {
     //tracing_subscriber::fmt::init();
     let coinbase_spendkey = include_str!("data/mineraddress_sapling_spendingkey").to_string();
     let regtest_manager = RegtestManager::new(
         Some(create_zcash_conf("externalwallet_coinbaseaddress.conf")),
-        None,
+        Some(create_lightwalletd_conf("lightwalletd.yml")),
     );
     let child_process_handler = regtest_manager.launch(true).unwrap();
     let server_id = ZingoConfig::get_server_or_default(Some("http://127.0.0.1".to_string()));
@@ -51,6 +64,8 @@ fn coinbasebacked_spendcapable_setup() -> (RegtestManager, ChildProcessHandler, 
     )
 }
 
+fn basic_zcashd_lwd_zingolib_conected_setup() (RegtestManager, ChildProcessHandler, LightClient)
+#[ignore]
 #[test]
 fn mine_sapling_to_self_b() {
     let (regtest_manager, _child_process_handler, client) = coinbasebacked_spendcapable_setup();
