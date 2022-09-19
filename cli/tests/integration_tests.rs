@@ -27,9 +27,9 @@ impl TestConfigGenerator {
             zcashd_chain_port,
         }
     }
-    fn create_zcash_conf(&self) -> std::path::PathBuf {
+    fn create_funded_zcash_conf(&self, address_to_fund: &str) -> std::path::PathBuf {
         let contents = data::config_template_fillers::zcashd::funded(
-            data::SAPLING_ADDRESS_FROM_SPEND_AUTH,
+            address_to_fund,
             dbg!(format!("{:?}", self.zcashd_chain_port).as_str()),
         );
         let mut output = std::fs::File::create(&self.zcash_conf_location)
@@ -53,7 +53,7 @@ fn generate_configured_regtest_manager(
 ) -> RegtestManager {
     let test_configs = TestConfigGenerator::new(zcash_pathbase, lightwalletd_pathbase);
     RegtestManager::new(
-        Some(test_configs.create_zcash_conf()),
+        Some(test_configs.create_funded_zcash_conf(data::SAPLING_ADDRESS_FROM_SPEND_AUTH)),
         Some(test_configs.create_lightwalletd_conf()),
     )
 }
