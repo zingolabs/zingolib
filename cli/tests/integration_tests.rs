@@ -37,6 +37,33 @@ fn create_lightwalletd_conf(base: &str) -> std::path::PathBuf {
     std::io::Write::write(&mut output, contents.as_bytes()).expect("Couldn't write {contents}!");
     config
 }
+/// The general scenario framework requires instances of zingo-cli, lightwalletd, and zcashd (in regtest mode).
+/// This setup is intended to produce the most basic of scenarios.  As scenarios with even less requirements
+/// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
+fn basic_zcashd_lwd_zingolib_connected_setup() -> (RegtestManager, ChildProcessHandler, LightClient)
+{
+    let regtest_manager = RegtestManager::new(
+        Some(create_zcash_conf("basic_zcashd.conf")),
+        Some(create_lightwalletd_conf("lightwalletd.yml")),
+    );
+    let child_process_handler = regtest_manager.launch(true).unwrap();
+    let server_id = ZingoConfig::get_server_or_default(Some("http://127.0.0.1".to_string()));
+    let (config, _height) = create_zingoconf_with_datadir(
+        server_id,
+        Some(regtest_manager.zingo_datadir.to_string_lossy().to_string()),
+    )
+    .unwrap();
+    (
+        regtest_manager,
+        child_process_handler,
+        LightClient::new(&config, 0).unwrap(),
+    )
+}
+#[ignore]
+#[test]
+fn basic_connectivity_scenario() {
+    let regtest_manager = basic_zcashd_lwd_zingolib_connected_setup();
+}
 /// Many scenarios need to start with spendable funds.  This setup provides
 /// 1 block worth of coinbase to a preregistered spend capability.
 ///
@@ -64,7 +91,6 @@ fn coinbasebacked_spendcapable_setup() -> (RegtestManager, ChildProcessHandler, 
     )
 }
 
-#[ignore]
 #[test]
 fn mine_sapling_to_self_b() {
     let (regtest_manager, _child_process_handler, client) = coinbasebacked_spendcapable_setup();
