@@ -7,6 +7,11 @@ use zingo_cli::regtest::{ChildProcessHandler, RegtestManager};
 use zingoconfig::ZingoConfig;
 use zingolib::{create_zingoconf_with_datadir, lightclient::LightClient};
 
+struct TestConfigGenerator {
+    zcash_conf_location: std::path::PathBuf,
+    lightwalletd_conf_location: std::path::PathBuf,
+    zcashd_chain_port: u16,
+}
 fn create_zcash_conf(base: &str) -> std::path::PathBuf {
     let mut config = zingo_cli::regtest::get_git_rootdir();
     config.push("cli");
