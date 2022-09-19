@@ -12,45 +12,58 @@ struct TestConfigGenerator {
     lightwalletd_conf_location: std::path::PathBuf,
     zcashd_chain_port: u16,
 }
-fn create_zcash_conf(base: &str) -> std::path::PathBuf {
-    let mut config = zingo_cli::regtest::get_git_rootdir();
-    config.push("cli");
-    config.push("tests");
-    config.push("data");
-    config.push(base);
-
-    let zcashdport = portpicker::pick_unused_port();
-    let contents = data::config_template_fillers::zcashd::funded(
-        data::SAPLING_ADDRESS_FROM_SPEND_AUTH,
-        dbg!(format!("{:?}", zcashdport.unwrap()).as_str()),
-    );
-    let mut output =
-        std::fs::File::create(&mut config).expect("How could path {config} be missing?");
-    std::io::Write::write(&mut output, contents.as_bytes()).expect("Couldn't write {contents}!");
-    config
+impl TestConfigGenerator {
+    fn new(zcash_pathbase: &str, lightwalletd_pathbase: &str) -> Self {
+        let mut common_path = zingo_cli::regtest::get_git_rootdir();
+        common_path.push("cli");
+        common_path.push("tests");
+        common_path.push("data");
+        let zcash_conf_location = common_path.join(zcash_pathbase);
+        let lightwalletd_conf_location = common_path.join(lightwalletd_pathbase);
+        let zcashd_chain_port = portpicker::pick_unused_port().expect("Port unpickable!");
+        Self {
+            zcash_conf_location,
+            lightwalletd_conf_location,
+            zcashd_chain_port,
+        }
+    }
+    fn create_zcash_conf(&self) -> std::path::PathBuf {
+        let contents = data::config_template_fillers::zcashd::funded(
+            data::SAPLING_ADDRESS_FROM_SPEND_AUTH,
+            dbg!(format!("{:?}", self.zcashd_chain_port).as_str()),
+        );
+        let mut output = std::fs::File::create(&self.zcash_conf_location)
+            .expect("How could path {config} be missing?");
+        std::io::Write::write(&mut output, contents.as_bytes())
+            .expect("Couldn't write {contents}!");
+        self.zcash_conf_location.clone()
+    }
+    fn create_lightwalletd_conf(&self) -> std::path::PathBuf {
+        let contents = data::config_template_fillers::lightwalletd::basic();
+        let mut output = std::fs::File::create(&self.lightwalletd_conf_location)
+            .expect("How could path {config} be missing?");
+        std::io::Write::write(&mut output, contents.as_bytes())
+            .expect("Couldn't write {contents}!");
+        self.lightwalletd_conf_location.clone()
+    }
 }
-fn create_lightwalletd_conf(base: &str) -> std::path::PathBuf {
-    let mut config = zingo_cli::regtest::get_git_rootdir();
-    config.push("cli");
-    config.push("tests");
-    config.push("data");
-    config.push(base);
-
-    let contents = data::config_template_fillers::lightwalletd::basic();
-    let mut output =
-        std::fs::File::create(&mut config).expect("How could path {config} be missing?");
-    std::io::Write::write(&mut output, contents.as_bytes()).expect("Couldn't write {contents}!");
-    config
+fn generate_configured_regtest_manager(
+    zcash_pathbase: &str,
+    lightwalletd_pathbase: &str,
+) -> RegtestManager {
+    let test_configs = TestConfigGenerator::new(zcash_pathbase, lightwalletd_pathbase);
+    RegtestManager::new(
+        Some(test_configs.create_zcash_conf()),
+        Some(test_configs.create_lightwalletd_conf()),
+    )
 }
 /// The general scenario framework requires instances of zingo-cli, lightwalletd, and zcashd (in regtest mode).
 /// This setup is intended to produce the most basic of scenarios.  As scenarios with even less requirements
 /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
 fn basic_zcashd_lwd_zingolib_connected_setup() -> (RegtestManager, ChildProcessHandler, LightClient)
 {
-    let regtest_manager = RegtestManager::new(
-        Some(create_zcash_conf("basic_zcashd.conf")),
-        Some(create_lightwalletd_conf("lightwalletd.yml")),
-    );
+    let regtest_manager =
+        generate_configured_regtest_manager("basic_zzcashd.conf", "lightwalletd.yml");
     let child_process_handler = regtest_manager.launch(true).unwrap();
     let server_id = ZingoConfig::get_server_or_default(Some("http://127.0.0.1".to_string()));
     let (config, _height) = create_zingoconf_with_datadir(
@@ -78,9 +91,9 @@ fn basic_connectivity_scenario() {
 fn coinbasebacked_spendcapable_setup() -> (RegtestManager, ChildProcessHandler, LightClient) {
     //tracing_subscriber::fmt::init();
     let coinbase_spendkey = include_str!("data/mineraddress_sapling_spendingkey").to_string();
-    let regtest_manager = RegtestManager::new(
-        Some(create_zcash_conf("externalwallet_coinbaseaddress.conf")),
-        Some(create_lightwalletd_conf("lightwalletd.yml")),
+    let regtest_manager = generate_configured_regtest_manager(
+        "externalwallet_coinbaseaddress.conf",
+        "lightwalletd.yml",
     );
     let child_process_handler = regtest_manager.launch(true).unwrap();
     let server_id = ZingoConfig::get_server_or_default(Some("http://127.0.0.1".to_string()));
