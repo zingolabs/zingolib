@@ -15,7 +15,7 @@ fn create_zcash_conf(base: &str) -> std::path::PathBuf {
     config.push(base);
 
     let zcashdport = portpicker::pick_unused_port();
-    let contents = data::fillout_zcashd_configtemplate(
+    let contents = data::fillout_funded_zcashd_configtemplate(
         data::SAPLING_ADDRESS_FROM_SPEND_AUTH,
         dbg!(format!("{:?}", zcashdport.unwrap()).as_str()),
     );
