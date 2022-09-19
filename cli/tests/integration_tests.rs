@@ -64,7 +64,7 @@ fn coinbasebacked_spendcapable_setup() -> (RegtestManager, ChildProcessHandler, 
     )
 }
 
-fn basic_zcashd_lwd_zingolib_conected_setup() (RegtestManager, ChildProcessHandler, LightClient)
+fn basic_zcashd_lwd_zingolib_conected_setup() (RegtestManager, ChildProcessHandler, LightClient) { todo!("implement");}
 #[ignore]
 #[test]
 fn mine_sapling_to_self_b() {
