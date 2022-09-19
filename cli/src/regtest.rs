@@ -335,7 +335,6 @@ impl RegtestManager {
         let lightwalletd_bin = &mut self.bin_location.to_owned();
         lightwalletd_bin.push("lightwalletd");
 
-        dbg!(&self.lightwalletd_config);
         let mut lightwalletd_child = std::process::Command::new(lightwalletd_bin)
         .args([
             "--no-tls-very-insecure",
