@@ -150,7 +150,7 @@ fn coinbasebacked_spendcapable_setup() -> (RegtestManager, ChildProcessHandler, 
 
 fn basic_no_spendable_setup() -> (RegtestManager, ChildProcessHandler, LightClient) {
     let regtest_manager = create_maybe_funded_regtest_manager(
-        "what_is_this_string_for.conf",
+        "externalwallet_coinbaseaddress.conf",
         "lightwalletd.yml",
         None,
     );
