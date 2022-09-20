@@ -6,7 +6,7 @@ zregtestsapling1fkc26vpg566hgnx33n5uvgye4neuxt4358k68atnx78l5tg2dewdycesmr4m5pn5
 
 pub mod config_template_fillers {
     pub mod zcashd {
-        pub fn funded(mineraddress: &str, rpcport: &str) -> String {
+        pub fn basic(rpcport: &str, extra: &str) -> String {
             format!("\
 ### Blockchain Configuration
 regtest=1
@@ -35,10 +35,16 @@ rpcpassword=xxxxxx
 rpcport={rpcport}
 rpcallowip=127.0.0.1
 
-
-### Zcashd Help provides documentation of the following:
-mineraddress={mineraddress}
-minetolocalwallet=0 # This is set to false so that we can mine to a wallet, other than the zcashd wallet.")
+{extra}")
+        }
+        pub fn funded(mineraddress: &str, rpcport: &str) -> String {
+            basic(rpcport, 
+                &format!(
+                    "### Zcashd Help provides documentation of the following:
+                    mineraddress={mineraddress}
+                    minetolocalwallet=0 # This is set to false so that we can mine to a wallet, other than the zcashd wallet."                   
+                )
+            ) 
         }
     }
     pub mod lightwalletd {
