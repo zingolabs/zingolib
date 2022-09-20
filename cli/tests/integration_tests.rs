@@ -28,15 +28,19 @@ impl TestConfigGenerator {
         }
     }
     fn create_funded_zcash_conf(&self, address_to_fund: &str) -> std::path::PathBuf {
-        let contents = data::config_template_fillers::zcashd::funded(
-            address_to_fund,
-            dbg!(format!("{:?}", self.zcashd_chain_port).as_str()),
-        );
-        self.write_contents_and_return_path("zcash", contents)
+        self.write_contents_and_return_path(
+            "zcash",
+            data::config_template_fillers::zcashd::funded(
+                address_to_fund,
+                dbg!(format!("{:?}", self.zcashd_chain_port).as_str()),
+            ),
+        )
     }
     fn create_lightwalletd_conf(&self) -> std::path::PathBuf {
-        let contents = data::config_template_fillers::lightwalletd::basic();
-        self.write_contents_and_return_path("lightwalletd", contents)
+        self.write_contents_and_return_path(
+            "lightwalletd",
+            data::config_template_fillers::lightwalletd::basic(),
+        )
     }
     fn write_contents_and_return_path(
         &self,
