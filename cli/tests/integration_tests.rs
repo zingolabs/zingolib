@@ -137,15 +137,14 @@ fn coinbasebacked_spendcapable_setup() -> (RegtestManager, ChildProcessHandler, 
 }
 
 #[test]
-fn mine_sapling_to_self_b() {
+fn empty_zcashd_sapling_commitment_tree() {
     let (regtest_manager, _child_process_handler, client) = coinbasebacked_spendcapable_setup();
-    regtest_manager.generate_n_blocks(5).unwrap();
-    let runtime = Runtime::new().unwrap();
-
-    runtime.block_on(client.do_sync(true)).unwrap();
-
-    let balance = runtime.block_on(client.do_balance());
-    assert_eq!(balance["sapling_balance"], 625000000);
+    let trees = regtest_manager
+        .get_cli_handle()
+        .args(["z_gettreestate", "1"])
+        .output()
+        .expect("Couldn't get the trees.");
+    dbg!(trees);
 }
 
 #[ignore]
