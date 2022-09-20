@@ -123,7 +123,8 @@ fn basic_connectivity_scenario() {
 /// This key is registered to receive block rewards by:
 ///  (1) existing accessibly for test code in: cli/examples/mineraddress_sapling_spendingkey
 ///  (2) corresponding to the address registered as the "mineraddress" field in cli/examples/zcash.conf
-fn coinbasebacked_spendcapable_setup() -> (RegtestManager, ChildProcessHandler, LightClient) {
+fn coinbasebacked_spendcapable_setup() -> (RegtestManager, ChildProcessHandler, LightClient, Runtime)
+{
     //tracing_subscriber::fmt::init();
     let coinbase_spendkey = include_str!("data/mineraddress_sapling_spendingkey").to_string();
     let regtest_manager = create_maybe_funded_regtest_manager(
@@ -138,10 +139,12 @@ fn coinbasebacked_spendcapable_setup() -> (RegtestManager, ChildProcessHandler, 
         Some(regtest_manager.zingo_datadir.to_string_lossy().to_string()),
     )
     .unwrap();
+    regtest_manager.generate_n_blocks(5).unwrap();
     (
         regtest_manager,
         child_process_handler,
         LightClient::create_with_capable_wallet(coinbase_spendkey, &config, 0, false).unwrap(),
+        Runtime::new().unwrap(),
     )
 }
 
@@ -168,7 +171,8 @@ fn basic_no_spendable_setup() -> (RegtestManager, ChildProcessHandler, LightClie
 #[test]
 #[ignore]
 fn empty_zcashd_sapling_commitment_tree() {
-    let (regtest_manager, _child_process_handler, _client) = coinbasebacked_spendcapable_setup();
+    let (regtest_manager, _child_process_handler, _client, _runtime) =
+        coinbasebacked_spendcapable_setup();
     let trees = regtest_manager
         .get_cli_handle()
         .args(["z_gettreestate", "1"])
@@ -225,10 +229,9 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
 
 #[ignore]
 #[test]
-fn mine_sapling_to_self_a() {
-    let (regtest_manager, _child_process_handler, client) = coinbasebacked_spendcapable_setup();
-    regtest_manager.generate_n_blocks(5).unwrap();
-    let runtime = Runtime::new().unwrap();
+fn mine_sapling_to_self() {
+    let (_regtest_manager, _child_process_handler, client, runtime) =
+        coinbasebacked_spendcapable_setup();
 
     runtime.block_on(client.do_sync(true)).unwrap();
 
@@ -239,9 +242,8 @@ fn mine_sapling_to_self_a() {
 #[ignore]
 #[test]
 fn send_mined_sapling_to_orchard() {
-    let (regtest_manager, _child_process_handler, client) = coinbasebacked_spendcapable_setup();
-    regtest_manager.generate_n_blocks(5).unwrap();
-    let runtime = Runtime::new().unwrap();
+    let (regtest_manager, _child_process_handler, client, runtime) =
+        coinbasebacked_spendcapable_setup();
     runtime.block_on(async {
         sleep(Duration::from_secs(2)).await;
         let sync_status = client.do_sync(true).await.unwrap();
