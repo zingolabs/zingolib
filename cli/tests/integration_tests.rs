@@ -7,6 +7,17 @@ use zingo_cli::regtest::{ChildProcessHandler, RegtestManager};
 use zingoconfig::ZingoConfig;
 use zingolib::{create_zingoconf_with_datadir, lightclient::LightClient};
 
+///  Test setup involves common configurations files.  Contents and locations
+///  are variable.
+///   Locations:
+///     Each test must have a unique set of config files.  By default those
+///     files will be preserved on test failure.
+///   Contents:
+///     The specific configuration values may or may not differ between
+///     scenarios and/or tests.
+///     Data templates for config files are in:
+///        * tests::data::config_template_fillers::zcashd
+///        * tests::data::config_template_fillers::lightwalletd
 struct TestConfigGenerator {
     zcash_conf_location: std::path::PathBuf,
     lightwalletd_conf_location: std::path::PathBuf,
