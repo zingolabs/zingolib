@@ -193,14 +193,16 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
     let orchard_commitments_finalroot =
         "2fd8e51a03d9bbe2dd809831b1497aeb68a6e37ddf707ced4aa2d8dff13529ae";
     let finalstates = "000000";
+    // Setup
     let (regtest_manager, _child_process_handler, _client) = basic_no_spendable_setup();
+    // Execution:
     let trees = regtest_manager
         .get_cli_handle()
         .args(["z_gettreestate", "1"])
         .output()
         .expect("Couldn't get the trees.");
     let trees = json::parse(&String::from_utf8_lossy(&trees.stdout));
-    //let pretty_trees = json::stringify_pretty(trees.unwrap(), 4);
+    // Assertions:
     assert_eq!(
         sprout_commitments_finalroot,
         trees.as_ref().unwrap()["sprout"]["commitments"]["finalRoot"]
