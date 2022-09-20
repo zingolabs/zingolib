@@ -85,7 +85,7 @@ fn generate_configured_regtest_manager(
 fn basic_zcashd_lwd_zingolib_connected_setup() -> (RegtestManager, ChildProcessHandler, LightClient)
 {
     let regtest_manager =
-        generate_configured_regtest_manager("basic_zzcashd.conf", "lightwalletd.yml");
+        generate_configured_regtest_manager("basic_zcashd.conf", "lightwalletd.yml");
     let child_process_handler = regtest_manager.launch(true).unwrap();
     let server_id = ZingoConfig::get_server_or_default(Some("http://127.0.0.1".to_string()));
     let (config, _height) = create_zingoconf_with_datadir(
