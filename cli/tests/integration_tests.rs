@@ -144,7 +144,9 @@ fn empty_zcashd_sapling_commitment_tree() {
         .args(["z_gettreestate", "1"])
         .output()
         .expect("Couldn't get the trees.");
-    dbg!(trees);
+    let trees = json::parse(&String::from_utf8_lossy(&trees.stdout));
+    let pretty_trees = json::stringify_pretty(trees.unwrap(), 4);
+    println!("{}", pretty_trees);
 }
 
 #[ignore]
