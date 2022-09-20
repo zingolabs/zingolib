@@ -30,6 +30,7 @@ pub struct RegtestManager {
     regtest_dir: PathBuf,
     confs_dir: PathBuf,
     bin_location: PathBuf,
+    cli_bin: PathBuf,
     logs: PathBuf,
     data_dir: PathBuf,
     zcashd_datadir: PathBuf,
@@ -68,6 +69,7 @@ impl RegtestManager {
         let regtest_dir = get_regtest_dir();
         let confs_dir = regtest_dir.join("conf");
         let bin_location = regtest_dir.join("bin");
+        let cli_bin = bin_location.join("zcash-cli");
         let logs = regtest_dir.join("logs");
         let data_dir = regtest_dir.join("data");
         let zcashd_datadir = data_dir.join("zcashd");
@@ -94,6 +96,7 @@ impl RegtestManager {
             regtest_dir,
             confs_dir,
             bin_location,
+            cli_bin,
             logs,
             data_dir,
             zcashd_datadir,
@@ -109,21 +112,22 @@ impl RegtestManager {
         }
     }
 
-    pub fn generate_n_blocks(
-        &self,
-        num_blocks: u32,
-    ) -> Result<std::process::Output, std::io::Error> {
-        let cli_bin = &self.bin_location.join("zcash-cli");
+    pub fn get_cli_handle(&self) -> std::process::Command {
         let config_str = &self
             .zcashd_config
             .to_str()
             .expect("Path to string failure!");
-        std::process::Command::new(cli_bin)
-            .args([
-                format!("-conf={config_str}"),
-                "generate".to_string(),
-                num_blocks.to_string(),
-            ])
+
+        let mut command = std::process::Command::new(&self.cli_bin);
+        command.arg(format!("-conf={config_str}"));
+        command
+    }
+    pub fn generate_n_blocks(
+        &self,
+        num_blocks: u32,
+    ) -> Result<std::process::Output, std::io::Error> {
+        self.get_cli_handle()
+            .args(["generate".to_string(), num_blocks.to_string()])
             .output()
     }
     fn prepare_working_directories(&self) {
