@@ -168,7 +168,7 @@ fn basic_no_spendable_setup() -> (RegtestManager, ChildProcessHandler, LightClie
 #[test]
 #[ignore]
 fn empty_zcashd_sapling_commitment_tree() {
-    let (regtest_manager, _child_process_handler, client) = coinbasebacked_spendcapable_setup();
+    let (regtest_manager, _child_process_handler, _client) = coinbasebacked_spendcapable_setup();
     let trees = regtest_manager
         .get_cli_handle()
         .args(["z_gettreestate", "1"])
@@ -181,15 +181,46 @@ fn empty_zcashd_sapling_commitment_tree() {
 
 #[test]
 fn actual_empty_zcashd_sapling_commitment_tree() {
-    let (regtest_manager, _child_process_handler, client) = basic_no_spendable_setup();
+    // Expectations:
+    let sprout_commitments_finalroot =
+        "59d2cde5e65c1414c32ba54f0fe4bdb3d67618125286e6a191317917c812c6d7";
+    let sapling_commitments_finalroot =
+        "3e49b5f954aa9d3545bc6c37744661eea48d7c34e3000d82b7f0010c30f4c2fb";
+    let orchard_commitments_finalroot =
+        "2fd8e51a03d9bbe2dd809831b1497aeb68a6e37ddf707ced4aa2d8dff13529ae";
+    let finalstates = "000000";
+    let (regtest_manager, _child_process_handler, _client) = basic_no_spendable_setup();
     let trees = regtest_manager
         .get_cli_handle()
         .args(["z_gettreestate", "1"])
         .output()
         .expect("Couldn't get the trees.");
     let trees = json::parse(&String::from_utf8_lossy(&trees.stdout));
-    let pretty_trees = json::stringify_pretty(trees.unwrap(), 4);
-    println!("{}", pretty_trees);
+    //let pretty_trees = json::stringify_pretty(trees.unwrap(), 4);
+    assert_eq!(
+        sprout_commitments_finalroot,
+        trees.as_ref().unwrap()["sprout"]["commitments"]["finalRoot"]
+    );
+    assert_eq!(
+        sapling_commitments_finalroot,
+        trees.as_ref().unwrap()["sapling"]["commitments"]["finalRoot"]
+    );
+    assert_eq!(
+        orchard_commitments_finalroot,
+        trees.as_ref().unwrap()["orchard"]["commitments"]["finalRoot"]
+    );
+    assert_eq!(
+        finalstates,
+        trees.as_ref().unwrap()["sprout"]["commitments"]["finalState"]
+    );
+    assert_eq!(
+        finalstates,
+        trees.as_ref().unwrap()["sapling"]["commitments"]["finalState"]
+    );
+    assert_eq!(
+        finalstates,
+        trees.as_ref().unwrap()["orchard"]["commitments"]["finalState"]
+    );
 }
 
 #[ignore]
