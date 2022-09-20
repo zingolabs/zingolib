@@ -69,7 +69,7 @@ impl TestConfigGenerator {
         loc.clone()
     }
 }
-fn generate_configured_regtest_manager(
+fn create_funded_regtest_manager(
     zcash_pathbase: &str,
     lightwalletd_pathbase: &str,
 ) -> RegtestManager {
@@ -84,8 +84,7 @@ fn generate_configured_regtest_manager(
 /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
 fn basic_zcashd_lwd_zingolib_connected_setup() -> (RegtestManager, ChildProcessHandler, LightClient)
 {
-    let regtest_manager =
-        generate_configured_regtest_manager("basic_zcashd.conf", "lightwalletd.yml");
+    let regtest_manager = create_funded_regtest_manager("basic_zcashd.conf", "lightwalletd.yml");
     let child_process_handler = regtest_manager.launch(true).unwrap();
     let server_id = ZingoConfig::get_server_or_default(Some("http://127.0.0.1".to_string()));
     let (config, _height) = create_zingoconf_with_datadir(
@@ -113,10 +112,8 @@ fn basic_connectivity_scenario() {
 fn coinbasebacked_spendcapable_setup() -> (RegtestManager, ChildProcessHandler, LightClient) {
     //tracing_subscriber::fmt::init();
     let coinbase_spendkey = include_str!("data/mineraddress_sapling_spendingkey").to_string();
-    let regtest_manager = generate_configured_regtest_manager(
-        "externalwallet_coinbaseaddress.conf",
-        "lightwalletd.yml",
-    );
+    let regtest_manager =
+        create_funded_regtest_manager("externalwallet_coinbaseaddress.conf", "lightwalletd.yml");
     let child_process_handler = regtest_manager.launch(true).unwrap();
     let server_id = ZingoConfig::get_server_or_default(Some("http://127.0.0.1".to_string()));
     let (config, _height) = create_zingoconf_with_datadir(
