@@ -32,8 +32,7 @@ fn two_zcashds_with_colliding_configs() {
     //   The test-or-scenario that caused this situation has failed/panicked.
 }
 #[test]
-#[ignore]
-fn empty_zcashd_sapling_commitment_tree() {
+fn zcashd_sapling_commitment_tree() {
     let (regtest_manager, _child_process_handler, _client, _runtime) =
         setup::coinbasebacked_spendcapable();
     let trees = regtest_manager

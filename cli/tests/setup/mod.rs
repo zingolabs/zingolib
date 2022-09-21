@@ -126,7 +126,7 @@ pub fn basic_funded_zcashd_lwd_zingolib_connected(
 pub fn coinbasebacked_spendcapable() -> (RegtestManager, ChildProcessHandler, LightClient, Runtime)
 {
     //tracing_subscriber::fmt::init();
-    let coinbase_spendkey = include_str!("../data/mineraddress_sapling_spendingkey").to_string();
+    let coinbase_spendkey = data::SECRET_SPEND_AUTH_SAPLING.to_string();
     let regtest_manager = create_maybe_funded_regtest_manager(
         "externalwallet_coinbaseaddress.conf",
         "lightwalletd.yml",
