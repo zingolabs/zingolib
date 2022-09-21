@@ -37,7 +37,7 @@ pub struct RegtestManager {
     zcashd_logs_dir: PathBuf,
     zcashd_stdout_log: PathBuf,
     pub zcashd_config: PathBuf,
-    lightwalletd_config: PathBuf,
+    pub lightwalletd_config: PathBuf,
     lightwalletd_logs_dir: PathBuf,
     lightwalletd_stdout_log: PathBuf,
     lightwalletd_stderr_log: PathBuf,
@@ -65,13 +65,10 @@ pub enum LaunchChildProcessError {
     },
 }
 impl RegtestManager {
-    pub fn new(
-        rootpathname: Option<PathBuf>,
-        zcashdconfname: Option<PathBuf>,
-        lightwalletdconfname: Option<PathBuf>,
-    ) -> Self {
+    pub fn new(rootpathname: Option<PathBuf>) -> Self {
         let regtest_dir = dbg!(rootpathname.unwrap_or_else(get_regtest_dir));
         let confs_dir = regtest_dir.join("conf");
+        std::fs::create_dir_all(&confs_dir).expect("Couldn't create dir.");
         let bin_dir = get_regtest_dir().join("bin");
         std::fs::create_dir_all(&bin_dir).expect("Couldn't create dir.");
         let cli_bin = bin_dir.join("zcash-cli");
@@ -82,18 +79,8 @@ impl RegtestManager {
         let zcashd_logs_dir = logs_dir.join("zcashd");
         std::fs::create_dir_all(&zcashd_logs_dir).expect("Couldn't create dir.");
         let zcashd_stdout_log = zcashd_logs_dir.join("stdout.log");
-        let zcashd_config;
-        if let Some(confpath) = zcashdconfname {
-            zcashd_config = confpath;
-        } else {
-            zcashd_config = confs_dir.join("zcash.conf");
-        }
-        let lightwalletd_config;
-        if let Some(confpath) = lightwalletdconfname {
-            lightwalletd_config = confpath;
-        } else {
-            lightwalletd_config = confs_dir.join("lightwalletd.yaml");
-        }
+        let zcashd_config = confs_dir.join("zcash.conf");
+        let lightwalletd_config = confs_dir.join("lightwalletd.yaml");
         let lightwalletd_logs_dir = logs_dir.join("lightwalletd");
         std::fs::create_dir_all(&lightwalletd_logs_dir).expect("Couldn't create dir.");
         let lightwalletd_stdout_log = lightwalletd_logs_dir.join("stdout.log");

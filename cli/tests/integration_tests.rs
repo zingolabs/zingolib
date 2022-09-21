@@ -5,12 +5,10 @@ mod data;
 mod setup;
 use tokio::time::sleep;
 
-#[ignore]
 #[test]
 fn basic_connectivity_scenario_a() {
     let _regtest_manager = setup::basic_funded_zcashd_lwd_zingolib_connected();
 }
-#[ignore]
 #[test]
 fn basic_connectivity_scenario() {
     let _regtest_manager = setup::basic_funded_zcashd_lwd_zingolib_connected();

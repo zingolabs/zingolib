@@ -333,7 +333,7 @@ to scan from the start of the blockchain."
         //   * spawn zcashd in regtest mode
         //   * spawn lighwalletd and connect it to zcashd
         let regtest_manager = if matches.is_present("regtest") {
-            let regtest_manager = regtest::RegtestManager::new(None, None, None);
+            let regtest_manager = regtest::RegtestManager::new(None);
             child_process_handler = Some(regtest_manager.launch(clean_regtest_data)?);
             maybe_server = Some("http://127.0.0.1".to_string());
             Some(regtest_manager)

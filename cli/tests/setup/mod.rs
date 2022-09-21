@@ -18,30 +18,31 @@ use zingolib::{create_zingoconf_with_datadir, lightclient::LightClient};
 ///        * tests::data::config_template_fillers::zcashd
 ///        * tests::data::config_template_fillers::lightwalletd
 struct TestConfigGenerator {
-    zcash_conf_location: PathBuf,
-    lightwalletd_conf_location: PathBuf,
     zcashd_rpcservice_port: String,
     lightwalletd_rpcservice_port: String,
+    regtest_manager: RegtestManager,
 }
 impl TestConfigGenerator {
-    fn new(zcash_pathbase: &str, lightwalletd_pathbase: &str) -> Self {
+    fn new() -> Self {
         let mut common_path = zingo_cli::regtest::get_git_rootdir();
         common_path.push("cli");
         common_path.push("tests");
         common_path.push("data");
-        let zcash_conf_location = common_path.join(zcash_pathbase);
-        let lightwalletd_conf_location = common_path.join(lightwalletd_pathbase);
         let zcashd_rpcservice_port = portpicker::pick_unused_port()
             .expect("Port unpickable!")
             .to_string();
         let lightwalletd_rpcservice_port = portpicker::pick_unused_port()
             .expect("Port unpickable!")
             .to_string();
+        let regtest_manager = RegtestManager::new(Some(
+            tempdir::TempDir::new("zingo_integration_test")
+                .unwrap()
+                .into_path(),
+        ));
         Self {
-            zcash_conf_location,
-            lightwalletd_conf_location,
             zcashd_rpcservice_port,
             lightwalletd_rpcservice_port,
+            regtest_manager,
         }
     }
 
@@ -70,42 +71,45 @@ impl TestConfigGenerator {
     }
     fn write_contents_and_return_path(&self, configtype: &str, contents: String) -> PathBuf {
         let loc = match configtype {
-            "zcash" => &self.zcash_conf_location,
-            "lightwalletd" => &self.lightwalletd_conf_location,
+            "zcash" => &self.regtest_manager.zcashd_config,
+            "lightwalletd" => &self.regtest_manager.lightwalletd_config,
             _ => panic!("Unepexted configtype!"),
         };
-        let mut output = std::fs::File::create(&loc).expect("How could path {config} be missing?");
+        dbg!(&loc);
+        let mut output = std::fs::File::create(&loc).expect("How could path be missing?");
         std::io::Write::write(&mut output, contents.as_bytes())
-            .expect("Couldn't write {contents}!");
+            .expect(&format!("Couldn't write {contents}!"));
         loc.clone()
     }
 }
-fn create_maybe_funded_regtest_manager(
-    zcash_pathbase: &str,
-    lightwalletd_pathbase: &str,
-    fund_recipient_address: Option<&str>,
-) -> RegtestManager {
-    let test_configs = TestConfigGenerator::new(zcash_pathbase, lightwalletd_pathbase);
-    RegtestManager::new(
-        Some(tempdir::TempDir::new("funded").unwrap().into_path()),
-        Some(match fund_recipient_address {
-            Some(fund_to_address) => test_configs.create_funded_zcash_conf(fund_to_address),
-            None => test_configs.create_unfunded_zcash_conf(),
-        }),
-        Some(test_configs.create_lightwalletd_conf()),
-    )
+fn create_maybe_funded_regtest_manager(fund_recipient_address: Option<&str>) -> RegtestManager {
+    let test_configs = TestConfigGenerator::new();
+    match fund_recipient_address {
+        Some(fund_to_address) => test_configs.create_funded_zcash_conf(fund_to_address),
+        None => test_configs.create_unfunded_zcash_conf(),
+    };
+    test_configs.create_lightwalletd_conf();
+    test_configs.regtest_manager
 }
 /// The general scenario framework requires instances of zingo-cli, lightwalletd, and zcashd (in regtest mode).
 /// This setup is intended to produce the most basic of scenarios.  As scenarios with even less requirements
 /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
 pub fn basic_funded_zcashd_lwd_zingolib_connected(
 ) -> (RegtestManager, ChildProcessHandler, LightClient) {
-    let regtest_manager = create_maybe_funded_regtest_manager(
-        "basic_zcashd.conf",
-        "lightwalletd.yml",
-        Some(data::SAPLING_ADDRESS_FROM_SPEND_AUTH),
-    );
-    let child_process_handler = regtest_manager.launch(true).unwrap();
+    let regtest_manager =
+        create_maybe_funded_regtest_manager(Some(data::SAPLING_ADDRESS_FROM_SPEND_AUTH));
+    let child_process_handler = regtest_manager.launch(true).unwrap_or_else(|e| {
+        panic!(
+            "{}",
+            match e {
+                zingo_cli::regtest::LaunchChildProcessError::ZcashdState {
+                    errorcode,
+                    stdout,
+                    stderr,
+                } => stdout,
+            }
+        )
+    });
     let server_id = ZingoConfig::get_server_or_default(Some("http://127.0.0.1".to_string()));
     let (config, _height) = create_zingoconf_with_datadir(
         server_id,
@@ -128,11 +132,8 @@ pub fn coinbasebacked_spendcapable() -> (RegtestManager, ChildProcessHandler, Li
 {
     //tracing_subscriber::fmt::init();
     let coinbase_spendkey = data::SECRET_SPEND_AUTH_SAPLING.to_string();
-    let regtest_manager = create_maybe_funded_regtest_manager(
-        "externalwallet_coinbaseaddress.conf",
-        "lightwalletd.yml",
-        Some(data::SAPLING_ADDRESS_FROM_SPEND_AUTH),
-    );
+    let regtest_manager =
+        create_maybe_funded_regtest_manager(Some(data::SAPLING_ADDRESS_FROM_SPEND_AUTH));
     let child_process_handler = regtest_manager.launch(true).unwrap();
     let server_id = ZingoConfig::get_server_or_default(Some("http://127.0.0.1".to_string()));
     let (config, _height) = create_zingoconf_with_datadir(
@@ -150,11 +151,7 @@ pub fn coinbasebacked_spendcapable() -> (RegtestManager, ChildProcessHandler, Li
 }
 
 pub fn basic_no_spendable() -> (RegtestManager, ChildProcessHandler, LightClient) {
-    let regtest_manager = create_maybe_funded_regtest_manager(
-        "externalwallet_coinbaseaddress.conf",
-        "lightwalletd.yml",
-        None,
-    );
+    let regtest_manager = create_maybe_funded_regtest_manager(None);
     let child_process_handler = regtest_manager.launch(true).unwrap();
     let server_id = ZingoConfig::get_server_or_default(Some("http://127.0.0.1".to_string()));
     let (config, _height) = create_zingoconf_with_datadir(
