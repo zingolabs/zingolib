@@ -13,7 +13,6 @@ fn basic_connectivity_scenario_a() {
 fn basic_connectivity_scenario_b() {
     let _regtest_manager = setup::basic_funded_zcashd_lwd_zingolib_connected();
 }
-#[ignore]
 #[test]
 fn two_zcashds_with_colliding_configs() {
     // Expectations:
