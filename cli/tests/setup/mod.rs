@@ -87,6 +87,7 @@ fn create_maybe_funded_regtest_manager(
 ) -> RegtestManager {
     let test_configs = TestConfigGenerator::new(zcash_pathbase, lightwalletd_pathbase);
     RegtestManager::new(
+        Some(tempdir::TempDir::new("funded").unwrap().into_path()),
         Some(match fund_recipient_address {
             Some(fund_to_address) => test_configs.create_funded_zcash_conf(fund_to_address),
             None => test_configs.create_unfunded_zcash_conf(),
@@ -108,7 +109,7 @@ pub fn basic_funded_zcashd_lwd_zingolib_connected(
     let server_id = ZingoConfig::get_server_or_default(Some("http://127.0.0.1".to_string()));
     let (config, _height) = create_zingoconf_with_datadir(
         server_id,
-        Some(regtest_manager.zingo_datadir.to_string_lossy().to_string()),
+        Some(regtest_manager.zingo_data_dir.to_string_lossy().to_string()),
     )
     .unwrap();
     (
@@ -136,7 +137,7 @@ pub fn coinbasebacked_spendcapable() -> (RegtestManager, ChildProcessHandler, Li
     let server_id = ZingoConfig::get_server_or_default(Some("http://127.0.0.1".to_string()));
     let (config, _height) = create_zingoconf_with_datadir(
         server_id,
-        Some(regtest_manager.zingo_datadir.to_string_lossy().to_string()),
+        Some(regtest_manager.zingo_data_dir.to_string_lossy().to_string()),
     )
     .unwrap();
     regtest_manager.generate_n_blocks(5).unwrap();
@@ -158,7 +159,7 @@ pub fn basic_no_spendable() -> (RegtestManager, ChildProcessHandler, LightClient
     let server_id = ZingoConfig::get_server_or_default(Some("http://127.0.0.1".to_string()));
     let (config, _height) = create_zingoconf_with_datadir(
         server_id,
-        Some(regtest_manager.zingo_datadir.to_string_lossy().to_string()),
+        Some(regtest_manager.zingo_data_dir.to_string_lossy().to_string()),
     )
     .unwrap();
     (
