@@ -265,30 +265,34 @@ impl BlockAndWitnessData {
         return (true, heighest_tree);
     }
 
+    ///  This associated fn compares a pair of trees and informs the caller
+    ///  whether the candidate tree can be derived from the trusted reference
+    ///  tree according to (we hope) the protocol.
     fn verify_tree_pair(
         blocks: Arc<RwLock<Vec<BlockData>>>,
-        vt: TreeState,
-        ct: TreeState,
+        unverified_tree: TreeState,
+        closest_lower_verified_tree: TreeState,
     ) -> JoinHandle<bool> {
         tokio::spawn(async move {
-            assert!(ct.height <= vt.height);
+            assert!(closest_lower_verified_tree.height <= unverified_tree.height);
 
-            if ct.height == vt.height {
+            if closest_lower_verified_tree.height == unverified_tree.height {
                 return true;
             }
-            let mut sapling_tree =
-                CommitmentTree::<SaplingNode>::read(&hex::decode(ct.sapling_tree).unwrap()[..])
-                    .unwrap();
+            let mut sapling_tree = CommitmentTree::<SaplingNode>::read(
+                &hex::decode(closest_lower_verified_tree.sapling_tree).unwrap()[..],
+            )
+            .unwrap();
             let mut orchard_tree = CommitmentTree::<MerkleHashOrchard>::read(
-                &hex::decode(ct.orchard_tree).unwrap()[..],
+                &hex::decode(closest_lower_verified_tree.orchard_tree).unwrap()[..],
             )
             .unwrap_or(CommitmentTree::empty());
 
             {
                 let blocks = blocks.read().await;
                 let top_block = blocks.first().unwrap().height;
-                let start_pos = (top_block - ct.height - 1) as usize;
-                let end_pos = (top_block - vt.height) as usize;
+                let start_pos = (top_block - closest_lower_verified_tree.height - 1) as usize;
+                let end_pos = (top_block - unverified_tree.height) as usize;
 
                 if start_pos >= blocks.len() || end_pos >= blocks.len() {
                     // Blocks are not in the current sync, which means this has already been verified
@@ -313,8 +317,8 @@ impl BlockAndWitnessData {
             orchard_tree.write(&mut orchard_buf).unwrap();
 
             // Return if verified
-            (hex::encode(sapling_buf) == vt.sapling_tree)
-                && (hex::encode(orchard_buf) == vt.orchard_tree)
+            (hex::encode(sapling_buf) == unverified_tree.sapling_tree)
+                && (hex::encode(orchard_buf) == unverified_tree.orchard_tree)
         })
     }
     // Invalidate the block (and wallet transactions associated with it) at the given block height
