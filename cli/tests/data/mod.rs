@@ -35,6 +35,10 @@ rpcpassword=xxxxxx
 rpcport={rpcport}
 rpcallowip=127.0.0.1
 
+# Buried config option to allow non-canonical RPC-PORT:
+# https://zcash.readthedocs.io/en/latest/rtd_pages/zcash_conf_guide.html#zcash-conf-guide
+listen=0
+
 {extra}")
         }
         pub fn funded(mineraddress: &str, rpcport: &str) -> String {
