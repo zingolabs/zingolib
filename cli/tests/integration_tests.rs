@@ -1,183 +1,24 @@
 #![forbid(unsafe_code)]
-use std::{path::PathBuf, time::Duration};
+use std::time::Duration;
 
 mod data;
-use tokio::{runtime::Runtime, time::sleep};
-use zingo_cli::regtest::{ChildProcessHandler, RegtestManager};
-use zingoconfig::ZingoConfig;
-use zingolib::{create_zingoconf_with_datadir, lightclient::LightClient};
+mod setup;
+use tokio::time::sleep;
 
-///  Test setup involves common configurations files.  Contents and locations
-///  are variable.
-///   Locations:
-///     Each test must have a unique set of config files.  By default those
-///     files will be preserved on test failure.
-///   Contents:
-///     The specific configuration values may or may not differ between
-///     scenarios and/or tests.
-///     Data templates for config files are in:
-///        * tests::data::config_template_fillers::zcashd
-///        * tests::data::config_template_fillers::lightwalletd
-struct TestConfigGenerator {
-    zcash_conf_location: PathBuf,
-    lightwalletd_conf_location: PathBuf,
-    zcashd_rpcservice_port: String,
-    lightwalletd_rpcservice_port: String,
-}
-impl TestConfigGenerator {
-    fn new(zcash_pathbase: &str, lightwalletd_pathbase: &str) -> Self {
-        let mut common_path = zingo_cli::regtest::get_git_rootdir();
-        common_path.push("cli");
-        common_path.push("tests");
-        common_path.push("data");
-        let zcash_conf_location = common_path.join(zcash_pathbase);
-        let lightwalletd_conf_location = common_path.join(lightwalletd_pathbase);
-        let zcashd_rpcservice_port = portpicker::pick_unused_port()
-            .expect("Port unpickable!")
-            .to_string();
-        let lightwalletd_rpcservice_port = portpicker::pick_unused_port()
-            .expect("Port unpickable!")
-            .to_string();
-        Self {
-            zcash_conf_location,
-            lightwalletd_conf_location,
-            zcashd_rpcservice_port,
-            lightwalletd_rpcservice_port,
-        }
-    }
-
-    fn create_unfunded_zcash_conf(&self) -> PathBuf {
-        self.write_contents_and_return_path(
-            "zcash",
-            data::config_template_fillers::zcashd::basic(&self.zcashd_rpcservice_port, ""),
-        )
-    }
-    fn create_funded_zcash_conf(&self, address_to_fund: &str) -> PathBuf {
-        self.write_contents_and_return_path(
-            "zcash",
-            data::config_template_fillers::zcashd::funded(
-                address_to_fund,
-                &self.zcashd_rpcservice_port,
-            ),
-        )
-    }
-    fn create_lightwalletd_conf(&self) -> PathBuf {
-        self.write_contents_and_return_path(
-            "lightwalletd",
-            dbg!(data::config_template_fillers::lightwalletd::basic(
-                &self.lightwalletd_rpcservice_port
-            )),
-        )
-    }
-    fn write_contents_and_return_path(&self, configtype: &str, contents: String) -> PathBuf {
-        let loc = match configtype {
-            "zcash" => &self.zcash_conf_location,
-            "lightwalletd" => &self.lightwalletd_conf_location,
-            _ => panic!("Unepexted configtype!"),
-        };
-        let mut output = std::fs::File::create(&loc).expect("How could path {config} be missing?");
-        std::io::Write::write(&mut output, contents.as_bytes())
-            .expect("Couldn't write {contents}!");
-        loc.clone()
-    }
-}
-fn create_maybe_funded_regtest_manager(
-    zcash_pathbase: &str,
-    lightwalletd_pathbase: &str,
-    fund_recipient_address: Option<&str>,
-) -> RegtestManager {
-    let test_configs = TestConfigGenerator::new(zcash_pathbase, lightwalletd_pathbase);
-    RegtestManager::new(
-        Some(match fund_recipient_address {
-            Some(fund_to_address) => test_configs.create_funded_zcash_conf(fund_to_address),
-            None => test_configs.create_unfunded_zcash_conf(),
-        }),
-        Some(test_configs.create_lightwalletd_conf()),
-    )
-}
-/// The general scenario framework requires instances of zingo-cli, lightwalletd, and zcashd (in regtest mode).
-/// This setup is intended to produce the most basic of scenarios.  As scenarios with even less requirements
-/// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
-fn basic_funded_zcashd_lwd_zingolib_connected_setup(
-) -> (RegtestManager, ChildProcessHandler, LightClient) {
-    let regtest_manager = create_maybe_funded_regtest_manager(
-        "basic_zcashd.conf",
-        "lightwalletd.yml",
-        Some(data::SAPLING_ADDRESS_FROM_SPEND_AUTH),
-    );
-    let child_process_handler = regtest_manager.launch(true).unwrap();
-    let server_id = ZingoConfig::get_server_or_default(Some("http://127.0.0.1".to_string()));
-    let (config, _height) = create_zingoconf_with_datadir(
-        server_id,
-        Some(regtest_manager.zingo_datadir.to_string_lossy().to_string()),
-    )
-    .unwrap();
-    (
-        regtest_manager,
-        child_process_handler,
-        LightClient::new(&config, 0).unwrap(),
-    )
+#[ignore]
+#[test]
+fn basic_connectivity_scenario_a() {
+    let _regtest_manager = setup::basic_funded_zcashd_lwd_zingolib_connected();
 }
 #[test]
 fn basic_connectivity_scenario() {
-    let _regtest_manager = basic_funded_zcashd_lwd_zingolib_connected_setup();
+    let _regtest_manager = setup::basic_funded_zcashd_lwd_zingolib_connected();
 }
-/// Many scenarios need to start with spendable funds.  This setup provides
-/// 1 block worth of coinbase to a preregistered spend capability.
-///
-/// This key is registered to receive block rewards by:
-///  (1) existing accessibly for test code in: cli/examples/mineraddress_sapling_spendingkey
-///  (2) corresponding to the address registered as the "mineraddress" field in cli/examples/zcash.conf
-fn coinbasebacked_spendcapable_setup() -> (RegtestManager, ChildProcessHandler, LightClient, Runtime)
-{
-    //tracing_subscriber::fmt::init();
-    let coinbase_spendkey = include_str!("data/mineraddress_sapling_spendingkey").to_string();
-    let regtest_manager = create_maybe_funded_regtest_manager(
-        "externalwallet_coinbaseaddress.conf",
-        "lightwalletd.yml",
-        Some(data::SAPLING_ADDRESS_FROM_SPEND_AUTH),
-    );
-    let child_process_handler = regtest_manager.launch(true).unwrap();
-    let server_id = ZingoConfig::get_server_or_default(Some("http://127.0.0.1".to_string()));
-    let (config, _height) = create_zingoconf_with_datadir(
-        server_id,
-        Some(regtest_manager.zingo_datadir.to_string_lossy().to_string()),
-    )
-    .unwrap();
-    regtest_manager.generate_n_blocks(5).unwrap();
-    (
-        regtest_manager,
-        child_process_handler,
-        LightClient::create_with_capable_wallet(coinbase_spendkey, &config, 0, false).unwrap(),
-        Runtime::new().unwrap(),
-    )
-}
-
-fn basic_no_spendable_setup() -> (RegtestManager, ChildProcessHandler, LightClient) {
-    let regtest_manager = create_maybe_funded_regtest_manager(
-        "externalwallet_coinbaseaddress.conf",
-        "lightwalletd.yml",
-        None,
-    );
-    let child_process_handler = regtest_manager.launch(true).unwrap();
-    let server_id = ZingoConfig::get_server_or_default(Some("http://127.0.0.1".to_string()));
-    let (config, _height) = create_zingoconf_with_datadir(
-        server_id,
-        Some(regtest_manager.zingo_datadir.to_string_lossy().to_string()),
-    )
-    .unwrap();
-    (
-        regtest_manager,
-        child_process_handler,
-        LightClient::new(&config, 0).unwrap(),
-    )
-}
-
 #[test]
 #[ignore]
 fn empty_zcashd_sapling_commitment_tree() {
     let (regtest_manager, _child_process_handler, _client, _runtime) =
-        coinbasebacked_spendcapable_setup();
+        setup::coinbasebacked_spendcapable();
     let trees = regtest_manager
         .get_cli_handle()
         .args(["z_gettreestate", "1"])
@@ -200,7 +41,7 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
         "2fd8e51a03d9bbe2dd809831b1497aeb68a6e37ddf707ced4aa2d8dff13529ae";
     let finalstates = "000000";
     // Setup
-    let (regtest_manager, _child_process_handler, _client) = basic_no_spendable_setup();
+    let (regtest_manager, _child_process_handler, _client) = setup::basic_no_spendable();
     // Execution:
     let trees = regtest_manager
         .get_cli_handle()
@@ -240,7 +81,7 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
 #[test]
 fn mine_sapling_to_self() {
     let (_regtest_manager, _child_process_handler, client, runtime) =
-        coinbasebacked_spendcapable_setup();
+        setup::coinbasebacked_spendcapable();
 
     runtime.block_on(client.do_sync(true)).unwrap();
 
@@ -252,7 +93,7 @@ fn mine_sapling_to_self() {
 #[test]
 fn send_mined_sapling_to_orchard() {
     let (regtest_manager, _child_process_handler, client, runtime) =
-        coinbasebacked_spendcapable_setup();
+        setup::coinbasebacked_spendcapable();
     runtime.block_on(async {
         sleep(Duration::from_secs(2)).await;
         let sync_status = client.do_sync(true).await.unwrap();
