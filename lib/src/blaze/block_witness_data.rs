@@ -210,11 +210,11 @@ impl BlockAndWitnessData {
                 }),
         );
 
-        // Add all the verification trees as verified, so they can be used as starting points. If any of them fails to verify, then we will
-        // fail the whole thing anyway.
+        // Add all the verification trees as verified, so they can be used as starting points.
+        // If any of them fails to verify, then we will fail the whole thing anyway.
         start_trees.extend(unverified_tree_states.iter().map(|t| t.clone()));
 
-        // Also add the wallet's heighest tree
+        // Also add the wallet's highest tree
         if self.verified_tree.is_some() {
             start_trees.push(self.verified_tree.as_ref().unwrap().clone());
         }
