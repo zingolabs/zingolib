@@ -68,7 +68,7 @@ pub async fn create_test_server(
             ])
             .output()
             .unwrap();
-        tracing_subscriber::fmt::init();
+        //tracing_subscriber::fmt::init();
     });
     let (ready_transmitter, ready_receiver) = oneshot::channel();
     let (stop_transmitter, stop_receiver) = oneshot::channel();

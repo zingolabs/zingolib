@@ -10,7 +10,7 @@ fn basic_connectivity_scenario_a() {
     let _regtest_manager = setup::basic_funded_zcashd_lwd_zingolib_connected();
 }
 #[test]
-fn basic_connectivity_scenario() {
+fn basic_connectivity_scenario_b() {
     let _regtest_manager = setup::basic_funded_zcashd_lwd_zingolib_connected();
 }
 #[ignore]
@@ -29,6 +29,7 @@ fn two_zcashds_with_colliding_configs() {
     //   The incorrectly configured location is still present (and not checked in)
     //   The test-or-scenario that caused this situation has failed/panicked.
 }
+#[ignore]
 #[test]
 fn zcashd_sapling_commitment_tree() {
     let (regtest_manager, _child_process_handler, _client, _runtime) =
