@@ -49,10 +49,10 @@ rpcallowip=127.0.0.1
     }
     pub mod lightwalletd {
 
-        pub fn basic() -> String {
+        pub fn basic(rpcport: &str) -> String {
             format! {"\
 # # Default zingo lib lightwalletd conf YAML for regtest mode # #
-bind-addr: 127.0.0.1:9067
+bind-addr: 127.0.0.1:{rpcport}
 cache-size: 10
 log-file: ../logs/lwd.log
 log-level: 10
