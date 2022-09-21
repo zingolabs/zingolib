@@ -166,7 +166,6 @@ impl BlockAndWitnessData {
     }
 
     // Verify all the downloaded tree states
-    #[tracing::instrument(skip(self))]
     pub async fn verify_trees(&self) -> (bool, Option<TreeState>) {
         // Verify only on the last batch
         {
