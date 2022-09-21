@@ -36,8 +36,9 @@ use super::{fixed_size_buffer::FixedSizeBuffer, sync_status::SyncStatus};
 type Node<D> = <<D as DomainWalletExt<zingoconfig::Network>>::WalletNote as NoteAndMetadata>::Node;
 
 pub struct BlockAndWitnessData {
-    // List of all blocks and their hashes/commitment trees.
-    // Stored with the tallest block first, and the shortest last.
+    // List of all downloaded blocks in the current batch and
+    // their hashes/commitment trees. Stored with the tallest
+    // block first, and the shortest last.
     blocks: Arc<RwLock<Vec<BlockData>>>,
 
     // List of existing blocks in the wallet. Used for reorgs
@@ -273,9 +274,8 @@ impl BlockAndWitnessData {
         unverified_tree: TreeState,
         closest_lower_verified_tree: TreeState,
     ) -> JoinHandle<bool> {
+        assert!(closest_lower_verified_tree.height <= unverified_tree.height);
         tokio::spawn(async move {
-            assert!(closest_lower_verified_tree.height <= unverified_tree.height);
-
             if closest_lower_verified_tree.height == unverified_tree.height {
                 return true;
             }
