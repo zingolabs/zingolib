@@ -39,14 +39,14 @@ pub struct BlockAndWitnessData {
     // List of all downloaded blocks in the current batch and
     // their hashes/commitment trees. Stored with the tallest
     // block first, and the shortest last.
-    blocks: Arc<RwLock<Vec<BlockData>>>,
+    blocks_in_current_batch: Arc<RwLock<Vec<BlockData>>>,
 
     // List of existing blocks in the wallet. Used for reorgs
     existing_blocks: Arc<RwLock<Vec<BlockData>>>,
 
     // List of sapling tree states that were fetched from the server,
     // which need to be verified before we return from the function.
-    pub verification_list: Arc<RwLock<Vec<TreeState>>>,
+    pub unverified_treestates: Arc<RwLock<Vec<TreeState>>>,
 
     // How many blocks to process at a time.
     batch_size: u64,
@@ -64,9 +64,9 @@ pub struct BlockAndWitnessData {
 impl BlockAndWitnessData {
     pub fn new(config: &ZingoConfig, sync_status: Arc<RwLock<SyncStatus>>) -> Self {
         Self {
-            blocks: Arc::new(RwLock::new(vec![])),
+            blocks_in_current_batch: Arc::new(RwLock::new(vec![])),
             existing_blocks: Arc::new(RwLock::new(vec![])),
-            verification_list: Arc::new(RwLock::new(vec![])),
+            unverified_treestates: Arc::new(RwLock::new(vec![])),
             batch_size: 25_000,
             verified_tree: None,
             sync_status,
@@ -97,10 +97,10 @@ impl BlockAndWitnessData {
                 panic!("Blocks are in wrong order");
             }
         }
-        self.verification_list.write().await.clear();
+        self.unverified_treestates.write().await.clear();
         self.verified_tree = verified_tree;
 
-        self.blocks.write().await.clear();
+        self.blocks_in_current_batch.write().await.clear();
 
         self.existing_blocks.write().await.clear();
         self.existing_blocks.write().await.extend(existing_blocks);
@@ -118,10 +118,10 @@ impl BlockAndWitnessData {
         &self,
         num: usize,
     ) -> Vec<BlockData> {
-        self.verification_list.write().await.clear();
+        self.unverified_treestates.write().await.clear();
 
         {
-            let mut blocks = self.blocks.write().await;
+            let mut blocks = self.blocks_in_current_batch.write().await;
             blocks.extend(self.existing_blocks.write().await.drain(..));
 
             blocks.truncate(num);
@@ -137,7 +137,7 @@ impl BlockAndWitnessData {
         self.wait_for_block(height).await;
 
         let cb = {
-            let blocks = self.blocks.read().await;
+            let blocks = self.blocks_in_current_batch.read().await;
             let pos = blocks.first().unwrap().height - height;
             let bd = blocks.get(pos as usize).unwrap();
 
@@ -177,18 +177,22 @@ impl BlockAndWitnessData {
         }
 
         // If there's nothing to verify, return
-        if self.verification_list.read().await.is_empty() {
+        if self.unverified_treestates.read().await.is_empty() {
             info!("nothing to verify, returning");
             return (true, None);
         }
 
         // Sort and de-dup the verification list
-        let mut verification_list = self.verification_list.write().await.split_off(0);
-        verification_list.sort_unstable_by_key(|ts| ts.height);
-        verification_list.dedup_by_key(|ts| ts.height);
+        // split_off(0) is a hack to assign ownership of the entire vector to
+        // the ident on the left
+        let mut unverified_tree_states = self.unverified_treestates.write().await.split_off(0);
+        unverified_tree_states.sort_unstable_by_key(|treestate| treestate.height);
+        unverified_tree_states.dedup_by_key(|treestate| treestate.height);
 
         // Remember the highest tree that will be verified, and return that.
-        let heighest_tree = verification_list.last().map(|ts| ts.clone());
+        let highest_tree = unverified_tree_states
+            .last()
+            .map(|treestate| treestate.clone());
 
         let mut start_trees = vec![];
 
@@ -208,7 +212,7 @@ impl BlockAndWitnessData {
 
         // Add all the verification trees as verified, so they can be used as starting points. If any of them fails to verify, then we will
         // fail the whole thing anyway.
-        start_trees.extend(verification_list.iter().map(|t| t.clone()));
+        start_trees.extend(unverified_tree_states.iter().map(|t| t.clone()));
 
         // Also add the wallet's heighest tree
         if self.verified_tree.is_some() {
@@ -224,7 +228,7 @@ impl BlockAndWitnessData {
         start_trees.sort_unstable_by_key(|ts| ts.height);
 
         // Now, for each tree state that we need to verify, find the closest one
-        let tree_pairs = verification_list
+        let tree_pairs = unverified_tree_states
             .into_iter()
             .filter_map(|vt| {
                 let height = vt.height;
@@ -243,7 +247,7 @@ impl BlockAndWitnessData {
             .collect::<Vec<_>>();
 
         // Verify each tree pair
-        let blocks = self.blocks.clone();
+        let blocks = self.blocks_in_current_batch.clone();
         let handles: Vec<JoinHandle<bool>> = tree_pairs
             .into_iter()
             .map(|(vt, ct)| Self::verify_tree_pair(blocks.clone(), vt, ct))
@@ -263,7 +267,7 @@ impl BlockAndWitnessData {
             return (false, None);
         }
 
-        return (true, heighest_tree);
+        return (true, highest_tree);
     }
 
     ///  This associated fn compares a pair of trees and informs the caller
@@ -357,7 +361,7 @@ impl BlockAndWitnessData {
         // Create a new channel where we'll receive the blocks
         let (transmitter, mut receiver) = mpsc::unbounded_channel::<CompactBlock>();
 
-        let blocks = self.blocks.clone();
+        let blocks = self.blocks_in_current_batch.clone();
         let existing_blocks = self.existing_blocks.clone();
 
         let sync_status = self.sync_status.clone();
@@ -448,7 +452,7 @@ impl BlockAndWitnessData {
 
     async fn wait_for_first_block(&self) -> u64 {
         loop {
-            match self.blocks.read().await.first() {
+            match self.blocks_in_current_batch.read().await.first() {
                 None => {
                     yield_now().await;
                     sleep(Duration::from_millis(100)).await;
@@ -466,7 +470,15 @@ impl BlockAndWitnessData {
     async fn wait_for_block(&self, threshold_height: u64) {
         self.wait_for_first_block().await;
 
-        while self.blocks.read().await.last().unwrap().height > threshold_height {
+        while self
+            .blocks_in_current_batch
+            .read()
+            .await
+            .last()
+            .unwrap()
+            .height
+            > threshold_height
+        {
             yield_now().await;
             sleep(Duration::from_millis(100)).await;
 
@@ -483,7 +495,7 @@ impl BlockAndWitnessData {
 
         {
             // Read Lock
-            let blocks = self.blocks.read().await;
+            let blocks = self.blocks_in_current_batch.read().await;
             let pos = blocks.first().unwrap().height - after_height;
             match nf {
                 ChannelNullifier::Sapling(nf) => {
@@ -524,7 +536,7 @@ impl BlockAndWitnessData {
         self.wait_for_block(height).await;
 
         {
-            let blocks = self.blocks.read().await;
+            let blocks = self.blocks_in_current_batch.read().await;
             let pos = blocks.first().unwrap().height - height;
             blocks.get(pos as usize).unwrap().cb().time
         }
@@ -566,7 +578,7 @@ impl BlockAndWitnessData {
                 self.wait_for_block(height).await;
 
                 {
-                    let blocks = RwLock::read(&self.blocks).await;
+                    let blocks = RwLock::read(&self.blocks_in_current_batch).await;
 
                     let pos = blocks.first().unwrap().height - height;
                     let bd = blocks.get(pos as usize).unwrap();
@@ -659,7 +671,7 @@ impl BlockAndWitnessData {
         let mut fsb = FixedSizeBuffer::new(MAX_REORG);
 
         let top_block = {
-            let mut blocks = self.blocks.read().await;
+            let mut blocks = self.blocks_in_current_batch.read().await;
             let top_block = blocks.first().unwrap().height;
             let pos = top_block - height;
 
@@ -685,7 +697,7 @@ impl BlockAndWitnessData {
                     // Every 10k blocks, give up the lock, let other threads proceed and then re-acquire it
                     drop(blocks);
                     yield_now().await;
-                    blocks = self.blocks.read().await;
+                    blocks = self.blocks_in_current_batch.read().await;
                 }
             }
 
@@ -715,7 +727,7 @@ impl BlockAndWitnessData {
         let mut w = witnesses.last().unwrap().clone();
 
         {
-            let blocks = self.blocks.read().await;
+            let blocks = self.blocks_in_current_batch.read().await;
             let pos = blocks.first().unwrap().height - height;
 
             let mut transaction_id_found = false;

@@ -175,7 +175,7 @@ impl TrialDecryptions {
             info!("trial decrypting block {}", height);
             let uri = config.server.read().unwrap().clone();
             let tree_state = GrpcConnector::get_trees(uri, compact_block.height).await?;
-            RwLock::write(&bsync_data.read().await.block_data.verification_list)
+            RwLock::write(&bsync_data.read().await.block_data.unverified_treestates)
                 .await
                 .push(tree_state);
 
