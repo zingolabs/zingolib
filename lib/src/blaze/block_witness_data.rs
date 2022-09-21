@@ -205,6 +205,7 @@ impl BlockAndWitnessData {
                     tree_state.height = h;
                     tree_state.hash = hash.to_string();
                     tree_state.sapling_tree = tree.to_string();
+                    tree_state.orchard_tree = String::from("000000");
 
                     tree_state
                 }),
@@ -290,7 +291,7 @@ impl BlockAndWitnessData {
             let mut orchard_tree = CommitmentTree::<MerkleHashOrchard>::read(
                 &hex::decode(closest_lower_verified_tree.orchard_tree).unwrap()[..],
             )
-            .unwrap_or(CommitmentTree::empty());
+            .expect("Invalid orchard tree!");
 
             {
                 let blocks = blocks.read().await;
