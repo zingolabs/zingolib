@@ -21,7 +21,8 @@ use zingolib::{create_zingoconf_with_datadir, lightclient::LightClient};
 struct TestConfigGenerator {
     zcash_conf_location: PathBuf,
     lightwalletd_conf_location: PathBuf,
-    zcashd_chain_port: u16,
+    zcashd_rpcservice_port: String,
+    lightwalletd_rpcservice_port: String,
 }
 impl TestConfigGenerator {
     fn new(zcash_pathbase: &str, lightwalletd_pathbase: &str) -> Self {
@@ -31,21 +32,24 @@ impl TestConfigGenerator {
         common_path.push("data");
         let zcash_conf_location = common_path.join(zcash_pathbase);
         let lightwalletd_conf_location = common_path.join(lightwalletd_pathbase);
-        let zcashd_chain_port = portpicker::pick_unused_port().expect("Port unpickable!");
+        let zcashd_rpcservice_port = portpicker::pick_unused_port()
+            .expect("Port unpickable!")
+            .to_string();
+        let lightwalletd_rpcservice_port = portpicker::pick_unused_port()
+            .expect("Port unpickable!")
+            .to_string();
         Self {
             zcash_conf_location,
             lightwalletd_conf_location,
-            zcashd_chain_port,
+            zcashd_rpcservice_port,
+            lightwalletd_rpcservice_port,
         }
     }
 
     fn create_unfunded_zcash_conf(&self) -> PathBuf {
         self.write_contents_and_return_path(
             "zcash",
-            data::config_template_fillers::zcashd::basic(
-                dbg!(format!("{:?}", self.zcashd_chain_port).as_str()),
-                "",
-            ),
+            data::config_template_fillers::zcashd::basic(&self.zcashd_rpcservice_port, ""),
         )
     }
     fn create_funded_zcash_conf(&self, address_to_fund: &str) -> PathBuf {
@@ -53,14 +57,16 @@ impl TestConfigGenerator {
             "zcash",
             data::config_template_fillers::zcashd::funded(
                 address_to_fund,
-                dbg!(format!("{:?}", self.zcashd_chain_port).as_str()),
+                &self.zcashd_rpcservice_port,
             ),
         )
     }
     fn create_lightwalletd_conf(&self) -> PathBuf {
         self.write_contents_and_return_path(
             "lightwalletd",
-            data::config_template_fillers::lightwalletd::basic(),
+            dbg!(data::config_template_fillers::lightwalletd::basic(
+                &self.lightwalletd_rpcservice_port
+            )),
         )
     }
     fn write_contents_and_return_path(&self, configtype: &str, contents: String) -> PathBuf {
@@ -112,7 +118,6 @@ fn basic_funded_zcashd_lwd_zingolib_connected_setup(
         LightClient::new(&config, 0).unwrap(),
     )
 }
-#[ignore]
 #[test]
 fn basic_connectivity_scenario() {
     let _regtest_manager = basic_funded_zcashd_lwd_zingolib_connected_setup();
@@ -183,6 +188,7 @@ fn empty_zcashd_sapling_commitment_tree() {
     println!("{}", pretty_trees);
 }
 
+#[ignore]
 #[test]
 fn actual_empty_zcashd_sapling_commitment_tree() {
     // Expectations:
@@ -227,6 +233,7 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
         finalstates,
         trees.as_ref().unwrap()["orchard"]["commitments"]["finalState"]
     );
+    dbg!(std::process::Command::new("grpcurl").args(["-plaintext", "127.0.0.1:9067"]));
 }
 
 #[ignore]
