@@ -1700,10 +1700,10 @@ impl LightClient {
         let verify_handle =
             tokio::spawn(async move { block_data.read().await.block_data.verify_trees().await });
         let (verified, heighest_tree) = verify_handle.await.map_err(|e| e.to_string())?;
-        info!("Sapling tree verification {}", verified);
+        info!("tree verification {}", verified);
         info!("highest tree exists: {}", heighest_tree.is_some());
         if !verified {
-            return Err("Sapling Tree Verification Failed".to_string());
+            return Err("Tree Verification Failed".to_string());
         }
 
         info!("Sync finished, doing post-processing");

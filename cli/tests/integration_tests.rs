@@ -29,7 +29,6 @@ fn two_zcashds_with_colliding_configs() {
     //   The incorrectly configured location is still present (and not checked in)
     //   The test-or-scenario that caused this situation has failed/panicked.
 }
-#[ignore]
 #[test]
 fn zcashd_sapling_commitment_tree() {
     let (regtest_manager, _child_process_handler, _client, _runtime) =
@@ -44,7 +43,6 @@ fn zcashd_sapling_commitment_tree() {
     println!("{}", pretty_trees);
 }
 
-#[ignore]
 #[test]
 fn actual_empty_zcashd_sapling_commitment_tree() {
     // Expectations:
@@ -92,7 +90,6 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
     dbg!(std::process::Command::new("grpcurl").args(["-plaintext", "127.0.0.1:9067"]));
 }
 
-#[ignore]
 #[test]
 fn mine_sapling_to_self() {
     let (_regtest_manager, _child_process_handler, client, runtime) =
@@ -104,7 +101,6 @@ fn mine_sapling_to_self() {
     assert_eq!(balance["sapling_balance"], 625000000);
 }
 
-#[ignore]
 #[test]
 fn send_mined_sapling_to_orchard() {
     let (regtest_manager, _child_process_handler, client, runtime) =
@@ -134,15 +130,6 @@ fn send_mined_sapling_to_orchard() {
         let transactions = client.do_list_transactions(false).await;
         println!("{}", json::stringify_pretty(balance.clone(), 4));
         println!("{}", json::stringify_pretty(transactions, 4));
-        assert_eq!(balance["unverified_orchard_balance"], 5000);
-        assert_eq!(balance["verified_orchard_balance"], 0);
-
-        regtest_manager.generate_n_blocks(4).unwrap();
-        sleep(Duration::from_secs(2)).await;
-        client.do_sync(true).await.unwrap();
-        let balance = client.do_balance().await;
-        println!("{}", json::stringify_pretty(balance.clone(), 4));
-        assert_eq!(balance["unverified_orchard_balance"], 0);
         assert_eq!(balance["verified_orchard_balance"], 5000);
     });
 }

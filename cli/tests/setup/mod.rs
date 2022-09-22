@@ -82,35 +82,38 @@ impl TestConfigGenerator {
         loc.clone()
     }
 }
-fn create_maybe_funded_regtest_manager(fund_recipient_address: Option<&str>) -> RegtestManager {
+fn create_maybe_funded_regtest_manager(
+    fund_recipient_address: Option<&str>,
+) -> (RegtestManager, String) {
     let test_configs = TestConfigGenerator::new();
     match fund_recipient_address {
         Some(fund_to_address) => test_configs.create_funded_zcash_conf(fund_to_address),
         None => test_configs.create_unfunded_zcash_conf(),
     };
     test_configs.create_lightwalletd_conf();
-    test_configs.regtest_manager
+    (
+        test_configs.regtest_manager,
+        test_configs.lightwalletd_rpcservice_port,
+    )
 }
 /// The general scenario framework requires instances of zingo-cli, lightwalletd, and zcashd (in regtest mode).
 /// This setup is intended to produce the most basic of scenarios.  As scenarios with even less requirements
 /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
 pub fn basic_funded_zcashd_lwd_zingolib_connected(
 ) -> (RegtestManager, ChildProcessHandler, LightClient) {
-    let regtest_manager =
+    let (regtest_manager, server_port) =
         create_maybe_funded_regtest_manager(Some(data::SAPLING_ADDRESS_FROM_SPEND_AUTH));
-    let child_process_handler = regtest_manager.launch(true).unwrap_or_else(|e| {
-        panic!(
-            "{}",
-            match e {
-                zingo_cli::regtest::LaunchChildProcessError::ZcashdState {
-                    errorcode,
-                    stdout,
-                    stderr,
-                } => stdout,
-            }
-        )
+    let child_process_handler = regtest_manager.launch(true).unwrap_or_else(|e| match e {
+        zingo_cli::regtest::LaunchChildProcessError::ZcashdState {
+            errorcode,
+            stdout,
+            stderr,
+        } => {
+            panic!("{} {} {}", errorcode, stdout, stderr)
+        }
     });
-    let server_id = ZingoConfig::get_server_or_default(Some("http://127.0.0.1".to_string()));
+    let server_id =
+        ZingoConfig::get_server_or_default(Some(format!("http://127.0.0.1:{server_port}")));
     let (config, _height) = create_zingoconf_with_datadir(
         server_id,
         Some(regtest_manager.zingo_data_dir.to_string_lossy().to_string()),
@@ -132,10 +135,11 @@ pub fn coinbasebacked_spendcapable() -> (RegtestManager, ChildProcessHandler, Li
 {
     //tracing_subscriber::fmt::init();
     let coinbase_spendkey = data::SECRET_SPEND_AUTH_SAPLING.to_string();
-    let regtest_manager =
+    let (regtest_manager, server_port) =
         create_maybe_funded_regtest_manager(Some(data::SAPLING_ADDRESS_FROM_SPEND_AUTH));
     let child_process_handler = regtest_manager.launch(true).unwrap();
-    let server_id = ZingoConfig::get_server_or_default(Some("http://127.0.0.1".to_string()));
+    let server_id =
+        ZingoConfig::get_server_or_default(Some(format!("http://127.0.0.1:{server_port}")));
     let (config, _height) = create_zingoconf_with_datadir(
         server_id,
         Some(regtest_manager.zingo_data_dir.to_string_lossy().to_string()),
@@ -151,9 +155,10 @@ pub fn coinbasebacked_spendcapable() -> (RegtestManager, ChildProcessHandler, Li
 }
 
 pub fn basic_no_spendable() -> (RegtestManager, ChildProcessHandler, LightClient) {
-    let regtest_manager = create_maybe_funded_regtest_manager(None);
+    let (regtest_manager, server_port) = create_maybe_funded_regtest_manager(None);
     let child_process_handler = regtest_manager.launch(true).unwrap();
-    let server_id = ZingoConfig::get_server_or_default(Some("http://127.0.0.1".to_string()));
+    let server_id =
+        ZingoConfig::get_server_or_default(Some(format!("http://127.0.0.1:{server_port}")));
     let (config, _height) = create_zingoconf_with_datadir(
         server_id,
         Some(regtest_manager.zingo_data_dir.to_string_lossy().to_string()),

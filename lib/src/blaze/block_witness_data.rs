@@ -268,7 +268,7 @@ impl BlockAndWitnessData {
         }
 
         // If any one was false, return false
-        if results.unwrap().into_iter().find(|r| *r == false).is_some() {
+        if !results.unwrap().into_iter().all(std::convert::identity) {
             return (false, None);
         }
 
