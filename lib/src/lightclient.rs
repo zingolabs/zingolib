@@ -1732,7 +1732,6 @@ impl LightClient {
             anchors.sort_unstable_by(|(_, height_a), (_, height_b)| height_b.cmp(height_a));
             anchors.truncate(10);
         }
-        dbg!(self.wallet.orchard_anchors.read().await);
         // 2. If sync was successfull, also try to get historical prices
         // self.update_historical_prices().await;
         // zingolabs considers this to be a serious privacy/secuity leak
