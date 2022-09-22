@@ -19,7 +19,10 @@ use crate::{
 };
 use futures::{stream::FuturesUnordered, StreamExt};
 use log::info;
-use orchard::{keys::IncomingViewingKey as OrchardIvk, note_encryption::OrchardDomain};
+use orchard::{
+    keys::IncomingViewingKey as OrchardIvk, note_encryption::OrchardDomain,
+    tree::MerkleHashOrchard, Anchor,
+};
 use std::sync::Arc;
 use tokio::{
     sync::{
@@ -31,6 +34,7 @@ use tokio::{
 use zcash_note_encryption::Domain;
 use zcash_primitives::{
     consensus::{BlockHeight, Parameters},
+    merkle_tree::CommitmentTree,
     sapling::{note_encryption::SaplingDomain, SaplingIvk},
     transaction::{Transaction, TxId},
 };
@@ -173,11 +177,17 @@ impl TrialDecryptions {
         for compact_block in compact_blocks {
             let height = BlockHeight::from_u32(compact_block.height as u32);
             info!("trial decrypting block {}", height);
-            let uri = config.server.read().unwrap().clone();
-            let tree_state = GrpcConnector::get_trees(uri, compact_block.height).await?;
-            RwLock::write(&bsync_data.read().await.block_data.unverified_treestates)
-                .await
-                .push(tree_state);
+            {
+                let data = bsync_data.read().await;
+                let mut anchors = data.block_data.orchard_anchors.write().await;
+                let uri = config.server.read().unwrap().clone();
+                let tree_state = GrpcConnector::get_trees(uri, compact_block.height).await?;
+                let orchard_tree = CommitmentTree::<MerkleHashOrchard>::read(
+                    hex::decode(&tree_state.orchard_tree).unwrap().as_slice(),
+                )
+                .unwrap();
+                anchors.push((Anchor::from(orchard_tree.root()), height.into()));
+            }
 
             for (transaction_num, compact_transaction) in compact_block.vtx.iter().enumerate() {
                 if let Some(filter) = transaction_size_filter {

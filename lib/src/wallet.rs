@@ -8,6 +8,7 @@ use futures::Future;
 use log::{error, info, warn};
 use orchard::keys::SpendingKey as OrchardSpendingKey;
 use orchard::note_encryption::OrchardDomain;
+use orchard::Anchor;
 use std::{
     cmp,
     collections::HashMap,
@@ -25,7 +26,6 @@ use zcash_client_backend::{
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
 use zcash_primitives::memo::MemoBytes;
-use zcash_primitives::merkle_tree::CommitmentTree;
 use zcash_primitives::sapling::note_encryption::SaplingDomain;
 use zcash_primitives::transaction::builder::Progress;
 use zcash_primitives::{
@@ -173,6 +173,9 @@ pub struct LightWallet {
     // Heighest verified block
     pub(crate) verified_tree: Arc<RwLock<Option<TreeState>>>,
 
+    // Orchard anchors, and their heights
+    pub(crate) orchard_anchors: Arc<RwLock<Vec<(Anchor, BlockHeight)>>>,
+
     // Progress of an outgoing transaction
     send_progress: Arc<RwLock<SendProgress>>,
 
@@ -209,6 +212,7 @@ impl LightWallet {
             wallet_options: Arc::new(RwLock::new(WalletOptions::default())),
             birthday: AtomicU64::new(height),
             verified_tree: Arc::new(RwLock::new(None)),
+            orchard_anchors: Arc::new(RwLock::new(Vec::new())),
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(WalletZecPriceInfo::new())),
             transaction_context,
@@ -318,6 +322,7 @@ impl LightWallet {
             wallet_options: Arc::new(RwLock::new(wallet_options)),
             birthday: AtomicU64::new(birthday),
             verified_tree: Arc::new(RwLock::new(verified_tree)),
+            orchard_anchors: Arc::new(RwLock::new(Vec::new())),
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(price)),
             transaction_context,
@@ -756,6 +761,7 @@ impl LightWallet {
     /// and the wallet will need to be rescanned
     pub async fn clear_all(&self) {
         self.blocks.write().await.clear();
+        self.orchard_anchors.write().await.clear();
         self.transaction_context
             .transaction_metadata_set
             .write()
@@ -1489,21 +1495,36 @@ impl LightWallet {
         println!("Selected notes worth {}", u64::from(selected_value));
 
         let orchard_anchor = if let Some(note) = orchard_notes.get(0) {
-            note.witness.root()
+            orchard::Anchor::from(note.witness.root())
         } else {
-            if let Some(tree_state) = &*self.verified_tree.read().await {
-                let ref orchard_tree = tree_state.orchard_tree;
-                CommitmentTree::read(hex::decode(orchard_tree).unwrap().as_slice())
-                    .unwrap()
-                    .root()
-            } else {
-                return Err("No last known verified tree".to_string());
-            }
+            self.orchard_anchors
+                .read()
+                .await
+                .iter()
+                .find_map(|(anchor, height)| {
+                    if height
+                        == &(target_height
+                            - BlockHeight::from_u32(
+                                *self
+                                    .transaction_context
+                                    .config
+                                    .anchor_offset
+                                    .first()
+                                    .unwrap(),
+                            ))
+                    {
+                        Some(anchor)
+                    } else {
+                        None
+                    }
+                })
+                .ok_or("No Orchard anchor for target height in wallet".to_string())?
+                .clone()
         };
         let mut builder = Builder::with_orchard_anchor(
             self.transaction_context.config.chain,
             target_height,
-            orchard::Anchor::from(orchard_anchor),
+            orchard_anchor,
         );
         println!(
             "{}: Adding {} sapling notes, {} orchard notes, and {} utxos",

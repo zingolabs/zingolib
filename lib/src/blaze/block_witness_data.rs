@@ -9,7 +9,7 @@ use crate::{
     },
 };
 use log::info;
-use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
+use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard, Anchor};
 use zcash_note_encryption::Domain;
 use zingoconfig::{Network, ZingoConfig, MAX_REORG};
 
@@ -54,6 +54,9 @@ pub struct BlockAndWitnessData {
     // Heighest verified tree
     verified_tree: Option<TreeState>,
 
+    // Orchard anchors, and their heights.
+    pub(crate) orchard_anchors: Arc<RwLock<Vec<(Anchor, BlockHeight)>>>,
+
     // Link to the syncstatus where we can update progress
     sync_status: Arc<RwLock<SyncStatus>>,
 
@@ -69,6 +72,7 @@ impl BlockAndWitnessData {
             unverified_treestates: Arc::new(RwLock::new(vec![])),
             batch_size: 25_000,
             verified_tree: None,
+            orchard_anchors: Arc::new(RwLock::new(Vec::new())),
             sync_status,
             sapling_activation_height: config.sapling_activation_height(),
             orchard_activation_height: config
@@ -570,6 +574,9 @@ impl BlockAndWitnessData {
             } else {
                 let tree_state = GrpcConnector::get_trees(uri, prev_height).await?;
                 let tree = hex::decode(D::get_tree(&tree_state)).unwrap();
+                RwLock::write(&self.unverified_treestates)
+                    .await
+                    .push(tree_state);
                 CommitmentTree::read(&tree[..]).map_err(|e| format!("{}", e))?
             };
 

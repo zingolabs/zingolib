@@ -1708,22 +1708,37 @@ impl LightClient {
 
         info!("Sync finished, doing post-processing");
 
+        let blaze_sync_data = bsync_data.read().await;
         // Post sync, we have to do a bunch of stuff
         // 1. Get the last 100 blocks and store it into the wallet, needed for future re-orgs
-        let blocks = bsync_data
-            .read()
-            .await
+        let blocks = blaze_sync_data
             .block_data
             .drain_existingblocks_into_blocks_with_truncation(MAX_REORG)
             .await;
         self.wallet.set_blocks(blocks).await;
 
+        // Store the last ten orchard anchors
+        {
+            let mut anchors = self.wallet.orchard_anchors.write().await;
+            *anchors = blaze_sync_data
+                .block_data
+                .orchard_anchors
+                .read()
+                .await
+                .clone()
+                .into_iter()
+                .chain(anchors.split_off(0).into_iter())
+                .collect();
+            anchors.sort_unstable_by(|(_, height_a), (_, height_b)| height_b.cmp(height_a));
+            anchors.truncate(10);
+        }
+        dbg!(self.wallet.orchard_anchors.read().await);
         // 2. If sync was successfull, also try to get historical prices
         // self.update_historical_prices().await;
         // zingolabs considers this to be a serious privacy/secuity leak
 
         // 3. Mark the sync finished, which will clear the nullifier cache etc...
-        bsync_data.read().await.finish().await;
+        blaze_sync_data.finish().await;
 
         // 4. Remove the witnesses for spent notes more than 100 blocks old, since now there
         // is no risk of reorg
