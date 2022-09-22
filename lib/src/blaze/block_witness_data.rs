@@ -324,10 +324,26 @@ impl BlockAndWitnessData {
             sapling_tree.write(&mut sapling_buf).unwrap();
             let mut orchard_buf = vec![];
             orchard_tree.write(&mut orchard_buf).unwrap();
+            let determined_orchard_tree = hex::encode(orchard_buf);
 
             // Return if verified
-            (hex::encode(sapling_buf) == unverified_tree.sapling_tree)
-                && (hex::encode(orchard_buf) == unverified_tree.orchard_tree)
+            if (hex::encode(sapling_buf) == unverified_tree.sapling_tree)
+                && (determined_orchard_tree == unverified_tree.orchard_tree)
+            {
+                true
+            } else {
+                if determined_orchard_tree[..132] == unverified_tree.orchard_tree[..132]
+                    && &determined_orchard_tree[132..] == "00"
+                    && unverified_tree.orchard_tree[134..]
+                        .chars()
+                        .all(|character| character == '0')
+                {
+                    true
+                } else {
+                    dbg!(determined_orchard_tree, unverified_tree.orchard_tree);
+                    false
+                }
+            }
         })
     }
     // Invalidate the block (and wallet transactions associated with it) at the given block height
