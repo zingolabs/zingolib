@@ -1717,7 +1717,7 @@ impl LightClient {
             .await;
         self.wallet.set_blocks(blocks).await;
 
-        // Store the last ten orchard anchors
+        // Store the ten highest orchard anchors
         {
             let mut anchors = self.wallet.orchard_anchors.write().await;
             *anchors = blaze_sync_data
