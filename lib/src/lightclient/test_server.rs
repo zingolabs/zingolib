@@ -412,6 +412,10 @@ impl TestServerData {
         }
     }
 
+    ///  This methods expects blocks in more recent (higher to lower) to
+    ///  older order.   This is because client syncronization can know
+    ///  that recent funds are unspent if it has checked all subsequent
+    ///  notes.
     pub fn add_blocks(&mut self, cbs: Vec<CompactBlock>) {
         if cbs.is_empty() {
             panic!("No blocks");
