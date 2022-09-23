@@ -14,21 +14,6 @@ fn basic_connectivity_scenario_b() {
     let _regtest_manager = setup::basic_funded_zcashd_lwd_zingolib_connected();
 }
 #[test]
-fn two_zcashds_with_colliding_configs() {
-    // Expectations:
-    //   The children are terminated by the test run end.
-    // Setup:
-    //   Two different zcashds are configured to launch with 1 config-location
-    todo!("let _regtest_manager = setup::basic_funded_zcashd_lwd_zingolib_connected();");
-    // Execution:
-    //   Launch the two "bonking" zcashd instances
-    // Assertions:
-    //   zcashd A is terminated
-    //   zcashd B is terminated
-    //   The incorrectly configured location is still present (and not checked in)
-    //   The test-or-scenario that caused this situation has failed/panicked.
-}
-#[test]
 fn zcashd_sapling_commitment_tree() {
     let (regtest_manager, _child_process_handler, _client, _runtime) =
         setup::coinbasebacked_spendcapable();
