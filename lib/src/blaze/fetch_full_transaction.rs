@@ -356,7 +356,7 @@ impl TransactionContext {
                     self.transaction_metadata_set.write().await.add_new_spent(
                     transaction.txid(),
                     transaction_block_height,
-                    unconfirmed,
+                    true, // this was "unconfirmed" but this fn is invoked inside `if unconfirmed` TODO: add regression test to protect against movement
                     block_time,
                     <FnGenBundle<D> as zingo_traits::Bundle<D, Network>>::Spend::wallet_nullifier(
                         nf,
