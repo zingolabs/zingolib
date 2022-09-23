@@ -442,14 +442,11 @@ impl TestServerData {
         }
 
         for blk in cbs.into_iter().rev() {
-            let mut sapling_tree = self
-                .tree_states
-                .last()
+            let last_tree_states = self.tree_states.last();
+            let mut sapling_tree = last_tree_states
                 .map(|trees| trees.sapling_tree.clone())
                 .unwrap_or(CommitmentTree::empty());
-            let mut orchard_tree = self
-                .tree_states
-                .last()
+            let mut orchard_tree = last_tree_states
                 .map(|trees| trees.orchard_tree.clone())
                 .unwrap_or(CommitmentTree::empty());
             for transaction in &blk.vtx {
