@@ -590,9 +590,7 @@ impl BlockAndWitnessData {
             } else {
                 let tree_state = GrpcConnector::get_trees(uri, prev_height).await?;
                 let tree = hex::decode(D::get_tree(&tree_state)).unwrap();
-                RwLock::write(&self.unverified_treestates)
-                    .await
-                    .push(tree_state);
+                self.unverified_treestates.write().await.push(tree_state);
                 CommitmentTree::read(&tree[..]).map_err(|e| format!("{}", e))?
             };
 
