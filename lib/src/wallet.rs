@@ -1281,7 +1281,7 @@ impl LightWallet {
         (vec![], vec![], vec![], Amount::zero())
     }
 
-    async fn get_all_domain_specific_notes<D>(&self) -> Vec<Vec<D::SpendableNote>>
+    async fn get_all_domain_specific_notes<D>(&self) -> Vec<Vec<D::SpendableNoteAT>>
     where
         D: DomainWalletExt<zingoconfig::Network>,
         <D as Domain>::Recipient: traits::Recipient,
@@ -1320,7 +1320,7 @@ impl LightWallet {
                             )
                         }
                     })
-                    .collect::<Vec<D::SpendableNote>>();
+                    .collect::<Vec<D::SpendableNoteAT>>();
                 candidate_notes.sort_by_key(|spendable_note| {
                     D::WalletNote::value_from_note(&spendable_note.note())
                 });
@@ -1330,9 +1330,9 @@ impl LightWallet {
     }
 
     fn add_notes_to_total<D: DomainWalletExt<zingoconfig::Network>>(
-        candidates: Vec<Vec<D::SpendableNote>>,
+        candidates: Vec<Vec<D::SpendableNoteAT>>,
         target_amount: Amount,
-    ) -> (Vec<D::SpendableNote>, Amount)
+    ) -> (Vec<D::SpendableNoteAT>, Amount)
     where
         D::Note: PartialEq + Clone,
         D::Recipient: traits::Recipient,

@@ -829,7 +829,7 @@ where
         Diversifier = <<Self as Domain>::Recipient as Recipient>::Diversifier,
         Nullifier = <<<Self as DomainWalletExt<P>>::Bundle as Bundle<Self, P>>::Spend as Spend>::Nullifier,
     >;
-    type SpendableNote: SpendableNote<P, Self>;
+    type SpendableNoteAT: SpendableNote<P, Self>;
     type Key: WalletKey<
             Ovk = <Self as Domain>::OutgoingViewingKey,
             Ivk = <Self as Domain>::IncomingViewingKey,
@@ -853,7 +853,7 @@ impl<P: Parameters> DomainWalletExt<P> for SaplingDomain<P> {
 
     type WalletNote = SaplingNoteAndMetadata;
 
-    type SpendableNote = SpendableSaplingNote;
+    type SpendableNoteAT = SpendableSaplingNote;
 
     type Key = SaplingKey;
 
@@ -877,7 +877,7 @@ impl<P: Parameters> DomainWalletExt<P> for OrchardDomain {
 
     type WalletNote = OrchardNoteAndMetadata;
 
-    type SpendableNote = SpendableOrchardNote;
+    type SpendableNoteAT = SpendableOrchardNote;
 
     type Key = OrchardKey;
 
@@ -929,7 +929,7 @@ impl Diversifiable for OrchardFullViewingKey {
 pub trait SpendableNote<P, D>
 where
     P: Parameters,
-    D: DomainWalletExt<P, SpendableNote = Self>,
+    D: DomainWalletExt<P, SpendableNoteAT = Self>,
     <D as Domain>::Recipient: Recipient,
     <D as Domain>::Note: PartialEq + Clone,
     Self: Sized,

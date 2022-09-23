@@ -189,7 +189,8 @@ impl BlockAndWitnessData {
         // Sort and de-dup the verification list
         // split_off(0) is a hack to assign ownership of the entire vector to
         // the ident on the left
-        let mut unverified_tree_states = self.unverified_treestates.write().await.split_off(0);
+        let mut unverified_tree_states: Vec<TreeState> =
+            self.unverified_treestates.write().await.drain(..).collect();
         unverified_tree_states.sort_unstable_by_key(|treestate| treestate.height);
         unverified_tree_states.dedup_by_key(|treestate| treestate.height);
 
