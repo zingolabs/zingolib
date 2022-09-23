@@ -800,7 +800,7 @@ async fn sapling_incoming_viewkey(scenario: NBlockFCBLScenario) {
         value
     );
 
-    log::info!("{}", lightclient.do_balance().await);
+    log::debug!("{}", lightclient.do_balance().await);
     assert!(!lightclient
         .wallet
         .keys()
