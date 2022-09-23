@@ -1,6 +1,6 @@
 use crate::apply_scenario;
 use crate::blaze::block_witness_data::{
-    update_trees_with_compact_transaction, BlockCommitmentTrees,
+    update_trees_with_compact_transaction, CommitmentTreesForBlock,
 };
 use crate::blaze::test_utils::FakeCompactBlockList;
 use crate::compact_formats::compact_tx_streamer_server::CompactTxStreamer;
@@ -383,7 +383,7 @@ pub struct TestServerData {
     pub sent_transactions: Vec<RawTransaction>,
     pub config: ZingoConfig,
     pub zec_price: f64,
-    pub tree_states: Vec<BlockCommitmentTrees>,
+    pub tree_states: Vec<CommitmentTreesForBlock>,
 }
 
 impl TestServerData {
@@ -456,7 +456,7 @@ impl TestServerData {
                     transaction,
                 )
             }
-            let tree_states = BlockCommitmentTrees {
+            let tree_states = CommitmentTreesForBlock {
                 block_height: blk.height,
                 block_hash: BlockHash::from_slice(&blk.hash).to_string(),
                 sapling_tree,
@@ -687,7 +687,7 @@ impl CompactTxStreamer for TestGRPCService {
             .tree_states
             .iter()
             .find(|trees| trees.block_height == block.height)
-            .map(BlockCommitmentTrees::to_tree_state)
+            .map(CommitmentTreesForBlock::to_tree_state)
         {
             return Ok(Response::new(tree_state));
         }
@@ -709,7 +709,7 @@ impl CompactTxStreamer for TestGRPCService {
             .iter()
             .find(|trees| trees.block_height == start_block)
             .map(Clone::clone)
-            .unwrap_or(BlockCommitmentTrees::empty());
+            .unwrap_or(CommitmentTreesForBlock::empty());
 
         let mut trees = self
             .data

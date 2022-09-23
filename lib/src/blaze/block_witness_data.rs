@@ -799,7 +799,7 @@ impl BlockAndWitnessData {
 /// The sapling tree and orchard tree for a given block height, with the block hash.
 /// The hash is likely used for reorgs.
 #[derive(Debug, Clone)]
-pub struct BlockCommitmentTrees {
+pub struct CommitmentTreesForBlock {
     pub block_height: u64,
     pub block_hash: String,
     pub sapling_tree: CommitmentTree<SaplingNode>,
@@ -807,7 +807,7 @@ pub struct BlockCommitmentTrees {
 }
 
 // The following four allow(unused) functions are currently only called in test code
-impl BlockCommitmentTrees {
+impl CommitmentTreesForBlock {
     #[allow(unused)]
     pub fn to_tree_state(&self) -> TreeState {
         TreeState {
