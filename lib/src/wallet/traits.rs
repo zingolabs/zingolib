@@ -964,8 +964,8 @@ where
             None
         }
     }
-    ///This checks needed are shared between domains, and thus are performed in the
-    ///default impl of `from`. This function's only caller should be `Self::from`
+    /// The checks needed are shared between domains, and thus are performed in the
+    /// default impl of `from`. This function's only caller should be `Self::from`
     fn from_parts_unchecked(
         transaction_id: TxId,
         nullifier: <D::WalletNote as NoteAndMetadata>::Nullifier,
