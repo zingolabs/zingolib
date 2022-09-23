@@ -50,7 +50,7 @@ pub fn trees_from_cblocks(
 ) {
     let mut sapling_trees = Vec::new();
     let mut orchard_trees = Vec::new();
-    for block in compactblock_list {
+    for fake_compact_block in compactblock_list {
         let mut sapling_tree = sapling_trees
             .last()
             .map(Clone::clone)
@@ -59,7 +59,7 @@ pub fn trees_from_cblocks(
             .last()
             .map(Clone::clone)
             .unwrap_or_else(|| CommitmentTree::empty());
-        for compact_transaction in &block.block.vtx {
+        for compact_transaction in &fake_compact_block.block.vtx {
             update_trees_with_compact_transaction(
                 &mut sapling_tree,
                 &mut orchard_tree,

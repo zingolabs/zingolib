@@ -707,8 +707,11 @@ async fn sapling_to_sapling_scan_together() {
 
     // 3. Calculate witness so we can get the nullifier without it getting mined
     let trees = crate::blaze::test_utils::trees_from_cblocks(&fake_compactblock_list.blocks);
-    let witness = IncrementalWitness::from_tree(trees.0.last().unwrap());
-    let nf = note.nf(&mockuser_extfvk.fvk.vk.nk, witness.position() as u64);
+    let witness_from_last_sapling_tree = IncrementalWitness::from_tree(trees.0.last().unwrap());
+    let nf = note.nf(
+        &mockuser_extfvk.fvk.vk.nk,
+        witness_from_last_sapling_tree.position() as u64,
+    );
 
     //  Create recipient to receive funds from Mock User
     let pa = if let Some(RecipientAddress::Shielded(pa)) =
