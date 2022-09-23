@@ -310,7 +310,7 @@ impl TrialDecryptions {
                     let keys = keys.read().await;
                     let wallet_key = &D::Key::get_keys(&*keys)[ivk_num];
                     let fvk = wallet_key.fvk().unwrap();
-                    let have_spending_key = wallet_key.sk().is_some();
+                    let have_spending_key = wallet_key.spend_key().is_some();
                     let uri = bsync_data.read().await.uri().clone();
 
                     // Get the witness for the note

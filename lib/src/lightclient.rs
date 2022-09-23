@@ -1786,8 +1786,8 @@ impl LightClient {
                     readlocked_keys
                         .get_all_orchard_keys_of_type::<OrchardSpendingKey>()
                         .iter()
-                        .map(|orchard_sk| {
-                            OrchardFullViewingKey::from(orchard_sk)
+                        .map(|orchard_spend_key| {
+                            OrchardFullViewingKey::from(orchard_spend_key)
                                 .address_at(0u32, orchard::keys::Scope::External)
                         })
                         .next(),

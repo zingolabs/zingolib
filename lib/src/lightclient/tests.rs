@@ -690,8 +690,10 @@ async fn sapling_to_sapling_scan_together() {
         let lock = keys_readlock.read().await;
         let mockuser_extfvk = lock.get_all_sapling_extfvks()[0].clone();
         (
-            lock.get_sk_for_fvk::<SaplingDomain<Network>>(&lock.get_all_sapling_extfvks()[0])
-                .unwrap(),
+            lock.get_spend_key_for_fvk::<SaplingDomain<Network>>(
+                &lock.get_all_sapling_extfvks()[0],
+            )
+            .unwrap(),
             mockuser_extfvk,
         )
     };

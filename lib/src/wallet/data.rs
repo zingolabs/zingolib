@@ -731,7 +731,7 @@ pub struct SpendableOrchardNote {
     pub diversifier: OrchardDiversifier,
     pub note: OrchardNote,
     pub witness: IncrementalWitness<MerkleHashOrchard>,
-    pub sk: OrchardSpendingKey,
+    pub spend_key: OrchardSpendingKey,
 }
 
 // Struct that tracks the latest and historical price of ZEC in the wallet

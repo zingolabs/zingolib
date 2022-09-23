@@ -627,19 +627,19 @@ impl LightWallet {
 
     async fn add_imported_spend_key<
         WalletKey: self::traits::WalletKey + Clone,
-        ViewKey: for<'a> From<&'a WalletKey::Sk>,
+        ViewKey: for<'a> From<&'a WalletKey::SpendKey>,
         DecodeError: std::fmt::Display,
     >(
         &self,
         key: &str,
         hrp: &str,
         birthday: u64,
-        decoder: impl Fn(&str, &str) -> Result<Option<WalletKey::Sk>, DecodeError>,
+        decoder: impl Fn(&str, &str) -> Result<Option<WalletKey::SpendKey>, DecodeError>,
         key_finder: impl Fn(&Keys) -> &Vec<WalletKey>,
         key_finder_mut: impl Fn(&mut Keys) -> &mut Vec<WalletKey>,
-        key_matcher: impl Fn(&WalletKey, &WalletKey::Sk) -> bool,
+        key_matcher: impl Fn(&WalletKey, &WalletKey::SpendKey) -> bool,
         find_view_key: impl Fn(&WalletKey, &ViewKey) -> bool,
-        key_importer: impl Fn(WalletKey::Sk) -> WalletKey,
+        key_importer: impl Fn(WalletKey::SpendKey) -> WalletKey,
         encode_address: impl Fn(WalletKey::Address) -> String,
     ) -> String {
         let address_getter = |decoded_key| {
@@ -703,13 +703,13 @@ impl LightWallet {
     }
     async fn update_view_key<
         WalletKey: self::traits::WalletKey + Clone,
-        ViewKey: for<'a> From<&'a WalletKey::Sk>,
+        ViewKey: for<'a> From<&'a WalletKey::SpendKey>,
     >(
         &self,
-        decoded_key: WalletKey::Sk,
+        decoded_key: WalletKey::SpendKey,
         key_finder_mut: impl Fn(&mut Keys) -> &mut Vec<WalletKey>,
         find_view_key: impl Fn(&WalletKey, &ViewKey) -> bool,
-        key_importer: impl Fn(WalletKey::Sk) -> WalletKey,
+        key_importer: impl Fn(WalletKey::SpendKey) -> WalletKey,
     ) -> WalletKey::Address {
         let fvk = ViewKey::from(&decoded_key);
         let mut write_keys = self.transaction_context.keys.write().await;
@@ -1311,7 +1311,7 @@ impl LightWallet {
                             None
                         } else {
                             // Get the spending key for the selected fvk, if we have it
-                            let extsk = keys.get_sk_for_fvk::<D>(&note.fvk());
+                            let extsk = keys.get_spend_key_for_fvk::<D>(&note.fvk());
                             SpendableNote::from(
                                 transaction_id,
                                 note,
@@ -1579,7 +1579,7 @@ impl LightWallet {
             println!("Adding orchard spend");
             let path = selected.witness.path().unwrap();
             if let Err(e) = builder.add_orchard_spend(
-                selected.sk.clone(),
+                selected.spend_key.clone(),
                 selected.note.clone(),
                 orchard::tree::MerklePath::from((
                     incrementalmerkletree::Position::from(path.position as usize),

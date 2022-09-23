@@ -549,7 +549,7 @@ impl Keys {
             .is_some()
     }
 
-    pub fn get_sk_for_fvk<D>(&self, fvk: &D::Fvk) -> Option<<D::Key as WalletKey>::Sk>
+    pub fn get_spend_key_for_fvk<D>(&self, fvk: &D::Fvk) -> Option<<D::Key as WalletKey>::SpendKey>
     where
         D: DomainWalletExt<zingoconfig::Network>,
         <D as Domain>::Recipient: super::traits::Recipient,
@@ -558,7 +558,7 @@ impl Keys {
         D::Key::get_keys(self)
             .iter()
             .find(|wallet_key| wallet_key.fvk().as_ref() == Some(fvk))
-            .map(|wallet_key| wallet_key.sk())
+            .map(|wallet_key| wallet_key.spend_key())
             .flatten()
     }
 

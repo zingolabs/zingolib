@@ -713,23 +713,23 @@ pub trait WalletKey
 where
     Self: Sized,
 {
-    type Sk: Clone;
+    type SpendKey: Clone;
     type Fvk: PartialEq;
     type Ivk;
     type Ovk;
     type Address: PartialEq;
-    fn sk(&self) -> Option<Self::Sk>;
+    fn spend_key(&self) -> Option<Self::SpendKey>;
     fn fvk(&self) -> Option<Self::Fvk>;
     fn ivk(&self) -> Option<Self::Ivk>;
     fn ovk(&self) -> Option<Self::Ovk>;
     fn address(&self) -> Self::Address;
     fn addresses_from_keys(keys: &Keys) -> Vec<String>;
     fn get_keys(keys: &Keys) -> &Vec<Self>;
-    fn set_spend_key_for_view_key(&mut self, key: Self::Sk);
+    fn set_spend_key_for_view_key(&mut self, key: Self::SpendKey);
 }
 
 impl WalletKey for SaplingKey {
-    type Sk = SaplingExtendedSpendingKey;
+    type SpendKey = SaplingExtendedSpendingKey;
 
     type Fvk = SaplingExtendedFullViewingKey;
 
@@ -739,7 +739,7 @@ impl WalletKey for SaplingKey {
 
     type Address = SaplingAddress;
 
-    fn sk(&self) -> Option<Self::Sk> {
+    fn spend_key(&self) -> Option<Self::SpendKey> {
         self.extsk.clone()
     }
 
@@ -765,14 +765,14 @@ impl WalletKey for SaplingKey {
         keys.zkeys()
     }
 
-    fn set_spend_key_for_view_key(&mut self, key: Self::Sk) {
+    fn set_spend_key_for_view_key(&mut self, key: Self::SpendKey) {
         self.extsk = Some(key);
         self.keytype = super::keys::sapling::WalletZKeyType::ImportedSpendingKey;
     }
 }
 
 impl WalletKey for OrchardKey {
-    type Sk = OrchardSpendingKey;
+    type SpendKey = OrchardSpendingKey;
 
     type Fvk = OrchardFullViewingKey;
 
@@ -782,7 +782,7 @@ impl WalletKey for OrchardKey {
 
     type Address = zcash_client_backend::address::UnifiedAddress;
 
-    fn sk(&self) -> Option<Self::Sk> {
+    fn spend_key(&self) -> Option<Self::SpendKey> {
         (&self.key).try_into().ok()
     }
     fn fvk(&self) -> Option<Self::Fvk> {
@@ -808,7 +808,7 @@ impl WalletKey for OrchardKey {
         keys.okeys()
     }
 
-    fn set_spend_key_for_view_key(&mut self, key: Self::Sk) {
+    fn set_spend_key_for_view_key(&mut self, key: Self::SpendKey) {
         self.key = super::keys::orchard::WalletOKeyInner::ImportedSpendingKey(key)
     }
 }
@@ -938,7 +938,7 @@ where
         transaction_id: TxId,
         note_and_metadata: &D::WalletNote,
         anchor_offset: usize,
-        spend_key: &Option<<D::Key as WalletKey>::Sk>,
+        spend_key: &Option<<D::Key as WalletKey>::SpendKey>,
     ) -> Option<Self> {
         // Include only notes that haven't been spent, or haven't been included in an unconfirmed spend yet.
         if note_and_metadata.spent().is_none()
@@ -972,14 +972,14 @@ where
         diversifier: <D::WalletNote as NoteAndMetadata>::Diversifier,
         note: D::Note,
         witness: IncrementalWitness<<D::WalletNote as NoteAndMetadata>::Node>,
-        sk: <D::Key as WalletKey>::Sk,
+        sk: <D::Key as WalletKey>::SpendKey,
     ) -> Self;
     fn transaction_id(&self) -> TxId;
     fn nullifier(&self) -> <D::WalletNote as NoteAndMetadata>::Nullifier;
     fn diversifier(&self) -> <D::WalletNote as NoteAndMetadata>::Diversifier;
     fn note(&self) -> &D::Note;
     fn witness(&self) -> &IncrementalWitness<<D::WalletNote as NoteAndMetadata>::Node>;
-    fn sk(&self) -> &<D::Key as WalletKey>::Sk;
+    fn spend_key(&self) -> &<D::Key as WalletKey>::SpendKey;
 }
 
 impl<P: Parameters> SpendableNote<P, SaplingDomain<P>> for SpendableSaplingNote {
@@ -1021,7 +1021,7 @@ impl<P: Parameters> SpendableNote<P, SaplingDomain<P>> for SpendableSaplingNote 
         &self.witness
     }
 
-    fn sk(&self) -> &SaplingExtendedSpendingKey {
+    fn spend_key(&self) -> &SaplingExtendedSpendingKey {
         &self.extsk
     }
 }
@@ -1041,7 +1041,7 @@ impl<P: Parameters> SpendableNote<P, OrchardDomain> for SpendableOrchardNote {
             diversifier,
             note,
             witness,
-            sk,
+            spend_key: sk,
         }
     }
     fn transaction_id(&self) -> TxId {
@@ -1064,8 +1064,8 @@ impl<P: Parameters> SpendableNote<P, OrchardDomain> for SpendableOrchardNote {
         &self.witness
     }
 
-    fn sk(&self) -> &OrchardSpendingKey {
-        &self.sk
+    fn spend_key(&self) -> &OrchardSpendingKey {
+        &self.spend_key
     }
 }
 
