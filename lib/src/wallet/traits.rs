@@ -936,26 +936,28 @@ where
 {
     fn from(
         transaction_id: TxId,
-        nd: &D::WalletNote,
+        note_and_metadata: &D::WalletNote,
         anchor_offset: usize,
-        sk: &Option<<D::Key as WalletKey>::Sk>,
+        spend_key: &Option<<D::Key as WalletKey>::Sk>,
     ) -> Option<Self> {
         // Include only notes that haven't been spent, or haven't been included in an unconfirmed spend yet.
-        if nd.spent().is_none()
-            && nd.unconfirmed_spent().is_none()
-            && sk.is_some()
-            && nd.witnesses().len() >= (anchor_offset + 1)
+        if note_and_metadata.spent().is_none()
+            && note_and_metadata.unconfirmed_spent().is_none()
+            && spend_key.is_some()
+            && note_and_metadata.witnesses().len() >= (anchor_offset + 1)
         {
-            let witness = nd.witnesses().get(nd.witnesses().len() - anchor_offset - 1);
+            let witness = note_and_metadata
+                .witnesses()
+                .get(note_and_metadata.witnesses().len() - anchor_offset - 1);
 
             witness.map(|w| {
                 Self::from_parts_unchecked(
                     transaction_id,
-                    nd.nullifier(),
-                    *nd.diversifier(),
-                    nd.note().clone(),
+                    note_and_metadata.nullifier(),
+                    *note_and_metadata.diversifier(),
+                    note_and_metadata.note().clone(),
                     w.clone(),
-                    sk.clone().unwrap(),
+                    spend_key.clone().unwrap(),
                 )
             })
         } else {
