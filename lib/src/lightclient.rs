@@ -1323,6 +1323,7 @@ impl LightClient {
 
         info!("Mempool monitoring starting");
 
+        let uri = lc.config.get_server_uri();
         // Start monitoring the mempool in a new thread
         let h = std::thread::spawn(move || {
             // Start a new async runtime, which is fine because we are in a new thread.
@@ -1372,7 +1373,7 @@ impl LightClient {
                     loop {
                         //info!("Monitoring mempool");
                         let r = GrpcConnector::monitor_mempool(
-                            lc.config.get_server_uri(),
+                            uri.clone(),
                             mempool_transmitter.clone(),
                         )
                         .await;
