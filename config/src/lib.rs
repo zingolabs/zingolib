@@ -35,6 +35,26 @@ pub const GAP_RULE_UNUSED_ADDRESSES: usize = if cfg!(any(target_os = "ios", targ
     5
 };
 
+pub fn construct_server_uri(server: Option<String>) -> http::Uri {
+    match server {
+        Some(s) => {
+            let mut s = if s.starts_with("http") {
+                s
+            } else {
+                "http://".to_string() + &s
+            };
+            let uri: http::Uri = s.parse().unwrap();
+            if uri.port().is_none() {
+                s = s + ":9067";
+            }
+            s
+        }
+        None => DEFAULT_SERVER.to_string(),
+    }
+    .parse()
+    .unwrap()
+}
+
 #[derive(Clone, Debug)]
 pub struct ZingoConfig {
     pub server: Arc<RwLock<http::Uri>>,
@@ -213,26 +233,6 @@ impl ZingoConfig {
         //println!("LogFile:\n{}", log_path.to_str().unwrap());
 
         log_path.into_boxed_path()
-    }
-
-    pub fn get_server_or_default(server: Option<String>) -> http::Uri {
-        match server {
-            Some(s) => {
-                let mut s = if s.starts_with("http") {
-                    s
-                } else {
-                    "http://".to_string() + &s
-                };
-                let uri: http::Uri = s.parse().unwrap();
-                if uri.port().is_none() {
-                    s = s + ":9067";
-                }
-                s
-            }
-            None => DEFAULT_SERVER.to_string(),
-        }
-        .parse()
-        .unwrap()
     }
 
     pub fn get_coin_type(&self) -> u32 {

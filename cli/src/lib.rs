@@ -340,7 +340,7 @@ to scan from the start of the blockchain."
         } else {
             None
         };
-        let server = ZingoConfig::get_server_or_default(maybe_server);
+        let server = zingoconfig::construct_server_uri(maybe_server);
 
         // Test to make sure the server has all of scheme, host and port
         if server.scheme_str().is_none() || server.host().is_none() || server.port().is_none() {

@@ -3,7 +3,6 @@ use std::path::PathBuf;
 
 use tokio::runtime::Runtime;
 use zingo_cli::regtest::{ChildProcessHandler, RegtestManager};
-use zingoconfig::ZingoConfig;
 use zingolib::{create_zingoconf_with_datadir, lightclient::LightClient};
 
 ///  Test setup involves common configurations files.  Contents and locations
@@ -113,7 +112,7 @@ pub fn basic_funded_zcashd_lwd_zingolib_connected(
         }
     });
     let server_id =
-        ZingoConfig::get_server_or_default(Some(format!("http://127.0.0.1:{server_port}")));
+        zingoconfig::construct_server_uri(Some(format!("http://127.0.0.1:{server_port}")));
     let (config, _height) = create_zingoconf_with_datadir(
         server_id,
         Some(regtest_manager.zingo_data_dir.to_string_lossy().to_string()),
@@ -139,7 +138,7 @@ pub fn coinbasebacked_spendcapable() -> (RegtestManager, ChildProcessHandler, Li
         create_maybe_funded_regtest_manager(Some(data::SAPLING_ADDRESS_FROM_SPEND_AUTH));
     let child_process_handler = regtest_manager.launch(true).unwrap();
     let server_id =
-        ZingoConfig::get_server_or_default(Some(format!("http://127.0.0.1:{server_port}")));
+        zingoconfig::construct_server_uri(Some(format!("http://127.0.0.1:{server_port}")));
     let (config, _height) = create_zingoconf_with_datadir(
         server_id,
         Some(regtest_manager.zingo_data_dir.to_string_lossy().to_string()),
@@ -158,7 +157,7 @@ pub fn basic_no_spendable() -> (RegtestManager, ChildProcessHandler, LightClient
     let (regtest_manager, server_port) = create_maybe_funded_regtest_manager(None);
     let child_process_handler = regtest_manager.launch(true).unwrap();
     let server_id =
-        ZingoConfig::get_server_or_default(Some(format!("http://127.0.0.1:{server_port}")));
+        zingoconfig::construct_server_uri(Some(format!("http://127.0.0.1:{server_port}")));
     let (config, _height) = create_zingoconf_with_datadir(
         server_id,
         Some(regtest_manager.zingo_data_dir.to_string_lossy().to_string()),

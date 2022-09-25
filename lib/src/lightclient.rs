@@ -1448,8 +1448,7 @@ impl LightClient {
         sync_result
     }
 
-    /// Start syncing in batches with the max size, so we don't consume memory more than
-    // wha twe can handle.
+    /// Start syncing in batches with the max size, to manage memory consumption.
     async fn start_sync(&self) -> Result<JsonValue, String> {
         // We can only do one sync at a time because we sync blocks in serial order
         // If we allow multiple syncs, they'll all get jumbled up.
