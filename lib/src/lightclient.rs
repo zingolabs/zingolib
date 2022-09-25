@@ -109,7 +109,7 @@ async fn get_recent_median_price_from_gemini() -> Result<f64, reqwest::Error> {
 
 impl LightClient {
     /// Method to create a test-only version of the LightClient
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub async fn test_new(
         config: &ZingoConfig,
         seed_phrase: Option<String>,
