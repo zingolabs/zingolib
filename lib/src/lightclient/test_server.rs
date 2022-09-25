@@ -84,7 +84,7 @@ pub async fn create_test_server(
     let addr: std::net::SocketAddr = server_port.parse().unwrap();
 
     let mut config = ZingoConfig::create_unconnected(Network::FakeMainnet, None);
-    *config.server.write().unwrap() = uri.replace("127.0.0.1", "localhost").parse().unwrap();
+    *config.server_uri.write().unwrap() = uri.replace("127.0.0.1", "localhost").parse().unwrap();
 
     let (service, data) = TestGRPCService::new(config.clone());
 
@@ -297,7 +297,7 @@ async fn test_direct_grpc_and_lightclient_blockchain_height_agreement() {
         let (data, config, ready_receiver, stop_transmitter, test_server_handle) =
             create_test_server(https).await;
 
-        let uri = config.server.clone();
+        let uri = config.server_uri.clone();
         let mut client = crate::grpc_connector::GrpcConnector::new(uri.read().unwrap().clone())
             .get_client()
             .await

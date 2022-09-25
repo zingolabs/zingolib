@@ -133,12 +133,12 @@ impl LightClient {
         l.set_wallet_initial_state(height).await;
 
         info!("Created new wallet!");
-        info!("Created LightClient to {}", &config.server.read().unwrap());
+        info!("Created LightClient to {}", &config.get_server_uri());
         Ok(l)
     }
 
     pub fn set_server(&self, server: http::Uri) {
-        *self.config.server.write().unwrap() = server
+        *self.config.server_uri.write().unwrap() = server
     }
 
     fn write_file_if_not_exists(dir: &Box<Path>, name: &str, bytes: &[u8]) -> io::Result<()> {
@@ -275,7 +275,7 @@ impl LightClient {
             "Getting sapling tree from LightwalletD at height {}",
             height
         );
-        match GrpcConnector::get_trees(self.config.server.read().unwrap().clone(), height).await {
+        match GrpcConnector::get_trees(self.config.get_server_uri(), height).await {
             Ok(tree_state) => {
                 let hash = tree_state.hash.clone();
                 let tree = tree_state.sapling_tree.clone();
@@ -323,7 +323,7 @@ impl LightClient {
             l.set_wallet_initial_state(latest_block).await;
 
             info!("Created new wallet with a new seed!");
-            info!("Created LightClient to {}", &config.server.read().unwrap());
+            info!("Created LightClient to {}", &config.get_server_uri());
 
             // Save
             l.do_save()
@@ -408,7 +408,7 @@ impl LightClient {
             })
         };
 
-        info!("Created LightClient to {}", &config.server.read().unwrap());
+        info!("Created LightClient to {}", &config.get_server_uri());
 
         lr
     }
@@ -429,7 +429,7 @@ impl LightClient {
                 "Read wallet with birthday {}",
                 lc.wallet.get_birthday().await
             );
-            info!("Created LightClient to {}", &config.server.read().unwrap());
+            info!("Created LightClient to {}", &config.get_server_uri());
 
             Ok(lc)
         });
@@ -467,7 +467,7 @@ impl LightClient {
                 "Read wallet with birthday {}",
                 lc.wallet.get_birthday().await
             );
-            info!("Created LightClient to {}", &config.server.read().unwrap());
+            info!("Created LightClient to {}", &config.get_server_uri());
 
             Ok(lc)
         });
@@ -707,7 +707,7 @@ impl LightClient {
     }
 
     pub fn get_server_uri(&self) -> http::Uri {
-        self.config.server.read().unwrap().clone()
+        self.config.get_server_uri()
     }
 
     pub async fn do_zec_price(&self) -> String {
@@ -1319,7 +1319,6 @@ impl LightClient {
         }
 
         let config = lc.config.clone();
-        let uri = config.server.clone();
         let lci = lc.clone();
 
         info!("Mempool monitoring starting");
@@ -1369,12 +1368,11 @@ impl LightClient {
                     }
                 });
 
-                let uri = uri.read().unwrap().clone();
                 let h2 = tokio::spawn(async move {
                     loop {
                         //info!("Monitoring mempool");
                         let r = GrpcConnector::monitor_mempool(
-                            uri.clone(),
+                            lc.config.get_server_uri(),
                             mempool_transmitter.clone(),
                         )
                         .await;
@@ -1457,8 +1455,7 @@ impl LightClient {
         // The top of the wallet
         let last_scanned_height = self.wallet.last_scanned_height().await;
 
-        let uri = self.config.server.read().unwrap().clone();
-        let latest_blockid = GrpcConnector::get_latest_block(uri).await?;
+        let latest_blockid = GrpcConnector::get_latest_block(self.config.get_server_uri()).await?;
         if latest_blockid.height < last_scanned_height {
             let w = format!(
                 "Server's latest block({}) is behind ours({})",
@@ -1567,7 +1564,7 @@ impl LightClient {
         //self.update_current_price().await;
 
         // Sapling Tree GRPC Fetcher
-        let grpc_connector = GrpcConnector::new(self.config.server.read().unwrap().clone());
+        let grpc_connector = GrpcConnector::new(self.config.get_server_uri());
 
         // A signal to detect reorgs, and if so, ask the block_fetcher to fetch new blocks.
         let (reorg_transmitter, reorg_receiver) = unbounded_channel();

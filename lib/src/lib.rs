@@ -44,7 +44,7 @@ pub fn create_zingoconf_with_datadir(
 
         // Create a Light Client Config
         let config = ZingoConfig {
-            server: Arc::new(RwLock::new(server)),
+            server_uri: Arc::new(RwLock::new(server)),
             chain: match info.chain_name.as_str() {
                 "main" => Network::Mainnet,
                 "test" => Network::Testnet,

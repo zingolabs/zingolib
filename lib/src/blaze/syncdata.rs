@@ -22,7 +22,7 @@ impl BlazeSyncData {
 
         Self {
             sync_status: sync_status.clone(),
-            uri: config.server.read().unwrap().clone(),
+            uri: config.get_server_uri(),
             block_data: BlockAndWitnessData::new(config, sync_status),
             wallet_options: WalletOptions::default(),
         }

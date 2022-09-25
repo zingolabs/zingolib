@@ -226,7 +226,7 @@ pub fn command_loop(
 pub fn attempt_recover_seed(_password: Option<String>) {
     // Create a Light Client Config in an attempt to recover the file.
     ZingoConfig {
-        server: Arc::new(RwLock::new("0.0.0.0:0".parse().unwrap())),
+        server_uri: Arc::new(RwLock::new("0.0.0.0:0".parse().unwrap())),
         chain: zingoconfig::Network::Mainnet,
         monitor_mempool: false,
         anchor_offset: [0u32; 5],
@@ -401,10 +401,7 @@ to scan from the start of the blockchain."
         info!("Starting Zingo-CLI");
         info!("Light Client config {:?}", config);
 
-        println!(
-            "Lightclient connecting to {}",
-            config.server.read().unwrap()
-        );
+        println!("Lightclient connecting to {}", config.get_server_uri());
 
         // At startup, run a sync.
         if self.sync {

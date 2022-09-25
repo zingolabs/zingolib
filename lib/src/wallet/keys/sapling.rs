@@ -332,7 +332,7 @@ pub mod tests {
 
     fn get_config() -> ZingoConfig {
         ZingoConfig {
-            server: Arc::new(RwLock::new("0.0.0.0:0".parse().unwrap())),
+            server_uri: Arc::new(RwLock::new("0.0.0.0:0".parse().unwrap())),
             chain: zingoconfig::Network::FakeMainnet,
             monitor_mempool: false,
             anchor_offset: [0u32; 5],

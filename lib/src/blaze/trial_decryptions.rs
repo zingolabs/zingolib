@@ -180,7 +180,7 @@ impl TrialDecryptions {
             {
                 let data = bsync_data.read().await;
                 let mut anchors = data.block_data.orchard_anchors.write().await;
-                let uri = config.server.read().unwrap().clone();
+                let uri = config.get_server_uri();
                 let tree_state = GrpcConnector::get_trees(uri, compact_block.height).await?;
                 let orchard_tree = CommitmentTree::<MerkleHashOrchard>::read(
                     hex::decode(&tree_state.orchard_tree).unwrap().as_slice(),

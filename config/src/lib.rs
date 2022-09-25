@@ -57,7 +57,7 @@ pub fn construct_server_uri(server: Option<String>) -> http::Uri {
 
 #[derive(Clone, Debug)]
 pub struct ZingoConfig {
-    pub server: Arc<RwLock<http::Uri>>,
+    pub server_uri: Arc<RwLock<http::Uri>>,
     pub chain: Network,
     pub anchor_offset: [u32; 5],
     pub monitor_mempool: bool,
@@ -68,7 +68,7 @@ impl ZingoConfig {
     // Create an unconnected (to any server) config to test for local wallet etc...
     pub fn create_unconnected(chain: Network, dir: Option<String>) -> ZingoConfig {
         ZingoConfig {
-            server: Arc::new(RwLock::new(http::Uri::default())),
+            server_uri: Arc::new(RwLock::new(http::Uri::default())),
             chain,
             monitor_mempool: false,
             anchor_offset: [4u32; 5],
@@ -192,6 +192,12 @@ impl ZingoConfig {
         }
     }
 
+    pub fn get_server_uri(&self) -> http::Uri {
+        self.server_uri
+            .read()
+            .expect("Couldn't read configured server URI!")
+            .clone()
+    }
     pub fn get_wallet_path(&self) -> Box<Path> {
         let mut wallet_location = self.get_zcash_data_path().into_path_buf();
         wallet_location.push(WALLET_NAME);
