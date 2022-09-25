@@ -1523,8 +1523,8 @@ impl LightClient {
         res
     }
 
-    /// start_sync will start synchronizing the blockchain from the wallet's last height. This function will return immediately after starting the sync
-    /// Use the `sync_status` command to get the status of the sync
+    /// start_sync will start synchronizing the blockchain from the wallet's last height. This function will
+    /// return immediately after starting the sync.  Use the `sync_status` command to get the status of the sync
     async fn start_sync_batch(
         &self,
         latest_block: u64,
