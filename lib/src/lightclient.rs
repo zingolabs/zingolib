@@ -1524,15 +1524,13 @@ impl LightClient {
     }
 
     /// start_sync will start synchronizing the blockchain from the wallet's last height. This function will
-    /// return immediately after starting the sync.  Use the `do_sync_status` LightClient method command to
+    /// return immediately after starting the sync.  Use the `do_sync_status` LightClient method to
     /// get the status of the sync
     async fn start_sync_batch(
         &self,
         latest_block: u64,
         batch_num: usize,
     ) -> Result<JsonValue, String> {
-        let uri = self.config.server.clone();
-
         // The top of the wallet
         let last_scanned_height = self.wallet.last_scanned_height().await;
 
@@ -1570,7 +1568,7 @@ impl LightClient {
         //self.update_current_price().await;
 
         // Sapling Tree GRPC Fetcher
-        let grpc_connector = GrpcConnector::new(uri.read().unwrap().clone());
+        let grpc_connector = GrpcConnector::new(self.config.server.read().unwrap().clone());
 
         // A signal to detect reorgs, and if so, ask the block_fetcher to fetch new blocks.
         let (reorg_transmitter, reorg_receiver) = unbounded_channel();
