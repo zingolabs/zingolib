@@ -1699,9 +1699,9 @@ impl LightClient {
 
         let verify_handle =
             tokio::spawn(async move { block_data.read().await.block_data.verify_trees().await });
-        let (verified, heighest_tree) = verify_handle.await.map_err(|e| e.to_string())?;
+        let (verified, highest_tree) = verify_handle.await.map_err(|e| e.to_string())?;
         info!("tree verification {}", verified);
-        info!("highest tree exists: {}", heighest_tree.is_some());
+        info!("highest tree exists: {}", highest_tree.is_some());
         if !verified {
             return Err("Tree Verification Failed".to_string());
         }
@@ -1755,8 +1755,8 @@ impl LightClient {
             .clear_expired_mempool(latest_block);
 
         // 6. Set the heighest verified tree
-        if heighest_tree.is_some() {
-            *self.wallet.verified_tree.write().await = heighest_tree;
+        if highest_tree.is_some() {
+            *self.wallet.verified_tree.write().await = highest_tree;
         }
 
         Ok(object! {
