@@ -182,7 +182,8 @@ pub struct LightWallet {
     // The current price of ZEC. (time_fetched, price in USD)
     pub price: Arc<RwLock<WalletZecPriceInfo>>,
 
-    // Local data to the proxy to specify transactions to fetch.
+    // Local state needed to submit [compact]block-requests to the proxy
+    // and interpret responses
     pub(crate) transaction_context: TransactionContext,
 }
 
