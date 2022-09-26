@@ -404,9 +404,9 @@ impl BlockAndWitnessData {
             // Reorg stuff
             let mut last_block_expecting = end_block;
 
-            while let Some(cb) = receiver.recv().await {
+            while let Some(compact_block) = receiver.recv().await {
                 // We'll process 25_000 blocks at a time.
-                if cb.height % batch_size == 0 {
+                if compact_block.height % batch_size == 0 {
                     if !blks.is_empty() {
                         // Add these blocks to the list
                         sync_status.write().await.blocks_done += blks.len() as u64;
@@ -415,11 +415,11 @@ impl BlockAndWitnessData {
                 }
 
                 // Check if this is the last block we are expecting
-                if cb.height == last_block_expecting {
+                if compact_block.height == last_block_expecting {
                     // Check to see if the prev block's hash matches, and if it does, finish the task
                     let reorg_block = match existing_blocks.read().await.first() {
                         Some(top_block) => {
-                            if top_block.hash() == cb.prev_hash().to_string() {
+                            if top_block.hash() == compact_block.prev_hash().to_string() {
                                 None
                             } else {
                                 // send a reorg signal
@@ -445,8 +445,8 @@ impl BlockAndWitnessData {
                     reorg_transmitter.send(reorg_block).unwrap();
                 }
 
-                earliest_block_height = cb.height;
-                blks.push(BlockData::new(cb));
+                earliest_block_height = compact_block.height;
+                blks.push(BlockData::new(compact_block));
             }
 
             if !blks.is_empty() {

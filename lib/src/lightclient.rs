@@ -1645,7 +1645,7 @@ impl LightClient {
                 .await
         });
 
-        // We wait first for the node's to be updated. This is where reorgs will be handled, so all the steps done after this phase will
+        // We wait first for the nodes to be updated. This is where reorgs will be handled, so all the steps done after this phase will
         // assume that the reorgs are done.
         let earliest_block = block_and_witness_handle.await.unwrap().unwrap();
 

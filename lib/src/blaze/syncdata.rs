@@ -42,7 +42,10 @@ impl BlazeSyncData {
         wallet_options: WalletOptions,
     ) {
         if start_block < end_block {
-            panic!("Blocks should be backwards");
+            panic!(
+                "start_block is: {start_block}\n\
+                 end_block is:   {end_block}"
+            );
         }
 
         // Clear the status for a new sync batch
