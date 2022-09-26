@@ -51,8 +51,11 @@ pub struct BlockAndWitnessData {
     // How many blocks to process at a time.
     batch_size: u64,
 
-    // Heighest verified tree
-    verified_tree: Option<TreeState>,
+    // Highest verified trees
+    // The incorrect type name "TreeState" is encoded in protobuf
+    // there are 'treestate' members of this type for each commitment
+    // tree producing protocol
+    highest_verified_trees: Option<TreeState>,
 
     // Orchard anchors, and their heights.
     pub(crate) orchard_anchors: Arc<RwLock<Vec<(Anchor, BlockHeight)>>>,
@@ -71,7 +74,7 @@ impl BlockAndWitnessData {
             existing_blocks: Arc::new(RwLock::new(vec![])),
             unverified_treestates: Arc::new(RwLock::new(vec![])),
             batch_size: 25_000,
-            verified_tree: None,
+            highest_verified_trees: None,
             orchard_anchors: Arc::new(RwLock::new(Vec::new())),
             sync_status,
             sapling_activation_height: config.sapling_activation_height(),
@@ -102,7 +105,7 @@ impl BlockAndWitnessData {
             }
         }
         self.unverified_treestates.write().await.clear();
-        self.verified_tree = verified_tree;
+        self.highest_verified_trees = verified_tree;
 
         self.blocks_in_current_batch.write().await.clear();
 
@@ -206,13 +209,13 @@ impl BlockAndWitnessData {
             get_all_main_checkpoints()
                 .into_iter()
                 .map(|(h, hash, tree)| {
-                    let mut tree_state = TreeState::default();
-                    tree_state.height = h;
-                    tree_state.hash = hash.to_string();
-                    tree_state.sapling_tree = tree.to_string();
-                    tree_state.orchard_tree = String::from("000000");
+                    let mut trees_state = TreeState::default();
+                    trees_state.height = h;
+                    trees_state.hash = hash.to_string();
+                    trees_state.sapling_tree = tree.to_string();
+                    trees_state.orchard_tree = String::from("000000");
 
-                    tree_state
+                    trees_state
                 }),
         );
 
@@ -221,8 +224,8 @@ impl BlockAndWitnessData {
         start_trees.extend(unverified_tree_states.iter().map(|t| t.clone()));
 
         // Also add the wallet's highest tree
-        if self.verified_tree.is_some() {
-            start_trees.push(self.verified_tree.as_ref().unwrap().clone());
+        if self.highest_verified_trees.is_some() {
+            start_trees.push(self.highest_verified_trees.as_ref().unwrap().clone());
         }
 
         // If there are no available start trees, there is nothing to verify.
@@ -236,16 +239,18 @@ impl BlockAndWitnessData {
         // Now, for each tree state that we need to verify, find the closest one
         let tree_pairs = unverified_tree_states
             .into_iter()
-            .filter_map(|vt| {
-                let height = vt.height;
-                let closest_tree =
-                    start_trees.iter().fold(
-                        None,
-                        |ct, st| if st.height < height { Some(st) } else { ct },
-                    );
+            .filter_map(|candidate| {
+                let height = candidate.height;
+                let closest_tree = start_trees.iter().fold(None, |closest, start| {
+                    if start.height < height {
+                        Some(start)
+                    } else {
+                        closest
+                    }
+                });
 
                 if closest_tree.is_some() {
-                    Some((vt, closest_tree.unwrap().clone()))
+                    Some((candidate, closest_tree.unwrap().clone()))
                 } else {
                     None
                 }
