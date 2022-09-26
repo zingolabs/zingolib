@@ -781,6 +781,8 @@ impl LightWallet {
         true
     }
 
+    /// TODO: How do we know that 'sapling_activation_height - 1' is only returned
+    /// when it should be?  When should it be?
     pub async fn last_scanned_height(&self) -> u64 {
         self.blocks
             .read()
