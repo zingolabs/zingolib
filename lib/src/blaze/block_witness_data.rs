@@ -234,15 +234,14 @@ impl BlockAndWitnessData {
         }
 
         // sort
-        start_trees.sort_unstable_by_key(|ts| ts.height);
+        start_trees.sort_unstable_by_key(|trees_state| trees_state.height);
 
         // Now, for each tree state that we need to verify, find the closest one
         let tree_pairs = unverified_tree_states
             .into_iter()
             .filter_map(|candidate| {
-                let height = candidate.height;
                 let closest_tree = start_trees.iter().fold(None, |closest, start| {
-                    if start.height < height {
+                    if start.height < candidate.height {
                         Some(start)
                     } else {
                         closest
@@ -261,7 +260,7 @@ impl BlockAndWitnessData {
         let blocks = self.blocks_in_current_batch.clone();
         let handles: Vec<JoinHandle<bool>> = tree_pairs
             .into_iter()
-            .map(|(vt, ct)| Self::verify_tree_pair(blocks.clone(), vt, ct))
+            .map(|(candidate, closest)| Self::verify_tree_pair(blocks.clone(), candidate, closest))
             .collect();
 
         let results = join_all(handles)
