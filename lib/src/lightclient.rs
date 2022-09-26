@@ -1723,7 +1723,7 @@ impl LightClient {
                 .await
                 .clone()
                 .into_iter()
-                .chain(anchors.split_off(0).into_iter())
+                .chain(anchors.drain(..))
                 .collect();
             anchors.sort_unstable_by(|(_, height_a), (_, height_b)| height_b.cmp(height_a));
             anchors.truncate(10);
