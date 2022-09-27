@@ -1389,7 +1389,7 @@ impl LightWallet {
 
         // Call the internal function
         match self
-            .send_to_address_internal(
+            .send_to_address_inner(
                 prover,
                 transparent_only,
                 migrate_sapling_to_orchard,
@@ -1409,7 +1409,7 @@ impl LightWallet {
         }
     }
 
-    async fn send_to_address_internal<F, Fut, P: TxProver>(
+    async fn send_to_address_inner<F, Fut, P: TxProver>(
         &self,
         prover: P,
         transparent_only: bool,
