@@ -1438,7 +1438,7 @@ impl LightWallet {
         );
 
         // Convert address (str) to RecepientAddress and value to Amount
-        let recepients = tos
+        let recipients = tos
             .iter()
             .map(|to| {
                 let ra = match address::RecipientAddress::decode(
@@ -1620,7 +1620,7 @@ impl LightWallet {
             .and_then(OrchardKey::ovk);
 
         let mut total_z_recepients = 0u32;
-        for (to, value, memo) in recepients {
+        for (to, value, memo) in recipients {
             // Compute memo if it exists
             let encoded_memo = match memo {
                 None => MemoBytes::from(Memo::Empty),
