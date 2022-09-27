@@ -1619,8 +1619,8 @@ impl LightWallet {
             .get(0)
             .and_then(OrchardKey::ovk);
 
-        let mut total_z_recepients = 0u32;
-        for (to, value, memo) in recipients {
+        let mut total_z_recipients = 0u32;
+        for (recipient_address, value, memo) in recipients {
             // Compute memo if it exists
             let encoded_memo = match memo {
                 None => MemoBytes::from(Memo::Empty),
@@ -1639,9 +1639,9 @@ impl LightWallet {
 
             println!("{}: Adding output", now() - start_time);
 
-            if let Err(e) = match to {
+            if let Err(e) = match recipient_address {
                 address::RecipientAddress::Shielded(to) => {
-                    total_z_recepients += 1;
+                    total_z_recipients += 1;
                     builder.add_sapling_output(Some(sapling_ovk), to.clone(), value, encoded_memo)
                 }
                 address::RecipientAddress::Transparent(to) => {
@@ -1656,7 +1656,7 @@ impl LightWallet {
                             encoded_memo,
                         )
                     } else if let Some(sapling_addr) = ua.sapling() {
-                        total_z_recepients += 1;
+                        total_z_recipients += 1;
                         builder.add_sapling_output(
                             Some(sapling_ovk),
                             sapling_addr.clone(),
@@ -1699,7 +1699,7 @@ impl LightWallet {
             let mut p = self.send_progress.write().await;
             p.is_send_in_progress = true;
             p.progress = 0;
-            p.total = sapling_notes.len() as u32 + total_z_recepients;
+            p.total = sapling_notes.len() as u32 + total_z_recipients;
         }
 
         println!("{}: Building transaction", now() - start_time);
