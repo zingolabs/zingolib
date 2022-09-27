@@ -337,6 +337,8 @@ impl BlockAndWitnessData {
             {
                 true
             } else {
+                // Parentless trees are encoded differently by zcashd for Orchard than for Sapling
+                // this hack allows the case of a parentless orchard_tree
                 if determined_orchard_tree[..132] == unverified_tree.orchard_tree[..132]
                     && &determined_orchard_tree[132..] == "00"
                     && unverified_tree.orchard_tree[134..]
