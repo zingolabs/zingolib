@@ -1497,33 +1497,9 @@ impl LightWallet {
         }
         println!("Selected notes worth {}", u64::from(selected_value));
 
-        let orchard_anchor = if let Some(note) = orchard_notes.get(0) {
-            orchard::Anchor::from(note.witness.root())
-        } else {
-            self.orchard_anchors
-                .read()
-                .await
-                .iter()
-                .find_map(|(anchor, height)| {
-                    if height
-                        == &(target_height
-                            - BlockHeight::from_u32(
-                                *self
-                                    .transaction_context
-                                    .config
-                                    .anchor_offset
-                                    .first()
-                                    .unwrap(),
-                            ))
-                    {
-                        Some(anchor)
-                    } else {
-                        None
-                    }
-                })
-                .ok_or("No Orchard anchor for target height in wallet".to_string())?
-                .clone()
-        };
+        let orchard_anchor = self
+            .get_orchard_anchor(&orchard_notes, target_height)
+            .await?;
         let mut builder = Builder::with_orchard_anchor(
             self.transaction_context.config.chain,
             target_height,
@@ -1793,6 +1769,40 @@ impl LightWallet {
         }
 
         Ok((transaction_id, raw_transaction))
+    }
+
+    async fn get_orchard_anchor(
+        &self,
+        orchard_notes: &[SpendableOrchardNote],
+        target_height: BlockHeight,
+    ) -> Result<Anchor, String> {
+        if let Some(note) = orchard_notes.get(0) {
+            Ok(orchard::Anchor::from(note.witness.root()))
+        } else {
+            self.orchard_anchors
+                .read()
+                .await
+                .iter()
+                .find_map(|(anchor, height)| {
+                    if height
+                        == &(target_height
+                            - BlockHeight::from_u32(
+                                *self
+                                    .transaction_context
+                                    .config
+                                    .anchor_offset
+                                    .first()
+                                    .unwrap(),
+                            ))
+                    {
+                        Some(anchor.clone())
+                    } else {
+                        None
+                    }
+                })
+                .ok_or("No Orchard anchor for target height in wallet".to_string())
+                .clone()
+        }
     }
 
     pub async fn encrypt(&self, passwd: String) -> io::Result<()> {
