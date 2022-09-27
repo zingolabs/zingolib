@@ -840,7 +840,7 @@ where
 
     type Bundle: Bundle<Self, P>;
 
-    fn wallet_notes_mut(_: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote>;
+    fn to_notes_vec_mut(_: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote>;
     fn get_tree(tree_state: &TreeState) -> &String;
 }
 
@@ -859,7 +859,7 @@ impl<P: Parameters> DomainWalletExt<P> for SaplingDomain<P> {
 
     type Bundle = SaplingBundle<SaplingAuthorized>;
 
-    fn wallet_notes_mut(transaction: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote> {
+    fn to_notes_vec_mut(transaction: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote> {
         &mut transaction.sapling_notes
     }
 
@@ -883,7 +883,7 @@ impl<P: Parameters> DomainWalletExt<P> for OrchardDomain {
 
     type Bundle = OrchardBundle<OrchardAuthorized, Amount>;
 
-    fn wallet_notes_mut(transaction: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote> {
+    fn to_notes_vec_mut(transaction: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote> {
         &mut transaction.orchard_notes
     }
 

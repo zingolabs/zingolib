@@ -1622,7 +1622,7 @@ impl LightWallet {
         let mut total_z_recipients = 0u32;
         for (recipient_address, value, memo) in recipients {
             // Compute memo if it exists
-            let encoded_memo = match memo {
+            let validated_memo = match memo {
                 None => MemoBytes::from(Memo::Empty),
                 Some(s) => {
                     // If the string starts with an "0x", and contains only hex chars ([a-f0-9]+) then
@@ -1642,7 +1642,7 @@ impl LightWallet {
             if let Err(e) = match recipient_address {
                 address::RecipientAddress::Shielded(to) => {
                     total_z_recipients += 1;
-                    builder.add_sapling_output(Some(sapling_ovk), to.clone(), value, encoded_memo)
+                    builder.add_sapling_output(Some(sapling_ovk), to.clone(), value, validated_memo)
                 }
                 address::RecipientAddress::Transparent(to) => {
                     builder.add_transparent_output(&to, value)
@@ -1653,7 +1653,7 @@ impl LightWallet {
                             orchard_ovk.clone(),
                             orchard_addr.clone(),
                             u64::from(value),
-                            encoded_memo,
+                            validated_memo,
                         )
                     } else if let Some(sapling_addr) = ua.sapling() {
                         total_z_recipients += 1;
@@ -1661,7 +1661,7 @@ impl LightWallet {
                             Some(sapling_ovk),
                             sapling_addr.clone(),
                             value,
-                            encoded_memo,
+                            validated_memo,
                         )
                     } else {
                         return Err("Received UA with no Orchard or Sapling receiver".to_string());

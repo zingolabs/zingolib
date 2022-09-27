@@ -163,8 +163,6 @@ impl TransactionMetadataSet {
         });
     }
 
-    // We also need to update any note data and utxos in existing transactions that
-    // were spent in any of the txids that were removed
     pub fn remove_txids(&mut self, txids_to_remove: Vec<TxId>) {
         for txid in &txids_to_remove {
             self.current.remove(&txid);
@@ -197,7 +195,7 @@ impl TransactionMetadataSet {
     {
         self.current.values_mut().for_each(|transaction_metadata| {
             // Update notes to rollback any spent notes
-            D::wallet_notes_mut(transaction_metadata)
+            D::to_notes_vec_mut(transaction_metadata)
                 .iter_mut()
                 .for_each(|nd| {
                     // Mark note as unspent if the txid being removed spent it.
@@ -725,7 +723,7 @@ impl TransactionMetadataSet {
         // Update the block height, in case this was a mempool or unconfirmed tx.
         transaction_metadata.block = height;
 
-        match D::wallet_notes_mut(transaction_metadata)
+        match D::to_notes_vec_mut(transaction_metadata)
             .iter_mut()
             .find(|n| n.note() == &note)
         {
