@@ -1191,7 +1191,7 @@ impl LightWallet {
         &self,
         target_amount: Amount,
         transparent_only: bool,
-        shield_transparenent: bool,
+        shield_transparent: bool,
         prefer_orchard_over_sapling: bool,
     ) -> (
         Vec<SpendableOrchardNote>,
@@ -1200,7 +1200,7 @@ impl LightWallet {
         Amount,
     ) {
         // First, if we are allowed to pick transparent value, pick them all
-        let utxos = if transparent_only || shield_transparenent {
+        let utxos = if transparent_only || shield_transparent {
             self.get_utxos()
                 .await
                 .iter()
@@ -1212,13 +1212,13 @@ impl LightWallet {
         };
 
         // Check how much we've selected
-        let transparent_value_selected = utxos.iter().fold(Amount::zero(), |prev, utxo| {
+        let total_transparent_value = utxos.iter().fold(Amount::zero(), |prev, utxo| {
             (prev + Amount::from_u64(utxo.value).unwrap()).unwrap()
         });
 
         // If we are allowed only transparent funds or we've selected enough then return
-        if transparent_only || transparent_value_selected >= target_amount {
-            return (vec![], vec![], utxos, transparent_value_selected);
+        if transparent_only || total_transparent_value >= target_amount {
+            return (vec![], vec![], utxos, total_transparent_value);
         }
 
         let mut sapling_value_selected = Amount::zero();
@@ -1231,30 +1231,30 @@ impl LightWallet {
             (sapling_notes, sapling_value_selected) =
                 Self::add_notes_to_total::<SaplingDomain<zingoconfig::Network>>(
                     sapling_candidates,
-                    (target_amount - transparent_value_selected).unwrap(),
+                    (target_amount - total_transparent_value).unwrap(),
                 );
-            if transparent_value_selected + sapling_value_selected >= Some(target_amount) {
+            if total_transparent_value + sapling_value_selected >= Some(target_amount) {
                 return (
                     vec![],
                     sapling_notes,
                     utxos,
-                    (transparent_value_selected + sapling_value_selected).unwrap(),
+                    (total_transparent_value + sapling_value_selected).unwrap(),
                 );
             }
         }
         let orchard_candidates = self.get_all_domain_specific_notes::<OrchardDomain>().await;
         let (orchard_notes, orchard_value_selected) = Self::add_notes_to_total::<OrchardDomain>(
             orchard_candidates,
-            (target_amount - transparent_value_selected - sapling_value_selected).unwrap(),
+            (target_amount - total_transparent_value - sapling_value_selected).unwrap(),
         );
-        if transparent_value_selected + sapling_value_selected + orchard_value_selected
+        if total_transparent_value + sapling_value_selected + orchard_value_selected
             >= Some(target_amount)
         {
             return (
                 orchard_notes,
                 sapling_notes,
                 utxos,
-                (transparent_value_selected + sapling_value_selected + orchard_value_selected)
+                (total_transparent_value + sapling_value_selected + orchard_value_selected)
                     .unwrap(),
             );
         }
@@ -1265,16 +1265,16 @@ impl LightWallet {
             (sapling_notes, sapling_value_selected) =
                 Self::add_notes_to_total::<SaplingDomain<zingoconfig::Network>>(
                     sapling_candidates,
-                    (target_amount - transparent_value_selected).unwrap(),
+                    (target_amount - total_transparent_value).unwrap(),
                 );
-            if transparent_value_selected + sapling_value_selected + orchard_value_selected
+            if total_transparent_value + sapling_value_selected + orchard_value_selected
                 >= Some(target_amount)
             {
                 return (
                     orchard_notes,
                     sapling_notes,
                     utxos,
-                    (transparent_value_selected + sapling_value_selected + orchard_value_selected)
+                    (total_transparent_value + sapling_value_selected + orchard_value_selected)
                         .unwrap(),
                 );
             }
@@ -1290,16 +1290,16 @@ impl LightWallet {
         <D as Domain>::Recipient: traits::Recipient,
         <D as Domain>::Note: PartialEq + Clone,
     {
-        let keys_arc = self.keys();
-        let keys = keys_arc.read().await;
-        let notes_arc = self.transactions();
-        let notes = notes_arc.read().await;
+        let keys_lth = self.keys();
+        let keys = keys_lth.read().await;
+        let tranmds_lth = self.transactions();
+        let transaction_metadata_set = tranmds_lth.read().await;
         self.transaction_context
             .config
             .anchor_offset
             .iter()
             .map(|anchor_offset| {
-                let mut candidate_notes = notes
+                let mut candidate_notes = transaction_metadata_set
                     .current
                     .iter()
                     .flat_map(|(transaction_id, transaction)| {
