@@ -1247,6 +1247,7 @@ mod test {
     }
 
     #[test]
+    #[ignore]
     fn get_orchard_end_from_start_plus_block() {
         let mut start_tree =
             CommitmentTree::<MerkleHashOrchard>::read(&*hex::decode(ORCHARD_START).unwrap())
