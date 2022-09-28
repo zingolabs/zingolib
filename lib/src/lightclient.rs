@@ -141,6 +141,10 @@ impl LightClient {
         *self.config.server_uri.write().unwrap() = server
     }
 
+    pub fn get_server(&self) -> std::sync::RwLockReadGuard<http::Uri> {
+        self.config.server_uri.read().unwrap()
+    }
+
     fn write_file_if_not_exists(dir: &Box<Path>, name: &str, bytes: &[u8]) -> io::Result<()> {
         let mut file_path = dir.to_path_buf();
         file_path.push(name);

@@ -139,3 +139,57 @@ fn send_mined_sapling_to_orchard() {
     //   The test-or-scenario that caused this situation has failed/panicked.
     //}
 }
+#[test]
+fn note_selection_order() {
+    let (regtest_manager_1, _child_process_handler_1, client_1, runtime) =
+        setup::coinbasebacked_spendcapable();
+    let (_regtest_manager_2, child_process_handler_2, client_2, _) =
+        setup::coinbasebacked_spendcapable();
+    // We just want the second client, we don't want the zcashd or lightwalletd
+    drop(child_process_handler_2);
+
+    runtime.block_on(async {
+        sleep(Duration::from_secs(1)).await;
+        regtest_manager_1.generate_n_blocks(5).unwrap();
+        sleep(Duration::from_secs(1)).await;
+        client_1.do_sync(true).await.unwrap();
+
+        client_2.set_server(client_1.get_server().clone());
+        client_2.do_rescan().await.unwrap();
+        let address_of_2 = client_2.do_address().await["sapling_addresses"][0].clone();
+        for n in 1..=5 {
+            client_1
+                .do_send(vec![(
+                    dbg!(&address_of_2.to_string()),
+                    n * 1000,
+                    Some(n.to_string()),
+                )])
+                .await
+                .unwrap();
+        }
+        regtest_manager_1.generate_n_blocks(5).unwrap();
+        sleep(Duration::from_secs(2)).await;
+        println!("Server 2: {}", client_2.get_server());
+        client_2.do_sync(true).await.unwrap();
+        let address_of_1 = client_1.do_address().await["sapling_addresses"][0].clone();
+        client_2
+            .do_send(vec![(
+                dbg!(&address_of_1.to_string()),
+                5000,
+                Some("Sending back, should have 2 inputs".to_string()),
+            )])
+            .await
+            .unwrap();
+        let notes = client_2.do_list_notes(false).await;
+        assert_eq!(notes["pending_notes"].len(), 2);
+        assert_eq!(notes["unspent_notes"].len(), 4);
+        assert_eq!(
+            notes["unspent_notes"]
+                .members()
+                .filter(|note| note["is_change"].as_bool().unwrap())
+                .collect::<Vec<_>>()
+                .len(),
+            1
+        );
+    });
+}
