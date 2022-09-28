@@ -12,6 +12,7 @@ use orchard::{
     tree::MerkleHashOrchard,
 };
 use zcash_encoding::Vector;
+use zcash_note_encryption::Domain;
 use zcash_primitives::{
     consensus::BlockHeight,
     memo::Memo,
@@ -166,27 +167,9 @@ impl TransactionMetadataSet {
         for txid in &txids_to_remove {
             self.current.remove(&txid);
         }
-
-        // We also need to update any sapling note data and utxos in existing transactions that
-        // were spent in any of the txids that were removed
-        self.current.values_mut().for_each(|wtx| {
-            // Update notes to rollback any spent notes
-            wtx.sapling_notes.iter_mut().for_each(|nd| {
-                // Mark note as unspent if the txid being removed spent it.
-                if nd.spent.is_some() && txids_to_remove.contains(&nd.spent.unwrap().0) {
-                    nd.spent = None;
-                }
-
-                // Remove unconfirmed spends too
-                if nd.unconfirmed_spent.is_some()
-                    && txids_to_remove.contains(&nd.unconfirmed_spent.unwrap().0)
-                {
-                    nd.unconfirmed_spent = None;
-                }
-            });
-
+        self.current.values_mut().for_each(|transaction_metadata| {
             // Update UTXOs to rollback any spent utxos
-            wtx.utxos.iter_mut().for_each(|utxo| {
+            transaction_metadata.utxos.iter_mut().for_each(|utxo| {
                 if utxo.spent.is_some() && txids_to_remove.contains(&utxo.spent.unwrap()) {
                     utxo.spent = None;
                     utxo.spent_at_height = None;
@@ -199,6 +182,35 @@ impl TransactionMetadataSet {
                 }
             })
         });
+        self.remove_domain_specific_txids::<SaplingDomain<Network>>(&txids_to_remove);
+        self.remove_domain_specific_txids::<OrchardDomain>(&txids_to_remove);
+    }
+
+    fn remove_domain_specific_txids<D: DomainWalletExt<Network>>(
+        &mut self,
+        txids_to_remove: &Vec<TxId>,
+    ) where
+        <D as Domain>::Recipient: Recipient,
+        <D as Domain>::Note: PartialEq + Clone,
+    {
+        self.current.values_mut().for_each(|transaction_metadata| {
+            // Update notes to rollback any spent notes
+            D::to_notes_vec_mut(transaction_metadata)
+                .iter_mut()
+                .for_each(|nd| {
+                    // Mark note as unspent if the txid being removed spent it.
+                    if nd.spent().is_some() && txids_to_remove.contains(&nd.spent().unwrap().0) {
+                        *nd.spent_mut() = None;
+                    }
+
+                    // Remove unconfirmed spends too
+                    if nd.unconfirmed_spent().is_some()
+                        && txids_to_remove.contains(&nd.unconfirmed_spent().unwrap().0)
+                    {
+                        *nd.unconfirmed_spent_mut() = None;
+                    }
+                });
+        });
     }
 
     // During reorgs, we need to remove all txns at a given height, and all spends that refer to any removed txns.
@@ -209,9 +221,9 @@ impl TransactionMetadataSet {
         let txids_to_remove = self
             .current
             .values()
-            .filter_map(|wtx| {
-                if wtx.block >= reorg_height {
-                    Some(wtx.txid.clone())
+            .filter_map(|transaction_metadata| {
+                if transaction_metadata.block >= reorg_height {
+                    Some(transaction_metadata.txid.clone())
                 } else {
                     None
                 }
@@ -230,6 +242,9 @@ impl TransactionMetadataSet {
                     // empty vector, for which pop() is a no-op.
                     let _discard = nd.witnesses.pop(u64::from(reorg_height));
                 }
+                for nd in tx.orchard_notes.iter_mut() {
+                    let _discard = nd.witnesses.pop(u64::from(reorg_height));
+                }
             }
         }
     }
@@ -243,13 +258,14 @@ impl TransactionMetadataSet {
 
         self.current
             .iter()
-            .filter(|(_, wtx)| !wtx.unconfirmed) // Update only confirmed notes
-            .flat_map(|(txid, wtx)| {
+            .filter(|(_, transaction_metadata)| !transaction_metadata.unconfirmed) // Update only confirmed notes
+            .flat_map(|(txid, transaction_metadata)| {
                 // Fetch notes that are before the before_block.
-                wtx.sapling_notes
+                transaction_metadata
+                    .sapling_notes
                     .iter()
                     .filter_map(move |sapling_note_description| {
-                        if wtx.block <= before_block
+                        if transaction_metadata.block <= before_block
                             && sapling_note_description.have_spending_key
                             && sapling_note_description.witnesses.len() > 0
                             && sapling_note_description.spent.is_none()
@@ -264,26 +280,24 @@ impl TransactionMetadataSet {
                             None
                         }
                     })
-                    .chain(
-                        wtx.orchard_notes
-                            .iter()
-                            .filter_map(move |orchard_note_description| {
-                                if wtx.block <= before_block
-                                    && orchard_note_description.have_spending_key
-                                    && orchard_note_description.witnesses.len() > 0
-                                    && orchard_note_description.spent.is_none()
-                                {
-                                    Some((
-                                        txid.clone(),
-                                        ChannelNullifier::Orchard(
-                                            orchard_note_description.nullifier.clone(),
-                                        ),
-                                    ))
-                                } else {
-                                    None
-                                }
-                            }),
-                    )
+                    .chain(transaction_metadata.orchard_notes.iter().filter_map(
+                        move |orchard_note_description| {
+                            if transaction_metadata.block <= before_block
+                                && orchard_note_description.have_spending_key
+                                && orchard_note_description.witnesses.len() > 0
+                                && orchard_note_description.spent.is_none()
+                            {
+                                Some((
+                                    txid.clone(),
+                                    ChannelNullifier::Orchard(
+                                        orchard_note_description.nullifier.clone(),
+                                    ),
+                                ))
+                            } else {
+                                None
+                            }
+                        },
+                    ))
             })
             .collect()
     }
@@ -298,11 +312,18 @@ impl TransactionMetadataSet {
     pub fn get_nullifiers_of_unspent_sapling_notes(&self) -> Vec<(SaplingNullifier, u64, TxId)> {
         self.current
             .iter()
-            .flat_map(|(_, wtx)| {
-                wtx.sapling_notes
+            .flat_map(|(_, transaction_metadata)| {
+                transaction_metadata
+                    .sapling_notes
                     .iter()
                     .filter(|nd| nd.spent.is_none())
-                    .map(move |nd| (nd.nullifier.clone(), nd.note.value, wtx.txid.clone()))
+                    .map(move |nd| {
+                        (
+                            nd.nullifier.clone(),
+                            nd.note.value,
+                            transaction_metadata.txid.clone(),
+                        )
+                    })
             })
             .collect()
     }
@@ -310,15 +331,16 @@ impl TransactionMetadataSet {
     pub fn get_nullifiers_of_unspent_orchard_notes(&self) -> Vec<(OrchardNullifier, u64, TxId)> {
         self.current
             .iter()
-            .flat_map(|(_, wtx)| {
-                wtx.orchard_notes
+            .flat_map(|(_, transaction_metadata)| {
+                transaction_metadata
+                    .orchard_notes
                     .iter()
                     .filter(|nd| nd.spent.is_none())
                     .map(move |nd| {
                         (
                             nd.nullifier.clone(),
                             nd.note.value().inner(),
-                            wtx.txid.clone(),
+                            transaction_metadata.txid.clone(),
                         )
                     })
             })
@@ -330,11 +352,12 @@ impl TransactionMetadataSet {
         txid: &TxId,
         nullifier: &SaplingNullifier,
     ) -> Option<(WitnessCache<SaplingNode>, BlockHeight)> {
-        self.current.get(txid).map(|wtx| {
-            wtx.sapling_notes
+        self.current.get(txid).map(|transaction_metadata| {
+            transaction_metadata
+                .sapling_notes
                 .iter()
                 .find(|nd| nd.nullifier == *nullifier)
-                .map(|nd| (nd.witnesses.clone(), wtx.block))
+                .map(|nd| (nd.witnesses.clone(), transaction_metadata.block))
         })?
     }
 
@@ -343,11 +366,12 @@ impl TransactionMetadataSet {
         txid: &TxId,
         nullifier: &OrchardNullifier,
     ) -> Option<(WitnessCache<MerkleHashOrchard>, BlockHeight)> {
-        self.current.get(txid).map(|wtx| {
-            wtx.orchard_notes
+        self.current.get(txid).map(|transaction_metadata| {
+            transaction_metadata
+                .orchard_notes
                 .iter()
                 .find(|nd| nd.nullifier == *nullifier)
-                .map(|nd| (nd.witnesses.clone(), wtx.block))
+                .map(|nd| (nd.witnesses.clone(), transaction_metadata.block))
         })?
     }
 
@@ -386,14 +410,17 @@ impl TransactionMetadataSet {
     pub(crate) fn clear_old_witnesses(&mut self, latest_height: u64) {
         let cutoff = (latest_height.saturating_sub(MAX_REORG as u64)) as u32;
 
-        self.current.iter_mut().for_each(|(_, wtx)| {
-            wtx.sapling_notes
-                .iter_mut()
-                .filter(|n| {
-                    !n.witnesses.is_empty() && n.spent.is_some() && n.spent.unwrap().1 < cutoff
-                })
-                .for_each(|n| n.witnesses.clear());
-        });
+        self.current
+            .iter_mut()
+            .for_each(|(_, transaction_metadata)| {
+                transaction_metadata
+                    .sapling_notes
+                    .iter_mut()
+                    .filter(|n| {
+                        !n.witnesses.is_empty() && n.spent.is_some() && n.spent.unwrap().1 < cutoff
+                    })
+                    .for_each(|n| n.witnesses.clear());
+            });
     }
 
     pub(crate) fn clear_expired_mempool(&mut self, latest_height: u64) {
@@ -402,8 +429,10 @@ impl TransactionMetadataSet {
         let txids_to_remove = self
             .current
             .iter()
-            .filter(|(_, wtx)| wtx.unconfirmed && wtx.block < cutoff)
-            .map(|(_, wtx)| wtx.txid.clone())
+            .filter(|(_, transaction_metadata)| {
+                transaction_metadata.unconfirmed && transaction_metadata.block < cutoff
+            })
+            .map(|(_, transaction_metadata)| transaction_metadata.txid.clone())
             .collect::<Vec<_>>();
 
         txids_to_remove
@@ -455,8 +484,8 @@ impl TransactionMetadataSet {
     // transction as change. i.e., If any funds were spent in this transaction, all recieved notes are change notes.
     pub fn check_notes_mark_change(&mut self, txid: &TxId) {
         if self.total_funds_spent_in(txid) > 0 {
-            self.current.get_mut(txid).map(|wtx| {
-                wtx.sapling_notes.iter_mut().for_each(|n| {
+            self.current.get_mut(txid).map(|transaction_metadata| {
+                transaction_metadata.sapling_notes.iter_mut().for_each(|n| {
                     n.is_change = true;
                 })
             });
@@ -477,16 +506,16 @@ impl TransactionMetadataSet {
             );
             self.last_txid = Some(txid.clone());
         }
-        let wtx = self.current.get_mut(&txid).expect("Txid should be present");
+        let transaction_metadata = self.current.get_mut(&txid).expect("Txid should be present");
 
         // Make sure the unconfirmed status matches
-        if wtx.unconfirmed != unconfirmed {
-            wtx.unconfirmed = unconfirmed;
-            wtx.block = height;
-            wtx.datetime = datetime;
+        if transaction_metadata.unconfirmed != unconfirmed {
+            transaction_metadata.unconfirmed = unconfirmed;
+            transaction_metadata.block = height;
+            transaction_metadata.datetime = datetime;
         }
 
-        wtx
+        transaction_metadata
     }
 
     pub fn set_price(&mut self, txid: &TxId, price: Option<f64>) {
@@ -539,7 +568,7 @@ impl TransactionMetadataSet {
         source_txid: TxId,
     ) {
         // Record this Tx as having spent some funds
-        let wtx = self.get_or_create_transaction_metadata(
+        let transaction_metadata = self.get_or_create_transaction_metadata(
             &txid,
             BlockHeight::from(height),
             unconfirmed,
@@ -547,13 +576,13 @@ impl TransactionMetadataSet {
         );
 
         // Mark the height correctly, in case this was previously a mempool or unconfirmed tx.
-        wtx.block = height;
-        if NnMd::Nullifier::get_nullifiers_spent_in_transaction(wtx)
+        transaction_metadata.block = height;
+        if NnMd::Nullifier::get_nullifiers_spent_in_transaction(transaction_metadata)
             .iter()
             .find(|nf| **nf == nullifier)
             .is_none()
         {
-            wtx.add_spent_nullifier(nullifier.to_channel_nullifier(), value)
+            transaction_metadata.add_spent_nullifier(nullifier.to_channel_nullifier(), value)
         }
 
         // Since this Txid has spent some funds, output notes in this Tx that are sent to us are actually change.
@@ -561,12 +590,12 @@ impl TransactionMetadataSet {
 
         // Mark the source note as spent
         if !unconfirmed {
-            let wtx = self
+            let transaction_metadata = self
                 .current
                 .get_mut(&source_txid)
                 .expect("Txid should be present");
 
-            NnMd::transaction_metadata_notes_mut(wtx)
+            NnMd::transaction_metadata_notes_mut(transaction_metadata)
                 .iter_mut()
                 .find(|n| n.nullifier() == nullifier)
                 .map(|nd| {
@@ -584,13 +613,13 @@ impl TransactionMetadataSet {
         timestamp: u64,
         total_transparent_value_spent: u64,
     ) {
-        let wtx = self.get_or_create_transaction_metadata(
+        let transaction_metadata = self.get_or_create_transaction_metadata(
             &txid,
             BlockHeight::from(height),
             unconfirmed,
             timestamp,
         );
-        wtx.total_transparent_value_spent = total_transparent_value_spent;
+        transaction_metadata.total_transparent_value_spent = total_transparent_value_spent;
 
         self.check_notes_mark_change(&txid);
     }
@@ -603,8 +632,8 @@ impl TransactionMetadataSet {
         source_height: u32,
     ) -> u64 {
         // Find the UTXO
-        let value = if let Some(utxo_wtx) = self.current.get_mut(&spent_txid) {
-            if let Some(spent_utxo) = utxo_wtx
+        let value = if let Some(utxo_transacion_metadata) = self.current.get_mut(&spent_txid) {
+            if let Some(spent_utxo) = utxo_transacion_metadata
                 .utxos
                 .iter_mut()
                 .find(|u| u.txid == spent_txid && u.output_index == output_num as u64)
@@ -639,7 +668,7 @@ impl TransactionMetadataSet {
         output_num: u32,
     ) {
         // Read or create the current TxId
-        let wtx = self.get_or_create_transaction_metadata(
+        let transaction_metadata = self.get_or_create_transaction_metadata(
             &txid,
             BlockHeight::from(height),
             unconfirmed,
@@ -647,7 +676,7 @@ impl TransactionMetadataSet {
         );
 
         // Add this UTXO if it doesn't already exist
-        if let Some(utxo) = wtx
+        if let Some(utxo) = transaction_metadata
             .utxos
             .iter_mut()
             .find(|utxo| utxo.txid == txid && utxo.output_index == output_num as u64)
@@ -655,7 +684,7 @@ impl TransactionMetadataSet {
             // If it already exists, it is likely an mempool tx, so update the height
             utxo.height = height as i32
         } else {
-            wtx.utxos.push(Utxo {
+            transaction_metadata.utxos.push(Utxo {
                 address: taddr,
                 txid: txid.clone(),
                 output_index: output_num as u64,
@@ -679,22 +708,22 @@ impl TransactionMetadataSet {
         fvk: &D::Fvk,
     ) where
         D: DomainWalletExt<Network>,
-        D::Note: PartialEq,
+        D::Note: PartialEq + Clone,
         D::Recipient: Recipient,
     {
         // Check if this is a change note
         let is_change = self.total_funds_spent_in(&txid) > 0;
 
-        let wtx = self.get_or_create_transaction_metadata(
+        let transaction_metadata = self.get_or_create_transaction_metadata(
             &txid,
             BlockHeight::from(height),
             true,
             timestamp,
         );
         // Update the block height, in case this was a mempool or unconfirmed tx.
-        wtx.block = height;
+        transaction_metadata.block = height;
 
-        match D::wallet_notes_mut(wtx)
+        match D::to_notes_vec_mut(transaction_metadata)
             .iter_mut()
             .find(|n| n.note() == &note)
         {
@@ -712,7 +741,7 @@ impl TransactionMetadataSet {
                     false,
                 );
 
-                D::WalletNote::transaction_metadata_notes_mut(wtx).push(nd);
+                D::WalletNote::transaction_metadata_notes_mut(transaction_metadata).push(nd);
             }
             Some(_) => {}
         }
@@ -779,20 +808,20 @@ impl TransactionMetadataSet {
         have_spending_key: bool,
         witness: IncrementalWitness<<D::WalletNote as NoteAndMetadata>::Node>,
     ) where
-        D::Note: PartialEq,
+        D::Note: PartialEq + Clone,
         D::Recipient: Recipient,
     {
         // Check if this is a change note
         let is_change = self.total_funds_spent_in(&txid) > 0;
 
-        let wtx = self.get_or_create_transaction_metadata(
+        let transaction_metadata = self.get_or_create_transaction_metadata(
             &txid,
             BlockHeight::from(height),
             unconfirmed,
             timestamp,
         );
         // Update the block height, in case this was a mempool or unconfirmed tx.
-        wtx.block = height;
+        transaction_metadata.block = height;
 
         let nullifier = D::WalletNote::get_nullifier_from_note_fvk_and_witness_position(
             &note,
@@ -805,7 +834,7 @@ impl TransactionMetadataSet {
             WitnessCache::empty()
         };
 
-        match D::WalletNote::transaction_metadata_notes_mut(wtx)
+        match D::WalletNote::transaction_metadata_notes_mut(transaction_metadata)
             .iter_mut()
             .find(|n| n.nullifier() == nullifier)
         {
@@ -823,11 +852,11 @@ impl TransactionMetadataSet {
                     have_spending_key,
                 );
 
-                D::WalletNote::transaction_metadata_notes_mut(wtx).push(nd);
+                D::WalletNote::transaction_metadata_notes_mut(transaction_metadata).push(nd);
 
                 // Also remove any pending notes.
                 use super::traits::ToBytes;
-                D::WalletNote::transaction_metadata_notes_mut(wtx)
+                D::WalletNote::transaction_metadata_notes_mut(transaction_metadata)
                     .retain(|n| n.nullifier().to_bytes() != [0u8; 32]);
             }
             Some(n) => {
@@ -847,8 +876,8 @@ impl TransactionMetadataSet {
         note: Nd::Note,
         memo: Memo,
     ) {
-        self.current.get_mut(txid).map(|wtx| {
-            Nd::transaction_metadata_notes_mut(wtx)
+        self.current.get_mut(txid).map(|transaction_metadata| {
+            Nd::transaction_metadata_notes_mut(transaction_metadata)
                 .iter_mut()
                 .find(|n| n.note() == &note)
                 .map(|n| *n.memo_mut() = Some(memo));
@@ -860,14 +889,20 @@ impl TransactionMetadataSet {
         txid: &TxId,
         outgoing_metadata: Vec<OutgoingTxMetadata>,
     ) {
-        if let Some(wtx) = self.current.get_mut(txid) {
+        if let Some(transaction_metadata) = self.current.get_mut(txid) {
             // This is n^2 search, but this is likely very small struct, limited by the protocol, so...
             let new_omd: Vec<_> = outgoing_metadata
                 .into_iter()
-                .filter(|om| wtx.outgoing_metadata.iter().find(|o| **o == *om).is_none())
+                .filter(|om| {
+                    transaction_metadata
+                        .outgoing_metadata
+                        .iter()
+                        .find(|o| **o == *om)
+                        .is_none()
+                })
                 .collect();
 
-            wtx.outgoing_metadata.extend(new_omd);
+            transaction_metadata.outgoing_metadata.extend(new_omd);
         } else {
             error!(
                 "TxId {} should be present while adding metadata, but wasn't",

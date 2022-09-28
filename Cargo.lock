@@ -42,6 +42,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ansi_term"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d52a9bb7ec0cf484c551830a7ce27bd20d67eac647e1befb56b0be4ee39a55d2"
+dependencies = [
+ "winapi",
+]
+
+[[package]]
 name = "anyhow"
 version = "1.0.62"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -211,7 +220,7 @@ dependencies = [
  "log",
  "num_cpus",
  "pairing",
- "rand_core",
+ "rand_core 0.6.3",
  "rayon",
  "subtle",
 ]
@@ -224,7 +233,7 @@ checksum = "d0830ae4cc96b0617cc912970c2b17e89456fecbf55e8eed53a956f37ab50c41"
 dependencies = [
  "hmac 0.11.0",
  "pbkdf2 0.9.0",
- "rand",
+ "rand 0.8.5",
  "sha2 0.9.9",
  "unicode-normalization",
  "zeroize",
@@ -238,7 +247,7 @@ checksum = "bef0f0152ec5cf17f49a5866afaa3439816207fd4f0a224c0211ffaf5e278426"
 dependencies = [
  "hmac 0.12.1",
  "pbkdf2 0.10.1",
- "rand",
+ "rand 0.8.5",
  "sha2 0.10.2",
  "unicode-normalization",
  "zeroize",
@@ -342,7 +351,7 @@ dependencies = [
  "ff",
  "group",
  "pairing",
- "rand_core",
+ "rand_core 0.6.3",
  "subtle",
 ]
 
@@ -726,7 +735,7 @@ checksum = "c34f04666d835ff5d62e058c3995147c06f42fe86ff053337632bca83e42702d"
 [[package]]
 name = "equihash"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash?rev=e5484c96445dbff38cfb4a6e0983ade1bc0d7656#e5484c96445dbff38cfb4a6e0983ade1bc0d7656"
+source = "git+https://github.com/zingolabs/librustzcash?rev=d66f7f70516e6da5c24008874a926d41221b1346#d66f7f70516e6da5c24008874a926d41221b1346"
 dependencies = [
  "blake2b_simd",
  "byteorder",
@@ -766,7 +775,7 @@ dependencies = [
 [[package]]
 name = "f4jumble"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/librustzcash?rev=e5484c96445dbff38cfb4a6e0983ade1bc0d7656#e5484c96445dbff38cfb4a6e0983ade1bc0d7656"
+source = "git+https://github.com/zingolabs/librustzcash?rev=d66f7f70516e6da5c24008874a926d41221b1346#d66f7f70516e6da5c24008874a926d41221b1346"
 dependencies = [
  "blake2b_simd",
 ]
@@ -798,7 +807,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df689201f395c6b90dfe87127685f8dbfc083a5e779e613575d8bd7314300c3e"
 dependencies = [
  "bitvec",
- "rand_core",
+ "rand_core 0.6.3",
  "subtle",
 ]
 
@@ -852,6 +861,12 @@ dependencies = [
  "num-integer",
  "num-traits",
 ]
+
+[[package]]
+name = "fuchsia-cprng"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a06f77d526c1a601b7c4cdd98f54b5eaabffc14d5f2f0296febdc7f357c6d3ba"
 
 [[package]]
 name = "funty"
@@ -977,7 +992,7 @@ checksum = "7391856def869c1c81063a03457c676fbcd419709c3dfb33d8d319de484b154d"
 dependencies = [
  "byteorder",
  "ff",
- "rand_core",
+ "rand_core 0.6.3",
  "subtle",
 ]
 
@@ -1013,7 +1028,7 @@ dependencies = [
  "halo2_proofs",
  "lazy_static",
  "pasta_curves",
- "rand",
+ "rand 0.8.5",
  "subtle",
  "uint",
 ]
@@ -1028,7 +1043,7 @@ dependencies = [
  "ff",
  "group",
  "pasta_curves",
- "rand_core",
+ "rand_core 0.6.3",
  "rayon",
  "tracing",
 ]
@@ -1046,7 +1061,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9cd89bf343be18dbe1e505100e48168bbd084760e842a8fed0317d2361470193"
 dependencies = [
  "lazy_static",
- "rand_core",
+ "rand_core 0.6.3",
  "ring",
  "secp256k1",
 ]
@@ -1320,7 +1335,7 @@ dependencies = [
  "bls12_381",
  "ff",
  "group",
- "rand_core",
+ "rand_core 0.6.3",
  "subtle",
 ]
 
@@ -1640,7 +1655,7 @@ dependencies = [
 [[package]]
 name = "orchard"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/orchard?rev=48b7dac551a9af6c194632e6a9f0ff5fb7918dcc#48b7dac551a9af6c194632e6a9f0ff5fb7918dcc"
+source = "git+https://github.com/zingolabs/orchard?rev=49874b31da4fedcb31fcfadf5ba8804bf860c4bf#49874b31da4fedcb31fcfadf5ba8804bf860c4bf"
 dependencies = [
  "aes",
  "bitvec",
@@ -1657,7 +1672,7 @@ dependencies = [
  "nonempty",
  "pasta_curves",
  "proptest",
- "rand",
+ "rand 0.8.5",
  "reddsa",
  "serde",
  "subtle",
@@ -1719,7 +1734,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d791538a6dcc1e7cb7fe6f6b58aca40e7f79403c45b2bc274008b5e647af1d8"
 dependencies = [
  "base64ct",
- "rand_core",
+ "rand_core 0.6.3",
  "subtle",
 ]
 
@@ -1733,7 +1748,7 @@ dependencies = [
  "ff",
  "group",
  "lazy_static",
- "rand",
+ "rand 0.8.5",
  "static_assertions",
  "subtle",
 ]
@@ -1829,7 +1844,7 @@ version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be97d76faf1bfab666e1375477b23fde79eccf0276e9b63b92a39d676a889ba9"
 dependencies = [
- "rand",
+ "rand 0.8.5",
 ]
 
 [[package]]
@@ -1875,7 +1890,7 @@ dependencies = [
  "lazy_static",
  "num-traits",
  "quick-error 2.0.1",
- "rand",
+ "rand 0.8.5",
  "rand_chacha",
  "rand_xorshift",
  "regex-syntax",
@@ -2002,13 +2017,26 @@ dependencies = [
 
 [[package]]
 name = "rand"
+version = "0.4.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "552840b97013b1a26992c11eac34bdd778e464601a4c2054b5f0bff7c6761293"
+dependencies = [
+ "fuchsia-cprng",
+ "libc",
+ "rand_core 0.3.1",
+ "rdrand",
+ "winapi",
+]
+
+[[package]]
+name = "rand"
 version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "34af8d1a0e25924bc5b7c43c079c942339d8f0a8b57c39049bef581b46327404"
 dependencies = [
  "libc",
  "rand_chacha",
- "rand_core",
+ "rand_core 0.6.3",
 ]
 
 [[package]]
@@ -2018,8 +2046,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6c10a63a0fa32252be49d21e7709d4d4baf8d231c2dbce1eaa8141b9b127d88"
 dependencies = [
  "ppv-lite86",
- "rand_core",
+ "rand_core 0.6.3",
 ]
+
+[[package]]
+name = "rand_core"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a6fdeb83b075e8266dcc8762c22776f6877a63111121f5f8c7411e5be7eed4b"
+dependencies = [
+ "rand_core 0.4.2",
+]
+
+[[package]]
+name = "rand_core"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9c33a3c44ca05fa6f1807d8e6743f3824e8509beca625669633be0acbdf509dc"
 
 [[package]]
 name = "rand_core"
@@ -2036,7 +2079,7 @@ version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d25bf25ec5ae4a3f1b92f929810509a2f53d7dca2f50b794ff57e3face536c8f"
 dependencies = [
- "rand_core",
+ "rand_core 0.6.3",
 ]
 
 [[package]]
@@ -2064,6 +2107,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rdrand"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "678054eb77286b51581ba43620cc911abf02758c91f93f479767aed0f90458b2"
+dependencies = [
+ "rand_core 0.3.1",
+]
+
+[[package]]
 name = "reddsa"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2074,7 +2126,7 @@ dependencies = [
  "group",
  "jubjub",
  "pasta_curves",
- "rand_core",
+ "rand_core 0.6.3",
  "serde",
  "thiserror",
  "zeroize",
@@ -2090,7 +2142,7 @@ dependencies = [
  "byteorder",
  "digest 0.9.0",
  "jubjub",
- "rand_core",
+ "rand_core 0.6.3",
  "serde",
  "thiserror",
  "zeroize",
@@ -2542,6 +2594,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sharded-slab"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "900fba806f70c630b0a382d0d825e17a0f19fcd059a2ade1ff237bcddf446b31"
+dependencies = [
+ "lazy_static",
+]
+
+[[package]]
 name = "shellwords"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2727,6 +2788,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
+name = "tempdir"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "15f2b5fb00ccdf689e0149d1b1b3c03fead81c2b37735d812fa8bddbbf41b6d8"
+dependencies = [
+ "rand 0.4.6",
+ "remove_dir_all",
+]
+
+[[package]]
 name = "tempfile"
 version = "3.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2784,6 +2855,15 @@ dependencies = [
  "libc",
  "redox_syscall",
  "winapi",
+]
+
+[[package]]
+name = "thread_local"
+version = "1.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5516c27b78311c50bf42c071425c560ac799b11c30b31f87e3081965fe5e0180"
+dependencies = [
+ "once_cell",
 ]
 
 [[package]]
@@ -2998,7 +3078,7 @@ dependencies = [
  "indexmap",
  "pin-project",
  "pin-project-lite",
- "rand",
+ "rand 0.8.5",
  "slab",
  "tokio",
  "tokio-util",
@@ -3087,6 +3167,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5aeea4303076558a00714b823f9ad67d58a3bbda1df83d8827d21193156e22f7"
 dependencies = [
  "once_cell",
+ "valuable",
 ]
 
 [[package]]
@@ -3097,6 +3178,31 @@ checksum = "97d095ae15e245a057c8e8451bab9b3ee1e1f68e9ba2b4fbc18d0ac5237835f2"
 dependencies = [
  "pin-project",
  "tracing",
+]
+
+[[package]]
+name = "tracing-log"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "78ddad33d2d10b1ed7eb9d1f518a5674713876e97e5bb9b7345a7984fbb4f922"
+dependencies = [
+ "lazy_static",
+ "log",
+ "tracing-core",
+]
+
+[[package]]
+name = "tracing-subscriber"
+version = "0.3.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60db860322da191b40952ad9affe65ea23e7dd6a5c442c2c42865810c6ab8e6b"
+dependencies = [
+ "ansi_term",
+ "sharded-slab",
+ "smallvec",
+ "thread_local",
+ "tracing-core",
+ "tracing-log",
 ]
 
 [[package]]
@@ -3219,6 +3325,12 @@ name = "utf8parse"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "936e4b492acfd135421d8dca4b1aa80a7bfc26e702ef3af710e0752684df5372"
+
+[[package]]
+name = "valuable"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "830b7e5d4d90034032940e4ace0d9a9a057e7a45cd94e6c007832e39edb82f6d"
 
 [[package]]
 name = "vcpkg"
@@ -3503,7 +3615,7 @@ dependencies = [
 [[package]]
 name = "zcash_address"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/librustzcash?rev=e5484c96445dbff38cfb4a6e0983ade1bc0d7656#e5484c96445dbff38cfb4a6e0983ade1bc0d7656"
+source = "git+https://github.com/zingolabs/librustzcash?rev=d66f7f70516e6da5c24008874a926d41221b1346#d66f7f70516e6da5c24008874a926d41221b1346"
 dependencies = [
  "bech32 0.8.1",
  "bs58",
@@ -3514,12 +3626,13 @@ dependencies = [
 [[package]]
 name = "zcash_client_backend"
 version = "0.5.0"
-source = "git+https://github.com/zingolabs/librustzcash?rev=e5484c96445dbff38cfb4a6e0983ade1bc0d7656#e5484c96445dbff38cfb4a6e0983ade1bc0d7656"
+source = "git+https://github.com/zingolabs/librustzcash?rev=d66f7f70516e6da5c24008874a926d41221b1346#d66f7f70516e6da5c24008874a926d41221b1346"
 dependencies = [
  "base64",
  "bech32 0.8.1",
  "bls12_381",
  "bs58",
+ "crossbeam-channel",
  "ff",
  "group",
  "hex 0.4.3",
@@ -3530,9 +3643,11 @@ dependencies = [
  "percent-encoding",
  "protobuf",
  "protobuf-codegen-pure",
- "rand_core",
+ "rand_core 0.6.3",
+ "rayon",
  "subtle",
  "time 0.2.27",
+ "tracing",
  "zcash_address",
  "zcash_note_encryption",
  "zcash_primitives",
@@ -3541,7 +3656,7 @@ dependencies = [
 [[package]]
 name = "zcash_encoding"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/librustzcash?rev=e5484c96445dbff38cfb4a6e0983ade1bc0d7656#e5484c96445dbff38cfb4a6e0983ade1bc0d7656"
+source = "git+https://github.com/zingolabs/librustzcash?rev=d66f7f70516e6da5c24008874a926d41221b1346#d66f7f70516e6da5c24008874a926d41221b1346"
 dependencies = [
  "byteorder",
  "nonempty",
@@ -3550,18 +3665,18 @@ dependencies = [
 [[package]]
 name = "zcash_note_encryption"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/librustzcash?rev=e5484c96445dbff38cfb4a6e0983ade1bc0d7656#e5484c96445dbff38cfb4a6e0983ade1bc0d7656"
+source = "git+https://github.com/zingolabs/librustzcash?rev=d66f7f70516e6da5c24008874a926d41221b1346#d66f7f70516e6da5c24008874a926d41221b1346"
 dependencies = [
  "chacha20",
  "chacha20poly1305",
- "rand_core",
+ "rand_core 0.6.3",
  "subtle",
 ]
 
 [[package]]
 name = "zcash_primitives"
 version = "0.7.0"
-source = "git+https://github.com/zingolabs/librustzcash?rev=e5484c96445dbff38cfb4a6e0983ade1bc0d7656#e5484c96445dbff38cfb4a6e0983ade1bc0d7656"
+source = "git+https://github.com/zingolabs/librustzcash?rev=d66f7f70516e6da5c24008874a926d41221b1346#d66f7f70516e6da5c24008874a926d41221b1346"
 dependencies = [
  "aes",
  "bip0039 0.9.0",
@@ -3585,8 +3700,8 @@ dependencies = [
  "nonempty",
  "orchard",
  "proptest",
- "rand",
- "rand_core",
+ "rand 0.8.5",
+ "rand_core 0.6.3",
  "ripemd",
  "secp256k1",
  "sha2 0.9.9",
@@ -3599,7 +3714,7 @@ dependencies = [
 [[package]]
 name = "zcash_proofs"
 version = "0.7.1"
-source = "git+https://github.com/zingolabs/librustzcash?rev=e5484c96445dbff38cfb4a6e0983ade1bc0d7656#e5484c96445dbff38cfb4a6e0983ade1bc0d7656"
+source = "git+https://github.com/zingolabs/librustzcash?rev=d66f7f70516e6da5c24008874a926d41221b1346#d66f7f70516e6da5c24008874a926d41221b1346"
 dependencies = [
  "bellman",
  "blake2b_simd",
@@ -3610,7 +3725,7 @@ dependencies = [
  "group",
  "jubjub",
  "lazy_static",
- "rand_core",
+ "rand_core 0.6.3",
  "redjubjub",
  "tracing",
  "zcash_primitives",
@@ -3645,9 +3760,12 @@ dependencies = [
  "http",
  "json",
  "log",
+ "portpicker",
  "rustyline",
  "shellwords",
+ "tempdir",
  "tokio",
+ "tracing-subscriber",
  "zingoconfig",
  "zingolib",
 ]
@@ -3684,6 +3802,7 @@ dependencies = [
  "http-body",
  "hyper",
  "hyper-rustls",
+ "incrementalmerkletree",
  "json",
  "jubjub",
  "lazy_static",
@@ -3694,7 +3813,7 @@ dependencies = [
  "pairing",
  "portpicker",
  "prost",
- "rand",
+ "rand 0.8.5",
  "reqwest",
  "ring",
  "ripemd160",
@@ -3713,6 +3832,8 @@ dependencies = [
  "tonic-build",
  "tower",
  "tower-http 0.2.5",
+ "tracing",
+ "tracing-subscriber",
  "webpki-roots 0.21.1",
  "zcash_address",
  "zcash_client_backend",

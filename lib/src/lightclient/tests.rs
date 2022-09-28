@@ -12,7 +12,7 @@ use zcash_note_encryption::EphemeralKeyBytes;
 use zcash_primitives::consensus::{BlockHeight, BranchId, TestNetwork};
 use zcash_primitives::memo::Memo;
 use zcash_primitives::merkle_tree::IncrementalWitness;
-use zcash_primitives::sapling::note_encryption::sapling_note_encryption;
+use zcash_primitives::sapling::note_encryption::{sapling_note_encryption, SaplingDomain};
 use zcash_primitives::sapling::{Note, Rseed, ValueCommitment};
 use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
 use zcash_primitives::transaction::components::{OutputDescription, GROTH_PROOF_SIZE};
@@ -20,6 +20,7 @@ use zcash_primitives::transaction::Transaction;
 use zcash_primitives::zip32::{ExtendedFullViewingKey, ExtendedSpendingKey};
 
 use crate::apply_scenario;
+use crate::blaze::block_witness_data::CommitmentTreesForBlock;
 use crate::blaze::test_utils::{FakeCompactBlockList, FakeTransaction};
 use crate::lightclient::testmocks;
 
@@ -47,11 +48,12 @@ fn new_wallet_from_phrase() {
         .to_string();
 
     let config = ZingoConfig::create_unconnected(Network::FakeMainnet, Some(data_dir));
-    let lc = LightClient::new_from_phrase(TEST_SEED.to_string(), &config, 0, false).unwrap();
+    let lc =
+        LightClient::create_with_capable_wallet(TEST_SEED.to_string(), &config, 0, false).unwrap();
     assert_eq!(
         format!(
             "{:?}",
-            LightClient::new_from_phrase(TEST_SEED.to_string(), &config, 0, false)
+            LightClient::create_with_capable_wallet(TEST_SEED.to_string(), &config, 0, false)
                 .err()
                 .unwrap()
         ),
@@ -94,7 +96,7 @@ fn new_wallet_from_sapling_esk() {
 
     let config = ZingoConfig::create_unconnected(Network::FakeMainnet, Some(data_dir));
     let sk = "secret-extended-key-main1qvpa0qr8qqqqpqxn4l054nzxpxzp3a8r2djc7sekdek5upce8mc2j2z0arzps4zv940qeg706hd0wq6g5snzvhp332y6vhwyukdn8dhekmmsk7fzvzkqm6ypc99uy63tpesqwxhpre78v06cx8k5xpp9mrhtgqs5dvp68cqx2yrvthflmm2ynl8c0506dekul0f6jkcdmh0292lpphrksyc5z3pxwws97zd5els3l2mjt2s7hntap27mlmt6w0drtfmz36vz8pgu7ec0twfrq";
-    let lc = LightClient::new_from_phrase(sk.to_string(), &config, 0, false).unwrap();
+    let lc = LightClient::create_with_capable_wallet(sk.to_string(), &config, 0, false).unwrap();
     Runtime::new().unwrap().block_on(async move {
         let addresses = lc.do_address().await;
         assert_eq!(addresses["sapling_addresses"].len(), 1);
@@ -160,7 +162,7 @@ fn new_wallet_from_zvk() {
 
     let config = ZingoConfig::create_unconnected(Network::FakeMainnet, Some(data_dir));
     let vk = "zxviews1qvpa0qr8qqqqpqxn4l054nzxpxzp3a8r2djc7sekdek5upce8mc2j2z0arzps4zv9kdvg28gjzvxd47ant6jn4svln5psw3htx93cq93ahw4e7lptrtlq7he5r6p6rcm3s0z6l24ype84sgqfrmghu449htrjspfv6qg2zfx2yrvthflmm2ynl8c0506dekul0f6jkcdmh0292lpphrksyc5z3pxwws97zd5els3l2mjt2s7hntap27mlmt6w0drtfmz36vz8pgu7ecrxzsls";
-    let lc = LightClient::new_from_phrase(vk.to_string(), &config, 0, false).unwrap();
+    let lc = LightClient::create_with_capable_wallet(vk.to_string(), &config, 0, false).unwrap();
 
     Runtime::new().unwrap().block_on(async move {
         let addresses = lc.do_address().await;
@@ -203,7 +205,7 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
         .clone();
     let value = 100_000;
     let (transaction, _height, _) =
-        fake_compactblock_list.create_coinbase_transaction(&extfvk1, value);
+        fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, value);
     let txid = transaction.txid();
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
@@ -619,7 +621,7 @@ async fn sapling_incoming_multisapling_outgoing(scenario: NBlockFCBLScenario) {
         .clone();
     let value = 100_000;
     let (_transaction, _height, _) =
-        fake_compactblock_list.create_coinbase_transaction(&extfvk1, value);
+        fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, value);
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
     mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
 
@@ -688,20 +690,28 @@ async fn sapling_to_sapling_scan_together() {
         let lock = keys_readlock.read().await;
         let mockuser_extfvk = lock.get_all_sapling_extfvks()[0].clone();
         (
-            lock.get_extsk_for_extfvk(&lock.get_all_sapling_extfvks()[0])
-                .unwrap(),
+            lock.get_spend_key_for_fvk::<SaplingDomain<Network>>(
+                &lock.get_all_sapling_extfvks()[0],
+            )
+            .unwrap(),
             mockuser_extfvk,
         )
     };
     let value = 100_000;
     let (transaction, _height, note) = fake_compactblock_list // NOTE: Extracting fvk this way for future proof.
-        .create_coinbase_transaction(&ExtendedFullViewingKey::from(&mockuser_spendkey), value);
+        .create_sapling_coinbase_transaction(
+            &ExtendedFullViewingKey::from(&mockuser_spendkey),
+            value,
+        );
     let txid = transaction.txid();
 
     // 3. Calculate witness so we can get the nullifier without it getting mined
-    let tree = crate::blaze::test_utils::tree_from_cblocks(&fake_compactblock_list.blocks);
-    let witness = IncrementalWitness::from_tree(&tree);
-    let nf = note.nf(&mockuser_extfvk.fvk.vk, witness.position() as u64);
+    let trees = crate::blaze::test_utils::trees_from_cblocks(&fake_compactblock_list.blocks);
+    let witness_from_last_sapling_tree = IncrementalWitness::from_tree(trees.0.last().unwrap());
+    let nf = note.nf(
+        &mockuser_extfvk.fvk.vk.nk,
+        witness_from_last_sapling_tree.position() as u64,
+    );
 
     //  Create recipient to receive funds from Mock User
     let pa = if let Some(RecipientAddress::Shielded(pa)) =
@@ -776,7 +786,7 @@ async fn sapling_incoming_viewkey(scenario: NBlockFCBLScenario) {
 
     let value = 100_000;
     let (transaction, _height, _) =
-        fake_compactblock_list.create_coinbase_transaction(&iextfvk, value);
+        fake_compactblock_list.create_sapling_coinbase_transaction(&iextfvk, value);
     let txid = transaction.txid();
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
     mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
@@ -789,6 +799,14 @@ async fn sapling_incoming_viewkey(scenario: NBlockFCBLScenario) {
             .unwrap(),
         value
     );
+
+    log::debug!("{}", lightclient.do_balance().await);
+    assert!(!lightclient
+        .wallet
+        .keys()
+        .read()
+        .await
+        .have_sapling_spending_key(&iextfvk));
     assert_eq!(
         lightclient.do_balance().await["spendable_sapling_balance"]
             .as_u64()
@@ -1038,7 +1056,7 @@ async fn mixed_transaction(scenario: NBlockFCBLScenario) {
         .clone();
     let zvalue = 100_000;
     let (_ztransaction, _height, _) =
-        fake_compactblock_list.create_coinbase_transaction(&extfvk1, zvalue);
+        fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, zvalue);
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
     mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
 
@@ -1150,7 +1168,7 @@ async fn aborted_resync(scenario: NBlockFCBLScenario) {
         .clone();
     let zvalue = 100_000;
     let (_ztransaction, _height, _) =
-        fake_compactblock_list.create_coinbase_transaction(&extfvk1, zvalue);
+        fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, zvalue);
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
     mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
 
@@ -1276,7 +1294,7 @@ async fn no_change(scenario: NBlockFCBLScenario) {
         .clone();
     let zvalue = 100_000;
     let (_ztransaction, _height, _) =
-        fake_compactblock_list.create_coinbase_transaction(&extfvk1, zvalue);
+        fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, zvalue);
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
     mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
 
@@ -1326,7 +1344,11 @@ async fn recover_at_checkpoint() {
     data.write()
         .await
         .tree_states
-        .push((ckpt_height, hash.to_string(), tree.to_string()));
+        .push(CommitmentTreesForBlock::from_pre_orchard_checkpoint(
+            ckpt_height,
+            hash.to_string(),
+            tree.to_string(),
+        ));
 
     // 2. Mine 110 blocks after 1220000
     let mut fcbl = FakeCompactBlockList::new(0);
@@ -1430,7 +1452,7 @@ async fn witness_clearing(scenario: NBlockFCBLScenario) {
         .clone();
     let value = 100_000;
     let (transaction, _height, _) =
-        fake_compactblock_list.create_coinbase_transaction(&extfvk1, value);
+        fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, value);
     let txid = transaction.txid();
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
     mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
@@ -1535,7 +1557,7 @@ async fn mempool_clearing(scenario: NBlockFCBLScenario) {
         .clone();
     let value = 100_000;
     let (transaction, _height, _) =
-        fake_compactblock_list.create_coinbase_transaction(&extfvk1, value);
+        fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, value);
     let orig_transaction_id = transaction.txid().to_string();
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
     mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
@@ -1670,7 +1692,7 @@ async fn mempool_and_balance(scenario: NBlockFCBLScenario) {
         .clone();
     let value = 100_000;
     let (_transaction, _height, _) =
-        fake_compactblock_list.create_coinbase_transaction(&extfvk1, value);
+        fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, value);
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
     let bal = lightclient.do_balance().await;

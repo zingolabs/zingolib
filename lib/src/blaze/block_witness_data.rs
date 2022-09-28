@@ -8,9 +8,10 @@ use crate::{
         transactions::TransactionMetadataSet,
     },
 };
-use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
+use log::info;
+use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard, Anchor};
 use zcash_note_encryption::Domain;
-use zingoconfig::{ZingoConfig, MAX_REORG};
+use zingoconfig::{Network, ZingoConfig, MAX_REORG};
 
 use futures::future::join_all;
 use http::Uri;
@@ -32,24 +33,32 @@ use zcash_primitives::{
 
 use super::{fixed_size_buffer::FixedSizeBuffer, sync_status::SyncStatus};
 
-#[allow(dead_code)]
+type Node<D> = <<D as DomainWalletExt<zingoconfig::Network>>::WalletNote as NoteAndMetadata>::Node;
+
 pub struct BlockAndWitnessData {
-    // List of all blocks and their hashes/commitment trees.
-    // Stored with the tallest block first, and the shortest last.
-    blocks: Arc<RwLock<Vec<BlockData>>>,
+    // List of all downloaded blocks in the current batch and
+    // their hashes/commitment trees. Stored with the tallest
+    // block first, and the shortest last.
+    blocks_in_current_batch: Arc<RwLock<Vec<BlockData>>>,
 
     // List of existing blocks in the wallet. Used for reorgs
     existing_blocks: Arc<RwLock<Vec<BlockData>>>,
 
     // List of sapling tree states that were fetched from the server,
     // which need to be verified before we return from the function.
-    verification_list: Arc<RwLock<Vec<TreeState>>>,
+    pub unverified_treestates: Arc<RwLock<Vec<TreeState>>>,
 
     // How many blocks to process at a time.
     batch_size: u64,
 
-    // Heighest verified tree
-    verified_tree: Option<TreeState>,
+    // Highest verified trees
+    // The incorrect type name "TreeState" is encoded in protobuf
+    // there are 'treestate' members of this type for each commitment
+    // tree producing protocol
+    highest_verified_trees: Option<TreeState>,
+
+    // Orchard anchors, and their heights.
+    pub(crate) orchard_anchors: Arc<RwLock<Vec<(Anchor, BlockHeight)>>>,
 
     // Link to the syncstatus where we can update progress
     sync_status: Arc<RwLock<SyncStatus>>,
@@ -61,11 +70,12 @@ pub struct BlockAndWitnessData {
 impl BlockAndWitnessData {
     pub fn new(config: &ZingoConfig, sync_status: Arc<RwLock<SyncStatus>>) -> Self {
         Self {
-            blocks: Arc::new(RwLock::new(vec![])),
+            blocks_in_current_batch: Arc::new(RwLock::new(vec![])),
             existing_blocks: Arc::new(RwLock::new(vec![])),
-            verification_list: Arc::new(RwLock::new(vec![])),
+            unverified_treestates: Arc::new(RwLock::new(vec![])),
             batch_size: 25_000,
-            verified_tree: None,
+            highest_verified_trees: None,
+            orchard_anchors: Arc::new(RwLock::new(Vec::new())),
             sync_status,
             sapling_activation_height: config.sapling_activation_height(),
             orchard_activation_height: config
@@ -94,10 +104,10 @@ impl BlockAndWitnessData {
                 panic!("Blocks are in wrong order");
             }
         }
-        self.verification_list.write().await.clear();
-        self.verified_tree = verified_tree;
+        self.unverified_treestates.write().await.clear();
+        self.highest_verified_trees = verified_tree;
 
-        self.blocks.write().await.clear();
+        self.blocks_in_current_batch.write().await.clear();
 
         self.existing_blocks.write().await.clear();
         self.existing_blocks.write().await.extend(existing_blocks);
@@ -115,10 +125,10 @@ impl BlockAndWitnessData {
         &self,
         num: usize,
     ) -> Vec<BlockData> {
-        self.verification_list.write().await.clear();
+        self.unverified_treestates.write().await.clear();
 
         {
-            let mut blocks = self.blocks.write().await;
+            let mut blocks = self.blocks_in_current_batch.write().await;
             blocks.extend(self.existing_blocks.write().await.drain(..));
 
             blocks.truncate(num);
@@ -134,7 +144,7 @@ impl BlockAndWitnessData {
         self.wait_for_block(height).await;
 
         let cb = {
-            let blocks = self.blocks.read().await;
+            let blocks = self.blocks_in_current_batch.read().await;
             let pos = blocks.first().unwrap().height - height;
             let bd = blocks.get(pos as usize).unwrap();
 
@@ -164,7 +174,7 @@ impl BlockAndWitnessData {
     }
 
     // Verify all the downloaded tree states
-    pub async fn verify_sapling_tree(&self) -> (bool, Option<TreeState>) {
+    pub async fn verify_trees(&self) -> (bool, Option<TreeState>) {
         // Verify only on the last batch
         {
             let sync_status = self.sync_status.read().await;
@@ -174,17 +184,23 @@ impl BlockAndWitnessData {
         }
 
         // If there's nothing to verify, return
-        if self.verification_list.read().await.is_empty() {
+        if self.unverified_treestates.read().await.is_empty() {
+            info!("nothing to verify, returning");
             return (true, None);
         }
 
         // Sort and de-dup the verification list
-        let mut verification_list = self.verification_list.write().await.split_off(0);
-        verification_list.sort_by_cached_key(|ts| ts.height);
-        verification_list.dedup_by_key(|ts| ts.height);
+        // split_off(0) is a hack to assign ownership of the entire vector to
+        // the ident on the left
+        let mut unverified_tree_states: Vec<TreeState> =
+            self.unverified_treestates.write().await.drain(..).collect();
+        unverified_tree_states.sort_unstable_by_key(|treestate| treestate.height);
+        unverified_tree_states.dedup_by_key(|treestate| treestate.height);
 
         // Remember the highest tree that will be verified, and return that.
-        let heighest_tree = verification_list.last().map(|ts| ts.clone());
+        let highest_tree = unverified_tree_states
+            .last()
+            .map(|treestate| treestate.clone());
 
         let mut start_trees = vec![];
 
@@ -193,22 +209,23 @@ impl BlockAndWitnessData {
             get_all_main_checkpoints()
                 .into_iter()
                 .map(|(h, hash, tree)| {
-                    let mut tree_state = TreeState::default();
-                    tree_state.height = h;
-                    tree_state.hash = hash.to_string();
-                    tree_state.sapling_tree = tree.to_string();
+                    let mut trees_state = TreeState::default();
+                    trees_state.height = h;
+                    trees_state.hash = hash.to_string();
+                    trees_state.sapling_tree = tree.to_string();
+                    trees_state.orchard_tree = String::from("000000");
 
-                    tree_state
+                    trees_state
                 }),
         );
 
-        // Add all the verification trees as verified, so they can be used as starting points. If any of them fails to verify, then we will
-        // fail the whole thing anyway.
-        start_trees.extend(verification_list.iter().map(|t| t.clone()));
+        // Add all the verification trees as verified, so they can be used as starting points.
+        // If any of them fails to verify, then we will fail the whole thing anyway.
+        start_trees.extend(unverified_tree_states.iter().map(|t| t.clone()));
 
-        // Also add the wallet's heighest tree
-        if self.verified_tree.is_some() {
-            start_trees.push(self.verified_tree.as_ref().unwrap().clone());
+        // Also add the wallet's highest tree
+        if self.highest_verified_trees.is_some() {
+            start_trees.push(self.highest_verified_trees.as_ref().unwrap().clone());
         }
 
         // If there are no available start trees, there is nothing to verify.
@@ -217,21 +234,22 @@ impl BlockAndWitnessData {
         }
 
         // sort
-        start_trees.sort_by_cached_key(|ts| ts.height);
+        start_trees.sort_unstable_by_key(|trees_state| trees_state.height);
 
         // Now, for each tree state that we need to verify, find the closest one
-        let tree_pairs = verification_list
+        let tree_pairs = unverified_tree_states
             .into_iter()
-            .filter_map(|vt| {
-                let height = vt.height;
-                let closest_tree =
-                    start_trees.iter().fold(
-                        None,
-                        |ct, st| if st.height < height { Some(st) } else { ct },
-                    );
+            .filter_map(|candidate| {
+                let closest_tree = start_trees.iter().fold(None, |closest, start| {
+                    if start.height < candidate.height {
+                        Some(start)
+                    } else {
+                        closest
+                    }
+                });
 
                 if closest_tree.is_some() {
-                    Some((vt, closest_tree.unwrap().clone()))
+                    Some((candidate, closest_tree.unwrap().clone()))
                 } else {
                     None
                 }
@@ -239,52 +257,10 @@ impl BlockAndWitnessData {
             .collect::<Vec<_>>();
 
         // Verify each tree pair
-        let blocks = self.blocks.clone();
+        let blocks = self.blocks_in_current_batch.clone();
         let handles: Vec<JoinHandle<bool>> = tree_pairs
             .into_iter()
-            .map(|(vt, ct)| {
-                let blocks = blocks.clone();
-                tokio::spawn(async move {
-                    assert!(ct.height <= vt.height);
-
-                    if ct.height == vt.height {
-                        return true;
-                    }
-                    let mut tree = CommitmentTree::<SaplingNode>::read(
-                        &hex::decode(ct.sapling_tree).unwrap()[..],
-                    )
-                    .unwrap();
-
-                    {
-                        let blocks = blocks.read().await;
-
-                        let top_block = blocks.first().unwrap().height;
-                        let start_pos = (top_block - ct.height - 1) as usize;
-                        let end_pos = (top_block - vt.height) as usize;
-
-                        if start_pos >= blocks.len() || end_pos >= blocks.len() {
-                            // Blocks are not in the current sync, which means this has already been verified
-                            return true;
-                        }
-
-                        for i in (end_pos..start_pos + 1).rev() {
-                            let cb = &blocks.get(i as usize).unwrap().cb();
-                            for compact_transaction in &cb.vtx {
-                                for co in &compact_transaction.outputs {
-                                    let node = SaplingNode::new(co.cmu().unwrap().into());
-                                    tree.append(node).unwrap();
-                                }
-                            }
-                        }
-                    }
-                    // Verify that the verification_tree can be calculated from the start tree
-                    let mut buf = vec![];
-                    tree.write(&mut buf).unwrap();
-
-                    // Return if verified
-                    hex::encode(buf) == vt.sapling_tree
-                })
-            })
+            .map(|(candidate, closest)| Self::verify_tree_pair(blocks.clone(), candidate, closest))
             .collect();
 
         let results = join_all(handles)
@@ -297,13 +273,86 @@ impl BlockAndWitnessData {
         }
 
         // If any one was false, return false
-        if results.unwrap().into_iter().find(|r| *r == false).is_some() {
+        if !results.unwrap().into_iter().all(std::convert::identity) {
             return (false, None);
         }
 
-        return (true, heighest_tree);
+        return (true, highest_tree);
     }
 
+    ///  This associated fn compares a pair of trees and informs the caller
+    ///  whether the candidate tree can be derived from the trusted reference
+    ///  tree according to (we hope) the protocol.
+    fn verify_tree_pair(
+        blocks: Arc<RwLock<Vec<BlockData>>>,
+        unverified_tree: TreeState,
+        closest_lower_verified_tree: TreeState,
+    ) -> JoinHandle<bool> {
+        assert!(closest_lower_verified_tree.height <= unverified_tree.height);
+        tokio::spawn(async move {
+            if closest_lower_verified_tree.height == unverified_tree.height {
+                return true;
+            }
+            let mut sapling_tree = CommitmentTree::<SaplingNode>::read(
+                &hex::decode(closest_lower_verified_tree.sapling_tree).unwrap()[..],
+            )
+            .unwrap();
+            let mut orchard_tree = CommitmentTree::<MerkleHashOrchard>::read(
+                &hex::decode(closest_lower_verified_tree.orchard_tree).unwrap()[..],
+            )
+            .expect("Invalid orchard tree!");
+
+            {
+                let blocks = blocks.read().await;
+                let top_block = blocks.first().unwrap().height;
+                let start_pos = (top_block - closest_lower_verified_tree.height - 1) as usize;
+                let end_pos = (top_block - unverified_tree.height) as usize;
+
+                if start_pos >= blocks.len() || end_pos >= blocks.len() {
+                    // Blocks are not in the current sync, which means this has already been verified
+                    return true;
+                }
+
+                for i in (end_pos..start_pos + 1).rev() {
+                    let cb = &blocks.get(i as usize).unwrap().cb();
+                    for compact_transaction in &cb.vtx {
+                        update_trees_with_compact_transaction(
+                            &mut sapling_tree,
+                            &mut orchard_tree,
+                            compact_transaction,
+                        )
+                    }
+                }
+            }
+            // Verify that the verification_tree can be calculated from the start tree
+            let mut sapling_buf = vec![];
+            sapling_tree.write(&mut sapling_buf).unwrap();
+            let mut orchard_buf = vec![];
+            orchard_tree.write(&mut orchard_buf).unwrap();
+            let determined_orchard_tree = hex::encode(orchard_buf);
+
+            // Return if verified
+            if (hex::encode(sapling_buf) == unverified_tree.sapling_tree)
+                && (determined_orchard_tree == unverified_tree.orchard_tree)
+            {
+                true
+            } else {
+                // Parentless trees are encoded differently by zcashd for Orchard than for Sapling
+                // this hack allows the case of a parentless orchard_tree
+                if determined_orchard_tree[..132] == unverified_tree.orchard_tree[..132]
+                    && &determined_orchard_tree[132..] == "00"
+                    && unverified_tree.orchard_tree[134..]
+                        .chars()
+                        .all(|character| character == '0')
+                {
+                    true
+                } else {
+                    dbg!(determined_orchard_tree, unverified_tree.orchard_tree);
+                    false
+                }
+            }
+        })
+    }
     // Invalidate the block (and wallet transactions associated with it) at the given block height
     pub async fn invalidate_block(
         reorg_height: u64,
@@ -340,7 +389,7 @@ impl BlockAndWitnessData {
         // Create a new channel where we'll receive the blocks
         let (transmitter, mut receiver) = mpsc::unbounded_channel::<CompactBlock>();
 
-        let blocks = self.blocks.clone();
+        let blocks = self.blocks_in_current_batch.clone();
         let existing_blocks = self.existing_blocks.clone();
 
         let sync_status = self.sync_status.clone();
@@ -361,9 +410,9 @@ impl BlockAndWitnessData {
             // Reorg stuff
             let mut last_block_expecting = end_block;
 
-            while let Some(cb) = receiver.recv().await {
+            while let Some(compact_block) = receiver.recv().await {
                 // We'll process 25_000 blocks at a time.
-                if cb.height % batch_size == 0 {
+                if compact_block.height % batch_size == 0 {
                     if !blks.is_empty() {
                         // Add these blocks to the list
                         sync_status.write().await.blocks_done += blks.len() as u64;
@@ -372,11 +421,11 @@ impl BlockAndWitnessData {
                 }
 
                 // Check if this is the last block we are expecting
-                if cb.height == last_block_expecting {
+                if compact_block.height == last_block_expecting {
                     // Check to see if the prev block's hash matches, and if it does, finish the task
                     let reorg_block = match existing_blocks.read().await.first() {
                         Some(top_block) => {
-                            if top_block.hash() == cb.prev_hash().to_string() {
+                            if top_block.hash() == compact_block.prev_hash().to_string() {
                                 None
                             } else {
                                 // send a reorg signal
@@ -402,8 +451,8 @@ impl BlockAndWitnessData {
                     reorg_transmitter.send(reorg_block).unwrap();
                 }
 
-                earliest_block_height = cb.height;
-                blks.push(BlockData::new(cb));
+                earliest_block_height = compact_block.height;
+                blks.push(BlockData::new(compact_block));
             }
 
             if !blks.is_empty() {
@@ -431,7 +480,7 @@ impl BlockAndWitnessData {
 
     async fn wait_for_first_block(&self) -> u64 {
         loop {
-            match self.blocks.read().await.first() {
+            match self.blocks_in_current_batch.read().await.first() {
                 None => {
                     yield_now().await;
                     sleep(Duration::from_millis(100)).await;
@@ -449,7 +498,15 @@ impl BlockAndWitnessData {
     async fn wait_for_block(&self, threshold_height: u64) {
         self.wait_for_first_block().await;
 
-        while self.blocks.read().await.last().unwrap().height > threshold_height {
+        while self
+            .blocks_in_current_batch
+            .read()
+            .await
+            .last()
+            .unwrap()
+            .height
+            > threshold_height
+        {
             yield_now().await;
             sleep(Duration::from_millis(100)).await;
 
@@ -466,7 +523,7 @@ impl BlockAndWitnessData {
 
         {
             // Read Lock
-            let blocks = self.blocks.read().await;
+            let blocks = self.blocks_in_current_batch.read().await;
             let pos = blocks.first().unwrap().height - after_height;
             match nf {
                 ChannelNullifier::Sapling(nf) => {
@@ -507,7 +564,7 @@ impl BlockAndWitnessData {
         self.wait_for_block(height).await;
 
         {
-            let blocks = self.blocks.read().await;
+            let blocks = self.blocks_in_current_batch.read().await;
             let pos = blocks.first().unwrap().height - height;
             blocks.get(pos as usize).unwrap().cb().time
         }
@@ -525,9 +582,8 @@ impl BlockAndWitnessData {
     ) -> Result<IncrementalWitness<<D::WalletNote as NoteAndMetadata>::Node>, String>
     where
         D: DomainWalletExt<zingoconfig::Network>,
-        D::Note: PartialEq,
+        D::Note: PartialEq + Clone,
         D::ExtractedCommitmentBytes: Into<[u8; 32]>,
-        [u8; 32]: From<<D as Domain>::ExtractedCommitmentBytes>,
         D::Recipient: crate::wallet::traits::Recipient,
     {
         // Get the previous block's height, because that block's commitment trees are the states at the start
@@ -541,9 +597,7 @@ impl BlockAndWitnessData {
             } else {
                 let tree_state = GrpcConnector::get_trees(uri, prev_height).await?;
                 let tree = hex::decode(D::get_tree(&tree_state)).unwrap();
-                RwLock::write(&self.verification_list)
-                    .await
-                    .push(tree_state);
+                self.unverified_treestates.write().await.push(tree_state);
                 CommitmentTree::read(&tree[..]).map_err(|e| format!("{}", e))?
             };
 
@@ -553,7 +607,7 @@ impl BlockAndWitnessData {
                 self.wait_for_block(height).await;
 
                 {
-                    let blocks = RwLock::read(&self.blocks).await;
+                    let blocks = RwLock::read(&self.blocks_in_current_batch).await;
 
                     let pos = blocks.first().unwrap().height - height;
                     let bd = blocks.get(pos as usize).unwrap();
@@ -627,10 +681,14 @@ impl BlockAndWitnessData {
     }
 
     // Stream all the outputs start at the block till the highest block available.
-    pub(crate) async fn update_witness_after_block<Node: Hashable + FromCommitment>(
+    pub(crate) async fn update_witness_after_block<D: DomainWalletExt<zingoconfig::Network>>(
         &self,
-        witnesses: WitnessCache<Node>,
-    ) -> WitnessCache<Node> {
+        witnesses: WitnessCache<Node<D>>,
+    ) -> WitnessCache<Node<D>>
+    where
+        <D as Domain>::Recipient: crate::wallet::traits::Recipient,
+        <D as Domain>::Note: PartialEq + Clone,
+    {
         let height = witnesses.top_height + 1;
 
         // Check if we've already synced all the requested blocks
@@ -642,7 +700,7 @@ impl BlockAndWitnessData {
         let mut fsb = FixedSizeBuffer::new(MAX_REORG);
 
         let top_block = {
-            let mut blocks = self.blocks.read().await;
+            let mut blocks = self.blocks_in_current_batch.read().await;
             let top_block = blocks.first().unwrap().height;
             let pos = top_block - height;
 
@@ -653,9 +711,9 @@ impl BlockAndWitnessData {
             for i in (0..pos + 1).rev() {
                 let cb = &blocks.get(i as usize).unwrap().cb();
                 for compact_transaction in &cb.vtx {
-                    for co in &compact_transaction.outputs {
-                        if let Some(node) = Node::from_commitment(&co.cmu().unwrap().into()).into()
-                        {
+                    use crate::wallet::traits::CompactOutput as _;
+                    for co in D::CompactOutput::from_compact_transaction(compact_transaction) {
+                        if let Some(node) = Node::<D>::from_commitment(&co.cmstar()).into() {
                             w.append(node).unwrap();
                         }
                     }
@@ -668,7 +726,7 @@ impl BlockAndWitnessData {
                     // Every 10k blocks, give up the lock, let other threads proceed and then re-acquire it
                     drop(blocks);
                     yield_now().await;
-                    blocks = self.blocks.read().await;
+                    blocks = self.blocks_in_current_batch.read().await;
                 }
             }
 
@@ -687,7 +745,7 @@ impl BlockAndWitnessData {
     ) -> WitnessCache<<D::WalletNote as NoteAndMetadata>::Node>
     where
         D::Recipient: crate::wallet::traits::Recipient,
-        D::Note: PartialEq,
+        D::Note: PartialEq + Clone,
         <D::WalletNote as NoteAndMetadata>::Node: FromCommitment,
     {
         let height = u64::from(*height);
@@ -698,7 +756,7 @@ impl BlockAndWitnessData {
         let mut w = witnesses.last().unwrap().clone();
 
         {
-            let blocks = self.blocks.read().await;
+            let blocks = self.blocks_in_current_batch.read().await;
             let pos = blocks.first().unwrap().height - height;
 
             let mut transaction_id_found = false;
@@ -740,7 +798,87 @@ impl BlockAndWitnessData {
         // Replace the last witness in the vector with the newly computed one.
         let witnesses = WitnessCache::new(vec![w], height);
 
-        return self.update_witness_after_block(witnesses).await;
+        return self.update_witness_after_block::<D>(witnesses).await;
+    }
+}
+
+/// The sapling tree and orchard tree for a given block height, with the block hash.
+/// The hash is likely used for reorgs.
+#[derive(Debug, Clone)]
+pub struct CommitmentTreesForBlock {
+    pub block_height: u64,
+    pub block_hash: String,
+    pub sapling_tree: CommitmentTree<SaplingNode>,
+    pub orchard_tree: CommitmentTree<MerkleHashOrchard>,
+}
+
+// The following four allow(unused) functions are currently only called in test code
+impl CommitmentTreesForBlock {
+    #[allow(unused)]
+    pub fn to_tree_state(&self) -> TreeState {
+        TreeState {
+            height: self.block_height,
+            hash: self.block_hash.clone(),
+            sapling_tree: tree_to_string(&self.sapling_tree),
+            orchard_tree: tree_to_string(&self.orchard_tree),
+            // We don't care about the rest of these fields
+            ..Default::default()
+        }
+    }
+    #[allow(unused)]
+    pub fn empty() -> Self {
+        Self {
+            block_height: 0,
+            block_hash: "".to_string(),
+            sapling_tree: CommitmentTree::empty(),
+            orchard_tree: CommitmentTree::empty(),
+        }
+    }
+    #[allow(unused)]
+    pub fn from_pre_orchard_checkpoint(
+        block_height: u64,
+        block_hash: String,
+        sapling_tree: String,
+    ) -> Self {
+        Self {
+            block_height,
+            block_hash,
+            sapling_tree: CommitmentTree::read(&*hex::decode(sapling_tree).unwrap()).unwrap(),
+            orchard_tree: CommitmentTree::empty(),
+        }
+    }
+}
+
+#[allow(unused)]
+pub fn tree_to_string<Node: Hashable>(tree: &CommitmentTree<Node>) -> String {
+    let mut b1 = vec![];
+    tree.write(&mut b1).unwrap();
+    hex::encode(b1)
+}
+
+pub fn update_trees_with_compact_transaction(
+    sapling_tree: &mut CommitmentTree<SaplingNode>,
+    orchard_tree: &mut CommitmentTree<MerkleHashOrchard>,
+    compact_transaction: &CompactTx,
+) {
+    update_tree_with_compact_transaction::<SaplingDomain<Network>>(
+        sapling_tree,
+        compact_transaction,
+    );
+    update_tree_with_compact_transaction::<OrchardDomain>(orchard_tree, compact_transaction);
+}
+
+pub fn update_tree_with_compact_transaction<D: DomainWalletExt<Network>>(
+    tree: &mut CommitmentTree<Node<D>>,
+    compact_transaction: &CompactTx,
+) where
+    <D as Domain>::Recipient: crate::wallet::traits::Recipient,
+    <D as Domain>::Note: PartialEq + Clone,
+{
+    use crate::wallet::traits::CompactOutput;
+    for output in D::CompactOutput::from_compact_transaction(&compact_transaction) {
+        let node = Node::<D>::from_commitment(output.cmstar()).unwrap();
+        tree.append(node).unwrap()
     }
 }
 
@@ -749,20 +887,24 @@ mod test {
     use std::sync::Arc;
 
     use crate::blaze::sync_status::SyncStatus;
+    use crate::compact_formats::CompactBlock;
     use crate::wallet::transactions::TransactionMetadataSet;
     use crate::{
         blaze::test_utils::{FakeCompactBlock, FakeCompactBlockList},
         wallet::data::BlockData,
     };
     use futures::future::join_all;
+    use orchard::tree::MerkleHashOrchard;
     use rand::rngs::OsRng;
     use rand::RngCore;
     use tokio::sync::RwLock;
     use tokio::{sync::mpsc::unbounded_channel, task::JoinHandle};
     use zcash_primitives::block::BlockHash;
+    use zcash_primitives::merkle_tree::CommitmentTree;
+    use zcash_primitives::sapling;
     use zingoconfig::{Network, ZingoConfig};
 
-    use super::BlockAndWitnessData;
+    use super::*;
 
     #[tokio::test]
     async fn setup_finish_simple() {
@@ -1067,5 +1209,59 @@ mod test {
                 finished_blks[i].cb().hash().to_string()
             );
         }
+    }
+
+    const SAPLING_START: &'static str = "01f2e6144dbd45cf3faafd337fe59916fe5659b4932a4a008b535b8912a8f5c0000131ac2795ef458f5223f929680085935ebd5cb84d4849b3813b03aeb80d812241020001bcc10bd2116f34cd46d0dedef75c489d6ef9b6b551c0521e3b2e56b7f641fb01";
+    const ORCHARD_START: &'static str = "000000";
+    const SAPLING_END: &'static str = "01ea571adc215d4eac2925efafd854c76a8afc69f07d49155febaa46f979c6616d0003000001dc4b3f1381533d99b536252aaba09b08fa1c1ddc0687eb4ede716e6a5fbfb003";
+    const ORCHARD_END: &'static str = "011e9dcd34e245194b66dff86b1cabaa87b29e96df711e4fff72da64e88656090001c3bf930865f0c2139ce1548b0bfabd8341943571e8af619043d84d12b51355071f00000000000000000000000000000000000000000000000000000000000000";
+    const BLOCK: &'static str = "10071a209bf92fdc55b77cbae5d13d49b4d64374ebe7ac3c5579134100e600bc01208d052220b84a8818a26321dca19ad1007d4bb99fafa07b048a0b471b1a4bbd0199ea3c0828d2fe9299063a4612203bc5bbb7df345e336288a7ffe8fac6f7dcb4ee6e4d3b4e852bcd7d52fef8d66a2a220a20d2f3948ed5e06345446d753d2688cdb1d949e0fed1e0f271e04197d0c63251023ace0308011220d151d78dec5dcf5e0308f7bfbf00d80be27081766d2cb5070c22b4556aadc88122220a20bd5312efa676f7000e5d660f01bfd946fd11102af75e7f969a0d84931e16f3532a220a20601ed4084186c4499a1bb5000490582649da2df8f2ba3e749a07c5c0aaeb9f0e2a220a20ea571adc215d4eac2925efafd854c76a8afc69f07d49155febaa46f979c6616d329c010a2062faac36e47bf420b90379b7c96cc5956daa0deedb4ed392928ba588fa5aac1012201e9dcd34e245194b66dff86b1cabaa87b29e96df711e4fff72da64e8865609001a20f5153d2a8ee2e211a7966b52e6bb3b089f32f8c55a57df1f245e6f1ec3356b982234e26e07bfb0d3c0bae348a6196ba3f069e3a1861fa4da1895ab4ad86ece7934231f6490c6e26b63298d8464560b41b2941add03ac329c010a2028ac227306fb680dc501ba9c8c51312b29b2eb79d61e5645f5486039462a620b1220c3bf930865f0c2139ce1548b0bfabd8341943571e8af619043d84d12b51355071a200803db70afdeb80b0f47a703df68c62e007e162b8b983b6f2f5df8d7b24c18a322342b1f151f67048590976a3a69e1d8a6c7408c3489bd81696cad15a9ac0a92d20f1b17ebf717f52695aeaf123aaab0ac406d6afd4a";
+
+    fn decode_block() -> CompactBlock {
+        <CompactBlock as prost::Message>::decode(&*hex::decode(BLOCK).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn orchard_starts_empty() {
+        let empty_tree =
+            CommitmentTree::<MerkleHashOrchard>::read(&*hex::decode(ORCHARD_START).unwrap())
+                .unwrap();
+        assert_eq!(empty_tree, CommitmentTree::<MerkleHashOrchard>::empty());
+    }
+
+    #[test]
+    fn get_sapling_end_from_start_plus_block() {
+        let mut start_tree =
+            CommitmentTree::<sapling::Node>::read(&*hex::decode(SAPLING_START).unwrap()).unwrap();
+        let cb = decode_block();
+
+        for compact_transaction in &cb.vtx {
+            super::update_tree_with_compact_transaction::<SaplingDomain<Network>>(
+                &mut start_tree,
+                compact_transaction,
+            )
+        }
+        let end_tree =
+            CommitmentTree::<sapling::Node>::read(&*hex::decode(SAPLING_END).unwrap()).unwrap();
+        assert_eq!(start_tree, end_tree);
+    }
+
+    #[test]
+    #[ignore]
+    fn get_orchard_end_from_start_plus_block() {
+        let mut start_tree =
+            CommitmentTree::<MerkleHashOrchard>::read(&*hex::decode(ORCHARD_START).unwrap())
+                .unwrap();
+        let cb = decode_block();
+
+        for compact_transaction in &cb.vtx {
+            super::update_tree_with_compact_transaction::<OrchardDomain>(
+                &mut start_tree,
+                compact_transaction,
+            )
+        }
+        let end_tree =
+            CommitmentTree::<MerkleHashOrchard>::read(&*hex::decode(ORCHARD_END).unwrap()).unwrap();
+        assert_eq!(start_tree, end_tree);
     }
 }

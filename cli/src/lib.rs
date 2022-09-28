@@ -7,7 +7,7 @@ use log::{error, info};
 use clap::{self, Arg};
 use regtest::ChildProcessHandler;
 use zingoconfig::{Network, ZingoConfig};
-use zingolib::{commands, create_on_data_dir, lightclient::LightClient};
+use zingolib::{commands, create_zingoconf_with_datadir, lightclient::LightClient};
 
 pub mod regtest;
 pub mod version;
@@ -226,7 +226,7 @@ pub fn command_loop(
 pub fn attempt_recover_seed(_password: Option<String>) {
     // Create a Light Client Config in an attempt to recover the file.
     ZingoConfig {
-        server: Arc::new(RwLock::new("0.0.0.0:0".parse().unwrap())),
+        server_uri: Arc::new(RwLock::new("0.0.0.0:0".parse().unwrap())),
         chain: zingoconfig::Network::Mainnet,
         monitor_mempool: false,
         anchor_offset: [0u32; 5],
@@ -270,7 +270,7 @@ impl From<regtest::LaunchChildProcessError> for CLIRunError {
     }
 }
 /// This type manages setup of the zingo-cli utility among its responsibilities:
-///  * parse arguments with standard clap: https://crates.io/crates/clap
+///  * parse arguments with standard clap: <https://crates.io/crates/clap>
 ///  * behave correctly as a function of each parameter that may have been passed
 ///      * add details of above here
 ///  * handle parameters as efficiently as possible.
@@ -333,14 +333,14 @@ to scan from the start of the blockchain."
         //   * spawn zcashd in regtest mode
         //   * spawn lighwalletd and connect it to zcashd
         let regtest_manager = if matches.is_present("regtest") {
-            let regtest_manager = regtest::RegtestManager::new();
+            let regtest_manager = regtest::RegtestManager::new(None);
             child_process_handler = Some(regtest_manager.launch(clean_regtest_data)?);
             maybe_server = Some("http://127.0.0.1".to_string());
             Some(regtest_manager)
         } else {
             None
         };
-        let server = ZingoConfig::get_server_or_default(maybe_server);
+        let server = zingoconfig::construct_server_uri(maybe_server);
 
         // Test to make sure the server has all of scheme, host and port
         if server.scheme_str().is_none() || server.host().is_none() || server.port().is_none() {
@@ -369,11 +369,11 @@ to scan from the start of the blockchain."
     pub fn startup(&self) -> std::io::Result<(Sender<(String, Vec<String>)>, Receiver<String>)> {
         // Try to get the configuration
         let (config, latest_block_height) =
-            create_on_data_dir(self.server.clone(), self.maybe_data_dir.clone())?;
+            create_zingoconf_with_datadir(self.server.clone(), self.maybe_data_dir.clone())?;
         regtest_config_check(&self.regtest_manager, &config.chain);
 
         let lightclient = match self.seed.clone() {
-            Some(phrase) => Arc::new(LightClient::new_from_phrase(
+            Some(phrase) => Arc::new(LightClient::create_with_capable_wallet(
                 phrase,
                 &config,
                 self.birthday,
@@ -401,10 +401,7 @@ to scan from the start of the blockchain."
         info!("Starting Zingo-CLI");
         info!("Light Client config {:?}", config);
 
-        println!(
-            "Lightclient connecting to {}",
-            config.server.read().unwrap()
-        );
+        println!("Lightclient connecting to {}", config.get_server_uri());
 
         // At startup, run a sync.
         if self.sync {

@@ -4,7 +4,7 @@ use std::io::Read;
 ///  Simple helper to succinctly reference the project root dir.
 use std::path::{Path, PathBuf};
 use std::process::Child;
-fn get_git_rootdir() -> PathBuf {
+pub fn get_git_rootdir() -> PathBuf {
     let revparse_raw = std::process::Command::new("git")
         .args(["rev-parse", "--show-toplevel"])
         .output()
@@ -20,24 +20,29 @@ fn get_regtest_dir() -> PathBuf {
     get_git_rootdir().join("regtest")
 }
 
+///  To manage the state associated a "regtest" run this type:
+///   * sets up paths to config and log directories
+///   * optionally receives parameters that allow configs to be set in nonstandard
+///     locations.  We use this to input configs for the integration_tests
 #[derive(Clone)]
 #[allow(dead_code)]
 pub struct RegtestManager {
     regtest_dir: PathBuf,
     confs_dir: PathBuf,
-    bin_location: PathBuf,
-    logs: PathBuf,
+    bin_dir: PathBuf,
+    cli_bin: PathBuf,
+    logs_dir: PathBuf,
     data_dir: PathBuf,
-    zcashd_datadir: PathBuf,
-    zcashd_logs: PathBuf,
+    zcashd_data_dir: PathBuf,
+    zcashd_logs_dir: PathBuf,
     zcashd_stdout_log: PathBuf,
     pub zcashd_config: PathBuf,
-    lightwalletd_config: PathBuf,
-    lightwalletd_logs: PathBuf,
+    pub lightwalletd_config: PathBuf,
+    lightwalletd_logs_dir: PathBuf,
     lightwalletd_stdout_log: PathBuf,
     lightwalletd_stderr_log: PathBuf,
-    lightwalletd_datadir: PathBuf,
-    pub zingo_datadir: PathBuf,
+    lightwalletd_data_dir: PathBuf,
+    pub zingo_data_dir: PathBuf,
 }
 ///  We use the `ChildProcessHandler` to handle the children of generated in scenario testing
 pub struct ChildProcessHandler {
@@ -60,74 +65,71 @@ pub enum LaunchChildProcessError {
     },
 }
 impl RegtestManager {
-    pub fn new() -> Self {
-        let regtest_dir = get_regtest_dir();
+    pub fn new(rootpathname: Option<PathBuf>) -> Self {
+        let regtest_dir = dbg!(rootpathname.unwrap_or_else(get_regtest_dir));
         let confs_dir = regtest_dir.join("conf");
-        let bin_location = regtest_dir.join("bin");
-        let logs = regtest_dir.join("logs");
+        std::fs::create_dir_all(&confs_dir).expect("Couldn't create dir.");
+        let bin_dir = get_regtest_dir().join("bin");
+        std::fs::create_dir_all(&bin_dir).expect("Couldn't create dir.");
+        let cli_bin = bin_dir.join("zcash-cli");
+        let logs_dir = regtest_dir.join("logs");
         let data_dir = regtest_dir.join("data");
-        let zcashd_datadir = data_dir.join("zcashd");
-        let zcashd_logs = logs.join("zcashd");
-        let zcashd_stdout_log = zcashd_logs.join("stdout.log");
+        let zcashd_data_dir = data_dir.join("zcashd");
+        std::fs::create_dir_all(&zcashd_data_dir).expect("Couldn't create dir.");
+        let zcashd_logs_dir = logs_dir.join("zcashd");
+        std::fs::create_dir_all(&zcashd_logs_dir).expect("Couldn't create dir.");
+        let zcashd_stdout_log = zcashd_logs_dir.join("stdout.log");
         let zcashd_config = confs_dir.join("zcash.conf");
         let lightwalletd_config = confs_dir.join("lightwalletd.yaml");
-        let lightwalletd_logs = logs.join("lightwalletd");
-        let lightwalletd_stdout_log = lightwalletd_logs.join("stdout.log");
-        let lightwalletd_stderr_log = lightwalletd_logs.join("stderr.log");
-        let lightwalletd_datadir = data_dir.join("lightwalletd");
-        let zingo_datadir = data_dir.join("zingo");
-        assert!(&zcashd_config
-            .to_str()
-            .unwrap()
-            .ends_with("/regtest/conf/zcash.conf"));
-        assert!(&zcashd_datadir
-            .to_str()
-            .unwrap()
-            .ends_with("/regtest/data/zcashd"));
+        let lightwalletd_logs_dir = logs_dir.join("lightwalletd");
+        std::fs::create_dir_all(&lightwalletd_logs_dir).expect("Couldn't create dir.");
+        let lightwalletd_stdout_log = lightwalletd_logs_dir.join("stdout.log");
+        let lightwalletd_stderr_log = lightwalletd_logs_dir.join("stderr.log");
+        let lightwalletd_data_dir = data_dir.join("lightwalletd");
+        std::fs::create_dir_all(&lightwalletd_data_dir).expect("Couldn't create dir.");
+        let zingo_data_dir = data_dir.join("zingo");
+        std::fs::create_dir_all(&zingo_data_dir).expect("Couldn't create dir.");
         RegtestManager {
             regtest_dir,
             confs_dir,
-            bin_location,
-            logs,
+            bin_dir,
+            cli_bin,
+            logs_dir,
             data_dir,
-            zcashd_datadir,
-            zcashd_logs,
+            zcashd_data_dir,
+            zcashd_logs_dir,
             zcashd_stdout_log,
             zcashd_config,
             lightwalletd_config,
-            lightwalletd_logs,
+            lightwalletd_logs_dir,
             lightwalletd_stdout_log,
             lightwalletd_stderr_log,
-            lightwalletd_datadir,
-            zingo_datadir,
+            lightwalletd_data_dir,
+            zingo_data_dir,
         }
     }
 
-    pub fn generate_n_blocks(
-        &self,
-        num_blocks: u32,
-    ) -> Result<std::process::Output, std::io::Error> {
-        let cli_bin = &self.bin_location.join("zcash-cli");
+    pub fn get_cli_handle(&self) -> std::process::Command {
         let config_str = &self
             .zcashd_config
             .to_str()
             .expect("Path to string failure!");
-        std::process::Command::new(cli_bin)
-            .args([
-                format!("-conf={config_str}"),
-                "generate".to_string(),
-                num_blocks.to_string(),
-            ])
+
+        let mut command = std::process::Command::new(&self.cli_bin);
+        command.arg(format!("-conf={config_str}"));
+        command
+    }
+    pub fn generate_n_blocks(
+        &self,
+        num_blocks: u32,
+    ) -> Result<std::process::Output, std::io::Error> {
+        self.get_cli_handle()
+            .args(["generate".to_string(), num_blocks.to_string()])
             .output()
     }
     fn prepare_working_directories(&self) {
         // remove contents of existing data directories
-        let zcd_subdir = &self.zcashd_datadir.join("regtest");
-
-        assert!(&zcd_subdir
-            .to_str()
-            .unwrap()
-            .ends_with("/regtest/data/zcashd/regtest"));
+        let zcd_subdir = &self.zcashd_data_dir.join("regtest");
 
         std::process::Command::new("rm")
             .arg("-r")
@@ -135,12 +137,7 @@ impl RegtestManager {
             .output()
             .expect("problem with rm zcd subdir");
 
-        let lwd_subdir = &self.lightwalletd_datadir.join("db");
-
-        assert!(&lwd_subdir
-            .to_str()
-            .unwrap()
-            .ends_with("/regtest/data/lightwalletd/db"));
+        let lwd_subdir = &self.lightwalletd_data_dir.join("db");
 
         std::process::Command::new("rm")
             .arg("-r")
@@ -148,17 +145,8 @@ impl RegtestManager {
             .output()
             .expect("problem with rm lwd subdir");
 
-        let zingo_file_one = &self.zingo_datadir.join("zingo-wallet.dat");
-        let zingo_file_two = &self.zingo_datadir.join("zingo-wallet.debug.log");
-
-        assert!(&zingo_file_one
-            .to_str()
-            .unwrap()
-            .ends_with("/regtest/data/zingo/zingo-wallet.dat"));
-        assert!(&zingo_file_two
-            .to_str()
-            .unwrap()
-            .ends_with("/regtest/data/zingo/zingo-wallet.debug.log"));
+        let zingo_file_one = &self.zingo_data_dir.join("zingo-wallet.dat");
+        let zingo_file_two = &self.zingo_data_dir.join("zingo-wallet.debug.log");
 
         std::process::Command::new("rm")
             .arg(zingo_file_one)
@@ -170,7 +158,7 @@ impl RegtestManager {
             .expect("problem with rm zingofile");
 
         // copy contents from regtestvector directory to working zcashd data directory
-        let destination_subdir = &self.zcashd_datadir.join("regtest").join("*");
+        let destination_subdir = &self.zcashd_data_dir.join("regtest").join("*");
 
         std::process::Command::new("rm")
             .arg("-r")
@@ -180,7 +168,7 @@ impl RegtestManager {
     }
     fn zcashd_launch(&self) -> (std::process::Child, File) {
         use std::ffi::OsStr;
-        let zcashd_bin = &mut self.bin_location.clone();
+        let zcashd_bin = &mut self.bin_dir.clone();
         zcashd_bin.push("zcashd");
         let mut command = std::process::Command::new(zcashd_bin);
         command
@@ -193,7 +181,7 @@ impl RegtestManager {
                 .as_str(),
                 format!(
                     "--datadir={}",
-                    &self.zcashd_datadir.to_str().expect("Unexpected string!")
+                    &self.zcashd_data_dir.to_str().expect("Unexpected string!")
                 )
                 .as_str(),
                 // Currently zcashd will not write to debug.log with the following flag
@@ -236,6 +224,9 @@ impl RegtestManager {
             File::create(&self.zcashd_stdout_log).expect("file::create Result error"),
         )
     }
+    /// Once the expected filesystem setup is complete attempt to launch the children
+    /// lightwalletd and zcashd.  Child processes are killed during drop of their
+    /// "ChildProcessHandler" container
     pub fn launch(
         &self,
         clean_regtest_data: bool,
@@ -318,15 +309,15 @@ impl RegtestManager {
         }
         println!("lightwalletd is about to start. This should only take a moment.");
 
-        let mut lwd_logfile =
+        let mut lightwalletd_logfile =
             File::create(&self.lightwalletd_stdout_log).expect("file::create Result error");
-        let mut lwd_err_logfile =
+        let mut lightwalletd_err_logfile =
             File::create(&self.lightwalletd_stderr_log).expect("file::create Result error");
 
-        let lwd_bin = &mut self.bin_location.to_owned();
-        lwd_bin.push("lightwalletd");
+        let lightwalletd_bin = &mut self.bin_dir.to_owned();
+        lightwalletd_bin.push("lightwalletd");
 
-        let mut lightwalletd_child = std::process::Command::new(lwd_bin)
+        let mut lightwalletd_child = std::process::Command::new(lightwalletd_bin)
         .args([
             "--no-tls-very-insecure",
             "--zcash-conf-path",
@@ -338,7 +329,7 @@ impl RegtestManager {
                 .to_str()
                 .expect("lightwalletd_config PathBuf to str fail!"),
             "--data-dir",
-            &self.lightwalletd_datadir
+            &self.lightwalletd_data_dir
                 .to_str()
                 .expect("lightwalletd_datadir PathBuf to str fail!"),
             "--log-file",
@@ -353,14 +344,14 @@ impl RegtestManager {
 
         if let Some(mut lwd_log) = lightwalletd_child.stdout.take() {
             std::thread::spawn(move || {
-                std::io::copy(&mut lwd_log, &mut lwd_logfile)
+                std::io::copy(&mut lwd_log, &mut lightwalletd_logfile)
                     .expect("io::copy error writing lwd_stdout.log");
             });
         }
 
         if let Some(mut lwd_err_log) = lightwalletd_child.stderr.take() {
             std::thread::spawn(move || {
-                std::io::copy(&mut lwd_err_log, &mut lwd_err_logfile)
+                std::io::copy(&mut lwd_err_log, &mut lightwalletd_err_logfile)
                     .expect("io::copy error writing lwd_stderr.log");
             });
         }

@@ -356,7 +356,7 @@ impl TransactionContext {
                     self.transaction_metadata_set.write().await.add_new_spent(
                     transaction.txid(),
                     transaction_block_height,
-                    unconfirmed,
+                    true, // this was "unconfirmed" but this fn is invoked inside `if unconfirmed` TODO: add regression test to protect against movement
                     block_time,
                     <FnGenBundle<D> as zingo_traits::Bundle<D, Network>>::Spend::wallet_nullifier(
                         nf,
@@ -395,7 +395,7 @@ impl TransactionContext {
                 )
                 .into_iter();
                 while let Some(decrypt_attempt) = decrypt_attempts.next() {
-                    let (note, to, memo_bytes) = match decrypt_attempt {
+                    let ((note, to, memo_bytes), _ivk_num) = match decrypt_attempt {
                         Some(plaintext) => plaintext,
                         _ => continue,
                     };
@@ -471,7 +471,7 @@ impl TransactionContext {
                                         } else {
                                             Some(OutgoingTxMetadata {
                                                 address,
-                                                value: D::WalletNote::value(&note),
+                                                value: D::WalletNote::value_from_note(&note),
                                                 memo,
                                             })
                                         }

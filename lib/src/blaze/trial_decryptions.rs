@@ -5,6 +5,7 @@
 
 use crate::{
     compact_formats::{CompactBlock, CompactTx},
+    grpc_connector::GrpcConnector,
     wallet::{
         data::{ChannelNullifier, TransactionMetadata},
         keys::Keys,
@@ -18,7 +19,10 @@ use crate::{
 };
 use futures::{stream::FuturesUnordered, StreamExt};
 use log::info;
-use orchard::{keys::IncomingViewingKey as OrchardIvk, note_encryption::OrchardDomain};
+use orchard::{
+    keys::IncomingViewingKey as OrchardIvk, note_encryption::OrchardDomain,
+    tree::MerkleHashOrchard, Anchor,
+};
 use std::sync::Arc;
 use tokio::{
     sync::{
@@ -30,6 +34,7 @@ use tokio::{
 use zcash_note_encryption::Domain;
 use zcash_primitives::{
     consensus::{BlockHeight, Parameters},
+    merkle_tree::CommitmentTree,
     sapling::{note_encryption::SaplingDomain, SaplingIvk},
     transaction::{Transaction, TxId},
 };
@@ -171,6 +176,18 @@ impl TrialDecryptions {
 
         for compact_block in compact_blocks {
             let height = BlockHeight::from_u32(compact_block.height as u32);
+            info!("trial decrypting block {}", height);
+            {
+                let data = bsync_data.read().await;
+                let mut anchors = data.block_data.orchard_anchors.write().await;
+                let uri = config.get_server_uri();
+                let trees_state = GrpcConnector::get_trees(uri, compact_block.height).await?;
+                let orchard_tree = CommitmentTree::<MerkleHashOrchard>::read(
+                    hex::decode(&trees_state.orchard_tree).unwrap().as_slice(),
+                )
+                .unwrap();
+                anchors.push((Anchor::from(orchard_tree.root()), height.into()));
+            }
 
             for (transaction_num, compact_transaction) in compact_block.vtx.iter().enumerate() {
                 if let Some(filter) = transaction_size_filter {
@@ -268,7 +285,7 @@ impl TrialDecryptions {
     ) where
         D: DomainWalletExt<zingoconfig::Network>,
         <D as Domain>::Recipient: crate::wallet::traits::Recipient + Send + 'static,
-        <D as Domain>::Note: PartialEq + Send + 'static,
+        <D as Domain>::Note: PartialEq + Send + 'static + Clone,
         [u8; 32]: From<<D as Domain>::ExtractedCommitmentBytes>,
     {
         let outputs = D::CompactOutput::from_compact_transaction(&compact_transaction)
@@ -277,9 +294,8 @@ impl TrialDecryptions {
             .collect::<Vec<_>>();
         let maybe_decrypted_outputs =
             zcash_note_encryption::batch::try_compact_note_decryption(&ivks, &outputs);
-        let outputs_len = outputs.len();
         for maybe_decrypted_output in maybe_decrypted_outputs.into_iter().enumerate() {
-            if let (i, Some((note, to))) = maybe_decrypted_output {
+            if let (i, Some(((note, to), ivk_num))) = maybe_decrypted_output {
                 *transaction_metadata = true; // i.e. we got metadata
 
                 let keys = keys.clone();
@@ -292,9 +308,9 @@ impl TrialDecryptions {
 
                 workers.push(tokio::spawn(async move {
                     let keys = keys.read().await;
-                    let wallet_key = &D::Key::get_keys(&*keys)[i / outputs_len];
+                    let wallet_key = &D::Key::get_keys(&*keys)[ivk_num];
                     let fvk = wallet_key.fvk().unwrap();
-                    let have_spending_key = wallet_key.sk().is_some();
+                    let have_spending_key = wallet_key.spend_key().is_some();
                     let uri = bsync_data.read().await.uri().clone();
 
                     // Get the witness for the note
@@ -306,7 +322,7 @@ impl TrialDecryptions {
                             uri,
                             height,
                             transaction_num,
-                            i % outputs_len,
+                            i,
                             config.chain.activation_height(D::NU).unwrap().into(),
                         )
                         .await?;
@@ -337,7 +353,7 @@ impl TrialDecryptions {
                             transaction_id,
                             nullifier.to_channel_nullifier(),
                             height,
-                            Some((i % outputs_len) as u32),
+                            Some((i) as u32),
                         ))
                         .unwrap();
 

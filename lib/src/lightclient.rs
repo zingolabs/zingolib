@@ -35,7 +35,12 @@ use tokio::{
     task::yield_now,
     time::sleep,
 };
-use zcash_client_backend::encoding::{decode_payment_address, encode_payment_address};
+
+use orchard::keys::{FullViewingKey as OrchardFullViewingKey, SpendingKey as OrchardSpendingKey};
+use zcash_client_backend::{
+    address::UnifiedAddress,
+    encoding::{decode_payment_address, encode_payment_address},
+};
 use zcash_primitives::{
     block::BlockHash,
     consensus::{BlockHeight, BranchId},
@@ -104,7 +109,7 @@ async fn get_recent_median_price_from_gemini() -> Result<f64, reqwest::Error> {
 
 impl LightClient {
     /// Method to create a test-only version of the LightClient
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub async fn test_new(
         config: &ZingoConfig,
         seed_phrase: Option<String>,
@@ -128,12 +133,12 @@ impl LightClient {
         l.set_wallet_initial_state(height).await;
 
         info!("Created new wallet!");
-        info!("Created LightClient to {}", &config.server.read().unwrap());
+        info!("Created LightClient to {}", &config.get_server_uri());
         Ok(l)
     }
 
     pub fn set_server(&self, server: http::Uri) {
-        *self.config.server.write().unwrap() = server
+        *self.config.server_uri.write().unwrap() = server
     }
 
     fn write_file_if_not_exists(dir: &Box<Path>, name: &str, bytes: &[u8]) -> io::Result<()> {
@@ -270,7 +275,7 @@ impl LightClient {
             "Getting sapling tree from LightwalletD at height {}",
             height
         );
-        match GrpcConnector::get_trees(self.config.server.read().unwrap().clone(), height).await {
+        match GrpcConnector::get_trees(self.config.get_server_uri(), height).await {
             Ok(tree_state) => {
                 let hash = tree_state.hash.clone();
                 let tree = tree_state.sapling_tree.clone();
@@ -318,7 +323,7 @@ impl LightClient {
             l.set_wallet_initial_state(latest_block).await;
 
             info!("Created new wallet with a new seed!");
-            info!("Created LightClient to {}", &config.server.read().unwrap());
+            info!("Created LightClient to {}", &config.get_server_uri());
 
             // Save
             l.do_save()
@@ -345,8 +350,8 @@ impl LightClient {
         Self::new_wallet(config, latest_block, 1)
     }
 
-    pub fn new_from_phrase(
-        seed_phrase: String,
+    pub fn create_with_capable_wallet(
+        key_or_seedphrase: String,
         config: &ZingoConfig,
         birthday: u64,
         overwrite: bool,
@@ -363,16 +368,16 @@ impl LightClient {
             }
         }
         println!(
-            "Seed: {seed_phrase}\nhrp_view: {}",
+            "Seed: {key_or_seedphrase}\nhrp_view: {}",
             config.hrp_sapling_viewing_key()
         );
 
-        let lr = if seed_phrase.starts_with(config.hrp_sapling_private_key())
-            || seed_phrase.starts_with(config.hrp_sapling_viewing_key())
+        let lr = if key_or_seedphrase.starts_with(config.hrp_sapling_private_key())
+            || key_or_seedphrase.starts_with(config.hrp_sapling_viewing_key())
         {
             let lc = Self::new_wallet(config, birthday, 0)?;
             Runtime::new().unwrap().block_on(async move {
-                lc.do_import_key(seed_phrase, birthday)
+                lc.do_import_key(key_or_seedphrase, birthday)
                     .await
                     .map_err(|e| io::Error::new(ErrorKind::InvalidData, e))?;
 
@@ -380,12 +385,12 @@ impl LightClient {
 
                 Ok(lc)
             })
-        } else if seed_phrase.starts_with(config.chain.hrp_orchard_spending_key()) {
+        } else if key_or_seedphrase.starts_with(config.chain.hrp_orchard_spending_key()) {
             todo!()
         } else {
             Runtime::new().unwrap().block_on(async move {
                 let l = LightClient {
-                    wallet: LightWallet::new(config.clone(), Some(seed_phrase), birthday, 1)?,
+                    wallet: LightWallet::new(config.clone(), Some(key_or_seedphrase), birthday, 1)?,
                     config: config.clone(),
                     mempool_monitor: std::sync::RwLock::new(None),
                     sync_lock: Mutex::new(()),
@@ -403,7 +408,7 @@ impl LightClient {
             })
         };
 
-        info!("Created LightClient to {}", &config.server.read().unwrap());
+        info!("Created LightClient to {}", &config.get_server_uri());
 
         lr
     }
@@ -424,7 +429,7 @@ impl LightClient {
                 "Read wallet with birthday {}",
                 lc.wallet.get_birthday().await
             );
-            info!("Created LightClient to {}", &config.server.read().unwrap());
+            info!("Created LightClient to {}", &config.get_server_uri());
 
             Ok(lc)
         });
@@ -462,7 +467,7 @@ impl LightClient {
                 "Read wallet with birthday {}",
                 lc.wallet.get_birthday().await
             );
-            info!("Created LightClient to {}", &config.server.read().unwrap());
+            info!("Created LightClient to {}", &config.get_server_uri());
 
             Ok(lc)
         });
@@ -702,7 +707,7 @@ impl LightClient {
     }
 
     pub fn get_server_uri(&self) -> http::Uri {
-        self.config.server.read().unwrap().clone()
+        self.config.get_server_uri()
     }
 
     pub async fn do_zec_price(&self) -> String {
@@ -895,7 +900,7 @@ impl LightClient {
 
     pub fn do_encrypt_message(&self, to_address_str: String, memo: Memo) -> JsonValue {
         let to = match decode_payment_address(self.config.hrp_sapling_address(), &to_address_str) {
-            Ok(Some(to)) => to,
+            Ok(to) => to,
             _ => {
                 return object! {"error" => format!("Couldn't parse {} as a z-address", to_address_str) };
             }
@@ -1066,7 +1071,7 @@ impl LightClient {
                         "datetime"     => transaction_metadata.datetime,
                         "position"     => i,
                         "txid"         => format!("{}", transaction_metadata.txid),
-                        "amount"       => NnMd::value(nd.note()) as i64,
+                        "amount"       => nd.value() as i64,
                         "zec_price"    => transaction_metadata.zec_price.map(|p| (p * 100.0).round() / 100.0),
                         "address"      => LightWallet::note_address(&self.config.chain, nd),
                         "memo"         => LightWallet::memo_str(nd.memo().clone())
@@ -1314,11 +1319,11 @@ impl LightClient {
         }
 
         let config = lc.config.clone();
-        let uri = config.server.clone();
         let lci = lc.clone();
 
         info!("Mempool monitoring starting");
 
+        let uri = lc.config.get_server_uri();
         // Start monitoring the mempool in a new thread
         let h = std::thread::spawn(move || {
             // Start a new async runtime, which is fine because we are in a new thread.
@@ -1364,7 +1369,6 @@ impl LightClient {
                     }
                 });
 
-                let uri = uri.read().unwrap().clone();
                 let h2 = tokio::spawn(async move {
                     loop {
                         //info!("Monitoring mempool");
@@ -1443,8 +1447,7 @@ impl LightClient {
         sync_result
     }
 
-    /// Start syncing in batches with the max size, so we don't consume memory more than
-    // wha twe can handle.
+    /// Start syncing in batches with the max size, to manage memory consumption.
     async fn start_sync(&self) -> Result<JsonValue, String> {
         // We can only do one sync at a time because we sync blocks in serial order
         // If we allow multiple syncs, they'll all get jumbled up.
@@ -1453,8 +1456,7 @@ impl LightClient {
         // The top of the wallet
         let last_scanned_height = self.wallet.last_scanned_height().await;
 
-        let uri = self.config.server.read().unwrap().clone();
-        let latest_blockid = GrpcConnector::get_latest_block(uri).await?;
+        let latest_blockid = GrpcConnector::get_latest_block(self.config.get_server_uri()).await?;
         if latest_blockid.height < last_scanned_height {
             let w = format!(
                 "Server's latest block({}) is behind ours({})",
@@ -1518,15 +1520,14 @@ impl LightClient {
         res
     }
 
-    /// start_sync will start synchronizing the blockchain from the wallet's last height. This function will return immediately after starting the sync
-    /// Use the `sync_status` command to get the status of the sync
+    /// start_sync will start synchronizing the blockchain from the wallet's last height. This function will
+    /// return immediately after starting the sync.  Use the `do_sync_status` LightClient method to
+    /// get the status of the sync
     async fn start_sync_batch(
         &self,
         latest_block: u64,
         batch_num: usize,
     ) -> Result<JsonValue, String> {
-        let uri = self.config.server.clone();
-
         // The top of the wallet
         let last_scanned_height = self.wallet.last_scanned_height().await;
 
@@ -1564,7 +1565,7 @@ impl LightClient {
         //self.update_current_price().await;
 
         // Sapling Tree GRPC Fetcher
-        let grpc_connector = GrpcConnector::new(uri.read().unwrap().clone());
+        let grpc_connector = GrpcConnector::new(self.config.get_server_uri());
 
         // A signal to detect reorgs, and if so, ask the block_fetcher to fetch new blocks.
         let (reorg_transmitter, reorg_receiver) = unbounded_channel();
@@ -1644,7 +1645,7 @@ impl LightClient {
                 .await
         });
 
-        // We wait first for the node's to be updated. This is where reorgs will be handled, so all the steps done after this phase will
+        // We wait first for the nodes to be updated. This is where reorgs will be handled, so all the steps done after this phase will
         // assume that the reorgs are done.
         let earliest_block = block_and_witness_handle.await.unwrap().unwrap();
 
@@ -1664,14 +1665,6 @@ impl LightClient {
 
         // 3. Verify all the downloaded data
         let block_data = bsync_data.clone();
-        let verify_handle = tokio::spawn(async move {
-            block_data
-                .read()
-                .await
-                .block_data
-                .verify_sapling_tree()
-                .await
-        });
 
         // Wait for everything to finish
 
@@ -1700,30 +1693,47 @@ impl LightClient {
         .map(|r| r.map_err(|e| format!("{}", e))?)
         .collect::<Result<(), String>>()?;
 
-        let (verified, heighest_tree) = verify_handle.await.map_err(|e| e.to_string())?;
-        info!("Sapling tree verification {}", verified);
+        let verify_handle =
+            tokio::spawn(async move { block_data.read().await.block_data.verify_trees().await });
+        let (verified, highest_tree) = verify_handle.await.map_err(|e| e.to_string())?;
+        info!("tree verification {}", verified);
+        info!("highest tree exists: {}", highest_tree.is_some());
         if !verified {
-            return Err("Sapling Tree Verification Failed".to_string());
+            return Err("Tree Verification Failed".to_string());
         }
 
         info!("Sync finished, doing post-processing");
 
+        let blaze_sync_data = bsync_data.read().await;
         // Post sync, we have to do a bunch of stuff
         // 1. Get the last 100 blocks and store it into the wallet, needed for future re-orgs
-        let blocks = bsync_data
-            .read()
-            .await
+        let blocks = blaze_sync_data
             .block_data
             .drain_existingblocks_into_blocks_with_truncation(MAX_REORG)
             .await;
         self.wallet.set_blocks(blocks).await;
 
+        // Store the ten highest orchard anchors
+        {
+            let mut anchors = self.wallet.orchard_anchors.write().await;
+            *anchors = blaze_sync_data
+                .block_data
+                .orchard_anchors
+                .read()
+                .await
+                .clone()
+                .into_iter()
+                .chain(anchors.drain(..))
+                .collect();
+            anchors.sort_unstable_by(|(_, height_a), (_, height_b)| height_b.cmp(height_a));
+            anchors.truncate(10);
+        }
         // 2. If sync was successfull, also try to get historical prices
         // self.update_historical_prices().await;
         // zingolabs considers this to be a serious privacy/secuity leak
 
         // 3. Mark the sync finished, which will clear the nullifier cache etc...
-        bsync_data.read().await.finish().await;
+        blaze_sync_data.finish().await;
 
         // 4. Remove the witnesses for spent notes more than 100 blocks old, since now there
         // is no risk of reorg
@@ -1741,8 +1751,8 @@ impl LightClient {
             .clear_expired_mempool(latest_block);
 
         // 6. Set the heighest verified tree
-        if heighest_tree.is_some() {
-            *self.wallet.verified_tree.write().await = heighest_tree;
+        if highest_tree.is_some() {
+            *self.wallet.verified_tree.write().await = highest_tree;
         }
 
         Ok(object! {
@@ -1765,15 +1775,32 @@ impl LightClient {
         }
 
         let addr = address
-            .or(self
-                .wallet
-                .keys()
-                .read()
-                .await
-                .get_all_sapling_addresses()
-                .get(0)
-                .map(|s| s.clone()))
-            .unwrap();
+            .or({
+                let keys = self.wallet.keys();
+                let readlocked_keys = keys.read().await;
+                UnifiedAddress::from_receivers(
+                    readlocked_keys
+                        .get_all_orchard_keys_of_type::<OrchardSpendingKey>()
+                        .iter()
+                        .map(|orchard_spend_key| {
+                            OrchardFullViewingKey::from(orchard_spend_key)
+                                .address_at(0u32, orchard::keys::Scope::External)
+                        })
+                        .next(),
+                    readlocked_keys
+                        .zkeys
+                        .iter()
+                        .filter(|sapling_key| sapling_key.extsk.is_some())
+                        .map(|sapling_key| sapling_key.zaddress.clone())
+                        .next(),
+                    None,
+                )
+                .map(|ua| ua.encode(&self.config.chain))
+            })
+            .ok_or(String::from(
+                "No sapling or orchard spend authority in wallet. \n
+                    please generate a shielded address and try again, or supply a destination address",
+            ))?;
 
         let result = {
             let _lock = self.sync_lock.lock().await;
@@ -1784,6 +1811,7 @@ impl LightClient {
             self.wallet
                 .send_to_address(
                     prover,
+                    true,
                     true,
                     vec![(&addr, tbal - fee, None)],
                     |transaction_bytes| {
@@ -1796,6 +1824,7 @@ impl LightClient {
         result.map(|(transaction_id, _)| transaction_id)
     }
 
+    //TODO: Add migrate_sapling_to_orchard argument
     pub async fn do_send(&self, addrs: Vec<(&str, u64, Option<String>)>) -> Result<String, String> {
         // First, get the concensus branch ID
         info!("Creating transaction");
@@ -1807,7 +1836,7 @@ impl LightClient {
             let prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
 
             self.wallet
-                .send_to_address(prover, false, addrs, |transaction_bytes| {
+                .send_to_address(prover, false, false, addrs, |transaction_bytes| {
                     GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
                 })
                 .await
@@ -1816,6 +1845,7 @@ impl LightClient {
         result.map(|(transaction_id, _)| transaction_id)
     }
 
+    //TODO: Add migrate_sapling_to_orchard argument
     #[cfg(test)]
     pub async fn test_do_send(
         &self,
@@ -1829,7 +1859,7 @@ impl LightClient {
             let prover = crate::blaze::test_utils::FakeTransactionProver {};
 
             self.wallet
-                .send_to_address(prover, false, addrs, |transaction_bytes| {
+                .send_to_address(prover, false, false, addrs, |transaction_bytes| {
                     GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
                 })
                 .await

@@ -21,7 +21,7 @@ use std::{
 use tokio::runtime::Runtime;
 use zingoconfig::{Network, ZingoConfig};
 
-pub fn create_on_data_dir(
+pub fn create_zingoconf_with_datadir(
     server: http::Uri,
     data_dir: Option<String>,
 ) -> Result<(ZingoConfig, u64)> {
@@ -44,7 +44,7 @@ pub fn create_on_data_dir(
 
         // Create a Light Client Config
         let config = ZingoConfig {
-            server: Arc::new(RwLock::new(server)),
+            server_uri: Arc::new(RwLock::new(server)),
             chain: match info.chain_name.as_str() {
                 "main" => Network::Mainnet,
                 "test" => Network::Testnet,

@@ -358,7 +358,7 @@ impl GrpcConnector {
     }
 
     pub async fn get_info(uri: http::Uri) -> Result<LightdInfo, String> {
-        let client = Arc::new(GrpcConnector::new(uri));
+        let client = Arc::new(GrpcConnector::new(uri.clone()));
 
         let mut client = client
             .get_client()
@@ -370,7 +370,7 @@ impl GrpcConnector {
         let response = client
             .get_lightd_info(request)
             .await
-            .map_err(|e| format!("Error with response: {:?}", e))?;
+            .map_err(|e| format!("Error with get_lightd_info response at {uri}: {e:?}"))?;
         Ok(response.into_inner())
     }
 
@@ -402,7 +402,7 @@ impl GrpcConnector {
     }
 
     pub async fn get_trees(uri: http::Uri, height: u64) -> Result<TreeState, String> {
-        let client = Arc::new(GrpcConnector::new(uri));
+        let client = Arc::new(GrpcConnector::new(uri.clone()));
         let mut client = client
             .get_client()
             .await
@@ -415,14 +415,14 @@ impl GrpcConnector {
         let response = client
             .get_tree_state(Request::new(b))
             .await
-            .map_err(|e| format!("Error with response: {:?}", e))?;
+            .map_err(|e| format!("Error with get_tree_state response at {uri}: {:?}", e))?;
 
         Ok(response.into_inner())
     }
 
     // get_latest_block GRPC call
     pub async fn get_latest_block(uri: http::Uri) -> Result<BlockId, String> {
-        let client = Arc::new(GrpcConnector::new(uri));
+        let client = Arc::new(GrpcConnector::new(uri.clone()));
         let mut client = client
             .get_client()
             .await
@@ -433,7 +433,7 @@ impl GrpcConnector {
         let response = client
             .get_latest_block(request)
             .await
-            .map_err(|e| format!("Error with response: {:?}", e))?;
+            .map_err(|e| format!("Error with get_latest_block response at {uri}: {:?}", e))?;
 
         Ok(response.into_inner())
     }
