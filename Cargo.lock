@@ -3756,16 +3756,20 @@ dependencies = [
 name = "zingo-cli"
 version = "0.1.1"
 dependencies = [
+ "bech32 0.9.1",
  "clap",
  "http",
  "json",
  "log",
  "portpicker",
+ "rand 0.8.5",
  "rustyline",
  "shellwords",
  "tempdir",
  "tokio",
  "tracing-subscriber",
+ "zcash_client_backend",
+ "zcash_primitives",
  "zingoconfig",
  "zingolib",
 ]

@@ -7,11 +7,11 @@ use tokio::time::sleep;
 
 #[test]
 fn basic_connectivity_scenario_a() {
-    let _regtest_manager = setup::basic_funded_zcashd_lwd_zingolib_connected();
+    let _ = setup::coinbasebacked_spendcapable();
 }
 #[test]
 fn basic_connectivity_scenario_b() {
-    let _regtest_manager = setup::basic_funded_zcashd_lwd_zingolib_connected();
+    let _ = setup::coinbasebacked_spendcapable();
 }
 #[test]
 fn zcashd_sapling_commitment_tree() {
@@ -79,10 +79,16 @@ fn mine_sapling_to_self() {
     let (_regtest_manager, _child_process_handler, client, runtime) =
         setup::coinbasebacked_spendcapable();
 
-    runtime.block_on(client.do_sync(true)).unwrap();
+    runtime.block_on(async {
+        sleep(Duration::from_secs(2)).await;
+        client.do_sync(true).await.unwrap();
 
-    let balance = runtime.block_on(client.do_balance());
-    assert_eq!(balance["sapling_balance"], 625000000);
+        let balance = client.do_balance().await;
+        println!("{}", json::stringify_pretty(balance.clone(), 4));
+        let transactions = client.do_list_transactions(false).await;
+        println!("{}", json::stringify_pretty(transactions, 4));
+        assert_eq!(balance["sapling_balance"], 3_750_000_000u64);
+    });
 }
 
 #[test]
