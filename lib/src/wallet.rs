@@ -1324,8 +1324,9 @@ impl LightWallet {
                         }
                     })
                     .collect::<Vec<D::SpendableNoteAT>>();
-                candidate_notes.sort_by_key(|spendable_note| {
-                    D::WalletNote::value_from_note(&spendable_note.note())
+                candidate_notes.sort_unstable_by(|spendable_note_1, spendable_note_2| {
+                    D::WalletNote::value_from_note(&spendable_note_2.note())
+                        .cmp(&D::WalletNote::value_from_note(&spendable_note_1.note()))
                 });
                 candidate_notes
             })
