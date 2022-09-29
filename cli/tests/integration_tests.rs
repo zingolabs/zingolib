@@ -110,24 +110,13 @@ fn send_mined_sapling_to_orchard() {
         let balance = client.do_balance().await;
         assert_eq!(balance["verified_orchard_balance"], 5000);
     });
-    // Proposed Test:
-    //#[test]
-    //fn two_zcashds_with_colliding_configs() {
-    // Expectations:
-    //   The children are terminated by the test run end.
-    // Setup:
-    //   Two different zcashds are configured to launch with 1 config-location
-    //todo!("let _regtest_manager = setup::basic_funded_zcashd_lwd_zingolib_connected();");
-    // Execution:
-    //   Launch the two "bonking" zcashd instances
-    // Assertions:
-    //   zcashd A is terminated
-    //   zcashd B is terminated
-    //   The incorrectly configured location is still present (and not checked in)
-    //   The test-or-scenario that caused this situation has failed/panicked.
-    //}
 }
 
+#[test]
+fn create_network_disconnected_client() {
+    let (_regtest_manager_1, _child_process_handler_1, _client_1, _runtime) =
+        setup::coinbasebacked_spendcapable();
+}
 /// This uses a manual outdated version of two_clients_a_spendcapable, but with the
 /// advantage of starting client_b on a different server, thus testing the ability
 /// to change servers after boot
@@ -231,3 +220,19 @@ fn send_orchard_back_and_forth() {
         drop(child_process_handler);
     });
 }
+// Proposed Test:
+//#[test]
+//fn two_zcashds_with_colliding_configs() {
+// Expectations:
+//   The children are terminated by the test run end.
+// Setup:
+//   Two different zcashds are configured to launch with 1 config-location
+//todo!("let _regtest_manager = setup::basic_funded_zcashd_lwd_zingolib_connected();");
+// Execution:
+//   Launch the two "bonking" zcashd instances
+// Assertions:
+//   zcashd A is terminated
+//   zcashd B is terminated
+//   The incorrectly configured location is still present (and not checked in)
+//   The test-or-scenario that caused this situation has failed/panicked.
+//}
