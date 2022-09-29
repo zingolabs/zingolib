@@ -85,9 +85,6 @@ fn mine_sapling_to_self() {
         client.do_sync(true).await.unwrap();
 
         let balance = client.do_balance().await;
-        println!("{}", json::stringify_pretty(balance.clone(), 4));
-        let transactions = client.do_list_transactions(false).await;
-        println!("{}", json::stringify_pretty(transactions, 4));
         assert_eq!(balance["sapling_balance"], 3_750_000_000u64);
     });
 }
@@ -98,12 +95,10 @@ fn send_mined_sapling_to_orchard() {
         setup::coinbasebacked_spendcapable();
     runtime.block_on(async {
         sleep(Duration::from_secs(2)).await;
-        let sync_status = client.do_sync(true).await.unwrap();
-        println!("{}", json::stringify_pretty(sync_status, 4));
+        client.do_sync(true).await.unwrap();
 
         let o_addr = client.do_new_address("o").await.unwrap()[0].take();
-        println!("{o_addr}");
-        let send_status = client
+        client
             .do_send(vec![(
                 o_addr.to_string().as_str(),
                 5000,
@@ -111,16 +106,12 @@ fn send_mined_sapling_to_orchard() {
             )])
             .await
             .unwrap();
-        println!("Send status: {send_status}");
 
         regtest_manager.generate_n_blocks(2).unwrap();
         sleep(Duration::from_secs(2)).await;
 
         client.do_sync(true).await.unwrap();
         let balance = client.do_balance().await;
-        let transactions = client.do_list_transactions(false).await;
-        println!("{}", json::stringify_pretty(balance.clone(), 4));
-        println!("{}", json::stringify_pretty(transactions, 4));
         assert_eq!(balance["verified_orchard_balance"], 5000);
     });
     // Proposed Test:
@@ -174,7 +165,6 @@ fn note_selection_order() {
         }
         regtest_manager_1.generate_n_blocks(5).unwrap();
         sleep(Duration::from_secs(2)).await;
-        println!("Server 2: {}", client_2.get_server());
         client_2.do_sync(true).await.unwrap();
         let address_of_1 = client_1.do_address().await["sapling_addresses"][0].clone();
         client_2
