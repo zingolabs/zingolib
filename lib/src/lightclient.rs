@@ -107,9 +107,9 @@ async fn get_recent_median_price_from_gemini() -> Result<f64, reqwest::Error> {
     Ok(trades[5])
 }
 
+#[cfg(test)]
 impl LightClient {
     /// Method to create a test-only version of the LightClient
-    #[cfg(test)]
     pub async fn test_new(
         config: &ZingoConfig,
         seed_phrase: Option<String>,
@@ -137,6 +137,30 @@ impl LightClient {
         Ok(l)
     }
 
+    //TODO: Add migrate_sapling_to_orchard argument
+    #[cfg(test)]
+    pub async fn test_do_send(
+        &self,
+        addrs: Vec<(&str, u64, Option<String>)>,
+    ) -> Result<String, String> {
+        // First, get the concensus branch ID
+        info!("Creating transaction");
+
+        let result = {
+            let _lock = self.sync_lock.lock().await;
+            let prover = crate::blaze::test_utils::FakeTransactionProver {};
+
+            self.wallet
+                .send_to_address(prover, false, false, addrs, |transaction_bytes| {
+                    GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
+                })
+                .await
+        };
+
+        result.map(|(transaction_id, _)| transaction_id)
+    }
+}
+impl LightClient {
     pub fn set_server(&self, server: http::Uri) {
         *self.config.server_uri.write().unwrap() = server
     }
@@ -1838,29 +1862,6 @@ impl LightClient {
             let (sapling_output, sapling_spend) = self.read_sapling_params()?;
 
             let prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
-
-            self.wallet
-                .send_to_address(prover, false, false, addrs, |transaction_bytes| {
-                    GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
-                })
-                .await
-        };
-
-        result.map(|(transaction_id, _)| transaction_id)
-    }
-
-    //TODO: Add migrate_sapling_to_orchard argument
-    #[cfg(test)]
-    pub async fn test_do_send(
-        &self,
-        addrs: Vec<(&str, u64, Option<String>)>,
-    ) -> Result<String, String> {
-        // First, get the concensus branch ID
-        info!("Creating transaction");
-
-        let result = {
-            let _lock = self.sync_lock.lock().await;
-            let prover = crate::blaze::test_utils::FakeTransactionProver {};
 
             self.wallet
                 .send_to_address(prover, false, false, addrs, |transaction_bytes| {
