@@ -122,7 +122,7 @@ impl LightClient {
             ));
         }
 
-        let l = LightClient::create_unconnected(config, seed_phrase, height)
+        let l = LightClient::create_unconnected(config, seed_phrase, height, 1)
             .expect("Unconnected client creation failed!");
         l.set_wallet_initial_state(height).await;
 
@@ -158,9 +158,10 @@ impl LightClient {
         config: &ZingoConfig,
         seed_phrase: Option<String>,
         height: u64,
+        num_zaddrs: u32,
     ) -> io::Result<Self> {
         Ok(LightClient {
-            wallet: LightWallet::new(config.clone(), seed_phrase, height, 1)?,
+            wallet: LightWallet::new(config.clone(), seed_phrase, height, num_zaddrs)?,
             config: config.clone(),
             mempool_monitor: std::sync::RwLock::new(None),
             bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
