@@ -73,7 +73,7 @@ impl BlockAndWitnessData {
             blocks_in_current_batch: Arc::new(RwLock::new(vec![])),
             existing_blocks: Arc::new(RwLock::new(vec![])),
             unverified_treestates: Arc::new(RwLock::new(vec![])),
-            batch_size: 25_000,
+            batch_size: 25,
             highest_verified_trees: None,
             orchard_anchors: Arc::new(RwLock::new(Vec::new())),
             sync_status,
@@ -411,7 +411,6 @@ impl BlockAndWitnessData {
             let mut last_block_expecting = end_block;
 
             while let Some(compact_block) = receiver.recv().await {
-                // We'll process 25_000 blocks at a time.
                 if compact_block.height % batch_size == 0 {
                     if !blks.is_empty() {
                         // Add these blocks to the list
