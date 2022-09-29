@@ -123,6 +123,7 @@ impl LightClient {
         }
 
         let l = LightClient::create_unconnected(config, seed_phrase, height, 1)
+            .await
             .expect("Unconnected client creation failed!");
         l.set_wallet_initial_state(height).await;
 
@@ -154,14 +155,22 @@ impl LightClient {
     }
 }
 impl LightClient {
-    pub fn create_unconnected(
+    pub async fn create_unconnected(
         config: &ZingoConfig,
         seed_phrase: Option<String>,
         height: u64,
         num_zaddrs: u32,
     ) -> io::Result<Self> {
+        let wallet;
+        if config.wallet_exists() {
+            let mut file_buffer = BufReader::new(File::open(config.get_wallet_path())?);
+            wallet = LightWallet::read(&mut file_buffer, config).await?;
+        } else {
+            wallet = LightWallet::new(config.clone(), seed_phrase, height, num_zaddrs)?;
+        };
+
         Ok(LightClient {
-            wallet: LightWallet::new(config.clone(), seed_phrase, height, num_zaddrs)?,
+            wallet,
             config: config.clone(),
             mempool_monitor: std::sync::RwLock::new(None),
             bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
@@ -347,7 +356,7 @@ impl LightClient {
 
     fn new_wallet(config: &ZingoConfig, height: u64, num_zaddrs: u32) -> io::Result<Self> {
         Runtime::new().unwrap().block_on(async move {
-            let l = LightClient::create_unconnected(&config, None, height, num_zaddrs)?;
+            let l = LightClient::create_unconnected(&config, None, height, num_zaddrs).await?;
             l.set_wallet_initial_state(height).await;
 
             info!("Created new wallet with a new seed!");
@@ -417,13 +426,9 @@ impl LightClient {
             todo!()
         } else {
             Runtime::new().unwrap().block_on(async move {
-                let l = LightClient {
-                    wallet: LightWallet::new(config.clone(), Some(key_or_seedphrase), birthday, 1)?,
-                    config: config.clone(),
-                    mempool_monitor: std::sync::RwLock::new(None),
-                    sync_lock: Mutex::new(()),
-                    bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
-                };
+                let l =
+                    LightClient::create_unconnected(&config, Some(key_or_seedphrase), birthday, 1)
+                        .await?;
 
                 l.set_wallet_initial_state(birthday).await;
                 l.do_save()
