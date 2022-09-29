@@ -138,7 +138,6 @@ impl LightClient {
     }
 
     //TODO: Add migrate_sapling_to_orchard argument
-    #[cfg(test)]
     pub async fn test_do_send(
         &self,
         addrs: Vec<(&str, u64, Option<String>)>,
