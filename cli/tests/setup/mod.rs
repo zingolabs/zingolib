@@ -136,18 +136,14 @@ pub fn coinbasebacked_spendcapable() -> (RegtestManager, ChildProcessHandler, Li
     .unwrap();
     let mut spendkey_bytes = Vec::new();
     coinbase_spendkey.write(&mut spendkey_bytes).unwrap();
-    let light_client = LightClient::create_with_capable_wallet(
-        bech32::encode(
-            "secret-extended-key-regtest",
-            <Vec<u8> as bech32::ToBase32>::to_base32(&spendkey_bytes),
-            bech32::Variant::Bech32,
-        )
-        .unwrap(),
-        &config,
-        0,
-        false,
+    let key_bytes = bech32::encode(
+        "secret-extended-key-regtest",
+        <Vec<u8> as bech32::ToBase32>::to_base32(&spendkey_bytes),
+        bech32::Variant::Bech32,
     )
     .unwrap();
+    let light_client =
+        LightClient::create_with_capable_wallet(key_bytes, &config, 0, false).unwrap();
     regtest_manager.generate_n_blocks(5).unwrap();
     (
         regtest_manager,
