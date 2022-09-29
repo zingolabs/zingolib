@@ -122,14 +122,8 @@ impl LightClient {
             ));
         }
 
-        let l = LightClient {
-            wallet: LightWallet::new(config.clone(), seed_phrase, height, 1)?,
-            config: config.clone(),
-            mempool_monitor: std::sync::RwLock::new(None),
-            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
-            sync_lock: Mutex::new(()),
-        };
-
+        let l = LightClient::create_unconnected(config, seed_phrase, height)
+            .expect("Unconnected client creation failed!");
         l.set_wallet_initial_state(height).await;
 
         info!("Created new wallet!");
@@ -160,6 +154,19 @@ impl LightClient {
     }
 }
 impl LightClient {
+    pub fn create_unconnected(
+        config: &ZingoConfig,
+        seed_phrase: Option<String>,
+        height: u64,
+    ) -> io::Result<Self> {
+        Ok(LightClient {
+            wallet: LightWallet::new(config.clone(), seed_phrase, height, 1)?,
+            config: config.clone(),
+            mempool_monitor: std::sync::RwLock::new(None),
+            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
+            sync_lock: Mutex::new(()),
+        })
+    }
     pub fn set_server(&self, server: http::Uri) {
         *self.config.server_uri.write().unwrap() = server
     }
