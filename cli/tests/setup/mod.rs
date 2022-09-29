@@ -156,6 +156,32 @@ pub fn coinbasebacked_spendcapable() -> (RegtestManager, ChildProcessHandler, Li
     )
 }
 
+pub fn two_clients_a_coinbase_backed() -> (
+    RegtestManager,
+    LightClient,
+    LightClient,
+    ChildProcessHandler,
+    Runtime,
+) {
+    let (regtest_manager, child_process_handler, client_a, runtime) = coinbasebacked_spendcapable();
+    let client_b_zingoconf_path = format!(
+        "{}_b",
+        regtest_manager.zingo_data_dir.to_string_lossy().to_string()
+    );
+    std::fs::create_dir(&client_b_zingoconf_path).unwrap();
+    let (client_b_config, _height) =
+        create_zingoconf_with_datadir(client_a.get_server_uri(), Some(client_b_zingoconf_path))
+            .unwrap();
+    let client_b = LightClient::new(&client_b_config, 0).unwrap();
+    (
+        regtest_manager,
+        client_a,
+        client_b,
+        child_process_handler,
+        runtime,
+    )
+}
+
 pub fn basic_no_spendable() -> (RegtestManager, ChildProcessHandler, LightClient) {
     let (regtest_manager, server_port) = create_maybe_funded_regtest_manager(None);
     let child_process_handler = regtest_manager.launch(true).unwrap();

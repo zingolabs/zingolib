@@ -3,6 +3,7 @@ use std::time::Duration;
 
 mod data;
 mod setup;
+use setup::two_clients_a_coinbase_backed;
 use tokio::time::sleep;
 
 #[test]
@@ -139,6 +140,10 @@ fn send_mined_sapling_to_orchard() {
     //   The test-or-scenario that caused this situation has failed/panicked.
     //}
 }
+
+/// This uses a manual outdated version of two_clients_a_spendcapable, but with the
+/// advantage of starting client_b on a different server, thus testing the ability
+/// to change servers after boot
 #[test]
 fn note_selection_order() {
     let (regtest_manager_1, _child_process_handler_1, client_1, runtime) =
@@ -191,5 +196,52 @@ fn note_selection_order() {
                 .len(),
             1
         );
+    });
+}
+
+#[test]
+fn send_orchard_back_and_forth() {
+    let (regtest_manager, client_a, client_b, child_process_handler, runtime) =
+        two_clients_a_coinbase_backed();
+    runtime.block_on(async {
+        sleep(Duration::from_secs(2)).await;
+        client_a.do_sync(true).await.unwrap();
+
+        // do_new_address returns a single element json array for some reason
+        let ua_of_b = client_b.do_new_address("o").await.unwrap()[0].to_string();
+        client_a
+            .do_send(vec![(&ua_of_b, 10_000, Some("Orcharding".to_string()))])
+            .await
+            .unwrap();
+
+        regtest_manager.generate_n_blocks(3).unwrap();
+        sleep(Duration::from_secs(2)).await;
+        client_b.do_sync(true).await.unwrap();
+        client_a.do_sync(true).await.unwrap();
+
+        // We still need to implement sending change to orchard, in librustzcash
+        // Even when we do, we'll probably send change to sapling with no
+        // preexisting orchard spend authority
+        assert_eq!(client_a.do_balance().await["orchard_balance"], 0);
+        assert_eq!(client_b.do_balance().await["orchard_balance"], 10_000);
+
+        let ua_of_a = client_a.do_new_address("o").await.unwrap()[0].to_string();
+        client_b
+            .do_send(vec![(&ua_of_a, 5_000, Some("Sending back".to_string()))])
+            .await
+            .unwrap();
+
+        regtest_manager.generate_n_blocks(3).unwrap();
+        sleep(Duration::from_secs(2)).await;
+        client_a.do_sync(true).await.unwrap();
+        client_b.do_sync(true).await.unwrap();
+
+        assert_eq!(client_a.do_balance().await["orchard_balance"], 5_000);
+        assert_eq!(client_b.do_balance().await["sapling_balance"], 4_000);
+        assert_eq!(client_b.do_balance().await["orchard_balance"], 0);
+
+        // Unneeded, but more explicit than having child_process_handler be an
+        // unused variable
+        drop(child_process_handler);
     });
 }
