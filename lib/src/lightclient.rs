@@ -345,17 +345,10 @@ impl LightClient {
         };
     }
 
-    fn new_wallet(config: &ZingoConfig, latest_block: u64, num_zaddrs: u32) -> io::Result<Self> {
+    fn new_wallet(config: &ZingoConfig, height: u64, num_zaddrs: u32) -> io::Result<Self> {
         Runtime::new().unwrap().block_on(async move {
-            let l = LightClient {
-                wallet: LightWallet::new(config.clone(), None, latest_block, num_zaddrs)?,
-                config: config.clone(),
-                mempool_monitor: std::sync::RwLock::new(None),
-                sync_lock: Mutex::new(()),
-                bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
-            };
-
-            l.set_wallet_initial_state(latest_block).await;
+            let l = LightClient::create_unconnected(&config, None, height, num_zaddrs)?;
+            l.set_wallet_initial_state(height).await;
 
             info!("Created new wallet with a new seed!");
             info!("Created LightClient to {}", &config.get_server_uri());
