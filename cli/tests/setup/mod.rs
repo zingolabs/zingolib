@@ -134,7 +134,6 @@ pub fn coinbasebacked_spendcapable() -> (RegtestManager, ChildProcessHandler, Li
         Some(regtest_manager.zingo_data_dir.to_string_lossy().to_string()),
     )
     .unwrap();
-    regtest_manager.generate_n_blocks(5).unwrap();
     let mut spendkey_bytes = Vec::new();
     coinbase_spendkey.write(&mut spendkey_bytes).unwrap();
     let light_client = LightClient::create_with_capable_wallet(
@@ -149,6 +148,7 @@ pub fn coinbasebacked_spendcapable() -> (RegtestManager, ChildProcessHandler, Li
         false,
     )
     .unwrap();
+    regtest_manager.generate_n_blocks(5).unwrap();
     (
         regtest_manager,
         child_process_handler,
