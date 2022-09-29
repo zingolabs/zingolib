@@ -10,6 +10,13 @@ use tokio::time::sleep;
 fn basic_connectivity_scenario_canary() {
     let _ = setup::coinbasebacked_spendcapable();
 }
+
+#[test]
+fn create_network_disconnected_client() {
+    let (_regtest_manager_1, _child_process_handler_1, _client_1, _runtime) =
+        setup::coinbasebacked_spendcapable();
+}
+
 #[test]
 fn zcashd_sapling_commitment_tree() {
     let (regtest_manager, _child_process_handler, _client, _runtime) =
@@ -110,12 +117,6 @@ fn send_mined_sapling_to_orchard() {
         let balance = client.do_balance().await;
         assert_eq!(balance["verified_orchard_balance"], 5000);
     });
-}
-
-#[test]
-fn create_network_disconnected_client() {
-    let (_regtest_manager_1, _child_process_handler_1, _client_1, _runtime) =
-        setup::coinbasebacked_spendcapable();
 }
 /// This uses a manual outdated version of two_clients_a_spendcapable, but with the
 /// advantage of starting client_b on a different server, thus testing the ability
