@@ -7,11 +7,7 @@ use setup::two_clients_a_coinbase_backed;
 use tokio::time::sleep;
 
 #[test]
-fn basic_connectivity_scenario_a() {
-    let _ = setup::coinbasebacked_spendcapable();
-}
-#[test]
-fn basic_connectivity_scenario_b() {
+fn basic_connectivity_scenario_canary() {
     let _ = setup::coinbasebacked_spendcapable();
 }
 #[test]
