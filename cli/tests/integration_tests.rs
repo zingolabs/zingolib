@@ -118,7 +118,7 @@ fn send_mined_sapling_to_orchard() {
         assert_eq!(balance["verified_orchard_balance"], 5000);
     });
 }
-/// This uses a manual outdated version of two_clients_a_spendcapable, but with the
+/// This uses a manual outdated version of two_clients_a_coinbase_backed, but with the
 /// advantage of starting client_b on a different server, thus testing the ability
 /// to change servers after boot
 #[test]
