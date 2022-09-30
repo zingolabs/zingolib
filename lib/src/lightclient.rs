@@ -471,9 +471,7 @@ impl LightClient {
     }
 
     pub fn read_from_disk(config: &ZingoConfig) -> io::Result<Self> {
-        let wallet_path = if config.wallet_exists() {
-            config.get_wallet_path()
-        } else {
+        if !config.wallet_exists() {
             return Err(Error::new(
                 ErrorKind::AlreadyExists,
                 format!(
