@@ -13,7 +13,7 @@ use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard, Anchor};
 use zcash_note_encryption::Domain;
 use zingoconfig::{Network, ZingoConfig, MAX_REORG};
 
-use futures::future::join_all;
+use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
 use http::Uri;
 use std::{sync::Arc, time::Duration};
 use tokio::{
@@ -370,6 +370,42 @@ impl BlockAndWitnessData {
             .write()
             .await
             .remove_txns_at_height(reorg_height);
+    }
+
+    pub async fn update_orchard_anchors_process(
+        &self,
+        start_block: u64,
+        end_block: u64,
+        uri: Arc<std::sync::RwLock<Uri>>,
+    ) -> JoinHandle<Result<(), String>> {
+        let orchard_anchors = self.orchard_anchors.clone();
+        tokio::spawn(async move {
+            let mut workers = FuturesUnordered::new();
+            for block_height in end_block..=start_block {
+                let uri = uri.clone();
+                let orchard_anchors = orchard_anchors.clone();
+                workers.push(tokio::spawn(async move {
+                    let mut anchors = orchard_anchors.write().await;
+
+                    let uri = uri.read().unwrap().clone();
+                    let trees_state = GrpcConnector::get_trees(uri.clone(), block_height).await?;
+                    let orchard_tree = CommitmentTree::<MerkleHashOrchard>::read(
+                        hex::decode(&trees_state.orchard_tree).unwrap().as_slice(),
+                    )
+                    .unwrap();
+                    anchors.push((
+                        Anchor::from(orchard_tree.root()),
+                        BlockHeight::from_u32(block_height as u32),
+                    ));
+                    Ok::<_, String>(())
+                }))
+            }
+            while let Some(r) = workers.next().await {
+                r.map_err(|r| r.to_string())??;
+            }
+
+            Ok(())
+        })
     }
 
     /// Start a new sync where we ingest all the blocks
