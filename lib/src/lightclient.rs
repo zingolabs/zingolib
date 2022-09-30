@@ -1052,6 +1052,12 @@ impl LightClient {
                         .iter()
                         .filter(|nd| nd.is_change)
                         .map(|nd| nd.note.value)
+                        .sum::<u64>() 
+                        + wallet_transaction
+                        .orchard_notes
+                        .iter()
+                        .filter(|nd| nd.is_change)
+                        .map(|nd| nd.note.value().inner())
                         .sum::<u64>()
                         + wallet_transaction.utxos.iter().map(|ut| ut.value).sum::<u64>();
 
