@@ -721,8 +721,8 @@ impl BlockAndWitnessData {
                 // At the end of every block, update the witness in the array
                 fsb.push(w.clone());
 
-                if i % 10_000 == 0 {
-                    // Every 10k blocks, give up the lock, let other threads proceed and then re-acquire it
+                if i % 250 == 0 {
+                    // Every 250 blocks, give up the lock, let other threads proceed and then re-acquire it
                     drop(blocks);
                     yield_now().await;
                     blocks = self.blocks_in_current_batch.read().await;
