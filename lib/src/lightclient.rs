@@ -814,9 +814,9 @@ impl LightClient {
 
     // Return a list of all notes, spent and unspent
     pub async fn do_list_notes(&self, all_notes: bool) -> JsonValue {
-        let mut unspent_notes: Vec<JsonValue> = vec![];
-        let mut spent_notes: Vec<JsonValue> = vec![];
-        let mut pending_notes: Vec<JsonValue> = vec![];
+        let mut unspent_sapling_notes: Vec<JsonValue> = vec![];
+        let mut spent_sapling_notes: Vec<JsonValue> = vec![];
+        let mut pending_sapling_notes: Vec<JsonValue> = vec![];
 
         let anchor_height = BlockHeight::from_u32(self.wallet.get_anchor_height().await);
 
@@ -863,11 +863,68 @@ impl LightClient {
                 })
                 .for_each( |note| {
                     if note["spent"].is_null() && note["unconfirmed_spent"].is_null() {
-                        unspent_notes.push(note);
+                        unspent_sapling_notes.push(note);
                     } else if !note["spent"].is_null() {
-                        spent_notes.push(note);
+                        spent_sapling_notes.push(note);
                     } else {
-                        pending_notes.push(note);
+                        pending_sapling_notes.push(note);
+                    }
+                });
+        }
+
+        let mut unspent_orchard_notes: Vec<JsonValue> = vec![];
+        let mut spent_orchard_notes: Vec<JsonValue> = vec![];
+        let mut pending_orchard_notes: Vec<JsonValue> = vec![];
+
+        {
+            // Same thing but with orchard. TODO: Dry
+            let spendable_address: HashSet<String> = self
+                .wallet
+                .keys()
+                .read()
+                .await
+                .okeys()
+                .into_iter()
+                .filter(|k| OrchardSpendingKey::try_from(&k.key).is_ok())
+                .map(|k| k.unified_address.encode(&self.config.chain))
+                .collect();
+
+            self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
+                .flat_map( |(transaction_id, wtx)| {
+                    let spendable_address = spendable_address.clone();
+                    wtx.orchard_notes.iter().filter_map(move |nd|
+                        if !all_notes && nd.spent.is_some() {
+                            None
+                        } else {
+                            let address = LightWallet::note_address(&self.config.chain, nd);
+                            let spendable = address.is_some() &&
+                                                    spendable_address.contains(&address.clone().unwrap()) &&
+                                                    wtx.block <= anchor_height && nd.spent.is_none() && nd.unconfirmed_spent.is_none();
+
+                            let created_block:u32 = wtx.block.into();
+                            Some(object!{
+                                "created_in_block"   => created_block,
+                                "datetime"           => wtx.datetime,
+                                "created_in_txid"    => format!("{}", transaction_id),
+                                "value"              => nd.note.value().inner(),
+                                "unconfirmed"        => wtx.unconfirmed,
+                                "is_change"          => nd.is_change,
+                                "address"            => address,
+                                "spendable"          => spendable,
+                                "spent"              => nd.spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
+                                "spent_at_height"    => nd.spent.map(|(_, h)| h),
+                                "unconfirmed_spent"  => nd.unconfirmed_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
+                            })
+                        }
+                    )
+                })
+                .for_each( |note| {
+                    if note["spent"].is_null() && note["unconfirmed_spent"].is_null() {
+                        unspent_orchard_notes.push(note);
+                    } else if !note["spent"].is_null() {
+                        spent_orchard_notes.push(note);
+                    } else {
+                        pending_orchard_notes.push(note);
                     }
                 });
         }
@@ -912,14 +969,17 @@ impl LightClient {
         }
 
         let mut res = object! {
-            "unspent_notes" => unspent_notes,
-            "pending_notes" => pending_notes,
+            "unspent_sapling_notes" => unspent_sapling_notes,
+            "pending_sapling_notes" => pending_sapling_notes,
+            "unspent_orchard_notes" => unspent_orchard_notes,
+            "pending_orchard_notes" => pending_orchard_notes,
             "utxos"         => unspent_utxos,
             "pending_utxos" => pending_utxos,
         };
 
         if all_notes {
-            res["spent_notes"] = JsonValue::Array(spent_notes);
+            res["spent_sapling_notes"] = JsonValue::Array(spent_sapling_notes);
+            res["spent_orchard_notes"] = JsonValue::Array(spent_orchard_notes);
             res["spent_utxos"] = JsonValue::Array(spent_utxos);
         }
 
