@@ -1715,6 +1715,14 @@ impl LightClient {
                 .await
         });
 
+        // Update orchard anchors
+        let update_orchard_anchors_handle = bsync_data
+            .read()
+            .await
+            .block_data
+            .update_orchard_anchors_process(start_block, end_block, self.config.server_uri.clone())
+            .await;
+
         // We wait first for the nodes to be updated. This is where reorgs will be handled, so all the steps done after this phase will
         // assume that the reorgs are done.
         let earliest_block = block_and_witness_handle.await.unwrap().unwrap();
@@ -1753,6 +1761,7 @@ impl LightClient {
 
         join_all(vec![
             update_notes_handle,
+            update_orchard_anchors_handle,
             taddr_transactions_handle,
             fetch_compact_blocks_handle,
             fetch_full_transactions_handle,
