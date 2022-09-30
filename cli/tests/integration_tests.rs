@@ -142,7 +142,7 @@ fn note_selection_order() {
         for n in 1..=5 {
             client_1
                 .do_send(vec![(
-                    dbg!(&address_of_2.to_string()),
+                    &address_of_2.to_string(),
                     n * 1000,
                     Some(n.to_string()),
                 )])
@@ -155,7 +155,7 @@ fn note_selection_order() {
         let address_of_1 = client_1.do_address().await["sapling_addresses"][0].clone();
         client_2
             .do_send(vec![(
-                dbg!(&address_of_1.to_string()),
+                &address_of_1.to_string(),
                 5000,
                 Some("Sending back, should have 2 inputs".to_string()),
             )])
