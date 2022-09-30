@@ -16,6 +16,10 @@ zingolib = { path = "../lib/" }
 zingoconfig = { path = "../config/" }
 
 [dev-dependencies]
+bech32 = "0.9.0"
 portpicker = "0.1.1"
+rand = "0.8.5"
 tempdir = "0.3.7"
 tracing-subscriber = "0.3.15"
+zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash", rev = "d66f7f70516e6da5c24008874a926d41221b1346"}
+zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", rev = "d66f7f70516e6da5c24008874a926d41221b1346", features = ["transparent-inputs", "test-dependencies"] }

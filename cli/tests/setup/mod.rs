@@ -1,4 +1,5 @@
 use crate::data;
+use rand::{rngs::OsRng, Rng};
 use std::path::PathBuf;
 
 use tokio::runtime::Runtime;
@@ -95,13 +96,28 @@ fn create_maybe_funded_regtest_manager(
         test_configs.lightwalletd_rpcservice_port,
     )
 }
+
+/// Many scenarios need to start with spendable funds.  This setup provides
+/// 1 block worth of coinbase to a preregistered spend capability.
+///
+/// This key is registered to receive block rewards by:
+///  (1) existing accessibly for test code in: cli/examples/mineraddress_sapling_spendingkey
+///  (2) corresponding to the address registered as the "mineraddress" field in cli/examples/zcash.conf
+///
 /// The general scenario framework requires instances of zingo-cli, lightwalletd, and zcashd (in regtest mode).
 /// This setup is intended to produce the most basic of scenarios.  As scenarios with even less requirements
 /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
-pub fn basic_funded_zcashd_lwd_zingolib_connected(
-) -> (RegtestManager, ChildProcessHandler, LightClient) {
-    let (regtest_manager, server_port) =
-        create_maybe_funded_regtest_manager(Some(data::SAPLING_ADDRESS_FROM_SPEND_AUTH));
+pub fn coinbasebacked_spendcapable() -> (RegtestManager, ChildProcessHandler, LightClient, Runtime)
+{
+    //tracing_subscriber::fmt::init();
+    let coinbase_spendkey =
+        zcash_primitives::zip32::ExtendedSpendingKey::master(&OsRng.gen::<[u8; 32]>());
+    let (regtest_manager, server_port) = create_maybe_funded_regtest_manager(Some(
+        &zcash_client_backend::encoding::encode_payment_address(
+            "zregtestsapling",
+            &coinbase_spendkey.default_address().1,
+        ),
+    ));
     let child_process_handler = regtest_manager.launch(true).unwrap_or_else(|e| match e {
         zingo_cli::regtest::LaunchChildProcessError::ZcashdState {
             errorcode,
@@ -118,38 +134,48 @@ pub fn basic_funded_zcashd_lwd_zingolib_connected(
         Some(regtest_manager.zingo_data_dir.to_string_lossy().to_string()),
     )
     .unwrap();
-    (
-        regtest_manager,
-        child_process_handler,
-        LightClient::new(&config, 0).unwrap(),
-    )
-}
-/// Many scenarios need to start with spendable funds.  This setup provides
-/// 1 block worth of coinbase to a preregistered spend capability.
-///
-/// This key is registered to receive block rewards by:
-///  (1) existing accessibly for test code in: cli/examples/mineraddress_sapling_spendingkey
-///  (2) corresponding to the address registered as the "mineraddress" field in cli/examples/zcash.conf
-pub fn coinbasebacked_spendcapable() -> (RegtestManager, ChildProcessHandler, LightClient, Runtime)
-{
-    //tracing_subscriber::fmt::init();
-    let coinbase_spendkey = data::SECRET_SPEND_AUTH_SAPLING.to_string();
-    let (regtest_manager, server_port) =
-        create_maybe_funded_regtest_manager(Some(data::SAPLING_ADDRESS_FROM_SPEND_AUTH));
-    let child_process_handler = regtest_manager.launch(true).unwrap();
-    let server_id =
-        zingoconfig::construct_server_uri(Some(format!("http://127.0.0.1:{server_port}")));
-    let (config, _height) = create_zingoconf_with_datadir(
-        server_id,
-        Some(regtest_manager.zingo_data_dir.to_string_lossy().to_string()),
+    let mut spendkey_bytes = Vec::new();
+    coinbase_spendkey.write(&mut spendkey_bytes).unwrap();
+    let key_bytes = bech32::encode(
+        "secret-extended-key-regtest",
+        <Vec<u8> as bech32::ToBase32>::to_base32(&spendkey_bytes),
+        bech32::Variant::Bech32,
     )
     .unwrap();
+    let light_client =
+        LightClient::create_with_capable_wallet(key_bytes, &config, 0, false).unwrap();
     regtest_manager.generate_n_blocks(5).unwrap();
     (
         regtest_manager,
         child_process_handler,
-        LightClient::create_with_capable_wallet(coinbase_spendkey, &config, 0, false).unwrap(),
+        light_client,
         Runtime::new().unwrap(),
+    )
+}
+
+pub fn two_clients_a_coinbase_backed() -> (
+    RegtestManager,
+    LightClient,
+    LightClient,
+    ChildProcessHandler,
+    Runtime,
+) {
+    let (regtest_manager, child_process_handler, client_a, runtime) = coinbasebacked_spendcapable();
+    let client_b_zingoconf_path = format!(
+        "{}_b",
+        regtest_manager.zingo_data_dir.to_string_lossy().to_string()
+    );
+    std::fs::create_dir(&client_b_zingoconf_path).unwrap();
+    let (client_b_config, _height) =
+        create_zingoconf_with_datadir(client_a.get_server_uri(), Some(client_b_zingoconf_path))
+            .unwrap();
+    let client_b = LightClient::new(&client_b_config, 0).unwrap();
+    (
+        regtest_manager,
+        client_a,
+        client_b,
+        child_process_handler,
+        runtime,
     )
 }
 

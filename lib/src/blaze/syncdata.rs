@@ -12,7 +12,7 @@ use zingoconfig::ZingoConfig;
 pub struct BlazeSyncData {
     pub(crate) sync_status: Arc<RwLock<SyncStatus>>,
     pub(crate) block_data: BlockAndWitnessData,
-    uri: Uri,
+    uri: Arc<std::sync::RwLock<Uri>>,
     pub(crate) wallet_options: WalletOptions,
 }
 
@@ -22,14 +22,14 @@ impl BlazeSyncData {
 
         Self {
             sync_status: sync_status.clone(),
-            uri: config.get_server_uri(),
+            uri: config.server_uri.clone(),
             block_data: BlockAndWitnessData::new(config, sync_status),
             wallet_options: WalletOptions::default(),
         }
     }
 
-    pub fn uri(&self) -> &'_ Uri {
-        &self.uri
+    pub fn uri(&self) -> Uri {
+        self.uri.read().unwrap().clone()
     }
 
     pub async fn setup_for_sync(

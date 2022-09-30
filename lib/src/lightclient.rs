@@ -107,9 +107,9 @@ async fn get_recent_median_price_from_gemini() -> Result<f64, reqwest::Error> {
     Ok(trades[5])
 }
 
+#[cfg(test)]
 impl LightClient {
     /// Method to create a test-only version of the LightClient
-    #[cfg(test)]
     pub async fn test_new(
         config: &ZingoConfig,
         seed_phrase: Option<String>,
@@ -122,14 +122,8 @@ impl LightClient {
             ));
         }
 
-        let l = LightClient {
-            wallet: LightWallet::new(config.clone(), seed_phrase, height, 1)?,
-            config: config.clone(),
-            mempool_monitor: std::sync::RwLock::new(None),
-            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
-            sync_lock: Mutex::new(()),
-        };
-
+        let l = LightClient::create_unconnected(config, seed_phrase, height, 1)
+            .expect("Unconnected client creation failed!");
         l.set_wallet_initial_state(height).await;
 
         info!("Created new wallet!");
@@ -137,8 +131,49 @@ impl LightClient {
         Ok(l)
     }
 
+    //TODO: Add migrate_sapling_to_orchard argument
+    pub async fn test_do_send(
+        &self,
+        addrs: Vec<(&str, u64, Option<String>)>,
+    ) -> Result<String, String> {
+        // First, get the concensus branch ID
+        info!("Creating transaction");
+
+        let result = {
+            let _lock = self.sync_lock.lock().await;
+            let prover = crate::blaze::test_utils::FakeTransactionProver {};
+
+            self.wallet
+                .send_to_address(prover, false, false, addrs, |transaction_bytes| {
+                    GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
+                })
+                .await
+        };
+
+        result.map(|(transaction_id, _)| transaction_id)
+    }
+}
+impl LightClient {
+    pub fn create_unconnected(
+        config: &ZingoConfig,
+        seed_phrase: Option<String>,
+        height: u64,
+        num_zaddrs: u32,
+    ) -> io::Result<Self> {
+        Ok(LightClient {
+            wallet: LightWallet::new(config.clone(), seed_phrase, height, num_zaddrs)?,
+            config: config.clone(),
+            mempool_monitor: std::sync::RwLock::new(None),
+            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
+            sync_lock: Mutex::new(()),
+        })
+    }
     pub fn set_server(&self, server: http::Uri) {
         *self.config.server_uri.write().unwrap() = server
+    }
+
+    pub fn get_server(&self) -> std::sync::RwLockReadGuard<http::Uri> {
+        self.config.server_uri.read().unwrap()
     }
 
     fn write_file_if_not_exists(dir: &Box<Path>, name: &str, bytes: &[u8]) -> io::Result<()> {
@@ -310,17 +345,10 @@ impl LightClient {
         };
     }
 
-    fn new_wallet(config: &ZingoConfig, latest_block: u64, num_zaddrs: u32) -> io::Result<Self> {
+    fn new_wallet(config: &ZingoConfig, height: u64, num_zaddrs: u32) -> io::Result<Self> {
         Runtime::new().unwrap().block_on(async move {
-            let l = LightClient {
-                wallet: LightWallet::new(config.clone(), None, latest_block, num_zaddrs)?,
-                config: config.clone(),
-                mempool_monitor: std::sync::RwLock::new(None),
-                sync_lock: Mutex::new(()),
-                bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
-            };
-
-            l.set_wallet_initial_state(latest_block).await;
+            let l = LightClient::create_unconnected(&config, None, height, num_zaddrs)?;
+            l.set_wallet_initial_state(height).await;
 
             info!("Created new wallet with a new seed!");
             info!("Created LightClient to {}", &config.get_server_uri());
@@ -1834,29 +1862,6 @@ impl LightClient {
             let (sapling_output, sapling_spend) = self.read_sapling_params()?;
 
             let prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
-
-            self.wallet
-                .send_to_address(prover, false, false, addrs, |transaction_bytes| {
-                    GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
-                })
-                .await
-        };
-
-        result.map(|(transaction_id, _)| transaction_id)
-    }
-
-    //TODO: Add migrate_sapling_to_orchard argument
-    #[cfg(test)]
-    pub async fn test_do_send(
-        &self,
-        addrs: Vec<(&str, u64, Option<String>)>,
-    ) -> Result<String, String> {
-        // First, get the concensus branch ID
-        info!("Creating transaction");
-
-        let result = {
-            let _lock = self.sync_lock.lock().await;
-            let prover = crate::blaze::test_utils::FakeTransactionProver {};
 
             self.wallet
                 .send_to_address(prover, false, false, addrs, |transaction_bytes| {
