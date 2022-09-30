@@ -1548,7 +1548,7 @@ dependencies = [
 [[package]]
 name = "orchard"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/orchard?rev=48b7dac551a9af6c194632e6a9f0ff5fb7918dcc#48b7dac551a9af6c194632e6a9f0ff5fb7918dcc"
+source = "git+https://github.com/zingolabs/orchard?rev=49874b31da4fedcb31fcfadf5ba8804bf860c4bf#49874b31da4fedcb31fcfadf5ba8804bf860c4bf"
 dependencies = [
  "aes",
  "bitvec",
@@ -1570,7 +1570,7 @@ dependencies = [
  "serde",
  "subtle",
  "tracing",
- "zcash_note_encryption 0.1.0 (git+https://github.com/zingolabs/librustzcash?rev=e5484c96445dbff38cfb4a6e0983ade1bc0d7656)",
+ "zcash_note_encryption",
 ]
 
 [[package]]
@@ -3405,7 +3405,7 @@ dependencies = [
  "time 0.2.27",
  "tracing",
  "zcash_address",
- "zcash_note_encryption 0.1.0 (git+https://github.com/zingolabs/librustzcash?rev=d66f7f70516e6da5c24008874a926d41221b1346)",
+ "zcash_note_encryption",
  "zcash_primitives",
 ]
 
@@ -3422,17 +3422,6 @@ dependencies = [
 name = "zcash_note_encryption"
 version = "0.1.0"
 source = "git+https://github.com/zingolabs/librustzcash?rev=d66f7f70516e6da5c24008874a926d41221b1346#d66f7f70516e6da5c24008874a926d41221b1346"
-dependencies = [
- "chacha20",
- "chacha20poly1305",
- "rand_core",
- "subtle",
-]
-
-[[package]]
-name = "zcash_note_encryption"
-version = "0.1.0"
-source = "git+https://github.com/zingolabs/librustzcash?rev=e5484c96445dbff38cfb4a6e0983ade1bc0d7656#e5484c96445dbff38cfb4a6e0983ade1bc0d7656"
 dependencies = [
  "chacha20",
  "chacha20poly1305",
@@ -3475,7 +3464,7 @@ dependencies = [
  "subtle",
  "zcash_address",
  "zcash_encoding",
- "zcash_note_encryption 0.1.0 (git+https://github.com/zingolabs/librustzcash?rev=d66f7f70516e6da5c24008874a926d41221b1346)",
+ "zcash_note_encryption",
 ]
 
 [[package]]
@@ -3586,13 +3575,8 @@ dependencies = [
  "zcash_address",
  "zcash_client_backend",
  "zcash_encoding",
- "zcash_note_encryption 0.1.0 (git+https://github.com/zingolabs/librustzcash?rev=d66f7f70516e6da5c24008874a926d41221b1346)",
+ "zcash_note_encryption",
  "zcash_primitives",
  "zcash_proofs",
  "zingoconfig",
 ]
-
-[[patch.unused]]
-name = "zcash_primitives"
-version = "0.7.0"
-source = "git+https://github.com/zingolabs/librustzcash?rev=e5484c96445dbff38cfb4a6e0983ade1bc0d7656#e5484c96445dbff38cfb4a6e0983ade1bc0d7656"
