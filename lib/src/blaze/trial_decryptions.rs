@@ -99,7 +99,7 @@ impl TrialDecryptions {
             while let Some(cb) = receiver.recv().await {
                 cbs.push(cb);
 
-                if cbs.len() >= 1_000 {
+                if cbs.len() >= 125 {
                     // We seem to have enough to delegate to a new thread.
                     // Why 1000?
                     let keys = keys.clone();
@@ -169,7 +169,6 @@ impl TrialDecryptions {
         )>,
     ) -> Result<(), String> {
         let config = keys.read().await.config().clone();
-        let blk_count = compact_blocks.len();
         let mut workers = FuturesUnordered::new();
 
         let download_memos = bsync_data.read().await.wallet_options.download_memos;
@@ -245,21 +244,20 @@ impl TrialDecryptions {
                         receiver.await.unwrap().map(|_r| ())
                     }));
                 }
+                // Update sync status
+                bsync_data
+                    .read()
+                    .await
+                    .sync_status
+                    .write()
+                    .await
+                    .trial_dec_done += 1;
             }
         }
 
         while let Some(r) = workers.next().await {
             r.map_err(|e| e.to_string())??;
         }
-
-        // Update sync status
-        bsync_data
-            .read()
-            .await
-            .sync_status
-            .write()
-            .await
-            .trial_dec_done += blk_count as u64;
 
         // Return a nothing-value
         Ok::<(), String>(())
