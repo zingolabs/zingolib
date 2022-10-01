@@ -735,7 +735,7 @@ impl BlockAndWitnessData {
         return WitnessCache::new(fsb.into_vec(), top_block);
     }
 
-    pub(crate) async fn update_witness_after_pos<D: DomainWalletExt<zingoconfig::Network>>(
+    pub(crate) async fn update_witness_after_position<D: DomainWalletExt<zingoconfig::Network>>(
         &self,
         height: &BlockHeight,
         transaction_id: &TxId,
