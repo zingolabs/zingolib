@@ -1052,7 +1052,7 @@ impl LightClient {
                         .iter()
                         .filter(|nd| nd.is_change)
                         .map(|nd| nd.note.value)
-                        .sum::<u64>() 
+                        .sum::<u64>()
                         + wallet_transaction
                         .orchard_notes
                         .iter()
