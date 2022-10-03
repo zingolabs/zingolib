@@ -12,7 +12,7 @@ use crate::{
         keys::Keys,
         message::Message,
         now,
-        traits::NoteAndMetadata,
+        traits::{DomainWalletExt, NoteAndMetadata, Recipient},
         LightWallet,
     },
 };
@@ -35,6 +35,7 @@ use tokio::{
     task::yield_now,
     time::sleep,
 };
+use zcash_note_encryption::Domain;
 
 use orchard::keys::{FullViewingKey as OrchardFullViewingKey, SpendingKey as OrchardSpendingKey};
 use zcash_client_backend::{
@@ -812,30 +813,30 @@ impl LightClient {
         })
     }
 
-    /// Return a list of all notes, spent and unspent
-    pub async fn do_list_notes(&self, include_spent_notes: bool) -> JsonValue {
+    async fn collect_notes<D: DomainWalletExt<zingoconfig::Network>>(
+        &self,
+        anchor_height: BlockHeight,
+        include_spent_notes: bool,
+    ) -> (Vec<JsonValue>, Vec<JsonValue>, Vec<JsonValue>)
+    where
+        <D as Domain>::Recipient: Recipient,
+    {
+        // First, collect all extfvk's that are spendable (i.e., we have the private key)
+        let spendable_sapling_addresses: HashSet<String> = self
+            .wallet
+            .keys()
+            .read()
+            .await
+            .get_all_spendable_zaddresses()
+            .into_iter()
+            .collect();
         let mut unspent_sapling_notes: Vec<JsonValue> = vec![];
         let mut spent_sapling_notes: Vec<JsonValue> = vec![];
         let mut pending_sapling_notes: Vec<JsonValue> = vec![];
-
-        let anchor_height = BlockHeight::from_u32(self.wallet.get_anchor_height().await);
-
-        {
-            // First, collect all extfvk's that are spendable (i.e., we have the private key)
-            let spendable_sapling_addresses: HashSet<String> = self
-                .wallet
-                .keys()
-                .read()
-                .await
-                .get_all_spendable_zaddresses()
-                .into_iter()
-                .collect();
-
-            // Collect Sapling notes
-            self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
+        self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
                 .flat_map( |(transaction_id, transaction_metadata)| {
                     transaction_metadata.sapling_notes.iter().filter_map(|note_metadata|
-                        if !include_spent_notes && note_metadata.is_spent() {
+                        if !include_spent_notes && note_metadata.is_confirmed_spent() {
                             None
                         } else {
                             let address = LightWallet::note_address(&self.config.chain, note_metadata);
@@ -869,7 +870,20 @@ impl LightClient {
                         pending_sapling_notes.push(note);
                     }
                 });
-        }
+        (
+            unspent_sapling_notes,
+            spent_sapling_notes,
+            pending_sapling_notes,
+        )
+    }
+    /// Return a list of all notes, spent and unspent
+    pub async fn do_list_notes(&self, include_spent_notes: bool) -> JsonValue {
+        let anchor_height = BlockHeight::from_u32(self.wallet.get_anchor_height().await);
+
+        // Collect Sapling notes
+        let (unspent_sapling_notes, spent_sapling_notes, pending_sapling_notes) = self
+            .collect_sapling_notes(anchor_height, include_spent_notes)
+            .await;
 
         let mut unspent_orchard_notes: Vec<JsonValue> = vec![];
         let mut spent_orchard_notes: Vec<JsonValue> = vec![];
@@ -892,7 +906,7 @@ impl LightClient {
                 .flat_map( |(transaction_id, transaction_metadata)| {
                     let spendable_address = spendable_address.clone();
                     transaction_metadata.orchard_notes.iter().filter_map(move |orch_note_metadata|
-                        if !include_spent_notes && orch_note_metadata.is_spent() {
+                        if !include_spent_notes && orch_note_metadata.is_confirmed_spent() {
                             None
                         } else {
                             let address = LightWallet::note_address(&self.config.chain, orch_note_metadata);

@@ -458,7 +458,7 @@ pub trait NoteAndMetadata: Sized {
     fn value(&self) -> u64 {
         Self::value_from_note(self.note())
     }
-    fn is_spent(&self) -> bool {
+    fn is_confirmed_spent(&self) -> bool {
         Self::spent(self).is_some()
     }
 }
