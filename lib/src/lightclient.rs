@@ -822,7 +822,7 @@ impl LightClient {
 
         {
             // First, collect all extfvk's that are spendable (i.e., we have the private key)
-            let spendable_address: HashSet<String> = self
+            let spendable_sapling_addresses: HashSet<String> = self
                 .wallet
                 .keys()
                 .read()
@@ -833,30 +833,29 @@ impl LightClient {
 
             // Collect Sapling notes
             self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
-                .flat_map( |(transaction_id, wtx)| {
-                    let spendable_address = spendable_address.clone();
-                    wtx.sapling_notes.iter().filter_map(move |nd|
-                        if !include_spent_notes && nd.spent.is_some() {
+                .flat_map( |(transaction_id, transaction_metadata)| {
+                    transaction_metadata.sapling_notes.iter().filter_map(|note_metadata|
+                        if !include_spent_notes && note_metadata.is_spent() {
                             None
                         } else {
-                            let address = LightWallet::note_address(&self.config.chain, nd);
+                            let address = LightWallet::note_address(&self.config.chain, note_metadata);
                             let spendable = address.is_some() &&
-                                                    spendable_address.contains(&address.clone().unwrap()) &&
-                                                    wtx.block_height <= anchor_height && nd.spent.is_none() && nd.unconfirmed_spent.is_none();
+                                                    spendable_sapling_addresses.contains(&address.clone().unwrap()) &&
+                                                    transaction_metadata.block_height <= anchor_height && note_metadata.is_spent() && note_metadata.unconfirmed_spent.is_none();
 
-                            let created_block:u32 = wtx.block_height.into();
+                            let created_block:u32 = transaction_metadata.block_height.into();
                             Some(object!{
                                 "created_in_block"   => created_block,
-                                "datetime"           => wtx.datetime,
-                                "created_in_txid"    => format!("{}", transaction_id),
-                                "value"              => nd.note.value,
-                                "unconfirmed"        => wtx.unconfirmed,
-                                "is_change"          => nd.is_change,
+                                "datetime"           => transaction_metadata.datetime,
+                                "created_in_txid"    => format!("{}", transaction_id.clone()),
+                                "value"              => note_metadata.note.value,
+                                "unconfirmed"        => transaction_metadata.unconfirmed,
+                                "is_change"          => note_metadata.is_change,
                                 "address"            => address,
                                 "spendable"          => spendable,
-                                "spent"              => nd.spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
-                                "spent_at_height"    => nd.spent.map(|(_, h)| h),
-                                "unconfirmed_spent"  => nd.unconfirmed_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
+                                "spent"              => note_metadata.spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
+                                "spent_at_height"    => note_metadata.spent.map(|(_, h)| h),
+                                "unconfirmed_spent"  => note_metadata.unconfirmed_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
                             })
                         }
                     )
@@ -890,30 +889,30 @@ impl LightClient {
                 .collect();
 
             self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
-                .flat_map( |(transaction_id, wtx)| {
+                .flat_map( |(transaction_id, transaction_metadata)| {
                     let spendable_address = spendable_address.clone();
-                    wtx.orchard_notes.iter().filter_map(move |nd|
-                        if !include_spent_notes && nd.spent.is_some() {
+                    transaction_metadata.orchard_notes.iter().filter_map(move |orch_note_metadata|
+                        if !include_spent_notes && orch_note_metadata.is_spent() {
                             None
                         } else {
-                            let address = LightWallet::note_address(&self.config.chain, nd);
+                            let address = LightWallet::note_address(&self.config.chain, orch_note_metadata);
                             let spendable = address.is_some() &&
                                                     spendable_address.contains(&address.clone().unwrap()) &&
-                                                    wtx.block <= anchor_height && nd.spent.is_none() && nd.unconfirmed_spent.is_none();
+                                                    transaction_metadata.block <= anchor_height && orch_note_metadata.spent.is_none() && orch_note_metadata.unconfirmed_spent.is_none();
 
-                            let created_block:u32 = wtx.block.into();
+                            let created_block:u32 = transaction_metadata.block.into();
                             Some(object!{
                                 "created_in_block"   => created_block,
-                                "datetime"           => wtx.datetime,
+                                "datetime"           => transaction_metadata.datetime,
                                 "created_in_txid"    => format!("{}", transaction_id),
-                                "value"              => nd.note.value().inner(),
-                                "unconfirmed"        => wtx.unconfirmed,
-                                "is_change"          => nd.is_change,
+                                "value"              => orch_note_metadata.note.value().inner(),
+                                "unconfirmed"        => transaction_metadata.unconfirmed,
+                                "is_change"          => orch_note_metadata.is_change,
                                 "address"            => address,
                                 "spendable"          => spendable,
-                                "spent"              => nd.spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
-                                "spent_at_height"    => nd.spent.map(|(_, h)| h),
-                                "unconfirmed_spent"  => nd.unconfirmed_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
+                                "spent"              => orch_note_metadata.spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
+                                "spent_at_height"    => orch_note_metadata.spent.map(|(_, h)| h),
+                                "unconfirmed_spent"  => orch_note_metadata.unconfirmed_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
                             })
                         }
                     )
