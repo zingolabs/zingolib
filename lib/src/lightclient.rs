@@ -812,8 +812,8 @@ impl LightClient {
         })
     }
 
-    // Return a list of all notes, spent and unspent
-    pub async fn do_list_notes(&self, all_notes: bool) -> JsonValue {
+    /// Return a list of all notes, spent and unspent
+    pub async fn do_list_notes(&self, include_spent_notes: bool) -> JsonValue {
         let mut unspent_sapling_notes: Vec<JsonValue> = vec![];
         let mut spent_sapling_notes: Vec<JsonValue> = vec![];
         let mut pending_sapling_notes: Vec<JsonValue> = vec![];
@@ -836,7 +836,7 @@ impl LightClient {
                 .flat_map( |(transaction_id, wtx)| {
                     let spendable_address = spendable_address.clone();
                     wtx.sapling_notes.iter().filter_map(move |nd|
-                        if !all_notes && nd.spent.is_some() {
+                        if !include_spent_notes && nd.spent.is_some() {
                             None
                         } else {
                             let address = LightWallet::note_address(&self.config.chain, nd);
@@ -893,7 +893,7 @@ impl LightClient {
                 .flat_map( |(transaction_id, wtx)| {
                     let spendable_address = spendable_address.clone();
                     wtx.orchard_notes.iter().filter_map(move |nd|
-                        if !all_notes && nd.spent.is_some() {
+                        if !include_spent_notes && nd.spent.is_some() {
                             None
                         } else {
                             let address = LightWallet::note_address(&self.config.chain, nd);
@@ -937,7 +937,7 @@ impl LightClient {
             self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
                 .flat_map( |(transaction_id, wtx)| {
                     wtx.utxos.iter().filter_map(move |utxo|
-                        if !all_notes && utxo.spent.is_some() {
+                        if !include_spent_notes && utxo.spent.is_some() {
                             None
                         } else {
                             let created_block:u32 = wtx.block_height.into();
@@ -977,7 +977,7 @@ impl LightClient {
             "pending_utxos" => pending_utxos,
         };
 
-        if all_notes {
+        if include_spent_notes {
             res["spent_sapling_notes"] = JsonValue::Array(spent_sapling_notes);
             res["spent_orchard_notes"] = JsonValue::Array(spent_orchard_notes);
             res["spent_utxos"] = JsonValue::Array(spent_utxos);
