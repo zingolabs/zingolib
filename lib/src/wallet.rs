@@ -442,6 +442,10 @@ impl LightWallet {
         compile_error!("Haven't gotten around to removing this yet")
     }
 
+    pub fn unified_spend_auth(&self) -> Arc<RwLock<UnifiedSpendAuthority>> {
+        self.transaction_context.key
+    }
+
     pub fn transactions(&self) -> Arc<RwLock<TransactionMetadataSet>> {
         self.transaction_context.transaction_metadata_set.clone()
     }
@@ -702,7 +706,7 @@ impl LightWallet {
         address_getter: impl FnOnce(KeyType) -> Fut,
         encode_address: impl Fn(WalletKey::Address) -> String,
     ) -> String {
-        if self.transaction_context.keys.read().await.encrypted {
+        if self.transaction_context.key.read().await.encrypted {
             return "Error: Can't import spending key while wallet is encrypted".to_string();
         }
         let decoded_key = match decoder(hrp, key) {

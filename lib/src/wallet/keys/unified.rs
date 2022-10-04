@@ -39,6 +39,9 @@ pub struct ReceiverSelection {
 }
 
 impl UnifiedSpendAuthority {
+    pub fn addresses(&self) -> &[UnifiedAddress] {
+        &self.addresses
+    }
     pub fn new_address(
         &mut self,
         desired_receivers: ReceiverSelection,
@@ -175,5 +178,44 @@ impl ReadableWriteable<()> for UnifiedSpendAuthority {
 
     fn write<W: std::io::Write>(&self, writer: W) -> std::io::Result<()> {
         todo!()
+    }
+}
+
+impl From<&UnifiedSpendAuthority> for orchard::keys::IncomingViewingKey {
+    fn from(usa: &UnifiedSpendAuthority) -> Self {
+        orchard::keys::FullViewingKey::from(&usa.orchard_key).to_ivk(Scope::External)
+    }
+}
+
+impl From<&UnifiedSpendAuthority> for zcash_primitives::sapling::SaplingIvk {
+    fn from(usa: &UnifiedSpendAuthority) -> Self {
+        zcash_primitives::zip32::ExtendedFullViewingKey::from(&usa.sapling_key)
+            .fvk
+            .vk
+            .ivk()
+    }
+}
+impl From<&UnifiedSpendAuthority> for orchard::keys::FullViewingKey {
+    fn from(usa: &UnifiedSpendAuthority) -> Self {
+        orchard::keys::FullViewingKey::from(&usa.orchard_key)
+    }
+}
+
+impl From<&UnifiedSpendAuthority> for zcash_primitives::zip32::ExtendedFullViewingKey {
+    fn from(usa: &UnifiedSpendAuthority) -> Self {
+        zcash_primitives::zip32::ExtendedFullViewingKey::from(&usa.sapling_key)
+    }
+}
+impl From<&UnifiedSpendAuthority> for orchard::keys::OutgoingViewingKey {
+    fn from(usa: &UnifiedSpendAuthority) -> Self {
+        orchard::keys::FullViewingKey::from(&usa.orchard_key).to_ovk(Scope::External)
+    }
+}
+
+impl From<&UnifiedSpendAuthority> for zcash_primitives::keys::OutgoingViewingKey {
+    fn from(usa: &UnifiedSpendAuthority) -> Self {
+        zcash_primitives::zip32::ExtendedFullViewingKey::from(&usa.sapling_key)
+            .fvk
+            .ovk
     }
 }
