@@ -1,10 +1,5 @@
 //! In all cases in this file "external_version" refers to a serialization version that is interpreted
 //! from a source outside of the code-base e.g. a wallet-file.
-use std::{
-    collections::HashMap,
-    io::{self, Error, ErrorKind, Read, Write},
-};
-
 use ::orchard::keys::{
     IncomingViewingKey as OrchardIncomingViewingKey, SpendingKey as OrchardSpendingKey,
 };
@@ -15,6 +10,10 @@ use rand::{rngs::OsRng, Rng};
 use ripemd160::Digest;
 use sha2::Sha256;
 use sodiumoxide::crypto::secretbox;
+use std::{
+    collections::HashMap,
+    io::{self, Error, ErrorKind, Read, Write},
+};
 use zcash_address::unified::{Encoding, Ufvk};
 use zcash_client_backend::{
     address,

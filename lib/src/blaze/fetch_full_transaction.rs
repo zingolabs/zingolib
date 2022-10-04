@@ -26,6 +26,7 @@ use tokio::{
     },
     task::JoinHandle,
 };
+use zcash_client_backend::address::{RecipientAddress, UnifiedAddress};
 use zcash_note_encryption::try_output_recovery_with_ovk;
 
 use zcash_primitives::{
@@ -191,7 +192,8 @@ impl TransactionContext {
                                 );
 
                             // Ensure that we add any new HD addresses
-                            self.keys.write().await.ensure_hd_taddresses(&output_taddr);
+                            // TODO: I don't think we need to do this anymore
+                            // self.keys.write().await.ensure_hd_taddresses(&output_taddr);
                         }
                     }
                     _ => {}
@@ -368,8 +370,7 @@ impl TransactionContext {
         //     1. There's more than one way to be "spent".
         //     2. It's possible for a "nullifier" to be in the wallet's spent list, but never in the global ledger.
         //     <https://github.com/zingolabs/zingolib/issues/65>
-        let all_wallet_keys = self.keys.read().await;
-        let domain_specific_keys = D::Key::get_keys(&*all_wallet_keys).clone();
+        let usa = self.key.read().await;
         let domain_tagged_outputs =
             <FnGenBundle<D> as zingo_traits::Bundle<D, Network>>::from_transaction(transaction)
                 .into_iter()
@@ -382,101 +383,106 @@ impl TransactionContext {
                 })
                 .collect::<Vec<_>>();
 
-        for key in domain_specific_keys.iter() {
-            if let Some(ivk) = key.ivk() {
-                let mut decrypt_attempts = zcash_note_encryption::batch::try_note_decryption(
-                    &[ivk],
-                    &domain_tagged_outputs,
-                )
+        let ivk = <D::Key as zingo_traits::WalletKey>::Ivk::from(&*usa);
+        let mut decrypt_attempts =
+            zcash_note_encryption::batch::try_note_decryption(&[ivk], &domain_tagged_outputs)
                 .into_iter();
-                while let Some(decrypt_attempt) = decrypt_attempts.next() {
-                    let ((note, to, memo_bytes), _ivk_num) = match decrypt_attempt {
-                        Some(plaintext) => plaintext,
-                        _ => continue,
-                    };
-                    let memo_bytes = MemoBytes::from_bytes(&memo_bytes.to_bytes()).unwrap();
-                    if unconfirmed {
-                        self.transaction_metadata_set
-                            .write()
-                            .await
-                            .add_pending_note::<D>(
-                                transaction.txid(),
-                                transaction_block_height,
-                                block_time as u64,
-                                note.clone(),
-                                to,
-                                &match &key.fvk() {
-                                    Some(k) => k.clone(),
-                                    None => todo!(
-                            "Handle this case more carefully. How should we handle missing fvks?"
-                        ),
-                                },
-                            );
-                    }
-                    let memo = memo_bytes
-                        .clone()
-                        .try_into()
-                        .unwrap_or(Memo::Future(memo_bytes));
-                    self.transaction_metadata_set
-                        .write()
-                        .await
-                        .add_memo_to_note_metadata::<D::WalletNote>(
-                            &transaction.txid(),
-                            note,
-                            memo,
-                        );
-                }
+        while let Some(decrypt_attempt) = decrypt_attempts.next() {
+            let ((note, to, memo_bytes), _ivk_num) = match decrypt_attempt {
+                Some(plaintext) => plaintext,
+                _ => continue,
+            };
+            let memo_bytes = MemoBytes::from_bytes(&memo_bytes.to_bytes()).unwrap();
+            if unconfirmed {
+                self.transaction_metadata_set
+                    .write()
+                    .await
+                    .add_pending_note::<D>(
+                        transaction.txid(),
+                        transaction_block_height,
+                        block_time as u64,
+                        note.clone(),
+                        to,
+                        &<D::Key as zingo_traits::WalletKey>::Fvk::from(&*usa),
+                    );
             }
+            let memo = memo_bytes
+                .clone()
+                .try_into()
+                .unwrap_or(Memo::Future(memo_bytes));
+            self.transaction_metadata_set
+                .write()
+                .await
+                .add_memo_to_note_metadata::<D::WalletNote>(&transaction.txid(), note, memo);
         }
         for (_domain, output) in domain_tagged_outputs {
             outgoing_metadatas.extend(
-                domain_specific_keys
-                    .iter()
-                    .filter_map(|key| {
-                        match try_output_recovery_with_ovk::<
-                            D,
-                            <FnGenBundle<D> as zingo_traits::Bundle<D, Network>>::Output,
-                        >(
-                            &output.domain(transaction_block_height, self.config.chain),
-                            &key.ovk().unwrap(),
-                            &output,
-                            &output.value_commitment(),
-                            &output.out_ciphertext(),
-                        ) {
-                            Some((note, payment_address, memo_bytes)) => {
-                                // Mark this transaction as an outgoing transaction, so we can grab all outgoing metadata
-                                *is_outgoing_transaction = true;
-                                let address =
-                                    payment_address.b32encode_for_network(&self.config.chain);
+                match try_output_recovery_with_ovk::<
+                    D,
+                    <FnGenBundle<D> as zingo_traits::Bundle<D, Network>>::Output,
+                >(
+                    &output.domain(transaction_block_height, self.config.chain),
+                    &<<D::Key as zingo_traits::WalletKey>::Ovk as From<&UnifiedSpendAuthority>>::from(&*usa),
+                    &output,
+                    &output.value_commitment(),
+                    &output.out_ciphertext(),
+                ) {
+                    Some((note, payment_address, memo_bytes)) => {
+                        // Mark this transaction as an outgoing transaction, so we can grab all outgoing metadata
+                        *is_outgoing_transaction = true;
+                        let address = payment_address.b32encode_for_network(&self.config.chain);
 
-                                // Check if this is change, and if it also doesn't have a memo, don't add
-                                // to the outgoing metadata.
-                                // If this is change (i.e., funds sent to ourself) AND has a memo, then
-                                // presumably the user is writing a memo to themself, so we will add it to
-                                // the outgoing metadata, even though it might be confusing in the UI, but hopefully
-                                // the user can make sense of it.
-                                match Memo::from_bytes(&memo_bytes.to_bytes()) {
-                                    Err(_) => None,
-                                    Ok(memo) => {
-                                        if D::Key::addresses_from_keys(&all_wallet_keys)
-                                            .contains(&address)
-                                            && memo == Memo::Empty
-                                        {
-                                            None
-                                        } else {
-                                            Some(OutgoingTxMetadata {
-                                                address,
-                                                value: D::WalletNote::value_from_note(&note),
-                                                memo,
-                                            })
-                                        }
-                                    }
+                        // Check if this is change, and if it also doesn't have a memo, don't add
+                        // to the outgoing metadata.
+                        // If this is change (i.e., funds sent to ourself) AND has a memo, then
+                        // presumably the user is writing a memo to themself, so we will add it to
+                        // the outgoing metadata, even though it might be confusing in the UI, but hopefully
+                        // the user can make sense of it.
+                        match Memo::from_bytes(&memo_bytes.to_bytes()) {
+                            Err(_) => None,
+                            Ok(memo) => {
+                                if usa.addresses().iter().any(|unified_address| {
+                                    [
+                                        unified_address
+                                            .transparent()
+                                            .cloned()
+                                            .map(RecipientAddress::from),
+                                        unified_address
+                                            .sapling()
+                                            .cloned()
+                                            .map(RecipientAddress::from),
+                                        unified_address.orchard().cloned().map(
+                                            |orchard_reciever| {
+                                                RecipientAddress::from(
+                                                    UnifiedAddress::from_receivers(
+                                                        Some(orchard_reciever),
+                                                        None,
+                                                        None,
+                                                    )
+                                                    .unwrap(),
+                                                )
+                                            },
+                                        ),
+                                    ]
+                                    .into_iter()
+                                    .filter_map(std::convert::identity)
+                                    .map(|addr| addr.encode(&self.config.chain))
+                                    .any(|addr| addr == address)
+                                }) && memo == Memo::Empty
+                                {
+                                    None
+                                } else {
+                                    Some(OutgoingTxMetadata {
+                                        address,
+                                        value: D::WalletNote::value_from_note(&note),
+                                        memo,
+                                    })
                                 }
                             }
-                            None => None,
                         }
-                    })
-                    .collect::<Vec<_>>(),
+                    }
+                    None => None,
+                },
             );
         }
     }

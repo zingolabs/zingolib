@@ -6,7 +6,7 @@ use super::{
         ChannelNullifier, OrchardNoteAndMetadata, SaplingNoteAndMetadata, SpendableOrchardNote,
         SpendableSaplingNote, TransactionMetadata, WitnessCache,
     },
-    keys::{orchard::OrchardKey, sapling::SaplingKey, Keys},
+    keys::{orchard::OrchardKey, sapling::SaplingKey, unified::UnifiedSpendAuthority, Keys},
     transactions::TransactionMetadataSet,
 };
 use crate::compact_formats::{
@@ -717,9 +717,9 @@ where
     Self: Sized,
 {
     type SpendKey: Clone;
-    type Fvk: PartialEq;
-    type Ivk;
-    type Ovk;
+    type Fvk: PartialEq + for<'a> From<&'a UnifiedSpendAuthority>;
+    type Ivk: for<'a> From<&'a UnifiedSpendAuthority>;
+    type Ovk: for<'a> From<&'a UnifiedSpendAuthority>;
     type Address: PartialEq;
     fn spend_key(&self) -> Option<Self::SpendKey>;
     fn fvk(&self) -> Option<Self::Fvk>;

@@ -1404,7 +1404,7 @@ impl LightClient {
                 let lc1 = lci.clone();
 
                 let h1 = tokio::spawn(async move {
-                    let keys = lc1.wallet.keys();
+                    let key = lc1.wallet.unified_spend_auth();
                     let transaction_metadata_set = lc1
                         .wallet
                         .transaction_context
@@ -1425,7 +1425,7 @@ impl LightClient {
 
                             TransactionContext::new(
                                 &config,
-                                keys.clone(),
+                                key.clone(),
                                 transaction_metadata_set.clone(),
                             )
                             .scan_full_tx(
