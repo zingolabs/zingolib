@@ -46,6 +46,7 @@ use zcash_primitives::{
     block::BlockHash,
     consensus::{BlockHeight, BranchId},
     memo::{Memo, MemoBytes},
+    sapling::note_encryption::SaplingDomain,
     transaction::{components::amount::DEFAULT_FEE, Transaction},
 };
 use zcash_proofs::prover::LocalTxProver;
@@ -820,6 +821,8 @@ impl LightClient {
     ) -> (Vec<JsonValue>, Vec<JsonValue>, Vec<JsonValue>)
     where
         <D as Domain>::Recipient: Recipient,
+        <D as Domain>::Note: Clone,
+        <D as Domain>::Note: PartialEq,
     {
         // First, collect all extfvk's that are spendable (i.e., we have the private key)
         let spendable_sapling_addresses: HashSet<String> = self
@@ -827,12 +830,12 @@ impl LightClient {
             .keys()
             .read()
             .await
-            .get_all_spendable_zaddresses()
+            .get_all_spendable_zaddresses::<D::WalletNote>() // TODO:  Migrate this to keys
             .into_iter()
             .collect();
-        let mut unspent_sapling_notes: Vec<JsonValue> = vec![];
-        let mut spent_sapling_notes: Vec<JsonValue> = vec![];
-        let mut pending_sapling_notes: Vec<JsonValue> = vec![];
+        let mut unspent_notes: Vec<JsonValue> = vec![];
+        let mut spent_notes: Vec<JsonValue> = vec![];
+        let mut pending_notes: Vec<JsonValue> = vec![];
         self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
                 .flat_map( |(transaction_id, transaction_metadata)| {
                     transaction_metadata.sapling_notes.iter().filter_map(|note_metadata|
@@ -863,18 +866,14 @@ impl LightClient {
                 })
                 .for_each( |note| {
                     if note["spent"].is_null() && note["unconfirmed_spent"].is_null() {
-                        unspent_sapling_notes.push(note);
+                        unspent_notes.push(note);
                     } else if !note["spent"].is_null() {
-                        spent_sapling_notes.push(note);
+                        spent_notes.push(note);
                     } else {
-                        pending_sapling_notes.push(note);
+                        pending_notes.push(note);
                     }
                 });
-        (
-            unspent_sapling_notes,
-            spent_sapling_notes,
-            pending_sapling_notes,
-        )
+        (unspent_notes, spent_notes, pending_notes)
     }
     /// Return a list of all notes, spent and unspent
     pub async fn do_list_notes(&self, include_spent_notes: bool) -> JsonValue {
@@ -882,7 +881,10 @@ impl LightClient {
 
         // Collect Sapling notes
         let (unspent_sapling_notes, spent_sapling_notes, pending_sapling_notes) = self
-            .collect_sapling_notes(anchor_height, include_spent_notes)
+            .collect_notes::<SaplingDomain<zingoconfig::Network>>(
+                anchor_height,
+                include_spent_notes,
+            )
             .await;
 
         let mut unspent_orchard_notes: Vec<JsonValue> = vec![];

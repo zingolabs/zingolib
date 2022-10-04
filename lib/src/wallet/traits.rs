@@ -816,6 +816,12 @@ impl WalletKey for OrchardKey {
     }
 }
 
+/// This provides an interface that works for the librustzcash defined protocol domains:
+///    <https://docs.rs/zcash_note_encryption/0.1.0/zcash_note_encryption/trait.Domain.html>
+///    * sapling
+///    * orchard
+///    * FUTURE?
+///    
 pub trait DomainWalletExt<P: Parameters>: Domain + BatchDomain
 where
     Self: Sized,
