@@ -1,6 +1,6 @@
 use crate::wallet::{
     data::OutgoingTxMetadata,
-    keys::{Keys, ToBase58Check},
+    keys::{address_from_pubkeyhash, unified::UnifiedSpendAuthority, Keys, ToBase58Check},
     traits::{
         self as zingo_traits, Bundle as _, DomainWalletExt, NoteAndMetadata as _, Nullifier as _,
         Recipient as _, ShieldedOutputExt as _, Spend as _, ToBytes as _, WalletKey as _,
@@ -42,19 +42,19 @@ use zingoconfig::{Network, ZingoConfig};
 #[derive(Clone)]
 pub struct TransactionContext {
     pub(crate) config: ZingoConfig,
-    pub(crate) keys: Arc<RwLock<Keys>>,
+    pub(crate) key: Arc<RwLock<UnifiedSpendAuthority>>,
     pub(crate) transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
 }
 
 impl TransactionContext {
     pub fn new(
         config: &ZingoConfig,
-        keys: Arc<RwLock<Keys>>,
+        key: Arc<RwLock<UnifiedSpendAuthority>>,
         transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
     ) -> Self {
         Self {
             config: config.clone(),
-            keys,
+            key,
             transaction_metadata_set,
         }
     }
@@ -71,8 +71,7 @@ impl TransactionContext {
         let mut is_outgoing_transaction = false;
 
         // Collect our t-addresses for easy checking
-        let taddrs = self.keys.read().await.get_all_taddrs();
-        let taddrs_set: HashSet<_> = taddrs.iter().map(|t| t.clone()).collect();
+        let taddrs_set = self.key.read().await.get_all_taddrs(&self.config);
 
         //todo: investigate scanning all bundles simultaneously
         self.scan_transparent_bundle(
@@ -121,11 +120,7 @@ impl TransactionContext {
         if is_outgoing_transaction {
             if let Some(t_bundle) = transaction.transparent_bundle() {
                 for vout in &t_bundle.vout {
-                    let taddr = self
-                        .keys
-                        .read()
-                        .await
-                        .address_from_pubkeyhash(vout.script_pubkey.address());
+                    let taddr = address_from_pubkeyhash(&self.config, vout.script_pubkey.address());
 
                     if taddr.is_some() && !taddrs_set.contains(taddr.as_ref().unwrap()) {
                         outgoing_metadatas.push(OutgoingTxMetadata {

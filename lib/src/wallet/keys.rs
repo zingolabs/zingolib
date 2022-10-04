@@ -1021,3 +1021,19 @@ impl Keys {
         }
     }
 }
+
+/// STATIC METHODS
+pub fn address_from_pubkeyhash(
+    config: &ZingoConfig,
+    ta: Option<TransparentAddress>,
+) -> Option<String> {
+    match ta {
+        Some(TransparentAddress::PublicKey(hash)) => {
+            Some(hash.to_base58check(&config.base58_pubkey_address(), &[]))
+        }
+        Some(TransparentAddress::Script(hash)) => {
+            Some(hash.to_base58check(&config.base58_script_address(), &[]))
+        }
+        _ => None,
+    }
+}

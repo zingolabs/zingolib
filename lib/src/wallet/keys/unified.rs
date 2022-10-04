@@ -1,11 +1,14 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use bip0039::Mnemonic;
 use orchard::keys::Scope;
+use rand::{rngs::OsRng, Rng};
 use tokio::sync::{Mutex, RwLock};
 use zcash_client_backend::address::UnifiedAddress;
 use zcash_primitives::zip32::DiversifierIndex;
 use zingoconfig::ZingoConfig;
+
+use crate::wallet::traits::ReadableWriteable;
 
 use super::{extended_transparent::KeyIndex, Keys};
 
@@ -20,6 +23,11 @@ pub struct UnifiedSpendAuthority {
     // Not all diversifier indexes produce valid sapling addresses.
     // Because of this, the index isn't necessarily equal to addresses.len()
     next_sapling_diversifier_index: DiversifierIndex,
+
+    // Note that unified spend authority encryption is not yet implemented,
+    // These are placeholder fields, and are currenly always false
+    pub(crate) encrypted: bool,
+    pub(crate) unlocked: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -101,6 +109,71 @@ impl UnifiedSpendAuthority {
             transparent_child_keys: vec![],
             addresses: vec![],
             next_sapling_diversifier_index: DiversifierIndex::new(),
+            encrypted: false,
+            unlocked: false,
         }
+    }
+
+    pub fn new_from_phrase(
+        config: &ZingoConfig,
+        seed_phrase: Option<String>,
+        position: u32,
+    ) -> Result<Self, String> {
+        let mut seed_bytes = [0u8; 32];
+        if seed_phrase.is_none() {
+            // Create a random seed.
+            let mut system_rng = OsRng;
+            system_rng.fill(&mut seed_bytes);
+        } else {
+            let phrase = match Mnemonic::from_phrase(seed_phrase.unwrap().as_str()) {
+                Ok(p) => p,
+                Err(e) => {
+                    let e = format!("Error parsing phrase: {}", e);
+                    //error!("{}", e);
+                    return Err(e);
+                }
+            };
+
+            seed_bytes.copy_from_slice(&phrase.entropy());
+        }
+
+        // The seed bytes is the raw entropy. To pass it to HD wallet generation,
+        // we need to get the 64 byte bip39 entropy
+        let bip39_seed = Mnemonic::from_entropy(seed_bytes).unwrap().to_seed("");
+        Ok(Self::new_from_seed(config, &bip39_seed, position))
+    }
+
+    pub(crate) fn get_all_taddrs(&self, config: &ZingoConfig) -> HashSet<String> {
+        self.addresses
+            .iter()
+            .filter_map(|address| {
+                address.transparent().and_then(|transparent_reciever| {
+                    if let zcash_primitives::legacy::TransparentAddress::PublicKey(hash) =
+                        transparent_reciever
+                    {
+                        Some(super::ToBase58Check::to_base58check(
+                            hash.as_slice(),
+                            &config.base58_pubkey_address(),
+                            &[],
+                        ))
+                    } else {
+                        None
+                    }
+                })
+            })
+            .collect()
+    }
+}
+impl ReadableWriteable<()> for UnifiedSpendAuthority {
+    type VersionSize = u8;
+
+    const VERSION: Self::VersionSize = 1;
+
+    fn read<R: std::io::Read>(reader: R, _input: ()) -> std::io::Result<Self> {
+        todo!()
+    }
+
+    fn write<W: std::io::Write>(&self, writer: W) -> std::io::Result<()> {
+        todo!()
     }
 }
