@@ -408,18 +408,32 @@ impl TransactionMetadataSet {
     }
 
     pub(crate) fn clear_old_witnesses(&mut self, latest_height: u64) {
+        self.clear_old_domain_specific_witnesses::<OrchardDomain>(latest_height);
+        self.clear_old_domain_specific_witnesses::<SaplingDomain<zingoconfig::Network>>(
+            latest_height,
+        );
+    }
+
+    fn clear_old_domain_specific_witnesses<D: DomainWalletExt<zingoconfig::Network>>(
+        &mut self,
+        latest_height: u64,
+    ) where
+        <D as Domain>::Note: Clone + PartialEq,
+        <D as Domain>::Recipient: Recipient,
+    {
         let cutoff = (latest_height.saturating_sub(MAX_REORG as u64)) as u32;
 
         self.current
             .iter_mut()
             .for_each(|(_, transaction_metadata)| {
-                transaction_metadata
-                    .sapling_notes
+                D::to_notes_vec_mut(transaction_metadata)
                     .iter_mut()
                     .filter(|n| {
-                        !n.witnesses.is_empty() && n.spent.is_some() && n.spent.unwrap().1 < cutoff
+                        !n.witnesses().is_empty()
+                            && n.spent().is_some()
+                            && n.spent().unwrap().1 < cutoff
                     })
-                    .for_each(|n| n.witnesses.clear());
+                    .for_each(|n| n.witnesses_mut().clear());
             });
     }
 
