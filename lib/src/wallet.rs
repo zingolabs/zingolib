@@ -42,6 +42,7 @@ use zcash_primitives::{
 };
 
 use self::data::SpendableOrchardNote;
+use self::keys::unified::UnifiedSpendAuthority;
 use self::traits::{DomainWalletExt, NoteAndMetadata, SpendableNote};
 use self::{
     data::{BlockData, OrchardNoteAndMetadata, SaplingNoteAndMetadata, Utxo, WalletZecPriceInfo},
@@ -189,7 +190,7 @@ pub struct LightWallet {
     pub(crate) transaction_context: TransactionContext,
 }
 
-use crate::wallet::traits::{Diversifiable as _, WalletKey};
+use crate::wallet::traits::{Diversifiable as _, ReadableWriteable, WalletKey};
 impl LightWallet {
     pub fn serialized_version() -> u64 {
         return 25;
@@ -201,13 +202,12 @@ impl LightWallet {
         height: u64,
         num_zaddrs: u32,
     ) -> io::Result<Self> {
-        let keys = Keys::new(&config, seed_phrase, num_zaddrs)
+        let key = UnifiedSpendAuthority::new_from_phrase(&config, seed_phrase, 0)
             .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
-
         let transaction_metadata_set = Arc::new(RwLock::new(TransactionMetadataSet::new()));
         let transaction_context = TransactionContext::new(
             &config,
-            Arc::new(RwLock::new(keys)),
+            Arc::new(RwLock::new(key)),
             transaction_metadata_set,
         );
         Ok(Self {
@@ -237,20 +237,16 @@ impl LightWallet {
         let external_version = reader.read_u64::<LittleEndian>()?;
         if external_version > Self::serialized_version() {
             let e = format!(
-                "Don't know how to read wallet version {}. Do you have the latest version?",
-                external_version
+                "Don't know how to read wallet version {}. Do you have the latest version?\n{}",
+                external_version,
+                "Note: wallet files from zecwallet or beta zingo are not compatible"
             );
             error!("{}", e);
             return Err(io::Error::new(ErrorKind::InvalidData, e));
         }
 
         info!("Reading wallet version {}", external_version);
-
-        let keys = if external_version <= 14 {
-            Keys::read_old(external_version, &mut reader, config)
-        } else {
-            Keys::read_internal(&mut reader, config)
-        }?;
+        let key = UnifiedSpendAuthority::read(&mut reader, ())?;
 
         let mut blocks = Vector::read(&mut reader, |r| BlockData::read(r))?;
         if external_version <= 14 {
@@ -309,19 +305,7 @@ impl LightWallet {
             })?
         };
 
-        // If version <= 8, adjust the "is_spendable" status of each note data
-        if external_version <= 8 {
-            // Collect all spendable keys
-            let spendable_keys: Vec<_> = keys
-                .get_all_sapling_extfvks()
-                .into_iter()
-                .filter(|extfvk| keys.have_sapling_spending_key(extfvk))
-                .collect();
-
-            transactions.adjust_spendable_status(spendable_keys);
-        }
-
-        let price = if external_version <= 13 {
+        let price = if version <= 13 {
             WalletZecPriceInfo::new()
         } else {
             WalletZecPriceInfo::read(&mut reader)?
@@ -329,7 +313,7 @@ impl LightWallet {
 
         let transaction_context = TransactionContext::new(
             &config,
-            Arc::new(RwLock::new(keys)),
+            Arc::new(RwLock::new(key)),
             Arc::new(RwLock::new(transactions)),
         );
 
@@ -373,8 +357,8 @@ impl LightWallet {
     }
 
     pub async fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
-        if self.transaction_context.keys.read().await.encrypted
-            && self.transaction_context.keys.read().await.unlocked
+        if self.transaction_context.key.read().await.encrypted
+            && self.transaction_context.key.read().await.unlocked
         {
             return Err(Error::new(
                 ErrorKind::InvalidInput,
@@ -387,7 +371,7 @@ impl LightWallet {
 
         // Write all the keys
         self.transaction_context
-            .keys
+            .key
             .read()
             .await
             .write(&mut writer)?;
@@ -455,7 +439,7 @@ impl LightWallet {
     }
 
     pub fn keys(&self) -> Arc<RwLock<Keys>> {
-        self.transaction_context.keys.clone()
+        compile_error!("Haven't gotten around to removing this yet")
     }
 
     pub fn transactions(&self) -> Arc<RwLock<TransactionMetadataSet>> {
@@ -536,15 +520,18 @@ impl LightWallet {
     }
 
     pub async fn is_unlocked_for_spending(&self) -> bool {
-        self.transaction_context
-            .keys
-            .read()
-            .await
-            .is_unlocked_for_spending()
+        match &*self.transaction_context.key.read().await {
+            UnifiedSpendAuthority {
+                encrypted: true,
+                unlocked: false,
+                ..
+            } => false,
+            otherwise => true,
+        }
     }
 
     pub async fn is_encrypted(&self) -> bool {
-        self.transaction_context.keys.read().await.is_encrypted()
+        self.transaction_context.key.read().await.encrypted
     }
 
     // Get the first block that this wallet has a transaction in. This is often used as the wallet's "birthday"
@@ -583,7 +570,7 @@ impl LightWallet {
     }
 
     pub async fn add_imported_tk(&self, sk: String) -> String {
-        if self.transaction_context.keys.read().await.encrypted {
+        if self.transaction_context.key.read().await.encrypted {
             return "Error: Can't import transparent address key while wallet is encrypted"
                 .to_string();
         }
@@ -595,7 +582,8 @@ impl LightWallet {
 
         let address = sk.address.clone();
 
-        if self
+        todo!("Key import currently non-functional")
+        /*if self
             .transaction_context
             .keys
             .read()
@@ -610,6 +598,7 @@ impl LightWallet {
 
         self.transaction_context.keys.write().await.tkeys.push(sk);
         return address;
+        */
     }
 
     // Add a new imported spending key to the wallet
