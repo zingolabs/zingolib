@@ -830,7 +830,7 @@ impl LightClient {
             .keys()
             .read()
             .await
-            .get_all_spendable_zaddresses::<D::WalletNote>() // TODO:  Migrate this to keys
+            .get_all_spendable_addresses::<D>() // TODO:  Migrate this to keys
             .into_iter()
             .collect();
         let mut unspent_notes: Vec<JsonValue> = vec![];

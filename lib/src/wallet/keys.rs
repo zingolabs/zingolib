@@ -515,11 +515,16 @@ impl Keys {
             .collect()
     }
 
-    pub fn get_all_spendable_zaddresses(&self) -> Vec<String> {
-        self.zkeys
+    pub fn get_all_spendable_addresses<D: DomainWalletExt>(&self) -> Vec<String> {
+        D::WalletKey::get_keys(self)
             .iter()
-            .filter(|zk| zk.have_sapling_spending_key())
-            .map(|zk| encode_payment_address(self.config.hrp_sapling_address(), &zk.zaddress))
+            .filter(|wallet_key| wallet_key.spend_key().is_some())
+            .map(|wallet_spend_key| {
+                encode_payment_address(
+                    self.config.hrp_sapling_address(),
+                    &wallet_spend_key.zaddress,
+                )
+            })
             .collect()
     }
 
