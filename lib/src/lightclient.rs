@@ -486,89 +486,34 @@ impl LightClient {
             error!("Wallet is locked");
             return Err("Wallet is locked");
         }
+        let usa = self.wallet.unified_spend_auth().read().await;
 
-        // Clone address so it can be moved into the closure
-        let address = addr.clone();
-        // Go over all z addresses
-        let z_keys = self
-            .export_x_keys(Keys::get_z_private_keys, |(addr, pk, vk)| match &address {
-                Some(target_addr) if target_addr != addr => None,
-                _ => Some(object! {
-                    "address"     => addr.clone(),
-                    "private_key" => pk.clone(),
-                    "viewing_key" => vk.clone(),
-                }),
-            })
-            .await;
+        let transparent_parent_key = usa.transparent_parent_key;
 
-        // Clone address so it can be moved into the closure
-        let address = addr.clone();
-
-        // Go over all t addresses
-        let t_keys = self
-            .export_x_keys(Keys::get_t_secret_keys, |(addr, sk)| match &address {
-                Some(target_addr) if target_addr != addr => None,
-                _ => Some(object! {
-                    "address"     => addr.clone(),
-                    "private_key" => sk.clone(),
-                }),
-            })
-            .await;
-
-        // Clone address so it can be moved into the closure
-        let address = addr.clone();
-
-        // Go over all orchard addresses
-        let o_keys = self
-            .export_x_keys(
-                Keys::get_orchard_spending_keys,
-                |(addr, sk, vk)| match &address {
-                    Some(target_addr) if target_addr != addr => None,
-                    _ => Some(object! {
-                        "address"     => addr.clone(),
-                        "spending_key" => sk.clone(),
-                        "full_viewing_key" => vk.clone(),
-                    }),
-                },
-            )
-            .await;
-
-        let mut all_keys = vec![];
-        all_keys.extend_from_slice(&o_keys);
-        all_keys.extend_from_slice(&z_keys);
-        all_keys.extend_from_slice(&t_keys);
-
-        Ok(all_keys.into())
-    }
-
-    //helper function to export all keys of a type
-    async fn export_x_keys<T, F: Fn(&Keys) -> Vec<T>, G: Fn(&T) -> Option<JsonValue>>(
-        &self,
-        key_getter: F,
-        key_filter_map: G,
-    ) -> Vec<JsonValue> {
-        key_getter(&*self.wallet.keys().read().await)
-            .iter()
-            .filter_map(key_filter_map)
-            .collect()
+        object! {}
     }
 
     /// Provide an object with all wallet addresses
     pub async fn do_address(&self) -> JsonValue {
-        // Collect z addresses
-        let z_addresses = self.wallet.keys().read().await.get_all_sapling_addresses();
-
-        // Collect t addresses
-        let t_addresses = self.wallet.keys().read().await.get_all_taddrs();
-
-        // Collect o addresses
-        let o_addresses = self.wallet.keys().read().await.get_all_orchard_addresses();
-
-        object! {
-            "sapling_addresses" => z_addresses,
-            "transparent_addresses" => t_addresses,
-            "orchard_addresses" => o_addresses,
+        let mut objectified_addresses = Vec::new();
+        for address in self.wallet.unified_spend_auth().read().await.addresses() {
+            let encoded_ua = address.encode(&self.config.chain);
+            let mut receiver_kinds = Vec::new();
+            if address.transparent().is_some() {
+                receiver_kinds.push("transparent")
+            }
+            if address.sapling().is_some() {
+                receiver_kinds.push("sapling")
+            }
+            if address.orchard().is_some() {
+                receiver_kinds.push("orchard")
+            }
+            objectified_addresses.push(object! {
+                "address" => encoded_ua,
+                "recievers" => receiver_kinds,
+            })
         }
+        JsonValue::Array(objectified_addresses)
     }
 
     pub async fn do_last_transaction_id(&self) -> JsonValue {
