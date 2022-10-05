@@ -520,7 +520,7 @@ impl LightWallet {
             .await
             .current
             .values()
-            .map(|wtx| u64::from(wtx.block))
+            .map(|wtx| u64::from(wtx.block_height))
             .min();
 
         let birthday = self.birthday.load(std::sync::atomic::Ordering::SeqCst);
@@ -956,7 +956,7 @@ impl LightWallet {
                 keys.have_sapling_spending_key(&notedata.extfvk)
             }),
             Box::new(|_, transaction: &TransactionMetadata| {
-                transaction.block > BlockHeight::from_u32(anchor_height)
+                transaction.block_height > BlockHeight::from_u32(anchor_height)
             }),
         ];
         self.shielded_balance(target_addr, filters).await
@@ -973,7 +973,7 @@ impl LightWallet {
                 keys.have_orchard_spending_key(&notedata.fvk.to_ivk(orchard::keys::Scope::External))
             }),
             Box::new(|_, transaction: &TransactionMetadata| {
-                transaction.block > BlockHeight::from_u32(anchor_height)
+                transaction.block_height > BlockHeight::from_u32(anchor_height)
             }),
         ];
         self.shielded_balance(target_addr, filters).await
@@ -993,7 +993,7 @@ impl LightWallet {
         let anchor_height = self.get_anchor_height().await;
         let filters: &[Box<dyn Fn(&&NnMd, &TransactionMetadata) -> bool>] =
             &[Box::new(|_, transaction| {
-                transaction.block <= BlockHeight::from_u32(anchor_height)
+                transaction.block_height <= BlockHeight::from_u32(anchor_height)
             })];
         self.shielded_balance::<NnMd>(target_addr, filters).await
     }
@@ -1002,7 +1002,9 @@ impl LightWallet {
         let anchor_height = self.get_anchor_height().await;
         let keys = self.transaction_context.keys.read().await;
         let filters: &[Box<dyn Fn(&&SaplingNoteAndMetadata, &TransactionMetadata) -> bool>] = &[
-            Box::new(|_, transaction| transaction.block <= BlockHeight::from_u32(anchor_height)),
+            Box::new(|_, transaction| {
+                transaction.block_height <= BlockHeight::from_u32(anchor_height)
+            }),
             Box::new(|nnmd, _| {
                 keys.have_sapling_spending_key(&nnmd.extfvk) && nnmd.witnesses.len() > 0
             }),
@@ -1014,7 +1016,9 @@ impl LightWallet {
         let anchor_height = self.get_anchor_height().await;
         let keys = self.transaction_context.keys.read().await;
         let filters: &[Box<dyn Fn(&&OrchardNoteAndMetadata, &TransactionMetadata) -> bool>] = &[
-            Box::new(|_, transaction| transaction.block <= BlockHeight::from_u32(anchor_height)),
+            Box::new(|_, transaction| {
+                transaction.block_height <= BlockHeight::from_u32(anchor_height)
+            }),
             Box::new(|nnmd, _| {
                 keys.have_orchard_spending_key(&nnmd.fvk.to_ivk(orchard::keys::Scope::External))
                     && nnmd.witnesses.len() > 0
@@ -1144,7 +1148,7 @@ impl LightWallet {
             .await
             .current
             .iter()
-            .map(|(transaction_id, wtx)| (transaction_id.clone(), wtx.block))
+            .map(|(transaction_id, wtx)| (transaction_id.clone(), wtx.block_height))
             .collect();
 
         // Go over all the sapling notes that might need updating

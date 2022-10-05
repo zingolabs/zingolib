@@ -842,9 +842,9 @@ impl LightClient {
                             let address = LightWallet::note_address(&self.config.chain, nd);
                             let spendable = address.is_some() &&
                                                     spendable_address.contains(&address.clone().unwrap()) &&
-                                                    wtx.block <= anchor_height && nd.spent.is_none() && nd.unconfirmed_spent.is_none();
+                                                    wtx.block_height <= anchor_height && nd.spent.is_none() && nd.unconfirmed_spent.is_none();
 
-                            let created_block:u32 = wtx.block.into();
+                            let created_block:u32 = wtx.block_height.into();
                             Some(object!{
                                 "created_in_block"   => created_block,
                                 "datetime"           => wtx.datetime,
@@ -883,7 +883,7 @@ impl LightClient {
                         if !all_notes && utxo.spent.is_some() {
                             None
                         } else {
-                            let created_block:u32 = wtx.block.into();
+                            let created_block:u32 = wtx.block_height.into();
 
                             Some(object!{
                                 "created_in_block"   => created_block,
@@ -1015,7 +1015,7 @@ impl LightClient {
                         })
                         .collect::<Vec<JsonValue>>();
 
-                    let block_height: u32 = wallet_transaction.block.into();
+                    let block_height: u32 = wallet_transaction.block_height.into();
                     transactions.push(object! {
                         "block_height" => block_height,
                         "unconfirmed" => wallet_transaction.unconfirmed,
@@ -1034,7 +1034,7 @@ impl LightClient {
                 let total_transparent_received = wallet_transaction.utxos.iter().map(|u| u.value).sum::<u64>();
                 if total_transparent_received > wallet_transaction.total_transparent_value_spent {
                     // Create an input transaction for the transparent value as well.
-                    let block_height: u32 = wallet_transaction.block.into();
+                    let block_height: u32 = wallet_transaction.block_height.into();
                     transactions.push(object! {
                         "block_height" => block_height,
                         "unconfirmed" => wallet_transaction.unconfirmed,
@@ -1092,7 +1092,7 @@ impl LightClient {
         NnMd: NoteAndMetadata + 'b,
     {
         NnMd::transaction_metadata_notes(&transaction_metadata).iter().filter(|nd| !nd.is_change()).enumerate().map(|(i, nd)| {
-                    let block_height: u32 = transaction_metadata.block.into();
+                    let block_height: u32 = transaction_metadata.block_height.into();
                     let mut o = object! {
                         "block_height" => block_height,
                         "unconfirmed" => transaction_metadata.unconfirmed,

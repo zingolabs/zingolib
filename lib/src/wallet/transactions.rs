@@ -40,7 +40,7 @@ use super::{
 /// this struct are threadsafe/locked properly.
 pub struct TransactionMetadataSet {
     pub(crate) current: HashMap<TxId, TransactionMetadata>,
-    pub(crate) last_txid: Option<TxId>,
+    pub(crate) some_txid_from_highest_wallet_block: Option<TxId>,
 }
 
 impl TransactionMetadataSet {
@@ -51,7 +51,7 @@ impl TransactionMetadataSet {
     pub fn new() -> Self {
         Self {
             current: HashMap::new(),
-            last_txid: None,
+            some_txid_from_highest_wallet_block: None,
         }
     }
 
@@ -72,7 +72,7 @@ impl TransactionMetadataSet {
 
         Ok(Self {
             current: txs,
-            last_txid: None,
+            some_txid_from_highest_wallet_block: None,
         })
     }
 
@@ -98,11 +98,11 @@ impl TransactionMetadataSet {
         let current = txs_tuples
             .into_iter()
             .collect::<HashMap<TxId, TransactionMetadata>>();
-        let last_txid = current
+        let some_txid_from_highest_wallet_block = current
             .values()
             .fold(None, |c: Option<(TxId, BlockHeight)>, w| {
-                if c.is_none() || w.block > c.unwrap().1 {
-                    Some((w.txid.clone(), w.block))
+                if c.is_none() || w.block_height > c.unwrap().1 {
+                    Some((w.txid.clone(), w.block_height))
                 } else {
                     c
                 }
@@ -123,7 +123,10 @@ impl TransactionMetadataSet {
             vec![]
         };
 
-        Ok(Self { current, last_txid })
+        Ok(Self {
+            current,
+            some_txid_from_highest_wallet_block,
+        })
     }
 
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
@@ -222,7 +225,7 @@ impl TransactionMetadataSet {
             .current
             .values()
             .filter_map(|transaction_metadata| {
-                if transaction_metadata.block >= reorg_height {
+                if transaction_metadata.block_height >= reorg_height {
                     Some(transaction_metadata.txid.clone())
                 } else {
                     None
@@ -235,7 +238,7 @@ impl TransactionMetadataSet {
         // Trim all witnesses for the invalidated blocks
         for tx in self.current.values_mut() {
             // We only want to trim the witness for "existing" notes, i.e., notes that were created before the block that is being removed
-            if tx.block < reorg_height {
+            if tx.block_height < reorg_height {
                 for nd in tx.sapling_notes.iter_mut() {
                     // The latest witness is at the last() position, so just pop() it.
                     // We should be checking if there is a witness at all, but if there is none, it is an
@@ -249,8 +252,9 @@ impl TransactionMetadataSet {
         }
     }
 
+    /// This returns an _arbitrary_ txid from the latest block the wallet is aware of.
     pub fn get_last_txid(&self) -> &'_ Option<TxId> {
-        &self.last_txid
+        &self.some_txid_from_highest_wallet_block
     }
 
     pub fn get_notes_for_updating(&self, before_block: u64) -> Vec<(TxId, ChannelNullifier)> {
@@ -265,7 +269,7 @@ impl TransactionMetadataSet {
                     .sapling_notes
                     .iter()
                     .filter_map(move |sapling_note_description| {
-                        if transaction_metadata.block <= before_block
+                        if transaction_metadata.block_height <= before_block
                             && sapling_note_description.have_spending_key
                             && sapling_note_description.witnesses.len() > 0
                             && sapling_note_description.spent.is_none()
@@ -282,7 +286,7 @@ impl TransactionMetadataSet {
                     })
                     .chain(transaction_metadata.orchard_notes.iter().filter_map(
                         move |orchard_note_description| {
-                            if transaction_metadata.block <= before_block
+                            if transaction_metadata.block_height <= before_block
                                 && orchard_note_description.have_spending_key
                                 && orchard_note_description.witnesses.len() > 0
                                 && orchard_note_description.spent.is_none()
@@ -357,7 +361,7 @@ impl TransactionMetadataSet {
                 .sapling_notes
                 .iter()
                 .find(|nd| nd.nullifier == *nullifier)
-                .map(|nd| (nd.witnesses.clone(), transaction_metadata.block))
+                .map(|nd| (nd.witnesses.clone(), transaction_metadata.block_height))
         })?
     }
 
@@ -371,7 +375,7 @@ impl TransactionMetadataSet {
                 .orchard_notes
                 .iter()
                 .find(|nd| nd.nullifier == *nullifier)
-                .map(|nd| (nd.witnesses.clone(), transaction_metadata.block))
+                .map(|nd| (nd.witnesses.clone(), transaction_metadata.block_height))
         })?
     }
 
@@ -408,18 +412,32 @@ impl TransactionMetadataSet {
     }
 
     pub(crate) fn clear_old_witnesses(&mut self, latest_height: u64) {
+        self.clear_old_domain_specific_witnesses::<OrchardDomain>(latest_height);
+        self.clear_old_domain_specific_witnesses::<SaplingDomain<zingoconfig::Network>>(
+            latest_height,
+        );
+    }
+
+    fn clear_old_domain_specific_witnesses<D: DomainWalletExt<zingoconfig::Network>>(
+        &mut self,
+        latest_height: u64,
+    ) where
+        <D as Domain>::Note: Clone + PartialEq,
+        <D as Domain>::Recipient: Recipient,
+    {
         let cutoff = (latest_height.saturating_sub(MAX_REORG as u64)) as u32;
 
         self.current
             .iter_mut()
             .for_each(|(_, transaction_metadata)| {
-                transaction_metadata
-                    .sapling_notes
+                D::to_notes_vec_mut(transaction_metadata)
                     .iter_mut()
                     .filter(|n| {
-                        !n.witnesses.is_empty() && n.spent.is_some() && n.spent.unwrap().1 < cutoff
+                        !n.witnesses().is_empty()
+                            && n.spent().is_some()
+                            && n.spent().unwrap().1 < cutoff
                     })
-                    .for_each(|n| n.witnesses.clear());
+                    .for_each(|n| n.witnesses_mut().clear());
             });
     }
 
@@ -430,7 +448,7 @@ impl TransactionMetadataSet {
             .current
             .iter()
             .filter(|(_, transaction_metadata)| {
-                transaction_metadata.unconfirmed && transaction_metadata.block < cutoff
+                transaction_metadata.unconfirmed && transaction_metadata.block_height < cutoff
             })
             .map(|(_, transaction_metadata)| transaction_metadata.txid.clone())
             .collect::<Vec<_>>();
@@ -504,14 +522,14 @@ impl TransactionMetadataSet {
                 txid.clone(),
                 TransactionMetadata::new(BlockHeight::from(height), datetime, &txid, unconfirmed),
             );
-            self.last_txid = Some(txid.clone());
+            self.some_txid_from_highest_wallet_block = Some(txid.clone());
         }
         let transaction_metadata = self.current.get_mut(&txid).expect("Txid should be present");
 
         // Make sure the unconfirmed status matches
         if transaction_metadata.unconfirmed != unconfirmed {
             transaction_metadata.unconfirmed = unconfirmed;
-            transaction_metadata.block = height;
+            transaction_metadata.block_height = height;
             transaction_metadata.datetime = datetime;
         }
 
@@ -576,7 +594,7 @@ impl TransactionMetadataSet {
         );
 
         // Mark the height correctly, in case this was previously a mempool or unconfirmed tx.
-        transaction_metadata.block = height;
+        transaction_metadata.block_height = height;
         if NnMd::Nullifier::get_nullifiers_spent_in_transaction(transaction_metadata)
             .iter()
             .find(|nf| **nf == nullifier)
@@ -721,7 +739,7 @@ impl TransactionMetadataSet {
             timestamp,
         );
         // Update the block height, in case this was a mempool or unconfirmed tx.
-        transaction_metadata.block = height;
+        transaction_metadata.block_height = height;
 
         match D::to_notes_vec_mut(transaction_metadata)
             .iter_mut()
@@ -821,7 +839,7 @@ impl TransactionMetadataSet {
             timestamp,
         );
         // Update the block height, in case this was a mempool or unconfirmed tx.
-        transaction_metadata.block = height;
+        transaction_metadata.block_height = height;
 
         let nullifier = D::WalletNote::get_nullifier_from_note_fvk_and_witness_position(
             &note,

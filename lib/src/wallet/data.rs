@@ -466,7 +466,7 @@ impl OutgoingTxMetadata {
 
 pub struct TransactionMetadata {
     // Block in which this tx was included
-    pub block: BlockHeight,
+    pub block_height: BlockHeight,
 
     // Is this Tx unconfirmed (i.e., not yet mined)
     pub unconfirmed: bool,
@@ -557,7 +557,7 @@ impl TransactionMetadata {
         unconfirmed: bool,
     ) -> Self {
         TransactionMetadata {
-            block: height,
+            block_height: height,
             unconfirmed,
             datetime,
             txid: transaction_id.clone(),
@@ -645,7 +645,7 @@ impl TransactionMetadata {
         };
 
         Ok(Self {
-            block,
+            block_height: block,
             unconfirmed,
             datetime,
             txid: transaction_id,
@@ -666,7 +666,7 @@ impl TransactionMetadata {
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
-        let block: u32 = self.block.into();
+        let block: u32 = self.block_height.into();
         writer.write_i32::<LittleEndian>(block as i32)?;
 
         writer.write_u8(if self.unconfirmed { 1 } else { 0 })?;
