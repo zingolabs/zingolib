@@ -1,16 +1,19 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use bip0039::Mnemonic;
 use orchard::keys::Scope;
 use rand::{rngs::OsRng, Rng};
 use tokio::sync::{Mutex, RwLock};
 use zcash_client_backend::address::UnifiedAddress;
-use zcash_primitives::zip32::DiversifierIndex;
+use zcash_primitives::{legacy::TransparentAddress, zip32::DiversifierIndex};
 use zingoconfig::ZingoConfig;
 
 use crate::wallet::traits::ReadableWriteable;
 
-use super::{extended_transparent::KeyIndex, Keys};
+use super::{extended_transparent::KeyIndex, Keys, ToBase58Check};
 
 #[derive(Clone, Debug)]
 pub struct UnifiedSpendAuthority {
@@ -95,6 +98,26 @@ impl UnifiedSpendAuthority {
         ))
     }
 
+    pub fn get_taddr_to_sk_map(
+        &self,
+        config: &ZingoConfig,
+    ) -> HashMap<String, secp256k1::SecretKey> {
+        self.addresses
+            .iter()
+            .enumerate()
+            .filter_map(|(i, ua)| ua.transparent().zip(self.transparent_child_keys.get(i)))
+            .map(|(taddr, key)| {
+                let hash = match taddr {
+                    TransparentAddress::PublicKey(hash) => hash,
+                    TransparentAddress::Script(hash) => hash,
+                };
+                (
+                    hash.to_base58check(&config.base58_script_address(), &[]),
+                    key.clone(),
+                )
+            })
+            .collect()
+    }
     pub fn new_from_seed(config: &ZingoConfig, seed: &[u8; 64], position: u32) -> Self {
         let (sapling_key, _, _) = Keys::get_zaddr_from_bip39seed(config, seed, position);
         let transparent_parent_key =
@@ -165,6 +188,19 @@ impl UnifiedSpendAuthority {
                 })
             })
             .collect()
+    }
+
+    pub fn encrypt(&mut self, passwd: String) -> std::io::Result<()> {
+        todo!()
+    }
+    pub fn lock(&mut self) -> std::io::Result<()> {
+        todo!()
+    }
+    pub fn unlock(&mut self, passwd: String) -> std::io::Result<()> {
+        todo!()
+    }
+    pub fn remove_encryption(&mut self, passwd: String) -> std::io::Result<()> {
+        todo!()
     }
 }
 impl ReadableWriteable<()> for UnifiedSpendAuthority {

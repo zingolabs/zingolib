@@ -119,7 +119,7 @@ fn new_wallet_from_sapling_esk() {
         );
     });
 }
-
+/*
 #[test]
 fn import_orchard_spending_key() {
     let temp_dir = tempfile::Builder::new().prefix("test").tempdir().unwrap();
@@ -147,7 +147,7 @@ fn import_orchard_spending_key() {
             .await;
         assert_eq!(new_address, "Error: Key already exists");
     });
-}
+}*/
 
 #[test]
 fn new_wallet_from_zvk() {
@@ -781,6 +781,7 @@ async fn sapling_to_sapling_scan_together() {
     clean_shutdown(stop_transmitter, test_server_handle).await;
 }
 
+/*
 apply_scenario! {sapling_incoming_viewkey 10}
 async fn sapling_incoming_viewkey(scenario: NBlockFCBLScenario) {
     let NBlockFCBLScenario {
@@ -930,7 +931,7 @@ async fn sapling_incoming_viewkey(scenario: NBlockFCBLScenario) {
         list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
         sent_value
     );
-}
+}*/
 
 apply_scenario! {t_incoming_t_outgoing 10}
 async fn t_incoming_t_outgoing(scenario: NBlockFCBLScenario) {

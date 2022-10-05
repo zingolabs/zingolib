@@ -729,6 +729,15 @@ where
     fn addresses_from_keys(keys: &Keys) -> Vec<String>;
     fn get_keys(keys: &Keys) -> &Vec<Self>;
     fn set_spend_key_for_view_key(&mut self, key: Self::SpendKey);
+    fn usa_to_fvk(usa: &UnifiedSpendAuthority) -> Self::Fvk {
+        Self::Fvk::from(usa)
+    }
+    fn usa_to_ivk(usa: &UnifiedSpendAuthority) -> Self::Ivk {
+        Self::Ivk::from(usa)
+    }
+    fn usa_to_ovk(usa: &UnifiedSpendAuthority) -> Self::Ovk {
+        Self::Ovk::from(usa)
+    }
 }
 
 impl WalletKey for SaplingKey {

@@ -404,20 +404,12 @@ impl LightClient {
 
         if key_or_seedphrase.starts_with(config.hrp_sapling_private_key())
             || key_or_seedphrase.starts_with(config.hrp_sapling_viewing_key())
+            || key_or_seedphrase.starts_with(config.chain.hrp_orchard_spending_key())
         {
-            let lightclient = Self::new_wallet(config, birthday, 0)?;
-            Runtime::new().unwrap().block_on(async move {
-                lightclient
-                    .do_import_key(key_or_seedphrase, birthday)
-                    .await
-                    .map_err(|e| io::Error::new(ErrorKind::InvalidData, e))?;
-
-                info!("Created wallet with 0 keys, imported private key");
-
-                Ok(lightclient)
-            })
-        } else if key_or_seedphrase.starts_with(config.chain.hrp_orchard_spending_key()) {
-            todo!()
+            Err(Error::new(
+                ErrorKind::InvalidInput,
+                "Key import not currently supported",
+            ))
         } else {
             Runtime::new().unwrap().block_on(async move {
                 let lightclient = LightClient {
@@ -1199,132 +1191,6 @@ impl LightClient {
         Ok(array![new_address])
     }
 
-    /// Convinence function to determine what type of key this is and import it
-    pub async fn do_import_key(&self, key: String, birthday: u64) -> Result<JsonValue, String> {
-        macro_rules! match_key_type {
-            ($key:ident: $($start:expr => $do:expr,)+) => {
-                match $key {
-                    $(_ if $key.starts_with($start) => $do,)+
-                    _ => Err(format!(
-                        "'{}' was not recognized as either a spending key or a viewing key",
-                        key,
-                    )),
-                }
-            }
-        }
-
-        match_key_type!(key:
-            self.config.hrp_sapling_private_key() => self.do_import_sapling_spend_key(key, birthday).await,
-            self.config.hrp_sapling_viewing_key() => self.do_import_sapling_full_view_key(key, birthday).await,
-            "K" => self.do_import_tk(key).await,
-            "L" => self.do_import_tk(key).await,
-            self.config.chain.hrp_orchard_spending_key() => self.do_import_orchard_secret_key(key, birthday).await,
-            self.config.chain.hrp_unified_full_viewing_key() => todo!(),
-        )
-    }
-
-    /// Import a new transparent private key
-    pub async fn do_import_tk(&self, sk: String) -> Result<JsonValue, String> {
-        if !self.wallet.is_unlocked_for_spending().await {
-            error!("Wallet is locked");
-            return Err("Wallet is locked".to_string());
-        }
-
-        let address = self.wallet.add_imported_tk(sk).await;
-        if address.starts_with("Error") {
-            let e = address;
-            error!("{}", e);
-            return Err(e);
-        }
-
-        self.do_save().await?;
-        Ok(array![address])
-    }
-
-    /// Import a new orchard private key
-    pub async fn do_import_orchard_secret_key(
-        &self,
-        key: String,
-        birthday: u64,
-    ) -> Result<JsonValue, String> {
-        if !self.wallet.is_unlocked_for_spending().await {
-            error!("Wallet is locked");
-            return Err("Wallet is locked".to_string());
-        }
-
-        let new_address = {
-            let addr = self
-                .wallet
-                .add_imported_orchard_spending_key(key, birthday)
-                .await;
-            if addr.starts_with("Error") {
-                let e = addr;
-                error!("{}", e);
-                return Err(e);
-            }
-
-            addr
-        };
-
-        self.do_save().await?;
-
-        Ok(array![new_address])
-    }
-
-    /// Import a new z-address private key
-    pub async fn do_import_sapling_spend_key(
-        &self,
-        sk: String,
-        birthday: u64,
-    ) -> Result<JsonValue, String> {
-        if !self.wallet.is_unlocked_for_spending().await {
-            error!("Wallet is locked");
-            return Err("Wallet is locked".to_string());
-        }
-
-        let new_address = {
-            let addr = self.wallet.add_imported_sapling_extsk(sk, birthday).await;
-            if addr.starts_with("Error") {
-                let e = addr;
-                error!("{}", e);
-                return Err(e);
-            }
-
-            addr
-        };
-
-        self.do_save().await?;
-
-        Ok(array![new_address])
-    }
-
-    /// Import a new viewing key
-    pub async fn do_import_sapling_full_view_key(
-        &self,
-        vk: String,
-        birthday: u64,
-    ) -> Result<JsonValue, String> {
-        if !self.wallet.is_unlocked_for_spending().await {
-            error!("Wallet is locked");
-            return Err("Wallet is locked".to_string());
-        }
-
-        let new_address = {
-            let addr = self.wallet.add_imported_sapling_extfvk(vk, birthday).await;
-            if addr.starts_with("Error") {
-                let e = addr;
-                error!("{}", e);
-                return Err(e);
-            }
-
-            addr
-        };
-
-        self.do_save().await?;
-
-        Ok(array![new_address])
-    }
-
     pub async fn clear_state(&self) {
         // First, clear the state from the wallet
         self.wallet.clear_all().await;
@@ -1664,8 +1530,11 @@ impl LightClient {
             grpc_connector.start_taddr_transaction_fetcher().await;
 
         // Local state necessary for a transaction fetch
-        let transaction_context =
-            TransactionContext::new(&self.config, self.wallet.keys(), self.wallet.transactions());
+        let transaction_context = TransactionContext::new(
+            &self.config,
+            self.wallet.unified_spend_auth(),
+            self.wallet.transactions(),
+        );
         let (
             fetch_full_transactions_handle,
             fetch_full_transaction_transmitter,
