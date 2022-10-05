@@ -29,6 +29,7 @@ use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::sapling::note_encryption::SaplingDomain;
+use zcash_primitives::sapling::SaplingIvk;
 use zcash_primitives::transaction::builder::Progress;
 use zcash_primitives::{
     consensus::BlockHeight,
@@ -343,12 +344,6 @@ impl LightWallet {
             transaction_context,
         };
 
-        // For old wallets, remove unused addresses
-        if external_version <= 14 {
-            lw.remove_unused_taddrs().await;
-            lw.remove_unused_zaddrs().await;
-        }
-
         if external_version <= 14 {
             lw.set_witness_block_heights().await;
         }
@@ -439,11 +434,12 @@ impl LightWallet {
     }
 
     pub fn keys(&self) -> Arc<RwLock<Keys>> {
-        compile_error!("Haven't gotten around to removing this yet")
+        todo!("Remove this")
+        // compile_error!("Haven't gotten around to removing this yet")
     }
 
     pub fn unified_spend_auth(&self) -> Arc<RwLock<UnifiedSpendAuthority>> {
-        self.transaction_context.key
+        self.transaction_context.key.clone()
     }
 
     pub fn transactions(&self) -> Arc<RwLock<TransactionMetadataSet>> {
@@ -571,222 +567,6 @@ impl LightWallet {
             self.birthday
                 .store(wallet_birthday, std::sync::atomic::Ordering::SeqCst);
         }
-    }
-
-    pub async fn add_imported_tk(&self, sk: String) -> String {
-        if self.transaction_context.key.read().await.encrypted {
-            return "Error: Can't import transparent address key while wallet is encrypted"
-                .to_string();
-        }
-
-        let sk = match TransparentKey::from_sk_string(&self.transaction_context.config, sk) {
-            Err(e) => return format!("Error: {}", e),
-            Ok(k) => k,
-        };
-
-        let address = sk.address.clone();
-
-        todo!("Key import currently non-functional")
-        /*if self
-            .transaction_context
-            .keys
-            .read()
-            .await
-            .tkeys
-            .iter()
-            .find(|&tk| tk.address == address)
-            .is_some()
-        {
-            return "Error: Key already exists".to_string();
-        }
-
-        self.transaction_context.keys.write().await.tkeys.push(sk);
-        return address;
-        */
-    }
-
-    // Add a new imported spending key to the wallet
-    /// NOTE: This will not rescan the wallet
-    pub async fn add_imported_sapling_extsk(&self, sk: String, birthday: u64) -> String {
-        self.add_imported_spend_key(
-            &sk,
-            self.transaction_context.config.hrp_sapling_private_key(),
-            birthday,
-            |k, hrp| decode_extended_spending_key(k, hrp).map(Some),
-            Keys::zkeys,
-            Keys::zkeys_mut,
-            |wallet_key: &SaplingKey, new_key: &zcash_primitives::zip32::ExtendedSpendingKey| {
-                wallet_key.extsk.is_some() && wallet_key.extsk.as_ref().unwrap() == &new_key.clone()
-            },
-            |wk, fvk| &wk.extfvk == fvk,
-            SaplingKey::new_imported_sk,
-            |key| {
-                encode_payment_address(self.transaction_context.config.hrp_sapling_address(), &key)
-            },
-        )
-        .await
-    }
-
-    // Add a new imported orchard secret key to the wallet
-    /// NOTE: This will not rescan the wallet
-    pub async fn add_imported_orchard_spending_key(&self, osk: String, birthday: u64) -> String {
-        self.add_imported_spend_key(
-            &osk,
-            self.transaction_context
-                .config
-                .chain
-                .hrp_orchard_spending_key(),
-            birthday,
-            decode_orchard_spending_key,
-            Keys::okeys,
-            Keys::okeys_mut,
-            |wallet_key, new_key| {
-                (&wallet_key.key)
-                    .try_into()
-                    .ok()
-                    .map(|x: OrchardSpendingKey| x.to_bytes().to_vec())
-                    == Some(new_key.to_bytes().to_vec())
-            },
-            |wk: &OrchardKey, fvk: &orchard::keys::FullViewingKey| {
-                (&wk.key).try_into().ok() == Some(fvk.clone())
-            },
-            OrchardKey::new_imported_osk,
-            |address: address::UnifiedAddress| {
-                address.encode(&self.transaction_context.config.chain)
-            },
-        )
-        .await
-    }
-
-    async fn add_imported_spend_key<
-        WalletKey: self::traits::WalletKey + Clone,
-        ViewKey: for<'a> From<&'a WalletKey::SpendKey>,
-        DecodeError: std::fmt::Display,
-    >(
-        &self,
-        key: &str,
-        hrp: &str,
-        birthday: u64,
-        decoder: impl Fn(&str, &str) -> Result<Option<WalletKey::SpendKey>, DecodeError>,
-        key_finder: impl Fn(&Keys) -> &Vec<WalletKey>,
-        key_finder_mut: impl Fn(&mut Keys) -> &mut Vec<WalletKey>,
-        key_matcher: impl Fn(&WalletKey, &WalletKey::SpendKey) -> bool,
-        find_view_key: impl Fn(&WalletKey, &ViewKey) -> bool,
-        key_importer: impl Fn(WalletKey::SpendKey) -> WalletKey,
-        encode_address: impl Fn(WalletKey::Address) -> String,
-    ) -> String {
-        let address_getter = |decoded_key| {
-            self.update_view_key(decoded_key, key_finder_mut, find_view_key, key_importer)
-        };
-        self.add_imported_key(
-            key,
-            hrp,
-            birthday,
-            decoder,
-            key_finder,
-            key_matcher,
-            address_getter,
-            encode_address,
-        )
-        .await
-    }
-    async fn add_imported_key<
-        KeyType,
-        WalletKey: self::traits::WalletKey + Clone,
-        DecodeError: std::fmt::Display,
-        Fut: Future<Output = WalletKey::Address>,
-    >(
-        &self,
-        key: &str,
-        hrp: &str,
-        birthday: u64,
-        decoder: impl Fn(&str, &str) -> Result<Option<KeyType>, DecodeError>,
-        key_finder: impl Fn(&Keys) -> &Vec<WalletKey>,
-        key_matcher: impl Fn(&WalletKey, &KeyType) -> bool,
-        address_getter: impl FnOnce(KeyType) -> Fut,
-        encode_address: impl Fn(WalletKey::Address) -> String,
-    ) -> String {
-        if self.transaction_context.key.read().await.encrypted {
-            return "Error: Can't import spending key while wallet is encrypted".to_string();
-        }
-        let decoded_key = match decoder(hrp, key) {
-            Ok(Some(k)) => k,
-            Ok(None) => {
-                return format!(
-                    "Error: Couldn't decode {} key",
-                    std::any::type_name::<KeyType>()
-                )
-            }
-            Err(e) => {
-                return format!(
-                    "Error importing {} key: {e}",
-                    std::any::type_name::<KeyType>()
-                )
-            }
-        };
-        if key_finder(&*self.transaction_context.keys.read().await)
-            .iter()
-            .any(|k| key_matcher(k, &decoded_key))
-        {
-            return "Error: Key already exists".to_string();
-        };
-        // Adjust wallet birthday
-        self.adjust_wallet_birthday(birthday);
-        encode_address(address_getter(decoded_key).await)
-    }
-    async fn update_view_key<
-        WalletKey: self::traits::WalletKey + Clone,
-        ViewKey: for<'a> From<&'a WalletKey::SpendKey>,
-    >(
-        &self,
-        decoded_key: WalletKey::SpendKey,
-        key_finder_mut: impl Fn(&mut Keys) -> &mut Vec<WalletKey>,
-        find_view_key: impl Fn(&WalletKey, &ViewKey) -> bool,
-        key_importer: impl Fn(WalletKey::SpendKey) -> WalletKey,
-    ) -> WalletKey::Address {
-        let fvk = ViewKey::from(&decoded_key);
-        let mut write_keys = self.transaction_context.keys.write().await;
-        let write_keys = key_finder_mut(&mut *write_keys);
-        let maybe_existing_key = write_keys.iter_mut().find(|k| find_view_key(k, &fvk));
-        // If the viewing key exists, and is now being upgraded to the spending key, replace it in-place
-        if maybe_existing_key.is_some() {
-            let existing_key = maybe_existing_key.unwrap();
-            existing_key.set_spend_key_for_view_key(decoded_key);
-            existing_key.address()
-        } else {
-            let newkey = key_importer(decoded_key);
-            write_keys.push(newkey.clone());
-            newkey.address()
-        }
-    }
-    // Add a new imported viewing key to the wallet
-    /// NOTE: This will not rescan the wallet
-    pub async fn add_imported_sapling_extfvk(&self, vk: String, birthday: u64) -> String {
-        self.add_imported_key(
-            &vk,
-            self.transaction_context.config.hrp_sapling_viewing_key(),
-            birthday,
-            |k, hrp| decode_extended_full_viewing_key(k, hrp).map(Some),
-            Keys::zkeys,
-            |wallet_key, new_key| wallet_key.extfvk == new_key.clone(),
-            |key| async {
-                let newkey = SaplingKey::new_imported_viewkey(key);
-                self.transaction_context
-                    .keys
-                    .write()
-                    .await
-                    .zkeys
-                    .push(newkey.clone());
-                newkey.zaddress
-            },
-            |address| {
-                encode_payment_address(
-                    self.transaction_context.config.hrp_sapling_address(),
-                    &address,
-                )
-            },
-        )
-        .await
     }
 
     /// Clears all the downloaded blocks and resets the state back to the initial block.
@@ -980,34 +760,20 @@ impl LightWallet {
     pub async fn unverified_sapling_balance(&self, target_addr: Option<String>) -> u64 {
         let anchor_height = self.get_anchor_height().await;
 
-        let keys = self.transaction_context.keys.read().await;
-
-        let filters: &[Box<dyn Fn(&&SaplingNoteAndMetadata, &TransactionMetadata) -> bool>] = &[
-            Box::new(|notedata: &&SaplingNoteAndMetadata, _| {
-                // Check to see if we have this note's spending key.
-                keys.have_sapling_spending_key(&notedata.extfvk)
-            }),
-            Box::new(|_, transaction: &TransactionMetadata| {
+        let filters: &[Box<dyn Fn(&&SaplingNoteAndMetadata, &TransactionMetadata) -> bool>] =
+            &[Box::new(|_, transaction: &TransactionMetadata| {
                 transaction.block_height > BlockHeight::from_u32(anchor_height)
-            }),
-        ];
+            })];
         self.shielded_balance(target_addr, filters).await
     }
 
     pub async fn unverified_orchard_balance(&self, target_addr: Option<String>) -> u64 {
         let anchor_height = self.get_anchor_height().await;
 
-        let keys = self.transaction_context.keys.read().await;
-
-        let filters: &[Box<dyn Fn(&&OrchardNoteAndMetadata, &TransactionMetadata) -> bool>] = &[
-            Box::new(|notedata, _| {
-                // Check to see if we have this note's spending key.
-                keys.have_orchard_spending_key(&notedata.fvk.to_ivk(orchard::keys::Scope::External))
-            }),
-            Box::new(|_, transaction: &TransactionMetadata| {
+        let filters: &[Box<dyn Fn(&&OrchardNoteAndMetadata, &TransactionMetadata) -> bool>] =
+            &[Box::new(|_, transaction: &TransactionMetadata| {
                 transaction.block_height > BlockHeight::from_u32(anchor_height)
-            }),
-        ];
+            })];
         self.shielded_balance(target_addr, filters).await
     }
 
@@ -1032,137 +798,33 @@ impl LightWallet {
 
     pub async fn spendable_sapling_balance(&self, target_addr: Option<String>) -> u64 {
         let anchor_height = self.get_anchor_height().await;
-        let keys = self.transaction_context.keys.read().await;
         let filters: &[Box<dyn Fn(&&SaplingNoteAndMetadata, &TransactionMetadata) -> bool>] = &[
             Box::new(|_, transaction| {
                 transaction.block_height <= BlockHeight::from_u32(anchor_height)
             }),
-            Box::new(|nnmd, _| {
-                keys.have_sapling_spending_key(&nnmd.extfvk) && nnmd.witnesses.len() > 0
-            }),
+            Box::new(|nnmd, _| nnmd.witnesses.len() > 0),
         ];
         self.shielded_balance(target_addr, filters).await
     }
 
     pub async fn spendable_orchard_balance(&self, target_addr: Option<String>) -> u64 {
         let anchor_height = self.get_anchor_height().await;
-        let keys = self.transaction_context.keys.read().await;
         let filters: &[Box<dyn Fn(&&OrchardNoteAndMetadata, &TransactionMetadata) -> bool>] = &[
             Box::new(|_, transaction| {
                 transaction.block_height <= BlockHeight::from_u32(anchor_height)
             }),
-            Box::new(|nnmd, _| {
-                keys.have_orchard_spending_key(&nnmd.fvk.to_ivk(orchard::keys::Scope::External))
-                    && nnmd.witnesses.len() > 0
-            }),
+            Box::new(|nnmd, _| nnmd.witnesses.len() > 0),
         ];
         self.shielded_balance(target_addr, filters).await
     }
 
-    pub async fn remove_unused_taddrs(&self) {
-        let taddrs = self.transaction_context.keys.read().await.get_all_taddrs();
-        if taddrs.len() <= 1 {
-            return;
-        }
-
-        let highest_account = self
-            .transaction_context
-            .transaction_metadata_set
-            .read()
-            .await
-            .current
-            .values()
-            .flat_map(|wtx| {
-                wtx.utxos.iter().map(|u| {
-                    taddrs
-                        .iter()
-                        .position(|taddr| *taddr == u.address)
-                        .unwrap_or(taddrs.len())
-                })
-            })
-            .max();
-
-        if highest_account.is_none() {
-            return;
-        }
-
-        if highest_account.unwrap() == 0 {
-            // Remove unused addresses
-            self.transaction_context
-                .keys
-                .write()
-                .await
-                .tkeys
-                .truncate(1);
-        }
-    }
-
-    pub async fn remove_unused_zaddrs(&self) {
-        let zaddrs = self
-            .transaction_context
-            .keys
-            .read()
-            .await
-            .get_all_sapling_addresses();
-        if zaddrs.len() <= 1 {
-            return;
-        }
-
-        let highest_account = self
-            .transaction_context
-            .transaction_metadata_set
-            .read()
-            .await
-            .current
-            .values()
-            .flat_map(|wtx| {
-                wtx.sapling_notes.iter().map(|n| {
-                    let (_, pa) = n.extfvk.default_address();
-                    let zaddr = encode_payment_address(
-                        self.transaction_context.config.hrp_sapling_address(),
-                        &pa,
-                    );
-                    zaddrs
-                        .iter()
-                        .position(|za| *za == zaddr)
-                        .unwrap_or(zaddrs.len())
-                })
-            })
-            .max();
-
-        if highest_account.is_none() {
-            return;
-        }
-
-        if highest_account.unwrap() == 0 {
-            // Remove unused addresses
-            self.transaction_context
-                .keys
-                .write()
-                .await
-                .zkeys
-                .truncate(1);
-        }
-    }
-
+    ///TODO: Make this work for orchard too
     pub async fn decrypt_message(&self, enc: Vec<u8>) -> Option<Message> {
-        // Collect all the ivks in the wallet
-        let ivks: Vec<_> = self
-            .transaction_context
-            .keys
-            .read()
-            .await
-            .get_all_sapling_extfvks()
-            .iter()
-            .map(|extfvk| extfvk.fvk.vk.ivk())
-            .collect();
+        let sapling_ivk = SaplingIvk::from(&*self.unified_spend_auth().read().await);
 
-        // Attempt decryption with all available ivks, one at a time. This is pretty fast, so need need for fancy multithreading
-        for ivk in ivks {
-            if let Ok(msg) = Message::decrypt(&enc, &ivk) {
-                // If decryption succeeded for this IVK, return the decrypted memo and the matched address
-                return Some(msg);
-            }
+        if let Ok(msg) = Message::decrypt(&enc, &sapling_ivk) {
+            // If decryption succeeded for this IVK, return the decrypted memo and the matched address
+            return Some(msg);
         }
 
         // If nothing matched
@@ -1458,7 +1120,7 @@ impl LightWallet {
         F: Fn(Box<[u8]>) -> Fut,
         Fut: Future<Output = Result<String, String>>,
     {
-        if !self.transaction_context.keys.read().await.unlocked {
+        if !self.unified_spend_auth().read().await.unlocked {
             return Err("Cannot spend while wallet is locked".to_string());
         }
 
@@ -1509,11 +1171,10 @@ impl LightWallet {
         // Create a map from address -> sk for all taddrs, so we can spend from the
         // right address
         let address_to_sk = self
-            .transaction_context
-            .keys
+            .unified_spend_auth()
             .read()
             .await
-            .get_taddr_to_sk_map();
+            .get_taddr_to_sk_map(&self.transaction_context.config);
 
         let (orchard_notes, sapling_notes, utxos, selected_value) = self
             .select_notes_and_utxos(
@@ -1843,20 +1504,19 @@ impl LightWallet {
     }
 
     pub async fn encrypt(&self, passwd: String) -> io::Result<()> {
-        self.transaction_context.keys.write().await.encrypt(passwd)
+        self.unified_spend_auth().write().await.encrypt(passwd)
     }
 
     pub async fn lock(&self) -> io::Result<()> {
-        self.transaction_context.keys.write().await.lock()
+        self.unified_spend_auth().write().await.lock()
     }
 
     pub async fn unlock(&self, passwd: String) -> io::Result<()> {
-        self.transaction_context.keys.write().await.unlock(passwd)
+        self.unified_spend_auth().write().await.unlock(passwd)
     }
 
     pub async fn remove_encryption(&self, passwd: String) -> io::Result<()> {
-        self.transaction_context
-            .keys
+        self.unified_spend_auth()
             .write()
             .await
             .remove_encryption(passwd)
