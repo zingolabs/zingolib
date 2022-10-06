@@ -898,9 +898,9 @@ impl LightClient {
                             let address = LightWallet::note_address(&self.config.chain, orch_note_metadata);
                             let spendable = address.is_some() &&
                                                     spendable_address.contains(&address.clone().unwrap()) &&
-                                                    transaction_metadata.block <= anchor_height && orch_note_metadata.spent.is_none() && orch_note_metadata.unconfirmed_spent.is_none();
+                                                    transaction_metadata.block_height <= anchor_height && orch_note_metadata.spent.is_none() && orch_note_metadata.unconfirmed_spent.is_none();
 
-                            let created_block:u32 = transaction_metadata.block.into();
+                            let created_block:u32 = transaction_metadata.block_height.into();
                             Some(object!{
                                 "created_in_block"   => created_block,
                                 "datetime"           => transaction_metadata.datetime,
