@@ -584,6 +584,7 @@ impl LightClient {
             .collect()
     }
 
+    /// Provide an object with all wallet addresses
     pub async fn do_address(&self) -> JsonValue {
         // Collect z addresses
         let z_addresses = self.wallet.keys().read().await.get_all_sapling_addresses();
