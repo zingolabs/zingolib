@@ -841,7 +841,7 @@ impl LightClient {
                             let address = LightWallet::note_address(&self.config.chain, note_metadata);
                             let spendable = address.is_some() &&
                                                     spendable_sapling_addresses.contains(&address.clone().unwrap()) &&
-                                                    transaction_metadata.block_height <= anchor_height && note_metadata.is_spent() && note_metadata.unconfirmed_spent.is_none();
+                                                    transaction_metadata.block_height <= anchor_height && !note_metadata.is_spent() && note_metadata.unconfirmed_spent.is_none();
 
                             let created_block:u32 = transaction_metadata.block_height.into();
                             Some(object!{

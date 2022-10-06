@@ -162,10 +162,10 @@ fn note_selection_order() {
             .await
             .unwrap();
         let notes = client_2.do_list_notes(false).await;
-        assert_eq!(notes["pending_notes"].len(), 2);
-        assert_eq!(notes["unspent_notes"].len(), 4);
+        assert_eq!(notes["pending_sapling_notes"].len(), 2);
+        assert_eq!(notes["unspent_sapling_notes"].len(), 4);
         assert_eq!(
-            notes["unspent_notes"]
+            notes["unspent_sapling_notes"]
                 .members()
                 .filter(|note| note["is_change"].as_bool().unwrap())
                 .collect::<Vec<_>>()
