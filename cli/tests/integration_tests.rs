@@ -123,8 +123,8 @@ async fn check_client_blockchain_height_belief(
     n: u64,
 ) {
     assert_eq!(
-        json::parse(&client.do_info().await).unwrap()["latest_block_height"],
-        json::number::Number::from(n)
+        u64::from(client.do_wallet_last_scanned_height().await),
+        n.to_string()
     );
 }
 /// This implements similar behavior to 'two_clients_a_coinbase_backed', but with the
@@ -136,6 +136,7 @@ fn note_selection_order() {
         two_clients_a_coinbase_backed();
 
     tokio::runtime::Runtime::new().unwrap().block_on(async {
+        check_client_blockchain_height_belief(&client_1, 0).await;
         client_1.do_sync(true).await.unwrap();
         check_client_blockchain_height_belief(&client_1, 6).await;
         client_2.set_server(client_1.get_server().clone());
