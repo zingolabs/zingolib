@@ -1,5 +1,4 @@
 use crate::data;
-use rand::{rngs::OsRng, Rng};
 use std::path::PathBuf;
 
 use tokio::runtime::Runtime;
@@ -110,14 +109,14 @@ fn create_maybe_funded_regtest_manager(
 pub fn coinbasebacked_spendcapable() -> (RegtestManager, ChildProcessHandler, LightClient, Runtime)
 {
     //tracing_subscriber::fmt::init();
-    let coinbase_spendkey =
-        zcash_primitives::zip32::ExtendedSpendingKey::master(&OsRng.gen::<[u8; 32]>());
-    let (regtest_manager, server_port) = create_maybe_funded_regtest_manager(Some(
-        &zcash_client_backend::encoding::encode_payment_address(
-            "zregtestsapling",
-            &coinbase_spendkey.default_address().1,
-        ),
-    ));
+    //let coinbase_spendkey =
+    //  zcash_primitives::zip32::ExtendedSpendingKey::master(&OsRng.gen::<[u8; 32]>());
+    let seed_phrase = zcash_primitives::zip339::Mnemonic::from_entropy([0; 32])
+        .unwrap()
+        .to_string();
+    let z_addr_of_seed_phrase = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
+    let (regtest_manager, server_port) =
+        create_maybe_funded_regtest_manager(Some(z_addr_of_seed_phrase));
     let child_process_handler = regtest_manager.launch(true).unwrap_or_else(|e| match e {
         zingo_cli::regtest::LaunchChildProcessError::ZcashdState {
             errorcode,
@@ -134,16 +133,8 @@ pub fn coinbasebacked_spendcapable() -> (RegtestManager, ChildProcessHandler, Li
         Some(regtest_manager.zingo_data_dir.to_string_lossy().to_string()),
     )
     .unwrap();
-    let mut spendkey_bytes = Vec::new();
-    coinbase_spendkey.write(&mut spendkey_bytes).unwrap();
-    let key_bytes = bech32::encode(
-        "secret-extended-key-regtest",
-        <Vec<u8> as bech32::ToBase32>::to_base32(&spendkey_bytes),
-        bech32::Variant::Bech32,
-    )
-    .unwrap();
     let light_client =
-        LightClient::create_with_capable_wallet(key_bytes, &config, 0, false).unwrap();
+        LightClient::create_with_capable_wallet(seed_phrase, &config, 0, false).unwrap();
     regtest_manager.generate_n_blocks(5).unwrap();
     (
         regtest_manager,
