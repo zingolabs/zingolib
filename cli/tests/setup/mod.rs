@@ -143,7 +143,9 @@ pub fn coinbasebacked_spendcapable() -> (RegtestManager, ChildProcessHandler, Li
         Runtime::new().unwrap(),
     )
 }
-
+/// This creates two so-called "LightClient"s "client_a" controls a spend authority
+/// that has furnished a receiving address in the mineraddress configuration field
+/// of the "generating" regtest-zcashd
 pub fn two_clients_a_coinbase_backed() -> (
     RegtestManager,
     LightClient,
