@@ -121,10 +121,10 @@ fn send_mined_sapling_to_orchard() {
 
 #[test]
 fn note_selection_order() {
-    let (regtest_manager, client_1, client_2, child_process_handler, runtime) =
+    let (regtest_manager, client_1, client_2, child_process_handler, _) =
         two_clients_a_coinbase_backed();
 
-    runtime.block_on(async {
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
         sleep(Duration::from_secs(1)).await;
         regtest_manager.generate_n_blocks(5).unwrap();
         sleep(Duration::from_secs(1)).await;
