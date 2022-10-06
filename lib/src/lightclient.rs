@@ -1938,6 +1938,10 @@ impl LightClient {
 
         result.map(|(transaction_id, _)| transaction_id)
     }
+
+    pub async fn do_wallet_last_scanned_height(&self) -> JsonValue {
+        json::JsonValue::from(self.wallet.last_scanned_height().await)
+    }
 }
 
 #[cfg(test)]
