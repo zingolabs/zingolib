@@ -299,7 +299,21 @@ impl ReadableWriteable<()> for UnifiedSpendAuthority {
     fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         writer.write_u8(Self::VERSION)?;
         writer.write(self.orchard_key.to_bytes())?;
-        todo!()
+        self.sapling_key.write(&mut writer)?;
+        self.transparent_parent_key.write(&mut writer)?;
+        let mut receivers_per_address = Vec::new();
+        for address in &self.addresses {
+            receivers_per_address.push(ReceiverSelection {
+                orchard: address.orchard().is_some(),
+                sapling: address.sapling().is_some(),
+                transparent: address.transparent().is_some(),
+            })
+        }
+        Vector::write(
+            &mut writer,
+            &receivers_per_address,
+            |mut w, receiver_selection| receiver_selection.write(&mut w),
+        )
     }
 }
 
