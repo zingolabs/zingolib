@@ -716,7 +716,7 @@ pub trait WalletKey
 where
     Self: Sized,
 {
-    type SpendKey: Clone;
+    type SpendKey: Clone + for<'a> From<&'a UnifiedSpendAuthority>;
     type Fvk: PartialEq + for<'a> From<&'a UnifiedSpendAuthority>;
     type Ivk: for<'a> From<&'a UnifiedSpendAuthority>;
     type Ovk: for<'a> From<&'a UnifiedSpendAuthority>;
@@ -729,6 +729,9 @@ where
     fn addresses_from_keys(keys: &Keys) -> Vec<String>;
     fn get_keys(keys: &Keys) -> &Vec<Self>;
     fn set_spend_key_for_view_key(&mut self, key: Self::SpendKey);
+    fn usa_to_sk(usa: &UnifiedSpendAuthority) -> Self::SpendKey {
+        Self::SpendKey::from(usa)
+    }
     fn usa_to_fvk(usa: &UnifiedSpendAuthority) -> Self::Fvk {
         Self::Fvk::from(usa)
     }
