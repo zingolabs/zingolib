@@ -480,20 +480,6 @@ impl LightClient {
         Ok(())
     }
 
-    // Export private keys
-    pub async fn do_export(&self, addr: Option<String>) -> Result<JsonValue, &str> {
-        if !self.wallet.is_unlocked_for_spending().await {
-            error!("Wallet is locked");
-            return Err("Wallet is locked");
-        }
-        let usa = self.wallet.unified_spend_auth().read().await;
-
-        let transparent_parent_key = usa.transparent_parent_key;
-
-        object! {}
-    }
-
-    /// Provide an object with all wallet addresses
     pub async fn do_address(&self) -> JsonValue {
         let mut objectified_addresses = Vec::new();
         for address in self.wallet.unified_spend_auth().read().await.addresses() {

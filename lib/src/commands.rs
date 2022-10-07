@@ -451,22 +451,8 @@ impl Command for ExportCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        if args.len() > 1 {
-            return self.help();
-        }
-
-        RT.block_on(async move {
-            let address = if args.is_empty() {
-                None
-            } else {
-                Some(args[0].to_string())
-            };
-            match lightclient.do_export(address).await {
-                Ok(j) => j,
-                Err(e) => object! { "error" => e },
-            }
-            .pretty(2)
-        })
+        "Key export currently unimplemented, please use seed phrase to backup/restore keys"
+            .to_string()
     }
 }
 
