@@ -10,6 +10,7 @@ use orchard::keys::Scope;
 use rand::{rngs::OsRng, Rng};
 use tokio::sync::{Mutex, RwLock};
 use zcash_client_backend::address::UnifiedAddress;
+use zcash_encoding::Vector;
 use zcash_primitives::{legacy::TransparentAddress, zip32::DiversifierIndex};
 use zingoconfig::ZingoConfig;
 
@@ -41,6 +42,51 @@ pub struct ReceiverSelection {
     orchard: bool,
     sapling: bool,
     transparent: bool,
+}
+
+impl ReadableWriteable<()> for ReceiverSelection {
+    const VERSION: u8 = 1;
+
+    fn read<R: Read>(mut reader: R, _: ()) -> io::Result<Self> {
+        let _version = Self::get_version(&mut reader)?;
+        let recievers = reader.read_u8()?;
+        Ok(Self {
+            orchard: recievers & 0b1 != 0,
+            sapling: recievers & 0b10 != 0,
+            transparent: recievers & 0b100 != 0,
+        })
+    }
+
+    fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+        writer.write_u8(Self::VERSION)?;
+        let mut receivers = 0;
+        if self.orchard {
+            receivers |= 0b1;
+        };
+        if self.sapling {
+            receivers |= 0b10;
+        };
+        if self.transparent {
+            receivers |= 0b100;
+        };
+        writer.write_u8(receivers)?;
+        Ok(())
+    }
+}
+
+#[test]
+fn read_write_receiver_selections() {
+    for (i, receivers_selected) in (0..8)
+        .into_iter()
+        .map(|n| ReceiverSelection::read([1, n].as_slice(), ()).unwrap())
+        .enumerate()
+    {
+        let mut recievers_selected_bytes = [0; 2];
+        receivers_selected
+            .write(recievers_selected_bytes.as_mut_slice())
+            .unwrap();
+        assert_eq!(i as u8, recievers_selected_bytes[1]);
+    }
 }
 
 impl UnifiedSpendAuthority {
@@ -85,8 +131,7 @@ impl UnifiedSpendAuthority {
         } else {
             None
         };
-
-        UnifiedAddress::from_receivers(
+        let ua = UnifiedAddress::from_receivers(
             orchard_receiver,
             sapling_reciever,
             transparent_receiver
@@ -97,7 +142,9 @@ impl UnifiedSpendAuthority {
         )
         .ok_or(format!(
             "Invalid receivers requested! At least one of sapling or orchard required"
-        ))
+        ))?;
+        self.addresses.push(ua.clone());
+        Ok(ua)
     }
 
     pub fn get_taddr_to_sk_map(
@@ -217,8 +264,36 @@ impl ReadableWriteable<()> for UnifiedSpendAuthority {
                 io::Error::new(io::ErrorKind::InvalidData, "Invalid orchard spending key"),
             )?;
         let sapling_key = zcash_primitives::zip32::ExtendedSpendingKey::read(&mut reader)?;
-        let transparent_key = super::extended_transparent::ExtendedPrivKey::read(&mut reader, ())?;
-        todo!()
+        let transparent_parent_key =
+            super::extended_transparent::ExtendedPrivKey::read(&mut reader, ())?;
+        let receivers_selected =
+            Vector::read(&mut reader, |mut r| ReceiverSelection::read(&mut r, ()))?;
+        let encrypted = match reader.read_u8()? {
+            0 => false,
+            1 => true,
+            _ => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "encrypted status is not bool!",
+                ))
+            }
+        };
+        let mut usa = Self {
+            orchard_key,
+            sapling_key,
+            transparent_parent_key,
+            transparent_child_keys: vec![],
+            addresses: vec![],
+            next_sapling_diversifier_index: DiversifierIndex::new(),
+            encrypted,
+            unlocked: false,
+        };
+        for receiver_selection in receivers_selected {
+            usa.new_address(receiver_selection)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+        }
+
+        Ok(usa)
     }
 
     fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
