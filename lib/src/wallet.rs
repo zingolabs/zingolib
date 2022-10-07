@@ -433,10 +433,10 @@ impl LightWallet {
             });
     }
 
-    pub fn keys(&self) -> Arc<RwLock<Keys>> {
+    /*  pub fn keys(&self) -> Arc<RwLock<Keys>> {
         todo!("Remove this")
         // compile_error!("Haven't gotten around to removing this yet")
-    }
+    }*/
 
     pub fn unified_spend_auth(&self) -> Arc<RwLock<UnifiedSpendAuthority>> {
         self.transaction_context.key.clone()
@@ -988,8 +988,8 @@ impl LightWallet {
         <D as Domain>::Recipient: traits::Recipient,
         <D as Domain>::Note: PartialEq + Clone,
     {
-        let keys_lth = self.keys();
-        let keys = keys_lth.read().await;
+        let usa_lth = self.unified_spend_auth();
+        let usa = usa_lth.read().await;
         let tranmds_lth = self.transactions();
         let transaction_metadata_set = tranmds_lth.read().await;
         self.transaction_context
@@ -1012,12 +1012,12 @@ impl LightWallet {
                             None
                         } else {
                             // Get the spending key for the selected fvk, if we have it
-                            let extsk = keys.get_spend_key_for_fvk::<D>(&note.fvk());
+                            let extsk = D::Key::usa_to_sk(&usa);
                             SpendableNote::from(
                                 transaction_id,
                                 note,
                                 *anchor_offset as usize,
-                                &extsk,
+                                &Some(extsk),
                             )
                         }
                     })
@@ -1278,20 +1278,30 @@ impl LightWallet {
         // the builder will automatically send change to that address
         if sapling_notes.len() == 0 {
             builder.send_change_to(
-                self.keys().read().await.zkeys[0].extfvk.fvk.ovk,
-                self.keys().read().await.zkeys[0].zaddress.clone(),
+                zcash_primitives::keys::OutgoingViewingKey::from(
+                    &*self.unified_spend_auth().read().await,
+                ),
+                self.unified_spend_auth()
+                    .read()
+                    .await
+                    .addresses()
+                    .iter()
+                    .find_map(|address| address.sapling())
+                    .ok_or(
+                        "No sapling receivers in wallet to receive change!\n\
+                        please add an address with a sapling component"
+                            .to_string(),
+                    )?
+                    .clone(),
             );
         }
 
         // We'll use the first ovk to encrypt outgoing transactions
-        let sapling_ovk = self.keys().read().await.zkeys[0].extfvk.fvk.ovk;
-        let orchard_ovk = self
-            .keys()
-            .read()
-            .await
-            .okeys
-            .get(0)
-            .and_then(OrchardKey::ovk);
+        let sapling_ovk = zcash_primitives::keys::OutgoingViewingKey::from(
+            &*self.unified_spend_auth().read().await,
+        );
+        let orchard_ovk =
+            orchard::keys::OutgoingViewingKey::from(&*self.unified_spend_auth().read().await);
 
         let mut total_z_recipients = 0u32;
         for (recipient_address, value, memo) in recipients {
@@ -1324,7 +1334,7 @@ impl LightWallet {
                 address::RecipientAddress::Unified(ua) => {
                     if let Some(orchard_addr) = ua.orchard() {
                         builder.add_orchard_output(
-                            orchard_ovk.clone(),
+                            Some(orchard_ovk.clone()),
                             orchard_addr.clone(),
                             u64::from(value),
                             validated_memo,
@@ -1581,13 +1591,9 @@ mod test {
                 mut fake_compactblock_list,
                 ..
             } = scenario;
-            let extended_fvk = lightclient
-                .wallet
-                .keys()
-                .read()
-                .await
-                .get_all_sapling_extfvks()[0]
-                .clone();
+            let extended_fvk = zcash_primitives::zip32::ExtendedFullViewingKey::from(
+                &*lightclient.wallet.unified_spend_auth().read().await,
+            );
             let (_, _, _) =
                 fake_compactblock_list.create_sapling_coinbase_transaction(&extended_fvk, 1);
             mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
@@ -1612,13 +1618,9 @@ mod test {
                 mut fake_compactblock_list,
                 ..
             } = scenario;
-            let extended_fvk = lightclient
-                .wallet
-                .keys()
-                .read()
-                .await
-                .get_all_sapling_extfvks()[0]
-                .clone();
+            let extended_fvk = zcash_primitives::zip32::ExtendedFullViewingKey::from(
+                &*lightclient.wallet.unified_spend_auth().read().await,
+            );
             use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
             let (_, _, _) = fake_compactblock_list
                 .create_sapling_coinbase_transaction(&extended_fvk, 1 + u64::from(DEFAULT_FEE));
@@ -1649,13 +1651,9 @@ mod test {
             ..
         } = scenario;
         // 2. Send an incoming transaction to fill the wallet
-        let extfvk1 = lightclient
-            .wallet
-            .keys()
-            .read()
-            .await
-            .get_all_sapling_extfvks()[0]
-            .clone();
+        let extfvk1 = zcash_primitives::zip32::ExtendedFullViewingKey::from(
+            &*lightclient.wallet.unified_spend_auth().read().await,
+        );
         let value = 100_000;
         let (transaction, _height, _) =
             fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, value);
@@ -1776,9 +1774,26 @@ mod test {
         assert_eq!(utxos.len(), 0);
 
         // 4. Get an incoming transaction to a t address
-        let sk = lightclient.wallet.keys().read().await.tkeys[0].clone();
-        let pk = sk.pubkey().unwrap();
-        let taddr = sk.address;
+        let (i, sk) = lightclient
+            .wallet
+            .unified_spend_auth()
+            .read()
+            .await
+            .transparent_child_keys()
+            .first()
+            .unwrap()
+            .clone();
+        let secp = secp256k1::Secp256k1::new();
+        let pk = secp256k1::PublicKey::from_secret_key(&secp, &sk);
+        let taddr = lightclient
+            .wallet
+            .unified_spend_auth()
+            .read()
+            .await
+            .addresses()[i]
+            .transparent()
+            .unwrap()
+            .clone();
         let tvalue = 100_000;
 
         let mut fake_transaction = FakeTransaction::new(true);
@@ -1827,13 +1842,9 @@ mod test {
             ..
         } = scenario;
         // 2. Send an incoming transaction to fill the wallet
-        let extfvk1 = lightclient
-            .wallet
-            .keys()
-            .read()
-            .await
-            .get_all_sapling_extfvks()[0]
-            .clone();
+        let extfvk1 = zcash_primitives::zip32::ExtendedFullViewingKey::from(
+            &*lightclient.wallet.unified_spend_auth().read().await,
+        );
         let value1 = 100_000;
         let (transaction, _height, _) =
             fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, value1);

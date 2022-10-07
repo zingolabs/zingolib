@@ -23,7 +23,7 @@ pub struct UnifiedSpendAuthority {
     orchard_key: orchard::keys::SpendingKey,
     sapling_key: zcash_primitives::zip32::ExtendedSpendingKey,
     transparent_parent_key: super::extended_transparent::ExtendedPrivKey,
-    transparent_child_keys: Vec<secp256k1::SecretKey>,
+    transparent_child_keys: Vec<(usize, secp256k1::SecretKey)>,
 
     addresses: Vec<UnifiedAddress>,
     // Not all diversifier indexes produce valid sapling addresses.
@@ -93,6 +93,11 @@ impl UnifiedSpendAuthority {
     pub fn addresses(&self) -> &[UnifiedAddress] {
         &self.addresses
     }
+
+    pub fn transparent_child_keys(&self) -> &Vec<(usize, secp256k1::SecretKey)> {
+        &self.transparent_child_keys
+    }
+
     pub fn new_address(
         &mut self,
         desired_receivers: ReceiverSelection,
@@ -126,7 +131,8 @@ impl UnifiedSpendAuthority {
                 .private_key;
             let secp = secp256k1::Secp256k1::new();
             let address = secp256k1::PublicKey::from_secret_key(&secp, &new_key);
-            self.transparent_child_keys.push(new_key);
+            self.transparent_child_keys
+                .push((self.addresses.len(), new_key));
             Some(address)
         } else {
             None
@@ -154,7 +160,13 @@ impl UnifiedSpendAuthority {
         self.addresses
             .iter()
             .enumerate()
-            .filter_map(|(i, ua)| ua.transparent().zip(self.transparent_child_keys.get(i)))
+            .filter_map(|(i, ua)| {
+                ua.transparent().zip(
+                    self.transparent_child_keys
+                        .iter()
+                        .find(|(index, _key)| i == *index),
+                )
+            })
             .map(|(taddr, key)| {
                 let hash = match taddr {
                     TransparentAddress::PublicKey(hash) => hash,
@@ -162,7 +174,7 @@ impl UnifiedSpendAuthority {
                 };
                 (
                     hash.to_base58check(&config.base58_script_address(), &[]),
-                    key.clone(),
+                    key.1.clone(),
                 )
             })
             .collect()
@@ -314,6 +326,18 @@ impl ReadableWriteable<()> for UnifiedSpendAuthority {
             &receivers_per_address,
             |mut w, receiver_selection| receiver_selection.write(&mut w),
         )
+    }
+}
+
+impl From<&UnifiedSpendAuthority> for zcash_primitives::zip32::ExtendedSpendingKey {
+    fn from(usa: &UnifiedSpendAuthority) -> Self {
+        usa.sapling_key.clone()
+    }
+}
+
+impl From<&UnifiedSpendAuthority> for orchard::keys::SpendingKey {
+    fn from(usa: &UnifiedSpendAuthority) -> Self {
+        usa.orchard_key.clone()
     }
 }
 
