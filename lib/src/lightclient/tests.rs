@@ -79,7 +79,6 @@ fn new_wallet_from_phrase() {
             "t1eQ63fwkQ4n4Eo5uCrPGaAV8FWB2tmx7ui".to_string(),
             addresses["transparent_addresses"][0]
         );
-        println!("z {}", lc.do_export(None).await.unwrap().pretty(2));
     });
 }
 

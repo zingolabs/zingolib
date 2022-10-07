@@ -1,9 +1,11 @@
 use std::{
     collections::{HashMap, HashSet},
+    io::{self, Read, Write},
     sync::Arc,
 };
 
 use bip0039::Mnemonic;
+use byteorder::{ReadBytesExt, WriteBytesExt};
 use orchard::keys::Scope;
 use rand::{rngs::OsRng, Rng};
 use tokio::sync::{Mutex, RwLock};
@@ -204,15 +206,24 @@ impl UnifiedSpendAuthority {
     }
 }
 impl ReadableWriteable<()> for UnifiedSpendAuthority {
-    type VersionSize = u8;
+    const VERSION: u8 = 1;
 
-    const VERSION: Self::VersionSize = 1;
-
-    fn read<R: std::io::Read>(reader: R, _input: ()) -> std::io::Result<Self> {
+    fn read<R: Read>(mut reader: R, _input: ()) -> io::Result<Self> {
+        let _version = Self::get_version(&mut reader)?;
+        let mut orchard_key_bytes = [0; 32];
+        reader.read_exact(&mut orchard_key_bytes)?;
+        let orchard_key: orchard::keys::SpendingKey =
+            Option::from(orchard::keys::SpendingKey::from_bytes(orchard_key_bytes)).ok_or(
+                io::Error::new(io::ErrorKind::InvalidData, "Invalid orchard spending key"),
+            )?;
+        let sapling_key = zcash_primitives::zip32::ExtendedSpendingKey::read(&mut reader)?;
+        let transparent_key = super::extended_transparent::ExtendedPrivKey::read(&mut reader, ())?;
         todo!()
     }
 
-    fn write<W: std::io::Write>(&self, writer: W) -> std::io::Result<()> {
+    fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+        writer.write_u8(Self::VERSION)?;
+        writer.write(self.orchard_key.to_bytes())?;
         todo!()
     }
 }

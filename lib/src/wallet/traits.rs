@@ -1082,17 +1082,25 @@ impl<P: Parameters> SpendableNote<P, OrchardDomain> for SpendableOrchardNote {
 }
 
 pub trait ReadableWriteable<Input>: Sized {
-    type VersionSize;
-    const VERSION: Self::VersionSize;
+    const VERSION: u8;
 
     fn read<R: Read>(reader: R, input: Input) -> io::Result<Self>;
     fn write<W: Write>(&self, writer: W) -> io::Result<()>;
+    fn get_version<R: Read>(mut reader: R) -> io::Result<u8> {
+        let version = reader.read_u8()?;
+        if version > Self::VERSION {
+            Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Wallet file is from future version of zingo",
+            ))
+        } else {
+            Ok(version)
+        }
+    }
 }
 
 impl ReadableWriteable<()> for SaplingExtendedFullViewingKey {
-    type VersionSize = ();
-
-    const VERSION: Self::VersionSize = (); //Not applicable
+    const VERSION: u8 = 0; //Not applicable
 
     fn read<R: Read>(reader: R, _: ()) -> io::Result<Self> {
         Self::read(reader)
@@ -1104,9 +1112,7 @@ impl ReadableWriteable<()> for SaplingExtendedFullViewingKey {
 }
 
 impl ReadableWriteable<()> for OrchardFullViewingKey {
-    type VersionSize = ();
-
-    const VERSION: Self::VersionSize = (); //Not applicable
+    const VERSION: u8 = 0; //Not applicable
 
     fn read<R: Read>(reader: R, _: ()) -> io::Result<Self> {
         Self::read(reader)
@@ -1118,14 +1124,13 @@ impl ReadableWriteable<()> for OrchardFullViewingKey {
 }
 
 impl ReadableWriteable<(SaplingExtendedFullViewingKey, SaplingDiversifier)> for SaplingNote {
-    type VersionSize = ();
-
-    const VERSION: Self::VersionSize = ();
+    const VERSION: u8 = 1;
 
     fn read<R: Read>(
         mut reader: R,
         (extfvk, diversifier): (SaplingExtendedFullViewingKey, SaplingDiversifier),
     ) -> io::Result<Self> {
+        let _version = Self::get_version(&mut reader)?;
         let value = reader.read_u64::<LittleEndian>()?;
         let rseed = super::data::read_sapling_rseed(&mut reader)?;
 
@@ -1146,6 +1151,7 @@ impl ReadableWriteable<(SaplingExtendedFullViewingKey, SaplingDiversifier)> for 
     }
 
     fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+        writer.write_u8(Self::VERSION)?;
         writer.write_u64::<LittleEndian>(self.value)?;
         super::data::write_sapling_rseed(&mut writer, &self.rseed)?;
         Ok(())
@@ -1153,14 +1159,13 @@ impl ReadableWriteable<(SaplingExtendedFullViewingKey, SaplingDiversifier)> for 
 }
 
 impl ReadableWriteable<(OrchardFullViewingKey, OrchardDiversifier)> for OrchardNote {
-    type VersionSize = ();
-
-    const VERSION: Self::VersionSize = ();
+    const VERSION: u8 = 1;
 
     fn read<R: Read>(
         mut reader: R,
         (fvk, diversifier): (OrchardFullViewingKey, OrchardDiversifier),
     ) -> io::Result<Self> {
+        let _version = Self::get_version(&mut reader)?;
         let value = reader.read_u64::<LittleEndian>()?;
         let mut nullifier_bytes = [0; 32];
         reader.read_exact(&mut nullifier_bytes)?;
@@ -1188,6 +1193,7 @@ impl ReadableWriteable<(OrchardFullViewingKey, OrchardDiversifier)> for OrchardN
     }
 
     fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+        writer.write_u8(Self::VERSION)?;
         writer.write_u64::<LittleEndian>(self.value().inner())?;
         writer.write_all(&self.rho().to_bytes())?;
         writer.write_all(self.random_seed().as_bytes())?;
@@ -1199,19 +1205,11 @@ impl<T> ReadableWriteable<()> for T
 where
     T: NoteAndMetadata,
 {
-    type VersionSize = u64; //I don't know why this is so big, but it changing it would break reading
-                            //of old versios
-
-    const VERSION: Self::VersionSize = 20;
+    const VERSION: u8 = 1;
 
     fn read<R: Read>(mut reader: R, _: ()) -> io::Result<Self> {
-        let version = reader.read_u64::<LittleEndian>()?;
+        let _version = Self::get_version(&mut reader)?;
 
-        let _account = if version <= 5 {
-            reader.read_u64::<LittleEndian>()?
-        } else {
-            0
-        };
         let fvk = <T::Fvk as ReadableWriteable<()>>::read(&mut reader, ())?;
 
         let mut diversifier_bytes = [0u8; 11];
@@ -1222,11 +1220,7 @@ where
             <T::Note as ReadableWriteable<_>>::read(&mut reader, (fvk.clone(), diversifier))?;
 
         let witnesses_vec = Vector::read(&mut reader, |r| IncrementalWitness::<T::Node>::read(r))?;
-        let top_height = if version < 20 {
-            0
-        } else {
-            reader.read_u64::<LittleEndian>()?
-        };
+        let top_height = reader.read_u64::<LittleEndian>()?;
         let witnesses = WitnessCache::new(witnesses_vec, top_height);
 
         let mut nullifier = [0u8; 32];
@@ -1236,36 +1230,14 @@ where
         // Note that this is only the spent field, we ignore the unconfirmed_spent field.
         // The reason is that unconfirmed spents are only in memory, and we need to get the actual value of spent
         // from the blockchain anyway.
-        let spent = if version <= 5 {
-            let spent = Optional::read(&mut reader, |r| {
-                let mut transaction_id_bytes = [0u8; 32];
-                r.read_exact(&mut transaction_id_bytes)?;
-                Ok(TxId::from_bytes(transaction_id_bytes))
-            })?;
+        let spent = Optional::read(&mut reader, |r| {
+            let mut transaction_id_bytes = [0u8; 32];
+            r.read_exact(&mut transaction_id_bytes)?;
+            let height = r.read_u32::<LittleEndian>()?;
+            Ok((TxId::from_bytes(transaction_id_bytes), height))
+        })?;
 
-            let spent_at_height = if version >= 2 {
-                Optional::read(&mut reader, |r| r.read_i32::<LittleEndian>())?
-            } else {
-                None
-            };
-
-            if spent.is_some() && spent_at_height.is_some() {
-                Some((spent.unwrap(), spent_at_height.unwrap() as u32))
-            } else {
-                None
-            }
-        } else {
-            Optional::read(&mut reader, |r| {
-                let mut transaction_id_bytes = [0u8; 32];
-                r.read_exact(&mut transaction_id_bytes)?;
-                let height = r.read_u32::<LittleEndian>()?;
-                Ok((TxId::from_bytes(transaction_id_bytes), height))
-            })?
-        };
-
-        let unconfirmed_spent = if version <= 4 {
-            None
-        } else {
+        let unconfirmed_spent = {
             Optional::read(&mut reader, |r| {
                 let mut transaction_bytes = [0u8; 32];
                 r.read_exact(&mut transaction_bytes)?;
@@ -1294,11 +1266,7 @@ where
 
         let is_change: bool = reader.read_u8()? > 0;
 
-        let have_spending_key = if version <= 2 {
-            true // Will get populated in the lightwallet::read() method, for now assume true
-        } else {
-            reader.read_u8()? > 0
-        };
+        let have_spending_key = reader.read_u8()? > 0;
 
         Ok(T::from_parts(
             fvk,
@@ -1316,7 +1284,7 @@ where
 
     fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         // Write a version number first, so we can later upgrade this if needed.
-        writer.write_u64::<LittleEndian>(Self::VERSION)?;
+        writer.write_u8(Self::VERSION)?;
 
         self.fvk().write(&mut writer)?;
 
