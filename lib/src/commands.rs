@@ -1314,7 +1314,7 @@ impl Command for HeightCommand {
         RT.block_on(async move {
             format!(
                 "{}",
-                object! { "height" => lightclient.wallet.last_scanned_height().await}.pretty(2)
+                object! { "height" => lightclient.do_wallet_last_scanned_height().await}.pretty(2)
             )
         })
     }

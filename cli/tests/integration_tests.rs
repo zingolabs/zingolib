@@ -4,8 +4,8 @@ use std::time::Duration;
 mod data;
 mod setup;
 use setup::two_clients_a_coinbase_backed;
+use tokio::runtime::Runtime;
 use tokio::time::sleep;
-
 #[test]
 fn basic_connectivity_scenario_canary() {
     let _ = setup::coinbasebacked_spendcapable();
@@ -13,14 +13,13 @@ fn basic_connectivity_scenario_canary() {
 
 #[test]
 fn create_network_disconnected_client() {
-    let (_regtest_manager_1, _child_process_handler_1, _client_1, _runtime) =
+    let (_regtest_manager_1, _child_process_handler_1, _client_1) =
         setup::coinbasebacked_spendcapable();
 }
 
 #[test]
 fn zcashd_sapling_commitment_tree() {
-    let (regtest_manager, _child_process_handler, _client, _runtime) =
-        setup::coinbasebacked_spendcapable();
+    let (regtest_manager, _child_process_handler, _client) = setup::coinbasebacked_spendcapable();
     let trees = regtest_manager
         .get_cli_handle()
         .args(["z_gettreestate", "1"])
@@ -80,10 +79,9 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
 
 #[test]
 fn mine_sapling_to_self() {
-    let (_regtest_manager, _child_process_handler, client, runtime) =
-        setup::coinbasebacked_spendcapable();
+    let (_regtest_manager, _child_process_handler, client) = setup::coinbasebacked_spendcapable();
 
-    runtime.block_on(async {
+    Runtime::new().unwrap().block_on(async {
         sleep(Duration::from_secs(2)).await;
         client.do_sync(true).await.unwrap();
 
@@ -94,9 +92,8 @@ fn mine_sapling_to_self() {
 
 #[test]
 fn send_mined_sapling_to_orchard() {
-    let (regtest_manager, _child_process_handler, client, runtime) =
-        setup::coinbasebacked_spendcapable();
-    runtime.block_on(async {
+    let (regtest_manager, _child_process_handler, client) = setup::coinbasebacked_spendcapable();
+    Runtime::new().unwrap().block_on(async {
         sleep(Duration::from_secs(2)).await;
         client.do_sync(true).await.unwrap();
 
@@ -118,27 +115,35 @@ fn send_mined_sapling_to_orchard() {
         assert_eq!(balance["verified_orchard_balance"], 5000);
     });
 }
-async fn check_client_blockchain_height_belief(
-    client: &zingolib::lightclient::LightClient,
-    n: u64,
-) {
-    assert_eq!(
-        u64::from(client.do_wallet_last_scanned_height().await),
-        n.to_string()
-    );
+use zingo_cli::regtest::RegtestManager;
+use zingolib::lightclient::LightClient;
+async fn set_wallet_chainheight(manager: &RegtestManager, client: &LightClient, n: u32) {
+    manager
+        .generate_n_blocks(n)
+        .expect("Called for side effect, failed!");
+    while check_wallet_chainheight_value(&client, n).await {}
+}
+async fn check_wallet_chainheight_value(client: &LightClient, n: u32) -> bool {
+    client
+        .do_wallet_last_scanned_height()
+        .await
+        .as_u32()
+        .unwrap()
+        == n
 }
 /// This implements similar behavior to 'two_clients_a_coinbase_backed', but with the
 /// advantage of starting client_b on a different server, thus testing the ability
 /// to change servers after boot
 #[test]
 fn note_selection_order() {
-    let (regtest_manager, client_1, client_2, child_process_handler, _) =
+    let (regtest_manager, client_1, client_2, child_process_handler) =
         two_clients_a_coinbase_backed();
 
-    tokio::runtime::Runtime::new().unwrap().block_on(async {
-        check_client_blockchain_height_belief(&client_1, 0).await;
+    Runtime::new().unwrap().block_on(async {
+        //check_client_blockchain_height_belief(&client_1, 0).await;
+        sleep(Duration::from_secs(2)).await;
         client_1.do_sync(true).await.unwrap();
-        check_client_blockchain_height_belief(&client_1, 6).await;
+        //check_wallet_chainheight_value(&client_1, 6).await;
         client_2.set_server(client_1.get_server().clone());
         let address_of_2 = client_2.do_address().await["sapling_addresses"][0].clone();
         for n in 1..=5 {
@@ -152,7 +157,7 @@ fn note_selection_order() {
                 .unwrap();
         }
         client_2.do_rescan().await.unwrap();
-        regtest_manager_1.generate_n_blocks(5).unwrap();
+        regtest_manager.generate_n_blocks(5).unwrap();
         sleep(Duration::from_secs(2)).await;
         client_2.do_sync(true).await.unwrap();
         let address_of_1 = client_1.do_address().await["sapling_addresses"][0].clone();
@@ -183,9 +188,9 @@ fn note_selection_order() {
 
 #[test]
 fn send_orchard_back_and_forth() {
-    let (regtest_manager, client_a, client_b, child_process_handler, runtime) =
+    let (regtest_manager, client_a, client_b, child_process_handler) =
         two_clients_a_coinbase_backed();
-    runtime.block_on(async {
+    Runtime::new().unwrap().block_on(async {
         sleep(Duration::from_secs(2)).await;
         client_a.do_sync(true).await.unwrap();
 
