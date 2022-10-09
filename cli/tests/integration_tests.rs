@@ -8,7 +8,7 @@ use tokio::runtime::Runtime;
 use tokio::time::sleep;
 #[test]
 fn basic_connectivity_scenario_canary() {
-    let _ = setup::coinbasebacked_spendcapable();
+    let (_, _child_process_handler_to_drop, _) = setup::coinbasebacked_spendcapable();
 }
 
 #[test]
@@ -107,29 +107,35 @@ fn send_mined_sapling_to_orchard() {
             .await
             .unwrap();
 
-        regtest_manager.generate_n_blocks(2).unwrap();
-        sleep(Duration::from_secs(2)).await;
-
-        client.do_sync(true).await.unwrap();
+        increase_wallet_height(&regtest_manager, &client, 2).await;
         let balance = client.do_balance().await;
         assert_eq!(balance["verified_orchard_balance"], 5000);
     });
 }
 use zingo_cli::regtest::RegtestManager;
 use zingolib::lightclient::LightClient;
-async fn set_wallet_chainheight(manager: &RegtestManager, client: &LightClient, n: u32) {
+async fn increase_wallet_height(manager: &RegtestManager, client: &LightClient, n: u32) {
+    let start_height = client
+        .do_wallet_last_scanned_height()
+        .await
+        .as_u32()
+        .unwrap();
+    let target = start_height + n;
     manager
         .generate_n_blocks(n)
         .expect("Called for side effect, failed!");
-    while check_wallet_chainheight_value(&client, n).await {}
+    while check_wallet_chainheight_value(&client, target).await {
+        sleep(Duration::from_millis(50)).await;
+    }
 }
-async fn check_wallet_chainheight_value(client: &LightClient, n: u32) -> bool {
+async fn check_wallet_chainheight_value(client: &LightClient, target: u32) -> bool {
+    client.do_sync(true).await.unwrap();
     client
         .do_wallet_last_scanned_height()
         .await
         .as_u32()
         .unwrap()
-        == n
+        != target
 }
 /// This implements similar behavior to 'two_clients_a_coinbase_backed', but with the
 /// advantage of starting client_b on a different server, thus testing the ability
@@ -157,9 +163,7 @@ fn note_selection_order() {
                 .unwrap();
         }
         client_2.do_rescan().await.unwrap();
-        regtest_manager.generate_n_blocks(5).unwrap();
-        sleep(Duration::from_secs(2)).await;
-        client_2.do_sync(true).await.unwrap();
+        increase_wallet_height(&regtest_manager, &client_2, 5).await;
         let address_of_1 = client_1.do_address().await["sapling_addresses"][0].clone();
         client_2
             .do_send(vec![(
