@@ -1,7 +1,6 @@
 use crate::data;
 use std::path::PathBuf;
 
-use tokio::runtime::Runtime;
 use zingo_cli::regtest::{ChildProcessHandler, RegtestManager};
 use zingolib::{create_zingoconf_with_datadir, lightclient::LightClient};
 
@@ -106,8 +105,7 @@ fn create_maybe_funded_regtest_manager(
 /// The general scenario framework requires instances of zingo-cli, lightwalletd, and zcashd (in regtest mode).
 /// This setup is intended to produce the most basic of scenarios.  As scenarios with even less requirements
 /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
-pub fn coinbasebacked_spendcapable() -> (RegtestManager, ChildProcessHandler, LightClient, Runtime)
-{
+pub fn coinbasebacked_spendcapable() -> (RegtestManager, ChildProcessHandler, LightClient) {
     //tracing_subscriber::fmt::init();
     //let coinbase_spendkey =
     //  zcash_primitives::zip32::ExtendedSpendingKey::master(&OsRng.gen::<[u8; 32]>());
@@ -136,12 +134,7 @@ pub fn coinbasebacked_spendcapable() -> (RegtestManager, ChildProcessHandler, Li
     let light_client =
         LightClient::create_with_capable_wallet(seed_phrase, &config, 0, false).unwrap();
     regtest_manager.generate_n_blocks(5).unwrap();
-    (
-        regtest_manager,
-        child_process_handler,
-        light_client,
-        Runtime::new().unwrap(),
-    )
+    (regtest_manager, child_process_handler, light_client)
 }
 /// This creates two so-called "LightClient"s "client_a" controls a spend authority
 /// that has furnished a receiving address in the mineraddress configuration field
@@ -151,9 +144,8 @@ pub fn two_clients_a_coinbase_backed() -> (
     LightClient,
     LightClient,
     ChildProcessHandler,
-    Runtime,
 ) {
-    let (regtest_manager, child_process_handler, client_a, runtime) = coinbasebacked_spendcapable();
+    let (regtest_manager, child_process_handler, client_a) = coinbasebacked_spendcapable();
     let client_b_zingoconf_path = format!(
         "{}_b",
         regtest_manager.zingo_data_dir.to_string_lossy().to_string()
@@ -163,13 +155,7 @@ pub fn two_clients_a_coinbase_backed() -> (
         create_zingoconf_with_datadir(client_a.get_server_uri(), Some(client_b_zingoconf_path))
             .unwrap();
     let client_b = LightClient::new(&client_b_config, 0).unwrap();
-    (
-        regtest_manager,
-        client_a,
-        client_b,
-        child_process_handler,
-        runtime,
-    )
+    (regtest_manager, client_a, client_b, child_process_handler)
 }
 
 pub fn basic_no_spendable() -> (RegtestManager, ChildProcessHandler, LightClient) {
