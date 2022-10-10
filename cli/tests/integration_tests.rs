@@ -2,24 +2,25 @@
 use std::time::Duration;
 
 mod data;
-mod setup;
-use setup::two_clients_a_coinbase_backed;
+mod utils;
 use tokio::runtime::Runtime;
 use tokio::time::sleep;
+use utils::setup::{
+    basic_no_spendable, coinbasebacked_spendcapable, two_clients_a_coinbase_backed,
+};
 #[test]
 fn basic_connectivity_scenario_canary() {
-    let (_, _child_process_handler_to_drop, _) = setup::coinbasebacked_spendcapable();
+    let (_, _child_process_handler_to_drop, _) = coinbasebacked_spendcapable();
 }
 
 #[test]
 fn create_network_disconnected_client() {
-    let (_regtest_manager_1, _child_process_handler_1, _client_1) =
-        setup::coinbasebacked_spendcapable();
+    let (_regtest_manager_1, _child_process_handler_1, _client_1) = coinbasebacked_spendcapable();
 }
 
 #[test]
 fn zcashd_sapling_commitment_tree() {
-    let (regtest_manager, _child_process_handler, _client) = setup::coinbasebacked_spendcapable();
+    let (regtest_manager, _child_process_handler, _client) = coinbasebacked_spendcapable();
     let trees = regtest_manager
         .get_cli_handle()
         .args(["z_gettreestate", "1"])
@@ -41,7 +42,7 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
         "2fd8e51a03d9bbe2dd809831b1497aeb68a6e37ddf707ced4aa2d8dff13529ae";
     let finalstates = "000000";
     // Setup
-    let (regtest_manager, _child_process_handler, _client) = setup::basic_no_spendable();
+    let (regtest_manager, _child_process_handler, _client) = basic_no_spendable();
     // Execution:
     let trees = regtest_manager
         .get_cli_handle()
@@ -79,7 +80,7 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
 
 #[test]
 fn mine_sapling_to_self() {
-    let (_regtest_manager, _child_process_handler, client) = setup::coinbasebacked_spendcapable();
+    let (_regtest_manager, _child_process_handler, client) = coinbasebacked_spendcapable();
 
     Runtime::new().unwrap().block_on(async {
         sleep(Duration::from_secs(2)).await;
@@ -92,7 +93,7 @@ fn mine_sapling_to_self() {
 
 #[test]
 fn send_mined_sapling_to_orchard() {
-    let (regtest_manager, _child_process_handler, client) = setup::coinbasebacked_spendcapable();
+    let (regtest_manager, _child_process_handler, client) = coinbasebacked_spendcapable();
     Runtime::new().unwrap().block_on(async {
         sleep(Duration::from_secs(2)).await;
         client.do_sync(true).await.unwrap();
@@ -107,35 +108,10 @@ fn send_mined_sapling_to_orchard() {
             .await
             .unwrap();
 
-        increase_height_and_sync_client(&regtest_manager, &client, 2).await;
+        utils::increase_height_and_sync_client(&regtest_manager, &client, 2).await;
         let balance = client.do_balance().await;
         assert_eq!(balance["verified_orchard_balance"], 5000);
     });
-}
-use zingo_cli::regtest::RegtestManager;
-use zingolib::lightclient::LightClient;
-async fn increase_height_and_sync_client(manager: &RegtestManager, client: &LightClient, n: u32) {
-    let start_height = client
-        .do_wallet_last_scanned_height()
-        .await
-        .as_u32()
-        .unwrap();
-    let target = start_height + n;
-    manager
-        .generate_n_blocks(n)
-        .expect("Called for side effect, failed!");
-    while check_wallet_chainheight_value(&client, target).await {
-        sleep(Duration::from_millis(50)).await;
-    }
-}
-async fn check_wallet_chainheight_value(client: &LightClient, target: u32) -> bool {
-    client.do_sync(true).await.unwrap();
-    client
-        .do_wallet_last_scanned_height()
-        .await
-        .as_u32()
-        .unwrap()
-        != target
 }
 /// This implements similar behavior to 'two_clients_a_coinbase_backed', but with the
 /// advantage of starting client_b on a different server, thus testing the ability
@@ -163,7 +139,7 @@ fn note_selection_order() {
                 .unwrap();
         }
         client_2.do_rescan().await.unwrap();
-        increase_height_and_sync_client(&regtest_manager, &client_2, 5).await;
+        utils::increase_height_and_sync_client(&regtest_manager, &client_2, 5).await;
         let address_of_1 = client_1.do_address().await["sapling_addresses"][0].clone();
         client_2
             .do_send(vec![(
