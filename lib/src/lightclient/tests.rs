@@ -9,7 +9,7 @@ use zcash_client_backend::encoding::{
     encode_extended_full_viewing_key, encode_extended_spending_key, encode_payment_address,
 };
 use zcash_note_encryption::EphemeralKeyBytes;
-use zcash_primitives::consensus::{BlockHeight, BranchId, TestNetwork};
+use zcash_primitives::consensus::{BlockHeight, BranchId, Parameters, TestNetwork};
 use zcash_primitives::memo::Memo;
 use zcash_primitives::merkle_tree::IncrementalWitness;
 use zcash_primitives::sapling::note_encryption::{sapling_note_encryption, SaplingDomain};
@@ -195,13 +195,8 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
         ..
     } = scenario;
     // 2. Send an incoming transaction to fill the wallet
-    let extfvk1 = lightclient
-        .wallet
-        .keys()
-        .read()
-        .await
-        .get_all_sapling_extfvks()[0]
-        .clone();
+    let extfvk1 =
+        ExtendedFullViewingKey::from(&*lightclient.wallet.unified_spend_auth().read().await);
     let value = 100_000;
     let (transaction, _height, _) =
         fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, value);
@@ -217,12 +212,17 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
     assert_eq!(b["spendable_sapling_balance"].as_u64().unwrap(), 0);
     assert_eq!(
         b["sapling_addresses"][0]["address"],
-        lightclient
-            .wallet
-            .keys()
-            .read()
-            .await
-            .get_all_sapling_addresses()[0]
+        encode_payment_address(
+            lightclient.config.chain.hrp_sapling_payment_address(),
+            lightclient
+                .wallet
+                .unified_spend_auth()
+                .read()
+                .await
+                .addresses()[0]
+                .sapling()
+                .unwrap()
+        ),
     );
     assert_eq!(
         b["sapling_addresses"][0]["sapling_balance"]
@@ -1791,14 +1791,13 @@ fn test_read_wallet_from_buffer() {
     let mut buf = Vec::new();
     let config = ZingoConfig::create_unconnected(Network::FakeMainnet, None);
     Runtime::new().unwrap().block_on(async {
-        let wallet = crate::wallet::LightWallet::new(config.clone(), None, 0, 7).unwrap();
+        let wallet = crate::wallet::LightWallet::new(config.clone(), None, 0).unwrap();
         wallet.write(&mut buf).await.unwrap();
     });
     let client = LightClient::read_from_buffer(&config, &buf[..]).unwrap();
     Runtime::new().unwrap().block_on(async {
-        use std::ops::Deref as _;
         let wallet = client.wallet;
-        assert_eq!(wallet.keys().read().await.deref().zkeys.len(), 7);
+        todo!("Make meaningfull assertions here")
     });
 }
 

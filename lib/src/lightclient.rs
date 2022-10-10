@@ -9,7 +9,7 @@ use crate::{
     grpc_connector::GrpcConnector,
     wallet::{
         data::{OrchardNoteAndMetadata, SaplingNoteAndMetadata, TransactionMetadata},
-        keys::Keys,
+        keys::{unified::ReceiverSelection, Keys},
         message::Message,
         now,
         traits::NoteAndMetadata,
@@ -122,7 +122,7 @@ impl LightClient {
             ));
         }
 
-        let l = LightClient::create_unconnected(config, seed_phrase, height, 1)
+        let l = LightClient::create_unconnected(config, seed_phrase, height)
             .expect("Unconnected client creation failed!");
         l.set_wallet_initial_state(height).await;
 
@@ -158,10 +158,9 @@ impl LightClient {
         config: &ZingoConfig,
         seed_phrase: Option<String>,
         height: u64,
-        num_zaddrs: u32,
     ) -> io::Result<Self> {
         Ok(LightClient {
-            wallet: LightWallet::new(config.clone(), seed_phrase, height, num_zaddrs)?,
+            wallet: LightWallet::new(config.clone(), seed_phrase, height)?,
             config: config.clone(),
             mempool_monitor: std::sync::RwLock::new(None),
             bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
@@ -345,9 +344,9 @@ impl LightClient {
         };
     }
 
-    fn new_wallet(config: &ZingoConfig, height: u64, num_zaddrs: u32) -> io::Result<Self> {
+    fn new_wallet(config: &ZingoConfig, height: u64) -> io::Result<Self> {
         Runtime::new().unwrap().block_on(async move {
-            let l = LightClient::create_unconnected(&config, None, height, num_zaddrs)?;
+            let l = LightClient::create_unconnected(&config, None, height)?;
             l.set_wallet_initial_state(height).await;
 
             info!("Created new wallet with a new seed!");
@@ -375,7 +374,7 @@ impl LightClient {
             }
         }
 
-        Self::new_wallet(config, latest_block, 1)
+        Self::new_wallet(config, latest_block)
     }
 
     /// The wallet this fn associates with the lightclient is specifically derived from
@@ -413,7 +412,7 @@ impl LightClient {
         } else {
             Runtime::new().unwrap().block_on(async move {
                 let lightclient = LightClient {
-                    wallet: LightWallet::new(config.clone(), Some(key_or_seedphrase), birthday, 1)?,
+                    wallet: LightWallet::new(config.clone(), Some(key_or_seedphrase), birthday)?,
                     config: config.clone(),
                     mempool_monitor: std::sync::RwLock::new(None),
                     sync_lock: Mutex::new(()),
@@ -509,41 +508,6 @@ impl LightClient {
     }
 
     pub async fn do_balance(&self) -> JsonValue {
-        // Collect z addresses
-        let mut sapling_addresses = vec![];
-        for sapling_address in self.wallet.keys().read().await.get_all_sapling_addresses() {
-            sapling_addresses.push(object! {
-                "address"                     => sapling_address.clone(),
-                "sapling_balance"             => self.wallet.maybe_verified_sapling_balance(Some(sapling_address.clone())).await,
-                "verified_sapling_balance"    => self.wallet.verified_sapling_balance(Some(sapling_address.clone())).await,
-                "spendable_sapling_balance"   => self.wallet.spendable_sapling_balance(Some(sapling_address.clone())).await,
-                "unverified_sapling_balance"  => self.wallet.unverified_sapling_balance(Some(sapling_address.clone())).await
-            });
-        }
-
-        let mut orchard_addresses = vec![];
-        for orchard_address in self.wallet.keys().read().await.get_all_orchard_addresses() {
-            orchard_addresses.push(object! {
-                "address"                     => orchard_address.clone(),
-                "orchard_balance"             => self.wallet.maybe_verified_orchard_balance(Some(orchard_address.clone())).await,
-                "verified_orchard_balance"    => self.wallet.verified_orchard_balance(Some(orchard_address.clone())).await,
-                "spendable_orchard_balance"   => self.wallet.spendable_orchard_balance(Some(orchard_address.clone())).await,
-                "unverified_orchard_balance"  => self.wallet.unverified_orchard_balance(Some(orchard_address.clone())).await
-            });
-        }
-
-        // Collect t addresses
-        let mut t_addresses = vec![];
-        for taddress in self.wallet.keys().read().await.get_all_taddrs() {
-            // Get the balance for this address
-            let balance = self.wallet.tbalance(Some(taddress.clone())).await;
-
-            t_addresses.push(object! {
-                "address"                     => taddress,
-                "balance"                     => balance,
-            });
-        }
-
         object! {
             "sapling_balance"                 => self.wallet.maybe_verified_sapling_balance(None).await,
             "verified_sapling_balance"        => self.wallet.verified_sapling_balance(None).await,
@@ -554,9 +518,6 @@ impl LightClient {
             "spendable_orchard_balance"       => self.wallet.spendable_orchard_balance(None).await,
             "unverified_orchard_balance"      => self.wallet.unverified_orchard_balance(None).await,
             "transparent_balance"             => self.wallet.tbalance(None).await,
-            "sapling_addresses"               => sapling_addresses,
-            "orchard_addresses"               => orchard_addresses,
-            "transparent_addresses"           => t_addresses,
         }
     }
 
@@ -708,7 +669,7 @@ impl LightClient {
         }
 
         Ok(object! {
-            "seed"     => self.wallet.keys().read().await.get_seed_phrase(),
+            "seed"     => self.wallet.mnemonic().to_string(),
             "birthday" => self.wallet.get_birthday().await
         })
     }
@@ -722,27 +683,16 @@ impl LightClient {
         let anchor_height = BlockHeight::from_u32(self.wallet.get_anchor_height().await);
 
         {
-            // First, collect all extfvk's that are spendable (i.e., we have the private key)
-            let spendable_sapling_addresses: HashSet<String> = self
-                .wallet
-                .keys()
-                .read()
-                .await
-                .get_all_spendable_zaddresses()
-                .into_iter()
-                .collect();
-
             // Collect Sapling notes
             self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
-                .flat_map( |(transaction_id, transaction_metadata)| {
-                    transaction_metadata.sapling_notes.iter().filter_map(|note_metadata|
-                        if !include_spent_notes && note_metadata.is_spent() {
+                .flat_map( |(transaction_id, wtx)| {
+                    wtx.sapling_notes.iter().filter_map(move |nd|
+                        if !all_notes && nd.spent.is_some() {
                             None
                         } else {
                             let address = LightWallet::note_address(&self.config.chain, note_metadata);
                             let spendable = address.is_some() &&
-                                                    spendable_sapling_addresses.contains(&address.clone().unwrap()) &&
-                                                    transaction_metadata.block_height <= anchor_height && !note_metadata.is_spent() && note_metadata.unconfirmed_spent.is_none();
+                                                    wtx.block_height <= anchor_height && nd.spent.is_none() && nd.unconfirmed_spent.is_none();
 
                             let created_block:u32 = transaction_metadata.block_height.into();
                             Some(object!{
@@ -1096,30 +1046,23 @@ impl LightClient {
             return Err("Wallet is locked".to_string());
         }
 
-        let new_address = {
-            let addr = match addr_type {
-                "z" => self.wallet.keys().write().await.add_zaddr(),
-                "t" => self.wallet.keys().write().await.add_taddr(),
-                "o" => self.wallet.keys().write().await.add_orchard_addr(),
-                _ => {
-                    let e = format!("Unrecognized address type: {}", addr_type);
-                    error!("{}", e);
-                    return Err(e);
-                }
-            };
-
-            if addr.starts_with("Error") {
-                let e = format!("Error creating new address: {}", addr);
-                error!("{}", e);
-                return Err(e);
-            }
-
-            addr
+        //TODO: Placeholder interface
+        let desired_receivers = ReceiverSelection {
+            sapling: addr_type.contains('z'),
+            orchard: addr_type.contains('o'),
+            transparent: addr_type.contains('t'),
         };
+
+        let new_address = self
+            .wallet
+            .unified_spend_auth()
+            .write()
+            .await
+            .new_address(desired_receivers)?;
 
         self.do_save().await?;
 
-        Ok(array![new_address])
+        Ok(array![new_address.encode(&self.config.chain)])
     }
 
     pub async fn clear_state(&self) {
