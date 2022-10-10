@@ -192,19 +192,23 @@ fn note_selection_order() {
 
 #[test]
 fn send_orchard_back_and_forth() {
-    //! Setup and send from client_a to client_b orchard address.
     let (regtest_manager, client_a, client_b, child_process_handler) =
         two_clients_a_coinbase_backed();
     Runtime::new().unwrap().block_on(async {
-        increase_height_and_sync_client(&regtest_manager, &client_a, 0).await;
+        sleep(Duration::from_secs(2)).await;
+        client_a.do_sync(true).await.unwrap();
+
+        // do_new_address returns a single element json array for some reason
         let ua_of_b = client_b.do_new_address("o").await.unwrap()[0].to_string();
         client_a
             .do_send(vec![(&ua_of_b, 10_000, Some("Orcharding".to_string()))])
             .await
             .unwrap();
 
-        increase_height_and_sync_client(&regtest_manager, &client_b, 3).await;
-        increase_height_and_sync_client(&regtest_manager, &client_a, 0).await;
+        regtest_manager.generate_n_blocks(3).unwrap();
+        sleep(Duration::from_secs(2)).await;
+        client_b.do_sync(true).await.unwrap();
+        client_a.do_sync(true).await.unwrap();
 
         // We still need to implement sending change to orchard, in librustzcash
         // Even when we do, we'll probably send change to sapling with no
@@ -218,8 +222,10 @@ fn send_orchard_back_and_forth() {
             .await
             .unwrap();
 
-        increase_height_and_sync_client(&regtest_manager, &client_a, 3).await;
-        increase_height_and_sync_client(&regtest_manager, &client_b, 0).await;
+        regtest_manager.generate_n_blocks(3).unwrap();
+        sleep(Duration::from_secs(2)).await;
+        client_a.do_sync(true).await.unwrap();
+        client_b.do_sync(true).await.unwrap();
 
         assert_eq!(client_a.do_balance().await["orchard_balance"], 5_000);
         assert_eq!(client_b.do_balance().await["sapling_balance"], 4_000);
