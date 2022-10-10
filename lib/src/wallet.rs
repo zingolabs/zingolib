@@ -5,12 +5,15 @@ use crate::compact_formats::TreeState;
 use crate::wallet::data::TransactionMetadata;
 use crate::wallet::keys::transparent::TransparentKey;
 use crate::wallet::{data::SpendableSaplingNote, keys::sapling::SaplingKey};
+use bip0039::Mnemonic;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::Future;
 use log::{error, info, warn};
 use orchard::keys::SpendingKey as OrchardSpendingKey;
 use orchard::note_encryption::OrchardDomain;
 use orchard::Anchor;
+use rand::rngs::OsRng;
+use rand::Rng;
 use std::{
     cmp,
     collections::HashMap,
@@ -168,6 +171,9 @@ pub struct LightWallet {
     // will start from here.
     birthday: AtomicU64,
 
+    /// The seed for the wallet, stored as a bip0039 Mnemonic
+    mnemonic: Mnemonic,
+
     // The last 100 blocks, used if something gets re-orged
     pub(super) blocks: Arc<RwLock<Vec<BlockData>>>,
 
@@ -197,13 +203,22 @@ impl LightWallet {
         return 25;
     }
 
-    pub fn new(
-        config: ZingoConfig,
-        seed_phrase: Option<String>,
-        height: u64,
-        num_zaddrs: u32,
-    ) -> io::Result<Self> {
-        let key = UnifiedSpendAuthority::new_from_phrase(&config, seed_phrase, 0)
+    pub fn new(config: ZingoConfig, seed_phrase: Option<String>, height: u64) -> io::Result<Self> {
+        let mnemonic = if seed_phrase.is_none() {
+            let mut seed_bytes = [0u8; 32];
+            // Create a random seed.
+            let mut system_rng = OsRng;
+            system_rng.fill(&mut seed_bytes);
+            Mnemonic::from_entropy(seed_bytes)
+        } else {
+            Mnemonic::from_phrase(seed_phrase.unwrap().as_str())
+        }
+        .map_err(|e| {
+            let e = format!("Error parsing phrase: {}", e);
+            //error!("{}", e);
+            Error::new(ErrorKind::InvalidData, e)
+        })?;
+        let key = UnifiedSpendAuthority::new_from_phrase(&config, &mnemonic, 0)
             .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
         let transaction_metadata_set = Arc::new(RwLock::new(TransactionMetadataSet::new()));
         let transaction_context = TransactionContext::new(
@@ -213,6 +228,7 @@ impl LightWallet {
         );
         Ok(Self {
             blocks: Arc::new(RwLock::new(vec![])),
+            mnemonic,
             wallet_options: Arc::new(RwLock::new(WalletOptions::default())),
             birthday: AtomicU64::new(height),
             verified_tree: Arc::new(RwLock::new(None)),
@@ -333,8 +349,14 @@ impl LightWallet {
             Vec::new()
         };
 
+        //TODO: Rework read/write interface, given the opportunity to make breaking changes
+        let seed_bytes = Vector::read(&mut reader, |r| r.read_u8())?;
+        let mnemonic = Mnemonic::from_entropy(seed_bytes)
+            .map_err(|e| Error::new(ErrorKind::InvalidData, e.to_string()))?;
+
         let mut lw = Self {
             blocks: Arc::new(RwLock::new(blocks)),
+            mnemonic,
             wallet_options: Arc::new(RwLock::new(wallet_options)),
             birthday: AtomicU64::new(birthday),
             verified_tree: Arc::new(RwLock::new(verified_tree)),
@@ -414,7 +436,17 @@ impl LightWallet {
             },
         )?;
 
+        Vector::write(
+            &mut writer,
+            &self.mnemonic.clone().into_entropy(),
+            |w, byte| w.write_u8(*byte),
+        )?;
+
         Ok(())
+    }
+
+    pub fn mnemonic(&self) -> &Mnemonic {
+        &self.mnemonic
     }
 
     // Before version 20, witnesses didn't store their height, so we need to update them.
@@ -433,10 +465,10 @@ impl LightWallet {
             });
     }
 
-    /*  pub fn keys(&self) -> Arc<RwLock<Keys>> {
+    pub fn keys(&self) -> Arc<RwLock<Keys>> {
         todo!("Remove this")
         // compile_error!("Haven't gotten around to removing this yet")
-    }*/
+    }
 
     pub fn unified_spend_auth(&self) -> Arc<RwLock<UnifiedSpendAuthority>> {
         self.transaction_context.key.clone()
@@ -1569,6 +1601,7 @@ mod test {
             clean_shutdown, mine_numblocks_each_with_two_sap_txs, mine_pending_blocks,
             NBlockFCBLScenario,
         },
+        wallet::keys::address_from_pubkeyhash,
     };
 
     mod bench_select_notes_and_utxos {
@@ -1797,7 +1830,11 @@ mod test {
         let tvalue = 100_000;
 
         let mut fake_transaction = FakeTransaction::new(true);
-        fake_transaction.add_t_output(&pk, taddr.clone(), tvalue);
+        fake_transaction.add_t_output(
+            &pk,
+            address_from_pubkeyhash(&lightclient.config, Some(taddr.clone())).unwrap(),
+            tvalue,
+        );
         let (_ttransaction, _) = fake_compactblock_list.add_fake_transaction(fake_transaction);
         mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 

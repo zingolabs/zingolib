@@ -39,9 +39,9 @@ pub struct UnifiedSpendAuthority {
 #[derive(Debug, Clone, Copy)]
 #[non_exhaustive]
 pub struct ReceiverSelection {
-    orchard: bool,
-    sapling: bool,
-    transparent: bool,
+    pub orchard: bool,
+    pub sapling: bool,
+    pub transparent: bool,
 }
 
 impl ReadableWriteable<()> for ReceiverSelection {
@@ -203,30 +203,12 @@ impl UnifiedSpendAuthority {
 
     pub fn new_from_phrase(
         config: &ZingoConfig,
-        seed_phrase: Option<String>,
+        seed_phrase: &Mnemonic,
         position: u32,
     ) -> Result<Self, String> {
-        let mut seed_bytes = [0u8; 32];
-        if seed_phrase.is_none() {
-            // Create a random seed.
-            let mut system_rng = OsRng;
-            system_rng.fill(&mut seed_bytes);
-        } else {
-            let phrase = match Mnemonic::from_phrase(seed_phrase.unwrap().as_str()) {
-                Ok(p) => p,
-                Err(e) => {
-                    let e = format!("Error parsing phrase: {}", e);
-                    //error!("{}", e);
-                    return Err(e);
-                }
-            };
-
-            seed_bytes.copy_from_slice(&phrase.entropy());
-        }
-
         // The seed bytes is the raw entropy. To pass it to HD wallet generation,
         // we need to get the 64 byte bip39 entropy
-        let bip39_seed = Mnemonic::from_entropy(seed_bytes).unwrap().to_seed("");
+        let bip39_seed = seed_phrase.to_seed("");
         Ok(Self::new_from_seed(config, &bip39_seed, position))
     }
 
