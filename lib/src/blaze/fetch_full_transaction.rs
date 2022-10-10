@@ -1,9 +1,9 @@
 use crate::wallet::{
     data::OutgoingTxMetadata,
-    keys::{address_from_pubkeyhash, unified::UnifiedSpendAuthority, Keys, ToBase58Check},
+    keys::{address_from_pubkeyhash, unified::UnifiedSpendAuthority, ToBase58Check},
     traits::{
         self as zingo_traits, Bundle as _, DomainWalletExt, NoteAndMetadata as _, Nullifier as _,
-        Recipient as _, ShieldedOutputExt as _, Spend as _, ToBytes as _, WalletKey as _,
+        Recipient as _, ShieldedOutputExt as _, Spend as _, ToBytes as _,
     },
     transactions::TransactionMetadataSet,
 };

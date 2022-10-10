@@ -3,8 +3,8 @@
 use crate::blaze::fetch_full_transaction::TransactionContext;
 use crate::compact_formats::TreeState;
 use crate::wallet::data::TransactionMetadata;
-use crate::wallet::keys::transparent::TransparentKey;
-use crate::wallet::{data::SpendableSaplingNote, keys::sapling::SaplingKey};
+
+use crate::wallet::data::SpendableSaplingNote;
 use bip0039::Mnemonic;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::Future;
@@ -22,12 +22,7 @@ use std::{
     time::SystemTime,
 };
 use tokio::sync::RwLock;
-use zcash_client_backend::{
-    address,
-    encoding::{
-        decode_extended_full_viewing_key, decode_extended_spending_key, encode_payment_address,
-    },
-};
+use zcash_client_backend::address;
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
 use zcash_primitives::memo::MemoBytes;
@@ -50,7 +45,7 @@ use self::keys::unified::UnifiedSpendAuthority;
 use self::traits::{DomainWalletExt, NoteAndMetadata, SpendableNote};
 use self::{
     data::{BlockData, OrchardNoteAndMetadata, SaplingNoteAndMetadata, Utxo, WalletZecPriceInfo},
-    keys::{orchard::OrchardKey, Keys},
+    keys::Keys,
     message::Message,
     transactions::TransactionMetadataSet,
 };
@@ -272,7 +267,7 @@ impl LightWallet {
             blocks = blocks.into_iter().rev().collect();
         }
 
-        let mut transactions = if external_version <= 14 {
+        let transactions = if external_version <= 14 {
             TransactionMetadataSet::read_old(&mut reader)
         } else {
             TransactionMetadataSet::read(&mut reader)
@@ -558,7 +553,7 @@ impl LightWallet {
                 unlocked: false,
                 ..
             } => false,
-            otherwise => true,
+            _otherwise => true,
         }
     }
 
@@ -589,6 +584,8 @@ impl LightWallet {
             ))
     }
 
+    // This function will likely be used if/when we reimplement key import
+    #[allow(dead_code)]
     fn adjust_wallet_birthday(&self, new_birthday: u64) {
         let mut wallet_birthday = self.birthday.load(std::sync::atomic::Ordering::SeqCst);
         if new_birthday < wallet_birthday {
@@ -1564,6 +1561,9 @@ impl LightWallet {
             .remove_encryption(passwd)
     }
 }
+
+//This function will likely be used again if/when we re-implement key import
+#[allow(dead_code)]
 fn decode_orchard_spending_key(
     expected_hrp: &str,
     s: &str,

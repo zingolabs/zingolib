@@ -1,14 +1,12 @@
 use std::{
     collections::{HashMap, HashSet},
     io::{self, Read, Write},
-    sync::Arc,
 };
 
 use bip0039::Mnemonic;
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use orchard::keys::Scope;
-use rand::{rngs::OsRng, Rng};
-use tokio::sync::{Mutex, RwLock};
+
 use zcash_client_backend::address::UnifiedAddress;
 use zcash_encoding::Vector;
 use zcash_primitives::{legacy::TransparentAddress, zip32::DiversifierIndex};
@@ -140,6 +138,7 @@ impl UnifiedSpendAuthority {
         let ua = UnifiedAddress::from_receivers(
             orchard_receiver,
             sapling_reciever,
+            #[allow(deprecated)]
             transparent_receiver
                 .as_ref()
                 // This is deprecated. Not sure what the alternative is,
@@ -233,16 +232,16 @@ impl UnifiedSpendAuthority {
             .collect()
     }
 
-    pub fn encrypt(&mut self, passwd: String) -> std::io::Result<()> {
+    pub fn encrypt(&mut self, _passwd: String) -> std::io::Result<()> {
         todo!()
     }
     pub fn lock(&mut self) -> std::io::Result<()> {
         todo!()
     }
-    pub fn unlock(&mut self, passwd: String) -> std::io::Result<()> {
+    pub fn unlock(&mut self, _passwd: String) -> std::io::Result<()> {
         todo!()
     }
-    pub fn remove_encryption(&mut self, passwd: String) -> std::io::Result<()> {
+    pub fn remove_encryption(&mut self, _passwd: String) -> std::io::Result<()> {
         todo!()
     }
 }
