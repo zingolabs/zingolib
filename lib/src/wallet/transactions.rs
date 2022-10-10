@@ -432,12 +432,12 @@ impl TransactionMetadataSet {
             .for_each(|(_, transaction_metadata)| {
                 D::to_notes_vec_mut(transaction_metadata)
                     .iter_mut()
-                    .filter(|n| {
-                        !n.witnesses().is_empty()
-                            && n.spent().is_some()
-                            && n.spent().unwrap().1 < cutoff
+                    .filter(|note_data| {
+                        !note_data.witnesses().is_empty()
+                            && note_data.is_spent()
+                            && note_data.spent().unwrap().1 < cutoff
                     })
-                    .for_each(|n| n.witnesses_mut().clear());
+                    .for_each(|note_data| note_data.witnesses_mut().clear());
             });
     }
 
