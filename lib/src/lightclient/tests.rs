@@ -5,9 +5,7 @@ use rand::rngs::OsRng;
 use tokio::runtime::Runtime;
 use zcash_client_backend::address::RecipientAddress;
 
-use zcash_client_backend::encoding::{
-    encode_extended_full_viewing_key, encode_extended_spending_key, encode_payment_address,
-};
+use zcash_client_backend::encoding::encode_payment_address;
 use zcash_note_encryption::EphemeralKeyBytes;
 use zcash_primitives::consensus::{BlockHeight, BranchId, Parameters, TestNetwork};
 use zcash_primitives::memo::Memo;
@@ -17,7 +15,7 @@ use zcash_primitives::sapling::{Note, Rseed, ValueCommitment};
 use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
 use zcash_primitives::transaction::components::{OutputDescription, GROTH_PROOF_SIZE};
 use zcash_primitives::transaction::Transaction;
-use zcash_primitives::zip32::{ExtendedFullViewingKey, ExtendedSpendingKey};
+use zcash_primitives::zip32::ExtendedFullViewingKey;
 
 use crate::apply_scenario;
 use crate::blaze::block_witness_data::CommitmentTreesForBlock;
@@ -1796,7 +1794,7 @@ fn test_read_wallet_from_buffer() {
     });
     let client = LightClient::read_from_buffer(&config, &buf[..]).unwrap();
     Runtime::new().unwrap().block_on(async {
-        let wallet = client.wallet;
+        let _wallet = client.wallet;
         todo!("Make meaningfull assertions here")
     });
 }

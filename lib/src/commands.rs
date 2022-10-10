@@ -450,7 +450,7 @@ impl Command for ExportCommand {
         "Export private key for wallet addresses".to_string()
     }
 
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(&self, _args: &[&str], _lightclient: &LightClient) -> String {
         "Key export currently unimplemented, please use seed phrase to backup/restore keys"
             .to_string()
     }
@@ -1198,7 +1198,7 @@ impl Command for ImportCommand {
         "Import spending or viewing keys into the wallet".to_string()
     }
 
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(&self, _args: &[&str], _lightclient: &LightClient) -> String {
         "Key import not currently supported".to_string()
     }
 }

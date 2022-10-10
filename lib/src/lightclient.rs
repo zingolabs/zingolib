@@ -9,7 +9,7 @@ use crate::{
     grpc_connector::GrpcConnector,
     wallet::{
         data::{OrchardNoteAndMetadata, SaplingNoteAndMetadata, TransactionMetadata},
-        keys::{unified::ReceiverSelection, Keys},
+        keys::unified::ReceiverSelection,
         message::Message,
         now,
         traits::NoteAndMetadata,
@@ -21,7 +21,6 @@ use json::{array, object, JsonValue};
 use log::{error, info, warn};
 use std::{
     cmp,
-    collections::HashSet,
     fs::File,
     io::{self, BufReader, Error, ErrorKind, Read, Write},
     path::Path,

@@ -67,6 +67,8 @@ impl TransparentKey {
         }
     }
 
+    //This function will likely be used if/when we reimplement key import
+    #[allow(dead_code)]
     pub fn from_sk_string(config: &ZingoConfig, sks: String) -> io::Result<Self> {
         let (_v, mut bytes) = sks.as_str().from_base58check()?;
         let suffix = bytes.split_off(32);
