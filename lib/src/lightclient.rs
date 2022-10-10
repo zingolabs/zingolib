@@ -1427,8 +1427,11 @@ impl LightClient {
                 .await;
 
         // Do Trial decryptions of all the sapling outputs, and pass on the successful ones to the update_notes processor
-        let trial_decryptions_processor =
-            TrialDecryptions::new(self.wallet.keys(), self.wallet.transactions());
+        let trial_decryptions_processor = TrialDecryptions::new(
+            Arc::new(self.config.clone()),
+            self.wallet.unified_spend_auth(),
+            self.wallet.transactions(),
+        );
         let (trial_decrypts_handle, trial_decrypts_transmitter) = trial_decryptions_processor
             .start(
                 bsync_data.clone(),
@@ -1463,15 +1466,18 @@ impl LightClient {
         let earliest_block = block_and_witness_handle.await.unwrap().unwrap();
 
         // 1. Fetch the transparent txns only after reorgs are done.
-        let taddr_transactions_handle = FetchTaddrTransactions::new(self.wallet.keys())
-            .start(
-                start_block,
-                earliest_block,
-                taddr_fetcher_transmitter,
-                fetch_taddr_transactions_transmitter,
-                self.config.chain,
-            )
-            .await;
+        let taddr_transactions_handle = FetchTaddrTransactions::new(
+            self.wallet.unified_spend_auth(),
+            Arc::new(self.config.clone()),
+        )
+        .start(
+            start_block,
+            earliest_block,
+            taddr_fetcher_transmitter,
+            fetch_taddr_transactions_transmitter,
+            self.config.chain,
+        )
+        .await;
 
         // 2. Notify the notes updater that the blocks are done updating
         blocks_done_transmitter.send(earliest_block).unwrap();
@@ -1587,33 +1593,9 @@ impl LightClient {
             ));
         }
 
-        let addr = address
-            .or({
-                let keys = self.wallet.keys();
-                let readlocked_keys = keys.read().await;
-                UnifiedAddress::from_receivers(
-                    readlocked_keys
-                        .get_all_orchard_keys_of_type::<OrchardSpendingKey>()
-                        .iter()
-                        .map(|orchard_spend_key| {
-                            OrchardFullViewingKey::from(orchard_spend_key)
-                                .address_at(0u32, orchard::keys::Scope::External)
-                        })
-                        .next(),
-                    readlocked_keys
-                        .zkeys
-                        .iter()
-                        .filter(|sapling_key| sapling_key.extsk.is_some())
-                        .map(|sapling_key| sapling_key.zaddress.clone())
-                        .next(),
-                    None,
-                )
-                .map(|ua| ua.encode(&self.config.chain))
-            })
-            .ok_or(String::from(
-                "No sapling or orchard spend authority in wallet. \n
-                    please generate a shielded address and try again, or supply a destination address",
-            ))?;
+        let addr = address.unwrap_or(
+            self.wallet.unified_spend_auth().read().await.addresses()[0].encode(&self.config.chain),
+        );
 
         let result = {
             let _lock = self.sync_lock.lock().await;

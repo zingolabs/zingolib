@@ -196,7 +196,7 @@ impl UnifiedSpendAuthority {
             addresses: vec![],
             next_sapling_diversifier_index: DiversifierIndex::new(),
             encrypted: false,
-            unlocked: false,
+            unlocked: true,
         }
     }
 
@@ -279,7 +279,7 @@ impl ReadableWriteable<()> for UnifiedSpendAuthority {
             addresses: vec![],
             next_sapling_diversifier_index: DiversifierIndex::new(),
             encrypted,
-            unlocked: false,
+            unlocked: true,
         };
         for receiver_selection in receivers_selected {
             usa.new_address(receiver_selection)
