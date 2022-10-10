@@ -460,7 +460,7 @@ impl LightWallet {
             });
     }
 
-    pub fn keys(&self) -> Arc<RwLock<Keys>> {
+    pub fn keys(&self) -> Arc<RwLock<keys::Keys>> {
         todo!("Remove this")
         // compile_error!("Haven't gotten around to removing this yet")
     }
