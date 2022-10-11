@@ -441,8 +441,10 @@ impl LightClient {
         lr
     }
 
+    /// This constructor depends on a wallet that's read from a buffer.
+    /// Its only internal call is in a test of its functionality.
     pub fn read_from_buffer<R: Read>(config: &ZingoConfig, mut reader: R) -> io::Result<Self> {
-        let l = Runtime::new().unwrap().block_on(async move {
+        Runtime::new().unwrap().block_on(async move {
             let wallet = LightWallet::read(&mut reader, config).await?;
 
             let lc = LightClient {
@@ -460,11 +462,12 @@ impl LightClient {
             info!("Created LightClient to {}", &config.get_server_uri());
 
             Ok(lc)
-        });
-
-        l
+        })
     }
 
+    /// This constructor is used by zingo-cli in CLIRunner::startup.
+    /// TODO: There is no internal test of it analagous to:
+    /// lightclient::tests::test_read_wallet_from_buffer
     pub fn read_from_disk(config: &ZingoConfig) -> io::Result<Self> {
         let wallet_path = if config.wallet_exists() {
             config.get_wallet_path()
@@ -478,10 +481,10 @@ impl LightClient {
             ));
         };
 
-        let l = Runtime::new().unwrap().block_on(async move {
-            let mut file_buffer = BufReader::new(File::open(wallet_path)?);
+        Runtime::new().unwrap().block_on(async move {
+            let mut reader = BufReader::new(File::open(wallet_path)?);
 
-            let wallet = LightWallet::read(&mut file_buffer, config).await?;
+            let wallet = LightWallet::read(&mut reader, config).await?;
 
             let lc = LightClient {
                 wallet,
@@ -498,9 +501,7 @@ impl LightClient {
             info!("Created LightClient to {}", &config.get_server_uri());
 
             Ok(lc)
-        });
-
-        l
+        })
     }
 
     pub fn init_logging(&self) -> io::Result<()> {
