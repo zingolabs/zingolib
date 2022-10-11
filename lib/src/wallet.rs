@@ -220,7 +220,9 @@ impl LightWallet {
         })
     }
 
-    pub async fn read<R: Read>(mut reader: R, config: &ZingoConfig) -> io::Result<Self> {
+    /// This is a Wallet constructor.  It is the internal function called by 2 LightWallet
+    /// read procedures, by reducing its visibility we constrain possible uses.
+    pub(crate) async fn read<R: Read>(mut reader: R, config: &ZingoConfig) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
         if version > Self::serialized_version() {
             let e = format!(
