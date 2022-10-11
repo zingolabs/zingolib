@@ -465,9 +465,6 @@ impl LightClient {
         })
     }
 
-    /// This constructor is used by zingo-cli in CLIRunner::startup.
-    /// TODO: There is no internal test of it analagous to:
-    /// lightclient::tests::test_read_wallet_from_buffer
     pub fn read_from_disk(config: &ZingoConfig) -> io::Result<Self> {
         let wallet_path = if config.wallet_exists() {
             config.get_wallet_path()
