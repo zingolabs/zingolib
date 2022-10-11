@@ -11,8 +11,9 @@ use zcash_primitives::{
     zip32::{ExtendedFullViewingKey, ExtendedSpendingKey},
 };
 
-use super::Keys;
 use zingoconfig::ZingoConfig;
+
+use super::get_zaddr_from_bip39seed;
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum WalletZKeyType {
@@ -215,7 +216,7 @@ impl SaplingKey {
         match self.keytype {
             WalletZKeyType::HdKey => {
                 let (extsk, extfvk, address) =
-                    Keys::get_zaddr_from_bip39seed(&config, &bip39_seed, self.hdkey_num.unwrap());
+                    get_zaddr_from_bip39seed(&config, &bip39_seed, self.hdkey_num.unwrap());
 
                 if address != self.zaddress {
                     return Err(io::Error::new(

@@ -6,7 +6,7 @@ use super::{
         ChannelNullifier, OrchardNoteAndMetadata, SaplingNoteAndMetadata, SpendableOrchardNote,
         SpendableSaplingNote, TransactionMetadata, WitnessCache,
     },
-    keys::{orchard::OrchardKey, sapling::SaplingKey, unified::UnifiedSpendAuthority, Keys},
+    keys::{orchard::OrchardKey, sapling::SaplingKey, unified::UnifiedSpendAuthority},
     transactions::TransactionMetadataSet,
 };
 use crate::compact_formats::{
@@ -726,8 +726,6 @@ where
     fn ivk(&self) -> Option<Self::Ivk>;
     fn ovk(&self) -> Option<Self::Ovk>;
     fn address(&self) -> Self::Address;
-    fn addresses_from_keys(keys: &Keys) -> Vec<String>;
-    fn get_keys(keys: &Keys) -> &Vec<Self>;
     fn set_spend_key_for_view_key(&mut self, key: Self::SpendKey);
     fn usa_to_sk(usa: &UnifiedSpendAuthority) -> Self::SpendKey {
         Self::SpendKey::from(usa)
@@ -772,14 +770,6 @@ impl WalletKey for SaplingKey {
         self.zaddress.clone()
     }
 
-    fn addresses_from_keys(keys: &Keys) -> Vec<String> {
-        keys.get_all_sapling_addresses()
-    }
-
-    fn get_keys(keys: &Keys) -> &Vec<Self> {
-        keys.zkeys()
-    }
-
     fn set_spend_key_for_view_key(&mut self, key: Self::SpendKey) {
         self.extsk = Some(key);
         self.keytype = super::keys::sapling::WalletZKeyType::ImportedSpendingKey;
@@ -813,14 +803,6 @@ impl WalletKey for OrchardKey {
 
     fn address(&self) -> Self::Address {
         self.unified_address.clone()
-    }
-
-    fn addresses_from_keys(keys: &Keys) -> Vec<String> {
-        keys.get_all_orchard_addresses()
-    }
-
-    fn get_keys(keys: &Keys) -> &Vec<Self> {
-        keys.okeys()
     }
 
     fn set_spend_key_for_view_key(&mut self, key: Self::SpendKey) {

@@ -41,6 +41,7 @@ use zcash_primitives::{
 };
 
 use self::data::SpendableOrchardNote;
+use self::keys::unified::ReceiverSelection;
 use self::keys::unified::UnifiedSpendAuthority;
 use self::traits::{DomainWalletExt, NoteAndMetadata, SpendableNote};
 use self::{
@@ -212,12 +213,18 @@ impl LightWallet {
             //error!("{}", e);
             Error::new(ErrorKind::InvalidData, e)
         })?;
-        let key = UnifiedSpendAuthority::new_from_phrase(&config, &mnemonic, 0)
+        let mut usa = UnifiedSpendAuthority::new_from_phrase(&config, &mnemonic, 0)
             .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
+        usa.new_address(ReceiverSelection {
+            sapling: true,
+            orchard: true,
+            transparent: true,
+        })
+        .unwrap();
         let transaction_metadata_set = Arc::new(RwLock::new(TransactionMetadataSet::new()));
         let transaction_context = TransactionContext::new(
             &config,
-            Arc::new(RwLock::new(key)),
+            Arc::new(RwLock::new(usa)),
             transaction_metadata_set,
         );
         Ok(Self {
@@ -459,10 +466,10 @@ impl LightWallet {
             });
     }
 
-    pub fn keys(&self) -> Arc<RwLock<keys::Keys>> {
+    /*    pub fn keys(&self) -> Arc<RwLock<keys::Keys>> {
         todo!("Remove this")
         // compile_error!("Haven't gotten around to removing this yet")
-    }
+    }*/
 
     pub fn unified_spend_auth(&self) -> Arc<RwLock<UnifiedSpendAuthority>> {
         self.transaction_context.key.clone()
@@ -1600,7 +1607,7 @@ mod test {
             clean_shutdown, mine_numblocks_each_with_two_sap_txs, mine_pending_blocks,
             NBlockFCBLScenario,
         },
-        wallet::keys::address_from_pubkeyhash,
+        wallet::keys::unified::get_transparent_secretkey_pubkey_taddr,
     };
 
     mod bench_select_notes_and_utxos {
@@ -1806,34 +1813,11 @@ mod test {
         assert_eq!(utxos.len(), 0);
 
         // 4. Get an incoming transaction to a t address
-        let (i, sk) = lightclient
-            .wallet
-            .unified_spend_auth()
-            .read()
-            .await
-            .transparent_child_keys()
-            .first()
-            .unwrap()
-            .clone();
-        let secp = secp256k1::Secp256k1::new();
-        let pk = secp256k1::PublicKey::from_secret_key(&secp, &sk);
-        let taddr = lightclient
-            .wallet
-            .unified_spend_auth()
-            .read()
-            .await
-            .addresses()[i]
-            .transparent()
-            .unwrap()
-            .clone();
+        let (_sk, pk, taddr) = get_transparent_secretkey_pubkey_taddr(&lightclient).await;
         let tvalue = 100_000;
 
         let mut fake_transaction = FakeTransaction::new(true);
-        fake_transaction.add_t_output(
-            &pk,
-            address_from_pubkeyhash(&lightclient.config, Some(taddr.clone())).unwrap(),
-            tvalue,
-        );
+        fake_transaction.add_t_output(&pk, taddr, tvalue);
         let (_ttransaction, _) = fake_compactblock_list.add_fake_transaction(fake_transaction);
         mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
