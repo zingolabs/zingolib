@@ -14,7 +14,7 @@ use zingoconfig::ZingoConfig;
 
 use crate::wallet::traits::ReadableWriteable;
 
-use super::{extended_transparent::KeyIndex, Keys, ToBase58Check};
+use super::{extended_transparent::KeyIndex, get_zaddr_from_bip39seed, ToBase58Check};
 
 #[derive(Clone, Debug)]
 pub struct UnifiedSpendAuthority {
@@ -179,7 +179,7 @@ impl UnifiedSpendAuthority {
             .collect()
     }
     pub fn new_from_seed(config: &ZingoConfig, seed: &[u8; 64], position: u32) -> Self {
-        let (sapling_key, _, _) = Keys::get_zaddr_from_bip39seed(config, seed, position);
+        let (sapling_key, _, _) = get_zaddr_from_bip39seed(config, seed, position);
         let transparent_parent_key =
             super::extended_transparent::ExtendedPrivKey::get_ext_taddr_from_bip39seed(
                 config, seed, position,
@@ -230,6 +230,12 @@ impl UnifiedSpendAuthority {
                 })
             })
             .collect()
+    }
+
+    pub fn first_sapling_address(&self) -> &zcash_primitives::sapling::PaymentAddress {
+        // This index is dangerous, but all ways to instanciate a UnifiedSpendAuthority
+        // create it with a suitable first address
+        self.addresses()[0].sapling().unwrap()
     }
 
     pub fn encrypt(&mut self, _passwd: String) -> std::io::Result<()> {
@@ -359,4 +365,41 @@ impl From<&UnifiedSpendAuthority> for zcash_primitives::keys::OutgoingViewingKey
             .fvk
             .ovk
     }
+}
+
+#[cfg(test)]
+pub async fn get_first_zaddr_as_string_from_lightclient(
+    lightclient: &crate::lightclient::LightClient,
+) -> String {
+    use zcash_primitives::consensus::Parameters;
+
+    zcash_client_backend::encoding::encode_payment_address(
+        lightclient.config.chain.hrp_sapling_payment_address(),
+        lightclient
+            .wallet
+            .unified_spend_auth()
+            .read()
+            .await
+            .first_sapling_address(),
+    )
+}
+
+#[cfg(test)]
+pub async fn get_transparent_secretkey_pubkey_taddr(
+    lightclient: &crate::lightclient::LightClient,
+) -> (secp256k1::SecretKey, secp256k1::PublicKey, String) {
+    use super::address_from_pubkeyhash;
+
+    let usa_readlock = lightclient.wallet.unified_spend_auth();
+    let usa = usa_readlock.read().await;
+    // 2. Get an incoming transaction to a t address
+    let sk = usa.transparent_child_keys()[0].1;
+    let secp = secp256k1::Secp256k1::new();
+    let pk = secp256k1::PublicKey::from_secret_key(&secp, &sk);
+    let taddr = address_from_pubkeyhash(
+        &lightclient.config,
+        usa.addresses()[0].transparent().cloned(),
+    )
+    .unwrap();
+    (sk, pk, taddr)
 }

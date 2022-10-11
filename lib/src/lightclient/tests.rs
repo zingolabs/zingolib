@@ -10,12 +10,12 @@ use zcash_note_encryption::EphemeralKeyBytes;
 use zcash_primitives::consensus::{BlockHeight, BranchId, Parameters, TestNetwork};
 use zcash_primitives::memo::Memo;
 use zcash_primitives::merkle_tree::IncrementalWitness;
-use zcash_primitives::sapling::note_encryption::{sapling_note_encryption, SaplingDomain};
+use zcash_primitives::sapling::note_encryption::sapling_note_encryption;
 use zcash_primitives::sapling::{Note, Rseed, ValueCommitment};
 use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
 use zcash_primitives::transaction::components::{OutputDescription, GROTH_PROOF_SIZE};
 use zcash_primitives::transaction::Transaction;
-use zcash_primitives::zip32::ExtendedFullViewingKey;
+use zcash_primitives::zip32::{ExtendedFullViewingKey, ExtendedSpendingKey};
 
 use crate::apply_scenario;
 use crate::blaze::block_witness_data::CommitmentTreesForBlock;
@@ -28,6 +28,9 @@ use crate::lightclient::test_server::{
 };
 use crate::lightclient::LightClient;
 use crate::wallet::data::{SaplingNoteAndMetadata, TransactionMetadata};
+use crate::wallet::keys::unified::{
+    get_first_zaddr_as_string_from_lightclient, get_transparent_secretkey_pubkey_taddr,
+};
 use crate::wallet::traits::ReadableWriteable;
 
 use super::checkpoints;
@@ -250,12 +253,17 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
         assert_eq!(jv["amount"].as_u64().unwrap(), value);
         assert_eq!(
             jv["address"],
-            lightclient
-                .wallet
-                .keys()
-                .read()
-                .await
-                .get_all_sapling_addresses()[0]
+            encode_payment_address(
+                lightclient.config.chain.hrp_sapling_payment_address(),
+                lightclient
+                    .wallet
+                    .unified_spend_auth()
+                    .read()
+                    .await
+                    .addresses()[0]
+                    .sapling()
+                    .unwrap(),
+            )
         );
         assert_eq!(jv["block_height"].as_u64().unwrap(), 11);
     } else {
@@ -443,13 +451,8 @@ async fn multiple_incoming_same_transaction(scenario: NBlockFCBLScenario) {
         ..
     } = scenario;
 
-    let extfvk1 = lightclient
-        .wallet
-        .keys()
-        .read()
-        .await
-        .get_all_sapling_extfvks()[0]
-        .clone();
+    let extfvk1: ExtendedFullViewingKey =
+        (&*lightclient.wallet.unified_spend_auth().read().await).into();
     let value = 100_000;
     // 2. Construct the Fake transaction.
     let to = extfvk1.default_address().1;
@@ -542,12 +545,7 @@ async fn multiple_incoming_same_transaction(scenario: NBlockFCBLScenario) {
             assert_eq!(unspent_notes[i]["is_change"].as_bool().unwrap(), false);
             assert_eq!(
                 unspent_notes[i]["address"],
-                lightclient
-                    .wallet
-                    .keys()
-                    .read()
-                    .await
-                    .get_all_sapling_addresses()[0]
+                get_first_zaddr_as_string_from_lightclient(&lightclient).await
             );
         }
     } else {
@@ -562,12 +560,7 @@ async fn multiple_incoming_same_transaction(scenario: NBlockFCBLScenario) {
             assert_eq!(sorted_transactions[i]["block_height"].as_u64().unwrap(), 11);
             assert_eq!(
                 sorted_transactions[i]["address"],
-                lightclient
-                    .wallet
-                    .keys()
-                    .read()
-                    .await
-                    .get_all_sapling_addresses()[0]
+                get_first_zaddr_as_string_from_lightclient(&lightclient).await
             );
             assert_eq!(
                 sorted_transactions[i]["amount"].as_u64().unwrap(),
@@ -636,13 +629,7 @@ async fn sapling_incoming_multisapling_outgoing(scenario: NBlockFCBLScenario) {
         ..
     } = scenario;
     // 2. Send an incoming transaction to fill the wallet
-    let extfvk1 = lightclient
-        .wallet
-        .keys()
-        .read()
-        .await
-        .get_all_sapling_extfvks()[0]
-        .clone();
+    let extfvk1 = (&*lightclient.wallet.unified_spend_auth().read().await).into();
     let value = 100_000;
     let (_transaction, _height, _) =
         fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, value);
@@ -709,17 +696,10 @@ async fn sapling_to_sapling_scan_together() {
     let mut fake_compactblock_list = FakeCompactBlockList::new(0);
 
     // 2. Send an incoming sapling transaction to fill the wallet
-    let (mockuser_spendkey, mockuser_extfvk) = {
-        let keys_readlock = lightclient.wallet.keys();
-        let lock = keys_readlock.read().await;
-        let mockuser_extfvk = lock.get_all_sapling_extfvks()[0].clone();
-        (
-            lock.get_spend_key_for_fvk::<SaplingDomain<Network>>(
-                &lock.get_all_sapling_extfvks()[0],
-            )
-            .unwrap(),
-            mockuser_extfvk,
-        )
+    let (mockuser_spendkey, mockuser_extfvk): (ExtendedSpendingKey, ExtendedFullViewingKey) = {
+        let usa_readlock = lightclient.wallet.unified_spend_auth();
+        let usa = &*usa_readlock.read().await;
+        (usa.into(), usa.into())
     };
     let value = 100_000;
     let (transaction, _height, note) = fake_compactblock_list // NOTE: Extracting fvk this way for future proof.
@@ -938,10 +918,9 @@ async fn t_incoming_t_outgoing(scenario: NBlockFCBLScenario) {
         mut fake_compactblock_list,
         ..
     } = scenario;
+
     // 2. Get an incoming transaction to a t address
-    let sk = lightclient.wallet.keys().read().await.tkeys[0].clone();
-    let pk = sk.pubkey().unwrap();
-    let taddr = sk.address;
+    let (_sk, pk, taddr) = get_transparent_secretkey_pubkey_taddr(&lightclient).await;
     let value = 100_000;
 
     let mut fake_transaction = FakeTransaction::new(true);
@@ -1076,13 +1055,7 @@ async fn mixed_transaction(scenario: NBlockFCBLScenario) {
         ..
     } = scenario;
     // 2. Send an incoming transaction to fill the wallet
-    let extfvk1 = lightclient
-        .wallet
-        .keys()
-        .read()
-        .await
-        .get_all_sapling_extfvks()[0]
-        .clone();
+    let extfvk1 = (&*lightclient.wallet.unified_spend_auth().read().await).into();
     let zvalue = 100_000;
     let (_ztransaction, _height, _) =
         fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, zvalue);
@@ -1090,9 +1063,7 @@ async fn mixed_transaction(scenario: NBlockFCBLScenario) {
     mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
 
     // 3. Send an incoming t-address transaction
-    let sk = lightclient.wallet.keys().read().await.tkeys[0].clone();
-    let pk = sk.pubkey().unwrap();
-    let taddr = sk.address;
+    let (_sk, pk, taddr) = get_transparent_secretkey_pubkey_taddr(&lightclient).await;
     let tvalue = 200_000;
 
     let mut fake_transaction = FakeTransaction::new(true);
@@ -1190,13 +1161,7 @@ async fn aborted_resync(scenario: NBlockFCBLScenario) {
         ..
     } = scenario;
     // 2. Send an incoming transaction to fill the wallet
-    let extfvk1 = lightclient
-        .wallet
-        .keys()
-        .read()
-        .await
-        .get_all_sapling_extfvks()[0]
-        .clone();
+    let extfvk1 = (&*lightclient.wallet.unified_spend_auth().read().await).into();
     let zvalue = 100_000;
     let (_ztransaction, _height, _) =
         fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, zvalue);
@@ -1204,9 +1169,7 @@ async fn aborted_resync(scenario: NBlockFCBLScenario) {
     mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
 
     // 3. Send an incoming t-address transaction
-    let sk = lightclient.wallet.keys().read().await.tkeys[0].clone();
-    let pk = sk.pubkey().unwrap();
-    let taddr = sk.address;
+    let (_sk, pk, taddr) = get_transparent_secretkey_pubkey_taddr(&lightclient).await;
     let tvalue = 200_000;
 
     let mut fake_transaction = FakeTransaction::new(true);
@@ -1316,13 +1279,7 @@ async fn no_change(scenario: NBlockFCBLScenario) {
         ..
     } = scenario;
     // 2. Send an incoming transaction to fill the wallet
-    let extfvk1 = lightclient
-        .wallet
-        .keys()
-        .read()
-        .await
-        .get_all_sapling_extfvks()[0]
-        .clone();
+    let extfvk1 = (&*lightclient.wallet.unified_spend_auth().read().await).into();
     let zvalue = 100_000;
     let (_ztransaction, _height, _) =
         fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, zvalue);
@@ -1330,9 +1287,7 @@ async fn no_change(scenario: NBlockFCBLScenario) {
     mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
 
     // 3. Send an incoming t-address transaction
-    let sk = lightclient.wallet.keys().read().await.tkeys[0].clone();
-    let pk = sk.pubkey().unwrap();
-    let taddr = sk.address;
+    let (_sk, pk, taddr) = get_transparent_secretkey_pubkey_taddr(&lightclient).await;
     let tvalue = 200_000;
 
     let mut fake_transaction = FakeTransaction::new(true);
@@ -1477,13 +1432,7 @@ async fn witness_clearing(scenario: NBlockFCBLScenario) {
         ..
     } = scenario;
     // 2. Send an incoming transaction to fill the wallet
-    let extfvk1 = lightclient
-        .wallet
-        .keys()
-        .read()
-        .await
-        .get_all_sapling_extfvks()[0]
-        .clone();
+    let extfvk1 = (&*lightclient.wallet.unified_spend_auth().read().await).into();
     let value = 100_000;
     let (transaction, _height, _) =
         fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, value);
@@ -1582,13 +1531,7 @@ async fn mempool_clearing(scenario: NBlockFCBLScenario) {
         ..
     } = scenario;
     // 2. Send an incoming transaction to fill the wallet
-    let extfvk1 = lightclient
-        .wallet
-        .keys()
-        .read()
-        .await
-        .get_all_sapling_extfvks()[0]
-        .clone();
+    let extfvk1 = (&*lightclient.wallet.unified_spend_auth().read().await).into();
     let value = 100_000;
     let (transaction, _height, _) =
         fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, value);
@@ -1721,13 +1664,7 @@ async fn mempool_and_balance(scenario: NBlockFCBLScenario) {
     } = scenario;
 
     // 2. Send an incoming transaction to fill the wallet
-    let extfvk1 = lightclient
-        .wallet
-        .keys()
-        .read()
-        .await
-        .get_all_sapling_extfvks()[0]
-        .clone();
+    let extfvk1 = (&*lightclient.wallet.unified_spend_auth().read().await).into();
     let value = 100_000;
     let (_transaction, _height, _) =
         fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, value);

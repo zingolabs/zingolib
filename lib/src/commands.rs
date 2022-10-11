@@ -1,4 +1,4 @@
-use crate::wallet::keys::Keys;
+use crate::wallet::keys::is_shielded_address;
 use crate::wallet::MemoDownloadOption;
 use crate::{lightclient::LightClient, wallet::utils};
 use json::object;
@@ -899,8 +899,8 @@ impl Command for SendCommand {
                     None
                 };
 
-                // Memo has to be None if not sending to a shileded address
-                if memo.is_some() && !Keys::is_shielded_address(&address, &lightclient.config) {
+                // Memo has to be None if not sending to a shielded address
+                if memo.is_some() && !is_shielded_address(&address, &lightclient.config) {
                     return format!("Can't send a memo to the non-shielded address {}", address);
                 }
 
