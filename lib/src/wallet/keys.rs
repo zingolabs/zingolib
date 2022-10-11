@@ -33,7 +33,7 @@ use zingoconfig::{ZingoConfig, GAP_RULE_UNUSED_ADDRESSES};
 use crate::wallet::utils;
 
 use self::{
-    orchard::{OrchardKey, WalletOKeyInner},
+    orchard::OrchardKey,
     sapling::{SaplingKey, WalletZKeyType},
     transparent::{TransparentKey, WalletTKeyType},
 };
@@ -482,16 +482,6 @@ impl Keys {
 
     pub fn get_all_sapling_extfvks(&self) -> Vec<ExtendedFullViewingKey> {
         self.zkeys.iter().map(|zk| zk.extfvk.clone()).collect()
-    }
-
-    pub(crate) fn get_all_orchard_keys_of_type<T>(&self) -> Vec<T>
-    where
-        for<'a> T: TryFrom<&'a WalletOKeyInner>,
-    {
-        self.okeys
-            .iter()
-            .filter_map(|k| T::try_from(&k.key).ok())
-            .collect()
     }
 
     pub fn get_all_sapling_addresses(&self) -> Vec<String> {

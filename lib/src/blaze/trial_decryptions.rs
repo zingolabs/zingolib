@@ -277,10 +277,10 @@ impl TrialDecryptions {
         let maybe_decrypted_outputs =
             zcash_note_encryption::batch::try_compact_note_decryption(&[ivk], &outputs);
         for maybe_decrypted_output in maybe_decrypted_outputs.into_iter().enumerate() {
-            if let (i, Some(((note, to), ivk_num))) = maybe_decrypted_output {
+            if let (i, Some(((note, to), _ivk_num))) = maybe_decrypted_output {
                 *transaction_metadata = true; // i.e. we got metadata
 
-                let keys = usa.clone();
+                let usa = usa.clone();
                 let bsync_data = bsync_data.clone();
                 let transaction_metadata_set = transaction_metadata_set.clone();
                 let detected_transaction_id_sender = detected_transaction_id_sender.clone();
@@ -289,8 +289,8 @@ impl TrialDecryptions {
                 let config = config.clone();
 
                 workers.push(tokio::spawn(async move {
-                    let keys = keys.read().await;
-                    let fvk = D::Key::usa_to_fvk(&*keys);
+                    let usa = usa.read().await;
+                    let fvk = D::Key::usa_to_fvk(&*usa);
 
                     // We don't have fvk import, all our keys are spending
                     let have_spending_key = true;

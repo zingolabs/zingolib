@@ -45,7 +45,6 @@ use self::keys::unified::UnifiedSpendAuthority;
 use self::traits::{DomainWalletExt, NoteAndMetadata, SpendableNote};
 use self::{
     data::{BlockData, OrchardNoteAndMetadata, SaplingNoteAndMetadata, Utxo, WalletZecPriceInfo},
-    keys::Keys,
     message::Message,
     transactions::TransactionMetadataSet,
 };
