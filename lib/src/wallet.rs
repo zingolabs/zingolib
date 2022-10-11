@@ -190,7 +190,7 @@ pub struct LightWallet {
 use crate::wallet::traits::{Diversifiable as _, WalletKey};
 impl LightWallet {
     pub fn serialized_version() -> u64 {
-        return 24;
+        return 25;
     }
 
     pub fn new(
@@ -318,12 +318,28 @@ impl LightWallet {
             Arc::new(RwLock::new(keys)),
             Arc::new(RwLock::new(transactions)),
         );
+
+        let orchard_anchors = if version >= 25 {
+            Vector::read(&mut reader, |r| {
+                let mut anchor_bytes = [0; 32];
+                r.read_exact(&mut anchor_bytes)?;
+                let block_height = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
+                Ok((
+                    Option::from(Anchor::from_bytes(anchor_bytes))
+                        .ok_or(Error::new(ErrorKind::InvalidData, "Bad orchard anchor"))?,
+                    block_height,
+                ))
+            })?
+        } else {
+            Vec::new()
+        };
+
         let mut lw = Self {
             blocks: Arc::new(RwLock::new(blocks)),
             wallet_options: Arc::new(RwLock::new(wallet_options)),
             birthday: AtomicU64::new(birthday),
             verified_tree: Arc::new(RwLock::new(verified_tree)),
-            orchard_anchors: Arc::new(RwLock::new(Vec::new())),
+            orchard_anchors: Arc::new(RwLock::new(orchard_anchors)),
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(price)),
             transaction_context,
@@ -395,6 +411,15 @@ impl LightWallet {
 
         // Price info
         self.price.read().await.write(&mut writer)?;
+
+        Vector::write(
+            &mut writer,
+            &*self.orchard_anchors.read().await,
+            |w, (anchor, height)| {
+                w.write_all(&anchor.to_bytes())?;
+                w.write_u32::<LittleEndian>(u32::from(*height))
+            },
+        )?;
 
         Ok(())
     }
