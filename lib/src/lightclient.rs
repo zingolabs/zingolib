@@ -446,7 +446,7 @@ impl LightClient {
     /// It's used by zingo-mobile.
     pub fn read_from_buffer<R: Read>(config: &ZingoConfig, mut reader: R) -> io::Result<Self> {
         Runtime::new().unwrap().block_on(async move {
-            let wallet = LightWallet::read(&mut reader, config).await?;
+            let wallet = LightWallet::read_internal(&mut reader, config).await?;
 
             let lc = LightClient {
                 wallet,
