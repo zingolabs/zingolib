@@ -35,11 +35,7 @@ use tokio::{
     time::sleep,
 };
 
-use orchard::keys::{FullViewingKey as OrchardFullViewingKey, SpendingKey as OrchardSpendingKey};
-use zcash_client_backend::{
-    address::UnifiedAddress,
-    encoding::{decode_payment_address, encode_payment_address},
-};
+use zcash_client_backend::encoding::{decode_payment_address, encode_payment_address};
 use zcash_primitives::{
     block::BlockHash,
     consensus::{BlockHeight, BranchId},
@@ -674,7 +670,7 @@ impl LightClient {
     }
 
     /// Return a list of all notes, spent and unspent
-    pub async fn do_list_notes(&self, include_spent_notes: bool) -> JsonValue {
+    pub async fn do_list_notes(&self, all_notes: bool) -> JsonValue {
         let mut unspent_sapling_notes: Vec<JsonValue> = vec![];
         let mut spent_sapling_notes: Vec<JsonValue> = vec![];
         let mut pending_sapling_notes: Vec<JsonValue> = vec![];
@@ -684,14 +680,14 @@ impl LightClient {
         {
             // Collect Sapling notes
             self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
-                .flat_map( |(transaction_id, wtx)| {
-                    wtx.sapling_notes.iter().filter_map(move |nd|
-                        if !all_notes && nd.spent.is_some() {
+                .flat_map( |(transaction_id, transaction_metadata)| {
+                    transaction_metadata.sapling_notes.iter().filter_map(move |note_metadata|
+                        if !all_notes && note_metadata.spent.is_some() {
                             None
                         } else {
                             let address = LightWallet::note_address(&self.config.chain, note_metadata);
                             let spendable = address.is_some() &&
-                                                    wtx.block_height <= anchor_height && nd.spent.is_none() && nd.unconfirmed_spent.is_none();
+                                                    transaction_metadata.block_height <= anchor_height && note_metadata.spent.is_none() && note_metadata.unconfirmed_spent.is_none();
 
                             let created_block:u32 = transaction_metadata.block_height.into();
                             Some(object!{
@@ -726,28 +722,14 @@ impl LightClient {
         let mut pending_orchard_notes: Vec<JsonValue> = vec![];
 
         {
-            // Same thing but with orchard. TODO: Dry
-            let spendable_address: HashSet<String> = self
-                .wallet
-                .keys()
-                .read()
-                .await
-                .okeys()
-                .into_iter()
-                .filter(|k| OrchardSpendingKey::try_from(&k.key).is_ok())
-                .map(|k| k.unified_address.encode(&self.config.chain))
-                .collect();
-
             self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
                 .flat_map( |(transaction_id, transaction_metadata)| {
-                    let spendable_address = spendable_address.clone();
                     transaction_metadata.orchard_notes.iter().filter_map(move |orch_note_metadata|
-                        if !include_spent_notes && orch_note_metadata.is_spent() {
+                        if !all_notes && orch_note_metadata.is_spent() {
                             None
                         } else {
                             let address = LightWallet::note_address(&self.config.chain, orch_note_metadata);
                             let spendable = address.is_some() &&
-                                                    spendable_address.contains(&address.clone().unwrap()) &&
                                                     transaction_metadata.block_height <= anchor_height && orch_note_metadata.spent.is_none() && orch_note_metadata.unconfirmed_spent.is_none();
 
                             let created_block:u32 = transaction_metadata.block_height.into();
@@ -786,7 +768,7 @@ impl LightClient {
             self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
                 .flat_map( |(transaction_id, wtx)| {
                     wtx.utxos.iter().filter_map(move |utxo|
-                        if !include_spent_notes && utxo.spent.is_some() {
+                        if !all_notes && utxo.spent.is_some() {
                             None
                         } else {
                             let created_block:u32 = wtx.block_height.into();
@@ -826,7 +808,7 @@ impl LightClient {
             "pending_utxos" => pending_utxos,
         };
 
-        if include_spent_notes {
+        if all_notes {
             res["spent_sapling_notes"] = JsonValue::Array(spent_sapling_notes);
             res["spent_orchard_notes"] = JsonValue::Array(spent_orchard_notes);
             res["spent_utxos"] = JsonValue::Array(spent_utxos);

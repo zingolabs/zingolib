@@ -124,19 +124,6 @@ impl TransparentKey {
     }
 
     #[cfg(test)]
-    pub fn empty(ta: &String) -> Self {
-        TransparentKey {
-            keytype: WalletTKeyType::HdKey,
-            key: None,
-            address: ta.clone(),
-            hdkey_num: None,
-            locked: false,
-            enc_key: None,
-            nonce: None,
-        }
-    }
-
-    #[cfg(test)]
     pub fn pubkey(&self) -> io::Result<secp256k1::PublicKey> {
         if self.key.is_none() {
             return Err(io::Error::new(ErrorKind::NotFound, "Wallet locked"));
