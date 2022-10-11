@@ -481,27 +481,8 @@ impl LightClient {
             ));
         };
 
-        Runtime::new().unwrap().block_on(async move {
-            let mut reader = BufReader::new(File::open(wallet_path)?);
-
-            let wallet = LightWallet::read(&mut reader, config).await?;
-
-            let lc = LightClient {
-                wallet,
-                config: config.clone(),
-                mempool_monitor: std::sync::RwLock::new(None),
-                sync_lock: Mutex::new(()),
-                bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
-            };
-
-            info!(
-                "Read wallet with birthday {}",
-                lc.wallet.get_birthday().await
-            );
-            info!("Created LightClient to {}", &config.get_server_uri());
-
-            Ok(lc)
-        })
+        let reader = BufReader::new(File::open(wallet_path)?);
+        LightClient::read_from_buffer(&config, reader)
     }
 
     pub fn init_logging(&self) -> io::Result<()> {
