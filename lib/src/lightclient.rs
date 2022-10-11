@@ -443,6 +443,7 @@ impl LightClient {
 
     /// This constructor depends on a wallet that's read from a buffer.
     /// Its only internal call is in a test of its functionality.
+    /// It's used by zingo-mobile.
     pub fn read_from_buffer<R: Read>(config: &ZingoConfig, mut reader: R) -> io::Result<Self> {
         Runtime::new().unwrap().block_on(async move {
             let wallet = LightWallet::read(&mut reader, config).await?;
@@ -477,9 +478,7 @@ impl LightClient {
                 ),
             ));
         };
-
-        let reader = BufReader::new(File::open(wallet_path)?);
-        LightClient::read_from_buffer(&config, reader)
+        LightClient::read_from_buffer(&config, BufReader::new(File::open(wallet_path)?))
     }
 
     pub fn init_logging(&self) -> io::Result<()> {
