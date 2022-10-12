@@ -9,7 +9,7 @@ use crate::{
     grpc_connector::GrpcConnector,
     wallet::{
         data::{OrchardNoteAndMetadata, SaplingNoteAndMetadata, TransactionMetadata},
-        keys::unified::ReceiverSelection,
+        keys::{unified::ReceiverSelection, address_from_pubkeyhash},
         message::Message,
         now,
         traits::NoteAndMetadata,
@@ -38,7 +38,7 @@ use tokio::{
 use zcash_client_backend::encoding::{decode_payment_address, encode_payment_address};
 use zcash_primitives::{
     block::BlockHash,
-    consensus::{BlockHeight, BranchId},
+    consensus::{BlockHeight, BranchId, Parameters},
     memo::{Memo, MemoBytes},
     transaction::{components::amount::DEFAULT_FEE, Transaction},
 };
@@ -478,19 +478,13 @@ impl LightClient {
         let mut objectified_addresses = Vec::new();
         for address in self.wallet.unified_spend_auth().read().await.addresses() {
             let encoded_ua = address.encode(&self.config.chain);
-            let mut receiver_kinds = Vec::new();
-            if address.transparent().is_some() {
-                receiver_kinds.push("transparent")
-            }
-            if address.sapling().is_some() {
-                receiver_kinds.push("sapling")
-            }
-            if address.orchard().is_some() {
-                receiver_kinds.push("orchard")
-            }
             objectified_addresses.push(object! {
-                "address" => encoded_ua,
-                "recievers" => receiver_kinds,
+            "address" => encoded_ua,
+            "recievers" => object!(
+                "transparent" => address_from_pubkeyhash(&self.config, address.transparent().cloned()),
+                "sapling" => address.sapling().map(|z_addr| encode_payment_address(self.config.chain.hrp_sapling_payment_address(), z_addr)),
+                "orchard_exists" => address.orchard().is_some(),
+                )            
             })
         }
         JsonValue::Array(objectified_addresses)

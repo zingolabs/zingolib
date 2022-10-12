@@ -172,7 +172,7 @@ impl UnifiedSpendAuthority {
                     TransparentAddress::Script(hash) => hash,
                 };
                 (
-                    hash.to_base58check(&config.base58_script_address(), &[]),
+                    hash.to_base58check(&config.base58_pubkey_address(), &[]),
                     key.1.clone(),
                 )
             })
@@ -312,7 +312,8 @@ impl ReadableWriteable<()> for UnifiedSpendAuthority {
             &mut writer,
             &receivers_per_address,
             |mut w, receiver_selection| receiver_selection.write(&mut w),
-        )
+        )?;
+        writer.write_u8(self.encrypted as u8)
     }
 }
 
