@@ -226,32 +226,32 @@ impl LightWallet {
         mut reader: R,
         config: &ZingoConfig,
     ) -> io::Result<Self> {
-        let version_read_from_external = reader.read_u64::<LittleEndian>()?;
-        if version_read_from_external > Self::serialized_version() {
+        let version_of_read_lwallet = reader.read_u64::<LittleEndian>()?;
+        if version_of_read_lwallet > Self::serialized_version() {
             let e = format!(
                 "Don't know how to read wallet version {}. Do you have the latest version?",
-                version_read_from_external
+                version_of_read_lwallet
             );
             error!("{}", e);
             return Err(io::Error::new(ErrorKind::InvalidData, e));
         }
 
-        info!("Reading wallet version {}", version_read_from_external);
+        info!("Reading wallet version {}", version_of_read_lwallet);
 
-        let keys = if version_read_from_external <= 14 {
-            Keys::read_old(version_read_from_external, &mut reader, config)
+        let keys = if version_of_read_lwallet <= 14 {
+            Keys::read_old(version_of_read_lwallet, &mut reader, config)
         } else {
             Keys::read(&mut reader, config)
         }?;
 
         let mut blocks = Vector::read(&mut reader, |r| BlockData::read(r))?;
-        if version_read_from_external <= 14 {
+        if version_of_read_lwallet <= 14 {
             // Reverse the order, since after version 20, we need highest-block-first
             // TODO: Consider order between 14 and 20.
             blocks = blocks.into_iter().rev().collect();
         }
 
-        let mut transactions = if version_read_from_external <= 14 {
+        let mut transactions = if version_of_read_lwallet <= 14 {
             TransactionMetadataSet::read_old(&mut reader)
         } else {
             TransactionMetadataSet::read(&mut reader)
@@ -269,7 +269,7 @@ impl LightWallet {
             ));
         }
 
-        let wallet_options = if version_read_from_external <= 23 {
+        let wallet_options = if version_of_read_lwallet <= 23 {
             WalletOptions::default()
         } else {
             WalletOptions::read(&mut reader)?
@@ -277,15 +277,15 @@ impl LightWallet {
 
         let birthday = reader.read_u64::<LittleEndian>()?;
 
-        if version_read_from_external <= 22 {
-            let _sapling_tree_verified = if version_read_from_external <= 12 {
+        if version_of_read_lwallet <= 22 {
+            let _sapling_tree_verified = if version_of_read_lwallet <= 12 {
                 true
             } else {
                 reader.read_u8()? == 1
             };
         }
 
-        let verified_tree = if version_read_from_external <= 21 {
+        let verified_tree = if version_of_read_lwallet <= 21 {
             None
         } else {
             Optional::read(&mut reader, |r| {
@@ -302,7 +302,7 @@ impl LightWallet {
         };
 
         // If version <= 8, adjust the "is_spendable" status of each note data
-        if version_read_from_external <= 8 {
+        if version_of_read_lwallet <= 8 {
             // Collect all spendable keys
             let spendable_keys: Vec<_> = keys
                 .get_all_sapling_extfvks()
@@ -313,7 +313,7 @@ impl LightWallet {
             transactions.adjust_spendable_status(spendable_keys);
         }
 
-        let price = if version_read_from_external <= 13 {
+        let price = if version_of_read_lwallet <= 13 {
             WalletZecPriceInfo::new()
         } else {
             WalletZecPriceInfo::read(&mut reader)?
@@ -325,7 +325,7 @@ impl LightWallet {
             Arc::new(RwLock::new(transactions)),
         );
 
-        let orchard_anchors = if version_read_from_external >= 25 {
+        let orchard_anchors = if version_of_read_lwallet >= 25 {
             Vector::read(&mut reader, |r| {
                 let mut anchor_bytes = [0; 32];
                 r.read_exact(&mut anchor_bytes)?;
@@ -352,12 +352,12 @@ impl LightWallet {
         };
 
         // For old wallets, remove unused addresses
-        if version_read_from_external <= 14 {
+        if version_of_read_lwallet <= 14 {
             lw.remove_unused_taddrs().await;
             lw.remove_unused_zaddrs().await;
         }
 
-        if version_read_from_external <= 14 {
+        if version_of_read_lwallet <= 14 {
             lw.set_witness_block_heights().await;
         }
 

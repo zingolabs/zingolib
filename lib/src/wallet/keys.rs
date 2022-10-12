@@ -234,22 +234,22 @@ impl Keys {
 
     /// Uniquely called by LightWallet::read_internal
     pub fn read_old<R: Read>(
-        version_read_from_external: u64,
+        lw_version_read_from_external: u64,
         mut reader: R,
         config: &ZingoConfig,
     ) -> io::Result<Self> {
-        let encrypted = if version_read_from_external >= 4 {
+        let encrypted = if lw_version_read_from_external >= 4 {
             reader.read_u8()? > 0
         } else {
             false
         };
 
         let mut enc_seed = [0u8; 48];
-        if version_read_from_external >= 4 {
+        if lw_version_read_from_external >= 4 {
             reader.read_exact(&mut enc_seed)?;
         }
 
-        let nonce = if version_read_from_external >= 4 {
+        let nonce = if lw_version_read_from_external >= 4 {
             Vector::read(&mut reader, |r| r.read_u8())?
         } else {
             vec![]
@@ -259,12 +259,12 @@ impl Keys {
         let mut seed_bytes = [0u8; 32];
         reader.read_exact(&mut seed_bytes)?;
 
-        let zkeys = if version_read_from_external <= 6 {
+        let zkeys = if lw_version_read_from_external <= 6 {
             // Up until version 6, the wallet keys were written out individually
             // Read the spending keys
             let extsks = Vector::read(&mut reader, |r| ExtendedSpendingKey::read(r))?;
 
-            let extfvks = if version_read_from_external >= 4 {
+            let extfvks = if lw_version_read_from_external >= 4 {
                 // Read the viewing keys
                 Vector::read(&mut reader, |r| ExtendedFullViewingKey::read(r))?
             } else {
@@ -334,7 +334,7 @@ impl Keys {
             Vector::read(&mut reader, |r| SaplingKey::read(r))?
         };
 
-        let tkeys = if version_read_from_external <= 20 {
+        let tkeys = if lw_version_read_from_external <= 20 {
             let tkeys = Vector::read(&mut reader, |r| {
                 let mut tpk_bytes = [0u8; 32];
                 r.read_exact(&mut tpk_bytes)?;
@@ -342,7 +342,7 @@ impl Keys {
                     .map_err(|e| io::Error::new(ErrorKind::InvalidData, e))
             })?;
 
-            let taddresses = if version_read_from_external >= 4 {
+            let taddresses = if lw_version_read_from_external >= 4 {
                 // Read the addresses
                 Vector::read(&mut reader, |r| utils::read_string(r))?
             } else {
@@ -379,12 +379,15 @@ impl Keys {
         })
     }
 
+    /// This fn is called (uniquely in this lib) by LightWallet::read_internal
+    /// which reads the first 64 bits of a serialized wallet before this can be
+    /// called.
     pub fn read<R: Read>(mut reader: R, config: &ZingoConfig) -> io::Result<Self> {
-        let version = reader.read_u64::<LittleEndian>()?;
-        if version > Self::serialized_version() {
+        let keys_version = reader.read_u64::<LittleEndian>()?;
+        if keys_version > Self::serialized_version() {
             let e = format!(
-                "Don't know how to read wallet version {}. Do you have the latest version?",
-                version
+                "Don't know how to read keys version {}. Do you have the latest version?",
+                keys_version
             );
             return Err(io::Error::new(ErrorKind::InvalidData, e));
         }
@@ -402,13 +405,13 @@ impl Keys {
 
         let zkeys = Vector::read(&mut reader, |r| SaplingKey::read(r))?;
 
-        let okeys = if version > 21 {
+        let okeys = if keys_version > 21 {
             Vector::read(&mut reader, |r| OrchardKey::read(r))?
         } else {
             vec![]
         };
 
-        let tkeys = if version <= 20 {
+        let tkeys = if keys_version <= 20 {
             let tkeys = Vector::read(&mut reader, |r| {
                 let mut tpk_bytes = [0u8; 32];
                 r.read_exact(&mut tpk_bytes)?;
