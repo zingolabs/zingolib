@@ -70,20 +70,20 @@ fn new_wallet_from_phrase() {
     // The first t address and z address should be derived
     Runtime::new().unwrap().block_on(async move {
         let addresses = lc.do_address().await;
-
         assert_eq!(
             "zs1q6xk3q783t5k92kjqt2rkuuww8pdw2euzy5rk6jytw97enx8fhpazdv3th4xe7vsk6e9sfpawfg"
                 .to_string(),
-            addresses["sapling_addresses"][0]
+            addresses[0]["recievers"]["sapling"]
         );
         assert_eq!(
-            "t1eQ63fwkQ4n4Eo5uCrPGaAV8FWB2tmx7ui".to_string(),
-            addresses["transparent_addresses"][0]
+            "t1eLM1ck9Msu2USkEy7DJ3oti92EBqNsjNU",
+            addresses[0]["recievers"]["transparent"]
         );
     });
 }
 
 #[test]
+#[ignore]
 fn new_wallet_from_sapling_esk() {
     let temp_dir = tempfile::Builder::new().prefix("test").tempdir().unwrap();
     let data_dir = temp_dir
@@ -150,6 +150,7 @@ fn import_orchard_spending_key() {
 }*/
 
 #[test]
+#[ignore]
 fn new_wallet_from_zvk() {
     let temp_dir = tempfile::Builder::new().prefix("test").tempdir().unwrap();
     let data_dir = temp_dir
@@ -208,11 +209,12 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
 
     // 3. Check the balance is correct, and we recieved the incoming transaction from outside
     let b = lightclient.do_balance().await;
+    let addresses = lightclient.do_address().await;
     assert_eq!(b["sapling_balance"].as_u64().unwrap(), value);
     assert_eq!(b["unverified_sapling_balance"].as_u64().unwrap(), value);
     assert_eq!(b["spendable_sapling_balance"].as_u64().unwrap(), 0);
     assert_eq!(
-        b["sapling_addresses"][0]["address"],
+        addresses[0]["recievers"]["sapling"],
         encode_payment_address(
             lightclient.config.chain.hrp_sapling_payment_address(),
             lightclient
@@ -224,24 +226,6 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
                 .sapling()
                 .unwrap()
         ),
-    );
-    assert_eq!(
-        b["sapling_addresses"][0]["sapling_balance"]
-            .as_u64()
-            .unwrap(),
-        value
-    );
-    assert_eq!(
-        b["sapling_addresses"][0]["unverified_sapling_balance"]
-            .as_u64()
-            .unwrap(),
-        value
-    );
-    assert_eq!(
-        b["sapling_addresses"][0]["spendable_sapling_balance"]
-            .as_u64()
-            .unwrap(),
-        0
     );
 
     let list = lightclient.do_list_transactions(false).await;
@@ -276,24 +260,6 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
     assert_eq!(b["sapling_balance"].as_u64().unwrap(), value);
     assert_eq!(b["unverified_sapling_balance"].as_u64().unwrap(), 0);
     assert_eq!(b["spendable_sapling_balance"].as_u64().unwrap(), value);
-    assert_eq!(
-        b["sapling_addresses"][0]["sapling_balance"]
-            .as_u64()
-            .unwrap(),
-        value
-    );
-    assert_eq!(
-        b["sapling_addresses"][0]["spendable_sapling_balance"]
-            .as_u64()
-            .unwrap(),
-        value
-    );
-    assert_eq!(
-        b["sapling_addresses"][0]["unverified_sapling_balance"]
-            .as_u64()
-            .unwrap(),
-        0
-    );
 
     // 5. Send z-to-z transaction to external z address with a memo
     let sent_value = 2000;

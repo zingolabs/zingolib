@@ -805,3 +805,16 @@ impl WalletZecPriceInfo {
         Ok(())
     }
 }
+
+#[test]
+fn read_write_empty_sapling_tree() {
+    let mut buffer = Vec::new();
+
+    CommitmentTree::<SaplingNode>::empty()
+        .write(&mut buffer)
+        .unwrap();
+    assert_eq!(
+        CommitmentTree::<SaplingNode>::empty(),
+        CommitmentTree::<SaplingNode>::read(&mut buffer.as_slice()).unwrap()
+    )
+}
