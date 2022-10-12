@@ -247,6 +247,7 @@ impl LightWallet {
         let mut blocks = Vector::read(&mut reader, |r| BlockData::read(r))?;
         if version_read_from_external <= 14 {
             // Reverse the order, since after version 20, we need highest-block-first
+            // TODO: Consider order between 14 and 20.
             blocks = blocks.into_iter().rev().collect();
         }
 
