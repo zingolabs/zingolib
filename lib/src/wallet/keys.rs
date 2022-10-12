@@ -233,22 +233,22 @@ impl Keys {
     }
 
     pub fn read_old<R: Read>(
-        version: u64,
+        version_read_from_external: u64,
         mut reader: R,
         config: &ZingoConfig,
     ) -> io::Result<Self> {
-        let encrypted = if version >= 4 {
+        let encrypted = if version_read_from_external >= 4 {
             reader.read_u8()? > 0
         } else {
             false
         };
 
         let mut enc_seed = [0u8; 48];
-        if version >= 4 {
+        if version_read_from_external >= 4 {
             reader.read_exact(&mut enc_seed)?;
         }
 
-        let nonce = if version >= 4 {
+        let nonce = if version_read_from_external >= 4 {
             Vector::read(&mut reader, |r| r.read_u8())?
         } else {
             vec![]
@@ -258,12 +258,12 @@ impl Keys {
         let mut seed_bytes = [0u8; 32];
         reader.read_exact(&mut seed_bytes)?;
 
-        let zkeys = if version <= 6 {
+        let zkeys = if version_read_from_external <= 6 {
             // Up until version 6, the wallet keys were written out individually
             // Read the spending keys
             let extsks = Vector::read(&mut reader, |r| ExtendedSpendingKey::read(r))?;
 
-            let extfvks = if version >= 4 {
+            let extfvks = if version_read_from_external >= 4 {
                 // Read the viewing keys
                 Vector::read(&mut reader, |r| ExtendedFullViewingKey::read(r))?
             } else {
@@ -333,7 +333,7 @@ impl Keys {
             Vector::read(&mut reader, |r| SaplingKey::read(r))?
         };
 
-        let tkeys = if version <= 20 {
+        let tkeys = if version_read_from_external <= 20 {
             let tkeys = Vector::read(&mut reader, |r| {
                 let mut tpk_bytes = [0u8; 32];
                 r.read_exact(&mut tpk_bytes)?;
@@ -341,7 +341,7 @@ impl Keys {
                     .map_err(|e| io::Error::new(ErrorKind::InvalidData, e))
             })?;
 
-            let taddresses = if version >= 4 {
+            let taddresses = if version_read_from_external >= 4 {
                 // Read the addresses
                 Vector::read(&mut reader, |r| utils::read_string(r))?
             } else {
