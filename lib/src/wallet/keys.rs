@@ -232,6 +232,7 @@ impl Keys {
         })
     }
 
+    /// Uniquely called by LightWallet::read_internal
     pub fn read_old<R: Read>(
         version_read_from_external: u64,
         mut reader: R,
