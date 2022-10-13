@@ -379,7 +379,7 @@ to scan from the start of the blockchain."
         regtest_config_check(&self.regtest_manager, &config.chain);
 
         let lightclient = match self.seed.clone() {
-            Some(phrase) => Arc::new(LightClient::create_with_capable_wallet(
+            Some(phrase) => Arc::new(LightClient::create_with_seedorkey_wallet(
                 phrase,
                 &config,
                 self.birthday,

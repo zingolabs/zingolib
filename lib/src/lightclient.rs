@@ -378,7 +378,9 @@ impl LightClient {
         Self::new_wallet(config, latest_block, 1)
     }
 
-    pub fn create_with_capable_wallet(
+    /// The wallet this fn associates with the lightclient is specifically derived from
+    /// a spend authority.
+    pub fn create_with_seedorkey_wallet(
         key_or_seedphrase: String,
         config: &ZingoConfig,
         birthday: u64,
