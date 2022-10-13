@@ -184,7 +184,7 @@ impl TrialDecryptions {
                 let orchard_tree = CommitmentTree::<MerkleHashOrchard>::read(
                     hex::decode(&trees_state.orchard_tree).unwrap().as_slice(),
                 )
-                .unwrap();
+                .unwrap_or(CommitmentTree::empty());
                 anchors.push((Anchor::from(orchard_tree.root()), height.into()));
             }
 
