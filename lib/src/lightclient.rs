@@ -400,24 +400,25 @@ impl LightClient {
             config.hrp_sapling_viewing_key()
         );
 
-        let lr = if key_or_seedphrase.starts_with(config.hrp_sapling_private_key())
+        if key_or_seedphrase.starts_with(config.hrp_sapling_private_key())
             || key_or_seedphrase.starts_with(config.hrp_sapling_viewing_key())
         {
-            let lc = Self::new_wallet(config, birthday, 0)?;
+            let lightclient = Self::new_wallet(config, birthday, 0)?;
             Runtime::new().unwrap().block_on(async move {
-                lc.do_import_key(key_or_seedphrase, birthday)
+                lightclient
+                    .do_import_key(key_or_seedphrase, birthday)
                     .await
                     .map_err(|e| io::Error::new(ErrorKind::InvalidData, e))?;
 
                 info!("Created wallet with 0 keys, imported private key");
 
-                Ok(lc)
+                Ok(lightclient)
             })
         } else if key_or_seedphrase.starts_with(config.chain.hrp_orchard_spending_key()) {
             todo!()
         } else {
             Runtime::new().unwrap().block_on(async move {
-                let l = LightClient {
+                let lightclient = LightClient {
                     wallet: LightWallet::new(config.clone(), Some(key_or_seedphrase), birthday, 1)?,
                     config: config.clone(),
                     mempool_monitor: std::sync::RwLock::new(None),
@@ -425,20 +426,32 @@ impl LightClient {
                     bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
                 };
 
-                l.set_wallet_initial_state(birthday).await;
-                l.do_save()
+                lightclient.set_wallet_initial_state(birthday).await;
+                lightclient
+                    .do_save()
                     .await
                     .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
 
                 info!("Created new wallet!");
 
-                Ok(l)
+                Ok(lightclient)
             })
+        }
+    }
+
+    pub fn read_from_disk(config: &ZingoConfig) -> io::Result<Self> {
+        let wallet_path = if config.wallet_exists() {
+            config.get_wallet_path()
+        } else {
+            return Err(Error::new(
+                ErrorKind::AlreadyExists,
+                format!(
+                    "Cannot read wallet. No file at {}",
+                    config.get_wallet_path().display()
+                ),
+            ));
         };
-
-        info!("Created LightClient to {}", &config.get_server_uri());
-
-        lr
+        LightClient::read_from_buffer(&config, BufReader::new(File::open(wallet_path)?))
     }
 
     /// This constructor depends on a wallet that's read from a buffer.
@@ -465,22 +478,6 @@ impl LightClient {
             Ok(lc)
         })
     }
-
-    pub fn read_from_disk(config: &ZingoConfig) -> io::Result<Self> {
-        let wallet_path = if config.wallet_exists() {
-            config.get_wallet_path()
-        } else {
-            return Err(Error::new(
-                ErrorKind::AlreadyExists,
-                format!(
-                    "Cannot read wallet. No file at {}",
-                    config.get_wallet_path().display()
-                ),
-            ));
-        };
-        LightClient::read_from_buffer(&config, BufReader::new(File::open(wallet_path)?))
-    }
-
     pub fn init_logging(&self) -> io::Result<()> {
         // Configure logging first.
         let log_config = self.config.get_log_config()?;

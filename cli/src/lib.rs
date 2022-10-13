@@ -105,6 +105,9 @@ fn regtest_config_check(regtest_manager: &Option<regtest::RegtestManager>, chain
     }
 }
 
+/// TODO: start_interactive does not explicitly reference a wallet, do we need
+/// to expose new/more/higher-layer abstractions to facilitate wallet reuse from
+/// the CLI?
 fn start_interactive(
     command_transmitter: Sender<(String, Vec<String>)>,
     resp_receiver: Receiver<String>,
@@ -366,6 +369,9 @@ to scan from the start of the blockchain."
         })
     }
 
+    /// Used by the zingocli crate, and the zingo-mobile application:
+    /// <https://github.com/zingolabs/zingolib/tree/dev/cli>
+    /// <https://github.com/zingolabs/zingo-mobile>
     pub fn startup(&self) -> std::io::Result<(Sender<(String, Vec<String>)>, Receiver<String>)> {
         // Try to get the configuration
         let (config, latest_block_height) =
