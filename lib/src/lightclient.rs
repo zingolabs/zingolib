@@ -457,8 +457,8 @@ impl LightClient {
     }
 
     /// This constructor depends on a wallet that's read from a buffer.
-    /// Its only internal call is in a test of its functionality.
-    /// It's used by zingo-mobile.
+    /// It is used internally by read_from_disk, and directly called by
+    /// zingo-mobile.
     pub fn read_from_buffer<R: Read>(config: &ZingoConfig, mut reader: R) -> io::Result<Self> {
         Runtime::new().unwrap().block_on(async move {
             let wallet = LightWallet::read_internal(&mut reader, config).await?;
