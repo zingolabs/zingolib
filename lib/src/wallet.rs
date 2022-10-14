@@ -222,6 +222,11 @@ impl LightWallet {
 
     /// This is a Wallet constructor.  It is the internal function called by 2 LightWallet
     /// read procedures, by reducing its visibility we constrain possible uses.
+    /// Each type that can be deserialized has an associated serialization version.  Our
+    /// convention is to omit the type e.g. "wallet" from the local variable ident, and
+    /// make explicit (via ident) which variable refers to a value deserialized from
+    /// some source and which is represented as a source-code constant.
+
     pub(crate) async fn read_internal<R: Read>(
         mut reader: R,
         config: &ZingoConfig,
