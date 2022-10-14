@@ -392,7 +392,7 @@ impl BlockAndWitnessData {
                     let orchard_tree = CommitmentTree::<MerkleHashOrchard>::read(
                         hex::decode(&trees_state.orchard_tree).unwrap().as_slice(),
                     )
-                    .unwrap();
+                    .unwrap_or(CommitmentTree::empty());
                     anchors.push((
                         Anchor::from(orchard_tree.root()),
                         BlockHeight::from_u32(block_height as u32),
