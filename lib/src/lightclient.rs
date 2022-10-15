@@ -1809,7 +1809,7 @@ impl LightClient {
             let mut anchors = self.wallet.orchard_anchors.write().await;
             *anchors = blaze_sync_data
                 .block_data
-                .orchard_anchors
+                .orchard_anchor_height_pairs
                 .read()
                 .await
                 .clone()
