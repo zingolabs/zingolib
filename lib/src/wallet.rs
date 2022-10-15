@@ -325,7 +325,7 @@ impl LightWallet {
             Arc::new(RwLock::new(transactions)),
         );
 
-        let orchard_anchors = if version_of_read_lwallet >= 25 {
+        let orchard_anchor_height_pairs = if version_of_read_lwallet >= 25 {
             Vector::read(&mut reader, |r| {
                 let mut anchor_bytes = [0; 32];
                 r.read_exact(&mut anchor_bytes)?;
@@ -345,7 +345,7 @@ impl LightWallet {
             wallet_options: Arc::new(RwLock::new(wallet_options)),
             birthday: AtomicU64::new(birthday),
             verified_tree: Arc::new(RwLock::new(verified_tree)),
-            orchard_anchor_and_height_pairs: Arc::new(RwLock::new(orchard_anchors)),
+            orchard_anchor_and_height_pairs: Arc::new(RwLock::new(orchard_anchor_height_pairs)),
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(price)),
             transaction_context,
