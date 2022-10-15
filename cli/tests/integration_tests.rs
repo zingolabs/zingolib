@@ -9,11 +9,6 @@ use utils::setup::{
     basic_no_spendable, coinbasebacked_spendcapable, two_clients_a_coinbase_backed,
 };
 #[test]
-fn basic_connectivity_scenario_canary() {
-    let (_, _child_process_handler_to_drop, _) = coinbasebacked_spendcapable();
-}
-
-#[test]
 fn create_network_disconnected_client() {
     let (_regtest_manager_1, _child_process_handler_1, _client_1) = coinbasebacked_spendcapable();
 }
