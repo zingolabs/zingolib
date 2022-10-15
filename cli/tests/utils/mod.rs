@@ -9,6 +9,7 @@ pub async fn increase_height_and_sync_client(
     client: &LightClient,
     n: u32,
 ) {
+    client.do_sync(true).await.unwrap();
     let start_height = client
         .do_wallet_last_scanned_height()
         .await
