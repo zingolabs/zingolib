@@ -75,12 +75,10 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
 
 #[test]
 fn mine_sapling_to_self() {
-    let (_regtest_manager, _child_process_handler, client) = coinbasebacked_spendcapable();
+    let (regtest_manager, _child_process_handler, client) = coinbasebacked_spendcapable();
 
     Runtime::new().unwrap().block_on(async {
-        sleep(Duration::from_secs(2)).await;
-        client.do_sync(true).await.unwrap();
-
+        utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
         let balance = client.do_balance().await;
         assert_eq!(balance["sapling_balance"], 3_750_000_000u64);
     });
