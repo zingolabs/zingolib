@@ -48,12 +48,12 @@ fn new_wallet_from_phrase() {
         .to_string();
 
     let config = ZingoConfig::create_unconnected(Network::FakeMainnet, Some(data_dir));
-    let lc =
-        LightClient::create_with_capable_wallet(TEST_SEED.to_string(), &config, 0, false).unwrap();
+    let lc = LightClient::create_with_seedorkey_wallet(TEST_SEED.to_string(), &config, 0, false)
+        .unwrap();
     assert_eq!(
         format!(
             "{:?}",
-            LightClient::create_with_capable_wallet(TEST_SEED.to_string(), &config, 0, false)
+            LightClient::create_with_seedorkey_wallet(TEST_SEED.to_string(), &config, 0, false)
                 .err()
                 .unwrap()
         ),
@@ -96,7 +96,7 @@ fn new_wallet_from_sapling_esk() {
 
     let config = ZingoConfig::create_unconnected(Network::FakeMainnet, Some(data_dir));
     let sk = "secret-extended-key-main1qvpa0qr8qqqqpqxn4l054nzxpxzp3a8r2djc7sekdek5upce8mc2j2z0arzps4zv940qeg706hd0wq6g5snzvhp332y6vhwyukdn8dhekmmsk7fzvzkqm6ypc99uy63tpesqwxhpre78v06cx8k5xpp9mrhtgqs5dvp68cqx2yrvthflmm2ynl8c0506dekul0f6jkcdmh0292lpphrksyc5z3pxwws97zd5els3l2mjt2s7hntap27mlmt6w0drtfmz36vz8pgu7ec0twfrq";
-    let lc = LightClient::create_with_capable_wallet(sk.to_string(), &config, 0, false).unwrap();
+    let lc = LightClient::create_with_seedorkey_wallet(sk.to_string(), &config, 0, false).unwrap();
     Runtime::new().unwrap().block_on(async move {
         let addresses = lc.do_address().await;
         assert_eq!(addresses["sapling_addresses"].len(), 1);
@@ -162,7 +162,7 @@ fn new_wallet_from_zvk() {
 
     let config = ZingoConfig::create_unconnected(Network::FakeMainnet, Some(data_dir));
     let vk = "zxviews1qvpa0qr8qqqqpqxn4l054nzxpxzp3a8r2djc7sekdek5upce8mc2j2z0arzps4zv9kdvg28gjzvxd47ant6jn4svln5psw3htx93cq93ahw4e7lptrtlq7he5r6p6rcm3s0z6l24ype84sgqfrmghu449htrjspfv6qg2zfx2yrvthflmm2ynl8c0506dekul0f6jkcdmh0292lpphrksyc5z3pxwws97zd5els3l2mjt2s7hntap27mlmt6w0drtfmz36vz8pgu7ecrxzsls";
-    let lc = LightClient::create_with_capable_wallet(vk.to_string(), &config, 0, false).unwrap();
+    let lc = LightClient::create_with_seedorkey_wallet(vk.to_string(), &config, 0, false).unwrap();
 
     Runtime::new().unwrap().block_on(async move {
         let addresses = lc.do_address().await;

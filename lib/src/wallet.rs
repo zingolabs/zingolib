@@ -190,7 +190,7 @@ pub struct LightWallet {
 use crate::wallet::traits::{Diversifiable as _, WalletKey};
 impl LightWallet {
     pub fn serialized_version() -> u64 {
-        return 24;
+        return 25;
     }
 
     pub fn new(
@@ -220,32 +220,38 @@ impl LightWallet {
         })
     }
 
-    pub async fn read<R: Read>(mut reader: R, config: &ZingoConfig) -> io::Result<Self> {
-        let version = reader.read_u64::<LittleEndian>()?;
-        if version > Self::serialized_version() {
+    /// This is a Wallet constructor.  It is the internal function called by 2 LightWallet
+    /// read procedures, by reducing its visibility we constrain possible uses.
+    pub(crate) async fn read_internal<R: Read>(
+        mut reader: R,
+        config: &ZingoConfig,
+    ) -> io::Result<Self> {
+        let version_of_read_lwallet = reader.read_u64::<LittleEndian>()?;
+        if version_of_read_lwallet > Self::serialized_version() {
             let e = format!(
                 "Don't know how to read wallet version {}. Do you have the latest version?",
-                version
+                version_of_read_lwallet
             );
             error!("{}", e);
             return Err(io::Error::new(ErrorKind::InvalidData, e));
         }
 
-        info!("Reading wallet version {}", version);
+        info!("Reading wallet version {}", version_of_read_lwallet);
 
-        let keys = if version <= 14 {
-            Keys::read_old(version, &mut reader, config)
+        let keys = if version_of_read_lwallet <= 14 {
+            Keys::read_old(version_of_read_lwallet, &mut reader, config)
         } else {
             Keys::read(&mut reader, config)
         }?;
 
         let mut blocks = Vector::read(&mut reader, |r| BlockData::read(r))?;
-        if version <= 14 {
+        if version_of_read_lwallet <= 14 {
             // Reverse the order, since after version 20, we need highest-block-first
+            // TODO: Consider order between 14 and 20.
             blocks = blocks.into_iter().rev().collect();
         }
 
-        let mut transactions = if version <= 14 {
+        let mut transactions = if version_of_read_lwallet <= 14 {
             TransactionMetadataSet::read_old(&mut reader)
         } else {
             TransactionMetadataSet::read(&mut reader)
@@ -263,7 +269,7 @@ impl LightWallet {
             ));
         }
 
-        let wallet_options = if version <= 23 {
+        let wallet_options = if version_of_read_lwallet <= 23 {
             WalletOptions::default()
         } else {
             WalletOptions::read(&mut reader)?
@@ -271,15 +277,15 @@ impl LightWallet {
 
         let birthday = reader.read_u64::<LittleEndian>()?;
 
-        if version <= 22 {
-            let _sapling_tree_verified = if version <= 12 {
+        if version_of_read_lwallet <= 22 {
+            let _sapling_tree_verified = if version_of_read_lwallet <= 12 {
                 true
             } else {
                 reader.read_u8()? == 1
             };
         }
 
-        let verified_tree = if version <= 21 {
+        let verified_tree = if version_of_read_lwallet <= 21 {
             None
         } else {
             Optional::read(&mut reader, |r| {
@@ -296,7 +302,7 @@ impl LightWallet {
         };
 
         // If version <= 8, adjust the "is_spendable" status of each note data
-        if version <= 8 {
+        if version_of_read_lwallet <= 8 {
             // Collect all spendable keys
             let spendable_keys: Vec<_> = keys
                 .get_all_sapling_extfvks()
@@ -307,7 +313,7 @@ impl LightWallet {
             transactions.adjust_spendable_status(spendable_keys);
         }
 
-        let price = if version <= 13 {
+        let price = if version_of_read_lwallet <= 13 {
             WalletZecPriceInfo::new()
         } else {
             WalletZecPriceInfo::read(&mut reader)?
@@ -318,24 +324,40 @@ impl LightWallet {
             Arc::new(RwLock::new(keys)),
             Arc::new(RwLock::new(transactions)),
         );
+
+        let orchard_anchors = if version_of_read_lwallet >= 25 {
+            Vector::read(&mut reader, |r| {
+                let mut anchor_bytes = [0; 32];
+                r.read_exact(&mut anchor_bytes)?;
+                let block_height = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
+                Ok((
+                    Option::from(Anchor::from_bytes(anchor_bytes))
+                        .ok_or(Error::new(ErrorKind::InvalidData, "Bad orchard anchor"))?,
+                    block_height,
+                ))
+            })?
+        } else {
+            Vec::new()
+        };
+
         let mut lw = Self {
             blocks: Arc::new(RwLock::new(blocks)),
             wallet_options: Arc::new(RwLock::new(wallet_options)),
             birthday: AtomicU64::new(birthday),
             verified_tree: Arc::new(RwLock::new(verified_tree)),
-            orchard_anchors: Arc::new(RwLock::new(Vec::new())),
+            orchard_anchors: Arc::new(RwLock::new(orchard_anchors)),
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(price)),
             transaction_context,
         };
 
         // For old wallets, remove unused addresses
-        if version <= 14 {
+        if version_of_read_lwallet <= 14 {
             lw.remove_unused_taddrs().await;
             lw.remove_unused_zaddrs().await;
         }
 
-        if version <= 14 {
+        if version_of_read_lwallet <= 14 {
             lw.set_witness_block_heights().await;
         }
 
@@ -395,6 +417,15 @@ impl LightWallet {
 
         // Price info
         self.price.read().await.write(&mut writer)?;
+
+        Vector::write(
+            &mut writer,
+            &*self.orchard_anchors.read().await,
+            |w, (anchor, height)| {
+                w.write_all(&anchor.to_bytes())?;
+                w.write_u32::<LittleEndian>(u32::from(*height))
+            },
+        )?;
 
         Ok(())
     }

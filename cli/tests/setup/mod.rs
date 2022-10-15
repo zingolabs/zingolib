@@ -134,7 +134,7 @@ pub fn coinbasebacked_spendcapable() -> (RegtestManager, ChildProcessHandler, Li
     )
     .unwrap();
     let light_client =
-        LightClient::create_with_capable_wallet(seed_phrase, &config, 0, false).unwrap();
+        LightClient::create_with_seedorkey_wallet(seed_phrase, &config, 0, false).unwrap();
     regtest_manager.generate_n_blocks(5).unwrap();
     (
         regtest_manager,

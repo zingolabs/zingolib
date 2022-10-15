@@ -378,7 +378,9 @@ impl LightClient {
         Self::new_wallet(config, latest_block, 1)
     }
 
-    pub fn create_with_capable_wallet(
+    /// The wallet this fn associates with the lightclient is specifically derived from
+    /// a spend authority.
+    pub fn create_with_seedorkey_wallet(
         key_or_seedphrase: String,
         config: &ZingoConfig,
         birthday: u64,
@@ -400,24 +402,25 @@ impl LightClient {
             config.hrp_sapling_viewing_key()
         );
 
-        let lr = if key_or_seedphrase.starts_with(config.hrp_sapling_private_key())
+        if key_or_seedphrase.starts_with(config.hrp_sapling_private_key())
             || key_or_seedphrase.starts_with(config.hrp_sapling_viewing_key())
         {
-            let lc = Self::new_wallet(config, birthday, 0)?;
+            let lightclient = Self::new_wallet(config, birthday, 0)?;
             Runtime::new().unwrap().block_on(async move {
-                lc.do_import_key(key_or_seedphrase, birthday)
+                lightclient
+                    .do_import_key(key_or_seedphrase, birthday)
                     .await
                     .map_err(|e| io::Error::new(ErrorKind::InvalidData, e))?;
 
                 info!("Created wallet with 0 keys, imported private key");
 
-                Ok(lc)
+                Ok(lightclient)
             })
         } else if key_or_seedphrase.starts_with(config.chain.hrp_orchard_spending_key()) {
             todo!()
         } else {
             Runtime::new().unwrap().block_on(async move {
-                let l = LightClient {
+                let lightclient = LightClient {
                     wallet: LightWallet::new(config.clone(), Some(key_or_seedphrase), birthday, 1)?,
                     config: config.clone(),
                     mempool_monitor: std::sync::RwLock::new(None),
@@ -425,44 +428,17 @@ impl LightClient {
                     bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
                 };
 
-                l.set_wallet_initial_state(birthday).await;
-                l.do_save()
+                lightclient.set_wallet_initial_state(birthday).await;
+                lightclient
+                    .do_save()
                     .await
                     .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
 
                 info!("Created new wallet!");
 
-                Ok(l)
+                Ok(lightclient)
             })
-        };
-
-        info!("Created LightClient to {}", &config.get_server_uri());
-
-        lr
-    }
-
-    pub fn read_from_buffer<R: Read>(config: &ZingoConfig, mut reader: R) -> io::Result<Self> {
-        let l = Runtime::new().unwrap().block_on(async move {
-            let wallet = LightWallet::read(&mut reader, config).await?;
-
-            let lc = LightClient {
-                wallet,
-                config: config.clone(),
-                mempool_monitor: std::sync::RwLock::new(None),
-                sync_lock: Mutex::new(()),
-                bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
-            };
-
-            info!(
-                "Read wallet with birthday {}",
-                lc.wallet.get_birthday().await
-            );
-            info!("Created LightClient to {}", &config.get_server_uri());
-
-            Ok(lc)
-        });
-
-        l
+        }
     }
 
     pub fn read_from_disk(config: &ZingoConfig) -> io::Result<Self> {
@@ -477,11 +453,15 @@ impl LightClient {
                 ),
             ));
         };
+        LightClient::read_from_buffer(&config, BufReader::new(File::open(wallet_path)?))
+    }
 
-        let l = Runtime::new().unwrap().block_on(async move {
-            let mut file_buffer = BufReader::new(File::open(wallet_path)?);
-
-            let wallet = LightWallet::read(&mut file_buffer, config).await?;
+    /// This constructor depends on a wallet that's read from a buffer.
+    /// Its only internal call is in a test of its functionality.
+    /// It's used by zingo-mobile.
+    pub fn read_from_buffer<R: Read>(config: &ZingoConfig, mut reader: R) -> io::Result<Self> {
+        Runtime::new().unwrap().block_on(async move {
+            let wallet = LightWallet::read_internal(&mut reader, config).await?;
 
             let lc = LightClient {
                 wallet,
@@ -498,11 +478,8 @@ impl LightClient {
             info!("Created LightClient to {}", &config.get_server_uri());
 
             Ok(lc)
-        });
-
-        l
+        })
     }
-
     pub fn init_logging(&self) -> io::Result<()> {
         // Configure logging first.
         let log_config = self.config.get_log_config()?;
