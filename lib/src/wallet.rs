@@ -174,7 +174,7 @@ pub struct LightWallet {
     pub(crate) verified_tree: Arc<RwLock<Option<TreeState>>>,
 
     // Orchard anchors, and their heights
-    pub(crate) orchard_anchors: Arc<RwLock<Vec<(Anchor, BlockHeight)>>>,
+    pub(crate) orchard_anchor_and_height_pairs: Arc<RwLock<Vec<(Anchor, BlockHeight)>>>,
 
     // Progress of an outgoing transaction
     send_progress: Arc<RwLock<SendProgress>>,
@@ -213,7 +213,7 @@ impl LightWallet {
             wallet_options: Arc::new(RwLock::new(WalletOptions::default())),
             birthday: AtomicU64::new(height),
             verified_tree: Arc::new(RwLock::new(None)),
-            orchard_anchors: Arc::new(RwLock::new(Vec::new())),
+            orchard_anchor_and_height_pairs: Arc::new(RwLock::new(Vec::new())),
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(WalletZecPriceInfo::new())),
             transaction_context,
@@ -345,7 +345,7 @@ impl LightWallet {
             wallet_options: Arc::new(RwLock::new(wallet_options)),
             birthday: AtomicU64::new(birthday),
             verified_tree: Arc::new(RwLock::new(verified_tree)),
-            orchard_anchors: Arc::new(RwLock::new(orchard_anchors)),
+            orchard_anchor_and_height_pairs: Arc::new(RwLock::new(orchard_anchors)),
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(price)),
             transaction_context,
@@ -420,7 +420,7 @@ impl LightWallet {
 
         Vector::write(
             &mut writer,
-            &*self.orchard_anchors.read().await,
+            &*self.orchard_anchor_and_height_pairs.read().await,
             |w, (anchor, height)| {
                 w.write_all(&anchor.to_bytes())?;
                 w.write_u32::<LittleEndian>(u32::from(*height))
@@ -793,7 +793,7 @@ impl LightWallet {
     /// and the wallet will need to be rescanned
     pub async fn clear_all(&self) {
         self.blocks.write().await.clear();
-        self.orchard_anchors.write().await.clear();
+        self.orchard_anchor_and_height_pairs.write().await.clear();
         self.transaction_context
             .transaction_metadata_set
             .write()
@@ -1815,7 +1815,7 @@ impl LightWallet {
         if let Some(note) = orchard_notes.get(0) {
             Ok(orchard::Anchor::from(note.witness.root()))
         } else {
-            self.orchard_anchors
+            self.orchard_anchor_and_height_pairs
                 .read()
                 .await
                 .iter()
