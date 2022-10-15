@@ -1,3 +1,5 @@
+//! In all cases in this file "external_version" refers to a serialization version that is interpreted
+//! from a source outside of the code-base e.g. a wallet-file.
 use std::{
     collections::HashMap,
     io::{self, Error, ErrorKind, Read, Write},
@@ -75,7 +77,8 @@ impl ToBase58Check for [u8] {
 
 /// A trait for converting base58check encoded values.
 pub trait FromBase58Check {
-    /// Convert a value of `self`, interpreted as base58check encoded data, into the tuple with version and payload as bytes vector.
+    /// Convert a value of `self`, interpreted as base58check encoded data,
+    /// into the tuple with version and payload as bytes vector.
     fn from_base58check(&self) -> io::Result<(u8, Vec<u8>)>;
 }
 
@@ -234,22 +237,22 @@ impl Keys {
 
     /// Uniquely called by LightWallet::read_internal
     pub fn read_old<R: Read>(
-        lw_version_read_from_external: u64,
+        external_version: u64,
         mut reader: R,
         config: &ZingoConfig,
     ) -> io::Result<Self> {
-        let encrypted = if lw_version_read_from_external >= 4 {
+        let encrypted = if external_version >= 4 {
             reader.read_u8()? > 0
         } else {
             false
         };
 
         let mut enc_seed = [0u8; 48];
-        if lw_version_read_from_external >= 4 {
+        if external_version >= 4 {
             reader.read_exact(&mut enc_seed)?;
         }
 
-        let nonce = if lw_version_read_from_external >= 4 {
+        let nonce = if external_version >= 4 {
             Vector::read(&mut reader, |r| r.read_u8())?
         } else {
             vec![]
@@ -259,12 +262,12 @@ impl Keys {
         let mut seed_bytes = [0u8; 32];
         reader.read_exact(&mut seed_bytes)?;
 
-        let zkeys = if lw_version_read_from_external <= 6 {
+        let zkeys = if external_version <= 6 {
             // Up until version 6, the wallet keys were written out individually
             // Read the spending keys
             let extsks = Vector::read(&mut reader, |r| ExtendedSpendingKey::read(r))?;
 
-            let extfvks = if lw_version_read_from_external >= 4 {
+            let extfvks = if external_version >= 4 {
                 // Read the viewing keys
                 Vector::read(&mut reader, |r| ExtendedFullViewingKey::read(r))?
             } else {
@@ -334,7 +337,7 @@ impl Keys {
             Vector::read(&mut reader, |r| SaplingKey::read(r))?
         };
 
-        let tkeys = if lw_version_read_from_external <= 20 {
+        let tkeys = if external_version <= 20 {
             let tkeys = Vector::read(&mut reader, |r| {
                 let mut tpk_bytes = [0u8; 32];
                 r.read_exact(&mut tpk_bytes)?;
@@ -342,7 +345,7 @@ impl Keys {
                     .map_err(|e| io::Error::new(ErrorKind::InvalidData, e))
             })?;
 
-            let taddresses = if lw_version_read_from_external >= 4 {
+            let taddresses = if external_version >= 4 {
                 // Read the addresses
                 Vector::read(&mut reader, |r| utils::read_string(r))?
             } else {
@@ -382,7 +385,7 @@ impl Keys {
     /// This fn is called (uniquely in this lib) by LightWallet::read_internal
     /// which reads the first 64 bits of a serialized wallet before this can be
     /// called.
-    pub fn read<R: Read>(mut reader: R, config: &ZingoConfig) -> io::Result<Self> {
+    pub(crate) fn read_internal<R: Read>(mut reader: R, config: &ZingoConfig) -> io::Result<Self> {
         let keys_version = reader.read_u64::<LittleEndian>()?;
         if keys_version > Self::serialized_version() {
             let e = format!(

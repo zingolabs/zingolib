@@ -249,7 +249,7 @@ impl LightWallet {
         let keys = if external_version <= 14 {
             Keys::read_old(external_version, &mut reader, config)
         } else {
-            Keys::read(&mut reader, config)
+            Keys::read_internal(&mut reader, config)
         }?;
 
         let mut blocks = Vector::read(&mut reader, |r| BlockData::read(r))?;
