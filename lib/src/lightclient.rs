@@ -1806,7 +1806,7 @@ impl LightClient {
 
         // Store the ten highest orchard anchors
         {
-            let mut anchors = self.wallet.orchard_anchors.write().await;
+            let mut anchors = self.wallet.orchard_anchor_and_height_pairs.write().await;
             *anchors = blaze_sync_data
                 .block_data
                 .orchard_anchor_height_pairs
