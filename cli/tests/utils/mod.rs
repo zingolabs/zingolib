@@ -4,17 +4,20 @@ use tokio::time::sleep;
 use zingo_cli::regtest::RegtestManager;
 use zingolib::lightclient::LightClient;
 
+async fn get_synced_wallet_height(client: &LightClient) -> u32 {
+    client.do_sync(true).await.unwrap();
+    client
+        .do_wallet_last_scanned_height()
+        .await
+        .as_u32()
+        .unwrap()
+}
 pub async fn increase_height_and_sync_client(
     manager: &RegtestManager,
     client: &LightClient,
     n: u32,
 ) {
-    client.do_sync(true).await.unwrap();
-    let start_height = client
-        .do_wallet_last_scanned_height()
-        .await
-        .as_u32()
-        .unwrap();
+    let start_height = get_synced_wallet_height(&client).await;
     let target = start_height + n;
     manager
         .generate_n_blocks(n)
@@ -24,13 +27,7 @@ pub async fn increase_height_and_sync_client(
     }
 }
 async fn check_wallet_chainheight_value(client: &LightClient, target: u32) -> bool {
-    client.do_sync(true).await.unwrap();
-    client
-        .do_wallet_last_scanned_height()
-        .await
-        .as_u32()
-        .unwrap()
-        != target
+    get_synced_wallet_height(&client).await != target
 }
 pub mod setup {
     use crate::data;
