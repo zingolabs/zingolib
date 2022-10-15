@@ -58,7 +58,7 @@ pub struct BlockAndWitnessData {
     highest_verified_trees: Option<TreeState>,
 
     // Orchard anchors, and their heights.
-    pub(crate) orchard_anchors: Arc<RwLock<Vec<(Anchor, BlockHeight)>>>,
+    pub(crate) orchard_anchor_height_pairs: Arc<RwLock<Vec<(Anchor, BlockHeight)>>>,
 
     // Link to the syncstatus where we can update progress
     sync_status: Arc<RwLock<SyncStatus>>,
@@ -75,7 +75,7 @@ impl BlockAndWitnessData {
             unverified_treestates: Arc::new(RwLock::new(vec![])),
             batch_size: 25,
             highest_verified_trees: None,
-            orchard_anchors: Arc::new(RwLock::new(Vec::new())),
+            orchard_anchor_height_pairs: Arc::new(RwLock::new(Vec::new())),
             sync_status,
             sapling_activation_height: config.sapling_activation_height(),
             orchard_activation_height: config
@@ -378,14 +378,14 @@ impl BlockAndWitnessData {
         end_block: u64,
         uri: Arc<std::sync::RwLock<Uri>>,
     ) -> JoinHandle<Result<(), String>> {
-        let orchard_anchors = self.orchard_anchors.clone();
+        let orchard_anchor_height_pairs = self.orchard_anchor_height_pairs.clone();
         tokio::spawn(async move {
             let mut workers = FuturesUnordered::new();
             for block_height in end_block..=start_block {
                 let uri = uri.clone();
-                let orchard_anchors = orchard_anchors.clone();
+                let orchard_anchor_height_pairs = orchard_anchor_height_pairs.clone();
                 workers.push(tokio::spawn(async move {
-                    let mut anchors = orchard_anchors.write().await;
+                    let mut anchors_and_heights = orchard_anchor_height_pairs.write().await;
 
                     let uri = uri.read().unwrap().clone();
                     let trees_state = GrpcConnector::get_trees(uri.clone(), block_height).await?;
@@ -393,7 +393,7 @@ impl BlockAndWitnessData {
                         hex::decode(&trees_state.orchard_tree).unwrap().as_slice(),
                     )
                     .unwrap_or(CommitmentTree::empty());
-                    anchors.push((
+                    anchors_and_heights.push((
                         Anchor::from(orchard_tree.root()),
                         BlockHeight::from_u32(block_height as u32),
                     ));
