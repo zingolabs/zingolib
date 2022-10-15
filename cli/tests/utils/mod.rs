@@ -137,7 +137,8 @@ pub mod setup {
     /// The general scenario framework requires instances of zingo-cli, lightwalletd, and zcashd (in regtest mode).
     /// This setup is intended to produce the most basic of scenarios.  As scenarios with even less requirements
     /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
-    pub fn coinbasebacked_spendcapable() -> (RegtestManager, ChildProcessHandler, LightClient) {
+    pub async fn synced_coinbasebacked_spendcapable(
+    ) -> (RegtestManager, ChildProcessHandler, LightClient) {
         //tracing_subscriber::fmt::init();
         //let coinbase_spendkey =
         //  zcash_primitives::zip32::ExtendedSpendingKey::master(&OsRng.gen::<[u8; 32]>());
@@ -165,19 +166,20 @@ pub mod setup {
         .unwrap();
         let light_client =
             LightClient::create_with_seedorkey_wallet(seed_phrase, &config, 0, false).unwrap();
-        regtest_manager.generate_n_blocks(5).unwrap();
+        super::increase_height_and_sync_client(&regtest_manager, &light_client, 5).await;
         (regtest_manager, child_process_handler, light_client)
     }
     /// This creates two so-called "LightClient"s "client_a" controls a spend authority
     /// that has furnished a receiving address in the mineraddress configuration field
     /// of the "generating" regtest-zcashd
-    pub fn two_clients_a_coinbase_backed() -> (
+    pub async fn two_clients_a_coinbase_backed() -> (
         RegtestManager,
         LightClient,
         LightClient,
         ChildProcessHandler,
     ) {
-        let (regtest_manager, child_process_handler, client_a) = coinbasebacked_spendcapable();
+        let (regtest_manager, child_process_handler, client_a) =
+            synced_coinbasebacked_spendcapable().await;
         let client_b_zingoconf_path = format!(
             "{}_b",
             regtest_manager.zingo_data_dir.to_string_lossy().to_string()

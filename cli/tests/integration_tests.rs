@@ -6,21 +6,23 @@ mod utils;
 use tokio::runtime::Runtime;
 use tokio::time::sleep;
 use utils::setup::{
-    basic_no_spendable, coinbasebacked_spendcapable, two_clients_a_coinbase_backed,
+    basic_no_spendable, synced_coinbasebacked_spendcapable, two_clients_a_coinbase_backed,
 };
-#[test]
-fn basic_connectivity_scenario_canary() {
-    let (_, _child_process_handler_to_drop, _) = coinbasebacked_spendcapable();
+#[tokio::test]
+async fn basic_connectivity_scenario_canary() {
+    let (_, _child_process_handler_to_drop, _) = synced_coinbasebacked_spendcapable().await;
 }
 
-#[test]
-fn create_network_disconnected_client() {
-    let (_regtest_manager_1, _child_process_handler_1, _client_1) = coinbasebacked_spendcapable();
+#[tokio::test]
+async fn create_network_disconnected_client() {
+    let (_regtest_manager_1, _child_process_handler_1, _client_1) =
+        synced_coinbasebacked_spendcapable().await;
 }
 
-#[test]
-fn zcashd_sapling_commitment_tree() {
-    let (regtest_manager, _child_process_handler, _client) = coinbasebacked_spendcapable();
+#[tokio::test]
+async fn zcashd_sapling_commitment_tree() {
+    let (regtest_manager, _child_process_handler, _client) =
+        synced_coinbasebacked_spendcapable().await;
     let trees = regtest_manager
         .get_cli_handle()
         .args(["z_gettreestate", "1"])
@@ -80,9 +82,9 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
 
 #[test]
 fn mine_sapling_to_self() {
-    let (_regtest_manager, _child_process_handler, client) = coinbasebacked_spendcapable();
-
     Runtime::new().unwrap().block_on(async {
+        let (_regtest_manager, _child_process_handler, client) =
+            synced_coinbasebacked_spendcapable().await;
         sleep(Duration::from_secs(2)).await;
         client.do_sync(true).await.unwrap();
 
@@ -93,8 +95,9 @@ fn mine_sapling_to_self() {
 
 #[test]
 fn send_mined_sapling_to_orchard() {
-    let (regtest_manager, _child_process_handler, client) = coinbasebacked_spendcapable();
     Runtime::new().unwrap().block_on(async {
+        let (regtest_manager, _child_process_handler, client) =
+            synced_coinbasebacked_spendcapable().await;
         sleep(Duration::from_secs(2)).await;
         client.do_sync(true).await.unwrap();
 
@@ -115,10 +118,9 @@ fn send_mined_sapling_to_orchard() {
 }
 #[test]
 fn note_selection_order() {
-    let (regtest_manager, client_1, client_2, child_process_handler) =
-        two_clients_a_coinbase_backed();
-
     Runtime::new().unwrap().block_on(async {
+        let (regtest_manager, client_1, client_2, child_process_handler) =
+            two_clients_a_coinbase_backed().await;
         //check_client_blockchain_height_belief(&client_1, 0).await;
         sleep(Duration::from_secs(2)).await;
         client_1.do_sync(true).await.unwrap();
@@ -157,17 +159,17 @@ fn note_selection_order() {
                 .len(),
             1
         );
+        drop(child_process_handler);
     });
 
     // More explicit than ignoring the unused variable, we only care about this in order to drop it
-    drop(child_process_handler);
 }
 
 #[test]
 fn send_orchard_back_and_forth() {
-    let (regtest_manager, client_a, client_b, child_process_handler) =
-        two_clients_a_coinbase_backed();
     Runtime::new().unwrap().block_on(async {
+        let (regtest_manager, client_a, client_b, child_process_handler) =
+            two_clients_a_coinbase_backed().await;
         sleep(Duration::from_secs(2)).await;
         client_a.do_sync(true).await.unwrap();
 
