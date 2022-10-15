@@ -1,10 +1,8 @@
 #![forbid(unsafe_code)]
-use std::time::Duration;
 
 mod data;
 mod utils;
 use tokio::runtime::Runtime;
-use tokio::time::sleep;
 use utils::setup::{
     basic_no_spendable, coinbasebacked_spendcapable, two_clients_a_coinbase_backed,
 };
@@ -79,6 +77,7 @@ fn mine_sapling_to_self() {
 
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
+
         let balance = client.do_balance().await;
         assert_eq!(balance["sapling_balance"], 3_750_000_000u64);
     });
@@ -88,8 +87,7 @@ fn mine_sapling_to_self() {
 fn send_mined_sapling_to_orchard() {
     let (regtest_manager, _child_process_handler, client) = coinbasebacked_spendcapable();
     Runtime::new().unwrap().block_on(async {
-        sleep(Duration::from_secs(2)).await;
-        client.do_sync(true).await.unwrap();
+        utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
 
         let o_addr = client.do_new_address("o").await.unwrap()[0].take();
         client
@@ -112,10 +110,8 @@ fn note_selection_order() {
         two_clients_a_coinbase_backed();
 
     Runtime::new().unwrap().block_on(async {
-        //check_client_blockchain_height_belief(&client_1, 0).await;
-        sleep(Duration::from_secs(2)).await;
-        client_1.do_sync(true).await.unwrap();
-        //check_wallet_chainheight_value(&client_1, 6).await;
+        utils::increase_height_and_sync_client(&regtest_manager, &client_1, 5).await;
+
         client_2.set_server(client_1.get_server().clone());
         let address_of_2 = client_2.do_address().await["sapling_addresses"][0].clone();
         for n in 1..=5 {
@@ -161,8 +157,7 @@ fn send_orchard_back_and_forth() {
     let (regtest_manager, client_a, client_b, child_process_handler) =
         two_clients_a_coinbase_backed();
     Runtime::new().unwrap().block_on(async {
-        sleep(Duration::from_secs(2)).await;
-        client_a.do_sync(true).await.unwrap();
+        utils::increase_height_and_sync_client(&regtest_manager, &client_a, 5).await;
 
         // do_new_address returns a single element json array for some reason
         let ua_of_b = client_b.do_new_address("o").await.unwrap()[0].to_string();
@@ -171,9 +166,7 @@ fn send_orchard_back_and_forth() {
             .await
             .unwrap();
 
-        regtest_manager.generate_n_blocks(3).unwrap();
-        sleep(Duration::from_secs(2)).await;
-        client_b.do_sync(true).await.unwrap();
+        utils::increase_height_and_sync_client(&regtest_manager, &client_b, 3).await;
         client_a.do_sync(true).await.unwrap();
 
         // We still need to implement sending change to orchard, in librustzcash
@@ -188,9 +181,7 @@ fn send_orchard_back_and_forth() {
             .await
             .unwrap();
 
-        regtest_manager.generate_n_blocks(3).unwrap();
-        sleep(Duration::from_secs(2)).await;
-        client_a.do_sync(true).await.unwrap();
+        utils::increase_height_and_sync_client(&regtest_manager, &client_a, 3).await;
         client_b.do_sync(true).await.unwrap();
 
         assert_eq!(client_a.do_balance().await["orchard_balance"], 5_000);
