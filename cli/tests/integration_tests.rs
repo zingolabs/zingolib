@@ -1,26 +1,19 @@
 #![forbid(unsafe_code)]
-use std::time::Duration;
 
 mod data;
-mod setup;
-use setup::two_clients_a_coinbase_backed;
-use tokio::time::sleep;
-
-#[test]
-fn basic_connectivity_scenario_canary() {
-    let _ = setup::coinbasebacked_spendcapable();
-}
-
+mod utils;
+use tokio::runtime::Runtime;
+use utils::setup::{
+    basic_no_spendable, coinbasebacked_spendcapable, two_clients_a_coinbase_backed,
+};
 #[test]
 fn create_network_disconnected_client() {
-    let (_regtest_manager_1, _child_process_handler_1, _client_1, _runtime) =
-        setup::coinbasebacked_spendcapable();
+    let (_regtest_manager_1, _child_process_handler_1, _client_1) = coinbasebacked_spendcapable();
 }
 
 #[test]
 fn zcashd_sapling_commitment_tree() {
-    let (regtest_manager, _child_process_handler, _client, _runtime) =
-        setup::coinbasebacked_spendcapable();
+    let (regtest_manager, _child_process_handler, _client) = coinbasebacked_spendcapable();
     let trees = regtest_manager
         .get_cli_handle()
         .args(["z_gettreestate", "1"])
@@ -42,7 +35,7 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
         "2fd8e51a03d9bbe2dd809831b1497aeb68a6e37ddf707ced4aa2d8dff13529ae";
     let finalstates = "000000";
     // Setup
-    let (regtest_manager, _child_process_handler, _client) = setup::basic_no_spendable();
+    let (regtest_manager, _child_process_handler, _client) = basic_no_spendable();
     // Execution:
     let trees = regtest_manager
         .get_cli_handle()
@@ -80,12 +73,10 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
 
 #[test]
 fn mine_sapling_to_self() {
-    let (_regtest_manager, _child_process_handler, client, runtime) =
-        setup::coinbasebacked_spendcapable();
+    let (regtest_manager, _child_process_handler, client) = coinbasebacked_spendcapable();
 
-    runtime.block_on(async {
-        sleep(Duration::from_secs(2)).await;
-        client.do_sync(true).await.unwrap();
+    Runtime::new().unwrap().block_on(async {
+        utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
 
         let balance = client.do_balance().await;
         assert_eq!(balance["sapling_balance"], 3_750_000_000u64);
@@ -94,11 +85,9 @@ fn mine_sapling_to_self() {
 
 #[test]
 fn send_mined_sapling_to_orchard() {
-    let (regtest_manager, _child_process_handler, client, runtime) =
-        setup::coinbasebacked_spendcapable();
-    runtime.block_on(async {
-        sleep(Duration::from_secs(2)).await;
-        client.do_sync(true).await.unwrap();
+    let (regtest_manager, _child_process_handler, client) = coinbasebacked_spendcapable();
+    Runtime::new().unwrap().block_on(async {
+        utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
 
         let o_addr = client.do_new_address("o").await.unwrap()[0].take();
         client
@@ -110,26 +99,20 @@ fn send_mined_sapling_to_orchard() {
             .await
             .unwrap();
 
-        regtest_manager.generate_n_blocks(2).unwrap();
-        sleep(Duration::from_secs(2)).await;
-
-        client.do_sync(true).await.unwrap();
+        utils::increase_height_and_sync_client(&regtest_manager, &client, 2).await;
         let balance = client.do_balance().await;
         assert_eq!(balance["verified_orchard_balance"], 5000);
     });
 }
-
 #[test]
 fn note_selection_order() {
-    let (regtest_manager, client_1, client_2, child_process_handler, runtime) =
+    let (regtest_manager, client_1, client_2, child_process_handler) =
         two_clients_a_coinbase_backed();
 
-    runtime.block_on(async {
-        sleep(Duration::from_secs(1)).await;
-        regtest_manager.generate_n_blocks(5).unwrap();
-        sleep(Duration::from_secs(1)).await;
-        client_1.do_sync(true).await.unwrap();
+    Runtime::new().unwrap().block_on(async {
+        utils::increase_height_and_sync_client(&regtest_manager, &client_1, 5).await;
 
+        client_2.set_server(client_1.get_server().clone());
         let address_of_2 = client_2.do_address().await["sapling_addresses"][0].clone();
         for n in 1..=5 {
             client_1
@@ -141,9 +124,8 @@ fn note_selection_order() {
                 .await
                 .unwrap();
         }
-        regtest_manager.generate_n_blocks(5).unwrap();
-        sleep(Duration::from_secs(2)).await;
-        client_2.do_sync(true).await.unwrap();
+        client_2.do_rescan().await.unwrap();
+        utils::increase_height_and_sync_client(&regtest_manager, &client_2, 5).await;
         let address_of_1 = client_1.do_address().await["sapling_addresses"][0].clone();
         client_2
             .do_send(vec![(
@@ -172,11 +154,10 @@ fn note_selection_order() {
 
 #[test]
 fn send_orchard_back_and_forth() {
-    let (regtest_manager, client_a, client_b, child_process_handler, runtime) =
+    let (regtest_manager, client_a, client_b, child_process_handler) =
         two_clients_a_coinbase_backed();
-    runtime.block_on(async {
-        sleep(Duration::from_secs(2)).await;
-        client_a.do_sync(true).await.unwrap();
+    Runtime::new().unwrap().block_on(async {
+        utils::increase_height_and_sync_client(&regtest_manager, &client_a, 5).await;
 
         // do_new_address returns a single element json array for some reason
         let ua_of_b = client_b.do_new_address("o").await.unwrap()[0].to_string();
@@ -185,9 +166,7 @@ fn send_orchard_back_and_forth() {
             .await
             .unwrap();
 
-        regtest_manager.generate_n_blocks(3).unwrap();
-        sleep(Duration::from_secs(2)).await;
-        client_b.do_sync(true).await.unwrap();
+        utils::increase_height_and_sync_client(&regtest_manager, &client_b, 3).await;
         client_a.do_sync(true).await.unwrap();
 
         // We still need to implement sending change to orchard, in librustzcash
@@ -202,9 +181,7 @@ fn send_orchard_back_and_forth() {
             .await
             .unwrap();
 
-        regtest_manager.generate_n_blocks(3).unwrap();
-        sleep(Duration::from_secs(2)).await;
-        client_a.do_sync(true).await.unwrap();
+        utils::increase_height_and_sync_client(&regtest_manager, &client_a, 3).await;
         client_b.do_sync(true).await.unwrap();
 
         assert_eq!(client_a.do_balance().await["orchard_balance"], 5_000);
