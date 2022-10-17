@@ -1,3 +1,5 @@
+//! In all cases in this file "external_version" refers to a serialization version that is interpreted
+//! from a source outside of the code-base e.g. a wallet-file.
 use crate::blaze::fetch_full_transaction::TransactionContext;
 use crate::compact_formats::TreeState;
 use crate::wallet::data::TransactionMetadata;
@@ -122,7 +124,7 @@ impl WalletOptions {
     }
 
     pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
-        let version = reader.read_u64::<LittleEndian>()?;
+        let external_version = reader.read_u64::<LittleEndian>()?;
 
         let download_memos = match reader.read_u8()? {
             0 => MemoDownloadOption::NoMemos,
@@ -136,7 +138,7 @@ impl WalletOptions {
             }
         };
 
-        let transaction_size_filter = if version > 1 {
+        let transaction_size_filter = if external_version > 1 {
             Optional::read(reader, |mut r| r.read_u32::<LittleEndian>())?
         } else {
             Some(500)
@@ -222,36 +224,42 @@ impl LightWallet {
 
     /// This is a Wallet constructor.  It is the internal function called by 2 LightWallet
     /// read procedures, by reducing its visibility we constrain possible uses.
+    /// Each type that can be deserialized has an associated serialization version.  Our
+    /// convention is to omit the type e.g. "wallet" from the local variable ident, and
+    /// make explicit (via ident) which variable refers to a value deserialized from
+    /// some source ("external") and which is represented as a source-code constant
+    /// ("internal").
+
     pub(crate) async fn read_internal<R: Read>(
         mut reader: R,
         config: &ZingoConfig,
     ) -> io::Result<Self> {
-        let version_of_read_lwallet = reader.read_u64::<LittleEndian>()?;
-        if version_of_read_lwallet > Self::serialized_version() {
+        let external_version = reader.read_u64::<LittleEndian>()?;
+        if external_version > Self::serialized_version() {
             let e = format!(
                 "Don't know how to read wallet version {}. Do you have the latest version?",
-                version_of_read_lwallet
+                external_version
             );
             error!("{}", e);
             return Err(io::Error::new(ErrorKind::InvalidData, e));
         }
 
-        info!("Reading wallet version {}", version_of_read_lwallet);
+        info!("Reading wallet version {}", external_version);
 
-        let keys = if version_of_read_lwallet <= 14 {
-            Keys::read_old(version_of_read_lwallet, &mut reader, config)
+        let keys = if external_version <= 14 {
+            Keys::read_old(external_version, &mut reader, config)
         } else {
-            Keys::read(&mut reader, config)
+            Keys::read_internal(&mut reader, config)
         }?;
 
         let mut blocks = Vector::read(&mut reader, |r| BlockData::read(r))?;
-        if version_of_read_lwallet <= 14 {
+        if external_version <= 14 {
             // Reverse the order, since after version 20, we need highest-block-first
             // TODO: Consider order between 14 and 20.
             blocks = blocks.into_iter().rev().collect();
         }
 
-        let mut transactions = if version_of_read_lwallet <= 14 {
+        let mut transactions = if external_version <= 14 {
             TransactionMetadataSet::read_old(&mut reader)
         } else {
             TransactionMetadataSet::read(&mut reader)
@@ -269,7 +277,7 @@ impl LightWallet {
             ));
         }
 
-        let wallet_options = if version_of_read_lwallet <= 23 {
+        let wallet_options = if external_version <= 23 {
             WalletOptions::default()
         } else {
             WalletOptions::read(&mut reader)?
@@ -277,15 +285,15 @@ impl LightWallet {
 
         let birthday = reader.read_u64::<LittleEndian>()?;
 
-        if version_of_read_lwallet <= 22 {
-            let _sapling_tree_verified = if version_of_read_lwallet <= 12 {
+        if external_version <= 22 {
+            let _sapling_tree_verified = if external_version <= 12 {
                 true
             } else {
                 reader.read_u8()? == 1
             };
         }
 
-        let verified_tree = if version_of_read_lwallet <= 21 {
+        let verified_tree = if external_version <= 21 {
             None
         } else {
             Optional::read(&mut reader, |r| {
@@ -302,7 +310,7 @@ impl LightWallet {
         };
 
         // If version <= 8, adjust the "is_spendable" status of each note data
-        if version_of_read_lwallet <= 8 {
+        if external_version <= 8 {
             // Collect all spendable keys
             let spendable_keys: Vec<_> = keys
                 .get_all_sapling_extfvks()
@@ -313,7 +321,7 @@ impl LightWallet {
             transactions.adjust_spendable_status(spendable_keys);
         }
 
-        let price = if version_of_read_lwallet <= 13 {
+        let price = if external_version <= 13 {
             WalletZecPriceInfo::new()
         } else {
             WalletZecPriceInfo::read(&mut reader)?
@@ -325,7 +333,7 @@ impl LightWallet {
             Arc::new(RwLock::new(transactions)),
         );
 
-        let orchard_anchors = if version_of_read_lwallet >= 25 {
+        let orchard_anchors = if external_version >= 25 {
             Vector::read(&mut reader, |r| {
                 let mut anchor_bytes = [0; 32];
                 r.read_exact(&mut anchor_bytes)?;
@@ -352,12 +360,12 @@ impl LightWallet {
         };
 
         // For old wallets, remove unused addresses
-        if version_of_read_lwallet <= 14 {
+        if external_version <= 14 {
             lw.remove_unused_taddrs().await;
             lw.remove_unused_zaddrs().await;
         }
 
-        if version_of_read_lwallet <= 14 {
+        if external_version <= 14 {
             lw.set_witness_block_heights().await;
         }
 
