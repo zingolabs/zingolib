@@ -80,7 +80,7 @@ pub fn init_from_seed(
 
     config.set_data_dir(data_dir);
 
-    let lightclient = match LightClient::create_with_capable_wallet(seed, &config, birthday, false) {
+    let lightclient = match LightClient::create_with_seedorkey_wallet(seed, &config, birthday, false) {
         Ok(mut l) => {
             match l.set_sapling_params(
                 &decode(&sapling_output_b64).unwrap(),
