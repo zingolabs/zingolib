@@ -13,6 +13,7 @@ pub struct SyncStatus {
     pub blocks_done: u64,
     pub trial_dec_done: u64,
     pub txn_scan_done: u64,
+    pub orchard_anchors_done: u64,
 
     pub blocks_total: u64,
 
@@ -30,6 +31,7 @@ impl SyncStatus {
         self.blocks_total = 0;
         self.txn_scan_done = 0;
         self.batch_num = 0;
+        self.orchard_anchors_done = 0;
         self.batch_total = batch_total;
     }
 
@@ -74,14 +76,15 @@ impl fmt::Display for SyncStatus {
         if self.blocks_total > 0 && self.in_progress {
             write!(
                 f,
-                "id: {}, blocks: {}% ({}), decryptions: {}% ({}), tx_scan: {}% ({})",
+                "id: {}, blocks: {}% ({}), decryptions: {}% ({}), tx_scan: {}% ({}), anchors: {}",
                 self.sync_id,
                 self.perct(self.blocks_done),
                 self.blocks_done,
                 self.perct(self.trial_dec_done),
                 self.trial_dec_done,
                 self.perct(self.txn_scan_done),
-                self.txn_scan_done
+                self.txn_scan_done,
+                self.orchard_anchors_done
             )
         } else {
             write!(
