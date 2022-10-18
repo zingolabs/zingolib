@@ -474,7 +474,7 @@ impl LightClient {
         Ok(())
     }
 
-    pub async fn do_address(&self) -> JsonValue {
+    pub async fn do_addresses(&self) -> JsonValue {
         let mut objectified_addresses = Vec::new();
         for address in self.wallet.unified_spend_auth().read().await.addresses() {
             let encoded_ua = address.encode(&self.config.chain);
