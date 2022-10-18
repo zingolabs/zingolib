@@ -112,7 +112,7 @@ fn note_selection_order() {
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client_1, 5).await;
 
-        let address_of_2 = client_2.do_address().await[0]["recievers"]["sapling"].clone();
+        let address_of_2 = client_2.do_address().await[0]["receivers"]["sapling"].clone();
         for n in 1..=5 {
             client_1
                 .do_send(vec![(
