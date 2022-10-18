@@ -118,6 +118,8 @@ fn note_selection_order() {
         // <https://zips.z.cash/zip-0316>
         let sapling_address_of_2 =
             sapling_address_client_2.do_addresses().await[0]["receivers"]["sapling"].clone();
+
+        // Send five transfers in increasing 1000 zat increments
         for n in 1..=5 {
             ua_address_client_1
                 .do_send(vec![(
@@ -131,6 +133,9 @@ fn note_selection_order() {
         utils::increase_height_and_sync_client(&regtest_manager, &sapling_address_client_2, 5)
             .await;
         let ua_address_of_1 = ua_address_client_1.do_addresses().await[0]["address"].clone();
+        // We know that the largest single note that 2 received from 1 was 5000, for 2 to send
+        // 5000 back to 1 it will have to collect funds from two notes to pay the full 5000
+        // plus the transaction fee.
         sapling_address_client_2
             .do_send(vec![(
                 &ua_address_of_1.to_string(),
@@ -140,8 +145,11 @@ fn note_selection_order() {
             .await
             .unwrap();
         let notes = sapling_address_client_2.do_list_notes(false).await;
-        // We know that the largest single note that 2 received from the
+        // The 5000 zat note to cover the value, plus another for the tx-fee.
         assert_eq!(notes["pending_sapling_notes"].len(), 2);
+        // Because the above tx fee won't consume a full note, change will be sent back to 2.
+        // This implies that two will have a total of 4 unspent notes:
+        //  * three from 1 sent above + 1 as change to itself
         assert_eq!(notes["unspent_sapling_notes"].len(), 4);
         assert_eq!(
             notes["unspent_sapling_notes"]
