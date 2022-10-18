@@ -1209,7 +1209,7 @@ impl LightWallet {
             .unified_spend_auth()
             .read()
             .await
-            .get_taddr_to_sk_map(&self.transaction_context.config);
+            .get_taddr_to_secretkey_map(&self.transaction_context.config);
 
         let (orchard_notes, sapling_notes, utxos, selected_value) = self
             .select_notes_and_utxos(

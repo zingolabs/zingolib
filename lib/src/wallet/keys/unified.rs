@@ -152,7 +152,7 @@ impl UnifiedSpendAuthority {
         Ok(ua)
     }
 
-    pub fn get_taddr_to_sk_map(
+    pub fn get_taddr_to_secretkey_map(
         &self,
         config: &ZingoConfig,
     ) -> HashMap<String, secp256k1::SecretKey> {

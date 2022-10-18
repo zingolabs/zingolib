@@ -112,8 +112,13 @@ fn note_selection_order() {
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client_1, 5).await;
 
+        // Note that do_addresses returns an array, each element is a JSON representation
+        // of a UA.  Legacy addresses can be extracted from the receivers, per:
+        // <https://zips.z.cash/zip-0316>
+        // This is a sapling_address
         let address_of_2 = client_2.do_addresses().await[0]["receivers"]["sapling"].clone();
         for n in 1..=5 {
+            // sapling to sapling
             client_1
                 .do_send(vec![(
                     &address_of_2.to_string(),
@@ -124,7 +129,9 @@ fn note_selection_order() {
                 .unwrap();
         }
         utils::increase_height_and_sync_client(&regtest_manager, &client_2, 5).await;
+        // This is a Unified Address
         let address_of_1 = client_1.do_addresses().await[0]["address"].clone();
+        // sapling to UA
         client_2
             .do_send(vec![(
                 &address_of_1.to_string(),
@@ -134,6 +141,7 @@ fn note_selection_order() {
             .await
             .unwrap();
         let notes = client_2.do_list_notes(false).await;
+        // We know that the largest single note that 2 received from the
         assert_eq!(notes["pending_sapling_notes"].len(), 2);
         assert_eq!(notes["unspent_sapling_notes"].len(), 4);
         assert_eq!(
