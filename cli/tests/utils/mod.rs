@@ -139,8 +139,6 @@ pub mod setup {
     /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
     pub fn coinbasebacked_spendcapable() -> (RegtestManager, ChildProcessHandler, LightClient) {
         //tracing_subscriber::fmt::init();
-        //let coinbase_spendkey =
-        //  zcash_primitives::zip32::ExtendedSpendingKey::master(&OsRng.gen::<[u8; 32]>());
         let seed_phrase = zcash_primitives::zip339::Mnemonic::from_entropy([0; 32])
             .unwrap()
             .to_string();
