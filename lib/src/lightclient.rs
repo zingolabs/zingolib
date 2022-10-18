@@ -480,7 +480,7 @@ impl LightClient {
             let encoded_ua = address.encode(&self.config.chain);
             objectified_addresses.push(object! {
             "address" => encoded_ua,
-            "recievers" => object!(
+            "receivers" => object!(
                 "transparent" => address_from_pubkeyhash(&self.config, address.transparent().cloned()),
                 "sapling" => address.sapling().map(|z_addr| encode_payment_address(self.config.chain.hrp_sapling_payment_address(), z_addr)),
                 "orchard_exists" => address.orchard().is_some(),
