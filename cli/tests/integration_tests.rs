@@ -117,7 +117,6 @@ fn note_selection_order() {
         // <https://zips.z.cash/zip-0316>
         let sapling_address_of_2 = client_2.do_addresses().await[0]["receivers"]["sapling"].clone();
         for n in 1..=5 {
-            // sapling to sapling
             client_1
                 .do_send(vec![(
                     &sapling_address_of_2.to_string(),
@@ -128,9 +127,7 @@ fn note_selection_order() {
                 .unwrap();
         }
         utils::increase_height_and_sync_client(&regtest_manager, &client_2, 5).await;
-        // This is a Unified Address
         let ua_address_of_1 = client_1.do_addresses().await[0]["address"].clone();
-        // sapling to UA
         client_2
             .do_send(vec![(
                 &ua_address_of_1.to_string(),
