@@ -115,13 +115,12 @@ fn note_selection_order() {
         // Note that do_addresses returns an array, each element is a JSON representation
         // of a UA.  Legacy addresses can be extracted from the receivers, per:
         // <https://zips.z.cash/zip-0316>
-        // This is a sapling_address
-        let address_of_2 = client_2.do_addresses().await[0]["receivers"]["sapling"].clone();
+        let sapling_address_of_2 = client_2.do_addresses().await[0]["receivers"]["sapling"].clone();
         for n in 1..=5 {
             // sapling to sapling
             client_1
                 .do_send(vec![(
-                    &address_of_2.to_string(),
+                    &sapling_address_of_2.to_string(),
                     n * 1000,
                     Some(n.to_string()),
                 )])
@@ -130,11 +129,11 @@ fn note_selection_order() {
         }
         utils::increase_height_and_sync_client(&regtest_manager, &client_2, 5).await;
         // This is a Unified Address
-        let address_of_1 = client_1.do_addresses().await[0]["address"].clone();
+        let ua_address_of_1 = client_1.do_addresses().await[0]["address"].clone();
         // sapling to UA
         client_2
             .do_send(vec![(
-                &address_of_1.to_string(),
+                &ua_address_of_1.to_string(),
                 5000,
                 Some("Sending back, should have 2 inputs".to_string()),
             )])
