@@ -323,7 +323,7 @@ impl LightWallet {
             })?
         };
 
-        let price = if version <= 13 {
+        let price = if external_version <= 13 {
             WalletZecPriceInfo::new()
         } else {
             WalletZecPriceInfo::read(&mut reader)?
