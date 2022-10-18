@@ -4,16 +4,17 @@ mod data;
 mod utils;
 use tokio::runtime::Runtime;
 use utils::setup::{
-    basic_no_spendable, coinbasebacked_spendcapable, two_clients_a_coinbase_backed,
+    basic_no_spendable, saplingcoinbasebacked_spendcapable, two_clients_a_saplingcoinbase_backed,
 };
 #[test]
 fn create_network_disconnected_client() {
-    let (_regtest_manager_1, _child_process_handler_1, _client_1) = coinbasebacked_spendcapable();
+    let (_regtest_manager_1, _child_process_handler_1, _client_1) =
+        saplingcoinbasebacked_spendcapable();
 }
 
 #[test]
 fn zcashd_sapling_commitment_tree() {
-    let (regtest_manager, _child_process_handler, _client) = coinbasebacked_spendcapable();
+    let (regtest_manager, _child_process_handler, _client) = saplingcoinbasebacked_spendcapable();
     let trees = regtest_manager
         .get_cli_handle()
         .args(["z_gettreestate", "1"])
@@ -73,7 +74,7 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
 
 #[test]
 fn mine_sapling_to_self() {
-    let (regtest_manager, _child_process_handler, client) = coinbasebacked_spendcapable();
+    let (regtest_manager, _child_process_handler, client) = saplingcoinbasebacked_spendcapable();
 
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
@@ -85,7 +86,7 @@ fn mine_sapling_to_self() {
 
 #[test]
 fn send_mined_sapling_to_orchard() {
-    let (regtest_manager, _child_process_handler, client) = coinbasebacked_spendcapable();
+    let (regtest_manager, _child_process_handler, client) = saplingcoinbasebacked_spendcapable();
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
 
@@ -106,18 +107,19 @@ fn send_mined_sapling_to_orchard() {
 }
 #[test]
 fn note_selection_order() {
-    let (regtest_manager, client_1, client_2, child_process_handler) =
-        two_clients_a_coinbase_backed();
+    let (regtest_manager, ua_address_client_1, sapling_address_client_2, child_process_handler) =
+        two_clients_a_saplingcoinbase_backed();
 
     Runtime::new().unwrap().block_on(async {
-        utils::increase_height_and_sync_client(&regtest_manager, &client_1, 5).await;
+        utils::increase_height_and_sync_client(&regtest_manager, &ua_address_client_1, 5).await;
 
         // Note that do_addresses returns an array, each element is a JSON representation
         // of a UA.  Legacy addresses can be extracted from the receivers, per:
         // <https://zips.z.cash/zip-0316>
-        let sapling_address_of_2 = client_2.do_addresses().await[0]["receivers"]["sapling"].clone();
+        let sapling_address_of_2 =
+            sapling_address_client_2.do_addresses().await[0]["receivers"]["sapling"].clone();
         for n in 1..=5 {
-            client_1
+            ua_address_client_1
                 .do_send(vec![(
                     &sapling_address_of_2.to_string(),
                     n * 1000,
@@ -126,9 +128,10 @@ fn note_selection_order() {
                 .await
                 .unwrap();
         }
-        utils::increase_height_and_sync_client(&regtest_manager, &client_2, 5).await;
-        let ua_address_of_1 = client_1.do_addresses().await[0]["address"].clone();
-        client_2
+        utils::increase_height_and_sync_client(&regtest_manager, &sapling_address_client_2, 5)
+            .await;
+        let ua_address_of_1 = ua_address_client_1.do_addresses().await[0]["address"].clone();
+        sapling_address_client_2
             .do_send(vec![(
                 &ua_address_of_1.to_string(),
                 5000,
@@ -136,7 +139,7 @@ fn note_selection_order() {
             )])
             .await
             .unwrap();
-        let notes = client_2.do_list_notes(false).await;
+        let notes = sapling_address_client_2.do_list_notes(false).await;
         // We know that the largest single note that 2 received from the
         assert_eq!(notes["pending_sapling_notes"].len(), 2);
         assert_eq!(notes["unspent_sapling_notes"].len(), 4);
@@ -157,7 +160,7 @@ fn note_selection_order() {
 #[test]
 fn send_orchard_back_and_forth() {
     let (regtest_manager, client_a, client_b, child_process_handler) =
-        two_clients_a_coinbase_backed();
+        two_clients_a_saplingcoinbase_backed();
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client_a, 5).await;
 

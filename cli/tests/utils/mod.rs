@@ -137,7 +137,8 @@ pub mod setup {
     /// The general scenario framework requires instances of zingo-cli, lightwalletd, and zcashd (in regtest mode).
     /// This setup is intended to produce the most basic of scenarios.  As scenarios with even less requirements
     /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
-    pub fn coinbasebacked_spendcapable() -> (RegtestManager, ChildProcessHandler, LightClient) {
+    pub fn saplingcoinbasebacked_spendcapable() -> (RegtestManager, ChildProcessHandler, LightClient)
+    {
         //tracing_subscriber::fmt::init();
         let seed_phrase = zcash_primitives::zip339::Mnemonic::from_entropy([0; 32])
             .unwrap()
@@ -168,13 +169,14 @@ pub mod setup {
     /// This creates two so-called "LightClient"s "client_a" controls a spend authority
     /// that has furnished a receiving address in the mineraddress configuration field
     /// of the "generating" regtest-zcashd
-    pub fn two_clients_a_coinbase_backed() -> (
+    pub fn two_clients_a_saplingcoinbase_backed() -> (
         RegtestManager,
         LightClient,
         LightClient,
         ChildProcessHandler,
     ) {
-        let (regtest_manager, child_process_handler, client_a) = coinbasebacked_spendcapable();
+        let (regtest_manager, child_process_handler, client_a) =
+            saplingcoinbasebacked_spendcapable();
         let client_b_zingoconf_path = format!(
             "{}_b",
             regtest_manager.zingo_data_dir.to_string_lossy().to_string()
