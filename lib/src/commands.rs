@@ -423,7 +423,7 @@ impl Command for AddressCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        RT.block_on(async move { format!("{}", lightclient.do_address().await.pretty(2)) })
+        RT.block_on(async move { format!("{}", lightclient.do_addresses().await.pretty(2)) })
     }
 }
 

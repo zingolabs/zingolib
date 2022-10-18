@@ -47,11 +47,11 @@ impl ReadableWriteable<()> for ReceiverSelection {
 
     fn read<R: Read>(mut reader: R, _: ()) -> io::Result<Self> {
         let _version = Self::get_version(&mut reader)?;
-        let recievers = reader.read_u8()?;
+        let receivers = reader.read_u8()?;
         Ok(Self {
-            orchard: recievers & 0b1 != 0,
-            sapling: recievers & 0b10 != 0,
-            transparent: recievers & 0b100 != 0,
+            orchard: receivers & 0b1 != 0,
+            sapling: receivers & 0b10 != 0,
+            transparent: receivers & 0b100 != 0,
         })
     }
 
@@ -79,11 +79,11 @@ fn read_write_receiver_selections() {
         .map(|n| ReceiverSelection::read([1, n].as_slice(), ()).unwrap())
         .enumerate()
     {
-        let mut recievers_selected_bytes = [0; 2];
+        let mut receivers_selected_bytes = [0; 2];
         receivers_selected
-            .write(recievers_selected_bytes.as_mut_slice())
+            .write(receivers_selected_bytes.as_mut_slice())
             .unwrap();
-        assert_eq!(i as u8, recievers_selected_bytes[1]);
+        assert_eq!(i as u8, receivers_selected_bytes[1]);
     }
 }
 
@@ -108,7 +108,7 @@ impl UnifiedSpendAuthority {
         } else {
             None
         };
-        let sapling_reciever = if desired_receivers.sapling {
+        let sapling_receiver = if desired_receivers.sapling {
             let (mut new_index, address) =
                 zcash_primitives::zip32::ExtendedFullViewingKey::from(&self.sapling_key)
                     .find_address(self.next_sapling_diversifier_index)
@@ -137,7 +137,7 @@ impl UnifiedSpendAuthority {
         };
         let ua = UnifiedAddress::from_receivers(
             orchard_receiver,
-            sapling_reciever,
+            sapling_receiver,
             #[allow(deprecated)]
             transparent_receiver
                 .as_ref()
@@ -215,9 +215,9 @@ impl UnifiedSpendAuthority {
         self.addresses
             .iter()
             .filter_map(|address| {
-                address.transparent().and_then(|transparent_reciever| {
+                address.transparent().and_then(|transparent_receiver| {
                     if let zcash_primitives::legacy::TransparentAddress::PublicKey(hash) =
-                        transparent_reciever
+                        transparent_receiver
                     {
                         Some(super::ToBase58Check::to_base58check(
                             hash.as_slice(),
