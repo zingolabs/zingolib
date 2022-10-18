@@ -19,6 +19,10 @@ The default config includes all network upgrades set to block height 1, therefor
 You must copy your compiled `zcashd`, `zcash-cli` and `lightwalletd` binaries to `zingolib/regtest/bin/` or set up symlinks, etc. `zcash-cli` is also needed if you wish
 to interact with your `zcashd` instance while it is running.
 
+You'll need transaction parameters to run `zcashd` you can obtain them by running:
+
+`zcash/zcutils/fetch_params.sh`
+
 Run `cargo build` to produce the `zingo-cli` binary.
 
 From your `zingolib/` directory, you can run:
