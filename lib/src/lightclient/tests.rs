@@ -69,15 +69,15 @@ fn new_wallet_from_phrase() {
 
     // The first t address and z address should be derived
     Runtime::new().unwrap().block_on(async move {
-        let addresses = lc.do_address().await;
+        let addresses = lc.do_addresses().await;
         assert_eq!(
             "zs1q6xk3q783t5k92kjqt2rkuuww8pdw2euzy5rk6jytw97enx8fhpazdv3th4xe7vsk6e9sfpawfg"
                 .to_string(),
-            addresses[0]["recievers"]["sapling"]
+            addresses[0]["receivers"]["sapling"]
         );
         assert_eq!(
             "t1eLM1ck9Msu2USkEy7DJ3oti92EBqNsjNU",
-            addresses[0]["recievers"]["transparent"]
+            addresses[0]["receivers"]["transparent"]
         );
     });
 }
@@ -98,7 +98,7 @@ fn new_wallet_from_sapling_esk() {
     let sk = "secret-extended-key-main1qvpa0qr8qqqqpqxn4l054nzxpxzp3a8r2djc7sekdek5upce8mc2j2z0arzps4zv940qeg706hd0wq6g5snzvhp332y6vhwyukdn8dhekmmsk7fzvzkqm6ypc99uy63tpesqwxhpre78v06cx8k5xpp9mrhtgqs5dvp68cqx2yrvthflmm2ynl8c0506dekul0f6jkcdmh0292lpphrksyc5z3pxwws97zd5els3l2mjt2s7hntap27mlmt6w0drtfmz36vz8pgu7ec0twfrq";
     let lc = LightClient::create_with_seedorkey_wallet(sk.to_string(), &config, 0, false).unwrap();
     Runtime::new().unwrap().block_on(async move {
-        let addresses = lc.do_address().await;
+        let addresses = lc.do_addresses().await;
         assert_eq!(addresses["sapling_addresses"].len(), 1);
         assert_eq!(addresses["transparent_addresses"].len(), 1);
         assert_eq!(
@@ -110,7 +110,7 @@ fn new_wallet_from_sapling_esk() {
         // New address should be derived from the seed
         lc.do_new_address("z").await.unwrap();
 
-        let addresses = lc.do_address().await;
+        let addresses = lc.do_addresses().await;
         assert_eq!(addresses["sapling_addresses"].len(), 2);
         assert_ne!(
             "zs1q6xk3q783t5k92kjqt2rkuuww8pdw2euzy5rk6jytw97enx8fhpazdv3th4xe7vsk6e9sfpawfg"
@@ -166,7 +166,7 @@ fn new_wallet_from_zvk() {
     let lc = LightClient::create_with_seedorkey_wallet(vk.to_string(), &config, 0, false).unwrap();
 
     Runtime::new().unwrap().block_on(async move {
-        let addresses = lc.do_address().await;
+        let addresses = lc.do_addresses().await;
         assert_eq!(addresses["sapling_addresses"].len(), 1);
         assert_eq!(addresses["transparent_addresses"].len(), 1);
         assert_eq!(
@@ -178,7 +178,7 @@ fn new_wallet_from_zvk() {
         // New address should be derived from the seed
         lc.do_new_address("z").await.unwrap();
 
-        let addresses = lc.do_address().await;
+        let addresses = lc.do_addresses().await;
         assert_eq!(addresses["sapling_addresses"].len(), 2);
         assert_ne!(
             "zs1q6xk3q783t5k92kjqt2rkuuww8pdw2euzy5rk6jytw97enx8fhpazdv3th4xe7vsk6e9sfpawfg"
@@ -209,12 +209,12 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
 
     // 3. Check the balance is correct, and we recieved the incoming transaction from outside
     let b = lightclient.do_balance().await;
-    let addresses = lightclient.do_address().await;
+    let addresses = lightclient.do_addresses().await;
     assert_eq!(b["sapling_balance"].as_u64().unwrap(), value);
     assert_eq!(b["unverified_sapling_balance"].as_u64().unwrap(), value);
     assert_eq!(b["spendable_sapling_balance"].as_u64().unwrap(), 0);
     assert_eq!(
-        addresses[0]["recievers"]["sapling"],
+        addresses[0]["receivers"]["sapling"],
         encode_payment_address(
             lightclient.config.chain.hrp_sapling_payment_address(),
             lightclient

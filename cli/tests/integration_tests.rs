@@ -112,7 +112,7 @@ fn note_selection_order() {
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client_1, 5).await;
 
-        let address_of_2 = client_2.do_address().await[0]["receivers"]["sapling"].clone();
+        let address_of_2 = client_2.do_addresses().await[0]["receivers"]["sapling"].clone();
         for n in 1..=5 {
             client_1
                 .do_send(vec![(
@@ -124,7 +124,7 @@ fn note_selection_order() {
                 .unwrap();
         }
         utils::increase_height_and_sync_client(&regtest_manager, &client_2, 5).await;
-        let address_of_1 = client_1.do_address().await[0]["address"].clone();
+        let address_of_1 = client_1.do_addresses().await[0]["address"].clone();
         client_2
             .do_send(vec![(
                 &address_of_1.to_string(),

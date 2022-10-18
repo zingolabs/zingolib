@@ -452,10 +452,10 @@ impl TransactionContext {
                                             .cloned()
                                             .map(RecipientAddress::from),
                                         unified_address.orchard().cloned().map(
-                                            |orchard_reciever| {
+                                            |orchard_receiver| {
                                                 RecipientAddress::from(
                                                     UnifiedAddress::from_receivers(
-                                                        Some(orchard_reciever),
+                                                        Some(orchard_receiver),
                                                         None,
                                                         None,
                                                     )

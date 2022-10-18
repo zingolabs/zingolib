@@ -179,7 +179,7 @@ impl GrpcConnector {
                     )));
                 }
 
-                // Dispatch a set of recievers
+                // Dispatch a set of receivers
                 result_transmitter.send(transaction_receivers).unwrap();
 
                 // // Wait for all the t-addr transactions to be fetched from LightwalletD and sent to the h1 handle.
