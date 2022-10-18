@@ -379,11 +379,13 @@ impl BlockAndWitnessData {
         uri: Arc<std::sync::RwLock<Uri>>,
     ) -> JoinHandle<Result<(), String>> {
         let orchard_anchor_height_pairs = self.orchard_anchor_height_pairs.clone();
+        let sync_status = self.sync_status.clone();
         tokio::spawn(async move {
             let mut workers = FuturesUnordered::new();
             for block_height in end_block..=start_block {
                 let uri = uri.clone();
                 let orchard_anchor_height_pairs = orchard_anchor_height_pairs.clone();
+                let sync_status = sync_status.clone();
                 workers.push(tokio::spawn(async move {
                     let mut anchors_and_heights = orchard_anchor_height_pairs.write().await;
 
@@ -397,6 +399,7 @@ impl BlockAndWitnessData {
                         Anchor::from(orchard_tree.root()),
                         BlockHeight::from_u32(block_height as u32),
                     ));
+                    sync_status.write().await.orchard_anchors_done += 1;
                     Ok::<_, String>(())
                 }))
             }
