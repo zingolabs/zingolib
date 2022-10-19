@@ -196,8 +196,8 @@ fn note_selection_order() {
             })
             .collect::<Vec<_>>();
         assert_eq!(non_change_note_values.iter().fold(0, |x, y| x + y), 6000u64);
-        let _balance_1 = sapling_sender_orchard_receiver.do_balance().await;
-        let _balance_2 = sapling_receiver_and_sender.do_balance().await;
+        //let balance_1 = sapling_sender_orchard_receiver.do_balance().await;
+        //let _balance_2 = sapling_receiver_and_sender.do_balance().await;
         //dbg!(&balance_1["sapling_balance"]);
         //dbg!(&balance_2["sapling_balance"]);
         //dbg!(&change_note["created_in_block"]);
