@@ -105,6 +105,7 @@ fn send_mined_sapling_to_orchard() {
         assert_eq!(balance["verified_orchard_balance"], 5000);
     });
 }
+use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
 #[test]
 fn note_selection_order() {
     let (regtest_manager, ua_address_client_1, sapling_address_client_2, child_process_handler) =
@@ -147,18 +148,31 @@ fn note_selection_order() {
         let notes = sapling_address_client_2.do_list_notes(false).await;
         // The 5000 zat note to cover the value, plus another for the tx-fee.
         assert_eq!(notes["pending_sapling_notes"].len(), 2);
+        assert_eq!(notes["pending_sapling_notes"][0]["value"], 5000);
+        //assert_eq!(notes["pending_sapling_notes"].len(), 2);
         // Because the above tx fee won't consume a full note, change will be sent back to 2.
-        // This implies that two will have a total of 4 unspent notes:
-        //  * three from 1 sent above + 1 as change to itself
+        // This implies that client_2 will have a total of 4 unspent notes:
+        //  * three from client_1 sent above + 1 as change to itself
         assert_eq!(notes["unspent_sapling_notes"].len(), 4);
-        assert_eq!(
-            notes["unspent_sapling_notes"]
-                .members()
-                .filter(|note| note["is_change"].as_bool().unwrap())
-                .collect::<Vec<_>>()
-                .len(),
-            1
-        );
+        let change_note = notes["unspent_sapling_notes"]
+            .members()
+            .filter(|note| note["is_change"].as_bool().unwrap())
+            .collect::<Vec<_>>()[0];
+        // Because 4000 is the size of the second largest note.
+        assert_eq!(change_note["value"], 4000 - u64::from(DEFAULT_FEE));
+        let non_change_note_values = notes["unspent_sapling_notes"]
+            .members()
+            .filter(|note| !note["is_change"].as_bool().unwrap())
+            .map(|x| &x["value"])
+            .collect::<Vec<_>>();
+        dbg!(&non_change_note_values);
+        let _balance_1 = ua_address_client_1.do_balance().await;
+        let _balance_2 = sapling_address_client_2.do_balance().await;
+        //dbg!(&balance_1["sapling_balance"]);
+        //dbg!(&balance_2["sapling_balance"]);
+        //dbg!(&change_note["created_in_block"]);
+        //dbg!(&change_note["value"]);
+        //dbg!(DEFAULT_FEE);
     });
 
     // More explicit than ignoring the unused variable, we only care about this in order to drop it
