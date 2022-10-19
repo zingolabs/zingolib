@@ -190,9 +190,12 @@ fn note_selection_order() {
         let non_change_note_values = receiver_sender_notes["unspent_sapling_notes"]
             .members()
             .filter(|note| !note["is_change"].as_bool().unwrap())
-            .map(|x| &x["value"])
+            .map(|x| {
+                let v = &x["value"].as_fixed_point_u64(0).unwrap();
+                v.clone()
+            })
             .collect::<Vec<_>>();
-        dbg!(&non_change_note_values);
+        assert_eq!(non_change_note_values.iter().fold(0, |x, y| x + y), 6000u64);
         let _balance_1 = sapling_sender_orchard_receiver.do_balance().await;
         let _balance_2 = sapling_receiver_and_sender.do_balance().await;
         //dbg!(&balance_1["sapling_balance"]);
