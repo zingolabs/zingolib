@@ -135,7 +135,7 @@ fn note_selection_order() {
             sapling_receiver_and_sender.do_addresses().await[0]["receivers"]["sapling"].clone();
 
         // Send five transfers in increasing 1000 zat increments
-        // These are send from the coinbase funded client which will
+        // These are sent from the coinbase funded client which will
         // subequently receive funding via it's orchard-packed UA.
         for n in 1..=5 {
             sapling_sender_orchard_receiver
