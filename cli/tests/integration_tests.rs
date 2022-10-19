@@ -113,62 +113,51 @@ fn note_selection_order() {
     //! In addition to testing the order in which notes are selected this test:
     //!   * sends to a sapling address
     //!   * sends back to the original sender's UA
-    let (
-        regtest_manager,
-        sapling_sender_orchard_receiver,
-        sapling_receiver_and_sender,
-        child_process_handler,
-    ) = two_clients_a_saplingcoinbase_backed();
+    let (regtest_manager, client_1, client_2, child_process_handler) =
+        two_clients_a_saplingcoinbase_backed();
 
     Runtime::new().unwrap().block_on(async {
-        utils::increase_height_and_sync_client(
-            &regtest_manager,
-            &sapling_sender_orchard_receiver,
-            5,
-        )
-        .await;
+        utils::increase_height_and_sync_client(&regtest_manager, &client_1, 5).await;
 
         // Note that do_addresses returns an array, each element is a JSON representation
         // of a UA.  Legacy addresses can be extracted from the receivers, per:
         // <https://zips.z.cash/zip-0316>
-        let receiver_sender_sap_addr =
-            sapling_receiver_and_sender.do_addresses().await[0]["receivers"]["sapling"].clone();
+        let client_2_saplingaddress =
+            client_2.do_addresses().await[0]["receivers"]["sapling"].clone();
 
         // Send five transfers in increasing 1000 zat increments
         // These are sent from the coinbase funded client which will
         // subequently receive funding via it's orchard-packed UA.
         for n in 1..=5 {
-            sapling_sender_orchard_receiver
+            client_1
                 .do_send(vec![(
-                    &receiver_sender_sap_addr.to_string(),
+                    &client_2_saplingaddress.to_string(),
                     n * 1000,
                     Some(n.to_string()),
                 )])
                 .await
                 .unwrap();
         }
-        utils::increase_height_and_sync_client(&regtest_manager, &sapling_receiver_and_sender, 5)
-            .await;
-        let orch_receiver_ua_addr =
-            sapling_sender_orchard_receiver.do_addresses().await[0]["address"].clone();
+        utils::increase_height_and_sync_client(&regtest_manager, &client_2, 5).await;
+        let client_1_unifiedaddress = client_1.do_addresses().await[0]["address"].clone();
         // We know that the largest single note that 2 received from 1 was 5000, for 2 to send
         // 5000 back to 1 it will have to collect funds from two notes to pay the full 5000
         // plus the transaction fee.
-        sapling_receiver_and_sender
+        client_2
             .do_send(vec![(
-                &orch_receiver_ua_addr.to_string(),
+                &client_1_unifiedaddress.to_string(),
                 5000,
                 Some("Sending back, should have 2 inputs".to_string()),
             )])
             .await
             .unwrap();
-        let receiver_sender_notes = sapling_receiver_and_sender.do_list_notes(false).await;
+        let client_2_notes = client_2.do_list_notes(false).await;
         // The 5000 zat note to cover the value, plus another for the tx-fee.
         //assert_eq!(notes["pending_sapling_notes"].len(), 2);
-        let first_value = receiver_sender_notes["pending_sapling_notes"][0]["value"]
+        let first_value = client_2_notes["pending_sapling_notes"][0]["value"]
             .as_fixed_point_u64(0)
             .unwrap();
-        let second_value = receiver_sender_notes["pending_sapling_notes"][1]["value"]
+        let second_value = client_2_notes["pending_sapling_notes"][1]["value"]
             .as_fixed_point_u64(0)
             .unwrap();
         assert!(
@@ -180,14 +169,14 @@ fn note_selection_order() {
         // Because the above tx fee won't consume a full note, change will be sent back to 2.
         // This implies that client_2 will have a total of 4 unspent notes:
         //  * three from client_1 sent above + 1 as change to itself
-        assert_eq!(receiver_sender_notes["unspent_sapling_notes"].len(), 4);
-        let change_note = receiver_sender_notes["unspent_sapling_notes"]
+        assert_eq!(client_2_notes["unspent_sapling_notes"].len(), 4);
+        let change_note = client_2_notes["unspent_sapling_notes"]
             .members()
             .filter(|note| note["is_change"].as_bool().unwrap())
             .collect::<Vec<_>>()[0];
         // Because 4000 is the size of the second largest note.
         assert_eq!(change_note["value"], 4000 - u64::from(DEFAULT_FEE));
-        let non_change_note_values = receiver_sender_notes["unspent_sapling_notes"]
+        let non_change_note_values = client_2_notes["unspent_sapling_notes"]
             .members()
             .filter(|note| !note["is_change"].as_bool().unwrap())
             .map(|x| {
@@ -195,7 +184,21 @@ fn note_selection_order() {
                 v.clone()
             })
             .collect::<Vec<_>>();
-        assert_eq!(non_change_note_values.iter().fold(0, |x, y| x + y), 6000u64);
+        // sapling_receiver_and_sender got a total of 5000+4000+3000+2000+1000
+        // It sent 5000 to the sapling_sender_orchard_receiver, and also
+        // paid the defualt transaction fee.
+        // In non change notes it has 3000+2000+1000.
+        // There is an outstanding 3000 that is marked as change.
+        // After sync the unspent_sapling_notes should go to 9000.
+        assert_eq!(non_change_note_values.iter().sum::<u64>(), 6000u64);
+
+        utils::increase_height_and_sync_client(&regtest_manager, &client_2, 5).await;
+        let client_2_post_transaction_notes = client_2.do_list_notes(false).await;
+        assert_eq!(
+            client_2_post_transaction_notes["pending_sapling_notes"].len(),
+            0
+        );
+
         //let balance_1 = sapling_sender_orchard_receiver.do_balance().await;
         //let _balance_2 = sapling_receiver_and_sender.do_balance().await;
         //dbg!(&balance_1["sapling_balance"]);
