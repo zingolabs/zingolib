@@ -1,44 +1,16 @@
 //! In all cases in this file "external_version" refers to a serialization version that is interpreted
 //! from a source outside of the code-base e.g. a wallet-file.
-use ::orchard::keys::{
-    IncomingViewingKey as OrchardIncomingViewingKey, SpendingKey as OrchardSpendingKey,
-};
 use base58::{FromBase58, ToBase58};
-use bip0039::Mnemonic;
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use rand::{rngs::OsRng, Rng};
 use ripemd160::Digest;
 use sha2::Sha256;
-use sodiumoxide::crypto::secretbox;
-use std::{
-    collections::HashMap,
-    io::{self, Error, ErrorKind, Read, Write},
-};
-use zcash_address::unified::{Encoding, Ufvk};
-use zcash_client_backend::{
-    address,
-    encoding::{
-        encode_extended_full_viewing_key, encode_extended_spending_key, encode_payment_address,
-    },
-};
-use zcash_encoding::Vector;
-use zcash_note_encryption::Domain;
+use std::io::{self, ErrorKind};
+use zcash_client_backend::address;
 use zcash_primitives::{
     legacy::TransparentAddress,
     sapling::PaymentAddress,
     zip32::{ChildIndex, ExtendedFullViewingKey, ExtendedSpendingKey},
 };
-use zingoconfig::{ZingoConfig, GAP_RULE_UNUSED_ADDRESSES};
-
-use crate::wallet::utils;
-
-use self::{
-    orchard::OrchardKey,
-    sapling::{SaplingKey, WalletZKeyType},
-    transparent::{TransparentKey, WalletTKeyType},
-};
-
-use super::traits::{DomainWalletExt, WalletKey};
+use zingoconfig::ZingoConfig;
 
 pub(crate) mod extended_transparent;
 pub(crate) mod orchard;
