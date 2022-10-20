@@ -277,7 +277,7 @@ impl ReadableWriteable<()> for UnifiedSpendAuthority {
                 ))
             }
         };
-        let mut usa = Self {
+        let mut unifiedspendauth = Self {
             orchard_key,
             sapling_key,
             transparent_parent_key,
@@ -288,11 +288,12 @@ impl ReadableWriteable<()> for UnifiedSpendAuthority {
             unlocked: true,
         };
         for receiver_selection in receivers_selected {
-            usa.new_address(receiver_selection)
+            unifiedspendauth
+                .new_address(receiver_selection)
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
         }
 
-        Ok(usa)
+        Ok(unifiedspendauth)
     }
 
     fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
