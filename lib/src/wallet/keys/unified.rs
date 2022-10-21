@@ -9,7 +9,9 @@ use orchard::keys::Scope;
 
 use zcash_client_backend::address::UnifiedAddress;
 use zcash_encoding::Vector;
-use zcash_primitives::{legacy::TransparentAddress, zip32::DiversifierIndex};
+use zcash_primitives::{
+    consensus::Parameters, legacy::TransparentAddress, zip32::DiversifierIndex,
+};
 use zingoconfig::ZingoConfig;
 
 use crate::wallet::traits::ReadableWriteable;
@@ -211,6 +213,25 @@ impl UnifiedSpendAuthority {
         Ok(Self::new_from_seed(config, &bip39_seed, position))
     }
 
+    pub(crate) fn get_ua_from_contained_sapling_receiver(
+        &self,
+        receiver: &zcash_primitives::sapling::PaymentAddress,
+    ) -> Option<UnifiedAddress> {
+        self.addresses
+            .iter()
+            .find(|ua| ua.sapling() == Some(&receiver))
+            .cloned()
+    }
+
+    pub(crate) fn get_ua_from_contained_transparent_receiver(
+        &self,
+        receiver: &TransparentAddress,
+    ) -> Option<UnifiedAddress> {
+        self.addresses
+            .iter()
+            .find(|ua| ua.transparent() == Some(&receiver))
+            .cloned()
+    }
     pub(crate) fn get_all_taddrs(&self, config: &ZingoConfig) -> HashSet<String> {
         self.addresses
             .iter()
@@ -373,8 +394,6 @@ impl From<&UnifiedSpendAuthority> for zcash_primitives::keys::OutgoingViewingKey
 pub async fn get_first_zaddr_as_string_from_lightclient(
     lightclient: &crate::lightclient::LightClient,
 ) -> String {
-    use zcash_primitives::consensus::Parameters;
-
     zcash_client_backend::encoding::encode_payment_address(
         lightclient.config.chain.hrp_sapling_payment_address(),
         lightclient

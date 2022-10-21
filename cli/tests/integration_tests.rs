@@ -253,6 +253,31 @@ fn send_orchard_back_and_forth() {
         drop(child_process_handler);
     });
 }
+
+#[test]
+fn diversified_addresses_receive_funds_in_best_pool() {
+    let (regtest_manager, client_a, client_b, child_process_handler) =
+        two_clients_a_saplingcoinbase_backed();
+    Runtime::new().unwrap().block_on(async {
+        client_b.do_new_address("o").await.unwrap();
+        client_b.do_new_address("zo").await.unwrap();
+        client_b.do_new_address("z").await.unwrap();
+
+        utils::increase_height_and_sync_client(&regtest_manager, &client_a, 5).await;
+        let addresses = client_b.do_addresses().await;
+        let address_5000_nonememo_tuples = addresses
+            .members()
+            .map(|ua| (ua["address"].as_str().unwrap(), 5_000, None))
+            .collect::<Vec<(&str, u64, Option<String>)>>();
+        client_a
+            .do_send(address_5000_nonememo_tuples)
+            .await
+            .unwrap();
+        utils::increase_height_and_sync_client(&regtest_manager, &client_b, 5).await;
+        let transactions = client_b.do_list_transactions(true).await;
+        panic!("{}", json::stringify_pretty(transactions, 4));
+    });
+}
 // Proposed Test:
 //#[test]
 //fn two_zcashds_with_colliding_configs() {

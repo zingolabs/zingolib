@@ -178,12 +178,20 @@ impl TransactionContext {
                             hash.to_base58check(&self.config.base58_pubkey_address(), &[]);
                         if taddrs_set.contains(&output_taddr) {
                             // This is our address. Add this as an output to the txid
+                            let unifiedspendauth = self.key.read().await;
                             self.transaction_metadata_set
                                 .write()
                                 .await
                                 .add_new_taddr_output(
                                     transaction.txid(),
-                                    output_taddr.clone(),
+                                    vout.script_pubkey
+                                        .address()
+                                        .and_then(|ta| {
+                                            unifiedspendauth
+                                                .get_ua_from_contained_transparent_receiver(&ta)
+                                        })
+                                        .unwrap()
+                                        .encode(&self.config.chain),
                                     height.into(),
                                     unconfirmed,
                                     block_time as u64,
