@@ -198,14 +198,6 @@ fn note_selection_order() {
             client_2_post_transaction_notes["pending_sapling_notes"].len(),
             0
         );
-
-        //let balance_1 = sapling_sender_orchard_receiver.do_balance().await;
-        //let _balance_2 = sapling_receiver_and_sender.do_balance().await;
-        //dbg!(&balance_1["sapling_balance"]);
-        //dbg!(&balance_2["sapling_balance"]);
-        //dbg!(&change_note["created_in_block"]);
-        //dbg!(&change_note["value"]);
-        //dbg!(DEFAULT_FEE);
     });
 
     // More explicit than ignoring the unused variable, we only care about this in order to drop it
