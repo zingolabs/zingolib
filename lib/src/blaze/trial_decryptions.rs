@@ -228,15 +228,15 @@ impl TrialDecryptions {
                         receiver.await.unwrap().map(|_r| ())
                     }));
                 }
-                // Update sync status
-                bsync_data
-                    .read()
-                    .await
-                    .sync_status
-                    .write()
-                    .await
-                    .trial_dec_done += 1;
             }
+            // Update sync status
+            bsync_data
+                .read()
+                .await
+                .sync_status
+                .write()
+                .await
+                .trial_dec_done += 1;
         }
 
         while let Some(r) = workers.next().await {
