@@ -8,11 +8,11 @@ use crate::{
     compact_formats::RawTransaction,
     grpc_connector::GrpcConnector,
     wallet::{
-        data::{OrchardNoteAndMetadata, SaplingNoteAndMetadata, TransactionMetadata},
+        data::{ReceivedOrchardNoteAndMetadata, ReceivedSaplingNoteAndMetadata, TransactionMetadata},
         keys::{unified::ReceiverSelection, address_from_pubkeyhash},
         message::Message,
         now,
-        traits::NoteAndMetadata,
+        traits::ReceivedNoteAndMetadata,
         LightWallet,
     },
 };
@@ -961,12 +961,12 @@ impl LightClient {
     where
         'a: 'b,
     {
-        self.add_wallet_notes_in_transaction_to_list_inner::<'a, 'b, SaplingNoteAndMetadata>(
+        self.add_wallet_notes_in_transaction_to_list_inner::<'a, 'b, ReceivedSaplingNoteAndMetadata>(
             transaction_metadata,
             include_memo_hex,
         )
         .chain(
-            self.add_wallet_notes_in_transaction_to_list_inner::<'a, 'b, OrchardNoteAndMetadata>(
+            self.add_wallet_notes_in_transaction_to_list_inner::<'a, 'b, ReceivedOrchardNoteAndMetadata>(
                 transaction_metadata,
                 include_memo_hex,
             ),
@@ -980,7 +980,7 @@ impl LightClient {
     ) -> impl Iterator<Item = JsonValue> + 'b
     where
         'a: 'b,
-        NnMd: NoteAndMetadata + 'b,
+        NnMd: ReceivedNoteAndMetadata + 'b,
     {
         NnMd::transaction_metadata_notes(&transaction_metadata).iter().filter(|nd| !nd.is_change()).enumerate().map(|(i, nd)| {
                     let block_height: u32 = transaction_metadata.block_height.into();

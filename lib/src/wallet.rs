@@ -43,9 +43,12 @@ use zcash_primitives::{
 use self::data::SpendableOrchardNote;
 use self::keys::unified::ReceiverSelection;
 use self::keys::unified::UnifiedSpendAuthority;
-use self::traits::{DomainWalletExt, NoteAndMetadata, SpendableNote};
+use self::traits::{DomainWalletExt, ReceivedNoteAndMetadata, SpendableNote};
 use self::{
-    data::{BlockData, OrchardNoteAndMetadata, SaplingNoteAndMetadata, Utxo, WalletZecPriceInfo},
+    data::{
+        BlockData, ReceivedOrchardNoteAndMetadata, ReceivedSaplingNoteAndMetadata, Utxo,
+        WalletZecPriceInfo,
+    },
     message::Message,
     transactions::TransactionMetadataSet,
 };
@@ -490,7 +493,7 @@ impl LightWallet {
         self.blocks.read().await.iter().map(|b| b.clone()).collect()
     }
 
-    pub(crate) fn note_address<NnMd: NoteAndMetadata>(
+    pub(crate) fn note_address<NnMd: ReceivedNoteAndMetadata>(
         network: &zingoconfig::Network,
         note: &NnMd,
     ) -> Option<String> {
@@ -705,12 +708,12 @@ impl LightWallet {
     }
 
     pub async fn maybe_verified_sapling_balance(&self, addr: Option<String>) -> u64 {
-        self.shielded_balance::<SaplingNoteAndMetadata>(addr, &[])
+        self.shielded_balance::<ReceivedSaplingNoteAndMetadata>(addr, &[])
             .await
     }
 
     pub async fn maybe_verified_orchard_balance(&self, addr: Option<String>) -> u64 {
-        self.shielded_balance::<OrchardNoteAndMetadata>(addr, &[])
+        self.shielded_balance::<ReceivedOrchardNoteAndMetadata>(addr, &[])
             .await
     }
 
@@ -720,7 +723,7 @@ impl LightWallet {
         filters: &[Box<dyn Fn(&&NnMd, &TransactionMetadata) -> bool + '_>],
     ) -> u64
     where
-        NnMd: traits::NoteAndMetadata,
+        NnMd: traits::ReceivedNoteAndMetadata,
     {
         let filter_notes_by_target_addr = |notedata: &&NnMd| match target_addr.as_ref() {
             Some(addr) => {
@@ -755,7 +758,7 @@ impl LightWallet {
                 filtered_notes
                     .map(|notedata| {
                         if notedata.spent().is_none() && notedata.unconfirmed_spent().is_none() {
-                            <NnMd as traits::NoteAndMetadata>::value(notedata)
+                            <NnMd as traits::ReceivedNoteAndMetadata>::value(notedata)
                         } else {
                             0
                         }
@@ -795,34 +798,39 @@ impl LightWallet {
     pub async fn unverified_sapling_balance(&self, target_addr: Option<String>) -> u64 {
         let anchor_height = self.get_anchor_height().await;
 
-        let filters: &[Box<dyn Fn(&&SaplingNoteAndMetadata, &TransactionMetadata) -> bool>] =
-            &[Box::new(|_, transaction: &TransactionMetadata| {
-                transaction.block_height > BlockHeight::from_u32(anchor_height)
-            })];
+        let filters: &[Box<
+            dyn Fn(&&ReceivedSaplingNoteAndMetadata, &TransactionMetadata) -> bool,
+        >] = &[Box::new(|_, transaction: &TransactionMetadata| {
+            transaction.block_height > BlockHeight::from_u32(anchor_height)
+        })];
         self.shielded_balance(target_addr, filters).await
     }
 
     pub async fn unverified_orchard_balance(&self, target_addr: Option<String>) -> u64 {
         let anchor_height = self.get_anchor_height().await;
 
-        let filters: &[Box<dyn Fn(&&OrchardNoteAndMetadata, &TransactionMetadata) -> bool>] =
-            &[Box::new(|_, transaction: &TransactionMetadata| {
-                transaction.block_height > BlockHeight::from_u32(anchor_height)
-            })];
+        let filters: &[Box<
+            dyn Fn(&&ReceivedOrchardNoteAndMetadata, &TransactionMetadata) -> bool,
+        >] = &[Box::new(|_, transaction: &TransactionMetadata| {
+            transaction.block_height > BlockHeight::from_u32(anchor_height)
+        })];
         self.shielded_balance(target_addr, filters).await
     }
 
     pub async fn verified_sapling_balance(&self, target_addr: Option<String>) -> u64 {
-        self.verified_balance::<SaplingNoteAndMetadata>(target_addr)
+        self.verified_balance::<ReceivedSaplingNoteAndMetadata>(target_addr)
             .await
     }
 
     pub async fn verified_orchard_balance(&self, target_addr: Option<String>) -> u64 {
-        self.verified_balance::<OrchardNoteAndMetadata>(target_addr)
+        self.verified_balance::<ReceivedOrchardNoteAndMetadata>(target_addr)
             .await
     }
 
-    async fn verified_balance<NnMd: NoteAndMetadata>(&self, target_addr: Option<String>) -> u64 {
+    async fn verified_balance<NnMd: ReceivedNoteAndMetadata>(
+        &self,
+        target_addr: Option<String>,
+    ) -> u64 {
         let anchor_height = self.get_anchor_height().await;
         let filters: &[Box<dyn Fn(&&NnMd, &TransactionMetadata) -> bool>] =
             &[Box::new(|_, transaction| {
@@ -833,7 +841,9 @@ impl LightWallet {
 
     pub async fn spendable_sapling_balance(&self, target_addr: Option<String>) -> u64 {
         let anchor_height = self.get_anchor_height().await;
-        let filters: &[Box<dyn Fn(&&SaplingNoteAndMetadata, &TransactionMetadata) -> bool>] = &[
+        let filters: &[Box<
+            dyn Fn(&&ReceivedSaplingNoteAndMetadata, &TransactionMetadata) -> bool,
+        >] = &[
             Box::new(|_, transaction| {
                 transaction.block_height <= BlockHeight::from_u32(anchor_height)
             }),
@@ -844,7 +854,9 @@ impl LightWallet {
 
     pub async fn spendable_orchard_balance(&self, target_addr: Option<String>) -> u64 {
         let anchor_height = self.get_anchor_height().await;
-        let filters: &[Box<dyn Fn(&&OrchardNoteAndMetadata, &TransactionMetadata) -> bool>] = &[
+        let filters: &[Box<
+            dyn Fn(&&ReceivedOrchardNoteAndMetadata, &TransactionMetadata) -> bool,
+        >] = &[
             Box::new(|_, transaction| {
                 transaction.block_height <= BlockHeight::from_u32(anchor_height)
             }),

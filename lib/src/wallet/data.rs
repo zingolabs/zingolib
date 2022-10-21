@@ -202,7 +202,7 @@ impl<Node: Hashable> WitnessCache<Node> {
     //     return hex::encode(buf);
     // }
 }
-pub struct SaplingNoteAndMetadata {
+pub struct ReceivedSaplingNoteAndMetadata {
     // Technically, this should be recoverable from the account number,
     // but we're going to refactor this in the future, so I'll write it again here.
     pub(super) extfvk: ExtendedFullViewingKey,
@@ -225,7 +225,7 @@ pub struct SaplingNoteAndMetadata {
     pub have_spending_key: bool,
 }
 
-pub struct OrchardNoteAndMetadata {
+pub struct ReceivedOrchardNoteAndMetadata {
     pub(super) fvk: orchard::keys::FullViewingKey,
 
     pub diversifier: OrchardDiversifier,
@@ -246,7 +246,7 @@ pub struct OrchardNoteAndMetadata {
     pub have_spending_key: bool,
 }
 
-impl std::fmt::Debug for SaplingNoteAndMetadata {
+impl std::fmt::Debug for ReceivedSaplingNoteAndMetadata {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SaplingNoteData")
             .field("extfvk", &self.extfvk)
@@ -485,10 +485,10 @@ pub struct TransactionMetadata {
     pub spent_orchard_nullifiers: Vec<OrchardNullifier>,
 
     // List of all sapling notes received in this tx. Some of these might be change notes.
-    pub sapling_notes: Vec<SaplingNoteAndMetadata>,
+    pub sapling_notes: Vec<ReceivedSaplingNoteAndMetadata>,
 
     // List of all sapling notes received in this tx. Some of these might be change notes.
-    pub orchard_notes: Vec<OrchardNoteAndMetadata>,
+    pub orchard_notes: Vec<ReceivedOrchardNoteAndMetadata>,
 
     // List of all Utxos received in this Tx. Some of these might be change notes
     pub utxos: Vec<Utxo>,
@@ -597,9 +597,10 @@ impl TransactionMetadata {
 
         let transaction_id = TxId::from_bytes(transaction_id_bytes);
 
-        let sapling_notes = Vector::read(&mut reader, |r| SaplingNoteAndMetadata::read(r, ()))?;
+        let sapling_notes =
+            Vector::read(&mut reader, |r| ReceivedSaplingNoteAndMetadata::read(r, ()))?;
         let orchard_notes = if version > 22 {
-            Vector::read(&mut reader, |r| OrchardNoteAndMetadata::read(r, ()))?
+            Vector::read(&mut reader, |r| ReceivedOrchardNoteAndMetadata::read(r, ()))?
         } else {
             vec![]
         };

@@ -29,10 +29,10 @@ use zingoconfig::{Network, MAX_REORG};
 
 use super::{
     data::{
-        ChannelNullifier, OrchardNoteAndMetadata, OutgoingTxMetadata, SaplingNoteAndMetadata,
-        TransactionMetadata, Utxo, WitnessCache,
+        ChannelNullifier, OutgoingTxMetadata, ReceivedOrchardNoteAndMetadata,
+        ReceivedSaplingNoteAndMetadata, TransactionMetadata, Utxo, WitnessCache,
     },
-    traits::{DomainWalletExt, FromBytes, NoteAndMetadata, Nullifier, Recipient},
+    traits::{DomainWalletExt, FromBytes, Nullifier, ReceivedNoteAndMetadata, Recipient},
 };
 
 /// List of all transactions in a wallet.
@@ -553,7 +553,7 @@ impl TransactionMetadataSet {
     ) {
         match nullifier {
             ChannelNullifier::Orchard(nullifier) => self
-                .add_new_spent_internal::<OrchardNoteAndMetadata>(
+                .add_new_spent_internal::<ReceivedOrchardNoteAndMetadata>(
                     txid,
                     height,
                     unconfirmed,
@@ -563,7 +563,7 @@ impl TransactionMetadataSet {
                     source_txid,
                 ),
             ChannelNullifier::Sapling(nullifier) => self
-                .add_new_spent_internal::<SaplingNoteAndMetadata>(
+                .add_new_spent_internal::<ReceivedSaplingNoteAndMetadata>(
                     txid,
                     height,
                     unconfirmed,
@@ -575,7 +575,7 @@ impl TransactionMetadataSet {
         }
     }
 
-    fn add_new_spent_internal<NnMd: NoteAndMetadata>(
+    fn add_new_spent_internal<NnMd: ReceivedNoteAndMetadata>(
         &mut self,
         txid: TxId,
         height: BlockHeight,
@@ -747,11 +747,11 @@ impl TransactionMetadataSet {
         {
             None => {
                 let nd = D::WalletNote::from_parts(
-                    <D::WalletNote as NoteAndMetadata>::Fvk::clone(fvk),
+                    <D::WalletNote as ReceivedNoteAndMetadata>::Fvk::clone(fvk),
                     to.diversifier(),
                     note,
                     WitnessCache::empty(),
-                    <D::WalletNote as NoteAndMetadata>::Nullifier::from_bytes([0u8; 32]),
+                    <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier::from_bytes([0u8; 32]),
                     None,
                     None,
                     None,
@@ -820,11 +820,11 @@ impl TransactionMetadataSet {
         height: BlockHeight,
         unconfirmed: bool,
         timestamp: u64,
-        note: <D::WalletNote as NoteAndMetadata>::Note,
+        note: <D::WalletNote as ReceivedNoteAndMetadata>::Note,
         to: D::Recipient,
-        fvk: &<D::WalletNote as NoteAndMetadata>::Fvk,
+        fvk: &<D::WalletNote as ReceivedNoteAndMetadata>::Fvk,
         have_spending_key: bool,
-        witness: IncrementalWitness<<D::WalletNote as NoteAndMetadata>::Node>,
+        witness: IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node>,
     ) where
         D::Note: PartialEq + Clone,
         D::Recipient: Recipient,
@@ -888,7 +888,7 @@ impl TransactionMetadataSet {
     }
 
     // Update the memo for a note if it already exists. If the note doesn't exist, then nothing happens.
-    pub(crate) fn add_memo_to_note_metadata<Nd: NoteAndMetadata>(
+    pub(crate) fn add_memo_to_note_metadata<Nd: ReceivedNoteAndMetadata>(
         &mut self,
         txid: &TxId,
         note: Nd::Note,

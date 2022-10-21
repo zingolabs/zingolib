@@ -2,8 +2,9 @@ use crate::wallet::{
     data::OutgoingTxMetadata,
     keys::{address_from_pubkeyhash, unified::UnifiedSpendAuthority, ToBase58Check},
     traits::{
-        self as zingo_traits, Bundle as _, DomainWalletExt, NoteAndMetadata as _, Nullifier as _,
-        Recipient as _, ShieldedOutputExt as _, Spend as _, ToBytes as _,
+        self as zingo_traits, Bundle as _, DomainWalletExt, Nullifier as _,
+        ReceivedNoteAndMetadata as _, Recipient as _, ShieldedOutputExt as _, Spend as _,
+        ToBytes as _,
     },
     transactions::TransactionMetadataSet,
 };
@@ -346,7 +347,7 @@ impl TransactionContext {
         // because for transactions in the block, we will check the nullifiers from the blockdata
         if unconfirmed {
             let unspent_nullifiers =
-            <<D as DomainWalletExt<Network>>::WalletNote as zingo_traits::NoteAndMetadata>::Nullifier::get_nullifiers_of_unspent_notes_from_transaction_set(
+            <<D as DomainWalletExt<Network>>::WalletNote as zingo_traits::ReceivedNoteAndMetadata>::Nullifier::get_nullifiers_of_unspent_notes_from_transaction_set(
                 &*self.transaction_metadata_set.read().await,
             );
             for output in

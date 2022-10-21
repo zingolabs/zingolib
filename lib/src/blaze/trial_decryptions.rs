@@ -9,7 +9,7 @@ use crate::{
         data::{ChannelNullifier, TransactionMetadata},
         keys::unified::UnifiedSpendAuthority,
         traits::{
-            CompactOutput as _, DomainWalletExt, NoteAndMetadata as _, Nullifier as _,
+            CompactOutput as _, DomainWalletExt, Nullifier as _, ReceivedNoteAndMetadata as _,
             WalletKey as _,
         },
         transactions::TransactionMetadataSet,

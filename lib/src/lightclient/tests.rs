@@ -27,7 +27,7 @@ use crate::lightclient::test_server::{
     clean_shutdown, create_test_server, mine_numblocks_each_with_two_sap_txs, mine_pending_blocks,
 };
 use crate::lightclient::LightClient;
-use crate::wallet::data::{SaplingNoteAndMetadata, TransactionMetadata};
+use crate::wallet::data::{ReceivedSaplingNoteAndMetadata, TransactionMetadata};
 use crate::wallet::keys::unified::{
     get_first_zaddr_as_string_from_lightclient, get_transparent_secretkey_pubkey_taddr,
 };
@@ -1564,7 +1564,7 @@ async fn mempool_clearing(scenario: NBlockFCBLScenario) {
                 format!("{:#?}", note),
                 format!(
                     "{:#?}",
-                    SaplingNoteAndMetadata::read(&*note_bytes, ()).unwrap()
+                    ReceivedSaplingNoteAndMetadata::read(&*note_bytes, ()).unwrap()
                 )
             );
         }

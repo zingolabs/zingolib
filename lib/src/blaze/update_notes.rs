@@ -1,4 +1,4 @@
-use crate::wallet::traits::{DomainWalletExt, NoteAndMetadata};
+use crate::wallet::traits::{DomainWalletExt, ReceivedNoteAndMetadata};
 use crate::wallet::MemoDownloadOption;
 use crate::wallet::{
     data::{ChannelNullifier, TransactionMetadata},
@@ -75,7 +75,7 @@ impl UpdateNotes {
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         wallet_txns: Arc<RwLock<TransactionMetadataSet>>,
         txid: TxId,
-        nullifier: <D::WalletNote as NoteAndMetadata>::Nullifier,
+        nullifier: <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier,
         output_num: Option<u32>,
     ) where
         D::Note: PartialEq + Clone,

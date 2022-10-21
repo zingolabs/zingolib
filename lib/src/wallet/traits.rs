@@ -3,8 +3,8 @@ use std::io::{self, Read, Write};
 
 use super::{
     data::{
-        ChannelNullifier, OrchardNoteAndMetadata, SaplingNoteAndMetadata, SpendableOrchardNote,
-        SpendableSaplingNote, TransactionMetadata, WitnessCache,
+        ChannelNullifier, ReceivedOrchardNoteAndMetadata, ReceivedSaplingNoteAndMetadata,
+        SpendableOrchardNote, SpendableSaplingNote, TransactionMetadata, WitnessCache,
     },
     keys::{orchard::OrchardKey, sapling::SaplingKey, unified::UnifiedSpendAuthority},
     transactions::TransactionMetadataSet,
@@ -401,7 +401,7 @@ impl Nullifier for OrchardNullifier {
     }
 }
 
-pub trait NoteAndMetadata: Sized {
+pub trait ReceivedNoteAndMetadata: Sized {
     type Fvk: Clone + Diversifiable + ReadableWriteable<()> + Send;
     type Diversifier: Copy + FromBytes<11> + ToBytes<11>;
     type Note: PartialEq + ReadableWriteable<(Self::Fvk, Self::Diversifier)> + Clone;
@@ -432,7 +432,9 @@ pub trait NoteAndMetadata: Sized {
     ) -> Self;
     fn is_change(&self) -> bool;
     fn fvk(&self) -> &Self::Fvk;
-    fn diversifier(&self) -> &<<Self::Fvk as Diversifiable>::Note as NoteAndMetadata>::Diversifier;
+    fn diversifier(
+        &self,
+    ) -> &<<Self::Fvk as Diversifiable>::Note as ReceivedNoteAndMetadata>::Diversifier;
     fn memo(&self) -> &Option<Memo>;
     fn memo_mut(&mut self) -> &mut Option<Memo>;
     fn note(&self) -> &Self::Note;
@@ -463,7 +465,7 @@ pub trait NoteAndMetadata: Sized {
     }
 }
 
-impl NoteAndMetadata for SaplingNoteAndMetadata {
+impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
     type Fvk = SaplingExtendedFullViewingKey;
     type Diversifier = SaplingDiversifier;
     type Note = SaplingNote;
@@ -589,7 +591,7 @@ impl NoteAndMetadata for SaplingNoteAndMetadata {
     }
 }
 
-impl NoteAndMetadata for OrchardNoteAndMetadata {
+impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
     type Fvk = OrchardFullViewingKey;
     type Diversifier = OrchardDiversifier;
     type Note = OrchardNote;
@@ -820,7 +822,7 @@ where
 
     type Fvk: Clone + Send + Diversifiable<Note = Self::WalletNote> + PartialEq;
     type CompactOutput: CompactOutput<Self, P>;
-    type WalletNote: NoteAndMetadata<
+    type WalletNote: ReceivedNoteAndMetadata<
         Fvk = Self::Fvk,
         Note = <Self as Domain>::Note,
         Diversifier = <<Self as Domain>::Recipient as Recipient>::Diversifier,
@@ -848,7 +850,7 @@ impl<P: Parameters> DomainWalletExt<P> for SaplingDomain<P> {
 
     type CompactOutput = CompactSaplingOutput;
 
-    type WalletNote = SaplingNoteAndMetadata;
+    type WalletNote = ReceivedSaplingNoteAndMetadata;
 
     type SpendableNoteAT = SpendableSaplingNote;
 
@@ -872,7 +874,7 @@ impl<P: Parameters> DomainWalletExt<P> for OrchardDomain {
 
     type CompactOutput = CompactOrchardAction;
 
-    type WalletNote = OrchardNoteAndMetadata;
+    type WalletNote = ReceivedOrchardNoteAndMetadata;
 
     type SpendableNoteAT = SpendableOrchardNote;
 
@@ -890,34 +892,34 @@ impl<P: Parameters> DomainWalletExt<P> for OrchardDomain {
 }
 
 pub trait Diversifiable {
-    type Note: NoteAndMetadata;
+    type Note: ReceivedNoteAndMetadata;
     type Address: Recipient;
     fn diversified_address(
         &self,
-        div: <Self::Note as NoteAndMetadata>::Diversifier,
+        div: <Self::Note as ReceivedNoteAndMetadata>::Diversifier,
     ) -> Option<Self::Address>;
 }
 
 impl Diversifiable for SaplingExtendedFullViewingKey {
-    type Note = SaplingNoteAndMetadata;
+    type Note = ReceivedSaplingNoteAndMetadata;
 
     type Address = zcash_primitives::sapling::PaymentAddress;
 
     fn diversified_address(
         &self,
-        div: <<zcash_primitives::zip32::ExtendedFullViewingKey as Diversifiable>::Note as NoteAndMetadata>::Diversifier,
+        div: <<zcash_primitives::zip32::ExtendedFullViewingKey as Diversifiable>::Note as ReceivedNoteAndMetadata>::Diversifier,
     ) -> Option<Self::Address> {
         self.fvk.vk.to_payment_address(div)
     }
 }
 
 impl Diversifiable for OrchardFullViewingKey {
-    type Note = OrchardNoteAndMetadata;
+    type Note = ReceivedOrchardNoteAndMetadata;
     type Address = orchard::Address;
 
     fn diversified_address(
         &self,
-        div: <<orchard::keys::FullViewingKey as Diversifiable>::Note as NoteAndMetadata>::Diversifier,
+        div: <<orchard::keys::FullViewingKey as Diversifiable>::Note as ReceivedNoteAndMetadata>::Diversifier,
     ) -> Option<Self::Address> {
         Some(self.address(div, orchard::keys::Scope::External))
     }
@@ -965,17 +967,17 @@ where
     /// default impl of `from`. This function's only caller should be `Self::from`
     fn from_parts_unchecked(
         transaction_id: TxId,
-        nullifier: <D::WalletNote as NoteAndMetadata>::Nullifier,
-        diversifier: <D::WalletNote as NoteAndMetadata>::Diversifier,
+        nullifier: <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier,
+        diversifier: <D::WalletNote as ReceivedNoteAndMetadata>::Diversifier,
         note: D::Note,
-        witness: IncrementalWitness<<D::WalletNote as NoteAndMetadata>::Node>,
+        witness: IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node>,
         sk: <D::Key as WalletKey>::SpendKey,
     ) -> Self;
     fn transaction_id(&self) -> TxId;
-    fn nullifier(&self) -> <D::WalletNote as NoteAndMetadata>::Nullifier;
-    fn diversifier(&self) -> <D::WalletNote as NoteAndMetadata>::Diversifier;
+    fn nullifier(&self) -> <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier;
+    fn diversifier(&self) -> <D::WalletNote as ReceivedNoteAndMetadata>::Diversifier;
     fn note(&self) -> &D::Note;
-    fn witness(&self) -> &IncrementalWitness<<D::WalletNote as NoteAndMetadata>::Node>;
+    fn witness(&self) -> &IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node>;
     fn spend_key(&self) -> &<D::Key as WalletKey>::SpendKey;
 }
 
@@ -1188,7 +1190,7 @@ impl ReadableWriteable<(OrchardFullViewingKey, OrchardDiversifier)> for OrchardN
 
 impl<T> ReadableWriteable<()> for T
 where
-    T: NoteAndMetadata,
+    T: ReceivedNoteAndMetadata,
 {
     const VERSION: u8 = 1;
 
