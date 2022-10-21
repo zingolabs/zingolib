@@ -43,6 +43,7 @@ use zcash_primitives::{
 use self::data::SpendableOrchardNote;
 use self::keys::unified::ReceiverSelection;
 use self::keys::unified::UnifiedSpendAuthority;
+use self::traits::Recipient;
 use self::traits::{DomainWalletExt, ReceivedNoteAndMetadata, SpendableNote};
 use self::{
     data::{
@@ -493,13 +494,21 @@ impl LightWallet {
         self.blocks.read().await.iter().map(|b| b.clone()).collect()
     }
 
-    pub(crate) fn note_address<NnMd: ReceivedNoteAndMetadata>(
+    pub(crate) fn note_address<D: DomainWalletExt<zingoconfig::Network>>(
         network: &zingoconfig::Network,
-        note: &NnMd,
-    ) -> Option<String> {
+        note: &D::WalletNote,
+        unified_spend_auth: &UnifiedSpendAuthority,
+    ) -> Option<String>
+    where
+        <D as Domain>::Recipient: Recipient,
+        <D as Domain>::Note: PartialEq + Clone,
+    {
         note.fvk()
             .diversified_address(*note.diversifier())
-            .map(|address| traits::Recipient::b32encode_for_network(&address, network))
+            .and_then(|address| {
+                D::ua_from_contained_receiver(unified_spend_auth, &address)
+                    .map(|ua| ua.encode(network))
+            })
     }
 
     pub async fn set_download_memo(&self, value: MemoDownloadOption) {

@@ -8,17 +8,21 @@ use crate::{
     compact_formats::RawTransaction,
     grpc_connector::GrpcConnector,
     wallet::{
-        data::{ReceivedOrchardNoteAndMetadata, ReceivedSaplingNoteAndMetadata, TransactionMetadata},
-        keys::{unified::ReceiverSelection, address_from_pubkeyhash},
+        data::TransactionMetadata,
+        keys::{
+            address_from_pubkeyhash,
+            unified::{ReceiverSelection, UnifiedSpendAuthority},
+        },
         message::Message,
         now,
-        traits::ReceivedNoteAndMetadata,
+        traits::{DomainWalletExt, ReceivedNoteAndMetadata, Recipient},
         LightWallet,
     },
 };
 use futures::future::join_all;
 use json::{array, object, JsonValue};
 use log::{error, info, warn};
+use orchard::note_encryption::OrchardDomain;
 use std::{
     cmp,
     fs::File,
@@ -34,16 +38,18 @@ use tokio::{
     task::yield_now,
     time::sleep,
 };
+use zcash_note_encryption::Domain;
 
 use zcash_client_backend::encoding::{decode_payment_address, encode_payment_address};
 use zcash_primitives::{
     block::BlockHash,
     consensus::{BlockHeight, BranchId, Parameters},
     memo::{Memo, MemoBytes},
+    sapling::note_encryption::SaplingDomain,
     transaction::{components::amount::DEFAULT_FEE, Transaction},
 };
 use zcash_proofs::prover::LocalTxProver;
-use zingoconfig::{ZingoConfig, MAX_REORG};
+use zingoconfig::{Network, ZingoConfig, MAX_REORG};
 
 pub(crate) mod checkpoints;
 
@@ -484,7 +490,7 @@ impl LightClient {
                 "transparent" => address_from_pubkeyhash(&self.config, address.transparent().cloned()),
                 "sapling" => address.sapling().map(|z_addr| encode_payment_address(self.config.chain.hrp_sapling_payment_address(), z_addr)),
                 "orchard_exists" => address.orchard().is_some(),
-                )            
+                )
             })
         }
         JsonValue::Array(objectified_addresses)
@@ -670,6 +676,8 @@ impl LightClient {
         let mut pending_sapling_notes: Vec<JsonValue> = vec![];
 
         let anchor_height = BlockHeight::from_u32(self.wallet.get_anchor_height().await);
+        let unified_spend_auth_arc = self.wallet.unified_spend_auth();
+        let unified_spend_auth = &unified_spend_auth_arc.read().await;
 
         {
             // Collect Sapling notes
@@ -679,7 +687,7 @@ impl LightClient {
                         if !all_notes && note_metadata.spent.is_some() {
                             None
                         } else {
-                            let address = LightWallet::note_address(&self.config.chain, note_metadata);
+                            let address = LightWallet::note_address::<SaplingDomain<Network>>(&self.config.chain, note_metadata, &unified_spend_auth);
                             let spendable = address.is_some() &&
                                                     transaction_metadata.block_height <= anchor_height && note_metadata.spent.is_none() && note_metadata.unconfirmed_spent.is_none();
 
@@ -715,6 +723,8 @@ impl LightClient {
         let mut spent_orchard_notes: Vec<JsonValue> = vec![];
         let mut pending_orchard_notes: Vec<JsonValue> = vec![];
 
+        let unified_spend_auth_arc = self.wallet.unified_spend_auth();
+        let unified_spend_auth = &unified_spend_auth_arc.read().await;
         {
             self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
                 .flat_map( |(transaction_id, transaction_metadata)| {
@@ -722,7 +732,7 @@ impl LightClient {
                         if !all_notes && orch_note_metadata.is_spent() {
                             None
                         } else {
-                            let address = LightWallet::note_address(&self.config.chain, orch_note_metadata);
+                            let address = LightWallet::note_address::<OrchardDomain>(&self.config.chain, orch_note_metadata, &unified_spend_auth);
                             let spendable = address.is_some() &&
                                                     transaction_metadata.block_height <= anchor_height && orch_note_metadata.spent.is_none() && orch_note_metadata.unconfirmed_spent.is_none();
 
@@ -859,6 +869,8 @@ impl LightClient {
 
     pub async fn do_list_transactions(&self, include_memo_hex: bool) -> JsonValue {
         // Create a list of TransactionItems from wallet transactions
+        let unified_spend_auth_arc = self.wallet.unified_spend_auth();
+        let unified_spend_auth = &unified_spend_auth_arc.read().await;
         let mut transaction_list = self
             .wallet
             .transaction_context.transaction_metadata_set
@@ -919,7 +931,7 @@ impl LightClient {
                 }
 
                 // For each sapling note that is not a change, add a transaction.
-                transactions.extend(self.add_wallet_notes_in_transaction_to_list(&wallet_transaction, &include_memo_hex));
+                transactions.extend(self.add_wallet_notes_in_transaction_to_list(&wallet_transaction, &include_memo_hex, &**unified_spend_auth));
 
                 // Get the total transparent received
                 let total_transparent_received = wallet_transaction.utxos.iter().map(|u| u.value).sum::<u64>();
@@ -953,36 +965,45 @@ impl LightClient {
         JsonValue::Array(transaction_list)
     }
 
-    fn add_wallet_notes_in_transaction_to_list<'a, 'b>(
+    fn add_wallet_notes_in_transaction_to_list<'a, 'b, 'c>(
         &'a self,
         transaction_metadata: &'b TransactionMetadata,
         include_memo_hex: &'b bool,
+        unified_spend_auth: &'c UnifiedSpendAuthority,
     ) -> impl Iterator<Item = JsonValue> + 'b
     where
         'a: 'b,
+        'c: 'b,
     {
-        self.add_wallet_notes_in_transaction_to_list_inner::<'a, 'b, ReceivedSaplingNoteAndMetadata>(
+        self.add_wallet_notes_in_transaction_to_list_inner::<'a, 'b, 'c, SaplingDomain<Network>>(
             transaction_metadata,
             include_memo_hex,
+            unified_spend_auth,
         )
         .chain(
-            self.add_wallet_notes_in_transaction_to_list_inner::<'a, 'b, ReceivedOrchardNoteAndMetadata>(
+            self.add_wallet_notes_in_transaction_to_list_inner::<'a, 'b, 'c, OrchardDomain>(
                 transaction_metadata,
                 include_memo_hex,
+                unified_spend_auth,
             ),
         )
     }
 
-    fn add_wallet_notes_in_transaction_to_list_inner<'a, 'b, NnMd>(
+    fn add_wallet_notes_in_transaction_to_list_inner<'a, 'b, 'c, D>(
         &'a self,
         transaction_metadata: &'b TransactionMetadata,
         include_memo_hex: &'b bool,
+        unified_spend_auth: &'c UnifiedSpendAuthority,
     ) -> impl Iterator<Item = JsonValue> + 'b
     where
         'a: 'b,
-        NnMd: ReceivedNoteAndMetadata + 'b,
+        'c: 'b,
+        D: DomainWalletExt<Network>,
+        D::WalletNote: 'b,
+        <D as Domain>::Recipient: Recipient,
+        <D as Domain>::Note: PartialEq + Clone,
     {
-        NnMd::transaction_metadata_notes(&transaction_metadata).iter().filter(|nd| !nd.is_change()).enumerate().map(|(i, nd)| {
+        D::WalletNote::transaction_metadata_notes(&transaction_metadata).iter().filter(|nd| !nd.is_change()).enumerate().map(|(i, nd)| {
                     let block_height: u32 = transaction_metadata.block_height.into();
                     let mut o = object! {
                         "block_height" => block_height,
@@ -992,7 +1013,7 @@ impl LightClient {
                         "txid"         => format!("{}", transaction_metadata.txid),
                         "amount"       => nd.value() as i64,
                         "zec_price"    => transaction_metadata.zec_price.map(|p| (p * 100.0).round() / 100.0),
-                        "address"      => LightWallet::note_address(&self.config.chain, nd),
+                        "address"      => LightWallet::note_address::<D>(&self.config.chain, nd, unified_spend_auth),
                         "memo"         => LightWallet::memo_str(nd.memo().clone())
                     };
 

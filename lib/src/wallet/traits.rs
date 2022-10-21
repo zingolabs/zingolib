@@ -29,7 +29,7 @@ use orchard::{
 };
 use subtle::CtOption;
 use zcash_address::unified::{self, Encoding as _, Receiver};
-use zcash_client_backend::encoding::encode_payment_address;
+use zcash_client_backend::{address::UnifiedAddress, encoding::encode_payment_address};
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::{
     BatchDomain, Domain, ShieldedOutput, COMPACT_NOTE_SIZE, ENC_CIPHERTEXT_SIZE,
@@ -820,7 +820,10 @@ where
 {
     const NU: NetworkUpgrade;
 
-    type Fvk: Clone + Send + Diversifiable<Note = Self::WalletNote> + PartialEq;
+    type Fvk: Clone
+        + Send
+        + Diversifiable<Note = Self::WalletNote, Address = Self::Recipient>
+        + PartialEq;
     type CompactOutput: CompactOutput<Self, P>;
     type WalletNote: ReceivedNoteAndMetadata<
         Fvk = Self::Fvk,
@@ -840,6 +843,10 @@ where
     type Bundle: Bundle<Self, P>;
 
     fn to_notes_vec_mut(_: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote>;
+    fn ua_from_contained_receiver<'a>(
+        unified_spend_auth: &'a UnifiedSpendAuthority,
+        receiver: &Self::Recipient,
+    ) -> Option<&'a UnifiedAddress>;
     fn get_tree(tree_state: &TreeState) -> &String;
 }
 
@@ -865,6 +872,16 @@ impl<P: Parameters> DomainWalletExt<P> for SaplingDomain<P> {
     fn get_tree(tree_state: &TreeState) -> &String {
         &tree_state.sapling_tree
     }
+
+    fn ua_from_contained_receiver<'a>(
+        unified_spend_auth: &'a UnifiedSpendAuthority,
+        receiver: &Self::Recipient,
+    ) -> Option<&'a UnifiedAddress> {
+        unified_spend_auth
+            .addresses()
+            .iter()
+            .find(|ua| ua.sapling() == Some(receiver))
+    }
 }
 
 impl<P: Parameters> DomainWalletExt<P> for OrchardDomain {
@@ -888,6 +905,16 @@ impl<P: Parameters> DomainWalletExt<P> for OrchardDomain {
 
     fn get_tree(tree_state: &TreeState) -> &String {
         &tree_state.orchard_tree
+    }
+
+    fn ua_from_contained_receiver<'a>(
+        unified_spend_auth: &'a UnifiedSpendAuthority,
+        receiver: &Self::Recipient,
+    ) -> Option<&'a UnifiedAddress> {
+        unified_spend_auth
+            .addresses()
+            .iter()
+            .find(|ua| ua.orchard() == Some(receiver))
     }
 }
 
