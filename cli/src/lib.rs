@@ -387,7 +387,7 @@ to scan from the start of the blockchain."
             )?),
             None => {
                 if config.wallet_exists() {
-                    Arc::new(LightClient::read_from_disk(&config)?)
+                    Arc::new(LightClient::read_wallet_from_disk(&config)?)
                 } else {
                     println!("Creating a new wallet");
                     // Create a wallet with height - 100, to protect against reorgs

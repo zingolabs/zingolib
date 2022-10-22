@@ -1697,7 +1697,7 @@ fn test_read_wallet_from_buffer() {
         let wallet = crate::wallet::LightWallet::new(config.clone(), None, 0).unwrap();
         wallet.write(&mut buf).await.unwrap();
     });
-    let client = LightClient::read_from_buffer(&config, &buf[..]).unwrap();
+    let client = LightClient::read_wallet_from_buffer(&config, &buf[..]).unwrap();
     Runtime::new().unwrap().block_on(async {
         let _wallet = client.wallet;
         todo!("Make meaningfull assertions here")
