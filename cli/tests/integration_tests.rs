@@ -275,8 +275,21 @@ fn diversified_addresses_receive_funds_in_best_pool() {
             .unwrap();
         utils::increase_height_and_sync_client(&regtest_manager, &client_b, 5).await;
         let transactions = client_b.do_list_transactions(true).await;
-        println!("{}", json::stringify_pretty(addresses, 4));
-        panic!("{}", json::stringify_pretty(transactions, 4));
+        let balance_b = client_b.do_balance().await;
+        assert_eq!(
+            balance_b,
+            json::object! {
+                "sapling_balance": 5000,
+                "verified_sapling_balance": 5000,
+                "spendable_sapling_balance": 5000,
+                "unverified_sapling_balance": 0,
+                "orchard_balance": 15000,
+                "verified_orchard_balance": 15000,
+                "spendable_orchard_balance": 15000,
+                "unverified_orchard_balance": 0,
+                "transparent_balance": 0
+            }
+        );
     });
 }
 // Proposed Test:

@@ -237,17 +237,13 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
         assert_eq!(jv["amount"].as_u64().unwrap(), value);
         assert_eq!(
             jv["address"],
-            encode_payment_address(
-                lightclient.config.chain.hrp_sapling_payment_address(),
-                lightclient
-                    .wallet
-                    .unified_spend_auth()
-                    .read()
-                    .await
-                    .addresses()[0]
-                    .sapling()
-                    .unwrap(),
-            )
+            lightclient
+                .wallet
+                .unified_spend_auth()
+                .read()
+                .await
+                .addresses()[0]
+                .encode(&lightclient.config.chain)
         );
         assert_eq!(jv["block_height"].as_u64().unwrap(), 11);
     } else {
@@ -511,7 +507,13 @@ async fn multiple_incoming_same_transaction(scenario: NBlockFCBLScenario) {
             assert_eq!(unspent_notes[i]["is_change"].as_bool().unwrap(), false);
             assert_eq!(
                 unspent_notes[i]["address"],
-                get_first_zaddr_as_string_from_lightclient(&lightclient).await
+                lightclient
+                    .wallet
+                    .unified_spend_auth()
+                    .read()
+                    .await
+                    .addresses()[0]
+                    .encode(&lightclient.config.chain)
             );
         }
     } else {
@@ -526,7 +528,7 @@ async fn multiple_incoming_same_transaction(scenario: NBlockFCBLScenario) {
             assert_eq!(sorted_transactions[i]["block_height"].as_u64().unwrap(), 11);
             assert_eq!(
                 sorted_transactions[i]["address"],
-                get_first_zaddr_as_string_from_lightclient(&lightclient).await
+                lightclient.do_addresses().await[0]["address"]
             );
             assert_eq!(
                 sorted_transactions[i]["amount"].as_u64().unwrap(),

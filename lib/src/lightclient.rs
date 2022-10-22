@@ -40,7 +40,10 @@ use tokio::{
 };
 use zcash_note_encryption::Domain;
 
-use zcash_client_backend::encoding::{decode_payment_address, encode_payment_address};
+use zcash_client_backend::{
+    address::RecipientAddress,
+    encoding::{decode_payment_address, encode_payment_address},
+};
 use zcash_primitives::{
     block::BlockHash,
     consensus::{BlockHeight, BranchId, Parameters},
@@ -776,6 +779,11 @@ impl LightClient {
                             None
                         } else {
                             let created_block:u32 = wtx.block_height.into();
+                            let recipient = RecipientAddress::decode(&self.config.chain, &utxo.address);
+                            let taddr = match recipient {
+                            Some(RecipientAddress::Transparent(taddr)) => taddr,
+                                _otherwise => panic!("Read invalid taddr from wallet-local Utxo, this should be impossible"),
+                            };
 
                             Some(object!{
                                 "created_in_block"   => created_block,
@@ -784,7 +792,7 @@ impl LightClient {
                                 "value"              => utxo.value,
                                 "scriptkey"          => hex::encode(utxo.script.clone()),
                                 "is_change"          => false, // TODO: Identify notes as change if we send change to our own taddrs
-                                "address"            => utxo.address.clone(),
+                                "address"            => unified_spend_auth.get_ua_from_contained_transparent_receiver(&taddr).map(|ua| ua.encode(&self.config.chain)),
                                 "spent_at_height"    => utxo.spent_at_height,
                                 "spent"              => utxo.spent.map(|spent_transaction_id| format!("{}", spent_transaction_id)),
                                 "unconfirmed_spent"  => utxo.unconfirmed_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
