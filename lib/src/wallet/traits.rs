@@ -1105,7 +1105,10 @@ pub trait ReadableWriteable<Input>: Sized {
         if version > Self::VERSION {
             Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "Wallet file is from future version of zingo",
+                format!(
+                    "Wallet file version \"{}\" is from future version of zingo",
+                    version,
+                ),
             ))
         } else {
             Ok(version)

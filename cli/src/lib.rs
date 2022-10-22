@@ -431,7 +431,7 @@ to scan from the start of the blockchain."
         match self.startup() {
             Ok(c) => c,
             Err(e) => {
-                let emsg = format!("Error during startup:{}\nIf you repeatedly run into this issue, you might have to restore your wallet from your seed phrase.", e);
+                let emsg = format!("Error during startup:\n{}\nIf you repeatedly run into this issue, you might have to restore your wallet from your seed phrase.", e);
                 eprintln!("{}", emsg);
                 error!("{}", emsg);
                 if cfg!(target_os = "unix") {
