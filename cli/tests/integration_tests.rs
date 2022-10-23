@@ -266,7 +266,6 @@ fn diversified_addresses_receive_funds_in_best_pool() {
             .await
             .unwrap();
         utils::increase_height_and_sync_client(&regtest_manager, &client_b, 5).await;
-        let transactions = client_b.do_list_transactions(true).await;
         let balance_b = client_b.do_balance().await;
         assert_eq!(
             balance_b,
@@ -282,8 +281,71 @@ fn diversified_addresses_receive_funds_in_best_pool() {
                 "transparent_balance": 0
             }
         );
+        // Unneeded, but more explicit than having child_process_handler be an
+        // unused variable
+        drop(child_process_handler);
     });
 }
+
+#[test]
+fn rescan_still_have_outgoing_metadata() {
+    let (regtest_manager, client_a, client_b, child_process_handler) =
+        two_clients_a_saplingcoinbase_backed();
+    Runtime::new().unwrap().block_on(async {
+        utils::increase_height_and_sync_client(&regtest_manager, &client_a, 5).await;
+        let sapling_addr_of_b = client_b.do_new_address("tz").await.unwrap();
+        for _ in 0..4 {
+            client_a
+                .do_send(vec![(
+                    sapling_addr_of_b[0].as_str().unwrap(),
+                    1_000,
+                    Some("foo".to_string()),
+                )])
+                .await
+                .unwrap();
+            utils::increase_height_and_sync_client(&regtest_manager, &client_a, 5).await;
+        }
+        let transactions = client_a.do_list_transactions(false).await;
+        client_a.do_rescan().await.unwrap();
+        let post_rescan_transactions = client_a.do_list_transactions(false).await;
+        assert_eq!(transactions, post_rescan_transactions);
+
+        drop(child_process_handler);
+    });
+}
+
+#[test]
+fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
+    let (regtest_manager, child_process_handler, client) = saplingcoinbasebacked_spendcapable();
+    Runtime::new().unwrap().block_on(async {
+        utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
+        let sapling_addr = client.do_new_address("tz").await.unwrap();
+        for memo in [None, Some("foo"), None, Some("bar")] {
+            client
+                .do_send(vec![(
+                    sapling_addr[0].as_str().unwrap(),
+                    client.do_balance().await["spendable_sapling_balance"]
+                        .as_u64()
+                        .unwrap()
+                        - 1_000,
+                    memo.map(ToString::to_string),
+                )])
+                .await
+                .unwrap();
+            utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
+        }
+        let transactions = client.do_list_transactions(false).await;
+        let notes = client.do_list_notes(true).await;
+        client.do_rescan().await.unwrap();
+        let post_rescan_transactions = client.do_list_transactions(false).await;
+        let post_rescan_notes = client.do_list_notes(true).await;
+        assert_eq!(transactions, post_rescan_transactions);
+        assert_eq!(notes, post_rescan_notes);
+
+        drop(child_process_handler);
+    });
+}
+
 // Proposed Test:
 //#[test]
 //fn two_zcashds_with_colliding_configs() {
