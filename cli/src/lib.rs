@@ -327,9 +327,8 @@ to scan from the start of the blockchain."
             }
         };
 
-        let mut maybe_data_dir = matches.value_of("data-dir").map(|s| s.to_string());
-
         let clean_regtest_data = !matches.is_present("no-clean");
+        let mut maybe_data_dir = matches.value_of("data-dir").map(|s| s.to_string());
         let mut maybe_server = matches.value_of("server").map(|s| s.to_string());
         let mut child_process_handler = None;
         // Regtest specific launch:

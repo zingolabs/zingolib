@@ -949,7 +949,8 @@ impl Command for SaveCommand {
         RT.block_on(async move {
             match lightclient.do_save().await {
                 Ok(_) => {
-                    let r = object! { "result" => "success" };
+                    let r = object! { "result" => "success",
+                    "wallet_path" => lightclient.config.get_wallet_path().to_str().unwrap() };
                     r.pretty(2)
                 }
                 Err(e) => {
