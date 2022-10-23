@@ -814,6 +814,16 @@ impl LightClient {
                 });
         }
 
+        unspent_sapling_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        spent_sapling_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        pending_sapling_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        unspent_orchard_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        spent_orchard_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        pending_orchard_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        unspent_utxos.sort_by_key(|note| note["created_in_block"].as_u64());
+        pending_utxos.sort_by_key(|note| note["created_in_block"].as_u64());
+        spent_utxos.sort_by_key(|note| note["created_in_block"].as_u64());
+
         let mut res = object! {
             "unspent_sapling_notes" => unspent_sapling_notes,
             "pending_sapling_notes" => pending_sapling_notes,
