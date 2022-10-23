@@ -327,7 +327,7 @@ to scan from the start of the blockchain."
             }
         };
 
-        let maybe_data_dir = matches.value_of("data-dir").map(|s| s.to_string());
+        let mut maybe_data_dir = matches.value_of("data-dir").map(|s| s.to_string());
 
         let clean_regtest_data = !matches.is_present("no-clean");
         let mut maybe_server = matches.value_of("server").map(|s| s.to_string());
@@ -337,6 +337,11 @@ to scan from the start of the blockchain."
         //   * spawn lighwalletd and connect it to zcashd
         let regtest_manager = if matches.is_present("regtest") {
             let regtest_manager = regtest::RegtestManager::new(None);
+            if maybe_data_dir.is_none() {
+                maybe_data_dir = Some(String::from(
+                    regtest_manager.zingo_data_dir.to_str().unwrap(),
+                ));
+            };
             child_process_handler = Some(regtest_manager.launch(clean_regtest_data)?);
             maybe_server = Some("http://127.0.0.1".to_string());
             Some(regtest_manager)
