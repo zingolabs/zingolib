@@ -927,6 +927,24 @@ impl Command for SendCommand {
     }
 }
 
+fn wallet_saver(lightclient: &LightClient) -> String {
+    RT.block_on(async move {
+        match lightclient.do_save().await {
+            Ok(_) => {
+                let r = object! { "result" => "success",
+                "wallet_path" => lightclient.config.get_wallet_path().to_str().unwrap() };
+                r.pretty(2)
+            }
+            Err(e) => {
+                let r = object! {
+                    "result" => "error",
+                    "error" => e
+                };
+                r.pretty(2)
+            }
+        }
+    })
+}
 struct SaveCommand {}
 impl Command for SaveCommand {
     fn help(&self) -> String {
@@ -946,22 +964,7 @@ impl Command for SaveCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        RT.block_on(async move {
-            match lightclient.do_save().await {
-                Ok(_) => {
-                    let r = object! { "result" => "success",
-                    "wallet_path" => lightclient.config.get_wallet_path().to_str().unwrap() };
-                    r.pretty(2)
-                }
-                Err(e) => {
-                    let r = object! {
-                        "result" => "error",
-                        "error" => e
-                    };
-                    r.pretty(2)
-                }
-            }
-        })
+        wallet_saver(&lightclient)
     }
 }
 
@@ -1393,12 +1396,7 @@ impl Command for QuitCommand {
             }
         }
 
-        RT.block_on(async move {
-            match lightclient.do_save().await {
-                Ok(_) => "".to_string(),
-                Err(e) => e,
-            }
-        })
+        wallet_saver(&lightclient)
     }
 }
 
