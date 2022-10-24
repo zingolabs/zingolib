@@ -694,8 +694,7 @@ impl LightClient {
                             None
                         } else {
                             let address = LightWallet::note_address::<SaplingDomain<Network>>(&self.config.chain, note_metadata, &unified_spend_auth);
-                            let spendable = address.is_some() &&
-                                                    transaction_metadata.block_height <= anchor_height && note_metadata.spent.is_none() && note_metadata.unconfirmed_spent.is_none();
+                            let spendable = transaction_metadata.block_height <= anchor_height && note_metadata.spent.is_none() && note_metadata.unconfirmed_spent.is_none();
 
                             let created_block:u32 = transaction_metadata.block_height.into();
                             Some(object!{
@@ -739,8 +738,7 @@ impl LightClient {
                             None
                         } else {
                             let address = LightWallet::note_address::<OrchardDomain>(&self.config.chain, orch_note_metadata, &unified_spend_auth);
-                            let spendable = address.is_some() &&
-                                                    transaction_metadata.block_height <= anchor_height && orch_note_metadata.spent.is_none() && orch_note_metadata.unconfirmed_spent.is_none();
+                            let spendable = transaction_metadata.block_height <= anchor_height && orch_note_metadata.spent.is_none() && orch_note_metadata.unconfirmed_spent.is_none();
 
                             let created_block:u32 = transaction_metadata.block_height.into();
                             Some(object!{
