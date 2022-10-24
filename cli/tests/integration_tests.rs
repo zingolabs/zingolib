@@ -2,6 +2,7 @@
 
 mod data;
 mod utils;
+use json::JsonValue;
 use tokio::runtime::Runtime;
 use utils::setup::{
     basic_no_spendable, saplingcoinbasebacked_spendcapable, two_clients_a_saplingcoinbase_backed,
@@ -106,7 +107,6 @@ fn send_mined_sapling_to_orchard() {
     });
 }
 use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
-use zingoconfig::ZingoConfig;
 use zingolib::{create_zingoconf_with_datadir, lightclient::LightClient};
 #[test]
 fn note_selection_order() {
@@ -352,6 +352,21 @@ fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
 fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
     let (regtest_manager, client_a, client_b, child_process_handler) =
         two_clients_a_saplingcoinbase_backed();
+    let mut expected_unspent_sapling_notes = json::object! {
+
+            "created_in_block" =>  7,
+            "datetime" =>  1666631643,
+            "created_in_txid" => "4eeaca8d292f07f9cbe26a276f7658e75f0ef956fb21646e3907e912c5af1ec5",
+            "value" =>  1000,
+            "unconfirmed" =>  false,
+            "is_change" =>  false,
+            "address" =>  "uregtest1gvnz2m8wkzxmdvzc7w6txnaam8d7k8zx7zdn0dlglyud5wltsc9d2xf26ptz79d399esc66f5lkmvg95jpa7c5sqt7hgtnvp4xxkypew8w9weuqa8wevy85nz4yr8u508ekw5qwxff8",
+            "spendable" =>  true,
+            "spent" =>  JsonValue::Null,
+            "spent_at_height" =>  JsonValue::Null,
+            "unconfirmed_spent" =>  JsonValue::Null,
+
+    };
     let seed = Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client_a, 5).await;
         let sapling_addr_of_b = client_b.do_new_address("tz").await.unwrap();
@@ -364,12 +379,16 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
             .await
             .unwrap();
         utils::increase_height_and_sync_client(&regtest_manager, &client_a, 5).await;
-        let sync_status = client_b.do_sync(true).await.unwrap();
-        println!("{}", json::stringify_pretty(sync_status, 4));
-        println!(
-            "{}",
-            json::stringify_pretty(client_b.do_list_notes(true).await, 4)
-        );
+        client_b.do_sync(true).await.unwrap();
+        let notes = client_b.do_list_notes(true).await;
+        assert_eq!(notes["unspent_sapling_notes"].members().len(), 1);
+        let note = notes["unspent_sapling_notes"].members().next().unwrap();
+        //The following fields aren't known until runtime, and should be cryptographically nondeterministic
+        //Testing that they're generated correctly is beyond the scope if this test
+        expected_unspent_sapling_notes["datetime"] = note["datetime"].clone();
+        expected_unspent_sapling_notes["created_in_txid"] = note["created_in_txid"].clone();
+
+        assert_eq!(note, &expected_unspent_sapling_notes);
         client_b.do_seed_phrase().await.unwrap()
     });
     let (config, _height) = create_zingoconf_with_datadir(
@@ -380,6 +399,9 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
             .map(ToString::to_string),
     )
     .unwrap();
+    let mut expected_unspent_sapling_notes_after_restore_from_seed =
+        expected_unspent_sapling_notes.clone();
+    expected_unspent_sapling_notes_after_restore_from_seed["address"] = JsonValue::Null;
     let client_b_restored = LightClient::create_with_seedorkey_wallet(
         seed["seed"].as_str().unwrap().to_string(),
         &config,
@@ -388,13 +410,28 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
     )
     .unwrap();
     Runtime::new().unwrap().block_on(async {
-        let sync_status = client_b_restored.do_sync(true).await.unwrap();
-        println!("{}", json::stringify_pretty(sync_status, 4));
-        panic!(
-            "{}",
-            json::stringify_pretty(client_b_restored.do_list_notes(true).await, 4)
+        client_b_restored.do_sync(true).await.unwrap();
+        let notes = client_b_restored.do_list_notes(true).await;
+        assert_eq!(notes["unspent_sapling_notes"].members().len(), 1);
+        assert_eq!(
+            notes["unspent_sapling_notes"].members().next().unwrap(),
+            &expected_unspent_sapling_notes_after_restore_from_seed,
+            "Expected: {}\nActual: {}",
+            json::stringify_pretty(
+                expected_unspent_sapling_notes_after_restore_from_seed.clone(),
+                4
+            ),
+            json::stringify_pretty(
+                notes["unspent_sapling_notes"]
+                    .members()
+                    .next()
+                    .unwrap()
+                    .clone(),
+                4
+            )
         );
     });
+    drop(child_process_handler);
 }
 
 // Proposed Test:
