@@ -357,7 +357,7 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
             "created_in_block" =>  7,
             "datetime" =>  1666631643,
             "created_in_txid" => "4eeaca8d292f07f9cbe26a276f7658e75f0ef956fb21646e3907e912c5af1ec5",
-            "value" =>  1000,
+            "value" =>  5_000,
             "unconfirmed" =>  false,
             "is_change" =>  false,
             "address" =>  "uregtest1gvnz2m8wkzxmdvzc7w6txnaam8d7k8zx7zdn0dlglyud5wltsc9d2xf26ptz79d399esc66f5lkmvg95jpa7c5sqt7hgtnvp4xxkypew8w9weuqa8wevy85nz4yr8u508ekw5qwxff8",
@@ -373,7 +373,7 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
         client_a
             .do_send(vec![(
                 sapling_addr_of_b[0].as_str().unwrap(),
-                1_000,
+                5_000,
                 Some("foo".to_string()),
             )])
             .await
@@ -388,7 +388,13 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
         expected_unspent_sapling_notes["datetime"] = note["datetime"].clone();
         expected_unspent_sapling_notes["created_in_txid"] = note["created_in_txid"].clone();
 
-        assert_eq!(note, &expected_unspent_sapling_notes);
+        assert_eq!(
+            note,
+            &expected_unspent_sapling_notes,
+            "Expected: {}\nActual: {}",
+            json::stringify_pretty(expected_unspent_sapling_notes.clone(), 4),
+            json::stringify_pretty(note.clone(), 4)
+        );
         client_b.do_seed_phrase().await.unwrap()
     });
     let (config, _height) = create_zingoconf_with_datadir(
@@ -413,22 +419,31 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
         client_b_restored.do_sync(true).await.unwrap();
         let notes = client_b_restored.do_list_notes(true).await;
         assert_eq!(notes["unspent_sapling_notes"].members().len(), 1);
+        let note = notes["unspent_sapling_notes"].members().next().unwrap();
         assert_eq!(
-            notes["unspent_sapling_notes"].members().next().unwrap(),
+            note,
             &expected_unspent_sapling_notes_after_restore_from_seed,
             "Expected: {}\nActual: {}",
             json::stringify_pretty(
                 expected_unspent_sapling_notes_after_restore_from_seed.clone(),
                 4
             ),
-            json::stringify_pretty(
-                notes["unspent_sapling_notes"]
-                    .members()
-                    .next()
-                    .unwrap()
-                    .clone(),
-                4
-            )
+            json::stringify_pretty(note.clone(), 4)
+        );
+
+        //The first address in a wallet should always contain all three currently existant receiver types
+        let address_of_a = &client_a.do_addresses().await[0]["address"];
+        client_b_restored
+            .do_send(vec![(address_of_a.as_str().unwrap(), 4_000, None)])
+            .await
+            .unwrap();
+        utils::increase_height_and_sync_client(&regtest_manager, &client_a, 5).await;
+
+        //Ensure that client_b_restored was still able to spend the note, despite not having the
+        //diversified address associated with it
+        assert_eq!(
+            client_a.do_balance().await["spendable_orchard_balance"],
+            4_000
         );
     });
     drop(child_process_handler);
