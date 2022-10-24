@@ -185,7 +185,12 @@ pub mod setup {
         let (client_b_config, _height) =
             create_zingoconf_with_datadir(client_a.get_server_uri(), Some(client_b_zingoconf_path))
                 .unwrap();
-        let client_b = LightClient::new(&client_b_config, 0).unwrap();
+        let seed_phrase_of_b = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
+            .unwrap()
+            .to_string();
+        let client_b =
+            LightClient::create_with_seedorkey_wallet(seed_phrase_of_b, &client_b_config, 0, false)
+                .unwrap();
         (regtest_manager, client_a, client_b, child_process_handler)
     }
 
