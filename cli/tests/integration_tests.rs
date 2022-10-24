@@ -106,6 +106,8 @@ fn send_mined_sapling_to_orchard() {
     });
 }
 use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
+use zingoconfig::ZingoConfig;
+use zingolib::{create_zingoconf_with_datadir, lightclient::LightClient};
 #[test]
 fn note_selection_order() {
     //! In order to fund a transaction multiple notes may be selected and consumed.
@@ -343,6 +345,55 @@ fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
         assert_eq!(notes, post_rescan_notes);
 
         drop(child_process_handler);
+    });
+}
+
+#[test]
+fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
+    let (regtest_manager, client_a, client_b, child_process_handler) =
+        two_clients_a_saplingcoinbase_backed();
+    let seed = Runtime::new().unwrap().block_on(async {
+        utils::increase_height_and_sync_client(&regtest_manager, &client_a, 5).await;
+        let sapling_addr_of_b = client_b.do_new_address("tz").await.unwrap();
+        client_a
+            .do_send(vec![(
+                sapling_addr_of_b[0].as_str().unwrap(),
+                1_000,
+                Some("foo".to_string()),
+            )])
+            .await
+            .unwrap();
+        utils::increase_height_and_sync_client(&regtest_manager, &client_a, 5).await;
+        let sync_status = client_b.do_sync(true).await.unwrap();
+        println!("{}", json::stringify_pretty(sync_status, 4));
+        println!(
+            "{}",
+            json::stringify_pretty(client_b.do_list_notes(true).await, 4)
+        );
+        client_b.do_seed_phrase().await.unwrap()
+    });
+    let (config, _height) = create_zingoconf_with_datadir(
+        client_b.get_server_uri(),
+        regtest_manager
+            .zingo_data_dir
+            .to_str()
+            .map(ToString::to_string),
+    )
+    .unwrap();
+    let client_b_restored = LightClient::create_with_seedorkey_wallet(
+        seed["seed"].as_str().unwrap().to_string(),
+        &config,
+        0,
+        true,
+    )
+    .unwrap();
+    Runtime::new().unwrap().block_on(async {
+        let sync_status = client_b_restored.do_sync(true).await.unwrap();
+        println!("{}", json::stringify_pretty(sync_status, 4));
+        panic!(
+            "{}",
+            json::stringify_pretty(client_b_restored.do_list_notes(true).await, 4)
+        );
     });
 }
 
