@@ -1685,6 +1685,7 @@ async fn mempool_and_balance(scenario: NBlockFCBLScenario) {
     assert_eq!(bal["unverified_sapling_balance"].as_u64().unwrap(), 0);
 }
 
+#[ignore]
 #[test]
 fn test_read_wallet_from_buffer() {
     //Block_on needed because read_from_buffer starts a tokio::Runtime, which panics when called in async code
