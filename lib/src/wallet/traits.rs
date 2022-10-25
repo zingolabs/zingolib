@@ -315,8 +315,10 @@ where
     type Outputs: IntoIterator<Item = Self::Output>;
     /// An extractive process that returns domain specific information from a transaction.
     fn from_transaction(transaction: &Transaction) -> Option<&Self>;
-    fn outputs(&self) -> &Self::Outputs;
-    fn spends(&self) -> &Self::Spends;
+    /// Some domains, Orchard for example, do not expose
+    /// immediately expose outputs
+    fn output_elements(&self) -> &Self::Outputs;
+    fn spend_elements(&self) -> &Self::Spends;
 }
 
 impl<P: Parameters> Bundle<SaplingDomain<P>, P> for SaplingBundle<SaplingAuthorized> {
@@ -328,11 +330,11 @@ impl<P: Parameters> Bundle<SaplingDomain<P>, P> for SaplingBundle<SaplingAuthori
         transaction.sapling_bundle()
     }
 
-    fn outputs(&self) -> &Self::Outputs {
+    fn output_elements(&self) -> &Self::Outputs {
         &self.shielded_outputs
     }
 
-    fn spends(&self) -> &Self::Spends {
+    fn spend_elements(&self) -> &Self::Spends {
         &self.shielded_spends
     }
 }
@@ -347,12 +349,12 @@ impl<P: Parameters> Bundle<OrchardDomain, P> for OrchardBundle<OrchardAuthorized
         transaction.orchard_bundle()
     }
 
-    fn outputs(&self) -> &Self::Outputs {
+    fn output_elements(&self) -> &Self::Outputs {
         //! In orchard each action contains an output and a spend.
         self.actions()
     }
 
-    fn spends(&self) -> &Self::Spends {
+    fn spend_elements(&self) -> &Self::Spends {
         //! In orchard each action contains an output and a spend.
         self.actions()
     }
