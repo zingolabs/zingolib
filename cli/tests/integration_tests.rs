@@ -342,7 +342,13 @@ fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
         let post_rescan_transactions = client.do_list_transactions(false).await;
         let post_rescan_notes = client.do_list_notes(true).await;
         assert_eq!(transactions, post_rescan_transactions);
-        assert_eq!(notes, post_rescan_notes);
+        assert_eq!(
+            notes,
+            post_rescan_notes,
+            "Pre-Rescan: {}\nPost-Rescan: {}",
+            json::stringify_pretty(notes.clone(), 4),
+            json::stringify_pretty(post_rescan_notes.clone(), 4)
+        );
 
         drop(child_process_handler);
     });
