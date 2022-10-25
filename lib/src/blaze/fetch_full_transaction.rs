@@ -269,7 +269,7 @@ impl TransactionContext {
         &self,
         transaction: &Transaction,
         height: BlockHeight,
-        unconfirmed: bool,
+        pending: bool,
         block_time: u32,
         is_outgoing_transaction: &mut bool,
         outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
@@ -277,7 +277,7 @@ impl TransactionContext {
         self.scan_bundle::<SaplingDomain<Network>>(
             transaction,
             height,
-            unconfirmed,
+            pending,
             block_time,
             is_outgoing_transaction,
             outgoing_metadatas,
@@ -288,7 +288,7 @@ impl TransactionContext {
         &self,
         transaction: &Transaction,
         height: BlockHeight,
-        unconfirmed: bool,
+        pending: bool,
         block_time: u32,
         is_outgoing_transaction: &mut bool,
         outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
@@ -296,7 +296,7 @@ impl TransactionContext {
         self.scan_bundle::<OrchardDomain>(
             transaction,
             height,
-            unconfirmed,
+            pending,
             block_time,
             is_outgoing_transaction,
             outgoing_metadatas,
@@ -313,7 +313,7 @@ impl TransactionContext {
         &self,
         transaction: &Transaction,
         transaction_block_height: BlockHeight, // TODO: Note that this parameter is NA in the case of "unconfirmed"
-        unconfirmed: bool, // TODO: This is true when called by wallet.send_to_address_internal, investigate.
+        pending: bool, // TODO: This is true when called by wallet.send_to_address_internal, investigate.
         block_time: u32,
         is_outgoing_transaction: &mut bool, // Isn't this also NA for unconfirmed?
         outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
@@ -341,7 +341,7 @@ impl TransactionContext {
         type FnGenBundle<I> = <I as DomainWalletExt<Network>>::Bundle;
         // Check if any of the nullifiers generated in this transaction are ours. We only need this for unconfirmed transactions,
         // because for transactions in the block, we will check the nullifiers from the blockdata
-        if unconfirmed {
+        if pending {
             let unspent_nullifiers =
             <<D as DomainWalletExt<Network>>
               ::WalletNote as zingo_traits::ReceivedNoteAndMetadata>
@@ -400,7 +400,7 @@ impl TransactionContext {
                 _ => continue,
             };
             let memo_bytes = MemoBytes::from_bytes(&memo_bytes.to_bytes()).unwrap();
-            if unconfirmed {
+            if pending {
                 self.transaction_metadata_set
                     .write()
                     .await
