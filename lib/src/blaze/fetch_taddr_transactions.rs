@@ -19,13 +19,13 @@ use zcash_primitives::transaction::Transaction;
 use zingoconfig::ZingoConfig;
 
 pub struct FetchTaddrTransactions {
-    usa: Arc<RwLock<UnifiedSpendCapability>>,
+    usc: Arc<RwLock<UnifiedSpendCapability>>,
     config: Arc<ZingoConfig>,
 }
 
 impl FetchTaddrTransactions {
-    pub fn new(usa: Arc<RwLock<UnifiedSpendCapability>>, config: Arc<ZingoConfig>) -> Self {
-        Self { usa, config }
+    pub fn new(usc: Arc<RwLock<UnifiedSpendCapability>>, config: Arc<ZingoConfig>) -> Self {
+        Self { usc, config }
     }
 
     pub async fn start(
@@ -39,10 +39,10 @@ impl FetchTaddrTransactions {
         full_transaction_scanner: UnboundedSender<(Transaction, BlockHeight)>,
         network: impl Parameters + Send + Copy + 'static,
     ) -> JoinHandle<Result<(), String>> {
-        let usa = self.usa.clone();
+        let usc = self.usc.clone();
         let config = self.config.clone();
         tokio::spawn(async move {
-            let taddrs = usa
+            let taddrs = usc
                 .read()
                 .await
                 .addresses()
