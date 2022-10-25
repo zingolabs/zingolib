@@ -1,6 +1,6 @@
 use crate::compact_formats::RawTransaction;
 use crate::wallet::keys::address_from_pubkeyhash;
-use crate::wallet::keys::unified::UnifiedSpendAuthority;
+use crate::wallet::keys::unified::UnifiedSpendCapability;
 
 use std::sync::Arc;
 use tokio::join;
@@ -19,12 +19,12 @@ use zcash_primitives::transaction::Transaction;
 use zingoconfig::ZingoConfig;
 
 pub struct FetchTaddrTransactions {
-    usa: Arc<RwLock<UnifiedSpendAuthority>>,
+    usa: Arc<RwLock<UnifiedSpendCapability>>,
     config: Arc<ZingoConfig>,
 }
 
 impl FetchTaddrTransactions {
-    pub fn new(usa: Arc<RwLock<UnifiedSpendAuthority>>, config: Arc<ZingoConfig>) -> Self {
+    pub fn new(usa: Arc<RwLock<UnifiedSpendCapability>>, config: Arc<ZingoConfig>) -> Self {
         Self { usa, config }
     }
 

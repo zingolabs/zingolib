@@ -1,6 +1,6 @@
 use crate::wallet::{
     data::OutgoingTxMetadata,
-    keys::{address_from_pubkeyhash, unified::UnifiedSpendAuthority, ToBase58Check},
+    keys::{address_from_pubkeyhash, unified::UnifiedSpendCapability, ToBase58Check},
     traits::{
         self as zingo_traits, Bundle as _, DomainWalletExt, Nullifier as _,
         ReceivedNoteAndMetadata as _, Recipient as _, ShieldedOutputExt as _, Spend as _,
@@ -44,14 +44,14 @@ use zingoconfig::{Network, ZingoConfig};
 #[derive(Clone)]
 pub struct TransactionContext {
     pub(crate) config: ZingoConfig,
-    pub(crate) key: Arc<RwLock<UnifiedSpendAuthority>>,
+    pub(crate) key: Arc<RwLock<UnifiedSpendCapability>>,
     pub(crate) transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
 }
 
 impl TransactionContext {
     pub fn new(
         config: &ZingoConfig,
-        key: Arc<RwLock<UnifiedSpendAuthority>>,
+        key: Arc<RwLock<UnifiedSpendCapability>>,
         transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
     ) -> Self {
         Self {
@@ -304,14 +304,18 @@ impl TransactionContext {
         .await;
     }
 
-    /// Core
+    /// Transactions contain per-protocol "bundles" of components.
+    /// The component details vary by protocol.
+    /// In Sapling the components are "Spends" and "Outputs"
+    /// In Orchard the components are "Actions", each of which
+    /// _IS_ 1 Spend and 1 Output.
     async fn scan_bundle<D>(
         &self,
         transaction: &Transaction,
-        transaction_block_height: BlockHeight,
+        transaction_block_height: BlockHeight, // TODO: Note that this parameter is NA in the case of "unconfirmed"
         unconfirmed: bool, // TODO: This is true when called by wallet.send_to_address_internal, investigate.
         block_time: u32,
-        is_outgoing_transaction: &mut bool,
+        is_outgoing_transaction: &mut bool, // Isn't this also NA for unconfirmed?
         outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
     ) where
         D: zingo_traits::DomainWalletExt<Network>,
@@ -345,7 +349,7 @@ impl TransactionContext {
             for output in
                 <FnGenBundle<D> as zingo_traits::Bundle<D, Network>>::from_transaction(transaction)
                     .into_iter()
-                    .flat_map(|bundle| bundle.spends().into_iter())
+                    .flat_map(|bundle| bundle.spend_elements().into_iter())
             {
                 if let Some((nf, value, transaction_id)) = unspent_nullifiers
                     .iter()
@@ -371,11 +375,11 @@ impl TransactionContext {
         //     1. There's more than one way to be "spent".
         //     2. It's possible for a "nullifier" to be in the wallet's spent list, but never in the global ledger.
         //     <https://github.com/zingolabs/zingolib/issues/65>
-        let usa = self.key.read().await;
+        let unified_spend_capability = self.key.read().await;
         let domain_tagged_outputs =
             <FnGenBundle<D> as zingo_traits::Bundle<D, Network>>::from_transaction(transaction)
                 .into_iter()
-                .flat_map(|bundle| bundle.outputs().into_iter())
+                .flat_map(|bundle| bundle.output_elements().into_iter())
                 .map(|output| {
                     (
                         output.domain(transaction_block_height, self.config.chain),
@@ -384,7 +388,7 @@ impl TransactionContext {
                 })
                 .collect::<Vec<_>>();
 
-        let ivk = <D::Key as zingo_traits::WalletKey>::usa_to_ivk(&*usa);
+        let ivk = <D::Key as zingo_traits::WalletKey>::usc_to_ivk(&*unified_spend_capability);
         let mut decrypt_attempts =
             zcash_note_encryption::batch::try_note_decryption(&[ivk], &domain_tagged_outputs)
                 .into_iter();
@@ -404,7 +408,9 @@ impl TransactionContext {
                         block_time as u64,
                         note.clone(),
                         to,
-                        &<D::Key as zingo_traits::WalletKey>::usa_to_fvk(&*usa),
+                        &<D::Key as zingo_traits::WalletKey>::usc_to_fvk(
+                            &*unified_spend_capability,
+                        ),
                     );
             }
             let memo = memo_bytes
@@ -423,7 +429,7 @@ impl TransactionContext {
                     <FnGenBundle<D> as zingo_traits::Bundle<D, Network>>::Output,
                 >(
                     &output.domain(transaction_block_height, self.config.chain),
-                    &<D::Key as zingo_traits::WalletKey>::usa_to_ovk(&*usa),
+                    &<D::Key as zingo_traits::WalletKey>::usa_to_ovk(&*unified_spend_capability),
                     &output,
                     &output.value_commitment(),
                     &output.out_ciphertext(),
@@ -442,34 +448,36 @@ impl TransactionContext {
                         match Memo::from_bytes(&memo_bytes.to_bytes()) {
                             Err(_) => None,
                             Ok(memo) => {
-                                if usa.addresses().iter().any(|unified_address| {
-                                    [
-                                        unified_address
-                                            .transparent()
-                                            .cloned()
-                                            .map(RecipientAddress::from),
-                                        unified_address
-                                            .sapling()
-                                            .cloned()
-                                            .map(RecipientAddress::from),
-                                        unified_address.orchard().cloned().map(
-                                            |orchard_receiver| {
-                                                RecipientAddress::from(
-                                                    UnifiedAddress::from_receivers(
-                                                        Some(orchard_receiver),
-                                                        None,
-                                                        None,
+                                if unified_spend_capability.addresses().iter().any(
+                                    |unified_address| {
+                                        [
+                                            unified_address
+                                                .transparent()
+                                                .cloned()
+                                                .map(RecipientAddress::from),
+                                            unified_address
+                                                .sapling()
+                                                .cloned()
+                                                .map(RecipientAddress::from),
+                                            unified_address.orchard().cloned().map(
+                                                |orchard_receiver| {
+                                                    RecipientAddress::from(
+                                                        UnifiedAddress::from_receivers(
+                                                            Some(orchard_receiver),
+                                                            None,
+                                                            None,
+                                                        )
+                                                        .unwrap(),
                                                     )
-                                                    .unwrap(),
-                                                )
-                                            },
-                                        ),
-                                    ]
-                                    .into_iter()
-                                    .filter_map(std::convert::identity)
-                                    .map(|addr| addr.encode(&self.config.chain))
-                                    .any(|addr| addr == address)
-                                }) && memo == Memo::Empty
+                                                },
+                                            ),
+                                        ]
+                                        .into_iter()
+                                        .filter_map(std::convert::identity)
+                                        .map(|addr| addr.encode(&self.config.chain))
+                                        .any(|addr| addr == address)
+                                    },
+                                ) && memo == Memo::Empty
                                 {
                                     None
                                 } else {

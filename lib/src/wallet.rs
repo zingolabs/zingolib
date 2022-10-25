@@ -42,7 +42,7 @@ use zcash_primitives::{
 
 use self::data::SpendableOrchardNote;
 use self::keys::unified::ReceiverSelection;
-use self::keys::unified::UnifiedSpendAuthority;
+use self::keys::unified::UnifiedSpendCapability;
 use self::traits::Recipient;
 use self::traits::{DomainWalletExt, ReceivedNoteAndMetadata, SpendableNote};
 use self::{
@@ -217,9 +217,9 @@ impl LightWallet {
             //error!("{}", e);
             Error::new(ErrorKind::InvalidData, e)
         })?;
-        let mut usa = UnifiedSpendAuthority::new_from_phrase(&config, &mnemonic, 0)
+        let mut usc = UnifiedSpendCapability::new_from_phrase(&config, &mnemonic, 0)
             .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
-        usa.new_address(ReceiverSelection {
+        usc.new_address(ReceiverSelection {
             sapling: true,
             orchard: true,
             transparent: true,
@@ -228,7 +228,7 @@ impl LightWallet {
         let transaction_metadata_set = Arc::new(RwLock::new(TransactionMetadataSet::new()));
         let transaction_context = TransactionContext::new(
             &config,
-            Arc::new(RwLock::new(usa)),
+            Arc::new(RwLock::new(usc)),
             transaction_metadata_set,
         );
         Ok(Self {
@@ -268,7 +268,7 @@ impl LightWallet {
         }
 
         info!("Reading wallet version {}", external_version);
-        let key = UnifiedSpendAuthority::read(&mut reader, ())?;
+        let key = UnifiedSpendCapability::read(&mut reader, ())?;
 
         let mut blocks = Vector::read(&mut reader, |r| BlockData::read(r))?;
         if external_version <= 14 {
@@ -475,7 +475,7 @@ impl LightWallet {
         // compile_error!("Haven't gotten around to removing this yet")
     }*/
 
-    pub fn unified_spend_auth(&self) -> Arc<RwLock<UnifiedSpendAuthority>> {
+    pub fn unified_spend_capability(&self) -> Arc<RwLock<UnifiedSpendCapability>> {
         self.transaction_context.key.clone()
     }
 
@@ -497,7 +497,7 @@ impl LightWallet {
     pub(crate) fn note_address<D: DomainWalletExt<zingoconfig::Network>>(
         network: &zingoconfig::Network,
         note: &D::WalletNote,
-        unified_spend_auth: &UnifiedSpendAuthority,
+        unified_spend_auth: &UnifiedSpendCapability,
     ) -> Option<String>
     where
         <D as Domain>::Recipient: Recipient,
@@ -566,7 +566,7 @@ impl LightWallet {
 
     pub async fn is_unlocked_for_spending(&self) -> bool {
         match &*self.transaction_context.key.read().await {
-            UnifiedSpendAuthority {
+            UnifiedSpendCapability {
                 encrypted: true,
                 unlocked: false,
                 ..
@@ -876,7 +876,7 @@ impl LightWallet {
 
     ///TODO: Make this work for orchard too
     pub async fn decrypt_message(&self, enc: Vec<u8>) -> Option<Message> {
-        let sapling_ivk = SaplingIvk::from(&*self.unified_spend_auth().read().await);
+        let sapling_ivk = SaplingIvk::from(&*self.unified_spend_capability().read().await);
 
         if let Ok(msg) = Message::decrypt(&enc, &sapling_ivk) {
             // If decryption succeeded for this IVK, return the decrypted memo and the matched address
@@ -1044,8 +1044,8 @@ impl LightWallet {
         <D as Domain>::Recipient: traits::Recipient,
         <D as Domain>::Note: PartialEq + Clone,
     {
-        let usa_lth = self.unified_spend_auth();
-        let usa = usa_lth.read().await;
+        let usc_lth = self.unified_spend_capability();
+        let usc = usc_lth.read().await;
         let tranmds_lth = self.transactions();
         let transaction_metadata_set = tranmds_lth.read().await;
         self.transaction_context
@@ -1068,7 +1068,7 @@ impl LightWallet {
                             None
                         } else {
                             // Get the spending key for the selected fvk, if we have it
-                            let extsk = D::Key::usa_to_sk(&usa);
+                            let extsk = D::Key::usc_to_sk(&usc);
                             SpendableNote::from(
                                 transaction_id,
                                 note,
@@ -1176,7 +1176,7 @@ impl LightWallet {
         F: Fn(Box<[u8]>) -> Fut,
         Fut: Future<Output = Result<String, String>>,
     {
-        if !self.unified_spend_auth().read().await.unlocked {
+        if !self.unified_spend_capability().read().await.unlocked {
             return Err("Cannot spend while wallet is locked".to_string());
         }
 
@@ -1227,7 +1227,7 @@ impl LightWallet {
         // Create a map from address -> sk for all taddrs, so we can spend from the
         // right address
         let address_to_sk = self
-            .unified_spend_auth()
+            .unified_spend_capability()
             .read()
             .await
             .get_taddr_to_secretkey_map(&self.transaction_context.config);
@@ -1335,9 +1335,9 @@ impl LightWallet {
         if sapling_notes.len() == 0 {
             builder.send_change_to(
                 zcash_primitives::keys::OutgoingViewingKey::from(
-                    &*self.unified_spend_auth().read().await,
+                    &*self.unified_spend_capability().read().await,
                 ),
-                self.unified_spend_auth()
+                self.unified_spend_capability()
                     .read()
                     .await
                     .addresses()
@@ -1354,10 +1354,10 @@ impl LightWallet {
 
         // We'll use the first ovk to encrypt outgoing transactions
         let sapling_ovk = zcash_primitives::keys::OutgoingViewingKey::from(
-            &*self.unified_spend_auth().read().await,
+            &*self.unified_spend_capability().read().await,
         );
         let orchard_ovk =
-            orchard::keys::OutgoingViewingKey::from(&*self.unified_spend_auth().read().await);
+            orchard::keys::OutgoingViewingKey::from(&*self.unified_spend_capability().read().await);
 
         let mut total_z_recipients = 0u32;
         for (recipient_address, value, memo) in recipients {
@@ -1570,19 +1570,22 @@ impl LightWallet {
     }
 
     pub async fn encrypt(&self, passwd: String) -> io::Result<()> {
-        self.unified_spend_auth().write().await.encrypt(passwd)
+        self.unified_spend_capability()
+            .write()
+            .await
+            .encrypt(passwd)
     }
 
     pub async fn lock(&self) -> io::Result<()> {
-        self.unified_spend_auth().write().await.lock()
+        self.unified_spend_capability().write().await.lock()
     }
 
     pub async fn unlock(&self, passwd: String) -> io::Result<()> {
-        self.unified_spend_auth().write().await.unlock(passwd)
+        self.unified_spend_capability().write().await.unlock(passwd)
     }
 
     pub async fn remove_encryption(&self, passwd: String) -> io::Result<()> {
-        self.unified_spend_auth()
+        self.unified_spend_capability()
             .write()
             .await
             .remove_encryption(passwd)
@@ -1652,7 +1655,7 @@ mod test {
                 ..
             } = scenario;
             let extended_fvk = zcash_primitives::zip32::ExtendedFullViewingKey::from(
-                &*lightclient.wallet.unified_spend_auth().read().await,
+                &*lightclient.wallet.unified_spend_capability().read().await,
             );
             let (_, _, _) =
                 fake_compactblock_list.create_sapling_coinbase_transaction(&extended_fvk, 1);
@@ -1679,7 +1682,7 @@ mod test {
                 ..
             } = scenario;
             let extended_fvk = zcash_primitives::zip32::ExtendedFullViewingKey::from(
-                &*lightclient.wallet.unified_spend_auth().read().await,
+                &*lightclient.wallet.unified_spend_capability().read().await,
             );
             use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
             let (_, _, _) = fake_compactblock_list
@@ -1712,7 +1715,7 @@ mod test {
         } = scenario;
         // 2. Send an incoming transaction to fill the wallet
         let extfvk1 = zcash_primitives::zip32::ExtendedFullViewingKey::from(
-            &*lightclient.wallet.unified_spend_auth().read().await,
+            &*lightclient.wallet.unified_spend_capability().read().await,
         );
         let value = 100_000;
         let (transaction, _height, _) =
@@ -1884,7 +1887,7 @@ mod test {
         } = scenario;
         // 2. Send an incoming transaction to fill the wallet
         let extfvk1 = zcash_primitives::zip32::ExtendedFullViewingKey::from(
-            &*lightclient.wallet.unified_spend_auth().read().await,
+            &*lightclient.wallet.unified_spend_capability().read().await,
         );
         let value1 = 100_000;
         let (transaction, _height, _) =

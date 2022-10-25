@@ -19,7 +19,7 @@ use crate::wallet::traits::ReadableWriteable;
 use super::{extended_transparent::KeyIndex, get_zaddr_from_bip39seed, ToBase58Check};
 
 #[derive(Clone, Debug)]
-pub struct UnifiedSpendAuthority {
+pub struct UnifiedSpendCapability {
     orchard_key: orchard::keys::SpendingKey,
     sapling_key: zcash_primitives::zip32::ExtendedSpendingKey,
     transparent_parent_key: super::extended_transparent::ExtendedPrivKey,
@@ -89,7 +89,7 @@ fn read_write_receiver_selections() {
     }
 }
 
-impl UnifiedSpendAuthority {
+impl UnifiedSpendCapability {
     pub fn addresses(&self) -> &[UnifiedAddress] {
         &self.addresses
     }
@@ -110,13 +110,13 @@ impl UnifiedSpendAuthority {
         } else {
             None
         };
+        let (mut new_index, address) =
+            zcash_primitives::zip32::ExtendedFullViewingKey::from(&self.sapling_key)
+                .find_address(self.next_sapling_diversifier_index)
+                .expect("Diversifier index overflow");
+        new_index.increment().expect("Diversifier index overflow");
+        self.next_sapling_diversifier_index = new_index;
         let sapling_receiver = if desired_receivers.sapling {
-            let (mut new_index, address) =
-                zcash_primitives::zip32::ExtendedFullViewingKey::from(&self.sapling_key)
-                    .find_address(self.next_sapling_diversifier_index)
-                    .expect("Diversifier index overflow");
-            new_index.increment().expect("Diversifier index overflow");
-            self.next_sapling_diversifier_index = new_index;
             Some(address)
         } else {
             None
@@ -272,7 +272,7 @@ impl UnifiedSpendAuthority {
         todo!()
     }
 }
-impl ReadableWriteable<()> for UnifiedSpendAuthority {
+impl ReadableWriteable<()> for UnifiedSpendCapability {
     const VERSION: u8 = 1;
 
     fn read<R: Read>(mut reader: R, _input: ()) -> io::Result<Self> {
@@ -339,51 +339,51 @@ impl ReadableWriteable<()> for UnifiedSpendAuthority {
     }
 }
 
-impl From<&UnifiedSpendAuthority> for zcash_primitives::zip32::ExtendedSpendingKey {
-    fn from(usa: &UnifiedSpendAuthority) -> Self {
+impl From<&UnifiedSpendCapability> for zcash_primitives::zip32::ExtendedSpendingKey {
+    fn from(usa: &UnifiedSpendCapability) -> Self {
         usa.sapling_key.clone()
     }
 }
 
-impl From<&UnifiedSpendAuthority> for orchard::keys::SpendingKey {
-    fn from(usa: &UnifiedSpendAuthority) -> Self {
+impl From<&UnifiedSpendCapability> for orchard::keys::SpendingKey {
+    fn from(usa: &UnifiedSpendCapability) -> Self {
         usa.orchard_key.clone()
     }
 }
 
-impl From<&UnifiedSpendAuthority> for orchard::keys::IncomingViewingKey {
-    fn from(usa: &UnifiedSpendAuthority) -> Self {
+impl From<&UnifiedSpendCapability> for orchard::keys::IncomingViewingKey {
+    fn from(usa: &UnifiedSpendCapability) -> Self {
         orchard::keys::FullViewingKey::from(&usa.orchard_key).to_ivk(Scope::External)
     }
 }
 
-impl From<&UnifiedSpendAuthority> for zcash_primitives::sapling::SaplingIvk {
-    fn from(usa: &UnifiedSpendAuthority) -> Self {
+impl From<&UnifiedSpendCapability> for zcash_primitives::sapling::SaplingIvk {
+    fn from(usa: &UnifiedSpendCapability) -> Self {
         zcash_primitives::zip32::ExtendedFullViewingKey::from(&usa.sapling_key)
             .fvk
             .vk
             .ivk()
     }
 }
-impl From<&UnifiedSpendAuthority> for orchard::keys::FullViewingKey {
-    fn from(usa: &UnifiedSpendAuthority) -> Self {
+impl From<&UnifiedSpendCapability> for orchard::keys::FullViewingKey {
+    fn from(usa: &UnifiedSpendCapability) -> Self {
         orchard::keys::FullViewingKey::from(&usa.orchard_key)
     }
 }
 
-impl From<&UnifiedSpendAuthority> for zcash_primitives::zip32::ExtendedFullViewingKey {
-    fn from(usa: &UnifiedSpendAuthority) -> Self {
+impl From<&UnifiedSpendCapability> for zcash_primitives::zip32::ExtendedFullViewingKey {
+    fn from(usa: &UnifiedSpendCapability) -> Self {
         zcash_primitives::zip32::ExtendedFullViewingKey::from(&usa.sapling_key)
     }
 }
-impl From<&UnifiedSpendAuthority> for orchard::keys::OutgoingViewingKey {
-    fn from(usa: &UnifiedSpendAuthority) -> Self {
+impl From<&UnifiedSpendCapability> for orchard::keys::OutgoingViewingKey {
+    fn from(usa: &UnifiedSpendCapability) -> Self {
         orchard::keys::FullViewingKey::from(&usa.orchard_key).to_ovk(Scope::External)
     }
 }
 
-impl From<&UnifiedSpendAuthority> for zcash_primitives::keys::OutgoingViewingKey {
-    fn from(usa: &UnifiedSpendAuthority) -> Self {
+impl From<&UnifiedSpendCapability> for zcash_primitives::keys::OutgoingViewingKey {
+    fn from(usa: &UnifiedSpendCapability) -> Self {
         zcash_primitives::zip32::ExtendedFullViewingKey::from(&usa.sapling_key)
             .fvk
             .ovk
@@ -398,7 +398,7 @@ pub async fn get_first_zaddr_as_string_from_lightclient(
         lightclient.config.chain.hrp_sapling_payment_address(),
         lightclient
             .wallet
-            .unified_spend_auth()
+            .unified_spend_capability()
             .read()
             .await
             .first_sapling_address(),
@@ -411,7 +411,7 @@ pub async fn get_transparent_secretkey_pubkey_taddr(
 ) -> (secp256k1::SecretKey, secp256k1::PublicKey, String) {
     use super::address_from_pubkeyhash;
 
-    let usa_readlock = lightclient.wallet.unified_spend_auth();
+    let usa_readlock = lightclient.wallet.unified_spend_capability();
     let usa = usa_readlock.read().await;
     // 2. Get an incoming transaction to a t address
     let sk = usa.transparent_child_keys()[0].1;
