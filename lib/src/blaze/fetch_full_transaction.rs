@@ -343,7 +343,9 @@ impl TransactionContext {
         // because for transactions in the block, we will check the nullifiers from the blockdata
         if unconfirmed {
             let unspent_nullifiers =
-            <<D as DomainWalletExt<Network>>::WalletNote as zingo_traits::ReceivedNoteAndMetadata>::Nullifier::get_nullifiers_of_unspent_notes_from_transaction_set(
+            <<D as DomainWalletExt<Network>>
+              ::WalletNote as zingo_traits::ReceivedNoteAndMetadata>
+                ::Nullifier::get_nullifiers_of_unspent_notes_from_transaction_set(
                 &*self.transaction_metadata_set.read().await,
             );
             for output in
