@@ -498,7 +498,7 @@ impl LightWallet {
         network: &zingoconfig::Network,
         note: &D::WalletNote,
         unified_spend_auth: &UnifiedSpendCapability,
-    ) -> Option<String>
+    ) -> String
     where
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
@@ -509,6 +509,7 @@ impl LightWallet {
                 D::ua_from_contained_receiver(unified_spend_auth, &address)
                     .map(|ua| ua.encode(network))
             })
+            .unwrap_or("Diversifier not in wallet. Perhaps you restored from seed and didn't restore addresses".to_string())
     }
 
     pub async fn set_download_memo(&self, value: MemoDownloadOption) {

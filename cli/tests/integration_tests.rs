@@ -407,7 +407,10 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
     .unwrap();
     let mut expected_unspent_sapling_notes_after_restore_from_seed =
         expected_unspent_sapling_notes.clone();
-    expected_unspent_sapling_notes_after_restore_from_seed["address"] = JsonValue::Null;
+    expected_unspent_sapling_notes_after_restore_from_seed["address"] = JsonValue::String(
+        "Diversifier not in wallet. Perhaps you restored from seed and didn't restore addresses"
+            .to_string(),
+    );
     let client_b_restored = LightClient::create_with_seedorkey_wallet(
         seed["seed"].as_str().unwrap().to_string(),
         &config,
