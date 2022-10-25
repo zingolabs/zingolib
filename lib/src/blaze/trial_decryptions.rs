@@ -7,7 +7,7 @@ use crate::{
     compact_formats::{CompactBlock, CompactTx},
     wallet::{
         data::{ChannelNullifier, TransactionMetadata},
-        keys::unified::UnifiedSpendAuthority,
+        keys::unified::UnifiedSpendCapability,
         traits::{
             CompactOutput as _, DomainWalletExt, Nullifier as _, ReceivedNoteAndMetadata as _,
             WalletKey as _,
@@ -38,7 +38,7 @@ use zingoconfig::ZingoConfig;
 use super::syncdata::BlazeSyncData;
 
 pub struct TrialDecryptions {
-    usa: Arc<RwLock<UnifiedSpendAuthority>>,
+    usa: Arc<RwLock<UnifiedSpendCapability>>,
     transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
     config: Arc<ZingoConfig>,
 }
@@ -46,7 +46,7 @@ pub struct TrialDecryptions {
 impl TrialDecryptions {
     pub fn new(
         config: Arc<ZingoConfig>,
-        usa: Arc<RwLock<UnifiedSpendAuthority>>,
+        usa: Arc<RwLock<UnifiedSpendCapability>>,
         transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
     ) -> Self {
         Self {
@@ -147,7 +147,7 @@ impl TrialDecryptions {
     async fn trial_decrypt_batch(
         config: Arc<ZingoConfig>,
         compact_blocks: Vec<CompactBlock>,
-        usa: Arc<RwLock<UnifiedSpendAuthority>>,
+        usa: Arc<RwLock<UnifiedSpendCapability>>,
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         sapling_ivk: SaplingIvk,
         orchard_ivk: OrchardIvk,
@@ -254,7 +254,7 @@ impl TrialDecryptions {
         ivk: D::IncomingViewingKey,
         height: BlockHeight,
         config: &zingoconfig::ZingoConfig,
-        usa: &Arc<RwLock<UnifiedSpendAuthority>>,
+        usa: &Arc<RwLock<UnifiedSpendCapability>>,
         bsync_data: &Arc<RwLock<BlazeSyncData>>,
         transaction_metadata_set: &Arc<RwLock<TransactionMetadataSet>>,
         detected_transaction_id_sender: &UnboundedSender<(
@@ -290,7 +290,7 @@ impl TrialDecryptions {
 
                 workers.push(tokio::spawn(async move {
                     let usa = usa.read().await;
-                    let fvk = D::Key::usa_to_fvk(&*usa);
+                    let fvk = D::Key::usc_to_fvk(&*usa);
 
                     // We don't have fvk import, all our keys are spending
                     let have_spending_key = true;

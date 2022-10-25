@@ -6,7 +6,7 @@ use super::{
         ChannelNullifier, ReceivedOrchardNoteAndMetadata, ReceivedSaplingNoteAndMetadata,
         SpendableOrchardNote, SpendableSaplingNote, TransactionMetadata, WitnessCache,
     },
-    keys::{orchard::OrchardKey, sapling::SaplingKey, unified::UnifiedSpendAuthority},
+    keys::{orchard::OrchardKey, sapling::SaplingKey, unified::UnifiedSpendCapability},
     transactions::TransactionMetadataSet,
 };
 use crate::compact_formats::{
@@ -720,10 +720,10 @@ pub trait WalletKey
 where
     Self: Sized,
 {
-    type SpendKey: Clone + for<'a> From<&'a UnifiedSpendAuthority>;
-    type Fvk: PartialEq + for<'a> From<&'a UnifiedSpendAuthority>;
-    type Ivk: for<'a> From<&'a UnifiedSpendAuthority>;
-    type Ovk: for<'a> From<&'a UnifiedSpendAuthority>;
+    type SpendKey: Clone + for<'a> From<&'a UnifiedSpendCapability>;
+    type Fvk: PartialEq + for<'a> From<&'a UnifiedSpendCapability>;
+    type Ivk: for<'a> From<&'a UnifiedSpendCapability>;
+    type Ovk: for<'a> From<&'a UnifiedSpendCapability>;
     type Address: PartialEq;
     fn spend_key(&self) -> Option<Self::SpendKey>;
     fn fvk(&self) -> Option<Self::Fvk>;
@@ -731,17 +731,17 @@ where
     fn ovk(&self) -> Option<Self::Ovk>;
     fn address(&self) -> Self::Address;
     fn set_spend_key_for_view_key(&mut self, key: Self::SpendKey);
-    fn usa_to_sk(usa: &UnifiedSpendAuthority) -> Self::SpendKey {
-        Self::SpendKey::from(usa)
+    fn usc_to_sk(usc: &UnifiedSpendCapability) -> Self::SpendKey {
+        Self::SpendKey::from(usc)
     }
-    fn usa_to_fvk(usa: &UnifiedSpendAuthority) -> Self::Fvk {
-        Self::Fvk::from(usa)
+    fn usc_to_fvk(usc: &UnifiedSpendCapability) -> Self::Fvk {
+        Self::Fvk::from(usc)
     }
-    fn usa_to_ivk(usa: &UnifiedSpendAuthority) -> Self::Ivk {
-        Self::Ivk::from(usa)
+    fn usc_to_ivk(usc: &UnifiedSpendCapability) -> Self::Ivk {
+        Self::Ivk::from(usc)
     }
-    fn usa_to_ovk(usa: &UnifiedSpendAuthority) -> Self::Ovk {
-        Self::Ovk::from(usa)
+    fn usa_to_ovk(usc: &UnifiedSpendCapability) -> Self::Ovk {
+        Self::Ovk::from(usc)
     }
 }
 
@@ -846,7 +846,7 @@ where
 
     fn to_notes_vec_mut(_: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote>;
     fn ua_from_contained_receiver<'a>(
-        unified_spend_auth: &'a UnifiedSpendAuthority,
+        unified_spend_auth: &'a UnifiedSpendCapability,
         receiver: &Self::Recipient,
     ) -> Option<&'a UnifiedAddress>;
     fn get_tree(tree_state: &TreeState) -> &String;
@@ -876,7 +876,7 @@ impl<P: Parameters> DomainWalletExt<P> for SaplingDomain<P> {
     }
 
     fn ua_from_contained_receiver<'a>(
-        unified_spend_auth: &'a UnifiedSpendAuthority,
+        unified_spend_auth: &'a UnifiedSpendCapability,
         receiver: &Self::Recipient,
     ) -> Option<&'a UnifiedAddress> {
         unified_spend_auth
@@ -910,7 +910,7 @@ impl<P: Parameters> DomainWalletExt<P> for OrchardDomain {
     }
 
     fn ua_from_contained_receiver<'a>(
-        unified_spend_auth: &'a UnifiedSpendAuthority,
+        unified_spend_auth: &'a UnifiedSpendCapability,
         receiver: &Self::Recipient,
     ) -> Option<&'a UnifiedAddress> {
         unified_spend_auth

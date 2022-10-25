@@ -1,6 +1,6 @@
 use crate::wallet::{
     data::OutgoingTxMetadata,
-    keys::{address_from_pubkeyhash, unified::UnifiedSpendAuthority, ToBase58Check},
+    keys::{address_from_pubkeyhash, unified::UnifiedSpendCapability, ToBase58Check},
     traits::{
         self as zingo_traits, Bundle as _, DomainWalletExt, Nullifier as _,
         ReceivedNoteAndMetadata as _, Recipient as _, ShieldedOutputExt as _, Spend as _,
@@ -44,14 +44,14 @@ use zingoconfig::{Network, ZingoConfig};
 #[derive(Clone)]
 pub struct TransactionContext {
     pub(crate) config: ZingoConfig,
-    pub(crate) key: Arc<RwLock<UnifiedSpendAuthority>>,
+    pub(crate) key: Arc<RwLock<UnifiedSpendCapability>>,
     pub(crate) transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
 }
 
 impl TransactionContext {
     pub fn new(
         config: &ZingoConfig,
-        key: Arc<RwLock<UnifiedSpendAuthority>>,
+        key: Arc<RwLock<UnifiedSpendCapability>>,
         transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
     ) -> Self {
         Self {
@@ -388,7 +388,7 @@ impl TransactionContext {
                 })
                 .collect::<Vec<_>>();
 
-        let ivk = <D::Key as zingo_traits::WalletKey>::usa_to_ivk(&*unified_spend_capability);
+        let ivk = <D::Key as zingo_traits::WalletKey>::usc_to_ivk(&*unified_spend_capability);
         let mut decrypt_attempts =
             zcash_note_encryption::batch::try_note_decryption(&[ivk], &domain_tagged_outputs)
                 .into_iter();
@@ -408,7 +408,7 @@ impl TransactionContext {
                         block_time as u64,
                         note.clone(),
                         to,
-                        &<D::Key as zingo_traits::WalletKey>::usa_to_fvk(
+                        &<D::Key as zingo_traits::WalletKey>::usc_to_fvk(
                             &*unified_spend_capability,
                         ),
                     );

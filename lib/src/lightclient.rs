@@ -11,7 +11,7 @@ use crate::{
         data::TransactionMetadata,
         keys::{
             address_from_pubkeyhash,
-            unified::{ReceiverSelection, UnifiedSpendAuthority},
+            unified::{ReceiverSelection, UnifiedSpendCapability},
         },
         message::Message,
         now,
@@ -488,7 +488,13 @@ impl LightClient {
 
     pub async fn do_addresses(&self) -> JsonValue {
         let mut objectified_addresses = Vec::new();
-        for address in self.wallet.unified_spend_auth().read().await.addresses() {
+        for address in self
+            .wallet
+            .unified_spend_capability()
+            .read()
+            .await
+            .addresses()
+        {
             let encoded_ua = address.encode(&self.config.chain);
             objectified_addresses.push(object! {
             "address" => encoded_ua,
@@ -682,8 +688,8 @@ impl LightClient {
         let mut pending_sapling_notes: Vec<JsonValue> = vec![];
 
         let anchor_height = BlockHeight::from_u32(self.wallet.get_anchor_height().await);
-        let unified_spend_auth_arc = self.wallet.unified_spend_auth();
-        let unified_spend_auth = &unified_spend_auth_arc.read().await;
+        let unified_spend_capability_arc = self.wallet.unified_spend_capability();
+        let unified_spend_capability = &unified_spend_capability_arc.read().await;
 
         {
             // Collect Sapling notes
@@ -693,7 +699,7 @@ impl LightClient {
                         if !all_notes && note_metadata.spent.is_some() {
                             None
                         } else {
-                            let address = LightWallet::note_address::<SaplingDomain<Network>>(&self.config.chain, note_metadata, &unified_spend_auth);
+                            let address = LightWallet::note_address::<SaplingDomain<Network>>(&self.config.chain, note_metadata, &unified_spend_capability);
                             let spendable = transaction_metadata.block_height <= anchor_height && note_metadata.spent.is_none() && note_metadata.unconfirmed_spent.is_none();
 
                             let created_block:u32 = transaction_metadata.block_height.into();
@@ -728,7 +734,7 @@ impl LightClient {
         let mut spent_orchard_notes: Vec<JsonValue> = vec![];
         let mut pending_orchard_notes: Vec<JsonValue> = vec![];
 
-        let unified_spend_auth_arc = self.wallet.unified_spend_auth();
+        let unified_spend_auth_arc = self.wallet.unified_spend_capability();
         let unified_spend_auth = &unified_spend_auth_arc.read().await;
         {
             self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
@@ -888,8 +894,8 @@ impl LightClient {
 
     pub async fn do_list_transactions(&self, include_memo_hex: bool) -> JsonValue {
         // Create a list of TransactionItems from wallet transactions
-        let unified_spend_auth_arc = self.wallet.unified_spend_auth();
-        let unified_spend_auth = &unified_spend_auth_arc.read().await;
+        let unified_spend_capability_arc = self.wallet.unified_spend_capability();
+        let unified_spend_capability = &unified_spend_capability_arc.read().await;
         let mut transaction_list = self
             .wallet
             .transaction_context.transaction_metadata_set
@@ -950,7 +956,7 @@ impl LightClient {
                 }
 
                 // For each sapling note that is not a change, add a transaction.
-                transactions.extend(self.add_wallet_notes_in_transaction_to_list(&wallet_transaction, &include_memo_hex, &**unified_spend_auth));
+                transactions.extend(self.add_wallet_notes_in_transaction_to_list(&wallet_transaction, &include_memo_hex, &**unified_spend_capability));
 
                 // Get the total transparent received
                 let total_transparent_received = wallet_transaction.utxos.iter().map(|u| u.value).sum::<u64>();
@@ -988,7 +994,7 @@ impl LightClient {
         &'a self,
         transaction_metadata: &'b TransactionMetadata,
         include_memo_hex: &'b bool,
-        unified_spend_auth: &'c UnifiedSpendAuthority,
+        unified_spend_auth: &'c UnifiedSpendCapability,
     ) -> impl Iterator<Item = JsonValue> + 'b
     where
         'a: 'b,
@@ -1012,7 +1018,7 @@ impl LightClient {
         &'a self,
         transaction_metadata: &'b TransactionMetadata,
         include_memo_hex: &'b bool,
-        unified_spend_auth: &'c UnifiedSpendAuthority,
+        unified_spend_auth: &'c UnifiedSpendCapability,
     ) -> impl Iterator<Item = JsonValue> + 'b
     where
         'a: 'b,
@@ -1070,7 +1076,7 @@ impl LightClient {
 
         let new_address = self
             .wallet
-            .unified_spend_auth()
+            .unified_spend_capability()
             .write()
             .await
             .new_address(desired_receivers)?;
@@ -1159,7 +1165,7 @@ impl LightClient {
                 let lc1 = lci.clone();
 
                 let h1 = tokio::spawn(async move {
-                    let key = lc1.wallet.unified_spend_auth();
+                    let key = lc1.wallet.unified_spend_capability();
                     let transaction_metadata_set = lc1
                         .wallet
                         .transaction_context
@@ -1421,7 +1427,7 @@ impl LightClient {
         // Local state necessary for a transaction fetch
         let transaction_context = TransactionContext::new(
             &self.config,
-            self.wallet.unified_spend_auth(),
+            self.wallet.unified_spend_capability(),
             self.wallet.transactions(),
         );
         let (
@@ -1445,7 +1451,7 @@ impl LightClient {
         // Do Trial decryptions of all the sapling outputs, and pass on the successful ones to the update_notes processor
         let trial_decryptions_processor = TrialDecryptions::new(
             Arc::new(self.config.clone()),
-            self.wallet.unified_spend_auth(),
+            self.wallet.unified_spend_capability(),
             self.wallet.transactions(),
         );
         let (trial_decrypts_handle, trial_decrypts_transmitter) = trial_decryptions_processor
@@ -1502,7 +1508,7 @@ impl LightClient {
 
         // 1. Fetch the transparent txns only after reorgs are done.
         let taddr_transactions_handle = FetchTaddrTransactions::new(
-            self.wallet.unified_spend_auth(),
+            self.wallet.unified_spend_capability(),
             Arc::new(self.config.clone()),
         )
         .start(
@@ -1630,7 +1636,12 @@ impl LightClient {
         }
 
         let addr = address.unwrap_or(
-            self.wallet.unified_spend_auth().read().await.addresses()[0].encode(&self.config.chain),
+            self.wallet
+                .unified_spend_capability()
+                .read()
+                .await
+                .addresses()[0]
+                .encode(&self.config.chain),
         );
 
         let result = {
