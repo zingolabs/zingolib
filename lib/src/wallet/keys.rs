@@ -117,9 +117,9 @@ pub fn is_shielded_address(addr: &String, config: &ZingoConfig) -> bool {
 /// STATIC METHODS
 pub fn address_from_pubkeyhash(
     config: &ZingoConfig,
-    ta: Option<TransparentAddress>,
+    taddr: Option<TransparentAddress>,
 ) -> Option<String> {
-    match ta {
+    match taddr {
         Some(TransparentAddress::PublicKey(hash)) => {
             Some(hash.to_base58check(&config.base58_pubkey_address(), &[]))
         }

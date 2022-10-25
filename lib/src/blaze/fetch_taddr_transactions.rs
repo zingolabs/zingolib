@@ -247,7 +247,7 @@ mod test {
                 }));
             }
 
-            // Dispatch a set of receievers
+            // Dispatch a set of receivers
             raw_transaction.send(transaction_receivers).unwrap();
 
             let total = join_all(transaction_receivers_workers)
