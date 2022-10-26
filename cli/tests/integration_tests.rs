@@ -352,14 +352,17 @@ fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
         let post_rescan_transactions = client.do_list_transactions(false).await;
         let post_rescan_notes = client.do_list_notes(true).await;
         assert_eq!(transactions, post_rescan_transactions);
-        assert_eq!(
-            notes,
-            post_rescan_notes,
-            "Pre-Rescan: {}\nPost-Rescan: {}",
-            json::stringify_pretty(notes.clone(), 4),
-            json::stringify_pretty(post_rescan_notes.clone(), 4)
-        );
 
+        // Notes are not in deterministic order after rescan. Insead, iterate over all
+        // the notes and check that they exist post-rescan
+        for (field_name, field) in notes.entries() {
+            for note in field.members() {
+                assert!(post_rescan_notes[field_name]
+                    .members()
+                    .any(|post_rescan_note| post_rescan_note == note));
+            }
+            assert_eq!(field.len(), post_rescan_notes[field_name].len());
+        }
         drop(child_process_handler);
     });
 }
