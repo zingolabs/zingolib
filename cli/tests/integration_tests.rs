@@ -332,7 +332,7 @@ fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
         let sapling_addr = client.do_new_address("tz").await.unwrap();
-        for memo in [None, Some("foo"), None, Some("bar")] {
+        for memo in [None, Some("foo")] {
             client
                 .do_send(vec![(
                     sapling_addr[0].as_str().unwrap(),
