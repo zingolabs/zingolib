@@ -9,9 +9,7 @@ use orchard::keys::Scope;
 
 use zcash_client_backend::address::UnifiedAddress;
 use zcash_encoding::Vector;
-use zcash_primitives::{
-    consensus::Parameters, legacy::TransparentAddress, zip32::DiversifierIndex,
-};
+use zcash_primitives::{legacy::TransparentAddress, zip32::DiversifierIndex};
 use zingoconfig::ZingoConfig;
 
 use crate::wallet::traits::ReadableWriteable;
@@ -211,16 +209,6 @@ impl UnifiedSpendCapability {
         // we need to get the 64 byte bip39 entropy
         let bip39_seed = seed_phrase.to_seed("");
         Ok(Self::new_from_seed(config, &bip39_seed, position))
-    }
-
-    pub(crate) fn get_ua_from_contained_sapling_receiver(
-        &self,
-        receiver: &zcash_primitives::sapling::PaymentAddress,
-    ) -> Option<UnifiedAddress> {
-        self.addresses
-            .iter()
-            .find(|ua| ua.sapling() == Some(&receiver))
-            .cloned()
     }
 
     pub(crate) fn get_ua_from_contained_transparent_receiver(
