@@ -130,12 +130,12 @@ pub mod setup {
     /// Many scenarios need to start with spendable funds.  This setup provides
     /// 1 block worth of coinbase to a preregistered spend capability.
     ///
-    /// This key is registered to receive block rewards by:
-    ///  (1) existing accessibly for test code in: cli/examples/mineraddress_sapling_spendingkey
-    ///  (2) corresponding to the address registered as the "mineraddress" field in cli/examples/zcash.conf
+    /// This key is registered to receive block rewards by corresponding to the
+    /// address registered as the "mineraddress" field in cli/examples/zcash.conf
     ///
-    /// The general scenario framework requires instances of zingo-cli, lightwalletd, and zcashd (in regtest mode).
-    /// This setup is intended to produce the most basic of scenarios.  As scenarios with even less requirements
+    /// The general scenario framework requires instances of zingo-cli, lightwalletd,  
+    /// and zcashd (in regtest mode). This setup is intended to produce the most basic  
+    /// of scenarios.  As scenarios with even less requirements
     /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
     pub fn saplingcoinbasebacked_spendcapable() -> (RegtestManager, ChildProcessHandler, LightClient)
     {
@@ -143,6 +143,12 @@ pub mod setup {
         let seed_phrase = zcash_primitives::zip339::Mnemonic::from_entropy([0; 32])
             .unwrap()
             .to_string();
+        assert_eq!(
+            &seed_phrase,
+            "abandon abandon abandon abandon abandon abandon abandon abandon \
+             abandon abandon abandon abandon abandon abandon abandon abandon \
+             abandon abandon abandon abandon abandon abandon abandon art"
+        );
         let z_addr_of_seed_phrase = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
         let (regtest_manager, server_port) =
             create_maybe_funded_regtest_manager(Some(z_addr_of_seed_phrase));
