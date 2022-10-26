@@ -390,7 +390,7 @@ impl TransactionContext {
                 })
                 .collect::<Vec<_>>();
 
-        let ivk = <D::Key as zingo_traits::WalletKey>::usc_to_ivk(&*unified_spend_capability);
+        let ivk = D::usc_to_ivk(&*unified_spend_capability);
         let mut decrypt_attempts =
             zcash_note_encryption::batch::try_note_decryption(&[ivk], &domain_tagged_outputs)
                 .into_iter();
@@ -410,9 +410,7 @@ impl TransactionContext {
                         block_time as u64,
                         note.clone(),
                         to,
-                        &<D::Key as zingo_traits::WalletKey>::usc_to_fvk(
-                            &*unified_spend_capability,
-                        ),
+                        &D::usc_to_fvk(&*unified_spend_capability),
                     );
             }
             let memo = memo_bytes
@@ -431,7 +429,7 @@ impl TransactionContext {
                     <FnGenBundle<D> as zingo_traits::Bundle<D, Network>>::Output,
                 >(
                     &output.domain(transaction_block_height, self.config.chain),
-                    &<D::Key as zingo_traits::WalletKey>::usc_to_ovk(&*unified_spend_capability),
+                    &D::usc_to_ovk(&*unified_spend_capability),
                     &output,
                     &output.value_commitment(),
                     &output.out_ciphertext(),

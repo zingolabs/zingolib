@@ -196,7 +196,7 @@ pub struct LightWallet {
     pub(crate) transaction_context: TransactionContext,
 }
 
-use crate::wallet::traits::{Diversifiable as _, ReadableWriteable, WalletKey};
+use crate::wallet::traits::{Diversifiable as _, ReadableWriteable};
 impl LightWallet {
     pub fn serialized_version() -> u64 {
         return 25;
@@ -1069,7 +1069,7 @@ impl LightWallet {
                             None
                         } else {
                             // Get the spending key for the selected fvk, if we have it
-                            let extsk = D::Key::usc_to_sk(&usc);
+                            let extsk = D::usc_to_sk(&usc);
                             SpendableNote::from(
                                 transaction_id,
                                 note,

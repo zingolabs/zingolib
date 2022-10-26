@@ -1,5 +1,4 @@
 //! Provides unifying interfaces for transaction management across Sapling and Orchard
-use crate::wallet::keys::SaplingKey;
 use std::io::{self, Read, Write};
 
 use super::{
@@ -7,7 +6,7 @@ use super::{
         ChannelNullifier, ReceivedOrchardNoteAndMetadata, ReceivedSaplingNoteAndMetadata,
         SpendableOrchardNote, SpendableSaplingNote, TransactionMetadata, WitnessCache,
     },
-    keys::{orchard::OrchardKey, unified::UnifiedSpendCapability},
+    keys::unified::UnifiedSpendCapability,
     transactions::TransactionMetadataSet,
 };
 use crate::compact_formats::{
@@ -19,8 +18,7 @@ use orchard::{
     bundle::{Authorized as OrchardAuthorized, Bundle as OrchardBundle},
     keys::{
         Diversifier as OrchardDiversifier, FullViewingKey as OrchardFullViewingKey,
-        IncomingViewingKey as OrchardIncomingViewingKey,
-        OutgoingViewingKey as OrchardOutgoingViewingKey, SpendingKey as OrchardSpendingKey,
+        SpendingKey as OrchardSpendingKey,
     },
     note::{Note as OrchardNote, Nullifier as OrchardNullifier},
     note_encryption::OrchardDomain,
@@ -37,13 +35,11 @@ use zcash_note_encryption::{
 };
 use zcash_primitives::{
     consensus::{BlockHeight, NetworkUpgrade, Parameters},
-    keys::OutgoingViewingKey as SaplingOutgoingViewingKey,
     memo::{Memo, MemoBytes},
     merkle_tree::{Hashable, IncrementalWitness},
     sapling::{
         note_encryption::SaplingDomain, Diversifier as SaplingDiversifier, Node as SaplingNode,
         Note as SaplingNote, Nullifier as SaplingNullifier, PaymentAddress as SaplingAddress,
-        SaplingIvk,
     },
     transaction::{
         components::{
@@ -716,105 +712,6 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
     }
 }
 
-/// A cross Domain interface to the hierarchy of capabilities deriveable from a SpendKey
-pub trait WalletKey
-where
-    Self: Sized,
-{
-    type SpendKey: Clone + for<'a> From<&'a UnifiedSpendCapability>;
-    type Fvk: PartialEq + for<'a> From<&'a UnifiedSpendCapability>;
-    type Ivk: for<'a> From<&'a UnifiedSpendCapability>;
-    type Ovk: for<'a> From<&'a UnifiedSpendCapability>;
-    type Address: PartialEq;
-    fn spend_key(&self) -> Option<Self::SpendKey>;
-    fn fvk(&self) -> Option<Self::Fvk>;
-    fn ivk(&self) -> Option<Self::Ivk>;
-    fn ovk(&self) -> Option<Self::Ovk>;
-    fn address(&self) -> Self::Address;
-    fn set_spend_key_for_view_key(&mut self, key: Self::SpendKey);
-    fn usc_to_sk(usc: &UnifiedSpendCapability) -> Self::SpendKey {
-        Self::SpendKey::from(usc)
-    }
-    fn usc_to_fvk(usc: &UnifiedSpendCapability) -> Self::Fvk {
-        Self::Fvk::from(usc)
-    }
-    fn usc_to_ivk(usc: &UnifiedSpendCapability) -> Self::Ivk {
-        Self::Ivk::from(usc)
-    }
-    fn usc_to_ovk(usc: &UnifiedSpendCapability) -> Self::Ovk {
-        Self::Ovk::from(usc)
-    }
-}
-
-impl WalletKey for SaplingKey {
-    type SpendKey = SaplingExtendedSpendingKey;
-
-    type Fvk = SaplingExtendedFullViewingKey;
-
-    type Ivk = SaplingIvk;
-
-    type Ovk = SaplingOutgoingViewingKey;
-
-    type Address = SaplingAddress;
-
-    fn spend_key(&self) -> Option<Self::SpendKey> {
-        self.extsk.clone()
-    }
-
-    fn fvk(&self) -> Option<Self::Fvk> {
-        Some(self.extfvk.clone())
-    }
-
-    fn ivk(&self) -> Option<Self::Ivk> {
-        Some(self.extfvk.fvk.vk.ivk())
-    }
-    fn ovk(&self) -> Option<Self::Ovk> {
-        Some(self.extfvk.fvk.ovk)
-    }
-    fn address(&self) -> Self::Address {
-        self.zaddress.clone()
-    }
-
-    fn set_spend_key_for_view_key(&mut self, key: Self::SpendKey) {
-        self.extsk = Some(key);
-        self.keytype = super::keys::WalletZKeyType::ImportedSpendingKey;
-    }
-}
-
-impl WalletKey for OrchardKey {
-    type SpendKey = OrchardSpendingKey;
-
-    type Fvk = OrchardFullViewingKey;
-
-    type Ivk = OrchardIncomingViewingKey;
-
-    type Ovk = OrchardOutgoingViewingKey;
-
-    type Address = zcash_client_backend::address::UnifiedAddress;
-
-    fn spend_key(&self) -> Option<Self::SpendKey> {
-        (&self.key).try_into().ok()
-    }
-    fn fvk(&self) -> Option<Self::Fvk> {
-        (&self.key).try_into().ok()
-    }
-    fn ivk(&self) -> Option<Self::Ivk> {
-        (&self.key).try_into().ok()
-    }
-
-    fn ovk(&self) -> Option<Self::Ovk> {
-        (&self.key).try_into().ok()
-    }
-
-    fn address(&self) -> Self::Address {
-        self.unified_address.clone()
-    }
-
-    fn set_spend_key_for_view_key(&mut self, key: Self::SpendKey) {
-        self.key = super::keys::orchard::WalletOKeyInner::ImportedSpendingKey(key)
-    }
-}
-
 pub trait DomainWalletExt<P: Parameters>: Domain + BatchDomain
 where
     Self: Sized,
@@ -827,6 +724,8 @@ where
         + Send
         + Diversifiable<Note = Self::WalletNote, Address = Self::Recipient>
         + PartialEq;
+
+    type SpendingKey: for<'a> From<&'a UnifiedSpendCapability> + Clone;
     type CompactOutput: CompactOutput<Self, P>;
     type WalletNote: ReceivedNoteAndMetadata<
         Fvk = Self::Fvk,
@@ -835,13 +734,6 @@ where
         Nullifier = <<<Self as DomainWalletExt<P>>::Bundle as Bundle<Self, P>>::Spend as Spend>::Nullifier,
     >;
     type SpendableNoteAT: SpendableNote<P, Self>;
-    type Key: WalletKey<
-            Ovk = <Self as Domain>::OutgoingViewingKey,
-            Ivk = <Self as Domain>::IncomingViewingKey,
-            Fvk = <Self as DomainWalletExt<P>>::Fvk,
-        > + Clone
-        + Send
-        + Sync;
 
     type Bundle: Bundle<Self, P>;
 
@@ -851,6 +743,10 @@ where
         receiver: &Self::Recipient,
     ) -> Option<&'a UnifiedAddress>;
     fn get_tree(tree_state: &TreeState) -> &String;
+    fn usc_to_sk(usc: &UnifiedSpendCapability) -> Self::SpendingKey;
+    fn usc_to_fvk(usc: &UnifiedSpendCapability) -> Self::Fvk;
+    fn usc_to_ivk(usc: &UnifiedSpendCapability) -> Self::IncomingViewingKey;
+    fn usc_to_ovk(usc: &UnifiedSpendCapability) -> Self::OutgoingViewingKey;
 }
 
 impl<P: Parameters> DomainWalletExt<P> for SaplingDomain<P> {
@@ -858,22 +754,18 @@ impl<P: Parameters> DomainWalletExt<P> for SaplingDomain<P> {
 
     type Fvk = SaplingExtendedFullViewingKey;
 
+    type SpendingKey = SaplingExtendedSpendingKey;
+
     type CompactOutput = CompactSaplingOutput;
 
     type WalletNote = ReceivedSaplingNoteAndMetadata;
 
     type SpendableNoteAT = SpendableSaplingNote;
 
-    type Key = SaplingKey;
-
     type Bundle = SaplingBundle<SaplingAuthorized>;
 
     fn to_notes_vec_mut(transaction: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote> {
         &mut transaction.sapling_notes
-    }
-
-    fn get_tree(tree_state: &TreeState) -> &String {
-        &tree_state.sapling_tree
     }
 
     fn ua_from_contained_receiver<'a>(
@@ -885,6 +777,22 @@ impl<P: Parameters> DomainWalletExt<P> for SaplingDomain<P> {
             .iter()
             .find(|ua| ua.sapling() == Some(receiver))
     }
+
+    fn get_tree(tree_state: &TreeState) -> &String {
+        &tree_state.sapling_tree
+    }
+    fn usc_to_sk(usc: &UnifiedSpendCapability) -> Self::SpendingKey {
+        Self::SpendingKey::from(usc)
+    }
+    fn usc_to_fvk(usc: &UnifiedSpendCapability) -> Self::Fvk {
+        Self::Fvk::from(usc)
+    }
+    fn usc_to_ivk(usc: &UnifiedSpendCapability) -> Self::IncomingViewingKey {
+        Self::IncomingViewingKey::from(usc)
+    }
+    fn usc_to_ovk(usc: &UnifiedSpendCapability) -> Self::OutgoingViewingKey {
+        Self::OutgoingViewingKey::from(usc)
+    }
 }
 
 impl<P: Parameters> DomainWalletExt<P> for OrchardDomain {
@@ -892,22 +800,18 @@ impl<P: Parameters> DomainWalletExt<P> for OrchardDomain {
 
     type Fvk = OrchardFullViewingKey;
 
+    type SpendingKey = OrchardSpendingKey;
+
     type CompactOutput = CompactOrchardAction;
 
     type WalletNote = ReceivedOrchardNoteAndMetadata;
 
     type SpendableNoteAT = SpendableOrchardNote;
 
-    type Key = OrchardKey;
-
     type Bundle = OrchardBundle<OrchardAuthorized, Amount>;
 
     fn to_notes_vec_mut(transaction: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote> {
         &mut transaction.orchard_notes
-    }
-
-    fn get_tree(tree_state: &TreeState) -> &String {
-        &tree_state.orchard_tree
     }
 
     fn ua_from_contained_receiver<'a>(
@@ -918,6 +822,22 @@ impl<P: Parameters> DomainWalletExt<P> for OrchardDomain {
             .addresses()
             .iter()
             .find(|unified_address| unified_address.orchard() == Some(receiver))
+    }
+
+    fn get_tree(tree_state: &TreeState) -> &String {
+        &tree_state.orchard_tree
+    }
+    fn usc_to_sk(usc: &UnifiedSpendCapability) -> Self::SpendingKey {
+        Self::SpendingKey::from(usc)
+    }
+    fn usc_to_fvk(usc: &UnifiedSpendCapability) -> Self::Fvk {
+        Self::Fvk::from(usc)
+    }
+    fn usc_to_ivk(usc: &UnifiedSpendCapability) -> Self::IncomingViewingKey {
+        Self::IncomingViewingKey::from(usc)
+    }
+    fn usc_to_ovk(usc: &UnifiedSpendCapability) -> Self::OutgoingViewingKey {
+        Self::OutgoingViewingKey::from(usc)
     }
 }
 
@@ -967,7 +887,7 @@ where
         transaction_id: TxId,
         note_and_metadata: &D::WalletNote,
         anchor_offset: usize,
-        spend_key: &Option<<D::Key as WalletKey>::SpendKey>,
+        spend_key: &Option<D::SpendingKey>,
     ) -> Option<Self> {
         // Include only notes that haven't been spent, or haven't been included in an unconfirmed spend yet.
         if note_and_metadata.spent().is_none()
@@ -1001,14 +921,14 @@ where
         diversifier: <D::WalletNote as ReceivedNoteAndMetadata>::Diversifier,
         note: D::Note,
         witness: IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node>,
-        sk: <D::Key as WalletKey>::SpendKey,
+        sk: D::SpendingKey,
     ) -> Self;
     fn transaction_id(&self) -> TxId;
     fn nullifier(&self) -> <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier;
     fn diversifier(&self) -> <D::WalletNote as ReceivedNoteAndMetadata>::Diversifier;
     fn note(&self) -> &D::Note;
     fn witness(&self) -> &IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node>;
-    fn spend_key(&self) -> &<D::Key as WalletKey>::SpendKey;
+    fn spend_key(&self) -> &D::SpendingKey;
 }
 
 impl<P: Parameters> SpendableNote<P, SaplingDomain<P>> for SpendableSaplingNote {

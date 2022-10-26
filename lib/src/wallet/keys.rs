@@ -13,30 +13,8 @@ use zcash_primitives::{
 use zingoconfig::ZingoConfig;
 
 pub(crate) mod extended_transparent;
-pub(crate) mod orchard;
 pub(crate) mod unified;
 
-#[derive(PartialEq, Debug, Clone)]
-pub enum WalletZKeyType {
-    ImportedSpendingKey = 1,
-}
-
-// A struct that holds z-address private keys or view keys
-#[derive(Clone, Debug, PartialEq)]
-pub struct SaplingKey {
-    pub(crate) keytype: WalletZKeyType,
-    locked: bool,
-    pub(crate) extsk: Option<ExtendedSpendingKey>,
-    pub(crate) extfvk: ExtendedFullViewingKey,
-    pub(crate) zaddress: PaymentAddress,
-
-    // If this is a HD key, what is the key number
-    pub(crate) hdkey_num: Option<u32>,
-
-    // If locked, the encrypted private key is stored here
-    enc_key: Option<Vec<u8>>,
-    nonce: Option<Vec<u8>>,
-}
 /// Sha256(Sha256(value))
 pub fn double_sha256(payload: &[u8]) -> Vec<u8> {
     let h1 = Sha256::digest(&payload);

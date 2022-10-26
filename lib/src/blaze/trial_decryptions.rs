@@ -10,7 +10,6 @@ use crate::{
         keys::unified::UnifiedSpendCapability,
         traits::{
             CompactOutput as _, DomainWalletExt, Nullifier as _, ReceivedNoteAndMetadata as _,
-            WalletKey as _,
         },
         transactions::TransactionMetadataSet,
         MemoDownloadOption,
@@ -290,7 +289,7 @@ impl TrialDecryptions {
 
                 workers.push(tokio::spawn(async move {
                     let usc = usc.read().await;
-                    let fvk = D::Key::usc_to_fvk(&*usc);
+                    let fvk = D::usc_to_fvk(&*usc);
 
                     // We don't have fvk import, all our keys are spending
                     let have_spending_key = true;
