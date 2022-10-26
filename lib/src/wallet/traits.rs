@@ -741,7 +741,7 @@ where
     fn usc_to_ivk(usc: &UnifiedSpendCapability) -> Self::Ivk {
         Self::Ivk::from(usc)
     }
-    fn usa_to_ovk(usc: &UnifiedSpendCapability) -> Self::Ovk {
+    fn usc_to_ovk(usc: &UnifiedSpendCapability) -> Self::Ovk {
         Self::Ovk::from(usc)
     }
 }
@@ -911,13 +911,13 @@ impl<P: Parameters> DomainWalletExt<P> for OrchardDomain {
     }
 
     fn ua_from_contained_receiver<'a>(
-        unified_spend_auth: &'a UnifiedSpendCapability,
+        unified_spend_capability: &'a UnifiedSpendCapability,
         receiver: &Self::Recipient,
     ) -> Option<&'a UnifiedAddress> {
-        unified_spend_auth
+        unified_spend_capability
             .addresses()
             .iter()
-            .find(|ua| ua.orchard() == Some(receiver))
+            .find(|unified_address| unified_address.orchard() == Some(receiver))
     }
 }
 

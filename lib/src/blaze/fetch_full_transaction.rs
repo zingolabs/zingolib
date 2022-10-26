@@ -431,7 +431,7 @@ impl TransactionContext {
                     <FnGenBundle<D> as zingo_traits::Bundle<D, Network>>::Output,
                 >(
                     &output.domain(transaction_block_height, self.config.chain),
-                    &<D::Key as zingo_traits::WalletKey>::usa_to_ovk(&*unified_spend_capability),
+                    &<D::Key as zingo_traits::WalletKey>::usc_to_ovk(&*unified_spend_capability),
                     &output,
                     &output.value_commitment(),
                     &output.out_ciphertext(),
