@@ -93,19 +93,3 @@ impl PartialEq for WalletOKeyInner {
         }
     }
 }
-impl OrchardKey {
-    pub fn new_hdkey(hdkey_num: u32, spending_key: SpendingKey) -> Self {
-        let key = WalletOKeyInner::HdKey(spending_key);
-        let address = FullViewingKey::from(&spending_key).address_at(0u64, Scope::External);
-        let unified_address = UnifiedAddress::from_receivers(Some(address), None, None).unwrap();
-
-        OrchardKey {
-            key,
-            locked: false,
-            unified_address,
-            hdkey_num: Some(hdkey_num),
-            enc_key: None,
-            nonce: None,
-        }
-    }
-}
