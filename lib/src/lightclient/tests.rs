@@ -663,9 +663,9 @@ async fn sapling_to_sapling_scan_together() {
 
     // 2. Send an incoming sapling transaction to fill the wallet
     let (mockuser_spendkey, mockuser_extfvk): (ExtendedSpendingKey, ExtendedFullViewingKey) = {
-        let usa_readlock = lightclient.wallet.unified_spend_capability();
-        let usa = &*usa_readlock.read().await;
-        (usa.into(), usa.into())
+        let usc_readlock = lightclient.wallet.unified_spend_capability();
+        let usc = &*usc_readlock.read().await;
+        (usc.into(), usc.into())
     };
     let value = 100_000;
     let (transaction, _height, note) = fake_compactblock_list // NOTE: Extracting fvk this way for future proof.
