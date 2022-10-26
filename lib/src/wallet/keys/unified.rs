@@ -340,51 +340,51 @@ impl ReadableWriteable<()> for UnifiedSpendCapability {
 }
 
 impl From<&UnifiedSpendCapability> for zcash_primitives::zip32::ExtendedSpendingKey {
-    fn from(usa: &UnifiedSpendCapability) -> Self {
-        usa.sapling_key.clone()
+    fn from(usc: &UnifiedSpendCapability) -> Self {
+        usc.sapling_key.clone()
     }
 }
 
 impl From<&UnifiedSpendCapability> for orchard::keys::SpendingKey {
-    fn from(usa: &UnifiedSpendCapability) -> Self {
-        usa.orchard_key.clone()
+    fn from(usc: &UnifiedSpendCapability) -> Self {
+        usc.orchard_key.clone()
     }
 }
 
 impl From<&UnifiedSpendCapability> for orchard::keys::IncomingViewingKey {
-    fn from(usa: &UnifiedSpendCapability) -> Self {
-        orchard::keys::FullViewingKey::from(&usa.orchard_key).to_ivk(Scope::External)
+    fn from(usc: &UnifiedSpendCapability) -> Self {
+        orchard::keys::FullViewingKey::from(&usc.orchard_key).to_ivk(Scope::External)
     }
 }
 
 impl From<&UnifiedSpendCapability> for zcash_primitives::sapling::SaplingIvk {
-    fn from(usa: &UnifiedSpendCapability) -> Self {
-        zcash_primitives::zip32::ExtendedFullViewingKey::from(&usa.sapling_key)
+    fn from(usc: &UnifiedSpendCapability) -> Self {
+        zcash_primitives::zip32::ExtendedFullViewingKey::from(&usc.sapling_key)
             .fvk
             .vk
             .ivk()
     }
 }
 impl From<&UnifiedSpendCapability> for orchard::keys::FullViewingKey {
-    fn from(usa: &UnifiedSpendCapability) -> Self {
-        orchard::keys::FullViewingKey::from(&usa.orchard_key)
+    fn from(usc: &UnifiedSpendCapability) -> Self {
+        orchard::keys::FullViewingKey::from(&usc.orchard_key)
     }
 }
 
 impl From<&UnifiedSpendCapability> for zcash_primitives::zip32::ExtendedFullViewingKey {
-    fn from(usa: &UnifiedSpendCapability) -> Self {
-        zcash_primitives::zip32::ExtendedFullViewingKey::from(&usa.sapling_key)
+    fn from(usc: &UnifiedSpendCapability) -> Self {
+        zcash_primitives::zip32::ExtendedFullViewingKey::from(&usc.sapling_key)
     }
 }
 impl From<&UnifiedSpendCapability> for orchard::keys::OutgoingViewingKey {
-    fn from(usa: &UnifiedSpendCapability) -> Self {
-        orchard::keys::FullViewingKey::from(&usa.orchard_key).to_ovk(Scope::External)
+    fn from(usc: &UnifiedSpendCapability) -> Self {
+        orchard::keys::FullViewingKey::from(&usc.orchard_key).to_ovk(Scope::External)
     }
 }
 
 impl From<&UnifiedSpendCapability> for zcash_primitives::keys::OutgoingViewingKey {
-    fn from(usa: &UnifiedSpendCapability) -> Self {
-        zcash_primitives::zip32::ExtendedFullViewingKey::from(&usa.sapling_key)
+    fn from(usc: &UnifiedSpendCapability) -> Self {
+        zcash_primitives::zip32::ExtendedFullViewingKey::from(&usc.sapling_key)
             .fvk
             .ovk
     }
