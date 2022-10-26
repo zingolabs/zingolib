@@ -149,9 +149,9 @@ pub mod setup {
              abandon abandon abandon abandon abandon abandon abandon abandon \
              abandon abandon abandon abandon abandon abandon abandon art"
         );
-        let z_addr_of_seed_phrase = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
+        let first_z_addr_from_seed_phrase = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
         let (regtest_manager, server_port) =
-            create_maybe_funded_regtest_manager(Some(z_addr_of_seed_phrase));
+            create_maybe_funded_regtest_manager(Some(first_z_addr_from_seed_phrase));
         let child_process_handler = regtest_manager.launch(true).unwrap_or_else(|e| match e {
             zingo_cli::regtest::LaunchChildProcessError::ZcashdState {
                 errorcode,
