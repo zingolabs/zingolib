@@ -3,10 +3,10 @@ use std::io::{self, Read, Write};
 
 use super::{
     data::{
-        ChannelNullifier, OrchardNoteAndMetadata, SaplingNoteAndMetadata, SpendableOrchardNote,
-        SpendableSaplingNote, TransactionMetadata, WitnessCache,
+        ChannelNullifier, ReceivedOrchardNoteAndMetadata, ReceivedSaplingNoteAndMetadata,
+        SpendableOrchardNote, SpendableSaplingNote, TransactionMetadata, WitnessCache,
     },
-    keys::{orchard::OrchardKey, sapling::SaplingKey, Keys},
+    keys::unified::UnifiedSpendCapability,
     transactions::TransactionMetadataSet,
 };
 use crate::compact_formats::{
@@ -18,8 +18,7 @@ use orchard::{
     bundle::{Authorized as OrchardAuthorized, Bundle as OrchardBundle},
     keys::{
         Diversifier as OrchardDiversifier, FullViewingKey as OrchardFullViewingKey,
-        IncomingViewingKey as OrchardIncomingViewingKey,
-        OutgoingViewingKey as OrchardOutgoingViewingKey, SpendingKey as OrchardSpendingKey,
+        SpendingKey as OrchardSpendingKey,
     },
     note::{Note as OrchardNote, Nullifier as OrchardNullifier},
     note_encryption::OrchardDomain,
@@ -29,20 +28,18 @@ use orchard::{
 };
 use subtle::CtOption;
 use zcash_address::unified::{self, Encoding as _, Receiver};
-use zcash_client_backend::encoding::encode_payment_address;
+use zcash_client_backend::{address::UnifiedAddress, encoding::encode_payment_address};
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::{
     BatchDomain, Domain, ShieldedOutput, COMPACT_NOTE_SIZE, ENC_CIPHERTEXT_SIZE,
 };
 use zcash_primitives::{
     consensus::{BlockHeight, NetworkUpgrade, Parameters},
-    keys::OutgoingViewingKey as SaplingOutgoingViewingKey,
     memo::{Memo, MemoBytes},
     merkle_tree::{Hashable, IncrementalWitness},
     sapling::{
         note_encryption::SaplingDomain, Diversifier as SaplingDiversifier, Node as SaplingNode,
         Note as SaplingNote, Nullifier as SaplingNullifier, PaymentAddress as SaplingAddress,
-        SaplingIvk,
     },
     transaction::{
         components::{
@@ -315,8 +312,10 @@ where
     type Outputs: IntoIterator<Item = Self::Output>;
     /// An extractive process that returns domain specific information from a transaction.
     fn from_transaction(transaction: &Transaction) -> Option<&Self>;
-    fn outputs(&self) -> &Self::Outputs;
-    fn spends(&self) -> &Self::Spends;
+    /// Some domains, Orchard for example, do not expose
+    /// immediately expose outputs
+    fn output_elements(&self) -> &Self::Outputs;
+    fn spend_elements(&self) -> &Self::Spends;
 }
 
 impl<P: Parameters> Bundle<SaplingDomain<P>, P> for SaplingBundle<SaplingAuthorized> {
@@ -328,11 +327,11 @@ impl<P: Parameters> Bundle<SaplingDomain<P>, P> for SaplingBundle<SaplingAuthori
         transaction.sapling_bundle()
     }
 
-    fn outputs(&self) -> &Self::Outputs {
+    fn output_elements(&self) -> &Self::Outputs {
         &self.shielded_outputs
     }
 
-    fn spends(&self) -> &Self::Spends {
+    fn spend_elements(&self) -> &Self::Spends {
         &self.shielded_spends
     }
 }
@@ -347,12 +346,12 @@ impl<P: Parameters> Bundle<OrchardDomain, P> for OrchardBundle<OrchardAuthorized
         transaction.orchard_bundle()
     }
 
-    fn outputs(&self) -> &Self::Outputs {
+    fn output_elements(&self) -> &Self::Outputs {
         //! In orchard each action contains an output and a spend.
         self.actions()
     }
 
-    fn spends(&self) -> &Self::Spends {
+    fn spend_elements(&self) -> &Self::Spends {
         //! In orchard each action contains an output and a spend.
         self.actions()
     }
@@ -401,7 +400,7 @@ impl Nullifier for OrchardNullifier {
     }
 }
 
-pub trait NoteAndMetadata: Sized {
+pub trait ReceivedNoteAndMetadata: Sized {
     type Fvk: Clone + Diversifiable + ReadableWriteable<()> + Send;
     type Diversifier: Copy + FromBytes<11> + ToBytes<11>;
     type Note: PartialEq + ReadableWriteable<(Self::Fvk, Self::Diversifier)> + Clone;
@@ -432,7 +431,9 @@ pub trait NoteAndMetadata: Sized {
     ) -> Self;
     fn is_change(&self) -> bool;
     fn fvk(&self) -> &Self::Fvk;
-    fn diversifier(&self) -> &<<Self::Fvk as Diversifiable>::Note as NoteAndMetadata>::Diversifier;
+    fn diversifier(
+        &self,
+    ) -> &<<Self::Fvk as Diversifiable>::Note as ReceivedNoteAndMetadata>::Diversifier;
     fn memo(&self) -> &Option<Memo>;
     fn memo_mut(&mut self) -> &mut Option<Memo>;
     fn note(&self) -> &Self::Note;
@@ -463,7 +464,7 @@ pub trait NoteAndMetadata: Sized {
     }
 }
 
-impl NoteAndMetadata for SaplingNoteAndMetadata {
+impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
     type Fvk = SaplingExtendedFullViewingKey;
     type Diversifier = SaplingDiversifier;
     type Note = SaplingNote;
@@ -589,7 +590,7 @@ impl NoteAndMetadata for SaplingNoteAndMetadata {
     }
 }
 
-impl NoteAndMetadata for OrchardNoteAndMetadata {
+impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
     type Fvk = OrchardFullViewingKey;
     type Diversifier = OrchardDiversifier;
     type Note = OrchardNote;
@@ -711,111 +712,6 @@ impl NoteAndMetadata for OrchardNoteAndMetadata {
     }
 }
 
-/// A cross Domain interface to the hierarchy of capabilities deriveable from a SpendKey
-pub trait WalletKey
-where
-    Self: Sized,
-{
-    type SpendKey: Clone;
-    type Fvk: PartialEq;
-    type Ivk;
-    type Ovk;
-    type Address: PartialEq;
-    fn spend_key(&self) -> Option<Self::SpendKey>;
-    fn fvk(&self) -> Option<Self::Fvk>;
-    fn ivk(&self) -> Option<Self::Ivk>;
-    fn ovk(&self) -> Option<Self::Ovk>;
-    fn address(&self) -> Self::Address;
-    fn addresses_from_keys(keys: &Keys) -> Vec<String>;
-    fn get_keys(keys: &Keys) -> &Vec<Self>;
-    fn set_spend_key_for_view_key(&mut self, key: Self::SpendKey);
-}
-
-impl WalletKey for SaplingKey {
-    type SpendKey = SaplingExtendedSpendingKey;
-
-    type Fvk = SaplingExtendedFullViewingKey;
-
-    type Ivk = SaplingIvk;
-
-    type Ovk = SaplingOutgoingViewingKey;
-
-    type Address = SaplingAddress;
-
-    fn spend_key(&self) -> Option<Self::SpendKey> {
-        self.extsk.clone()
-    }
-
-    fn fvk(&self) -> Option<Self::Fvk> {
-        Some(self.extfvk.clone())
-    }
-
-    fn ivk(&self) -> Option<Self::Ivk> {
-        Some(self.extfvk.fvk.vk.ivk())
-    }
-    fn ovk(&self) -> Option<Self::Ovk> {
-        Some(self.extfvk.fvk.ovk)
-    }
-    fn address(&self) -> Self::Address {
-        self.zaddress.clone()
-    }
-
-    fn addresses_from_keys(keys: &Keys) -> Vec<String> {
-        keys.get_all_sapling_addresses()
-    }
-
-    fn get_keys(keys: &Keys) -> &Vec<Self> {
-        keys.zkeys()
-    }
-
-    fn set_spend_key_for_view_key(&mut self, key: Self::SpendKey) {
-        self.extsk = Some(key);
-        self.keytype = super::keys::sapling::WalletZKeyType::ImportedSpendingKey;
-    }
-}
-
-impl WalletKey for OrchardKey {
-    type SpendKey = OrchardSpendingKey;
-
-    type Fvk = OrchardFullViewingKey;
-
-    type Ivk = OrchardIncomingViewingKey;
-
-    type Ovk = OrchardOutgoingViewingKey;
-
-    type Address = zcash_client_backend::address::UnifiedAddress;
-
-    fn spend_key(&self) -> Option<Self::SpendKey> {
-        (&self.key).try_into().ok()
-    }
-    fn fvk(&self) -> Option<Self::Fvk> {
-        (&self.key).try_into().ok()
-    }
-    fn ivk(&self) -> Option<Self::Ivk> {
-        (&self.key).try_into().ok()
-    }
-
-    fn ovk(&self) -> Option<Self::Ovk> {
-        (&self.key).try_into().ok()
-    }
-
-    fn address(&self) -> Self::Address {
-        self.unified_address.clone()
-    }
-
-    fn addresses_from_keys(keys: &Keys) -> Vec<String> {
-        keys.get_all_orchard_addresses()
-    }
-
-    fn get_keys(keys: &Keys) -> &Vec<Self> {
-        keys.okeys()
-    }
-
-    fn set_spend_key_for_view_key(&mut self, key: Self::SpendKey) {
-        self.key = super::keys::orchard::WalletOKeyInner::ImportedSpendingKey(key)
-    }
-}
-
 pub trait DomainWalletExt<P: Parameters>: Domain + BatchDomain
 where
     Self: Sized,
@@ -824,27 +720,33 @@ where
 {
     const NU: NetworkUpgrade;
 
-    type Fvk: Clone + Send + Diversifiable<Note = Self::WalletNote> + PartialEq;
+    type Fvk: Clone
+        + Send
+        + Diversifiable<Note = Self::WalletNote, Address = Self::Recipient>
+        + PartialEq;
+
+    type SpendingKey: for<'a> From<&'a UnifiedSpendCapability> + Clone;
     type CompactOutput: CompactOutput<Self, P>;
-    type WalletNote: NoteAndMetadata<
+    type WalletNote: ReceivedNoteAndMetadata<
         Fvk = Self::Fvk,
         Note = <Self as Domain>::Note,
         Diversifier = <<Self as Domain>::Recipient as Recipient>::Diversifier,
         Nullifier = <<<Self as DomainWalletExt<P>>::Bundle as Bundle<Self, P>>::Spend as Spend>::Nullifier,
     >;
     type SpendableNoteAT: SpendableNote<P, Self>;
-    type Key: WalletKey<
-            Ovk = <Self as Domain>::OutgoingViewingKey,
-            Ivk = <Self as Domain>::IncomingViewingKey,
-            Fvk = <Self as DomainWalletExt<P>>::Fvk,
-        > + Clone
-        + Send
-        + Sync;
 
     type Bundle: Bundle<Self, P>;
 
     fn to_notes_vec_mut(_: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote>;
+    fn ua_from_contained_receiver<'a>(
+        unified_spend_auth: &'a UnifiedSpendCapability,
+        receiver: &Self::Recipient,
+    ) -> Option<&'a UnifiedAddress>;
     fn get_tree(tree_state: &TreeState) -> &String;
+    fn usc_to_sk(usc: &UnifiedSpendCapability) -> Self::SpendingKey;
+    fn usc_to_fvk(usc: &UnifiedSpendCapability) -> Self::Fvk;
+    fn usc_to_ivk(usc: &UnifiedSpendCapability) -> Self::IncomingViewingKey;
+    fn usc_to_ovk(usc: &UnifiedSpendCapability) -> Self::OutgoingViewingKey;
 }
 
 impl<P: Parameters> DomainWalletExt<P> for SaplingDomain<P> {
@@ -852,13 +754,13 @@ impl<P: Parameters> DomainWalletExt<P> for SaplingDomain<P> {
 
     type Fvk = SaplingExtendedFullViewingKey;
 
+    type SpendingKey = SaplingExtendedSpendingKey;
+
     type CompactOutput = CompactSaplingOutput;
 
-    type WalletNote = SaplingNoteAndMetadata;
+    type WalletNote = ReceivedSaplingNoteAndMetadata;
 
     type SpendableNoteAT = SpendableSaplingNote;
-
-    type Key = SaplingKey;
 
     type Bundle = SaplingBundle<SaplingAuthorized>;
 
@@ -866,8 +768,30 @@ impl<P: Parameters> DomainWalletExt<P> for SaplingDomain<P> {
         &mut transaction.sapling_notes
     }
 
+    fn ua_from_contained_receiver<'a>(
+        unified_spend_auth: &'a UnifiedSpendCapability,
+        receiver: &Self::Recipient,
+    ) -> Option<&'a UnifiedAddress> {
+        unified_spend_auth
+            .addresses()
+            .iter()
+            .find(|ua| ua.sapling() == Some(receiver))
+    }
+
     fn get_tree(tree_state: &TreeState) -> &String {
         &tree_state.sapling_tree
+    }
+    fn usc_to_sk(usc: &UnifiedSpendCapability) -> Self::SpendingKey {
+        Self::SpendingKey::from(usc)
+    }
+    fn usc_to_fvk(usc: &UnifiedSpendCapability) -> Self::Fvk {
+        Self::Fvk::from(usc)
+    }
+    fn usc_to_ivk(usc: &UnifiedSpendCapability) -> Self::IncomingViewingKey {
+        Self::IncomingViewingKey::from(usc)
+    }
+    fn usc_to_ovk(usc: &UnifiedSpendCapability) -> Self::OutgoingViewingKey {
+        Self::OutgoingViewingKey::from(usc)
     }
 }
 
@@ -876,13 +800,13 @@ impl<P: Parameters> DomainWalletExt<P> for OrchardDomain {
 
     type Fvk = OrchardFullViewingKey;
 
+    type SpendingKey = OrchardSpendingKey;
+
     type CompactOutput = CompactOrchardAction;
 
-    type WalletNote = OrchardNoteAndMetadata;
+    type WalletNote = ReceivedOrchardNoteAndMetadata;
 
     type SpendableNoteAT = SpendableOrchardNote;
-
-    type Key = OrchardKey;
 
     type Bundle = OrchardBundle<OrchardAuthorized, Amount>;
 
@@ -890,40 +814,62 @@ impl<P: Parameters> DomainWalletExt<P> for OrchardDomain {
         &mut transaction.orchard_notes
     }
 
+    fn ua_from_contained_receiver<'a>(
+        unified_spend_capability: &'a UnifiedSpendCapability,
+        receiver: &Self::Recipient,
+    ) -> Option<&'a UnifiedAddress> {
+        unified_spend_capability
+            .addresses()
+            .iter()
+            .find(|unified_address| unified_address.orchard() == Some(receiver))
+    }
+
     fn get_tree(tree_state: &TreeState) -> &String {
         &tree_state.orchard_tree
+    }
+    fn usc_to_sk(usc: &UnifiedSpendCapability) -> Self::SpendingKey {
+        Self::SpendingKey::from(usc)
+    }
+    fn usc_to_fvk(usc: &UnifiedSpendCapability) -> Self::Fvk {
+        Self::Fvk::from(usc)
+    }
+    fn usc_to_ivk(usc: &UnifiedSpendCapability) -> Self::IncomingViewingKey {
+        Self::IncomingViewingKey::from(usc)
+    }
+    fn usc_to_ovk(usc: &UnifiedSpendCapability) -> Self::OutgoingViewingKey {
+        Self::OutgoingViewingKey::from(usc)
     }
 }
 
 pub trait Diversifiable {
-    type Note: NoteAndMetadata;
+    type Note: ReceivedNoteAndMetadata;
     type Address: Recipient;
     fn diversified_address(
         &self,
-        div: <Self::Note as NoteAndMetadata>::Diversifier,
+        div: <Self::Note as ReceivedNoteAndMetadata>::Diversifier,
     ) -> Option<Self::Address>;
 }
 
 impl Diversifiable for SaplingExtendedFullViewingKey {
-    type Note = SaplingNoteAndMetadata;
+    type Note = ReceivedSaplingNoteAndMetadata;
 
     type Address = zcash_primitives::sapling::PaymentAddress;
 
     fn diversified_address(
         &self,
-        div: <<zcash_primitives::zip32::ExtendedFullViewingKey as Diversifiable>::Note as NoteAndMetadata>::Diversifier,
+        div: <<zcash_primitives::zip32::ExtendedFullViewingKey as Diversifiable>::Note as ReceivedNoteAndMetadata>::Diversifier,
     ) -> Option<Self::Address> {
         self.fvk.vk.to_payment_address(div)
     }
 }
 
 impl Diversifiable for OrchardFullViewingKey {
-    type Note = OrchardNoteAndMetadata;
+    type Note = ReceivedOrchardNoteAndMetadata;
     type Address = orchard::Address;
 
     fn diversified_address(
         &self,
-        div: <<orchard::keys::FullViewingKey as Diversifiable>::Note as NoteAndMetadata>::Diversifier,
+        div: <<orchard::keys::FullViewingKey as Diversifiable>::Note as ReceivedNoteAndMetadata>::Diversifier,
     ) -> Option<Self::Address> {
         Some(self.address(div, orchard::keys::Scope::External))
     }
@@ -941,7 +887,7 @@ where
         transaction_id: TxId,
         note_and_metadata: &D::WalletNote,
         anchor_offset: usize,
-        spend_key: &Option<<D::Key as WalletKey>::SpendKey>,
+        spend_key: &Option<D::SpendingKey>,
     ) -> Option<Self> {
         // Include only notes that haven't been spent, or haven't been included in an unconfirmed spend yet.
         if note_and_metadata.spent().is_none()
@@ -971,18 +917,18 @@ where
     /// default impl of `from`. This function's only caller should be `Self::from`
     fn from_parts_unchecked(
         transaction_id: TxId,
-        nullifier: <D::WalletNote as NoteAndMetadata>::Nullifier,
-        diversifier: <D::WalletNote as NoteAndMetadata>::Diversifier,
+        nullifier: <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier,
+        diversifier: <D::WalletNote as ReceivedNoteAndMetadata>::Diversifier,
         note: D::Note,
-        witness: IncrementalWitness<<D::WalletNote as NoteAndMetadata>::Node>,
-        sk: <D::Key as WalletKey>::SpendKey,
+        witness: IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node>,
+        sk: D::SpendingKey,
     ) -> Self;
     fn transaction_id(&self) -> TxId;
-    fn nullifier(&self) -> <D::WalletNote as NoteAndMetadata>::Nullifier;
-    fn diversifier(&self) -> <D::WalletNote as NoteAndMetadata>::Diversifier;
+    fn nullifier(&self) -> <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier;
+    fn diversifier(&self) -> <D::WalletNote as ReceivedNoteAndMetadata>::Diversifier;
     fn note(&self) -> &D::Note;
-    fn witness(&self) -> &IncrementalWitness<<D::WalletNote as NoteAndMetadata>::Node>;
-    fn spend_key(&self) -> &<D::Key as WalletKey>::SpendKey;
+    fn witness(&self) -> &IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node>;
+    fn spend_key(&self) -> &D::SpendingKey;
 }
 
 impl<P: Parameters> SpendableNote<P, SaplingDomain<P>> for SpendableSaplingNote {
@@ -1073,17 +1019,28 @@ impl<P: Parameters> SpendableNote<P, OrchardDomain> for SpendableOrchardNote {
 }
 
 pub trait ReadableWriteable<Input>: Sized {
-    type VersionSize;
-    const VERSION: Self::VersionSize;
+    const VERSION: u8;
 
     fn read<R: Read>(reader: R, input: Input) -> io::Result<Self>;
     fn write<W: Write>(&self, writer: W) -> io::Result<()>;
+    fn get_version<R: Read>(mut reader: R) -> io::Result<u8> {
+        let version = reader.read_u8()?;
+        if version > Self::VERSION {
+            Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "Wallet file version \"{}\" is from future version of zingo",
+                    version,
+                ),
+            ))
+        } else {
+            Ok(version)
+        }
+    }
 }
 
 impl ReadableWriteable<()> for SaplingExtendedFullViewingKey {
-    type VersionSize = ();
-
-    const VERSION: Self::VersionSize = (); //Not applicable
+    const VERSION: u8 = 0; //Not applicable
 
     fn read<R: Read>(reader: R, _: ()) -> io::Result<Self> {
         Self::read(reader)
@@ -1095,9 +1052,7 @@ impl ReadableWriteable<()> for SaplingExtendedFullViewingKey {
 }
 
 impl ReadableWriteable<()> for OrchardFullViewingKey {
-    type VersionSize = ();
-
-    const VERSION: Self::VersionSize = (); //Not applicable
+    const VERSION: u8 = 0; //Not applicable
 
     fn read<R: Read>(reader: R, _: ()) -> io::Result<Self> {
         Self::read(reader)
@@ -1109,14 +1064,13 @@ impl ReadableWriteable<()> for OrchardFullViewingKey {
 }
 
 impl ReadableWriteable<(SaplingExtendedFullViewingKey, SaplingDiversifier)> for SaplingNote {
-    type VersionSize = ();
-
-    const VERSION: Self::VersionSize = ();
+    const VERSION: u8 = 1;
 
     fn read<R: Read>(
         mut reader: R,
         (extfvk, diversifier): (SaplingExtendedFullViewingKey, SaplingDiversifier),
     ) -> io::Result<Self> {
+        let _version = Self::get_version(&mut reader)?;
         let value = reader.read_u64::<LittleEndian>()?;
         let rseed = super::data::read_sapling_rseed(&mut reader)?;
 
@@ -1137,6 +1091,7 @@ impl ReadableWriteable<(SaplingExtendedFullViewingKey, SaplingDiversifier)> for 
     }
 
     fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+        writer.write_u8(Self::VERSION)?;
         writer.write_u64::<LittleEndian>(self.value)?;
         super::data::write_sapling_rseed(&mut writer, &self.rseed)?;
         Ok(())
@@ -1144,14 +1099,13 @@ impl ReadableWriteable<(SaplingExtendedFullViewingKey, SaplingDiversifier)> for 
 }
 
 impl ReadableWriteable<(OrchardFullViewingKey, OrchardDiversifier)> for OrchardNote {
-    type VersionSize = ();
-
-    const VERSION: Self::VersionSize = ();
+    const VERSION: u8 = 1;
 
     fn read<R: Read>(
         mut reader: R,
         (fvk, diversifier): (OrchardFullViewingKey, OrchardDiversifier),
     ) -> io::Result<Self> {
+        let _version = Self::get_version(&mut reader)?;
         let value = reader.read_u64::<LittleEndian>()?;
         let mut nullifier_bytes = [0; 32];
         reader.read_exact(&mut nullifier_bytes)?;
@@ -1179,6 +1133,7 @@ impl ReadableWriteable<(OrchardFullViewingKey, OrchardDiversifier)> for OrchardN
     }
 
     fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+        writer.write_u8(Self::VERSION)?;
         writer.write_u64::<LittleEndian>(self.value().inner())?;
         writer.write_all(&self.rho().to_bytes())?;
         writer.write_all(self.random_seed().as_bytes())?;
@@ -1188,21 +1143,13 @@ impl ReadableWriteable<(OrchardFullViewingKey, OrchardDiversifier)> for OrchardN
 
 impl<T> ReadableWriteable<()> for T
 where
-    T: NoteAndMetadata,
+    T: ReceivedNoteAndMetadata,
 {
-    type VersionSize = u64; //I don't know why this is so big, but it changing it would break reading
-                            //of old versios
-
-    const VERSION: Self::VersionSize = 20;
+    const VERSION: u8 = 1;
 
     fn read<R: Read>(mut reader: R, _: ()) -> io::Result<Self> {
-        let version = reader.read_u64::<LittleEndian>()?;
+        let _version = Self::get_version(&mut reader)?;
 
-        let _account = if version <= 5 {
-            reader.read_u64::<LittleEndian>()?
-        } else {
-            0
-        };
         let fvk = <T::Fvk as ReadableWriteable<()>>::read(&mut reader, ())?;
 
         let mut diversifier_bytes = [0u8; 11];
@@ -1213,11 +1160,7 @@ where
             <T::Note as ReadableWriteable<_>>::read(&mut reader, (fvk.clone(), diversifier))?;
 
         let witnesses_vec = Vector::read(&mut reader, |r| IncrementalWitness::<T::Node>::read(r))?;
-        let top_height = if version < 20 {
-            0
-        } else {
-            reader.read_u64::<LittleEndian>()?
-        };
+        let top_height = reader.read_u64::<LittleEndian>()?;
         let witnesses = WitnessCache::new(witnesses_vec, top_height);
 
         let mut nullifier = [0u8; 32];
@@ -1227,36 +1170,14 @@ where
         // Note that this is only the spent field, we ignore the unconfirmed_spent field.
         // The reason is that unconfirmed spents are only in memory, and we need to get the actual value of spent
         // from the blockchain anyway.
-        let spent = if version <= 5 {
-            let spent = Optional::read(&mut reader, |r| {
-                let mut transaction_id_bytes = [0u8; 32];
-                r.read_exact(&mut transaction_id_bytes)?;
-                Ok(TxId::from_bytes(transaction_id_bytes))
-            })?;
+        let spent = Optional::read(&mut reader, |r| {
+            let mut transaction_id_bytes = [0u8; 32];
+            r.read_exact(&mut transaction_id_bytes)?;
+            let height = r.read_u32::<LittleEndian>()?;
+            Ok((TxId::from_bytes(transaction_id_bytes), height))
+        })?;
 
-            let spent_at_height = if version >= 2 {
-                Optional::read(&mut reader, |r| r.read_i32::<LittleEndian>())?
-            } else {
-                None
-            };
-
-            if spent.is_some() && spent_at_height.is_some() {
-                Some((spent.unwrap(), spent_at_height.unwrap() as u32))
-            } else {
-                None
-            }
-        } else {
-            Optional::read(&mut reader, |r| {
-                let mut transaction_id_bytes = [0u8; 32];
-                r.read_exact(&mut transaction_id_bytes)?;
-                let height = r.read_u32::<LittleEndian>()?;
-                Ok((TxId::from_bytes(transaction_id_bytes), height))
-            })?
-        };
-
-        let unconfirmed_spent = if version <= 4 {
-            None
-        } else {
+        let unconfirmed_spent = {
             Optional::read(&mut reader, |r| {
                 let mut transaction_bytes = [0u8; 32];
                 r.read_exact(&mut transaction_bytes)?;
@@ -1285,11 +1206,7 @@ where
 
         let is_change: bool = reader.read_u8()? > 0;
 
-        let have_spending_key = if version <= 2 {
-            true // Will get populated in the lightwallet::read() method, for now assume true
-        } else {
-            reader.read_u8()? > 0
-        };
+        let have_spending_key = reader.read_u8()? > 0;
 
         Ok(T::from_parts(
             fvk,
@@ -1307,7 +1224,7 @@ where
 
     fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         // Write a version number first, so we can later upgrade this if needed.
-        writer.write_u64::<LittleEndian>(Self::VERSION)?;
+        writer.write_u8(Self::VERSION)?;
 
         self.fvk().write(&mut writer)?;
 

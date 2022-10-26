@@ -4,7 +4,7 @@ use crate::{
     lightclient::checkpoints::get_all_main_checkpoints,
     wallet::{
         data::{BlockData, ChannelNullifier, TransactionMetadata, WitnessCache},
-        traits::{DomainWalletExt, FromCommitment, NoteAndMetadata},
+        traits::{DomainWalletExt, FromCommitment, ReceivedNoteAndMetadata},
         transactions::TransactionMetadataSet,
     },
 };
@@ -33,7 +33,8 @@ use zcash_primitives::{
 
 use super::{fixed_size_buffer::FixedSizeBuffer, sync_status::SyncStatus};
 
-type Node<D> = <<D as DomainWalletExt<zingoconfig::Network>>::WalletNote as NoteAndMetadata>::Node;
+type Node<D> =
+    <<D as DomainWalletExt<zingoconfig::Network>>::WalletNote as ReceivedNoteAndMetadata>::Node;
 
 pub struct BlockAndWitnessData {
     // List of all downloaded blocks in the current batch and
@@ -617,7 +618,7 @@ impl BlockAndWitnessData {
         transaction_num: usize,
         output_num: usize,
         activation_height: u64,
-    ) -> Result<IncrementalWitness<<D::WalletNote as NoteAndMetadata>::Node>, String>
+    ) -> Result<IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node>, String>
     where
         D: DomainWalletExt<zingoconfig::Network>,
         D::Note: PartialEq + Clone,
@@ -667,10 +668,11 @@ impl BlockAndWitnessData {
                     .iter()
                     .enumerate()
             {
-                if let Some(node) = <D::WalletNote as NoteAndMetadata>::Node::from_commitment(
-                    &compactoutput.cmstar(),
-                )
-                .into()
+                if let Some(node) =
+                    <D::WalletNote as ReceivedNoteAndMetadata>::Node::from_commitment(
+                        &compactoutput.cmstar(),
+                    )
+                    .into()
                 {
                     tree.append(node).unwrap();
                     if t_num == transaction_num && o_num == output_num {
@@ -779,12 +781,12 @@ impl BlockAndWitnessData {
         height: &BlockHeight,
         transaction_id: &TxId,
         output_num: u32,
-        witnesses: WitnessCache<<D::WalletNote as NoteAndMetadata>::Node>,
-    ) -> WitnessCache<<D::WalletNote as NoteAndMetadata>::Node>
+        witnesses: WitnessCache<<D::WalletNote as ReceivedNoteAndMetadata>::Node>,
+    ) -> WitnessCache<<D::WalletNote as ReceivedNoteAndMetadata>::Node>
     where
         D::Recipient: crate::wallet::traits::Recipient,
         D::Note: PartialEq + Clone,
-        <D::WalletNote as NoteAndMetadata>::Node: FromCommitment,
+        <D::WalletNote as ReceivedNoteAndMetadata>::Node: FromCommitment,
     {
         let height = u64::from(*height);
         self.wait_for_block(height).await;
@@ -813,10 +815,11 @@ impl BlockAndWitnessData {
                     // If we've already passed the transaction id and output_num, stream the results
                     if transaction_id_found && output_found {
                         let compact_output = outputs.get(j as usize).unwrap();
-                        let node = <D::WalletNote as NoteAndMetadata>::Node::from_commitment(
-                            &compact_output.cmstar(),
-                        )
-                        .unwrap();
+                        let node =
+                            <D::WalletNote as ReceivedNoteAndMetadata>::Node::from_commitment(
+                                &compact_output.cmstar(),
+                            )
+                            .unwrap();
                         w.append(node).unwrap();
                     }
 

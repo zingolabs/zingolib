@@ -55,6 +55,7 @@ pub fn construct_server_uri(server: Option<String>) -> http::Uri {
     .unwrap()
 }
 
+/// Configuration data that is necessary? and sufficient? for the creation of a LightClient.
 #[derive(Clone, Debug)]
 pub struct ZingoConfig {
     pub server_uri: Arc<RwLock<http::Uri>>,

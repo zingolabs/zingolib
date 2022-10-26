@@ -8,20 +8,23 @@ use crate::{
     compact_formats::RawTransaction,
     grpc_connector::GrpcConnector,
     wallet::{
-        data::{OrchardNoteAndMetadata, SaplingNoteAndMetadata, TransactionMetadata},
-        keys::Keys,
+        data::TransactionMetadata,
+        keys::{
+            address_from_pubkeyhash,
+            unified::{ReceiverSelection, UnifiedSpendCapability},
+        },
         message::Message,
         now,
-        traits::NoteAndMetadata,
+        traits::{DomainWalletExt, ReceivedNoteAndMetadata, Recipient},
         LightWallet,
     },
 };
 use futures::future::join_all;
 use json::{array, object, JsonValue};
 use log::{error, info, warn};
+use orchard::note_encryption::OrchardDomain;
 use std::{
     cmp,
-    collections::HashSet,
     fs::File,
     io::{self, BufReader, Error, ErrorKind, Read, Write},
     path::Path,
@@ -35,20 +38,21 @@ use tokio::{
     task::yield_now,
     time::sleep,
 };
+use zcash_note_encryption::Domain;
 
-use orchard::keys::{FullViewingKey as OrchardFullViewingKey, SpendingKey as OrchardSpendingKey};
 use zcash_client_backend::{
-    address::UnifiedAddress,
+    address::RecipientAddress,
     encoding::{decode_payment_address, encode_payment_address},
 };
 use zcash_primitives::{
     block::BlockHash,
-    consensus::{BlockHeight, BranchId},
+    consensus::{BlockHeight, BranchId, Parameters},
     memo::{Memo, MemoBytes},
+    sapling::note_encryption::SaplingDomain,
     transaction::{components::amount::DEFAULT_FEE, Transaction},
 };
 use zcash_proofs::prover::LocalTxProver;
-use zingoconfig::{ZingoConfig, MAX_REORG};
+use zingoconfig::{Network, ZingoConfig, MAX_REORG};
 
 pub(crate) mod checkpoints;
 
@@ -122,7 +126,7 @@ impl LightClient {
             ));
         }
 
-        let l = LightClient::create_unconnected(config, seed_phrase, height, 1)
+        let l = LightClient::create_unconnected(config, seed_phrase, height)
             .expect("Unconnected client creation failed!");
         l.set_wallet_initial_state(height).await;
 
@@ -158,10 +162,9 @@ impl LightClient {
         config: &ZingoConfig,
         seed_phrase: Option<String>,
         height: u64,
-        num_zaddrs: u32,
     ) -> io::Result<Self> {
         Ok(LightClient {
-            wallet: LightWallet::new(config.clone(), seed_phrase, height, num_zaddrs)?,
+            wallet: LightWallet::new(config.clone(), seed_phrase, height)?,
             config: config.clone(),
             mempool_monitor: std::sync::RwLock::new(None),
             bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
@@ -345,9 +348,9 @@ impl LightClient {
         };
     }
 
-    fn new_wallet(config: &ZingoConfig, height: u64, num_zaddrs: u32) -> io::Result<Self> {
+    fn new_wallet(config: &ZingoConfig, height: u64) -> io::Result<Self> {
         Runtime::new().unwrap().block_on(async move {
-            let l = LightClient::create_unconnected(&config, None, height, num_zaddrs)?;
+            let l = LightClient::create_unconnected(&config, None, height)?;
             l.set_wallet_initial_state(height).await;
 
             info!("Created new wallet with a new seed!");
@@ -375,7 +378,7 @@ impl LightClient {
             }
         }
 
-        Self::new_wallet(config, latest_block, 1)
+        Self::new_wallet(config, latest_block)
     }
 
     /// The wallet this fn associates with the lightclient is specifically derived from
@@ -404,24 +407,16 @@ impl LightClient {
 
         if key_or_seedphrase.starts_with(config.hrp_sapling_private_key())
             || key_or_seedphrase.starts_with(config.hrp_sapling_viewing_key())
+            || key_or_seedphrase.starts_with(config.chain.hrp_orchard_spending_key())
         {
-            let lightclient = Self::new_wallet(config, birthday, 0)?;
-            Runtime::new().unwrap().block_on(async move {
-                lightclient
-                    .do_import_key(key_or_seedphrase, birthday)
-                    .await
-                    .map_err(|e| io::Error::new(ErrorKind::InvalidData, e))?;
-
-                info!("Created wallet with 0 keys, imported private key");
-
-                Ok(lightclient)
-            })
-        } else if key_or_seedphrase.starts_with(config.chain.hrp_orchard_spending_key()) {
-            todo!()
+            Err(Error::new(
+                ErrorKind::InvalidInput,
+                "Key import not currently supported",
+            ))
         } else {
             Runtime::new().unwrap().block_on(async move {
                 let lightclient = LightClient {
-                    wallet: LightWallet::new(config.clone(), Some(key_or_seedphrase), birthday, 1)?,
+                    wallet: LightWallet::new(config.clone(), Some(key_or_seedphrase), birthday)?,
                     config: config.clone(),
                     mempool_monitor: std::sync::RwLock::new(None),
                     sync_lock: Mutex::new(()),
@@ -441,7 +436,7 @@ impl LightClient {
         }
     }
 
-    pub fn read_from_disk(config: &ZingoConfig) -> io::Result<Self> {
+    pub fn read_wallet_from_disk(config: &ZingoConfig) -> io::Result<Self> {
         let wallet_path = if config.wallet_exists() {
             config.get_wallet_path()
         } else {
@@ -453,13 +448,16 @@ impl LightClient {
                 ),
             ));
         };
-        LightClient::read_from_buffer(&config, BufReader::new(File::open(wallet_path)?))
+        LightClient::read_wallet_from_buffer(&config, BufReader::new(File::open(wallet_path)?))
     }
 
     /// This constructor depends on a wallet that's read from a buffer.
     /// It is used internally by read_from_disk, and directly called by
     /// zingo-mobile.
-    pub fn read_from_buffer<R: Read>(config: &ZingoConfig, mut reader: R) -> io::Result<Self> {
+    pub fn read_wallet_from_buffer<R: Read>(
+        config: &ZingoConfig,
+        mut reader: R,
+    ) -> io::Result<Self> {
         Runtime::new().unwrap().block_on(async move {
             let wallet = LightWallet::read_internal(&mut reader, config).await?;
 
@@ -488,95 +486,26 @@ impl LightClient {
         Ok(())
     }
 
-    // Export private keys
-    pub async fn do_export(&self, addr: Option<String>) -> Result<JsonValue, &str> {
-        if !self.wallet.is_unlocked_for_spending().await {
-            error!("Wallet is locked");
-            return Err("Wallet is locked");
-        }
-
-        // Clone address so it can be moved into the closure
-        let address = addr.clone();
-        // Go over all z addresses
-        let z_keys = self
-            .export_x_keys(Keys::get_z_private_keys, |(addr, pk, vk)| match &address {
-                Some(target_addr) if target_addr != addr => None,
-                _ => Some(object! {
-                    "address"     => addr.clone(),
-                    "private_key" => pk.clone(),
-                    "viewing_key" => vk.clone(),
-                }),
+    pub async fn do_addresses(&self) -> JsonValue {
+        let mut objectified_addresses = Vec::new();
+        for address in self
+            .wallet
+            .unified_spend_capability()
+            .read()
+            .await
+            .addresses()
+        {
+            let encoded_ua = address.encode(&self.config.chain);
+            objectified_addresses.push(object! {
+            "address" => encoded_ua,
+            "receivers" => object!(
+                "transparent" => address_from_pubkeyhash(&self.config, address.transparent().cloned()),
+                "sapling" => address.sapling().map(|z_addr| encode_payment_address(self.config.chain.hrp_sapling_payment_address(), z_addr)),
+                "orchard_exists" => address.orchard().is_some(),
+                )
             })
-            .await;
-
-        // Clone address so it can be moved into the closure
-        let address = addr.clone();
-
-        // Go over all t addresses
-        let t_keys = self
-            .export_x_keys(Keys::get_t_secret_keys, |(addr, sk)| match &address {
-                Some(target_addr) if target_addr != addr => None,
-                _ => Some(object! {
-                    "address"     => addr.clone(),
-                    "private_key" => sk.clone(),
-                }),
-            })
-            .await;
-
-        // Clone address so it can be moved into the closure
-        let address = addr.clone();
-
-        // Go over all orchard addresses
-        let o_keys = self
-            .export_x_keys(
-                Keys::get_orchard_spending_keys,
-                |(addr, sk, vk)| match &address {
-                    Some(target_addr) if target_addr != addr => None,
-                    _ => Some(object! {
-                        "address"     => addr.clone(),
-                        "spending_key" => sk.clone(),
-                        "full_viewing_key" => vk.clone(),
-                    }),
-                },
-            )
-            .await;
-
-        let mut all_keys = vec![];
-        all_keys.extend_from_slice(&o_keys);
-        all_keys.extend_from_slice(&z_keys);
-        all_keys.extend_from_slice(&t_keys);
-
-        Ok(all_keys.into())
-    }
-
-    //helper function to export all keys of a type
-    async fn export_x_keys<T, F: Fn(&Keys) -> Vec<T>, G: Fn(&T) -> Option<JsonValue>>(
-        &self,
-        key_getter: F,
-        key_filter_map: G,
-    ) -> Vec<JsonValue> {
-        key_getter(&*self.wallet.keys().read().await)
-            .iter()
-            .filter_map(key_filter_map)
-            .collect()
-    }
-
-    /// Provide an object with all wallet addresses
-    pub async fn do_address(&self) -> JsonValue {
-        // Collect z addresses
-        let z_addresses = self.wallet.keys().read().await.get_all_sapling_addresses();
-
-        // Collect t addresses
-        let t_addresses = self.wallet.keys().read().await.get_all_taddrs();
-
-        // Collect o addresses
-        let o_addresses = self.wallet.keys().read().await.get_all_orchard_addresses();
-
-        object! {
-            "sapling_addresses" => z_addresses,
-            "transparent_addresses" => t_addresses,
-            "orchard_addresses" => o_addresses,
         }
+        JsonValue::Array(objectified_addresses)
     }
 
     pub async fn do_last_transaction_id(&self) -> JsonValue {
@@ -586,41 +515,6 @@ impl LightClient {
     }
 
     pub async fn do_balance(&self) -> JsonValue {
-        // Collect z addresses
-        let mut sapling_addresses = vec![];
-        for sapling_address in self.wallet.keys().read().await.get_all_sapling_addresses() {
-            sapling_addresses.push(object! {
-                "address"                     => sapling_address.clone(),
-                "sapling_balance"             => self.wallet.maybe_verified_sapling_balance(Some(sapling_address.clone())).await,
-                "verified_sapling_balance"    => self.wallet.verified_sapling_balance(Some(sapling_address.clone())).await,
-                "spendable_sapling_balance"   => self.wallet.spendable_sapling_balance(Some(sapling_address.clone())).await,
-                "unverified_sapling_balance"  => self.wallet.unverified_sapling_balance(Some(sapling_address.clone())).await
-            });
-        }
-
-        let mut orchard_addresses = vec![];
-        for orchard_address in self.wallet.keys().read().await.get_all_orchard_addresses() {
-            orchard_addresses.push(object! {
-                "address"                     => orchard_address.clone(),
-                "orchard_balance"             => self.wallet.maybe_verified_orchard_balance(Some(orchard_address.clone())).await,
-                "verified_orchard_balance"    => self.wallet.verified_orchard_balance(Some(orchard_address.clone())).await,
-                "spendable_orchard_balance"   => self.wallet.spendable_orchard_balance(Some(orchard_address.clone())).await,
-                "unverified_orchard_balance"  => self.wallet.unverified_orchard_balance(Some(orchard_address.clone())).await
-            });
-        }
-
-        // Collect t addresses
-        let mut t_addresses = vec![];
-        for taddress in self.wallet.keys().read().await.get_all_taddrs() {
-            // Get the balance for this address
-            let balance = self.wallet.tbalance(Some(taddress.clone())).await;
-
-            t_addresses.push(object! {
-                "address"                     => taddress,
-                "balance"                     => balance,
-            });
-        }
-
         object! {
             "sapling_balance"                 => self.wallet.maybe_verified_sapling_balance(None).await,
             "verified_sapling_balance"        => self.wallet.verified_sapling_balance(None).await,
@@ -631,9 +525,6 @@ impl LightClient {
             "spendable_orchard_balance"       => self.wallet.spendable_orchard_balance(None).await,
             "unverified_orchard_balance"      => self.wallet.unverified_orchard_balance(None).await,
             "transparent_balance"             => self.wallet.tbalance(None).await,
-            "sapling_addresses"               => sapling_addresses,
-            "orchard_addresses"               => orchard_addresses,
-            "transparent_addresses"           => t_addresses,
         }
     }
 
@@ -785,41 +676,31 @@ impl LightClient {
         }
 
         Ok(object! {
-            "seed"     => self.wallet.keys().read().await.get_seed_phrase(),
+            "seed"     => self.wallet.mnemonic().to_string(),
             "birthday" => self.wallet.get_birthday().await
         })
     }
 
     /// Return a list of all notes, spent and unspent
-    pub async fn do_list_notes(&self, include_spent_notes: bool) -> JsonValue {
+    pub async fn do_list_notes(&self, all_notes: bool) -> JsonValue {
         let mut unspent_sapling_notes: Vec<JsonValue> = vec![];
         let mut spent_sapling_notes: Vec<JsonValue> = vec![];
         let mut pending_sapling_notes: Vec<JsonValue> = vec![];
 
         let anchor_height = BlockHeight::from_u32(self.wallet.get_anchor_height().await);
+        let unified_spend_capability_arc = self.wallet.unified_spend_capability();
+        let unified_spend_capability = &unified_spend_capability_arc.read().await;
 
         {
-            // First, collect all extfvk's that are spendable (i.e., we have the private key)
-            let spendable_sapling_addresses: HashSet<String> = self
-                .wallet
-                .keys()
-                .read()
-                .await
-                .get_all_spendable_zaddresses()
-                .into_iter()
-                .collect();
-
             // Collect Sapling notes
             self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
                 .flat_map( |(transaction_id, transaction_metadata)| {
-                    transaction_metadata.sapling_notes.iter().filter_map(|note_metadata|
-                        if !include_spent_notes && note_metadata.is_spent() {
+                    transaction_metadata.sapling_notes.iter().filter_map(move |note_metadata|
+                        if !all_notes && note_metadata.spent.is_some() {
                             None
                         } else {
-                            let address = LightWallet::note_address(&self.config.chain, note_metadata);
-                            let spendable = address.is_some() &&
-                                                    spendable_sapling_addresses.contains(&address.clone().unwrap()) &&
-                                                    transaction_metadata.block_height <= anchor_height && !note_metadata.is_spent() && note_metadata.unconfirmed_spent.is_none();
+                            let address = LightWallet::note_address::<SaplingDomain<Network>>(&self.config.chain, note_metadata, &unified_spend_capability);
+                            let spendable = transaction_metadata.block_height <= anchor_height && note_metadata.spent.is_none() && note_metadata.unconfirmed_spent.is_none();
 
                             let created_block:u32 = transaction_metadata.block_height.into();
                             Some(object!{
@@ -853,30 +734,17 @@ impl LightClient {
         let mut spent_orchard_notes: Vec<JsonValue> = vec![];
         let mut pending_orchard_notes: Vec<JsonValue> = vec![];
 
+        let unified_spend_auth_arc = self.wallet.unified_spend_capability();
+        let unified_spend_auth = &unified_spend_auth_arc.read().await;
         {
-            // Same thing but with orchard. TODO: Dry
-            let spendable_address: HashSet<String> = self
-                .wallet
-                .keys()
-                .read()
-                .await
-                .okeys()
-                .into_iter()
-                .filter(|k| OrchardSpendingKey::try_from(&k.key).is_ok())
-                .map(|k| k.unified_address.encode(&self.config.chain))
-                .collect();
-
             self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
                 .flat_map( |(transaction_id, transaction_metadata)| {
-                    let spendable_address = spendable_address.clone();
                     transaction_metadata.orchard_notes.iter().filter_map(move |orch_note_metadata|
-                        if !include_spent_notes && orch_note_metadata.is_spent() {
+                        if !all_notes && orch_note_metadata.is_spent() {
                             None
                         } else {
-                            let address = LightWallet::note_address(&self.config.chain, orch_note_metadata);
-                            let spendable = address.is_some() &&
-                                                    spendable_address.contains(&address.clone().unwrap()) &&
-                                                    transaction_metadata.block_height <= anchor_height && orch_note_metadata.spent.is_none() && orch_note_metadata.unconfirmed_spent.is_none();
+                            let address = LightWallet::note_address::<OrchardDomain>(&self.config.chain, orch_note_metadata, &unified_spend_auth);
+                            let spendable = transaction_metadata.block_height <= anchor_height && orch_note_metadata.spent.is_none() && orch_note_metadata.unconfirmed_spent.is_none();
 
                             let created_block:u32 = transaction_metadata.block_height.into();
                             Some(object!{
@@ -914,10 +782,15 @@ impl LightClient {
             self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
                 .flat_map( |(transaction_id, wtx)| {
                     wtx.utxos.iter().filter_map(move |utxo|
-                        if !include_spent_notes && utxo.spent.is_some() {
+                        if !all_notes && utxo.spent.is_some() {
                             None
                         } else {
                             let created_block:u32 = wtx.block_height.into();
+                            let recipient = RecipientAddress::decode(&self.config.chain, &utxo.address);
+                            let taddr = match recipient {
+                            Some(RecipientAddress::Transparent(taddr)) => taddr,
+                                _otherwise => panic!("Read invalid taddr from wallet-local Utxo, this should be impossible"),
+                            };
 
                             Some(object!{
                                 "created_in_block"   => created_block,
@@ -926,7 +799,7 @@ impl LightClient {
                                 "value"              => utxo.value,
                                 "scriptkey"          => hex::encode(utxo.script.clone()),
                                 "is_change"          => false, // TODO: Identify notes as change if we send change to our own taddrs
-                                "address"            => utxo.address.clone(),
+                                "address"            => unified_spend_auth.get_ua_from_contained_transparent_receiver(&taddr).map(|ua| ua.encode(&self.config.chain)),
                                 "spent_at_height"    => utxo.spent_at_height,
                                 "spent"              => utxo.spent.map(|spent_transaction_id| format!("{}", spent_transaction_id)),
                                 "unconfirmed_spent"  => utxo.unconfirmed_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
@@ -945,6 +818,16 @@ impl LightClient {
                 });
         }
 
+        unspent_sapling_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        spent_sapling_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        pending_sapling_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        unspent_orchard_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        spent_orchard_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        pending_orchard_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        unspent_utxos.sort_by_key(|note| note["created_in_block"].as_u64());
+        pending_utxos.sort_by_key(|note| note["created_in_block"].as_u64());
+        spent_utxos.sort_by_key(|note| note["created_in_block"].as_u64());
+
         let mut res = object! {
             "unspent_sapling_notes" => unspent_sapling_notes,
             "pending_sapling_notes" => pending_sapling_notes,
@@ -954,7 +837,7 @@ impl LightClient {
             "pending_utxos" => pending_utxos,
         };
 
-        if include_spent_notes {
+        if all_notes {
             res["spent_sapling_notes"] = JsonValue::Array(spent_sapling_notes);
             res["spent_orchard_notes"] = JsonValue::Array(spent_orchard_notes);
             res["spent_utxos"] = JsonValue::Array(spent_utxos);
@@ -1011,6 +894,8 @@ impl LightClient {
 
     pub async fn do_list_transactions(&self, include_memo_hex: bool) -> JsonValue {
         // Create a list of TransactionItems from wallet transactions
+        let unified_spend_capability_arc = self.wallet.unified_spend_capability();
+        let unified_spend_capability = &unified_spend_capability_arc.read().await;
         let mut transaction_list = self
             .wallet
             .transaction_context.transaction_metadata_set
@@ -1071,7 +956,7 @@ impl LightClient {
                 }
 
                 // For each sapling note that is not a change, add a transaction.
-                transactions.extend(self.add_wallet_notes_in_transaction_to_list(&wallet_transaction, &include_memo_hex));
+                transactions.extend(self.add_wallet_notes_in_transaction_to_list(&wallet_transaction, &include_memo_hex, &**unified_spend_capability));
 
                 // Get the total transparent received
                 let total_transparent_received = wallet_transaction.utxos.iter().map(|u| u.value).sum::<u64>();
@@ -1105,36 +990,45 @@ impl LightClient {
         JsonValue::Array(transaction_list)
     }
 
-    fn add_wallet_notes_in_transaction_to_list<'a, 'b>(
+    fn add_wallet_notes_in_transaction_to_list<'a, 'b, 'c>(
         &'a self,
         transaction_metadata: &'b TransactionMetadata,
         include_memo_hex: &'b bool,
+        unified_spend_auth: &'c UnifiedSpendCapability,
     ) -> impl Iterator<Item = JsonValue> + 'b
     where
         'a: 'b,
+        'c: 'b,
     {
-        self.add_wallet_notes_in_transaction_to_list_inner::<'a, 'b, SaplingNoteAndMetadata>(
+        self.add_wallet_notes_in_transaction_to_list_inner::<'a, 'b, 'c, SaplingDomain<Network>>(
             transaction_metadata,
             include_memo_hex,
+            unified_spend_auth,
         )
         .chain(
-            self.add_wallet_notes_in_transaction_to_list_inner::<'a, 'b, OrchardNoteAndMetadata>(
+            self.add_wallet_notes_in_transaction_to_list_inner::<'a, 'b, 'c, OrchardDomain>(
                 transaction_metadata,
                 include_memo_hex,
+                unified_spend_auth,
             ),
         )
     }
 
-    fn add_wallet_notes_in_transaction_to_list_inner<'a, 'b, NnMd>(
+    fn add_wallet_notes_in_transaction_to_list_inner<'a, 'b, 'c, D>(
         &'a self,
         transaction_metadata: &'b TransactionMetadata,
         include_memo_hex: &'b bool,
+        unified_spend_auth: &'c UnifiedSpendCapability,
     ) -> impl Iterator<Item = JsonValue> + 'b
     where
         'a: 'b,
-        NnMd: NoteAndMetadata + 'b,
+        'c: 'b,
+        D: DomainWalletExt<Network>,
+        D::WalletNote: 'b,
+        <D as Domain>::Recipient: Recipient,
+        <D as Domain>::Note: PartialEq + Clone,
     {
-        NnMd::transaction_metadata_notes(&transaction_metadata).iter().filter(|nd| !nd.is_change()).enumerate().map(|(i, nd)| {
+        D::WalletNote::transaction_metadata_notes(&transaction_metadata).iter().filter(|nd| !nd.is_change()).enumerate().map(|(i, nd)| {
                     let block_height: u32 = transaction_metadata.block_height.into();
                     let mut o = object! {
                         "block_height" => block_height,
@@ -1144,7 +1038,7 @@ impl LightClient {
                         "txid"         => format!("{}", transaction_metadata.txid),
                         "amount"       => nd.value() as i64,
                         "zec_price"    => transaction_metadata.zec_price.map(|p| (p * 100.0).round() / 100.0),
-                        "address"      => LightWallet::note_address(&self.config.chain, nd),
+                        "address"      => LightWallet::note_address::<D>(&self.config.chain, nd, unified_spend_auth),
                         "memo"         => LightWallet::memo_str(nd.memo().clone())
                     };
 
@@ -1173,156 +1067,23 @@ impl LightClient {
             return Err("Wallet is locked".to_string());
         }
 
-        let new_address = {
-            let addr = match addr_type {
-                "z" => self.wallet.keys().write().await.add_zaddr(),
-                "t" => self.wallet.keys().write().await.add_taddr(),
-                "o" => self.wallet.keys().write().await.add_orchard_addr(),
-                _ => {
-                    let e = format!("Unrecognized address type: {}", addr_type);
-                    error!("{}", e);
-                    return Err(e);
-                }
-            };
-
-            if addr.starts_with("Error") {
-                let e = format!("Error creating new address: {}", addr);
-                error!("{}", e);
-                return Err(e);
-            }
-
-            addr
+        //TODO: Placeholder interface
+        let desired_receivers = ReceiverSelection {
+            sapling: addr_type.contains('z'),
+            orchard: addr_type.contains('o'),
+            transparent: addr_type.contains('t'),
         };
 
-        self.do_save().await?;
-
-        Ok(array![new_address])
-    }
-
-    /// Convinence function to determine what type of key this is and import it
-    pub async fn do_import_key(&self, key: String, birthday: u64) -> Result<JsonValue, String> {
-        macro_rules! match_key_type {
-            ($key:ident: $($start:expr => $do:expr,)+) => {
-                match $key {
-                    $(_ if $key.starts_with($start) => $do,)+
-                    _ => Err(format!(
-                        "'{}' was not recognized as either a spending key or a viewing key",
-                        key,
-                    )),
-                }
-            }
-        }
-
-        match_key_type!(key:
-            self.config.hrp_sapling_private_key() => self.do_import_sapling_spend_key(key, birthday).await,
-            self.config.hrp_sapling_viewing_key() => self.do_import_sapling_full_view_key(key, birthday).await,
-            "K" => self.do_import_tk(key).await,
-            "L" => self.do_import_tk(key).await,
-            self.config.chain.hrp_orchard_spending_key() => self.do_import_orchard_secret_key(key, birthday).await,
-            self.config.chain.hrp_unified_full_viewing_key() => todo!(),
-        )
-    }
-
-    /// Import a new transparent private key
-    pub async fn do_import_tk(&self, sk: String) -> Result<JsonValue, String> {
-        if !self.wallet.is_unlocked_for_spending().await {
-            error!("Wallet is locked");
-            return Err("Wallet is locked".to_string());
-        }
-
-        let address = self.wallet.add_imported_tk(sk).await;
-        if address.starts_with("Error") {
-            let e = address;
-            error!("{}", e);
-            return Err(e);
-        }
-
-        self.do_save().await?;
-        Ok(array![address])
-    }
-
-    /// Import a new orchard private key
-    pub async fn do_import_orchard_secret_key(
-        &self,
-        key: String,
-        birthday: u64,
-    ) -> Result<JsonValue, String> {
-        if !self.wallet.is_unlocked_for_spending().await {
-            error!("Wallet is locked");
-            return Err("Wallet is locked".to_string());
-        }
-
-        let new_address = {
-            let addr = self
-                .wallet
-                .add_imported_orchard_spending_key(key, birthday)
-                .await;
-            if addr.starts_with("Error") {
-                let e = addr;
-                error!("{}", e);
-                return Err(e);
-            }
-
-            addr
-        };
+        let new_address = self
+            .wallet
+            .unified_spend_capability()
+            .write()
+            .await
+            .new_address(desired_receivers)?;
 
         self.do_save().await?;
 
-        Ok(array![new_address])
-    }
-
-    /// Import a new z-address private key
-    pub async fn do_import_sapling_spend_key(
-        &self,
-        sk: String,
-        birthday: u64,
-    ) -> Result<JsonValue, String> {
-        if !self.wallet.is_unlocked_for_spending().await {
-            error!("Wallet is locked");
-            return Err("Wallet is locked".to_string());
-        }
-
-        let new_address = {
-            let addr = self.wallet.add_imported_sapling_extsk(sk, birthday).await;
-            if addr.starts_with("Error") {
-                let e = addr;
-                error!("{}", e);
-                return Err(e);
-            }
-
-            addr
-        };
-
-        self.do_save().await?;
-
-        Ok(array![new_address])
-    }
-
-    /// Import a new viewing key
-    pub async fn do_import_sapling_full_view_key(
-        &self,
-        vk: String,
-        birthday: u64,
-    ) -> Result<JsonValue, String> {
-        if !self.wallet.is_unlocked_for_spending().await {
-            error!("Wallet is locked");
-            return Err("Wallet is locked".to_string());
-        }
-
-        let new_address = {
-            let addr = self.wallet.add_imported_sapling_extfvk(vk, birthday).await;
-            if addr.starts_with("Error") {
-                let e = addr;
-                error!("{}", e);
-                return Err(e);
-            }
-
-            addr
-        };
-
-        self.do_save().await?;
-
-        Ok(array![new_address])
+        Ok(array![new_address.encode(&self.config.chain)])
     }
 
     pub async fn clear_state(&self) {
@@ -1404,7 +1165,7 @@ impl LightClient {
                 let lc1 = lci.clone();
 
                 let h1 = tokio::spawn(async move {
-                    let keys = lc1.wallet.keys();
+                    let key = lc1.wallet.unified_spend_capability();
                     let transaction_metadata_set = lc1
                         .wallet
                         .transaction_context
@@ -1425,7 +1186,7 @@ impl LightClient {
 
                             TransactionContext::new(
                                 &config,
-                                keys.clone(),
+                                key.clone(),
                                 transaction_metadata_set.clone(),
                             )
                             .scan_full_tx(
@@ -1664,8 +1425,11 @@ impl LightClient {
             grpc_connector.start_taddr_transaction_fetcher().await;
 
         // Local state necessary for a transaction fetch
-        let transaction_context =
-            TransactionContext::new(&self.config, self.wallet.keys(), self.wallet.transactions());
+        let transaction_context = TransactionContext::new(
+            &self.config,
+            self.wallet.unified_spend_capability(),
+            self.wallet.transactions(),
+        );
         let (
             fetch_full_transactions_handle,
             fetch_full_transaction_transmitter,
@@ -1685,8 +1449,11 @@ impl LightClient {
                 .await;
 
         // Do Trial decryptions of all the sapling outputs, and pass on the successful ones to the update_notes processor
-        let trial_decryptions_processor =
-            TrialDecryptions::new(self.wallet.keys(), self.wallet.transactions());
+        let trial_decryptions_processor = TrialDecryptions::new(
+            Arc::new(self.config.clone()),
+            self.wallet.unified_spend_capability(),
+            self.wallet.transactions(),
+        );
         let (trial_decrypts_handle, trial_decrypts_transmitter) = trial_decryptions_processor
             .start(
                 bsync_data.clone(),
@@ -1740,15 +1507,18 @@ impl LightClient {
         let earliest_block = block_and_witness_handle.await.unwrap().unwrap();
 
         // 1. Fetch the transparent txns only after reorgs are done.
-        let taddr_transactions_handle = FetchTaddrTransactions::new(self.wallet.keys())
-            .start(
-                start_block,
-                earliest_block,
-                taddr_fetcher_transmitter,
-                fetch_taddr_transactions_transmitter,
-                self.config.chain,
-            )
-            .await;
+        let taddr_transactions_handle = FetchTaddrTransactions::new(
+            self.wallet.unified_spend_capability(),
+            Arc::new(self.config.clone()),
+        )
+        .start(
+            start_block,
+            earliest_block,
+            taddr_fetcher_transmitter,
+            fetch_taddr_transactions_transmitter,
+            self.config.chain,
+        )
+        .await;
 
         // 2. Notify the notes updater that the blocks are done updating
         blocks_done_transmitter.send(earliest_block).unwrap();
@@ -1865,33 +1635,14 @@ impl LightClient {
             ));
         }
 
-        let addr = address
-            .or({
-                let keys = self.wallet.keys();
-                let readlocked_keys = keys.read().await;
-                UnifiedAddress::from_receivers(
-                    readlocked_keys
-                        .get_all_orchard_keys_of_type::<OrchardSpendingKey>()
-                        .iter()
-                        .map(|orchard_spend_key| {
-                            OrchardFullViewingKey::from(orchard_spend_key)
-                                .address_at(0u32, orchard::keys::Scope::External)
-                        })
-                        .next(),
-                    readlocked_keys
-                        .zkeys
-                        .iter()
-                        .filter(|sapling_key| sapling_key.extsk.is_some())
-                        .map(|sapling_key| sapling_key.zaddress.clone())
-                        .next(),
-                    None,
-                )
-                .map(|ua| ua.encode(&self.config.chain))
-            })
-            .ok_or(String::from(
-                "No sapling or orchard spend authority in wallet. \n
-                    please generate a shielded address and try again, or supply a destination address",
-            ))?;
+        let addr = address.unwrap_or(
+            self.wallet
+                .unified_spend_capability()
+                .read()
+                .await
+                .addresses()[0]
+                .encode(&self.config.chain),
+        );
 
         let result = {
             let _lock = self.sync_lock.lock().await;

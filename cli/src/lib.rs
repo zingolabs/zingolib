@@ -327,9 +327,8 @@ to scan from the start of the blockchain."
             }
         };
 
-        let maybe_data_dir = matches.value_of("data-dir").map(|s| s.to_string());
-
         let clean_regtest_data = !matches.is_present("no-clean");
+        let mut maybe_data_dir = matches.value_of("data-dir").map(|s| s.to_string());
         let mut maybe_server = matches.value_of("server").map(|s| s.to_string());
         let mut child_process_handler = None;
         // Regtest specific launch:
@@ -337,6 +336,11 @@ to scan from the start of the blockchain."
         //   * spawn lighwalletd and connect it to zcashd
         let regtest_manager = if matches.is_present("regtest") {
             let regtest_manager = regtest::RegtestManager::new(None);
+            if maybe_data_dir.is_none() {
+                maybe_data_dir = Some(String::from(
+                    regtest_manager.zingo_data_dir.to_str().unwrap(),
+                ));
+            };
             child_process_handler = Some(regtest_manager.launch(clean_regtest_data)?);
             maybe_server = Some("http://127.0.0.1".to_string());
             Some(regtest_manager)
@@ -387,7 +391,7 @@ to scan from the start of the blockchain."
             )?),
             None => {
                 if config.wallet_exists() {
-                    Arc::new(LightClient::read_from_disk(&config)?)
+                    Arc::new(LightClient::read_wallet_from_disk(&config)?)
                 } else {
                     println!("Creating a new wallet");
                     // Create a wallet with height - 100, to protect against reorgs
@@ -431,7 +435,7 @@ to scan from the start of the blockchain."
         match self.startup() {
             Ok(c) => c,
             Err(e) => {
-                let emsg = format!("Error during startup:{}\nIf you repeatedly run into this issue, you might have to restore your wallet from your seed phrase.", e);
+                let emsg = format!("Error during startup:\n{}\nIf you repeatedly run into this issue, you might have to restore your wallet from your seed phrase.", e);
                 eprintln!("{}", emsg);
                 error!("{}", emsg);
                 if cfg!(target_os = "unix") {

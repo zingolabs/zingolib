@@ -1,6 +1,7 @@
 use crate::compact_formats::RawTransaction;
+use crate::wallet::keys::address_from_pubkeyhash;
+use crate::wallet::keys::unified::UnifiedSpendCapability;
 
-use crate::wallet::keys::Keys;
 use std::sync::Arc;
 use tokio::join;
 use tokio::sync::mpsc::unbounded_channel;
@@ -10,19 +11,21 @@ use tokio::{
     sync::{mpsc::UnboundedSender, RwLock},
     task::JoinHandle,
 };
-use zcash_primitives::consensus::BlockHeight;
 
+use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::consensus::BranchId;
 use zcash_primitives::consensus::Parameters;
 use zcash_primitives::transaction::Transaction;
+use zingoconfig::ZingoConfig;
 
 pub struct FetchTaddrTransactions {
-    keys: Arc<RwLock<Keys>>,
+    usc: Arc<RwLock<UnifiedSpendCapability>>,
+    config: Arc<ZingoConfig>,
 }
 
 impl FetchTaddrTransactions {
-    pub fn new(keys: Arc<RwLock<Keys>>) -> Self {
-        Self { keys }
+    pub fn new(usc: Arc<RwLock<UnifiedSpendCapability>>, config: Arc<ZingoConfig>) -> Self {
+        Self { usc, config }
     }
 
     pub async fn start(
@@ -36,10 +39,18 @@ impl FetchTaddrTransactions {
         full_transaction_scanner: UnboundedSender<(Transaction, BlockHeight)>,
         network: impl Parameters + Send + Copy + 'static,
     ) -> JoinHandle<Result<(), String>> {
-        let keys = self.keys.clone();
-
+        let usc = self.usc.clone();
+        let config = self.config.clone();
         tokio::spawn(async move {
-            let taddrs = keys.read().await.get_all_taddrs();
+            let taddrs = usc
+                .read()
+                .await
+                .addresses()
+                .iter()
+                .filter_map(|ua| {
+                    address_from_pubkeyhash(config.as_ref(), ua.transparent().cloned())
+                })
+                .collect::<Vec<_>>();
 
             // Fetch all transactions for all t-addresses in parallel, and process them in height order
             let req = (taddrs, start_height, end_height);
@@ -148,6 +159,8 @@ impl FetchTaddrTransactions {
     }
 }
 
+// TODO: Reexamine this test, which relies on explicit creation of transparent spend auths
+/*
 #[cfg(test)]
 mod test {
     use futures::future::join_all;
@@ -166,14 +179,14 @@ mod test {
     use zcash_primitives::transaction::Transaction;
 
     use crate::wallet::keys::transparent::TransparentKey;
-    use crate::wallet::keys::Keys;
+    use crate::wallet::keys::UnifiedSpendAuthority;
 
     use super::FetchTaddrTransactions;
 
     #[tokio::test]
     async fn out_of_order_transactions() {
         // 5 t addresses
-        let mut keys = Keys::new_empty();
+        let mut keys = UnifiedSpendAuthority::new_empty();
         let gened_taddrs: Vec<_> = (0..5).into_iter().map(|n| format!("taddr{}", n)).collect();
         keys.tkeys = gened_taddrs
             .iter()
@@ -234,7 +247,7 @@ mod test {
                 }));
             }
 
-            // Dispatch a set of recievers
+            // Dispatch a set of receivers
             raw_transaction.send(transaction_receivers).unwrap();
 
             let total = join_all(transaction_receivers_workers)
@@ -287,3 +300,4 @@ mod test {
         h3.await.unwrap().unwrap();
     }
 }
+*/

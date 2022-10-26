@@ -1,6 +1,13 @@
+use std::io;
+
+use byteorder::{ReadBytesExt, WriteBytesExt};
 use lazy_static::lazy_static;
 use ring::hmac::{self, Context, Key};
 use secp256k1::{Error, PublicKey, Secp256k1, SecretKey, SignOnly};
+use zcash_encoding::Vector;
+use zingoconfig::ZingoConfig;
+
+use crate::wallet::traits::ReadableWriteable;
 
 lazy_static! {
     static ref SECP256K1_SIGN_ONLY: Secp256k1<SignOnly> = Secp256k1::signing_only();
@@ -80,6 +87,25 @@ impl ExtendedPrivKey {
         })
     }
 
+    pub fn get_ext_taddr_from_bip39seed(config: &ZingoConfig, bip39_seed: &[u8], pos: u32) -> Self {
+        assert_eq!(bip39_seed.len(), 64);
+
+        let ext_t_key = ExtendedPrivKey::with_seed(bip39_seed).unwrap();
+        ext_t_key
+            .derive_private_key(KeyIndex::hardened_from_normalize_index(44).unwrap())
+            .unwrap()
+            .derive_private_key(
+                KeyIndex::hardened_from_normalize_index(config.get_coin_type()).unwrap(),
+            )
+            .unwrap()
+            .derive_private_key(KeyIndex::hardened_from_normalize_index(0).unwrap())
+            .unwrap()
+            .derive_private_key(KeyIndex::Normal(0))
+            .unwrap()
+            .derive_private_key(KeyIndex::Normal(pos))
+            .unwrap()
+    }
+
     fn sign_hardended_key(&self, index: u32) -> ring::hmac::Tag {
         let signing_key = Key::new(hmac::HMAC_SHA512, &self.chain_code);
         let mut h = Context::with_key(&signing_key);
@@ -115,5 +141,29 @@ impl ExtendedPrivKey {
             private_key,
             chain_code: chain_code.to_vec(),
         })
+    }
+}
+
+impl ReadableWriteable<()> for ExtendedPrivKey {
+    const VERSION: u8 = 1;
+
+    fn read<R: std::io::Read>(mut reader: R, _: ()) -> std::io::Result<Self> {
+        Self::get_version(&mut reader)?;
+        let mut secret_key_bytes = [0; 32];
+        reader.read_exact(&mut secret_key_bytes)?;
+        let private_key = SecretKey::from_slice(&secret_key_bytes)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+        let chain_code = Vector::read(&mut reader, |r| r.read_u8())?;
+        Ok(Self {
+            private_key,
+            chain_code,
+        })
+    }
+
+    fn write<W: std::io::Write>(&self, mut writer: W) -> std::io::Result<()> {
+        writer.write_u8(Self::VERSION)?;
+        writer.write(&self.private_key.serialize_secret())?;
+        Vector::write(&mut writer, &self.chain_code, |w, byte| w.write_u8(*byte))?;
+        Ok(())
     }
 }

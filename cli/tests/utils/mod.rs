@@ -137,10 +137,9 @@ pub mod setup {
     /// The general scenario framework requires instances of zingo-cli, lightwalletd, and zcashd (in regtest mode).
     /// This setup is intended to produce the most basic of scenarios.  As scenarios with even less requirements
     /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
-    pub fn coinbasebacked_spendcapable() -> (RegtestManager, ChildProcessHandler, LightClient) {
+    pub fn saplingcoinbasebacked_spendcapable() -> (RegtestManager, ChildProcessHandler, LightClient)
+    {
         //tracing_subscriber::fmt::init();
-        //let coinbase_spendkey =
-        //  zcash_primitives::zip32::ExtendedSpendingKey::master(&OsRng.gen::<[u8; 32]>());
         let seed_phrase = zcash_primitives::zip339::Mnemonic::from_entropy([0; 32])
             .unwrap()
             .to_string();
@@ -167,26 +166,43 @@ pub mod setup {
             LightClient::create_with_seedorkey_wallet(seed_phrase, &config, 0, false).unwrap();
         (regtest_manager, child_process_handler, light_client)
     }
-    /// This creates two so-called "LightClient"s "client_a" controls a spend authority
+    /// This creates two so-called "LightClient"s "client_one" controls a spend capability
     /// that has furnished a receiving address in the mineraddress configuration field
     /// of the "generating" regtest-zcashd
-    pub fn two_clients_a_coinbase_backed() -> (
+    pub fn two_clients_one_saplingcoinbase_backed() -> (
         RegtestManager,
         LightClient,
         LightClient,
         ChildProcessHandler,
     ) {
-        let (regtest_manager, child_process_handler, client_a) = coinbasebacked_spendcapable();
-        let client_b_zingoconf_path = format!(
-            "{}_b",
+        let (regtest_manager, child_process_handler, client_one) =
+            saplingcoinbasebacked_spendcapable();
+        let client_two_zingoconf_path = format!(
+            "{}_two",
             regtest_manager.zingo_data_dir.to_string_lossy().to_string()
         );
-        std::fs::create_dir(&client_b_zingoconf_path).unwrap();
-        let (client_b_config, _height) =
-            create_zingoconf_with_datadir(client_a.get_server_uri(), Some(client_b_zingoconf_path))
-                .unwrap();
-        let client_b = LightClient::new(&client_b_config, 0).unwrap();
-        (regtest_manager, client_a, client_b, child_process_handler)
+        std::fs::create_dir(&client_two_zingoconf_path).unwrap();
+        let (client_two_config, _height) = create_zingoconf_with_datadir(
+            client_one.get_server_uri(),
+            Some(client_two_zingoconf_path),
+        )
+        .unwrap();
+        let seed_phrase_of_two = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
+            .unwrap()
+            .to_string();
+        let client_two = LightClient::create_with_seedorkey_wallet(
+            seed_phrase_of_two,
+            &client_two_config,
+            0,
+            false,
+        )
+        .unwrap();
+        (
+            regtest_manager,
+            client_one,
+            client_two,
+            child_process_handler,
+        )
     }
 
     pub fn basic_no_spendable() -> (RegtestManager, ChildProcessHandler, LightClient) {

@@ -1,4 +1,4 @@
-use crate::wallet::keys::Keys;
+use crate::wallet::keys::is_shielded_address;
 use crate::wallet::MemoDownloadOption;
 use crate::{lightclient::LightClient, wallet::utils};
 use json::object;
@@ -423,7 +423,7 @@ impl Command for AddressCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        RT.block_on(async move { format!("{}", lightclient.do_address().await.pretty(2)) })
+        RT.block_on(async move { format!("{}", lightclient.do_addresses().await.pretty(2)) })
     }
 }
 
@@ -450,23 +450,9 @@ impl Command for ExportCommand {
         "Export private key for wallet addresses".to_string()
     }
 
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        if args.len() > 1 {
-            return self.help();
-        }
-
-        RT.block_on(async move {
-            let address = if args.is_empty() {
-                None
-            } else {
-                Some(args[0].to_string())
-            };
-            match lightclient.do_export(address).await {
-                Ok(j) => j,
-                Err(e) => object! { "error" => e },
-            }
-            .pretty(2)
-        })
+    fn exec(&self, _args: &[&str], _lightclient: &LightClient) -> String {
+        "Key export currently unimplemented, please use seed phrase to backup/restore keys"
+            .to_string()
     }
 }
 
@@ -913,8 +899,8 @@ impl Command for SendCommand {
                     None
                 };
 
-                // Memo has to be None if not sending to a shileded address
-                if memo.is_some() && !Keys::is_shielded_address(&address, &lightclient.config) {
+                // Memo has to be None if not sending to a shielded address
+                if memo.is_some() && !is_shielded_address(&address, &lightclient.config) {
                     return format!("Can't send a memo to the non-shielded address {}", address);
                 }
 
@@ -941,6 +927,24 @@ impl Command for SendCommand {
     }
 }
 
+fn wallet_saver(lightclient: &LightClient) -> String {
+    RT.block_on(async move {
+        match lightclient.do_save().await {
+            Ok(_) => {
+                let r = object! { "result" => "success",
+                "wallet_path" => lightclient.config.get_wallet_path().to_str().unwrap() };
+                r.pretty(2)
+            }
+            Err(e) => {
+                let r = object! {
+                    "result" => "error",
+                    "error" => e
+                };
+                r.pretty(2)
+            }
+        }
+    })
+}
 struct SaveCommand {}
 impl Command for SaveCommand {
     fn help(&self) -> String {
@@ -960,21 +964,7 @@ impl Command for SaveCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        RT.block_on(async move {
-            match lightclient.do_save().await {
-                Ok(_) => {
-                    let r = object! { "result" => "success" };
-                    r.pretty(2)
-                }
-                Err(e) => {
-                    let r = object! {
-                        "result" => "error",
-                        "error" => e
-                    };
-                    r.pretty(2)
-                }
-            }
-        })
+        wallet_saver(&lightclient)
     }
 }
 
@@ -1212,84 +1202,8 @@ impl Command for ImportCommand {
         "Import spending or viewing keys into the wallet".to_string()
     }
 
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        if args.len() == 0 || args.len() > 3 {
-            return format!("Insufficient arguments\n\n{}", self.help());
-        }
-
-        let (key, birthday, rescan) = if args.len() == 1 {
-            // If only one arg, parse it as JSON
-            let json_args = match json::parse(&args[0]) {
-                Ok(j) => j,
-                Err(e) => {
-                    let es = format!("Couldn't understand JSON: {}", e);
-                    return format!("{}\n{}", es, self.help());
-                }
-            };
-
-            if !json_args.is_object() {
-                return format!("Couldn't parse argument as a JSON object\n{}", self.help());
-            }
-
-            if !json_args.has_key("key") {
-                return format!(
-                    "'key' field is required in the JSON, containing the spending or viewing key to import\n{}",
-                    self.help()
-                );
-            }
-
-            if !json_args.has_key("birthday") {
-                return format!("'birthday' field is required in the JSON, containing the birthday of the spending or viewing key\n{}", self.help());
-            }
-
-            (
-                json_args["key"].as_str().unwrap().to_string(),
-                json_args["birthday"].as_u64().unwrap(),
-                !json_args["norescan"].as_bool().unwrap_or(false),
-            )
-        } else {
-            let key = args[0];
-            let birthday = match args[1].parse::<u64>() {
-                Ok(b) => b,
-                Err(_) => {
-                    return format!(
-                        "Couldn't parse {} as birthday. Please specify an integer. Ok to use '0'",
-                        args[1]
-                    )
-                }
-            };
-
-            let rescan = if args.len() == 3 {
-                if args[2] == "norescan" || args[2] == "false" || args[2] == "no" {
-                    false
-                } else {
-                    return format!(
-                        "Couldn't undestand the argument '{}'. Please pass 'norescan' to prevent rescanning the wallet",
-                        args[2]
-                    );
-                }
-            } else {
-                true
-            };
-
-            (key.to_string(), birthday, rescan)
-        };
-
-        RT.block_on(async move {
-            let r = match lightclient.do_import_key(key, birthday).await {
-                Ok(r) => r.pretty(2),
-                Err(e) => return format!("Error: {}", e),
-            };
-
-            if rescan {
-                match lightclient.do_rescan().await {
-                    Ok(_) => {}
-                    Err(e) => return format!("Error: Rescan failed: {}", e),
-                };
-            }
-
-            return r;
-        })
+    fn exec(&self, _args: &[&str], _lightclient: &LightClient) -> String {
+        "Key import not currently supported".to_string()
     }
 }
 
@@ -1482,12 +1396,7 @@ impl Command for QuitCommand {
             }
         }
 
-        RT.block_on(async move {
-            match lightclient.do_save().await {
-                Ok(_) => "".to_string(),
-                Err(e) => e,
-            }
-        })
+        wallet_saver(&lightclient)
     }
 }
 
