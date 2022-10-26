@@ -5,7 +5,7 @@ mod utils;
 use json::JsonValue;
 use tokio::runtime::Runtime;
 use utils::setup::{
-    basic_no_spendable, saplingcoinbasebacked_spendcapable, two_clients_a_saplingcoinbase_backed,
+    basic_no_spendable, saplingcoinbasebacked_spendcapable, two_clients_one_saplingcoinbase_backed,
 };
 #[test]
 fn create_network_disconnected_client() {
@@ -120,7 +120,7 @@ fn note_selection_order() {
     //!   * sends to a sapling address
     //!   * sends back to the original sender's UA
     let (regtest_manager, client_1, client_2, child_process_handler) =
-        two_clients_a_saplingcoinbase_backed();
+        two_clients_one_saplingcoinbase_backed();
 
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client_1, 5).await;
@@ -220,7 +220,7 @@ fn note_selection_order() {
 #[test]
 fn send_orchard_back_and_forth() {
     let (regtest_manager, client_a, client_b, child_process_handler) =
-        two_clients_a_saplingcoinbase_backed();
+        two_clients_one_saplingcoinbase_backed();
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client_a, 5).await;
 
@@ -262,7 +262,7 @@ fn send_orchard_back_and_forth() {
 #[test]
 fn diversified_addresses_receive_funds_in_best_pool() {
     let (regtest_manager, client_a, client_b, child_process_handler) =
-        two_clients_a_saplingcoinbase_backed();
+        two_clients_one_saplingcoinbase_backed();
     Runtime::new().unwrap().block_on(async {
         client_b.do_new_address("o").await.unwrap();
         client_b.do_new_address("zo").await.unwrap();
@@ -302,31 +302,30 @@ fn diversified_addresses_receive_funds_in_best_pool() {
 
 #[test]
 fn rescan_still_have_outgoing_metadata() {
-    let (regtest_manager, client_a, client_b, child_process_handler) =
-        two_clients_a_saplingcoinbase_backed();
+    let (regtest_manager, client_one, client_two, child_process_handler) =
+        two_clients_one_saplingcoinbase_backed();
     Runtime::new().unwrap().block_on(async {
-        utils::increase_height_and_sync_client(&regtest_manager, &client_a, 5).await;
-        let sapling_addr_of_b = client_b.do_new_address("tz").await.unwrap();
-        for _ in 0..4 {
-            client_a
-                .do_send(vec![(
-                    sapling_addr_of_b[0].as_str().unwrap(),
-                    1_000,
-                    Some("foo".to_string()),
-                )])
-                .await
-                .unwrap();
-            utils::increase_height_and_sync_client(&regtest_manager, &client_a, 5).await;
-        }
-        let transactions = client_a.do_list_transactions(false).await;
-        client_a.do_rescan().await.unwrap();
-        let post_rescan_transactions = client_a.do_list_transactions(false).await;
+        utils::increase_height_and_sync_client(&regtest_manager, &client_one, 5).await;
+        let sapling_addr_of_two = client_two.do_new_address("tz").await.unwrap();
+        client_one
+            .do_send(vec![(
+                sapling_addr_of_two[0].as_str().unwrap(),
+                1_000,
+                Some("foo".to_string()),
+            )])
+            .await
+            .unwrap();
+        utils::increase_height_and_sync_client(&regtest_manager, &client_one, 5).await;
+        let transactions = client_one.do_list_transactions(false).await;
+        client_one.do_rescan().await.unwrap();
+        let post_rescan_transactions = client_one.do_list_transactions(false).await;
         assert_eq!(transactions, post_rescan_transactions);
 
         drop(child_process_handler);
     });
 }
 
+///
 #[test]
 fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
     let (regtest_manager, child_process_handler, client) = saplingcoinbasebacked_spendcapable();
@@ -368,7 +367,7 @@ fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
 #[test]
 fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
     let (regtest_manager, client_a, client_b, child_process_handler) =
-        two_clients_a_saplingcoinbase_backed();
+        two_clients_one_saplingcoinbase_backed();
     let mut expected_unspent_sapling_notes = json::object! {
 
             "created_in_block" =>  7,
