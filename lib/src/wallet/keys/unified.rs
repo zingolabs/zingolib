@@ -391,21 +391,6 @@ impl From<&UnifiedSpendCapability> for zcash_primitives::keys::OutgoingViewingKe
 }
 
 #[cfg(test)]
-pub async fn get_first_zaddr_as_string_from_lightclient(
-    lightclient: &crate::lightclient::LightClient,
-) -> String {
-    zcash_client_backend::encoding::encode_payment_address(
-        lightclient.config.chain.hrp_sapling_payment_address(),
-        lightclient
-            .wallet
-            .unified_spend_capability()
-            .read()
-            .await
-            .first_sapling_address(),
-    )
-}
-
-#[cfg(test)]
 pub async fn get_transparent_secretkey_pubkey_taddr(
     lightclient: &crate::lightclient::LightClient,
 ) -> (secp256k1::SecretKey, secp256k1::PublicKey, String) {
