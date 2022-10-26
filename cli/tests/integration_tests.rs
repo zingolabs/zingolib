@@ -130,7 +130,7 @@ fn note_selection_order() {
         // Send five transfers in increasing 1000 zat increments
         // These are sent from the coinbase funded client which will
         // subequently receive funding via it's orchard-packed UA.
-        for n in 1..=5 {
+        for n in 1..=3 {
             client_1
                 .do_send(vec![(
                     &client_2_saplingaddress.to_string(),
@@ -142,20 +142,19 @@ fn note_selection_order() {
         }
         utils::increase_height_and_sync_client(&regtest_manager, &client_2, 5).await;
         let client_1_unifiedaddress = client_1.do_addresses().await[0]["address"].clone();
-        // We know that the largest single note that 2 received from 1 was 5000, for 2 to send
-        // 5000 back to 1 it will have to collect funds from two notes to pay the full 5000
+        // We know that the largest single note that 2 received from 1 was 3000, for 2 to send
+        // 3000 back to 1 it will have to collect funds from two notes to pay the full 3000
         // plus the transaction fee.
         client_2
             .do_send(vec![(
                 &client_1_unifiedaddress.to_string(),
-                5000,
+                3000,
                 Some("Sending back, should have 2 inputs".to_string()),
             )])
             .await
             .unwrap();
         let client_2_notes = client_2.do_list_notes(false).await;
-        // The 5000 zat note to cover the value, plus another for the tx-fee.
-        //assert_eq!(notes["pending_sapling_notes"].len(), 2);
+        // The 3000 zat note to cover the value, plus another for the tx-fee.
         let first_value = client_2_notes["pending_sapling_notes"][0]["value"]
             .as_fixed_point_u64(0)
             .unwrap();
@@ -163,21 +162,20 @@ fn note_selection_order() {
             .as_fixed_point_u64(0)
             .unwrap();
         assert!(
-            first_value == 5000u64 && second_value == 4000u64
-                || first_value == 4000u64 && second_value == 5000u64
+            first_value == 3000u64 && second_value == 2000u64
+                || first_value == 2000u64 && second_value == 3000u64
         );
         //);
-        //assert_eq!(note_providing_change["value"], 4000);
         // Because the above tx fee won't consume a full note, change will be sent back to 2.
-        // This implies that client_2 will have a total of 4 unspent notes:
-        //  * three from client_1 sent above + 1 as change to itself
-        assert_eq!(client_2_notes["unspent_sapling_notes"].len(), 4);
+        // This implies that client_2 will have a total of 2 unspent notes:
+        //  * one from client_1 sent above (and never used) + 1 as change to itself
+        assert_eq!(client_2_notes["unspent_sapling_notes"].len(), 2);
         let change_note = client_2_notes["unspent_sapling_notes"]
             .members()
             .filter(|note| note["is_change"].as_bool().unwrap())
             .collect::<Vec<_>>()[0];
-        // Because 4000 is the size of the second largest note.
-        assert_eq!(change_note["value"], 4000 - u64::from(DEFAULT_FEE));
+        // Because 2000 is the size of the second largest note.
+        assert_eq!(change_note["value"], 2000 - u64::from(DEFAULT_FEE));
         let non_change_note_values = client_2_notes["unspent_sapling_notes"]
             .members()
             .filter(|note| !note["is_change"].as_bool().unwrap())
@@ -186,19 +184,34 @@ fn note_selection_order() {
                 v.clone()
             })
             .collect::<Vec<_>>();
-        // sapling_receiver_and_sender got a total of 5000+4000+3000+2000+1000
-        // It sent 5000 to the sapling_sender_orchard_receiver, and also
+        // client_2 got a total of 3000+2000+1000
+        // It sent 3000 to the client_1, and also
         // paid the defualt transaction fee.
-        // In non change notes it has 3000+2000+1000.
-        // There is an outstanding 3000 that is marked as change.
-        // After sync the unspent_sapling_notes should go to 9000.
-        assert_eq!(non_change_note_values.iter().sum::<u64>(), 6000u64);
+        // In non change notes it has 1000.
+        // There is an outstanding 2000 that is marked as change.
+        // After sync the unspent_sapling_notes should go to 3000.
+        assert_eq!(non_change_note_values.iter().sum::<u64>(), 1000u64);
 
         utils::increase_height_and_sync_client(&regtest_manager, &client_2, 5).await;
         let client_2_post_transaction_notes = client_2.do_list_notes(false).await;
         assert_eq!(
             client_2_post_transaction_notes["pending_sapling_notes"].len(),
             0
+        );
+        assert_eq!(
+            client_2_post_transaction_notes["unspent_sapling_notes"].len(),
+            2
+        );
+        assert_eq!(
+            client_2_post_transaction_notes["unspent_sapling_notes"]
+                .members()
+                .into_iter()
+                .map(|x| {
+                    let v = &x["value"].as_fixed_point_u64(0).unwrap();
+                    v.clone()
+                })
+                .sum::<u64>(),
+            2000u64 // 1000 received and unused + (2000 - 1000 txfee)
         );
     });
 
