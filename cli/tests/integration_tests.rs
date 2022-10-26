@@ -106,6 +106,10 @@ fn send_mined_sapling_to_orchard() {
         assert_eq!(balance["verified_orchard_balance"], 5000);
     });
 }
+fn extract_value_as_u64(input: &JsonValue) -> u64 {
+    let note = &input["value"].as_fixed_point_u64(0).unwrap();
+    note.clone()
+}
 use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
 use zingolib::{create_zingoconf_with_datadir, lightclient::LightClient};
 #[test]
@@ -179,10 +183,7 @@ fn note_selection_order() {
         let non_change_note_values = client_2_notes["unspent_sapling_notes"]
             .members()
             .filter(|note| !note["is_change"].as_bool().unwrap())
-            .map(|x| {
-                let v = &x["value"].as_fixed_point_u64(0).unwrap();
-                v.clone()
-            })
+            .map(|x| extract_value_as_u64(x))
             .collect::<Vec<_>>();
         // client_2 got a total of 3000+2000+1000
         // It sent 3000 to the client_1, and also
@@ -206,10 +207,7 @@ fn note_selection_order() {
             client_2_post_transaction_notes["unspent_sapling_notes"]
                 .members()
                 .into_iter()
-                .map(|x| {
-                    let v = &x["value"].as_fixed_point_u64(0).unwrap();
-                    v.clone()
-                })
+                .map(|x| extract_value_as_u64(x))
                 .sum::<u64>(),
             2000u64 // 1000 received and unused + (2000 - 1000 txfee)
         );
