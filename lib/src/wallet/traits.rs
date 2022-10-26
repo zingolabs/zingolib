@@ -1,12 +1,38 @@
 //! Provides unifying interfaces for transaction management across Sapling and Orchard
 use std::io::{self, Read, Write};
 
+#[derive(PartialEq, Debug, Clone)]
+pub enum WalletZKeyType {
+    ImportedSpendingKey = 1,
+}
+
+use zcash_primitives::{
+    sapling::PaymentAddress,
+    zip32::{ExtendedFullViewingKey, ExtendedSpendingKey},
+};
+
+// A struct that holds z-address private keys or view keys
+#[derive(Clone, Debug, PartialEq)]
+pub struct SaplingKey {
+    pub(crate) keytype: WalletZKeyType,
+    locked: bool,
+    pub(crate) extsk: Option<ExtendedSpendingKey>,
+    pub(crate) extfvk: ExtendedFullViewingKey,
+    pub(crate) zaddress: PaymentAddress,
+
+    // If this is a HD key, what is the key number
+    pub(crate) hdkey_num: Option<u32>,
+
+    // If locked, the encrypted private key is stored here
+    enc_key: Option<Vec<u8>>,
+    nonce: Option<Vec<u8>>,
+}
 use super::{
     data::{
         ChannelNullifier, ReceivedOrchardNoteAndMetadata, ReceivedSaplingNoteAndMetadata,
         SpendableOrchardNote, SpendableSaplingNote, TransactionMetadata, WitnessCache,
     },
-    keys::{orchard::OrchardKey, sapling::SaplingKey, unified::UnifiedSpendCapability},
+    keys::{orchard::OrchardKey, unified::UnifiedSpendCapability},
     transactions::TransactionMetadataSet,
 };
 use crate::compact_formats::{
@@ -776,7 +802,7 @@ impl WalletKey for SaplingKey {
 
     fn set_spend_key_for_view_key(&mut self, key: Self::SpendKey) {
         self.extsk = Some(key);
-        self.keytype = super::keys::sapling::WalletZKeyType::ImportedSpendingKey;
+        self.keytype = WalletZKeyType::ImportedSpendingKey;
     }
 }
 
