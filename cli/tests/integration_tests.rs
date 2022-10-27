@@ -492,6 +492,18 @@ fn ensure_taddrs_from_old_seeds_work() {
         "tmDSApneNXLWcw1unFCvJEus3Ugnpw2fPLy",
         "tmU29L8gXXmSpRcHKE2GLFLRW4suQ95opci",
     ];
+    let _normalized_index_addresses = [
+        "tmMKJvgXLgckRbL2qArhKmLSmvhMEXgtTAc",
+        "tmFDjcf9T35kzLAVwGSeCiFRe6XDNMpBQo9",
+        "tmKxoeD2pbmpcac5RBFw9Rvc7h5KN1ZJ83o",
+        "tmEceryatGjB3sY9xPRdXCbXiTBXGEUTFbm",
+    ];
+    let _hardened_index_addresses = [
+        "tmGwfiiLDUSVxsWAY66UP76r1E68YTt64d1",
+        "tmSwk8bjXdCgBvpS8Kybk5nUyE21QFcDqre",
+        "tmEMgi2cSnEWmRGbgGxFiSsGF5a4gPATNWA",
+        "tmTtvtJvGaBATERDFZGQhvaRxDS9KCHUf9r",
+    ];
     let seed = "hospital museum valve antique skate museum \
     unfold vocal weird milk scale social vessel identify \
     crowd hospital control album rib bulb path oven civil tank";
@@ -511,6 +523,7 @@ fn ensure_taddrs_from_old_seeds_work() {
                 transparent_addresses[i]
             )
         }
+        assert!(1 == 0);
     });
     drop(child_process_handler);
 }
