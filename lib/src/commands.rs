@@ -76,51 +76,60 @@ impl Command for ParseCommand {
 
     fn exec(&self, args: &[&str], _lightclient: &LightClient) -> String {
         match args.len() {
-            1 => [
-                zingoconfig::Network::Mainnet,
-                zingoconfig::Network::Testnet,
-                zingoconfig::Network::Regtest,
-            ]
-            .iter()
-            .find_map(|network| RecipientAddress::decode(network, &args[0]).zip(Some(network)))
-            .map(|(recipient_address, network)| {
-                let network_string = match network {
-                    zingoconfig::Network::Mainnet => "mainnet",
-                    zingoconfig::Network::Testnet => "testnet",
-                    zingoconfig::Network::Regtest => "regtest",
-                    zingoconfig::Network::FakeMainnet => unreachable!(),
-                };
+            1 => json::stringify_pretty(
+                [
+                    zingoconfig::Network::Mainnet,
+                    zingoconfig::Network::Testnet,
+                    zingoconfig::Network::Regtest,
+                ]
+                .iter()
+                .find_map(|network| RecipientAddress::decode(network, &args[0]).zip(Some(network)))
+                .map(|(recipient_address, network)| {
+                    let network_string = match network {
+                        zingoconfig::Network::Mainnet => "mainnet",
+                        zingoconfig::Network::Testnet => "testnet",
+                        zingoconfig::Network::Regtest => "regtest",
+                        zingoconfig::Network::FakeMainnet => unreachable!(),
+                    };
 
-                match recipient_address {
-                    RecipientAddress::Shielded(_) => object! {
-                        "network" => network_string,
-                        "address_kind" => "sapling",
-                    },
-                    RecipientAddress::Transparent(_) => object! {
-                        "network" => network_string,
-                        "address_kind" => "transparent",
-                    },
-                    RecipientAddress::Unified(ua) => {
-                        let mut receivers_available = vec![];
-                        if ua.orchard().is_some() {
-                            receivers_available.push("orchard")
-                        }
-                        if ua.sapling().is_some() {
-                            receivers_available.push("sapling")
-                        }
-                        if ua.transparent().is_some() {
-                            receivers_available.push("transparent")
-                        }
-                        object! {
+                    match recipient_address {
+                        RecipientAddress::Shielded(_) => object! {
+                            "status" => "successs",
                             "network" => network_string,
-                            "address_kind" => "unified",
-                            "receivers_available" => receivers_available,
+                            "address_kind" => "sapling",
+                        },
+                        RecipientAddress::Transparent(_) => object! {
+                            "status" => "successs",
+                            "network" => network_string,
+                            "address_kind" => "transparent",
+                        },
+                        RecipientAddress::Unified(ua) => {
+                            let mut receivers_available = vec![];
+                            if ua.orchard().is_some() {
+                                receivers_available.push("orchard")
+                            }
+                            if ua.sapling().is_some() {
+                                receivers_available.push("sapling")
+                            }
+                            if ua.transparent().is_some() {
+                                receivers_available.push("transparent")
+                            }
+                            object! {
+                                "status" => "successs",
+                                "network" => network_string,
+                                "address_kind" => "unified",
+                                "receivers_available" => receivers_available,
+                            }
                         }
                     }
-                }
-            })
-            .map(|address_info| json::stringify_pretty(address_info, 4))
-            .unwrap_or("Invalid address, could not parse".to_string()),
+                })
+                .unwrap_or(object! {
+                    "status" => "Invalid address",
+                    "network" => json::JsonValue::Null,
+                    "address_kind" => json::JsonValue::Null
+                }),
+                4,
+            ),
             _ => self.help(),
         }
     }
