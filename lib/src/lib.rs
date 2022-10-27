@@ -27,7 +27,7 @@ pub fn create_zingoconf_with_datadir(
 ) -> Result<(ZingoConfig, u64)> {
     use std::net::ToSocketAddrs;
 
-    let lc = Runtime::new().unwrap().block_on(async move {
+    Runtime::new().unwrap().block_on(async move {
         // Test for a connection first
         format!("{}:{}", server.host().unwrap(), server.port().unwrap())
             .to_socket_addrs()?
@@ -58,7 +58,5 @@ pub fn create_zingoconf_with_datadir(
         };
 
         Ok((config, info.block_height))
-    });
-
-    lc
+    })
 }

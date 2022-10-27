@@ -379,7 +379,7 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
             "value" =>  5_000,
             "unconfirmed" =>  false,
             "is_change" =>  false,
-            "address" =>  "uregtest1gvnz2m8wkzxmdvzc7w6txnaam8d7k8zx7zdn0dlglyud5wltsc9d2xf26ptz79d399esc66f5lkmvg95jpa7c5sqt7hgtnvp4xxkypew8w9weuqa8wevy85nz4yr8u508ekw5qwxff8",
+            "address" =>  "uregtest1m8un60udl5ac0928aghy4jx6wp59ty7ct4t8ks9udwn8y6fkdmhe6pq0x5huv8v0pprdlq07tclqgl5fzfvvzjf4fatk8cpyktaudmhvjcqufdsfmktgawvne3ksrhs97pf0u8s8f8h",
             "spendable" =>  true,
             "spent" =>  JsonValue::Null,
             "spent_at_height" =>  JsonValue::Null,
@@ -467,6 +467,41 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
             client_a.do_balance().await["spendable_orchard_balance"],
             4_000
         );
+    });
+    drop(child_process_handler);
+}
+
+#[test]
+fn ensure_taddrs_from_old_seeds_work() {
+    let (regtest_manager, child_process_handler, client_a) = saplingcoinbasebacked_spendcapable();
+
+    let client_b_zingoconf_path = format!(
+        "{}_two",
+        regtest_manager.zingo_data_dir.to_string_lossy().to_string()
+    );
+    std::fs::create_dir(&client_b_zingoconf_path).unwrap();
+    let (client_b_config, _height) =
+        create_zingoconf_with_datadir(client_a.get_server_uri(), Some(client_b_zingoconf_path))
+            .unwrap();
+
+    // The first taddr generated on commit 9e71a14eb424631372fd08503b1bd83ea763c7fb
+    let transparent_address = "tmFLszfkjgim4zoUMAXpuohnFBAKy99rr2i";
+    // Generated from the following seed
+    let seed = "hospital museum valve antique skate museum \
+    unfold vocal weird milk scale social vessel identify \
+    crowd hospital control album rib bulb path oven civil tank";
+    let client_b =
+        LightClient::create_with_seedorkey_wallet(seed.to_string(), &client_b_config, 0, false)
+            .unwrap();
+
+    Runtime::new().unwrap().block_on(async {
+        client_b.do_new_address("zt").await.unwrap();
+        let addresses = client_b.do_addresses().await;
+        println!("{}", json::stringify_pretty(addresses.clone(), 4));
+        assert_eq!(
+            addresses[0]["receivers"]["transparent"].to_string(),
+            transparent_address
+        )
     });
     drop(child_process_handler);
 }
