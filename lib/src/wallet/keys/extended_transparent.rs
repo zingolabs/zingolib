@@ -100,8 +100,6 @@ impl ExtendedPrivKey {
             .unwrap()
             .derive_private_key(KeyIndex::hardened_from_normalize_index(0).unwrap())
             .unwrap()
-            .derive_private_key(KeyIndex::Normal(0))
-            .unwrap()
             .derive_private_key(KeyIndex::Normal(pos))
             .unwrap()
     }
