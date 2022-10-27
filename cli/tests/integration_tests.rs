@@ -379,7 +379,7 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
             "value" =>  5_000,
             "unconfirmed" =>  false,
             "is_change" =>  false,
-            "address" =>  "uregtest1gvnz2m8wkzxmdvzc7w6txnaam8d7k8zx7zdn0dlglyud5wltsc9d2xf26ptz79d399esc66f5lkmvg95jpa7c5sqt7hgtnvp4xxkypew8w9weuqa8wevy85nz4yr8u508ekw5qwxff8",
+            "address" =>  "uregtest1m8un60udl5ac0928aghy4jx6wp59ty7ct4t8ks9udwn8y6fkdmhe6pq0x5huv8v0pprdlq07tclqgl5fzfvvzjf4fatk8cpyktaudmhvjcqufdsfmktgawvne3ksrhs97pf0u8s8f8h",
             "spendable" =>  true,
             "spent" =>  JsonValue::Null,
             "spent_at_height" =>  JsonValue::Null,
