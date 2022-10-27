@@ -484,7 +484,7 @@ fn ensure_taddrs_from_old_seeds_work() {
         create_zingoconf_with_datadir(client_a.get_server_uri(), Some(client_b_zingoconf_path))
             .unwrap();
 
-    // The first four taddrs generated on commit 9e71a14eb424631372fd08503b1bd83ea763c7fb
+    // The addresses were generated on commit 9e71a14eb424631372fd08503b1bd83ea763c7fb
     // Generated from the following seed
     let transparent_addresses = [
         "tmFLszfkjgim4zoUMAXpuohnFBAKy99rr2i",
@@ -492,6 +492,37 @@ fn ensure_taddrs_from_old_seeds_work() {
         "tmDSApneNXLWcw1unFCvJEus3Ugnpw2fPLy",
         "tmU29L8gXXmSpRcHKE2GLFLRW4suQ95opci",
     ];
+    let sapling_address =
+    "zregtestsapling1fkc26vpg566hgnx33n5uvgye4neuxt4358k68atnx78l5tg2dewdycesmr4m5pn56ffzsa7lyj6"
+  ;
+    let keys = r#"
+  {
+    "address": "uregtest1ue949txhf9t2z6ldg8wc6s5t439t2hu55yh9l58gc23cmxthths836nxtpyvhpkrftsp2jnnp9eadtqy2nefxn04eyxeu8l0x5kk8ct9",
+    "spending_key": "secret-orchard-sk-regtest1gyj08qlt0qvra4urjcey3wv4j36auz3ng9k834excpqr0xaqarkq9mzcgw",
+    "full_viewing_key": "uviewregtest1ufrhts0alkska20dgtpqrarvytcdr3jhlps4c793y87ayjqxpxxj030eaph2fl8sy0gv049p96urfznc235e6upzpg5qnssfsceh7mywnvpd38tnr3jwmmqa3yg4kux2t25reef9ewgxf8t36772y0ccptlhzrt9jh2tsh7u5hfd63elt5zfnfcvdvsjt"
+  },
+  {
+    "address": "zregtestsapling1fkc26vpg566hgnx33n5uvgye4neuxt4358k68atnx78l5tg2dewdycesmr4m5pn56ffzsa7lyj6",
+    "private_key": "secret-extended-key-regtest1qwxwxvvsqqqqpqpscrwl4x0sahmtm7j3wgl2q4n44c8wzkdf5q04wue4wpjsvtw9js33wjet4582cwkhwnrgu82nzps7v7mnk3htzac0qaskl4vjlacs8xstgfedq0yhp8t2t8k8r28telx77vkc9jx506wcl7yxvucwjys2rk59627kv92kgqp8nqujmmt3vnln7ytlwjm53euylkyruft54lg34c7ne2w6sc9c2wam3yne5t2jvh7458hezwyfaxljxvunqwwlancespz6n",
+    "viewing_key": "zxviewregtestsapling1qwxwxvvsqqqqpqpscrwl4x0sahmtm7j3wgl2q4n44c8wzkdf5q04wue4wpjsvtw9jslp2d7x2zfl0mjrlvnd3twkx29e7ue5zpvev9ph00sm2y0nxfmxlzgf0pt8l3pss0mfemcnflfk8tu6e9ytkleaa2m6mae07f6gpkklrk59627kv92kgqp8nqujmmt3vnln7ytlwjm53euylkyruft54lg34c7ne2w6sc9c2wam3yne5t2jvh7458hezwyfaxljxvunqwwlanctwwkl5"
+  },
+  {
+    "address": "tmFLszfkjgim4zoUMAXpuohnFBAKy99rr2i",
+    "private_key": "cQvjTKYNooYh6Jdxaik2bN5Z2LsY4wy9w1u7PJh7NMTcrnGogLkv"
+  },
+  {
+    "address": "tmAtLC3JkTDrXyn5okUbb6qcMGE4Xq4UdhD",
+    "private_key": "cW3FxZri8WFq7M8oTNyTxAGuReyXRhcxit2Hc1GUUvuoQ3kXn8BD"
+  },
+  {
+    "address": "tmDSApneNXLWcw1unFCvJEus3Ugnpw2fPLy",
+    "private_key": "cQ5fDow1deweWgUAa7kQxFdGffNWPpr3veBSuQ6SWPfSnkJkRjt2"
+  },
+  {
+    "address": "tmU29L8gXXmSpRcHKE2GLFLRW4suQ95opci",
+    "private_key": "cUCcVaqFQvSfx6GSr7rvJnzJNFPygg9Z9oZicvibnNgCXHgE5V5h"
+  }"#;
+
     let seed = "hospital museum valve antique skate museum unfold vocal weird milk scale social vessel identify crowd hospital control album rib bulb path oven civil tank";
     let client_b =
         LightClient::create_with_seedorkey_wallet(seed.to_string(), &client_b_config, 0, false)
@@ -503,6 +534,19 @@ fn ensure_taddrs_from_old_seeds_work() {
         }
         let addresses = client_b.do_addresses().await;
         println!("{}", json::stringify_pretty(addresses.clone(), 4));
+        println!(
+            "{}",
+            json::stringify_pretty(
+                client_b
+                    .wallet
+                    .unified_spend_capability()
+                    .read()
+                    .await
+                    .export(&client_b.config)
+                    .unwrap(),
+                4
+            )
+        );
         for (i, address) in addresses.members().enumerate() {
             assert_eq!(
                 address["receivers"]["transparent"],

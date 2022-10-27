@@ -200,6 +200,42 @@ impl UnifiedSpendCapability {
         }
     }
 
+    pub fn export(&self, config: &ZingoConfig) -> Result<json::JsonValue, String> {
+        use bech32::ToBase32;
+        use zcash_client_backend::encoding::encode_extended_spending_key;
+
+        let orchard_key_encoded = bech32::encode(
+            config.chain.hrp_orchard_spending_key(),
+            self.orchard_key.to_bytes().to_base32(),
+            bech32::Variant::Bech32m,
+        )
+        .map_err(|e| e.to_string())?;
+        let sapling_key_encoded =
+            encode_extended_spending_key(config.hrp_sapling_private_key(), &self.sapling_key);
+        let transparent_parent_key_encoded = self
+            .transparent_parent_key
+            .private_key
+            .as_ref()
+            .to_base58check(&config.base58_secretkey_prefix(), &[0x01]);
+        let transaperent_child_keys_encoded = self
+            .transparent_child_keys
+            .iter()
+            .map(|(_i, child_key)| {
+                child_key
+                    .as_ref()
+                    .to_base58check(&config.base58_secretkey_prefix(), &[0x01])
+            })
+            .collect::<Vec<_>>();
+        let chain_code_bytes = &self.transparent_parent_key.chain_code;
+        Ok(json::object! {
+            "orchard" => orchard_key_encoded,
+            "sapling" => sapling_key_encoded,
+            "transparent_parent_key" => transparent_parent_key_encoded,
+            "chain_code" => hex::encode(chain_code_bytes),
+            "transparent_childred" => transaperent_child_keys_encoded
+        })
+    }
+
     pub fn new_from_phrase(
         config: &ZingoConfig,
         seed_phrase: &Mnemonic,

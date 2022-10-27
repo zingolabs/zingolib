@@ -74,8 +74,8 @@ impl WalletStatus {
 }
 
 pub struct LightClient {
-    pub(crate) config: ZingoConfig,
-    pub(crate) wallet: LightWallet,
+    pub config: ZingoConfig,
+    pub wallet: LightWallet,
 
     mempool_monitor: std::sync::RwLock<Option<std::thread::JoinHandle<()>>>,
 
