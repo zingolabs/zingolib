@@ -131,7 +131,7 @@ pub mod setup {
     /// 1 block worth of coinbase to a preregistered spend capability.
     ///
     /// This key is registered to receive block rewards by corresponding to the
-    /// address registered as the "mineraddress" field in cli/examples/zcash.conf
+    /// address registered as the "mineraddress" field in zcash.conf
     ///
     /// The general scenario framework requires instances of zingo-cli, lightwalletd,  
     /// and zcashd (in regtest mode). This setup is intended to produce the most basic  
