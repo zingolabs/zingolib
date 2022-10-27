@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 use std::str::FromStr;
 use tokio::runtime::Runtime;
+use zcash_client_backend::address::RecipientAddress;
 use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
 
 lazy_static! {
@@ -52,6 +53,74 @@ impl Command for ChangeServerCommand {
                 Err(_) => "invalid server uri",
             }
             .to_string(),
+            _ => self.help(),
+        }
+    }
+}
+
+struct ParseCommand {}
+impl Command for ParseCommand {
+    fn help(&self) -> String {
+        "Parse an address\n\
+        Usage:\n\
+        parse [address]\n\
+        \n\
+        Example\n\
+        parse tmSwk8bjXdCgBvpS8Kybk5nUyE21QFcDqre"
+            .to_string()
+    }
+
+    fn short_help(&self) -> String {
+        "Parse an address".to_string()
+    }
+
+    fn exec(&self, args: &[&str], _lightclient: &LightClient) -> String {
+        match args.len() {
+            1 => [
+                zingoconfig::Network::Mainnet,
+                zingoconfig::Network::Testnet,
+                zingoconfig::Network::Regtest,
+            ]
+            .iter()
+            .find_map(|network| RecipientAddress::decode(network, &args[0]).zip(Some(network)))
+            .map(|(recipient_address, network)| {
+                let network_string = match network {
+                    zingoconfig::Network::Mainnet => "mainnet",
+                    zingoconfig::Network::Testnet => "testnet",
+                    zingoconfig::Network::Regtest => "regtest",
+                    zingoconfig::Network::FakeMainnet => unreachable!(),
+                };
+
+                match recipient_address {
+                    RecipientAddress::Shielded(_) => object! {
+                        "network" => network_string,
+                        "address_kind" => "sapling",
+                    },
+                    RecipientAddress::Transparent(_) => object! {
+                        "network" => network_string,
+                        "address_kind" => "transparent",
+                    },
+                    RecipientAddress::Unified(ua) => {
+                        let mut receivers_available = vec![];
+                        if ua.orchard().is_some() {
+                            receivers_available.push("orchard")
+                        }
+                        if ua.sapling().is_some() {
+                            receivers_available.push("sapling")
+                        }
+                        if ua.transparent().is_some() {
+                            receivers_available.push("transparent")
+                        }
+                        object! {
+                            "network" => network_string,
+                            "address_kind" => "unified",
+                            "receivers_available" => receivers_available,
+                        }
+                    }
+                }
+            })
+            .map(|address_info| json::stringify_pretty(address_info, 4))
+            .unwrap_or("Invalid address, could not parse".to_string()),
             _ => self.help(),
         }
     }
@@ -1417,6 +1486,7 @@ pub fn get_commands() -> Box<HashMap<String, Box<dyn Command>>> {
         "decryptmessage".to_string(),
         Box::new(DecryptMessageCommand {}),
     );
+    map.insert("parse".to_string(), Box::new(ParseCommand {}));
     map.insert("changeserver".to_string(), Box::new(ChangeServerCommand {}));
     map.insert("rescan".to_string(), Box::new(RescanCommand {}));
     map.insert("clear".to_string(), Box::new(ClearCommand {}));
