@@ -94,12 +94,12 @@ impl Command for ParseCommand {
 
                     match recipient_address {
                         RecipientAddress::Shielded(_) => object! {
-                            "status" => "successs",
+                            "status" => "success",
                             "network" => network_string,
                             "address_kind" => "sapling",
                         },
                         RecipientAddress::Transparent(_) => object! {
-                            "status" => "successs",
+                            "status" => "success",
                             "network" => network_string,
                             "address_kind" => "transparent",
                         },
@@ -115,7 +115,7 @@ impl Command for ParseCommand {
                                 receivers_available.push("transparent")
                             }
                             object! {
-                                "status" => "successs",
+                                "status" => "success",
                                 "network" => network_string,
                                 "address_kind" => "unified",
                                 "receivers_available" => receivers_available,
