@@ -492,7 +492,9 @@ fn ensure_taddrs_from_old_seeds_work() {
         "tmDSApneNXLWcw1unFCvJEus3Ugnpw2fPLy",
         "tmU29L8gXXmSpRcHKE2GLFLRW4suQ95opci",
     ];
-    let seed = "hospital museum valve antique skate museum unfold vocal weird milk scale social vessel identify crowd hospital control album rib bulb path oven civil tank";
+    let seed = "hospital museum valve antique skate museum \
+    unfold vocal weird milk scale social vessel identify \
+    crowd hospital control album rib bulb path oven civil tank";
     let client_b =
         LightClient::create_with_seedorkey_wallet(seed.to_string(), &client_b_config, 0, false)
             .unwrap();
@@ -505,7 +507,7 @@ fn ensure_taddrs_from_old_seeds_work() {
         println!("{}", json::stringify_pretty(addresses.clone(), 4));
         for (i, address) in addresses.members().enumerate() {
             assert_eq!(
-                address["receivers"]["transparent"],
+                address["receivers"]["transparent"].to_string(),
                 transparent_addresses[i]
             )
         }

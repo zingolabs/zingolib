@@ -1062,11 +1062,6 @@ impl LightClient {
 
     /// Create a new address, deriving it from the seed.
     pub async fn do_new_address(&self, addr_type: &str) -> Result<JsonValue, String> {
-        if !self.wallet.is_unlocked_for_spending().await {
-            error!("Wallet is locked");
-            return Err("Wallet is locked".to_string());
-        }
-
         //TODO: Placeholder interface
         let desired_receivers = ReceiverSelection {
             sapling: addr_type.contains('z'),
