@@ -485,7 +485,7 @@ fn ensure_taddrs_from_old_seeds_work() {
             .unwrap();
 
     // The first taddr generated on commit 9e71a14eb424631372fd08503b1bd83ea763c7fb
-    let transparent_addresses = ["tmFLszfkjgim4zoUMAXpuohnFBAKy99rr2i"];
+    let transparent_address = "tmFLszfkjgim4zoUMAXpuohnFBAKy99rr2i";
     // Generated from the following seed
     let seed = "hospital museum valve antique skate museum \
     unfold vocal weird milk scale social vessel identify \
@@ -500,7 +500,7 @@ fn ensure_taddrs_from_old_seeds_work() {
         println!("{}", json::stringify_pretty(addresses.clone(), 4));
         assert_eq!(
             addresses[0]["receivers"]["transparent"].to_string(),
-            transparent_addresses[0]
+            transparent_address
         )
     });
     drop(child_process_handler);
