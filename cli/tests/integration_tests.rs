@@ -523,7 +523,6 @@ fn ensure_taddrs_from_old_seeds_work() {
                 transparent_addresses[i]
             )
         }
-        assert!(1 == 0);
     });
     drop(child_process_handler);
 }
