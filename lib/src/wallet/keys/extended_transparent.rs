@@ -87,7 +87,11 @@ impl ExtendedPrivKey {
         })
     }
 
-    pub fn get_ext_taddr_from_bip39seed(config: &ZingoConfig, bip39_seed: &[u8], pos: u32) -> Self {
+    pub fn get_ext_taddr_from_bip39seed(
+        config: &ZingoConfig,
+        bip39_seed: &[u8],
+        position: u32,
+    ) -> Self {
         assert_eq!(bip39_seed.len(), 64);
 
         let ext_t_key = ExtendedPrivKey::with_seed(bip39_seed).unwrap();
@@ -100,7 +104,7 @@ impl ExtendedPrivKey {
             .unwrap()
             .derive_private_key(KeyIndex::hardened_from_normalize_index(0).unwrap())
             .unwrap()
-            .derive_private_key(KeyIndex::Normal(pos))
+            .derive_private_key(KeyIndex::Normal(position))
             .unwrap()
     }
 

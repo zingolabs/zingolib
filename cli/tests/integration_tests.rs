@@ -495,7 +495,7 @@ fn ensure_taddrs_from_old_seeds_work() {
             .unwrap();
 
     Runtime::new().unwrap().block_on(async {
-        client_b.do_new_address("tzo").await.unwrap();
+        client_b.do_new_address("zt").await.unwrap();
         let addresses = client_b.do_addresses().await;
         println!("{}", json::stringify_pretty(addresses.clone(), 4));
         assert_eq!(
