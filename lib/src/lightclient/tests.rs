@@ -74,7 +74,7 @@ fn new_wallet_from_phrase() {
             addresses[0]["receivers"]["sapling"]
         );
         assert_eq!(
-            "t1eLM1ck9Msu2USkEy7DJ3oti92EBqNsjNU",
+            "t1eQ63fwkQ4n4Eo5uCrPGaAV8FWB2tmx7ui",
             addresses[0]["receivers"]["transparent"]
         );
     });
