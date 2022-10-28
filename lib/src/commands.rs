@@ -86,8 +86,8 @@ impl Command for ParseCommand {
                 .find_map(|network| RecipientAddress::decode(network, &args[0]).zip(Some(network)))
                 .map(|(recipient_address, network)| {
                     let network_string = match network {
-                        zingoconfig::Network::Mainnet => "mainnet",
-                        zingoconfig::Network::Testnet => "testnet",
+                        zingoconfig::Network::Mainnet => "main",
+                        zingoconfig::Network::Testnet => "test",
                         zingoconfig::Network::Regtest => "regtest",
                         zingoconfig::Network::FakeMainnet => unreachable!(),
                     };
