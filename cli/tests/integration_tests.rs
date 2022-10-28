@@ -524,7 +524,9 @@ fn ensure_taddrs_from_old_seeds_work() {
 //}
 
 /// TODO: feature gate
-#[cfg(test)]
 mod cross_version {
-    
+    #[test]
+    fn cross_compat() {
+        assert_eq!(0, 0);
+    }
 }
