@@ -522,3 +522,9 @@ fn ensure_taddrs_from_old_seeds_work() {
 //   The incorrectly configured location is still present (and not checked in)
 //   The test-or-scenario that caused this situation has failed/panicked.
 //}
+
+/// TODO: feature gate
+#[cfg(test)]
+mod cross_version {
+    
+}
