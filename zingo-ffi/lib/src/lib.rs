@@ -134,7 +134,7 @@ pub fn init_from_b64(
         }
     };
 
-    let lightclient = match LightClient::read_from_buffer(&config, &decoded_bytes[..]) {
+    let lightclient = match LightClient::read_wallet_from_buffer(&config, &decoded_bytes[..]) {
         Ok(mut l) => {
             match l.set_sapling_params(
                 &decode(&sapling_output_b64).unwrap(),
