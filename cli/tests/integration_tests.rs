@@ -488,9 +488,13 @@ fn ensure_taddrs_from_old_seeds_work() {
     // The first taddr generated on commit 9e71a14eb424631372fd08503b1bd83ea763c7fb
     let transparent_address = "tmFLszfkjgim4zoUMAXpuohnFBAKy99rr2i";
 
-    let client_b =
-        LightClient::create_with_seedorkey_wallet(TEST_SEED.to_string(), &client_b_config, 0, false)
-            .unwrap();
+    let client_b = LightClient::create_with_seedorkey_wallet(
+        TEST_SEED.to_string(),
+        &client_b_config,
+        0,
+        false,
+    )
+    .unwrap();
 
     Runtime::new().unwrap().block_on(async {
         client_b.do_new_address("zt").await.unwrap();
@@ -521,7 +525,7 @@ fn ensure_taddrs_from_old_seeds_work() {
 //   The test-or-scenario that caused this situation has failed/panicked.
 //}
 
-/// TODO: feature gate
+#[cfg(feature = "cross_version")]
 mod cross_version {
     #[test]
     fn cross_compat() {
