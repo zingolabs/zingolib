@@ -2,6 +2,7 @@
 
 mod data;
 mod utils;
+use data::TEST_SEED;
 use json::JsonValue;
 use tokio::runtime::Runtime;
 use utils::setup::{
@@ -486,12 +487,9 @@ fn ensure_taddrs_from_old_seeds_work() {
 
     // The first taddr generated on commit 9e71a14eb424631372fd08503b1bd83ea763c7fb
     let transparent_address = "tmFLszfkjgim4zoUMAXpuohnFBAKy99rr2i";
-    // Generated from the following seed
-    let seed = "hospital museum valve antique skate museum \
-    unfold vocal weird milk scale social vessel identify \
-    crowd hospital control album rib bulb path oven civil tank";
+
     let client_b =
-        LightClient::create_with_seedorkey_wallet(seed.to_string(), &client_b_config, 0, false)
+        LightClient::create_with_seedorkey_wallet(TEST_SEED.to_string(), &client_b_config, 0, false)
             .unwrap();
 
     Runtime::new().unwrap().block_on(async {
