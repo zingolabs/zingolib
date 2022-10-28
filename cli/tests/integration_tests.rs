@@ -526,6 +526,8 @@ fn ensure_taddrs_from_old_seeds_work() {
 //}
 
 #[cfg(feature = "cross_version")]
+/// Use test seed to recieve funds from artificial blockchain 
+/// using zcash-cli and zcashd in regtest mode
 mod cross_version {
     #[test]
     fn cross_compat() {
