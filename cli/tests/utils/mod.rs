@@ -238,7 +238,7 @@ pub mod setup {
             .unwrap()
             .to_string();
         let client_two = LightClient::create_with_seedorkey_wallet(
-            seed_phrase_for_two,
+            seed_phrase_for_two.clone(),
             &client_two_config,
             0,
             false,
