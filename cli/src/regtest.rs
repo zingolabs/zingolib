@@ -31,6 +31,7 @@ pub struct RegtestManager {
     confs_dir: PathBuf,
     bin_dir: PathBuf,
     cli_bin: PathBuf,
+    #[cfg(feature = "cross_version")]
     zingo_cli_bin: PathBuf,
     logs_dir: PathBuf,
     data_dir: PathBuf,
@@ -72,6 +73,7 @@ impl RegtestManager {
         std::fs::create_dir_all(&confs_dir).expect("Couldn't create dir.");
         let bin_dir = get_regtest_dir().join("bin");
         std::fs::create_dir_all(&bin_dir).expect("Couldn't create dir.");
+        #[cfg(feature = "cross_version")]
         let zingo_cli_bin = bin_dir.join("zingo-cli");
         let cli_bin = bin_dir.join("zcash-cli");
         let logs_dir = regtest_dir.join("logs");
@@ -95,6 +97,7 @@ impl RegtestManager {
             regtest_dir,
             confs_dir,
             bin_dir,
+            #[cfg(feature = "cross_version")]
             zingo_cli_bin,
             cli_bin,
             logs_dir,
@@ -123,13 +126,9 @@ impl RegtestManager {
         command
     }
 
-    pub fn get_zingo_cli_handle(&self) -> std::process::Command {
-        let config_str = &self
-            .zcashd_config
-            .to_str()
-            .expect("Path to string failure!");
-
-        let mut command = std::process::Command::new(&self.zingo_cli_bin);
+    #[cfg(feature = "cross_version")]
+    pub fn get_zingo_cli_handle(&self, seed_phrase: &str) -> std::process::Command {
+        std::process::Command::new(&self.zingo_cli_bin).args(["--seed", seed_phrase])
     }
 
     pub fn generate_n_blocks(
