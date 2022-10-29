@@ -529,15 +529,15 @@ fn ensure_taddrs_from_old_seeds_work() {
 /// Use test seed to receive funds from local "regtest" blockchain
 /// using zcash-cli and zcashd in regtest mode
 mod cross_version {
-    use crate::utils::setup::two_clients_one_saplingcoinbase_backed;
+    use crate::utils::setup::cross_version_setup;
 
     #[test]
     fn cross_compat() {
+        let (regtest_manager, client_one, client_two, child_process_handler) =
+            cross_version_setup();
         let seed_phrase = zcash_primitives::zip339::Mnemonic::from_entropy([0; 32])
             .unwrap()
             .to_string();
-        let (regtest_manager, client_one, client_two, child_process_handler) =
-            two_clients_one_saplingcoinbase_backed();
         let zingo_cli = regtest_manager.get_zingo_cli_handle(&seed_phrase);
     }
 }

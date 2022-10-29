@@ -215,7 +215,7 @@ pub mod setup {
     /// that has furnished a receiving address in the mineraddress configuration field
     /// of the "generating" regtest-zcashd
     #[cfg(feature = "cross_version")]
-    pub fn three_clients() -> (
+    pub fn cross_version_setup() -> (
         RegtestManager,
         LightClient,
         LightClient,
