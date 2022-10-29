@@ -220,6 +220,7 @@ pub mod setup {
         LightClient,
         LightClient,
         ChildProcessHandler,
+        String,
     ) {
         let (regtest_manager, child_process_handler, client_one) =
             saplingcoinbasebacked_spendcapable();
@@ -233,11 +234,11 @@ pub mod setup {
             Some(client_two_zingoconf_path),
         )
         .unwrap();
-        let seed_phrase_of_two = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
+        let seed_phrase_for_two = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
             .unwrap()
             .to_string();
         let client_two = LightClient::create_with_seedorkey_wallet(
-            seed_phrase_of_two,
+            seed_phrase_for_two,
             &client_two_config,
             0,
             false,
@@ -248,6 +249,7 @@ pub mod setup {
             client_one,
             client_two,
             child_process_handler,
+            seed_phrase_for_two,
         )
     }
 

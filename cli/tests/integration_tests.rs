@@ -533,11 +533,8 @@ mod cross_version {
 
     #[test]
     fn cross_compat() {
-        let (regtest_manager, client_one, client_two, child_process_handler) =
+        let (regtest_manager, client_one, client_two, child_process_handler, client_two_seedphrase) =
             cross_version_setup();
-        let seed_phrase = zcash_primitives::zip339::Mnemonic::from_entropy([0; 32])
-            .unwrap()
-            .to_string();
-        let zingo_cli = regtest_manager.get_zingo_cli_handle(&seed_phrase);
+        let zingo_cli = regtest_manager.get_zingo_cli_handle(&client_two_seedphrase);
     }
 }
