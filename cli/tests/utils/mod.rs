@@ -211,6 +211,46 @@ pub mod setup {
         )
     }
 
+    /// This creates two so-called "LightClient"s "client_one" controls a spend capability
+    /// that has furnished a receiving address in the mineraddress configuration field
+    /// of the "generating" regtest-zcashd
+    #[cfg(feature = "cross_version")]
+    pub fn three_clients() -> (
+        RegtestManager,
+        LightClient,
+        LightClient,
+        ChildProcessHandler,
+    ) {
+        let (regtest_manager, child_process_handler, client_one) =
+            saplingcoinbasebacked_spendcapable();
+        let client_two_zingoconf_path = format!(
+            "{}_two",
+            regtest_manager.zingo_data_dir.to_string_lossy().to_string()
+        );
+        std::fs::create_dir(&client_two_zingoconf_path).unwrap();
+        let (client_two_config, _height) = create_zingoconf_with_datadir(
+            client_one.get_server_uri(),
+            Some(client_two_zingoconf_path),
+        )
+        .unwrap();
+        let seed_phrase_of_two = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
+            .unwrap()
+            .to_string();
+        let client_two = LightClient::create_with_seedorkey_wallet(
+            seed_phrase_of_two,
+            &client_two_config,
+            0,
+            false,
+        )
+        .unwrap();
+        (
+            regtest_manager,
+            client_one,
+            client_two,
+            child_process_handler,
+        )
+    }
+
     pub fn basic_no_spendable() -> (RegtestManager, ChildProcessHandler, LightClient) {
         let (regtest_manager, server_port) = create_maybe_funded_regtest_manager(None);
         let child_process_handler = regtest_manager.launch(true).unwrap();
