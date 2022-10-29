@@ -128,9 +128,9 @@ impl RegtestManager {
 
     #[cfg(feature = "cross_version")]
     pub fn get_zingo_cli_handle(&self, seed_phrase: &str) -> std::process::Command {
-        let mut command = std::process::Command::new(&self.zingo_cli_bin);
-        command.args(["--seed", seed_phrase]);
-        command
+        let mut handle = std::process::Command::new(&self.zingo_cli_bin);
+        handle.args(["--regtest", "--birthday=1", "--seed", seed_phrase]);
+        handle
     }
 
     pub fn generate_n_blocks(

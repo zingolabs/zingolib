@@ -535,6 +535,15 @@ mod cross_version {
     fn cross_compat() {
         let (regtest_manager, client_one, client_two, child_process_handler, client_two_seedphrase) =
             cross_version_setup();
-        let zingo_cli = regtest_manager.get_zingo_cli_handle(&client_two_seedphrase);
+        let mut zingo_cli_handle = regtest_manager.get_zingo_cli_handle(&client_two_seedphrase);
+        let addresses = &zingo_cli_handle
+            .arg("addresses")
+            .output()
+            .expect("unable to create addresses");
+        assert_eq!(
+            std::str::from_utf8(addresses.stdout.as_slice()).unwrap(),
+            "foo"
+        );
+        drop(child_process_handler);
     }
 }
