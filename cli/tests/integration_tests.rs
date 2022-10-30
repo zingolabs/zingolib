@@ -531,19 +531,35 @@ fn ensure_taddrs_from_old_seeds_work() {
 mod cross_version {
     use crate::utils::setup::cross_version_setup;
 
+    fn extract_legacy_address(raw_output: &Vec<u8>, legacy_addr_type: &str) -> String {
+        let address_chunk = std::str::from_utf8(raw_output)
+            .unwrap()
+            .split_once("{\n  \"result\": \"success\",\n  \"latest_block\": 1,\n  \"total_blocks_synced\": 1\n}\n")
+            .unwrap().1;
+        let addresses = json::parse(address_chunk).unwrap();
+        let with_quotes = json::stringify(addresses[0]["receivers"][legacy_addr_type].clone());
+        with_quotes
+            .strip_suffix("\"")
+            .unwrap()
+            .strip_prefix("\"")
+            .unwrap()
+            .to_string()
+    }
     #[test]
     fn cross_compat() {
         let (regtest_manager, client_one, client_two, child_process_handler, client_two_seedphrase) =
             cross_version_setup();
         let mut zingo_cli_handle = regtest_manager.get_zingo_cli_handle(&client_two_seedphrase);
-        let addresses = &zingo_cli_handle
+        let raw_output = zingo_cli_handle
             .arg("addresses")
             .output()
-            .expect("unable to create addresses");
-        assert_eq!(
-            std::str::from_utf8(addresses.stdout.as_slice()).unwrap(),
-            "foo"
-        );
+            .expect("unable to create addresses")
+            .stdout;
+
+        let taddr = extract_legacy_address(&raw_output, "transparent");
+        let zaddr = extract_legacy_address(&raw_output, "sapling");
+        assert_eq!(taddr, "tmCMFLcENTAx8pJzvMMRqVmYuQnhoLCgFQF");
+        assert_eq!(zaddr, "foo");
         drop(child_process_handler);
     }
 }
