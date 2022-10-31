@@ -539,7 +539,6 @@ mod cross_version {
             .output()
             .expect("unable to create addresses")
             .stdout;
-        dbg!(&raw_output);
         let address_chunk = std::str::from_utf8(&raw_output)
             .unwrap()
             .split_once("{\n  \"result\": \"success\",\n  \"latest_block\": 1,\n  \"total_blocks_synced\": 1\n}\n")

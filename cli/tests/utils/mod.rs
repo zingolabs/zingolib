@@ -94,9 +94,9 @@ pub mod setup {
         fn create_lightwalletd_conf(&self) -> PathBuf {
             self.write_contents_and_return_path(
                 "lightwalletd",
-                dbg!(data::config_template_fillers::lightwalletd::basic(
-                    &self.lightwalletd_rpcservice_port
-                )),
+                data::config_template_fillers::lightwalletd::basic(
+                    &self.lightwalletd_rpcservice_port,
+                ),
             )
         }
         fn write_contents_and_return_path(&self, configtype: &str, contents: String) -> PathBuf {
