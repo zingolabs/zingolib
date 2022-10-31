@@ -253,6 +253,35 @@ pub mod setup {
         )
     }
 
+    #[cfg(feature = "cross_version")]
+    struct ZingoCliHandler {
+        lightwalletd_port: String,
+        seed_phrase: &'static str,
+        zingo_cli_bin: PathBuf,
+    }
+    impl ZingoCliHandler {
+        pub fn new(lightwalletd_port: String, seed_phrase: &str, zingo_cli_bin: PathBuf) -> Self {
+            Self {
+                lightwalletd_port,
+                seed_phrase,
+                zingo_cli_bin,
+            }
+        }
+        pub fn build_handle(&self) -> std::process::Command {
+            let lightwalletd_port = self.lightwalletd_port;
+            let lightwalletd_server = &format!("http://127.0.0.1:{lightwalletd_port}");
+            let mut handle = std::process::Command::new(&self.zingo_cli_bin);
+            handle.args([
+                "--regtest",
+                "--server",
+                lightwalletd_server,
+                "--birthday=1",
+                "--seed",
+                self.seed_phrase,
+            ]);
+            handle
+        }
+    }
     /// This creates two so-called "LightClient"s "client_one" controls a spend capability
     /// that has furnished a receiving address in the mineraddress configuration field
     /// of the "generating" regtest-zcashd
@@ -262,7 +291,7 @@ pub mod setup {
         LightClient,
         LightClient,
         ChildProcessHandler,
-        std::process::Command,
+        ZingoCliHandler,
     ) {
         let (regtest_manager, child_process_handler, client_one, lightwalletd_port) =
             saplingcoinbasebacked_spendcapable_cross_version();

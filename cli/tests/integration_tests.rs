@@ -529,25 +529,19 @@ fn ensure_taddrs_from_old_seeds_work() {
 /// Use test seed to receive funds from local "regtest" blockchain
 /// using zcash-cli and zcashd in regtest mode
 mod cross_version {
-    use std::process::Command;
-
     use crate::utils::setup::cross_version_setup;
 
     pub const ZINGOCLISTART_DELIMITER: &str = "\n{\n  \"result\": \"success\",\n  \"latest_block\": 1,\n  \"total_blocks_synced\": 1\n}\nReady!\nCTRL-D\n";
-    fn extract_post_startup_output(zingo_cli_handle: &mut Command) -> String {
-        let raw_output = zingo_cli_handle
-            .output()
-            .expect("unable to launch cli")
-            .stdout;
-        std::str::from_utf8(&raw_output)
+    fn extract_post_startup_output(raw_call_result: Vec<u8>) -> String {
+        std::str::from_utf8(&raw_call_result)
             .unwrap()
             .split_once(ZINGOCLISTART_DELIMITER)
             .unwrap()
             .1
             .to_string()
     }
-    fn extract_transparent_address(zingo_cli_handle: &mut Command) -> String {
-        let addresses = json::parse(dbg!(&extract_post_startup_output(zingo_cli_handle))).unwrap();
+    fn extract_transparent_address(raw_addresses: Vec<u8>) -> String {
+        let addresses = json::parse(dbg!(&extract_post_startup_output(raw_addresses))).unwrap();
         let with_quotes = json::stringify(addresses[0]["receivers"]["transparent"].clone());
         with_quotes
             .strip_suffix("\"")
@@ -558,14 +552,20 @@ mod cross_version {
     }
     #[test]
     fn cross_compat() {
-        let (regtest_manager, client_one, client_two, child_process_handler, mut zingo_cli_handle) =
+        let (regtest_manager, client_one, client_two, child_process_handler, zingo_cli_handler) =
             cross_version_setup();
 
-        let taddr = extract_transparent_address(&mut zingo_cli_handle);
+        let addresses = zingo_cli_handler
+            .build_handle()
+            .arg("addresses")
+            .output()
+            .expect("Unable to call arg.")
+            .stdout;
+        let taddr = extract_transparent_address(addresses);
         //let zaddr = extract_legacy_address(&raw_output, "sapling");
         //assert_eq!(taddr, "tmCMFLcENTAx8pJzvMMRqVmYuQnhoLCgFQF");
         //assert_eq!(zaddr, "foo");
         drop(child_process_handler);
-        drop(zingo_cli_handle);
+        drop(zingo_cli_handler);
     }
 }

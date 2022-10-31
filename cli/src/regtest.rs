@@ -126,25 +126,6 @@ impl RegtestManager {
         command
     }
 
-    #[cfg(feature = "cross_version")]
-    pub fn get_zingo_cli_handle(
-        &self,
-        seed_phrase: &str,
-        lightwalletd_port: String,
-    ) -> std::process::Command {
-        let lightwalletd_server = &format!("http://127.0.0.1:{lightwalletd_port}");
-        let mut handle = std::process::Command::new(&self.zingo_cli_bin);
-        handle.args([
-            "--regtest",
-            "--server",
-            lightwalletd_server,
-            "--birthday=1",
-            "--seed",
-            seed_phrase,
-        ]);
-        handle
-    }
-
     pub fn generate_n_blocks(
         &self,
         num_blocks: u32,
