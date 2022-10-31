@@ -150,7 +150,7 @@ pub mod setup {
              abandon abandon abandon abandon abandon abandon abandon art"
         );
         let first_z_addr_from_seed_phrase = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
-        let (regtest_manager, server_port) =
+        let (regtest_manager, lightwalletd_port) =
             create_maybe_funded_regtest_manager(Some(first_z_addr_from_seed_phrase));
         let child_process_handler = regtest_manager.launch(true).unwrap_or_else(|e| match e {
             zingo_cli::regtest::LaunchChildProcessError::ZcashdState {
@@ -161,8 +161,9 @@ pub mod setup {
                 panic!("{} {} {}", errorcode, stdout, stderr)
             }
         });
-        let server_id =
-            zingoconfig::construct_server_uri(Some(format!("http://127.0.0.1:{server_port}")));
+        let server_id = zingoconfig::construct_server_uri(Some(format!(
+            "http://127.0.0.1:{lightwalletd_port}"
+        )));
         let (config, _height) = create_zingoconf_with_datadir(
             server_id,
             Some(regtest_manager.zingo_data_dir.to_string_lossy().to_string()),
@@ -171,6 +172,48 @@ pub mod setup {
         let light_client =
             LightClient::create_with_seedorkey_wallet(seed_phrase, &config, 0, false).unwrap();
         (regtest_manager, child_process_handler, light_client)
+    }
+
+    pub fn saplingcoinbasebacked_spendcapable_cross_version(
+    ) -> (RegtestManager, ChildProcessHandler, LightClient, String) {
+        //tracing_subscriber::fmt::init();
+        let seed_phrase = zcash_primitives::zip339::Mnemonic::from_entropy([0; 32])
+            .unwrap()
+            .to_string();
+        assert_eq!(
+            &seed_phrase,
+            "abandon abandon abandon abandon abandon abandon abandon abandon \
+             abandon abandon abandon abandon abandon abandon abandon abandon \
+             abandon abandon abandon abandon abandon abandon abandon art"
+        );
+        let first_z_addr_from_seed_phrase = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
+        let (regtest_manager, lightwalletd_port) =
+            create_maybe_funded_regtest_manager(Some(first_z_addr_from_seed_phrase));
+        let child_process_handler = regtest_manager.launch(true).unwrap_or_else(|e| match e {
+            zingo_cli::regtest::LaunchChildProcessError::ZcashdState {
+                errorcode,
+                stdout,
+                stderr,
+            } => {
+                panic!("{} {} {}", errorcode, stdout, stderr)
+            }
+        });
+        let server_id = zingoconfig::construct_server_uri(Some(format!(
+            "http://127.0.0.1:{lightwalletd_port}"
+        )));
+        let (config, _height) = create_zingoconf_with_datadir(
+            server_id,
+            Some(regtest_manager.zingo_data_dir.to_string_lossy().to_string()),
+        )
+        .unwrap();
+        let light_client =
+            LightClient::create_with_seedorkey_wallet(seed_phrase, &config, 0, false).unwrap();
+        (
+            regtest_manager,
+            child_process_handler,
+            light_client,
+            lightwalletd_port,
+        )
     }
     /// This creates two so-called "LightClient"s "client_one" controls a spend capability
     /// that has furnished a receiving address in the mineraddress configuration field
@@ -220,10 +263,10 @@ pub mod setup {
         LightClient,
         LightClient,
         ChildProcessHandler,
-        String,
+        std::process::Command,
     ) {
-        let (regtest_manager, child_process_handler, client_one) =
-            saplingcoinbasebacked_spendcapable();
+        let (regtest_manager, child_process_handler, client_one, lightwalletd_port) =
+            saplingcoinbasebacked_spendcapable_cross_version();
         let client_two_zingoconf_path = format!(
             "{}_two",
             regtest_manager.zingo_data_dir.to_string_lossy().to_string()
@@ -244,12 +287,14 @@ pub mod setup {
             false,
         )
         .unwrap();
+        let mut zingo_cli_handle =
+            regtest_manager.get_zingo_cli_handle(&seed_phrase_for_two, lightwalletd_port);
         (
             regtest_manager,
             client_one,
             client_two,
             child_process_handler,
-            seed_phrase_for_two,
+            zingo_cli_handle,
         )
     }
 
