@@ -533,17 +533,21 @@ mod cross_version {
 
     use crate::utils::setup::cross_version_setup;
 
-    fn extract_transparent_address(zingo_cli_handle: &mut Command) -> String {
+    pub const ZINGOCLISTART_DELIMITER: &str = "\n{\n  \"result\": \"success\",\n  \"latest_block\": 1,\n  \"total_blocks_synced\": 1\n}\nReady!\nCTRL-D\n";
+    fn extract_post_startup_output(zingo_cli_handle: &mut Command) -> String {
         let raw_output = zingo_cli_handle
-            .arg("addresses")
             .output()
-            .expect("unable to create addresses")
+            .expect("unable to launch cli")
             .stdout;
-        let address_chunk = std::str::from_utf8(&raw_output)
+        std::str::from_utf8(&raw_output)
             .unwrap()
-            .split_once("{\n  \"result\": \"success\",\n  \"latest_block\": 1,\n  \"total_blocks_synced\": 1\n}\n")
-            .unwrap().1;
-        let addresses = json::parse(address_chunk).unwrap();
+            .split_once(ZINGOCLISTART_DELIMITER)
+            .unwrap()
+            .1
+            .to_string()
+    }
+    fn extract_transparent_address(zingo_cli_handle: &mut Command) -> String {
+        let addresses = json::parse(dbg!(&extract_post_startup_output(zingo_cli_handle))).unwrap();
         let with_quotes = json::stringify(addresses[0]["receivers"]["transparent"].clone());
         with_quotes
             .strip_suffix("\"")
@@ -556,12 +560,8 @@ mod cross_version {
     fn cross_compat() {
         let (regtest_manager, client_one, client_two, child_process_handler, mut zingo_cli_handle) =
             cross_version_setup();
-        //std::thread::sleep(std::time::Duration::new(10, 0));
-        dbg!(&zingo_cli_handle);
-        let zingocli_output = zingo_cli_handle.output().unwrap().stderr;
-        dbg!(std::str::from_utf8(&zingocli_output).unwrap());
 
-        //let taddr = extract_transparent_address(&mut zingo_cli_handle);
+        let taddr = extract_transparent_address(&mut zingo_cli_handle);
         //let zaddr = extract_legacy_address(&raw_output, "sapling");
         //assert_eq!(taddr, "tmCMFLcENTAx8pJzvMMRqVmYuQnhoLCgFQF");
         //assert_eq!(zaddr, "foo");
