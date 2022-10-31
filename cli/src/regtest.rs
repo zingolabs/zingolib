@@ -115,6 +115,10 @@ impl RegtestManager {
         }
     }
 
+    #[cfg(feature = "cross_version")]
+    pub fn get_zingocli_bin(&self) -> PathBuf {
+        self.zingo_cli_bin.clone()
+    }
     pub fn get_cli_handle(&self) -> std::process::Command {
         let config_str = &self
             .zcashd_config

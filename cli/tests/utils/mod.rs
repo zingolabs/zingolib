@@ -254,13 +254,13 @@ pub mod setup {
     }
 
     #[cfg(feature = "cross_version")]
-    struct ZingoCliHandler {
+    pub struct ZingoCliHandler {
         lightwalletd_port: String,
-        seed_phrase: &'static str,
+        seed_phrase: String,
         zingo_cli_bin: PathBuf,
     }
     impl ZingoCliHandler {
-        pub fn new(lightwalletd_port: String, seed_phrase: &str, zingo_cli_bin: PathBuf) -> Self {
+        pub fn new(lightwalletd_port: String, seed_phrase: String, zingo_cli_bin: PathBuf) -> Self {
             Self {
                 lightwalletd_port,
                 seed_phrase,
@@ -268,7 +268,7 @@ pub mod setup {
             }
         }
         pub fn build_handle(&self) -> std::process::Command {
-            let lightwalletd_port = self.lightwalletd_port;
+            let lightwalletd_port = &self.lightwalletd_port;
             let lightwalletd_server = &format!("http://127.0.0.1:{lightwalletd_port}");
             let mut handle = std::process::Command::new(&self.zingo_cli_bin);
             handle.args([
@@ -277,7 +277,7 @@ pub mod setup {
                 lightwalletd_server,
                 "--birthday=1",
                 "--seed",
-                self.seed_phrase,
+                &self.seed_phrase,
             ]);
             handle
         }
@@ -315,14 +315,17 @@ pub mod setup {
             false,
         )
         .unwrap();
-        let mut zingo_cli_handle =
-            regtest_manager.get_zingo_cli_handle(&seed_phrase_for_two, lightwalletd_port);
+        let zingo_cli_handler = ZingoCliHandler::new(
+            lightwalletd_port,
+            seed_phrase_for_two,
+            regtest_manager.get_zingocli_bin(),
+        );
         (
             regtest_manager,
             client_one,
             client_two,
             child_process_handler,
-            zingo_cli_handle,
+            zingo_cli_handler,
         )
     }
 
