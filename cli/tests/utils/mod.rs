@@ -105,7 +105,6 @@ pub mod setup {
                 "lightwalletd" => &self.regtest_manager.lightwalletd_config,
                 _ => panic!("Unepexted configtype!"),
             };
-            dbg!(&loc);
             let mut output = std::fs::File::create(&loc).expect("How could path be missing?");
             std::io::Write::write(&mut output, contents.as_bytes())
                 .expect(&format!("Couldn't write {contents}!"));

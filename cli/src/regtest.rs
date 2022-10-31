@@ -68,7 +68,7 @@ pub enum LaunchChildProcessError {
 }
 impl RegtestManager {
     pub fn new(rootpathname: Option<PathBuf>) -> Self {
-        let regtest_dir = dbg!(rootpathname.unwrap_or_else(get_regtest_dir));
+        let regtest_dir = rootpathname.unwrap_or_else(get_regtest_dir);
         let confs_dir = regtest_dir.join("conf");
         std::fs::create_dir_all(&confs_dir).expect("Couldn't create dir.");
         let bin_dir = get_regtest_dir().join("bin");
