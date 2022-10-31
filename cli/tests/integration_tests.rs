@@ -560,7 +560,6 @@ mod cross_version {
         dbg!(&zingo_cli_handle);
         let zingocli_output = zingo_cli_handle.output().unwrap().stderr;
         dbg!(std::str::from_utf8(&zingocli_output).unwrap());
-        assert!(1 == 0);
 
         //let taddr = extract_transparent_address(&mut zingo_cli_handle);
         //let zaddr = extract_legacy_address(&raw_output, "sapling");

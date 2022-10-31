@@ -135,6 +135,7 @@ impl RegtestManager {
         let lightwalletd_server = &format!("http://127.0.0.1:{lightwalletd_port}");
         let mut handle = std::process::Command::new(&self.zingo_cli_bin);
         handle.args([
+            "--regtest",
             "--server",
             lightwalletd_server,
             "--birthday=1",
