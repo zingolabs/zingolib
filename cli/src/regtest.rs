@@ -132,8 +132,16 @@ impl RegtestManager {
         seed_phrase: &str,
         lightwalletd_port: String,
     ) -> std::process::Command {
+        let lightwalletd_server = &format!("https://127.0.0.1:{lightwalletd_port}");
         let mut handle = std::process::Command::new(&self.zingo_cli_bin);
-        handle.args(["--birthday=1", "--seed", seed_phrase]);
+        dbg!(&lightwalletd_server);
+        handle.args([
+            "--server",
+            lightwalletd_server,
+            "--birthday=1",
+            "--seed",
+            seed_phrase,
+        ]);
         handle
     }
 
