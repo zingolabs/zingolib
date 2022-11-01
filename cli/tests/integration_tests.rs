@@ -572,10 +572,15 @@ mod cross_version {
     }
     #[test]
     fn cross_compat() {
-        let (regtest_manager, client_one, client_two, child_process_handler, zingo_cli_handler) =
-            cross_version_setup();
+        let (
+            _regtest_manager,
+            _miner_client,
+            sameseed_newclient,
+            child_process_handler,
+            sameseed_oldcli_client,
+        ) = cross_version_setup();
 
-        let addresses = zingo_cli_handler
+        let addresses = sameseed_oldcli_client
             .build_handle()
             .arg("addresses")
             .output()
@@ -585,7 +590,16 @@ mod cross_version {
         let zaddr = extract_sapling_address(&addresses);
         let uaddr = extract_unified_address(&addresses);
         tokio::runtime::Runtime::new().unwrap().block_on(async {
-            let new_addresses = client_one.do_addresses().await;
+            let newclient_seed = sameseed_newclient.do_seed_phrase();
+            let oldclient_seed = sameseed_oldcli_client
+                .build_handle()
+                .arg("seed")
+                .output()
+                .expect("failed to get seed")
+                .stdout;
+            dbg!(std::str::from_utf8(&oldclient_seed));
+            assert!(1 == 0);
+            let new_addresses = sameseed_newclient.do_addresses().await;
             println!("{}", json::stringify_pretty(new_addresses.clone(), 4));
             assert_eq!(
                 new_addresses[0]["receivers"]["transparent"].to_string(),
@@ -593,6 +607,6 @@ mod cross_version {
             )
         });
         drop(child_process_handler);
-        drop(zingo_cli_handler);
+        drop(sameseed_oldcli_client);
     }
 }
