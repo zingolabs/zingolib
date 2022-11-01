@@ -611,8 +611,8 @@ mod cross_version {
             .expect("failed to get seed")
             .stdout;
         let oldclient_seed = dbg!(extract_seed(&rawseedoutput));
-        let zaddr = extract_sapling_address(&addresses);
-        let uaddr = extract_unified_address(&addresses);
+        let _zaddr = extract_sapling_address(&addresses);
+        let _uaddr = extract_unified_address(&addresses);
         tokio::runtime::Runtime::new().unwrap().block_on(async {
             let newclient_seed = sameseed_newclient.do_seed_phrase().await.unwrap();
             assert_eq!(newclient_seed["seed"].to_string(), oldclient_seed);
