@@ -400,10 +400,6 @@ impl LightClient {
                 ));
             }
         }
-        println!(
-            "Seed: {key_or_seedphrase}\nhrp_view: {}",
-            config.hrp_sapling_viewing_key()
-        );
 
         if key_or_seedphrase.starts_with(config.hrp_sapling_private_key())
             || key_or_seedphrase.starts_with(config.hrp_sapling_viewing_key())

@@ -177,14 +177,14 @@ pub mod setup {
     pub fn saplingcoinbasebacked_spendcapable_cross_version(
     ) -> (RegtestManager, ChildProcessHandler, LightClient, String) {
         //tracing_subscriber::fmt::init();
-        let seed_phrase = zcash_primitives::zip339::Mnemonic::from_entropy([0; 32])
+        let cross_version_seed_phrase = zcash_primitives::zip339::Mnemonic::from_entropy([3; 32])
             .unwrap()
             .to_string();
         assert_eq!(
-            &seed_phrase,
-            "abandon abandon abandon abandon abandon abandon abandon abandon \
-             abandon abandon abandon abandon abandon abandon abandon abandon \
-             abandon abandon abandon abandon abandon abandon abandon art"
+            &cross_version_seed_phrase,
+            "adapt blossom school alcohol coral light army gather \
+             adapt blossom school alcohol coral light army gather \
+             adapt blossom school alcohol coral light army hold"
         );
         let first_z_addr_from_seed_phrase = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
         let (regtest_manager, lightwalletd_port) =
@@ -206,14 +206,18 @@ pub mod setup {
             Some(regtest_manager.zingo_data_dir.to_string_lossy().to_string()),
         )
         .unwrap();
-        let light_client =
-            LightClient::create_with_seedorkey_wallet(seed_phrase.clone(), &config, 0, false)
-                .unwrap();
+        let light_client = LightClient::create_with_seedorkey_wallet(
+            cross_version_seed_phrase.clone(),
+            &config,
+            0,
+            false,
+        )
+        .unwrap();
         (
             regtest_manager,
             child_process_handler,
             light_client,
-            seed_phrase,
+            cross_version_seed_phrase,
         )
     }
     /// This creates two so-called "LightClient"s "client_one" controls a spend capability

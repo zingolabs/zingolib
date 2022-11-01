@@ -535,12 +535,9 @@ fn cross_compat() {
         let fixed_taddr_seed = fixed_taddr_client.do_seed_phrase().await.unwrap();
         let current_seed = current_client.do_seed_phrase().await.unwrap();
         assert_eq!(fixed_taddr_seed["seed"], current_seed["seed"]);
-        let fixt_addresses = fixed_taddr_client.do_addresses().await;
+        let fixed_taddresses = fixed_taddr_client.do_addresses().await;
         let current_addresses = fixed_taddr_client.do_addresses().await;
-        assert_eq!(
-            fixt_addresses[0]["receivers"]["transparent"],
-            current_addresses[0]["receivers"]["transparent"],
-        )
+        assert_eq!(fixed_taddresses, current_addresses);
     });
     drop(child_process_handler);
 }
