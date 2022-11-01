@@ -531,8 +531,8 @@ fn ensure_taddrs_from_old_seeds_work() {
 mod cross_version {
     use crate::utils::setup::cross_version_setup;
 
-    pub const ZINGOCLISTART_DELIMITER: &str = "\n{\n  \"result\": \"success\",\n  \"latest_block\": 1,\n  \"total_blocks_synced\": 1\n}\nReady!\nCTRL-D\n";
-    fn extract_post_startup_output(raw_call_result: Vec<u8>) -> String {
+    pub const ZINGOCLISTART_DELIMITER: &str = "\n{\n  \"result\": \"success\",\n  \"latest_block\": 1,\n  \"total_blocks_synced\": 1\n}\n";
+    fn extract_post_startup_output(raw_call_result: &Vec<u8>) -> String {
         std::str::from_utf8(&raw_call_result)
             .unwrap()
             .split_once(ZINGOCLISTART_DELIMITER)
@@ -540,9 +540,29 @@ mod cross_version {
             .1
             .to_string()
     }
-    fn extract_transparent_address(raw_addresses: Vec<u8>) -> String {
-        let addresses = json::parse(dbg!(&extract_post_startup_output(raw_addresses))).unwrap();
+    fn extract_transparent_address(raw_addresses: &Vec<u8>) -> String {
+        let addresses = json::parse(dbg!(&extract_post_startup_output(&raw_addresses))).unwrap();
         let with_quotes = json::stringify(addresses[0]["receivers"]["transparent"].clone());
+        with_quotes
+            .strip_suffix("\"")
+            .unwrap()
+            .strip_prefix("\"")
+            .unwrap()
+            .to_string()
+    }
+    fn extract_sapling_address(raw_addresses: &Vec<u8>) -> String {
+        let addresses = json::parse(dbg!(&extract_post_startup_output(&raw_addresses))).unwrap();
+        let with_quotes = json::stringify(addresses[0]["receivers"]["sapling"].clone());
+        with_quotes
+            .strip_suffix("\"")
+            .unwrap()
+            .strip_prefix("\"")
+            .unwrap()
+            .to_string()
+    }
+    fn extract_unified_address(raw_addresses: &Vec<u8>) -> String {
+        let addresses = json::parse(dbg!(&extract_post_startup_output(&raw_addresses))).unwrap();
+        let with_quotes = json::stringify(addresses[0]["address"].clone());
         with_quotes
             .strip_suffix("\"")
             .unwrap()
@@ -555,16 +575,13 @@ mod cross_version {
         let (regtest_manager, client_one, client_two, child_process_handler, zingo_cli_handler) =
             cross_version_setup();
 
-        let addresses = zingo_cli_handler
-            .build_handle()
-            .arg("addresses")
+        let addresses = dbg!(zingo_cli_handler.build_handle().arg("addresses"))
             .output()
             .expect("Unable to call arg.")
             .stdout;
-        let taddr = extract_transparent_address(addresses);
-        //let zaddr = extract_legacy_address(&raw_output, "sapling");
-        //assert_eq!(taddr, "tmCMFLcENTAx8pJzvMMRqVmYuQnhoLCgFQF");
-        //assert_eq!(zaddr, "foo");
+        let taddr = extract_transparent_address(&addresses);
+        let zaddr = extract_sapling_address(&addresses);
+        let uaddr = extract_unified_address(&addresses);
         drop(child_process_handler);
         drop(zingo_cli_handler);
     }
