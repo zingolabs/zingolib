@@ -121,8 +121,6 @@ impl UnifiedSpendCapability {
         };
         let transparent_receiver = if desired_receivers.transparent {
             let key_index = KeyIndex::from_index(self.addresses.len() as u32).unwrap();
-            //let key_index = KeyIndex::Normal(self.addresses.len() as u32);
-            dbg!(&key_index);
             let new_key = self
                 .transparent_parent_key
                 .derive_private_key(key_index)

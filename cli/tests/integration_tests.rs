@@ -2,6 +2,7 @@
 
 mod data;
 mod utils;
+use data::TEST_SEED;
 use json::JsonValue;
 use tokio::runtime::Runtime;
 use utils::setup::{
@@ -486,13 +487,14 @@ fn ensure_taddrs_from_old_seeds_work() {
 
     // The first taddr generated on commit 9e71a14eb424631372fd08503b1bd83ea763c7fb
     let transparent_address = "tmFLszfkjgim4zoUMAXpuohnFBAKy99rr2i";
-    // Generated from the following seed
-    let seed = "hospital museum valve antique skate museum \
-    unfold vocal weird milk scale social vessel identify \
-    crowd hospital control album rib bulb path oven civil tank";
-    let client_b =
-        LightClient::create_with_seedorkey_wallet(seed.to_string(), &client_b_config, 0, false)
-            .unwrap();
+
+    let client_b = LightClient::create_with_seedorkey_wallet(
+        TEST_SEED.to_string(),
+        &client_b_config,
+        0,
+        false,
+    )
+    .unwrap();
 
     Runtime::new().unwrap().block_on(async {
         client_b.do_new_address("zt").await.unwrap();
@@ -522,3 +524,105 @@ fn ensure_taddrs_from_old_seeds_work() {
 //   The incorrectly configured location is still present (and not checked in)
 //   The test-or-scenario that caused this situation has failed/panicked.
 //}
+
+#[cfg(feature = "cross_version")]
+/// Use test seed to receive funds from local "regtest" blockchain
+/// using zcash-cli and zcashd in regtest mode
+mod cross_version {
+    use crate::utils::setup::cross_version_setup;
+
+    pub const SEED_DELIMITER: &str = "\nSeed: ";
+    pub const ZINGOCLISTART_DELIMITER: &str = "\n{\n  \"result\": \"success\",\n  \"latest_block\": 1,\n  \"total_blocks_synced\": 1\n}\n";
+    fn extract_post_startup_output(raw_call_result: &Vec<u8>, delimiter: &str) -> String {
+        std::str::from_utf8(&raw_call_result)
+            .unwrap()
+            .split_once(delimiter)
+            .unwrap()
+            .1
+            .to_string()
+    }
+    fn extract_seed(rawoutput_ofseedcall: &Vec<u8>) -> String {
+        let raw = &extract_post_startup_output(rawoutput_ofseedcall, SEED_DELIMITER);
+        raw.split_once("\nhrp_view:").unwrap().0.to_string()
+    }
+    fn extract_transparent_address(raw_addresses: &Vec<u8>) -> String {
+        let addresses = json::parse(&extract_post_startup_output(
+            &raw_addresses,
+            ZINGOCLISTART_DELIMITER,
+        ))
+        .unwrap();
+        let with_quotes = json::stringify(addresses[0]["receivers"]["transparent"].clone());
+        with_quotes
+            .strip_suffix("\"")
+            .unwrap()
+            .strip_prefix("\"")
+            .unwrap()
+            .to_string()
+    }
+    fn extract_sapling_address(raw_addresses: &Vec<u8>) -> String {
+        let addresses = json::parse(&extract_post_startup_output(
+            &raw_addresses,
+            ZINGOCLISTART_DELIMITER,
+        ))
+        .unwrap();
+        let with_quotes = json::stringify(addresses[0]["receivers"]["sapling"].clone());
+        with_quotes
+            .strip_suffix("\"")
+            .unwrap()
+            .strip_prefix("\"")
+            .unwrap()
+            .to_string()
+    }
+    fn extract_unified_address(raw_addresses: &Vec<u8>) -> String {
+        let addresses = json::parse(&extract_post_startup_output(
+            &raw_addresses,
+            ZINGOCLISTART_DELIMITER,
+        ))
+        .unwrap();
+        let with_quotes = json::stringify(addresses[0]["address"].clone());
+        with_quotes
+            .strip_suffix("\"")
+            .unwrap()
+            .strip_prefix("\"")
+            .unwrap()
+            .to_string()
+    }
+    #[test]
+    fn cross_compat() {
+        let (
+            _regtest_manager,
+            _miner_client,
+            sameseed_newclient,
+            child_process_handler,
+            sameseed_oldcli_client,
+        ) = cross_version_setup();
+
+        let addresses = sameseed_oldcli_client
+            .build_handle()
+            .arg("addresses")
+            .output()
+            .expect("Unable to call arg.")
+            .stdout;
+        let oldclient_taddr = extract_transparent_address(&addresses);
+        let rawseedoutput = sameseed_oldcli_client
+            .build_handle()
+            .arg("seed")
+            .output()
+            .expect("failed to get seed")
+            .stdout;
+        let oldclient_seed = dbg!(extract_seed(&rawseedoutput));
+        let _zaddr = extract_sapling_address(&addresses);
+        let _uaddr = extract_unified_address(&addresses);
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let newclient_seed = sameseed_newclient.do_seed_phrase().await.unwrap();
+            assert_eq!(newclient_seed["seed"].to_string(), oldclient_seed);
+            let new_addresses = sameseed_newclient.do_addresses().await;
+            assert_eq!(
+                new_addresses[0]["receivers"]["transparent"].to_string(),
+                oldclient_taddr
+            )
+        });
+        drop(child_process_handler);
+        drop(sameseed_oldcli_client);
+    }
+}

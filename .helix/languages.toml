@@ -1,0 +1,6 @@
+[[language]]
+name = "rust"
+
+[language.config]
+checkOnSave = { command = "check" } 
+cargo = { features = ["cross_version"] }
