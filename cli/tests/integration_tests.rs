@@ -541,7 +541,7 @@ mod cross_version {
             .to_string()
     }
     fn extract_transparent_address(raw_addresses: &Vec<u8>) -> String {
-        let addresses = json::parse(dbg!(&extract_post_startup_output(&raw_addresses))).unwrap();
+        let addresses = json::parse(&extract_post_startup_output(&raw_addresses)).unwrap();
         let with_quotes = json::stringify(addresses[0]["receivers"]["transparent"].clone());
         with_quotes
             .strip_suffix("\"")
@@ -551,7 +551,7 @@ mod cross_version {
             .to_string()
     }
     fn extract_sapling_address(raw_addresses: &Vec<u8>) -> String {
-        let addresses = json::parse(dbg!(&extract_post_startup_output(&raw_addresses))).unwrap();
+        let addresses = json::parse(&extract_post_startup_output(&raw_addresses)).unwrap();
         let with_quotes = json::stringify(addresses[0]["receivers"]["sapling"].clone());
         with_quotes
             .strip_suffix("\"")
@@ -561,7 +561,7 @@ mod cross_version {
             .to_string()
     }
     fn extract_unified_address(raw_addresses: &Vec<u8>) -> String {
-        let addresses = json::parse(dbg!(&extract_post_startup_output(&raw_addresses))).unwrap();
+        let addresses = json::parse(&extract_post_startup_output(&raw_addresses)).unwrap();
         let with_quotes = json::stringify(addresses[0]["address"].clone());
         with_quotes
             .strip_suffix("\"")
@@ -575,13 +575,23 @@ mod cross_version {
         let (regtest_manager, client_one, client_two, child_process_handler, zingo_cli_handler) =
             cross_version_setup();
 
-        let addresses = dbg!(zingo_cli_handler.build_handle().arg("addresses"))
+        let addresses = zingo_cli_handler
+            .build_handle()
+            .arg("addresses")
             .output()
             .expect("Unable to call arg.")
             .stdout;
         let taddr = extract_transparent_address(&addresses);
         let zaddr = extract_sapling_address(&addresses);
         let uaddr = extract_unified_address(&addresses);
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let new_addresses = client_one.do_addresses().await;
+            println!("{}", json::stringify_pretty(new_addresses.clone(), 4));
+            assert_eq!(
+                new_addresses[0]["receivers"]["transparent"].to_string(),
+                taddr
+            )
+        });
         drop(child_process_handler);
         drop(zingo_cli_handler);
     }
