@@ -531,17 +531,26 @@ fn ensure_taddrs_from_old_seeds_work() {
 mod cross_version {
     use crate::utils::setup::cross_version_setup;
 
+    pub const SEED_DELIMITER: &str = "\nSeed: ";
     pub const ZINGOCLISTART_DELIMITER: &str = "\n{\n  \"result\": \"success\",\n  \"latest_block\": 1,\n  \"total_blocks_synced\": 1\n}\n";
-    fn extract_post_startup_output(raw_call_result: &Vec<u8>) -> String {
+    fn extract_post_startup_output(raw_call_result: &Vec<u8>, delimiter: &str) -> String {
         std::str::from_utf8(&raw_call_result)
             .unwrap()
-            .split_once(ZINGOCLISTART_DELIMITER)
+            .split_once(delimiter)
             .unwrap()
             .1
             .to_string()
     }
+    fn extract_seed(rawoutput_ofseedcall: &Vec<u8>) -> String {
+        let raw = &extract_post_startup_output(rawoutput_ofseedcall, SEED_DELIMITER);
+        raw.split_once("\nhrp_view:").unwrap().0.to_string()
+    }
     fn extract_transparent_address(raw_addresses: &Vec<u8>) -> String {
-        let addresses = json::parse(&extract_post_startup_output(&raw_addresses)).unwrap();
+        let addresses = json::parse(&extract_post_startup_output(
+            &raw_addresses,
+            ZINGOCLISTART_DELIMITER,
+        ))
+        .unwrap();
         let with_quotes = json::stringify(addresses[0]["receivers"]["transparent"].clone());
         with_quotes
             .strip_suffix("\"")
@@ -551,7 +560,11 @@ mod cross_version {
             .to_string()
     }
     fn extract_sapling_address(raw_addresses: &Vec<u8>) -> String {
-        let addresses = json::parse(&extract_post_startup_output(&raw_addresses)).unwrap();
+        let addresses = json::parse(&extract_post_startup_output(
+            &raw_addresses,
+            ZINGOCLISTART_DELIMITER,
+        ))
+        .unwrap();
         let with_quotes = json::stringify(addresses[0]["receivers"]["sapling"].clone());
         with_quotes
             .strip_suffix("\"")
@@ -561,7 +574,11 @@ mod cross_version {
             .to_string()
     }
     fn extract_unified_address(raw_addresses: &Vec<u8>) -> String {
-        let addresses = json::parse(&extract_post_startup_output(&raw_addresses)).unwrap();
+        let addresses = json::parse(&extract_post_startup_output(
+            &raw_addresses,
+            ZINGOCLISTART_DELIMITER,
+        ))
+        .unwrap();
         let with_quotes = json::stringify(addresses[0]["address"].clone());
         with_quotes
             .strip_suffix("\"")
@@ -586,24 +603,23 @@ mod cross_version {
             .output()
             .expect("Unable to call arg.")
             .stdout;
-        let taddr = extract_transparent_address(&addresses);
+        let oldclient_taddr = extract_transparent_address(&addresses);
+        let rawseedoutput = sameseed_oldcli_client
+            .build_handle()
+            .arg("seed")
+            .output()
+            .expect("failed to get seed")
+            .stdout;
+        let oldclient_seed = dbg!(extract_seed(&rawseedoutput));
         let zaddr = extract_sapling_address(&addresses);
         let uaddr = extract_unified_address(&addresses);
         tokio::runtime::Runtime::new().unwrap().block_on(async {
-            let newclient_seed = sameseed_newclient.do_seed_phrase();
-            let oldclient_seed = sameseed_oldcli_client
-                .build_handle()
-                .arg("seed")
-                .output()
-                .expect("failed to get seed")
-                .stdout;
-            dbg!(std::str::from_utf8(&oldclient_seed));
-            assert!(1 == 0);
+            let newclient_seed = sameseed_newclient.do_seed_phrase().await.unwrap();
+            assert_eq!(newclient_seed["seed"].to_string(), oldclient_seed);
             let new_addresses = sameseed_newclient.do_addresses().await;
-            println!("{}", json::stringify_pretty(new_addresses.clone(), 4));
             assert_eq!(
                 new_addresses[0]["receivers"]["transparent"].to_string(),
-                taddr
+                oldclient_taddr
             )
         });
         drop(child_process_handler);
