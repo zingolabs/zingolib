@@ -207,12 +207,13 @@ pub mod setup {
         )
         .unwrap();
         let light_client =
-            LightClient::create_with_seedorkey_wallet(seed_phrase, &config, 0, false).unwrap();
+            LightClient::create_with_seedorkey_wallet(seed_phrase.clone(), &config, 0, false)
+                .unwrap();
         (
             regtest_manager,
             child_process_handler,
             light_client,
-            lightwalletd_port,
+            seed_phrase,
         )
     }
     /// This creates two so-called "LightClient"s "client_one" controls a spend capability
@@ -254,36 +255,6 @@ pub mod setup {
         )
     }
 
-    #[cfg(feature = "cross_version")]
-    pub struct ZingoCliHandler {
-        lightwalletd_port: String,
-        seed_phrase: String,
-        zingo_cli_bin: PathBuf,
-    }
-    #[cfg(feature = "cross_version")]
-    impl ZingoCliHandler {
-        pub fn new(lightwalletd_port: String, seed_phrase: String, zingo_cli_bin: PathBuf) -> Self {
-            Self {
-                lightwalletd_port,
-                seed_phrase,
-                zingo_cli_bin,
-            }
-        }
-        pub fn build_handle(&self) -> std::process::Command {
-            let lightwalletd_port = &self.lightwalletd_port;
-            let lightwalletd_server = &format!("http://127.0.0.1:{lightwalletd_port}");
-            let mut handle = std::process::Command::new(&self.zingo_cli_bin);
-            handle.args([
-                "--regtest",
-                "--server",
-                lightwalletd_server,
-                "--birthday=1",
-                "--seed",
-                &self.seed_phrase,
-            ]);
-            handle
-        }
-    }
     /// This creates two so-called "LightClient"s "client_one" controls a spend capability
     /// that has furnished a receiving address in the mineraddress configuration field
     /// of the "generating" regtest-zcashd
@@ -291,43 +262,34 @@ pub mod setup {
     pub fn cross_version_setup() -> (
         RegtestManager,
         LightClient,
-        LightClient,
+        zingtaddrfix::lightclient::LightClient,
         ChildProcessHandler,
-        ZingoCliHandler,
     ) {
-        let (regtest_manager, child_process_handler, client_one, lightwalletd_port) =
+        let (regtest_manager, child_process_handler, current_client, current_seed_phrase) =
             saplingcoinbasebacked_spendcapable_cross_version();
-        let client_two_zingoconf_path = format!(
+        let current_version_client_zingoconf_path = format!(
             "{}_two",
             regtest_manager.zingo_data_dir.to_string_lossy().to_string()
         );
-        std::fs::create_dir(&client_two_zingoconf_path).unwrap();
-        let (client_two_config, _height) = create_zingoconf_with_datadir(
-            client_one.get_server_uri(),
-            Some(client_two_zingoconf_path),
+        std::fs::create_dir(&current_version_client_zingoconf_path).unwrap();
+        let (indexed_taddr_client, _height) = zingtaddrfix::create_zingoconf_with_datadir(
+            current_client.get_server_uri(),
+            Some(current_version_client_zingoconf_path),
         )
         .unwrap();
-        let seed_phrase_for_two = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
-            .unwrap()
-            .to_string();
-        let client_two = LightClient::create_with_seedorkey_wallet(
-            seed_phrase_for_two.clone(),
-            &client_two_config,
-            0,
-            false,
-        )
-        .unwrap();
-        let zingo_cli_handler = ZingoCliHandler::new(
-            lightwalletd_port,
-            seed_phrase_for_two,
-            regtest_manager.get_zingocli_bin(),
-        );
+        let fixed_taddr_client =
+            zingtaddrfix::lightclient::LightClient::create_with_seedorkey_wallet(
+                current_seed_phrase,
+                &indexed_taddr_client,
+                0,
+                false,
+            )
+            .unwrap();
         (
             regtest_manager,
-            client_one,
-            client_two,
+            current_client,
+            fixed_taddr_client,
             child_process_handler,
-            zingo_cli_handler,
         )
     }
 
