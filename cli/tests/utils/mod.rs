@@ -173,6 +173,7 @@ pub mod setup {
         (regtest_manager, child_process_handler, light_client)
     }
 
+    #[cfg(feature = "cross_version")]
     pub fn saplingcoinbasebacked_spendcapable_cross_version(
     ) -> (RegtestManager, ChildProcessHandler, LightClient, String) {
         //tracing_subscriber::fmt::init();
@@ -259,6 +260,7 @@ pub mod setup {
         seed_phrase: String,
         zingo_cli_bin: PathBuf,
     }
+    #[cfg(feature = "cross_version")]
     impl ZingoCliHandler {
         pub fn new(lightwalletd_port: String, seed_phrase: String, zingo_cli_bin: PathBuf) -> Self {
             Self {
