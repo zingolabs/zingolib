@@ -391,7 +391,10 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
             "unconfirmed_spent" =>  JsonValue::Null,
 
     };
-    let original_recipient_address = "uregtest1qtqr46fwkhmdn336uuyvvxyrv0l7trgc0z9clpryx6vtladnpyt4wvq99p59f4rcyuvpmmd0hm4k5vv6j8edj6n8ltk45sdkptlk7rtzlm4uup4laq8ka8vtxzqemj3yhk6hqhuypupzryhv66w65lah9ms03xa8nref7gux2zzhjnfanxnnrnwscmz6szv2ghrurhu3jsqdx25y2yh";
+    let original_recipient_address = "\
+        uregtest1qtqr46fwkhmdn336uuyvvxyrv0l7trgc0z9clpryx6vtladnpyt4wvq99p59f4rcyuvpmmd0hm4k5vv6j\
+        8edj6n8ltk45sdkptlk7rtzlm4uup4laq8ka8vtxzqemj3yhk6hqhuypupzryhv66w65lah9ms03xa8nref7gux2zz\
+        hjnfanxnnrnwscmz6szv2ghrurhu3jsqdx25y2yh";
     let seed_of_recipient = Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &sender, 5).await;
         let addresses = recipient.do_addresses().await;
