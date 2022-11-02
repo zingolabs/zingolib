@@ -374,7 +374,7 @@ fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
 /// the previous diversifier list.
 #[test]
 fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
-    let (regtest_manager, client_a, client_b, child_process_handler) =
+    let (regtest_manager, sender, recipient, child_process_handler) =
         two_clients_one_saplingcoinbase_backed();
     let mut expected_unspent_sapling_notes = json::object! {
 
@@ -391,20 +391,20 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
             "unconfirmed_spent" =>  JsonValue::Null,
 
     };
-    let seed = Runtime::new().unwrap().block_on(async {
-        utils::increase_height_and_sync_client(&regtest_manager, &client_a, 5).await;
-        let sapling_addr_of_b = client_b.do_new_address("tz").await.unwrap();
-        client_a
+    let seed_of_recipient = Runtime::new().unwrap().block_on(async {
+        utils::increase_height_and_sync_client(&regtest_manager, &sender, 5).await;
+        let recipient_addr = recipient.do_new_address("tz").await.unwrap();
+        sender
             .do_send(vec![(
-                sapling_addr_of_b[0].as_str().unwrap(),
+                recipient_addr[0].as_str().unwrap(),
                 5_000,
                 Some("foo".to_string()),
             )])
             .await
             .unwrap();
-        utils::increase_height_and_sync_client(&regtest_manager, &client_a, 5).await;
-        client_b.do_sync(true).await.unwrap();
-        let notes = client_b.do_list_notes(true).await;
+        utils::increase_height_and_sync_client(&regtest_manager, &sender, 5).await;
+        recipient.do_sync(true).await.unwrap();
+        let notes = recipient.do_list_notes(true).await;
         assert_eq!(notes["unspent_sapling_notes"].members().len(), 1);
         let note = notes["unspent_sapling_notes"].members().next().unwrap();
         //The following fields aren't known until runtime, and should be cryptographically nondeterministic
@@ -419,38 +419,39 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
             json::stringify_pretty(expected_unspent_sapling_notes.clone(), 4),
             json::stringify_pretty(note.clone(), 4)
         );
-        client_b.do_seed_phrase().await.unwrap()
+        recipient.do_seed_phrase().await.unwrap()
     });
     let (config, _height) = create_zingoconf_with_datadir(
-        client_b.get_server_uri(),
+        recipient.get_server_uri(),
         regtest_manager
             .zingo_data_dir
             .to_str()
             .map(ToString::to_string),
     )
     .unwrap();
+    drop(recipient);
     let mut expected_unspent_sapling_notes_after_restore_from_seed =
         expected_unspent_sapling_notes.clone();
     expected_unspent_sapling_notes_after_restore_from_seed["address"] = JsonValue::String(
         "Diversifier not in wallet. Perhaps you restored from seed and didn't restore addresses"
             .to_string(),
     );
-    let client_b_restored = LightClient::create_with_seedorkey_wallet(
-        seed["seed"].as_str().unwrap().to_string(),
+    let recipient_restored = LightClient::create_with_seedorkey_wallet(
+        seed_of_recipient["seed"].as_str().unwrap().to_string(),
         &config,
         0,
         true,
     )
     .unwrap();
     Runtime::new().unwrap().block_on(async {
-        client_b_restored.do_sync(true).await.unwrap();
-        let notes = client_b_restored.do_list_notes(true).await;
+        recipient_restored.do_sync(true).await.unwrap();
+        let notes = recipient_restored.do_list_notes(true).await;
         assert_eq!(notes["unspent_sapling_notes"].members().len(), 1);
         let note = notes["unspent_sapling_notes"].members().next().unwrap();
         assert_eq!(
             note,
             &expected_unspent_sapling_notes_after_restore_from_seed,
-            "Expected: {}\nActual: {}",
+            "\nExpected:\n{}\n===\nActual:\n{}\n",
             json::stringify_pretty(
                 expected_unspent_sapling_notes_after_restore_from_seed.clone(),
                 4
@@ -458,18 +459,18 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
             json::stringify_pretty(note.clone(), 4)
         );
 
-        //The first address in a wallet should always contain all three currently existant receiver types
-        let address_of_a = &client_a.do_addresses().await[0]["address"];
-        client_b_restored
-            .do_send(vec![(address_of_a.as_str().unwrap(), 4_000, None)])
+        //The first address in a wallet should always contain all three currently extant receiver types
+        let sender_address = &sender.do_addresses().await[0]["address"];
+        recipient_restored
+            .do_send(vec![(sender_address.as_str().unwrap(), 4_000, None)])
             .await
             .unwrap();
-        utils::increase_height_and_sync_client(&regtest_manager, &client_a, 5).await;
+        utils::increase_height_and_sync_client(&regtest_manager, &sender, 5).await;
 
         //Ensure that client_b_restored was still able to spend the note, despite not having the
         //diversified address associated with it
         assert_eq!(
-            client_a.do_balance().await["spendable_orchard_balance"],
+            sender.do_balance().await["spendable_orchard_balance"],
             4_000
         );
     });
