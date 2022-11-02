@@ -29,6 +29,18 @@ pub async fn increase_height_and_sync_client(
 async fn check_wallet_chainheight_value(client: &LightClient, target: u32) -> bool {
     get_synced_wallet_height(&client).await != target
 }
+pub fn derive_client(
+    reference_client: &LightClient,
+    regtest_manager: &RegtestManager,
+) -> (zingoconfig::ZingoConfig, u64) {
+    let server_id = reference_client.get_server_uri(); // Last use of original recipient
+    let zingo_datadir = regtest_manager
+        .zingo_data_dir
+        .to_str()
+        .map(ToString::to_string);
+
+    zingolib::create_zingoconf_with_datadir(server_id, zingo_datadir).unwrap()
+}
 pub mod setup {
     use crate::data;
     use std::path::PathBuf;

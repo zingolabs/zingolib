@@ -427,14 +427,8 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
         );
         recipient.do_seed_phrase().await.unwrap()
     });
-    let server_id = recipient.get_server_uri(); // Last use of original recipient
+    let (config, _height) = utils::derive_client(&recipient, &regtest_manager);
     drop(recipient); // Discard original to ensure subsequent data is fresh.
-
-    let zingo_datadir = regtest_manager
-        .zingo_data_dir
-        .to_str()
-        .map(ToString::to_string);
-    let (config, _height) = create_zingoconf_with_datadir(server_id, zingo_datadir).unwrap();
     let mut expected_unspent_sapling_notes_after_restore_from_seed =
         expected_unspent_sapling_notes.clone();
     expected_unspent_sapling_notes_after_restore_from_seed["address"] = JsonValue::String(
