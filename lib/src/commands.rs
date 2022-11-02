@@ -34,7 +34,7 @@ impl Command for ChangeServerCommand {
         h.push("changeserver [server_uri]");
         h.push("");
         h.push("Example:");
-        h.push("changeserver https://zuul.free2z.cash:9067");
+        h.push("changeserver https://mainnet.lightwalletd.com:9067");
 
         h.join("\n")
     }
