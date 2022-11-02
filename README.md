@@ -53,7 +53,7 @@ Because patching only applies at the top level of a project, in order to use thi
 ## Notes:
 * If you want to run your own server, please see [zingo lightwalletd](https://github.com/zingolabs/lightwalletd), and then run `./zingo-cli --server http://127.0.0.1:9067`
 * The default log file is in `~/.zcash/zingo-wallet.debug.log`. A default wallet is stored in `~/.zcash/zingo-wallet.dat`
-* Currently, the default, hard-coded `lightwalletd` server is https://zuul.free2z.cash:9067/. To change this, you can modify the `DEFAULT_SERVER` const in `config/src/lib.rs`
+* Currently, the default, hard-coded `lightwalletd` server is https://mainnet.lightwalletd.com:9067/. To change this, you can modify the `DEFAULT_SERVER` const in `config/src/lib.rs`
 
 ## Running in non-interactive mode:
 You can also run `zingo-cli` in non-interactive mode by passing the command you want to run as an argument. For example, `zingo-cli addresses` will list all wallet addresses and exit.
