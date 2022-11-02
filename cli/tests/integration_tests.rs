@@ -368,6 +368,10 @@ fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
     });
 }
 
+/// An arbitrary number of diversified addresses may be generated
+/// from a seed.  If the wallet is subsequently lost-or-destroyed
+/// wallet-regeneration-from-seed (sprouting) doesn't regenerate
+/// the previous diversifier list.
 #[test]
 fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
     let (regtest_manager, client_a, client_b, child_process_handler) =
