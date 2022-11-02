@@ -421,14 +421,12 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
         );
         recipient.do_seed_phrase().await.unwrap()
     });
-    let (config, _height) = create_zingoconf_with_datadir(
-        recipient.get_server_uri(),
-        regtest_manager
-            .zingo_data_dir
-            .to_str()
-            .map(ToString::to_string),
-    )
-    .unwrap();
+    let server_id = recipient.get_server_uri();
+    let zingo_datadir = regtest_manager
+        .zingo_data_dir
+        .to_str()
+        .map(ToString::to_string);
+    let (config, _height) = create_zingoconf_with_datadir(server_id, zingo_datadir).unwrap();
     drop(recipient);
     let mut expected_unspent_sapling_notes_after_restore_from_seed =
         expected_unspent_sapling_notes.clone();
@@ -459,7 +457,8 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
             json::stringify_pretty(note.clone(), 4)
         );
 
-        //The first address in a wallet should always contain all three currently extant receiver types
+        //The first address in a wallet should always contain all three currently extant
+        //receiver types.
         let sender_address = &sender.do_addresses().await[0]["address"];
         recipient_restored
             .do_send(vec![(sender_address.as_str().unwrap(), 4_000, None)])
@@ -467,7 +466,7 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
             .unwrap();
         utils::increase_height_and_sync_client(&regtest_manager, &sender, 5).await;
 
-        //Ensure that client_b_restored was still able to spend the note, despite not having the
+        //Ensure that recipient_restored was still able to spend the note, despite not having the
         //diversified address associated with it
         assert_eq!(
             sender.do_balance().await["spendable_orchard_balance"],
