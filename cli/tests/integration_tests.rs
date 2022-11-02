@@ -391,8 +391,11 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
             "unconfirmed_spent" =>  JsonValue::Null,
 
     };
+    let original_recipient_address = "uregtest1qtqr46fwkhmdn336uuyvvxyrv0l7trgc0z9clpryx6vtladnpyt4wvq99p59f4rcyuvpmmd0hm4k5vv6j8edj6n8ltk45sdkptlk7rtzlm4uup4laq8ka8vtxzqemj3yhk6hqhuypupzryhv66w65lah9ms03xa8nref7gux2zzhjnfanxnnrnwscmz6szv2ghrurhu3jsqdx25y2yh";
     let seed_of_recipient = Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &sender, 5).await;
+        let addresses = recipient.do_addresses().await;
+        assert_eq!(&addresses[0]["address"], &original_recipient_address);
         let recipient_addr = recipient.do_new_address("tz").await.unwrap();
         sender
             .do_send(vec![(
@@ -421,13 +424,14 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
         );
         recipient.do_seed_phrase().await.unwrap()
     });
-    let server_id = recipient.get_server_uri();
+    let server_id = recipient.get_server_uri(); // Last use of original recipient
+    drop(recipient); // Discard original to ensure subsequent data is fresh.
+
     let zingo_datadir = regtest_manager
         .zingo_data_dir
         .to_str()
         .map(ToString::to_string);
     let (config, _height) = create_zingoconf_with_datadir(server_id, zingo_datadir).unwrap();
-    drop(recipient);
     let mut expected_unspent_sapling_notes_after_restore_from_seed =
         expected_unspent_sapling_notes.clone();
     expected_unspent_sapling_notes_after_restore_from_seed["address"] = JsonValue::String(
@@ -443,6 +447,11 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
     .unwrap();
     let seed_of_recipient_restored = Runtime::new().unwrap().block_on(async {
         recipient_restored.do_sync(true).await.unwrap();
+        let restored_addresses = recipient_restored.do_addresses().await;
+        assert_eq!(
+            &restored_addresses[0]["address"],
+            &original_recipient_address
+        );
         let notes = recipient_restored.do_list_notes(true).await;
         assert_eq!(notes["unspent_sapling_notes"].members().len(), 1);
         let note = notes["unspent_sapling_notes"].members().next().unwrap();
