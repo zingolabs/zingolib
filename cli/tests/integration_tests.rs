@@ -427,7 +427,7 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
         );
         recipient.do_seed_phrase().await.unwrap()
     });
-    let (config, _height) = utils::derive_client(&recipient, &regtest_manager);
+    let (config, _height) = utils::setup::get_config_and_height(&recipient, &regtest_manager);
     drop(recipient); // Discard original to ensure subsequent data is fresh.
     let mut expected_unspent_sapling_notes_after_restore_from_seed =
         expected_unspent_sapling_notes.clone();
