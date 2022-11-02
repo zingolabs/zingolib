@@ -415,7 +415,7 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
         assert_eq!(
             note,
             &expected_unspent_sapling_notes,
-            "Expected: {}\nActual: {}",
+            "\nExpected:\n{}\n===\nActual:\n{}\n",
             json::stringify_pretty(expected_unspent_sapling_notes.clone(), 4),
             json::stringify_pretty(note.clone(), 4)
         );
