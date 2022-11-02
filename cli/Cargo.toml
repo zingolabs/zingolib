@@ -14,6 +14,7 @@ tokio =  { version = "1.6.0", features = ["full"] }
 
 zingolib = { path = "../lib/" }
 zingoconfig = { path = "../config/" }
+zingtaddrfix = { git = "https://github.com/zingolabs/zingolib", package = "zingolib", rev = "f8fb624237fd4923512cc065620b55230676ab82", optional = true }
 
 [dev-dependencies]
 bech32 = "0.9.0"
@@ -25,4 +26,4 @@ zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash", rev 
 zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", rev = "d66f7f70516e6da5c24008874a926d41221b1346", features = ["transparent-inputs", "test-dependencies"] }
 
 [features]
-cross_version = []
+cross_version = [ "dep:zingtaddrfix" ]

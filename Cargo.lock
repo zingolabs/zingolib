@@ -3770,13 +3770,27 @@ dependencies = [
  "tracing-subscriber",
  "zcash_client_backend",
  "zcash_primitives",
- "zingoconfig",
- "zingolib",
+ "zingoconfig 0.1.0",
+ "zingolib 0.2.0",
+ "zingolib 0.2.0 (git+https://github.com/zingolabs/zingolib?rev=f8fb624237fd4923512cc065620b55230676ab82)",
 ]
 
 [[package]]
 name = "zingoconfig"
 version = "0.1.0"
+dependencies = [
+ "dirs",
+ "http",
+ "log",
+ "log4rs",
+ "zcash_address",
+ "zcash_primitives",
+]
+
+[[package]]
+name = "zingoconfig"
+version = "0.1.0"
+source = "git+https://github.com/zingolabs/zingolib?rev=f8fb624237fd4923512cc065620b55230676ab82#f8fb624237fd4923512cc065620b55230676ab82"
 dependencies = [
  "dirs",
  "http",
@@ -3845,5 +3859,65 @@ dependencies = [
  "zcash_note_encryption",
  "zcash_primitives",
  "zcash_proofs",
- "zingoconfig",
+ "zingoconfig 0.1.0",
+]
+
+[[package]]
+name = "zingolib"
+version = "0.2.0"
+source = "git+https://github.com/zingolabs/zingolib?rev=f8fb624237fd4923512cc065620b55230676ab82#f8fb624237fd4923512cc065620b55230676ab82"
+dependencies = [
+ "base58",
+ "base64",
+ "bech32 0.9.1",
+ "bip0039 0.10.1",
+ "bls12_381",
+ "byteorder",
+ "bytes 0.4.12",
+ "ff",
+ "futures",
+ "group",
+ "hex 0.3.2",
+ "http",
+ "http-body",
+ "hyper",
+ "hyper-rustls",
+ "incrementalmerkletree",
+ "json",
+ "jubjub",
+ "lazy_static",
+ "log",
+ "log4rs",
+ "nonempty",
+ "orchard",
+ "pairing",
+ "prost",
+ "rand 0.8.5",
+ "reqwest",
+ "ring",
+ "ripemd160",
+ "rust-embed",
+ "rustls-pemfile",
+ "secp256k1",
+ "serde_json",
+ "sha2 0.9.9",
+ "sodiumoxide",
+ "subtle",
+ "tokio",
+ "tokio-rustls",
+ "tokio-stream",
+ "tonic",
+ "tonic-build",
+ "tower",
+ "tower-http 0.2.5",
+ "tracing",
+ "tracing-subscriber",
+ "webpki-roots 0.21.1",
+ "zcash_address",
+ "zcash_client_backend",
+ "zcash_encoding",
+ "zcash_note_encryption",
+ "zcash_primitives",
+ "zcash_proofs",
+ "zingoconfig 0.1.0 (git+https://github.com/zingolabs/zingolib?rev=f8fb624237fd4923512cc065620b55230676ab82)",
 ]

@@ -173,17 +173,18 @@ pub mod setup {
         (regtest_manager, child_process_handler, light_client)
     }
 
+    #[cfg(feature = "cross_version")]
     pub fn saplingcoinbasebacked_spendcapable_cross_version(
     ) -> (RegtestManager, ChildProcessHandler, LightClient, String) {
         //tracing_subscriber::fmt::init();
-        let seed_phrase = zcash_primitives::zip339::Mnemonic::from_entropy([0; 32])
+        let cross_version_seed_phrase = zcash_primitives::zip339::Mnemonic::from_entropy([3; 32])
             .unwrap()
             .to_string();
         assert_eq!(
-            &seed_phrase,
-            "abandon abandon abandon abandon abandon abandon abandon abandon \
-             abandon abandon abandon abandon abandon abandon abandon abandon \
-             abandon abandon abandon abandon abandon abandon abandon art"
+            &cross_version_seed_phrase,
+            "adapt blossom school alcohol coral light army gather \
+             adapt blossom school alcohol coral light army gather \
+             adapt blossom school alcohol coral light army hold"
         );
         let first_z_addr_from_seed_phrase = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
         let (regtest_manager, lightwalletd_port) =
@@ -205,13 +206,18 @@ pub mod setup {
             Some(regtest_manager.zingo_data_dir.to_string_lossy().to_string()),
         )
         .unwrap();
-        let light_client =
-            LightClient::create_with_seedorkey_wallet(seed_phrase, &config, 0, false).unwrap();
+        let light_client = LightClient::create_with_seedorkey_wallet(
+            cross_version_seed_phrase.clone(),
+            &config,
+            0,
+            false,
+        )
+        .unwrap();
         (
             regtest_manager,
             child_process_handler,
             light_client,
-            lightwalletd_port,
+            cross_version_seed_phrase,
         )
     }
     /// This creates two so-called "LightClient"s "client_one" controls a spend capability
@@ -253,35 +259,6 @@ pub mod setup {
         )
     }
 
-    #[cfg(feature = "cross_version")]
-    pub struct ZingoCliHandler {
-        lightwalletd_port: String,
-        seed_phrase: String,
-        zingo_cli_bin: PathBuf,
-    }
-    impl ZingoCliHandler {
-        pub fn new(lightwalletd_port: String, seed_phrase: String, zingo_cli_bin: PathBuf) -> Self {
-            Self {
-                lightwalletd_port,
-                seed_phrase,
-                zingo_cli_bin,
-            }
-        }
-        pub fn build_handle(&self) -> std::process::Command {
-            let lightwalletd_port = &self.lightwalletd_port;
-            let lightwalletd_server = &format!("http://127.0.0.1:{lightwalletd_port}");
-            let mut handle = std::process::Command::new(&self.zingo_cli_bin);
-            handle.args([
-                "--regtest",
-                "--server",
-                lightwalletd_server,
-                "--birthday=1",
-                "--seed",
-                &self.seed_phrase,
-            ]);
-            handle
-        }
-    }
     /// This creates two so-called "LightClient"s "client_one" controls a spend capability
     /// that has furnished a receiving address in the mineraddress configuration field
     /// of the "generating" regtest-zcashd
@@ -289,43 +266,34 @@ pub mod setup {
     pub fn cross_version_setup() -> (
         RegtestManager,
         LightClient,
-        LightClient,
+        zingtaddrfix::lightclient::LightClient,
         ChildProcessHandler,
-        ZingoCliHandler,
     ) {
-        let (regtest_manager, child_process_handler, client_one, lightwalletd_port) =
+        let (regtest_manager, child_process_handler, current_client, current_seed_phrase) =
             saplingcoinbasebacked_spendcapable_cross_version();
-        let client_two_zingoconf_path = format!(
+        let current_version_client_zingoconf_path = format!(
             "{}_two",
             regtest_manager.zingo_data_dir.to_string_lossy().to_string()
         );
-        std::fs::create_dir(&client_two_zingoconf_path).unwrap();
-        let (client_two_config, _height) = create_zingoconf_with_datadir(
-            client_one.get_server_uri(),
-            Some(client_two_zingoconf_path),
+        std::fs::create_dir(&current_version_client_zingoconf_path).unwrap();
+        let (indexed_taddr_client, _height) = zingtaddrfix::create_zingoconf_with_datadir(
+            current_client.get_server_uri(),
+            Some(current_version_client_zingoconf_path),
         )
         .unwrap();
-        let seed_phrase_for_two = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
-            .unwrap()
-            .to_string();
-        let client_two = LightClient::create_with_seedorkey_wallet(
-            seed_phrase_for_two.clone(),
-            &client_two_config,
-            0,
-            false,
-        )
-        .unwrap();
-        let zingo_cli_handler = ZingoCliHandler::new(
-            lightwalletd_port,
-            seed_phrase_for_two,
-            regtest_manager.get_zingocli_bin(),
-        );
+        let fixed_taddr_client =
+            zingtaddrfix::lightclient::LightClient::create_with_seedorkey_wallet(
+                current_seed_phrase,
+                &indexed_taddr_client,
+                0,
+                false,
+            )
+            .unwrap();
         (
             regtest_manager,
-            client_one,
-            client_two,
+            current_client,
+            fixed_taddr_client,
             child_process_handler,
-            zingo_cli_handler,
         )
     }
 
