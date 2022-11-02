@@ -443,7 +443,7 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
         true,
     )
     .unwrap();
-    Runtime::new().unwrap().block_on(async {
+    let seed_of_recipient_restored = Runtime::new().unwrap().block_on(async {
         recipient_restored.do_sync(true).await.unwrap();
         let notes = recipient_restored.do_list_notes(true).await;
         assert_eq!(notes["unspent_sapling_notes"].members().len(), 1);
@@ -473,7 +473,9 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
             sender.do_balance().await["spendable_orchard_balance"],
             4_000
         );
+        recipient_restored.do_seed_phrase().await.unwrap()
     });
+    assert_eq!(seed_of_recipient, seed_of_recipient_restored);
     drop(child_process_handler);
 }
 
