@@ -23,7 +23,7 @@ use zcash_primitives::{
     constants,
 };
 
-pub const DEFAULT_SERVER: &str = "https://zuul.free2z.cash";
+pub const DEFAULT_SERVER: &str = "https://mainnet.lightwalletd.com:9067";
 pub const MAX_REORG: usize = 100;
 pub const WALLET_NAME: &str = "zingo-wallet.dat";
 pub const LOGFILE_NAME: &str = "zingo-wallet.debug.log";
