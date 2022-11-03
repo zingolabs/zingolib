@@ -1560,9 +1560,9 @@ dependencies = [
 
 [[package]]
 name = "num_cpus"
-version = "1.13.1"
+version = "1.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19e64526ebdee182341572e50e9ad03965aa510cd94427a4549448f285e957a1"
+checksum = "f6058e64324c71e02bc2b150e4f3bc8286db6c83092132ffa3f6b1eab0f9def5"
 dependencies = [
  "hermit-abi",
  "libc",
@@ -2253,7 +2253,7 @@ dependencies = [
  "jni",
  "lazy_static",
  "log",
- "zingoconfig",
+ "zingoconfig 0.1.0 (git+https://github.com/zingolabs/zingolib?branch=dev)",
  "zingolib",
 ]
 
@@ -3669,7 +3669,20 @@ dependencies = [
 [[package]]
 name = "zingoconfig"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#88edcac37192ae3e68972946d91d9e7a133cfa8f"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#2f9bf84e3655492bd91845121f148cea7f634b10"
+dependencies = [
+ "dirs",
+ "http",
+ "log",
+ "log4rs",
+ "zcash_address",
+ "zcash_primitives",
+]
+
+[[package]]
+name = "zingoconfig"
+version = "0.1.0"
+source = "git+https://github.com/aloearev/zingolib?branch=seed_debugging#d0b5435754857272a74599c12d51e151a7b356be"
 dependencies = [
  "dirs",
  "http",
@@ -3682,7 +3695,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#88edcac37192ae3e68972946d91d9e7a133cfa8f"
+source = "git+https://github.com/aloearev/zingolib?branch=seed_debugging#d0b5435754857272a74599c12d51e151a7b356be"
 dependencies = [
  "base58",
  "base64 0.13.1",
@@ -3736,5 +3749,5 @@ dependencies = [
  "zcash_note_encryption",
  "zcash_primitives",
  "zcash_proofs",
- "zingoconfig",
+ "zingoconfig 0.1.0 (git+https://github.com/aloearev/zingolib?branch=seed_debugging)",
 ]
