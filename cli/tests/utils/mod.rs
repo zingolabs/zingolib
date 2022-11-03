@@ -29,6 +29,7 @@ pub async fn increase_height_and_sync_client(
 async fn check_wallet_chainheight_value(client: &LightClient, target: u32) -> bool {
     get_synced_wallet_height(&client).await != target
 }
+#[cfg(test)]
 pub mod setup {
     use crate::data;
     use std::path::PathBuf;
@@ -36,23 +37,72 @@ pub mod setup {
     use zingo_cli::regtest::{ChildProcessHandler, RegtestManager};
     use zingolib::{create_zingoconf_with_datadir, lightclient::LightClient};
 
-    struct ClientBuilder {
-        server_id: String,
-        zingo_datadir: String,
+    pub struct ClientBuilder {
+        server_id: http::Uri,
+        zingo_datadir: PathBuf,
         seed: Option<String>,
+        zingo_config: zingoconfig::ZingoConfig,
+        height: u64,
+        client_number: u8,
     }
     impl ClientBuilder {
-        pub fn get_config_and_height(
-            reference_client: &LightClient,
-            regtest_manager: &RegtestManager,
-        ) -> (zingoconfig::ZingoConfig, u64) {
-            let server_id = reference_client.get_server_uri(); // Last use of original recipient
-            let zingo_datadir = regtest_manager
-                .zingo_data_dir
-                .to_str()
-                .map(ToString::to_string);
+        pub fn new(server_id: http::Uri, zingo_datadir: PathBuf, seed: Option<String>) -> Self {
+            let (zingo_config, height) = zingolib::create_zingoconf_with_datadir(
+                server_id.clone(),
+                Some(zingo_datadir.to_str().unwrap().to_string()),
+            )
+            .unwrap();
+            let client_number = 0;
+            ClientBuilder {
+                server_id,
+                zingo_datadir,
+                seed,
+                zingo_config,
+                height,
+                client_number,
+            }
+        }
+        fn make_config(&mut self) -> (zingoconfig::ZingoConfig, u64) {
+            self.client_number += 1;
+            let conf_path = format!(
+                "{}_{}",
+                self.zingo_datadir.to_string_lossy().to_string(),
+                self.client_number
+            );
+            std::fs::create_dir(&conf_path).unwrap();
 
-            zingolib::create_zingoconf_with_datadir(server_id, zingo_datadir).unwrap()
+            zingolib::create_zingoconf_with_datadir(self.server_id.clone(), Some(conf_path))
+                .unwrap()
+        }
+        pub fn new_sameseed_client(&mut self, birthday: u64, overwrite: bool) -> LightClient {
+            let (zingo_config, _) = self.make_config();
+            LightClient::create_with_seedorkey_wallet(
+                self.seed.clone().unwrap(),
+                &zingo_config,
+                birthday,
+                overwrite,
+            )
+            .unwrap()
+        }
+        pub fn new_freshseed_client(&mut self, birthday: u64, overwrite: bool) -> LightClient {
+            let (zingo_config, _) = self.make_config();
+            LightClient::create_with_seedorkey_wallet(
+                self.seed.clone().unwrap(),
+                &zingo_config,
+                birthday,
+                overwrite,
+            )
+            .unwrap()
+        }
+        pub fn new_plantedseed_client(
+            &mut self,
+            seed: String,
+            birthday: u64,
+            overwrite: bool,
+        ) -> LightClient {
+            let (zingo_config, _) = self.make_config();
+            LightClient::create_with_seedorkey_wallet(seed, &zingo_config, birthday, overwrite)
+                .unwrap()
         }
     }
     //pub fn add_nonprimary_client() -> LightClient {}
@@ -156,8 +206,8 @@ pub mod setup {
     /// and zcashd (in regtest mode). This setup is intended to produce the most basic  
     /// of scenarios.  As scenarios with even less requirements
     /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
-    pub fn saplingcoinbasebacked_spendcapable() -> (RegtestManager, ChildProcessHandler, LightClient)
-    {
+    pub fn saplingcoinbasebacked_spendcapable(
+    ) -> (RegtestManager, ChildProcessHandler, ClientBuilder) {
         //tracing_subscriber::fmt::init();
         let seed_phrase = zcash_primitives::zip339::Mnemonic::from_entropy([0; 32])
             .unwrap()
@@ -183,14 +233,12 @@ pub mod setup {
         let server_id = zingoconfig::construct_server_uri(Some(format!(
             "http://127.0.0.1:{lightwalletd_port}"
         )));
-        let (config, _height) = create_zingoconf_with_datadir(
+        let client_builder = ClientBuilder::new(
             server_id,
-            Some(regtest_manager.zingo_data_dir.to_string_lossy().to_string()),
-        )
-        .unwrap();
-        let light_client =
-            LightClient::create_with_seedorkey_wallet(seed_phrase, &config, 0, false).unwrap();
-        (regtest_manager, child_process_handler, light_client)
+            regtest_manager.zingo_data_dir.clone(),
+            Some(seed_phrase),
+        );
+        (regtest_manager, child_process_handler, client_builder)
     }
 
     #[cfg(feature = "cross_version")]
@@ -248,34 +296,21 @@ pub mod setup {
         LightClient,
         LightClient,
         ChildProcessHandler,
+        ClientBuilder,
     ) {
-        let (regtest_manager, child_process_handler, client_one) =
+        let (regtest_manager, child_process_handler, mut client_builder) =
             saplingcoinbasebacked_spendcapable();
-        let client_two_zingoconf_path = format!(
-            "{}_two",
-            regtest_manager.zingo_data_dir.to_string_lossy().to_string()
-        );
-        std::fs::create_dir(&client_two_zingoconf_path).unwrap();
-        let (client_two_config, _height) = create_zingoconf_with_datadir(
-            client_one.get_server_uri(),
-            Some(client_two_zingoconf_path),
-        )
-        .unwrap();
+        let client_one = client_builder.new_sameseed_client(0, false);
         let seed_phrase_of_two = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
             .unwrap()
             .to_string();
-        let client_two = LightClient::create_with_seedorkey_wallet(
-            seed_phrase_of_two,
-            &client_two_config,
-            0,
-            false,
-        )
-        .unwrap();
+        let client_two = client_builder.new_plantedseed_client(seed_phrase_of_two, 0, false);
         (
             regtest_manager,
             client_one,
             client_two,
             child_process_handler,
+            client_builder,
         )
     }
 
