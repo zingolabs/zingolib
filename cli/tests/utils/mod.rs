@@ -41,24 +41,15 @@ pub mod setup {
         server_id: http::Uri,
         zingo_datadir: PathBuf,
         seed: Option<String>,
-        zingo_config: zingoconfig::ZingoConfig,
-        height: u64,
         client_number: u8,
     }
     impl ClientBuilder {
         pub fn new(server_id: http::Uri, zingo_datadir: PathBuf, seed: Option<String>) -> Self {
-            let (zingo_config, height) = zingolib::create_zingoconf_with_datadir(
-                server_id.clone(),
-                Some(zingo_datadir.to_str().unwrap().to_string()),
-            )
-            .unwrap();
             let client_number = 0;
             ClientBuilder {
                 server_id,
                 zingo_datadir,
                 seed,
-                zingo_config,
-                height,
                 client_number,
             }
         }
