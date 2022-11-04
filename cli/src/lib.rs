@@ -377,6 +377,9 @@ to scan from the start of the blockchain."
     /// <https://github.com/zingolabs/zingolib/tree/dev/cli>
     /// <https://github.com/zingolabs/zingo-mobile>
     pub fn startup(&self) -> std::io::Result<(Sender<(String, Vec<String>)>, Receiver<String>)> {
+        // Initialize logging
+        LightClient::init_logging()?;
+
         // Try to get the configuration
         let (config, latest_block_height) =
             create_zingoconf_with_datadir(self.server.clone(), self.maybe_data_dir.clone())?;
@@ -402,9 +405,6 @@ to scan from the start of the blockchain."
                 }
             }
         };
-
-        // Initialize logging
-        lightclient.init_logging()?;
 
         // Print startup Messages
         info!(""); // Blank line
