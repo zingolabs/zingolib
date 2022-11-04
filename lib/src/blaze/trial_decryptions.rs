@@ -169,7 +169,6 @@ impl TrialDecryptions {
 
         for compact_block in compact_blocks {
             let height = BlockHeight::from_u32(compact_block.height as u32);
-            //info!("trial decrypting block {}", height);
 
             for (transaction_num, compact_transaction) in compact_block.vtx.iter().enumerate() {
                 if let Some(filter) = transaction_size_filter {
