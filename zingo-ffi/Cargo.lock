@@ -2253,7 +2253,7 @@ dependencies = [
  "jni",
  "lazy_static",
  "log",
- "zingoconfig 0.1.0 (git+https://github.com/zingolabs/zingolib?branch=dev)",
+ "zingoconfig",
  "zingolib",
 ]
 
@@ -3669,20 +3669,7 @@ dependencies = [
 [[package]]
 name = "zingoconfig"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#2f9bf84e3655492bd91845121f148cea7f634b10"
-dependencies = [
- "dirs",
- "http",
- "log",
- "log4rs",
- "zcash_address",
- "zcash_primitives",
-]
-
-[[package]]
-name = "zingoconfig"
-version = "0.1.0"
-source = "git+https://github.com/aloearev/zingolib?branch=seed_debugging#d0b5435754857272a74599c12d51e151a7b356be"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#541cf02cf6c63e4f2a1eaee93eb19c7846418ccd"
 dependencies = [
  "dirs",
  "http",
@@ -3695,7 +3682,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.2.0"
-source = "git+https://github.com/aloearev/zingolib?branch=seed_debugging#d0b5435754857272a74599c12d51e151a7b356be"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#541cf02cf6c63e4f2a1eaee93eb19c7846418ccd"
 dependencies = [
  "base58",
  "base64 0.13.1",
@@ -3749,5 +3736,5 @@ dependencies = [
  "zcash_note_encryption",
  "zcash_primitives",
  "zcash_proofs",
- "zingoconfig 0.1.0 (git+https://github.com/aloearev/zingolib?branch=seed_debugging)",
+ "zingoconfig",
 ]
