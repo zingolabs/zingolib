@@ -210,7 +210,10 @@ impl LightWallet {
             system_rng.fill(&mut seed_bytes);
             Mnemonic::from_entropy(seed_bytes)
         } else {
-            Mnemonic::from_phrase(seed_phrase.unwrap().as_str())
+            let mnemonic = Mnemonic::from_phrase(seed_phrase.unwrap().as_str());
+
+            // This should be a no-op, but seems to be needed on android for some reason
+            mnemonic.and_then(|m| Mnemonic::from_entropy(m.entropy()))
         }
         .map_err(|e| {
             let e = format!("Error parsing phrase: {}", e);
