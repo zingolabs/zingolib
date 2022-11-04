@@ -288,7 +288,8 @@ impl RegtestManager {
             std::io::Read::read_to_string(&mut zcashd_log_open, &mut zcashd_logfile_state)
                 .expect("problem reading zcashd_logfile into rust string");
             if zcashd_logfile_state.contains("Error:") {
-                panic!("zcashd reporting ERROR! exiting with panic. you may have to shut the daemon down manually.");
+                panic!("zcashd reporting ERROR! exiting with panic. you may have to shut the daemon down manually.\n\
+                    See logfile for more details: {}", self.zcashd_stdout_log.to_string_lossy());
             } else if zcashd_logfile_state.contains("init message: Done loading") {
                 break;
             }
