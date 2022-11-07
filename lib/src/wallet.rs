@@ -213,7 +213,9 @@ impl LightWallet {
             let mnemonic = Mnemonic::from_phrase(seed_phrase.unwrap().as_str());
 
             // This should be a no-op, but seems to be needed on android for some reason
-            #[cfg(target_os = "android")]
+            // TODO: Test the this cfg actually works
+            //#[cfg(target_os = "android")]
+
             let mnemonic = mnemonic.and_then(|m| Mnemonic::from_entropy(m.entropy()));
 
             mnemonic
