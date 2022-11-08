@@ -83,9 +83,9 @@ impl Command for ParseCommand {
                     zingoconfig::Network::Regtest,
                 ]
                 .iter()
-                .find_map(|network| RecipientAddress::decode(network, &args[0]).zip(Some(network)))
-                .map(|(recipient_address, network)| {
-                    let network_string = match network {
+                .find_map(|chain| RecipientAddress::decode(chain, &args[0]).zip(Some(chain)))
+                .map(|(recipient_address, chain_name)| {
+                    let chain_name_string = match chain_name {
                         zingoconfig::Network::Mainnet => "main",
                         zingoconfig::Network::Testnet => "test",
                         zingoconfig::Network::Regtest => "regtest",
@@ -95,12 +95,12 @@ impl Command for ParseCommand {
                     match recipient_address {
                         RecipientAddress::Shielded(_) => object! {
                             "status" => "success",
-                            "network" => network_string,
+                            "chain_name" => chain_name_string,
                             "address_kind" => "sapling",
                         },
                         RecipientAddress::Transparent(_) => object! {
                             "status" => "success",
-                            "network" => network_string,
+                            "chain_name" => chain_name_string,
                             "address_kind" => "transparent",
                         },
                         RecipientAddress::Unified(ua) => {
@@ -116,7 +116,7 @@ impl Command for ParseCommand {
                             }
                             object! {
                                 "status" => "success",
-                                "network" => network_string,
+                                "chain_name" => chain_name_string,
                                 "address_kind" => "unified",
                                 "receivers_available" => receivers_available,
                             }
@@ -125,7 +125,7 @@ impl Command for ParseCommand {
                 })
                 .unwrap_or(object! {
                     "status" => "Invalid address",
-                    "network" => json::JsonValue::Null,
+                    "chain_name" => json::JsonValue::Null,
                     "address_kind" => json::JsonValue::Null
                 }),
                 4,
