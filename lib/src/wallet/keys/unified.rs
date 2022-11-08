@@ -27,11 +27,8 @@ pub struct UnifiedSpendCapability {
     // Not all diversifier indexes produce valid sapling addresses.
     // Because of this, the index isn't necessarily equal to addresses.len()
     next_sapling_diversifier_index: DiversifierIndex,
-
     // Note that unified spend authority encryption is not yet implemented,
     // These are placeholder fields, and are currenly always false
-    pub(crate) encrypted: bool,
-    pub(crate) unlocked: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -194,8 +191,6 @@ impl UnifiedSpendCapability {
             transparent_child_keys: vec![],
             addresses: vec![],
             next_sapling_diversifier_index: DiversifierIndex::new(),
-            encrypted: false,
-            unlocked: true,
         }
     }
 
@@ -245,19 +240,6 @@ impl UnifiedSpendCapability {
         // create it with a suitable first address
         self.addresses()[0].sapling().unwrap()
     }
-
-    pub fn encrypt(&mut self, _passwd: String) -> std::io::Result<()> {
-        todo!()
-    }
-    pub fn lock(&mut self) -> std::io::Result<()> {
-        todo!()
-    }
-    pub fn unlock(&mut self, _passwd: String) -> std::io::Result<()> {
-        todo!()
-    }
-    pub fn remove_encryption(&mut self, _passwd: String) -> std::io::Result<()> {
-        todo!()
-    }
 }
 impl ReadableWriteable<()> for UnifiedSpendCapability {
     const VERSION: u8 = 1;
@@ -275,16 +257,6 @@ impl ReadableWriteable<()> for UnifiedSpendCapability {
             super::extended_transparent::ExtendedPrivKey::read(&mut reader, ())?;
         let receivers_selected =
             Vector::read(&mut reader, |mut r| ReceiverSelection::read(&mut r, ()))?;
-        let encrypted = match reader.read_u8()? {
-            0 => false,
-            1 => true,
-            _ => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "encrypted status is not bool!",
-                ))
-            }
-        };
         let mut unifiedspendauth = Self {
             orchard_key,
             sapling_key,
@@ -292,8 +264,6 @@ impl ReadableWriteable<()> for UnifiedSpendCapability {
             transparent_child_keys: vec![],
             addresses: vec![],
             next_sapling_diversifier_index: DiversifierIndex::new(),
-            encrypted,
-            unlocked: true,
         };
         for receiver_selection in receivers_selected {
             unifiedspendauth
@@ -317,12 +287,11 @@ impl ReadableWriteable<()> for UnifiedSpendCapability {
                 transparent: address.transparent().is_some(),
             })
         }
-        Vector::write(
+        Ok(Vector::write(
             &mut writer,
             &receivers_per_address,
             |mut w, receiver_selection| receiver_selection.write(&mut w),
-        )?;
-        writer.write_u8(self.encrypted as u8)
+        )?)
     }
 }
 

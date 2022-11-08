@@ -526,21 +526,6 @@ impl LightClient {
     pub async fn do_save(&self) -> Result<(), String> {
         // On mobile platforms, disable the save, because the saves will be handled by the native layer, and not in rust
         if cfg!(all(not(target_os = "ios"), not(target_os = "android"))) {
-            // If the wallet is encrypted but unlocked, lock it again.
-            {
-                if self.wallet.is_encrypted().await && self.wallet.is_unlocked_for_spending().await
-                {
-                    match self.wallet.lock().await {
-                        Ok(_) => {}
-                        Err(e) => {
-                            let err = format!("ERR: {}", e);
-                            error!("{}", err);
-                            return Err(e.to_string());
-                        }
-                    }
-                }
-            }
-
             {
                 // Prevent any overlapping syncs during save, and don't save in the middle of a sync
                 let _lock = self.sync_lock.lock().await;
@@ -573,20 +558,6 @@ impl LightClient {
     }
 
     pub async fn do_save_to_buffer(&self) -> Result<Vec<u8>, String> {
-        // If the wallet is encrypted but unlocked, lock it again.
-        {
-            if self.wallet.is_encrypted().await && self.wallet.is_unlocked_for_spending().await {
-                match self.wallet.lock().await {
-                    Ok(_) => {}
-                    Err(e) => {
-                        let err = format!("ERR: {}", e);
-                        error!("{}", err);
-                        return Err(e.to_string());
-                    }
-                }
-            }
-        }
-
         let mut buffer: Vec<u8> = vec![];
         match self.wallet.write(&mut buffer).await {
             Ok(_) => Ok(buffer),
@@ -665,11 +636,6 @@ impl LightClient {
     }
 
     pub async fn do_seed_phrase(&self) -> Result<JsonValue, &str> {
-        if !self.wallet.is_unlocked_for_spending().await {
-            error!("Wallet is locked");
-            return Err("Wallet is locked");
-        }
-
         Ok(object! {
             "seed"     => self.wallet.mnemonic().to_string(),
             "birthday" => self.wallet.get_birthday().await
@@ -880,13 +846,6 @@ impl LightClient {
         }
     }
 
-    pub async fn do_encryption_status(&self) -> JsonValue {
-        object! {
-            "encrypted" => self.wallet.is_encrypted().await,
-            "locked"    => !self.wallet.is_unlocked_for_spending().await
-        }
-    }
-
     pub async fn do_list_transactions(&self, include_memo_hex: bool) -> JsonValue {
         // Create a list of TransactionItems from wallet transactions
         let unified_spend_capability_arc = self.wallet.unified_spend_capability();
@@ -1057,11 +1016,6 @@ impl LightClient {
 
     /// Create a new address, deriving it from the seed.
     pub async fn do_new_address(&self, addr_type: &str) -> Result<JsonValue, String> {
-        if !self.wallet.is_unlocked_for_spending().await {
-            error!("Wallet is locked");
-            return Err("Wallet is locked".to_string());
-        }
-
         //TODO: Placeholder interface
         let desired_receivers = ReceiverSelection {
             sapling: addr_type.contains('z'),
@@ -1092,10 +1046,6 @@ impl LightClient {
     }
 
     pub async fn do_rescan(&self) -> Result<JsonValue, String> {
-        if !self.wallet.is_unlocked_for_spending().await {
-            warn!("Wallet is locked, new HD addresses won't be added!");
-        }
-
         info!("Rescan starting");
 
         self.clear_state().await;
