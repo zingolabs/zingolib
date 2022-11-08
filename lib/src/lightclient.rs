@@ -573,29 +573,6 @@ impl LightClient {
         self.config.get_server_uri()
     }
 
-    pub async fn do_zec_price(&self) -> String {
-        let mut price = self.wallet.price.read().await.clone();
-
-        // If there is no price, try to fetch it first.
-        if price.zec_price.is_none() {
-            self.update_current_price().await;
-            price = self.wallet.price.read().await.clone();
-        }
-
-        match price.zec_price {
-            None => return "Error: No price".to_string(),
-            Some((timestamp, p)) => {
-                let o = object! {
-                    "zec_price" => p,
-                    "fetched_at" =>  timestamp,
-                    "currency" => price.currency
-                };
-
-                o.pretty(2)
-            }
-        }
-    }
-
     pub async fn do_info(&self) -> String {
         match GrpcConnector::get_info(self.get_server_uri()).await {
             Ok(i) => {
