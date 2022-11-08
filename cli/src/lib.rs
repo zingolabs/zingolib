@@ -239,8 +239,6 @@ pub fn attempt_recover_seed(_password: Option<String>) {
 
 pub struct ConfigTemplate {
     params: Vec<String>,
-    password: Option<String>,
-    recover: bool,
     server: http::Uri,
     seed: Option<String>,
     birthday: u64,
@@ -302,7 +300,6 @@ impl ConfigTemplate {
         } else {
             None
         };
-        let recover = matches.is_present("recover");
         let seed = matches.value_of("seed").map(|s| s.to_string());
         let maybe_birthday = matches.value_of("birthday");
         if seed.is_some() && maybe_birthday.is_none() {
@@ -357,11 +354,8 @@ to scan from the start of the blockchain."
         }
 
         let sync = !matches.is_present("nosync");
-        let password = matches.value_of("password").map(|s| s.to_string());
         Ok(Self {
             params,
-            password,
-            recover,
             server,
             seed,
             birthday,
@@ -380,7 +374,7 @@ pub fn startup(
     filled_template: &ConfigTemplate,
 ) -> std::io::Result<(Sender<(String, Vec<String>)>, Receiver<String>)> {
     // Initialize logging
-    LightClient::init_logging()?;
+    //LightClient::init_logging()?;
 
     // Try to get the configuration
     let (config, latest_block_height) = create_zingoconf_with_datadir(
@@ -447,15 +441,7 @@ fn start_cli_service(
         }
     }
 }
-fn check_recover(cli_config: &ConfigTemplate) {
-    if cli_config.recover {
-        // Create a Light Client Config in an attempt to recover the file.
-        attempt_recover_seed(cli_config.password.clone());
-        std::process::exit(0x0100);
-    }
-}
 fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
-    check_recover(cli_config);
     let (command_transmitter, resp_receiver) = start_cli_service(cli_config);
     if cli_config.command.is_none() {
         start_interactive(command_transmitter, resp_receiver);
