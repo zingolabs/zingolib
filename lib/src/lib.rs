@@ -19,7 +19,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 use tokio::runtime::Runtime;
-use zingoconfig::{Network, ZingoConfig};
+use zingoconfig::{BlockChain, ZingoConfig};
 
 pub fn create_zingoconf_with_datadir(
     server: http::Uri,
@@ -46,10 +46,10 @@ pub fn create_zingoconf_with_datadir(
         let config = ZingoConfig {
             server_uri: Arc::new(RwLock::new(server)),
             chain: match info.chain_name.as_str() {
-                "main" => Network::Mainnet,
-                "test" => Network::Testnet,
-                "regtest" => Network::Regtest,
-                "fakemainnet" => Network::FakeMainnet,
+                "main" => BlockChain::Mainnet,
+                "test" => BlockChain::Testnet,
+                "regtest" => BlockChain::Regtest,
+                "fakemainnet" => BlockChain::FakeMainnet,
                 _ => panic!("Unknown network"),
             },
             monitor_mempool: true,

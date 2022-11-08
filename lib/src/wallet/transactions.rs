@@ -25,7 +25,7 @@ use zcash_primitives::{
     zip32::ExtendedFullViewingKey,
 };
 
-use zingoconfig::{Network, MAX_REORG};
+use zingoconfig::{BlockChain, MAX_REORG};
 
 use super::{
     data::{
@@ -185,11 +185,11 @@ impl TransactionMetadataSet {
                 }
             })
         });
-        self.remove_domain_specific_txids::<SaplingDomain<Network>>(&txids_to_remove);
+        self.remove_domain_specific_txids::<SaplingDomain<BlockChain>>(&txids_to_remove);
         self.remove_domain_specific_txids::<OrchardDomain>(&txids_to_remove);
     }
 
-    fn remove_domain_specific_txids<D: DomainWalletExt<Network>>(
+    fn remove_domain_specific_txids<D: DomainWalletExt<BlockChain>>(
         &mut self,
         txids_to_remove: &Vec<TxId>,
     ) where
@@ -413,12 +413,12 @@ impl TransactionMetadataSet {
 
     pub(crate) fn clear_old_witnesses(&mut self, latest_height: u64) {
         self.clear_old_domain_specific_witnesses::<OrchardDomain>(latest_height);
-        self.clear_old_domain_specific_witnesses::<SaplingDomain<zingoconfig::Network>>(
+        self.clear_old_domain_specific_witnesses::<SaplingDomain<zingoconfig::BlockChain>>(
             latest_height,
         );
     }
 
-    fn clear_old_domain_specific_witnesses<D: DomainWalletExt<zingoconfig::Network>>(
+    fn clear_old_domain_specific_witnesses<D: DomainWalletExt<zingoconfig::BlockChain>>(
         &mut self,
         latest_height: u64,
     ) where
@@ -725,7 +725,7 @@ impl TransactionMetadataSet {
         to: D::Recipient,
         fvk: &D::Fvk,
     ) where
-        D: DomainWalletExt<Network>,
+        D: DomainWalletExt<BlockChain>,
         D::Note: PartialEq + Clone,
         D::Recipient: Recipient,
     {
@@ -777,7 +777,7 @@ impl TransactionMetadataSet {
         have_spending_key: bool,
         witness: IncrementalWitness<SaplingNode>,
     ) {
-        self.add_new_note::<SaplingDomain<zingoconfig::Network>>(
+        self.add_new_note::<SaplingDomain<zingoconfig::BlockChain>>(
             txid,
             height,
             unconfirmed,
@@ -814,7 +814,7 @@ impl TransactionMetadataSet {
         )
     }
 
-    pub(crate) fn add_new_note<D: DomainWalletExt<zingoconfig::Network>>(
+    pub(crate) fn add_new_note<D: DomainWalletExt<zingoconfig::BlockChain>>(
         &mut self,
         txid: TxId,
         height: BlockHeight,

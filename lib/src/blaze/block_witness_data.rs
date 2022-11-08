@@ -11,7 +11,7 @@ use crate::{
 use log::info;
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard, Anchor};
 use zcash_note_encryption::Domain;
-use zingoconfig::{Network, ZingoConfig, MAX_REORG};
+use zingoconfig::{BlockChain, ZingoConfig, MAX_REORG};
 
 use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
 use http::Uri;
@@ -34,7 +34,7 @@ use zcash_primitives::{
 use super::{fixed_size_buffer::FixedSizeBuffer, sync_status::SyncStatus};
 
 type Node<D> =
-    <<D as DomainWalletExt<zingoconfig::Network>>::WalletNote as ReceivedNoteAndMetadata>::Node;
+    <<D as DomainWalletExt<zingoconfig::BlockChain>>::WalletNote as ReceivedNoteAndMetadata>::Node;
 
 pub struct BlockAndWitnessData {
     // List of all downloaded blocks in the current batch and
@@ -620,7 +620,7 @@ impl BlockAndWitnessData {
         activation_height: u64,
     ) -> Result<IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node>, String>
     where
-        D: DomainWalletExt<zingoconfig::Network>,
+        D: DomainWalletExt<zingoconfig::BlockChain>,
         D::Note: PartialEq + Clone,
         D::ExtractedCommitmentBytes: Into<[u8; 32]>,
         D::Recipient: crate::wallet::traits::Recipient,
@@ -692,7 +692,7 @@ impl BlockAndWitnessData {
         transaction_num: usize,
         output_num: usize,
     ) -> Result<IncrementalWitness<SaplingNode>, String> {
-        self.get_note_witness::<SaplingDomain<zingoconfig::Network>>(
+        self.get_note_witness::<SaplingDomain<zingoconfig::BlockChain>>(
             uri,
             height,
             transaction_num,
@@ -721,7 +721,7 @@ impl BlockAndWitnessData {
     }
 
     // Stream all the outputs start at the block till the highest block available.
-    pub(crate) async fn update_witness_after_block<D: DomainWalletExt<zingoconfig::Network>>(
+    pub(crate) async fn update_witness_after_block<D: DomainWalletExt<zingoconfig::BlockChain>>(
         &self,
         witnesses: WitnessCache<Node<D>>,
     ) -> WitnessCache<Node<D>>
@@ -776,7 +776,7 @@ impl BlockAndWitnessData {
         return WitnessCache::new(fsb.into_vec(), top_block);
     }
 
-    pub(crate) async fn update_witness_after_pos<D: DomainWalletExt<zingoconfig::Network>>(
+    pub(crate) async fn update_witness_after_pos<D: DomainWalletExt<zingoconfig::BlockChain>>(
         &self,
         height: &BlockHeight,
         transaction_id: &TxId,
@@ -902,14 +902,14 @@ pub fn update_trees_with_compact_transaction(
     orchard_tree: &mut CommitmentTree<MerkleHashOrchard>,
     compact_transaction: &CompactTx,
 ) {
-    update_tree_with_compact_transaction::<SaplingDomain<Network>>(
+    update_tree_with_compact_transaction::<SaplingDomain<BlockChain>>(
         sapling_tree,
         compact_transaction,
     );
     update_tree_with_compact_transaction::<OrchardDomain>(orchard_tree, compact_transaction);
 }
 
-pub fn update_tree_with_compact_transaction<D: DomainWalletExt<Network>>(
+pub fn update_tree_with_compact_transaction<D: DomainWalletExt<BlockChain>>(
     tree: &mut CommitmentTree<Node<D>>,
     compact_transaction: &CompactTx,
 ) where
@@ -943,14 +943,14 @@ mod test {
     use zcash_primitives::block::BlockHash;
     use zcash_primitives::merkle_tree::CommitmentTree;
     use zcash_primitives::sapling;
-    use zingoconfig::{Network, ZingoConfig};
+    use zingoconfig::{BlockChain, ZingoConfig};
 
     use super::*;
 
     #[tokio::test]
     async fn setup_finish_simple() {
         let mut nw = BlockAndWitnessData::new_with_batchsize(
-            &ZingoConfig::create_unconnected(Network::FakeMainnet, None),
+            &ZingoConfig::create_unconnected(BlockChain::FakeMainnet, None),
             25_000,
         );
 
@@ -967,7 +967,7 @@ mod test {
     #[tokio::test]
     async fn verify_block_and_witness_data_blocks_order() {
         let mut scenario_bawd = BlockAndWitnessData::new_with_batchsize(
-            &ZingoConfig::create_unconnected(Network::FakeMainnet, None),
+            &ZingoConfig::create_unconnected(BlockChain::FakeMainnet, None),
             25_000,
         );
 
@@ -1000,7 +1000,7 @@ mod test {
     #[tokio::test]
     async fn setup_finish_large() {
         let mut nw = BlockAndWitnessData::new_with_batchsize(
-            &ZingoConfig::create_unconnected(Network::FakeMainnet, None),
+            &ZingoConfig::create_unconnected(BlockChain::FakeMainnet, None),
             25_000,
         );
 
@@ -1020,7 +1020,7 @@ mod test {
 
     #[tokio::test]
     async fn from_sapling_genesis() {
-        let config = ZingoConfig::create_unconnected(Network::FakeMainnet, None);
+        let config = ZingoConfig::create_unconnected(BlockChain::FakeMainnet, None);
 
         let blocks = FakeCompactBlockList::new(200).into_blockdatas();
 
@@ -1069,7 +1069,7 @@ mod test {
 
     #[tokio::test]
     async fn with_existing_batched() {
-        let config = ZingoConfig::create_unconnected(Network::FakeMainnet, None);
+        let config = ZingoConfig::create_unconnected(BlockChain::FakeMainnet, None);
 
         let mut blocks = FakeCompactBlockList::new(200).into_blockdatas();
 
@@ -1127,7 +1127,7 @@ mod test {
 
     #[tokio::test]
     async fn with_reorg() {
-        let config = ZingoConfig::create_unconnected(Network::FakeMainnet, None);
+        let config = ZingoConfig::create_unconnected(BlockChain::FakeMainnet, None);
 
         let mut blocks = FakeCompactBlockList::new(100).into_blockdatas();
 
@@ -1277,7 +1277,7 @@ mod test {
         let cb = decode_block();
 
         for compact_transaction in &cb.vtx {
-            super::update_tree_with_compact_transaction::<SaplingDomain<Network>>(
+            super::update_tree_with_compact_transaction::<SaplingDomain<BlockChain>>(
                 &mut start_tree,
                 compact_transaction,
             )

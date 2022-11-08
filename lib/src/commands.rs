@@ -78,18 +78,18 @@ impl Command for ParseCommand {
         match args.len() {
             1 => json::stringify_pretty(
                 [
-                    zingoconfig::Network::Mainnet,
-                    zingoconfig::Network::Testnet,
-                    zingoconfig::Network::Regtest,
+                    zingoconfig::BlockChain::Mainnet,
+                    zingoconfig::BlockChain::Testnet,
+                    zingoconfig::BlockChain::Regtest,
                 ]
                 .iter()
                 .find_map(|chain| RecipientAddress::decode(chain, &args[0]).zip(Some(chain)))
                 .map(|(recipient_address, chain_name)| {
                     let chain_name_string = match chain_name {
-                        zingoconfig::Network::Mainnet => "main",
-                        zingoconfig::Network::Testnet => "test",
-                        zingoconfig::Network::Regtest => "regtest",
-                        zingoconfig::Network::FakeMainnet => unreachable!(),
+                        zingoconfig::BlockChain::Mainnet => "main",
+                        zingoconfig::BlockChain::Testnet => "test",
+                        zingoconfig::BlockChain::Regtest => "regtest",
+                        zingoconfig::BlockChain::FakeMainnet => unreachable!(),
                     };
 
                     match recipient_address {
@@ -1309,7 +1309,7 @@ pub mod tests {
         let lc = Runtime::new()
             .unwrap()
             .block_on(LightClient::test_new(
-                &ZingoConfig::create_unconnected(zingoconfig::Network::FakeMainnet, None),
+                &ZingoConfig::create_unconnected(zingoconfig::BlockChain::FakeMainnet, None),
                 Some(TEST_SEED.to_string()),
                 0,
             ))
