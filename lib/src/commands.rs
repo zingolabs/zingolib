@@ -395,28 +395,6 @@ impl Command for UpdateCurrentPriceCommand {
     }
 }
 
-struct UnconfirmedRecentTxIdCommand {}
-impl Command for UnconfirmedRecentTxIdCommand {
-    fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("Show the latest TxId in the wallet");
-        h.push("Usage:");
-        h.push("lasttxid");
-
-        h.join("\n")
-    }
-
-    fn short_help(&self) -> String {
-        "Show the latest TxId in the wallet".to_string()
-    }
-
-    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        RT.block_on(
-            async move { format!("{}", lightclient.do_maybe_recent_txid().await.pretty(2)) },
-        )
-    }
-}
-
 struct BalanceCommand {}
 impl Command for BalanceCommand {
     fn help(&self) -> String {
@@ -1279,10 +1257,6 @@ pub fn get_commands() -> Box<HashMap<String, Box<dyn Command>>> {
     map.insert("rescan".to_string(), Box::new(RescanCommand {}));
     map.insert("clear".to_string(), Box::new(ClearCommand {}));
     map.insert("help".to_string(), Box::new(HelpCommand {}));
-    map.insert(
-        "unconfirmedrecenttxid".to_string(),
-        Box::new(UnconfirmedRecentTxIdCommand {}),
-    );
     map.insert("balance".to_string(), Box::new(BalanceCommand {}));
     map.insert("addresses".to_string(), Box::new(AddressCommand {}));
     map.insert("height".to_string(), Box::new(HeightCommand {}));
