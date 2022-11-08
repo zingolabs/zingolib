@@ -373,30 +373,6 @@ impl Command for InfoCommand {
     }
 }
 
-struct ZecPriceCommand {}
-impl Command for ZecPriceCommand {
-    fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("Use UpdateCurrentPriceCommand instead.");
-        h.push("Backwards compatible price fetch");
-        h.push("Get the latest ZEC price from Gemini exchange's API.");
-        h.push("Currently using USD.");
-        h.push("Usage:");
-        h.push("zecprice");
-        h.push("");
-
-        h.join("\n")
-    }
-
-    fn short_help(&self) -> String {
-        "Get the latest ZEC price in the wallet's currency (USD)".to_string()
-    }
-
-    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        RT.block_on(async move { lightclient.do_zec_price().await })
-    }
-}
-
 struct UpdateCurrentPriceCommand {}
 impl Command for UpdateCurrentPriceCommand {
     fn help(&self) -> String {
@@ -1313,7 +1289,6 @@ pub fn get_commands() -> Box<HashMap<String, Box<dyn Command>>> {
     map.insert("import".to_string(), Box::new(ImportCommand {}));
     map.insert("export".to_string(), Box::new(ExportCommand {}));
     map.insert("info".to_string(), Box::new(InfoCommand {}));
-    map.insert("zecprice".to_string(), Box::new(ZecPriceCommand {}));
     map.insert(
         "updatecurrentprice".to_string(),
         Box::new(UpdateCurrentPriceCommand {}),
