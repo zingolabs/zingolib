@@ -76,17 +76,6 @@ pub mod setup {
             .unwrap()
         }
 
-        #[allow(dead_code)]
-        pub fn new_freshseed_client(&mut self, birthday: u64, overwrite: bool) -> LightClient {
-            let (zingo_config, _) = self.make_config();
-            LightClient::create_with_seedorkey_wallet(
-                self.seed.clone().unwrap(),
-                &zingo_config,
-                birthday,
-                overwrite,
-            )
-            .unwrap()
-        }
         pub fn new_plantedseed_client(
             &mut self,
             seed: String,
