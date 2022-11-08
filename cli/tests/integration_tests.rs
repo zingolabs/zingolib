@@ -10,13 +10,14 @@ use utils::setup::{
 };
 #[test]
 fn create_network_disconnected_client() {
-    let (_regtest_manager_1, _child_process_handler_1, _client_1) =
+    let (_regtest_manager_1, _child_process_handler_1, _client_builder) =
         saplingcoinbasebacked_spendcapable();
 }
 
 #[test]
 fn zcashd_sapling_commitment_tree() {
-    let (regtest_manager, _child_process_handler, _client) = saplingcoinbasebacked_spendcapable();
+    let (regtest_manager, _child_process_handler, _client_builder) =
+        saplingcoinbasebacked_spendcapable();
     let trees = regtest_manager
         .get_cli_handle()
         .args(["z_gettreestate", "1"])
@@ -76,8 +77,9 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
 
 #[test]
 fn mine_sapling_to_self() {
-    let (regtest_manager, _child_process_handler, client) = saplingcoinbasebacked_spendcapable();
-
+    let (regtest_manager, _child_process_handler, mut client_builder) =
+        saplingcoinbasebacked_spendcapable();
+    let client = client_builder.new_sameseed_client(0, false);
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
 
@@ -88,7 +90,9 @@ fn mine_sapling_to_self() {
 
 #[test]
 fn send_mined_sapling_to_orchard() {
-    let (regtest_manager, _child_process_handler, client) = saplingcoinbasebacked_spendcapable();
+    let (regtest_manager, _child_process_handler, mut client_builder) =
+        saplingcoinbasebacked_spendcapable();
+    let client = client_builder.new_sameseed_client(0, false);
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
 
@@ -112,7 +116,6 @@ fn extract_value_as_u64(input: &JsonValue) -> u64 {
     note.clone()
 }
 use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
-use zingolib::{create_zingoconf_with_datadir, lightclient::LightClient};
 #[test]
 fn note_selection_order() {
     //! In order to fund a transaction multiple notes may be selected and consumed.
@@ -120,7 +123,7 @@ fn note_selection_order() {
     //! In addition to testing the order in which notes are selected this test:
     //!   * sends to a sapling address
     //!   * sends back to the original sender's UA
-    let (regtest_manager, client_1, client_2, child_process_handler) =
+    let (regtest_manager, client_1, client_2, child_process_handler, _) =
         two_clients_one_saplingcoinbase_backed();
 
     Runtime::new().unwrap().block_on(async {
@@ -220,7 +223,7 @@ fn note_selection_order() {
 
 #[test]
 fn send_orchard_back_and_forth() {
-    let (regtest_manager, client_a, client_b, child_process_handler) =
+    let (regtest_manager, client_a, client_b, child_process_handler, _) =
         two_clients_one_saplingcoinbase_backed();
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client_a, 5).await;
@@ -262,7 +265,7 @@ fn send_orchard_back_and_forth() {
 
 #[test]
 fn diversified_addresses_receive_funds_in_best_pool() {
-    let (regtest_manager, client_a, client_b, child_process_handler) =
+    let (regtest_manager, client_a, client_b, child_process_handler, _) =
         two_clients_one_saplingcoinbase_backed();
     Runtime::new().unwrap().block_on(async {
         client_b.do_new_address("o").await.unwrap();
@@ -303,7 +306,7 @@ fn diversified_addresses_receive_funds_in_best_pool() {
 
 #[test]
 fn rescan_still_have_outgoing_metadata() {
-    let (regtest_manager, client_one, client_two, child_process_handler) =
+    let (regtest_manager, client_one, client_two, child_process_handler, _) =
         two_clients_one_saplingcoinbase_backed();
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client_one, 5).await;
@@ -329,7 +332,9 @@ fn rescan_still_have_outgoing_metadata() {
 ///
 #[test]
 fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
-    let (regtest_manager, child_process_handler, client) = saplingcoinbasebacked_spendcapable();
+    let (regtest_manager, child_process_handler, mut client_builder) =
+        saplingcoinbasebacked_spendcapable();
+    let client = client_builder.new_sameseed_client(0, false);
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
         let sapling_addr = client.do_new_address("tz").await.unwrap();
@@ -368,9 +373,13 @@ fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
     });
 }
 
+/// An arbitrary number of diversified addresses may be generated
+/// from a seed.  If the wallet is subsequently lost-or-destroyed
+/// wallet-regeneration-from-seed (sprouting) doesn't regenerate
+/// the previous diversifier list.
 #[test]
 fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
-    let (regtest_manager, client_a, client_b, child_process_handler) =
+    let (regtest_manager, sender, recipient, child_process_handler, mut client_builder) =
         two_clients_one_saplingcoinbase_backed();
     let mut expected_unspent_sapling_notes = json::object! {
 
@@ -387,20 +396,26 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
             "unconfirmed_spent" =>  JsonValue::Null,
 
     };
-    let seed = Runtime::new().unwrap().block_on(async {
-        utils::increase_height_and_sync_client(&regtest_manager, &client_a, 5).await;
-        let sapling_addr_of_b = client_b.do_new_address("tz").await.unwrap();
-        client_a
+    let original_recipient_address = "\
+        uregtest1qtqr46fwkhmdn336uuyvvxyrv0l7trgc0z9clpryx6vtladnpyt4wvq99p59f4rcyuvpmmd0hm4k5vv6j\
+        8edj6n8ltk45sdkptlk7rtzlm4uup4laq8ka8vtxzqemj3yhk6hqhuypupzryhv66w65lah9ms03xa8nref7gux2zz\
+        hjnfanxnnrnwscmz6szv2ghrurhu3jsqdx25y2yh";
+    let seed_of_recipient = Runtime::new().unwrap().block_on(async {
+        utils::increase_height_and_sync_client(&regtest_manager, &sender, 5).await;
+        let addresses = recipient.do_addresses().await;
+        assert_eq!(&addresses[0]["address"], &original_recipient_address);
+        let recipient_addr = recipient.do_new_address("tz").await.unwrap();
+        sender
             .do_send(vec![(
-                sapling_addr_of_b[0].as_str().unwrap(),
+                recipient_addr[0].as_str().unwrap(),
                 5_000,
                 Some("foo".to_string()),
             )])
             .await
             .unwrap();
-        utils::increase_height_and_sync_client(&regtest_manager, &client_a, 5).await;
-        client_b.do_sync(true).await.unwrap();
-        let notes = client_b.do_list_notes(true).await;
+        utils::increase_height_and_sync_client(&regtest_manager, &sender, 5).await;
+        recipient.do_sync(true).await.unwrap();
+        let notes = recipient.do_list_notes(true).await;
         assert_eq!(notes["unspent_sapling_notes"].members().len(), 1);
         let note = notes["unspent_sapling_notes"].members().next().unwrap();
         //The following fields aren't known until runtime, and should be cryptographically nondeterministic
@@ -411,42 +426,38 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
         assert_eq!(
             note,
             &expected_unspent_sapling_notes,
-            "Expected: {}\nActual: {}",
+            "\nExpected:\n{}\n===\nActual:\n{}\n",
             json::stringify_pretty(expected_unspent_sapling_notes.clone(), 4),
             json::stringify_pretty(note.clone(), 4)
         );
-        client_b.do_seed_phrase().await.unwrap()
+        recipient.do_seed_phrase().await.unwrap()
     });
-    let (config, _height) = create_zingoconf_with_datadir(
-        client_b.get_server_uri(),
-        regtest_manager
-            .zingo_data_dir
-            .to_str()
-            .map(ToString::to_string),
-    )
-    .unwrap();
+    drop(recipient); // Discard original to ensure subsequent data is fresh.
     let mut expected_unspent_sapling_notes_after_restore_from_seed =
         expected_unspent_sapling_notes.clone();
     expected_unspent_sapling_notes_after_restore_from_seed["address"] = JsonValue::String(
         "Diversifier not in wallet. Perhaps you restored from seed and didn't restore addresses"
             .to_string(),
     );
-    let client_b_restored = LightClient::create_with_seedorkey_wallet(
-        seed["seed"].as_str().unwrap().to_string(),
-        &config,
+    let recipient_restored = client_builder.new_plantedseed_client(
+        seed_of_recipient["seed"].as_str().unwrap().to_string(),
         0,
         true,
-    )
-    .unwrap();
-    Runtime::new().unwrap().block_on(async {
-        client_b_restored.do_sync(true).await.unwrap();
-        let notes = client_b_restored.do_list_notes(true).await;
+    );
+    let seed_of_recipient_restored = Runtime::new().unwrap().block_on(async {
+        recipient_restored.do_sync(true).await.unwrap();
+        let restored_addresses = recipient_restored.do_addresses().await;
+        assert_eq!(
+            &restored_addresses[0]["address"],
+            &original_recipient_address
+        );
+        let notes = recipient_restored.do_list_notes(true).await;
         assert_eq!(notes["unspent_sapling_notes"].members().len(), 1);
         let note = notes["unspent_sapling_notes"].members().next().unwrap();
         assert_eq!(
             note,
             &expected_unspent_sapling_notes_after_restore_from_seed,
-            "Expected: {}\nActual: {}",
+            "\nExpected:\n{}\n===\nActual:\n{}\n",
             json::stringify_pretty(
                 expected_unspent_sapling_notes_after_restore_from_seed.clone(),
                 4
@@ -454,47 +465,35 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
             json::stringify_pretty(note.clone(), 4)
         );
 
-        //The first address in a wallet should always contain all three currently existant receiver types
-        let address_of_a = &client_a.do_addresses().await[0]["address"];
-        client_b_restored
-            .do_send(vec![(address_of_a.as_str().unwrap(), 4_000, None)])
+        //The first address in a wallet should always contain all three currently extant
+        //receiver types.
+        let sender_address = &sender.do_addresses().await[0]["address"];
+        recipient_restored
+            .do_send(vec![(sender_address.as_str().unwrap(), 4_000, None)])
             .await
             .unwrap();
-        utils::increase_height_and_sync_client(&regtest_manager, &client_a, 5).await;
+        utils::increase_height_and_sync_client(&regtest_manager, &sender, 5).await;
 
-        //Ensure that client_b_restored was still able to spend the note, despite not having the
+        //Ensure that recipient_restored was still able to spend the note, despite not having the
         //diversified address associated with it
         assert_eq!(
-            client_a.do_balance().await["spendable_orchard_balance"],
+            sender.do_balance().await["spendable_orchard_balance"],
             4_000
         );
+        recipient_restored.do_seed_phrase().await.unwrap()
     });
+    assert_eq!(seed_of_recipient, seed_of_recipient_restored);
     drop(child_process_handler);
 }
 
 #[test]
 fn ensure_taddrs_from_old_seeds_work() {
-    let (regtest_manager, child_process_handler, client_a) = saplingcoinbasebacked_spendcapable();
-
-    let client_b_zingoconf_path = format!(
-        "{}_two",
-        regtest_manager.zingo_data_dir.to_string_lossy().to_string()
-    );
-    std::fs::create_dir(&client_b_zingoconf_path).unwrap();
-    let (client_b_config, _height) =
-        create_zingoconf_with_datadir(client_a.get_server_uri(), Some(client_b_zingoconf_path))
-            .unwrap();
-
+    let (_regtest_manager, child_process_handler, mut client_builder) =
+        saplingcoinbasebacked_spendcapable();
     // The first taddr generated on commit 9e71a14eb424631372fd08503b1bd83ea763c7fb
     let transparent_address = "tmFLszfkjgim4zoUMAXpuohnFBAKy99rr2i";
 
-    let client_b = LightClient::create_with_seedorkey_wallet(
-        TEST_SEED.to_string(),
-        &client_b_config,
-        0,
-        false,
-    )
-    .unwrap();
+    let client_b = client_builder.new_plantedseed_client(TEST_SEED.to_string(), 0, false);
 
     Runtime::new().unwrap().block_on(async {
         client_b.do_new_address("zt").await.unwrap();
