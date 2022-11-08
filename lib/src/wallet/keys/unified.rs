@@ -287,11 +287,11 @@ impl ReadableWriteable<()> for UnifiedSpendCapability {
                 transparent: address.transparent().is_some(),
             })
         }
-        Ok(Vector::write(
+        Vector::write(
             &mut writer,
             &receivers_per_address,
             |mut w, receiver_selection| receiver_selection.write(&mut w),
-        )?)
+        )
     }
 }
 
