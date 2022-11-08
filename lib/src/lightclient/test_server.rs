@@ -30,7 +30,7 @@ use zcash_primitives::block::BlockHash;
 use zcash_primitives::consensus::BranchId;
 use zcash_primitives::merkle_tree::CommitmentTree;
 use zcash_primitives::transaction::{Transaction, TxId};
-use zingoconfig::{Network, ZingoConfig};
+use zingoconfig::{ChainType, ZingoConfig};
 
 use super::LightClient;
 
@@ -83,7 +83,7 @@ pub async fn create_test_server(
     };
     let addr: std::net::SocketAddr = server_port.parse().unwrap();
 
-    let mut config = ZingoConfig::create_unconnected(Network::FakeMainnet, None);
+    let mut config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, None);
     *config.server_uri.write().unwrap() = uri.replace("127.0.0.1", "localhost").parse().unwrap();
 
     let (service, data) = TestGRPCService::new(config.clone());

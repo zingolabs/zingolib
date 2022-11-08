@@ -56,7 +56,7 @@ use zcash_primitives::{
         ExtendedSpendingKey as SaplingExtendedSpendingKey,
     },
 };
-use zingoconfig::Network;
+use zingoconfig::ChainType;
 
 /// This provides a uniform `.to_bytes` to types that might require it in a generic context.
 pub trait ToBytes<const N: usize> {
@@ -140,7 +140,7 @@ impl<P: Parameters> ShieldedOutputExt<P, SaplingDomain<P>> for OutputDescription
         self.out_ciphertext
     }
 
-    fn value_commitment(&self) -> <SaplingDomain<Network> as Domain>::ValueCommitment {
+    fn value_commitment(&self) -> <SaplingDomain<ChainType> as Domain>::ValueCommitment {
         self.cv
     }
 }
@@ -226,7 +226,7 @@ impl<Auth> Spend for Action<Auth> {
 pub trait Recipient {
     type Diversifier: Copy;
     fn diversifier(&self) -> Self::Diversifier;
-    fn b32encode_for_network(&self, chain: &Network) -> String;
+    fn b32encode_for_network(&self, chain: &ChainType) -> String;
 }
 
 impl Recipient for OrchardAddress {
@@ -236,7 +236,7 @@ impl Recipient for OrchardAddress {
         OrchardAddress::diversifier(&self)
     }
 
-    fn b32encode_for_network(&self, chain: &Network) -> String {
+    fn b32encode_for_network(&self, chain: &ChainType) -> String {
         unified::Address::try_from_items(vec![Receiver::Orchard(self.to_raw_address_bytes())])
             .expect("Could not create UA from orchard address")
             .encode(&chain.address_network().unwrap())
@@ -250,7 +250,7 @@ impl Recipient for SaplingAddress {
         *SaplingAddress::diversifier(&self)
     }
 
-    fn b32encode_for_network(&self, chain: &Network) -> String {
+    fn b32encode_for_network(&self, chain: &ChainType) -> String {
         encode_payment_address(chain.hrp_sapling_payment_address(), self)
     }
 }

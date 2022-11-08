@@ -6,7 +6,7 @@ use log::{error, info};
 
 use clap::{self, Arg};
 use regtest::ChildProcessHandler;
-use zingoconfig::{Network, ZingoConfig};
+use zingoconfig::{ChainType, ZingoConfig};
 use zingolib::{commands, create_zingoconf_with_datadir, lightclient::LightClient};
 
 pub mod regtest;
@@ -95,12 +95,12 @@ fn report_permission_error() {
 
 /// If the regtest flag was passed but a non regtest nework is selected
 /// exit immediately and vice versa.
-fn regtest_config_check(regtest_manager: &Option<regtest::RegtestManager>, chain: &Network) {
-    if regtest_manager.is_some() && chain == &Network::Regtest {
+fn regtest_config_check(regtest_manager: &Option<regtest::RegtestManager>, chain: &ChainType) {
+    if regtest_manager.is_some() && chain == &ChainType::Regtest {
         println!("regtest detected and network set correctly!");
-    } else if regtest_manager.is_some() && chain != &Network::Regtest {
+    } else if regtest_manager.is_some() && chain != &ChainType::Regtest {
         panic!("Regtest flag detected, but unexpected network set! Exiting.");
-    } else if chain == &Network::Regtest {
+    } else if chain == &ChainType::Regtest {
         panic!("WARNING! regtest network in use but no regtest flag recognized!");
     }
 }
@@ -230,7 +230,7 @@ pub fn attempt_recover_seed(_password: Option<String>) {
     // Create a Light Client Config in an attempt to recover the file.
     ZingoConfig {
         server_uri: Arc::new(RwLock::new("0.0.0.0:0".parse().unwrap())),
-        chain: zingoconfig::Network::Mainnet,
+        chain: zingoconfig::ChainType::Mainnet,
         monitor_mempool: false,
         anchor_offset: [0u32; 5],
         data_dir: None,

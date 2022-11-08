@@ -180,7 +180,7 @@ impl TrialDecryptions {
                 }
                 let mut transaction_metadata = false;
 
-                Self::trial_decrypt_domain_specific_outputs::<SaplingDomain<zingoconfig::Network>>(
+                Self::trial_decrypt_domain_specific_outputs::<SaplingDomain<zingoconfig::ChainType>>(
                     &mut transaction_metadata,
                     &compact_transaction,
                     transaction_num,
@@ -263,7 +263,7 @@ impl TrialDecryptions {
         )>,
         workers: &FuturesUnordered<JoinHandle<Result<(), String>>>,
     ) where
-        D: DomainWalletExt<zingoconfig::Network>,
+        D: DomainWalletExt<zingoconfig::ChainType>,
         <D as Domain>::Recipient: crate::wallet::traits::Recipient + Send + 'static,
         <D as Domain>::Note: PartialEq + Send + 'static + Clone,
         [u8; 32]: From<<D as Domain>::ExtractedCommitmentBytes>,

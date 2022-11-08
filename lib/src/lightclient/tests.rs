@@ -33,7 +33,7 @@ use crate::wallet::traits::ReadableWriteable;
 
 use super::checkpoints;
 use super::test_server::NBlockFCBLScenario;
-use zingoconfig::{Network, ZingoConfig};
+use zingoconfig::{ChainType, ZingoConfig};
 
 #[test]
 fn new_wallet_from_phrase() {
@@ -46,7 +46,7 @@ fn new_wallet_from_phrase() {
         .unwrap()
         .to_string();
 
-    let config = ZingoConfig::create_unconnected(Network::FakeMainnet, Some(data_dir));
+    let config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, Some(data_dir));
     let lc = LightClient::create_with_seedorkey_wallet(TEST_SEED.to_string(), &config, 0, false)
         .unwrap();
     assert_eq!(
@@ -92,7 +92,7 @@ fn new_wallet_from_sapling_esk() {
         .unwrap()
         .to_string();
 
-    let config = ZingoConfig::create_unconnected(Network::FakeMainnet, Some(data_dir));
+    let config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, Some(data_dir));
     let sk = "secret-extended-key-main1qvpa0qr8qqqqpqxn4l054nzxpxzp3a8r2djc7sekdek5upce8mc2j2z0arzps4zv940qeg706hd0wq6g5snzvhp332y6vhwyukdn8dhekmmsk7fzvzkqm6ypc99uy63tpesqwxhpre78v06cx8k5xpp9mrhtgqs5dvp68cqx2yrvthflmm2ynl8c0506dekul0f6jkcdmh0292lpphrksyc5z3pxwws97zd5els3l2mjt2s7hntap27mlmt6w0drtfmz36vz8pgu7ec0twfrq";
     let lc = LightClient::create_with_seedorkey_wallet(sk.to_string(), &config, 0, false).unwrap();
     Runtime::new().unwrap().block_on(async move {
@@ -159,7 +159,7 @@ fn new_wallet_from_zvk() {
         .unwrap()
         .to_string();
 
-    let config = ZingoConfig::create_unconnected(Network::FakeMainnet, Some(data_dir));
+    let config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, Some(data_dir));
     let vk = "zxviews1qvpa0qr8qqqqpqxn4l054nzxpxzp3a8r2djc7sekdek5upce8mc2j2z0arzps4zv9kdvg28gjzvxd47ant6jn4svln5psw3htx93cq93ahw4e7lptrtlq7he5r6p6rcm3s0z6l24ype84sgqfrmghu449htrjspfv6qg2zfx2yrvthflmm2ynl8c0506dekul0f6jkcdmh0292lpphrksyc5z3pxwws97zd5els3l2mjt2s7hntap27mlmt6w0drtfmz36vz8pgu7ecrxzsls";
     let lc = LightClient::create_with_seedorkey_wallet(vk.to_string(), &config, 0, false).unwrap();
 
@@ -1691,7 +1691,7 @@ fn test_read_wallet_from_buffer() {
     //Block_on needed because read_from_buffer starts a tokio::Runtime, which panics when called in async code
     //as you cannot create a Runtime inside a Runtime
     let mut buf = Vec::new();
-    let config = ZingoConfig::create_unconnected(Network::FakeMainnet, None);
+    let config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, None);
     Runtime::new().unwrap().block_on(async {
         let wallet = crate::wallet::LightWallet::new(config.clone(), None, 0).unwrap();
         wallet.write(&mut buf).await.unwrap();

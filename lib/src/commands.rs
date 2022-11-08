@@ -78,29 +78,29 @@ impl Command for ParseCommand {
         match args.len() {
             1 => json::stringify_pretty(
                 [
-                    zingoconfig::Network::Mainnet,
-                    zingoconfig::Network::Testnet,
-                    zingoconfig::Network::Regtest,
+                    zingoconfig::ChainType::Mainnet,
+                    zingoconfig::ChainType::Testnet,
+                    zingoconfig::ChainType::Regtest,
                 ]
                 .iter()
-                .find_map(|network| RecipientAddress::decode(network, &args[0]).zip(Some(network)))
-                .map(|(recipient_address, network)| {
-                    let network_string = match network {
-                        zingoconfig::Network::Mainnet => "mainnet",
-                        zingoconfig::Network::Testnet => "testnet",
-                        zingoconfig::Network::Regtest => "regtest",
-                        zingoconfig::Network::FakeMainnet => unreachable!(),
+                .find_map(|chain| RecipientAddress::decode(chain, &args[0]).zip(Some(chain)))
+                .map(|(recipient_address, chain_name)| {
+                    let chain_name_string = match chain_name {
+                        zingoconfig::ChainType::Mainnet => "main",
+                        zingoconfig::ChainType::Testnet => "test",
+                        zingoconfig::ChainType::Regtest => "regtest",
+                        zingoconfig::ChainType::FakeMainnet => unreachable!(),
                     };
 
                     match recipient_address {
                         RecipientAddress::Shielded(_) => object! {
                             "status" => "success",
-                            "network" => network_string,
+                            "chain_name" => chain_name_string,
                             "address_kind" => "sapling",
                         },
                         RecipientAddress::Transparent(_) => object! {
                             "status" => "success",
-                            "network" => network_string,
+                            "chain_name" => chain_name_string,
                             "address_kind" => "transparent",
                         },
                         RecipientAddress::Unified(ua) => {
@@ -116,7 +116,7 @@ impl Command for ParseCommand {
                             }
                             object! {
                                 "status" => "success",
-                                "network" => network_string,
+                                "chain_name" => chain_name_string,
                                 "address_kind" => "unified",
                                 "receivers_available" => receivers_available,
                             }
@@ -125,7 +125,7 @@ impl Command for ParseCommand {
                 })
                 .unwrap_or(object! {
                     "status" => "Invalid address",
-                    "network" => json::JsonValue::Null,
+                    "chain_name" => json::JsonValue::Null,
                     "address_kind" => json::JsonValue::Null
                 }),
                 4,
@@ -1309,7 +1309,7 @@ pub mod tests {
         let lc = Runtime::new()
             .unwrap()
             .block_on(LightClient::test_new(
-                &ZingoConfig::create_unconnected(zingoconfig::Network::FakeMainnet, None),
+                &ZingoConfig::create_unconnected(zingoconfig::ChainType::FakeMainnet, None),
                 Some(TEST_SEED.to_string()),
                 0,
             ))

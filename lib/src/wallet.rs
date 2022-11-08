@@ -493,8 +493,8 @@ impl LightWallet {
         self.blocks.read().await.iter().map(|b| b.clone()).collect()
     }
 
-    pub(crate) fn note_address<D: DomainWalletExt<zingoconfig::Network>>(
-        network: &zingoconfig::Network,
+    pub(crate) fn note_address<D: DomainWalletExt<zingoconfig::ChainType>>(
+        network: &zingoconfig::ChainType,
         note: &D::WalletNote,
         unified_spend_auth: &UnifiedSpendCapability,
     ) -> String
@@ -965,10 +965,10 @@ impl LightWallet {
         // Select the minimum number of notes required to satisfy the target value
         if prefer_orchard_over_sapling {
             let sapling_candidates = self
-                .get_all_domain_specific_notes::<SaplingDomain<zingoconfig::Network>>()
+                .get_all_domain_specific_notes::<SaplingDomain<zingoconfig::ChainType>>()
                 .await;
             (sapling_notes, sapling_value_selected) =
-                Self::add_notes_to_total::<SaplingDomain<zingoconfig::Network>>(
+                Self::add_notes_to_total::<SaplingDomain<zingoconfig::ChainType>>(
                     sapling_candidates,
                     (target_amount - total_transparent_value).unwrap(),
                 );
@@ -999,10 +999,10 @@ impl LightWallet {
         }
         if !prefer_orchard_over_sapling {
             let sapling_candidates = self
-                .get_all_domain_specific_notes::<SaplingDomain<zingoconfig::Network>>()
+                .get_all_domain_specific_notes::<SaplingDomain<zingoconfig::ChainType>>()
                 .await;
             (sapling_notes, sapling_value_selected) =
-                Self::add_notes_to_total::<SaplingDomain<zingoconfig::Network>>(
+                Self::add_notes_to_total::<SaplingDomain<zingoconfig::ChainType>>(
                     sapling_candidates,
                     (target_amount - total_transparent_value).unwrap(),
                 );
@@ -1025,7 +1025,7 @@ impl LightWallet {
 
     async fn get_all_domain_specific_notes<D>(&self) -> Vec<Vec<D::SpendableNoteAT>>
     where
-        D: DomainWalletExt<zingoconfig::Network>,
+        D: DomainWalletExt<zingoconfig::ChainType>,
         <D as Domain>::Recipient: traits::Recipient,
         <D as Domain>::Note: PartialEq + Clone,
     {
@@ -1072,7 +1072,7 @@ impl LightWallet {
             .collect()
     }
 
-    fn add_notes_to_total<D: DomainWalletExt<zingoconfig::Network>>(
+    fn add_notes_to_total<D: DomainWalletExt<zingoconfig::ChainType>>(
         candidates: Vec<Vec<D::SpendableNoteAT>>,
         target_amount: Amount,
     ) -> (Vec<D::SpendableNoteAT>, Amount)

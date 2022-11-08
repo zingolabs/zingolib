@@ -59,7 +59,7 @@ pub fn construct_server_uri(server: Option<String>) -> http::Uri {
 #[derive(Clone, Debug)]
 pub struct ZingoConfig {
     pub server_uri: Arc<RwLock<http::Uri>>,
-    pub chain: Network,
+    pub chain: ChainType,
     pub anchor_offset: [u32; 5],
     pub monitor_mempool: bool,
     pub data_dir: Option<String>,
@@ -67,7 +67,7 @@ pub struct ZingoConfig {
 
 impl ZingoConfig {
     // Create an unconnected (to any server) config to test for local wallet etc...
-    pub fn create_unconnected(chain: Network, dir: Option<String>) -> ZingoConfig {
+    pub fn create_unconnected(chain: ChainType, dir: Option<String>) -> ZingoConfig {
         ZingoConfig {
             server_uri: Arc::new(RwLock::new(http::Uri::default())),
             chain,
@@ -144,10 +144,10 @@ impl ZingoConfig {
                 };
 
                 match &self.chain {
-                    Network::Testnet => zcash_data_location.push("testnet3"),
-                    Network::Regtest => zcash_data_location.push("regtest"),
-                    Network::Mainnet => {}
-                    Network::FakeMainnet => zcash_data_location.push("fakemainnet"),
+                    ChainType::Testnet => zcash_data_location.push("testnet3"),
+                    ChainType::Regtest => zcash_data_location.push("regtest"),
+                    ChainType::Mainnet => {}
+                    ChainType::FakeMainnet => zcash_data_location.push("fakemainnet"),
                 };
             }
 
@@ -268,34 +268,34 @@ impl ZingoConfig {
 
     pub fn base58_secretkey_prefix(&self) -> [u8; 1] {
         match self.chain {
-            Network::Testnet | Network::Regtest | Network::FakeMainnet => [0xEF],
-            Network::Mainnet => [0x80],
+            ChainType::Testnet | ChainType::Regtest | ChainType::FakeMainnet => [0xEF],
+            ChainType::Mainnet => [0x80],
         }
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Network {
+pub enum ChainType {
     Testnet,
     Regtest,
     Mainnet,
     FakeMainnet,
 }
 
-impl Network {
+impl ChainType {
     pub fn hrp_orchard_spending_key(&self) -> &str {
         match self {
-            Network::Testnet => "secret-orchard-sk-test",
-            Network::Regtest => "secret-orchard-sk-regtest",
-            Network::Mainnet => "secret-orchard-sk-main",
-            Network::FakeMainnet => "secret-orchard-sk-main",
+            ChainType::Testnet => "secret-orchard-sk-test",
+            ChainType::Regtest => "secret-orchard-sk-regtest",
+            ChainType::Mainnet => "secret-orchard-sk-main",
+            ChainType::FakeMainnet => "secret-orchard-sk-main",
         }
     }
     pub fn hrp_unified_full_viewing_key(&self) -> &str {
         match self {
-            Network::Testnet => "uviewtest",
-            Network::Regtest => "uviewregtest",
-            Network::Mainnet => "uview",
-            Network::FakeMainnet => "uview",
+            ChainType::Testnet => "uviewtest",
+            ChainType::Regtest => "uviewregtest",
+            ChainType::Mainnet => "uview",
+            ChainType::FakeMainnet => "uview",
         }
     }
     pub fn to_zcash_address_network(&self) -> zcash_address::Network {
@@ -303,9 +303,9 @@ impl Network {
     }
 }
 
-impl std::fmt::Display for Network {
+impl std::fmt::Display for ChainType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use Network::*;
+        use ChainType::*;
         let name = match self {
             Testnet => "test",
             Regtest => "regtest",
@@ -316,8 +316,8 @@ impl std::fmt::Display for Network {
     }
 }
 
-use Network::*;
-impl Parameters for Network {
+use ChainType::*;
+impl Parameters for ChainType {
     fn activation_height(
         &self,
         nu: NetworkUpgrade,

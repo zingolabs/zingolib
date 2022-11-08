@@ -39,7 +39,7 @@ use zcash_primitives::{
 };
 
 use super::syncdata::BlazeSyncData;
-use zingoconfig::{Network, ZingoConfig};
+use zingoconfig::{ChainType, ZingoConfig};
 
 #[derive(Clone)]
 pub struct TransactionContext {
@@ -274,7 +274,7 @@ impl TransactionContext {
         is_outgoing_transaction: &mut bool,
         outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
     ) {
-        self.scan_bundle::<SaplingDomain<Network>>(
+        self.scan_bundle::<SaplingDomain<ChainType>>(
             transaction,
             height,
             pending,
@@ -318,26 +318,27 @@ impl TransactionContext {
         is_outgoing_transaction: &mut bool, // Isn't this also NA for unconfirmed?
         outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
     ) where
-        D: zingo_traits::DomainWalletExt<Network>,
+        D: zingo_traits::DomainWalletExt<ChainType>,
         D::Note: Clone + PartialEq,
         D::OutgoingViewingKey: std::fmt::Debug,
         D::Recipient: zingo_traits::Recipient,
         D::Memo: zingo_traits::ToBytes<512>,
     {
-        type FnGenBundle<I> = <I as DomainWalletExt<Network>>::Bundle;
+        type FnGenBundle<I> = <I as DomainWalletExt<ChainType>>::Bundle;
         // Check if any of the nullifiers generated in this transaction are ours. We only need this for unconfirmed transactions,
         // because for transactions in the block, we will check the nullifiers from the blockdata
         if pending {
             let unspent_nullifiers =
-            <<D as DomainWalletExt<Network>>
+            <<D as DomainWalletExt<ChainType>>
               ::WalletNote as zingo_traits::ReceivedNoteAndMetadata>
                 ::Nullifier::get_nullifiers_of_unspent_notes_from_transaction_set(
                 &*self.transaction_metadata_set.read().await,
             );
-            for output in
-                <FnGenBundle<D> as zingo_traits::Bundle<D, Network>>::from_transaction(transaction)
-                    .into_iter()
-                    .flat_map(|bundle| bundle.spend_elements().into_iter())
+            for output in <FnGenBundle<D> as zingo_traits::Bundle<D, ChainType>>::from_transaction(
+                transaction,
+            )
+            .into_iter()
+            .flat_map(|bundle| bundle.spend_elements().into_iter())
             {
                 if let Some((nf, value, transaction_id)) = unspent_nullifiers
                     .iter()
@@ -348,7 +349,7 @@ impl TransactionContext {
                     transaction_block_height,
                     true, // this was "unconfirmed" but this fn is invoked inside `if unconfirmed` TODO: add regression test to protect against movement
                     block_time,
-                    <FnGenBundle<D> as zingo_traits::Bundle<D, Network>>::Spend::wallet_nullifier(
+                    <FnGenBundle<D> as zingo_traits::Bundle<D, ChainType>>::Spend::wallet_nullifier(
                         nf,
                     ),
                     *value,
@@ -365,7 +366,7 @@ impl TransactionContext {
         //     <https://github.com/zingolabs/zingolib/issues/65>
         let unified_spend_capability = self.key.read().await;
         let domain_tagged_outputs =
-            <FnGenBundle<D> as zingo_traits::Bundle<D, Network>>::from_transaction(transaction)
+            <FnGenBundle<D> as zingo_traits::Bundle<D, ChainType>>::from_transaction(transaction)
                 .into_iter()
                 .flat_map(|bundle| bundle.output_elements().into_iter())
                 .map(|output| {
@@ -412,7 +413,7 @@ impl TransactionContext {
             outgoing_metadatas.extend(
                 match try_output_recovery_with_ovk::<
                     D,
-                    <FnGenBundle<D> as zingo_traits::Bundle<D, Network>>::Output,
+                    <FnGenBundle<D> as zingo_traits::Bundle<D, ChainType>>::Output,
                 >(
                     &output.domain(transaction_block_height, self.config.chain),
                     &D::usc_to_ovk(&*unified_spend_capability),
