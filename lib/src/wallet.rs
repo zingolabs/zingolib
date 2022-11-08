@@ -387,15 +387,6 @@ impl LightWallet {
     }
 
     pub async fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
-        if self.transaction_context.key.read().await.encrypted
-            && self.transaction_context.key.read().await.unlocked
-        {
-            return Err(Error::new(
-                ErrorKind::InvalidInput,
-                format!("Cannot write while wallet is unlocked while encrypted."),
-            ));
-        }
-
         // Write the version
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
@@ -571,21 +562,6 @@ impl LightWallet {
 
         // Discard the old value, since we are replacing it
         let _ = std::mem::replace(&mut *g, SendProgress::new(next_id));
-    }
-
-    pub async fn is_unlocked_for_spending(&self) -> bool {
-        match &*self.transaction_context.key.read().await {
-            UnifiedSpendCapability {
-                encrypted: true,
-                unlocked: false,
-                ..
-            } => false,
-            _otherwise => true,
-        }
-    }
-
-    pub async fn is_encrypted(&self) -> bool {
-        self.transaction_context.key.read().await.encrypted
     }
 
     // Get the first block that this wallet has a transaction in. This is often used as the wallet's "birthday"
@@ -1185,10 +1161,6 @@ impl LightWallet {
         F: Fn(Box<[u8]>) -> Fut,
         Fut: Future<Output = Result<String, String>>,
     {
-        if !self.unified_spend_capability().read().await.unlocked {
-            return Err("Cannot spend while wallet is locked".to_string());
-        }
-
         let start_time = now();
         if tos.len() == 0 {
             return Err("Need at least one destination address".to_string());
@@ -1576,28 +1548,6 @@ impl LightWallet {
                 .ok_or("No Orchard anchor for target height in wallet".to_string())
                 .clone()
         }
-    }
-
-    pub async fn encrypt(&self, passwd: String) -> io::Result<()> {
-        self.unified_spend_capability()
-            .write()
-            .await
-            .encrypt(passwd)
-    }
-
-    pub async fn lock(&self) -> io::Result<()> {
-        self.unified_spend_capability().write().await.lock()
-    }
-
-    pub async fn unlock(&self, passwd: String) -> io::Result<()> {
-        self.unified_spend_capability().write().await.unlock(passwd)
-    }
-
-    pub async fn remove_encryption(&self, passwd: String) -> io::Result<()> {
-        self.unified_spend_capability()
-            .write()
-            .await
-            .remove_encryption(passwd)
     }
 }
 

@@ -161,27 +161,6 @@ impl Command for SyncCommand {
     }
 }
 
-struct EncryptionStatusCommand {}
-impl Command for EncryptionStatusCommand {
-    fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("Check if the wallet is encrypted and if it is locked");
-        h.push("Usage:");
-        h.push("encryptionstatus");
-        h.push("");
-
-        h.join("\n")
-    }
-
-    fn short_help(&self) -> String {
-        "Check if the wallet is encrypted and if it is locked".to_string()
-    }
-
-    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        RT.block_on(async move { lightclient.do_encryption_status().await.pretty(2) })
-    }
-}
-
 struct SyncStatusCommand {}
 impl Command for SyncStatusCommand {
     fn help(&self) -> String {
@@ -531,178 +510,6 @@ impl Command for ExportCommand {
     fn exec(&self, _args: &[&str], _lightclient: &LightClient) -> String {
         "Key export currently unimplemented, please use seed phrase to backup/restore keys"
             .to_string()
-    }
-}
-
-struct EncryptCommand {}
-impl Command for EncryptCommand {
-    fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("Encrypt the wallet with a password");
-        h.push("Note 1: This will encrypt the seed and the sapling and transparent private keys.");
-        h.push("        Use 'unlock' to temporarily unlock the wallet for spending or 'decrypt' ");
-        h.push("        to permanatly remove the encryption");
-        h.push(
-            "Note 2: If you forget the password, the only way to recover the wallet is to restore",
-        );
-        h.push("        from the seed phrase.");
-        h.push("Usage:");
-        h.push("encrypt password");
-        h.push("");
-        h.push("Example:");
-        h.push("encrypt my_strong_password");
-
-        h.join("\n")
-    }
-
-    fn short_help(&self) -> String {
-        "Encrypt the wallet with a password".to_string()
-    }
-
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        if args.len() != 1 {
-            return self.help();
-        }
-
-        let passwd = args[0].to_string();
-
-        RT.block_on(async move {
-            match lightclient.wallet.encrypt(passwd).await {
-                Ok(_) => object! { "result" => "success" },
-                Err(e) => object! {
-                    "result" => "error",
-                    "error"  => e.to_string()
-                },
-            }
-            .pretty(2)
-        })
-    }
-}
-
-struct DecryptCommand {}
-impl Command for DecryptCommand {
-    fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("Completely remove wallet encryption, storing the wallet in plaintext on disk");
-        h.push(
-            "Note 1: This will decrypt the seed and the sapling and transparent private keys and store them on disk.",
-        );
-        h.push("        Use 'unlock' to temporarily unlock the wallet for spending");
-        h.push("Note 2: If you've forgotten the password, the only way to recover the wallet is to restore");
-        h.push("        from the seed phrase.");
-        h.push("Usage:");
-        h.push("decrypt password");
-        h.push("");
-        h.push("Example:");
-        h.push("decrypt my_strong_password");
-
-        h.join("\n")
-    }
-
-    fn short_help(&self) -> String {
-        "Completely remove wallet encryption".to_string()
-    }
-
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        if args.len() != 1 {
-            return self.help();
-        }
-
-        let passwd = args[0].to_string();
-        RT.block_on(async move {
-            match lightclient.wallet.remove_encryption(passwd).await {
-                Ok(_) => object! { "result" => "success" },
-                Err(e) => object! {
-                    "result" => "error",
-                    "error"  => e.to_string()
-                },
-            }
-            .pretty(2)
-        })
-    }
-}
-
-struct UnlockCommand {}
-impl Command for UnlockCommand {
-    fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("Unlock the wallet's encryption in memory, allowing spending from this wallet.");
-        h.push("Note 1: This will decrypt spending keys in memory only. The wallet remains encrypted on disk");
-        h.push("        Use 'decrypt' to remove the encryption permanatly.");
-        h.push("Note 2: If you've forgotten the password, the only way to recover the wallet is to restore");
-        h.push("        from the seed phrase.");
-        h.push("Usage:");
-        h.push("unlock password");
-        h.push("");
-        h.push("Example:");
-        h.push("unlock my_strong_password");
-
-        h.join("\n")
-    }
-
-    fn short_help(&self) -> String {
-        "Unlock wallet encryption for spending".to_string()
-    }
-
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        if args.len() != 1 {
-            return self.help();
-        }
-
-        let passwd = args[0].to_string();
-        RT.block_on(async move {
-            match lightclient.wallet.unlock(passwd).await {
-                Ok(_) => object! { "result" => "success" },
-                Err(e) => object! {
-                    "result" => "error",
-                    "error"  => e.to_string()
-                },
-            }
-            .pretty(2)
-        })
-    }
-}
-
-struct LockCommand {}
-impl Command for LockCommand {
-    fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("Lock a wallet that's been temporarily unlocked. You should already have encryption enabled.");
-        h.push("Note 1: This will remove all spending keys from memory. The wallet remains encrypted on disk");
-        h.push("Note 2: If you've forgotten the password, the only way to recover the wallet is to restore");
-        h.push("        from the seed phrase.");
-        h.push("Usage:");
-        h.push("lock");
-        h.push("");
-        h.push("Example:");
-        h.push("lock");
-
-        h.join("\n")
-    }
-
-    fn short_help(&self) -> String {
-        "Lock a wallet that's been temporarily unlocked".to_string()
-    }
-
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        if args.len() != 0 {
-            let mut h = vec![];
-            h.push("Extra arguments to lock. Did you mean 'encrypt'?");
-            h.push("");
-
-            return format!("{}\n{}", h.join("\n"), self.help());
-        }
-
-        RT.block_on(async move {
-            match lightclient.wallet.lock().await {
-                Ok(_) => object! { "result" => "success" },
-                Err(e) => object! {
-                    "result" => "error",
-                    "error"  => e.to_string()
-                },
-            }
-            .pretty(2)
-        })
     }
 }
 
@@ -1484,10 +1291,6 @@ pub fn get_commands() -> Box<HashMap<String, Box<dyn Command>>> {
     map.insert("sync".to_string(), Box::new(SyncCommand {}));
     map.insert("syncstatus".to_string(), Box::new(SyncStatusCommand {}));
     map.insert(
-        "encryptionstatus".to_string(),
-        Box::new(EncryptionStatusCommand {}),
-    );
-    map.insert(
         "encryptmessage".to_string(),
         Box::new(EncryptMessageCommand {}),
     );
@@ -1524,10 +1327,6 @@ pub fn get_commands() -> Box<HashMap<String, Box<dyn Command>>> {
     map.insert("new".to_string(), Box::new(NewAddressCommand {}));
     map.insert("defaultfee".to_string(), Box::new(DefaultFeeCommand {}));
     map.insert("seed".to_string(), Box::new(SeedCommand {}));
-    map.insert("encrypt".to_string(), Box::new(EncryptCommand {}));
-    map.insert("decrypt".to_string(), Box::new(DecryptCommand {}));
-    map.insert("unlock".to_string(), Box::new(UnlockCommand {}));
-    map.insert("lock".to_string(), Box::new(LockCommand {}));
 
     Box::new(map)
 }
