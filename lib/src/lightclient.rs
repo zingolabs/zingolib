@@ -52,7 +52,7 @@ use zcash_primitives::{
     transaction::{components::amount::DEFAULT_FEE, Transaction},
 };
 use zcash_proofs::prover::LocalTxProver;
-use zingoconfig::{BlockChain, ZingoConfig, MAX_REORG};
+use zingoconfig::{ChainType, ZingoConfig, MAX_REORG};
 
 pub(crate) mod checkpoints;
 
@@ -637,7 +637,7 @@ impl LightClient {
                         if !all_notes && note_metadata.spent.is_some() {
                             None
                         } else {
-                            let address = LightWallet::note_address::<SaplingDomain<BlockChain>>(&self.config.chain, note_metadata, &unified_spend_capability);
+                            let address = LightWallet::note_address::<SaplingDomain<ChainType>>(&self.config.chain, note_metadata, &unified_spend_capability);
                             let spendable = transaction_metadata.block_height <= anchor_height && note_metadata.spent.is_none() && note_metadata.unconfirmed_spent.is_none();
 
                             let created_block:u32 = transaction_metadata.block_height.into();
@@ -931,7 +931,7 @@ impl LightClient {
         'a: 'b,
         'c: 'b,
     {
-        self.add_wallet_notes_in_transaction_to_list_inner::<'a, 'b, 'c, SaplingDomain<BlockChain>>(
+        self.add_wallet_notes_in_transaction_to_list_inner::<'a, 'b, 'c, SaplingDomain<ChainType>>(
             transaction_metadata,
             include_memo_hex,
             unified_spend_auth,
@@ -954,7 +954,7 @@ impl LightClient {
     where
         'a: 'b,
         'c: 'b,
-        D: DomainWalletExt<BlockChain>,
+        D: DomainWalletExt<ChainType>,
         D::WalletNote: 'b,
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,

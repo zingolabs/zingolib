@@ -49,7 +49,7 @@ impl UpdateNotes {
     ) {
         match nullifier {
             ChannelNullifier::Sapling(n) => {
-                Self::update_witnesses_inner::<SaplingDomain<zingoconfig::BlockChain>>(
+                Self::update_witnesses_inner::<SaplingDomain<zingoconfig::ChainType>>(
                     bsync_data,
                     wallet_txns,
                     txid,
@@ -71,7 +71,7 @@ impl UpdateNotes {
         }
     }
 
-    async fn update_witnesses_inner<D: DomainWalletExt<zingoconfig::BlockChain>>(
+    async fn update_witnesses_inner<D: DomainWalletExt<zingoconfig::ChainType>>(
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         wallet_txns: Arc<RwLock<TransactionMetadataSet>>,
         txid: TxId,

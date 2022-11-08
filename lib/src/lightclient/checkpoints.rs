@@ -1,13 +1,13 @@
-use zingoconfig::BlockChain;
+use zingoconfig::ChainType;
 
 pub fn get_closest_checkpoint(
-    chain: &BlockChain,
+    chain: &ChainType,
     height: u64,
 ) -> Option<(u64, &'static str, &'static str)> {
     log::info!("Trying to get checkpoint closest to block {}", height);
     match chain {
-        BlockChain::Testnet => get_test_checkpoint(height),
-        BlockChain::Mainnet => get_main_checkpoint(height),
+        ChainType::Testnet => get_test_checkpoint(height),
+        ChainType::Mainnet => get_main_checkpoint(height),
         _ => None,
     }
 }
