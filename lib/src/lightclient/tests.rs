@@ -1505,7 +1505,7 @@ async fn mempool_clearing(scenario: NBlockFCBLScenario) {
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
     mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
     assert_eq!(
-        lightclient.do_last_transaction_id().await["last_txid"],
+        lightclient.do_maybe_recent_txid().await["last_txid"],
         orig_transaction_id
     );
 
@@ -1520,7 +1520,7 @@ async fn mempool_clearing(scenario: NBlockFCBLScenario) {
 
     // 4. The transaction is not yet sent, it is just sitting in the test GRPC server, so remove it from there to make sure it doesn't get mined.
     assert_eq!(
-        lightclient.do_last_transaction_id().await["last_txid"],
+        lightclient.do_maybe_recent_txid().await["last_txid"],
         sent_transaction_id
     );
     let mut sent_transactions = data

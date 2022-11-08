@@ -253,7 +253,7 @@ impl TransactionMetadataSet {
     }
 
     /// This returns an _arbitrary_ txid from the latest block the wallet is aware of.
-    pub fn get_last_txid(&self) -> &'_ Option<TxId> {
+    pub fn get_some_txid_from_highest_wallet_block(&self) -> &'_ Option<TxId> {
         &self.some_txid_from_highest_wallet_block
     }
 
