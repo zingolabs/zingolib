@@ -156,6 +156,12 @@ impl LightClient {
 
         result.map(|(transaction_id, _)| transaction_id)
     }
+
+    pub async fn do_maybe_recent_txid(&self) -> JsonValue {
+        object! {
+            "last_txid" => self.wallet.transactions().read().await.get_some_txid_from_highest_wallet_block().map(|t| t.to_string())
+        }
+    }
 }
 impl LightClient {
     pub fn create_unconnected(
@@ -501,12 +507,6 @@ impl LightClient {
             })
         }
         JsonValue::Array(objectified_addresses)
-    }
-
-    pub async fn do_maybe_recent_txid(&self) -> JsonValue {
-        object! {
-            "last_txid" => self.wallet.transactions().read().await.get_some_txid_from_highest_wallet_block().map(|t| t.to_string())
-        }
     }
 
     pub async fn do_balance(&self) -> JsonValue {
