@@ -12,7 +12,7 @@ use zingolib::{commands, create_zingoconf_with_datadir, lightclient::LightClient
 pub mod regtest;
 pub mod version;
 
-pub fn configure_app() -> clap::App<'static> {
+pub fn build_clap_app() -> clap::App<'static> {
     clap::App::new("Zingo CLI").version(version::VERSION)
             .arg(Arg::with_name("nosync")
                 .help("By default, zingo-cli will sync the wallet at startup. Pass --nosync to prevent the automatic sync at startup.")
@@ -237,7 +237,7 @@ pub fn attempt_recover_seed(_password: Option<String>) {
     };
 }
 
-pub struct CLIRunner {
+pub struct ConfigTemplate {
     params: Vec<String>,
     password: Option<String>,
     recover: bool,
@@ -260,14 +260,14 @@ fn short_circuit_on_help(params: Vec<String>) {
 }
 use std::string::String;
 #[derive(Debug)]
-enum CLIRunError {
+enum TemplateFillError {
     BirthdaylessSeed(String),
     InvalidBirthday(String),
     MalformedServerURL(String),
     ChildLaunchError(regtest::LaunchChildProcessError),
 }
 
-impl From<regtest::LaunchChildProcessError> for CLIRunError {
+impl From<regtest::LaunchChildProcessError> for TemplateFillError {
     fn from(underlyingerror: regtest::LaunchChildProcessError) -> Self {
         Self::ChildLaunchError(underlyingerror)
     }
@@ -280,9 +280,9 @@ impl From<regtest::LaunchChildProcessError> for CLIRunError {
 ///      * If a ShortCircuitCommand
 ///    is specified, then the system should execute only logic necessary to support that command,
 ///    in other words "help" the ShortCitcuitCommand _MUST_ not launch either zcashd or lightwalletd
-impl CLIRunner {
-    fn new() -> Result<Self, CLIRunError> {
-        let configured_app = configure_app();
+impl ConfigTemplate {
+    fn fill(configured_clap_app: clap::App<'static>) -> Result<Self, TemplateFillError> {
+        let configured_app = configured_clap_app;
         let matches = configured_app.get_matches();
         let command = matches.value_of("COMMAND");
         // Begin short_circuit section
@@ -310,7 +310,7 @@ impl CLIRunner {
             eprintln!(
             "Please specify the wallet birthday (eg. '--birthday 600000') to restore from seed."
         );
-            return Err(CLIRunError::BirthdaylessSeed(
+            return Err(TemplateFillError::BirthdaylessSeed(
                 "This should be the block height where the wallet was created.\
 If you don't remember the block height, you can pass '--birthday 0'\
 to scan from the start of the blockchain."
@@ -320,7 +320,7 @@ to scan from the start of the blockchain."
         let birthday = match maybe_birthday.unwrap_or("0").parse::<u64>() {
             Ok(b) => b,
             Err(e) => {
-                return Err(CLIRunError::InvalidBirthday(format!(
+                return Err(TemplateFillError::InvalidBirthday(format!(
                     "Couldn't parse birthday. This should be a block number. Error={}",
                     e
                 )));
@@ -351,7 +351,7 @@ to scan from the start of the blockchain."
 
         // Test to make sure the server has all of scheme, host and port
         if server.scheme_str().is_none() || server.host().is_none() || server.port().is_none() {
-            return Err(CLIRunError::MalformedServerURL(format!(
+            return Err(TemplateFillError::MalformedServerURL(format!(
                 "Please provide the --server parameter as [scheme]://[host]:[port].\nYou provided: {}",
                 server )));
         }
@@ -372,120 +372,126 @@ to scan from the start of the blockchain."
             child_process_handler,
         })
     }
+}
+/// Used by the zingocli crate, and the zingo-mobile application:
+/// <https://github.com/zingolabs/zingolib/tree/dev/cli>
+/// <https://github.com/zingolabs/zingo-mobile>
+pub fn startup(
+    filled_template: &ConfigTemplate,
+) -> std::io::Result<(Sender<(String, Vec<String>)>, Receiver<String>)> {
+    // Initialize logging
+    LightClient::init_logging()?;
 
-    /// Used by the zingocli crate, and the zingo-mobile application:
-    /// <https://github.com/zingolabs/zingolib/tree/dev/cli>
-    /// <https://github.com/zingolabs/zingo-mobile>
-    pub fn startup(&self) -> std::io::Result<(Sender<(String, Vec<String>)>, Receiver<String>)> {
-        // Initialize logging
-        LightClient::init_logging()?;
+    // Try to get the configuration
+    let (config, latest_block_height) = create_zingoconf_with_datadir(
+        filled_template.server.clone(),
+        filled_template.maybe_data_dir.clone(),
+    )?;
+    regtest_config_check(&filled_template.regtest_manager, &config.chain);
 
-        // Try to get the configuration
-        let (config, latest_block_height) =
-            create_zingoconf_with_datadir(self.server.clone(), self.maybe_data_dir.clone())?;
-        regtest_config_check(&self.regtest_manager, &config.chain);
-
-        let lightclient = match self.seed.clone() {
-            Some(phrase) => Arc::new(LightClient::create_with_seedorkey_wallet(
-                phrase,
-                &config,
-                self.birthday,
-                false,
-            )?),
-            None => {
-                if config.wallet_exists() {
-                    Arc::new(LightClient::read_wallet_from_disk(&config)?)
-                } else {
-                    println!("Creating a new wallet");
-                    // Create a wallet with height - 100, to protect against reorgs
-                    Arc::new(LightClient::new(
-                        &config,
-                        latest_block_height.saturating_sub(100),
-                    )?)
-                }
+    let lightclient = match filled_template.seed.clone() {
+        Some(phrase) => Arc::new(LightClient::create_with_seedorkey_wallet(
+            phrase,
+            &config,
+            filled_template.birthday,
+            false,
+        )?),
+        None => {
+            if config.wallet_exists() {
+                Arc::new(LightClient::read_wallet_from_disk(&config)?)
+            } else {
+                println!("Creating a new wallet");
+                // Create a wallet with height - 100, to protect against reorgs
+                Arc::new(LightClient::new(
+                    &config,
+                    latest_block_height.saturating_sub(100),
+                )?)
             }
-        };
-
-        // Print startup Messages
-        info!(""); // Blank line
-        info!("Starting Zingo-CLI");
-        info!("Light Client config {:?}", config);
-
-        println!("Lightclient connecting to {}", config.get_server_uri());
-
-        // At startup, run a sync.
-        if self.sync {
-            let update = commands::do_user_command("sync", &vec![], lightclient.as_ref());
-            println!("{}", update);
         }
+    };
 
-        // Start the command loop
-        let (command_transmitter, resp_receiver) = command_loop(lightclient.clone());
+    // Print startup Messages
+    info!(""); // Blank line
+    info!("Starting Zingo-CLI");
+    info!("Light Client config {:?}", config);
 
-        Ok((command_transmitter, resp_receiver))
+    println!("Lightclient connecting to {}", config.get_server_uri());
+
+    // At startup, run a sync.
+    if filled_template.sync {
+        let update = commands::do_user_command("sync", &vec![], lightclient.as_ref());
+        println!("{}", update);
     }
-    fn check_recover(&self) {
-        if self.recover {
-            // Create a Light Client Config in an attempt to recover the file.
-            attempt_recover_seed(self.password.clone());
-            std::process::exit(0x0100);
+
+    // Start the command loop
+    let (command_transmitter, resp_receiver) = command_loop(lightclient.clone());
+
+    Ok((command_transmitter, resp_receiver))
+}
+fn start_cli_service(
+    cli_config: &ConfigTemplate,
+) -> (Sender<(String, Vec<String>)>, Receiver<String>) {
+    match startup(cli_config) {
+        Ok(c) => c,
+        Err(e) => {
+            let emsg = format!("Error during startup:\n{}\nIf you repeatedly run into this issue, you might have to restore your wallet from your seed phrase.", e);
+            eprintln!("{}", emsg);
+            error!("{}", emsg);
+            if cfg!(target_os = "unix") {
+                match e.raw_os_error() {
+                    Some(13) => report_permission_error(),
+                    _ => {}
+                }
+            };
+            panic!();
         }
     }
-    fn start_cli_service(&self) -> (Sender<(String, Vec<String>)>, Receiver<String>) {
-        match self.startup() {
-            Ok(c) => c,
+}
+fn check_recover(cli_config: &ConfigTemplate) {
+    if cli_config.recover {
+        // Create a Light Client Config in an attempt to recover the file.
+        attempt_recover_seed(cli_config.password.clone());
+        std::process::exit(0x0100);
+    }
+}
+fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
+    check_recover(cli_config);
+    let (command_transmitter, resp_receiver) = start_cli_service(cli_config);
+    if cli_config.command.is_none() {
+        start_interactive(command_transmitter, resp_receiver);
+    } else {
+        command_transmitter
+            .send((
+                cli_config.command.clone().unwrap().to_string(),
+                cli_config
+                    .params
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect::<Vec<String>>(),
+            ))
+            .unwrap();
+
+        match resp_receiver.recv() {
+            Ok(s) => println!("{}", s),
             Err(e) => {
-                let emsg = format!("Error during startup:\n{}\nIf you repeatedly run into this issue, you might have to restore your wallet from your seed phrase.", e);
-                eprintln!("{}", emsg);
-                error!("{}", emsg);
-                if cfg!(target_os = "unix") {
-                    match e.raw_os_error() {
-                        Some(13) => report_permission_error(),
-                        _ => {}
-                    }
-                };
-                panic!();
+                let e = format!(
+                    "Error executing command {}: {}",
+                    cli_config.command.clone().unwrap(),
+                    e
+                );
+                eprintln!("{}", e);
+                error!("{}", e);
             }
         }
-    }
-    fn dispatch_command_or_start_interactive(self) {
-        self.check_recover();
-        let (command_transmitter, resp_receiver) = self.start_cli_service();
-        if self.command.is_none() {
-            start_interactive(command_transmitter, resp_receiver);
-        } else {
-            command_transmitter
-                .send((
-                    self.command.clone().unwrap().to_string(),
-                    self.params
-                        .iter()
-                        .map(|s| s.to_string())
-                        .collect::<Vec<String>>(),
-                ))
-                .unwrap();
 
-            match resp_receiver.recv() {
-                Ok(s) => println!("{}", s),
-                Err(e) => {
-                    let e = format!(
-                        "Error executing command {}: {}",
-                        self.command.clone().unwrap(),
-                        e
-                    );
-                    eprintln!("{}", e);
-                    error!("{}", e);
-                }
-            }
-
-            // Save before exit
-            command_transmitter
-                .send(("save".to_string(), vec![]))
-                .unwrap();
-            resp_receiver.recv().unwrap();
-        }
+        // Save before exit
+        command_transmitter
+            .send(("save".to_string(), vec![]))
+            .unwrap();
+        resp_receiver.recv().unwrap();
     }
-    pub fn run_cli() {
-        let cli_runner = CLIRunner::new().unwrap();
-        cli_runner.dispatch_command_or_start_interactive();
-    }
+}
+pub fn run_cli() {
+    let cli_config = ConfigTemplate::fill(build_clap_app()).unwrap();
+    dispatch_command_or_start_interactive(&cli_config);
 }
