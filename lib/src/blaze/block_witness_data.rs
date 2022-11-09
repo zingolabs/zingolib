@@ -30,7 +30,7 @@ use zcash_primitives::{
     transaction::TxId,
 };
 
-use super::{fixed_size_buffer::FixedSizeBuffer, sync_status::SyncStatus};
+use super::{fixed_size_buffer::FixedSizeBuffer, sync_status::BatchSyncStatus};
 
 type Node<D> =
     <<D as DomainWalletExt<zingoconfig::ChainType>>::WalletNote as ReceivedNoteAndMetadata>::Node;
@@ -61,14 +61,14 @@ pub struct BlockAndWitnessData {
     pub(crate) orchard_anchor_height_pairs: Arc<RwLock<Vec<(Anchor, BlockHeight)>>>,
 
     // Link to the syncstatus where we can update progress
-    sync_status: Arc<RwLock<SyncStatus>>,
+    sync_status: Arc<RwLock<BatchSyncStatus>>,
 
     sapling_activation_height: u64,
     orchard_activation_height: u64,
 }
 
 impl BlockAndWitnessData {
-    pub fn new(config: &ZingoConfig, sync_status: Arc<RwLock<SyncStatus>>) -> Self {
+    pub fn new(config: &ZingoConfig, sync_status: Arc<RwLock<BatchSyncStatus>>) -> Self {
         Self {
             blocks_in_current_batch: Arc::new(RwLock::new(vec![])),
             existing_blocks: Arc::new(RwLock::new(vec![])),
@@ -88,7 +88,7 @@ impl BlockAndWitnessData {
 
     #[cfg(test)]
     pub fn new_with_batchsize(config: &ZingoConfig, batch_size: u64) -> Self {
-        let mut s = Self::new(config, Arc::new(RwLock::new(SyncStatus::default())));
+        let mut s = Self::new(config, Arc::new(RwLock::new(BatchSyncStatus::default())));
         s.batch_size = batch_size;
 
         s
@@ -926,7 +926,7 @@ pub fn update_tree_with_compact_transaction<D: DomainWalletExt<ChainType>>(
 mod test {
     use std::sync::Arc;
 
-    use crate::blaze::sync_status::SyncStatus;
+    use crate::blaze::sync_status::BatchSyncStatus;
     use crate::compact_formats::CompactBlock;
     use crate::wallet::transactions::TransactionMetadataSet;
     use crate::{
@@ -1029,7 +1029,7 @@ mod test {
         let start_block = blocks.first().unwrap().height;
         let end_block = blocks.last().unwrap().height;
 
-        let sync_status = Arc::new(RwLock::new(SyncStatus::default()));
+        let sync_status = Arc::new(RwLock::new(BatchSyncStatus::default()));
         let mut nw = BlockAndWitnessData::new(&config, sync_status);
         nw.setup_sync(vec![], None).await;
 
@@ -1178,7 +1178,7 @@ mod test {
         let start_block = blocks.first().unwrap().height;
         let end_block = blocks.last().unwrap().height;
 
-        let sync_status = Arc::new(RwLock::new(SyncStatus::default()));
+        let sync_status = Arc::new(RwLock::new(BatchSyncStatus::default()));
         let mut nw = BlockAndWitnessData::new(&config, sync_status);
         nw.setup_sync(existing_blocks, None).await;
 

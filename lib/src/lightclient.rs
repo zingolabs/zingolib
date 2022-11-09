@@ -2,7 +2,7 @@ use crate::{
     blaze::{
         block_witness_data::BlockAndWitnessData, fetch_compact_blocks::FetchCompactBlocks,
         fetch_full_transaction::TransactionContext,
-        fetch_taddr_transactions::FetchTaddrTransactions, sync_status::SyncStatus,
+        fetch_taddr_transactions::FetchTaddrTransactions, sync_status::BatchSyncStatus,
         syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions, update_notes::UpdateNotes,
     },
     compact_formats::RawTransaction,
@@ -1055,7 +1055,7 @@ impl LightClient {
         }
     }
 
-    pub async fn do_sync_status(&self) -> SyncStatus {
+    pub async fn do_sync_status(&self) -> BatchSyncStatus {
         self.bsync_data
             .read()
             .await
@@ -1210,28 +1210,28 @@ impl LightClient {
         let _lock = self.sync_lock.lock().await;
 
         // The top of the wallet
-        let last_scanned_height = self.wallet.last_scanned_height().await;
+        let last_synced_height = self.wallet.last_synced_height().await;
 
         let latest_blockid = GrpcConnector::get_latest_block(self.config.get_server_uri()).await?;
-        if latest_blockid.height < last_scanned_height {
+        if latest_blockid.height < last_synced_height {
             let w = format!(
                 "Server's latest block({}) is behind ours({})",
-                latest_blockid.height, last_scanned_height
+                latest_blockid.height, last_synced_height
             );
             warn!("{}", w);
             return Err(w);
         }
 
-        if latest_blockid.height == last_scanned_height {
+        if latest_blockid.height == last_synced_height {
             if !latest_blockid.hash.is_empty()
                 && BlockHash::from_slice(&latest_blockid.hash).to_string()
-                    != self.wallet.last_scanned_hash().await
+                    != self.wallet.last_synced_hash().await
             {
-                warn!("One block reorg at height {}", last_scanned_height);
+                warn!("One block reorg at height {}", last_synced_height);
                 // This is a one-block reorg, so pop the last block. Even if there are more blocks to reorg, this is enough
                 // to trigger a sync, which will then reorg the remaining blocks
                 BlockAndWitnessData::invalidate_block(
-                    last_scanned_height,
+                    last_synced_height,
                     self.wallet.blocks.clone(),
                     self.wallet
                         .transaction_context
@@ -1243,7 +1243,7 @@ impl LightClient {
         }
 
         // Re-read the last scanned height
-        let last_scanned_height = self.wallet.last_scanned_height().await;
+        let last_scanned_height = self.wallet.last_synced_height().await;
         let batch_size = 1_000;
 
         let mut latest_block_batches = vec![];
@@ -1267,7 +1267,7 @@ impl LightClient {
 
         let mut res = Err("No batches were run!".to_string());
         for (batch_num, batch_latest_block) in latest_block_batches.into_iter().enumerate() {
-            res = self.start_sync_batch(batch_latest_block, batch_num).await;
+            res = self.sync_nth_batch(batch_latest_block, batch_num).await;
             if res.is_err() {
                 return res;
             }
@@ -1279,28 +1279,27 @@ impl LightClient {
     /// start_sync will start synchronizing the blockchain from the wallet's last height. This function will
     /// return immediately after starting the sync.  Use the `do_sync_status` LightClient method to
     /// get the status of the sync
-    async fn start_sync_batch(
+    async fn sync_nth_batch(
         &self,
-        latest_block: u64,
+        start_block: u64,
         batch_num: usize,
     ) -> Result<JsonValue, String> {
         // The top of the wallet
-        let last_scanned_height = self.wallet.last_scanned_height().await;
+        let last_synced_height = self.wallet.last_synced_height().await;
 
         debug!(
             "Latest block is {}, wallet block is {}",
-            latest_block, last_scanned_height
+            start_block, last_synced_height
         );
 
-        if last_scanned_height == latest_block {
+        if last_synced_height == start_block {
             debug!("Already at latest block, not syncing");
             return Ok(object! { "result" => "success" });
         }
 
         let bsync_data = self.bsync_data.clone();
 
-        let start_block = latest_block;
-        let end_block = last_scanned_height + 1;
+        let end_block = last_synced_height + 1;
 
         // Before we start, we need to do a few things
         // 1. Pre-populate the last 100 blocks, in case of reorgs
@@ -1526,14 +1525,14 @@ impl LightClient {
             .transactions()
             .write()
             .await
-            .clear_old_witnesses(latest_block);
+            .clear_old_witnesses(start_block);
 
         // 5. Remove expired mempool transactions, if any
         self.wallet
             .transactions()
             .write()
             .await
-            .clear_expired_mempool(latest_block);
+            .clear_expired_mempool(start_block);
 
         // 6. Set the heighest verified tree
         if highest_tree.is_some() {
@@ -1542,7 +1541,7 @@ impl LightClient {
 
         Ok(object! {
             "result" => "success",
-            "latest_block" => latest_block,
+            "latest_block" => start_block,
             "total_blocks_synced" => start_block - end_block + 1,
         })
     }
@@ -1612,7 +1611,7 @@ impl LightClient {
     }
 
     pub async fn do_wallet_last_scanned_height(&self) -> JsonValue {
-        json::JsonValue::from(self.wallet.last_scanned_height().await)
+        json::JsonValue::from(self.wallet.last_synced_height().await)
     }
 }
 

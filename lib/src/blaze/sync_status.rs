@@ -1,7 +1,7 @@
 use core::fmt;
 
 #[derive(Clone, Debug, Default)]
-pub struct SyncStatus {
+pub struct BatchSyncStatus {
     pub in_progress: bool,
     pub last_error: Option<String>,
 
@@ -20,7 +20,7 @@ pub struct SyncStatus {
     pub batch_total: usize,
 }
 
-impl SyncStatus {
+impl BatchSyncStatus {
     pub fn start_new(&mut self, batch_total: usize) {
         self.sync_id += 1;
         self.last_error = None;
@@ -54,7 +54,7 @@ impl SyncStatus {
     }
 }
 
-impl fmt::Display for SyncStatus {
+impl fmt::Display for BatchSyncStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.blocks_total > 0 && self.in_progress {
             write!(

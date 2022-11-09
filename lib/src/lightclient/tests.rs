@@ -203,7 +203,7 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
     let txid = transaction.txid();
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
-    assert_eq!(lightclient.wallet.last_scanned_height().await, 11);
+    assert_eq!(lightclient.wallet.last_synced_height().await, 11);
 
     // 3. Check the balance is correct, and we recieved the incoming transaction from outside
     let b = lightclient.do_balance().await;
@@ -487,7 +487,7 @@ async fn multiple_incoming_same_transaction(scenario: NBlockFCBLScenario) {
         .add_empty_block()
         .add_transactions(vec![compact_transaction]);
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
-    assert_eq!(lightclient.wallet.last_scanned_height().await, 11);
+    assert_eq!(lightclient.wallet.last_synced_height().await, 11);
 
     // 2. Check the notes - that we recieved 4 notes
     let notes = lightclient.do_list_notes(true).await;
@@ -1183,11 +1183,11 @@ async fn aborted_resync(scenario: NBlockFCBLScenario) {
     // 5. Now, we'll manually remove some of the blocks in the wallet, pretending that the sync was aborted in the middle.
     // We'll remove the top 20 blocks, so now the wallet only has the first 3 blocks
     lightclient.wallet.blocks.write().await.drain(0..20);
-    assert_eq!(lightclient.wallet.last_scanned_height().await, 3);
+    assert_eq!(lightclient.wallet.last_synced_height().await, 3);
 
     // 6. Do a sync again
     lightclient.do_sync(true).await.unwrap();
-    assert_eq!(lightclient.wallet.last_scanned_height().await, 23);
+    assert_eq!(lightclient.wallet.last_synced_height().await, 23);
 
     // 7. Should be exactly the same
     let notes_after = lightclient.do_list_notes(true).await;
@@ -1578,7 +1578,7 @@ async fn mempool_clearing(scenario: NBlockFCBLScenario) {
     // 6. Mine 10 blocks, the unconfirmed transaction should still be there.
     mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 10)
         .await;
-    assert_eq!(lightclient.wallet.last_scanned_height().await, 26);
+    assert_eq!(lightclient.wallet.last_synced_height().await, 26);
 
     let notes = lightclient.do_list_notes(true).await;
     let transactions = lightclient.do_list_transactions(false).await;
@@ -1600,7 +1600,7 @@ async fn mempool_clearing(scenario: NBlockFCBLScenario) {
     // 7. Mine 100 blocks, so the mempool expires
     mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 100)
         .await;
-    assert_eq!(lightclient.wallet.last_scanned_height().await, 126);
+    assert_eq!(lightclient.wallet.last_synced_height().await, 126);
 
     let notes = lightclient.do_list_notes(true).await;
     let transactions = lightclient.do_list_transactions(false).await;
