@@ -1,5 +1,4 @@
 use core::fmt;
-use std::cmp;
 
 #[derive(Clone, Debug, Default)]
 pub struct SyncStatus {
@@ -53,22 +52,6 @@ impl SyncStatus {
     pub fn finish(&mut self) {
         self.in_progress = false;
     }
-
-    fn perct(&self, num: u64) -> u8 {
-        let a = if self.blocks_total > 0 {
-            let (b, d) = if self.batch_total > 0 {
-                ((self.batch_num * 100 / self.batch_total), self.batch_total)
-            } else {
-                (0, 1)
-            };
-            let p = cmp::min(((num * 100) / self.blocks_total) as u8, 100);
-            b + (p as usize / d)
-        } else {
-            0
-        };
-
-        cmp::min(100, a as u8)
-    }
 }
 
 impl fmt::Display for SyncStatus {
@@ -76,13 +59,11 @@ impl fmt::Display for SyncStatus {
         if self.blocks_total > 0 && self.in_progress {
             write!(
                 f,
-                "id: {}, blocks: {}% ({:6}), decryptions: {}% ({:6}), tx_scan: {}% ({:6}), anchors: {}",
+                "id: {}, blocks_done/blocks_total: {:4}/{:4}, decryptions: {:4}, tx_scan: {:4}, anchors: {}",
                 self.sync_id,
-                self.perct(self.blocks_done),
                 self.blocks_done,
-                self.perct(self.trial_dec_done),
+                self.blocks_total,
                 self.trial_dec_done,
-                self.perct(self.txn_scan_done),
                 self.txn_scan_done,
                 self.orchard_anchors_done
             )
