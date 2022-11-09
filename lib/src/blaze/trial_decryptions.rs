@@ -16,7 +16,7 @@ use crate::{
     },
 };
 use futures::{stream::FuturesUnordered, StreamExt};
-use log::info;
+use log::debug;
 use orchard::{keys::IncomingViewingKey as OrchardIvk, note_encryption::OrchardDomain};
 use std::sync::Arc;
 use tokio::{
@@ -72,7 +72,7 @@ impl TrialDecryptions {
             oneshot::Sender<Result<Transaction, String>>,
         )>,
     ) -> (JoinHandle<()>, UnboundedSender<CompactBlock>) {
-        //info!("Starting trial decrptions processor");
+        //debug!("Starting trial decrptions processor");
 
         // Create a new channel where we'll receive the blocks
         let (transmitter, mut receiver) = unbounded_channel::<CompactBlock>();
@@ -327,7 +327,7 @@ impl TrialDecryptions {
                         witness,
                     );
 
-                    info!("Trial decrypt Detected txid {}", &transaction_id);
+                    debug!("Trial decrypt Detected txid {}", &transaction_id);
 
                     detected_transaction_id_sender
                         .send((
