@@ -21,7 +21,7 @@ use crate::{
 };
 use futures::future::join_all;
 use json::{array, object, JsonValue};
-use log::{error, info, warn};
+use log::{debug, error, warn};
 use orchard::note_encryption::OrchardDomain;
 use std::{
     cmp,
@@ -130,8 +130,8 @@ impl LightClient {
             .expect("Unconnected client creation failed!");
         l.set_wallet_initial_state(height).await;
 
-        info!("Created new wallet!");
-        info!("Created LightClient to {}", &config.get_server_uri());
+        debug!("Created new wallet!");
+        debug!("Created LightClient to {}", &config.get_server_uri());
         Ok(l)
     }
 
@@ -141,7 +141,7 @@ impl LightClient {
         addrs: Vec<(&str, u64, Option<String>)>,
     ) -> Result<String, String> {
         // First, get the concensus branch ID
-        info!("Creating transaction");
+        debug!("Creating transaction");
 
         let result = {
             let _lock = self.sync_lock.lock().await;
@@ -315,7 +315,7 @@ impl LightClient {
             return None;
         }
 
-        info!(
+        debug!(
             "Getting sapling tree from LightwalletD at height {}",
             height
         );
@@ -345,7 +345,7 @@ impl LightClient {
 
         match state {
             Some((height, hash, tree)) => {
-                info!("Setting initial state to height {}, tree {}", height, tree);
+                debug!("Setting initial state to height {}, tree {}", height, tree);
                 self.wallet
                     .set_initial_block(height, &hash.as_str(), &tree.as_str())
                     .await;
@@ -359,8 +359,8 @@ impl LightClient {
             let l = LightClient::create_unconnected(&config, None, height)?;
             l.set_wallet_initial_state(height).await;
 
-            info!("Created new wallet with a new seed!");
-            info!("Created LightClient to {}", &config.get_server_uri());
+            debug!("Created new wallet with a new seed!");
+            debug!("Created LightClient to {}", &config.get_server_uri());
 
             // Save
             l.do_save()
@@ -431,7 +431,7 @@ impl LightClient {
                     .await
                     .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
 
-                info!("Created new wallet!");
+                debug!("Created new wallet!");
 
                 Ok(lightclient)
             })
@@ -471,11 +471,11 @@ impl LightClient {
                 bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
             };
 
-            info!(
+            debug!(
                 "Read wallet with birthday {}",
                 lc.wallet.get_birthday().await
             );
-            info!("Created LightClient to {}", &config.get_server_uri());
+            debug!("Created LightClient to {}", &config.get_server_uri());
 
             Ok(lc)
         })
@@ -1019,11 +1019,11 @@ impl LightClient {
         // Then set the initial block
         let birthday = self.wallet.get_birthday().await;
         self.set_wallet_initial_state(birthday).await;
-        info!("Cleared wallet state, with birthday at {}", birthday);
+        debug!("Cleared wallet state, with birthday at {}", birthday);
     }
 
     pub async fn do_rescan(&self) -> Result<JsonValue, String> {
-        info!("Rescan starting");
+        debug!("Rescan starting");
 
         self.clear_state().await;
 
@@ -1034,7 +1034,7 @@ impl LightClient {
             self.do_save().await?;
         }
 
-        info!("Rescan finished");
+        debug!("Rescan finished");
 
         response
     }
@@ -1075,7 +1075,7 @@ impl LightClient {
         let config = lc.config.clone();
         let lci = lc.clone();
 
-        info!("Mempool monitoring starting");
+        debug!("Mempool monitoring starting");
 
         let uri = lc.config.get_server_uri();
         // Start monitoring the mempool in a new thread
@@ -1104,7 +1104,7 @@ impl LightClient {
                             ),
                         ) {
                             let price = price.read().await.clone();
-                            //info!("Mempool attempting to scan {}", tx.txid());
+                            //debug!("Mempool attempting to scan {}", tx.txid());
 
                             TransactionContext::new(
                                 &config,
@@ -1125,7 +1125,7 @@ impl LightClient {
 
                 let h2 = tokio::spawn(async move {
                     loop {
-                        //info!("Monitoring mempool");
+                        //debug!("Monitoring mempool");
                         let r = GrpcConnector::monitor_mempool(
                             uri.clone(),
                             mempool_transmitter.clone(),
@@ -1285,13 +1285,13 @@ impl LightClient {
         // The top of the wallet
         let last_scanned_height = self.wallet.last_scanned_height().await;
 
-        info!(
+        debug!(
             "Latest block is {}, wallet block is {}",
             latest_block, last_scanned_height
         );
 
         if last_scanned_height == latest_block {
-            info!("Already at latest block, not syncing");
+            debug!("Already at latest block, not syncing");
             return Ok(object! { "result" => "success" });
         }
 
@@ -1479,13 +1479,13 @@ impl LightClient {
         let verify_handle =
             tokio::spawn(async move { block_data.read().await.block_data.verify_trees().await });
         let (verified, highest_tree) = verify_handle.await.map_err(|e| e.to_string())?;
-        info!("tree verification {}", verified);
-        info!("highest tree exists: {}", highest_tree.is_some());
+        debug!("tree verification {}", verified);
+        debug!("highest tree exists: {}", highest_tree.is_some());
         if !verified {
             return Err("Tree Verification Failed".to_string());
         }
 
-        info!("Sync finished, doing post-processing");
+        debug!("Sync finished, doing post-processing");
 
         let blaze_sync_data = bsync_data.read().await;
         // Post sync, we have to do a bunch of stuff
@@ -1591,7 +1591,7 @@ impl LightClient {
     //TODO: Add migrate_sapling_to_orchard argument
     pub async fn do_send(&self, addrs: Vec<(&str, u64, Option<String>)>) -> Result<String, String> {
         // First, get the concensus branch ID
-        info!("Creating transaction");
+        debug!("Creating transaction");
 
         let result = {
             let _lock = self.sync_lock.lock().await;
