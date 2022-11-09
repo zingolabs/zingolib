@@ -59,13 +59,8 @@ impl fmt::Display for BatchSyncStatus {
         if self.blocks_total > 0 && self.in_progress {
             write!(
                 f,
-                "id: {}, blocks_done/blocks_total: {:4}/{:4}, decryptions: {:4}, tx_scan: {:4}, anchors: {}",
-                self.sync_id,
-                self.blocks_done,
-                self.blocks_total,
-                self.trial_dec_done,
-                self.txn_scan_done,
-                self.orchard_anchors_done
+                "**Batch** Current: {:4} Total: {:4}\n   Blocks Loaded: {:4} TrialDecrypted: {:4}, Total: {:4}",
+                self.batch_num, self.batch_total, self.blocks_done, self.trial_dec_done, self.blocks_total,
             )
         } else {
             write!(
