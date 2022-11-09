@@ -76,7 +76,7 @@ impl fmt::Display for SyncStatus {
         if self.blocks_total > 0 && self.in_progress {
             write!(
                 f,
-                "id: {}, blocks: {}% ({}), decryptions: {}% ({}), tx_scan: {}% ({}), anchors: {}",
+                "id: {}, blocks: {}% ({:6}), decryptions: {}% ({:6}), tx_scan: {}% ({:6}), anchors: {}",
                 self.sync_id,
                 self.perct(self.blocks_done),
                 self.blocks_done,
