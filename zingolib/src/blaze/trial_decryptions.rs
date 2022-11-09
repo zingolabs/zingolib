@@ -129,10 +129,18 @@ impl TrialDecryptions {
             )));
 
             while let Some(r) = workers.next().await {
-                r.unwrap().unwrap();
+                match r {
+                    Ok(result) => match result {
+                        Ok(()) => {}
+                        Err(errorstring) => {
+                            dbg!(errorstring);
+                            ()
+                        }
+                    },
+                    Err(joinerror) => panic!("{}", &joinerror.to_string()),
+                }
             }
         });
-
         return (management_thread_handle, transmitter);
     }
 
