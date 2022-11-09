@@ -32,7 +32,7 @@ impl BlazeSyncData {
         self.uri.read().unwrap().clone()
     }
 
-    pub async fn setup_for_sync(
+    pub async fn setup_nth_batch(
         &mut self,
         start_block: u64,
         end_block: u64,
