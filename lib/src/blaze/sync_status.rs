@@ -1,8 +1,7 @@
 use core::fmt;
-use std::cmp;
 
 #[derive(Clone, Debug, Default)]
-pub struct SyncStatus {
+pub struct BatchSyncStatus {
     pub in_progress: bool,
     pub last_error: Option<String>,
 
@@ -21,7 +20,7 @@ pub struct SyncStatus {
     pub batch_total: usize,
 }
 
-impl SyncStatus {
+impl BatchSyncStatus {
     pub fn start_new(&mut self, batch_total: usize) {
         self.sync_id += 1;
         self.last_error = None;
@@ -53,38 +52,15 @@ impl SyncStatus {
     pub fn finish(&mut self) {
         self.in_progress = false;
     }
-
-    fn perct(&self, num: u64) -> u8 {
-        let a = if self.blocks_total > 0 {
-            let (b, d) = if self.batch_total > 0 {
-                ((self.batch_num * 100 / self.batch_total), self.batch_total)
-            } else {
-                (0, 1)
-            };
-            let p = cmp::min(((num * 100) / self.blocks_total) as u8, 100);
-            b + (p as usize / d)
-        } else {
-            0
-        };
-
-        cmp::min(100, a as u8)
-    }
 }
 
-impl fmt::Display for SyncStatus {
+impl fmt::Display for BatchSyncStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.blocks_total > 0 && self.in_progress {
             write!(
                 f,
-                "id: {}, blocks: {}% ({}), decryptions: {}% ({}), tx_scan: {}% ({}), anchors: {}",
-                self.sync_id,
-                self.perct(self.blocks_done),
-                self.blocks_done,
-                self.perct(self.trial_dec_done),
-                self.trial_dec_done,
-                self.perct(self.txn_scan_done),
-                self.txn_scan_done,
-                self.orchard_anchors_done
+                "**Batch** Current: {:4} Total: {:4}\n   Blocks Loaded: {:4} TrialDecrypted: {:4}, Total: {:4}",
+                self.batch_num, self.batch_total, self.blocks_done, self.trial_dec_done, self.blocks_total,
             )
         } else {
             write!(

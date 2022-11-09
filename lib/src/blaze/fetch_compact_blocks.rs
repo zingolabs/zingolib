@@ -1,7 +1,7 @@
 use std::{cmp::max, sync::Arc};
 
 use crate::{compact_formats::CompactBlock, grpc_connector::GrpcConnector};
-use log::info;
+use log::debug;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use zingoconfig::ZingoConfig;
 pub struct FetchCompactBlocks {
@@ -32,7 +32,7 @@ impl FetchCompactBlocks {
                 return Err(format!("Wrong block order"));
             }
 
-            info!("Fetching blocks {}-{}", start, end);
+            debug!("Fetching blocks {}-{}", start, end);
 
             grpc_client.get_block_range(start, end, senders).await?;
         }
@@ -52,7 +52,7 @@ impl FetchCompactBlocks {
             return Err(format!("Expected blocks in reverse order"));
         }
 
-        //info!("Starting fetch compact blocks");
+        //debug!("Starting fetch compact blocks");
         self.fetch_blocks_range(&senders, start_block, end_block)
             .await?;
 
@@ -63,7 +63,7 @@ impl FetchCompactBlocks {
                 .await?;
         }
 
-        //info!("Finished fetch compact blocks, closing channels");
+        //debug!("Finished fetch compact blocks, closing channels");
         Ok(())
     }
 }

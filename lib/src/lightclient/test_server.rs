@@ -247,7 +247,7 @@ pub async fn setup_n_block_fcbl_scenario(
         initial_num_two_tx_blocks,
     )
     .await;
-    assert_eq!(lightclient.wallet.last_scanned_height().await, 10);
+    assert_eq!(lightclient.wallet.last_synced_height().await, 10);
     (
         NBlockFCBLScenario {
             data,
@@ -317,7 +317,7 @@ async fn test_direct_grpc_and_lightclient_blockchain_height_agreement() {
                 .into_inner()
         );
         assert_eq!(observed_pre_answer, expected_lightdinfo_before_blockmining);
-        assert_eq!(lightclient.wallet.last_scanned_height().await, 0);
+        assert_eq!(lightclient.wallet.last_synced_height().await, 0);
         // Change system under test state (generating random blocks)
         mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 10)
             .await;
@@ -330,7 +330,7 @@ async fn test_direct_grpc_and_lightclient_blockchain_height_agreement() {
                 .into_inner()
         );
         assert_eq!(observed_post_answer, expected_lightdinfo_after_blockmining);
-        assert_eq!(lightclient.wallet.last_scanned_height().await, 10);
+        assert_eq!(lightclient.wallet.last_synced_height().await, 10);
         clean_shutdown(stop_transmitter, test_server_handle).await;
     }
 }

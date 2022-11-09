@@ -455,7 +455,7 @@ impl LightWallet {
 
     // Before version 20, witnesses didn't store their height, so we need to update them.
     pub async fn set_witness_block_heights(&mut self) {
-        let top_height = self.last_scanned_height().await;
+        let top_height = self.last_synced_height().await;
         self.transaction_context
             .transaction_metadata_set
             .write()
@@ -627,7 +627,7 @@ impl LightWallet {
 
     /// TODO: How do we know that 'sapling_activation_height - 1' is only returned
     /// when it should be?  When should it be?
-    pub async fn last_scanned_height(&self) -> u64 {
+    pub async fn last_synced_height(&self) -> u64 {
         self.blocks
             .read()
             .await
@@ -636,7 +636,7 @@ impl LightWallet {
             .unwrap_or(self.transaction_context.config.sapling_activation_height() - 1)
     }
 
-    pub async fn last_scanned_hash(&self) -> String {
+    pub async fn last_synced_hash(&self) -> String {
         self.blocks
             .read()
             .await
@@ -1682,7 +1682,7 @@ mod test {
         let txid = transaction.txid();
         mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
-        assert_eq!(lightclient.wallet.last_scanned_height().await, 11);
+        assert_eq!(lightclient.wallet.last_synced_height().await, 11);
 
         // 3. With one confirmation, we should be able to select the note
         let amt = Amount::from_u64(10_000).unwrap();
@@ -1854,7 +1854,7 @@ mod test {
         let txid = transaction.txid();
         mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
-        assert_eq!(lightclient.wallet.last_scanned_height().await, 11);
+        assert_eq!(lightclient.wallet.last_synced_height().await, 11);
 
         // 3. With one confirmation, we should be able to select the note
         let amt = Amount::from_u64(10_000).unwrap();
