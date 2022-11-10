@@ -530,7 +530,7 @@ impl LightClient {
             {
                 log::debug!("target_os is not ios or android");
                 // Prevent any overlapping syncs during save, and don't save in the middle of a sync
-                let _lock = self.sync_lock.lock().await;
+                //let _lock = self.sync_lock.lock().await;
 
                 let mut wallet_bytes = vec![];
                 match self.wallet.write(&mut wallet_bytes).await {
