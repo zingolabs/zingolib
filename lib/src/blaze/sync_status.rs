@@ -22,6 +22,7 @@ pub struct BatchSyncStatus {
 
 impl BatchSyncStatus {
     pub fn start_new(&mut self, batch_total: usize) {
+        log::debug!("BatchSyncStatus::start_new(num_blocks_in_batch) called!");
         self.sync_id += 1;
         self.last_error = None;
         self.in_progress = true;
@@ -36,6 +37,11 @@ impl BatchSyncStatus {
 
     /// Setup a new sync status in prep for an upcoming sync
     pub fn new_sync_batch(&mut self, start_block: u64, end_block: u64, batch_num: usize) {
+        log::debug!(
+            "BatchSyncStatus::new_sync_batch(
+            start_block: {start_block}, end_block: {end_block}, batch_num: {batch_num}
+            ) called!"
+        );
         self.in_progress = true;
         self.last_error = None;
 
@@ -65,8 +71,9 @@ impl fmt::Display for BatchSyncStatus {
         } else {
             write!(
                 f,
-                "id: {}, in_progress: {}, errors: {}",
+                "id: {}, total_batch_blocks: {:4}, in_progress: {}, errors: {}",
                 self.sync_id,
+                self.blocks_total,
                 self.in_progress,
                 self.last_error.as_ref().unwrap_or(&"None".to_string())
             )

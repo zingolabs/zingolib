@@ -525,10 +525,12 @@ impl LightClient {
 
     pub async fn do_save(&self) -> Result<(), String> {
         // On mobile platforms, disable the save, because the saves will be handled by the native layer, and not in rust
+        log::debug!("do_save entered");
         if cfg!(all(not(target_os = "ios"), not(target_os = "android"))) {
             {
+                log::debug!("target_os is not ios or android");
                 // Prevent any overlapping syncs during save, and don't save in the middle of a sync
-                let _lock = self.sync_lock.lock().await;
+                //let _lock = self.sync_lock.lock().await;
 
                 let mut wallet_bytes = vec![];
                 match self.wallet.write(&mut wallet_bytes).await {
@@ -536,11 +538,13 @@ impl LightClient {
                         let mut file = File::create(self.config.get_wallet_path()).unwrap();
                         file.write_all(&wallet_bytes)
                             .map_err(|e| format!("{}", e))?;
+                        log::debug!("In the guts of a successful save!");
                         Ok(())
                     }
                     Err(e) => {
                         let err = format!("ERR: {}", e);
                         error!("{}", err);
+                        log::debug!("SAVE FAIL ON WALLET WRITE LOCK!");
                         Err(e.to_string())
                     }
                 }
@@ -1304,7 +1308,7 @@ impl LightClient {
         bsync_data
             .write()
             .await
-            .setup_for_sync(
+            .setup_nth_batch(
                 start_block,
                 end_block,
                 batch_num,
@@ -1484,7 +1488,7 @@ impl LightClient {
             return Err("Tree Verification Failed".to_string());
         }
 
-        debug!("Sync finished, doing post-processing");
+        debug!("Batch: {batch_num} synced, doing post-processing");
 
         let blaze_sync_data = bsync_data.read().await;
         // Post sync, we have to do a bunch of stuff
@@ -1537,6 +1541,9 @@ impl LightClient {
             *self.wallet.verified_tree.write().await = highest_tree;
         }
 
+        debug!("About to run save after syncing {}th batch!", batch_num);
+        #[cfg(target_os = "linux")]
+        self.do_save().await.unwrap();
         Ok(object! {
             "result" => "success",
             "latest_block" => start_block,

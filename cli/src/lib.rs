@@ -374,7 +374,7 @@ pub fn startup(
     filled_template: &ConfigTemplate,
 ) -> std::io::Result<(Sender<(String, Vec<String>)>, Receiver<String>)> {
     // Initialize logging
-    //LightClient::init_logging()?;
+    LightClient::init_logging()?;
 
     // Try to get the configuration
     let (config, latest_block_height) = create_zingoconf_with_datadir(
