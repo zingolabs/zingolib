@@ -1344,7 +1344,14 @@ async fn recover_at_checkpoint() {
         1220110
     );
 
-    // 5: Test2: Create a new lightwallet, restoring at checkpoint + 100
+    // 5: Test2: Delete the old wallet
+    //           Create a new wallet, restoring at checkpoint + 100
+
+    let wallet_name = &format!("{}/zingo-wallet.dat", config.data_dir.clone().unwrap());
+    let _wallet_remove = std::process::Command::new("rm")
+        .args(["-f", wallet_name])
+        .output()
+        .expect("Wallet should always be removed.");
     let lc = LightClient::test_new(&config, Some(TEST_SEED.to_string()), ckpt_height + 100)
         .await
         .unwrap();
