@@ -1542,7 +1542,8 @@ impl LightClient {
         }
 
         debug!("About to run save after syncing {}th batch!", batch_num);
-        self.do_save().await.unwrap(); // TODO: Ensure that this doesn't slow batch processing!
+        #[cfg(target_os = "linux")]
+        self.do_save().await.unwrap();
         Ok(object! {
             "result" => "success",
             "latest_block" => start_block,
