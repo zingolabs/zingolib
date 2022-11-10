@@ -551,14 +551,12 @@ impl LightClient {
         }
     }
 
-    #[cfg(any(target_os = "android", target_os = "ios"))]
     pub fn do_save_to_buffer_sync(&self) -> Result<Vec<u8>, String> {
         Runtime::new()
             .unwrap()
             .block_on(async move { self.do_save_to_buffer().await })
     }
 
-    #[cfg(any(target_os = "android", target_os = "ios"))]
     pub async fn do_save_to_buffer(&self) -> Result<Vec<u8>, String> {
         let mut buffer: Vec<u8> = vec![];
         match self.wallet.write(&mut buffer).await {
