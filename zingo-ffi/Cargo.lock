@@ -3669,7 +3669,7 @@ dependencies = [
 [[package]]
 name = "zingoconfig"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#4e1f3c7f88f35332ecbf42c2e03a3647e9eba0b2"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#d16abd3390ccbf986c9a55ccb1bca69ca5d6656a"
 dependencies = [
  "dirs",
  "http",
@@ -3682,7 +3682,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#4e1f3c7f88f35332ecbf42c2e03a3647e9eba0b2"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#d16abd3390ccbf986c9a55ccb1bca69ca5d6656a"
 dependencies = [
  "base58",
  "base64 0.13.1",
