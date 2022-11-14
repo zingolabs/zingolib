@@ -22,6 +22,20 @@ pub trait Command {
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String;
 }
 
+#[cfg(target_os = "android")]
+struct ConditionalCompCanaryCommand {}
+#[cfg(target_os = "android")]
+impl Command {
+    fn help(&self) -> String {
+        format! {"android was a target_os when this binary was compiled"}
+    }
+    fn short_help(&self) -> String {
+        format! {"android was a target_os when this binary was compiled"}
+    }
+    fn exec(&self, _args: &[&str], _lightclient: &LightClient) -> String {
+        format! {"android was a target_os when this binary was compiled"}
+    }
+}
 pub trait ShortCircuitedCommand {
     fn exec_without_lc(args: Vec<String>) -> String;
 }
