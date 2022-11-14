@@ -440,9 +440,9 @@ dependencies = [
 
 [[package]]
 name = "chrono"
-version = "0.4.22"
+version = "0.4.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfd4d1b31faaa3a89d7934dbded3111da0d2ef28e3ebccdb4f0179f5929d1ef1"
+checksum = "16b0a3d9ed01224b22057780a37bb8c5dbfe1be8ba48678e7bf57ec4b385411f"
 dependencies = [
  "iana-time-zone",
  "js-sys",
@@ -2253,7 +2253,7 @@ dependencies = [
  "jni",
  "lazy_static",
  "log",
- "zingoconfig",
+ "zingoconfig 0.1.0 (git+https://github.com/zingolabs/zingolib?branch=dev)",
  "zingolib",
 ]
 
@@ -3680,9 +3680,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "zingoconfig"
+version = "0.1.0"
+source = "git+https://github.com/aloearev/zingolib?branch=testbip_command#3041866bea5b8784679e3fe2ce782c8370bb1c0a"
+dependencies = [
+ "dirs",
+ "http",
+ "log",
+ "log4rs",
+ "zcash_address",
+ "zcash_primitives",
+]
+
+[[package]]
 name = "zingolib"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#d16abd3390ccbf986c9a55ccb1bca69ca5d6656a"
+source = "git+https://github.com/aloearev/zingolib?branch=testbip_command#3041866bea5b8784679e3fe2ce782c8370bb1c0a"
 dependencies = [
  "base58",
  "base64 0.13.1",
@@ -3736,5 +3749,5 @@ dependencies = [
  "zcash_note_encryption",
  "zcash_primitives",
  "zcash_proofs",
- "zingoconfig",
+ "zingoconfig 0.1.0 (git+https://github.com/aloearev/zingolib?branch=testbip_command)",
 ]
