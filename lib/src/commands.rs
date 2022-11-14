@@ -25,7 +25,7 @@ pub trait Command {
 #[cfg(target_os = "android")]
 struct ConditionalCompCanaryCommand {}
 #[cfg(target_os = "android")]
-impl Command {
+impl Command for ConditionalCompCanaryCommand {
     fn help(&self) -> String {
         format! {"android was a target_os when this binary was compiled"}
     }
