@@ -1149,9 +1149,9 @@ dependencies = [
 
 [[package]]
 name = "hyper-rustls"
-version = "0.23.0"
+version = "0.23.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d87c48c02e0dc5e3b849a2041db3029fd066650f8f717c07bf8ed78ccb895cac"
+checksum = "59df7c4e19c950e6e0e868dcc0a300b09a9b88e9ec55bd879ca819087a77355d"
 dependencies = [
  "http",
  "hyper",
@@ -2113,9 +2113,9 @@ dependencies = [
 
 [[package]]
 name = "reqwest"
-version = "0.11.12"
+version = "0.11.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "431949c384f4e2ae07605ccaa56d1d9d2ecdb5cadd4f9577ccfab29f2e5149fc"
+checksum = "68cc60575865c7831548863cc02356512e3f1dc2f3f82cb837d7fc4cc8f3c97c"
 dependencies = [
  "base64 0.13.1",
  "bytes 1.2.1",
@@ -3510,9 +3510,9 @@ dependencies = [
 
 [[package]]
 name = "wyz"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "30b31594f29d27036c383b53b59ed3476874d518f0efb151b27a4c275141390e"
+checksum = "05f360fc0b24296329c78fda852a1e9ae82de9cf7b27dae4b7f62f118f77b9ed"
 dependencies = [
  "tap",
 ]
@@ -3682,7 +3682,7 @@ dependencies = [
 [[package]]
 name = "zingoconfig"
 version = "0.1.0"
-source = "git+https://github.com/aloearev/zingolib?branch=testbip_command#3041866bea5b8784679e3fe2ce782c8370bb1c0a"
+source = "git+https://github.com/aloearev/zingolib?branch=testbip_command#ed681944dcc9d0556ed09a2b18667e7133569090"
 dependencies = [
  "dirs",
  "http",
@@ -3695,7 +3695,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.2.0"
-source = "git+https://github.com/aloearev/zingolib?branch=testbip_command#3041866bea5b8784679e3fe2ce782c8370bb1c0a"
+source = "git+https://github.com/aloearev/zingolib?branch=testbip_command#ed681944dcc9d0556ed09a2b18667e7133569090"
 dependencies = [
  "base58",
  "base64 0.13.1",
