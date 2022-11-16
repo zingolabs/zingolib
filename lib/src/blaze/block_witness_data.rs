@@ -8,11 +8,11 @@ use crate::{
         transactions::TransactionMetadataSet,
     },
 };
-use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard, Anchor};
+use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
 use zcash_note_encryption::Domain;
 use zingoconfig::{ChainType, ZingoConfig, MAX_REORG};
 
-use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
+use futures::future::join_all;
 use http::Uri;
 use std::{sync::Arc, time::Duration};
 use tokio::{
@@ -57,9 +57,6 @@ pub struct BlockAndWitnessData {
     // tree producing protocol
     highest_verified_trees: Option<TreeState>,
 
-    // Orchard anchors, and their heights.
-    pub(crate) orchard_anchor_height_pairs: Arc<RwLock<Vec<(Anchor, BlockHeight)>>>,
-
     // Link to the syncstatus where we can update progress
     sync_status: Arc<RwLock<BatchSyncStatus>>,
 
@@ -75,7 +72,6 @@ impl BlockAndWitnessData {
             unverified_treestates: Arc::new(RwLock::new(vec![])),
             batch_size: 25,
             highest_verified_trees: None,
-            orchard_anchor_height_pairs: Arc::new(RwLock::new(Vec::new())),
             sync_status,
             sapling_activation_height: config.sapling_activation_height(),
             orchard_activation_height: config
@@ -370,45 +366,6 @@ impl BlockAndWitnessData {
             .write()
             .await
             .remove_txns_at_height(reorg_height);
-    }
-
-    pub async fn update_orchard_anchors_process(
-        &self,
-        start_block: u64,
-        end_block: u64,
-        uri: Arc<std::sync::RwLock<Uri>>,
-    ) -> JoinHandle<Result<(), String>> {
-        let orchard_anchor_height_pairs = self.orchard_anchor_height_pairs.clone();
-        let sync_status = self.sync_status.clone();
-        tokio::spawn(async move {
-            let mut workers = FuturesUnordered::new();
-            for block_height in end_block..=start_block {
-                let uri = uri.clone();
-                let orchard_anchor_height_pairs = orchard_anchor_height_pairs.clone();
-                let sync_status = sync_status.clone();
-                workers.push(tokio::spawn(async move {
-                    let mut anchors_and_heights = orchard_anchor_height_pairs.write().await;
-
-                    let uri = uri.read().unwrap().clone();
-                    let trees_state = GrpcConnector::get_trees(uri.clone(), block_height).await?;
-                    let orchard_tree = CommitmentTree::<MerkleHashOrchard>::read(
-                        hex::decode(&trees_state.orchard_tree).unwrap().as_slice(),
-                    )
-                    .unwrap_or(CommitmentTree::empty());
-                    anchors_and_heights.push((
-                        Anchor::from(orchard_tree.root()),
-                        BlockHeight::from_u32(block_height as u32),
-                    ));
-                    sync_status.write().await.orchard_anchors_done += 1;
-                    Ok::<_, String>(())
-                }))
-            }
-            while let Some(r) = workers.next().await {
-                r.map_err(|r| r.to_string())??;
-            }
-
-            Ok(())
-        })
     }
 
     /// Start a new sync where we ingest all the blocks

@@ -1408,25 +1408,6 @@ impl LightClient {
                 .await
         });
 
-        // Update anchors only on the last batch
-
-        let update_orchard_anchors_handle = {
-            let bsync_readlock = bsync_data.read().await;
-            let sync_status = bsync_readlock.sync_status.read().await;
-            if sync_status.batch_num + 1 != sync_status.batch_total {
-                tokio::spawn(async move { Ok(()) })
-            } else {
-                bsync_readlock
-                    .block_data
-                    .update_orchard_anchors_process(
-                        start_block,
-                        end_block,
-                        self.config.server_uri.clone(),
-                    )
-                    .await
-            }
-        };
-        // Update orchard anchors
         // We wait first for the nodes to be updated. This is where reorgs will be handled, so all the steps done after this phase will
         // assume that the reorgs are done.
         let earliest_block = block_and_witness_handle.await.unwrap().unwrap();
@@ -1468,7 +1449,6 @@ impl LightClient {
 
         join_all(vec![
             update_notes_handle,
-            update_orchard_anchors_handle,
             taddr_transactions_handle,
             fetch_compact_blocks_handle,
             fetch_full_transactions_handle,
@@ -1499,21 +1479,6 @@ impl LightClient {
             .await;
         self.wallet.set_blocks(blocks).await;
 
-        // Store the ten highest orchard anchors
-        {
-            let mut anchors = self.wallet.orchard_anchor_and_height_pairs.write().await;
-            *anchors = blaze_sync_data
-                .block_data
-                .orchard_anchor_height_pairs
-                .read()
-                .await
-                .clone()
-                .into_iter()
-                .chain(anchors.drain(..))
-                .collect();
-            anchors.sort_unstable_by(|(_, height_a), (_, height_b)| height_b.cmp(height_a));
-            anchors.truncate(10);
-        }
         // 2. If sync was successfull, also try to get historical prices
         // self.update_historical_prices().await;
         // zingolabs considers this to be a serious privacy/secuity leak

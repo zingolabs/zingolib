@@ -11,6 +11,7 @@ use futures::Future;
 use log::{error, info, warn};
 use orchard::keys::SpendingKey as OrchardSpendingKey;
 use orchard::note_encryption::OrchardDomain;
+use orchard::tree::MerkleHashOrchard;
 use orchard::Anchor;
 use rand::rngs::OsRng;
 use rand::Rng;
@@ -26,6 +27,7 @@ use zcash_client_backend::address;
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
 use zcash_primitives::memo::MemoBytes;
+use zcash_primitives::merkle_tree::CommitmentTree;
 use zcash_primitives::sapling::note_encryption::SaplingDomain;
 use zcash_primitives::sapling::SaplingIvk;
 use zcash_primitives::transaction::builder::Progress;
@@ -182,9 +184,6 @@ pub struct LightWallet {
     // Heighest verified block
     pub(crate) verified_tree: Arc<RwLock<Option<TreeState>>>,
 
-    // Orchard anchors, and their heights
-    pub(crate) orchard_anchor_and_height_pairs: Arc<RwLock<Vec<(Anchor, BlockHeight)>>>,
-
     // Progress of an outgoing transaction
     send_progress: Arc<RwLock<SendProgress>>,
 
@@ -199,7 +198,7 @@ pub struct LightWallet {
 use crate::wallet::traits::{Diversifiable as _, ReadableWriteable};
 impl LightWallet {
     pub fn serialized_version() -> u64 {
-        return 25;
+        return 26;
     }
 
     pub fn new(config: ZingoConfig, seed_phrase: Option<String>, height: u64) -> io::Result<Self> {
@@ -245,7 +244,6 @@ impl LightWallet {
             wallet_options: Arc::new(RwLock::new(WalletOptions::default())),
             birthday: AtomicU64::new(height),
             verified_tree: Arc::new(RwLock::new(None)),
-            orchard_anchor_and_height_pairs: Arc::new(RwLock::new(Vec::new())),
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(WalletZecPriceInfo::new())),
             transaction_context,
@@ -347,13 +345,13 @@ impl LightWallet {
             Arc::new(RwLock::new(transactions)),
         );
 
-        let orchard_anchor_height_pairs = if external_version >= 25 {
+        let _orchard_anchor_height_pairs = if external_version == 25 {
             Vector::read(&mut reader, |r| {
                 let mut anchor_bytes = [0; 32];
                 r.read_exact(&mut anchor_bytes)?;
                 let block_height = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
                 Ok((
-                    Option::from(Anchor::from_bytes(anchor_bytes))
+                    Option::<Anchor>::from(Anchor::from_bytes(anchor_bytes))
                         .ok_or(Error::new(ErrorKind::InvalidData, "Bad orchard anchor"))?,
                     block_height,
                 ))
@@ -373,7 +371,6 @@ impl LightWallet {
             wallet_options: Arc::new(RwLock::new(wallet_options)),
             birthday: AtomicU64::new(birthday),
             verified_tree: Arc::new(RwLock::new(verified_tree)),
-            orchard_anchor_and_height_pairs: Arc::new(RwLock::new(orchard_anchor_height_pairs)),
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(price)),
             transaction_context,
@@ -430,15 +427,6 @@ impl LightWallet {
 
         // Price info
         self.price.read().await.write(&mut writer)?;
-
-        Vector::write(
-            &mut writer,
-            &*self.orchard_anchor_and_height_pairs.read().await,
-            |w, (anchor, height)| {
-                w.write_all(&anchor.to_bytes())?;
-                w.write_u32::<LittleEndian>(u32::from(*height))
-            },
-        )?;
 
         Vector::write(
             &mut writer,
@@ -606,7 +594,6 @@ impl LightWallet {
     /// and the wallet will need to be rescanned
     pub async fn clear_all(&self) {
         self.blocks.write().await.clear();
-        self.orchard_anchor_and_height_pairs.write().await.clear();
         self.transaction_context
             .transaction_metadata_set
             .write()
@@ -669,14 +656,7 @@ impl LightWallet {
                 // Select an anchor ANCHOR_OFFSET back from the target block,
                 // unless that would be before the earliest block we have.
                 let anchor_height = cmp::max(
-                    target_height.saturating_sub(
-                        *self
-                            .transaction_context
-                            .config
-                            .anchor_offset
-                            .last()
-                            .unwrap(),
-                    ),
+                    target_height.saturating_sub(self.transaction_context.config.anchor_offset),
                     min_height,
                 );
 
@@ -1023,7 +1003,7 @@ impl LightWallet {
         (vec![], vec![], vec![], Amount::zero())
     }
 
-    async fn get_all_domain_specific_notes<D>(&self) -> Vec<Vec<D::SpendableNoteAT>>
+    async fn get_all_domain_specific_notes<D>(&self) -> Vec<D::SpendableNoteAT>
     where
         D: DomainWalletExt<zingoconfig::ChainType>,
         <D as Domain>::Recipient: traits::Recipient,
@@ -1033,83 +1013,64 @@ impl LightWallet {
         let usc = usc_lth.read().await;
         let tranmds_lth = self.transactions();
         let transaction_metadata_set = tranmds_lth.read().await;
-        self.transaction_context
-            .config
-            .anchor_offset
+        let mut candidate_notes = transaction_metadata_set
+            .current
             .iter()
-            .map(|anchor_offset| {
-                let mut candidate_notes = transaction_metadata_set
-                    .current
+            .flat_map(|(transaction_id, transaction)| {
+                D::WalletNote::transaction_metadata_notes(transaction)
                     .iter()
-                    .flat_map(|(transaction_id, transaction)| {
-                        D::WalletNote::transaction_metadata_notes(transaction)
-                            .iter()
-                            .map(move |note| (*transaction_id, note))
-                    })
-                    .filter(|(_, note)| note.value() > 0)
-                    .filter_map(|(transaction_id, note)| {
-                        // Filter out notes that are already spent
-                        if note.spent().is_some() || note.unconfirmed_spent().is_some() {
-                            None
-                        } else {
-                            // Get the spending key for the selected fvk, if we have it
-                            let extsk = D::usc_to_sk(&usc);
-                            SpendableNote::from(
-                                transaction_id,
-                                note,
-                                *anchor_offset as usize,
-                                &Some(extsk),
-                            )
-                        }
-                    })
-                    .collect::<Vec<D::SpendableNoteAT>>();
-                candidate_notes.sort_unstable_by(|spendable_note_1, spendable_note_2| {
-                    D::WalletNote::value_from_note(&spendable_note_2.note())
-                        .cmp(&D::WalletNote::value_from_note(&spendable_note_1.note()))
-                });
-                candidate_notes
+                    .map(move |note| (*transaction_id, note))
             })
-            .collect()
+            .filter(|(_, note)| note.value() > 0)
+            .filter_map(|(transaction_id, note)| {
+                // Filter out notes that are already spent
+                if note.spent().is_some() || note.unconfirmed_spent().is_some() {
+                    None
+                } else {
+                    // Get the spending key for the selected fvk, if we have it
+                    let extsk = D::usc_to_sk(&usc);
+                    SpendableNote::from(
+                        transaction_id,
+                        note,
+                        self.transaction_context.config.anchor_offset as usize,
+                        &Some(extsk),
+                    )
+                }
+            })
+            .collect::<Vec<D::SpendableNoteAT>>();
+        candidate_notes.sort_unstable_by(|spendable_note_1, spendable_note_2| {
+            D::WalletNote::value_from_note(&spendable_note_2.note())
+                .cmp(&D::WalletNote::value_from_note(&spendable_note_1.note()))
+        });
+        candidate_notes
     }
 
     fn add_notes_to_total<D: DomainWalletExt<zingoconfig::ChainType>>(
-        candidates: Vec<Vec<D::SpendableNoteAT>>,
+        candidates: Vec<D::SpendableNoteAT>,
         target_amount: Amount,
     ) -> (Vec<D::SpendableNoteAT>, Amount)
     where
         D::Note: PartialEq + Clone,
         D::Recipient: traits::Recipient,
     {
-        let mut notes = vec![];
-        let mut value_selected = Amount::zero();
-        let mut candidates = candidates.into_iter();
-        loop {
-            if let Some(candidate_set) = candidates.next() {
-                notes = candidate_set
-                    .into_iter()
-                    .scan(Amount::zero(), |running_total, spendable| {
-                        if *running_total >= target_amount {
-                            None
-                        } else {
-                            *running_total +=
-                                Amount::from_u64(D::WalletNote::value_from_note(&spendable.note()))
-                                    .unwrap();
-                            Some(spendable)
-                        }
-                    })
-                    .collect::<Vec<_>>();
-                value_selected = notes.iter().fold(Amount::zero(), |prev, sn| {
-                    (prev + Amount::from_u64(D::WalletNote::value_from_note(&sn.note())).unwrap())
-                        .unwrap()
-                });
-
-                if value_selected >= target_amount {
-                    break (notes, value_selected);
+        let notes = candidates
+            .into_iter()
+            .scan(Amount::zero(), |running_total, spendable| {
+                if *running_total >= target_amount {
+                    None
+                } else {
+                    *running_total +=
+                        Amount::from_u64(D::WalletNote::value_from_note(&spendable.note()))
+                            .unwrap();
+                    Some(spendable)
                 }
-            } else {
-                break (notes, value_selected);
-            }
-        }
+            })
+            .collect::<Vec<_>>();
+        let value_selected = notes.iter().fold(Amount::zero(), |prev, sn| {
+            (prev + Amount::from_u64(D::WalletNote::value_from_note(&sn.note())).unwrap()).unwrap()
+        });
+
+        (notes, value_selected)
     }
 
     pub async fn send_to_address<F, Fut, P: TxProver>(
@@ -1225,7 +1186,7 @@ impl LightWallet {
             let e = format!(
                 "Insufficient verified funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent.",
                 u64::from(selected_value), u64::from(target_amount), self.transaction_context.config
-                .anchor_offset.last().unwrap() + 1
+                .anchor_offset + 1
             );
             error!("{}", e);
             return Err(e);
@@ -1524,29 +1485,21 @@ impl LightWallet {
         if let Some(note) = orchard_notes.get(0) {
             Ok(orchard::Anchor::from(note.witness.root()))
         } else {
-            self.orchard_anchor_and_height_pairs
-                .read()
-                .await
-                .iter()
-                .find_map(|(anchor, height)| {
-                    if height
-                        == &(target_height
-                            - BlockHeight::from_u32(
-                                *self
-                                    .transaction_context
-                                    .config
-                                    .anchor_offset
-                                    .first()
-                                    .unwrap(),
-                            ))
-                    {
-                        Some(anchor.clone())
-                    } else {
-                        None
-                    }
-                })
-                .ok_or("No Orchard anchor for target height in wallet".to_string())
-                .clone()
+            let trees = crate::grpc_connector::GrpcConnector::get_trees(
+                self.transaction_context
+                    .config
+                    .server_uri
+                    .read()
+                    .unwrap()
+                    .clone(),
+                u64::from(target_height) - self.transaction_context.config.anchor_offset as u64,
+            )
+            .await?;
+            let orchard_tree = CommitmentTree::<MerkleHashOrchard>::read(
+                hex::decode(&trees.orchard_tree).unwrap().as_slice(),
+            )
+            .unwrap_or(CommitmentTree::empty());
+            Ok(Anchor::from(orchard_tree.root()))
         }
     }
 }
@@ -1687,7 +1640,7 @@ mod test {
         // 3. With one confirmation, we should be able to select the note
         let amt = Amount::from_u64(10_000).unwrap();
         // Reset the anchor offsets
-        lightclient.wallet.transaction_context.config.anchor_offset = [9, 4, 2, 1, 0];
+        lightclient.wallet.transaction_context.config.anchor_offset = 0;
         let (_orchard_notes, sapling_notes, utxos, selected) = lightclient
             .wallet
             .select_notes_and_utxos(amt, false, false, false)
@@ -1716,7 +1669,7 @@ mod test {
         );
 
         // With min anchor_offset at 1, we can't select any notes
-        lightclient.wallet.transaction_context.config.anchor_offset = [9, 4, 2, 1, 1];
+        lightclient.wallet.transaction_context.config.anchor_offset = 1;
         let (_orchard_notes, sapling_notes, utxos, _selected) = lightclient
             .wallet
             .select_notes_and_utxos(amt, false, false, false)
@@ -1758,7 +1711,7 @@ mod test {
         // Mine 15 blocks, then selecting the note should result in witness only 10 blocks deep
         mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 15)
             .await;
-        lightclient.wallet.transaction_context.config.anchor_offset = [9, 4, 2, 1, 1];
+        lightclient.wallet.transaction_context.config.anchor_offset = 1;
         let (_orchard_notes, sapling_notes, utxos, selected) = lightclient
             .wallet
             .select_notes_and_utxos(amt, false, true, false)
@@ -1781,7 +1734,7 @@ mod test {
                     .unwrap()
                     .sapling_notes[0]
                     .witnesses
-                    .get_from_last(9)
+                    .get_from_last(1)
                     .unwrap()
             )
         );
@@ -1825,7 +1778,7 @@ mod test {
         assert_eq!(utxos.len(), 1);
 
         // Set min confs to 5, so the sapling note will not be selected
-        lightclient.wallet.transaction_context.config.anchor_offset = [9, 4, 4, 4, 4];
+        lightclient.wallet.transaction_context.config.anchor_offset = 4;
         let amt = Amount::from_u64(tvalue - 10_000).unwrap();
         let (_orchard_notes, sapling_notes, utxos, selected) = lightclient
             .wallet
@@ -1858,8 +1811,8 @@ mod test {
 
         // 3. With one confirmation, we should be able to select the note
         let amt = Amount::from_u64(10_000).unwrap();
-        // Reset the anchor offsets
-        lightclient.wallet.transaction_context.config.anchor_offset = [9, 4, 2, 1, 0];
+        // This test relies on historic functionality of multiple anchor offsets
+        lightclient.wallet.transaction_context.config.anchor_offset = 0;
         let (_orchard_notes, sapling_notes, utxos, selected) = lightclient
             .wallet
             .select_notes_and_utxos(amt, false, false, false)
@@ -1891,6 +1844,9 @@ mod test {
         mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5)
             .await;
 
+        // Reset the anchor offsets
+        lightclient.wallet.transaction_context.config.anchor_offset = 4;
+
         // 4. Send another incoming transaction.
         let value2 = 200_000;
         let (_transaction, _height, _) =
@@ -1909,6 +1865,8 @@ mod test {
         assert_eq!(utxos.len(), 0);
 
         // Selecting a bigger amount should select both notes
+        // This test relies on historic functionality of multiple anchor offsets
+        lightclient.wallet.transaction_context.config.anchor_offset = 0;
         let amt = Amount::from_u64(value1 + value2).unwrap();
         let (_orchard_notes, sapling_notes, utxos, selected) = lightclient
             .wallet

@@ -106,8 +106,13 @@ fn send_mined_sapling_to_orchard() {
             .await
             .unwrap();
 
-        utils::increase_height_and_sync_client(&regtest_manager, &client, 2).await;
+        utils::increase_height_and_sync_client(&regtest_manager, &client, 4).await;
         let balance = client.do_balance().await;
+        assert_eq!(balance["unverified_orchard_balance"], 5000);
+        assert_eq!(balance["verified_orchard_balance"], 0);
+        utils::increase_height_and_sync_client(&regtest_manager, &client, 1).await;
+        let balance = client.do_balance().await;
+        assert_eq!(balance["unverified_orchard_balance"], 0);
         assert_eq!(balance["verified_orchard_balance"], 5000);
     });
 }
@@ -132,22 +137,28 @@ fn note_selection_order() {
         // Note that do_addresses returns an array, each element is a JSON representation
         // of a UA.  Legacy addresses can be extracted from the receivers, per:
         // <https://zips.z.cash/zip-0316>
-        let client_2_saplingaddress =
-            client_2.do_addresses().await[0]["receivers"]["sapling"].clone();
+        let client_2_saplingaddress = client_2.do_addresses().await[0]["receivers"]["sapling"]
+            .clone()
+            .to_string();
 
         // Send five transfers in increasing 1000 zat increments
         // These are sent from the coinbase funded client which will
         // subequently receive funding via it's orchard-packed UA.
-        for n in 1..=3 {
-            client_1
-                .do_send(vec![(
-                    &client_2_saplingaddress.to_string(),
-                    n * 1000,
-                    Some(n.to_string()),
-                )])
-                .await
-                .unwrap();
-        }
+        client_1
+            .do_send(
+                (1..=3)
+                    .map(|n| {
+                        (
+                            client_2_saplingaddress.as_str(),
+                            n * 1000,
+                            Some(n.to_string()),
+                        )
+                    })
+                    .collect(),
+            )
+            .await
+            .unwrap();
+
         utils::increase_height_and_sync_client(&regtest_manager, &client_2, 5).await;
         let client_1_unifiedaddress = client_1.do_addresses().await[0]["address"].clone();
         // We know that the largest single note that 2 received from 1 was 3000, for 2 to send
@@ -235,7 +246,7 @@ fn send_orchard_back_and_forth() {
             .await
             .unwrap();
 
-        utils::increase_height_and_sync_client(&regtest_manager, &client_b, 3).await;
+        utils::increase_height_and_sync_client(&regtest_manager, &client_b, 5).await;
         client_a.do_sync(true).await.unwrap();
 
         // We still need to implement sending change to orchard, in librustzcash
