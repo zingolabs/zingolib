@@ -141,7 +141,7 @@ fn note_selection_order() {
             .clone()
             .to_string();
 
-        // Send five transfers in increasing 1000 zat increments
+        // Send three transfers in increasing 1000 zat increments
         // These are sent from the coinbase funded client which will
         // subequently receive funding via it's orchard-packed UA.
         client_1
