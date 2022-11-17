@@ -122,7 +122,7 @@ impl TransactionContext {
         if is_outgoing_transaction {
             if let Some(t_bundle) = transaction.transparent_bundle() {
                 for vout in &t_bundle.vout {
-                    let taddr = address_from_pubkeyhash(&self.config, vout.script_pubkey.address());
+                    let taddr = address_from_pubkeyhash(&self.config, vout.recipient_address());
 
                     if taddr.is_some() && !taddrs_set.contains(taddr.as_ref().unwrap()) {
                         outgoing_metadatas.push(OutgoingTxMetadata {
@@ -173,7 +173,7 @@ impl TransactionContext {
         // Scan all transparent outputs to see if we recieved any money
         if let Some(t_bundle) = transaction.transparent_bundle() {
             for (n, vout) in t_bundle.vout.iter().enumerate() {
-                match vout.script_pubkey.address() {
+                match vout.recipient_address() {
                     Some(TransparentAddress::PublicKey(hash)) => {
                         let output_taddr =
                             hash.to_base58check(&self.config.base58_pubkey_address(), &[]);

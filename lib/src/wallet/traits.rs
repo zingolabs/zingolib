@@ -179,17 +179,17 @@ pub trait FromCommitment
 where
     Self: Sized,
 {
-    fn from_commitment(from: &[u8; 32]) -> CtOption<Self>;
+    fn from_commitment(cmu: &[u8; 32]) -> Option<Self>;
 }
 
 impl FromCommitment for SaplingNode {
-    fn from_commitment(from: &[u8; 32]) -> CtOption<Self> {
-        CtOption::new(Self::new(*from), subtle::Choice::from(1))
+    fn from_commitment(from: &[u8; 32]) -> Option<Self> {
+        Self::read(from.as_slice()).ok()
     }
 }
 impl FromCommitment for MerkleHashOrchard {
-    fn from_commitment(from: &[u8; 32]) -> CtOption<Self> {
-        Self::from_bytes(from)
+    fn from_commitment(cmu: &[u8; 32]) -> Option<Self> {
+        Option::from(Self::from_bytes(cmu))
     }
 }
 
@@ -794,7 +794,7 @@ impl<P: Parameters> DomainWalletExt<P> for SaplingDomain<P> {
         Self::Fvk::from(usc)
     }
     fn usc_to_ivk(usc: &UnifiedSpendCapability) -> Self::IncomingViewingKey {
-        Self::IncomingViewingKey::from(usc)
+        Self::IncomingViewingKey::new(&zcash_primitives::sapling::SaplingIvk::from(usc))
     }
     fn usc_to_ovk(usc: &UnifiedSpendCapability) -> Self::OutgoingViewingKey {
         Self::OutgoingViewingKey::from(usc)
@@ -1142,7 +1142,7 @@ impl ReadableWriteable<(OrchardFullViewingKey, OrchardDiversifier)> for OrchardN
         writer.write_u8(Self::VERSION)?;
         writer.write_u64::<LittleEndian>(self.value().inner())?;
         writer.write_all(&self.rho().to_bytes())?;
-        writer.write_all(self.random_seed().as_bytes())?;
+        writer.write_all(self.rseed().as_bytes())?;
         Ok(())
     }
 }

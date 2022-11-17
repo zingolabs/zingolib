@@ -90,19 +90,6 @@ pub fn node_to_string<Node: Hashable>(n: &Node) -> String {
     hex::encode(b1)
 }
 
-///TODO: Is this used? This is probably covered by
-/// block_witness_data::update_tree_with_compact_transaction, consider deletion
-pub fn list_all_witness_nodes(cb: &CompactBlock) -> Vec<sapling::Node> {
-    let mut nodes = vec![];
-    for transaction in &cb.vtx {
-        for co in &transaction.outputs {
-            nodes.push(sapling::Node::new(co.cmu().unwrap().into()))
-        }
-    }
-
-    nodes
-}
-
 pub struct FakeTransaction {
     pub compact_transaction: CompactTx,
     pub data: TransactionData<zcash_primitives::transaction::Authorized>,
@@ -387,7 +374,8 @@ impl FakeCompactBlock {
     // Returns the nullifier of the new note.
     pub fn add_random_sapling_transaction(&mut self, num_outputs: usize) {
         let xsk_m = ExtendedSpendingKey::master(&[1u8; 32]);
-        let extfvk = ExtendedFullViewingKey::from(&xsk_m);
+
+        let extfvk = xsk_m.to_extended_full_viewing_key();
 
         let to = extfvk.default_address().1;
         let value = Amount::from_u64(1).unwrap();
@@ -493,7 +481,7 @@ impl FakeCompactBlockList {
                     .iter()
                     .filter_map(|vout| {
                         if let Some(TransparentAddress::PublicKey(taddr_hash)) =
-                            vout.script_pubkey.address()
+                            vout.recipient_address()
                         {
                             let taddr =
                                 taddr_hash.to_base58check(&config.base58_pubkey_address(), &[]);

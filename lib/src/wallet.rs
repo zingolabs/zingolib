@@ -1387,7 +1387,10 @@ impl LightWallet {
         println!("{}: Building transaction", now() - start_time);
 
         builder.with_progress_notifier(transmitter);
-        let (transaction, _) = match builder.build(&prover) {
+        let (transaction, _) = match builder.build(
+            &prover,
+            zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
+        ) {
             Ok(res) => res,
             Err(e) => {
                 let e = format!("Error creating transaction: {:?}", e);

@@ -670,7 +670,7 @@ async fn sapling_to_sapling_scan_together() {
     let value = 100_000;
     let (transaction, _height, note) = fake_compactblock_list // NOTE: Extracting fvk this way for future proof.
         .create_sapling_coinbase_transaction(
-            &ExtendedFullViewingKey::from(&mockuser_spendkey),
+            &mockuser_spendkey.to_extended_full_viewing_key(),
             value,
         );
     let txid = transaction.txid();

@@ -105,10 +105,11 @@ impl UnifiedSpendCapability {
         } else {
             None
         };
-        let (mut new_index, address) =
-            zcash_primitives::zip32::ExtendedFullViewingKey::from(&self.sapling_key)
-                .find_address(self.next_sapling_diversifier_index)
-                .expect("Diversifier index overflow");
+        let (mut new_index, address) = self
+            .sapling_key
+            .to_diversifiable_full_viewing_key()
+            .find_address(self.next_sapling_diversifier_index)
+            .expect("Diversifier index overflow");
         new_index.increment().expect("Diversifier index overflow");
         self.next_sapling_diversifier_index = new_index;
         let sapling_receiver = if desired_receivers.sapling {
@@ -315,8 +316,9 @@ impl From<&UnifiedSpendCapability> for orchard::keys::IncomingViewingKey {
 
 impl From<&UnifiedSpendCapability> for zcash_primitives::sapling::SaplingIvk {
     fn from(usc: &UnifiedSpendCapability) -> Self {
-        zcash_primitives::zip32::ExtendedFullViewingKey::from(&usc.sapling_key)
-            .fvk
+        usc.sapling_key
+            .to_diversifiable_full_viewing_key()
+            .fvk()
             .vk
             .ivk()
     }
@@ -329,7 +331,7 @@ impl From<&UnifiedSpendCapability> for orchard::keys::FullViewingKey {
 
 impl From<&UnifiedSpendCapability> for zcash_primitives::zip32::ExtendedFullViewingKey {
     fn from(usc: &UnifiedSpendCapability) -> Self {
-        zcash_primitives::zip32::ExtendedFullViewingKey::from(&usc.sapling_key)
+        usc.sapling_key.to_extended_full_viewing_key()
     }
 }
 impl From<&UnifiedSpendCapability> for orchard::keys::OutgoingViewingKey {
@@ -340,8 +342,9 @@ impl From<&UnifiedSpendCapability> for orchard::keys::OutgoingViewingKey {
 
 impl From<&UnifiedSpendCapability> for zcash_primitives::keys::OutgoingViewingKey {
     fn from(usc: &UnifiedSpendCapability) -> Self {
-        zcash_primitives::zip32::ExtendedFullViewingKey::from(&usc.sapling_key)
-            .fvk
+        usc.sapling_key
+            .to_diversifiable_full_viewing_key()
+            .fvk()
             .ovk
     }
 }

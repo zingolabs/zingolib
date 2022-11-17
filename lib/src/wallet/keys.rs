@@ -97,7 +97,7 @@ pub fn get_zaddr_from_bip39seed(
             ChildIndex::Hardened(pos),
         ],
     );
-    let extfvk = ExtendedFullViewingKey::from(&extsk);
+    let extfvk = extsk.to_extended_full_viewing_key();
     let address = extfvk.default_address().1;
 
     (extsk, extfvk, address)

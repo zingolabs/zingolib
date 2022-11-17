@@ -16,7 +16,9 @@ use zcash_primitives::{
     keys::OutgoingViewingKey,
     memo::Memo,
     sapling::{
-        note_encryption::{prf_ock, try_sapling_note_decryption, SaplingDomain},
+        note_encryption::{
+            prf_ock, try_sapling_note_decryption, PreparedIncomingViewingKey, SaplingDomain,
+        },
         PaymentAddress, Rseed, SaplingIvk, ValueCommitment,
     },
 };
@@ -202,7 +204,7 @@ impl Message {
         match try_sapling_note_decryption(
             &MAIN_NETWORK,
             BlockHeight::from_u32(1_100_000),
-            &ivk,
+            &PreparedIncomingViewingKey::new(&ivk),
             &Unspendable {
                 cmu_bytes,
                 epk_bytes,
@@ -242,10 +244,10 @@ pub mod tests {
         rng.fill(&mut seed);
 
         let extsk = ExtendedSpendingKey::master(&seed);
-        let ivk = ExtendedFullViewingKey::from(&extsk);
-        let (_, addr) = ivk.default_address();
+        let dfvk = extsk.to_diversifiable_full_viewing_key();
+        let (_, addr) = dfvk.default_address();
 
-        (extsk, ivk.fvk.vk.ivk(), addr)
+        (extsk, dfvk.fvk().vk.ivk(), addr)
     }
 
     #[test]
