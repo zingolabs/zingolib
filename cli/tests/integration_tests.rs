@@ -231,6 +231,63 @@ fn note_selection_order() {
     // More explicit than ignoring the unused variable, we only care about this in order to drop it
     drop(child_process_handler);
 }
+#[test]
+#[should_panic]
+fn sapling_negative_twenty_six() {
+    let (regtest_manager, client_1, client_2, _, _) = two_clients_one_saplingcoinbase_backed();
+    Runtime::new().unwrap().block_on(async {
+        utils::increase_height_and_sync_client(&regtest_manager, &client_1, 5).await;
+
+        let client_2_saplingaddress =
+            client_2.do_addresses().await[0]["receivers"]["sapling"].clone();
+        for n in 1..=8 {
+            println!("{}", client_1.do_balance().await);
+
+            client_1
+                .do_send(vec![(
+                    &client_2_saplingaddress.to_string(),
+                    n * 1000,
+                    Some(n.to_string()),
+                )])
+                .await
+                .unwrap();
+            // advancing chain and syncing client_2 but not client_1 ...
+            utils::increase_height_and_sync_client(&regtest_manager, &client_2, 5).await;
+            // eventually will cause error -26, as the chain is advanced too far, to avoid transaction expiring too soon.
+        }
+        assert_eq!(1, 1);
+    });
+}
+
+#[test]
+#[should_panic]
+fn unified_negative_twenty_six() {
+    let (regtest_manager, client_1, client_2, _, _) = two_clients_one_saplingcoinbase_backed();
+    Runtime::new().unwrap().block_on(async {
+        utils::increase_height_and_sync_client(&regtest_manager, &client_1, 5).await;
+
+        // the same error happens when sending to a ua
+        let client_2_uaddress = client_2.do_addresses().await[0]["address"].clone();
+        for n in 1..=8 {
+            println!("{}", client_1.do_balance().await);
+
+            client_1
+                .do_send(vec![(
+                    &client_2_uaddress.to_string(),
+                    n * 1000,
+                    Some(n.to_string()),
+                )])
+                .await
+                .unwrap();
+            utils::increase_height_and_sync_client(&regtest_manager, &client_2, 5).await;
+            // a way to make it work is to sync client_1 instead. But if a user
+            // of the cli makes a similar action, which is easy to do because
+            // the blockchain will be adding new blocks regularly, currently it
+            // will cause this error without suggesting to sync or auto-syncing, etc.
+        }
+        //assert_eq!(1, 1);
+    });
+}
 
 #[test]
 fn send_orchard_back_and_forth() {
