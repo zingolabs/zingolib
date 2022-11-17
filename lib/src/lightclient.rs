@@ -312,6 +312,10 @@ impl LightClient {
         Ok(())
     }
 
+    pub async fn interrupt_sync_after_batch(&mut self) {
+        self.continue_sync = false;
+    }
+
     pub async fn get_initial_state(&self, height: u64) -> Option<(u64, String, String)> {
         if height <= self.config.sapling_activation_height() {
             return None;
