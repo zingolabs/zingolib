@@ -669,9 +669,9 @@ dependencies = [
 
 [[package]]
 name = "digest"
-version = "0.10.5"
+version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "adfbc57365a37acbd2ebf2b64d7e69bb766e2fea813521ed536f5d0520dcf86c"
+checksum = "8168378f4e5023e7218c89c891c0fd8ecdb5e5e4f18cb78f38cf245dd021e76f"
 dependencies = [
  "block-buffer 0.10.3",
  "crypto-common",
@@ -1074,7 +1074,7 @@ version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c49c37c09c17a53d937dfbb742eb3a961d65a994e6bcdcf37e7399d0cc8ab5e"
 dependencies = [
- "digest 0.10.5",
+ "digest 0.10.6",
 ]
 
 [[package]]
@@ -1742,7 +1742,7 @@ version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "271779f35b581956db91a3e55737327a03aa051e90b1c47aeb189508533adfd7"
 dependencies = [
- "digest 0.10.5",
+ "digest 0.10.6",
  "password-hash",
 ]
 
@@ -2169,7 +2169,7 @@ version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bd124222d17ad93a644ed9d011a40f4fb64aa54275c08cc216524a9ea82fb09f"
 dependencies = [
- "digest 0.10.5",
+ "digest 0.10.6",
 ]
 
 [[package]]
@@ -2253,7 +2253,7 @@ dependencies = [
  "jni",
  "lazy_static",
  "log",
- "zingoconfig 0.1.0 (git+https://github.com/zingolabs/zingolib?branch=dev)",
+ "zingoconfig",
  "zingolib",
 ]
 
@@ -2506,7 +2506,7 @@ checksum = "82e6b795fe2e3b1e845bafcb27aa35405c4d47cdfc92af5fc8d3002f76cebdc0"
 dependencies = [
  "cfg-if",
  "cpufeatures",
- "digest 0.10.5",
+ "digest 0.10.6",
 ]
 
 [[package]]
@@ -3669,20 +3669,7 @@ dependencies = [
 [[package]]
 name = "zingoconfig"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#d16abd3390ccbf986c9a55ccb1bca69ca5d6656a"
-dependencies = [
- "dirs",
- "http",
- "log",
- "log4rs",
- "zcash_address",
- "zcash_primitives",
-]
-
-[[package]]
-name = "zingoconfig"
-version = "0.1.0"
-source = "git+https://github.com/aloearev/zingolib?branch=testbip_command#ed681944dcc9d0556ed09a2b18667e7133569090"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#18014a7ee77d10c555b112e670d972f1cd1d8f91"
 dependencies = [
  "dirs",
  "http",
@@ -3695,7 +3682,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.2.0"
-source = "git+https://github.com/aloearev/zingolib?branch=testbip_command#ed681944dcc9d0556ed09a2b18667e7133569090"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#18014a7ee77d10c555b112e670d972f1cd1d8f91"
 dependencies = [
  "base58",
  "base64 0.13.1",
@@ -3749,5 +3736,5 @@ dependencies = [
  "zcash_note_encryption",
  "zcash_primitives",
  "zcash_proofs",
- "zingoconfig 0.1.0 (git+https://github.com/aloearev/zingolib?branch=testbip_command)",
+ "zingoconfig",
 ]
