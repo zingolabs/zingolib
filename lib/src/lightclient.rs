@@ -82,6 +82,7 @@ pub struct LightClient {
     sync_lock: Mutex<()>,
 
     bsync_data: Arc<RwLock<BlazeSyncData>>,
+    continue_sync: bool,
 }
 
 use serde_json::Value;
@@ -175,6 +176,7 @@ impl LightClient {
             mempool_monitor: std::sync::RwLock::new(None),
             bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
             sync_lock: Mutex::new(()),
+            continue_sync: true,
         })
     }
     pub fn set_server(&self, server: http::Uri) {
@@ -423,6 +425,7 @@ impl LightClient {
                     mempool_monitor: std::sync::RwLock::new(None),
                     sync_lock: Mutex::new(()),
                     bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
+                    continue_sync: true,
                 };
 
                 lightclient.set_wallet_initial_state(birthday).await;
@@ -469,6 +472,7 @@ impl LightClient {
                 mempool_monitor: std::sync::RwLock::new(None),
                 sync_lock: Mutex::new(()),
                 bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
+                continue_sync: true,
             };
 
             debug!(
@@ -1272,6 +1276,9 @@ impl LightClient {
             res = self.sync_nth_batch(batch_latest_block, batch_num).await;
             if res.is_err() {
                 return res;
+            }
+            if !self.continue_sync {
+                break;
             }
         }
 
