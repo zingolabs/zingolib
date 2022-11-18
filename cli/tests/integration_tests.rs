@@ -234,7 +234,8 @@ fn note_selection_order() {
 #[test]
 #[should_panic]
 fn sapling_negative_twenty_six() {
-    let (regtest_manager, client_1, client_2, _, _) = two_clients_one_saplingcoinbase_backed();
+    let (regtest_manager, client_1, client_2, child_process_handler, _) =
+        two_clients_one_saplingcoinbase_backed();
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client_1, 5).await;
 
@@ -257,12 +258,14 @@ fn sapling_negative_twenty_six() {
         }
         assert_eq!(1, 1);
     });
+    drop(child_process_handler);
 }
 
 #[test]
 #[should_panic]
 fn unified_negative_twenty_six() {
-    let (regtest_manager, client_1, client_2, _, _) = two_clients_one_saplingcoinbase_backed();
+    let (regtest_manager, client_1, client_2, child_process_handler, _) =
+        two_clients_one_saplingcoinbase_backed();
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client_1, 5).await;
 
@@ -287,6 +290,7 @@ fn unified_negative_twenty_six() {
         }
         //assert_eq!(1, 1);
     });
+    drop(child_process_handler);
 }
 
 #[test]
