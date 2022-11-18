@@ -241,8 +241,8 @@ fn sapling_negative_twenty_six() {
 
         let client_2_saplingaddress =
             client_2.do_addresses().await[0]["receivers"]["sapling"].clone();
-        for n in 1..=8 {
-            println!("{}", client_1.do_balance().await);
+        for n in 1..=3 {
+            dbg!("Client One Balance: \n{}", client_1.do_balance().await);
 
             client_1
                 .do_send(vec![(
@@ -256,7 +256,6 @@ fn sapling_negative_twenty_six() {
             utils::increase_height_and_sync_client(&regtest_manager, &client_2, 5).await;
             // eventually will cause error -26, as the chain is advanced too far, to avoid transaction expiring too soon.
         }
-        assert_eq!(1, 1);
     });
     drop(child_process_handler);
 }
@@ -271,8 +270,8 @@ fn unified_negative_twenty_six() {
 
         // the same error happens when sending to a ua
         let client_2_uaddress = client_2.do_addresses().await[0]["address"].clone();
-        for n in 1..=8 {
-            println!("{}", client_1.do_balance().await);
+        for n in 1..=3 {
+            dbg!("Client One Balance: \n{}", client_1.do_balance().await);
 
             client_1
                 .do_send(vec![(
@@ -288,7 +287,6 @@ fn unified_negative_twenty_six() {
             // the blockchain will be adding new blocks regularly, currently it
             // will cause this error without suggesting to sync or auto-syncing, etc.
         }
-        //assert_eq!(1, 1);
     });
     drop(child_process_handler);
 }
