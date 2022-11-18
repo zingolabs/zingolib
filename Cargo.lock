@@ -829,7 +829,7 @@ checksum = "c34f04666d835ff5d62e058c3995147c06f42fe86ff053337632bca83e42702d"
 [[package]]
 name = "equihash"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash?rev=975a31754d01ffde666ce19a7126041c0261a290#975a31754d01ffde666ce19a7126041c0261a290"
+source = "git+https://github.com/zingolabs/librustzcash?rev=7e76a9983fe4719d9055b934e7316fb63273ce5a#7e76a9983fe4719d9055b934e7316fb63273ce5a"
 dependencies = [
  "blake2b_simd",
  "byteorder",
@@ -878,7 +878,7 @@ dependencies = [
 [[package]]
 name = "f4jumble"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/librustzcash?rev=975a31754d01ffde666ce19a7126041c0261a290#975a31754d01ffde666ce19a7126041c0261a290"
+source = "git+https://github.com/zingolabs/librustzcash?rev=7e76a9983fe4719d9055b934e7316fb63273ce5a#7e76a9983fe4719d9055b934e7316fb63273ce5a"
 dependencies = [
  "blake2b_simd",
 ]
@@ -2332,11 +2332,10 @@ dependencies = [
 
 [[package]]
 name = "rayon"
-version = "1.5.3"
+version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bd99e5772ead8baa5215278c9b15bf92087709e9c1b2d1f97cdb5a183c933a7d"
+checksum = "1e060280438193c554f654141c9ea9417886713b7acd75974c85b18a69a88e0b"
 dependencies = [
- "autocfg",
  "crossbeam-deque",
  "either",
  "rayon-core",
@@ -2344,9 +2343,9 @@ dependencies = [
 
 [[package]]
 name = "rayon-core"
-version = "1.9.3"
+version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "258bcdb5ac6dad48491bb2992db6b7cf74878b0384908af124823d118c99683f"
+checksum = "7ebf1bc4b691de61bd5a8ba170bfd6a1d363ff3cb595a51798d107aab25d2466"
 dependencies = [
  "crossbeam-channel",
  "crossbeam-deque",
@@ -3961,11 +3960,11 @@ dependencies = [
 [[package]]
 name = "zcash_address"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash?rev=975a31754d01ffde666ce19a7126041c0261a290#975a31754d01ffde666ce19a7126041c0261a290"
+source = "git+https://github.com/zingolabs/librustzcash?rev=7e76a9983fe4719d9055b934e7316fb63273ce5a#7e76a9983fe4719d9055b934e7316fb63273ce5a"
 dependencies = [
  "bech32 0.8.1",
  "bs58",
- "f4jumble 0.1.0 (git+https://github.com/zingolabs/librustzcash?rev=975a31754d01ffde666ce19a7126041c0261a290)",
+ "f4jumble 0.1.0 (git+https://github.com/zingolabs/librustzcash?rev=7e76a9983fe4719d9055b934e7316fb63273ce5a)",
  "zcash_encoding 0.2.0",
 ]
 
@@ -4002,7 +4001,7 @@ dependencies = [
 [[package]]
 name = "zcash_client_backend"
 version = "0.6.0"
-source = "git+https://github.com/zingolabs/librustzcash?rev=975a31754d01ffde666ce19a7126041c0261a290#975a31754d01ffde666ce19a7126041c0261a290"
+source = "git+https://github.com/zingolabs/librustzcash?rev=7e76a9983fe4719d9055b934e7316fb63273ce5a#7e76a9983fe4719d9055b934e7316fb63273ce5a"
 dependencies = [
  "base64",
  "bech32 0.8.1",
@@ -4040,7 +4039,7 @@ dependencies = [
 [[package]]
 name = "zcash_encoding"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash?rev=975a31754d01ffde666ce19a7126041c0261a290#975a31754d01ffde666ce19a7126041c0261a290"
+source = "git+https://github.com/zingolabs/librustzcash?rev=7e76a9983fe4719d9055b934e7316fb63273ce5a#7e76a9983fe4719d9055b934e7316fb63273ce5a"
 dependencies = [
  "byteorder",
  "nonempty",
@@ -4072,7 +4071,7 @@ dependencies = [
 [[package]]
 name = "zcash_note_encryption"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash?rev=975a31754d01ffde666ce19a7126041c0261a290#975a31754d01ffde666ce19a7126041c0261a290"
+source = "git+https://github.com/zingolabs/librustzcash?rev=7e76a9983fe4719d9055b934e7316fb63273ce5a#7e76a9983fe4719d9055b934e7316fb63273ce5a"
 dependencies = [
  "chacha20 0.9.0",
  "chacha20poly1305 0.10.1",
@@ -4122,7 +4121,7 @@ dependencies = [
 [[package]]
 name = "zcash_primitives"
 version = "0.9.0"
-source = "git+https://github.com/zingolabs/librustzcash?rev=975a31754d01ffde666ce19a7126041c0261a290#975a31754d01ffde666ce19a7126041c0261a290"
+source = "git+https://github.com/zingolabs/librustzcash?rev=7e76a9983fe4719d9055b934e7316fb63273ce5a#7e76a9983fe4719d9055b934e7316fb63273ce5a"
 dependencies = [
  "aes",
  "bip0039 0.9.0",
@@ -4131,7 +4130,7 @@ dependencies = [
  "blake2s_simd",
  "bls12_381",
  "byteorder",
- "equihash 0.2.0 (git+https://github.com/zingolabs/librustzcash?rev=975a31754d01ffde666ce19a7126041c0261a290)",
+ "equihash 0.2.0 (git+https://github.com/zingolabs/librustzcash?rev=7e76a9983fe4719d9055b934e7316fb63273ce5a)",
  "ff",
  "fpe",
  "group",
@@ -4178,7 +4177,7 @@ dependencies = [
 [[package]]
 name = "zcash_proofs"
 version = "0.9.0"
-source = "git+https://github.com/zingolabs/librustzcash?rev=975a31754d01ffde666ce19a7126041c0261a290#975a31754d01ffde666ce19a7126041c0261a290"
+source = "git+https://github.com/zingolabs/librustzcash?rev=7e76a9983fe4719d9055b934e7316fb63273ce5a#7e76a9983fe4719d9055b934e7316fb63273ce5a"
 dependencies = [
  "bellman",
  "blake2b_simd",
