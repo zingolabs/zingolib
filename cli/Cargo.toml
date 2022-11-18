@@ -22,8 +22,8 @@ portpicker = "0.1.1"
 rand = "0.8.5"
 tempdir = "0.3.7"
 tracing-subscriber = "0.3.15"
-zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash", rev = "48bf54f0d080a97c8a506ec999148ae9d46e577a"}
-zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", rev = "48bf54f0d080a97c8a506ec999148ae9d46e577a", features = ["transparent-inputs", "test-dependencies"] }
+zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash", rev = "01e6bf65542d3ad8190c798a01436d9edcd9f990"}
+zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", rev = "01e6bf65542d3ad8190c798a01436d9edcd9f990", features = ["transparent-inputs", "test-dependencies"] }
 
 [features]
 cross_version = [ "dep:zingtaddrfix" ]
