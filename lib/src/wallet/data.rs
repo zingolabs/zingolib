@@ -726,6 +726,14 @@ pub struct SpendableSaplingNote {
     pub extsk: ExtendedSpendingKey,
 }
 
+impl PartialEq for SpendableSaplingNote {
+    fn eq(&self, other: &Self) -> bool {
+        self.note == other.note
+    }
+}
+
+impl Eq for SpendableSaplingNote {}
+
 pub struct SpendableOrchardNote {
     pub transaction_id: TxId,
     pub nullifier: OrchardNullifier,
@@ -734,6 +742,14 @@ pub struct SpendableOrchardNote {
     pub witness: IncrementalWitness<MerkleHashOrchard>,
     pub spend_key: OrchardSpendingKey,
 }
+
+impl PartialEq for SpendableOrchardNote {
+    fn eq(&self, other: &Self) -> bool {
+        self.note == other.note
+    }
+}
+
+impl Eq for SpendableOrchardNote {}
 
 // Struct that tracks the latest and historical price of ZEC in the wallet
 #[derive(Clone, Debug)]

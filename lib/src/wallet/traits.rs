@@ -881,7 +881,7 @@ impl Diversifiable for OrchardFullViewingKey {
     }
 }
 
-pub trait SpendableNote<P, D>
+pub trait SpendableNote<P, D>: Eq
 where
     P: Parameters,
     D: DomainWalletExt<P, SpendableNoteAT = Self>,

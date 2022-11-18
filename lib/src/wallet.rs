@@ -1284,6 +1284,7 @@ impl LightWallet {
             orchard::keys::OutgoingViewingKey::from(&*self.unified_spend_capability().read().await);
 
         let mut total_z_recipients = 0u32;
+        let mut total_o_recipients = 0;
         for (recipient_address, value, memo) in recipients {
             // Compute memo if it exists
             let validated_memo = match memo {
@@ -1317,6 +1318,7 @@ impl LightWallet {
                     .map_err(zcash_primitives::transaction::builder::Error::TransparentBuild),
                 address::RecipientAddress::Unified(ua) => {
                     if let Some(orchard_addr) = ua.orchard() {
+                        total_o_recipients += 1;
                         builder.add_orchard_output::<zcash_primitives::transaction::fees::zip317::FeeRule>(
                             Some(orchard_ovk.clone()),
                             orchard_addr.clone(),
@@ -1346,7 +1348,23 @@ impl LightWallet {
 
         let fee_rule = zcash_primitives::transaction::fees::zip317::FeeRule::standard();
 
-        fee_rule.fee_required(&self.transaction_context.config.chain, target_height);
+        let fee_estimate = fee_rule
+            .fee_required(
+                &self.transaction_context.config.chain,
+                target_height,
+                builder.transparent_inputs(),
+                builder.transparent_outputs(),
+                builder.sapling_inputs().len(),
+                builder.sapling_outputs().len(),
+                std::cmp::max(orchard_notes.len(), total_o_recipients + 1),
+            )
+            .map_err(|e| e.to_string())?;
+
+        while (fee_estimate + target_amount).unwrap() > selected_value {
+            if builder.sapling_inputs().len() < builder.sapling_outputs().len() {
+                self.get_all_domain_specific_notes::<SaplingDomain<zingoconfig::ChainType>>()
+            }
+        }
 
         // Set up a channel to recieve updates on the progress of building the transaction.
         let (transmitter, receiver) = channel::<Progress>();
