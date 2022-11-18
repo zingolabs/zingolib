@@ -233,7 +233,7 @@ pub mod tests {
     use zcash_primitives::{
         memo::Memo,
         sapling::{PaymentAddress, Rseed, SaplingIvk},
-        zip32::{ExtendedFullViewingKey, ExtendedSpendingKey},
+        zip32::ExtendedSpendingKey,
     };
 
     use super::{Message, ENC_CIPHERTEXT_SIZE};

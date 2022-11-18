@@ -26,7 +26,7 @@ use orchard::{
     tree::MerkleHashOrchard,
     Action, Address as OrchardAddress,
 };
-use subtle::CtOption;
+
 use zcash_address::unified::{self, Encoding as _, Receiver};
 use zcash_client_backend::{address::UnifiedAddress, encoding::encode_payment_address};
 use zcash_encoding::{Optional, Vector};
@@ -935,6 +935,7 @@ where
     fn note(&self) -> &D::Note;
     fn witness(&self) -> &IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node>;
     fn spend_key(&self) -> &D::SpendingKey;
+    fn value(&self) -> Amount;
 }
 
 impl<P: Parameters> SpendableNote<P, SaplingDomain<P>> for SpendableSaplingNote {
@@ -979,6 +980,10 @@ impl<P: Parameters> SpendableNote<P, SaplingDomain<P>> for SpendableSaplingNote 
     fn spend_key(&self) -> &SaplingExtendedSpendingKey {
         &self.extsk
     }
+
+    fn value(&self) -> Amount {
+        Amount::from_u64(self.note.value).unwrap()
+    }
 }
 
 impl<P: Parameters> SpendableNote<P, OrchardDomain> for SpendableOrchardNote {
@@ -1021,6 +1026,10 @@ impl<P: Parameters> SpendableNote<P, OrchardDomain> for SpendableOrchardNote {
 
     fn spend_key(&self) -> &OrchardSpendingKey {
         &self.spend_key
+    }
+
+    fn value(&self) -> Amount {
+        Amount::from_u64(self.note.value().inner()).unwrap()
     }
 }
 
