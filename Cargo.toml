@@ -9,5 +9,5 @@ members = [
 debug = false
 
 [patch.crates-io]
-zcash_note_encryption = { git = "https://github.com/zingolabs/librustzcash", rev = "25d4a04bacfe2df4f3aa7a80862a539f79040d89" }
-zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", rev = "25d4a04bacfe2df4f3aa7a80862a539f79040d89" }
+zcash_note_encryption = { git = "https://github.com/zingolabs/librustzcash", rev = "975a31754d01ffde666ce19a7126041c0261a290" }
+zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", rev = "975a31754d01ffde666ce19a7126041c0261a290" }
