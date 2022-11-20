@@ -29,6 +29,8 @@ fn zcashd_sapling_commitment_tree() {
 }
 
 #[test]
+fn interupt_and_resume_sync_for_send() {}
+#[test]
 fn actual_empty_zcashd_sapling_commitment_tree() {
     // Expectations:
     let sprout_commitments_finalroot =
