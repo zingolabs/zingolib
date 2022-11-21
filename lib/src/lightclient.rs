@@ -1575,7 +1575,24 @@ impl LightClient {
     }
 
     //TODO: Add migrate_sapling_to_orchard argument
-    pub async fn do_send(&self, addrs: Vec<(&str, u64, Option<String>)>) -> Result<String, String> {
+    pub async fn do_send(
+        &self,
+        address_amount_memo_tuples: Vec<(&str, u64, Option<String>)>,
+    ) -> Result<String, String> {
+        let latest_height = GrpcConnector::get_latest_block(self.config.get_server_uri())
+            .await
+            .unwrap()
+            .height;
+        let transaction_submission_height =
+            match latest_height - self.config.reorg_buffer_offset as u64 {
+                x if x < self.config.sapling_activation_height() => {
+                    self.config.sapling_activation_height()
+                }
+                x if x < self.config.orchard_activation_height() => {
+                    self.config.orchard_activation_height()
+                }
+                x => x,
+            };
         self.interrupt_sync_after_batch(true).await;
         // First, get the concensus branch ID
         debug!("Creating transaction");
@@ -1587,9 +1604,15 @@ impl LightClient {
             let prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
 
             self.wallet
-                .send_to_address(prover, false, false, addrs, |transaction_bytes| {
-                    GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
-                })
+                .send_to_address(
+                    prover,
+                    false,
+                    false,
+                    address_amount_memo_tuples,
+                    |transaction_bytes| {
+                        GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
+                    },
+                )
                 .await
         };
 

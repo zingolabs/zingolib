@@ -53,7 +53,7 @@ pub fn create_zingoconf_with_datadir(
                 _ => panic!("Unknown network"),
             },
             monitor_mempool: true,
-            anchor_offset: zingoconfig::ANCHOR_OFFSET,
+            reorg_buffer_offset: zingoconfig::REORG_BUFFER_OFFSET,
             data_dir,
         };
 

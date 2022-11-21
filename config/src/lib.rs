@@ -27,7 +27,7 @@ pub const DEFAULT_SERVER: &str = "https://mainnet.lightwalletd.com:9067";
 pub const MAX_REORG: usize = 100;
 pub const WALLET_NAME: &str = "zingo-wallet.dat";
 pub const LOGFILE_NAME: &str = "zingo-wallet.debug.log";
-pub const ANCHOR_OFFSET: u32 = 4;
+pub const REORG_BUFFER_OFFSET: u32 = 4;
 pub const GAP_RULE_UNUSED_ADDRESSES: usize = if cfg!(any(target_os = "ios", target_os = "android"))
 {
     0
@@ -60,7 +60,7 @@ pub fn construct_server_uri(server: Option<String>) -> http::Uri {
 pub struct ZingoConfig {
     pub server_uri: Arc<RwLock<http::Uri>>,
     pub chain: ChainType,
-    pub anchor_offset: u32,
+    pub reorg_buffer_offset: u32,
     pub monitor_mempool: bool,
     pub data_dir: Option<String>,
 }
@@ -72,7 +72,7 @@ impl ZingoConfig {
             server_uri: Arc::new(RwLock::new(http::Uri::default())),
             chain,
             monitor_mempool: false,
-            anchor_offset: 4,
+            reorg_buffer_offset: 4,
             data_dir: dir,
         }
     }
@@ -85,6 +85,12 @@ impl ZingoConfig {
             .into()
     }
 
+    pub fn orchard_activation_height(&self) -> u64 {
+        self.chain
+            .activation_height(NetworkUpgrade::Nu5)
+            .unwrap()
+            .into()
+    }
     pub fn set_data_dir(&mut self, dir_str: String) {
         self.data_dir = Some(dir_str);
     }
