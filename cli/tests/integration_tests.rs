@@ -29,11 +29,24 @@ fn zcashd_sapling_commitment_tree() {
 }
 
 #[test]
-fn interrupt_and_resume_sync_for_send() {
+fn verify_old_wallet_uses_server_height_in_send() {
     let (regtest_manager, child_process_handler, mut client_builder) =
         saplingcoinbasebacked_spendcapable();
     let client = client_builder.new_sameseed_client(0, false);
-    Runtime::new().unwrap().block_on(async {});
+    Runtime::new().unwrap().block_on(async {
+        utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
+        // Scenario setup
+        regtest_manager
+            .generate_n_blocks(100)
+            .expect("Zcashd ought to be able to generate.");
+        let ua = client.do_new_address("o").await.unwrap()[0].to_string();
+
+        // Interrupt generating send
+        client
+            .do_send(vec![(&ua, 10_000, Some("Interrupting sync!!".to_string()))])
+            .await
+            .unwrap();
+    });
     drop(child_process_handler);
 }
 #[test]
