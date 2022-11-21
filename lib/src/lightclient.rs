@@ -82,7 +82,7 @@ pub struct LightClient {
     sync_lock: Mutex<()>,
 
     bsync_data: Arc<RwLock<BlazeSyncData>>,
-    continue_sync: bool,
+    continue_sync: Arc<RwLock<bool>>,
 }
 
 use serde_json::Value;
@@ -176,7 +176,7 @@ impl LightClient {
             mempool_monitor: std::sync::RwLock::new(None),
             bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
             sync_lock: Mutex::new(()),
-            continue_sync: true,
+            continue_sync: Arc::new(RwLock::new(true)),
         })
     }
     pub fn set_server(&self, server: http::Uri) {
@@ -313,7 +313,7 @@ impl LightClient {
     }
 
     pub async fn interrupt_sync_after_batch(&mut self) {
-        self.continue_sync = false;
+        *self.continue_sync.write().await = false;
     }
 
     pub async fn get_initial_state(&self, height: u64) -> Option<(u64, String, String)> {
@@ -429,7 +429,7 @@ impl LightClient {
                     mempool_monitor: std::sync::RwLock::new(None),
                     sync_lock: Mutex::new(()),
                     bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
-                    continue_sync: true,
+                    continue_sync: Arc::new(RwLock::new(true)),
                 };
 
                 lightclient.set_wallet_initial_state(birthday).await;
@@ -476,7 +476,7 @@ impl LightClient {
                 mempool_monitor: std::sync::RwLock::new(None),
                 sync_lock: Mutex::new(()),
                 bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
-                continue_sync: true,
+                continue_sync: Arc::new(RwLock::new(true)),
             };
 
             debug!(
@@ -1217,7 +1217,10 @@ impl LightClient {
     async fn start_sync(&self) -> Result<JsonValue, String> {
         // We can only do one sync at a time because we sync blocks in serial order
         // If we allow multiple syncs, they'll all get jumbled up.
-        let _lock = self.sync_lock.lock().await;
+        // TODO:  We run on resource constrained systems, where a single thread of
+        // execution often consumes most of the memory available, on other systems
+        // we might parallelize sync.
+        let lightclient_exclusion_lock = self.sync_lock.lock().await;
 
         // The top of the wallet
         let last_synced_height = self.wallet.last_synced_height().await;
@@ -1281,11 +1284,12 @@ impl LightClient {
             if res.is_err() {
                 return res;
             }
-            if !self.continue_sync {
+            if !*self.continue_sync.read().await {
                 break;
             }
         }
 
+        drop(lightclient_exclusion_lock);
         res
     }
 

@@ -29,7 +29,13 @@ fn zcashd_sapling_commitment_tree() {
 }
 
 #[test]
-fn interupt_and_resume_sync_for_send() {}
+fn interrupt_and_resume_sync_for_send() {
+    let (regtest_manager, child_process_handler, mut client_builder) =
+        saplingcoinbasebacked_spendcapable();
+    let client = client_builder.new_sameseed_client(0, false);
+    Runtime::new().unwrap().block_on(async {});
+    drop(child_process_handler);
+}
 #[test]
 fn actual_empty_zcashd_sapling_commitment_tree() {
     // Expectations:
