@@ -632,7 +632,7 @@ impl LightWallet {
             .unwrap_or_default()
     }
 
-    async fn get_wallet_target_height(&self) -> Option<u32> {
+    async fn get_wallet_latest_height(&self) -> Option<u32> {
         self.blocks
             .read()
             .await
@@ -1080,6 +1080,7 @@ impl LightWallet {
         transparent_only: bool,
         migrate_sapling_to_orchard: bool,
         tos: Vec<(&str, u64, Option<String>)>,
+        submission_height: BlockHeight,
         broadcast_fn: F,
     ) -> Result<(String, Vec<u8>), String>
     where
@@ -1096,6 +1097,7 @@ impl LightWallet {
                 transparent_only,
                 migrate_sapling_to_orchard,
                 tos,
+                submission_height,
                 broadcast_fn,
             )
             .await
@@ -1117,6 +1119,7 @@ impl LightWallet {
         transparent_only: bool,
         migrate_sapling_to_orchard: bool,
         tos: Vec<(&str, u64, Option<String>)>,
+        submission_height: BlockHeight,
         broadcast_fn: F,
     ) -> Result<(String, Vec<u8>), String>
     where
@@ -1162,7 +1165,7 @@ impl LightWallet {
         println!("{}: Selecting notes", now() - start_time);
 
         let target_amount = (Amount::from_u64(total_value).unwrap() + DEFAULT_FEE).unwrap();
-        let target_height = match self.get_wallet_target_height().await {
+        let last_height = match self.get_wallet_latest_height().await {
             Some(h) => BlockHeight::from_u32(h),
             None => return Err("No blocks in wallet to target, please sync first".to_string()),
         };
@@ -1194,12 +1197,10 @@ impl LightWallet {
         }
         println!("Selected notes worth {}", u64::from(selected_value));
 
-        let orchard_anchor = self
-            .get_orchard_anchor(&orchard_notes, target_height)
-            .await?;
+        let orchard_anchor = self.get_orchard_anchor(&orchard_notes, last_height).await?;
         let mut builder = Builder::with_orchard_anchor(
             self.transaction_context.config.chain,
-            target_height,
+            submission_height,
             orchard_anchor,
         );
         println!(
@@ -1431,7 +1432,7 @@ impl LightWallet {
                     .iter_mut()
                     .find(|nd| nd.nullifier == selected.nullifier)
                     .unwrap();
-                spent_note.unconfirmed_spent = Some((transaction.txid(), u32::from(target_height)));
+                spent_note.unconfirmed_spent = Some((transaction.txid(), u32::from(last_height)));
             }
             // Mark orchard notes as unconfirmed spent
             for selected in orchard_notes {
@@ -1443,7 +1444,7 @@ impl LightWallet {
                     .iter_mut()
                     .find(|nd| nd.nullifier == selected.nullifier)
                     .unwrap();
-                spent_note.unconfirmed_spent = Some((transaction.txid(), u32::from(target_height)));
+                spent_note.unconfirmed_spent = Some((transaction.txid(), u32::from(last_height)));
             }
 
             // Mark this utxo as unconfirmed spent
@@ -1456,7 +1457,7 @@ impl LightWallet {
                     .iter_mut()
                     .find(|u| utxo.txid == u.txid && utxo.output_index == u.output_index)
                     .unwrap();
-                spent_utxo.unconfirmed_spent = Some((transaction.txid(), u32::from(target_height)));
+                spent_utxo.unconfirmed_spent = Some((transaction.txid(), u32::from(last_height)));
             }
         }
 
@@ -1467,7 +1468,7 @@ impl LightWallet {
             self.transaction_context
                 .scan_full_tx(
                     transaction,
-                    target_height.into(),
+                    last_height.into(),
                     true,
                     now() as u32,
                     TransactionMetadata::get_price(now(), &price),

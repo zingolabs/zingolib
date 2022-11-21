@@ -141,6 +141,7 @@ impl LightClient {
         &self,
         addrs: Vec<(&str, u64, Option<String>)>,
     ) -> Result<String, String> {
+        let transaction_submission_height = self.latest_served_blockheight().await;
         // First, get the concensus branch ID
         debug!("Creating transaction");
 
@@ -149,9 +150,16 @@ impl LightClient {
             let prover = crate::blaze::test_utils::FakeTransactionProver {};
 
             self.wallet
-                .send_to_address(prover, false, false, addrs, |transaction_bytes| {
-                    GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
-                })
+                .send_to_address(
+                    prover,
+                    false,
+                    false,
+                    addrs,
+                    transaction_submission_height,
+                    |transaction_bytes| {
+                        GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
+                    },
+                )
                 .await
         };
 
@@ -1532,6 +1540,7 @@ impl LightClient {
     }
 
     pub async fn do_shield(&self, address: Option<String>) -> Result<String, String> {
+        let transaction_submission_height = self.latest_served_blockheight().await;
         let fee = u64::from(DEFAULT_FEE);
         let tbal = self.wallet.tbalance(None).await;
 
@@ -1564,6 +1573,7 @@ impl LightClient {
                     true,
                     true,
                     vec![(&addr, tbal - fee, None)],
+                    transaction_submission_height,
                     |transaction_bytes| {
                         GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
                     },
@@ -1574,25 +1584,29 @@ impl LightClient {
         result.map(|(transaction_id, _)| transaction_id)
     }
 
+    async fn latest_served_blockheight(&self) -> BlockHeight {
+        let latest_height = GrpcConnector::get_latest_block(self.config.get_server_uri())
+            .await
+            .unwrap()
+            .height;
+        BlockHeight::from_u32(
+            match latest_height - self.config.reorg_buffer_offset as u64 {
+                x if x < self.config.sapling_activation_height() => {
+                    self.config.sapling_activation_height() as u32
+                }
+                x if x < self.config.orchard_activation_height() => {
+                    self.config.orchard_activation_height() as u32
+                }
+                x => x as u32,
+            },
+        )
+    }
     //TODO: Add migrate_sapling_to_orchard argument
     pub async fn do_send(
         &self,
         address_amount_memo_tuples: Vec<(&str, u64, Option<String>)>,
     ) -> Result<String, String> {
-        let latest_height = GrpcConnector::get_latest_block(self.config.get_server_uri())
-            .await
-            .unwrap()
-            .height;
-        let transaction_submission_height =
-            match latest_height - self.config.reorg_buffer_offset as u64 {
-                x if x < self.config.sapling_activation_height() => {
-                    self.config.sapling_activation_height()
-                }
-                x if x < self.config.orchard_activation_height() => {
-                    self.config.orchard_activation_height()
-                }
-                x => x,
-            };
+        let transaction_submission_height = self.latest_served_blockheight().await;
         self.interrupt_sync_after_batch(true).await;
         // First, get the concensus branch ID
         debug!("Creating transaction");
@@ -1609,6 +1623,7 @@ impl LightClient {
                     false,
                     false,
                     address_amount_memo_tuples,
+                    transaction_submission_height,
                     |transaction_bytes| {
                         GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
                     },
