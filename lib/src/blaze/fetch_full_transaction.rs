@@ -464,9 +464,16 @@ impl TransactionContext {
                                         .map(|addr| addr.encode(&self.config.chain))
                                         .any(|addr| addr == address)
                                     },
-                                ) && memo == Memo::Empty
-                                {
-                                    None
+                                ) {
+                                    if let Memo::Text(_) = memo {
+                                        None
+                                    } else {
+                                        Some(OutgoingTxMetadata {
+                                            address,
+                                            value: D::WalletNote::value_from_note(&note),
+                                            memo,
+                                        })
+                                    }
                                 } else {
                                     Some(OutgoingTxMetadata {
                                         address,

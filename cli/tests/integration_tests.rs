@@ -108,12 +108,20 @@ fn send_mined_sapling_to_orchard() {
 
         utils::increase_height_and_sync_client(&regtest_manager, &client, 4).await;
         let balance = client.do_balance().await;
-        assert_eq!(balance["unverified_orchard_balance"], 5000);
+        // We send change to orchard now, so we should have the full value of the note
+        // we spent, minus the transaction fee
+        assert_eq!(
+            balance["unverified_orchard_balance"],
+            625_000_000 - u64::from(DEFAULT_FEE)
+        );
         assert_eq!(balance["verified_orchard_balance"], 0);
         utils::increase_height_and_sync_client(&regtest_manager, &client, 1).await;
         let balance = client.do_balance().await;
         assert_eq!(balance["unverified_orchard_balance"], 0);
-        assert_eq!(balance["verified_orchard_balance"], 5000);
+        assert_eq!(
+            balance["verified_orchard_balance"],
+            625_000_000 - u64::from(DEFAULT_FEE)
+        );
     });
 }
 fn extract_value_as_u64(input: &JsonValue) -> u64 {
@@ -187,9 +195,10 @@ fn note_selection_order() {
         //);
         // Because the above tx fee won't consume a full note, change will be sent back to 2.
         // This implies that client_2 will have a total of 2 unspent notes:
-        //  * one from client_1 sent above (and never used) + 1 as change to itself
-        assert_eq!(client_2_notes["unspent_sapling_notes"].len(), 2);
-        let change_note = client_2_notes["unspent_sapling_notes"]
+        //  * one (sapling) from client_1 sent above (and never used) + 1 (orchard) as change to itself
+        assert_eq!(client_2_notes["unspent_sapling_notes"].len(), 1);
+        assert_eq!(client_2_notes["unspent_orchard_notes"].len(), 1);
+        let change_note = client_2_notes["unspent_orchard_notes"]
             .members()
             .filter(|note| note["is_change"].as_bool().unwrap())
             .collect::<Vec<_>>()[0];
@@ -216,12 +225,21 @@ fn note_selection_order() {
         );
         assert_eq!(
             client_2_post_transaction_notes["unspent_sapling_notes"].len(),
-            2
+            1
+        );
+        assert_eq!(
+            client_2_post_transaction_notes["unspent_orchard_notes"].len(),
+            1
         );
         assert_eq!(
             client_2_post_transaction_notes["unspent_sapling_notes"]
                 .members()
                 .into_iter()
+                .chain(
+                    client_2_post_transaction_notes["unspent_orchard_notes"]
+                        .members()
+                        .into_iter()
+                )
                 .map(|x| extract_value_as_u64(x))
                 .sum::<u64>(),
             2000u64 // 1000 received and unused + (2000 - 1000 txfee)
@@ -249,10 +267,11 @@ fn send_orchard_back_and_forth() {
         utils::increase_height_and_sync_client(&regtest_manager, &client_b, 5).await;
         client_a.do_sync(true).await.unwrap();
 
-        // We still need to implement sending change to orchard, in librustzcash
-        // Even when we do, we'll probably send change to sapling with no
-        // preexisting orchard spend authority
-        assert_eq!(client_a.do_balance().await["orchard_balance"], 0);
+        // Regtest is generating notes with a block reward of 625_000_000 zats.
+        assert_eq!(
+            client_a.do_balance().await["orchard_balance"],
+            625_000_000 - 10_000 - u64::from(DEFAULT_FEE)
+        );
         assert_eq!(client_b.do_balance().await["orchard_balance"], 10_000);
 
         let ua_of_a = client_a.do_new_address("o").await.unwrap()[0].to_string();
@@ -264,9 +283,12 @@ fn send_orchard_back_and_forth() {
         utils::increase_height_and_sync_client(&regtest_manager, &client_a, 3).await;
         client_b.do_sync(true).await.unwrap();
 
-        assert_eq!(client_a.do_balance().await["orchard_balance"], 5_000);
-        assert_eq!(client_b.do_balance().await["sapling_balance"], 4_000);
-        assert_eq!(client_b.do_balance().await["orchard_balance"], 0);
+        assert_eq!(
+            client_a.do_balance().await["orchard_balance"],
+            625_000_000 - 10_000 - u64::from(DEFAULT_FEE) + 5_000
+        );
+        assert_eq!(client_b.do_balance().await["sapling_balance"], 0);
+        assert_eq!(client_b.do_balance().await["orchard_balance"], 4_000);
 
         // Unneeded, but more explicit than having child_process_handler be an
         // unused variable
@@ -353,10 +375,11 @@ fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
             client
                 .do_send(vec![(
                     sapling_addr[0].as_str().unwrap(),
-                    client.do_balance().await["spendable_sapling_balance"]
-                        .as_u64()
-                        .unwrap()
-                        - 1_000,
+                    {
+                        let balance = client.do_balance().await;
+                        balance["spendable_sapling_balance"].as_u64().unwrap()
+                            + balance["spendable_orchard_balance"].as_u64().unwrap()
+                    } - 1_000,
                     memo.map(ToString::to_string),
                 )])
                 .await
@@ -368,7 +391,13 @@ fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
         client.do_rescan().await.unwrap();
         let post_rescan_transactions = client.do_list_transactions(false).await;
         let post_rescan_notes = client.do_list_notes(true).await;
-        assert_eq!(transactions, post_rescan_transactions);
+        assert_eq!(
+            transactions,
+            post_rescan_transactions,
+            "Pre-Rescan: {}\n\n\nPost-Rescan: {}",
+            json::stringify_pretty(transactions.clone(), 4),
+            json::stringify_pretty(post_rescan_transactions.clone(), 4)
+        );
 
         // Notes are not in deterministic order after rescan. Insead, iterate over all
         // the notes and check that they exist post-rescan
@@ -483,13 +512,17 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
             .do_send(vec![(sender_address.as_str().unwrap(), 4_000, None)])
             .await
             .unwrap();
+        let sender_balance = sender.do_balance().await;
         utils::increase_height_and_sync_client(&regtest_manager, &sender, 5).await;
 
         //Ensure that recipient_restored was still able to spend the note, despite not having the
         //diversified address associated with it
         assert_eq!(
             sender.do_balance().await["spendable_orchard_balance"],
-            4_000
+            sender_balance["spendable_orchard_balance"]
+                .as_u64()
+                .unwrap()
+                + 4_000
         );
         recipient_restored.do_seed_phrase().await.unwrap()
     });

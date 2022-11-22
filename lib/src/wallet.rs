@@ -677,6 +677,7 @@ impl LightWallet {
     pub fn memo_str(memo: Option<Memo>) -> Option<String> {
         match memo {
             Some(Memo::Text(m)) => Some(m.to_string()),
+            Some(Memo::Arbitrary(_)) => Some("Wallet-internal memo".to_string()),
             _ => None,
         }
     }
@@ -1157,6 +1158,15 @@ impl LightWallet {
             .collect::<Result<Vec<(address::RecipientAddress, Amount, Option<String>)>, String>>(
             )?;
 
+        let destination_uas = recipients
+            .iter()
+            .filter_map(|recipient| match recipient.0 {
+                address::RecipientAddress::Shielded(_) => None,
+                address::RecipientAddress::Transparent(_) => None,
+                address::RecipientAddress::Unified(ref ua) => Some(ua.clone()),
+            })
+            .collect::<Vec<_>>();
+
         // Select notes to cover the target value
         println!("{}: Selecting notes", now() - start_time);
 
@@ -1354,6 +1364,36 @@ impl LightWallet {
                 error!("{}", e);
                 return Err(e);
             }
+        }
+        let mut uas_vec = Vec::new();
+        #[allow(unused_must_use)]
+        for ua in destination_uas {
+            let ua_bytes = ua.encode(&self.transaction_context.config.chain);
+            if ua_bytes.len() + uas_vec.len() > 511 {
+                break;
+            }
+            // This is only used by future consumers, so we don't really care if this
+            // goes wrong, hence the allow(unused_must_use)
+            uas_vec.write(ua_bytes.as_bytes());
+        }
+        uas_vec.truncate(511);
+        let mut uas_bytes = [0u8; 511];
+        uas_bytes[..uas_vec.len()].copy_from_slice(uas_vec.as_slice());
+
+        dbg!(selected_value, target_amount);
+        if let Err(e) = builder.add_orchard_output(
+            Some(orchard_ovk.clone()),
+            *self.unified_spend_capability().read().await.addresses()[0]
+                .orchard()
+                .unwrap(),
+            dbg!(u64::from(selected_value) - u64::from(target_amount)),
+            // Here we store the uas we sent to in the memo field. We don't use these yet,
+            // but they will eventually be used during rescan, to recover the full UA we sent to.
+            MemoBytes::from(Memo::Arbitrary(Box::new(uas_bytes))),
+        ) {
+            let e = format!("Error adding change output: {:?}", e);
+            error!("{}", e);
+            return Err(e);
         }
 
         // Set up a channel to recieve updates on the progress of building the transaction.
