@@ -632,7 +632,7 @@ impl LightWallet {
             .unwrap_or_default()
     }
 
-    async fn get_wallet_latest_height(&self) -> Option<u32> {
+    async fn get_latest_wallet_height_plus_one(&self) -> Option<u32> {
         self.blocks
             .read()
             .await
@@ -1165,7 +1165,7 @@ impl LightWallet {
         println!("{}: Selecting notes", now() - start_time);
 
         let target_amount = (Amount::from_u64(total_value).unwrap() + DEFAULT_FEE).unwrap();
-        let last_height = match self.get_wallet_latest_height().await {
+        let last_height = match self.get_latest_wallet_height_plus_one().await {
             Some(h) => BlockHeight::from_u32(h),
             None => return Err("No blocks in wallet to target, please sync first".to_string()),
         };
