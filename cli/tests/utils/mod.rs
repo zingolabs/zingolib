@@ -215,11 +215,11 @@ pub mod setup {
     pub fn saplingcoinbasebacked_spendcapable(
     ) -> (RegtestManager, ChildProcessHandler, ClientBuilder) {
         //tracing_subscriber::fmt::init();
-        let seed_phrase = zcash_primitives::zip339::Mnemonic::from_entropy([0; 32])
+        let abandon_art_seed = zcash_primitives::zip339::Mnemonic::from_entropy([0; 32])
             .unwrap()
             .to_string();
         assert_eq!(
-            &seed_phrase,
+            &abandon_art_seed,
             "abandon abandon abandon abandon abandon abandon abandon abandon \
              abandon abandon abandon abandon abandon abandon abandon abandon \
              abandon abandon abandon abandon abandon abandon abandon art"
@@ -242,7 +242,7 @@ pub mod setup {
         let client_builder = ClientBuilder::new(
             server_id,
             regtest_manager.zingo_data_dir.clone(),
-            Some(seed_phrase),
+            Some(abandon_art_seed),
         );
         (regtest_manager, child_process_handler, client_builder)
     }

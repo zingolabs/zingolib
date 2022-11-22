@@ -32,21 +32,22 @@ fn zcashd_sapling_commitment_tree() {
 fn verify_old_wallet_uses_server_height_in_send() {
     let (regtest_manager, child_process_handler, mut client_builder) =
         saplingcoinbasebacked_spendcapable();
-    let client = client_builder.new_sameseed_client(0, false);
+    let client_sending = client_builder.new_sameseed_client(0, false);
+    let client_receiving = client_builder.new_plantedseed_client(TEST_SEED.to_string(), 0, false);
     Runtime::new().unwrap().block_on(async {
         // Ensure that the client has confirmed spendable funds
-        utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
+        utils::increase_height_and_sync_client(&regtest_manager, &client_sending, 5).await;
 
         // Without sync push server forward 100 blocks
         utils::increase_server_height(&regtest_manager, 100).await;
-        let ua = client.do_new_address("o").await.unwrap()[0].to_string();
-        let client_wallet_height = client.do_wallet_last_scanned_height().await;
+        let ua = client_receiving.do_new_address("o").await.unwrap()[0].to_string();
+        let client_wallet_height = client_sending.do_wallet_last_scanned_height().await;
 
         // Verify that wallet is still back at 6.
         assert_eq!(client_wallet_height, 6);
 
         // Interrupt generating send
-        client
+        client_sending
             .do_send(vec![(&ua, 10_000, Some("Interrupting sync!!".to_string()))])
             .await
             .unwrap();
