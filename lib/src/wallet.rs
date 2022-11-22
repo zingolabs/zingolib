@@ -632,6 +632,7 @@ impl LightWallet {
             .unwrap_or_default()
     }
 
+    // TODO:   Understand how this is used.. is it correct to add one?
     async fn get_latest_wallet_height_plus_one(&self) -> Option<u32> {
         self.blocks
             .read()
