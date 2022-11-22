@@ -28,6 +28,7 @@ fn zcashd_sapling_commitment_tree() {
     println!("{}", pretty_trees);
 }
 
+#[ignore]
 #[test]
 fn verify_old_wallet_uses_server_height_in_send() {
     let (regtest_manager, child_process_handler, mut client_builder) =

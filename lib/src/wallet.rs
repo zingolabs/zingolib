@@ -1200,7 +1200,7 @@ impl LightWallet {
         let orchard_anchor = self.get_orchard_anchor(&orchard_notes, last_height).await?;
         let mut builder = Builder::with_orchard_anchor(
             self.transaction_context.config.chain,
-            submission_height,
+            last_height,
             orchard_anchor,
         );
         println!(
