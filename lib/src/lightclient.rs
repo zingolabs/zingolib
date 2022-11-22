@@ -1589,17 +1589,7 @@ impl LightClient {
             .await
             .unwrap()
             .height;
-        BlockHeight::from_u32(
-            match latest_height - self.config.reorg_buffer_offset as u64 {
-                x if x < self.config.sapling_activation_height() => {
-                    self.config.sapling_activation_height() as u32
-                }
-                x if x < self.config.orchard_activation_height() => {
-                    self.config.orchard_activation_height() as u32
-                }
-                x => x as u32,
-            },
-        )
+        BlockHeight::from_u32((latest_height - self.config.reorg_buffer_offset as u64) as u32)
     }
     //TODO: Add migrate_sapling_to_orchard argument
     pub async fn do_send(
