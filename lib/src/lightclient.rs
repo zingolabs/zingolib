@@ -82,6 +82,7 @@ pub struct LightClient {
     sync_lock: Mutex<()>,
 
     bsync_data: Arc<RwLock<BlazeSyncData>>,
+    continue_sync: Arc<RwLock<bool>>,
 }
 
 use serde_json::Value;
@@ -140,6 +141,7 @@ impl LightClient {
         &self,
         addrs: Vec<(&str, u64, Option<String>)>,
     ) -> Result<String, String> {
+        let transaction_submission_height = self.get_submission_height().await;
         // First, get the concensus branch ID
         debug!("Creating transaction");
 
@@ -148,9 +150,16 @@ impl LightClient {
             let prover = crate::blaze::test_utils::FakeTransactionProver {};
 
             self.wallet
-                .send_to_address(prover, false, false, addrs, |transaction_bytes| {
-                    GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
-                })
+                .send_to_address(
+                    prover,
+                    false,
+                    false,
+                    addrs,
+                    transaction_submission_height,
+                    |transaction_bytes| {
+                        GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
+                    },
+                )
                 .await
         };
 
@@ -175,6 +184,7 @@ impl LightClient {
             mempool_monitor: std::sync::RwLock::new(None),
             bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
             sync_lock: Mutex::new(()),
+            continue_sync: Arc::new(RwLock::new(true)),
         })
     }
     pub fn set_server(&self, server: http::Uri) {
@@ -310,6 +320,10 @@ impl LightClient {
         Ok(())
     }
 
+    async fn interrupt_sync_after_batch(&self, set_interrupt: bool) {
+        *self.continue_sync.write().await = set_interrupt;
+    }
+
     pub async fn get_initial_state(&self, height: u64) -> Option<(u64, String, String)> {
         if height <= self.config.sapling_activation_height() {
             return None;
@@ -423,6 +437,7 @@ impl LightClient {
                     mempool_monitor: std::sync::RwLock::new(None),
                     sync_lock: Mutex::new(()),
                     bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
+                    continue_sync: Arc::new(RwLock::new(true)),
                 };
 
                 lightclient.set_wallet_initial_state(birthday).await;
@@ -469,6 +484,7 @@ impl LightClient {
                 mempool_monitor: std::sync::RwLock::new(None),
                 sync_lock: Mutex::new(()),
                 bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
+                continue_sync: Arc::new(RwLock::new(true)),
             };
 
             debug!(
@@ -1209,7 +1225,10 @@ impl LightClient {
     async fn start_sync(&self) -> Result<JsonValue, String> {
         // We can only do one sync at a time because we sync blocks in serial order
         // If we allow multiple syncs, they'll all get jumbled up.
-        let _lock = self.sync_lock.lock().await;
+        // TODO:  We run on resource constrained systems, where a single thread of
+        // execution often consumes most of the memory available, on other systems
+        // we might parallelize sync.
+        let lightclient_exclusion_lock = self.sync_lock.lock().await;
 
         // The top of the wallet
         let last_synced_height = self.wallet.last_synced_height().await;
@@ -1273,8 +1292,12 @@ impl LightClient {
             if res.is_err() {
                 return res;
             }
+            if !*self.continue_sync.read().await {
+                break;
+            }
         }
 
+        drop(lightclient_exclusion_lock);
         res
     }
 
@@ -1517,6 +1540,7 @@ impl LightClient {
     }
 
     pub async fn do_shield(&self, address: Option<String>) -> Result<String, String> {
+        let transaction_submission_height = self.get_submission_height().await;
         let fee = u64::from(DEFAULT_FEE);
         let tbal = self.wallet.tbalance(None).await;
 
@@ -1549,6 +1573,7 @@ impl LightClient {
                     true,
                     true,
                     vec![(&addr, tbal - fee, None)],
+                    transaction_submission_height,
                     |transaction_bytes| {
                         GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
                     },
@@ -1559,8 +1584,21 @@ impl LightClient {
         result.map(|(transaction_id, _)| transaction_id)
     }
 
+    async fn get_submission_height(&self) -> BlockHeight {
+        BlockHeight::from_u32(
+            GrpcConnector::get_latest_block(self.config.get_server_uri())
+                .await
+                .unwrap()
+                .height as u32,
+        ) + 1
+    }
     //TODO: Add migrate_sapling_to_orchard argument
-    pub async fn do_send(&self, addrs: Vec<(&str, u64, Option<String>)>) -> Result<String, String> {
+    pub async fn do_send(
+        &self,
+        address_amount_memo_tuples: Vec<(&str, u64, Option<String>)>,
+    ) -> Result<String, String> {
+        let transaction_submission_height = self.get_submission_height().await;
+        self.interrupt_sync_after_batch(true).await;
         // First, get the concensus branch ID
         debug!("Creating transaction");
 
@@ -1571,12 +1609,20 @@ impl LightClient {
             let prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
 
             self.wallet
-                .send_to_address(prover, false, false, addrs, |transaction_bytes| {
-                    GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
-                })
+                .send_to_address(
+                    prover,
+                    false,
+                    false,
+                    address_amount_memo_tuples,
+                    transaction_submission_height,
+                    |transaction_bytes| {
+                        GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
+                    },
+                )
                 .await
         };
 
+        self.interrupt_sync_after_batch(false).await;
         result.map(|(transaction_id, _)| transaction_id)
     }
 

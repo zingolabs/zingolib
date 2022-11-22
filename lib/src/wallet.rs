@@ -632,7 +632,8 @@ impl LightWallet {
             .unwrap_or_default()
     }
 
-    async fn get_target_height(&self) -> Option<u32> {
+    // TODO:   Understand how this is used.. is it correct to add one?
+    async fn get_latest_wallet_height_plus_one(&self) -> Option<u32> {
         self.blocks
             .read()
             .await
@@ -656,7 +657,8 @@ impl LightWallet {
                 // Select an anchor ANCHOR_OFFSET back from the target block,
                 // unless that would be before the earliest block we have.
                 let anchor_height = cmp::max(
-                    target_height.saturating_sub(self.transaction_context.config.anchor_offset),
+                    target_height
+                        .saturating_sub(self.transaction_context.config.reorg_buffer_offset),
                     min_height,
                 );
 
@@ -1032,7 +1034,7 @@ impl LightWallet {
                     SpendableNote::from(
                         transaction_id,
                         note,
-                        self.transaction_context.config.anchor_offset as usize,
+                        self.transaction_context.config.reorg_buffer_offset as usize,
                         &Some(extsk),
                     )
                 }
@@ -1079,6 +1081,7 @@ impl LightWallet {
         transparent_only: bool,
         migrate_sapling_to_orchard: bool,
         tos: Vec<(&str, u64, Option<String>)>,
+        submission_height: BlockHeight,
         broadcast_fn: F,
     ) -> Result<(String, Vec<u8>), String>
     where
@@ -1095,6 +1098,7 @@ impl LightWallet {
                 transparent_only,
                 migrate_sapling_to_orchard,
                 tos,
+                submission_height,
                 broadcast_fn,
             )
             .await
@@ -1116,6 +1120,7 @@ impl LightWallet {
         transparent_only: bool,
         migrate_sapling_to_orchard: bool,
         tos: Vec<(&str, u64, Option<String>)>,
+        submission_height: BlockHeight,
         broadcast_fn: F,
     ) -> Result<(String, Vec<u8>), String>
     where
@@ -1161,7 +1166,7 @@ impl LightWallet {
         println!("{}: Selecting notes", now() - start_time);
 
         let target_amount = (Amount::from_u64(total_value).unwrap() + DEFAULT_FEE).unwrap();
-        let target_height = match self.get_target_height().await {
+        let last_height = match self.get_latest_wallet_height_plus_one().await {
             Some(h) => BlockHeight::from_u32(h),
             None => return Err("No blocks in wallet to target, please sync first".to_string()),
         };
@@ -1186,19 +1191,17 @@ impl LightWallet {
             let e = format!(
                 "Insufficient verified funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent.",
                 u64::from(selected_value), u64::from(target_amount), self.transaction_context.config
-                .anchor_offset + 1
+                .reorg_buffer_offset + 1
             );
             error!("{}", e);
             return Err(e);
         }
         println!("Selected notes worth {}", u64::from(selected_value));
 
-        let orchard_anchor = self
-            .get_orchard_anchor(&orchard_notes, target_height)
-            .await?;
+        let orchard_anchor = self.get_orchard_anchor(&orchard_notes, last_height).await?;
         let mut builder = Builder::with_orchard_anchor(
             self.transaction_context.config.chain,
-            target_height,
+            submission_height,
             orchard_anchor,
         );
         println!(
@@ -1430,7 +1433,7 @@ impl LightWallet {
                     .iter_mut()
                     .find(|nd| nd.nullifier == selected.nullifier)
                     .unwrap();
-                spent_note.unconfirmed_spent = Some((transaction.txid(), u32::from(target_height)));
+                spent_note.unconfirmed_spent = Some((transaction.txid(), u32::from(last_height)));
             }
             // Mark orchard notes as unconfirmed spent
             for selected in orchard_notes {
@@ -1442,7 +1445,7 @@ impl LightWallet {
                     .iter_mut()
                     .find(|nd| nd.nullifier == selected.nullifier)
                     .unwrap();
-                spent_note.unconfirmed_spent = Some((transaction.txid(), u32::from(target_height)));
+                spent_note.unconfirmed_spent = Some((transaction.txid(), u32::from(last_height)));
             }
 
             // Mark this utxo as unconfirmed spent
@@ -1455,7 +1458,7 @@ impl LightWallet {
                     .iter_mut()
                     .find(|u| utxo.txid == u.txid && utxo.output_index == u.output_index)
                     .unwrap();
-                spent_utxo.unconfirmed_spent = Some((transaction.txid(), u32::from(target_height)));
+                spent_utxo.unconfirmed_spent = Some((transaction.txid(), u32::from(last_height)));
             }
         }
 
@@ -1466,7 +1469,7 @@ impl LightWallet {
             self.transaction_context
                 .scan_full_tx(
                     transaction,
-                    target_height.into(),
+                    last_height.into(),
                     true,
                     now() as u32,
                     TransactionMetadata::get_price(now(), &price),
@@ -1492,7 +1495,8 @@ impl LightWallet {
                     .read()
                     .unwrap()
                     .clone(),
-                u64::from(target_height) - self.transaction_context.config.anchor_offset as u64,
+                u64::from(target_height)
+                    - self.transaction_context.config.reorg_buffer_offset as u64,
             )
             .await?;
             let orchard_tree = CommitmentTree::<MerkleHashOrchard>::read(
@@ -1640,7 +1644,11 @@ mod test {
         // 3. With one confirmation, we should be able to select the note
         let amt = Amount::from_u64(10_000).unwrap();
         // Reset the anchor offsets
-        lightclient.wallet.transaction_context.config.anchor_offset = 0;
+        lightclient
+            .wallet
+            .transaction_context
+            .config
+            .reorg_buffer_offset = 0;
         let (_orchard_notes, sapling_notes, utxos, selected) = lightclient
             .wallet
             .select_notes_and_utxos(amt, false, false, false)
@@ -1669,7 +1677,11 @@ mod test {
         );
 
         // With min anchor_offset at 1, we can't select any notes
-        lightclient.wallet.transaction_context.config.anchor_offset = 1;
+        lightclient
+            .wallet
+            .transaction_context
+            .config
+            .reorg_buffer_offset = 1;
         let (_orchard_notes, sapling_notes, utxos, _selected) = lightclient
             .wallet
             .select_notes_and_utxos(amt, false, false, false)
@@ -1711,7 +1723,11 @@ mod test {
         // Mine 15 blocks, then selecting the note should result in witness only 10 blocks deep
         mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 15)
             .await;
-        lightclient.wallet.transaction_context.config.anchor_offset = 1;
+        lightclient
+            .wallet
+            .transaction_context
+            .config
+            .reorg_buffer_offset = 1;
         let (_orchard_notes, sapling_notes, utxos, selected) = lightclient
             .wallet
             .select_notes_and_utxos(amt, false, true, false)
@@ -1778,7 +1794,11 @@ mod test {
         assert_eq!(utxos.len(), 1);
 
         // Set min confs to 5, so the sapling note will not be selected
-        lightclient.wallet.transaction_context.config.anchor_offset = 4;
+        lightclient
+            .wallet
+            .transaction_context
+            .config
+            .reorg_buffer_offset = 4;
         let amt = Amount::from_u64(tvalue - 10_000).unwrap();
         let (_orchard_notes, sapling_notes, utxos, selected) = lightclient
             .wallet
@@ -1812,7 +1832,11 @@ mod test {
         // 3. With one confirmation, we should be able to select the note
         let amt = Amount::from_u64(10_000).unwrap();
         // This test relies on historic functionality of multiple anchor offsets
-        lightclient.wallet.transaction_context.config.anchor_offset = 0;
+        lightclient
+            .wallet
+            .transaction_context
+            .config
+            .reorg_buffer_offset = 0;
         let (_orchard_notes, sapling_notes, utxos, selected) = lightclient
             .wallet
             .select_notes_and_utxos(amt, false, false, false)
@@ -1845,7 +1869,11 @@ mod test {
             .await;
 
         // Reset the anchor offsets
-        lightclient.wallet.transaction_context.config.anchor_offset = 4;
+        lightclient
+            .wallet
+            .transaction_context
+            .config
+            .reorg_buffer_offset = 4;
 
         // 4. Send another incoming transaction.
         let value2 = 200_000;
@@ -1866,7 +1894,11 @@ mod test {
 
         // Selecting a bigger amount should select both notes
         // This test relies on historic functionality of multiple anchor offsets
-        lightclient.wallet.transaction_context.config.anchor_offset = 0;
+        lightclient
+            .wallet
+            .transaction_context
+            .config
+            .reorg_buffer_offset = 0;
         let amt = Amount::from_u64(value1 + value2).unwrap();
         let (_orchard_notes, sapling_notes, utxos, selected) = lightclient
             .wallet

@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use json::JsonValue;
 use tokio::time::sleep;
 use zingo_cli::regtest::RegtestManager;
 use zingolib::lightclient::LightClient;
@@ -12,6 +13,29 @@ async fn get_synced_wallet_height(client: &LightClient) -> u32 {
         .as_u32()
         .unwrap()
 }
+
+fn poll_server_height(manager: &RegtestManager) -> JsonValue {
+    let temp_tips = manager.get_chain_tip().unwrap().stdout;
+    let tips = json::parse(&String::from_utf8_lossy(&temp_tips)).unwrap();
+    dbg!(tips[0]["height"].clone())
+}
+// This function _DOES NOT SYNC THE CLIENT/WALLET_.
+pub async fn increase_server_height(manager: &RegtestManager, n: u32) {
+    let start_height = poll_server_height(&manager).as_fixed_point_u64(2).unwrap();
+    let target = start_height + n as u64;
+    manager
+        .generate_n_blocks(n)
+        .expect("Called for side effect, failed!");
+    let mut count = 0;
+    while poll_server_height(&manager).as_fixed_point_u64(2).unwrap() < target {
+        sleep(Duration::from_millis(50)).await;
+        count = dbg!(count + 1);
+    }
+}
+// This function increases the chain height reliably (with polling) but
+// it _also_ ensures that the client state is synced.
+// Unsynced clients are very interesting to us.  See increate_server_height
+// to reliably increase the server without syncing the client
 pub async fn increase_height_and_sync_client(
     manager: &RegtestManager,
     client: &LightClient,

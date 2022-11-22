@@ -232,7 +232,7 @@ pub fn attempt_recover_seed(_password: Option<String>) {
         server_uri: Arc::new(RwLock::new("0.0.0.0:0".parse().unwrap())),
         chain: zingoconfig::ChainType::Mainnet,
         monitor_mempool: false,
-        anchor_offset: 0,
+        reorg_buffer_offset: 0,
         data_dir: None,
     };
 }

@@ -138,6 +138,11 @@ impl RegtestManager {
             .args(["generate".to_string(), num_blocks.to_string()])
             .output()
     }
+    pub fn get_chain_tip(&self) -> Result<std::process::Output, std::io::Error> {
+        self.get_cli_handle()
+            .arg("getchaintips".to_string())
+            .output()
+    }
     fn prepare_working_directories(&self) {
         // remove contents of existing data directories
         let zcd_subdir = &self.zcashd_data_dir.join("regtest");
