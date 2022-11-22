@@ -34,12 +34,16 @@ fn verify_old_wallet_uses_server_height_in_send() {
         saplingcoinbasebacked_spendcapable();
     let client = client_builder.new_sameseed_client(0, false);
     Runtime::new().unwrap().block_on(async {
+        // Ensure that the client has confirmed spendable funds
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
-        // Scenario setup
-        regtest_manager
-            .generate_n_blocks(100)
-            .expect("Zcashd ought to be able to generate.");
+
+        // Without sync push server forward 100 blocks
+        utils::increase_server_height(&regtest_manager, 100).await;
         let ua = client.do_new_address("o").await.unwrap()[0].to_string();
+        let client_wallet_height = client.do_wallet_last_scanned_height().await;
+
+        // Verify that wallet is still back at 6.
+        assert_eq!(client_wallet_height, 6);
 
         // Interrupt generating send
         client
