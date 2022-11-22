@@ -141,7 +141,7 @@ impl LightClient {
         &self,
         addrs: Vec<(&str, u64, Option<String>)>,
     ) -> Result<String, String> {
-        let transaction_submission_height = self.latest_served_blockheight().await;
+        let transaction_submission_height = self.get_submission_height().await;
         // First, get the concensus branch ID
         debug!("Creating transaction");
 
@@ -1540,7 +1540,7 @@ impl LightClient {
     }
 
     pub async fn do_shield(&self, address: Option<String>) -> Result<String, String> {
-        let transaction_submission_height = self.latest_served_blockheight().await;
+        let transaction_submission_height = self.get_submission_height().await;
         let fee = u64::from(DEFAULT_FEE);
         let tbal = self.wallet.tbalance(None).await;
 
@@ -1584,19 +1584,20 @@ impl LightClient {
         result.map(|(transaction_id, _)| transaction_id)
     }
 
-    async fn latest_served_blockheight(&self) -> BlockHeight {
-        let latest_height = GrpcConnector::get_latest_block(self.config.get_server_uri())
-            .await
-            .unwrap()
-            .height;
-        BlockHeight::from_u32((latest_height - self.config.reorg_buffer_offset as u64) as u32)
+    async fn get_submission_height(&self) -> BlockHeight {
+        BlockHeight::from_u32(
+            GrpcConnector::get_latest_block(self.config.get_server_uri())
+                .await
+                .unwrap()
+                .height as u32,
+        ) + 1
     }
     //TODO: Add migrate_sapling_to_orchard argument
     pub async fn do_send(
         &self,
         address_amount_memo_tuples: Vec<(&str, u64, Option<String>)>,
     ) -> Result<String, String> {
-        let transaction_submission_height = self.latest_served_blockheight().await;
+        let transaction_submission_height = self.get_submission_height().await;
         self.interrupt_sync_after_batch(true).await;
         // First, get the concensus branch ID
         debug!("Creating transaction");
