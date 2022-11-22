@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use base64::{decode, encode};
 
-use zingoconfig::ZingoConfig;
+use zingoconfig::construct_server_uri;
 use zingolib::{commands, lightclient::LightClient};
 
 // We'll use a MUTEX to store a global lightclient instance,
@@ -22,8 +22,8 @@ pub fn init_new(
     sapling_spend_b64: String,
     data_dir: String,
 ) -> String {
-    let server = ZingoConfig::get_server_or_default(Some(server_uri));
-    let (mut config, latest_block_height) = match zingolib::create_on_data_dir(server, None) {
+    let server = construct_server_uri(Some(server_uri));
+    let (mut config, latest_block_height) = match zingolib::create_zingoconf_with_datadir(server, None) {
         Ok((c, h)) => (c, h),
         Err(e) => {
             return format!("Error: {}", e);
@@ -70,8 +70,8 @@ pub fn init_from_seed(
     sapling_spend_b64: String,
     data_dir: String,
 ) -> String {
-    let server = ZingoConfig::get_server_or_default(Some(server_uri));
-    let (mut config, _latest_block_height) = match zingolib::create_on_data_dir(server, None) {
+    let server = construct_server_uri(Some(server_uri));
+    let (mut config, _latest_block_height) = match zingolib::create_zingoconf_with_datadir(server, None) {
         Ok((c, h)) => (c, h),
         Err(e) => {
             return format!("Error: {}", e);
@@ -80,7 +80,7 @@ pub fn init_from_seed(
 
     config.set_data_dir(data_dir);
 
-    let lightclient = match LightClient::new_from_phrase(seed, &config, birthday, false) {
+    let lightclient = match LightClient::create_with_seedorkey_wallet(seed, &config, birthday, false) {
         Ok(mut l) => {
             match l.set_sapling_params(
                 &decode(&sapling_output_b64).unwrap(),
@@ -117,8 +117,8 @@ pub fn init_from_b64(
     sapling_spend_b64: String,
     data_dir: String,
 ) -> String {
-    let server = ZingoConfig::get_server_or_default(Some(server_uri));
-    let (mut config, _latest_block_height) = match zingolib::create_on_data_dir(server, None) {
+    let server = construct_server_uri(Some(server_uri));
+    let (mut config, _latest_block_height) = match zingolib::create_zingoconf_with_datadir(server, None) {
         Ok((c, h)) => (c, h),
         Err(e) => {
             return format!("Error: {}", e);
@@ -134,7 +134,7 @@ pub fn init_from_b64(
         }
     };
 
-    let lightclient = match LightClient::read_from_buffer(&config, &decoded_bytes[..]) {
+    let lightclient = match LightClient::read_wallet_from_buffer(&config, &decoded_bytes[..]) {
         Ok(mut l) => {
             match l.set_sapling_params(
                 &decode(&sapling_output_b64).unwrap(),
