@@ -82,7 +82,7 @@ pub struct LightClient {
     sync_lock: Mutex<()>,
 
     bsync_data: Arc<RwLock<BlazeSyncData>>,
-    continue_sync: Arc<RwLock<bool>>,
+    interrupt_sync: Arc<RwLock<bool>>,
 }
 
 use serde_json::Value;
@@ -184,7 +184,7 @@ impl LightClient {
             mempool_monitor: std::sync::RwLock::new(None),
             bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
             sync_lock: Mutex::new(()),
-            continue_sync: Arc::new(RwLock::new(true)),
+            interrupt_sync: Arc::new(RwLock::new(false)),
         })
     }
     pub fn set_server(&self, server: http::Uri) {
@@ -321,7 +321,7 @@ impl LightClient {
     }
 
     async fn interrupt_sync_after_batch(&self, set_interrupt: bool) {
-        *self.continue_sync.write().await = !set_interrupt;
+        *self.interrupt_sync.write().await = set_interrupt;
     }
 
     pub async fn get_initial_state(&self, height: u64) -> Option<(u64, String, String)> {
@@ -437,7 +437,7 @@ impl LightClient {
                     mempool_monitor: std::sync::RwLock::new(None),
                     sync_lock: Mutex::new(()),
                     bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
-                    continue_sync: Arc::new(RwLock::new(true)),
+                    interrupt_sync: Arc::new(RwLock::new(false)),
                 };
 
                 lightclient.set_wallet_initial_state(birthday).await;
@@ -484,7 +484,7 @@ impl LightClient {
                 mempool_monitor: std::sync::RwLock::new(None),
                 sync_lock: Mutex::new(()),
                 bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
-                continue_sync: Arc::new(RwLock::new(true)),
+                interrupt_sync: Arc::new(RwLock::new(false)),
             };
 
             debug!(
@@ -1292,8 +1292,8 @@ impl LightClient {
             if res.is_err() {
                 return res;
             }
-            if !*self.continue_sync.read().await {
-                log::debug!("LightClient continue_sync is false");
+            if *self.interrupt_sync.read().await {
+                log::debug!("LightClient interrupt_sync is true");
                 break;
             }
         }
