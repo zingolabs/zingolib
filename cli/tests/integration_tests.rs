@@ -584,3 +584,155 @@ fn cross_compat() {
     });
     drop(child_process_handler);
 }
+
+#[test]
+fn t_incoming_t_outgoing() {
+    let (regtest_manager, sender, recipient, child_process_handler, _client_builder) =
+        two_clients_one_saplingcoinbase_backed();
+
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        utils::increase_height_and_sync_client(&regtest_manager, &sender, 9).await;
+        // 2. Get an incoming transaction to a t address
+        let taddr = recipient.do_addresses().await[0]["receivers"]["transparent"].clone();
+        let value = 100_000;
+
+        sender
+            .do_send(vec![(taddr.as_str().unwrap(), value, None)])
+            .await
+            .unwrap();
+
+        recipient.do_sync(true).await.unwrap();
+        utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1).await;
+
+        // 3. Test the list
+        let list = recipient.do_list_transactions(false).await;
+        assert_eq!(list[0]["block_height"].as_u64().unwrap(), 11);
+        assert_eq!(list[0]["address"], taddr);
+        assert_eq!(list[0]["amount"].as_u64().unwrap(), value);
+
+        // 4. We can spend the funds immediately, since this is a taddr
+        let sent_value = 20_000;
+        let sent_transaction_id = recipient
+            .do_send(vec![(EXT_TADDR, sent_value, None)])
+            .await
+            .unwrap();
+        utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1).await;
+
+        // 5. Test the unconfirmed send.
+        let list = recipient.do_list_transactions(false).await;
+        assert_eq!(list[1]["block_height"].as_u64().unwrap(), 12);
+        assert_eq!(list[1]["txid"], sent_transaction_id);
+        assert_eq!(
+            list[1]["amount"].as_i64().unwrap(),
+            -(sent_value as i64 + i64::from(DEFAULT_FEE))
+        );
+        assert_eq!(list[1]["unconfirmed"].as_bool().unwrap(), false);
+        //TODO: Fix after full UA saving. assert_eq!(list[1]["outgoing_metadata"][0]["address"], EXT_TADDR);
+        assert_eq!(
+            list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
+            value - sent_value - u64::from(DEFAULT_FEE)
+        );
+        assert_eq!(list[1]["outgoing_metadata"][1]["address"], EXT_TADDR);
+        assert_eq!(
+            list[1]["outgoing_metadata"][1]["value"].as_u64().unwrap(),
+            sent_value
+        );
+
+        let notes = recipient.do_list_notes(true).await;
+        assert_eq!(
+            notes["spent_utxos"][0]["created_in_block"]
+                .as_u64()
+                .unwrap(),
+            11
+        );
+        assert_eq!(
+            notes["spent_utxos"][0]["spent_at_height"].as_u64().unwrap(),
+            12
+        );
+        assert_eq!(notes["spent_utxos"][0]["spent"], sent_transaction_id);
+
+        // Change shielded note
+        assert_eq!(
+            notes["unspent_orchard_notes"][0]["created_in_block"]
+                .as_u64()
+                .unwrap(),
+            12
+        );
+        assert_eq!(
+            notes["unspent_orchard_notes"][0]["created_in_txid"],
+            sent_transaction_id
+        );
+        assert_eq!(
+            notes["unspent_orchard_notes"][0]["is_change"]
+                .as_bool()
+                .unwrap(),
+            true
+        );
+        assert_eq!(
+            notes["unspent_orchard_notes"][0]["value"].as_u64().unwrap(),
+            value - sent_value - u64::from(DEFAULT_FEE)
+        );
+
+        let list = recipient.do_list_transactions(false).await;
+        println!("{}", json::stringify_pretty(list.clone(), 4));
+
+        assert_eq!(list[1]["block_height"].as_u64().unwrap(), 12);
+        assert_eq!(list[1]["txid"], sent_transaction_id);
+        assert_eq!(list[1]["unconfirmed"].as_bool().unwrap(), false);
+        assert_eq!(list[1]["outgoing_metadata"][1]["address"], EXT_TADDR);
+        assert_eq!(
+            list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
+            (value - sent_value - u64::from(DEFAULT_FEE))
+        );
+        assert_eq!(
+            list[1]["outgoing_metadata"][1]["value"].as_u64().unwrap(),
+            sent_value
+        );
+
+        // Make sure everything is fine even after the rescan
+
+        recipient.do_rescan().await.unwrap();
+
+        let list = recipient.do_list_transactions(false).await;
+        println!("{}", json::stringify_pretty(list.clone(), 4));
+        assert_eq!(list[1]["block_height"].as_u64().unwrap(), 12);
+        assert_eq!(list[1]["txid"], sent_transaction_id);
+        assert_eq!(list[1]["unconfirmed"].as_bool().unwrap(), false);
+        assert_eq!(list[1]["outgoing_metadata"][1]["address"], EXT_TADDR);
+        assert_eq!(
+            list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
+            (value - sent_value - u64::from(DEFAULT_FEE))
+        );
+        assert_eq!(
+            list[1]["outgoing_metadata"][1]["value"].as_u64().unwrap(),
+            sent_value
+        );
+
+        let notes = recipient.do_list_notes(true).await;
+        // Change shielded note
+        assert_eq!(
+            notes["unspent_orchard_notes"][0]["created_in_block"]
+                .as_u64()
+                .unwrap(),
+            12
+        );
+        assert_eq!(
+            notes["unspent_orchard_notes"][0]["created_in_txid"],
+            sent_transaction_id
+        );
+        assert_eq!(
+            notes["unspent_orchard_notes"][0]["is_change"]
+                .as_bool()
+                .unwrap(),
+            true
+        );
+        assert_eq!(
+            notes["unspent_orchard_notes"][0]["value"].as_u64().unwrap(),
+            value - sent_value - u64::from(DEFAULT_FEE)
+        );
+    });
+    drop(child_process_handler);
+}
+
+// Burn-to regtest address generated by `zcash-cli getnewaddress`
+const EXT_TADDR: &str = "tmJTBtMwPU96XteSiP89xDz1WARNgRddEHq";
