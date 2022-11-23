@@ -918,9 +918,14 @@ async fn t_incoming_t_outgoing(scenario: NBlockFCBLScenario) {
         -(sent_value as i64 + i64::from(DEFAULT_FEE))
     );
     assert_eq!(list[1]["unconfirmed"].as_bool().unwrap(), true);
-    assert_eq!(list[1]["outgoing_metadata"][0]["address"], EXT_TADDR);
+    //TODO: Fix after full UA saving. assert_eq!(list[1]["outgoing_metadata"][0]["address"], EXT_TADDR);
     assert_eq!(
         list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
+        value - sent_value - u64::from(DEFAULT_FEE)
+    );
+    assert_eq!(list[1]["outgoing_metadata"][1]["address"], EXT_TADDR);
+    assert_eq!(
+        list[1]["outgoing_metadata"][1]["value"].as_u64().unwrap(),
         sent_value
     );
 
@@ -943,23 +948,23 @@ async fn t_incoming_t_outgoing(scenario: NBlockFCBLScenario) {
 
     // Change shielded note
     assert_eq!(
-        notes["unspent_sapling_notes"][0]["created_in_block"]
+        notes["unspent_orchard_notes"][0]["created_in_block"]
             .as_u64()
             .unwrap(),
         12
     );
     assert_eq!(
-        notes["unspent_sapling_notes"][0]["created_in_txid"],
+        notes["unspent_orchard_notes"][0]["created_in_txid"],
         sent_transaction_id
     );
     assert_eq!(
-        notes["unspent_sapling_notes"][0]["is_change"]
+        notes["unspent_orchard_notes"][0]["is_change"]
             .as_bool()
             .unwrap(),
         true
     );
     assert_eq!(
-        notes["unspent_sapling_notes"][0]["value"].as_u64().unwrap(),
+        notes["unspent_orchard_notes"][0]["value"].as_u64().unwrap(),
         value - sent_value - u64::from(DEFAULT_FEE)
     );
 
@@ -1054,28 +1059,28 @@ async fn mixed_transaction(scenario: NBlockFCBLScenario) {
     let list = lightclient.do_list_transactions(false).await;
 
     // 5. Check everything
-    assert_eq!(notes["unspent_sapling_notes"].len(), 1);
+    assert_eq!(notes["unspent_orchard_notes"].len(), 1);
     assert_eq!(
-        notes["unspent_sapling_notes"][0]["created_in_block"]
+        notes["unspent_orchard_notes"][0]["created_in_block"]
             .as_u64()
             .unwrap(),
         18
     );
     assert_eq!(
-        notes["unspent_sapling_notes"][0]["is_change"]
+        notes["unspent_orchard_notes"][0]["is_change"]
             .as_bool()
             .unwrap(),
         true
     );
     assert_eq!(
-        notes["unspent_sapling_notes"][0]["value"].as_u64().unwrap(),
+        notes["unspent_orchard_notes"][0]["value"].as_u64().unwrap(),
         tvalue + zvalue - sent_tvalue - sent_zvalue - u64::from(DEFAULT_FEE)
     );
 
     assert_eq!(notes["spent_sapling_notes"].len(), 1);
     assert_eq!(
         notes["spent_sapling_notes"][0]["spent"],
-        notes["unspent_sapling_notes"][0]["created_in_txid"]
+        notes["unspent_orchard_notes"][0]["created_in_txid"]
     );
 
     assert_eq!(notes["pending_sapling_notes"].len(), 0);
@@ -1085,7 +1090,7 @@ async fn mixed_transaction(scenario: NBlockFCBLScenario) {
     assert_eq!(notes["spent_utxos"].len(), 1);
     assert_eq!(
         notes["spent_utxos"][0]["spent"],
-        notes["unspent_sapling_notes"][0]["created_in_txid"]
+        notes["unspent_orchard_notes"][0]["created_in_txid"]
     );
 
     assert_eq!(list.len(), 3);
@@ -1096,7 +1101,7 @@ async fn mixed_transaction(scenario: NBlockFCBLScenario) {
     );
     assert_eq!(
         list[2]["txid"],
-        notes["unspent_sapling_notes"][0]["created_in_txid"]
+        notes["unspent_orchard_notes"][0]["created_in_txid"]
     );
     assert_eq!(
         list[2]["outgoing_metadata"]
@@ -1174,7 +1179,7 @@ async fn aborted_resync(scenario: NBlockFCBLScenario) {
                 .collect(),
         ))
         .unwrap()
-        .sapling_notes
+        .orchard_notes
         .get(0)
         .unwrap()
         .witnesses
@@ -1207,7 +1212,7 @@ async fn aborted_resync(scenario: NBlockFCBLScenario) {
                 .collect(),
         ))
         .unwrap()
-        .sapling_notes
+        .orchard_notes
         .get(0)
         .unwrap()
         .witnesses
