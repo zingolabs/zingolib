@@ -321,7 +321,7 @@ impl LightClient {
     }
 
     async fn interrupt_sync_after_batch(&self, set_interrupt: bool) {
-        *self.continue_sync.write().await = set_interrupt;
+        *self.continue_sync.write().await = !set_interrupt;
     }
 
     pub async fn get_initial_state(&self, height: u64) -> Option<(u64, String, String)> {
@@ -1293,6 +1293,7 @@ impl LightClient {
                 return res;
             }
             if !*self.continue_sync.read().await {
+                log::debug!("LightClient continue_sync is false");
                 break;
             }
         }
