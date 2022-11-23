@@ -269,13 +269,13 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
 
     let notes = lightclient.do_list_notes(true).await;
     // Has a new (unconfirmed) unspent note (the change)
-    assert_eq!(notes["unspent_sapling_notes"].len(), 1);
+    assert_eq!(notes["unspent_orchard_notes"].len(), 1);
     assert_eq!(
-        notes["unspent_sapling_notes"][0]["created_in_txid"],
+        notes["unspent_orchard_notes"][0]["created_in_txid"],
         sent_transaction_id
     );
     assert_eq!(
-        notes["unspent_sapling_notes"][0]["unconfirmed"]
+        notes["unspent_orchard_notes"][0]["unconfirmed"]
             .as_bool()
             .unwrap(),
         true
@@ -336,32 +336,32 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
     assert_eq!(jv.contains("unconfirmed"), false);
     assert_eq!(jv["block_height"].as_u64().unwrap(), 17);
 
-    // 8. Check the notes to see that we have one spent note and one unspent note (change)
+    // 8. Check the notes to see that we have one spent sapling note and one unspent orchard note (change)
     let notes = lightclient.do_list_notes(true).await;
     println!("{}", json::stringify_pretty(notes.clone(), 4));
-    assert_eq!(notes["unspent_sapling_notes"].len(), 1);
+    assert_eq!(notes["unspent_orchard_notes"].len(), 1);
     assert_eq!(
-        notes["unspent_sapling_notes"][0]["created_in_block"]
+        notes["unspent_orchard_notes"][0]["created_in_block"]
             .as_u64()
             .unwrap(),
         17
     );
     assert_eq!(
-        notes["unspent_sapling_notes"][0]["created_in_txid"],
+        notes["unspent_orchard_notes"][0]["created_in_txid"],
         sent_transaction_id
     );
     assert_eq!(
-        notes["unspent_sapling_notes"][0]["value"].as_u64().unwrap(),
+        notes["unspent_orchard_notes"][0]["value"].as_u64().unwrap(),
         value - sent_value - u64::from(DEFAULT_FEE)
     );
     assert_eq!(
-        notes["unspent_sapling_notes"][0]["is_change"]
+        notes["unspent_orchard_notes"][0]["is_change"]
             .as_bool()
             .unwrap(),
         true
     );
     assert_eq!(
-        notes["unspent_sapling_notes"][0]["spendable"]
+        notes["unspent_orchard_notes"][0]["spendable"]
             .as_bool()
             .unwrap(),
         false
