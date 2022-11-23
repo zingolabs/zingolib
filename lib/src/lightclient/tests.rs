@@ -1591,17 +1591,18 @@ async fn mempool_clearing(scenario: NBlockFCBLScenario) {
     let transactions = lightclient.do_list_transactions(false).await;
 
     // There is 1 unspent note, which is the unconfirmed transaction
-    assert_eq!(notes["unspent_sapling_notes"].len(), 1);
+    println!("{}", json::stringify_pretty(notes.clone(), 4));
+    println!("{}", json::stringify_pretty(transactions.clone(), 4));
+    // One unspent note, change, unconfirmed
+    assert_eq!(notes["unspent_orchard_notes"].len(), 1);
+    assert_eq!(notes["unspent_sapling_notes"].len(), 0);
+    let note = notes["unspent_orchard_notes"][0].clone();
+    assert_eq!(note["created_in_txid"], sent_transaction_id);
     assert_eq!(
-        notes["unspent_sapling_notes"][0]["created_in_txid"],
-        sent_transaction_id
+        note["value"].as_u64().unwrap(),
+        value - sent_value - u64::from(DEFAULT_FEE)
     );
-    assert_eq!(
-        notes["unspent_sapling_notes"][0]["unconfirmed"]
-            .as_bool()
-            .unwrap(),
-        true
-    );
+    assert_eq!(note["unconfirmed"].as_bool().unwrap(), true);
     assert_eq!(transactions.len(), 2);
 
     // 7. Mine 100 blocks, so the mempool expires
