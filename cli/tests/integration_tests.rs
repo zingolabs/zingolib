@@ -258,7 +258,7 @@ fn send_orchard_back_and_forth() {
         utils::increase_height_and_sync_client(&regtest_manager, &client_a, 5).await;
 
         // do_new_address returns a single element json array for some reason
-        let ua_of_b = client_b.do_new_address("o").await.unwrap()[0].to_string();
+        let ua_of_b = client_b.do_new_address("zto").await.unwrap()[0].to_string();
         client_a
             .do_send(vec![(&ua_of_b, 10_000, Some("Orcharding".to_string()))])
             .await
@@ -274,7 +274,7 @@ fn send_orchard_back_and_forth() {
         );
         assert_eq!(client_b.do_balance().await["orchard_balance"], 10_000);
 
-        let ua_of_a = client_a.do_new_address("o").await.unwrap()[0].to_string();
+        let ua_of_a = client_a.do_new_address("zto").await.unwrap()[0].to_string();
         client_b
             .do_send(vec![(&ua_of_a, 5_000, Some("Sending back".to_string()))])
             .await
@@ -289,6 +289,10 @@ fn send_orchard_back_and_forth() {
         );
         assert_eq!(client_b.do_balance().await["sapling_balance"], 0);
         assert_eq!(client_b.do_balance().await["orchard_balance"], 4_000);
+        println!(
+            "{}",
+            json::stringify_pretty(client_a.do_list_transactions(false).await, 4)
+        );
 
         // Unneeded, but more explicit than having child_process_handler be an
         // unused variable
@@ -627,14 +631,9 @@ fn t_incoming_t_outgoing() {
             -(sent_value as i64 + i64::from(DEFAULT_FEE))
         );
         assert_eq!(list[1]["unconfirmed"].as_bool().unwrap(), false);
-        //TODO: Fix after full UA saving. assert_eq!(list[1]["outgoing_metadata"][0]["address"], EXT_TADDR);
+        assert_eq!(list[1]["outgoing_metadata"][0]["address"], EXT_TADDR);
         assert_eq!(
             list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
-            value - sent_value - u64::from(DEFAULT_FEE)
-        );
-        assert_eq!(list[1]["outgoing_metadata"][1]["address"], EXT_TADDR);
-        assert_eq!(
-            list[1]["outgoing_metadata"][1]["value"].as_u64().unwrap(),
             sent_value
         );
 
@@ -679,13 +678,9 @@ fn t_incoming_t_outgoing() {
         assert_eq!(list[1]["block_height"].as_u64().unwrap(), 12);
         assert_eq!(list[1]["txid"], sent_transaction_id);
         assert_eq!(list[1]["unconfirmed"].as_bool().unwrap(), false);
-        assert_eq!(list[1]["outgoing_metadata"][1]["address"], EXT_TADDR);
+        assert_eq!(list[1]["outgoing_metadata"][0]["address"], EXT_TADDR);
         assert_eq!(
             list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
-            (value - sent_value - u64::from(DEFAULT_FEE))
-        );
-        assert_eq!(
-            list[1]["outgoing_metadata"][1]["value"].as_u64().unwrap(),
             sent_value
         );
 
@@ -698,13 +693,9 @@ fn t_incoming_t_outgoing() {
         assert_eq!(list[1]["block_height"].as_u64().unwrap(), 12);
         assert_eq!(list[1]["txid"], sent_transaction_id);
         assert_eq!(list[1]["unconfirmed"].as_bool().unwrap(), false);
-        assert_eq!(list[1]["outgoing_metadata"][1]["address"], EXT_TADDR);
+        assert_eq!(list[1]["outgoing_metadata"][0]["address"], EXT_TADDR);
         assert_eq!(
             list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
-            (value - sent_value - u64::from(DEFAULT_FEE))
-        );
-        assert_eq!(
-            list[1]["outgoing_metadata"][1]["value"].as_u64().unwrap(),
             sent_value
         );
 

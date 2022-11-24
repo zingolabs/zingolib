@@ -15,6 +15,7 @@ use orchard::note_encryption::OrchardDomain;
 use std::{
     collections::HashSet,
     convert::TryInto,
+    io::Read,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
@@ -129,6 +130,7 @@ impl TransactionContext {
                             address: taddr.unwrap(),
                             value: vout.value.into(),
                             memo: Memo::Empty,
+                            ua: None,
                         });
                     }
                 }
@@ -404,6 +406,50 @@ impl TransactionContext {
                 .clone()
                 .try_into()
                 .unwrap_or(Memo::Future(memo_bytes));
+            if let Memo::Arbitrary(ref wallet_internal_data) = memo {
+                let mut uas_bytes = vec![0; 511];
+                wallet_internal_data
+                    .as_slice()
+                    .read(&mut uas_bytes)
+                    .unwrap();
+                let uas_string = String::from_utf8(uas_bytes);
+                if let Ok(uas_string) = uas_string {
+                    for ua_string in uas_string.split('!') {
+                        if let Some(RecipientAddress::Unified(ua)) =
+                            RecipientAddress::decode(&self.config.chain, ua_string)
+                        {
+                            if let Some(transaction) = self
+                                .transaction_metadata_set
+                                .write()
+                                .await
+                                .current
+                                .get_mut(&transaction.txid())
+                            {
+                                let outgoing_potential_recievers = [
+                                    ua.orchard().map(|oaddr| {
+                                        oaddr.b32encode_for_network(&self.config.chain)
+                                    }),
+                                    ua.sapling().map(|zaddr| {
+                                        zaddr.b32encode_for_network(&self.config.chain)
+                                    }),
+                                    address_from_pubkeyhash(
+                                        &self.config,
+                                        ua.transparent().cloned(),
+                                    ),
+                                ];
+                                if let Some(metadata) =
+                                    transaction.outgoing_metadata.iter_mut().find(|metadata| {
+                                        outgoing_potential_recievers
+                                            .contains(&Some(metadata.address.clone()))
+                                    })
+                                {
+                                    metadata.ua = Some(ua_string.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             self.transaction_metadata_set
                 .write()
                 .await
@@ -466,19 +512,21 @@ impl TransactionContext {
                                     },
                                 ) {
                                     if let Memo::Text(_) = memo {
-                                        None
-                                    } else {
                                         Some(OutgoingTxMetadata {
                                             address,
                                             value: D::WalletNote::value_from_note(&note),
                                             memo,
+                                            ua: None,
                                         })
+                                    } else {
+                                        None
                                     }
                                 } else {
                                     Some(OutgoingTxMetadata {
                                         address,
                                         value: D::WalletNote::value_from_note(&note),
                                         memo,
+                                        ua: None,
                                     })
                                 }
                             }

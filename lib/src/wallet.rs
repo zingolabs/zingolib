@@ -1280,30 +1280,6 @@ impl LightWallet {
             }
         }
 
-        //TODO: Send change to orchard instead of sapling
-        // If no Sapling notes were added, add the change address manually. That is,
-        // send the change to our sapling address manually. Note that if a sapling note was spent,
-        // the builder will automatically send change to that address
-        if sapling_notes.len() == 0 {
-            builder.send_change_to(
-                zcash_primitives::keys::OutgoingViewingKey::from(
-                    &*self.unified_spend_capability().read().await,
-                ),
-                self.unified_spend_capability()
-                    .read()
-                    .await
-                    .addresses()
-                    .iter()
-                    .find_map(|address| address.sapling())
-                    .ok_or(
-                        "No sapling receivers in wallet to receive change!\n\
-                        please add an address with a sapling component"
-                            .to_string(),
-                    )?
-                    .clone(),
-            );
-        }
-
         // We'll use the first ovk to encrypt outgoing transactions
         let sapling_ovk = zcash_primitives::keys::OutgoingViewingKey::from(
             &*self.unified_spend_capability().read().await,
@@ -1365,20 +1341,22 @@ impl LightWallet {
                 return Err(e);
             }
         }
-        let mut uas_vec = Vec::new();
+        let mut uas_bytes_vec = Vec::new();
         #[allow(unused_must_use)]
         for ua in destination_uas {
-            let ua_bytes = ua.encode(&self.transaction_context.config.chain);
-            if ua_bytes.len() + uas_vec.len() > 511 {
+            let mut ua_string = ua.encode(&self.transaction_context.config.chain);
+            ua_string.push('!');
+            if ua_string.len() + uas_bytes_vec.len() > 511 {
                 break;
             }
             // This is only used by future consumers, so we don't really care if this
             // goes wrong, hence the allow(unused_must_use)
-            uas_vec.write(ua_bytes.as_bytes());
+            uas_bytes_vec.write(ua_string.as_bytes());
         }
-        uas_vec.truncate(511);
+        uas_bytes_vec.truncate(511);
         let mut uas_bytes = [0u8; 511];
-        uas_bytes[..uas_vec.len()].copy_from_slice(uas_vec.as_slice());
+        uas_bytes[..uas_bytes_vec.len()].copy_from_slice(uas_bytes_vec.as_slice());
+        println!("{:?}", uas_bytes);
 
         dbg!(selected_value, target_amount);
         if let Err(e) = builder.add_orchard_output(

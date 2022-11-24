@@ -418,11 +418,17 @@ impl Utxo {
     }
 }
 
-#[derive(PartialEq)]
 pub struct OutgoingTxMetadata {
     pub address: String,
     pub value: u64,
     pub memo: Memo,
+    pub ua: Option<String>,
+}
+
+impl PartialEq for OutgoingTxMetadata {
+    fn eq(&self, other: &Self) -> bool {
+        self.address == other.address && self.value == other.value && self.memo == other.memo
+    }
 }
 
 impl OutgoingTxMetadata {
@@ -451,14 +457,22 @@ impl OutgoingTxMetadata {
             address,
             value,
             memo,
+            ua: None,
         })
     }
 
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         // Strings are written as len + utf8
-        writer.write_u64::<LittleEndian>(self.address.as_bytes().len() as u64)?;
-        writer.write_all(self.address.as_bytes())?;
-
+        match &self.ua {
+            None => {
+                writer.write_u64::<LittleEndian>(self.address.as_bytes().len() as u64)?;
+                writer.write_all(self.address.as_bytes())?;
+            }
+            Some(ua) => {
+                writer.write_u64::<LittleEndian>(ua.as_bytes().len() as u64)?;
+                writer.write_all(ua.as_bytes())?;
+            }
+        }
         writer.write_u64::<LittleEndian>(self.value)?;
         writer.write_all(self.memo.encode().as_array())
     }
@@ -502,7 +516,7 @@ pub struct TransactionMetadata {
     // Total amount of transparent funds that belong to us that were spent in this Tx.
     pub total_transparent_value_spent: u64,
 
-    // All outgoing sapling sends to addresses outside this wallet
+    // All outgoing sends to addresses outside this wallet
     pub outgoing_metadata: Vec<OutgoingTxMetadata>,
 
     // Whether this TxID was downloaded from the server and scanned for Memos
