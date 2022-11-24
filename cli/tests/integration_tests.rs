@@ -234,14 +234,15 @@ fn note_selection_order() {
 #[test]
 #[should_panic]
 fn sapling_negative_twenty_six() {
-    let (regtest_manager, client_1, client_2, _, _) = two_clients_one_saplingcoinbase_backed();
+    let (regtest_manager, client_1, client_2, child_process_handler, _) =
+        two_clients_one_saplingcoinbase_backed();
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client_1, 5).await;
 
         let client_2_saplingaddress =
             client_2.do_addresses().await[0]["receivers"]["sapling"].clone();
-        for n in 1..=8 {
-            println!("{}", client_1.do_balance().await);
+        for n in 1..=3 {
+            dbg!("Client One Balance: \n{}", client_1.do_balance().await);
 
             client_1
                 .do_send(vec![(
@@ -255,38 +256,79 @@ fn sapling_negative_twenty_six() {
             utils::increase_height_and_sync_client(&regtest_manager, &client_2, 5).await;
             // eventually will cause error -26, as the chain is advanced too far, to avoid transaction expiring too soon.
         }
-        assert_eq!(1, 1);
     });
+    drop(child_process_handler);
 }
 
 #[test]
-#[should_panic]
 fn unified_negative_twenty_six() {
-    let (regtest_manager, client_1, client_2, _, _) = two_clients_one_saplingcoinbase_backed();
+    let (regtest_manager, client_1, client_2, child_process_handler, _) =
+        two_clients_one_saplingcoinbase_backed();
     Runtime::new().unwrap().block_on(async {
-        utils::increase_height_and_sync_client(&regtest_manager, &client_1, 5).await;
+        // This client has never synced, its wallet is at block height 0.
+        let client1_wallet_height_presync = &client_1.do_wallet_last_scanned_height().await;
+        assert_eq!(client1_wallet_height_presync, 0);
 
-        // the same error happens when sending to a ua
-        let client_2_uaddress = client_2.do_addresses().await[0]["address"].clone();
-        for n in 1..=8 {
-            println!("{}", client_1.do_balance().await);
+        // sync client_1, but increase block_height by 0,
+        utils::increase_height_and_sync_client(&regtest_manager, &client_1, 0).await;
 
-            client_1
-                .do_send(vec![(
-                    &client_2_uaddress.to_string(),
-                    n * 1000,
-                    Some(n.to_string()),
-                )])
-                .await
-                .unwrap();
-            utils::increase_height_and_sync_client(&regtest_manager, &client_2, 5).await;
-            // a way to make it work is to sync client_1 instead. But if a user
-            // of the cli makes a similar action, which is easy to do because
-            // the blockchain will be adding new blocks regularly, currently it
-            // will cause this error without suggesting to sync or auto-syncing, etc.
+        // client_1 will now be aware of the 1 block that is created during setup
+        let post_incr_h_and_sync_client1_height = &client_1.do_wallet_last_scanned_height().await;
+        assert_eq!(post_incr_h_and_sync_client1_height, 1);
+
+        // since client_1 is the owner of the mineraddress (the block reward recipient) it now has 1 block
+        // reward worth of funds in a single note
+        assert_eq!(
+            client_1.do_balance().await["sapling_balance"].clone(),
+            625000000
+        );
+        // BUT ITS SPENDABLE BALANCE IS 0
+        let mut counter = 0;
+        while client_1.do_balance().await["spendable_sapling_balance"].clone() == 0 {
+            utils::increase_height_and_sync_client(&regtest_manager, &client_1, 1).await;
+            counter = counter + 1;
         }
-        //assert_eq!(1, 1);
+        // Now the first block reward (which is a particular note)is spendable becauase it has been confirmed
+        assert_eq!(
+            client_1.do_balance().await["spendable_sapling_balance"].clone(),
+            625000000
+        );
+        // HOW MANY? times
+        // assert_eq!(&client_1.do_wallet_last_scanned_height().await, 666);
+        // But the total "sapling_balance" is much higher because it includes
+        // not-yet confirmed block rewards..  in fact it is:
+        //assert_eq!(client_1.do_balance().await["sapling_balance"].clone(), 666);
+        let client_2_uaddress = client_2.do_addresses().await[0]["address"].clone();
+
+        client_1
+            .do_send(vec![(
+                &client_2_uaddress.to_string(),
+                1000,
+                Some(1000.to_string()),
+            )])
+            .await
+            .unwrap();
+        // The following sync doesn't matter since client_1 is unaware of it.
+        //utils::increase_height_and_sync_client(&regtest_manager, &client_2, 5).await;
+        let insufficient_funds_fail = client_1
+            .do_send(vec![(
+                &client_2_uaddress.to_string(),
+                1000,
+                Some(1000.to_string()),
+            )])
+            .await;
+        let expected_error = Err(format!(
+            "{}{}",
+            "Insufficient verified funds. Have 0 zats, need 2000 zats. NOTE: ",
+            "funds need at least 5 confirmations before they can be spent."
+        ));
+        assert_eq!(insufficient_funds_fail, expected_error);
+        // a way to make it work is to sync client_1 instead. But if a user
+        // of the cli makes a similar action, which is easy to do because
+        // the blockchain will be adding new blocks regularly, currently it
+        // will cause this error without suggesting to sync or auto-syncing, etc.
     });
+    drop(child_process_handler);
 }
 
 #[test]
