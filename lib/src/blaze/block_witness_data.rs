@@ -698,6 +698,7 @@ impl BlockAndWitnessData {
         let top_block = {
             let mut blocks = self.blocks_in_current_batch.read().await;
             let top_block = blocks.first().unwrap().height;
+            let bottom_block = blocks.last().unwrap().height;
             let pos = top_block - height;
 
             // Get the last witness, and then use that.
@@ -724,6 +725,7 @@ impl BlockAndWitnessData {
                     yield_now().await;
                     blocks = self.blocks_in_current_batch.read().await;
                 }
+                self.sync_status.write().await.notes_updated = top_block - bottom_block - i;
             }
 
             top_block
