@@ -13,7 +13,7 @@ pub struct BatchSyncStatus {
     pub trial_dec_done: u64,
     pub txn_scan_done: u64,
 
-    pub notes_updated: u64,
+    pub witnesses_updated: u64,
 
     pub blocks_total: u64,
 
@@ -31,7 +31,7 @@ impl BatchSyncStatus {
         self.trial_dec_done = 0;
         self.blocks_total = 0;
         self.txn_scan_done = 0;
-        self.notes_updated = 0;
+        self.witnesses_updated = 0;
         self.batch_num = 0;
         self.batch_total = batch_total;
     }
@@ -51,7 +51,7 @@ impl BatchSyncStatus {
         self.blocks_done = 0;
         self.trial_dec_done = 0;
         self.blocks_total = 0;
-        self.notes_updated = 0;
+        self.witnesses_updated = 0;
         self.txn_scan_done = 0;
         self.batch_num = batch_num;
     }
@@ -74,7 +74,7 @@ impl fmt::Display for BatchSyncStatus {
                 self.batch_total,
                 self.blocks_done,
                 self.trial_dec_done,
-                self.notes_updated,
+                self.witnesses_updated,
                 self.blocks_total
             )
         } else {

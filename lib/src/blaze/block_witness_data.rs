@@ -725,7 +725,7 @@ impl BlockAndWitnessData {
                     yield_now().await;
                     blocks = self.blocks_in_current_batch.read().await;
                 }
-                self.sync_status.write().await.notes_updated = top_block - bottom_block - i;
+                self.sync_status.write().await.witnesses_updated = top_block - bottom_block - i;
             }
 
             top_block
