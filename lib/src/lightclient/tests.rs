@@ -1534,27 +1534,27 @@ async fn mempool_and_balance(scenario: NBlockFCBLScenario) {
 
     // Even though the transaction is not mined (in the mempool) the balances should be updated to reflect the spent funds
     let new_bal = value - (sent_value + u64::from(DEFAULT_FEE));
-    assert_eq!(bal["sapling_balance"].as_u64().unwrap(), new_bal);
-    assert_eq!(bal["verified_sapling_balance"].as_u64().unwrap(), 0);
-    assert_eq!(bal["unverified_sapling_balance"].as_u64().unwrap(), new_bal);
+    assert_eq!(bal["orchard_balance"].as_u64().unwrap(), new_bal);
+    assert_eq!(bal["verified_orchard_balance"].as_u64().unwrap(), 0);
+    assert_eq!(bal["unverified_orchard_balance"].as_u64().unwrap(), new_bal);
 
     // 5. Mine the pending block, but the balances should remain the same.
     fake_compactblock_list.add_pending_sends(&data).await;
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
     let bal = lightclient.do_balance().await;
-    assert_eq!(bal["sapling_balance"].as_u64().unwrap(), new_bal);
-    assert_eq!(bal["verified_sapling_balance"].as_u64().unwrap(), 0);
-    assert_eq!(bal["unverified_sapling_balance"].as_u64().unwrap(), new_bal);
+    assert_eq!(bal["orchard_balance"].as_u64().unwrap(), new_bal);
+    assert_eq!(bal["verified_orchard_balance"].as_u64().unwrap(), 0);
+    assert_eq!(bal["unverified_orchard_balance"].as_u64().unwrap(), new_bal);
 
     // 6. Mine 10 more blocks, making the funds verified and spendable.
     mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 10)
         .await;
     let bal = lightclient.do_balance().await;
 
-    assert_eq!(bal["sapling_balance"].as_u64().unwrap(), new_bal);
-    assert_eq!(bal["verified_sapling_balance"].as_u64().unwrap(), new_bal);
-    assert_eq!(bal["unverified_sapling_balance"].as_u64().unwrap(), 0);
+    assert_eq!(bal["orchard_balance"].as_u64().unwrap(), new_bal);
+    assert_eq!(bal["verified_orchard_balance"].as_u64().unwrap(), new_bal);
+    assert_eq!(bal["unverified_orchard_balance"].as_u64().unwrap(), 0);
 }
 
 #[ignore]
