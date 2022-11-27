@@ -88,12 +88,12 @@ fn mine_sapling_to_self() {
     });
 }
 
-/// This test shows the 5th confirmation changing the state of balance by
-/// debiting unverified_orchard_balance and crediting verified_orchard_balance.  The debit amount is
-/// consistent with all the notes in the relevant block changing state.
-/// NOTE that the balance doesn't give insight into the distribution across notes.
 #[test]
 fn send_mined_sapling_to_orchard() {
+    //! This test shows the 5th confirmation changing the state of balance by
+    //! debiting unverified_orchard_balance and crediting verified_orchard_balance.  The debit amount is
+    //! consistent with all the notes in the relevant block changing state.
+    //! NOTE that the balance doesn't give insight into the distribution across notes.
     let (regtest_manager, _child_process_handler, mut client_builder) =
         saplingcoinbasebacked_spendcapable();
     let client = client_builder.new_sameseed_client(0, false);
