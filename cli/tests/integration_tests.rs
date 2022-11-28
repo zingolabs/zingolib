@@ -275,8 +275,7 @@ fn send_orchard_back_and_forth() {
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client_a, 5).await;
 
-        // do_new_address returns a single element json array for some reason
-        let ua_of_b = client_b.do_new_address("zto").await.unwrap()[0].to_string();
+        let ua_of_b = client_b.do_addresses().await[0]["address"].to_string();
         client_a
             .do_send(vec![(&ua_of_b, 10_000, Some("Orcharding".to_string()))])
             .await
@@ -292,7 +291,7 @@ fn send_orchard_back_and_forth() {
         );
         assert_eq!(client_b.do_balance().await["orchard_balance"], 10_000);
 
-        let ua_of_a = client_a.do_new_address("zto").await.unwrap()[0].to_string();
+        let ua_of_a = client_a.do_addresses().await[0]["address"].to_string();
         client_b
             .do_send(vec![(&ua_of_a, 5_000, Some("Sending back".to_string()))])
             .await
