@@ -5,19 +5,17 @@ mod utils;
 use data::TEST_SEED;
 use json::JsonValue;
 use tokio::runtime::Runtime;
-use utils::setup::{
-    basic_no_spendable, saplingcoinbasebacked_spendcapable, two_clients_one_saplingcoinbase_backed,
-};
+use utils::setup;
 #[test]
 fn create_network_disconnected_client() {
     let (_regtest_manager_1, _child_process_handler_1, _client_builder) =
-        saplingcoinbasebacked_spendcapable();
+        setup::saplingcoinbasebacked_spendcapable();
 }
 
 #[test]
 fn zcashd_sapling_commitment_tree() {
     let (regtest_manager, _child_process_handler, _client_builder) =
-        saplingcoinbasebacked_spendcapable();
+        setup::saplingcoinbasebacked_spendcapable();
     let trees = regtest_manager
         .get_cli_handle()
         .args(["z_gettreestate", "1"])
@@ -39,7 +37,7 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
         "2fd8e51a03d9bbe2dd809831b1497aeb68a6e37ddf707ced4aa2d8dff13529ae";
     let finalstates = "000000";
     // Setup
-    let (regtest_manager, _child_process_handler, _client) = basic_no_spendable();
+    let (regtest_manager, _child_process_handler, _client) = setup::basic_no_spendable();
     // Execution:
     let trees = regtest_manager
         .get_cli_handle()
@@ -78,7 +76,7 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
 #[test]
 fn mine_sapling_to_self() {
     let (regtest_manager, _child_process_handler, mut client_builder) =
-        saplingcoinbasebacked_spendcapable();
+        setup::saplingcoinbasebacked_spendcapable();
     let client = client_builder.new_sameseed_client(0, false);
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
@@ -90,24 +88,44 @@ fn mine_sapling_to_self() {
 
 #[test]
 fn send_mined_sapling_to_orchard() {
+    //! This test shows the 5th confirmation changing the state of balance by
+    //! debiting unverified_orchard_balance and crediting verified_orchard_balance.  The debit amount is
+    //! consistent with all the notes in the relevant block changing state.
+    //! NOTE that the balance doesn't give insight into the distribution across notes.
     let (regtest_manager, _child_process_handler, mut client_builder) =
-        saplingcoinbasebacked_spendcapable();
+        setup::saplingcoinbasebacked_spendcapable();
     let client = client_builder.new_sameseed_client(0, false);
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
 
         let o_addr = client.do_new_address("o").await.unwrap()[0].take();
+        let amount_to_send = 5_000;
         client
             .do_send(vec![(
                 o_addr.to_string().as_str(),
-                5000,
+                amount_to_send,
                 Some("Scenario test: engage!".to_string()),
             )])
             .await
             .unwrap();
 
-        utils::increase_height_and_sync_client(&regtest_manager, &client, 4).await;
+        utils::increase_height_and_sync_client(&regtest_manager, &client, 1).await;
+        // We just sent 5_000 zats to our own orchard address...
+        let client_notes = dbg!(client.do_list_notes(false).await);
+        let first_value = client_notes["unspent_orchard_notes"][0]["value"]
+            .as_fixed_point_u64(0)
+            .unwrap();
+        let second_value = client_notes["unspent_orchard_notes"][1]["value"]
+            .as_fixed_point_u64(0)
+            .unwrap();
+        assert_eq!(first_value, amount_to_send);
+        // Show that the total is split among notes 1 and 2.
+        assert_eq!(
+            second_value,
+            625_000_000 - (amount_to_send + u64::from(DEFAULT_FEE))
+        );
         let balance = client.do_balance().await;
+        utils::increase_height_and_sync_client(&regtest_manager, &client, 4).await;
         // We send change to orchard now, so we should have the full value of the note
         // we spent, minus the transaction fee
         assert_eq!(
@@ -137,7 +155,7 @@ fn note_selection_order() {
     //!   * sends to a sapling address
     //!   * sends back to the original sender's UA
     let (regtest_manager, client_1, client_2, child_process_handler, _) =
-        two_clients_one_saplingcoinbase_backed();
+        setup::two_clients_one_saplingcoinbase_backed();
 
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client_1, 5).await;
@@ -253,7 +271,7 @@ fn note_selection_order() {
 #[test]
 fn send_orchard_back_and_forth() {
     let (regtest_manager, client_a, client_b, child_process_handler, _) =
-        two_clients_one_saplingcoinbase_backed();
+        setup::two_clients_one_saplingcoinbase_backed();
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client_a, 5).await;
 
@@ -303,7 +321,7 @@ fn send_orchard_back_and_forth() {
 #[test]
 fn diversified_addresses_receive_funds_in_best_pool() {
     let (regtest_manager, client_a, client_b, child_process_handler, _) =
-        two_clients_one_saplingcoinbase_backed();
+        setup::two_clients_one_saplingcoinbase_backed();
     Runtime::new().unwrap().block_on(async {
         client_b.do_new_address("o").await.unwrap();
         client_b.do_new_address("zo").await.unwrap();
@@ -344,7 +362,7 @@ fn diversified_addresses_receive_funds_in_best_pool() {
 #[test]
 fn rescan_still_have_outgoing_metadata() {
     let (regtest_manager, client_one, client_two, child_process_handler, _) =
-        two_clients_one_saplingcoinbase_backed();
+        setup::two_clients_one_saplingcoinbase_backed();
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client_one, 5).await;
         let sapling_addr_of_two = client_two.do_new_address("tz").await.unwrap();
@@ -370,7 +388,7 @@ fn rescan_still_have_outgoing_metadata() {
 #[test]
 fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
     let (regtest_manager, child_process_handler, mut client_builder) =
-        saplingcoinbasebacked_spendcapable();
+        setup::saplingcoinbasebacked_spendcapable();
     let client = client_builder.new_sameseed_client(0, false);
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
@@ -424,7 +442,7 @@ fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
 #[test]
 fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
     let (regtest_manager, sender, recipient, child_process_handler, mut client_builder) =
-        two_clients_one_saplingcoinbase_backed();
+        setup::two_clients_one_saplingcoinbase_backed();
     let mut expected_unspent_sapling_notes = json::object! {
 
             "created_in_block" =>  7,
@@ -537,7 +555,7 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
 #[test]
 fn ensure_taddrs_from_old_seeds_work() {
     let (_regtest_manager, child_process_handler, mut client_builder) =
-        saplingcoinbasebacked_spendcapable();
+        setup::saplingcoinbasebacked_spendcapable();
     // The first taddr generated on commit 9e71a14eb424631372fd08503b1bd83ea763c7fb
     let transparent_address = "tmFLszfkjgim4zoUMAXpuohnFBAKy99rr2i";
 
@@ -576,7 +594,7 @@ fn ensure_taddrs_from_old_seeds_work() {
 #[test]
 fn cross_compat() {
     let (_regtest_manager, current_client, fixed_taddr_client, child_process_handler) =
-        utils::setup::cross_version_setup();
+        setup::cross_version_setup();
 
     tokio::runtime::Runtime::new().unwrap().block_on(async {
         let fixed_taddr_seed = fixed_taddr_client.do_seed_phrase().await.unwrap();
@@ -592,7 +610,7 @@ fn cross_compat() {
 #[test]
 fn t_incoming_t_outgoing() {
     let (regtest_manager, sender, recipient, child_process_handler, _client_builder) =
-        two_clients_one_saplingcoinbase_backed();
+        setup::two_clients_one_saplingcoinbase_backed();
 
     tokio::runtime::Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &sender, 9).await;
@@ -728,7 +746,7 @@ fn t_incoming_t_outgoing() {
 #[test]
 fn send_to_ua_saves_full_ua_in_wallet() {
     let (regtest_manager, sender, recipient, child_process_handler, _client_builder) =
-        two_clients_one_saplingcoinbase_backed();
+        setup::two_clients_one_saplingcoinbase_backed();
     tokio::runtime::Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &sender, 5).await;
         let recipient_address = recipient.do_addresses().await[0]["address"].take();
