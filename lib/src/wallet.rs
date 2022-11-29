@@ -1361,8 +1361,8 @@ impl LightWallet {
                 .orchard()
                 .unwrap(),
             dbg!(u64::from(selected_value) - u64::from(target_amount)),
-            // Here we store the uas we sent to in the memo field. We don't use these yet,
-            // but they will eventually be used during rescan, to recover the full UA we sent to.
+            // Here we store the uas we sent to in the memo field.
+            // These are used to recover the full UA we sent to.
             MemoBytes::from(Memo::Arbitrary(Box::new(uas_bytes))),
         ) {
             let e = format!("Error adding change output: {:?}", e);

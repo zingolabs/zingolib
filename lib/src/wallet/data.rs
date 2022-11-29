@@ -419,7 +419,7 @@ impl Utxo {
 }
 
 pub struct OutgoingTxMetadata {
-    pub address: String,
+    pub to_address: String,
     pub value: u64,
     pub memo: Memo,
     pub ua: Option<String>,
@@ -427,7 +427,7 @@ pub struct OutgoingTxMetadata {
 
 impl PartialEq for OutgoingTxMetadata {
     fn eq(&self, other: &Self) -> bool {
-        self.address == other.address && self.value == other.value && self.memo == other.memo
+        self.to_address == other.to_address && self.value == other.value && self.memo == other.memo
     }
 }
 
@@ -454,7 +454,7 @@ impl OutgoingTxMetadata {
         }?;
 
         Ok(OutgoingTxMetadata {
-            address,
+            to_address: address,
             value,
             memo,
             ua: None,
@@ -465,8 +465,8 @@ impl OutgoingTxMetadata {
         // Strings are written as len + utf8
         match &self.ua {
             None => {
-                writer.write_u64::<LittleEndian>(self.address.as_bytes().len() as u64)?;
-                writer.write_all(self.address.as_bytes())?;
+                writer.write_u64::<LittleEndian>(self.to_address.as_bytes().len() as u64)?;
+                writer.write_all(self.to_address.as_bytes())?;
             }
             Some(ua) => {
                 writer.write_u64::<LittleEndian>(ua.as_bytes().len() as u64)?;

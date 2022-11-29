@@ -864,7 +864,7 @@ impl LightClient {
                         .iter()
                         .map(|om| {
                             let mut o = object! {
-                                "address" => om.ua.clone().unwrap_or(om.address.clone()),
+                                "address" => om.ua.clone().unwrap_or(om.to_address.clone()),
                                 "value"   => om.value,
                                 "memo"    => LightWallet::memo_str(Some(om.memo.clone()))
                             };

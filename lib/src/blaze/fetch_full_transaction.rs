@@ -132,7 +132,7 @@ impl TransactionContext {
 
                     if taddr.is_some() && !taddrs_set.contains(taddr.as_ref().unwrap()) {
                         outgoing_metadatas.push(OutgoingTxMetadata {
-                            address: taddr.unwrap(),
+                            to_address: taddr.unwrap(),
                             value: vout.value.into(),
                             memo: Memo::Empty,
                             ua: None,
@@ -196,7 +196,7 @@ impl TransactionContext {
                             if let Some(out_metadata) =
                                 transaction.outgoing_metadata.iter_mut().find(|out_meta| {
                                     outgoing_potential_receivers
-                                        .contains(&Some(out_meta.address.clone()))
+                                        .contains(&Some(out_meta.to_address.clone()))
                                 })
                             {
                                 out_metadata.ua = Some(ua.encode(&self.config.chain));
@@ -537,7 +537,7 @@ impl TransactionContext {
                                 ) {
                                     if let Memo::Text(_) = memo {
                                         Some(OutgoingTxMetadata {
-                                            address,
+                                            to_address: address,
                                             value: D::WalletNote::value_from_note(&note),
                                             memo,
                                             ua: None,
@@ -547,7 +547,7 @@ impl TransactionContext {
                                     }
                                 } else {
                                     Some(OutgoingTxMetadata {
-                                        address,
+                                        to_address: address,
                                         value: D::WalletNote::value_from_note(&note),
                                         memo,
                                         ua: None,
