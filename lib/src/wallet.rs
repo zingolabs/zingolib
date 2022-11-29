@@ -2,6 +2,7 @@
 //! from a source outside of the code-base e.g. a wallet-file.
 use crate::blaze::fetch_full_transaction::TransactionContext;
 use crate::compact_formats::TreeState;
+use crate::utils::create_wallet_internal_memo_version_0;
 use crate::wallet::data::TransactionMetadata;
 
 use crate::wallet::data::SpendableSaplingNote;
@@ -1341,22 +1342,17 @@ impl LightWallet {
                 return Err(e);
             }
         }
-        let mut uas_bytes_vec = Vec::new();
-        #[allow(unused_must_use)]
-        for ua in destination_uas {
-            let mut ua_string = ua.encode(&self.transaction_context.config.chain);
-            ua_string.push('!');
-            if ua_string.len() + uas_bytes_vec.len() > 511 {
-                break;
+        let uas_bytes = match create_wallet_internal_memo_version_0(&destination_uas) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                log::error!(
+                    "Could not write uas to memo field: {e}\n\
+        Your wallet will display an incorrect sent-to address. This is a visual error only.\n\
+        The correct address was sent to."
+                );
+                [0; 511]
             }
-            // This is only used by future consumers, so we don't really care if this
-            // goes wrong, hence the allow(unused_must_use)
-            uas_bytes_vec.write(ua_string.as_bytes());
-        }
-        uas_bytes_vec.truncate(511);
-        let mut uas_bytes = [0u8; 511];
-        uas_bytes[..uas_bytes_vec.len()].copy_from_slice(uas_bytes_vec.as_slice());
-        println!("{:?}", uas_bytes);
+        };
 
         dbg!(selected_value, target_amount);
         if let Err(e) = builder.add_orchard_output(

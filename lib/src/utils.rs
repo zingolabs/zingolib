@@ -4,6 +4,49 @@ use zcash_address::unified::{Address, Container, Encoding, Receiver};
 use zcash_client_backend::address::UnifiedAddress;
 use zcash_encoding::{CompactSize, Vector};
 
+pub const MEMO_VERSION: usize = 0;
+
+#[non_exhaustive]
+pub enum ParsedMemo {
+    Version0 { uas: Vec<UnifiedAddress> },
+}
+
+pub fn create_wallet_internal_memo_version_0(uas: &[UnifiedAddress]) -> io::Result<[u8; 511]> {
+    let mut uas_bytes_vec = Vec::new();
+    CompactSize::write(&mut uas_bytes_vec, crate::utils::MEMO_VERSION)?;
+    Vector::write(&mut uas_bytes_vec, uas, |mut w, ua| {
+        write_unified_address_to_raw_encoding(&ua, &mut w)
+    })?;
+    let mut uas_bytes = [0u8; 511];
+    if uas_bytes_vec.len() > 511 {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Too many uas to fit in memo field",
+        ))
+    } else {
+        uas_bytes[..uas_bytes_vec.len()].copy_from_slice(uas_bytes_vec.as_slice());
+        Ok(uas_bytes)
+    }
+}
+
+pub fn read_wallet_internal_memo(memo: [u8; 511]) -> io::Result<ParsedMemo> {
+    let mut reader: &[u8] = &memo;
+    match CompactSize::read(&mut reader)? {
+        0 => Ok(ParsedMemo::Version0 {
+            uas: Vector::read(&mut reader, |mut r| {
+                read_unified_address_from_raw_encoding(&mut r)
+            })?,
+        }),
+        _ => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Received memo from a future version of this protocol.\n\
+            Please ensure your software is up-to-date",
+            ))
+        }
+    }
+}
+
 pub fn write_unified_address_to_raw_encoding<W: Write>(
     ua: &UnifiedAddress,
     writer: W,

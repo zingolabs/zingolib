@@ -1,12 +1,15 @@
-use crate::wallet::{
-    data::OutgoingTxMetadata,
-    keys::{address_from_pubkeyhash, unified::UnifiedSpendCapability, ToBase58Check},
-    traits::{
-        self as zingo_traits, Bundle as _, DomainWalletExt, Nullifier as _,
-        ReceivedNoteAndMetadata as _, Recipient as _, ShieldedOutputExt as _, Spend as _,
-        ToBytes as _,
+use crate::{
+    utils::{read_wallet_internal_memo, ParsedMemo},
+    wallet::{
+        data::OutgoingTxMetadata,
+        keys::{address_from_pubkeyhash, unified::UnifiedSpendCapability, ToBase58Check},
+        traits::{
+            self as zingo_traits, Bundle as _, DomainWalletExt, Nullifier as _,
+            ReceivedNoteAndMetadata as _, Recipient as _, ShieldedOutputExt as _, Spend as _,
+            ToBytes as _,
+        },
+        transactions::TransactionMetadataSet,
     },
-    transactions::TransactionMetadataSet,
 };
 
 use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
@@ -15,7 +18,6 @@ use orchard::note_encryption::OrchardDomain;
 use std::{
     collections::HashSet,
     convert::TryInto,
-    io::Read,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
@@ -174,17 +176,9 @@ impl TransactionContext {
         arbitrary_memos_with_txids: Vec<([u8; 511], TxId)>,
     ) {
         for (wallet_internal_data, txid) in arbitrary_memos_with_txids {
-            let mut uas_bytes = vec![0; 511];
-            wallet_internal_data
-                .as_slice()
-                .read(&mut uas_bytes)
-                .unwrap();
-            let uas_string = String::from_utf8(uas_bytes);
-            if let Ok(uas_string) = uas_string {
-                for ua_string in uas_string.split('!') {
-                    if let Some(RecipientAddress::Unified(ua)) =
-                        RecipientAddress::decode(&self.config.chain, ua_string)
-                    {
+            match read_wallet_internal_memo(wallet_internal_data) {
+                Ok(ParsedMemo::Version0 { uas }) => {
+                    for ua in uas {
                         if let Some(transaction) = self
                             .transaction_metadata_set
                             .write()
@@ -205,12 +199,25 @@ impl TransactionContext {
                                         .contains(&Some(metadata.address.clone()))
                                 })
                             {
-                                metadata.ua = Some(ua_string.to_string());
+                                metadata.ua = Some(ua.encode(&self.config.chain));
                             } else {
+                                log::error!(
+                                    "Recieved memo indicating you sent to \
+                                    an address you don't have on record.\n({})\n\
+                                    This may mean you are being sent malicious data.\n\
+                                    Some information may not be displayed correctly",
+                                    ua.encode(&self.config.chain)
+                                )
                             }
                         }
                     }
                 }
+                Err(e) => log::error!(
+                    "Could not decode wallet internal memo: {e}.\n\
+                    Have you recently used a more up-to-date version of\
+                    this software?\nIf not, this may mean you are being sent\
+                    malicious data.\nSome information may not display correctly"
+                ),
             }
         }
     }
