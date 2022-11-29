@@ -269,13 +269,13 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
 
     let notes = lightclient.do_list_notes(true).await;
     // Has a new (unconfirmed) unspent note (the change)
-    assert_eq!(notes["unspent_sapling_notes"].len(), 1);
+    assert_eq!(notes["unspent_orchard_notes"].len(), 1);
     assert_eq!(
-        notes["unspent_sapling_notes"][0]["created_in_txid"],
+        notes["unspent_orchard_notes"][0]["created_in_txid"],
         sent_transaction_id
     );
     assert_eq!(
-        notes["unspent_sapling_notes"][0]["unconfirmed"]
+        notes["unspent_orchard_notes"][0]["unconfirmed"]
             .as_bool()
             .unwrap(),
         true
@@ -336,32 +336,32 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
     assert_eq!(jv.contains("unconfirmed"), false);
     assert_eq!(jv["block_height"].as_u64().unwrap(), 17);
 
-    // 8. Check the notes to see that we have one spent note and one unspent note (change)
+    // 8. Check the notes to see that we have one spent sapling note and one unspent orchard note (change)
     let notes = lightclient.do_list_notes(true).await;
     println!("{}", json::stringify_pretty(notes.clone(), 4));
-    assert_eq!(notes["unspent_sapling_notes"].len(), 1);
+    assert_eq!(notes["unspent_orchard_notes"].len(), 1);
     assert_eq!(
-        notes["unspent_sapling_notes"][0]["created_in_block"]
+        notes["unspent_orchard_notes"][0]["created_in_block"]
             .as_u64()
             .unwrap(),
         17
     );
     assert_eq!(
-        notes["unspent_sapling_notes"][0]["created_in_txid"],
+        notes["unspent_orchard_notes"][0]["created_in_txid"],
         sent_transaction_id
     );
     assert_eq!(
-        notes["unspent_sapling_notes"][0]["value"].as_u64().unwrap(),
+        notes["unspent_orchard_notes"][0]["value"].as_u64().unwrap(),
         value - sent_value - u64::from(DEFAULT_FEE)
     );
     assert_eq!(
-        notes["unspent_sapling_notes"][0]["is_change"]
+        notes["unspent_orchard_notes"][0]["is_change"]
             .as_bool()
             .unwrap(),
         true
     );
     assert_eq!(
-        notes["unspent_sapling_notes"][0]["spendable"]
+        notes["unspent_orchard_notes"][0]["spendable"]
             .as_bool()
             .unwrap(),
         false
@@ -876,142 +876,6 @@ async fn sapling_incoming_viewkey(scenario: NBlockFCBLScenario) {
     );
 }*/
 
-apply_scenario! {t_incoming_t_outgoing 10}
-async fn t_incoming_t_outgoing(scenario: NBlockFCBLScenario) {
-    let NBlockFCBLScenario {
-        data,
-        lightclient,
-        mut fake_compactblock_list,
-        ..
-    } = scenario;
-
-    // 2. Get an incoming transaction to a t address
-    let (_sk, pk, taddr) = get_transparent_secretkey_pubkey_taddr(&lightclient).await;
-    let value = 100_000;
-
-    let mut fake_transaction = FakeTransaction::new(true);
-    fake_transaction.add_t_output(&pk, taddr.clone(), value);
-    let (transaction, _) = fake_compactblock_list.add_fake_transaction(fake_transaction);
-    let txid = transaction.txid();
-    mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
-
-    // 3. Test the list
-    let list = lightclient.do_list_transactions(false).await;
-    assert_eq!(list[0]["block_height"].as_u64().unwrap(), 11);
-    assert_eq!(list[0]["txid"], txid.to_string());
-    assert_eq!(list[0]["address"], taddr);
-    assert_eq!(list[0]["amount"].as_u64().unwrap(), value);
-
-    // 4. We can spend the funds immediately, since this is a taddr
-    let sent_value = 20_000;
-    let sent_transaction_id = lightclient
-        .test_do_send(vec![(EXT_TADDR, sent_value, None)])
-        .await
-        .unwrap();
-
-    // 5. Test the unconfirmed send.
-    let list = lightclient.do_list_transactions(false).await;
-    assert_eq!(list[1]["block_height"].as_u64().unwrap(), 12);
-    assert_eq!(list[1]["txid"], sent_transaction_id);
-    assert_eq!(
-        list[1]["amount"].as_i64().unwrap(),
-        -(sent_value as i64 + i64::from(DEFAULT_FEE))
-    );
-    assert_eq!(list[1]["unconfirmed"].as_bool().unwrap(), true);
-    assert_eq!(list[1]["outgoing_metadata"][0]["address"], EXT_TADDR);
-    assert_eq!(
-        list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
-        sent_value
-    );
-
-    // 7. Mine the sent transaction
-    fake_compactblock_list.add_pending_sends(&data).await;
-    mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
-
-    let notes = lightclient.do_list_notes(true).await;
-    assert_eq!(
-        notes["spent_utxos"][0]["created_in_block"]
-            .as_u64()
-            .unwrap(),
-        11
-    );
-    assert_eq!(
-        notes["spent_utxos"][0]["spent_at_height"].as_u64().unwrap(),
-        12
-    );
-    assert_eq!(notes["spent_utxos"][0]["spent"], sent_transaction_id);
-
-    // Change shielded note
-    assert_eq!(
-        notes["unspent_sapling_notes"][0]["created_in_block"]
-            .as_u64()
-            .unwrap(),
-        12
-    );
-    assert_eq!(
-        notes["unspent_sapling_notes"][0]["created_in_txid"],
-        sent_transaction_id
-    );
-    assert_eq!(
-        notes["unspent_sapling_notes"][0]["is_change"]
-            .as_bool()
-            .unwrap(),
-        true
-    );
-    assert_eq!(
-        notes["unspent_sapling_notes"][0]["value"].as_u64().unwrap(),
-        value - sent_value - u64::from(DEFAULT_FEE)
-    );
-
-    let list = lightclient.do_list_transactions(false).await;
-
-    assert_eq!(list[1]["block_height"].as_u64().unwrap(), 12);
-    assert_eq!(list[1]["txid"], sent_transaction_id);
-    assert_eq!(list[1]["unconfirmed"].as_bool().unwrap(), false);
-    assert_eq!(list[1]["outgoing_metadata"][0]["address"], EXT_TADDR);
-    assert_eq!(
-        list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
-        sent_value
-    );
-
-    // Make sure everything is fine even after the rescan
-
-    lightclient.do_rescan().await.unwrap();
-
-    let list = lightclient.do_list_transactions(false).await;
-    assert_eq!(list[1]["block_height"].as_u64().unwrap(), 12);
-    assert_eq!(list[1]["txid"], sent_transaction_id);
-    assert_eq!(list[1]["unconfirmed"].as_bool().unwrap(), false);
-    assert_eq!(list[1]["outgoing_metadata"][0]["address"], EXT_TADDR);
-    assert_eq!(
-        list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
-        sent_value
-    );
-
-    let notes = lightclient.do_list_notes(true).await;
-    // Change shielded note
-    assert_eq!(
-        notes["unspent_sapling_notes"][0]["created_in_block"]
-            .as_u64()
-            .unwrap(),
-        12
-    );
-    assert_eq!(
-        notes["unspent_sapling_notes"][0]["created_in_txid"],
-        sent_transaction_id
-    );
-    assert_eq!(
-        notes["unspent_sapling_notes"][0]["is_change"]
-            .as_bool()
-            .unwrap(),
-        true
-    );
-    assert_eq!(
-        notes["unspent_sapling_notes"][0]["value"].as_u64().unwrap(),
-        value - sent_value - u64::from(DEFAULT_FEE)
-    );
-}
-
 apply_scenario! {mixed_transaction 10}
 async fn mixed_transaction(scenario: NBlockFCBLScenario) {
     let NBlockFCBLScenario {
@@ -1054,28 +918,28 @@ async fn mixed_transaction(scenario: NBlockFCBLScenario) {
     let list = lightclient.do_list_transactions(false).await;
 
     // 5. Check everything
-    assert_eq!(notes["unspent_sapling_notes"].len(), 1);
+    assert_eq!(notes["unspent_orchard_notes"].len(), 1);
     assert_eq!(
-        notes["unspent_sapling_notes"][0]["created_in_block"]
+        notes["unspent_orchard_notes"][0]["created_in_block"]
             .as_u64()
             .unwrap(),
         18
     );
     assert_eq!(
-        notes["unspent_sapling_notes"][0]["is_change"]
+        notes["unspent_orchard_notes"][0]["is_change"]
             .as_bool()
             .unwrap(),
         true
     );
     assert_eq!(
-        notes["unspent_sapling_notes"][0]["value"].as_u64().unwrap(),
+        notes["unspent_orchard_notes"][0]["value"].as_u64().unwrap(),
         tvalue + zvalue - sent_tvalue - sent_zvalue - u64::from(DEFAULT_FEE)
     );
 
     assert_eq!(notes["spent_sapling_notes"].len(), 1);
     assert_eq!(
         notes["spent_sapling_notes"][0]["spent"],
-        notes["unspent_sapling_notes"][0]["created_in_txid"]
+        notes["unspent_orchard_notes"][0]["created_in_txid"]
     );
 
     assert_eq!(notes["pending_sapling_notes"].len(), 0);
@@ -1085,7 +949,7 @@ async fn mixed_transaction(scenario: NBlockFCBLScenario) {
     assert_eq!(notes["spent_utxos"].len(), 1);
     assert_eq!(
         notes["spent_utxos"][0]["spent"],
-        notes["unspent_sapling_notes"][0]["created_in_txid"]
+        notes["unspent_orchard_notes"][0]["created_in_txid"]
     );
 
     assert_eq!(list.len(), 3);
@@ -1096,7 +960,7 @@ async fn mixed_transaction(scenario: NBlockFCBLScenario) {
     );
     assert_eq!(
         list[2]["txid"],
-        notes["unspent_sapling_notes"][0]["created_in_txid"]
+        notes["unspent_orchard_notes"][0]["created_in_txid"]
     );
     assert_eq!(
         list[2]["outgoing_metadata"]
@@ -1174,7 +1038,7 @@ async fn aborted_resync(scenario: NBlockFCBLScenario) {
                 .collect(),
         ))
         .unwrap()
-        .sapling_notes
+        .orchard_notes
         .get(0)
         .unwrap()
         .witnesses
@@ -1207,7 +1071,7 @@ async fn aborted_resync(scenario: NBlockFCBLScenario) {
                 .collect(),
         ))
         .unwrap()
-        .sapling_notes
+        .orchard_notes
         .get(0)
         .unwrap()
         .witnesses
@@ -1591,17 +1455,18 @@ async fn mempool_clearing(scenario: NBlockFCBLScenario) {
     let transactions = lightclient.do_list_transactions(false).await;
 
     // There is 1 unspent note, which is the unconfirmed transaction
-    assert_eq!(notes["unspent_sapling_notes"].len(), 1);
+    println!("{}", json::stringify_pretty(notes.clone(), 4));
+    println!("{}", json::stringify_pretty(transactions.clone(), 4));
+    // One unspent note, change, unconfirmed
+    assert_eq!(notes["unspent_orchard_notes"].len(), 1);
+    assert_eq!(notes["unspent_sapling_notes"].len(), 0);
+    let note = notes["unspent_orchard_notes"][0].clone();
+    assert_eq!(note["created_in_txid"], sent_transaction_id);
     assert_eq!(
-        notes["unspent_sapling_notes"][0]["created_in_txid"],
-        sent_transaction_id
+        note["value"].as_u64().unwrap(),
+        value - sent_value - u64::from(DEFAULT_FEE)
     );
-    assert_eq!(
-        notes["unspent_sapling_notes"][0]["unconfirmed"]
-            .as_bool()
-            .unwrap(),
-        true
-    );
+    assert_eq!(note["unconfirmed"].as_bool().unwrap(), true);
     assert_eq!(transactions.len(), 2);
 
     // 7. Mine 100 blocks, so the mempool expires
@@ -1669,27 +1534,27 @@ async fn mempool_and_balance(scenario: NBlockFCBLScenario) {
 
     // Even though the transaction is not mined (in the mempool) the balances should be updated to reflect the spent funds
     let new_bal = value - (sent_value + u64::from(DEFAULT_FEE));
-    assert_eq!(bal["sapling_balance"].as_u64().unwrap(), new_bal);
-    assert_eq!(bal["verified_sapling_balance"].as_u64().unwrap(), 0);
-    assert_eq!(bal["unverified_sapling_balance"].as_u64().unwrap(), new_bal);
+    assert_eq!(bal["orchard_balance"].as_u64().unwrap(), new_bal);
+    assert_eq!(bal["verified_orchard_balance"].as_u64().unwrap(), 0);
+    assert_eq!(bal["unverified_orchard_balance"].as_u64().unwrap(), new_bal);
 
     // 5. Mine the pending block, but the balances should remain the same.
     fake_compactblock_list.add_pending_sends(&data).await;
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
     let bal = lightclient.do_balance().await;
-    assert_eq!(bal["sapling_balance"].as_u64().unwrap(), new_bal);
-    assert_eq!(bal["verified_sapling_balance"].as_u64().unwrap(), 0);
-    assert_eq!(bal["unverified_sapling_balance"].as_u64().unwrap(), new_bal);
+    assert_eq!(bal["orchard_balance"].as_u64().unwrap(), new_bal);
+    assert_eq!(bal["verified_orchard_balance"].as_u64().unwrap(), 0);
+    assert_eq!(bal["unverified_orchard_balance"].as_u64().unwrap(), new_bal);
 
     // 6. Mine 10 more blocks, making the funds verified and spendable.
     mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 10)
         .await;
     let bal = lightclient.do_balance().await;
 
-    assert_eq!(bal["sapling_balance"].as_u64().unwrap(), new_bal);
-    assert_eq!(bal["verified_sapling_balance"].as_u64().unwrap(), new_bal);
-    assert_eq!(bal["unverified_sapling_balance"].as_u64().unwrap(), 0);
+    assert_eq!(bal["orchard_balance"].as_u64().unwrap(), new_bal);
+    assert_eq!(bal["verified_orchard_balance"].as_u64().unwrap(), new_bal);
+    assert_eq!(bal["unverified_orchard_balance"].as_u64().unwrap(), 0);
 }
 
 #[ignore]

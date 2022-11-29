@@ -505,6 +505,9 @@ impl TransactionMetadataSet {
             self.current.get_mut(txid).map(|transaction_metadata| {
                 transaction_metadata.sapling_notes.iter_mut().for_each(|n| {
                     n.is_change = true;
+                });
+                transaction_metadata.orchard_notes.iter_mut().for_each(|n| {
+                    n.is_change = true;
                 })
             });
         }

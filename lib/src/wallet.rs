@@ -3,6 +3,7 @@
 use crate::blaze::fetch_full_transaction::TransactionContext;
 use crate::compact_formats::TreeState;
 use crate::wallet::data::TransactionMetadata;
+use crate::wallet_internal_memo_handling::create_wallet_internal_memo_version_0;
 
 use crate::wallet::data::SpendableSaplingNote;
 use bip0039::Mnemonic;
@@ -679,6 +680,7 @@ impl LightWallet {
     pub fn memo_str(memo: Option<Memo>) -> Option<String> {
         match memo {
             Some(Memo::Text(m)) => Some(m.to_string()),
+            Some(Memo::Arbitrary(_)) => Some("Wallet-internal memo".to_string()),
             _ => None,
         }
     }
@@ -1162,6 +1164,15 @@ impl LightWallet {
             .collect::<Result<Vec<(address::RecipientAddress, Amount, Option<String>)>, String>>(
             )?;
 
+        let destination_uas = recipients
+            .iter()
+            .filter_map(|recipient| match recipient.0 {
+                address::RecipientAddress::Shielded(_) => None,
+                address::RecipientAddress::Transparent(_) => None,
+                address::RecipientAddress::Unified(ref ua) => Some(ua.clone()),
+            })
+            .collect::<Vec<_>>();
+
         // Select notes to cover the target value
         println!("{}: Selecting notes", now() - start_time);
 
@@ -1273,30 +1284,6 @@ impl LightWallet {
             }
         }
 
-        //TODO: Send change to orchard instead of sapling
-        // If no Sapling notes were added, add the change address manually. That is,
-        // send the change to our sapling address manually. Note that if a sapling note was spent,
-        // the builder will automatically send change to that address
-        if sapling_notes.len() == 0 {
-            builder.send_change_to(
-                zcash_primitives::keys::OutgoingViewingKey::from(
-                    &*self.unified_spend_capability().read().await,
-                ),
-                self.unified_spend_capability()
-                    .read()
-                    .await
-                    .addresses()
-                    .iter()
-                    .find_map(|address| address.sapling())
-                    .ok_or(
-                        "No sapling receivers in wallet to receive change!\n\
-                        please add an address with a sapling component"
-                            .to_string(),
-                    )?
-                    .clone(),
-            );
-        }
-
         // We'll use the first ovk to encrypt outgoing transactions
         let sapling_ovk = zcash_primitives::keys::OutgoingViewingKey::from(
             &*self.unified_spend_capability().read().await,
@@ -1357,6 +1344,33 @@ impl LightWallet {
                 error!("{}", e);
                 return Err(e);
             }
+        }
+        let uas_bytes = match create_wallet_internal_memo_version_0(&destination_uas) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                log::error!(
+                    "Could not write uas to memo field: {e}\n\
+        Your wallet will display an incorrect sent-to address. This is a visual error only.\n\
+        The correct address was sent to."
+                );
+                [0; 511]
+            }
+        };
+
+        dbg!(selected_value, target_amount);
+        if let Err(e) = builder.add_orchard_output(
+            Some(orchard_ovk.clone()),
+            *self.unified_spend_capability().read().await.addresses()[0]
+                .orchard()
+                .unwrap(),
+            dbg!(u64::from(selected_value) - u64::from(target_amount)),
+            // Here we store the uas we sent to in the memo field.
+            // These are used to recover the full UA we sent to.
+            MemoBytes::from(Memo::Arbitrary(Box::new(uas_bytes))),
+        ) {
+            let e = format!("Error adding change output: {:?}", e);
+            error!("{}", e);
+            return Err(e);
         }
 
         // Set up a channel to recieve updates on the progress of building the transaction.

@@ -1,12 +1,15 @@
-use crate::wallet::{
-    data::OutgoingTxMetadata,
-    keys::{address_from_pubkeyhash, unified::UnifiedSpendCapability, ToBase58Check},
-    traits::{
-        self as zingo_traits, Bundle as _, DomainWalletExt, Nullifier as _,
-        ReceivedNoteAndMetadata as _, Recipient as _, ShieldedOutputExt as _, Spend as _,
-        ToBytes as _,
+use crate::{
+    wallet::{
+        data::OutgoingTxMetadata,
+        keys::{address_from_pubkeyhash, unified::UnifiedSpendCapability, ToBase58Check},
+        traits::{
+            self as zingo_traits, Bundle as _, DomainWalletExt, Nullifier as _,
+            ReceivedNoteAndMetadata as _, Recipient as _, ShieldedOutputExt as _, Spend as _,
+            ToBytes as _,
+        },
+        transactions::TransactionMetadataSet,
     },
-    transactions::TransactionMetadataSet,
+    wallet_internal_memo_handling::{read_wallet_internal_memo, ParsedMemo},
 };
 
 use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
@@ -69,6 +72,7 @@ impl TransactionContext {
         block_time: u32,
         price: Option<f64>,
     ) {
+        let mut arbitrary_memos_with_txids = Vec::new();
         // Remember if this is an outgoing Tx. Useful for when we want to grab the outgoing metadata.
         let mut is_outgoing_transaction = false;
 
@@ -94,6 +98,7 @@ impl TransactionContext {
             block_time,
             &mut is_outgoing_transaction,
             &mut outgoing_metadatas,
+            &mut arbitrary_memos_with_txids,
         )
         .await;
         self.scan_orchard_bundle(
@@ -103,6 +108,7 @@ impl TransactionContext {
             block_time,
             &mut is_outgoing_transaction,
             &mut outgoing_metadatas,
+            &mut arbitrary_memos_with_txids,
         )
         .await;
 
@@ -126,9 +132,10 @@ impl TransactionContext {
 
                     if taddr.is_some() && !taddrs_set.contains(taddr.as_ref().unwrap()) {
                         outgoing_metadatas.push(OutgoingTxMetadata {
-                            address: taddr.unwrap(),
+                            to_address: taddr.unwrap(),
                             value: vout.value.into(),
                             memo: Memo::Empty,
+                            ua: None,
                         });
                     }
                 }
@@ -150,6 +157,9 @@ impl TransactionContext {
                 .add_outgoing_metadata(&transaction.txid(), outgoing_metadatas);
         }
 
+        self.update_outgoing_metadatas_with_uas(arbitrary_memos_with_txids)
+            .await;
+
         // Update price if available
         if price.is_some() {
             self.transaction_metadata_set
@@ -159,6 +169,57 @@ impl TransactionContext {
         }
 
         //info!("Finished Fetching full transaction {}", tx.txid());
+    }
+
+    async fn update_outgoing_metadatas_with_uas(
+        &self,
+        arbitrary_memos_with_txids: Vec<([u8; 511], TxId)>,
+    ) {
+        for (wallet_internal_data, txid) in arbitrary_memos_with_txids {
+            match read_wallet_internal_memo(wallet_internal_data) {
+                Ok(ParsedMemo::Version0 { uas }) => {
+                    for ua in uas {
+                        if let Some(transaction) = self
+                            .transaction_metadata_set
+                            .write()
+                            .await
+                            .current
+                            .get_mut(&txid)
+                        {
+                            let outgoing_potential_receivers = [
+                                ua.orchard()
+                                    .map(|oaddr| oaddr.b32encode_for_network(&self.config.chain)),
+                                ua.sapling()
+                                    .map(|zaddr| zaddr.b32encode_for_network(&self.config.chain)),
+                                address_from_pubkeyhash(&self.config, ua.transparent().cloned()),
+                            ];
+                            if let Some(out_metadata) =
+                                transaction.outgoing_metadata.iter_mut().find(|out_meta| {
+                                    outgoing_potential_receivers
+                                        .contains(&Some(out_meta.to_address.clone()))
+                                })
+                            {
+                                out_metadata.ua = Some(ua.encode(&self.config.chain));
+                            } else {
+                                log::error!(
+                                    "Recieved memo indicating you sent to \
+                                    an address you don't have on record.\n({})\n\
+                                    This may mean you are being sent malicious data.\n\
+                                    Some information may not be displayed correctly",
+                                    ua.encode(&self.config.chain)
+                                )
+                            }
+                        }
+                    }
+                }
+                Err(e) => log::error!(
+                    "Could not decode wallet internal memo: {e}.\n\
+                    Have you recently used a more up-to-date version of\
+                    this software?\nIf not, this may mean you are being sent\
+                    malicious data.\nSome information may not display correctly"
+                ),
+            }
+        }
     }
 
     async fn scan_transparent_bundle(
@@ -273,6 +334,7 @@ impl TransactionContext {
         block_time: u32,
         is_outgoing_transaction: &mut bool,
         outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
+        arbitrary_memos_with_txids: &mut Vec<([u8; 511], TxId)>,
     ) {
         self.scan_bundle::<SaplingDomain<ChainType>>(
             transaction,
@@ -281,6 +343,7 @@ impl TransactionContext {
             block_time,
             is_outgoing_transaction,
             outgoing_metadatas,
+            arbitrary_memos_with_txids,
         )
         .await
     }
@@ -292,6 +355,7 @@ impl TransactionContext {
         block_time: u32,
         is_outgoing_transaction: &mut bool,
         outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
+        arbitrary_memos_with_txids: &mut Vec<([u8; 511], TxId)>,
     ) {
         self.scan_bundle::<OrchardDomain>(
             transaction,
@@ -300,6 +364,7 @@ impl TransactionContext {
             block_time,
             is_outgoing_transaction,
             outgoing_metadatas,
+            arbitrary_memos_with_txids,
         )
         .await;
     }
@@ -317,6 +382,7 @@ impl TransactionContext {
         block_time: u32,
         is_outgoing_transaction: &mut bool, // Isn't this also NA for unconfirmed?
         outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
+        arbitrary_memos_with_txids: &mut Vec<([u8; 511], TxId)>,
     ) where
         D: zingo_traits::DomainWalletExt<ChainType>,
         D::Note: Clone + PartialEq,
@@ -404,6 +470,10 @@ impl TransactionContext {
                 .clone()
                 .try_into()
                 .unwrap_or(Memo::Future(memo_bytes));
+            if let Memo::Arbitrary(ref wallet_internal_data) = memo {
+                arbitrary_memos_with_txids
+                    .push((*wallet_internal_data.as_ref(), transaction.txid()));
+            }
             self.transaction_metadata_set
                 .write()
                 .await
@@ -464,14 +534,23 @@ impl TransactionContext {
                                         .map(|addr| addr.encode(&self.config.chain))
                                         .any(|addr| addr == address)
                                     },
-                                ) && memo == Memo::Empty
-                                {
-                                    None
+                                ) {
+                                    if let Memo::Text(_) = memo {
+                                        Some(OutgoingTxMetadata {
+                                            to_address: address,
+                                            value: D::WalletNote::value_from_note(&note),
+                                            memo,
+                                            ua: None,
+                                        })
+                                    } else {
+                                        None
+                                    }
                                 } else {
                                     Some(OutgoingTxMetadata {
-                                        address,
+                                        to_address: address,
                                         value: D::WalletNote::value_from_note(&note),
                                         memo,
+                                        ua: None,
                                     })
                                 }
                             }

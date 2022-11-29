@@ -9,6 +9,10 @@ pub mod compact_formats;
 pub mod grpc_connector;
 pub mod lightclient;
 pub mod wallet;
+pub mod wallet_internal_memo_handling;
+
+#[cfg(test)]
+pub(crate) mod test_vectors;
 
 #[cfg(feature = "embed_params")]
 #[derive(RustEmbed)]
