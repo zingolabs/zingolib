@@ -186,7 +186,7 @@ impl TransactionContext {
                             .current
                             .get_mut(&txid)
                         {
-                            let outgoing_potential_recievers = [
+                            let outgoing_potential_receivers = [
                                 ua.orchard()
                                     .map(|oaddr| oaddr.b32encode_for_network(&self.config.chain)),
                                 ua.sapling()
@@ -195,7 +195,7 @@ impl TransactionContext {
                             ];
                             if let Some(metadata) =
                                 transaction.outgoing_metadata.iter_mut().find(|metadata| {
-                                    outgoing_potential_recievers
+                                    outgoing_potential_receivers
                                         .contains(&Some(metadata.address.clone()))
                                 })
                             {
