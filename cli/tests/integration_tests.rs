@@ -109,23 +109,8 @@ fn send_mined_sapling_to_orchard() {
             .await
             .unwrap();
 
-        utils::increase_height_and_sync_client(&regtest_manager, &client, 1).await;
-        // We just sent 5_000 zats to our own orchard address...
-        let client_notes = dbg!(client.do_list_notes(false).await);
-        let first_value = client_notes["unspent_orchard_notes"][0]["value"]
-            .as_fixed_point_u64(0)
-            .unwrap();
-        let second_value = client_notes["unspent_orchard_notes"][1]["value"]
-            .as_fixed_point_u64(0)
-            .unwrap();
-        assert_eq!(first_value, amount_to_send);
-        // Show that the total is split among notes 1 and 2.
-        assert_eq!(
-            second_value,
-            625_000_000 - (amount_to_send + u64::from(DEFAULT_FEE))
-        );
-        let balance = client.do_balance().await;
         utils::increase_height_and_sync_client(&regtest_manager, &client, 4).await;
+        let balance = client.do_balance().await;
         // We send change to orchard now, so we should have the full value of the note
         // we spent, minus the transaction fee
         assert_eq!(
