@@ -13,7 +13,7 @@ pub enum ParsedMemo {
 
 pub fn create_wallet_internal_memo_version_0(uas: &[UnifiedAddress]) -> io::Result<[u8; 511]> {
     let mut uas_bytes_vec = Vec::new();
-    CompactSize::write(&mut uas_bytes_vec, crate::utils::MEMO_VERSION)?;
+    CompactSize::write(&mut uas_bytes_vec, MEMO_VERSION)?;
     Vector::write(&mut uas_bytes_vec, uas, |mut w, ua| {
         write_unified_address_to_raw_encoding(&ua, &mut w)
     })?;
