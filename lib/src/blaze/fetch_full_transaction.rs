@@ -1,5 +1,4 @@
 use crate::{
-    utils::{read_wallet_internal_memo, ParsedMemo},
     wallet::{
         data::OutgoingTxMetadata,
         keys::{address_from_pubkeyhash, unified::UnifiedSpendCapability, ToBase58Check},
@@ -10,6 +9,7 @@ use crate::{
         },
         transactions::TransactionMetadataSet,
     },
+    wallet_internal_memo_handling::{read_wallet_internal_memo, ParsedMemo},
 };
 
 use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
@@ -193,13 +193,13 @@ impl TransactionContext {
                                     .map(|zaddr| zaddr.b32encode_for_network(&self.config.chain)),
                                 address_from_pubkeyhash(&self.config, ua.transparent().cloned()),
                             ];
-                            if let Some(metadata) =
-                                transaction.outgoing_metadata.iter_mut().find(|metadata| {
+                            if let Some(out_metadata) =
+                                transaction.outgoing_metadata.iter_mut().find(|out_meta| {
                                     outgoing_potential_receivers
-                                        .contains(&Some(metadata.address.clone()))
+                                        .contains(&Some(out_meta.address.clone()))
                                 })
                             {
-                                metadata.ua = Some(ua.encode(&self.config.chain));
+                                out_metadata.ua = Some(ua.encode(&self.config.chain));
                             } else {
                                 log::error!(
                                     "Recieved memo indicating you sent to \
