@@ -8,7 +8,11 @@ pub mod commands;
 pub mod compact_formats;
 pub mod grpc_connector;
 pub mod lightclient;
+pub mod utils;
 pub mod wallet;
+
+#[cfg(test)]
+pub(crate) mod test_vectors;
 
 #[cfg(feature = "embed_params")]
 #[derive(RustEmbed)]
