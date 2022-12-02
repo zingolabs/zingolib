@@ -29,7 +29,7 @@ fn zcashd_sapling_commitment_tree() {
 #[test]
 fn verify_old_wallet_uses_server_height_in_send() {
     let (regtest_manager, child_process_handler, mut client_builder) =
-        saplingcoinbasebacked_spendcapable();
+        setup::saplingcoinbasebacked_spendcapable();
     let client_sending = client_builder.new_sameseed_client(0, false);
     let client_receiving = client_builder.new_plantedseed_client(TEST_SEED.to_string(), 0, false);
     Runtime::new().unwrap().block_on(async {
