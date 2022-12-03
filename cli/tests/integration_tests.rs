@@ -7,12 +7,6 @@ use json::JsonValue;
 use tokio::runtime::Runtime;
 use utils::setup;
 #[test]
-fn create_network_disconnected_client() {
-    let (_regtest_manager_1, _child_process_handler_1, _client_builder) =
-        setup::saplingcoinbasebacked_spendcapable();
-}
-
-#[test]
 fn zcashd_sapling_commitment_tree() {
     let (regtest_manager, _child_process_handler, _client_builder) =
         setup::saplingcoinbasebacked_spendcapable();
