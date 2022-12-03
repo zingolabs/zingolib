@@ -1292,6 +1292,7 @@ impl LightClient {
             if res.is_err() {
                 return res;
             }
+            drop(self.interrupt_sync.clone());
             if *self.interrupt_sync.read().await {
                 log::debug!("LightClient interrupt_sync is true");
                 break;
