@@ -1,6 +1,6 @@
 ## Zingolib
 [![license](https://img.shields.io/github/license/zingolabs/zingolib)](LICENSE) [![codecov](https://codecov.io/gh/zingolabs/zingolib/branch/dev/graph/badge.svg?token=WMKTJMQY28)](https://codecov.io/gh/zingolabs/zingolib)
-This repo provides both a library for zingoproxyclient and zingo-mobile, as well as an included cli application to interact with zcashd via lightwalletd.
+This repo provides both a library for zingo-mobile, as well as an included cli application to interact with zcashd via lightwalletd.
 
 ## WARNING! Experimental
 * This is experimental software.
@@ -71,6 +71,10 @@ Here are some CLI arguments you can pass to `zingo-cli`. Please run `zingo-cli -
     * Example: `./zingo-cli --server 127.0.0.1:9067 --data-dir /Users/ZingoRocks/my-test-wallet` will use the provided directory to store `zingo-wallet.dat` and logs. If the provided directory does not exist, it will create it.
 
 ## Regtest
+
+
 There is an experimental feature flag available with `zingo-cli`, in which the cli works in regtest mode, by also locally running `zcashd` and `lightwalletd`.
+
+For a relatively recent user experience please see: https://free2z.cash/zingo-cli-in-regtest-mode
 
 Please see `zingolib/regtest/README.md` for a detailed explanation.
