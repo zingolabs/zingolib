@@ -6,9 +6,10 @@ use data::TEST_SEED;
 use json::JsonValue;
 use tokio::runtime::Runtime;
 use utils::setup;
+
 #[test]
 fn zcashd_sapling_commitment_tree() {
-    //!  TODO:  Make this test assert something, what is this a test of
+    //!  TODO:  Make this test assert something, what is this a test of?
     //!  TODO:  Add doc-comment explaining what constraints this test
     //!  enforces
     let (regtest_manager, _child_process_handler, _client_builder) =
@@ -25,6 +26,12 @@ fn zcashd_sapling_commitment_tree() {
 
 #[test]
 fn verify_old_wallet_uses_server_height_in_send() {
+    //! An earlier version of zingolib used the _wallet's_ 'height' when
+    //! constructing transactions.  This worked well enough when the
+    //! client completed sync prior to sending, but when we introduced
+    //! interrupting send, it made it immediately obvious that this was
+    //! the wrong height to use!  The correct height is the
+    //! "mempool height" which is the server_height + 1
     let (regtest_manager, child_process_handler, mut client_builder) =
         setup::saplingcoinbasebacked_spendcapable();
     let client_sending = client_builder.new_sameseed_client(0, false);
