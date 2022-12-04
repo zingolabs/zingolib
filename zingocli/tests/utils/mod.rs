@@ -55,7 +55,7 @@ async fn check_wallet_chainheight_value(client: &LightClient, target: u32) -> bo
 }
 #[cfg(test)]
 pub mod setup {
-    use crate::data::{self, ABANDON_ART_SEED};
+    use crate::data::{self, seeds::ABANDON_ART_SEED};
     use std::path::PathBuf;
 
     use zingo_cli::regtest::{ChildProcessHandler, RegtestManager};

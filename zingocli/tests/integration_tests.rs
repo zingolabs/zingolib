@@ -2,8 +2,8 @@
 #![cfg(feature = "local_env")]
 mod data;
 mod utils;
-use data::ABANDON_ART_SEED;
-use data::HOSPITAL_MUSEUM_SEED;
+use data::seeds::ABANDON_ART_SEED;
+use data::seeds::HOSPITAL_MUSEUM_SEED;
 use json::JsonValue;
 use tokio::runtime::Runtime;
 use utils::setup;
