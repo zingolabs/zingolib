@@ -2,7 +2,8 @@
 #![cfg(feature = "local_env")]
 mod data;
 mod utils;
-use data::TEST_SEED;
+use data::ABANDON_ART_SEED;
+use data::HOSPITAL_MUSEUM_SEED;
 use json::JsonValue;
 use tokio::runtime::Runtime;
 use utils::setup;
@@ -13,7 +14,7 @@ fn zcashd_sapling_commitment_tree() {
     //!  TODO:  Add doc-comment explaining what constraints this test
     //!  enforces
     let (regtest_manager, _child_process_handler, _client_builder) =
-        setup::saplingcoinbasebacked_spendcapable();
+        setup::funded_client(ABANDON_ART_SEED);
     let trees = regtest_manager
         .get_cli_handle()
         .args(["z_gettreestate", "1"])
@@ -33,9 +34,10 @@ fn verify_old_wallet_uses_server_height_in_send() {
     //! the wrong height to use!  The correct height is the
     //! "mempool height" which is the server_height + 1
     let (regtest_manager, child_process_handler, mut client_builder) =
-        setup::saplingcoinbasebacked_spendcapable();
+        setup::funded_client(ABANDON_ART_SEED);
     let client_sending = client_builder.new_sameseed_client(0, false);
-    let client_receiving = client_builder.new_plantedseed_client(TEST_SEED.to_string(), 0, false);
+    let client_receiving =
+        client_builder.new_plantedseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false);
     Runtime::new().unwrap().block_on(async {
         // Ensure that the client has confirmed spendable funds
         utils::increase_height_and_sync_client(&regtest_manager, &client_sending, 5).await;
@@ -106,7 +108,7 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
 #[test]
 fn mine_sapling_to_self() {
     let (regtest_manager, _child_process_handler, mut client_builder) =
-        setup::saplingcoinbasebacked_spendcapable();
+        setup::funded_client(ABANDON_ART_SEED);
     let client = client_builder.new_sameseed_client(0, false);
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
@@ -123,7 +125,7 @@ fn send_mined_sapling_to_orchard() {
     //! consistent with all the notes in the relevant block changing state.
     //! NOTE that the balance doesn't give insight into the distribution across notes.
     let (regtest_manager, _child_process_handler, mut client_builder) =
-        setup::saplingcoinbasebacked_spendcapable();
+        setup::funded_client(ABANDON_ART_SEED);
     let client = client_builder.new_sameseed_client(0, false);
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
@@ -155,6 +157,7 @@ fn extract_value_as_u64(input: &JsonValue) -> u64 {
     note.clone()
 }
 use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
+
 #[test]
 fn note_selection_order() {
     //! In order to fund a transaction multiple notes may be selected and consumed.
@@ -395,7 +398,7 @@ fn rescan_still_have_outgoing_metadata() {
 #[test]
 fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
     let (regtest_manager, child_process_handler, mut client_builder) =
-        setup::saplingcoinbasebacked_spendcapable();
+        setup::funded_client(ABANDON_ART_SEED);
     let client = client_builder.new_sameseed_client(0, false);
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
@@ -562,11 +565,12 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
 #[test]
 fn ensure_taddrs_from_old_seeds_work() {
     let (_regtest_manager, child_process_handler, mut client_builder) =
-        setup::saplingcoinbasebacked_spendcapable();
+        setup::funded_client(ABANDON_ART_SEED);
     // The first taddr generated on commit 9e71a14eb424631372fd08503b1bd83ea763c7fb
     let transparent_address = "tmFLszfkjgim4zoUMAXpuohnFBAKy99rr2i";
 
-    let client_b = client_builder.new_plantedseed_client(TEST_SEED.to_string(), 0, false);
+    let client_b =
+        client_builder.new_plantedseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false);
 
     Runtime::new().unwrap().block_on(async {
         client_b.do_new_address("zt").await.unwrap();

@@ -1,7 +1,11 @@
 //Generate test seed
-pub const TEST_SEED: &str = "hospital museum valve antique skate museum \
-unfold vocal weird milk scale social vessel identify \
-crowd hospital control album rib bulb path oven civil tank";
+pub const ABANDON_ART_SEED: &str =
+    "abandon abandon abandon abandon abandon abandon abandon abandon \
+     abandon abandon abandon abandon abandon abandon abandon abandon \
+     abandon abandon abandon abandon abandon abandon abandon art";
+pub const HOSPITAL_MUSEUM_SEED: &str = "hospital museum valve antique skate museum \
+     unfold vocal weird milk scale social vessel identify \
+     crowd hospital control album rib bulb path oven civil tank";
 
 pub mod config_template_fillers {
     pub mod zcashd {

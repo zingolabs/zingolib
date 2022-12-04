@@ -55,7 +55,7 @@ async fn check_wallet_chainheight_value(client: &LightClient, target: u32) -> bo
 }
 #[cfg(test)]
 pub mod setup {
-    use crate::data;
+    use crate::data::{self, ABANDON_ART_SEED};
     use std::path::PathBuf;
 
     use zingo_cli::regtest::{ChildProcessHandler, RegtestManager};
@@ -78,6 +78,8 @@ pub mod setup {
             }
         }
         fn make_config(&mut self) -> (zingoconfig::ZingoConfig, u64) {
+            //! Each client requires a unique data_dir, we use the
+            //! client_number counter for this.
             self.client_number += 1;
             let conf_path = format!(
                 "{}_{}",
@@ -212,8 +214,7 @@ pub mod setup {
     /// and zcashd (in regtest mode). This setup is intended to produce the most basic  
     /// of scenarios.  As scenarios with even less requirements
     /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
-    pub fn saplingcoinbasebacked_spendcapable(
-    ) -> (RegtestManager, ChildProcessHandler, ClientBuilder) {
+    pub fn funded_client(base_seed: &str) -> (RegtestManager, ChildProcessHandler, ClientBuilder) {
         //tracing_subscriber::fmt::init();
         let abandon_art_seed = zcash_primitives::zip339::Mnemonic::from_entropy([0; 32])
             .unwrap()
@@ -242,7 +243,7 @@ pub mod setup {
         let client_builder = ClientBuilder::new(
             server_id,
             regtest_manager.zingo_data_dir.clone(),
-            Some(abandon_art_seed),
+            Some(base_seed.to_string()),
         );
         (regtest_manager, child_process_handler, client_builder)
     }
@@ -305,7 +306,7 @@ pub mod setup {
         ClientBuilder,
     ) {
         let (regtest_manager, child_process_handler, mut client_builder) =
-            saplingcoinbasebacked_spendcapable();
+            funded_client(ABANDON_ART_SEED);
         let client_one = client_builder.new_sameseed_client(0, false);
         let seed_phrase_of_two = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
             .unwrap()
