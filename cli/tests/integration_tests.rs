@@ -8,6 +8,9 @@ use tokio::runtime::Runtime;
 use utils::setup;
 #[test]
 fn zcashd_sapling_commitment_tree() {
+    //!  TODO:  Make this test assert something, what is this a test of
+    //!  TODO:  Add doc-comment explaining what constraints this test
+    //!  enforces
     let (regtest_manager, _child_process_handler, _client_builder) =
         setup::saplingcoinbasebacked_spendcapable();
     let trees = regtest_manager
