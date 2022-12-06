@@ -216,15 +216,6 @@ pub mod setup {
     /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
     pub fn funded_client(base_seed: &str) -> (RegtestManager, ChildProcessHandler, ClientBuilder) {
         //tracing_subscriber::fmt::init();
-        let abandon_art_seed = zcash_primitives::zip339::Mnemonic::from_entropy([0; 32])
-            .unwrap()
-            .to_string();
-        assert_eq!(
-            &abandon_art_seed,
-            "abandon abandon abandon abandon abandon abandon abandon abandon \
-             abandon abandon abandon abandon abandon abandon abandon abandon \
-             abandon abandon abandon abandon abandon abandon abandon art"
-        );
         let first_z_addr_from_seed_phrase = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
         let (regtest_manager, lightwalletd_port) =
             create_maybe_funded_regtest_manager(Some(first_z_addr_from_seed_phrase));
