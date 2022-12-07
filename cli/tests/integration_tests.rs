@@ -60,7 +60,7 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
     let sapling_commitments_finalroot =
         "3e49b5f954aa9d3545bc6c37744661eea48d7c34e3000d82b7f0010c30f4c2fb";
     let orchard_commitments_finalroot =
-        "2fd8e51a03d9bbe2dd809831b1497aeb68a6e37ddf707ced4aa2d8dff13529ae";
+        "ae2935f1dfd8a24aed7c70df7de3a668eb7a49b1319880dde2bbd9031ae5d82f";
     let finalstates = "000000";
     // Setup
     let (regtest_manager, _child_process_handler, _client) = setup::basic_no_spendable();
