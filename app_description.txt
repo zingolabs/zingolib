@@ -10,5 +10,5 @@ Only you have the power to share your information! Your perspective matters. You
 Zingo! uses on-chain memos to store information associated with your transactions. The client 
 extracts that data to provide insights exclusively to you.  Your data is never exposed to any
 third party.  By providing Users with private insight into their own economic behavior, we
-are enabling everyone to make healthier financial desisions. We anticipate diverse communities
+are enabling everyone to make healthier financial decisions. We anticipate diverse communities
 that form around different kinds of insights, to collaborate on shared values.
