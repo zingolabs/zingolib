@@ -61,6 +61,17 @@ pub mod setup {
     use zingo_cli::regtest::{ChildProcessHandler, RegtestManager};
     use zingolib::{create_zingoconf_with_datadir, lightclient::LightClient};
 
+    pub struct ScenarioBuilder {
+        regtest_manager: RegtestManager,
+        process_handler: ChildProcessHandler,
+        client_builder: SproutedClientBuilder,
+    }
+    impl ScenarioBuilder {
+        pub fn new() {}
+        fn create_manager() -> RegtestManager {}
+        fn create_process_handler() -> ChildProcessHandler {}
+        fn create_client_builder() -> SproutedClientBuilder {}
+    }
     /// Internally (and perhaps in wider scopes) we say "Sprout" to mean
     /// take a seed, and generate a client from the seed (planted in the chain).
     pub struct SproutedClientBuilder {
