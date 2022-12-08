@@ -55,22 +55,24 @@ async fn check_wallet_chainheight_value(client: &LightClient, target: u32) -> bo
 }
 #[cfg(test)]
 pub mod setup {
-    use crate::data::{self, seeds::ABANDON_ART_SEED};
+    use crate::data::{self, seeds::ABANDON_ART_SEED, REGSAP_ADDR_FROM_ABANDONART};
     use std::path::PathBuf;
 
     use zingo_cli::regtest::{ChildProcessHandler, RegtestManager};
     use zingolib::{create_zingoconf_with_datadir, lightclient::LightClient};
 
-    pub struct ClientBuilder {
+    /// Internally (and perhaps in wider scopes) we say "Sprout" to mean
+    /// take a seed, and generate a client from the seed (planted in the chain).
+    pub struct SproutedClientBuilder {
         server_id: http::Uri,
         zingo_datadir: PathBuf,
         seed: Option<String>,
         client_number: u8,
     }
-    impl ClientBuilder {
+    impl SproutedClientBuilder {
         pub fn new(server_id: http::Uri, zingo_datadir: PathBuf, seed: Option<String>) -> Self {
             let client_number = 0;
-            ClientBuilder {
+            SproutedClientBuilder {
                 server_id,
                 zingo_datadir,
                 seed,
@@ -91,7 +93,7 @@ pub mod setup {
             zingolib::create_zingoconf_with_datadir(self.server_id.clone(), Some(conf_path))
                 .unwrap()
         }
-        pub fn new_sameseed_client(&mut self, birthday: u64, overwrite: bool) -> LightClient {
+        pub fn new_funded_client(&mut self, birthday: u64, overwrite: bool) -> LightClient {
             let (zingo_config, _) = self.make_config();
             LightClient::create_with_seedorkey_wallet(
                 self.seed.clone().unwrap(),
@@ -214,11 +216,12 @@ pub mod setup {
     /// and zcashd (in regtest mode). This setup is intended to produce the most basic  
     /// of scenarios.  As scenarios with even less requirements
     /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
-    pub fn funded_client(base_seed: &str) -> (RegtestManager, ChildProcessHandler, ClientBuilder) {
+    pub fn funded_client(
+        base_seed: &str,
+    ) -> (RegtestManager, ChildProcessHandler, SproutedClientBuilder) {
         //tracing_subscriber::fmt::init();
-        let first_z_addr_from_seed_phrase = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
         let (regtest_manager, lightwalletd_port) =
-            create_maybe_funded_regtest_manager(Some(first_z_addr_from_seed_phrase));
+            create_maybe_funded_regtest_manager(Some(REGSAP_ADDR_FROM_ABANDONART));
         let child_process_handler = regtest_manager.launch(true).unwrap_or_else(|e| match e {
             zingo_cli::regtest::LaunchChildProcessError::ZcashdState {
                 errorcode,
@@ -231,7 +234,7 @@ pub mod setup {
         let server_id = zingoconfig::construct_server_uri(Some(format!(
             "http://127.0.0.1:{lightwalletd_port}"
         )));
-        let client_builder = ClientBuilder::new(
+        let client_builder = SproutedClientBuilder::new(
             server_id,
             regtest_manager.zingo_data_dir.clone(),
             Some(base_seed.to_string()),
@@ -294,11 +297,11 @@ pub mod setup {
         LightClient,
         LightClient,
         ChildProcessHandler,
-        ClientBuilder,
+        SproutedClientBuilder,
     ) {
         let (regtest_manager, child_process_handler, mut client_builder) =
             funded_client(ABANDON_ART_SEED);
-        let client_one = client_builder.new_sameseed_client(0, false);
+        let client_one = client_builder.new_funded_client(0, false);
         let seed_phrase_of_two = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
             .unwrap()
             .to_string();

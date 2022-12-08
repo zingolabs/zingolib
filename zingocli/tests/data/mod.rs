@@ -6,7 +6,6 @@ pub mod seeds {
             .to_string();
         assert_eq!(ABANDON_ART_SEED, abandon_art_seed);
         // TODO user get_zaddr_from_bip39seed to generate this address from that seed.
-        //let first_z_addr_from_seed_phrase = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
     }
     //Generate test seed
     pub const ABANDON_ART_SEED: &str =
@@ -17,6 +16,8 @@ pub mod seeds {
      unfold vocal weird milk scale social vessel identify \
      crowd hospital control album rib bulb path oven civil tank";
 }
+pub const REGSAP_ADDR_FROM_ABANDONART: &str =
+    "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
 pub mod config_template_fillers {
     pub mod zcashd {
         pub fn basic(rpcport: &str, extra: &str) -> String {
