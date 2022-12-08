@@ -3,8 +3,9 @@ Zingo! A Zcash Application
 Use zero knowledge cryptography to manage your transaction history in a private and mindful way.
 
 Take exclusive and unique control over your history. Use this unique insight into your
-own financial behavior to introspect on how you spend money. Optionally, share
+own financial behavior to introspect on how you spend money. Share
 insights on your terms. Establish healthy relationships with diverse economic communities.
+
 Only you have the power to share your information! Your perspective matters. You matter.
 
 Zingo! uses on-chain memos to store information associated with your transactions. The client 
@@ -12,3 +13,7 @@ extracts that data to provide insights exclusively to you.  Your data is never e
 third party.  By providing Users with private insight into their own economic behavior, we
 are enabling everyone to make healthier financial decisions. We anticipate diverse communities
 that form around different kinds of insights, to collaborate on shared values.
+
+When you send Zcash using Zingo! you can write a memo containing anything you like. When you receive
+Zcash you also receive the memo that the Sender wrote. Zingo! uses the memo 
+
