@@ -1,0 +1,13 @@
+Store your financial transaction history in a private and mindful way. You have
+exclusive and unique control over that history.  Use your unique insight into your
+own financial behavior to introspect on how you spend money.  Only you have the 
+power to share that information with others on _your_ terms.  
+
+Zingo! is a Zcash-blockchain application that uses on-chain memos to store the 
+details of your transactions, and client-side logic to privately provide insights 
+from those details to you.  Your data is never exposed to any third party, the 
+insights derived from your transaction history are solely provided to you, to do with 
+as you will. We believe that providing each User with a deeper insight into their own 
+economic behavior, we are enabling everyone to make more informed decisions, based on 
+their own judgments. We anticipate diverse communities that form around different kinds
+of insights, to collaborate on shared values.
