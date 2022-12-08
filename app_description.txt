@@ -8,12 +8,14 @@ insights on your terms. Establish healthy relationships with diverse economic co
 
 Only you have the power to share your information! Your perspective matters. You matter.
 
-Zingo! uses on-chain memos to store information associated with your transactions. The client 
+When you send Zcash you can write a memo containing anything you like. When you receive
+Zcash you also receive the memo that the Sender wrote. In most cryptocurrencies wallets
+routinely send transactions to themselves to recover "change" from the transaction.  In this case, where
+the application is both the Sender and the Receiver, Zingo uses the memo system to write
+notes to itself about the transactions it builds for the User.
+
+Zingo uses on-chain memos to store information associated with your transactions. The client
 extracts that data to provide insights exclusively to you.  Your data is never exposed to any
 third party.  By providing Users with private insight into their own economic behavior, we
 are enabling everyone to make healthier financial decisions. We anticipate diverse communities
 that form around different kinds of insights, to collaborate on shared values.
-
-When you send Zcash using Zingo! you can write a memo containing anything you like. When you receive
-Zcash you also receive the memo that the Sender wrote. Zingo! uses the memo 
-
