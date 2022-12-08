@@ -35,7 +35,7 @@ fn verify_old_wallet_uses_server_height_in_send() {
     //! "mempool height" which is the server_height + 1
     let (regtest_manager, child_process_handler, mut client_builder) =
         setup::funded_client(ABANDON_ART_SEED);
-    let client_sending = client_builder.new_sameseed_client(0, false);
+    let client_sending = client_builder.new_funded_client(0, false);
     let client_receiving =
         client_builder.new_plantedseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false);
     Runtime::new().unwrap().block_on(async {
@@ -109,7 +109,7 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
 fn mine_sapling_to_self() {
     let (regtest_manager, _child_process_handler, mut client_builder) =
         setup::funded_client(ABANDON_ART_SEED);
-    let client = client_builder.new_sameseed_client(0, false);
+    let client = client_builder.new_funded_client(0, false);
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
 
@@ -126,7 +126,7 @@ fn send_mined_sapling_to_orchard() {
     //! NOTE that the balance doesn't give insight into the distribution across notes.
     let (regtest_manager, _child_process_handler, mut client_builder) =
         setup::funded_client(ABANDON_ART_SEED);
-    let client = client_builder.new_sameseed_client(0, false);
+    let client = client_builder.new_funded_client(0, false);
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
 
@@ -399,7 +399,7 @@ fn rescan_still_have_outgoing_metadata() {
 fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
     let (regtest_manager, child_process_handler, mut client_builder) =
         setup::funded_client(ABANDON_ART_SEED);
-    let client = client_builder.new_sameseed_client(0, false);
+    let client = client_builder.new_funded_client(0, false);
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
         let sapling_addr = client.do_new_address("tz").await.unwrap();
