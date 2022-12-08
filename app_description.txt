@@ -15,7 +15,7 @@ the application is both the Sender and the Receiver, Zingo uses the memo system 
 notes to itself about the transactions it builds for the User.
 
 Zingo extracts that data to provide insights exclusively to you.  In our initial release we
-already use this introspective mechanism to "remember" which addresses you've previously sent Zcash.
+already use this introspective mechanism to "remember" which full Unified Addresses you've previously sent Zcash.
 In other words, Zingo keeps track of who you've sent Zcash to, on the blockchain. This "Address Book"
 of people you've "Sent To" in the past is completely private and, as long as you properly protect your
 seed-phrase, will be fully recovered even if you lose your device. 
@@ -25,11 +25,11 @@ you lose your device) of which addresses you previously produced to receive fund
 have a full list of all the addresses you asked people to use to send you zcash.
 
 Taken together these two instrospective mechanisms provide you with insight into who you've sent
-funds to, and who you've asked for funds from.  This is just the beginning!  We'll soon implement
+funds to, and who you've asked for funds from.  This is just the beginning!  We intend to implement
 mechanisms to allow users to share their insights in an anonymous, and economically viable way that
 will allow communities to aggregate around marketplaces of interesting insights!
 
-Your data is never exposed to any third party. By providing you with private insight into
+Your on-chain transaction details are never exposed to any third party. By providing you with private insight into
 your own economic behavior, we are enabling everyone to make healthier financial decisions.
 We anticipate diverse communities that form around different kinds of insights, to collaborate
 on shared values.
@@ -46,4 +46,3 @@ from the Recipient-Client, off-chain.  If the Sending-Client simply recorded the
 case of Re-Sprouting the Client from its SeedPhrase, there'd be no way to recover that relationship data.
 Zingo solves this issue by recording the original recipient provided UA in the memo field of change from the
 transaction.
-
