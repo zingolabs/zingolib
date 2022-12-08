@@ -9,13 +9,29 @@ insights on your terms. Establish healthy relationships with diverse economic co
 Only you have the power to share your information! Your perspective matters. You matter.
 
 When you send Zcash you can write a memo containing anything you like. When you receive
-Zcash you also receive the memo that the Sender wrote. In most cryptocurrencies wallets
+Zcash you also receive the memo that the Sender wrote. As with most cryptocurrencies, wallets
 routinely send transactions to themselves to recover "change" from the transaction.  In this case, where
 the application is both the Sender and the Receiver, Zingo uses the memo system to write
 notes to itself about the transactions it builds for the User.
 
-Zingo uses on-chain memos to store information associated with your transactions. The client
-extracts that data to provide insights exclusively to you.  Your data is never exposed to any
+Zingo extracts that data to provide insights exclusively to you.  In our initial release we
+already use this Introspective mechanism to "remember" which addresses you've previously sent Zcash.
+Zcash supports a multi-protocol Unified Address that enables the protocol to upgrade to newer versions
+without breaking backwards compatibility with earlier versions. This Unified Address system is 
+implemented by clients off-chain. Clients share Unified Addresses with each other, the Unified
+Addresses contain Protocol-Version Specific Addresses that the client can upack, and publish to the
+blockchain as part of the transaction that it builds. This means that the on-chain address associated
+with a transaction does not contain all of the information the Sending-Client received as a "Unified Address"
+from the Recipient-Client.  If the Sending-Client simply recorded the UA off-chain then, in the case of
+Re-Sprouting the Client from its SeedPhrase, there'd be no way to recover that relationship data.  Zingo
+solves this issue by recording the original recipient provided UA in the memo field of change from the
+transaction.
+
+In other words, Zingo keeps track of who you've sent Zcash to, on the blockchain.  
+
+
+
+  Your data is never exposed to any
 third party.  By providing Users with private insight into their own economic behavior, we
 are enabling everyone to make healthier financial decisions. We anticipate diverse communities
 that form around different kinds of insights, to collaborate on shared values.
