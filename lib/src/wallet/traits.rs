@@ -195,18 +195,14 @@ impl FromCommitment for MerkleHashOrchard {
 
 /// The component that transfers value.  In the common case, from one output to another.
 pub trait Spend {
-    type Nullifier: Nullifier;
+    type Nullifier: Nullifier + Into<ChannelNullifier>;
     fn nullifier(&self) -> &Self::Nullifier;
-    fn wallet_nullifier(_: &Self::Nullifier) -> PoolNullifier;
 }
 
 impl<Auth: SaplingAuthorization> Spend for SpendDescription<Auth> {
     type Nullifier = SaplingNullifier;
     fn nullifier(&self) -> &Self::Nullifier {
         &self.nullifier
-    }
-    fn wallet_nullifier(null: &Self::Nullifier) -> PoolNullifier {
-        PoolNullifier::Sapling(*null)
     }
 }
 
@@ -215,8 +211,17 @@ impl<Auth> Spend for Action<Auth> {
     fn nullifier(&self) -> &Self::Nullifier {
         self.nullifier()
     }
-    fn wallet_nullifier(null: &Self::Nullifier) -> PoolNullifier {
-        PoolNullifier::Orchard(*null)
+}
+
+impl From<OrchardNullifier> for PoolNullifier {
+    fn from(n: OrchardNullifier) -> Self {
+        PoolNullifier::Orchard(n)
+    }
+}
+
+impl From<SaplingNullifier> for PoolNullifier {
+    fn from(n: SaplingNullifier) -> Self {
+        PoolNullifier::Sapling(n)
     }
 }
 

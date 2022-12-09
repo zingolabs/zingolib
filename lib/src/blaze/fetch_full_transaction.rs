@@ -411,16 +411,14 @@ impl TransactionContext {
                     .find(|(nf, _, _)| nf == output.nullifier())
                 {
                     self.transaction_metadata_set.write().await.add_new_spent(
-                    transaction.txid(),
-                    transaction_block_height,
-                    true, // this was "unconfirmed" but this fn is invoked inside `if unconfirmed` TODO: add regression test to protect against movement
-                    block_time,
-                    <FnGenBundle<D> as zingo_traits::Bundle<D, ChainType>>::Spend::wallet_nullifier(
-                        nf,
-                    ),
-                    *value,
-                    *transaction_id,
-                );
+                        transaction.txid(),
+                        transaction_block_height,
+                        true, // this was "unconfirmed" but this fn is invoked inside `if unconfirmed` TODO: add regression test to protect against movement
+                        block_time,
+                        (*nf).into(),
+                        *value,
+                        *transaction_id,
+                    );
                 }
             }
         }
