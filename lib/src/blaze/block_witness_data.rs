@@ -741,13 +741,12 @@ impl BlockAndWitnessData {
         return WitnessCache::new(fsb.into_vec(), top_block);
     }
 
-    pub(crate) async fn update_witness_after_pos<D: DomainWalletExt<zingoconfig::ChainType>>(
+    async fn update_witness_after_reciept_to_block_end<D: DomainWalletExt<zingoconfig::ChainType>>(
         &self,
         height: &BlockHeight,
         transaction_id: &TxId,
         output_num: u32,
         witnesses: WitnessCache<<D::WalletNote as ReceivedNoteAndMetadata>::Node>,
-        nullifier: <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier,
     ) -> WitnessCache<<D::WalletNote as ReceivedNoteAndMetadata>::Node>
     where
         D::Recipient: crate::wallet::traits::Recipient,
@@ -803,11 +802,31 @@ impl BlockAndWitnessData {
         }
 
         // Replace the last witness in the vector with the newly computed one.
-        let witnesses = WitnessCache::new(vec![w], height);
-
-        return self
-            .update_witness_after_block::<D>(witnesses, nullifier)
+        WitnessCache::new(vec![w], height)
+    }
+    pub(crate) async fn update_witness_after_reciept<D: DomainWalletExt<zingoconfig::ChainType>>(
+        &self,
+        height: &BlockHeight,
+        transaction_id: &TxId,
+        output_num: u32,
+        witnesses: WitnessCache<<D::WalletNote as ReceivedNoteAndMetadata>::Node>,
+        nullifier: <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier,
+    ) -> WitnessCache<<D::WalletNote as ReceivedNoteAndMetadata>::Node>
+    where
+        D::Recipient: crate::wallet::traits::Recipient,
+        D::Note: PartialEq + Clone,
+        <D::WalletNote as ReceivedNoteAndMetadata>::Node: FromCommitment,
+    {
+        let witnesses = self
+            .update_witness_after_reciept_to_block_end::<D>(
+                height,
+                transaction_id,
+                output_num,
+                witnesses,
+            )
             .await;
+        self.update_witness_after_block::<D>(witnesses, nullifier)
+            .await
     }
 }
 

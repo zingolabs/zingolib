@@ -96,7 +96,7 @@ impl UpdateNotes {
                     .read()
                     .await
                     .block_data
-                    .update_witness_after_pos::<D>(
+                    .update_witness_after_reciept::<D>(
                         &created_height,
                         &txid,
                         output_num,
