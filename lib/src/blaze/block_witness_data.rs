@@ -4,7 +4,7 @@ use crate::{
     grpc_connector::GrpcConnector,
     lightclient::checkpoints::get_all_main_checkpoints,
     wallet::{
-        data::{BlockData, ChannelNullifier, TransactionMetadata, WitnessCache},
+        data::{BlockData, PoolNullifier, TransactionMetadata, WitnessCache},
         traits::{DomainWalletExt, FromCommitment, ReceivedNoteAndMetadata},
         transactions::TransactionMetadataSet,
     },
@@ -135,7 +135,7 @@ impl BlockAndWitnessData {
 
     pub async fn get_compact_transaction_for_nullifier_at_height(
         &self,
-        nullifier: &ChannelNullifier,
+        nullifier: &PoolNullifier,
         height: u64,
     ) -> (CompactTx, u32) {
         self.wait_for_block(height).await;
@@ -148,7 +148,7 @@ impl BlockAndWitnessData {
             bd.cb()
         };
         match nullifier {
-            ChannelNullifier::Sapling(nullifier) => {
+            PoolNullifier::Sapling(nullifier) => {
                 for compact_transaction in &cb.vtx {
                     for cs in &compact_transaction.spends {
                         if cs.nf == nullifier.to_vec() {
@@ -157,7 +157,7 @@ impl BlockAndWitnessData {
                     }
                 }
             }
-            ChannelNullifier::Orchard(nullifier) => {
+            PoolNullifier::Orchard(nullifier) => {
                 for compact_transaction in &cb.vtx {
                     for ca in &compact_transaction.actions {
                         if ca.nullifier == nullifier.to_bytes().to_vec() {
@@ -514,7 +514,7 @@ impl BlockAndWitnessData {
         }
     }
 
-    pub(crate) async fn is_nf_spent(&self, nf: ChannelNullifier, after_height: u64) -> Option<u64> {
+    pub(crate) async fn is_nf_spent(&self, nf: PoolNullifier, after_height: u64) -> Option<u64> {
         self.wait_for_block(after_height).await;
 
         {
@@ -522,7 +522,7 @@ impl BlockAndWitnessData {
             let blocks = self.blocks_in_current_batch.read().await;
             let pos = blocks.first().unwrap().height - after_height;
             match nf {
-                ChannelNullifier::Sapling(nf) => {
+                PoolNullifier::Sapling(nf) => {
                     let nf = nf.to_vec();
 
                     for i in (0..pos + 1).rev() {
@@ -536,7 +536,7 @@ impl BlockAndWitnessData {
                         }
                     }
                 }
-                ChannelNullifier::Orchard(nf) => {
+                PoolNullifier::Orchard(nf) => {
                     let nf = nf.to_bytes();
 
                     for i in (0..pos + 1).rev() {

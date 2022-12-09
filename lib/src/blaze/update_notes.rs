@@ -1,7 +1,7 @@
 use crate::wallet::traits::{DomainWalletExt, ReceivedNoteAndMetadata};
 use crate::wallet::MemoDownloadOption;
 use crate::wallet::{
-    data::{ChannelNullifier, TransactionMetadata},
+    data::{PoolNullifier, TransactionMetadata},
     transactions::TransactionMetadataSet,
 };
 use std::sync::Arc;
@@ -44,11 +44,11 @@ impl UpdateNotes {
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         wallet_txns: Arc<RwLock<TransactionMetadataSet>>,
         txid: TxId,
-        nullifier: ChannelNullifier,
+        nullifier: PoolNullifier,
         output_num: Option<u32>,
     ) {
         match nullifier {
-            ChannelNullifier::Sapling(n) => {
+            PoolNullifier::Sapling(n) => {
                 Self::update_witnesses_inner::<SaplingDomain<zingoconfig::ChainType>>(
                     bsync_data,
                     wallet_txns,
@@ -58,7 +58,7 @@ impl UpdateNotes {
                 )
                 .await
             }
-            ChannelNullifier::Orchard(n) => {
+            PoolNullifier::Orchard(n) => {
                 Self::update_witnesses_inner::<OrchardDomain>(
                     bsync_data,
                     wallet_txns,
@@ -133,14 +133,14 @@ impl UpdateNotes {
     ) -> (
         JoinHandle<Result<(), String>>,
         oneshot::Sender<u64>,
-        UnboundedSender<(TxId, ChannelNullifier, BlockHeight, Option<u32>)>,
+        UnboundedSender<(TxId, PoolNullifier, BlockHeight, Option<u32>)>,
     ) {
         //info!("Starting Note Update processing");
         let download_memos = bsync_data.read().await.wallet_options.download_memos;
 
         // Create a new channel where we'll be notified of TxIds that are to be processed
         let (transmitter, mut receiver) =
-            unbounded_channel::<(TxId, ChannelNullifier, BlockHeight, Option<u32>)>();
+            unbounded_channel::<(TxId, PoolNullifier, BlockHeight, Option<u32>)>();
 
         // Aside from the incoming Txns, we also need to update the notes that are currently in the wallet
         let wallet_transactions = self.transaction_metadata_set.clone();

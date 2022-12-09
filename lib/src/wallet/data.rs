@@ -31,19 +31,19 @@ use super::traits::ReadableWriteable;
 /// type to handle nullifiers from different domains.
 /// <https://github.com/zingolabs/zingolib/issues/64>
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ChannelNullifier {
+pub enum PoolNullifier {
     Sapling(SaplingNullifier),
     Orchard(OrchardNullifier),
 }
 
-impl std::hash::Hash for ChannelNullifier {
+impl std::hash::Hash for PoolNullifier {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match self {
-            ChannelNullifier::Sapling(n) => {
+            PoolNullifier::Sapling(n) => {
                 state.write_u8(0);
                 n.0.hash(state);
             }
-            ChannelNullifier::Orchard(n) => {
+            PoolNullifier::Orchard(n) => {
                 state.write_u8(1);
                 n.to_bytes().hash(state);
             }
@@ -732,13 +732,13 @@ impl TransactionMetadata {
         Ok(())
     }
 
-    pub(super) fn add_spent_nullifier(&mut self, nullifier: ChannelNullifier, value: u64) {
+    pub(super) fn add_spent_nullifier(&mut self, nullifier: PoolNullifier, value: u64) {
         match nullifier {
-            ChannelNullifier::Sapling(nf) => {
+            PoolNullifier::Sapling(nf) => {
                 self.spent_sapling_nullifiers.push(nf);
                 self.total_sapling_value_spent += value;
             }
-            ChannelNullifier::Orchard(nf) => {
+            PoolNullifier::Orchard(nf) => {
                 self.spent_orchard_nullifiers.push(nf);
                 self.total_orchard_value_spent += value;
             }

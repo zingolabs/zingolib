@@ -1,7 +1,7 @@
 use core::fmt;
 use std::collections::HashMap;
 
-use crate::wallet::data::ChannelNullifier;
+use crate::wallet::data::PoolNullifier;
 
 #[derive(Clone, Debug, Default)]
 pub struct BatchSyncStatus {
@@ -16,7 +16,7 @@ pub struct BatchSyncStatus {
     pub trial_dec_done: u64,
     pub txn_scan_done: u64,
 
-    pub witnesses_updated: HashMap<ChannelNullifier, u64>,
+    pub witnesses_updated: HashMap<PoolNullifier, u64>,
 
     pub blocks_total: u64,
 

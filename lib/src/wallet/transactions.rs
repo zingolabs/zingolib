@@ -29,7 +29,7 @@ use zingoconfig::{ChainType, MAX_REORG};
 
 use super::{
     data::{
-        ChannelNullifier, OutgoingTxMetadata, ReceivedOrchardNoteAndMetadata,
+        OutgoingTxMetadata, PoolNullifier, ReceivedOrchardNoteAndMetadata,
         ReceivedSaplingNoteAndMetadata, TransactionMetadata, Utxo, WitnessCache,
     },
     traits::{DomainWalletExt, FromBytes, Nullifier, ReceivedNoteAndMetadata, Recipient},
@@ -257,7 +257,7 @@ impl TransactionMetadataSet {
         &self.some_txid_from_highest_wallet_block
     }
 
-    pub fn get_notes_for_updating(&self, before_block: u64) -> Vec<(TxId, ChannelNullifier)> {
+    pub fn get_notes_for_updating(&self, before_block: u64) -> Vec<(TxId, PoolNullifier)> {
         let before_block = BlockHeight::from_u32(before_block as u32);
 
         self.current
@@ -276,9 +276,7 @@ impl TransactionMetadataSet {
                         {
                             Some((
                                 txid.clone(),
-                                ChannelNullifier::Sapling(
-                                    sapling_note_description.nullifier.clone(),
-                                ),
+                                PoolNullifier::Sapling(sapling_note_description.nullifier.clone()),
                             ))
                         } else {
                             None
@@ -293,7 +291,7 @@ impl TransactionMetadataSet {
                             {
                                 Some((
                                     txid.clone(),
-                                    ChannelNullifier::Orchard(
+                                    PoolNullifier::Orchard(
                                         orchard_note_description.nullifier.clone(),
                                     ),
                                 ))
@@ -464,12 +462,12 @@ impl TransactionMetadataSet {
     pub fn mark_txid_nf_spent(
         &mut self,
         txid: TxId,
-        nullifier: &ChannelNullifier,
+        nullifier: &PoolNullifier,
         spent_txid: &TxId,
         spent_at_height: BlockHeight,
     ) -> u64 {
         match nullifier {
-            ChannelNullifier::Sapling(nf) => {
+            PoolNullifier::Sapling(nf) => {
                 let mut note_data = self
                     .current
                     .get_mut(&txid)
@@ -482,7 +480,7 @@ impl TransactionMetadataSet {
                 note_data.unconfirmed_spent = None;
                 note_data.note.value
             }
-            ChannelNullifier::Orchard(nf) => {
+            PoolNullifier::Orchard(nf) => {
                 let mut note_data = self
                     .current
                     .get_mut(&txid)
@@ -550,12 +548,12 @@ impl TransactionMetadataSet {
         height: BlockHeight,
         unconfirmed: bool,
         timestamp: u32,
-        nullifier: ChannelNullifier,
+        nullifier: PoolNullifier,
         value: u64,
         source_txid: TxId,
     ) {
         match nullifier {
-            ChannelNullifier::Orchard(nullifier) => self
+            PoolNullifier::Orchard(nullifier) => self
                 .add_new_spent_internal::<ReceivedOrchardNoteAndMetadata>(
                     txid,
                     height,
@@ -565,7 +563,7 @@ impl TransactionMetadataSet {
                     value,
                     source_txid,
                 ),
-            ChannelNullifier::Sapling(nullifier) => self
+            PoolNullifier::Sapling(nullifier) => self
                 .add_new_spent_internal::<ReceivedSaplingNoteAndMetadata>(
                     txid,
                     height,
