@@ -6,7 +6,7 @@
 use crate::{
     compact_formats::{CompactBlock, CompactTx},
     wallet::{
-        data::{ChannelNullifier, TransactionMetadata},
+        data::{PoolNullifier, TransactionMetadata},
         keys::unified::UnifiedSpendCapability,
         traits::{
             CompactOutput as _, DomainWalletExt, Nullifier as _, ReceivedNoteAndMetadata as _,
@@ -62,7 +62,7 @@ impl TrialDecryptions {
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         detected_transaction_id_sender: UnboundedSender<(
             TxId,
-            ChannelNullifier,
+            PoolNullifier,
             BlockHeight,
             Option<u32>,
         )>,
@@ -154,7 +154,7 @@ impl TrialDecryptions {
         transaction_size_filter: Option<u32>,
         detected_transaction_id_sender: UnboundedSender<(
             TxId,
-            ChannelNullifier,
+            PoolNullifier,
             BlockHeight,
             Option<u32>,
         )>,
@@ -257,7 +257,7 @@ impl TrialDecryptions {
         transaction_metadata_set: &Arc<RwLock<TransactionMetadataSet>>,
         detected_transaction_id_sender: &UnboundedSender<(
             TxId,
-            ChannelNullifier,
+            PoolNullifier,
             BlockHeight,
             Option<u32>,
         )>,

@@ -1,7 +1,7 @@
 use crate::wallet::traits::{DomainWalletExt, ReceivedNoteAndMetadata};
 use crate::wallet::MemoDownloadOption;
 use crate::wallet::{
-    data::{ChannelNullifier, TransactionMetadata},
+    data::{PoolNullifier, TransactionMetadata},
     transactions::TransactionMetadataSet,
 };
 use std::sync::Arc;
@@ -20,7 +20,7 @@ use zcash_primitives::transaction::TxId;
 
 use super::syncdata::BlazeSyncData;
 
-/// A processor to update notes that we have recieved in the wallet.
+/// A processor to update notes that we have received in the wallet.
 /// We need to identify if this note has been spent in future blocks.
 /// If YES, then:
 ///    - Mark this note as spent
@@ -44,11 +44,11 @@ impl UpdateNotes {
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         wallet_txns: Arc<RwLock<TransactionMetadataSet>>,
         txid: TxId,
-        nullifier: ChannelNullifier,
+        nullifier: PoolNullifier,
         output_num: Option<u32>,
     ) {
         match nullifier {
-            ChannelNullifier::Sapling(n) => {
+            PoolNullifier::Sapling(n) => {
                 Self::update_witnesses_inner::<SaplingDomain<zingoconfig::ChainType>>(
                     bsync_data,
                     wallet_txns,
@@ -58,7 +58,7 @@ impl UpdateNotes {
                 )
                 .await
             }
-            ChannelNullifier::Orchard(n) => {
+            PoolNullifier::Orchard(n) => {
                 Self::update_witnesses_inner::<OrchardDomain>(
                     bsync_data,
                     wallet_txns,
@@ -96,7 +96,13 @@ impl UpdateNotes {
                     .read()
                     .await
                     .block_data
-                    .update_witness_after_pos::<D>(&created_height, &txid, output_num, witnesses)
+                    .update_witness_after_receipt::<D>(
+                        &created_height,
+                        &txid,
+                        output_num,
+                        witnesses,
+                        nullifier,
+                    )
                     .await
             } else {
                 // If the output_num was not present, then this is an existing note, and it needs
@@ -105,7 +111,7 @@ impl UpdateNotes {
                     .read()
                     .await
                     .block_data
-                    .update_witness_after_block::<D>(witnesses)
+                    .update_witness_after_block::<D>(witnesses, nullifier)
                     .await
             };
 
@@ -127,14 +133,14 @@ impl UpdateNotes {
     ) -> (
         JoinHandle<Result<(), String>>,
         oneshot::Sender<u64>,
-        UnboundedSender<(TxId, ChannelNullifier, BlockHeight, Option<u32>)>,
+        UnboundedSender<(TxId, PoolNullifier, BlockHeight, Option<u32>)>,
     ) {
         //info!("Starting Note Update processing");
         let download_memos = bsync_data.read().await.wallet_options.download_memos;
 
         // Create a new channel where we'll be notified of TxIds that are to be processed
         let (transmitter, mut receiver) =
-            unbounded_channel::<(TxId, ChannelNullifier, BlockHeight, Option<u32>)>();
+            unbounded_channel::<(TxId, PoolNullifier, BlockHeight, Option<u32>)>();
 
         // Aside from the incoming Txns, we also need to update the notes that are currently in the wallet
         let wallet_transactions = self.transaction_metadata_set.clone();
@@ -172,7 +178,7 @@ impl UpdateNotes {
         let h1 = tokio::spawn(async move {
             let mut workers = FuturesUnordered::new();
 
-            // Recieve Txns that are sent to the wallet. We need to update the notes for this.
+            // Receive Txns that are sent to the wallet. We need to update the notes for this.
             while let Some((transaction_id, nf, at_height, output_num)) = receiver.recv().await {
                 let bsync_data = bsync_data.clone();
                 let wallet_transactions = wallet_transactions.clone();
@@ -207,7 +213,7 @@ impl UpdateNotes {
                             spent_at_height,
                         );
 
-                        // Record the future transaction, the one that has spent the nullifiers recieved in this transaction in the wallet
+                        // Record the future transaction, the one that has spent the nullifiers received in this transaction in the wallet
                         wallet_transactions.write().await.add_new_spent(
                             spent_transaction_id,
                             spent_at_height,
@@ -218,7 +224,7 @@ impl UpdateNotes {
                             transaction_id,
                         );
 
-                        // Send the future transaction to be fetched too, in case it has only spent nullifiers and not recieved any change
+                        // Send the future transaction to be fetched too, in case it has only spent nullifiers and not received any change
                         if download_memos != MemoDownloadOption::NoMemos {
                             fetch_full_sender
                                 .send((spent_transaction_id, spent_at_height))

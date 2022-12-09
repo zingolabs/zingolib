@@ -1,9 +1,10 @@
+use crate::wallet::traits::Spend;
 use crate::{
     compact_formats::{CompactBlock, CompactTx, TreeState},
     grpc_connector::GrpcConnector,
     lightclient::checkpoints::get_all_main_checkpoints,
     wallet::{
-        data::{BlockData, ChannelNullifier, TransactionMetadata, WitnessCache},
+        data::{BlockData, PoolNullifier, TransactionMetadata, WitnessCache},
         traits::{DomainWalletExt, FromCommitment, ReceivedNoteAndMetadata},
         transactions::TransactionMetadataSet,
     },
@@ -134,7 +135,7 @@ impl BlockAndWitnessData {
 
     pub async fn get_compact_transaction_for_nullifier_at_height(
         &self,
-        nullifier: &ChannelNullifier,
+        nullifier: &PoolNullifier,
         height: u64,
     ) -> (CompactTx, u32) {
         self.wait_for_block(height).await;
@@ -147,7 +148,7 @@ impl BlockAndWitnessData {
             bd.cb()
         };
         match nullifier {
-            ChannelNullifier::Sapling(nullifier) => {
+            PoolNullifier::Sapling(nullifier) => {
                 for compact_transaction in &cb.vtx {
                     for cs in &compact_transaction.spends {
                         if cs.nf == nullifier.to_vec() {
@@ -156,7 +157,7 @@ impl BlockAndWitnessData {
                     }
                 }
             }
-            ChannelNullifier::Orchard(nullifier) => {
+            PoolNullifier::Orchard(nullifier) => {
                 for compact_transaction in &cb.vtx {
                     for ca in &compact_transaction.actions {
                         if ca.nullifier == nullifier.to_bytes().to_vec() {
@@ -513,7 +514,7 @@ impl BlockAndWitnessData {
         }
     }
 
-    pub(crate) async fn is_nf_spent(&self, nf: ChannelNullifier, after_height: u64) -> Option<u64> {
+    pub(crate) async fn is_nf_spent(&self, nf: PoolNullifier, after_height: u64) -> Option<u64> {
         self.wait_for_block(after_height).await;
 
         {
@@ -521,7 +522,7 @@ impl BlockAndWitnessData {
             let blocks = self.blocks_in_current_batch.read().await;
             let pos = blocks.first().unwrap().height - after_height;
             match nf {
-                ChannelNullifier::Sapling(nf) => {
+                PoolNullifier::Sapling(nf) => {
                     let nf = nf.to_vec();
 
                     for i in (0..pos + 1).rev() {
@@ -535,7 +536,7 @@ impl BlockAndWitnessData {
                         }
                     }
                 }
-                ChannelNullifier::Orchard(nf) => {
+                PoolNullifier::Orchard(nf) => {
                     let nf = nf.to_bytes();
 
                     for i in (0..pos + 1).rev() {
@@ -680,6 +681,7 @@ impl BlockAndWitnessData {
     pub(crate) async fn update_witness_after_block<D: DomainWalletExt<zingoconfig::ChainType>>(
         &self,
         witnesses: WitnessCache<Node<D>>,
+        nullifier: <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier,
     ) -> WitnessCache<Node<D>>
     where
         <D as Domain>::Recipient: crate::wallet::traits::Recipient,
@@ -725,7 +727,12 @@ impl BlockAndWitnessData {
                     yield_now().await;
                     blocks = self.blocks_in_current_batch.read().await;
                 }
-                self.sync_status.write().await.witnesses_updated = top_block - bottom_block - i;
+                self.sync_status.write().await.witnesses_updated.insert(
+                    <D::Bundle as crate::wallet::traits::Bundle<D, ChainType>>::Spend::wallet_nullifier(
+                        &nullifier,
+                    ),
+                    top_block - bottom_block - i,
+                );
             }
 
             top_block
@@ -734,7 +741,7 @@ impl BlockAndWitnessData {
         return WitnessCache::new(fsb.into_vec(), top_block);
     }
 
-    pub(crate) async fn update_witness_after_pos<D: DomainWalletExt<zingoconfig::ChainType>>(
+    async fn update_witness_after_reciept_to_block_end<D: DomainWalletExt<zingoconfig::ChainType>>(
         &self,
         height: &BlockHeight,
         transaction_id: &TxId,
@@ -795,9 +802,31 @@ impl BlockAndWitnessData {
         }
 
         // Replace the last witness in the vector with the newly computed one.
-        let witnesses = WitnessCache::new(vec![w], height);
-
-        return self.update_witness_after_block::<D>(witnesses).await;
+        WitnessCache::new(vec![w], height)
+    }
+    pub(crate) async fn update_witness_after_receipt<D: DomainWalletExt<zingoconfig::ChainType>>(
+        &self,
+        height: &BlockHeight,
+        transaction_id: &TxId,
+        output_num: u32,
+        witnesses: WitnessCache<<D::WalletNote as ReceivedNoteAndMetadata>::Node>,
+        nullifier: <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier,
+    ) -> WitnessCache<<D::WalletNote as ReceivedNoteAndMetadata>::Node>
+    where
+        D::Recipient: crate::wallet::traits::Recipient,
+        D::Note: PartialEq + Clone,
+        <D::WalletNote as ReceivedNoteAndMetadata>::Node: FromCommitment,
+    {
+        let witnesses = self
+            .update_witness_after_reciept_to_block_end::<D>(
+                height,
+                transaction_id,
+                output_num,
+                witnesses,
+            )
+            .await;
+        self.update_witness_after_block::<D>(witnesses, nullifier)
+            .await
     }
 }
 
