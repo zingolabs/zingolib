@@ -8,9 +8,7 @@ use crate::{
     wallet::{
         data::{PoolNullifier, TransactionMetadata},
         keys::unified::UnifiedSpendCapability,
-        traits::{
-            CompactOutput as _, DomainWalletExt, Nullifier as _, ReceivedNoteAndMetadata as _,
-        },
+        traits::{CompactOutput as _, DomainWalletExt, ReceivedNoteAndMetadata as _},
         transactions::TransactionMetadataSet,
         MemoDownloadOption,
     },
@@ -330,12 +328,7 @@ impl TrialDecryptions {
                     debug!("Trial decrypt Detected txid {}", &transaction_id);
 
                     detected_transaction_id_sender
-                        .send((
-                            transaction_id,
-                            nullifier.to_channel_nullifier(),
-                            height,
-                            Some((i) as u32),
-                        ))
+                        .send((transaction_id, nullifier.into(), height, Some((i) as u32)))
                         .unwrap();
 
                     Ok::<_, String>(())

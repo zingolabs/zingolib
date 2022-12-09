@@ -601,7 +601,7 @@ impl TransactionMetadataSet {
             .find(|nf| **nf == nullifier)
             .is_none()
         {
-            transaction_metadata.add_spent_nullifier(nullifier.to_channel_nullifier(), value)
+            transaction_metadata.add_spent_nullifier(nullifier.into(), value)
         }
 
         // Since this Txid has spent some funds, output notes in this Tx that are sent to us are actually change.

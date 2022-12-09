@@ -1,4 +1,3 @@
-use crate::wallet::traits::Spend;
 use crate::{
     compact_formats::{CompactBlock, CompactTx, TreeState},
     grpc_connector::GrpcConnector,
@@ -727,12 +726,11 @@ impl BlockAndWitnessData {
                     yield_now().await;
                     blocks = self.blocks_in_current_batch.read().await;
                 }
-                self.sync_status.write().await.witnesses_updated.insert(
-                    <D::Bundle as crate::wallet::traits::Bundle<D, ChainType>>::Spend::wallet_nullifier(
-                        &nullifier,
-                    ),
-                    top_block - bottom_block - i,
-                );
+                self.sync_status
+                    .write()
+                    .await
+                    .witnesses_updated
+                    .insert(nullifier.into(), top_block - bottom_block - i);
             }
 
             top_block
