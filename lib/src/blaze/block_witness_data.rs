@@ -804,7 +804,7 @@ impl BlockAndWitnessData {
         // Replace the last witness in the vector with the newly computed one.
         WitnessCache::new(vec![w], height)
     }
-    pub(crate) async fn update_witness_after_reciept<D: DomainWalletExt<zingoconfig::ChainType>>(
+    pub(crate) async fn update_witness_after_receipt<D: DomainWalletExt<zingoconfig::ChainType>>(
         &self,
         height: &BlockHeight,
         transaction_id: &TxId,

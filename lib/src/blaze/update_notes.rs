@@ -20,7 +20,7 @@ use zcash_primitives::transaction::TxId;
 
 use super::syncdata::BlazeSyncData;
 
-/// A processor to update notes that we have recieved in the wallet.
+/// A processor to update notes that we have received in the wallet.
 /// We need to identify if this note has been spent in future blocks.
 /// If YES, then:
 ///    - Mark this note as spent
@@ -96,7 +96,7 @@ impl UpdateNotes {
                     .read()
                     .await
                     .block_data
-                    .update_witness_after_reciept::<D>(
+                    .update_witness_after_receipt::<D>(
                         &created_height,
                         &txid,
                         output_num,
@@ -178,7 +178,7 @@ impl UpdateNotes {
         let h1 = tokio::spawn(async move {
             let mut workers = FuturesUnordered::new();
 
-            // Recieve Txns that are sent to the wallet. We need to update the notes for this.
+            // Receive Txns that are sent to the wallet. We need to update the notes for this.
             while let Some((transaction_id, nf, at_height, output_num)) = receiver.recv().await {
                 let bsync_data = bsync_data.clone();
                 let wallet_transactions = wallet_transactions.clone();
@@ -213,7 +213,7 @@ impl UpdateNotes {
                             spent_at_height,
                         );
 
-                        // Record the future transaction, the one that has spent the nullifiers recieved in this transaction in the wallet
+                        // Record the future transaction, the one that has spent the nullifiers received in this transaction in the wallet
                         wallet_transactions.write().await.add_new_spent(
                             spent_transaction_id,
                             spent_at_height,
@@ -224,7 +224,7 @@ impl UpdateNotes {
                             transaction_id,
                         );
 
-                        // Send the future transaction to be fetched too, in case it has only spent nullifiers and not recieved any change
+                        // Send the future transaction to be fetched too, in case it has only spent nullifiers and not received any change
                         if download_memos != MemoDownloadOption::NoMemos {
                             fetch_full_sender
                                 .send((spent_transaction_id, spent_at_height))
