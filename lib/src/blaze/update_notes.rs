@@ -96,7 +96,13 @@ impl UpdateNotes {
                     .read()
                     .await
                     .block_data
-                    .update_witness_after_pos::<D>(&created_height, &txid, output_num, witnesses)
+                    .update_witness_after_pos::<D>(
+                        &created_height,
+                        &txid,
+                        output_num,
+                        witnesses,
+                        nullifier,
+                    )
                     .await
             } else {
                 // If the output_num was not present, then this is an existing note, and it needs
@@ -105,7 +111,7 @@ impl UpdateNotes {
                     .read()
                     .await
                     .block_data
-                    .update_witness_after_block::<D>(witnesses)
+                    .update_witness_after_block::<D>(witnesses, nullifier)
                     .await
             };
 

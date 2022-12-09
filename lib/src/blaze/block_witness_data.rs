@@ -1,3 +1,4 @@
+use crate::wallet::traits::Spend;
 use crate::{
     compact_formats::{CompactBlock, CompactTx, TreeState},
     grpc_connector::GrpcConnector,
@@ -680,6 +681,7 @@ impl BlockAndWitnessData {
     pub(crate) async fn update_witness_after_block<D: DomainWalletExt<zingoconfig::ChainType>>(
         &self,
         witnesses: WitnessCache<Node<D>>,
+        nullifier: <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier,
     ) -> WitnessCache<Node<D>>
     where
         <D as Domain>::Recipient: crate::wallet::traits::Recipient,
@@ -725,7 +727,12 @@ impl BlockAndWitnessData {
                     yield_now().await;
                     blocks = self.blocks_in_current_batch.read().await;
                 }
-                self.sync_status.write().await.witnesses_updated = top_block - bottom_block - i;
+                self.sync_status.write().await.witnesses_updated.insert(
+                    <D::Bundle as crate::wallet::traits::Bundle<D, ChainType>>::Spend::wallet_nullifier(
+                        &nullifier,
+                    ),
+                    top_block - bottom_block - i,
+                );
             }
 
             top_block
@@ -740,6 +747,7 @@ impl BlockAndWitnessData {
         transaction_id: &TxId,
         output_num: u32,
         witnesses: WitnessCache<<D::WalletNote as ReceivedNoteAndMetadata>::Node>,
+        nullifier: <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier,
     ) -> WitnessCache<<D::WalletNote as ReceivedNoteAndMetadata>::Node>
     where
         D::Recipient: crate::wallet::traits::Recipient,
@@ -797,7 +805,9 @@ impl BlockAndWitnessData {
         // Replace the last witness in the vector with the newly computed one.
         let witnesses = WitnessCache::new(vec![w], height);
 
-        return self.update_witness_after_block::<D>(witnesses).await;
+        return self
+            .update_witness_after_block::<D>(witnesses, nullifier)
+            .await;
     }
 }
 

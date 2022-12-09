@@ -1,4 +1,7 @@
 use core::fmt;
+use std::collections::HashMap;
+
+use crate::wallet::data::ChannelNullifier;
 
 #[derive(Clone, Debug, Default)]
 pub struct BatchSyncStatus {
@@ -13,7 +16,7 @@ pub struct BatchSyncStatus {
     pub trial_dec_done: u64,
     pub txn_scan_done: u64,
 
-    pub witnesses_updated: u64,
+    pub witnesses_updated: HashMap<ChannelNullifier, u64>,
 
     pub blocks_total: u64,
 
@@ -31,7 +34,7 @@ impl BatchSyncStatus {
         self.trial_dec_done = 0;
         self.blocks_total = 0;
         self.txn_scan_done = 0;
-        self.witnesses_updated = 0;
+        self.witnesses_updated = HashMap::new();
         self.batch_num = 0;
         self.batch_total = batch_total;
     }
@@ -51,7 +54,7 @@ impl BatchSyncStatus {
         self.blocks_done = 0;
         self.trial_dec_done = 0;
         self.blocks_total = 0;
-        self.witnesses_updated = 0;
+        self.witnesses_updated = HashMap::new();
         self.txn_scan_done = 0;
         self.batch_num = batch_num;
     }
@@ -74,7 +77,7 @@ impl fmt::Display for BatchSyncStatus {
                 self.batch_total,
                 self.blocks_done,
                 self.trial_dec_done,
-                self.witnesses_updated,
+                self.witnesses_updated.values().min().unwrap_or(&0),
                 self.blocks_total
             )
         } else {

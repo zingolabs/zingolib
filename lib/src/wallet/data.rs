@@ -30,10 +30,25 @@ use super::traits::ReadableWriteable;
 /// `(TxId, WalletNullifier, BlockHeight, Option<u32>)`.  This enum permits a single channel
 /// type to handle nullifiers from different domains.
 /// <https://github.com/zingolabs/zingolib/issues/64>
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ChannelNullifier {
     Sapling(SaplingNullifier),
     Orchard(OrchardNullifier),
+}
+
+impl std::hash::Hash for ChannelNullifier {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            ChannelNullifier::Sapling(n) => {
+                state.write_u8(0);
+                n.0.hash(state);
+            }
+            ChannelNullifier::Orchard(n) => {
+                state.write_u8(1);
+                n.to_bytes().hash(state);
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
