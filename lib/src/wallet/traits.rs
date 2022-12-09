@@ -197,16 +197,12 @@ impl FromCommitment for MerkleHashOrchard {
 pub trait Spend {
     type Nullifier: Nullifier;
     fn nullifier(&self) -> &Self::Nullifier;
-    fn wallet_nullifier(_: &Self::Nullifier) -> PoolNullifier;
 }
 
 impl<Auth: SaplingAuthorization> Spend for SpendDescription<Auth> {
     type Nullifier = SaplingNullifier;
     fn nullifier(&self) -> &Self::Nullifier {
         &self.nullifier
-    }
-    fn wallet_nullifier(null: &Self::Nullifier) -> PoolNullifier {
-        PoolNullifier::Sapling(*null)
     }
 }
 
@@ -215,8 +211,17 @@ impl<Auth> Spend for Action<Auth> {
     fn nullifier(&self) -> &Self::Nullifier {
         self.nullifier()
     }
-    fn wallet_nullifier(null: &Self::Nullifier) -> PoolNullifier {
-        PoolNullifier::Orchard(*null)
+}
+
+impl From<OrchardNullifier> for PoolNullifier {
+    fn from(n: OrchardNullifier) -> Self {
+        PoolNullifier::Orchard(n)
+    }
+}
+
+impl From<SaplingNullifier> for PoolNullifier {
+    fn from(n: SaplingNullifier) -> Self {
+        PoolNullifier::Sapling(n)
     }
 }
 
@@ -364,12 +369,13 @@ impl<P: Parameters> Bundle<OrchardDomain, P> for OrchardBundle<OrchardAuthorized
 }
 
 /// TODO: Documentation neeeeeds help!!!!  XXXX
-pub trait Nullifier: PartialEq + Copy + Sized + ToBytes<32> + FromBytes<32> + Send {
+pub trait Nullifier:
+    PartialEq + Copy + Sized + ToBytes<32> + FromBytes<32> + Send + Into<PoolNullifier>
+{
     fn get_nullifiers_of_unspent_notes_from_transaction_set(
         transaction_metadata_set: &TransactionMetadataSet,
     ) -> Vec<(Self, u64, TxId)>;
     fn get_nullifiers_spent_in_transaction(transaction: &TransactionMetadata) -> &Vec<Self>;
-    fn to_channel_nullifier(&self) -> PoolNullifier;
 }
 
 impl Nullifier for SaplingNullifier {
@@ -384,10 +390,6 @@ impl Nullifier for SaplingNullifier {
     ) -> &Vec<Self> {
         &transaction_metadata_set.spent_sapling_nullifiers
     }
-
-    fn to_channel_nullifier(&self) -> PoolNullifier {
-        PoolNullifier::Sapling(*self)
-    }
 }
 
 impl Nullifier for OrchardNullifier {
@@ -399,10 +401,6 @@ impl Nullifier for OrchardNullifier {
 
     fn get_nullifiers_spent_in_transaction(transaction: &TransactionMetadata) -> &Vec<Self> {
         &transaction.spent_orchard_nullifiers
-    }
-
-    fn to_channel_nullifier(&self) -> PoolNullifier {
-        PoolNullifier::Orchard(*self)
     }
 }
 
@@ -477,6 +475,8 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
     type Node = SaplingNode;
     type Nullifier = SaplingNullifier;
 
+    /// This (and SET_NOTE_WITNESSES) could be associated functions instead of fn
+    /// constants, but that would require an additional repetition of the fn arguments.
     const GET_NOTE_WITNESSES: fn(
         &TransactionMetadataSet,
         &TxId,
