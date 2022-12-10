@@ -34,7 +34,7 @@ jobs:
           args:                 cargo-tarpaulin --verbose
       - name:                   Generate code coverage
         run: |
-          cargo tarpaulin --verbose --all-features --workspace --timeout 300 --out Xml --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release
+          cargo tarpaulin --verbose --workspace --timeout 300 --out Xml --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release
       - name:                   Upload to codecov.io
         uses:                   codecov/codecov-action@v2
         with:

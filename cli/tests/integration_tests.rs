@@ -1,11 +1,12 @@
 #![forbid(unsafe_code)]
-
+#![cfg(feature = "local_env")]
 mod data;
 mod utils;
 use data::TEST_SEED;
 use json::JsonValue;
 use tokio::runtime::Runtime;
 use utils::setup;
+
 #[test]
 fn create_network_disconnected_client() {
     let (_regtest_manager_1, _child_process_handler_1, _client_builder) =

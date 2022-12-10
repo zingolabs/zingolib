@@ -27,3 +27,4 @@ zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", rev = "d
 
 [features]
 cross_version = [ "dep:zingtaddrfix" ]
+local_env =[]
