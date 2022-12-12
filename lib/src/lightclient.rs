@@ -974,7 +974,7 @@ impl LightClient {
     where
         'a: 'b,
         'c: 'b,
-        D: DomainWalletExt<ChainType>,
+        D: DomainWalletExt,
         D::WalletNote: 'b,
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,

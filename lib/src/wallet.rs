@@ -482,7 +482,7 @@ impl LightWallet {
         self.blocks.read().await.iter().map(|b| b.clone()).collect()
     }
 
-    pub(crate) fn note_address<D: DomainWalletExt<zingoconfig::ChainType>>(
+    pub(crate) fn note_address<D: DomainWalletExt>(
         network: &zingoconfig::ChainType,
         note: &D::WalletNote,
         unified_spend_auth: &UnifiedSpendCapability,
@@ -1009,7 +1009,7 @@ impl LightWallet {
 
     async fn get_all_domain_specific_notes<D>(&self) -> Vec<D::SpendableNoteAT>
     where
-        D: DomainWalletExt<zingoconfig::ChainType>,
+        D: DomainWalletExt,
         <D as Domain>::Recipient: traits::Recipient,
         <D as Domain>::Note: PartialEq + Clone,
     {
@@ -1049,7 +1049,7 @@ impl LightWallet {
         candidate_notes
     }
 
-    fn add_notes_to_total<D: DomainWalletExt<zingoconfig::ChainType>>(
+    fn add_notes_to_total<D: DomainWalletExt>(
         candidates: Vec<D::SpendableNoteAT>,
         target_amount: Amount,
     ) -> (Vec<D::SpendableNoteAT>, Amount)

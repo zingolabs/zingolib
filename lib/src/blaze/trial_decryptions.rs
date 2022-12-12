@@ -261,7 +261,7 @@ impl TrialDecryptions {
         )>,
         workers: &FuturesUnordered<JoinHandle<Result<(), String>>>,
     ) where
-        D: DomainWalletExt<zingoconfig::ChainType>,
+        D: DomainWalletExt,
         <D as Domain>::Recipient: crate::wallet::traits::Recipient + Send + 'static,
         <D as Domain>::Note: PartialEq + Send + 'static + Clone,
         [u8; 32]: From<<D as Domain>::ExtractedCommitmentBytes>,

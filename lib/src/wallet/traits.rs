@@ -107,18 +107,16 @@ impl<const N: usize> ToBytes<N> for [u8; N] {
 
 /// Exposes the out_ciphertext, domain, and value_commitment in addition to the
 /// required methods of ShieldedOutput
-pub trait ShieldedOutputExt<P: Parameters, D: Domain>:
-    ShieldedOutput<D, ENC_CIPHERTEXT_SIZE>
-{
-    fn domain(&self, height: BlockHeight, parameters: P) -> D;
+pub trait ShieldedOutputExt<D: Domain>: ShieldedOutput<D, ENC_CIPHERTEXT_SIZE> {
+    fn domain(&self, height: BlockHeight, parameters: ChainType) -> D;
     /// A decryption key for `enc_ciphertext`.  `out_ciphertext` is _itself_  decryptable
     /// with the `OutgoingCipherKey` "`ock`".
     fn out_ciphertext(&self) -> [u8; 80];
     fn value_commitment(&self) -> D::ValueCommitment;
 }
 
-impl<A, P: Parameters> ShieldedOutputExt<P, OrchardDomain> for Action<A> {
-    fn domain(&self, _block_height: BlockHeight, _parameters: P) -> OrchardDomain {
+impl<A> ShieldedOutputExt<OrchardDomain> for Action<A> {
+    fn domain(&self, _block_height: BlockHeight, _parameters: ChainType) -> OrchardDomain {
         OrchardDomain::for_action(self)
     }
 
@@ -131,8 +129,8 @@ impl<A, P: Parameters> ShieldedOutputExt<P, OrchardDomain> for Action<A> {
     }
 }
 
-impl<P: Parameters> ShieldedOutputExt<P, SaplingDomain<P>> for OutputDescription<GrothProofBytes> {
-    fn domain(&self, height: BlockHeight, parameters: P) -> SaplingDomain<P> {
+impl ShieldedOutputExt<SaplingDomain<ChainType>> for OutputDescription<GrothProofBytes> {
+    fn domain(&self, height: BlockHeight, parameters: ChainType) -> SaplingDomain<ChainType> {
         SaplingDomain::for_height(parameters, height)
     }
 
@@ -260,7 +258,7 @@ impl Recipient for SaplingAddress {
     }
 }
 
-pub trait CompactOutput<D: DomainWalletExt<P>, P: Parameters>:
+pub trait CompactOutput<D: DomainWalletExt>:
     Sized + ShieldedOutput<D, COMPACT_NOTE_SIZE> + Clone
 where
     D::Recipient: Recipient,
@@ -268,10 +266,10 @@ where
 {
     fn from_compact_transaction(compact_transaction: &CompactTx) -> &Vec<Self>;
     fn cmstar(&self) -> &[u8; 32];
-    fn domain(&self, parameters: P, height: BlockHeight) -> D;
+    fn domain(&self, parameters: ChainType, height: BlockHeight) -> D;
 }
 
-impl<P: Parameters> CompactOutput<SaplingDomain<P>, P> for CompactSaplingOutput {
+impl CompactOutput<SaplingDomain<ChainType>> for CompactSaplingOutput {
     fn from_compact_transaction(compact_transaction: &CompactTx) -> &Vec<CompactSaplingOutput> {
         &compact_transaction.outputs
     }
@@ -280,12 +278,12 @@ impl<P: Parameters> CompactOutput<SaplingDomain<P>, P> for CompactSaplingOutput 
         vec_to_array(&self.cmu)
     }
 
-    fn domain(&self, parameters: P, height: BlockHeight) -> SaplingDomain<P> {
+    fn domain(&self, parameters: ChainType, height: BlockHeight) -> SaplingDomain<ChainType> {
         SaplingDomain::for_height(parameters, height)
     }
 }
 
-impl<P: Parameters> CompactOutput<OrchardDomain, P> for CompactOrchardAction {
+impl CompactOutput<OrchardDomain> for CompactOrchardAction {
     fn from_compact_transaction(compact_transaction: &CompactTx) -> &Vec<CompactOrchardAction> {
         &compact_transaction.actions
     }
@@ -293,7 +291,7 @@ impl<P: Parameters> CompactOutput<OrchardDomain, P> for CompactOrchardAction {
         vec_to_array(&self.cmx)
     }
 
-    fn domain(&self, _parameters: P, _heightt: BlockHeight) -> OrchardDomain {
+    fn domain(&self, _parameters: ChainType, _heightt: BlockHeight) -> OrchardDomain {
         OrchardDomain::for_nullifier(
             OrchardNullifier::from_bytes(vec_to_array(&self.nullifier)).unwrap(),
         )
@@ -304,7 +302,7 @@ impl<P: Parameters> CompactOutput<OrchardDomain, P> for CompactOrchardAction {
 /// domain. In the Orchard Domain bundles comprise Actions each of which contains
 /// both a Spend and an Output (though either or both may be dummies). Sapling transmissions,
 /// as implemented, contain a 1:1 ratio of Spends and Outputs.
-pub trait Bundle<D: DomainWalletExt<P>, P: Parameters>
+pub trait Bundle<D: DomainWalletExt>
 where
     D::Recipient: Recipient,
     D::Note: PartialEq + Clone,
@@ -312,7 +310,7 @@ where
     /// An expenditure of an ?external? output, such that its value is distributed among *this* transaction's outputs.
     type Spend: Spend;
     /// A value store that is completely emptied by transfer of its contents to another output.
-    type Output: ShieldedOutputExt<P, D> + Clone;
+    type Output: ShieldedOutputExt<D> + Clone;
     type Spends<'a>: IntoIterator<Item = &'a Self::Spend>
     where
         Self::Spend: 'a,
@@ -329,7 +327,7 @@ where
     fn spend_elements(&self) -> Self::Spends<'_>;
 }
 
-impl<P: Parameters> Bundle<SaplingDomain<P>, P> for SaplingBundle<SaplingAuthorized> {
+impl Bundle<SaplingDomain<ChainType>> for SaplingBundle<SaplingAuthorized> {
     type Spend = SpendDescription<SaplingAuthorized>;
     type Output = OutputDescription<GrothProofBytes>;
     type Spends<'a> = &'a Vec<Self::Spend>;
@@ -347,7 +345,7 @@ impl<P: Parameters> Bundle<SaplingDomain<P>, P> for SaplingBundle<SaplingAuthori
     }
 }
 
-impl<P: Parameters> Bundle<OrchardDomain, P> for OrchardBundle<OrchardAuthorized, Amount> {
+impl Bundle<OrchardDomain> for OrchardBundle<OrchardAuthorized, Amount> {
     type Spend = Action<Signature<SpendAuth>>;
     type Output = Action<Signature<SpendAuth>>;
     type Spends<'a> = &'a NonEmpty<Self::Spend>;
@@ -718,7 +716,7 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
     }
 }
 
-pub trait DomainWalletExt<P: Parameters>: Domain + BatchDomain
+pub trait DomainWalletExt: Domain + BatchDomain
 where
     Self: Sized,
     Self::Note: PartialEq + Clone,
@@ -732,16 +730,16 @@ where
         + PartialEq;
 
     type SpendingKey: for<'a> From<&'a UnifiedSpendCapability> + Clone;
-    type CompactOutput: CompactOutput<Self, P>;
+    type CompactOutput: CompactOutput<Self>;
     type WalletNote: ReceivedNoteAndMetadata<
         Fvk = Self::Fvk,
         Note = <Self as Domain>::Note,
         Diversifier = <<Self as Domain>::Recipient as Recipient>::Diversifier,
-        Nullifier = <<<Self as DomainWalletExt<P>>::Bundle as Bundle<Self, P>>::Spend as Spend>::Nullifier,
+        Nullifier = <<<Self as DomainWalletExt>::Bundle as Bundle<Self>>::Spend as Spend>::Nullifier,
     >;
-    type SpendableNoteAT: SpendableNote<P, Self>;
+    type SpendableNoteAT: SpendableNote<Self>;
 
-    type Bundle: Bundle<Self, P>;
+    type Bundle: Bundle<Self>;
 
     fn to_notes_vec_mut(_: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote>;
     fn ua_from_contained_receiver<'a>(
@@ -755,7 +753,7 @@ where
     fn usc_to_ovk(usc: &UnifiedSpendCapability) -> Self::OutgoingViewingKey;
 }
 
-impl<P: Parameters> DomainWalletExt<P> for SaplingDomain<P> {
+impl DomainWalletExt for SaplingDomain<ChainType> {
     const NU: NetworkUpgrade = NetworkUpgrade::Sapling;
 
     type Fvk = SaplingExtendedFullViewingKey;
@@ -801,7 +799,7 @@ impl<P: Parameters> DomainWalletExt<P> for SaplingDomain<P> {
     }
 }
 
-impl<P: Parameters> DomainWalletExt<P> for OrchardDomain {
+impl DomainWalletExt for OrchardDomain {
     const NU: NetworkUpgrade = NetworkUpgrade::Nu5;
 
     type Fvk = OrchardFullViewingKey;
@@ -881,10 +879,9 @@ impl Diversifiable for OrchardFullViewingKey {
     }
 }
 
-pub trait SpendableNote<P, D>
+pub trait SpendableNote<D>
 where
-    P: Parameters,
-    D: DomainWalletExt<P, SpendableNoteAT = Self>,
+    D: DomainWalletExt<SpendableNoteAT = Self>,
     <D as Domain>::Recipient: Recipient,
     <D as Domain>::Note: PartialEq + Clone,
     Self: Sized,
@@ -937,7 +934,7 @@ where
     fn spend_key(&self) -> &D::SpendingKey;
 }
 
-impl<P: Parameters> SpendableNote<P, SaplingDomain<P>> for SpendableSaplingNote {
+impl SpendableNote<SaplingDomain<ChainType>> for SpendableSaplingNote {
     fn from_parts_unchecked(
         transaction_id: TxId,
         nullifier: SaplingNullifier,
@@ -981,7 +978,7 @@ impl<P: Parameters> SpendableNote<P, SaplingDomain<P>> for SpendableSaplingNote 
     }
 }
 
-impl<P: Parameters> SpendableNote<P, OrchardDomain> for SpendableOrchardNote {
+impl SpendableNote<OrchardDomain> for SpendableOrchardNote {
     fn from_parts_unchecked(
         transaction_id: TxId,
         nullifier: OrchardNullifier,

@@ -384,27 +384,25 @@ impl TransactionContext {
         outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
         arbitrary_memos_with_txids: &mut Vec<([u8; 511], TxId)>,
     ) where
-        D: zingo_traits::DomainWalletExt<ChainType>,
+        D: zingo_traits::DomainWalletExt,
         D::Note: Clone + PartialEq,
         D::OutgoingViewingKey: std::fmt::Debug,
         D::Recipient: zingo_traits::Recipient,
         D::Memo: zingo_traits::ToBytes<512>,
     {
-        type FnGenBundle<I> = <I as DomainWalletExt<ChainType>>::Bundle;
+        type FnGenBundle<I> = <I as DomainWalletExt>::Bundle;
         // Check if any of the nullifiers generated in this transaction are ours. We only need this for unconfirmed transactions,
         // because for transactions in the block, we will check the nullifiers from the blockdata
         if pending {
             let unspent_nullifiers =
-            <<D as DomainWalletExt<ChainType>>
+            <<D as DomainWalletExt>
               ::WalletNote as zingo_traits::ReceivedNoteAndMetadata>
                 ::Nullifier::get_nullifiers_of_unspent_notes_from_transaction_set(
                 &*self.transaction_metadata_set.read().await,
             );
-            for output in <FnGenBundle<D> as zingo_traits::Bundle<D, ChainType>>::from_transaction(
-                transaction,
-            )
-            .into_iter()
-            .flat_map(|bundle| bundle.spend_elements().into_iter())
+            for output in <FnGenBundle<D> as zingo_traits::Bundle<D>>::from_transaction(transaction)
+                .into_iter()
+                .flat_map(|bundle| bundle.spend_elements().into_iter())
             {
                 if let Some((nf, value, transaction_id)) = unspent_nullifiers
                     .iter()
@@ -430,7 +428,7 @@ impl TransactionContext {
         //     <https://github.com/zingolabs/zingolib/issues/65>
         let unified_spend_capability = self.key.read().await;
         let domain_tagged_outputs =
-            <FnGenBundle<D> as zingo_traits::Bundle<D, ChainType>>::from_transaction(transaction)
+            <FnGenBundle<D> as zingo_traits::Bundle<D>>::from_transaction(transaction)
                 .into_iter()
                 .flat_map(|bundle| bundle.output_elements().into_iter())
                 .map(|output| {
@@ -481,7 +479,7 @@ impl TransactionContext {
             outgoing_metadatas.extend(
                 match try_output_recovery_with_ovk::<
                     D,
-                    <FnGenBundle<D> as zingo_traits::Bundle<D, ChainType>>::Output,
+                    <FnGenBundle<D> as zingo_traits::Bundle<D>>::Output,
                 >(
                     &output.domain(transaction_block_height, self.config.chain),
                     &D::usc_to_ovk(&*unified_spend_capability),
