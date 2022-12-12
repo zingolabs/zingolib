@@ -1057,24 +1057,18 @@ impl LightWallet {
         D::Note: PartialEq + Clone,
         D::Recipient: traits::Recipient,
     {
-        let notes = candidates
-            .into_iter()
-            .scan(Amount::zero(), |running_total, spendable| {
-                if *running_total >= target_amount {
-                    None
-                } else {
-                    *running_total +=
-                        Amount::from_u64(D::WalletNote::value_from_note(&spendable.note()))
-                            .unwrap();
-                    Some(spendable)
-                }
-            })
-            .collect::<Vec<_>>();
-        let value_selected = notes.iter().fold(Amount::zero(), |prev, sn| {
-            (prev + Amount::from_u64(D::WalletNote::value_from_note(&sn.note())).unwrap()).unwrap()
-        });
+        let mut notes = Vec::new();
+        let mut running_total = Amount::zero();
+        for note in candidates {
+            if running_total >= target_amount {
+                break;
+            }
+            running_total += Amount::from_u64(D::WalletNote::value_from_note(&note.note()))
+                .expect("Note value overflow error");
+            notes.push(note);
+        }
 
-        (notes, value_selected)
+        (notes, running_total)
     }
 
     pub async fn send_to_address<F, Fut, P: TxProver>(
