@@ -27,7 +27,7 @@ pub const DEFAULT_SERVER: &str = "https://mainnet.lightwalletd.com:9067";
 pub const MAX_REORG: usize = 100;
 pub const WALLET_NAME: &str = "zingo-wallet.dat";
 pub const LOGFILE_NAME: &str = "zingo-wallet.debug.log";
-pub const REORG_BUFFER_OFFSET: u32 = 4;
+pub const REORG_BUFFER_OFFSET: u32 = 1;
 pub const GAP_RULE_UNUSED_ADDRESSES: usize = if cfg!(any(target_os = "ios", target_os = "android"))
 {
     0
@@ -72,7 +72,7 @@ impl ZingoConfig {
             server_uri: Arc::new(RwLock::new(http::Uri::default())),
             chain,
             monitor_mempool: false,
-            reorg_buffer_offset: 4,
+            reorg_buffer_offset: REORG_BUFFER_OFFSET,
             data_dir: dir,
         }
     }

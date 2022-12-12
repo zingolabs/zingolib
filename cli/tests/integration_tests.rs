@@ -140,13 +140,6 @@ fn send_mined_sapling_to_orchard() {
         let balance = client.do_balance().await;
         // We send change to orchard now, so we should have the full value of the note
         // we spent, minus the transaction fee
-        assert_eq!(
-            balance["unverified_orchard_balance"],
-            625_000_000 - u64::from(DEFAULT_FEE)
-        );
-        assert_eq!(balance["verified_orchard_balance"], 0);
-        utils::increase_height_and_sync_client(&regtest_manager, &client, 1).await;
-        let balance = client.do_balance().await;
         assert_eq!(balance["unverified_orchard_balance"], 0);
         assert_eq!(
             balance["verified_orchard_balance"],
