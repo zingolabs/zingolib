@@ -307,7 +307,7 @@ where
     D::Recipient: Recipient,
     D::Note: PartialEq + Clone,
 {
-    /// An expenditure of an ?external? output, such that its value is distributed among *this* transaction's outputs.
+    /// An expenditure of an output, such that its value is distributed among *this* transaction's outputs.
     type Spend: Spend;
     /// A value store that is completely emptied by transfer of its contents to another output.
     type Output: ShieldedOutputExt<D> + Clone;
