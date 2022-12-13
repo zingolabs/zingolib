@@ -65,12 +65,22 @@ pub mod setup {
         regtest_manager: RegtestManager,
         process_handler: ChildProcessHandler,
         client_builder: SproutedClientBuilder,
+        test_config: TestConfigGenerator,
     }
     impl ScenarioBuilder {
         pub fn new() {}
-        fn create_manager() -> RegtestManager {}
-        fn create_process_handler() -> ChildProcessHandler {}
-        fn create_client_builder() -> SproutedClientBuilder {}
+        fn create_manager() -> RegtestManager {
+            todo!()
+        }
+        fn create_process_handler() -> ChildProcessHandler {
+            todo!()
+        }
+        fn create_client_builder() -> SproutedClientBuilder {
+            todo!()
+        }
+        fn create_config_generator() -> TestConfigGenerator {
+            todo!()
+        }
     }
     /// Internally (and perhaps in wider scopes) we say "Sprout" to mean
     /// take a seed, and generate a client from the seed (planted in the chain).
@@ -126,18 +136,6 @@ pub mod setup {
                 .unwrap()
         }
     }
-    //pub fn add_nonprimary_client() -> LightClient {}
-    ///  Test setup involves common configurations files.  Contents and locations
-    ///  are variable.
-    ///   Locations:
-    ///     Each test must have a unique set of config files.  By default those
-    ///     files will be preserved on test failure.
-    ///   Contents:
-    ///     The specific configuration values may or may not differ between
-    ///     scenarios and/or tests.
-    ///     Data templates for config files are in:
-    ///        * tests::data::config_template_fillers::zcashd
-    ///        * tests::data::config_template_fillers::lightwalletd
     struct TestConfigGenerator {
         zcashd_rpcservice_port: String,
         lightwalletd_rpcservice_port: String,
