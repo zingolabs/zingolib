@@ -54,167 +54,181 @@ async fn check_wallet_chainheight_value(client: &LightClient, target: u32) -> bo
     get_synced_wallet_height(&client).await != target
 }
 #[cfg(test)]
-pub mod setup {
+pub mod scenario {
     use crate::data::{self, seeds::ABANDON_ART_SEED, REGSAP_ADDR_FROM_ABANDONART};
-    use std::path::PathBuf;
 
     use zingo_cli::regtest::{ChildProcessHandler, RegtestManager};
     use zingolib::{create_zingoconf_with_datadir, lightclient::LightClient};
-
-    pub struct ScenarioBuilder {
-        regtest_manager: RegtestManager,
-        process_handler: ChildProcessHandler,
-        client_builder: SproutedClientBuilder,
-        test_config: TestConfigGenerator,
-    }
-    impl ScenarioBuilder {
-        pub fn new() {}
-        fn create_manager() -> RegtestManager {
-            todo!()
+    pub mod setup {
+        use super::{data, ChildProcessHandler, RegtestManager};
+        use std::path::PathBuf;
+        use zingolib::lightclient::LightClient;
+        pub struct ScenarioBuilder {
+            regtest_manager: RegtestManager,
+            process_handler: ChildProcessHandler,
+            client_builder: SproutedClientBuilder,
+            test_config: TestEnvironmentGenerator,
         }
-        fn create_process_handler() -> ChildProcessHandler {
-            todo!()
-        }
-        fn create_client_builder() -> SproutedClientBuilder {
-            todo!()
-        }
-        fn create_config_generator() -> TestConfigGenerator {
-            todo!()
-        }
-    }
-    /// Internally (and perhaps in wider scopes) we say "Sprout" to mean
-    /// take a seed, and generate a client from the seed (planted in the chain).
-    pub struct SproutedClientBuilder {
-        server_id: http::Uri,
-        zingo_datadir: PathBuf,
-        seed: Option<String>,
-        client_number: u8,
-    }
-    impl SproutedClientBuilder {
-        pub fn new(server_id: http::Uri, zingo_datadir: PathBuf, seed: Option<String>) -> Self {
-            let client_number = 0;
-            SproutedClientBuilder {
-                server_id,
-                zingo_datadir,
-                seed,
-                client_number,
+        impl ScenarioBuilder {
+            pub fn new() {
+                //! TestEnvironmentGenerator sets particular parameters, specific filenames,
+                //! port numbers, etc.  in general no test_config should be used for
+                //! more than one test, and usually is only invoked via this
+                //! ScenarioBuilder::new constructor.  If you need to set some value
+                //! once, per test, consider adding environment config (e.g. ports, OS) to
+                //! TestEnvironmentGenerator and for scenario specific add to this constructor
+                let test_config = TestEnvironmentGenerator::new();
+            }
+            fn create_manager() -> RegtestManager {
+                todo!()
+            }
+            fn create_process_handler() -> ChildProcessHandler {
+                todo!()
+            }
+            fn create_client_builder() -> SproutedClientBuilder {
+                todo!()
+            }
+            fn create_config_generator() -> TestEnvironmentGenerator {
+                todo!()
             }
         }
-        fn make_config(&mut self) -> (zingoconfig::ZingoConfig, u64) {
-            //! Each client requires a unique data_dir, we use the
-            //! client_number counter for this.
-            self.client_number += 1;
-            let conf_path = format!(
-                "{}_{}",
-                self.zingo_datadir.to_string_lossy().to_string(),
-                self.client_number
-            );
-            std::fs::create_dir(&conf_path).unwrap();
+        /// Internally (and perhaps in wider scopes) we say "Sprout" to mean
+        /// take a seed, and generate a client from the seed (planted in the chain).
+        pub struct SproutedClientBuilder {
+            server_id: http::Uri,
+            zingo_datadir: PathBuf,
+            seed: Option<String>,
+            client_number: u8,
+        }
+        impl SproutedClientBuilder {
+            pub fn new(server_id: http::Uri, zingo_datadir: PathBuf, seed: Option<String>) -> Self {
+                let client_number = 0;
+                SproutedClientBuilder {
+                    server_id,
+                    zingo_datadir,
+                    seed,
+                    client_number,
+                }
+            }
+            fn make_config(&mut self) -> (zingoconfig::ZingoConfig, u64) {
+                //! Each client requires a unique data_dir, we use the
+                //! client_number counter for this.
+                self.client_number += 1;
+                let conf_path = format!(
+                    "{}_{}",
+                    self.zingo_datadir.to_string_lossy().to_string(),
+                    self.client_number
+                );
+                std::fs::create_dir(&conf_path).unwrap();
 
-            zingolib::create_zingoconf_with_datadir(self.server_id.clone(), Some(conf_path))
-                .unwrap()
-        }
-        pub fn new_funded_client(&mut self, birthday: u64, overwrite: bool) -> LightClient {
-            let (zingo_config, _) = self.make_config();
-            LightClient::create_with_seedorkey_wallet(
-                self.seed.clone().unwrap(),
-                &zingo_config,
-                birthday,
-                overwrite,
-            )
-            .unwrap()
-        }
-
-        pub fn new_plantedseed_client(
-            &mut self,
-            seed: String,
-            birthday: u64,
-            overwrite: bool,
-        ) -> LightClient {
-            let (zingo_config, _) = self.make_config();
-            LightClient::create_with_seedorkey_wallet(seed, &zingo_config, birthday, overwrite)
-                .unwrap()
-        }
-    }
-    struct TestConfigGenerator {
-        zcashd_rpcservice_port: String,
-        lightwalletd_rpcservice_port: String,
-        regtest_manager: RegtestManager,
-    }
-    impl TestConfigGenerator {
-        fn new() -> Self {
-            let mut common_path = zingo_cli::regtest::get_git_rootdir();
-            common_path.push("cli");
-            common_path.push("tests");
-            common_path.push("data");
-            let zcashd_rpcservice_port = portpicker::pick_unused_port()
-                .expect("Port unpickable!")
-                .to_string();
-            let lightwalletd_rpcservice_port = portpicker::pick_unused_port()
-                .expect("Port unpickable!")
-                .to_string();
-            let regtest_manager = RegtestManager::new(Some(
-                tempdir::TempDir::new("zingo_integration_test")
+                zingolib::create_zingoconf_with_datadir(self.server_id.clone(), Some(conf_path))
                     .unwrap()
-                    .into_path(),
-            ));
-            Self {
-                zcashd_rpcservice_port,
-                lightwalletd_rpcservice_port,
-                regtest_manager,
+            }
+            pub fn new_funded_client(&mut self, birthday: u64, overwrite: bool) -> LightClient {
+                let (zingo_config, _) = self.make_config();
+                LightClient::create_with_seedorkey_wallet(
+                    self.seed.clone().unwrap(),
+                    &zingo_config,
+                    birthday,
+                    overwrite,
+                )
+                .unwrap()
+            }
+
+            pub fn new_plantedseed_client(
+                &mut self,
+                seed: String,
+                birthday: u64,
+                overwrite: bool,
+            ) -> LightClient {
+                let (zingo_config, _) = self.make_config();
+                LightClient::create_with_seedorkey_wallet(seed, &zingo_config, birthday, overwrite)
+                    .unwrap()
             }
         }
+        struct TestEnvironmentGenerator {
+            zcashd_rpcservice_port: String,
+            lightwalletd_rpcservice_port: String,
+            regtest_manager: RegtestManager,
+        }
+        impl TestEnvironmentGenerator {
+            fn new() -> Self {
+                let mut common_path = zingo_cli::regtest::get_git_rootdir();
+                common_path.push("cli");
+                common_path.push("tests");
+                common_path.push("data");
+                let zcashd_rpcservice_port = portpicker::pick_unused_port()
+                    .expect("Port unpickable!")
+                    .to_string();
+                let lightwalletd_rpcservice_port = portpicker::pick_unused_port()
+                    .expect("Port unpickable!")
+                    .to_string();
+                let regtest_manager = RegtestManager::new(Some(
+                    tempdir::TempDir::new("zingo_integration_test")
+                        .unwrap()
+                        .into_path(),
+                ));
+                Self {
+                    zcashd_rpcservice_port,
+                    lightwalletd_rpcservice_port,
+                    regtest_manager,
+                }
+            }
 
-        fn create_unfunded_zcash_conf(&self) -> PathBuf {
-            self.write_contents_and_return_path(
-                "zcash",
-                data::config_template_fillers::zcashd::basic(&self.zcashd_rpcservice_port, ""),
-            )
+            fn create_unfunded_zcash_conf(&self) -> PathBuf {
+                self.write_contents_and_return_path(
+                    "zcash",
+                    data::config_template_fillers::zcashd::basic(&self.zcashd_rpcservice_port, ""),
+                )
+            }
+            fn create_funded_zcash_conf(&self, address_to_fund: &str) -> PathBuf {
+                self.write_contents_and_return_path(
+                    "zcash",
+                    data::config_template_fillers::zcashd::funded(
+                        address_to_fund,
+                        &self.zcashd_rpcservice_port,
+                    ),
+                )
+            }
+            fn create_lightwalletd_conf(&self) -> PathBuf {
+                self.write_contents_and_return_path(
+                    "lightwalletd",
+                    data::config_template_fillers::lightwalletd::basic(
+                        &self.lightwalletd_rpcservice_port,
+                    ),
+                )
+            }
+            fn write_contents_and_return_path(
+                &self,
+                configtype: &str,
+                contents: String,
+            ) -> PathBuf {
+                let loc = match configtype {
+                    "zcash" => &self.regtest_manager.zcashd_config,
+                    "lightwalletd" => &self.regtest_manager.lightwalletd_config,
+                    _ => panic!("Unepexted configtype!"),
+                };
+                let mut output = std::fs::File::create(&loc).expect("How could path be missing?");
+                std::io::Write::write(&mut output, contents.as_bytes())
+                    .expect(&format!("Couldn't write {contents}!"));
+                loc.clone()
+            }
         }
-        fn create_funded_zcash_conf(&self, address_to_fund: &str) -> PathBuf {
-            self.write_contents_and_return_path(
-                "zcash",
-                data::config_template_fillers::zcashd::funded(
-                    address_to_fund,
-                    &self.zcashd_rpcservice_port,
-                ),
-            )
-        }
-        fn create_lightwalletd_conf(&self) -> PathBuf {
-            self.write_contents_and_return_path(
-                "lightwalletd",
-                data::config_template_fillers::lightwalletd::basic(
-                    &self.lightwalletd_rpcservice_port,
-                ),
-            )
-        }
-        fn write_contents_and_return_path(&self, configtype: &str, contents: String) -> PathBuf {
-            let loc = match configtype {
-                "zcash" => &self.regtest_manager.zcashd_config,
-                "lightwalletd" => &self.regtest_manager.lightwalletd_config,
-                _ => panic!("Unepexted configtype!"),
+        pub(crate) fn create_maybe_funded_regtest_manager(
+            fund_recipient_address: Option<&str>,
+        ) -> (RegtestManager, String) {
+            let test_configs = TestEnvironmentGenerator::new();
+            match fund_recipient_address {
+                Some(fund_to_address) => test_configs.create_funded_zcash_conf(fund_to_address),
+                None => test_configs.create_unfunded_zcash_conf(),
             };
-            let mut output = std::fs::File::create(&loc).expect("How could path be missing?");
-            std::io::Write::write(&mut output, contents.as_bytes())
-                .expect(&format!("Couldn't write {contents}!"));
-            loc.clone()
+            test_configs.create_lightwalletd_conf();
+            (
+                test_configs.regtest_manager,
+                test_configs.lightwalletd_rpcservice_port,
+            )
         }
     }
-    fn create_maybe_funded_regtest_manager(
-        fund_recipient_address: Option<&str>,
-    ) -> (RegtestManager, String) {
-        let test_configs = TestConfigGenerator::new();
-        match fund_recipient_address {
-            Some(fund_to_address) => test_configs.create_funded_zcash_conf(fund_to_address),
-            None => test_configs.create_unfunded_zcash_conf(),
-        };
-        test_configs.create_lightwalletd_conf();
-        (
-            test_configs.regtest_manager,
-            test_configs.lightwalletd_rpcservice_port,
-        )
-    }
-
     /// Many scenarios need to start with spendable funds.  This setup provides
     /// 1 block worth of coinbase to a preregistered spend capability.
     ///
@@ -227,10 +241,14 @@ pub mod setup {
     /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
     pub fn funded_client(
         base_seed: &str,
-    ) -> (RegtestManager, ChildProcessHandler, SproutedClientBuilder) {
+    ) -> (
+        RegtestManager,
+        ChildProcessHandler,
+        setup::SproutedClientBuilder,
+    ) {
         //tracing_subscriber::fmt::init();
         let (regtest_manager, lightwalletd_port) =
-            create_maybe_funded_regtest_manager(Some(REGSAP_ADDR_FROM_ABANDONART));
+            setup::create_maybe_funded_regtest_manager(Some(REGSAP_ADDR_FROM_ABANDONART));
         let child_process_handler = regtest_manager.launch(true).unwrap_or_else(|e| match e {
             zingo_cli::regtest::LaunchChildProcessError::ZcashdState {
                 errorcode,
@@ -243,7 +261,7 @@ pub mod setup {
         let server_id = zingoconfig::construct_server_uri(Some(format!(
             "http://127.0.0.1:{lightwalletd_port}"
         )));
-        let client_builder = SproutedClientBuilder::new(
+        let client_builder = setup::SproutedClientBuilder::new(
             server_id,
             regtest_manager.zingo_data_dir.clone(),
             Some(base_seed.to_string()),
@@ -266,7 +284,7 @@ pub mod setup {
         );
         let first_z_addr_from_seed_phrase = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
         let (regtest_manager, lightwalletd_port) =
-            create_maybe_funded_regtest_manager(Some(first_z_addr_from_seed_phrase));
+            setup::create_maybe_funded_regtest_manager(Some(first_z_addr_from_seed_phrase));
         let child_process_handler = regtest_manager.launch(true).unwrap_or_else(|e| match e {
             zingo_cli::regtest::LaunchChildProcessError::ZcashdState {
                 errorcode,
@@ -306,7 +324,7 @@ pub mod setup {
         LightClient,
         LightClient,
         ChildProcessHandler,
-        SproutedClientBuilder,
+        setup::SproutedClientBuilder,
     ) {
         let (regtest_manager, child_process_handler, mut client_builder) =
             funded_client(ABANDON_ART_SEED);
@@ -363,7 +381,7 @@ pub mod setup {
     }
 
     pub fn basic_no_spendable() -> (RegtestManager, ChildProcessHandler, LightClient) {
-        let (regtest_manager, server_port) = create_maybe_funded_regtest_manager(None);
+        let (regtest_manager, server_port) = setup::create_maybe_funded_regtest_manager(None);
         let child_process_handler = regtest_manager.launch(true).unwrap();
         let server_id =
             zingoconfig::construct_server_uri(Some(format!("http://127.0.0.1:{server_port}")));

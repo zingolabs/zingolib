@@ -6,7 +6,7 @@ use data::seeds::ABANDON_ART_SEED;
 use data::seeds::HOSPITAL_MUSEUM_SEED;
 use json::JsonValue;
 use tokio::runtime::Runtime;
-use utils::setup;
+use utils::scenario;
 
 #[test]
 fn zcashd_sapling_commitment_tree() {
@@ -14,7 +14,7 @@ fn zcashd_sapling_commitment_tree() {
     //!  TODO:  Add doc-comment explaining what constraints this test
     //!  enforces
     let (regtest_manager, _child_process_handler, _client_builder) =
-        setup::funded_client(ABANDON_ART_SEED);
+        scenario::funded_client(ABANDON_ART_SEED);
     let trees = regtest_manager
         .get_cli_handle()
         .args(["z_gettreestate", "1"])
@@ -34,7 +34,7 @@ fn verify_old_wallet_uses_server_height_in_send() {
     //! the wrong height to use!  The correct height is the
     //! "mempool height" which is the server_height + 1
     let (regtest_manager, child_process_handler, mut client_builder) =
-        setup::funded_client(ABANDON_ART_SEED);
+        scenario::funded_client(ABANDON_ART_SEED);
     let client_sending = client_builder.new_funded_client(0, false);
     let client_receiving =
         client_builder.new_plantedseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false);
@@ -69,7 +69,7 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
         "ae2935f1dfd8a24aed7c70df7de3a668eb7a49b1319880dde2bbd9031ae5d82f";
     let finalstates = "000000";
     // Setup
-    let (regtest_manager, _child_process_handler, _client) = setup::basic_no_spendable();
+    let (regtest_manager, _child_process_handler, _client) = scenario::basic_no_spendable();
     // Execution:
     let trees = regtest_manager
         .get_cli_handle()
@@ -108,7 +108,7 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
 #[test]
 fn mine_sapling_to_self() {
     let (regtest_manager, _child_process_handler, mut client_builder) =
-        setup::funded_client(ABANDON_ART_SEED);
+        scenario::funded_client(ABANDON_ART_SEED);
     let client = client_builder.new_funded_client(0, false);
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
@@ -125,7 +125,7 @@ fn send_mined_sapling_to_orchard() {
     //! consistent with all the notes in the relevant block changing state.
     //! NOTE that the balance doesn't give insight into the distribution across notes.
     let (regtest_manager, _child_process_handler, mut client_builder) =
-        setup::funded_client(ABANDON_ART_SEED);
+        scenario::funded_client(ABANDON_ART_SEED);
     let client = client_builder.new_funded_client(0, false);
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
@@ -166,7 +166,7 @@ fn note_selection_order() {
     //!   * sends to a sapling address
     //!   * sends back to the original sender's UA
     let (regtest_manager, client_1, client_2, child_process_handler, _) =
-        setup::two_clients_one_saplingcoinbase_backed();
+        scenario::two_clients_one_saplingcoinbase_backed();
 
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client_1, 5).await;
@@ -282,7 +282,7 @@ fn note_selection_order() {
 #[test]
 fn send_orchard_back_and_forth() {
     let (regtest_manager, client_a, client_b, child_process_handler, _) =
-        setup::two_clients_one_saplingcoinbase_backed();
+        scenario::two_clients_one_saplingcoinbase_backed();
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client_a, 5).await;
 
@@ -331,7 +331,7 @@ fn send_orchard_back_and_forth() {
 #[test]
 fn diversified_addresses_receive_funds_in_best_pool() {
     let (regtest_manager, client_a, client_b, child_process_handler, _) =
-        setup::two_clients_one_saplingcoinbase_backed();
+        scenario::two_clients_one_saplingcoinbase_backed();
     Runtime::new().unwrap().block_on(async {
         client_b.do_new_address("o").await.unwrap();
         client_b.do_new_address("zo").await.unwrap();
@@ -372,7 +372,7 @@ fn diversified_addresses_receive_funds_in_best_pool() {
 #[test]
 fn rescan_still_have_outgoing_metadata() {
     let (regtest_manager, client_one, client_two, child_process_handler, _) =
-        setup::two_clients_one_saplingcoinbase_backed();
+        scenario::two_clients_one_saplingcoinbase_backed();
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client_one, 5).await;
         let sapling_addr_of_two = client_two.do_new_address("tz").await.unwrap();
@@ -398,7 +398,7 @@ fn rescan_still_have_outgoing_metadata() {
 #[test]
 fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
     let (regtest_manager, child_process_handler, mut client_builder) =
-        setup::funded_client(ABANDON_ART_SEED);
+        scenario::funded_client(ABANDON_ART_SEED);
     let client = client_builder.new_funded_client(0, false);
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
@@ -452,7 +452,7 @@ fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
 #[test]
 fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
     let (regtest_manager, sender, recipient, child_process_handler, mut client_builder) =
-        setup::two_clients_one_saplingcoinbase_backed();
+        scenario::two_clients_one_saplingcoinbase_backed();
     let mut expected_unspent_sapling_notes = json::object! {
 
             "created_in_block" =>  7,
@@ -565,7 +565,7 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
 #[test]
 fn ensure_taddrs_from_old_seeds_work() {
     let (_regtest_manager, child_process_handler, mut client_builder) =
-        setup::funded_client(ABANDON_ART_SEED);
+        scenario::funded_client(ABANDON_ART_SEED);
     // The first taddr generated on commit 9e71a14eb424631372fd08503b1bd83ea763c7fb
     let transparent_address = "tmFLszfkjgim4zoUMAXpuohnFBAKy99rr2i";
 
@@ -605,7 +605,7 @@ fn ensure_taddrs_from_old_seeds_work() {
 #[test]
 fn cross_compat() {
     let (_regtest_manager, current_client, fixed_taddr_client, child_process_handler) =
-        setup::cross_version_setup();
+        scenario::cross_version_setup();
 
     tokio::runtime::Runtime::new().unwrap().block_on(async {
         let fixed_taddr_seed = fixed_taddr_client.do_seed_phrase().await.unwrap();
@@ -621,7 +621,7 @@ fn cross_compat() {
 #[test]
 fn t_incoming_t_outgoing() {
     let (regtest_manager, sender, recipient, child_process_handler, _client_builder) =
-        setup::two_clients_one_saplingcoinbase_backed();
+        scenario::two_clients_one_saplingcoinbase_backed();
 
     tokio::runtime::Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &sender, 9).await;
@@ -757,7 +757,7 @@ fn t_incoming_t_outgoing() {
 #[test]
 fn send_to_ua_saves_full_ua_in_wallet() {
     let (regtest_manager, sender, recipient, child_process_handler, _client_builder) =
-        setup::two_clients_one_saplingcoinbase_backed();
+        scenario::two_clients_one_saplingcoinbase_backed();
     tokio::runtime::Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &sender, 5).await;
         let recipient_address = recipient.do_addresses().await[0]["address"].take();
