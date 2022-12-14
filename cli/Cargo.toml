@@ -26,5 +26,6 @@ zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash", rev 
 zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", rev = "d66f7f70516e6da5c24008874a926d41221b1346", features = ["transparent-inputs", "test-dependencies"] }
 
 [features]
+default = ["local_env"]
 cross_version = [ "dep:zingtaddrfix" ]
 local_env =[]
