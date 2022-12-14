@@ -46,5 +46,5 @@ RUN apt install netcat -y
 # Cargo test
 # ENTRYPOINT ["bash", "-c", "cargo test --release"]
 
-# run container: i
+# run container: 
 # docker run --rm -e CARGO_HOME=/usr/src/zingolib/cargo_home -v crates-idx-vol:/usr/src/zingolib/cargo_home -it <image-name>
