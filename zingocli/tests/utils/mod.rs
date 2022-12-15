@@ -246,6 +246,7 @@ pub mod scenario {
         ChildProcessHandler,
         setup::SproutedClientBuilder,
     ) {
+        let scenariobuilder = setup::ScenarioBuilder::new();
         //tracing_subscriber::fmt::init();
         let (regtest_manager, lightwalletd_port) =
             setup::create_maybe_funded_regtest_manager(Some(REGSAP_ADDR_FROM_ABANDONART));
