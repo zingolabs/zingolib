@@ -55,22 +55,22 @@ async fn check_wallet_chainheight_value(client: &LightClient, target: u32) -> bo
 }
 #[cfg(test)]
 pub mod scenario {
-    use crate::data::{self, seeds::ABANDON_ART_SEED, REGSAP_ADDR_FROM_ABANDONART};
+    use crate::data::{self, REGSAP_ADDR_FROM_ABANDONART};
 
     use zingo_cli::regtest::{ChildProcessHandler, RegtestManager};
-    use zingolib::{create_zingoconf_with_datadir, lightclient::LightClient};
+    use zingolib::lightclient::LightClient;
     pub mod setup {
         use super::{data, ChildProcessHandler, RegtestManager};
         use std::path::PathBuf;
         use zingolib::lightclient::LightClient;
         pub struct ScenarioBuilder {
-            regtest_manager: RegtestManager,
-            process_handler: ChildProcessHandler,
-            client_builder: SproutedClientBuilder,
             test_env: TestEnvironmentGenerator,
+            pub regtest_manager: RegtestManager,
+            pub client_builder: ClientBuilder,
+            pub child_process_handler: ChildProcessHandler,
         }
         impl ScenarioBuilder {
-            pub fn new() {
+            pub fn new() -> Self {
                 //! TestEnvironmentGenerator sets particular parameters, specific filenames,
                 //! port numbers, etc.  in general no test_config should be used for
                 //! more than one test, and usually is only invoked via this
@@ -78,29 +78,34 @@ pub mod scenario {
                 //! once, per test, consider adding environment config (e.g. ports, OS) to
                 //! TestEnvironmentGenerator and for scenario specific add to this constructor
                 let test_env = TestEnvironmentGenerator::new();
-                let lightwalletd_port = test_env.lightwalletd_rpcservice_port;
+                let lightwalletd_port = test_env.lightwalletd_rpcservice_port.clone();
                 let server_id = zingoconfig::construct_server_uri(Some(format!(
                     "http://127.0.0.1:{lightwalletd_port}"
                 )));
                 let regtest_manager = RegtestManager::new(None);
-                let client_builder = SproutedClientBuilder::new(regtest_manager.zingo_datadir, Some(ABANDON_ART_SEED));
+                let client_builder = ClientBuilder::new(
+                    server_id,
+                    regtest_manager.zingo_datadir.clone(),
+                    data::seeds::ABANDON_ART_SEED,
+                );
+                let child_process_handler =
+                    regtest_manager.launch(true).unwrap_or_else(|e| match e {
+                        zingo_cli::regtest::LaunchChildProcessError::ZcashdState {
+                            errorcode,
+                            stdout,
+                            stderr,
+                        } => {
+                            panic!("{} {} {}", errorcode, stdout, stderr)
+                        }
+                    });
                 Self {
-                    client_builder: SproutedClientBuilder::new(Ok(())) 
-                    test_env: TestEnvironmentGenerator::new() }
+                    test_env,
+                    regtest_manager,
+                    client_builder,
+                    child_process_handler,
+                }
             }
-            fn create_manager() -> RegtestManager {
-                todo!()
-            }
-            fn create_process_handler() -> ChildProcessHandler {
-                todo!()
-            }
-            fn create_client_builder() -> SproutedClientBuilder {
-                todo!()
-            }
-            fn create_config_generator() -> TestEnvironmentGenerator {
-                todo!()
-            }
-            fn create_unfunded_zcash_conf(&self) -> PathBuf {
+            pub(crate) fn create_unfunded_zcash_conf(&self) -> PathBuf {
                 self.test_env.write_contents_and_return_path(
                     "zcash",
                     data::config_template_fillers::zcashd::basic(
@@ -109,7 +114,7 @@ pub mod scenario {
                     ),
                 )
             }
-            fn create_funded_zcash_conf(&self, address_to_fund: &str) -> PathBuf {
+            pub(crate) fn create_funded_zcash_conf(&self, address_to_fund: &str) -> PathBuf {
                 self.test_env.write_contents_and_return_path(
                     "zcash",
                     data::config_template_fillers::zcashd::funded(
@@ -129,16 +134,17 @@ pub mod scenario {
         }
         /// Internally (and perhaps in wider scopes) we say "Sprout" to mean
         /// take a seed, and generate a client from the seed (planted in the chain).
-        pub struct SproutedClientBuilder {
+        pub struct ClientBuilder {
             server_id: http::Uri,
             zingo_datadir: PathBuf,
-            seed: Option<String>,
+            seed: String,
             client_number: u8,
         }
-        impl SproutedClientBuilder {
-            pub fn new(server_id: http::Uri, zingo_datadir: PathBuf, seed: Option<String>) -> Self {
+        impl ClientBuilder {
+            pub fn new(server_id: http::Uri, zingo_datadir: PathBuf, seed: &str) -> Self {
+                let seed = seed.to_string();
                 let client_number = 0;
-                SproutedClientBuilder {
+                ClientBuilder {
                     server_id,
                     zingo_datadir,
                     seed,
@@ -156,13 +162,17 @@ pub mod scenario {
                 );
                 std::fs::create_dir(&conf_path).unwrap();
 
-                zingolib::create_zingoconf_with_datadir(self.server_id.clone(), Some(conf_path))
+                zingolib::create_zingoconf_from_datadir(self.server_id.clone(), Some(conf_path))
                     .unwrap()
             }
-            pub fn new_funded_client(&mut self, birthday: u64, overwrite: bool) -> LightClient {
+            pub fn build_unfunded_client(&mut self, birthday: u64) -> LightClient {
+                let (zingo_config, _) = self.make_config();
+                LightClient::new(&zingo_config, birthday).unwrap()
+            }
+            pub fn build_funded_client(&mut self, birthday: u64, overwrite: bool) -> LightClient {
                 let (zingo_config, _) = self.make_config();
                 LightClient::create_with_seedorkey_wallet(
-                    self.seed.clone().unwrap(),
+                    self.seed.clone(),
                     &zingo_config,
                     birthday,
                     overwrite,
@@ -170,7 +180,7 @@ pub mod scenario {
                 .unwrap()
             }
 
-            pub fn new_plantedseed_client(
+            pub fn build_newseed_client(
                 &mut self,
                 seed: String,
                 birthday: u64,
@@ -236,35 +246,15 @@ pub mod scenario {
     /// and zcashd (in regtest mode). This setup is intended to produce the most basic  
     /// of scenarios.  As scenarios with even less requirements
     /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
-    pub fn funded_client(
-        base_seed: &str,
-    ) -> (
-        RegtestManager,
-        ChildProcessHandler,
-        setup::SproutedClientBuilder,
-    ) {
-        let scenariobuilder = setup::ScenarioBuilder::new();
+    pub fn funded_client() -> (RegtestManager, ChildProcessHandler, setup::ClientBuilder) {
+        let sb = setup::ScenarioBuilder::new();
         //tracing_subscriber::fmt::init();
-        let (regtest_manager, lightwalletd_port) =
-            scenariobuilder.create_funded_zcash_conf(REGSAP_ADDR_FROM_ABANDONART);
-        let child_process_handler = regtest_manager.launch(true).unwrap_or_else(|e| match e {
-            zingo_cli::regtest::LaunchChildProcessError::ZcashdState {
-                errorcode,
-                stdout,
-                stderr,
-            } => {
-                panic!("{} {} {}", errorcode, stdout, stderr)
-            }
-        });
-        let server_id = zingoconfig::construct_server_uri(Some(format!(
-            "http://127.0.0.1:{lightwalletd_port}"
-        )));
-        let client_builder = setup::SproutedClientBuilder::new(
-            server_id,
-            regtest_manager.zingo_data_dir.clone(),
-            Some(base_seed.to_string()),
-        );
-        (regtest_manager, child_process_handler, client_builder)
+        sb.create_funded_zcash_conf(REGSAP_ADDR_FROM_ABANDONART);
+        (
+            sb.regtest_manager,
+            sb.child_process_handler,
+            sb.client_builder,
+        )
     }
 
     #[cfg(feature = "cross_version")]
@@ -281,35 +271,16 @@ pub mod scenario {
              adapt blossom school alcohol coral light army hold"
         );
         let first_z_addr_from_seed_phrase = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
-        let (regtest_manager, lightwalletd_port) =
-            setup::create_maybe_funded_regtest_manager(Some(first_z_addr_from_seed_phrase));
-        let child_process_handler = regtest_manager.launch(true).unwrap_or_else(|e| match e {
-            zingo_cli::regtest::LaunchChildProcessError::ZcashdState {
-                errorcode,
-                stdout,
-                stderr,
-            } => {
-                panic!("{} {} {}", errorcode, stdout, stderr)
-            }
-        });
-        let server_id = zingoconfig::construct_server_uri(Some(format!(
-            "http://127.0.0.1:{lightwalletd_port}"
-        )));
-        let (config, _height) = create_zingoconf_with_datadir(
-            server_id,
-            Some(regtest_manager.zingo_data_dir.to_string_lossy().to_string()),
-        )
-        .unwrap();
-        let light_client = LightClient::create_with_seedorkey_wallet(
+        let mut scenario_builder = setup::ScenarioBuilder::new();
+        scenario_builder.create_funded_zcash_conf(first_z_addr_from_seed_phrase);
+        let light_client = scenario_builder.client_builder.build_newseed_client(
             cross_version_seed_phrase.clone(),
-            &config,
             0,
             false,
-        )
-        .unwrap();
+        );
         (
-            regtest_manager,
-            child_process_handler,
+            scenario_builder.regtest_manager,
+            scenario_builder.child_process_handler,
             light_client,
             cross_version_seed_phrase,
         )
@@ -322,15 +293,14 @@ pub mod scenario {
         LightClient,
         LightClient,
         ChildProcessHandler,
-        setup::SproutedClientBuilder,
+        setup::ClientBuilder,
     ) {
-        let (regtest_manager, child_process_handler, mut client_builder) =
-            funded_client(ABANDON_ART_SEED);
-        let client_one = client_builder.new_funded_client(0, false);
+        let (regtest_manager, child_process_handler, mut client_builder) = funded_client();
+        let client_one = client_builder.build_funded_client(0, false);
         let seed_phrase_of_two = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
             .unwrap()
             .to_string();
-        let client_two = client_builder.new_plantedseed_client(seed_phrase_of_two, 0, false);
+        let client_two = client_builder.build_newseed_client(seed_phrase_of_two, 0, false);
         (
             regtest_manager,
             client_one,
@@ -379,20 +349,12 @@ pub mod scenario {
     }
 
     pub fn basic_no_spendable() -> (RegtestManager, ChildProcessHandler, LightClient) {
-        let (regtest_manager, server_port) =
-            setup::create_maybe_funded_regtest_manager(Some(REGSAP_ADDR_FROM_ABANDONART));
-        let child_process_handler = regtest_manager.launch(true).unwrap();
-        let server_id =
-            zingoconfig::construct_server_uri(Some(format!("http://127.0.0.1:{server_port}")));
-        let (config, _height) = create_zingoconf_with_datadir(
-            server_id,
-            Some(regtest_manager.zingo_data_dir.to_string_lossy().to_string()),
-        )
-        .unwrap();
+        let mut scenario_builder = setup::ScenarioBuilder::new();
+        scenario_builder.create_unfunded_zcash_conf();
         (
-            regtest_manager,
-            child_process_handler,
-            LightClient::new(&config, 0).unwrap(),
+            scenario_builder.regtest_manager,
+            scenario_builder.child_process_handler,
+            scenario_builder.client_builder.build_unfunded_client(0),
         )
     }
 }
