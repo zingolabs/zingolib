@@ -2,7 +2,6 @@
 #![cfg(feature = "local_env")]
 mod data;
 mod utils;
-use data::seeds::ABANDON_ART_SEED;
 use data::seeds::HOSPITAL_MUSEUM_SEED;
 use json::JsonValue;
 use tokio::runtime::Runtime;
@@ -13,8 +12,7 @@ fn zcashd_sapling_commitment_tree() {
     //!  TODO:  Make this test assert something, what is this a test of?
     //!  TODO:  Add doc-comment explaining what constraints this test
     //!  enforces
-    let (regtest_manager, _child_process_handler, _client_builder) =
-        scenario::funded_client(ABANDON_ART_SEED);
+    let (regtest_manager, child_process_handler, _client_builder) = scenario::funded_client();
     let trees = regtest_manager
         .get_cli_handle()
         .args(["z_gettreestate", "1"])
@@ -23,6 +21,7 @@ fn zcashd_sapling_commitment_tree() {
     let trees = json::parse(&String::from_utf8_lossy(&trees.stdout));
     let pretty_trees = json::stringify_pretty(trees.unwrap(), 4);
     println!("{}", pretty_trees);
+    drop(child_process_handler);
 }
 
 #[test]
@@ -33,11 +32,10 @@ fn verify_old_wallet_uses_server_height_in_send() {
     //! interrupting send, it made it immediately obvious that this was
     //! the wrong height to use!  The correct height is the
     //! "mempool height" which is the server_height + 1
-    let (regtest_manager, child_process_handler, mut client_builder) =
-        scenario::funded_client(ABANDON_ART_SEED);
-    let client_sending = client_builder.new_funded_client(0, false);
+    let (regtest_manager, child_process_handler, mut client_builder) = scenario::funded_client();
+    let client_sending = client_builder.build_funded_client(0, false);
     let client_receiving =
-        client_builder.new_plantedseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false);
+        client_builder.build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false);
     Runtime::new().unwrap().block_on(async {
         // Ensure that the client has confirmed spendable funds
         utils::increase_height_and_sync_client(&regtest_manager, &client_sending, 5).await;
@@ -69,7 +67,7 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
         "ae2935f1dfd8a24aed7c70df7de3a668eb7a49b1319880dde2bbd9031ae5d82f";
     let finalstates = "000000";
     // Setup
-    let (regtest_manager, _child_process_handler, _client) = scenario::basic_no_spendable();
+    let (regtest_manager, child_process_handler, _client) = scenario::basic_no_spendable();
     // Execution:
     let trees = regtest_manager
         .get_cli_handle()
@@ -103,19 +101,20 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
         trees.as_ref().unwrap()["orchard"]["commitments"]["finalState"]
     );
     dbg!(std::process::Command::new("grpcurl").args(["-plaintext", "127.0.0.1:9067"]));
+    drop(child_process_handler);
 }
 
 #[test]
 fn mine_sapling_to_self() {
-    let (regtest_manager, _child_process_handler, mut client_builder) =
-        scenario::funded_client(ABANDON_ART_SEED);
-    let client = client_builder.new_funded_client(0, false);
+    let (regtest_manager, child_process_handler, mut client_builder) = scenario::funded_client();
+    let client = client_builder.build_funded_client(0, false);
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
 
         let balance = client.do_balance().await;
         assert_eq!(balance["sapling_balance"], 3_750_000_000u64);
     });
+    drop(child_process_handler);
 }
 
 #[test]
@@ -124,9 +123,8 @@ fn send_mined_sapling_to_orchard() {
     //! debiting unverified_orchard_balance and crediting verified_orchard_balance.  The debit amount is
     //! consistent with all the notes in the relevant block changing state.
     //! NOTE that the balance doesn't give insight into the distribution across notes.
-    let (regtest_manager, _child_process_handler, mut client_builder) =
-        scenario::funded_client(ABANDON_ART_SEED);
-    let client = client_builder.new_funded_client(0, false);
+    let (regtest_manager, child_process_handler, mut client_builder) = scenario::funded_client();
+    let client = client_builder.build_funded_client(0, false);
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
 
@@ -151,6 +149,7 @@ fn send_mined_sapling_to_orchard() {
             625_000_000 - u64::from(DEFAULT_FEE)
         );
     });
+    drop(child_process_handler);
 }
 fn extract_value_as_u64(input: &JsonValue) -> u64 {
     let note = &input["value"].as_fixed_point_u64(0).unwrap();
@@ -397,9 +396,8 @@ fn rescan_still_have_outgoing_metadata() {
 ///
 #[test]
 fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
-    let (regtest_manager, child_process_handler, mut client_builder) =
-        scenario::funded_client(ABANDON_ART_SEED);
-    let client = client_builder.new_funded_client(0, false);
+    let (regtest_manager, child_process_handler, mut client_builder) = scenario::funded_client();
+    let client = client_builder.build_funded_client(0, false);
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
         let sapling_addr = client.do_new_address("tz").await.unwrap();
@@ -511,7 +509,7 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
         "Diversifier not in wallet. Perhaps you restored from seed and didn't restore addresses"
             .to_string(),
     );
-    let recipient_restored = client_builder.new_plantedseed_client(
+    let recipient_restored = client_builder.build_newseed_client(
         seed_of_recipient["seed"].as_str().unwrap().to_string(),
         0,
         true,
@@ -564,13 +562,11 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
 
 #[test]
 fn ensure_taddrs_from_old_seeds_work() {
-    let (_regtest_manager, child_process_handler, mut client_builder) =
-        scenario::funded_client(ABANDON_ART_SEED);
+    let (_regtest_manager, child_process_handler, mut client_builder) = scenario::funded_client();
     // The first taddr generated on commit 9e71a14eb424631372fd08503b1bd83ea763c7fb
     let transparent_address = "tmFLszfkjgim4zoUMAXpuohnFBAKy99rr2i";
 
-    let client_b =
-        client_builder.new_plantedseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false);
+    let client_b = client_builder.build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false);
 
     Runtime::new().unwrap().block_on(async {
         client_b.do_new_address("zt").await.unwrap();
