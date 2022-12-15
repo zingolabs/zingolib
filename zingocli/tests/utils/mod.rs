@@ -67,7 +67,7 @@ pub mod scenario {
             regtest_manager: RegtestManager,
             process_handler: ChildProcessHandler,
             client_builder: SproutedClientBuilder,
-            test_config: TestEnvironmentGenerator,
+            test_env: TestEnvironmentGenerator,
         }
         impl ScenarioBuilder {
             pub fn new() {
@@ -77,7 +77,16 @@ pub mod scenario {
                 //! ScenarioBuilder::new constructor.  If you need to set some value
                 //! once, per test, consider adding environment config (e.g. ports, OS) to
                 //! TestEnvironmentGenerator and for scenario specific add to this constructor
-                let test_config = TestEnvironmentGenerator::new();
+                let test_env = TestEnvironmentGenerator::new();
+                let lightwalletd_port = test_env.lightwalletd_rpcservice_port;
+                let server_id = zingoconfig::construct_server_uri(Some(format!(
+                    "http://127.0.0.1:{lightwalletd_port}"
+                )));
+                let regtest_manager = RegtestManager::new(None);
+                let client_builder = SproutedClientBuilder::new(regtest_manager.zingo_datadir, Some(ABANDON_ART_SEED));
+                Self {
+                    client_builder: SproutedClientBuilder::new(Ok(())) 
+                    test_env: TestEnvironmentGenerator::new() }
             }
             fn create_manager() -> RegtestManager {
                 todo!()
@@ -90,6 +99,32 @@ pub mod scenario {
             }
             fn create_config_generator() -> TestEnvironmentGenerator {
                 todo!()
+            }
+            fn create_unfunded_zcash_conf(&self) -> PathBuf {
+                self.test_env.write_contents_and_return_path(
+                    "zcash",
+                    data::config_template_fillers::zcashd::basic(
+                        &self.test_env.zcashd_rpcservice_port,
+                        "",
+                    ),
+                )
+            }
+            fn create_funded_zcash_conf(&self, address_to_fund: &str) -> PathBuf {
+                self.test_env.write_contents_and_return_path(
+                    "zcash",
+                    data::config_template_fillers::zcashd::funded(
+                        address_to_fund,
+                        &self.test_env.zcashd_rpcservice_port,
+                    ),
+                )
+            }
+            fn create_lightwalletd_conf(&self) -> PathBuf {
+                self.test_env.write_contents_and_return_path(
+                    "lightwalletd",
+                    data::config_template_fillers::lightwalletd::basic(
+                        &self.test_env.lightwalletd_rpcservice_port,
+                    ),
+                )
             }
         }
         /// Internally (and perhaps in wider scopes) we say "Sprout" to mean
@@ -174,30 +209,6 @@ pub mod scenario {
                     regtest_manager,
                 }
             }
-
-            fn create_unfunded_zcash_conf(&self) -> PathBuf {
-                self.write_contents_and_return_path(
-                    "zcash",
-                    data::config_template_fillers::zcashd::basic(&self.zcashd_rpcservice_port, ""),
-                )
-            }
-            fn create_funded_zcash_conf(&self, address_to_fund: &str) -> PathBuf {
-                self.write_contents_and_return_path(
-                    "zcash",
-                    data::config_template_fillers::zcashd::funded(
-                        address_to_fund,
-                        &self.zcashd_rpcservice_port,
-                    ),
-                )
-            }
-            fn create_lightwalletd_conf(&self) -> PathBuf {
-                self.write_contents_and_return_path(
-                    "lightwalletd",
-                    data::config_template_fillers::lightwalletd::basic(
-                        &self.lightwalletd_rpcservice_port,
-                    ),
-                )
-            }
             fn write_contents_and_return_path(
                 &self,
                 configtype: &str,
@@ -213,20 +224,6 @@ pub mod scenario {
                     .expect(&format!("Couldn't write {contents}!"));
                 loc.clone()
             }
-        }
-        pub(crate) fn create_maybe_funded_regtest_manager(
-            fund_recipient_address: Option<&str>,
-        ) -> (RegtestManager, String) {
-            let test_configs = TestEnvironmentGenerator::new();
-            match fund_recipient_address {
-                Some(fund_to_address) => test_configs.create_funded_zcash_conf(fund_to_address),
-                None => test_configs.create_unfunded_zcash_conf(),
-            };
-            test_configs.create_lightwalletd_conf();
-            (
-                test_configs.regtest_manager,
-                test_configs.lightwalletd_rpcservice_port,
-            )
         }
     }
     /// Many scenarios need to start with spendable funds.  This setup provides
@@ -249,7 +246,7 @@ pub mod scenario {
         let scenariobuilder = setup::ScenarioBuilder::new();
         //tracing_subscriber::fmt::init();
         let (regtest_manager, lightwalletd_port) =
-            setup::create_maybe_funded_regtest_manager(Some(REGSAP_ADDR_FROM_ABANDONART));
+            scenariobuilder.create_funded_zcash_conf(REGSAP_ADDR_FROM_ABANDONART);
         let child_process_handler = regtest_manager.launch(true).unwrap_or_else(|e| match e {
             zingo_cli::regtest::LaunchChildProcessError::ZcashdState {
                 errorcode,
@@ -357,7 +354,7 @@ pub mod scenario {
             saplingcoinbasebacked_spendcapable_cross_version();
         let current_version_client_zingoconf_path = format!(
             "{}_two",
-            regtest_manager.zingo_data_dir.to_string_lossy().to_string()
+            regtest_manager.zingo_datadir.to_string_lossy().to_string()
         );
         std::fs::create_dir(&current_version_client_zingoconf_path).unwrap();
         let (indexed_taddr_client, _height) = zingtaddrfix::create_zingoconf_with_datadir(
@@ -382,7 +379,8 @@ pub mod scenario {
     }
 
     pub fn basic_no_spendable() -> (RegtestManager, ChildProcessHandler, LightClient) {
-        let (regtest_manager, server_port) = setup::create_maybe_funded_regtest_manager(None);
+        let (regtest_manager, server_port) =
+            setup::create_maybe_funded_regtest_manager(Some(REGSAP_ADDR_FROM_ABANDONART));
         let child_process_handler = regtest_manager.launch(true).unwrap();
         let server_id =
             zingoconfig::construct_server_uri(Some(format!("http://127.0.0.1:{server_port}")));

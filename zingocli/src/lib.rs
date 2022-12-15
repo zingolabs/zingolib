@@ -335,7 +335,7 @@ to scan from the start of the blockchain."
             let regtest_manager = regtest::RegtestManager::new(None);
             if maybe_data_dir.is_none() {
                 maybe_data_dir = Some(String::from(
-                    regtest_manager.zingo_data_dir.to_str().unwrap(),
+                    regtest_manager.zingo_datadir.to_str().unwrap(),
                 ));
             };
             child_process_handler = Some(regtest_manager.launch(clean_regtest_data)?);
