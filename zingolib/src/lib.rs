@@ -29,10 +29,13 @@ pub fn create_zingoconf_from_datadir(
     server: http::Uri,
     data_dir: Option<String>,
 ) -> Result<(ZingoConfig, u64)> {
+    //! This call depends on a running lightwalletd it uses the ligthtwalletd
+    //! to find out what kind of chain it's running against.
     use std::net::ToSocketAddrs;
 
     Runtime::new().unwrap().block_on(async move {
         // Test for a connection first
+
         format!("{}:{}", server.host().unwrap(), server.port().unwrap())
             .to_socket_addrs()?
             .next()

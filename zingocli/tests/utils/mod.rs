@@ -106,6 +106,9 @@ pub mod scenarios {
                 }
             }
             pub(crate) fn create_unfunded_zcash_conf(&self) -> PathBuf {
+                //! Side effect only fn, writes to FS.
+                dbg!(&self.test_env.zcashd_rpcservice_port);
+                dbg!(&self.test_env.lightwalletd_rpcservice_port);
                 self.test_env.write_contents_and_return_path(
                     "zcash",
                     data::config_template_fillers::zcashd::basic(
@@ -352,6 +355,7 @@ pub mod scenarios {
 
     pub fn basic_no_spendable() -> (RegtestManager, ChildProcessHandler, LightClient) {
         let mut scenario_builder = setup::ScenarioBuilder::new();
+        dbg!("scenario_built");
         scenario_builder.create_unfunded_zcash_conf();
         (
             scenario_builder.regtest_manager,
