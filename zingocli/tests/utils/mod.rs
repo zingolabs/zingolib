@@ -156,10 +156,11 @@ pub mod scenario {
                 //! client_number counter for this.
                 self.client_number += 1;
                 let conf_path = format!(
-                    "{}_{}",
+                    "{}_client_{}",
                     self.zingo_datadir.to_string_lossy().to_string(),
                     self.client_number
                 );
+                dbg!(&conf_path);
                 std::fs::create_dir(&conf_path).unwrap();
 
                 zingolib::create_zingoconf_from_datadir(self.server_id.clone(), Some(conf_path))
