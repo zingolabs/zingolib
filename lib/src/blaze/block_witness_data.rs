@@ -32,8 +32,7 @@ use zcash_primitives::{
 
 use super::{fixed_size_buffer::FixedSizeBuffer, sync_status::BatchSyncStatus};
 
-type Node<D> =
-    <<D as DomainWalletExt<zingoconfig::ChainType>>::WalletNote as ReceivedNoteAndMetadata>::Node;
+type Node<D> = <<D as DomainWalletExt>::WalletNote as ReceivedNoteAndMetadata>::Node;
 
 pub struct BlockAndWitnessData {
     // List of all downloaded blocks in the current batch and
@@ -576,7 +575,7 @@ impl BlockAndWitnessData {
         activation_height: u64,
     ) -> Result<IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node>, String>
     where
-        D: DomainWalletExt<zingoconfig::ChainType>,
+        D: DomainWalletExt,
         D::Note: PartialEq + Clone,
         D::ExtractedCommitmentBytes: Into<[u8; 32]>,
         D::Recipient: crate::wallet::traits::Recipient,
@@ -677,7 +676,7 @@ impl BlockAndWitnessData {
     }
 
     // Stream all the outputs start at the block till the highest block available.
-    pub(crate) async fn update_witness_after_block<D: DomainWalletExt<zingoconfig::ChainType>>(
+    pub(crate) async fn update_witness_after_block<D: DomainWalletExt>(
         &self,
         witnesses: WitnessCache<Node<D>>,
         nullifier: <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier,
@@ -739,7 +738,7 @@ impl BlockAndWitnessData {
         return WitnessCache::new(fsb.into_vec(), top_block);
     }
 
-    async fn update_witness_after_reciept_to_block_end<D: DomainWalletExt<zingoconfig::ChainType>>(
+    async fn update_witness_after_reciept_to_block_end<D: DomainWalletExt>(
         &self,
         height: &BlockHeight,
         transaction_id: &TxId,
@@ -802,7 +801,7 @@ impl BlockAndWitnessData {
         // Replace the last witness in the vector with the newly computed one.
         WitnessCache::new(vec![w], height)
     }
-    pub(crate) async fn update_witness_after_receipt<D: DomainWalletExt<zingoconfig::ChainType>>(
+    pub(crate) async fn update_witness_after_receipt<D: DomainWalletExt>(
         &self,
         height: &BlockHeight,
         transaction_id: &TxId,
@@ -894,7 +893,7 @@ pub fn update_trees_with_compact_transaction(
     update_tree_with_compact_transaction::<OrchardDomain>(orchard_tree, compact_transaction);
 }
 
-pub fn update_tree_with_compact_transaction<D: DomainWalletExt<ChainType>>(
+pub fn update_tree_with_compact_transaction<D: DomainWalletExt>(
     tree: &mut CommitmentTree<Node<D>>,
     compact_transaction: &CompactTx,
 ) where

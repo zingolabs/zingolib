@@ -189,10 +189,8 @@ impl TransactionMetadataSet {
         self.remove_domain_specific_txids::<OrchardDomain>(&txids_to_remove);
     }
 
-    fn remove_domain_specific_txids<D: DomainWalletExt<ChainType>>(
-        &mut self,
-        txids_to_remove: &Vec<TxId>,
-    ) where
+    fn remove_domain_specific_txids<D: DomainWalletExt>(&mut self, txids_to_remove: &Vec<TxId>)
+    where
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
     {
@@ -416,10 +414,8 @@ impl TransactionMetadataSet {
         );
     }
 
-    fn clear_old_domain_specific_witnesses<D: DomainWalletExt<zingoconfig::ChainType>>(
-        &mut self,
-        latest_height: u64,
-    ) where
+    fn clear_old_domain_specific_witnesses<D: DomainWalletExt>(&mut self, latest_height: u64)
+    where
         <D as Domain>::Note: Clone + PartialEq,
         <D as Domain>::Recipient: Recipient,
     {
@@ -726,7 +722,7 @@ impl TransactionMetadataSet {
         to: D::Recipient,
         fvk: &D::Fvk,
     ) where
-        D: DomainWalletExt<ChainType>,
+        D: DomainWalletExt,
         D::Note: PartialEq + Clone,
         D::Recipient: Recipient,
     {
@@ -815,7 +811,7 @@ impl TransactionMetadataSet {
         )
     }
 
-    pub(crate) fn add_new_note<D: DomainWalletExt<zingoconfig::ChainType>>(
+    pub(crate) fn add_new_note<D: DomainWalletExt>(
         &mut self,
         txid: TxId,
         height: BlockHeight,

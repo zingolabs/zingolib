@@ -71,7 +71,7 @@ impl UpdateNotes {
         }
     }
 
-    async fn update_witnesses_inner<D: DomainWalletExt<zingoconfig::ChainType>>(
+    async fn update_witnesses_inner<D: DomainWalletExt>(
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         wallet_txns: Arc<RwLock<TransactionMetadataSet>>,
         txid: TxId,
