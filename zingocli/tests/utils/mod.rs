@@ -54,7 +54,7 @@ async fn check_wallet_chainheight_value(client: &LightClient, target: u32) -> bo
     get_synced_wallet_height(&client).await != target
 }
 #[cfg(test)]
-pub mod scenario {
+pub mod scenarios {
     use crate::data::{self, REGSAP_ADDR_FROM_ABANDONART};
 
     use zingo_cli::regtest::{ChildProcessHandler, RegtestManager};
@@ -123,7 +123,7 @@ pub mod scenario {
                     ),
                 )
             }
-            fn create_lightwalletd_conf(&self) -> PathBuf {
+            pub(crate) fn create_lightwalletd_conf(&self) -> PathBuf {
                 self.test_env.write_contents_and_return_path(
                     "lightwalletd",
                     data::config_template_fillers::lightwalletd::basic(
@@ -251,6 +251,7 @@ pub mod scenario {
         let sb = setup::ScenarioBuilder::new();
         //tracing_subscriber::fmt::init();
         sb.create_funded_zcash_conf(REGSAP_ADDR_FROM_ABANDONART);
+        sb.create_lightwalletd_conf();
         (
             sb.regtest_manager,
             sb.child_process_handler,
