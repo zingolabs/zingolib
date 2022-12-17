@@ -254,7 +254,6 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
     }
 
     // 4. Then add another 5 blocks, so the funds will become confirmed
-    mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
     let b = lightclient.do_balance().await;
     assert_eq!(b["sapling_balance"].as_u64().unwrap(), value);
     assert_eq!(b["unverified_sapling_balance"].as_u64().unwrap(), 0);
@@ -317,7 +316,7 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
         -(sent_value as i64 + i64::from(DEFAULT_FEE))
     );
     assert_eq!(jv["unconfirmed"].as_bool().unwrap(), true);
-    assert_eq!(jv["block_height"].as_u64().unwrap(), 17);
+    assert_eq!(jv["block_height"].as_u64().unwrap(), 12);
 
     assert_eq!(jv["outgoing_metadata"][0]["address"], EXT_ZADDR.to_string());
     assert_eq!(jv["outgoing_metadata"][0]["memo"], outgoing_memo);
@@ -339,7 +338,7 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
         .unwrap();
 
     assert_eq!(jv.contains("unconfirmed"), false);
-    assert_eq!(jv["block_height"].as_u64().unwrap(), 17);
+    assert_eq!(jv["block_height"].as_u64().unwrap(), 12);
 
     // 8. Check the notes to see that we have one spent sapling note and one unspent orchard note (change)
     let notes = lightclient.do_list_notes(true).await;
@@ -349,7 +348,7 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
         notes["unspent_orchard_notes"][0]["created_in_block"]
             .as_u64()
             .unwrap(),
-        17
+        12
     );
     assert_eq!(
         notes["unspent_orchard_notes"][0]["created_in_txid"],
@@ -403,7 +402,7 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
         notes["spent_sapling_notes"][0]["spent_at_height"]
             .as_u64()
             .unwrap(),
-        17
+        12
     );
 }
 
