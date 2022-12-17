@@ -195,17 +195,19 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
         ..
     } = scenario;
     // 2. Send an incoming transaction to fill the wallet
+    // Note:  This creates a new block via ->add_fake_transaction->add_empty_block
     let extfvk1 =
         ExtendedFullViewingKey::from(&*lightclient.wallet.unified_spend_capability().read().await);
     let value = 100_000;
     let (transaction, _height, _) =
         fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, value);
     let txid = transaction.txid();
+    // This is to mine the block used to add the coinbase transaction?
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
     assert_eq!(lightclient.wallet.last_synced_height().await, 11);
 
-    // 3. Check the balance is correct, and we recieved the incoming transaction from outside
+    // 3. Check the balance is correct, and we received the incoming transaction from ?outside?
     let b = lightclient.do_balance().await;
     let addresses = lightclient.do_addresses().await;
     assert_eq!(b["sapling_balance"].as_u64().unwrap(), value);
@@ -229,12 +231,12 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
     let list = lightclient.do_list_transactions(false).await;
     if let JsonValue::Array(list) = list {
         assert_eq!(list.len(), 1);
-        let jv = list[0].clone();
+        let mineraddress_transaction = list[0].clone();
 
-        assert_eq!(jv["txid"], txid.to_string());
-        assert_eq!(jv["amount"].as_u64().unwrap(), value);
+        assert_eq!(mineraddress_transaction["txid"], txid.to_string());
+        assert_eq!(mineraddress_transaction["amount"].as_u64().unwrap(), value);
         assert_eq!(
-            jv["address"],
+            mineraddress_transaction["address"],
             lightclient
                 .wallet
                 .unified_spend_capability()
@@ -243,7 +245,10 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
                 .addresses()[0]
                 .encode(&lightclient.config.chain)
         );
-        assert_eq!(jv["block_height"].as_u64().unwrap(), 11);
+        assert_eq!(
+            mineraddress_transaction["block_height"].as_u64().unwrap(),
+            11
+        );
     } else {
         panic!("Expecting an array");
     }
