@@ -256,13 +256,7 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
         panic!("Expecting an array");
     }
 
-    // 4. Then add another 5 blocks, so the funds will become confirmed
-    let b = lightclient.do_balance().await;
-    assert_eq!(b["sapling_balance"].as_u64().unwrap(), value);
-    assert_eq!(b["unverified_sapling_balance"].as_u64().unwrap(), 0);
-    assert_eq!(b["spendable_sapling_balance"].as_u64().unwrap(), value);
-
-    // 5. Send z-to-z transaction to external z address with a memo
+    // 4. Send z-to-z transaction to external z address with a memo
     let sent_value = 2000;
     let outgoing_memo = "Outgoing Memo".to_string();
 
@@ -271,8 +265,8 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
         .await
         .unwrap();
 
-    // 6. Check the unconfirmed transaction is present
-    // 6.1 Check notes
+    // 5. Check the unconfirmed transaction is present
+    // 5.1 Check notes
 
     let notes = lightclient.do_list_notes(true).await;
     // Has a new (unconfirmed) unspent note (the change)
@@ -328,7 +322,7 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
         sent_value
     );
 
-    // 7. Mine the sent transaction
+    // 6. Mine the sent transaction
     fake_compactblock_list.add_pending_sends(&data).await;
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
@@ -343,7 +337,7 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
     assert_eq!(jv.contains("unconfirmed"), false);
     assert_eq!(jv["block_height"].as_u64().unwrap(), 3);
 
-    // 8. Check the notes to see that we have one spent sapling note and one unspent orchard note (change)
+    // 7. Check the notes to see that we have one spent sapling note and one unspent orchard note (change)
     let notes = lightclient.do_list_notes(true).await;
     println!("{}", json::stringify_pretty(notes.clone(), 4));
     assert_eq!(notes["unspent_orchard_notes"].len(), 1);
