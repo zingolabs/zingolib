@@ -201,7 +201,7 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
     let value = 100_000;
     let (transaction, _height, _) =
         fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, value);
-    let txid = transaction.txid();
+    let mineraddr_funding_txid = transaction.txid();
     // This is to mine the block used to add the coinbase transaction?
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
@@ -233,7 +233,10 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
         assert_eq!(list.len(), 1);
         let mineraddress_transaction = list[0].clone();
 
-        assert_eq!(mineraddress_transaction["txid"], txid.to_string());
+        assert_eq!(
+            mineraddress_transaction["txid"],
+            mineraddr_funding_txid.to_string()
+        );
         assert_eq!(mineraddress_transaction["amount"].as_u64().unwrap(), value);
         assert_eq!(
             mineraddress_transaction["address"],
@@ -289,7 +292,7 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
     assert_eq!(notes["pending_sapling_notes"].len(), 1);
     assert_eq!(
         notes["pending_sapling_notes"][0]["created_in_txid"],
-        txid.to_string()
+        mineraddr_funding_txid.to_string()
     );
     assert_eq!(
         notes["pending_sapling_notes"][0]["unconfirmed_spent"],

@@ -558,6 +558,8 @@ impl FakeCompactBlockList {
         extfvk: &ExtendedFullViewingKey,
         value: u64,
     ) -> (&Transaction, u64, Note) {
+        //! If this is a "coinbase" transaction why does it take
+        //! an arbitrary "value"?
         let mut fake_transaction = FakeTransaction::new(false);
         let note = fake_transaction.add_sapling_transaction_paying(extfvk, value);
 
