@@ -29,21 +29,21 @@ COPY /bin/lightwalletd /usr/bin/
 # RUN make
 
 # Git clone zingolib (to be replaced with zingolib PR for CI)
-WORKDIR /usr/src
+# WORKDIR /usr/src
 # RUN git clone https://github.com/zingolabs/zingolib.git
-RUN git clone https://github.com/Oscar-Pepper/zingolib.git
+# RUN git clone https://github.com/Oscar-Pepper/zingolib.git
 
 # Copy zcash and lightwallet binaries into zingolib regtest directory
-WORKDIR zingolib
-RUN git checkout ci-update
-RUN cp /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./regtest/bin/
+# WORKDIR zingolib
+# RUN git checkout ci-update
+# RUN cp /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./regtest/bin/
 
 # Create CARGO_HOME directory for package caching
-RUN mkdir ./cargo_home
+# RUN mkdir ./cargo_home
 
-RUN cargo build --release
+# RUN cargo build --release
 
-RUN apt install netcat -y
+# RUN apt install netcat -y
 
 # Cargo test
 # ENTRYPOINT ["bash", "-c", "cargo test --release"]
@@ -53,3 +53,6 @@ RUN apt install netcat -y
 
 # run container: 
 # docker run --rm -e CARGO_HOME=/usr/src/zingolib/cargo_home -v crates-idx-vol:/usr/src/zingolib/cargo_home -it <image-name>
+
+# adding zingolib via volume
+# -v /home/oscar/src/zingolib:/usr/src/zingolib
