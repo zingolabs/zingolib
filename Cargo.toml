@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "zingolib",
-    "cli",
+    "zingocli",
     "config"
 ]
 
