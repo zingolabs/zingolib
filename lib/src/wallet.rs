@@ -361,7 +361,6 @@ impl LightWallet {
             Vec::new()
         };
 
-        //TODO: Rework read/write interface, given the opportunity to make breaking changes
         let seed_bytes = Vector::read(&mut reader, |r| r.read_u8())?;
         let mnemonic = Mnemonic::from_entropy(seed_bytes)
             .map_err(|e| Error::new(ErrorKind::InvalidData, e.to_string()))?;
@@ -633,13 +632,12 @@ impl LightWallet {
             .unwrap_or_default()
     }
 
-    // TODO:   Understand how this is used.. is it correct to add one?
-    async fn get_latest_wallet_height_plus_one(&self) -> Option<u32> {
+    async fn get_latest_wallet_height(&self) -> Option<u32> {
         self.blocks
             .read()
             .await
             .first()
-            .map(|block| block.height as u32 + 1)
+            .map(|block| block.height as u32)
     }
 
     /// Determines the target height for a transaction, and the offset from which to
@@ -1171,7 +1169,7 @@ impl LightWallet {
         println!("{}: Selecting notes", now() - start_time);
 
         let target_amount = (Amount::from_u64(total_value).unwrap() + DEFAULT_FEE).unwrap();
-        let last_height = match self.get_latest_wallet_height_plus_one().await {
+        let latest_wallet_height = match self.get_latest_wallet_height().await {
             Some(h) => BlockHeight::from_u32(h),
             None => return Err("No blocks in wallet to target, please sync first".to_string()),
         };
@@ -1203,7 +1201,9 @@ impl LightWallet {
         }
         println!("Selected notes worth {}", u64::from(selected_value));
 
-        let orchard_anchor = self.get_orchard_anchor(&orchard_notes, last_height).await?;
+        let orchard_anchor = self
+            .get_orchard_anchor(&orchard_notes, latest_wallet_height)
+            .await?;
         let mut builder = Builder::with_orchard_anchor(
             self.transaction_context.config.chain,
             submission_height,
@@ -1441,7 +1441,8 @@ impl LightWallet {
                     .iter_mut()
                     .find(|nd| nd.nullifier == selected.nullifier)
                     .unwrap();
-                spent_note.unconfirmed_spent = Some((transaction.txid(), u32::from(last_height)));
+                spent_note.unconfirmed_spent =
+                    Some((transaction.txid(), u32::from(submission_height)));
             }
             // Mark orchard notes as unconfirmed spent
             for selected in orchard_notes {
@@ -1453,7 +1454,8 @@ impl LightWallet {
                     .iter_mut()
                     .find(|nd| nd.nullifier == selected.nullifier)
                     .unwrap();
-                spent_note.unconfirmed_spent = Some((transaction.txid(), u32::from(last_height)));
+                spent_note.unconfirmed_spent =
+                    Some((transaction.txid(), u32::from(submission_height)));
             }
 
             // Mark this utxo as unconfirmed spent
@@ -1466,7 +1468,8 @@ impl LightWallet {
                     .iter_mut()
                     .find(|u| utxo.txid == u.txid && utxo.output_index == u.output_index)
                     .unwrap();
-                spent_utxo.unconfirmed_spent = Some((transaction.txid(), u32::from(last_height)));
+                spent_utxo.unconfirmed_spent =
+                    Some((transaction.txid(), u32::from(submission_height)));
             }
         }
 
@@ -1477,7 +1480,7 @@ impl LightWallet {
             self.transaction_context
                 .scan_full_tx(
                     transaction,
-                    last_height.into(),
+                    submission_height.into(),
                     true,
                     now() as u32,
                     TransactionMetadata::get_price(now(), &price),
@@ -1570,8 +1573,8 @@ mod test {
             assert_eq!(Amount::from_u64(0).unwrap(), sufficient_funds.3);
         }
 
-        crate::apply_scenario! {insufficient_funds_1_present_needed_1 10}
-        async fn insufficient_funds_1_present_needed_1(scenario: NBlockFCBLScenario) {
+        crate::apply_scenario! {sufficient_funds_1_present_needed_1 10}
+        async fn sufficient_funds_1_present_needed_1(scenario: NBlockFCBLScenario) {
             let NBlockFCBLScenario {
                 lightclient,
                 data,
@@ -1595,10 +1598,10 @@ mod test {
                 .wallet
                 .select_notes_and_utxos(Amount::from_u64(1).unwrap(), false, false, false)
                 .await;
-            assert_eq!(Amount::from_u64(0).unwrap(), sufficient_funds.3);
+            assert_eq!(Amount::from_u64(1).unwrap(), sufficient_funds.3);
         }
-        crate::apply_scenario! {insufficient_funds_1_plus_txfee_present_needed_1 10}
-        async fn insufficient_funds_1_plus_txfee_present_needed_1(scenario: NBlockFCBLScenario) {
+        crate::apply_scenario! {sufficient_funds_1_plus_txfee_present_needed_1 10}
+        async fn sufficient_funds_1_plus_txfee_present_needed_1(scenario: NBlockFCBLScenario) {
             let NBlockFCBLScenario {
                 lightclient,
                 data,

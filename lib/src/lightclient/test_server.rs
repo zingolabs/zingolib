@@ -803,8 +803,11 @@ impl CompactTxStreamer for TestGRPCService {
         todo!()
     }
 }
-apply_scenario! {check_anchor_offset 10}
-async fn check_anchor_offset(scenario: NBlockFCBLScenario) {
+apply_scenario! {check_reorg_buffer_offset 10}
+async fn check_reorg_buffer_offset(scenario: NBlockFCBLScenario) {
     let NBlockFCBLScenario { lightclient, .. } = scenario;
-    assert_eq!(lightclient.wallet.get_anchor_height().await, 10 - 4);
+    assert_eq!(
+        lightclient.wallet.get_anchor_height().await,
+        10 - zingoconfig::REORG_BUFFER_OFFSET
+    );
 }

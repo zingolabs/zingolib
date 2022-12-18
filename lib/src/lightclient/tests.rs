@@ -209,8 +209,8 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
     let b = lightclient.do_balance().await;
     let addresses = lightclient.do_addresses().await;
     assert_eq!(b["sapling_balance"].as_u64().unwrap(), value);
-    assert_eq!(b["unverified_sapling_balance"].as_u64().unwrap(), value);
-    assert_eq!(b["spendable_sapling_balance"].as_u64().unwrap(), 0);
+    assert_eq!(b["unverified_sapling_balance"].as_u64().unwrap(), 0);
+    assert_eq!(b["spendable_sapling_balance"].as_u64().unwrap(), value);
     assert_eq!(
         addresses[0]["receivers"]["sapling"],
         encode_payment_address(
@@ -364,8 +364,8 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
         notes["unspent_orchard_notes"][0]["spendable"]
             .as_bool()
             .unwrap(),
-        false
-    ); // Not yet spendable
+        true
+    ); // Spendable
 
     assert_eq!(notes["spent_sapling_notes"].len(), 1);
     assert_eq!(
@@ -1509,9 +1509,10 @@ async fn mempool_and_balance(scenario: NBlockFCBLScenario) {
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
     let bal = lightclient.do_balance().await;
+    println!("{}", json::stringify_pretty(bal.clone(), 4));
     assert_eq!(bal["sapling_balance"].as_u64().unwrap(), value);
-    assert_eq!(bal["verified_sapling_balance"].as_u64().unwrap(), 0);
-    assert_eq!(bal["unverified_sapling_balance"].as_u64().unwrap(), value);
+    assert_eq!(bal["unverified_sapling_balance"].as_u64().unwrap(), 0);
+    assert_eq!(bal["verified_sapling_balance"].as_u64().unwrap(), value);
 
     // 3. Mine 10 blocks
     mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 10)
@@ -1538,18 +1539,10 @@ async fn mempool_and_balance(scenario: NBlockFCBLScenario) {
     assert_eq!(bal["verified_orchard_balance"].as_u64().unwrap(), 0);
     assert_eq!(bal["unverified_orchard_balance"].as_u64().unwrap(), new_bal);
 
-    // 5. Mine the pending block, but the balances should remain the same.
+    // 5. Mine the pending block, making the funds verified and spendable.
     fake_compactblock_list.add_pending_sends(&data).await;
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
-    let bal = lightclient.do_balance().await;
-    assert_eq!(bal["orchard_balance"].as_u64().unwrap(), new_bal);
-    assert_eq!(bal["verified_orchard_balance"].as_u64().unwrap(), 0);
-    assert_eq!(bal["unverified_orchard_balance"].as_u64().unwrap(), new_bal);
-
-    // 6. Mine 10 more blocks, making the funds verified and spendable.
-    mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 10)
-        .await;
     let bal = lightclient.do_balance().await;
 
     assert_eq!(bal["orchard_balance"].as_u64().unwrap(), new_bal);
