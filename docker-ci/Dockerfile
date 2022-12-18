@@ -30,7 +30,7 @@ COPY /bin/lightwalletd /usr/bin/
 
 # Git clone zingolib (to be replaced with zingolib PR for CI)
 WORKDIR /usr/src
-# RUN git clone https://github.com/zingolabs/zingolib.git
+RUN git clone https://github.com/zingolabs/zingolib.git
 
 # Copy zcash and lightwallet binaries into zingolib regtest directory
 WORKDIR zingolib
