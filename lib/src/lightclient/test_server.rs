@@ -233,7 +233,6 @@ pub async fn setup_n_block_fcbl_scenario(
         initial_num_two_tx_blocks,
     )
     .await;
-    assert_eq!(lightclient.wallet.last_synced_height().await, 10);
     (
         NBlockFCBLScenario {
             data,
