@@ -302,23 +302,31 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
     let list = lightclient.do_list_transactions(false).await;
 
     assert_eq!(list.len(), 2);
-    let jv = list
+    let send_transaction = list
         .members()
-        .find(|jv| jv["txid"] == sent_transaction_id)
+        .find(|transaction| transaction["txid"] == sent_transaction_id)
         .unwrap();
 
-    assert_eq!(jv["txid"], sent_transaction_id);
+    assert_eq!(send_transaction["txid"], sent_transaction_id);
     assert_eq!(
-        jv["amount"].as_i64().unwrap(),
+        send_transaction["amount"].as_i64().unwrap(),
         -(sent_value as i64 + i64::from(DEFAULT_FEE))
     );
-    assert_eq!(jv["unconfirmed"].as_bool().unwrap(), true);
-    assert_eq!(jv["block_height"].as_u64().unwrap(), 3);
+    assert_eq!(send_transaction["unconfirmed"].as_bool().unwrap(), true);
+    assert_eq!(send_transaction["block_height"].as_u64().unwrap(), 3);
 
-    assert_eq!(jv["outgoing_metadata"][0]["address"], EXT_ZADDR.to_string());
-    assert_eq!(jv["outgoing_metadata"][0]["memo"], outgoing_memo);
     assert_eq!(
-        jv["outgoing_metadata"][0]["value"].as_u64().unwrap(),
+        send_transaction["outgoing_metadata"][0]["address"],
+        EXT_ZADDR.to_string()
+    );
+    assert_eq!(
+        send_transaction["outgoing_metadata"][0]["memo"],
+        outgoing_memo
+    );
+    assert_eq!(
+        send_transaction["outgoing_metadata"][0]["value"]
+            .as_u64()
+            .unwrap(),
         sent_value
     );
 
@@ -326,16 +334,8 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
     fake_compactblock_list.add_pending_sends(&data).await;
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
-    let list = lightclient.do_list_transactions(false).await;
-
-    assert_eq!(list.len(), 2);
-    let jv = list
-        .members()
-        .find(|jv| jv["txid"] == sent_transaction_id)
-        .unwrap();
-
-    assert_eq!(jv.contains("unconfirmed"), false);
-    assert_eq!(jv["block_height"].as_u64().unwrap(), 3);
+    assert_eq!(send_transaction.contains("unconfirmed"), false);
+    assert_eq!(send_transaction["block_height"].as_u64().unwrap(), 3);
 
     // 7. Check the notes to see that we have one spent sapling note and one unspent orchard note (change)
     let notes = lightclient.do_list_notes(true).await;
