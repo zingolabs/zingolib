@@ -186,7 +186,7 @@ fn new_wallet_from_zvk() {
     });
 }
 
-apply_scenario! {sapling_incoming_sapling_outgoing 10}
+apply_scenario! {sapling_incoming_sapling_outgoing 1}
 async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
     let NBlockFCBLScenario {
         data,
@@ -205,7 +205,7 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
     // This is to mine the block used to add the coinbase transaction?
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
-    assert_eq!(lightclient.wallet.last_synced_height().await, 11);
+    assert_eq!(lightclient.wallet.last_synced_height().await, 2);
 
     // 3. Check the balance is correct, and we received the incoming transaction from ?outside?
     let b = lightclient.do_balance().await;
@@ -250,7 +250,7 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
         );
         assert_eq!(
             mineraddress_transaction["block_height"].as_u64().unwrap(),
-            11
+            2
         );
     } else {
         panic!("Expecting an array");
@@ -319,7 +319,7 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
         -(sent_value as i64 + i64::from(DEFAULT_FEE))
     );
     assert_eq!(jv["unconfirmed"].as_bool().unwrap(), true);
-    assert_eq!(jv["block_height"].as_u64().unwrap(), 12);
+    assert_eq!(jv["block_height"].as_u64().unwrap(), 3);
 
     assert_eq!(jv["outgoing_metadata"][0]["address"], EXT_ZADDR.to_string());
     assert_eq!(jv["outgoing_metadata"][0]["memo"], outgoing_memo);
@@ -341,7 +341,7 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
         .unwrap();
 
     assert_eq!(jv.contains("unconfirmed"), false);
-    assert_eq!(jv["block_height"].as_u64().unwrap(), 12);
+    assert_eq!(jv["block_height"].as_u64().unwrap(), 3);
 
     // 8. Check the notes to see that we have one spent sapling note and one unspent orchard note (change)
     let notes = lightclient.do_list_notes(true).await;
@@ -351,7 +351,7 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
         notes["unspent_orchard_notes"][0]["created_in_block"]
             .as_u64()
             .unwrap(),
-        12
+        3
     );
     assert_eq!(
         notes["unspent_orchard_notes"][0]["created_in_txid"],
@@ -379,7 +379,7 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
         notes["spent_sapling_notes"][0]["created_in_block"]
             .as_u64()
             .unwrap(),
-        11
+        2
     );
     assert_eq!(
         notes["spent_sapling_notes"][0]["value"].as_u64().unwrap(),
@@ -405,7 +405,7 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
         notes["spent_sapling_notes"][0]["spent_at_height"]
             .as_u64()
             .unwrap(),
-        12
+        3
     );
 }
 
