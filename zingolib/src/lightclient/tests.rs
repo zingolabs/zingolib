@@ -338,6 +338,7 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
     assert_eq!(send_transaction["block_height"].as_u64().unwrap(), 3);
 
     // 7. Check the notes to see that we have one spent sapling note and one unspent orchard note (change)
+    // Which is immediately spendable.
     let notes = lightclient.do_list_notes(true).await;
     println!("{}", json::stringify_pretty(notes.clone(), 4));
     assert_eq!(notes["unspent_orchard_notes"].len(), 1);
