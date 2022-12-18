@@ -381,9 +381,11 @@ impl RegtestManager {
 
         //now enter loop to find string that indicates daemon is ready for next step
         loop {
-            std::io::Read::read_to_string(&mut lwd_log_opened, &mut lwd_logfile_state)
-                .expect("problem reading lwd_logfile into rust string");
-            if lwd_logfile_state.contains("Starting insecure no-TLS (plaintext) server") {
+            dbg!(
+                std::io::Read::read_to_string(&mut lwd_log_opened, &mut lwd_logfile_state)
+                    .expect("problem reading lwd_logfile into rust string")
+            );
+            if dbg!(lwd_logfile_state.contains("Starting insecure no-TLS (plaintext) server")) {
                 println!("lwd start section completed, lightwalletd should be running!");
                 println!("Standby, Zingo-cli should be running in regtest mode momentarily...");
                 break;

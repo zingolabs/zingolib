@@ -30,7 +30,7 @@ COPY /bin/lightwalletd /usr/bin/
 
 # Git clone zingolib (to be replaced with zingolib PR for CI)
 WORKDIR /usr/src
-RUN git clone https://github.com/zingolabs/zingolib.git
+# RUN git clone https://github.com/zingolabs/zingolib.git
 
 # Copy zcash and lightwallet binaries into zingolib regtest directory
 WORKDIR zingolib
@@ -45,6 +45,9 @@ RUN apt install netcat -y
 
 # Cargo test
 # ENTRYPOINT ["bash", "-c", "cargo test --release"]
+
+# Regtest - test only
+# ENTRYPOINT ["bash", "-c", "./target/release/zingo-cli --regtest"]
 
 # run container: 
 # docker run --rm -e CARGO_HOME=/usr/src/zingolib/cargo_home -v crates-idx-vol:/usr/src/zingolib/cargo_home -it <image-name>
