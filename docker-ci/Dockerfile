@@ -3,7 +3,7 @@ FROM debian:latest
 
 # Update and install dependencies
 RUN apt update && apt upgrade -y && \
-    apt install curl build-essential gcc make protobuf-compiler libssl-dev pkg-config git apt-transport-https wget gnupg2 unzip -y
+    apt install curl build-essential gcc protobuf-compiler libssl-dev pkg-config git apt-transport-https wget gnupg2 unzip -y
     
 # Install Rust
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y
@@ -15,41 +15,30 @@ RUN wget -qO - https://apt.z.cash/zcash.asc | gpg --import && \
     echo "deb [arch=amd64] https://apt.z.cash/ bullseye main" | tee /etc/apt/sources.list.d/zcash.list && \
     apt update && apt install zcash && zcash-fetch-params
 
-# Install Lightwalletd 
-# Building from source: docker in a docker issue
-# Copying binary from host instead for now
+# Copy lightwalletd binary
 COPY /bin/lightwalletd /usr/bin/
-
-# WORKDIR /usr/src
-# COPY /go/go1.19.3.linux-amd64.tar.gz ./go/
-# RUN rm -rf /usr/local/go && tar -xzf ./go/go1.19.3.linux-amd64.tar.gz -C /usr/local 
-# ENV PATH="$PATH:/usr/local/go/bin"
-# RUN git clone https://github.com/zingolabs/lightwalletd.git
-# WORKDIR lightwalletd
-# RUN make
 
 # Git clone zingolib (to be replaced with zingolib PR for CI)
 WORKDIR /usr/src
 # RUN git clone https://github.com/zingolabs/zingolib.git
-RUN git clone https://github.com/Oscar-Pepper/zingolib.git
+RUN git clone https://github.com/Oscar-Pepper/zingolib.git # test only
 
 # Copy zcash and lightwallet binaries into zingolib regtest directory
 WORKDIR zingolib
-RUN git checkout ci-update
+RUN git checkout ci-update # test only
 RUN cp /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./regtest/bin/
 
 # Create CARGO_HOME directory for package caching
 # RUN mkdir ./cargo_home
 
+# ------------test only ----------------------
 RUN cargo build --release
-
 RUN apt install netcat -y
+# ENTRYPOINT ["bash", "-c", "./target/release/zingo-cli --regtest"]
+#---------------------------------------------
 
 # Cargo test
 # ENTRYPOINT ["bash", "-c", "cargo test --release"]
 
-# Regtest - test only
-# ENTRYPOINT ["bash", "-c", "./target/release/zingo-cli --regtest"]
-
-# run container: 
+# caching crate index
 # docker run --rm -e CARGO_HOME=/usr/src/zingolib/cargo_home -v crates-idx-vol:/usr/src/zingolib/cargo_home -it <image-name>
