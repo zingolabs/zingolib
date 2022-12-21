@@ -329,12 +329,12 @@ impl RegtestManager {
         let mut lightwalletd_logfile =
             dbg!(File::create(&self.lightwalletd_stdout_log).expect("file::create Result error"));
         let mut lightwalletd_err_logfile =
-            File::create(&self.lightwalletd_stderr_log).expect("file::create Result error");
+            dbg!(File::create(&self.lightwalletd_stderr_log).expect("file::create Result error"));
 
         let lightwalletd_bin = &mut self.bin_dir.to_owned();
         lightwalletd_bin.push("lightwalletd");
 
-        let mut lightwalletd_child = std::process::Command::new(lightwalletd_bin)
+        let mut lightwalletd_child = dbg!(std::process::Command::new(lightwalletd_bin)
         .args([
             "--no-tls-very-insecure",
             "--zcash-conf-path",
@@ -357,25 +357,23 @@ impl RegtestManager {
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
-        .expect("failed to start lightwalletd. It's possible the lightwalletd binary is not in the /zingolib/regtest/bin/ directory, see /regtest/README.md");
+        .expect("failed to start lightwalletd. It's possible the lightwalletd binary is not in the /zingolib/regtest/bin/ directory, see /regtest/README.md"));
 
-        dbg!(
-            if let Some(mut lwd_log) = lightwalletd_child.stdout.take() {
-                std::thread::spawn(move || {
-                    std::io::copy(&mut lwd_log, &mut lightwalletd_logfile)
-                        .expect("io::copy error writing lwd_stdout.log");
-                });
-            }
-        );
+        if let Some(mut lwd_log) = lightwalletd_child.stdout.take() {
+            std::thread::spawn(move || {
+                dbg!(std::io::copy(&mut lwd_log, &mut lightwalletd_logfile)
+                    .expect("io::copy error writing lwd_stdout.log"));
+            });
+        }
 
-        dbg!(
-            if let Some(mut lwd_err_log) = lightwalletd_child.stderr.take() {
-                std::thread::spawn(move || {
+        if let Some(mut lwd_err_log) = lightwalletd_child.stderr.take() {
+            std::thread::spawn(move || {
+                dbg!(
                     std::io::copy(&mut lwd_err_log, &mut lightwalletd_err_logfile)
-                        .expect("io::copy error writing lwd_stderr.log");
-                });
-            }
-        );
+                        .expect("io::copy error writing lwd_stderr.log")
+                );
+            });
+        }
 
         println!("lightwalletd is now started in regtest mode, please standby...");
 
