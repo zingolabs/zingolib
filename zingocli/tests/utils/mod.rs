@@ -64,10 +64,10 @@ pub mod scenarios {
         use std::path::PathBuf;
         use zingolib::lightclient::LightClient;
         pub struct ScenarioBuilder {
-            test_env: TestEnvironmentGenerator,
+            pub test_env: TestEnvironmentGenerator,
             pub regtest_manager: RegtestManager,
             pub client_builder: ClientBuilder,
-            pub child_process_handler: ChildProcessHandler,
+            pub child_process_handler: Option<ChildProcessHandler>,
         }
         impl ScenarioBuilder {
             pub fn new() -> Self {
@@ -78,26 +78,18 @@ pub mod scenarios {
                 //! once, per test, consider adding environment config (e.g. ports, OS) to
                 //! TestEnvironmentGenerator and for scenario specific add to this constructor
                 let test_env = TestEnvironmentGenerator::new();
+                let regtest_manager = test_env.regtest_manager.clone();
                 let lightwalletd_port = test_env.lightwalletd_rpcservice_port.clone();
                 let server_id = zingoconfig::construct_server_uri(Some(format!(
                     "http://127.0.0.1:{lightwalletd_port}"
                 )));
-                let regtest_manager = RegtestManager::new(None);
                 let client_builder = ClientBuilder::new(
                     server_id,
                     regtest_manager.zingo_datadir.clone(),
                     data::seeds::ABANDON_ART_SEED,
                 );
-                let child_process_handler =
-                    regtest_manager.launch(true).unwrap_or_else(|e| match e {
-                        zingo_cli::regtest::LaunchChildProcessError::ZcashdState {
-                            errorcode,
-                            stdout,
-                            stderr,
-                        } => {
-                            panic!("{} {} {}", errorcode, stdout, stderr)
-                        }
-                    });
+                dbg!(&regtest_manager.zcashd_config);
+                let child_process_handler = None;
                 Self {
                     test_env,
                     regtest_manager,
@@ -105,36 +97,23 @@ pub mod scenarios {
                     child_process_handler,
                 }
             }
-            pub(crate) fn create_unfunded_zcash_conf(&self) -> PathBuf {
-                //! Side effect only fn, writes to FS.
-                dbg!(&self.test_env.zcashd_rpcservice_port);
-                dbg!(&self.test_env.lightwalletd_rpcservice_port);
-                self.test_env.write_contents_and_return_path(
-                    "zcash",
-                    data::config_template_fillers::zcashd::basic(
-                        &self.test_env.zcashd_rpcservice_port,
-                        "",
-                    ),
-                )
-            }
-            pub(crate) fn create_funded_zcash_conf(&self, address_to_fund: &str) -> PathBuf {
-                self.test_env.write_contents_and_return_path(
-                    "zcash",
-                    data::config_template_fillers::zcashd::funded(
-                        address_to_fund,
-                        &self.test_env.zcashd_rpcservice_port,
-                    ),
-                )
-            }
-            pub(crate) fn create_lightwalletd_conf(&self) -> PathBuf {
-                self.test_env.write_contents_and_return_path(
-                    "lightwalletd",
-                    data::config_template_fillers::lightwalletd::basic(
-                        &self.test_env.lightwalletd_rpcservice_port,
-                    ),
-                )
+            pub fn launch(&mut self) {
+                self.child_process_handler = Some(
+                    self.regtest_manager
+                        .launch(false)
+                        .unwrap_or_else(|e| match e {
+                            zingo_cli::regtest::LaunchChildProcessError::ZcashdState {
+                                errorcode,
+                                stdout,
+                                stderr,
+                            } => {
+                                panic!("{} {} {}", errorcode, stdout, stderr)
+                            }
+                        }),
+                );
             }
         }
+
         /// Internally (and perhaps in wider scopes) we say "Sprout" to mean
         /// take a seed, and generate a client from the seed (planted in the chain).
         pub struct ClientBuilder {
@@ -195,7 +174,7 @@ pub mod scenarios {
                     .unwrap()
             }
         }
-        struct TestEnvironmentGenerator {
+        pub struct TestEnvironmentGenerator {
             zcashd_rpcservice_port: String,
             lightwalletd_rpcservice_port: String,
             regtest_manager: RegtestManager,
@@ -222,6 +201,32 @@ pub mod scenarios {
                     lightwalletd_rpcservice_port,
                     regtest_manager,
                 }
+            }
+            pub(crate) fn create_unfunded_zcash_conf(&self) -> PathBuf {
+                //! Side effect only fn, writes to FS.
+                dbg!(&self.zcashd_rpcservice_port);
+                dbg!(&self.lightwalletd_rpcservice_port);
+                self.write_contents_and_return_path(
+                    "zcash",
+                    data::config_template_fillers::zcashd::basic(&self.zcashd_rpcservice_port, ""),
+                )
+            }
+            pub(crate) fn create_funded_zcash_conf(&self, address_to_fund: &str) -> PathBuf {
+                self.write_contents_and_return_path(
+                    "zcash",
+                    data::config_template_fillers::zcashd::funded(
+                        address_to_fund,
+                        &self.zcashd_rpcservice_port,
+                    ),
+                )
+            }
+            pub(crate) fn create_lightwalletd_conf(&self) -> PathBuf {
+                self.write_contents_and_return_path(
+                    "lightwalletd",
+                    data::config_template_fillers::lightwalletd::basic(
+                        &self.lightwalletd_rpcservice_port,
+                    ),
+                )
             }
             fn write_contents_and_return_path(
                 &self,
@@ -253,11 +258,12 @@ pub mod scenarios {
     pub fn funded_client() -> (RegtestManager, ChildProcessHandler, setup::ClientBuilder) {
         let sb = setup::ScenarioBuilder::new();
         //tracing_subscriber::fmt::init();
-        sb.create_funded_zcash_conf(REGSAP_ADDR_FROM_ABANDONART);
-        sb.create_lightwalletd_conf();
+        sb.test_env
+            .create_funded_zcash_conf(REGSAP_ADDR_FROM_ABANDONART);
+        sb.test_env.create_lightwalletd_conf();
         (
             sb.regtest_manager,
-            sb.child_process_handler,
+            sb.child_process_handler.unwrap(),
             sb.client_builder,
         )
     }
@@ -277,7 +283,9 @@ pub mod scenarios {
         );
         let first_z_addr_from_seed_phrase = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
         let mut scenario_builder = setup::ScenarioBuilder::new();
-        scenario_builder.create_funded_zcash_conf(first_z_addr_from_seed_phrase);
+        scenario_builder
+            .test_env
+            .create_funded_zcash_conf(first_z_addr_from_seed_phrase);
         let light_client = scenario_builder.client_builder.build_newseed_client(
             cross_version_seed_phrase.clone(),
             0,
@@ -285,7 +293,7 @@ pub mod scenarios {
         );
         (
             scenario_builder.regtest_manager,
-            scenario_builder.child_process_handler,
+            scenario_builder.child_process_handler.unwrap(),
             light_client,
             cross_version_seed_phrase,
         )
@@ -356,10 +364,12 @@ pub mod scenarios {
     pub fn basic_no_spendable() -> (RegtestManager, ChildProcessHandler, LightClient) {
         let mut scenario_builder = setup::ScenarioBuilder::new();
         dbg!("scenario_built");
-        scenario_builder.create_unfunded_zcash_conf();
+        scenario_builder.test_env.create_unfunded_zcash_conf();
+        scenario_builder.test_env.create_lightwalletd_conf();
+        scenario_builder.launch();
         (
             scenario_builder.regtest_manager,
-            scenario_builder.child_process_handler,
+            scenario_builder.child_process_handler.unwrap(),
             scenario_builder.client_builder.build_unfunded_client(0),
         )
     }
