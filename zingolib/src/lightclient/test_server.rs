@@ -225,7 +225,6 @@ pub async fn setup_n_block_fcbl_scenario(
 
     let mut fake_compactblock_list = FakeCompactBlockList::new(0);
 
-    // 1. Mine 10 blocks
     mine_numblocks_each_with_two_sap_txs(
         &mut fake_compactblock_list,
         &data,
