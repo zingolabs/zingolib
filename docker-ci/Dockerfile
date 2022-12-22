@@ -14,7 +14,7 @@ RUN cp /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./regtest/bin/
 
 # ------------test only ----------------------
 RUN cargo build --release
-# ENTRYPOINT ["bash", "-c", "./target/release/zingo-cli --regtest"]
+ENTRYPOINT ["bash", "-c", "./target/release/zingo-cli --regtest"]
 #---------------------------------------------
 
 # Cargo test

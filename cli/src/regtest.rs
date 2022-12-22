@@ -359,21 +359,21 @@ impl RegtestManager {
         .spawn()
         .expect("failed to start lightwalletd. It's possible the lightwalletd binary is not in the /zingolib/regtest/bin/ directory, see /regtest/README.md"));
 
-        // if let Some(mut lwd_log) = lightwalletd_child.stdout.take() {
-        //     std::thread::spawn(move || {
-        //         dbg!(std::io::copy(&mut lwd_log, &mut lightwalletd_logfile)
-        //             .expect("io::copy error writing lwd_stdout.log"));
-        //     });
-        // }
+        if let Some(mut lwd_log) = lightwalletd_child.stdout.take() {
+            std::thread::spawn(move || {
+                dbg!(std::io::copy(&mut lwd_log, &mut lightwalletd_logfile)
+                    .expect("io::copy error writing lwd_stdout.log"));
+            });
+        }
 
-        // if let Some(mut lwd_err_log) = lightwalletd_child.stderr.take() {
-        //     std::thread::spawn(move || {
-        //         dbg!(
-        //             std::io::copy(&mut lwd_err_log, &mut lightwalletd_err_logfile)
-        //                 .expect("io::copy error writing lwd_stderr.log")
-        //         );
-        //     });
-        // }
+        if let Some(mut lwd_err_log) = lightwalletd_child.stderr.take() {
+            std::thread::spawn(move || {
+                dbg!(
+                    std::io::copy(&mut lwd_err_log, &mut lightwalletd_err_logfile)
+                        .expect("io::copy error writing lwd_stderr.log")
+                );
+            });
+        }
 
         println!("lightwalletd is now started in regtest mode, please standby...");
 
