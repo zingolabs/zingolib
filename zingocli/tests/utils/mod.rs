@@ -100,7 +100,7 @@ pub mod scenarios {
             pub fn launch(&mut self) {
                 self.child_process_handler = Some(
                     self.regtest_manager
-                        .launch(false)
+                        .launch(true)
                         .unwrap_or_else(|e| match e {
                             zingo_cli::regtest::LaunchChildProcessError::ZcashdState {
                                 errorcode,
@@ -256,11 +256,12 @@ pub mod scenarios {
     /// of scenarios.  As scenarios with even less requirements
     /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
     pub fn funded_client() -> (RegtestManager, ChildProcessHandler, setup::ClientBuilder) {
-        let sb = setup::ScenarioBuilder::new();
+        let mut sb = setup::ScenarioBuilder::new();
         //tracing_subscriber::fmt::init();
         sb.test_env
             .create_funded_zcash_conf(REGSAP_ADDR_FROM_ABANDONART);
         sb.test_env.create_lightwalletd_conf();
+        sb.launch();
         (
             sb.regtest_manager,
             sb.child_process_handler.unwrap(),
