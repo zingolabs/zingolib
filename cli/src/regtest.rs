@@ -326,10 +326,10 @@ impl RegtestManager {
         }
         println!("lightwalletd is about to start. This should only take a moment.");
 
-        // let mut lightwalletd_logfile =
-        //     dbg!(File::create(&self.lightwalletd_stdout_log).expect("file::create Result error"));
-        // let mut lightwalletd_err_logfile =
-        //     dbg!(File::create(&self.lightwalletd_stderr_log).expect("file::create Result error"));
+        let mut lightwalletd_logfile =
+            dbg!(File::create(&self.lightwalletd_stdout_log).expect("file::create Result error"));
+        let mut lightwalletd_err_logfile =
+            dbg!(File::create(&self.lightwalletd_stderr_log).expect("file::create Result error"));
 
         let lightwalletd_bin = &mut self.bin_dir.to_owned();
         lightwalletd_bin.push("lightwalletd");
@@ -377,21 +377,21 @@ impl RegtestManager {
 
         println!("lightwalletd is now started in regtest mode, please standby...");
 
-        // let mut lwd_log_opened =
-        //     dbg!(File::open(&self.lightwalletd_stdout_log).expect("can't open lwd log"));
-        // let mut lwd_logfile_state = String::new();
+        let mut lwd_log_opened =
+            dbg!(File::open(&self.lightwalletd_stdout_log).expect("can't open lwd log"));
+        let mut lwd_logfile_state = String::new();
 
         //now enter loop to find string that indicates daemon is ready for next step
         loop {
-            // dbg!(
-            //     std::io::Read::read_to_string(&mut lwd_log_opened, &mut lwd_logfile_state)
-            //         .expect("problem reading lwd_logfile into rust string")
-            // );
-            // if dbg!(lwd_logfile_state.contains("Starting insecure no-TLS (plaintext) server")) {
-            //     println!("lwd start section completed, lightwalletd should be running!");
-            //     println!("Standby, Zingo-cli should be running in regtest mode momentarily...");
-            //     break;
-            // }
+            dbg!(
+                std::io::Read::read_to_string(&mut lwd_log_opened, &mut lwd_logfile_state)
+                    .expect("problem reading lwd_logfile into rust string")
+            );
+            if dbg!(lwd_logfile_state.contains("Starting insecure no-TLS (plaintext) server")) {
+                println!("lwd start section completed, lightwalletd should be running!");
+                println!("Standby, Zingo-cli should be running in regtest mode momentarily...");
+                break;
+            }
             // we need to sleep because even after the last message is detected, lwd needs a moment to become ready for regtest mode
             std::thread::sleep(check_interval);
         }

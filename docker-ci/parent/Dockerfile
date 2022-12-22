@@ -34,5 +34,4 @@ RUN mkdir /home/$USERNAME/src
 WORKDIR home/$USERNAME/src
 
 # test only
-RUN sudo apt install netcat -y
-
+RUN sudo apt install netcat nano -y
