@@ -84,7 +84,7 @@ impl RegtestManager {
         std::fs::create_dir_all(&zcashd_logs_dir).expect("Couldn't create dir.");
         let zcashd_stdout_log = zcashd_logs_dir.join("stdout.log");
         let zcashd_config = confs_dir.join("zcash.conf");
-        let lightwalletd_config = confs_dir.join("lightwalletd.yaml");
+        let lightwalletd_config = confs_dir.join("lightwalletd.yml");
         let lightwalletd_logs_dir = logs_dir.join("lightwalletd");
         std::fs::create_dir_all(&lightwalletd_logs_dir).expect("Couldn't create dir.");
         let lightwalletd_stdout_log = lightwalletd_logs_dir.join("stdout.log");
