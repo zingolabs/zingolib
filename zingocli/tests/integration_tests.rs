@@ -57,11 +57,6 @@ fn verify_old_wallet_uses_server_height_in_send() {
     drop(child_process_handler);
 }
 #[test]
-fn debug_upgrade() {
-    let (_regtest_manager, child_process_handler, _client) = scenarios::basic_no_spendable();
-    drop(child_process_handler);
-}
-#[test]
 fn actual_empty_zcashd_sapling_commitment_tree() {
     // Expectations:
     let sprout_commitments_finalroot =
