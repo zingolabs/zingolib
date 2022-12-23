@@ -69,7 +69,7 @@ impl TrialDecryptions {
             TxId,
             oneshot::Sender<Result<Transaction, String>>,
         )>,
-    ) -> (JoinHandle<()>, UnboundedSender<CompactBlock>) {
+    ) -> Result<(JoinHandle<()>, UnboundedSender<CompactBlock>), String> {
         //debug!("Starting trial decrptions processor");
 
         // Create a new channel where we'll receive the blocks
@@ -141,7 +141,7 @@ impl TrialDecryptions {
                 }
             }
         });
-        return (management_thread_handle, transmitter);
+        Ok((management_thread_handle, transmitter))
     }
 
     /// Trial decryption is invoked by spend-or-view key holders to detect

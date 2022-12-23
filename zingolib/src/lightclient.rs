@@ -1403,7 +1403,7 @@ impl LightClient {
             self.wallet.unified_spend_capability(),
             self.wallet.transactions(),
         );
-        let (trial_decrypts_handle, trial_decrypts_transmitter) = trial_decryptions_processor
+        if let Ok((trial_decrypts_handle, trial_decrypts_transmitter)) = trial_decryptions_processor
             .start(
                 bsync_data.clone(),
                 detected_transactions_transmitter,
@@ -1414,130 +1414,135 @@ impl LightClient {
                     .transaction_size_filter,
                 full_transaction_fetcher_transmitter,
             )
+            .await
+        {
+            // Fetch Compact blocks and send them to nullifier cache, node-and-witness cache and the trial-decryption processor
+            let fetch_compact_blocks = Arc::new(FetchCompactBlocks::new(&self.config));
+            let fetch_compact_blocks_handle = tokio::spawn(async move {
+                fetch_compact_blocks
+                    .start(
+                        [
+                            block_and_witness_data_transmitter,
+                            trial_decrypts_transmitter,
+                        ],
+                        start_block,
+                        end_block,
+                        reorg_receiver,
+                    )
+                    .await
+            });
+
+            // We wait first for the nodes to be updated. This is where reorgs will be handled, so all the steps done after this phase will
+            // assume that the reorgs are done.
+            let earliest_block = block_and_witness_handle.await.unwrap().unwrap();
+
+            // 1. Fetch the transparent txns only after reorgs are done.
+            let taddr_transactions_handle = FetchTaddrTransactions::new(
+                self.wallet.unified_spend_capability(),
+                Arc::new(self.config.clone()),
+            )
+            .start(
+                start_block,
+                earliest_block,
+                taddr_fetcher_transmitter,
+                fetch_taddr_transactions_transmitter,
+                self.config.chain,
+            )
             .await;
 
-        // Fetch Compact blocks and send them to nullifier cache, node-and-witness cache and the trial-decryption processor
-        let fetch_compact_blocks = Arc::new(FetchCompactBlocks::new(&self.config));
-        let fetch_compact_blocks_handle = tokio::spawn(async move {
-            fetch_compact_blocks
-                .start(
-                    [
-                        block_and_witness_data_transmitter,
-                        trial_decrypts_transmitter,
-                    ],
-                    start_block,
-                    end_block,
-                    reorg_receiver,
-                )
+            // 2. Notify the notes updater that the blocks are done updating
+            blocks_done_transmitter.send(earliest_block).unwrap();
+
+            // 3. Verify all the downloaded data
+            let block_data = bsync_data.clone();
+
+            // Wait for everything to finish
+
+            // Await all the futures
+            let r1 = tokio::spawn(async move {
+                join_all(vec![
+                    trial_decrypts_handle,
+                    full_transaction_fetcher_handle,
+                    taddr_fetcher_handle,
+                ])
                 .await
-        });
+                .into_iter()
+                .map(|r| r.map_err(|e| format!("{}", e)))
+                .collect::<Result<(), _>>()
+            });
 
-        // We wait first for the nodes to be updated. This is where reorgs will be handled, so all the steps done after this phase will
-        // assume that the reorgs are done.
-        let earliest_block = block_and_witness_handle.await.unwrap().unwrap();
-
-        // 1. Fetch the transparent txns only after reorgs are done.
-        let taddr_transactions_handle = FetchTaddrTransactions::new(
-            self.wallet.unified_spend_capability(),
-            Arc::new(self.config.clone()),
-        )
-        .start(
-            start_block,
-            earliest_block,
-            taddr_fetcher_transmitter,
-            fetch_taddr_transactions_transmitter,
-            self.config.chain,
-        )
-        .await;
-
-        // 2. Notify the notes updater that the blocks are done updating
-        blocks_done_transmitter.send(earliest_block).unwrap();
-
-        // 3. Verify all the downloaded data
-        let block_data = bsync_data.clone();
-
-        // Wait for everything to finish
-
-        // Await all the futures
-        let r1 = tokio::spawn(async move {
             join_all(vec![
-                trial_decrypts_handle,
-                full_transaction_fetcher_handle,
-                taddr_fetcher_handle,
+                update_notes_handle,
+                taddr_transactions_handle,
+                fetch_compact_blocks_handle,
+                fetch_full_transactions_handle,
+                r1,
             ])
             .await
             .into_iter()
-            .map(|r| r.map_err(|e| format!("{}", e)))
-            .collect::<Result<(), _>>()
-        });
+            .map(|r| r.map_err(|e| format!("{}", e))?)
+            .collect::<Result<(), String>>()?;
 
-        join_all(vec![
-            update_notes_handle,
-            taddr_transactions_handle,
-            fetch_compact_blocks_handle,
-            fetch_full_transactions_handle,
-            r1,
-        ])
-        .await
-        .into_iter()
-        .map(|r| r.map_err(|e| format!("{}", e))?)
-        .collect::<Result<(), String>>()?;
+            let verify_handle =
+                tokio::spawn(
+                    async move { block_data.read().await.block_data.verify_trees().await },
+                );
+            let (verified, highest_tree) = verify_handle.await.map_err(|e| e.to_string())?;
+            debug!("tree verification {}", verified);
+            debug!("highest tree exists: {}", highest_tree.is_some());
+            if !verified {
+                return Err("Tree Verification Failed".to_string());
+            }
 
-        let verify_handle =
-            tokio::spawn(async move { block_data.read().await.block_data.verify_trees().await });
-        let (verified, highest_tree) = verify_handle.await.map_err(|e| e.to_string())?;
-        debug!("tree verification {}", verified);
-        debug!("highest tree exists: {}", highest_tree.is_some());
-        if !verified {
-            return Err("Tree Verification Failed".to_string());
+            debug!("Batch: {batch_num} synced, doing post-processing");
+
+            let blaze_sync_data = bsync_data.read().await;
+            // Post sync, we have to do a bunch of stuff
+            // 1. Get the last 100 blocks and store it into the wallet, needed for future re-orgs
+            let blocks = blaze_sync_data
+                .block_data
+                .drain_existingblocks_into_blocks_with_truncation(MAX_REORG)
+                .await;
+            self.wallet.set_blocks(blocks).await;
+
+            // 2. If sync was successfull, also try to get historical prices
+            // self.update_historical_prices().await;
+            // zingolabs considers this to be a serious privacy/secuity leak
+
+            // 3. Mark the sync finished, which will clear the nullifier cache etc...
+            blaze_sync_data.finish().await;
+
+            // 4. Remove the witnesses for spent notes more than 100 blocks old, since now there
+            // is no risk of reorg
+            self.wallet
+                .transactions()
+                .write()
+                .await
+                .clear_old_witnesses(start_block);
+
+            // 5. Remove expired mempool transactions, if any
+            self.wallet
+                .transactions()
+                .write()
+                .await
+                .clear_expired_mempool(start_block);
+
+            // 6. Set the heighest verified tree
+            if highest_tree.is_some() {
+                *self.wallet.verified_tree.write().await = highest_tree;
+            }
+
+            debug!("About to run save after syncing {}th batch!", batch_num);
+            #[cfg(target_os = "linux")]
+            self.do_save().await.unwrap();
+            Ok(object! {
+                "result" => "success",
+                "latest_block" => start_block,
+                "total_blocks_synced" => start_block - end_block + 1,
+            })
+        } else {
+            Err("err".to_string())
         }
-
-        debug!("Batch: {batch_num} synced, doing post-processing");
-
-        let blaze_sync_data = bsync_data.read().await;
-        // Post sync, we have to do a bunch of stuff
-        // 1. Get the last 100 blocks and store it into the wallet, needed for future re-orgs
-        let blocks = blaze_sync_data
-            .block_data
-            .drain_existingblocks_into_blocks_with_truncation(MAX_REORG)
-            .await;
-        self.wallet.set_blocks(blocks).await;
-
-        // 2. If sync was successfull, also try to get historical prices
-        // self.update_historical_prices().await;
-        // zingolabs considers this to be a serious privacy/secuity leak
-
-        // 3. Mark the sync finished, which will clear the nullifier cache etc...
-        blaze_sync_data.finish().await;
-
-        // 4. Remove the witnesses for spent notes more than 100 blocks old, since now there
-        // is no risk of reorg
-        self.wallet
-            .transactions()
-            .write()
-            .await
-            .clear_old_witnesses(start_block);
-
-        // 5. Remove expired mempool transactions, if any
-        self.wallet
-            .transactions()
-            .write()
-            .await
-            .clear_expired_mempool(start_block);
-
-        // 6. Set the heighest verified tree
-        if highest_tree.is_some() {
-            *self.wallet.verified_tree.write().await = highest_tree;
-        }
-
-        debug!("About to run save after syncing {}th batch!", batch_num);
-        #[cfg(target_os = "linux")]
-        self.do_save().await.unwrap();
-        Ok(object! {
-            "result" => "success",
-            "latest_block" => start_block,
-            "total_blocks_synced" => start_block - end_block + 1,
-        })
     }
 
     pub async fn do_shield(&self, address: Option<String>) -> Result<String, String> {
