@@ -287,6 +287,8 @@ pub mod scenarios {
         scenario_builder
             .test_env
             .create_funded_zcash_conf(first_z_addr_from_seed_phrase);
+        scenario_builder.test_env.create_lightwalletd_conf();
+        scenario_builder.launch();
         let light_client = scenario_builder.client_builder.build_newseed_client(
             cross_version_seed_phrase.clone(),
             0,
