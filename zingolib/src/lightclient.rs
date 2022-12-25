@@ -92,6 +92,7 @@ enum PriceFetchError {
     NotJson,
     NoElements,
     PriceReprError(PriceReprError),
+    NanValue,
 }
 impl PriceFetchError {
     pub(crate) fn to_string(&self) -> String {
@@ -101,6 +102,7 @@ impl PriceFetchError {
             NotJson => "NotJson".to_string(),
             NoElements => "NoElements".to_string(),
             PriceReprError(e) => format!("PriceReprError: {}", e),
+            NanValue => "NanValue".to_string(),
         }
     }
 }
@@ -171,7 +173,13 @@ async fn get_recent_median_price_from_gemini() -> Result<f64, PriceFetchError> {
             return Err(PriceFetchError::PriceReprError(e));
         }
     };
-    trades.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    if trades.iter().any(|x| x.is_nan()) {
+        return Err(PriceFetchError::NanValue);
+    }
+    trades.sort_by(|a, b| {
+        a.partial_cmp(b)
+            .expect("a and b are f64, partial_cmp shouldn't panic")
+    });
     Ok(trades[5])
 }
 
