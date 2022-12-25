@@ -178,7 +178,7 @@ async fn get_recent_median_price_from_gemini() -> Result<f64, PriceFetchError> {
     }
     trades.sort_by(|a, b| {
         a.partial_cmp(b)
-            .expect("a and b are f64, partial_cmp shouldn't panic")
+            .expect("a and b are non-nan f64, I think that makes them comparable")
     });
     Ok(trades[5])
 }
