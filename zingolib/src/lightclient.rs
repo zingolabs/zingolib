@@ -91,7 +91,7 @@ enum PriceFetchError {
     ReqwestError(String),
     NotJson,
     NoElements,
-    PriceReprError,
+    PriceReprError(PriceReprError),
 }
 impl PriceFetchError {
     pub(crate) fn to_string(&self) -> String {
@@ -100,7 +100,7 @@ impl PriceFetchError {
             ReqwestError(e) => format!("ReqwestError: {}", e),
             NotJson => "NotJson".to_string(),
             NoElements => "NoElements".to_string(),
-            PriceReprError => "PriceReprError".to_string(),
+            PriceReprError(e) => format!("PriceReprError: {}", e),
         }
     }
 }
@@ -113,6 +113,21 @@ enum PriceReprError {
     NoValue,
     NoAsStrValue,
     NotParseable,
+}
+impl PriceReprError {
+    fn to_string(&self) -> String {
+        use PriceReprError::*;
+        match &*self {
+            NoValue => "NoValue".to_string(),
+            NoAsStrValue => "NoAsStrValue".to_string(),
+            NotParseable => "NotParseable".to_string(),
+        }
+    }
+}
+impl std::fmt::Display for PriceReprError {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fmt.write_str(self.to_string().as_str())
+    }
 }
 fn repr_price_as_f64(from_gemini: &Value) -> Result<f64, PriceReprError> {
     if let Some(value) = from_gemini.get("price") {
@@ -152,17 +167,9 @@ async fn get_recent_median_price_from_gemini() -> Result<f64, PriceFetchError> {
     };
     let mut trades: Vec<f64> = match elements.into_iter().map(repr_price_as_f64).collect() {
         Ok(trades) => trades,
-        Err(e) => match e {
-            PriceReprError::NoValue => {
-                return Err(PriceFetchError::PriceReprError);
-            }
-            PriceReprError::NoAsStrValue => {
-                return Err(PriceFetchError::PriceReprError);
-            }
-            PriceReprError::NotParseable => {
-                return Err(PriceFetchError::PriceReprError);
-            }
-        },
+        Err(e) => {
+            return Err(PriceFetchError::PriceReprError(e));
+        }
     };
     trades.sort_by(|a, b| a.partial_cmp(b).unwrap());
     Ok(trades[5])
