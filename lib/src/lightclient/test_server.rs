@@ -37,9 +37,7 @@ use super::LightClient;
 pub(crate) const TEST_PEMFILE_PATH: &'static str = "test-data/localhost.pem";
 static KEYGEN: std::sync::Once = std::sync::Once::new();
 
-pub async fn create_test_server(
-    https: bool,
-) -> (
+pub async fn create_test_server() -> (
     Arc<RwLock<TestServerData>>,
     ZingoConfig,
     oneshot::Receiver<()>,
@@ -76,11 +74,7 @@ pub async fn create_test_server(
 
     let port = portpicker::pick_unused_port().unwrap();
     let server_port = format!("127.0.0.1:{}", port);
-    let uri = if https {
-        format!("https://{}", server_port)
-    } else {
-        format!("http://{}", server_port)
-    };
+    let uri = format!("https://{}", server_port);
     let addr: std::net::SocketAddr = server_port.parse().unwrap();
 
     let mut config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, None);
@@ -124,7 +118,7 @@ pub async fn create_test_server(
             .parse()
             .unwrap();
         let listener = tokio::net::TcpListener::bind(nameuri).await.unwrap();
-        let tls_acceptor = if https {
+        let tls_acceptor = {
             use std::fs::File;
             use std::io::BufReader;
             let (cert, key) = (
@@ -152,8 +146,6 @@ pub async fn create_test_server(
                 .unwrap();
             tls.alpn_protocols = vec![b"h2".to_vec()];
             Some(tokio_rustls::TlsAcceptor::from(Arc::new(tls)))
-        } else {
-            None
         };
 
         ready_transmitter.send(()).unwrap();
@@ -177,30 +169,24 @@ pub async fn create_test_server(
 
             tokio::spawn(async move {
                 let svc = tower::ServiceBuilder::new().service(svc);
-                if https {
-                    let mut certificates = Vec::new();
-                    let https_conn = tls_acceptor
-                        .unwrap()
-                        .accept_with(conn, |info| {
-                            if let Some(certs) = info.peer_certificates() {
-                                for cert in certs {
-                                    certificates.push(cert.clone());
-                                }
-                            }
-                        })
-                        .await
-                        .unwrap();
 
-                    #[allow(unused_must_use)]
-                    {
-                        http.serve_connection(https_conn, svc).await;
-                    };
-                } else {
-                    #[allow(unused_must_use)]
-                    {
-                        http.serve_connection(conn, svc).await;
-                    };
-                }
+                let mut certificates = Vec::new();
+                let https_conn = tls_acceptor
+                    .unwrap()
+                    .accept_with(conn, |info| {
+                        if let Some(certs) = info.peer_certificates() {
+                            for cert in certs {
+                                certificates.push(cert.clone());
+                            }
+                        }
+                    })
+                    .await
+                    .unwrap();
+
+                #[allow(unused_must_use)]
+                {
+                    http.serve_connection(https_conn, svc).await;
+                };
             });
         }
 
@@ -232,7 +218,7 @@ pub async fn setup_n_block_fcbl_scenario(
     initial_num_two_tx_blocks: u64,
 ) -> (NBlockFCBLScenario, oneshot::Sender<()>, JoinHandle<()>) {
     let (data, config, ready_receiver, stop_transmitter, test_server_handle) =
-        create_test_server(true).await;
+        create_test_server().await;
     ready_receiver.await.unwrap();
 
     let lightclient = LightClient::test_new(&config, None, 0).await.unwrap();
@@ -293,46 +279,44 @@ async fn test_direct_grpc_and_lightclient_blockchain_height_agreement() {
         + " estimated_height: 0,"
         + " zcashd_build: \"\","
         + " zcashd_subversion: \"\" }";
-    for https in [true, false] {
-        let (data, config, ready_receiver, stop_transmitter, test_server_handle) =
-            create_test_server(https).await;
+    let (data, config, ready_receiver, stop_transmitter, test_server_handle) =
+        create_test_server().await;
 
-        let uri = config.server_uri.clone();
-        let mut client = crate::grpc_connector::GrpcConnector::new(uri.read().unwrap().clone())
-            .get_client()
+    let uri = config.server_uri.clone();
+    let mut client = crate::grpc_connector::GrpcConnector::new(uri.read().unwrap().clone())
+        .get_client()
+        .await
+        .unwrap();
+
+    //let info_getter = &mut client.get_lightd_info(Request::new(Empty {}));
+    ready_receiver.await.unwrap();
+    let lightclient = LightClient::test_new(&config, None, 0).await.unwrap();
+    let mut fake_compactblock_list = FakeCompactBlockList::new(0);
+
+    let observed_pre_answer = format!(
+        "{:?}",
+        client
+            .get_lightd_info(Request::new(Empty {}))
             .await
-            .unwrap();
-
-        //let info_getter = &mut client.get_lightd_info(Request::new(Empty {}));
-        ready_receiver.await.unwrap();
-        let lightclient = LightClient::test_new(&config, None, 0).await.unwrap();
-        let mut fake_compactblock_list = FakeCompactBlockList::new(0);
-
-        let observed_pre_answer = format!(
-            "{:?}",
-            client
-                .get_lightd_info(Request::new(Empty {}))
-                .await
-                .unwrap()
-                .into_inner()
-        );
-        assert_eq!(observed_pre_answer, expected_lightdinfo_before_blockmining);
-        assert_eq!(lightclient.wallet.last_synced_height().await, 0);
-        // Change system under test state (generating random blocks)
-        mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 10)
-            .await;
-        let observed_post_answer = format!(
-            "{:?}",
-            client
-                .get_lightd_info(Request::new(Empty {}))
-                .await
-                .unwrap()
-                .into_inner()
-        );
-        assert_eq!(observed_post_answer, expected_lightdinfo_after_blockmining);
-        assert_eq!(lightclient.wallet.last_synced_height().await, 10);
-        clean_shutdown(stop_transmitter, test_server_handle).await;
-    }
+            .unwrap()
+            .into_inner()
+    );
+    assert_eq!(observed_pre_answer, expected_lightdinfo_before_blockmining);
+    assert_eq!(lightclient.wallet.last_synced_height().await, 0);
+    // Change system under test state (generating random blocks)
+    mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 10)
+        .await;
+    let observed_post_answer = format!(
+        "{:?}",
+        client
+            .get_lightd_info(Request::new(Empty {}))
+            .await
+            .unwrap()
+            .into_inner()
+    );
+    assert_eq!(observed_post_answer, expected_lightdinfo_after_blockmining);
+    assert_eq!(lightclient.wallet.last_synced_height().await, 10);
+    clean_shutdown(stop_transmitter, test_server_handle).await;
 }
 /// stop_transmitter: issues the shutdown to the server thread
 /// server_thread_handle: this is Ready when the server thread exits
