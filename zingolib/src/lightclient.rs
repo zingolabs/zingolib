@@ -176,6 +176,12 @@ async fn get_recent_median_price_from_gemini() -> Result<f64, PriceFetchError> {
     if trades.iter().any(|x| x.is_nan()) {
         return Err(PriceFetchError::NanValue);
     }
+    // NOTE:  This code will panic if a value is received that:
+    // 1. was parsed from a string to an f64
+    // 2. is not a NaN
+    // 3. cannot be compared to an f64
+    // TODO:  Show that this is impossible, or write code to handle
+    // that case.
     trades.sort_by(|a, b| {
         a.partial_cmp(b)
             .expect("a and b are non-nan f64, I think that makes them comparable")
