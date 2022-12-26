@@ -97,7 +97,8 @@ fn generate_tls_server_config() -> tokio_rustls::rustls::ServerConfig {
 }
 
 fn generate_tls_server_port_uri() -> (String, String) {
-    let server_port = format!("127.0.0.1:{}", portpicker::pick_unused_port().unwrap());
+    let port = portpicker::pick_unused_port().unwrap();
+    let server_port = format!("127.0.0.1:{}", port);
     (
         server_port.clone(),
         format!("https://{}", server_port.clone()),
