@@ -37,36 +37,12 @@ use super::LightClient;
 pub(crate) const TEST_PEMFILE_PATH: &'static str = "test-data/localhost.pem";
 static KEYGEN: std::sync::Once = std::sync::Once::new();
 
-fn generate_tlc_cert_and_key() -> (
+fn generate_tls_cert_and_key() -> (
     tokio_rustls::rustls::Certificate,
     tokio_rustls::rustls::PrivateKey,
 ) {
     use std::fs::File;
     use std::io::BufReader;
-    (
-        tokio_rustls::rustls::Certificate(
-            rustls_pemfile::certs(&mut BufReader::new(File::open(TEST_PEMFILE_PATH).unwrap()))
-                .unwrap()
-                .pop()
-                .unwrap(),
-        ),
-        tokio_rustls::rustls::PrivateKey(
-            rustls_pemfile::pkcs8_private_keys(&mut BufReader::new(
-                File::open(TEST_PEMFILE_PATH).unwrap(),
-            ))
-            .unwrap()
-            .pop()
-            .expect("empty vec of private keys??"),
-        ),
-    )
-}
-pub async fn create_test_server() -> (
-    Arc<RwLock<TestServerData>>,
-    ZingoConfig,
-    oneshot::Receiver<()>,
-    oneshot::Sender<()>,
-    JoinHandle<()>,
-) {
     KEYGEN.call_once(|| {
         std::process::Command::new("openssl")
             .args([
@@ -91,7 +67,42 @@ pub async fn create_test_server() -> (
             .unwrap();
         //tracing_subscriber::fmt::init();
     });
+    (
+        tokio_rustls::rustls::Certificate(
+            rustls_pemfile::certs(&mut BufReader::new(File::open(TEST_PEMFILE_PATH).unwrap()))
+                .unwrap()
+                .pop()
+                .unwrap(),
+        ),
+        tokio_rustls::rustls::PrivateKey(
+            rustls_pemfile::pkcs8_private_keys(&mut BufReader::new(
+                File::open(TEST_PEMFILE_PATH).unwrap(),
+            ))
+            .unwrap()
+            .pop()
+            .expect("empty vec of private keys??"),
+        ),
+    )
+}
 
+fn generate_tls_server_config() -> tokio_rustls::rustls::ServerConfig {
+    let (cert, key) = generate_tls_cert_and_key();
+    let mut tls_server_config = ServerConfig::builder()
+        .with_safe_defaults()
+        .with_no_client_auth()
+        .with_single_cert(vec![cert], key)
+        .unwrap();
+    tls_server_config.alpn_protocols = vec![b"h2".to_vec()];
+    tls_server_config
+}
+
+pub async fn create_test_server() -> (
+    Arc<RwLock<TestServerData>>,
+    ZingoConfig,
+    oneshot::Receiver<()>,
+    oneshot::Sender<()>,
+    JoinHandle<()>,
+) {
     let port = portpicker::pick_unused_port().unwrap();
     let server_port = format!("127.0.0.1:{}", port);
     let uri = format!("https://{}", server_port);
@@ -141,13 +152,7 @@ pub async fn create_test_server() -> (
             .parse()
             .unwrap();
         let listener = tokio::net::TcpListener::bind(nameuri).await.unwrap();
-        let (cert, key) = generate_tlc_cert_and_key();
-        let mut tls_server_config = ServerConfig::builder()
-            .with_safe_defaults()
-            .with_no_client_auth()
-            .with_single_cert(vec![cert], key)
-            .unwrap();
-        tls_server_config.alpn_protocols = vec![b"h2".to_vec()];
+        let tls_server_config = generate_tls_server_config();
         let tls_acceptor = { Some(tokio_rustls::TlsAcceptor::from(Arc::new(tls_server_config))) };
 
         ready_transmitter.send(()).unwrap();
