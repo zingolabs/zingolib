@@ -37,13 +37,12 @@ use super::LightClient;
 pub(crate) const TEST_PEMFILE_PATH: &'static str = "test-data/localhost.pem";
 static KEYGEN: std::sync::Once = std::sync::Once::new();
 
-pub async fn create_test_server() -> (
-    Arc<RwLock<TestServerData>>,
-    ZingoConfig,
-    oneshot::Receiver<()>,
-    oneshot::Sender<()>,
-    JoinHandle<()>,
+fn generate_tls_cert_and_key() -> (
+    tokio_rustls::rustls::Certificate,
+    tokio_rustls::rustls::PrivateKey,
 ) {
+    use std::fs::File;
+    use std::io::BufReader;
     KEYGEN.call_once(|| {
         std::process::Command::new("openssl")
             .args([
@@ -68,14 +67,51 @@ pub async fn create_test_server() -> (
             .unwrap();
         //tracing_subscriber::fmt::init();
     });
-    let (ready_transmitter, ready_receiver) = oneshot::channel();
-    let (stop_transmitter, stop_receiver) = oneshot::channel();
-    let mut stop_fused = stop_receiver.fuse();
+    (
+        tokio_rustls::rustls::Certificate(
+            rustls_pemfile::certs(&mut BufReader::new(File::open(TEST_PEMFILE_PATH).unwrap()))
+                .unwrap()
+                .pop()
+                .unwrap(),
+        ),
+        tokio_rustls::rustls::PrivateKey(
+            rustls_pemfile::pkcs8_private_keys(&mut BufReader::new(
+                File::open(TEST_PEMFILE_PATH).unwrap(),
+            ))
+            .unwrap()
+            .pop()
+            .expect("empty vec of private keys??"),
+        ),
+    )
+}
 
+fn generate_tls_server_config() -> tokio_rustls::rustls::ServerConfig {
+    let (cert, key) = generate_tls_cert_and_key();
+    let mut tls_server_config = ServerConfig::builder()
+        .with_safe_defaults()
+        .with_no_client_auth()
+        .with_single_cert(vec![cert], key)
+        .unwrap();
+    tls_server_config.alpn_protocols = vec![b"h2".to_vec()];
+    tls_server_config
+}
+
+fn generate_tls_server_port_uri() -> (String, String) {
     let port = portpicker::pick_unused_port().unwrap();
     let server_port = format!("127.0.0.1:{}", port);
-    let uri = format!("https://{}", server_port);
-    let addr: std::net::SocketAddr = server_port.parse().unwrap();
+    (
+        server_port.clone(),
+        format!("https://{}", server_port.clone()),
+    )
+}
+pub async fn create_test_server() -> (
+    Arc<RwLock<TestServerData>>,
+    ZingoConfig,
+    oneshot::Receiver<()>,
+    oneshot::Sender<()>,
+    JoinHandle<()>,
+) {
+    let (server_port, uri) = generate_tls_server_port_uri();
 
     let mut config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, None);
     *config.server_uri.write().unwrap() = uri.replace("127.0.0.1", "localhost").parse().unwrap();
@@ -84,12 +120,16 @@ pub async fn create_test_server() -> (
 
     let (data_dir_transmitter, data_dir_receiver) = oneshot::channel();
 
-    let h1 = tokio::spawn(async move {
+    // Communication channels for the server spawning thread
+    let (ready_transmitter, ready_receiver) = oneshot::channel();
+    let (stop_transmitter, stop_receiver) = oneshot::channel();
+    let mut stop_fused = stop_receiver.fuse();
+    let server_spawn_thread = tokio::spawn(async move {
         let svc = CompactTxStreamerServer::new(service);
 
         // We create the temp dir here, so that we can clean it up after the test runs
         let temp_dir = tempfile::Builder::new()
-            .prefix(&format!("test{}", port).as_str())
+            .prefix(&format!("test{}", server_port.strip_prefix("127.0.0.1:").unwrap()).as_str())
             .tempdir()
             .unwrap();
 
@@ -106,47 +146,15 @@ pub async fn create_test_server() -> (
             )
             .unwrap();
 
-        let mut tls;
         let svc = Server::builder().add_service(svc).into_service();
 
         let mut http = hyper::server::conn::Http::new();
         http.http2_only(true);
 
-        let nameuri: std::string::String = uri
-            .replace("https://", "")
-            .replace("http://", "")
-            .parse()
-            .unwrap();
+        let nameuri: std::string::String = uri.replace("https://", "").parse().unwrap();
         let listener = tokio::net::TcpListener::bind(nameuri).await.unwrap();
-        let tls_acceptor = {
-            use std::fs::File;
-            use std::io::BufReader;
-            let (cert, key) = (
-                tokio_rustls::rustls::Certificate(
-                    rustls_pemfile::certs(&mut BufReader::new(
-                        File::open(TEST_PEMFILE_PATH).unwrap(),
-                    ))
-                    .unwrap()
-                    .pop()
-                    .unwrap(),
-                ),
-                tokio_rustls::rustls::PrivateKey(
-                    rustls_pemfile::pkcs8_private_keys(&mut BufReader::new(
-                        File::open(TEST_PEMFILE_PATH).unwrap(),
-                    ))
-                    .unwrap()
-                    .pop()
-                    .expect("empty vec of private keys??"),
-                ),
-            );
-            tls = ServerConfig::builder()
-                .with_safe_defaults()
-                .with_no_client_auth()
-                .with_single_cert(vec![cert], key)
-                .unwrap();
-            tls.alpn_protocols = vec![b"h2".to_vec()];
-            Some(tokio_rustls::TlsAcceptor::from(Arc::new(tls)))
-        };
+        let tls_server_config = generate_tls_server_config();
+        let tls_acceptor = { Some(tokio_rustls::TlsAcceptor::from(Arc::new(tls_server_config))) };
 
         ready_transmitter.send(()).unwrap();
         loop {
@@ -195,13 +203,16 @@ pub async fn create_test_server() -> (
 
     log::info!("creating data dir");
     let data_dir = data_dir_receiver.await.unwrap();
-    println!(
-        "GRPC Server listening on: {}. With datadir {}",
-        addr, data_dir
-    );
+    println!("GRPC Server listening with datadir {}", data_dir);
     config.data_dir = Some(data_dir);
 
-    (data, config, ready_receiver, stop_transmitter, h1)
+    (
+        data,
+        config,
+        ready_receiver,
+        stop_transmitter,
+        server_spawn_thread,
+    )
 }
 
 pub struct NBlockFCBLScenario {
