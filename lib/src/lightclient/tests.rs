@@ -654,7 +654,7 @@ async fn sapling_to_sapling_scan_together() {
     // 1. SpendK_S controls start - spend funds
     // 2. SpendK_R controls 0 + spend funds
     let (testserver_state, config, ready_receiver, stop_transmitter, test_server_handle) =
-        create_test_server(true).await;
+        create_test_server().await;
 
     ready_receiver.await.unwrap();
 
@@ -1151,7 +1151,7 @@ async fn no_change(scenario: NBlockFCBLScenario) {
 #[tokio::test]
 async fn recover_at_checkpoint() {
     // 1. Wait for test server to start
-    let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server(true).await;
+    let (data, config, ready_receiver, stop_transmitter, h1) = create_test_server().await;
     ready_receiver.await.unwrap();
 
     // Get checkpoint at 1220000
