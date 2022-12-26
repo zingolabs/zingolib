@@ -45,7 +45,7 @@ pub struct RegtestManager {
     lightwalletd_stdout_log: PathBuf,
     lightwalletd_stderr_log: PathBuf,
     lightwalletd_data_dir: PathBuf,
-    pub zingo_data_dir: PathBuf,
+    pub zingo_datadir: PathBuf,
 }
 ///  We use the `ChildProcessHandler` to handle the children of generated in scenario testing
 pub struct ChildProcessHandler {
@@ -114,7 +114,7 @@ impl RegtestManager {
             lightwalletd_stdout_log,
             lightwalletd_stderr_log,
             lightwalletd_data_dir,
-            zingo_data_dir,
+            zingo_datadir: zingo_data_dir,
         }
     }
 
@@ -164,8 +164,8 @@ impl RegtestManager {
             .output()
             .expect("problem with rm lwd subdir");
 
-        let zingo_file_one = &self.zingo_data_dir.join("zingo-wallet.dat");
-        let zingo_file_two = &self.zingo_data_dir.join("zingo-wallet.debug.log");
+        let zingo_file_one = &self.zingo_datadir.join("zingo-wallet.dat");
+        let zingo_file_two = &self.zingo_datadir.join("zingo-wallet.debug.log");
 
         std::process::Command::new("rm")
             .arg(zingo_file_one)

@@ -7,7 +7,7 @@ use log::{error, info};
 use clap::{self, Arg};
 use regtest::ChildProcessHandler;
 use zingoconfig::{ChainType, ZingoConfig};
-use zingolib::{commands, create_zingoconf_with_datadir, lightclient::LightClient};
+use zingolib::{commands, create_zingoconf_from_datadir, lightclient::LightClient};
 
 pub mod regtest;
 pub mod version;
@@ -335,7 +335,7 @@ to scan from the start of the blockchain."
             let regtest_manager = regtest::RegtestManager::new(None);
             if maybe_data_dir.is_none() {
                 maybe_data_dir = Some(String::from(
-                    regtest_manager.zingo_data_dir.to_str().unwrap(),
+                    regtest_manager.zingo_datadir.to_str().unwrap(),
                 ));
             };
             child_process_handler = Some(regtest_manager.launch(clean_regtest_data)?);
@@ -377,7 +377,7 @@ pub fn startup(
     LightClient::init_logging()?;
 
     // Try to get the configuration
-    let (config, latest_block_height) = create_zingoconf_with_datadir(
+    let (config, latest_block_height) = create_zingoconf_from_datadir(
         filled_template.server.clone(),
         filled_template.maybe_data_dir.clone(),
     )?;

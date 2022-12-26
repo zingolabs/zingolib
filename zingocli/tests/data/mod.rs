@@ -1,8 +1,23 @@
-//Generate test seed
-pub const TEST_SEED: &str = "hospital museum valve antique skate museum \
-unfold vocal weird milk scale social vessel identify \
-crowd hospital control album rib bulb path oven civil tank";
-
+pub mod seeds {
+    #[test]
+    fn validate_seeds() {
+        let abandon_art_seed = zcash_primitives::zip339::Mnemonic::from_entropy([0; 32])
+            .unwrap()
+            .to_string();
+        assert_eq!(ABANDON_ART_SEED, abandon_art_seed);
+        // TODO user get_zaddr_from_bip39seed to generate this address from that seed.
+    }
+    //Generate test seed
+    pub const ABANDON_ART_SEED: &str =
+        "abandon abandon abandon abandon abandon abandon abandon abandon \
+     abandon abandon abandon abandon abandon abandon abandon abandon \
+     abandon abandon abandon abandon abandon abandon abandon art";
+    pub const HOSPITAL_MUSEUM_SEED: &str = "hospital museum valve antique skate museum \
+     unfold vocal weird milk scale social vessel identify \
+     crowd hospital control album rib bulb path oven civil tank";
+}
+pub const REGSAP_ADDR_FROM_ABANDONART: &str =
+    "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
 pub mod config_template_fillers {
     pub mod zcashd {
         pub fn basic(rpcport: &str, extra: &str) -> String {
