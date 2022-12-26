@@ -111,7 +111,6 @@ pub async fn create_test_server() -> (
     JoinHandle<()>,
 ) {
     let (server_port, uri) = generate_tls_server_port_uri();
-    let addr: std::net::SocketAddr = server_port.parse().unwrap();
 
     let mut config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, None);
     *config.server_uri.write().unwrap() = uri.replace("127.0.0.1", "localhost").parse().unwrap();
@@ -203,10 +202,7 @@ pub async fn create_test_server() -> (
 
     log::info!("creating data dir");
     let data_dir = data_dir_receiver.await.unwrap();
-    println!(
-        "GRPC Server listening on: {}. With datadir {}",
-        addr, data_dir
-    );
+    println!("GRPC Server listening with datadir {}", data_dir);
     config.data_dir = Some(data_dir);
 
     (
