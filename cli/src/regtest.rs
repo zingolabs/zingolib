@@ -41,6 +41,7 @@ pub struct RegtestManager {
     pub zcashd_config: PathBuf,
     pub lightwalletd_config: PathBuf,
     lightwalletd_logs_dir: PathBuf,
+    lightwalletd_log: PathBuf,
     lightwalletd_stdout_log: PathBuf,
     lightwalletd_stderr_log: PathBuf,
     lightwalletd_data_dir: PathBuf,
@@ -87,6 +88,7 @@ impl RegtestManager {
         let lightwalletd_config = confs_dir.join("lightwalletd.yml");
         let lightwalletd_logs_dir = logs_dir.join("lightwalletd");
         std::fs::create_dir_all(&lightwalletd_logs_dir).expect("Couldn't create dir.");
+        let lightwalletd_log = lightwalletd_logs_dir.join("lwd.log");
         let lightwalletd_stdout_log = lightwalletd_logs_dir.join("stdout.log");
         let lightwalletd_stderr_log = lightwalletd_logs_dir.join("stderr.log");
         let lightwalletd_data_dir = data_dir.join("lightwalletd");
@@ -108,6 +110,7 @@ impl RegtestManager {
             zcashd_config,
             lightwalletd_config,
             lightwalletd_logs_dir,
+            lightwalletd_log,
             lightwalletd_stdout_log,
             lightwalletd_stderr_log,
             lightwalletd_data_dir,
@@ -325,9 +328,9 @@ impl RegtestManager {
             println!("Keeping old regtest data")
         }
         println!("lightwalletd is about to start. This should only take a moment.");
-
-        let mut lightwalletd_logfile =
-            File::create(&self.lightwalletd_stdout_log).expect("file::create Result error");
+        dbg!(File::create(&self.lightwalletd_log).expect("file::create Result error"));
+        let mut lightwalletd_stdout =
+            dbg!(File::create(&self.lightwalletd_stdout_log).expect("file::create Result error"));
         let mut lightwalletd_err_logfile =
             File::create(&self.lightwalletd_stderr_log).expect("file::create Result error");
 
@@ -350,7 +353,7 @@ impl RegtestManager {
                 .to_str()
                 .expect("lightwalletd_datadir PathBuf to str fail!"),
             "--log-file",
-            &self.lightwalletd_stdout_log
+            &self.lightwalletd_log
                 .to_str()
                 .expect("lightwalletd_stdout_log PathBuf to str fail!"),
         ])
@@ -359,10 +362,10 @@ impl RegtestManager {
         .spawn()
         .expect("failed to start lightwalletd. It's possible the lightwalletd binary is not in the /zingolib/regtest/bin/ directory, see /regtest/README.md");
 
-        if let Some(mut lwd_log) = lightwalletd_child.stdout.take() {
+        if let Some(mut lwd_stdout) = lightwalletd_child.stdout.take() {
             std::thread::spawn(move || {
-                std::io::copy(&mut lwd_log, &mut lightwalletd_logfile)
-                    .expect("io::copy error writing lwd_stdout.log");
+                dbg!(std::io::copy(&mut lwd_stdout, &mut lightwalletd_stdout)
+                    .expect("io::copy error writing lwd_stdout.log"));
             });
         }
 
@@ -376,7 +379,7 @@ impl RegtestManager {
         println!("lightwalletd is now started in regtest mode, please standby...");
 
         let mut lwd_log_opened =
-            File::open(&self.lightwalletd_stdout_log).expect("can't open lwd log");
+            dbg!(File::open(&self.lightwalletd_log).expect("can't open lwd log"));
         let mut lwd_logfile_state = String::new();
 
         //now enter loop to find string that indicates daemon is ready for next step
