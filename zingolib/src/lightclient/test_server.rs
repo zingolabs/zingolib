@@ -96,6 +96,13 @@ fn generate_tls_server_config() -> tokio_rustls::rustls::ServerConfig {
     tls_server_config
 }
 
+fn generate_tls_server_port_uri() -> (String, String) {
+    let server_port = format!("127.0.0.1:{}", portpicker::pick_unused_port().unwrap());
+    (
+        server_port.clone(),
+        format!("https://{}", server_port.clone()),
+    )
+}
 pub async fn create_test_server() -> (
     Arc<RwLock<TestServerData>>,
     ZingoConfig,
@@ -103,9 +110,7 @@ pub async fn create_test_server() -> (
     oneshot::Sender<()>,
     JoinHandle<()>,
 ) {
-    let port = portpicker::pick_unused_port().unwrap();
-    let server_port = format!("127.0.0.1:{}", port);
-    let uri = format!("https://{}", server_port);
+    let (server_port, uri) = generate_tls_server_port_uri();
     let addr: std::net::SocketAddr = server_port.parse().unwrap();
 
     let mut config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, None);
@@ -124,7 +129,7 @@ pub async fn create_test_server() -> (
 
         // We create the temp dir here, so that we can clean it up after the test runs
         let temp_dir = tempfile::Builder::new()
-            .prefix(&format!("test{}", port).as_str())
+            .prefix(&format!("test{}", server_port.strip_prefix("127.0.0.1:").unwrap()).as_str())
             .tempdir()
             .unwrap();
 
@@ -146,11 +151,7 @@ pub async fn create_test_server() -> (
         let mut http = hyper::server::conn::Http::new();
         http.http2_only(true);
 
-        let nameuri: std::string::String = uri
-            .replace("https://", "")
-            .replace("http://", "")
-            .parse()
-            .unwrap();
+        let nameuri: std::string::String = uri.replace("https://", "").parse().unwrap();
         let listener = tokio::net::TcpListener::bind(nameuri).await.unwrap();
         let tls_server_config = generate_tls_server_config();
         let tls_acceptor = { Some(tokio_rustls::TlsAcceptor::from(Arc::new(tls_server_config))) };
