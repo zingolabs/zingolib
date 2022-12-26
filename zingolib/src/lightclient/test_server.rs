@@ -68,9 +68,6 @@ pub async fn create_test_server() -> (
             .unwrap();
         //tracing_subscriber::fmt::init();
     });
-    let (ready_transmitter, ready_receiver) = oneshot::channel();
-    let (stop_transmitter, stop_receiver) = oneshot::channel();
-    let mut stop_fused = stop_receiver.fuse();
 
     let port = portpicker::pick_unused_port().unwrap();
     let server_port = format!("127.0.0.1:{}", port);
@@ -84,7 +81,11 @@ pub async fn create_test_server() -> (
 
     let (data_dir_transmitter, data_dir_receiver) = oneshot::channel();
 
-    let h1 = tokio::spawn(async move {
+    // Communication channels for the server spawning thread
+    let (ready_transmitter, ready_receiver) = oneshot::channel();
+    let (stop_transmitter, stop_receiver) = oneshot::channel();
+    let mut stop_fused = stop_receiver.fuse();
+    let server_spawn_thread = tokio::spawn(async move {
         let svc = CompactTxStreamerServer::new(service);
 
         // We create the temp dir here, so that we can clean it up after the test runs
@@ -201,7 +202,13 @@ pub async fn create_test_server() -> (
     );
     config.data_dir = Some(data_dir);
 
-    (data, config, ready_receiver, stop_transmitter, h1)
+    (
+        data,
+        config,
+        ready_receiver,
+        stop_transmitter,
+        server_spawn_thread,
+    )
 }
 
 pub struct NBlockFCBLScenario {
