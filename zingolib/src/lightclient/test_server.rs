@@ -225,7 +225,6 @@ pub async fn setup_n_block_fcbl_scenario(
 
     let mut fake_compactblock_list = FakeCompactBlockList::new(0);
 
-    // 1. Mine 10 blocks
     mine_numblocks_each_with_two_sap_txs(
         &mut fake_compactblock_list,
         &data,
@@ -233,7 +232,6 @@ pub async fn setup_n_block_fcbl_scenario(
         initial_num_two_tx_blocks,
     )
     .await;
-    assert_eq!(lightclient.wallet.last_synced_height().await, 10);
     (
         NBlockFCBLScenario {
             data,
@@ -787,11 +785,11 @@ impl CompactTxStreamer for TestGRPCService {
         todo!()
     }
 }
-apply_scenario! {check_reorg_buffer_offset 10}
+apply_scenario! {check_reorg_buffer_offset 1}
 async fn check_reorg_buffer_offset(scenario: NBlockFCBLScenario) {
     let NBlockFCBLScenario { lightclient, .. } = scenario;
     assert_eq!(
         lightclient.wallet.get_anchor_height().await,
-        10 - zingoconfig::REORG_BUFFER_OFFSET
+        1 - zingoconfig::REORG_BUFFER_OFFSET
     );
 }

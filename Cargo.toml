@@ -1,8 +1,8 @@
 [workspace]
 members = [
-    "lib",
-    "cli",
-    "config"
+    "zingolib",
+    "zingocli",
+    "zingoconfig"
 ]
 
 [profile.release]

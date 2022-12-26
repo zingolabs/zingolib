@@ -12,8 +12,8 @@ json = "0.12.4"
 http = "0.2.8"
 tokio =  { version = "1.6.0", features = ["full"] }
 
-zingolib = { path = "../lib/" }
-zingoconfig = { path = "../config/" }
+zingolib = { path = "../zingolib/" }
+zingoconfig = { path = "../zingoconfig/" }
 zingtaddrfix = { git = "https://github.com/zingolabs/zingolib", package = "zingolib", rev = "f8fb624237fd4923512cc065620b55230676ab82", optional = true }
 
 [dev-dependencies]
