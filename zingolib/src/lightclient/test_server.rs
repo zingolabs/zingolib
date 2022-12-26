@@ -37,6 +37,29 @@ use super::LightClient;
 pub(crate) const TEST_PEMFILE_PATH: &'static str = "test-data/localhost.pem";
 static KEYGEN: std::sync::Once = std::sync::Once::new();
 
+fn generate_tlc_cert_and_key() -> (
+    tokio_rustls::rustls::Certificate,
+    tokio_rustls::rustls::PrivateKey,
+) {
+    use std::fs::File;
+    use std::io::BufReader;
+    (
+        tokio_rustls::rustls::Certificate(
+            rustls_pemfile::certs(&mut BufReader::new(File::open(TEST_PEMFILE_PATH).unwrap()))
+                .unwrap()
+                .pop()
+                .unwrap(),
+        ),
+        tokio_rustls::rustls::PrivateKey(
+            rustls_pemfile::pkcs8_private_keys(&mut BufReader::new(
+                File::open(TEST_PEMFILE_PATH).unwrap(),
+            ))
+            .unwrap()
+            .pop()
+            .expect("empty vec of private keys??"),
+        ),
+    )
+}
 pub async fn create_test_server() -> (
     Arc<RwLock<TestServerData>>,
     ZingoConfig,
@@ -120,26 +143,7 @@ pub async fn create_test_server() -> (
             .unwrap();
         let listener = tokio::net::TcpListener::bind(nameuri).await.unwrap();
         let tls_acceptor = {
-            use std::fs::File;
-            use std::io::BufReader;
-            let (cert, key) = (
-                tokio_rustls::rustls::Certificate(
-                    rustls_pemfile::certs(&mut BufReader::new(
-                        File::open(TEST_PEMFILE_PATH).unwrap(),
-                    ))
-                    .unwrap()
-                    .pop()
-                    .unwrap(),
-                ),
-                tokio_rustls::rustls::PrivateKey(
-                    rustls_pemfile::pkcs8_private_keys(&mut BufReader::new(
-                        File::open(TEST_PEMFILE_PATH).unwrap(),
-                    ))
-                    .unwrap()
-                    .pop()
-                    .expect("empty vec of private keys??"),
-                ),
-            );
+            let (cert, key) = generate_tlc_cert_and_key();
             tls = ServerConfig::builder()
                 .with_safe_defaults()
                 .with_no_client_auth()
