@@ -141,17 +141,14 @@ pub async fn create_test_server() -> (
             .parse()
             .unwrap();
         let listener = tokio::net::TcpListener::bind(nameuri).await.unwrap();
-        let mut tls_server_config: ServerConfig;
-        let tls_acceptor = {
-            let (cert, key) = generate_tlc_cert_and_key();
-            tls_server_config = ServerConfig::builder()
-                .with_safe_defaults()
-                .with_no_client_auth()
-                .with_single_cert(vec![cert], key)
-                .unwrap();
-            tls_server_config.alpn_protocols = vec![b"h2".to_vec()];
-            Some(tokio_rustls::TlsAcceptor::from(Arc::new(tls_server_config)))
-        };
+        let (cert, key) = generate_tlc_cert_and_key();
+        let mut tls_server_config = ServerConfig::builder()
+            .with_safe_defaults()
+            .with_no_client_auth()
+            .with_single_cert(vec![cert], key)
+            .unwrap();
+        tls_server_config.alpn_protocols = vec![b"h2".to_vec()];
+        let tls_acceptor = { Some(tokio_rustls::TlsAcceptor::from(Arc::new(tls_server_config))) };
 
         ready_transmitter.send(()).unwrap();
         loop {
