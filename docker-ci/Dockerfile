@@ -6,7 +6,7 @@ RUN git clone https://github.com/Oscar-Pepper/zingolib.git # test only
 
 # Copy zcash and lightwallet binaries into zingolib regtest directory
 WORKDIR zingolib
-RUN git checkout ci-update # test only
+RUN git checkout ci # test only
 RUN cp /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./regtest/bin/
 
 # Create CARGO_HOME directory for package caching
