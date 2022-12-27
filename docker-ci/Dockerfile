@@ -1,24 +1,15 @@
 # Parent image for zingolibs CI
-FROM parent-ci:latest
+FROM builder:latest
 
-# RUN git clone https://github.com/zingolabs/zingolib.git
-RUN git clone https://github.com/Oscar-Pepper/zingolib.git # test only
+RUN git clone https://github.com/zingolabs/zingolib.git
 
 # Copy zcash and lightwallet binaries into zingolib regtest directory
 WORKDIR zingolib
-RUN git checkout ci # test only
 RUN ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./regtest/bin/
 
-# Create CARGO_HOME directory for package caching
-# RUN mkdir ./cargo_home
-
-# ------------test only ----------------------
-# RUN cargo build --release --features cross_version
-# ENTRYPOINT ["bash", "-c", "./target/release/zingo-cli --regtest"]
-#---------------------------------------------
-
 # Cargo test
-ENTRYPOINT ["bash", "-c", "cargo test --release --features cross_version"]
+# ENTRYPOINT ["bash", "-c", "cargo test --release --features cross_version"]
 
-# caching crate index
-# docker run --rm -e CARGO_HOME=/usr/src/zingolib/cargo_home -v crates-idx-vol:/usr/src/zingolib/cargo_home -it <image-name>
+# Cargo tarpaulin
+ENTRYPOINT ["bash", "-c", "cargo tarpaulin --all-features --avoid-cfg-tarpaulin --skip-clean --verbose --workspace --ignore-tests --release --timeout 300 --out Xml"]
+
