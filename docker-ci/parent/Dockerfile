@@ -14,7 +14,7 @@ RUN groupadd --gid $USER_GID $USERNAME  && \
 USER $USERNAME
 
 # Install packages
-RUN sudo apt install curl build-essential gcc protobuf-compiler libssl-dev pkg-config git apt-transport-https wget gnupg2 unzip -y
+RUN sudo apt install curl build-essential gcc protobuf-compiler libssl-dev pkg-config git apt-transport-https wget gnupg2 unzip procps -y
     
 # Install Rust
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y
