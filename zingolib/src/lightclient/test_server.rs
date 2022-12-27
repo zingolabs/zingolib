@@ -214,59 +214,67 @@ pub async fn create_test_server() -> (
         server_spawn_thread,
     )
 }
+pub(crate) mod http {
+    use std::convert::Infallible;
 
-pub async fn create_simple_http_server() {
-    let (server_port, uri) = generate_tls_server_port_uri();
-    let (ready_transmitter, ready_receiver) = oneshot::channel();
-    let (stop_transmitter, stop_receiver) = oneshot::channel();
-    let mut stop_fused = stop_receiver.fuse();
-    let server_spawn_thread = tokio::spawn(async move {
-        let mut http = hyper::server::conn::Http::new();
-        http.http2_only(true);
+    use super::{generate_tls_server_config, generate_tls_server_port_uri, oneshot, Arc};
+    use futures::FutureExt;
+    use hyper::{Body, Request, Response};
+    async fn hello(_: Request<Body>) -> Result<Response<Body>, Infallible> {}
+    pub async fn create_simple_server() {
+        let (server_port, uri) = generate_tls_server_port_uri();
+        let (ready_transmitter, ready_receiver) = oneshot::channel();
+        let (stop_transmitter, stop_receiver) = oneshot::channel();
+        let mut stop_fused = stop_receiver.fuse();
+        let server_spawn_thread = tokio::spawn(async move {
+            let mut http = hyper::server::conn::Http::new();
+            http.http2_only(true);
 
-        let nameuri: std::string::String = uri.replace("https://", "").parse().unwrap();
-        let listener = tokio::net::TcpListener::bind(nameuri).await.unwrap();
-        let tls_server_config = generate_tls_server_config();
-        let tls_acceptor = { Some(tokio_rustls::TlsAcceptor::from(Arc::new(tls_server_config))) };
+            let nameuri: std::string::String = uri.replace("https://", "").parse().unwrap();
+            let listener = tokio::net::TcpListener::bind(nameuri).await.unwrap();
+            let tls_server_config = generate_tls_server_config();
+            let tls_acceptor =
+                { Some(tokio_rustls::TlsAcceptor::from(Arc::new(tls_server_config))) };
 
-        ready_transmitter.send(()).unwrap();
-        loop {
-            let mut accepted = Box::pin(listener.accept().fuse());
-            let conn_addr = futures::select_biased!(
-                _ = (&mut stop_fused).fuse() => break,
-                conn_addr = accepted => conn_addr,
-            );
-            let (conn, _addr) = match conn_addr {
-                Ok(incoming) => incoming,
-                Err(e) => {
-                    eprintln!("Error accepting connection: {}", e);
-                    continue;
-                }
-            };
-
-            let http = http.clone();
-            let tls_acceptor = tls_acceptor.clone();
-            tokio::spawn(async move {
-                let mut certificates = Vec::new();
-                let https_conn = tls_acceptor
-                    .unwrap()
-                    .accept_with(conn, |info| {
-                        if let Some(certs) = info.peer_certificates() {
-                            for cert in certs {
-                                certificates.push(cert.clone());
-                            }
-                        }
-                    })
-                    .await
-                    .unwrap();
-
-                #[allow(unused_must_use)]
-                {
-                    http.serve_connection(https_conn, svc).await;
+            ready_transmitter.send(()).unwrap();
+            loop {
+                let mut accepted = Box::pin(listener.accept().fuse());
+                let conn_addr = futures::select_biased!(
+                    _ = (&mut stop_fused).fuse() => break,
+                    conn_addr = accepted => conn_addr,
+                );
+                let (conn, _addr) = match conn_addr {
+                    Ok(incoming) => incoming,
+                    Err(e) => {
+                        eprintln!("Error accepting connection: {}", e);
+                        continue;
+                    }
                 };
-            });
-        }
-    });
+
+                let http = http.clone();
+                let tls_acceptor = tls_acceptor.clone();
+                tokio::spawn(async move {
+                    let mut certificates = Vec::new();
+                    let https_conn = tls_acceptor
+                        .unwrap()
+                        .accept_with(conn, |info| {
+                            if let Some(certs) = info.peer_certificates() {
+                                for cert in certs {
+                                    certificates.push(cert.clone());
+                                }
+                            }
+                        })
+                        .await
+                        .unwrap();
+
+                    #[allow(unused_must_use)]
+                    {
+                        //http.serve_connection(https_conn, svc).await;
+                    };
+                });
+            }
+        });
+    }
 }
 
 pub struct NBlockFCBLScenario {
