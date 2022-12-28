@@ -26,7 +26,7 @@ jobs:
           cargo fmt --check
       - name:                   Generate code coverage
         run: |
-          cp -r /root/.zcash-params /github/home/
+          ln -s /root/.zcash-params /github/home
           cargo tarpaulin --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 300 --out xml
       - name:                   Upload to codecov.io
         uses:                   codecov/codecov-action@v2
