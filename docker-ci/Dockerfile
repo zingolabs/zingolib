@@ -11,4 +11,4 @@ RUN ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./regtest/bin
 # ENTRYPOINT ["bash", "-c", "cargo test --release --features cross_version"]
 
 # Cargo tarpaulin
-ENTRYPOINT ["bash", "-c", "cargo tarpaulin --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --verbose --workspace --timeout 300 --out Xml --features cross_version"]
+ENTRYPOINT ["bash", "-c", "cargo tarpaulin --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 300 --out xml --features cross_version"]
