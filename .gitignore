@@ -8,7 +8,7 @@ zingocli/target
 /procgov
 .DS_Store
 *.json.txt
-docker-ci/parent/lightwalletd
+docker-ci/lightwalletd
 zingolib/test-data/*
 !zingolib/test-data/README
 !zingolib/test-data/openssl_cfg

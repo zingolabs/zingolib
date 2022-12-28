@@ -1,0 +1,34 @@
+name: Main
+
+on: 
+  pull_request:
+  push:
+    branches:
+      - main
+      - dev
+
+jobs:
+  Test:
+    runs-on:                    ubuntu-22.04
+    env:
+      RUSTFLAGS:                -D warnings
+    container:
+      image:                    zingodevops/ci-build:latest
+      options:                  --security-opt seccomp=unconfined
+    steps:
+      - name:                   Checkout repository
+        uses:                   actions/checkout@v2
+      - name:                   Symlink lightwalletd and zcash binaries
+        run:                    ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./regtest/bin/
+      - name:                   Check formatting of code
+        run: |             
+          rustup default stable      
+          cargo fmt --check
+      - name:                   Generate code coverage
+        run: |
+          ln -s /root/.zcash-params /github/home
+          cargo tarpaulin --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 300 --out xml
+      - name:                   Upload to codecov.io
+        uses:                   codecov/codecov-action@v2
+        with:
+          fail_ci_if_error:     true

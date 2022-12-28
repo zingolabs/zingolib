@@ -1,24 +1,22 @@
-# Parent image for zingolibs CI
-FROM parent-ci:latest
+FROM debian:11.6
 
-# RUN git clone https://github.com/zingolabs/zingolib.git
-RUN git clone https://github.com/Oscar-Pepper/zingolib.git # test only
+# Install packages
+RUN apt update && \
+    apt install curl build-essential gcc protobuf-compiler libssl-dev pkg-config git apt-transport-https gnupg2 unzip procps -y
+    
+# Install Rust and Cargo-Tarpaulin
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+RUN cargo install cargo-tarpaulin
 
-# Copy zcash and lightwallet binaries into zingolib regtest directory
-WORKDIR zingolib
-RUN git checkout ci-update # test only
-RUN cp /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./regtest/bin/
+# Install Zcash and fetch zero-knowledge parameters
+RUN curl https://apt.z.cash/zcash.asc | gpg --import && \
+    gpg --export 3FE63B67F85EA808DE9B880E6DEF3BAF272766C0 | apt-key add - && \
+    echo "deb [arch=amd64] https://apt.z.cash/ bullseye main" | tee /etc/apt/sources.list.d/zcash.list && \
+    apt update && apt install zcash && zcash-fetch-params
 
-# Create CARGO_HOME directory for package caching
-# RUN mkdir ./cargo_home
+# Import lightwalletd binary
+COPY /lightwalletd /usr/bin/
 
-# ------------test only ----------------------
-RUN cargo build --release
-ENTRYPOINT ["bash", "-c", "./target/release/zingo-cli --regtest"]
-#---------------------------------------------
-
-# Cargo test
-# ENTRYPOINT ["bash", "-c", "cargo test --release"]
-
-# caching crate index
-# docker run --rm -e CARGO_HOME=/usr/src/zingolib/cargo_home -v crates-idx-vol:/usr/src/zingolib/cargo_home -it <image-name>
+# Set working directory
+WORKDIR /usr/src
