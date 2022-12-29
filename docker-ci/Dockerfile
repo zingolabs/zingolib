@@ -18,7 +18,6 @@ RUN curl https://apt.z.cash/zcash.asc | gpg --import && \
 COPY /lightwalletd /usr/bin/
 
 # Install cargo tools and compile zingolib dependencies
-ENV CARGO_HOME=/root/.cargo
 ENV CARGO_TARGET_DIR=/usr/local/build/target
 ENV SCCACHE_DIR=/usr/local/sccache
 RUN cargo install cargo-tarpaulin sccache
