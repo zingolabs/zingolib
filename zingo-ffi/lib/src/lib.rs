@@ -23,7 +23,7 @@ pub fn init_new(
     data_dir: String,
 ) -> String {
     let server = construct_server_uri(Some(server_uri));
-    let (mut config, latest_block_height) = match zingolib::create_zingoconf_with_datadir(server, None) {
+    let (mut config, latest_block_height) = match zingolib::create_zingoconf_from_datadir(server, None) {
         Ok((c, h)) => (c, h),
         Err(e) => {
             return format!("Error: {}", e);
@@ -71,7 +71,7 @@ pub fn init_from_seed(
     data_dir: String,
 ) -> String {
     let server = construct_server_uri(Some(server_uri));
-    let (mut config, _latest_block_height) = match zingolib::create_zingoconf_with_datadir(server, None) {
+    let (mut config, _latest_block_height) = match zingolib::create_zingoconf_from_datadir(server, None) {
         Ok((c, h)) => (c, h),
         Err(e) => {
             return format!("Error: {}", e);
@@ -118,7 +118,7 @@ pub fn init_from_b64(
     data_dir: String,
 ) -> String {
     let server = construct_server_uri(Some(server_uri));
-    let (mut config, _latest_block_height) = match zingolib::create_zingoconf_with_datadir(server, None) {
+    let (mut config, _latest_block_height) = match zingolib::create_zingoconf_from_datadir(server, None) {
         Ok((c, h)) => (c, h),
         Err(e) => {
             return format!("Error: {}", e);
