@@ -18,5 +18,10 @@ RUN curl https://apt.z.cash/zcash.asc | gpg --import && \
 # Import lightwalletd binary
 COPY /lightwalletd /usr/bin/
 
-# Set working directory
+# Compile zingolib dependencies
 WORKDIR /usr/src
+RUN git clone -b dev --single-branch https://github.com/zingolabs/zingolib.git
+WORKDIR zingolib
+RUN cargo build --release --all-features
+WORKDIR /usr/src
+RUN rm -rf zingolib/

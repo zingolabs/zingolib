@@ -13,7 +13,7 @@ jobs:
     env:
       RUSTFLAGS:                -D warnings
     container:
-      image:                    zingodevops/ci-build:latest
+      image:                    zingodevops/ci-build:stable
       options:                  --security-opt seccomp=unconfined
     steps:
       - name:                   Checkout repository
@@ -21,12 +21,11 @@ jobs:
       - name:                   Symlink lightwalletd and zcash binaries
         run:                    ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./regtest/bin/
       - name:                   Symlink dotfiles to /github/home/
-        run:                    ln -s /root/.bashrc /root/.cargo /root/.gnupg /root/.profile /root/.rustup /root/.zcash-params /github/home
+        run:                    ln -s /root/.cargo /root/.rustup /root/.zcash-params /github/home
       - name:                   Check formatting of code
-        run: |             
-          cargo fmt --check
+        run:                    cargo fmt --check
       - name:                   Generate code coverage
-        run: |
+        run:
           cargo tarpaulin --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 300 --out xml
       - name:                   Upload to codecov.io
         uses:                   codecov/codecov-action@v2
