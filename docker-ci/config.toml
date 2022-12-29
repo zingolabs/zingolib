@@ -1,2 +1,3 @@
 [build]
 rustc-wrapper = "/usr/local/cargo/bin/sccache"
+incremental = false

@@ -22,11 +22,11 @@ jobs:
         run:                    ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./regtest/bin/
       - name:                   Symlink zcash parameters and rustup files
         run:                    ln -s /root/.zcash-params /root/.rustup /github/home
-      - name:                   Set cargo paths
+      - name:                   Set Cargo paths
         run: |
-          CARGO_HOME=/usr/local/cargo
-          CARGO_TARGET_DIR=/usr/local/build/target
-          SCCACHE_DIR=/usr/local/sccache
+          export CARGO_HOME=/usr/local/cargo
+          export CARGO_TARGET_DIR=/usr/local/build/target
+          export SCCACHE_DIR=/usr/local/sccache
       - name:                   Check formatting of code
         run:                    cargo fmt --check
       - name:                   Generate code coverage
