@@ -27,6 +27,7 @@ jobs:
           CARGO_HOME=/usr/local/cargo
           CARGO_TARGET_DIR=/usr/local/build/target
           SCCACHE_DIR=/usr/local/sccache
+          RUSTUP_HOME=/root/.rustup
       - name:                   Check formatting of code
         run:                    cargo fmt --check
       - name:                   Generate code coverage
