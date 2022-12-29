@@ -20,8 +20,13 @@ jobs:
         uses:                   actions/checkout@v2
       - name:                   Symlink lightwalletd and zcash binaries
         run:                    ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./regtest/bin/
-      - name:                   Symlink dotfiles to /github/home/
-        run:                    ln -s /root/.cargo /root/.rustup /root/.zcash-params /github/home
+      - name:                   Symlink zcash parameters
+        run:                    ln -s /root/.zcash-params /github/home
+      - name:                   Set cargo paths
+        run: |
+          CARGO_HOME=/usr/local/cargo
+          CARGO_TARGET_DIR=/usr/local/build/target
+          SCCACHE_DIR=/usr/local/sccache
       - name:                   Check formatting of code
         run:                    cargo fmt --check
       - name:                   Generate code coverage
