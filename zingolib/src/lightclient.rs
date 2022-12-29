@@ -1265,7 +1265,7 @@ impl LightClient {
 
         // Re-read the last scanned height
         let last_scanned_height = self.wallet.last_synced_height().await;
-        let batch_size = 1_000;
+        let batch_size = 100;
 
         let mut latest_block_batches = vec![];
         let mut prev = last_scanned_height;
