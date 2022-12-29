@@ -635,6 +635,13 @@ async fn sapling_incoming_multisapling_outgoing(scenario: NBlockFCBLScenario) {
     }
 }
 #[tokio::test]
+async fn price_fetch() {
+    let (ready_receiver, stop_transmitter, test_server_handle) =
+        super::test_server::http::create_simple_server().await;
+    ready_receiver.await.unwrap();
+    clean_shutdown(stop_transmitter, test_server_handle).await;
+}
+#[tokio::test]
 async fn sapling_to_sapling_scan_together() {
     // Create an incoming transaction, and then send that transaction, and scan everything together, to make sure it works.
     // (For this test, the Sapling Domain is assumed in all cases.)

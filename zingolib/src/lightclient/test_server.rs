@@ -96,7 +96,7 @@ fn generate_tls_server_config() -> tokio_rustls::rustls::ServerConfig {
     tls_server_config
 }
 
-fn generate_tls_server_port_uri() -> (String, String) {
+fn generate_server_port_uri() -> (String, String) {
     let port = portpicker::pick_unused_port().unwrap();
     let server_port = format!("127.0.0.1:{}", port);
     (
@@ -111,7 +111,7 @@ pub async fn create_test_server() -> (
     oneshot::Sender<()>,
     JoinHandle<()>,
 ) {
-    let (server_port, uri) = generate_tls_server_port_uri();
+    let (server_port, uri) = generate_server_port_uri();
 
     let mut config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, None);
     *config.server_uri.write().unwrap() = uri.replace("127.0.0.1", "localhost").parse().unwrap();
@@ -217,12 +217,16 @@ pub async fn create_test_server() -> (
 pub(crate) mod http {
     use std::convert::Infallible;
 
-    use super::{generate_tls_server_config, generate_tls_server_port_uri, oneshot, Arc};
+    use super::{generate_server_port_uri, oneshot};
     use futures::FutureExt;
-    use hyper::{Body, Request, Response};
-    async fn hello(_: Request<Body>) -> Result<Response<Body>, Infallible> {}
-    pub async fn create_simple_server() {
-        let (server_port, uri) = generate_tls_server_port_uri();
+    use hyper::{
+        service::{make_service_fn, service_fn},
+        Body, Request, Response, Server,
+    };
+    use tokio::task::JoinHandle;
+    pub async fn create_simple_server(
+    ) -> (oneshot::Receiver<()>, oneshot::Sender<()>, JoinHandle<()>) {
+        let (_server_port, uri) = generate_server_port_uri();
         let (ready_transmitter, ready_receiver) = oneshot::channel();
         let (stop_transmitter, stop_receiver) = oneshot::channel();
         let mut stop_fused = stop_receiver.fuse();
@@ -232,10 +236,12 @@ pub(crate) mod http {
 
             let nameuri: std::string::String = uri.replace("https://", "").parse().unwrap();
             let listener = tokio::net::TcpListener::bind(nameuri).await.unwrap();
-            let tls_server_config = generate_tls_server_config();
-            let tls_acceptor =
-                { Some(tokio_rustls::TlsAcceptor::from(Arc::new(tls_server_config))) };
 
+            async fn hello(_: Request<Body>) -> Result<Response<Body>, Infallible> {
+                Ok(Response::new(Body::from("Hello world!")))
+            }
+            let make_svc =
+                make_service_fn(|_conn| async { Ok::<_, Infallible>(service_fn(hello)) });
             ready_transmitter.send(()).unwrap();
             loop {
                 let mut accepted = Box::pin(listener.accept().fuse());
@@ -243,7 +249,7 @@ pub(crate) mod http {
                     _ = (&mut stop_fused).fuse() => break,
                     conn_addr = accepted => conn_addr,
                 );
-                let (conn, _addr) = match conn_addr {
+                let (_conn, addr) = match conn_addr {
                     Ok(incoming) => incoming,
                     Err(e) => {
                         eprintln!("Error accepting connection: {}", e);
@@ -251,29 +257,17 @@ pub(crate) mod http {
                     }
                 };
 
-                let http = http.clone();
-                let tls_acceptor = tls_acceptor.clone();
                 tokio::spawn(async move {
-                    let mut certificates = Vec::new();
-                    let https_conn = tls_acceptor
-                        .unwrap()
-                        .accept_with(conn, |info| {
-                            if let Some(certs) = info.peer_certificates() {
-                                for cert in certs {
-                                    certificates.push(cert.clone());
-                                }
-                            }
-                        })
-                        .await
-                        .unwrap();
-
+                    let server = Server::bind(&addr).serve(make_svc);
                     #[allow(unused_must_use)]
                     {
-                        //http.serve_connection(https_conn, svc).await;
+                        server.await;
                     };
                 });
             }
+            println!("Server stopped");
         });
+        (ready_receiver, stop_transmitter, server_spawn_thread)
     }
 }
 
