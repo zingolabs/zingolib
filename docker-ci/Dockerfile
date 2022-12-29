@@ -28,6 +28,6 @@ COPY /lightwalletd /usr/bin/
 WORKDIR /usr/src
 RUN git clone -b dev --single-branch https://github.com/zingolabs/zingolib.git
 WORKDIR zingolib
-RUN cargo tarpaulin --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release
+RUN cargo tarpaulin --no-run --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release
 WORKDIR /usr/src
 RUN rm -rf zingolib/
