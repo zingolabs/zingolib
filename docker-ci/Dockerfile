@@ -1,13 +1,12 @@
 FROM debian:11.6
 
-# Install packages
+# Install dependencies
 RUN apt update && \
     apt install curl build-essential gcc protobuf-compiler libssl-dev pkg-config git apt-transport-https gnupg2 unzip procps -y
     
-# Install Rust and Cargo-Tarpaulin
+# Install Rust
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
-RUN cargo install cargo-tarpaulin
 
 # Install Zcash and fetch zero-knowledge parameters
 RUN curl https://apt.z.cash/zcash.asc | gpg --import && \
@@ -18,7 +17,12 @@ RUN curl https://apt.z.cash/zcash.asc | gpg --import && \
 # Import lightwalletd binary
 COPY /lightwalletd /usr/bin/
 
-# Compile zingolib dependencies
+# Install cargo tools and compile zingolib dependencies
+ENV CARGO_HOME=/root/.cargo
+ENV CARGO_TARGET_DIR=/usr/local/build/target
+ENV SCCACHE_DIR=/usr/local/sccache
+RUN cargo install cargo-tarpaulin sccache
+COPY /config.toml /root/.cargo/
 WORKDIR /usr/src
 RUN git clone -b dev --single-branch https://github.com/zingolabs/zingolib.git
 WORKDIR zingolib
