@@ -31,3 +31,18 @@ jobs:
         uses:                   codecov/codecov-action@v3
         with:
           fail_ci_if_error:     true
+        
+  Zingo-mobile:
+    runs-on:                    ubuntu-22.04
+    steps:
+      - name:                   Checkout zingo-mobile
+        uses:                   actions/checkout@v3
+        with:
+          repository:           Oscar-Pepper/zingo-mobile
+          ref:                  update-ci-2.0
+      - name:                   Checkout zingolib
+        uses:                   actions/checkout@v3
+        with:
+          path:                 ./rust/lib
+      - run:                    ls -la ./
+      - run:                    ls -la ./rust/lib/zingolib
