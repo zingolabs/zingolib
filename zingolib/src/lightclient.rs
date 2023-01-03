@@ -147,14 +147,13 @@ fn repr_price_as_f64(from_gemini: &Value) -> Result<f64, PriceReprError> {
     }
 }
 
-async fn get_recent_median_price_from_gemini() -> Result<f64, PriceFetchError> {
-    let httpget =
-        match reqwest::get("https://api.gemini.com/v1/trades/zecusd?limit_trades=11").await {
-            Ok(httpresponse) => httpresponse,
-            Err(e) => {
-                return Err(PriceFetchError::ReqwestError(e.to_string()));
-            }
-        };
+async fn get_recent_median_price_from(uri: &str) -> Result<f64, PriceFetchError> {
+    let httpget = match reqwest::get(uri).await {
+        Ok(httpresponse) => httpresponse,
+        Err(e) => {
+            return Err(PriceFetchError::ReqwestError(e.to_string()));
+        }
+    };
     let serialized = match httpget.json::<Value>().await {
         Ok(asjson) => asjson,
         Err(_) => {
@@ -1138,7 +1137,11 @@ impl LightClient {
 
     pub(crate) async fn update_current_price(&self) -> String {
         // Get the zec price from the server
-        match get_recent_median_price_from_gemini().await {
+        match get_recent_median_price_from(
+            "https://api.gemini.com/v1/trades/zecusd?limit_trades=11",
+        )
+        .await
+        {
             Ok(price) => {
                 self.wallet.set_latest_zec_price(price).await;
                 return price.to_string();
