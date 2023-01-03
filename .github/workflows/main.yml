@@ -43,6 +43,6 @@ jobs:
       - name:                   Checkout zingolib
         uses:                   actions/checkout@v3
         with:
-          path:                 ./rust/lib
+          path:                 ./rust/lib/zingolib
       - run:                    ls -la ./
       - run:                    ls -la ./rust/lib/zingolib
