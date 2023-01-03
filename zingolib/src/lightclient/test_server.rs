@@ -215,18 +215,22 @@ pub async fn create_test_server() -> (
     )
 }
 pub(crate) mod http {
-    use std::convert::Infallible;
+    use std::{convert::Infallible, net::SocketAddr};
 
-    use super::{generate_server_port_uri, oneshot};
+    use super::oneshot;
     use futures::FutureExt;
     use hyper::{
         service::{make_service_fn, service_fn},
         Body, Request, Response, Server,
     };
     use tokio::task::JoinHandle;
-    pub async fn create_simple_server(
-    ) -> (oneshot::Receiver<()>, oneshot::Sender<()>, JoinHandle<()>) {
-        let (_server_port, uri) = generate_server_port_uri();
+    pub async fn create_simple_server() -> (
+        oneshot::Receiver<()>,
+        oneshot::Sender<()>,
+        JoinHandle<()>,
+        u16,
+    ) {
+        let port = portpicker::pick_unused_port().unwrap();
         let (ready_transmitter, ready_receiver) = oneshot::channel();
         let (stop_transmitter, stop_receiver) = oneshot::channel();
         let mut stop_fused = stop_receiver.fuse();
@@ -234,40 +238,24 @@ pub(crate) mod http {
             let mut http = hyper::server::conn::Http::new();
             http.http2_only(true);
 
-            let nameuri: std::string::String = uri.replace("https://", "").parse().unwrap();
-            let listener = tokio::net::TcpListener::bind(nameuri).await.unwrap();
-
-            async fn hello(_: Request<Body>) -> Result<Response<Body>, Infallible> {
+            async fn hello(request: Request<Body>) -> Result<Response<Body>, Infallible> {
+                println!("Received request: {:?}", request);
                 Ok(Response::new(Body::from("Hello world!")))
             }
             let make_svc =
                 make_service_fn(|_conn| async { Ok::<_, Infallible>(service_fn(hello)) });
             ready_transmitter.send(()).unwrap();
-            loop {
-                let mut accepted = Box::pin(listener.accept().fuse());
-                let conn_addr = futures::select_biased!(
-                    _ = (&mut stop_fused).fuse() => break,
-                    conn_addr = accepted => conn_addr,
-                );
-                let (_conn, addr) = match conn_addr {
-                    Ok(incoming) => incoming,
-                    Err(e) => {
-                        eprintln!("Error accepting connection: {}", e);
-                        continue;
-                    }
-                };
 
-                tokio::spawn(async move {
-                    let server = Server::bind(&addr).serve(make_svc);
-                    #[allow(unused_must_use)]
-                    {
-                        server.await;
-                    };
-                });
+            let server = Server::bind(&SocketAddr::from(([127, 0, 0, 1], port)))
+                .serve(make_svc)
+                .fuse();
+            futures::select_biased! {
+                    _ = (&mut stop_fused).fuse() => (),
+                    _unreachable = server.fuse() => (),
             }
             println!("Server stopped");
         });
-        (ready_receiver, stop_transmitter, server_spawn_thread)
+        (ready_receiver, stop_transmitter, server_spawn_thread, port)
     }
 }
 
