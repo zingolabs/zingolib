@@ -7,7 +7,7 @@ use log::{error, info};
 use clap::{self, Arg};
 use regtest::ChildProcessHandler;
 use zingoconfig::{ChainType, ZingoConfig};
-use zingolib::{commands, create_zingoconf_from_datadir, lightclient::LightClient};
+use zingolib::{commands, create_zingoconf_from_datadir_smasher, lightclient::LightClient};
 
 pub mod regtest;
 pub mod version;
@@ -377,7 +377,7 @@ pub fn startup(
     LightClient::init_logging()?;
 
     // Try to get the configuration
-    let (config, latest_block_height) = create_zingoconf_from_datadir(
+    let (config, latest_block_height) = create_zingoconf_from_datadir_smasher(
         filled_template.server.clone(),
         filled_template.maybe_data_dir.clone(),
     )?;

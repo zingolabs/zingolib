@@ -25,7 +25,7 @@ use std::{
 use tokio::runtime::Runtime;
 use zingoconfig::{ChainType, ZingoConfig};
 
-pub fn create_zingoconf_from_datadir(
+pub fn create_zingoconf_from_datadir_smasher(
     server: http::Uri,
     data_dir: Option<String>,
 ) -> Result<(ZingoConfig, u64)> {
