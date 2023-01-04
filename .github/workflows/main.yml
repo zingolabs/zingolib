@@ -32,7 +32,7 @@ jobs:
         with:
           fail_ci_if_error:     true
         
-  Build zingo-mobile:
+  Build_zingo-mobile:
     runs-on:                    ubuntu-22.04
     steps:
       - name:                   Store zingolib github ref
