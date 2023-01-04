@@ -39,13 +39,14 @@ jobs:
         uses:                   actions/checkout@v3
         with:
           path:                 zingolib
-      - name:                   Print ref
-        run:                    echo running on branch ${GITHUB_REF}
+      - name:                   Store zingolib github ref
+        run:                    echo "zingolib_ref=${GITHUB_REF}" >> $GITHUB_ENV
       - name:                   Checkout zingo-mobile
         uses:                   actions/checkout@v3
         with:
-          repository:           Oscar-Pepper/zingo-mobile
-          ref:                  ci_link_test
+          repository:           zingolabs/zingo-mobile
           path:                 zingo-mobile
+      - name:                   Update zingo-mobile dependencies
+        run:                    sed -i "/^zingolib/ s/branch = \"dev\"/rev = \"${{ env.zingolib_ref }}\"/;/^zingoconfig/ s/branch = \"dev\"/rev = \"${{ env.zingolib_ref }}\"/" "zingo-mobile/rust/lib/Cargo.toml"
       - name:                   Build NDK
         run:                    cd zingo-mobile/rust/ && ./build.sh
