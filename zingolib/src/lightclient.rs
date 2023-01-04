@@ -87,28 +87,105 @@ pub struct LightClient {
 
 use serde_json::Value;
 
-fn repr_price_as_f64(from_gemini: &Value) -> f64 {
-    from_gemini
-        .get("price")
-        .unwrap()
-        .as_str()
-        .unwrap()
-        .parse::<f64>()
-        .unwrap()
+enum PriceFetchError {
+    ReqwestError(String),
+    NotJson,
+    NoElements,
+    PriceReprError(PriceReprError),
+    NanValue,
+}
+impl PriceFetchError {
+    pub(crate) fn to_string(&self) -> String {
+        use PriceFetchError::*;
+        match &*self {
+            ReqwestError(e) => format!("ReqwestError: {}", e),
+            NotJson => "NotJson".to_string(),
+            NoElements => "NoElements".to_string(),
+            PriceReprError(e) => format!("PriceReprError: {}", e),
+            NanValue => "NanValue".to_string(),
+        }
+    }
+}
+impl std::fmt::Display for PriceFetchError {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fmt.write_str(self.to_string().as_str())
+    }
+}
+enum PriceReprError {
+    NoValue,
+    NoAsStrValue,
+    NotParseable,
+}
+impl PriceReprError {
+    fn to_string(&self) -> String {
+        use PriceReprError::*;
+        match &*self {
+            NoValue => "NoValue".to_string(),
+            NoAsStrValue => "NoAsStrValue".to_string(),
+            NotParseable => "NotParseable".to_string(),
+        }
+    }
+}
+impl std::fmt::Display for PriceReprError {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fmt.write_str(self.to_string().as_str())
+    }
+}
+fn repr_price_as_f64(from_gemini: &Value) -> Result<f64, PriceReprError> {
+    if let Some(value) = from_gemini.get("price") {
+        if let Some(stringable) = value.as_str() {
+            if let Ok(parsed) = stringable.parse::<f64>() {
+                Ok(parsed)
+            } else {
+                Err(PriceReprError::NotParseable)
+            }
+        } else {
+            Err(PriceReprError::NoAsStrValue)
+        }
+    } else {
+        Err(PriceReprError::NoValue)
+    }
 }
 
-async fn get_recent_median_price_from_gemini() -> Result<f64, reqwest::Error> {
-    let mut trades: Vec<f64> =
-        reqwest::get("https://api.gemini.com/v1/trades/zecusd?limit_trades=11")
-            .await?
-            .json::<Value>()
-            .await?
-            .as_array()
-            .unwrap()
-            .into_iter()
-            .map(repr_price_as_f64)
-            .collect();
-    trades.sort_by(|a, b| a.partial_cmp(b).unwrap());
+async fn get_recent_median_price_from_gemini() -> Result<f64, PriceFetchError> {
+    let httpget =
+        match reqwest::get("https://api.gemini.com/v1/trades/zecusd?limit_trades=11").await {
+            Ok(httpresponse) => httpresponse,
+            Err(e) => {
+                return Err(PriceFetchError::ReqwestError(e.to_string()));
+            }
+        };
+    let serialized = match httpget.json::<Value>().await {
+        Ok(asjson) => asjson,
+        Err(_) => {
+            return Err(PriceFetchError::NotJson);
+        }
+    };
+    let elements = match serialized.as_array() {
+        Some(elements) => elements,
+        None => {
+            return Err(PriceFetchError::NoElements);
+        }
+    };
+    let mut trades: Vec<f64> = match elements.into_iter().map(repr_price_as_f64).collect() {
+        Ok(trades) => trades,
+        Err(e) => {
+            return Err(PriceFetchError::PriceReprError(e));
+        }
+    };
+    if trades.iter().any(|x| x.is_nan()) {
+        return Err(PriceFetchError::NanValue);
+    }
+    // NOTE:  This code will panic if a value is received that:
+    // 1. was parsed from a string to an f64
+    // 2. is not a NaN
+    // 3. cannot be compared to an f64
+    // TODO:  Show that this is impossible, or write code to handle
+    // that case.
+    trades.sort_by(|a, b| {
+        a.partial_cmp(b)
+            .expect("a and b are non-nan f64, I think that makes them comparable")
+    });
     Ok(trades[5])
 }
 
