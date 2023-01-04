@@ -46,7 +46,9 @@ jobs:
         with:
           repository:           zingolabs/zingo-mobile
           path:                 zingo-mobile
+      - run:                    echo testing ref from mobile repo ${GITHUB_REF}
       - name:                   Update zingo-mobile dependencies
-        run:                    sed -i "/^zingolib/ s/branch = \"dev\"/rev = \"${{ env.zingolib_ref }}\"/;/^zingoconfig/ s/branch = \"dev\"/rev = \"${{ env.zingolib_ref }}\"/" "zingo-mobile/rust/lib/Cargo.toml"
+        run:                    sed -i "/^zingolib\|^zingoconfig/ s/branch = \"dev\"/rev = \"${{ env.zingolib_ref }}\"/" "zingo-mobile/rust/lib/Cargo.toml"
+      - run:                    cat zingo-mobile/rust/lib/Cargo.toml
       - name:                   Build NDK
         run:                    cd zingo-mobile/rust/ && ./build.sh
