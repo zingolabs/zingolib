@@ -8,47 +8,40 @@ on:
       - dev
 
 jobs:
-#   Test:
-#     runs-on:                    ubuntu-22.04
-#     env:
-#       RUSTFLAGS:                -D warnings
-#     container:
-#       image:                    zingodevops/ci-build:stable
-#       options:                  --security-opt seccomp=unconfined
-#     steps:
-#       - name:                   Checkout repository
-#         uses:                   actions/checkout@v3
-#       - name:                   Symlink lightwalletd and zcash binaries
-#         run:                    ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./regtest/bin/
-#       - name:                   Symlink zcash parameters and rustup files
-#         run:                    ln -s /root/.zcash-params /root/.rustup /github/home
-#       - name:                   Check formatting of code
-#         run:                    cargo fmt --check
-#       - name:                   Generate code coverage
-#         run:
-#           cargo tarpaulin --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 300 --out xml
-#       - name:                   Upload to codecov.io
-#         uses:                   codecov/codecov-action@v3
-#         with:
-#           fail_ci_if_error:     true
+  Test:
+    runs-on:                    ubuntu-22.04
+    env:
+      RUSTFLAGS:                -D warnings
+    container:
+      image:                    zingodevops/ci-build:stable
+      options:                  --security-opt seccomp=unconfined
+    steps:
+      - name:                   Checkout repository
+        uses:                   actions/checkout@v3
+      - name:                   Symlink lightwalletd and zcash binaries
+        run:                    ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./regtest/bin/
+      - name:                   Symlink zcash parameters and rustup files
+        run:                    ln -s /root/.zcash-params /root/.rustup /github/home
+      - name:                   Check formatting of code
+        run:                    cargo fmt --check
+      - name:                   Generate code coverage
+        run:
+          cargo tarpaulin --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 300 --out xml
+      - name:                   Upload to codecov.io
+        uses:                   codecov/codecov-action@v3
+        with:
+          fail_ci_if_error:     true
         
-  Zingo-mobile:
+  Build zingo-mobile:
     runs-on:                    ubuntu-22.04
     steps:
-      - name:                   Checkout zingolib
-        uses:                   actions/checkout@v3
-        with:
-          path:                 zingolib
       - name:                   Store zingolib github ref
         run:                    echo "zingolib_ref=$(echo ${GITHUB_REF} | sed 's/\//\\\//g')" >> $GITHUB_ENV
       - name:                   Checkout zingo-mobile
         uses:                   actions/checkout@v3
         with:
           repository:           zingolabs/zingo-mobile
-          path:                 zingo-mobile
-      - run:                    echo testing ref from mobile repo ${GITHUB_REF}
       - name:                   Update zingo-mobile dependencies
-        run:                    sed -i "/^zingolib\|^zingoconfig/ s/branch = \"dev\"/rev = \"${{ env.zingolib_ref }}\"/" "zingo-mobile/rust/lib/Cargo.toml"
-      - run:                    cat zingo-mobile/rust/lib/Cargo.toml
+        run:                    sed -i "/^zingolib\|^zingoconfig/ s/branch = \"dev\"/rev = \"${{ env.zingolib_ref }}\"/" "rust/lib/Cargo.toml"
       - name:                   Build NDK
-        run:                    cd zingo-mobile/rust/ && ./build.sh
+        run:                    cd rust/ && ./build.sh
