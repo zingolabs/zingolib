@@ -35,13 +35,15 @@ jobs:
   Zingo-mobile:
     runs-on:                    ubuntu-22.04
     steps:
+      - name:                   Checkout zingolib
+        uses:                   actions/checkout@v3
+        with:
+          path:                 zingolib
       - name:                   Checkout zingo-mobile
         uses:                   actions/checkout@v3
         with:
           repository:           Oscar-Pepper/zingo-mobile
           ref:                  ci_link_test
-      - name:                   Checkout zingolib
-        uses:                   actions/checkout@v3
-        with:
-          path:                 ./rust/lib/zingolib
-      - run:                    cd rust && ./build.sh
+          path:                 zingo-mobile
+      - name:                   Build NDK
+        run:                    cd zingo-mobile/rust/ && ./build.sh
