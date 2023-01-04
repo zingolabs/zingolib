@@ -40,7 +40,7 @@ jobs:
         with:
           path:                 zingolib
       - name:                   Store zingolib github ref
-        run:                    echo "zingolib_ref=${GITHUB_REF}" >> $GITHUB_ENV
+        run:                    echo "zingolib_ref=$(echo ${GITHUB_REF} | sed 's/\//\\\//g')" >> $GITHUB_ENV
       - name:                   Checkout zingo-mobile
         uses:                   actions/checkout@v3
         with:
