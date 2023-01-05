@@ -145,7 +145,7 @@ pub mod scenarios {
                 dbg!(&conf_path);
                 std::fs::create_dir(&conf_path).unwrap();
 
-                zingolib::create_zingoconf_from_datadir(self.server_id.clone(), Some(conf_path))
+                zingolib::xcreate_zingoconf_from_datadir(self.server_id.clone(), Some(conf_path))
                     .unwrap()
             }
             pub fn build_unfunded_client(&mut self, birthday: u64) -> LightClient {
