@@ -31,3 +31,19 @@ jobs:
         uses:                   codecov/codecov-action@v3
         with:
           fail_ci_if_error:     true
+        
+  Build_zingo-mobile:
+    runs-on:                    ubuntu-22.04
+    steps:
+      - name:                   Store zingolib github ref
+        run:                    echo "zingolib_ref=$(echo ${GITHUB_REF} | sed 's/\//\\\//g')" >> $GITHUB_ENV
+      - name:                   Checkout zingo-mobile
+        uses:                   actions/checkout@v3
+        with:
+          repository:           zingolabs/zingo-mobile
+      - name:                   Update zingo-mobile dependencies
+        run:                    sed -i "/^zingolib\|^zingoconfig/ s/branch = \"dev\"/rev = \"${{ env.zingolib_ref }}\"/" "rust/lib/Cargo.toml"
+      - name:                   Check update was successful
+        run:                    if cat rust/lib/Cargo.toml | grep "^zingolib\|^zingoconfig" | grep -q "branch"; then exit 1; fi
+      - name:                   Build NDK
+        run:                    cd rust/ && ./build.sh
