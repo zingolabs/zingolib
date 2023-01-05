@@ -41,8 +41,8 @@ jobs:
         uses:                   actions/checkout@v3
         with:
           repository:           zingolabs/zingo-mobile
-      # - name:                   Update zingo-mobile dependencies
-      #   run:                    sed -i "/^zingolib\|^zingoconfig/ s/branch = \"dev\"/rev = \"${{ env.zingolib_ref }}\"/" "rust/lib/Cargo.toml"
+      - name:                   Update zingo-mobile dependencies
+        run:                    sed -i "/^zingolib\|^zingoconfig/ s/branch = \"dev\"/rev = \"${{ env.zingolib_ref }}\"/" "rust/lib/Cargo.toml"
       - name:                   Check update was successful
         run:                    if cat rust/lib/Cargo.toml | grep "^zingolib\|^zingoconfig" | grep -q "branch"; then exit 1; fi
       - name:                   Build NDK
