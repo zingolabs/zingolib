@@ -224,7 +224,7 @@ pub(crate) mod http {
         Body, Request, Response, Server,
     };
     use tokio::task::JoinHandle;
-    pub async fn create_simple_server() -> (
+    pub async fn create_price_response_server() -> (
         oneshot::Receiver<()>,
         oneshot::Sender<()>,
         JoinHandle<()>,

@@ -20,7 +20,7 @@ use zcash_primitives::zip32::{ExtendedFullViewingKey, ExtendedSpendingKey};
 use crate::apply_scenario;
 use crate::blaze::block_witness_data::CommitmentTreesForBlock;
 use crate::blaze::test_utils::{FakeCompactBlockList, FakeTransaction};
-use crate::lightclient::test_server::http::create_simple_server;
+use crate::lightclient::test_server::http::create_price_response_server;
 use crate::lightclient::{get_recent_median_price_from, testmocks};
 
 use crate::compact_formats::{CompactSaplingOutput, CompactTx};
@@ -637,7 +637,8 @@ async fn sapling_incoming_multisapling_outgoing(scenario: NBlockFCBLScenario) {
 }
 #[tokio::test]
 async fn price_fetch_from_fake_server() {
-    let (ready_receiver, stop_transmitter, test_server_handle, port) = create_simple_server().await;
+    let (ready_receiver, stop_transmitter, test_server_handle, port) =
+        create_price_response_server().await;
     ready_receiver.await.unwrap();
     let price = get_recent_median_price_from(&format!("http://127.0.0.1:{port}"))
         .await

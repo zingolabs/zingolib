@@ -87,6 +87,7 @@ pub struct LightClient {
 
 use serde_json::Value;
 
+#[derive(PartialEq, Eq, Debug)]
 enum PriceFetchError {
     ReqwestError(String),
     NotJson,
@@ -111,6 +112,8 @@ impl std::fmt::Display for PriceFetchError {
         fmt.write_str(self.to_string().as_str())
     }
 }
+
+#[derive(PartialEq, Eq, Debug)]
 enum PriceReprError {
     NoValue,
     NoAsStrValue,
