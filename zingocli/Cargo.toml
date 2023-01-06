@@ -10,7 +10,7 @@ log = "0.4.17"
 shellwords = "1.1.0"
 json = "0.12.4"
 http = "0.2.8"
-tokio =  { version = "1.6.0", features = ["full"] }
+tokio =  { version = "1.23.1", features = ["full"] }
 
 zingolib = { path = "../zingolib/" }
 zingoconfig = { path = "../zingoconfig/" }
