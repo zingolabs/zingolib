@@ -224,6 +224,9 @@ pub(crate) mod http {
         Body, Request, Response, Server,
     };
     use tokio::task::JoinHandle;
+    type GenericError = Box<dyn std::error::Error + Send + Sync>;
+    type Result<T> = std::result::Result<T, GenericError>;
+
     pub async fn create_price_response_server() -> (
         oneshot::Receiver<()>,
         oneshot::Sender<()>,
@@ -238,7 +241,7 @@ pub(crate) mod http {
             let mut http = hyper::server::conn::Http::new();
             http.http2_only(true);
 
-            async fn hello(request: Request<Body>) -> Result<Response<Body>, Infallible> {
+            async fn hello(request: Request<Body>) -> Result<Response<Body>> {
                 println!("Received request: {:?}", request);
                 Ok(Response::new(Body::from("Hello world!")))
             }
