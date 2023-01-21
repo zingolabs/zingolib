@@ -40,7 +40,8 @@ jobs:
       - name:                   Checkout zingo-mobile
         uses:                   actions/checkout@v3
         with:
-          repository:           zingolabs/zingo-mobile
+          repository:           Oscar-Pepper/zingo-mobile
+      - run:                    git checkout ci_seperate_builder_image
       - name:                   Update zingo-mobile dependencies
         run:                    sed -i "/^zingolib\|^zingoconfig/ s/branch = \"dev\"/rev = \"${{ env.zingolib_ref }}\"/" "rust/lib/Cargo.toml"
       - name:                   Check update was successful
