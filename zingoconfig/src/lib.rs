@@ -30,8 +30,12 @@ pub const LOGFILE_NAME: &str = "zingo-wallet.debug.log";
 pub const REORG_BUFFER_OFFSET: u32 = 0;
 pub const GAP_RULE_UNUSED_ADDRESSES: usize = if cfg!(any(target_os = "ios", target_os = "android"))
 {
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    compile_error!("correctly compiling to android/ios");
     0
 } else {
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    compile_error!("correctly compiling to non-android/ios");
     5
 };
 
