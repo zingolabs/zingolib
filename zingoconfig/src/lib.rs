@@ -28,16 +28,12 @@ pub const MAX_REORG: usize = 100;
 pub const WALLET_NAME: &str = "zingo-wallet.dat";
 pub const LOGFILE_NAME: &str = "zingo-wallet.debug.log";
 pub const REORG_BUFFER_OFFSET: u32 = 0;
-pub const GAP_RULE_UNUSED_ADDRESSES: usize = if cfg!(any(target_os = "ios", target_os = "android"))
-{
-    #[cfg(any(target_os = "ios", target_os = "android"))]
-    compile_error!("correctly compiling to android/ios");
-    0
-} else {
-    #[cfg(any(target_os = "ios", target_os = "android"))]
-    compile_error!("incorrect compilation build target");
-    5
-};
+
+#[cfg(any(target_os = "ios", target_os = "android"))]
+pub const GAP_RULE_UNUSED_ADDRESSES: usize = 0;
+
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+pub const GAP_RULE_UNUSED_ADDRESSES: usize = 5;
 
 pub fn construct_server_uri(server: Option<String>) -> http::Uri {
     match server {
@@ -131,47 +127,50 @@ impl ZingoConfig {
             .map_err(|e| Error::new(ErrorKind::Other, format!("{}", e)))
     }
 
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     pub fn get_zcash_data_path(&self) -> Box<Path> {
-        if cfg!(target_os = "ios") || cfg!(target_os = "android") {
-            PathBuf::from(&self.data_dir.as_ref().unwrap()).into_boxed_path()
+        compile_error!("correctly compiling to android/ios");
+        PathBuf::from(&self.data_dir.as_ref().unwrap()).into_boxed_path()
+    }
+
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    pub fn get_zcash_data_path(&self) -> Box<Path> {
+        compile_error!("incorrect compilation build target");
+        let mut zcash_data_location;
+        // If there's some --data-dir path provided, use it
+        if self.data_dir.is_some() {
+            zcash_data_location = PathBuf::from(&self.data_dir.as_ref().unwrap());
         } else {
-            let mut zcash_data_location;
-            // If there's some --data-dir path provided, use it
-            if self.data_dir.is_some() {
-                zcash_data_location = PathBuf::from(&self.data_dir.as_ref().unwrap());
+            if cfg!(target_os = "macos") || cfg!(target_os = "windows") {
+                zcash_data_location =
+                    dirs::data_dir().expect("Couldn't determine app data directory!");
+                zcash_data_location.push("Zcash");
             } else {
-                if cfg!(target_os = "macos") || cfg!(target_os = "windows") {
-                    zcash_data_location =
-                        dirs::data_dir().expect("Couldn't determine app data directory!");
-                    zcash_data_location.push("Zcash");
-                } else {
-                    if dirs::home_dir().is_none() {
-                        info!("Couldn't determine home dir!");
-                    }
-                    zcash_data_location =
-                        dirs::home_dir().expect("Couldn't determine home directory!");
-                    zcash_data_location.push(".zcash");
-                };
-
-                match &self.chain {
-                    ChainType::Testnet => zcash_data_location.push("testnet3"),
-                    ChainType::Regtest => zcash_data_location.push("regtest"),
-                    ChainType::Mainnet => {}
-                    ChainType::FakeMainnet => zcash_data_location.push("fakemainnet"),
-                };
-            }
-
-            // Create directory if it doesn't exist on non-mobile platforms
-            match std::fs::create_dir_all(zcash_data_location.clone()) {
-                Ok(_) => {}
-                Err(e) => {
-                    eprintln!("Couldn't create zcash directory!\n{}", e);
-                    panic!("Couldn't create zcash directory!");
+                if dirs::home_dir().is_none() {
+                    info!("Couldn't determine home dir!");
                 }
+                zcash_data_location = dirs::home_dir().expect("Couldn't determine home directory!");
+                zcash_data_location.push(".zcash");
             };
 
-            zcash_data_location.into_boxed_path()
+            match &self.chain {
+                ChainType::Testnet => zcash_data_location.push("testnet3"),
+                ChainType::Regtest => zcash_data_location.push("regtest"),
+                ChainType::Mainnet => {}
+                ChainType::FakeMainnet => zcash_data_location.push("fakemainnet"),
+            };
         }
+
+        // Create directory if it doesn't exist on non-mobile platforms
+        match std::fs::create_dir_all(zcash_data_location.clone()) {
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("Couldn't create zcash directory!\n{}", e);
+                panic!("Couldn't create zcash directory!");
+            }
+        };
+
+        zcash_data_location.into_boxed_path()
     }
 
     pub fn get_zcash_params_path(&self) -> io::Result<Box<Path>> {
