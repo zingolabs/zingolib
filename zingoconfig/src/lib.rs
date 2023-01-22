@@ -34,8 +34,8 @@ pub const GAP_RULE_UNUSED_ADDRESSES: usize = if cfg!(any(target_os = "ios", targ
     compile_error!("correctly compiling to android/ios");
     0
 } else {
-    #[cfg(not(any(target_os = "ios", target_os = "android")))]
-    compile_error!("correctly compiling to non-android/ios");
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    compile_error!("incorrect compilation build target");
     5
 };
 
