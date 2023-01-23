@@ -129,13 +129,14 @@ impl ZingoConfig {
 
     #[cfg(any(target_os = "ios", target_os = "android"))]
     pub fn get_zcash_data_path(&self) -> Box<Path> {
-        compile_error!("correctly compiling to android/ios");
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        compile_error!("incorrect compilation build target");
+
         PathBuf::from(&self.data_dir.as_ref().unwrap()).into_boxed_path()
     }
 
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     pub fn get_zcash_data_path(&self) -> Box<Path> {
-        compile_error!("incorrect compilation build target");
         let mut zcash_data_location;
         // If there's some --data-dir path provided, use it
         if self.data_dir.is_some() {
@@ -169,6 +170,9 @@ impl ZingoConfig {
                 panic!("Couldn't create zcash directory!");
             }
         };
+
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        compile_error!("incorrect compilation build target");
 
         zcash_data_location.into_boxed_path()
     }
