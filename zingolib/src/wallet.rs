@@ -216,7 +216,7 @@ impl LightWallet {
             // TODO: Test the this cfg actually works
             //#[cfg(target_os = "android")]
 
-            let mnemonic = mnemonic.and_then(|m| Mnemonic::from_entropy(m.entropy()));
+            // let mnemonic = mnemonic.and_then(|m| Mnemonic::from_entropy(m.entropy()));
 
             mnemonic
         }
