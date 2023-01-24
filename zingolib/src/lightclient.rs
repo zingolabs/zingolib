@@ -465,7 +465,7 @@ impl LightClient {
     /// Create a brand new wallet with a new seed phrase. Will fail if a wallet file
     /// already exists on disk
     pub fn new(config: &ZingoConfig, latest_block: u64) -> io::Result<Self> {
-        #[cfg(all(not(target_os = "ios"), not(target_os = "android")))]
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
         {
             if config.wallet_exists() {
                 return Err(Error::new(
@@ -473,6 +473,9 @@ impl LightClient {
                     "Cannot create a new wallet from seed, because a wallet already exists",
                 ));
             }
+
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            compile_error!("incorrect compilation build target");
         }
 
         Self::new_wallet(config, latest_block)
@@ -486,7 +489,7 @@ impl LightClient {
         birthday: u64,
         overwrite: bool,
     ) -> io::Result<Self> {
-        #[cfg(all(not(target_os = "ios"), not(target_os = "android")))]
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
         {
             if !overwrite && config.wallet_exists() {
                 return Err(Error::new(
@@ -496,6 +499,9 @@ impl LightClient {
                     ),
                 ));
             }
+
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            compile_error!("incorrect compilation build target");
         }
 
         if key_or_seedphrase.starts_with(config.hrp_sapling_private_key())
@@ -616,36 +622,41 @@ impl LightClient {
         }
     }
 
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     pub async fn do_save(&self) -> Result<(), String> {
-        // On mobile platforms, disable the save, because the saves will be handled by the native layer, and not in rust
         log::debug!("do_save entered");
-        if cfg!(all(not(target_os = "ios"), not(target_os = "android"))) {
-            {
-                log::debug!("target_os is not ios or android");
-                // Prevent any overlapping syncs during save, and don't save in the middle of a sync
-                //let _lock = self.sync_lock.lock().await;
+        log::debug!("target_os is not ios or android");
+        // Prevent any overlapping syncs during save, and don't save in the middle of a sync
+        //let _lock = self.sync_lock.lock().await;
 
-                let mut wallet_bytes = vec![];
-                match self.wallet.write(&mut wallet_bytes).await {
-                    Ok(_) => {
-                        let mut file = File::create(self.config.get_wallet_path()).unwrap();
-                        file.write_all(&wallet_bytes)
-                            .map_err(|e| format!("{}", e))?;
-                        log::debug!("In the guts of a successful save!");
-                        Ok(())
-                    }
-                    Err(e) => {
-                        let err = format!("ERR: {}", e);
-                        error!("{}", err);
-                        log::debug!("SAVE FAIL ON WALLET WRITE LOCK!");
-                        Err(e.to_string())
-                    }
-                }
+        let mut wallet_bytes = vec![];
+        match self.wallet.write(&mut wallet_bytes).await {
+            Ok(_) => {
+                let mut file = File::create(self.config.get_wallet_path()).unwrap();
+                file.write_all(&wallet_bytes)
+                    .map_err(|e| format!("{}", e))?;
+                log::debug!("In the guts of a successful save!");
+                Ok(())
             }
-        } else {
-            // On ios and android just return OK
-            Ok(())
+            Err(e) => {
+                let err = format!("ERR: {}", e);
+                error!("{}", err);
+                log::debug!("SAVE FAIL ON WALLET WRITE LOCK!");
+                Err(e.to_string())
+            }
         }
+    }
+
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    // On mobile platforms, disable the save, because the saves will be handled by the native layer, and not in rust
+    pub async fn do_save(&self) -> Result<(), String> {
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        compile_error!("incorrect compilation build target");
+
+        log::debug!("do_save entered");
+
+        // On ios and android just return OK
+        Ok(())
     }
 
     pub fn do_save_to_buffer_sync(&self) -> Result<Vec<u8>, String> {
@@ -1609,7 +1620,12 @@ impl LightClient {
 
         debug!("About to run save after syncing {}th batch!", batch_num);
         #[cfg(target_os = "linux")]
-        self.do_save().await.unwrap();
+        {
+            self.do_save().await.unwrap();
+
+            #[cfg(target_os = "android")]
+            compile_error!("incorrect compilation build target");
+        }
         Ok(object! {
             "result" => "success",
             "latest_block" => start_block,

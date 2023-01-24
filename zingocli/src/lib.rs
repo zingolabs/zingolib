@@ -431,12 +431,16 @@ fn start_cli_service(
             let emsg = format!("Error during startup:\n{}\nIf you repeatedly run into this issue, you might have to restore your wallet from your seed phrase.", e);
             eprintln!("{}", emsg);
             error!("{}", emsg);
-            if cfg!(target_os = "unix") {
+            #[cfg(target_os = "unix")]
+            {
                 match e.raw_os_error() {
                     Some(13) => report_permission_error(),
                     _ => {}
                 }
-            };
+
+                #[cfg(not(target_os = "unix"))]
+                compile_error!("incorrect compilation build target");
+            }
             panic!();
         }
     }
