@@ -71,8 +71,12 @@ pub fn build_clap_app() -> clap::App<'static> {
                 .index(2))
 }
 
+#[cfg(target_os = "unix")]
 /// This function is only tested against Linux.
 fn report_permission_error() {
+    #[cfg(not(target_os = "unix"))]
+    compile_error!("incorrect compilation build target");
+
     let user = std::env::var("USER").expect("Unexpected error reading value of $USER!");
     let home = std::env::var("HOME").expect("Unexpected error reading value of $HOME!");
     let current_executable =
