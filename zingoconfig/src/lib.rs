@@ -127,102 +127,117 @@ impl ZingoConfig {
             .map_err(|e| Error::new(ErrorKind::Other, format!("{}", e)))
     }
 
-    #[cfg(any(target_os = "ios", target_os = "android"))]
     pub fn get_zcash_data_path(&self) -> Box<Path> {
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        {
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            compile_error!("incorrect compilation build target");
+
+            PathBuf::from(&self.data_dir.as_ref().unwrap()).into_boxed_path()
+        }
+
         #[cfg(not(any(target_os = "ios", target_os = "android")))]
-        compile_error!("incorrect compilation build target");
+        {
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            compile_error!("incorrect compilation build target");
 
-        PathBuf::from(&self.data_dir.as_ref().unwrap()).into_boxed_path()
-    }
+            let mut zcash_data_location;
+            // If there's some --data-dir path provided, use it
+            if self.data_dir.is_some() {
+                zcash_data_location = PathBuf::from(&self.data_dir.as_ref().unwrap());
+            } else {
+                #[cfg(any(target_os = "macos", target_os = "windows"))]
+                {
+                    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+                    compile_error!("incorrect compilation build target");
 
-    #[cfg(not(any(target_os = "ios", target_os = "android")))]
-    pub fn get_zcash_data_path(&self) -> Box<Path> {
-        let mut zcash_data_location;
-        // If there's some --data-dir path provided, use it
-        if self.data_dir.is_some() {
-            zcash_data_location = PathBuf::from(&self.data_dir.as_ref().unwrap());
-        } else {
-            #[cfg(any(target_os = "macos", target_os = "windows"))]
-            {
-                zcash_data_location =
-                    dirs::data_dir().expect("Couldn't determine app data directory!");
-                zcash_data_location.push("Zcash");
+                    zcash_data_location =
+                        dirs::data_dir().expect("Couldn't determine app data directory!");
+                    zcash_data_location.push("Zcash");
+                }
 
                 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+                {
+                    #[cfg(any(target_os = "macos", target_os = "windows"))]
+                    compile_error!("incorrect compilation build target");
+
+                    if dirs::home_dir().is_none() {
+                        info!("Couldn't determine home dir!");
+                    }
+                    zcash_data_location =
+                        dirs::home_dir().expect("Couldn't determine home directory!");
+                    zcash_data_location.push(".zcash");
+                }
+
+                match &self.chain {
+                    ChainType::Testnet => zcash_data_location.push("testnet3"),
+                    ChainType::Regtest => zcash_data_location.push("regtest"),
+                    ChainType::Mainnet => {}
+                    ChainType::FakeMainnet => zcash_data_location.push("fakemainnet"),
+                };
+            }
+
+            // Create directory if it doesn't exist on non-mobile platforms
+            match std::fs::create_dir_all(zcash_data_location.clone()) {
+                Ok(_) => {}
+                Err(e) => {
+                    eprintln!("Couldn't create zcash directory!\n{}", e);
+                    panic!("Couldn't create zcash directory!");
+                }
+            };
+
+            zcash_data_location.into_boxed_path()
+        }
+    }
+
+    pub fn get_zcash_params_path(&self) -> io::Result<Box<Path>> {
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        {
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            compile_error!("incorrect compilation build target");
+
+            Ok(PathBuf::from(&self.data_dir.as_ref().unwrap()).into_boxed_path())
+        }
+
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        {
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            compile_error!("incorrect compilation build target");
+
+            if dirs::home_dir().is_none() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Couldn't determine Home Dir",
+                ));
+            }
+
+            let mut zcash_params = self.get_zcash_data_path().into_path_buf();
+            zcash_params.push("..");
+
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            {
+                #[cfg(not(any(target_os = "macos", target_os = "windows")))]
                 compile_error!("incorrect compilation build target");
+
+                zcash_params.push("ZcashParams");
             }
 
             #[cfg(not(any(target_os = "macos", target_os = "windows")))]
             {
-                if dirs::home_dir().is_none() {
-                    info!("Couldn't determine home dir!");
-                }
-                zcash_data_location = dirs::home_dir().expect("Couldn't determine home directory!");
-                zcash_data_location.push(".zcash");
-
                 #[cfg(any(target_os = "macos", target_os = "windows"))]
                 compile_error!("incorrect compilation build target");
+
+                zcash_params.push(".zcash-params");
             }
 
-            match &self.chain {
-                ChainType::Testnet => zcash_data_location.push("testnet3"),
-                ChainType::Regtest => zcash_data_location.push("regtest"),
-                ChainType::Mainnet => {}
-                ChainType::FakeMainnet => zcash_data_location.push("fakemainnet"),
-            };
-        }
-
-        // Create directory if it doesn't exist on non-mobile platforms
-        match std::fs::create_dir_all(zcash_data_location.clone()) {
-            Ok(_) => {}
-            Err(e) => {
-                eprintln!("Couldn't create zcash directory!\n{}", e);
-                panic!("Couldn't create zcash directory!");
-            }
-        };
-
-        #[cfg(any(target_os = "ios", target_os = "android"))]
-        compile_error!("incorrect compilation build target");
-
-        zcash_data_location.into_boxed_path()
-    }
-
-    #[cfg(any(target_os = "ios", target_os = "android"))]
-    pub fn get_zcash_params_path(&self) -> io::Result<Box<Path>> {
-        #[cfg(not(any(target_os = "ios", target_os = "android")))]
-        compile_error!("incorrect compilation build target");
-
-        Ok(PathBuf::from(&self.data_dir.as_ref().unwrap()).into_boxed_path())
-    }
-
-    #[cfg(not(any(target_os = "ios", target_os = "android")))]
-    pub fn get_zcash_params_path(&self) -> io::Result<Box<Path>> {
-        if dirs::home_dir().is_none() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Couldn't determine Home Dir",
-            ));
-        }
-
-        let mut zcash_params = self.get_zcash_data_path().into_path_buf();
-        zcash_params.push("..");
-
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
-        zcash_params.push("ZcashParams");
-
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-        zcash_params.push(".zcash-params");
-
-        match std::fs::create_dir_all(zcash_params.clone()) {
-            Ok(_) => Ok(zcash_params.into_boxed_path()),
-            Err(e) => {
-                eprintln!("Couldn't create zcash params directory\n{}", e);
-                Err(e)
+            match std::fs::create_dir_all(zcash_params.clone()) {
+                Ok(_) => Ok(zcash_params.into_boxed_path()),
+                Err(e) => {
+                    eprintln!("Couldn't create zcash params directory\n{}", e);
+                    Err(e)
+                }
             }
         }
-
-        #[cfg(any(target_os = "ios", target_os = "android"))]
-        compile_error!("incorrect compilation build target");
     }
 
     pub fn get_server_uri(&self) -> http::Uri {

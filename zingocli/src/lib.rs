@@ -437,13 +437,13 @@ fn start_cli_service(
             error!("{}", emsg);
             #[cfg(target_os = "unix")]
             {
+                #[cfg(not(target_os = "unix"))]
+                compile_error!("incorrect compilation build target");
+
                 match e.raw_os_error() {
                     Some(13) => report_permission_error(),
                     _ => {}
                 }
-
-                #[cfg(not(target_os = "unix"))]
-                compile_error!("incorrect compilation build target");
             }
             panic!();
         }
