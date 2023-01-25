@@ -71,6 +71,7 @@ pub fn build_clap_app() -> clap::App<'static> {
                 .index(2))
 }
 
+#[cfg(target_os = "linux")]
 /// This function is only tested against Linux.
 fn report_permission_error() {
     let user = std::env::var("USER").expect("Unexpected error reading value of $USER!");
@@ -431,12 +432,14 @@ fn start_cli_service(
             let emsg = format!("Error during startup:\n{}\nIf you repeatedly run into this issue, you might have to restore your wallet from your seed phrase.", e);
             eprintln!("{}", emsg);
             error!("{}", emsg);
-            if cfg!(target_os = "unix") {
+            #[cfg(target_os = "linux")]
+            // TODO: Test report_permission_error() for macos and change to target_family = "unix"
+            {
                 match e.raw_os_error() {
                     Some(13) => report_permission_error(),
                     _ => {}
                 }
-            };
+            }
             panic!();
         }
     }

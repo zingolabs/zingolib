@@ -28,12 +28,12 @@ pub const MAX_REORG: usize = 100;
 pub const WALLET_NAME: &str = "zingo-wallet.dat";
 pub const LOGFILE_NAME: &str = "zingo-wallet.debug.log";
 pub const REORG_BUFFER_OFFSET: u32 = 0;
-pub const GAP_RULE_UNUSED_ADDRESSES: usize = if cfg!(any(target_os = "ios", target_os = "android"))
-{
-    0
-} else {
-    5
-};
+
+#[cfg(any(target_os = "ios", target_os = "android"))]
+pub const GAP_RULE_UNUSED_ADDRESSES: usize = 0;
+
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+pub const GAP_RULE_UNUSED_ADDRESSES: usize = 5;
 
 pub fn construct_server_uri(server: Option<String>) -> http::Uri {
     match server {
@@ -128,26 +128,34 @@ impl ZingoConfig {
     }
 
     pub fn get_zcash_data_path(&self) -> Box<Path> {
-        if cfg!(target_os = "ios") || cfg!(target_os = "android") {
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        {
             PathBuf::from(&self.data_dir.as_ref().unwrap()).into_boxed_path()
-        } else {
+        }
+
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        {
             let mut zcash_data_location;
             // If there's some --data-dir path provided, use it
             if self.data_dir.is_some() {
                 zcash_data_location = PathBuf::from(&self.data_dir.as_ref().unwrap());
             } else {
-                if cfg!(target_os = "macos") || cfg!(target_os = "windows") {
+                #[cfg(any(target_os = "macos", target_os = "windows"))]
+                {
                     zcash_data_location =
                         dirs::data_dir().expect("Couldn't determine app data directory!");
                     zcash_data_location.push("Zcash");
-                } else {
+                }
+
+                #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+                {
                     if dirs::home_dir().is_none() {
                         info!("Couldn't determine home dir!");
                     }
                     zcash_data_location =
                         dirs::home_dir().expect("Couldn't determine home directory!");
                     zcash_data_location.push(".zcash");
-                };
+                }
 
                 match &self.chain {
                     ChainType::Testnet => zcash_data_location.push("testnet3"),
@@ -171,9 +179,13 @@ impl ZingoConfig {
     }
 
     pub fn get_zcash_params_path(&self) -> io::Result<Box<Path>> {
-        if cfg!(target_os = "ios") || cfg!(target_os = "android") {
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        {
             Ok(PathBuf::from(&self.data_dir.as_ref().unwrap()).into_boxed_path())
-        } else {
+        }
+
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        {
             if dirs::home_dir().is_none() {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
@@ -183,11 +195,12 @@ impl ZingoConfig {
 
             let mut zcash_params = self.get_zcash_data_path().into_path_buf();
             zcash_params.push("..");
-            if cfg!(target_os = "macos") || cfg!(target_os = "windows") {
-                zcash_params.push("ZcashParams");
-            } else {
-                zcash_params.push(".zcash-params");
-            }
+
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            zcash_params.push("ZcashParams");
+
+            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+            zcash_params.push(".zcash-params");
 
             match std::fs::create_dir_all(zcash_params.clone()) {
                 Ok(_) => Ok(zcash_params.into_boxed_path()),
