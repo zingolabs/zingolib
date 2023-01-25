@@ -467,9 +467,6 @@ impl LightClient {
     pub fn new(config: &ZingoConfig, latest_block: u64) -> io::Result<Self> {
         #[cfg(not(any(target_os = "ios", target_os = "android")))]
         {
-            #[cfg(any(target_os = "ios", target_os = "android"))]
-            compile_error!("incorrect compilation build target");
-
             if config.wallet_exists() {
                 return Err(Error::new(
                     ErrorKind::AlreadyExists,
@@ -491,9 +488,6 @@ impl LightClient {
     ) -> io::Result<Self> {
         #[cfg(not(any(target_os = "ios", target_os = "android")))]
         {
-            #[cfg(any(target_os = "ios", target_os = "android"))]
-            compile_error!("incorrect compilation build target");
-
             if !overwrite && config.wallet_exists() {
                 return Err(Error::new(
                     ErrorKind::AlreadyExists,
@@ -626,9 +620,6 @@ impl LightClient {
         #[cfg(any(target_os = "ios", target_os = "android"))]
         // On mobile platforms, disable the save, because the saves will be handled by the native layer, and not in rust
         {
-            #[cfg(not(any(target_os = "ios", target_os = "android")))]
-            compile_error!("incorrect compilation build target");
-
             log::debug!("do_save entered");
 
             // On ios and android just return OK
@@ -637,9 +628,6 @@ impl LightClient {
 
         #[cfg(not(any(target_os = "ios", target_os = "android")))]
         {
-            #[cfg(any(target_os = "ios", target_os = "android"))]
-            compile_error!("incorrect compilation build target");
-
             log::debug!("do_save entered");
             log::debug!("target_os is not ios or android");
             // Prevent any overlapping syncs during save, and don't save in the middle of a sync
@@ -1624,13 +1612,10 @@ impl LightClient {
         }
 
         debug!("About to run save after syncing {}th batch!", batch_num);
-        #[cfg(target_os = "linux")]
-        {
-            #[cfg(target_os = "android")]
-            compile_error!("incorrect compilation build target");
 
-            self.do_save().await.unwrap();
-        }
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        self.do_save().await.unwrap();
+
         Ok(object! {
             "result" => "success",
             "latest_block" => start_block,
