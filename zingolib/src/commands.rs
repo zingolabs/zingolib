@@ -616,7 +616,9 @@ impl Command for DecryptMessageCommand {
     }
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 struct SendCommand {}
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 impl Command for SendCommand {
     fn help(&self) -> String {
         let mut h = vec![];
