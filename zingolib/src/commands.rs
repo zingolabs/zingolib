@@ -418,7 +418,9 @@ impl Command for BalanceCommand {
     }
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 struct AddressCommand {}
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 impl Command for AddressCommand {
     fn help(&self) -> String {
         let mut h = vec![];
@@ -1251,6 +1253,7 @@ pub fn get_commands() -> Box<HashMap<String, Box<dyn Command>>> {
     map.insert("changeserver".to_string(), Box::new(ChangeServerCommand {}));
     map.insert("rescan".to_string(), Box::new(RescanCommand {}));
     map.insert("balance".to_string(), Box::new(BalanceCommand {}));
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     map.insert("addresses".to_string(), Box::new(AddressCommand {}));
     map.insert("height".to_string(), Box::new(HeightCommand {}));
     map.insert("sendprogress".to_string(), Box::new(SendProgressCommand {}));
