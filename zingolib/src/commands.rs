@@ -1245,19 +1245,9 @@ pub fn get_commands() -> Box<HashMap<String, Box<dyn Command>>> {
 
     map.insert("sync".to_string(), Box::new(SyncCommand {}));
     map.insert("syncstatus".to_string(), Box::new(SyncStatusCommand {}));
-    map.insert(
-        "encryptmessage".to_string(),
-        Box::new(EncryptMessageCommand {}),
-    );
-    map.insert(
-        "decryptmessage".to_string(),
-        Box::new(DecryptMessageCommand {}),
-    );
     map.insert("parse".to_string(), Box::new(ParseCommand {}));
     map.insert("changeserver".to_string(), Box::new(ChangeServerCommand {}));
     map.insert("rescan".to_string(), Box::new(RescanCommand {}));
-    map.insert("clear".to_string(), Box::new(ClearCommand {}));
-    map.insert("help".to_string(), Box::new(HelpCommand {}));
     map.insert("balance".to_string(), Box::new(BalanceCommand {}));
     map.insert("addresses".to_string(), Box::new(AddressCommand {}));
     map.insert("height".to_string(), Box::new(HeightCommand {}));
@@ -1271,15 +1261,27 @@ pub fn get_commands() -> Box<HashMap<String, Box<dyn Command>>> {
         "updatecurrentprice".to_string(),
         Box::new(UpdateCurrentPriceCommand {}),
     );
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     map.insert("send".to_string(), Box::new(SendCommand {}));
     map.insert("shield".to_string(), Box::new(ShieldCommand {}));
-    map.insert("save".to_string(), Box::new(SaveCommand {}));
-    map.insert("quit".to_string(), Box::new(QuitCommand {}));
     map.insert("list".to_string(), Box::new(TransactionsCommand {}));
     map.insert("notes".to_string(), Box::new(NotesCommand {}));
     map.insert("new".to_string(), Box::new(NewAddressCommand {}));
     map.insert("defaultfee".to_string(), Box::new(DefaultFeeCommand {}));
     map.insert("seed".to_string(), Box::new(SeedCommand {}));
+
+    map.insert(
+        "encryptmessage".to_string(),
+        Box::new(EncryptMessageCommand {}),
+    );
+    map.insert(
+        "decryptmessage".to_string(),
+        Box::new(DecryptMessageCommand {}),
+    );
+    map.insert("clear".to_string(), Box::new(ClearCommand {}));
+    map.insert("help".to_string(), Box::new(HelpCommand {}));
+    map.insert("save".to_string(), Box::new(SaveCommand {}));
+    map.insert("quit".to_string(), Box::new(QuitCommand {}));
 
     Box::new(map)
 }
