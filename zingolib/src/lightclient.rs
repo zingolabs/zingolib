@@ -453,6 +453,7 @@ impl LightClient {
             debug!("Created new wallet with a new seed!");
             debug!("Created LightClient to {}", &config.get_server_uri());
 
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             // Save
             l.do_save()
                 .await
@@ -518,6 +519,7 @@ impl LightClient {
                 };
 
                 lightclient.set_wallet_initial_state(birthday).await;
+                #[cfg(not(any(target_os = "ios", target_os = "android")))]
                 lightclient
                     .do_save()
                     .await
@@ -616,38 +618,27 @@ impl LightClient {
         }
     }
 
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     pub async fn do_save(&self) -> Result<(), String> {
-        #[cfg(any(target_os = "ios", target_os = "android"))]
-        // On mobile platforms, disable the save, because the saves will be handled by the native layer, and not in rust
-        {
-            log::debug!("do_save entered");
+        log::debug!("do_save entered");
+        log::debug!("target_os is not ios or android");
+        // Prevent any overlapping syncs during save, and don't save in the middle of a sync
+        //let _lock = self.sync_lock.lock().await;
 
-            // On ios and android just return OK
-            Ok(())
-        }
-
-        #[cfg(not(any(target_os = "ios", target_os = "android")))]
-        {
-            log::debug!("do_save entered");
-            log::debug!("target_os is not ios or android");
-            // Prevent any overlapping syncs during save, and don't save in the middle of a sync
-            //let _lock = self.sync_lock.lock().await;
-
-            let mut wallet_bytes = vec![];
-            match self.wallet.write(&mut wallet_bytes).await {
-                Ok(_) => {
-                    let mut file = File::create(self.config.get_wallet_path()).unwrap();
-                    file.write_all(&wallet_bytes)
-                        .map_err(|e| format!("{}", e))?;
-                    log::debug!("In the guts of a successful save!");
-                    Ok(())
-                }
-                Err(e) => {
-                    let err = format!("ERR: {}", e);
-                    error!("{}", err);
-                    log::debug!("SAVE FAIL ON WALLET WRITE LOCK!");
-                    Err(e.to_string())
-                }
+        let mut wallet_bytes = vec![];
+        match self.wallet.write(&mut wallet_bytes).await {
+            Ok(_) => {
+                let mut file = File::create(self.config.get_wallet_path()).unwrap();
+                file.write_all(&wallet_bytes)
+                    .map_err(|e| format!("{}", e))?;
+                log::debug!("In the guts of a successful save!");
+                Ok(())
+            }
+            Err(e) => {
+                let err = format!("ERR: {}", e);
+                error!("{}", err);
+                log::debug!("SAVE FAIL ON WALLET WRITE LOCK!");
+                Err(e.to_string())
             }
         }
     }
@@ -1108,6 +1099,7 @@ impl LightClient {
             .await
             .new_address(desired_receivers)?;
 
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
         self.do_save().await?;
 
         Ok(array![new_address.encode(&self.config.chain)])
@@ -1131,6 +1123,7 @@ impl LightClient {
         // Then, do a sync, which will force a full rescan from the initial state
         let response = self.do_sync(true).await;
 
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
         if response.is_ok() {
             self.do_save().await?;
         }

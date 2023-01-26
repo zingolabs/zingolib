@@ -261,7 +261,9 @@ impl Command for RescanCommand {
     }
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 struct ClearCommand {}
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 impl Command for ClearCommand {
     fn help(&self) -> String {
         let mut h = vec![];
@@ -288,7 +290,9 @@ impl Command for ClearCommand {
     }
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub struct HelpCommand {}
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 impl Command for HelpCommand {
     fn help(&self) -> String {
         let mut h = vec![];
@@ -330,6 +334,7 @@ impl Command for HelpCommand {
         }
     }
 }
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 impl ShortCircuitedCommand for HelpCommand {
     fn exec_without_lc(args: Vec<String>) -> String {
         let mut responses = vec![];
@@ -418,9 +423,7 @@ impl Command for BalanceCommand {
     }
 }
 
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
 struct AddressCommand {}
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
 impl Command for AddressCommand {
     fn help(&self) -> String {
         let mut h = vec![];
@@ -511,7 +514,9 @@ impl Command for ShieldCommand {
     }
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 struct EncryptMessageCommand {}
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 impl Command for EncryptMessageCommand {
     fn help(&self) -> String {
         let mut h = vec![];
@@ -585,7 +590,9 @@ impl Command for EncryptMessageCommand {
     }
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 struct DecryptMessageCommand {}
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 impl Command for DecryptMessageCommand {
     fn help(&self) -> String {
         let mut h = vec![];
@@ -618,9 +625,7 @@ impl Command for DecryptMessageCommand {
     }
 }
 
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
 struct SendCommand {}
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
 impl Command for SendCommand {
     fn help(&self) -> String {
         let mut h = vec![];
@@ -771,6 +776,7 @@ impl Command for SendCommand {
     }
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn wallet_saver(lightclient: &LightClient) -> String {
     RT.block_on(async move {
         match lightclient.do_save().await {
@@ -789,7 +795,9 @@ fn wallet_saver(lightclient: &LightClient) -> String {
         }
     })
 }
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 struct SaveCommand {}
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 impl Command for SaveCommand {
     fn help(&self) -> String {
         let mut h = vec![];
@@ -1186,7 +1194,9 @@ impl Command for NotesCommand {
     }
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 struct QuitCommand {}
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 impl Command for QuitCommand {
     fn help(&self) -> String {
         let mut h = vec![];
@@ -1253,7 +1263,6 @@ pub fn get_commands() -> Box<HashMap<String, Box<dyn Command>>> {
     map.insert("changeserver".to_string(), Box::new(ChangeServerCommand {}));
     map.insert("rescan".to_string(), Box::new(RescanCommand {}));
     map.insert("balance".to_string(), Box::new(BalanceCommand {}));
-    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     map.insert("addresses".to_string(), Box::new(AddressCommand {}));
     map.insert("height".to_string(), Box::new(HeightCommand {}));
     map.insert("sendprogress".to_string(), Box::new(SendProgressCommand {}));
@@ -1266,7 +1275,6 @@ pub fn get_commands() -> Box<HashMap<String, Box<dyn Command>>> {
         "updatecurrentprice".to_string(),
         Box::new(UpdateCurrentPriceCommand {}),
     );
-    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     map.insert("send".to_string(), Box::new(SendCommand {}));
     map.insert("shield".to_string(), Box::new(ShieldCommand {}));
     map.insert("list".to_string(), Box::new(TransactionsCommand {}));
@@ -1275,18 +1283,21 @@ pub fn get_commands() -> Box<HashMap<String, Box<dyn Command>>> {
     map.insert("defaultfee".to_string(), Box::new(DefaultFeeCommand {}));
     map.insert("seed".to_string(), Box::new(SeedCommand {}));
 
-    map.insert(
-        "encryptmessage".to_string(),
-        Box::new(EncryptMessageCommand {}),
-    );
-    map.insert(
-        "decryptmessage".to_string(),
-        Box::new(DecryptMessageCommand {}),
-    );
-    map.insert("clear".to_string(), Box::new(ClearCommand {}));
-    map.insert("help".to_string(), Box::new(HelpCommand {}));
-    map.insert("save".to_string(), Box::new(SaveCommand {}));
-    map.insert("quit".to_string(), Box::new(QuitCommand {}));
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    {
+        map.insert(
+            "encryptmessage".to_string(),
+            Box::new(EncryptMessageCommand {}),
+        );
+        map.insert(
+            "decryptmessage".to_string(),
+            Box::new(DecryptMessageCommand {}),
+        );
+        map.insert("clear".to_string(), Box::new(ClearCommand {}));
+        map.insert("help".to_string(), Box::new(HelpCommand {}));
+        map.insert("save".to_string(), Box::new(SaveCommand {}));
+        map.insert("quit".to_string(), Box::new(QuitCommand {}));
+    }
 
     Box::new(map)
 }
