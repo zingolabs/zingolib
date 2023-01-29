@@ -211,43 +211,18 @@ pub fn execute(cmd: String, args_list: String) -> String {
     resp
 }
 
-pub fn init_light_client(
+pub fn get_latest_block(
     server_uri: String,
-    sapling_output_b64: String,
-    sapling_spend_b64: String,
-    data_dir: String,
 ) -> String {
     let server = construct_server_uri(Some(server_uri));
-    let (mut config, latest_block_height) = match zingolib::create_zingoconf_from_datadir(server, None) {
+    let (config, latest_block_height) = match zingolib::create_zingoconf_from_datadir(server, None) {
         Ok((c, h)) => (c, h),
         Err(e) => {
             return format!("Error: {}", e);
         }
     };
 
-    config.set_data_dir(data_dir);
-
-    let lightclient = match LightClient::new(&config, latest_block_height.saturating_sub(100)) {
-        Ok(mut l) => {
-            match l.set_sapling_params(
-                &decode(&sapling_output_b64).unwrap(),
-                &decode(&sapling_spend_b64).unwrap(),
-            ) {
-                Ok(_) => l,
-                Err(e) => return format!("Error: {}", e),
-            }
-        }
-        Err(e) => {
-            return format!("Error: {}", e);
-        }
-    };
-
-    let lc = Arc::new(lightclient);
-    LightClient::start_mempool_monitor(lc.clone());
-
-    LIGHTCLIENT.lock().unwrap().replace(Some(lc));
-
-    let resp: String = "OK".to_string();
+    let resp: String = latest_block_height.to_string();
 
     resp
 }
