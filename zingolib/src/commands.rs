@@ -1283,7 +1283,7 @@ pub fn get_commands() -> Box<HashMap<String, Box<dyn Command>>> {
     );
     map.insert("parse".to_string(), Box::new(ParseCommand {}));
     map.insert(
-        "toggle_interrupt".to_string(),
+        "interrupt_sync_after_batch".to_string(),
         Box::new(InterruptCommand {}),
     );
     map.insert("changeserver".to_string(), Box::new(ChangeServerCommand {}));
