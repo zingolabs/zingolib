@@ -397,7 +397,7 @@ impl LightClient {
         Ok(())
     }
 
-    async fn interrupt_sync_after_batch(&self, set_interrupt: bool) {
+    pub async fn interrupt_sync_after_batch(&self, set_interrupt: bool) {
         *self.interrupt_sync.write().await = set_interrupt;
     }
 
