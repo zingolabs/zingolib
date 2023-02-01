@@ -58,6 +58,34 @@ impl Command for ChangeServerCommand {
     }
 }
 
+struct InterruptCommand {}
+impl Command for InterruptCommand {
+    fn help(&self) -> String {
+        "Toggle the sync interrupt after batch flag.".to_string()
+    }
+    fn short_help(&self) -> String {
+        "Toggle the sync interrupt after batch flag.".to_string()
+    }
+    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+        match args.len() {
+            1 => RT.block_on(async move {
+                match args[0] {
+                    "true" => {
+                        lightclient.interrupt_sync_after_batch(true).await;
+                        "true".to_string()
+                    }
+                    "false" => {
+                        lightclient.interrupt_sync_after_batch(false).await;
+                        "false".to_string()
+                    }
+                    _ => self.help(),
+                }
+            }),
+            _ => self.help(),
+        }
+    }
+}
+
 struct ParseCommand {}
 impl Command for ParseCommand {
     fn help(&self) -> String {
@@ -1254,6 +1282,10 @@ pub fn get_commands() -> Box<HashMap<String, Box<dyn Command>>> {
         Box::new(DecryptMessageCommand {}),
     );
     map.insert("parse".to_string(), Box::new(ParseCommand {}));
+    map.insert(
+        "toggle_interrupt".to_string(),
+        Box::new(InterruptCommand {}),
+    );
     map.insert("changeserver".to_string(), Box::new(ChangeServerCommand {}));
     map.insert("rescan".to_string(), Box::new(RescanCommand {}));
     map.insert("clear".to_string(), Box::new(ClearCommand {}));
