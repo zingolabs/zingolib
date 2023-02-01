@@ -1682,7 +1682,6 @@ impl LightClient {
         address_amount_memo_tuples: Vec<(&str, u64, Option<String>)>,
     ) -> Result<String, String> {
         let transaction_submission_height = self.get_submission_height().await;
-        self.interrupt_sync_after_batch(true).await;
         // First, get the concensus branch ID
         debug!("Creating transaction");
 
@@ -1706,7 +1705,6 @@ impl LightClient {
                 .await
         };
 
-        self.interrupt_sync_after_batch(false).await;
         result.map(|(transaction_id, _)| transaction_id)
     }
 
