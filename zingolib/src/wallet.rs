@@ -2,10 +2,8 @@
 //! from a source outside of the code-base e.g. a wallet-file.
 use crate::blaze::fetch_full_transaction::TransactionContext;
 use crate::compact_formats::TreeState;
-use crate::wallet::data::TransactionMetadata;
-use crate::wallet_internal_memo_handling::create_wallet_internal_memo_version_0;
+use crate::wallet::data::{SpendableSaplingNote, TransactionMetadata};
 
-use crate::wallet::data::SpendableSaplingNote;
 use bip0039::Mnemonic;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::Future;
@@ -42,6 +40,7 @@ use zcash_primitives::{
         components::{amount::DEFAULT_FEE, Amount, OutPoint, TxOut},
     },
 };
+use zingo_memo_utils::create_wallet_internal_memo_version_0;
 
 use self::data::SpendableOrchardNote;
 use self::keys::unified::ReceiverSelection;

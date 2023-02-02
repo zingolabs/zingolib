@@ -4,16 +4,23 @@ use zcash_address::unified::{Address, Container, Encoding, Receiver};
 use zcash_client_backend::address::UnifiedAddress;
 use zcash_encoding::{CompactSize, Vector};
 
-pub const MEMO_VERSION: usize = 0;
-
+/// A parsed memo. Currently there is only one version of this protocol,
+/// which is a list of UAs. The main use-case for this is to record the
+/// UAs sent from, as the blockchain only records the pool-specific receiver
+/// corresponding to the key we sent with.
 #[non_exhaustive]
+#[derive(Debug)]
 pub enum ParsedMemo {
     Version0 { uas: Vec<UnifiedAddress> },
 }
 
+/// Packs a list of UAs into a memo. The UA only memo is version 0 of the protocol
+/// Note that a UA's raw representation is 1 byte for length, +21 for a T-receiver,
+/// +44 for a Sapling receiver, and +44 for an Orchard reciever. This totals a maximum
+/// of 110 bytes per UA, and attemtping to write more than 510 bytes will cause an error.
 pub fn create_wallet_internal_memo_version_0(uas: &[UnifiedAddress]) -> io::Result<[u8; 511]> {
     let mut uas_bytes_vec = Vec::new();
-    CompactSize::write(&mut uas_bytes_vec, MEMO_VERSION)?;
+    CompactSize::write(&mut uas_bytes_vec, 0usize)?;
     Vector::write(&mut uas_bytes_vec, uas, |mut w, ua| {
         write_unified_address_to_raw_encoding(&ua, &mut w)
     })?;
@@ -29,6 +36,7 @@ pub fn create_wallet_internal_memo_version_0(uas: &[UnifiedAddress]) -> io::Resu
     }
 }
 
+/// Attempts to parse the 511 bytes of an arbitrary data memo
 pub fn read_wallet_internal_memo(memo: [u8; 511]) -> io::Result<ParsedMemo> {
     let mut reader: &[u8] = &memo;
     match CompactSize::read(&mut reader)? {
@@ -47,6 +55,9 @@ pub fn read_wallet_internal_memo(memo: [u8; 511]) -> io::Result<ParsedMemo> {
     }
 }
 
+/// A helper function to encode a UA as a CompactSize specifying the number
+/// of receivers, followed by the UA's raw encoding as specified in
+/// https://zips.z.cash/zip-0316#encoding-of-unified-addresses
 pub fn write_unified_address_to_raw_encoding<W: Write>(
     ua: &UnifiedAddress,
     writer: W,
@@ -67,6 +78,10 @@ pub fn write_unified_address_to_raw_encoding<W: Write>(
         w.write_all(data)
     })
 }
+
+/// A helper function to decode a UA from a CompactSize specifying the number of
+/// receivers, followed by the UA's raw encoding as specified in
+/// https://zips.z.cash/zip-0316#encoding-of-unified-addresses
 pub fn read_unified_address_from_raw_encoding<R: Read>(reader: R) -> io::Result<UnifiedAddress> {
     let receivers = Vector::read(reader, |mut r| {
         let typecode: usize = CompactSize::read_t(&mut r)?;
@@ -124,6 +139,9 @@ fn decode_receiver(typecode: usize, data: Vec<u8>) -> io::Result<Receiver> {
         },
     })
 }
+
+#[cfg(test)]
+mod test_vectors;
 
 #[cfg(test)]
 mod tests {
