@@ -30,7 +30,8 @@ jobs:
       - name:                   Upload to codecov.io
         uses:                   codecov/codecov-action@v3
         with:
-          fail_ci_if_error:     true
+          files:                ./cobertura.xml
+          # fail_ci_if_error:     true
         
   Build_zingo-mobile:
     runs-on:                    ubuntu-22.04
