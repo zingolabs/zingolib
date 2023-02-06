@@ -215,7 +215,7 @@ pub fn get_latest_block(
     server_uri: String,
 ) -> String {
     let server = construct_server_uri(Some(server_uri));
-    let (config, latest_block_height) = match zingolib::create_zingoconf_from_datadir(server, None) {
+    let (_config, latest_block_height) = match zingolib::create_zingoconf_from_datadir(server, None) {
         Ok((c, h)) => (c, h),
         Err(e) => {
             return format!("Error: {}", e);
