@@ -8,7 +8,7 @@ use crate::wallet::{
     },
     transactions::TransactionMetadataSet,
 };
-use zingo_memo_utils::{read_wallet_internal_memo, ParsedMemo};
+use zingo_memo::{read_wallet_internal_memo, ParsedMemo};
 
 use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
 use log::info;

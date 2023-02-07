@@ -40,7 +40,7 @@ use zcash_primitives::{
         components::{amount::DEFAULT_FEE, Amount, OutPoint, TxOut},
     },
 };
-use zingo_memo_utils::create_wallet_internal_memo_version_0;
+use zingo_memo::create_wallet_internal_memo_version_0;
 
 use self::data::SpendableOrchardNote;
 use self::keys::unified::ReceiverSelection;
