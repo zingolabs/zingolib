@@ -2,7 +2,8 @@
 members = [
     "zingolib",
     "zingocli",
-    "zingoconfig"
+    "zingoconfig",
+    "zingo-memo"
 ]
 
 [profile.release]

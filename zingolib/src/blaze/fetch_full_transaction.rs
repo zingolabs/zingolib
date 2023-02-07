@@ -1,16 +1,14 @@
-use crate::{
-    wallet::{
-        data::OutgoingTxMetadata,
-        keys::{address_from_pubkeyhash, unified::UnifiedSpendCapability, ToBase58Check},
-        traits::{
-            self as zingo_traits, Bundle as _, DomainWalletExt, Nullifier as _,
-            ReceivedNoteAndMetadata as _, Recipient as _, ShieldedOutputExt as _, Spend as _,
-            ToBytes as _,
-        },
-        transactions::TransactionMetadataSet,
+use crate::wallet::{
+    data::OutgoingTxMetadata,
+    keys::{address_from_pubkeyhash, unified::UnifiedSpendCapability, ToBase58Check},
+    traits::{
+        self as zingo_traits, Bundle as _, DomainWalletExt, Nullifier as _,
+        ReceivedNoteAndMetadata as _, Recipient as _, ShieldedOutputExt as _, Spend as _,
+        ToBytes as _,
     },
-    wallet_internal_memo_handling::{read_wallet_internal_memo, ParsedMemo},
+    transactions::TransactionMetadataSet,
 };
+use zingo_memo::{read_wallet_internal_memo, ParsedMemo};
 
 use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
 use log::info;
@@ -211,6 +209,13 @@ impl TransactionContext {
                             }
                         }
                     }
+                }
+                Ok(other_memo_version) => {
+                    log::error!(
+                        "Wallet internal memo is from a future version of the protocol\n\
+                        Please ensure that your software is up-to-date.\n\
+                        Memo: {other_memo_version:?}"
+                    )
                 }
                 Err(e) => log::error!(
                     "Could not decode wallet internal memo: {e}.\n\
