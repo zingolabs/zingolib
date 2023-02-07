@@ -1,3 +1,6 @@
+//! A framework that's used to set up a sandbox environment to run the zingo-cli binary in.
+//! Much of the functionality in this mod is also used in the `integration_tests` that exercise
+//! zingolib without building a zingo-cli instance.
 use std::fs::File;
 
 use std::io::Read;

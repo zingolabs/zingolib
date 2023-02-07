@@ -8,6 +8,9 @@ use tokio::runtime::Runtime;
 use utils::scenarios;
 
 #[test]
+fn compare_sync_times() {}
+
+#[test]
 fn zcashd_sapling_commitment_tree() {
     //!  TODO:  Make this test assert something, what is this a test of?
     //!  TODO:  Add doc-comment explaining what constraints this test

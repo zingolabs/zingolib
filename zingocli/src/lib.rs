@@ -1,4 +1,7 @@
 #![forbid(unsafe_code)]
+
+//! zingo-cli is a library providing functionality specific to command line interfaces, and a simple command
+//! line interface binary that consumes that library.
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, RwLock};
 
