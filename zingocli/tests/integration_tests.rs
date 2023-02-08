@@ -8,7 +8,27 @@ use tokio::runtime::Runtime;
 use utils::scenarios;
 
 #[test]
-fn compare_sync_times() {}
+fn compare_sync_times() {
+    //! How long does it take to sync?  Given which params?
+    let (regtest_manager, child_process_handler, mut client_builder) = scenarios::funded_client();
+    let empty_client =
+        client_builder.build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false);
+    Runtime::new().unwrap().block_on(async {
+        // Ensure that the client has confirmed spendable funds
+        let then = std::time::Instant::now();
+        utils::increase_server_height(&regtest_manager, 5000).await;
+        let now = std::time::Instant::now();
+        let duration = now - then;
+        println!("Height 5000, Batch Size 100 No Transactions Received:");
+        println!("{:?}", duration);
+        let then = std::time::Instant::now();
+        utils::increase_height_and_sync_client(&regtest_manager, &empty_client, 0).await;
+        let now = std::time::Instant::now();
+        let duration = now - then;
+        println!("{:?}", duration);
+    });
+    drop(child_process_handler);
+}
 
 #[test]
 fn zcashd_sapling_commitment_tree() {
