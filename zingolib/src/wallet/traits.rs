@@ -890,7 +890,7 @@ where
         transaction_id: TxId,
         note_and_metadata: &D::WalletNote,
         anchor_offset: usize,
-        spend_key: &Option<D::SpendingKey>,
+        spend_key: Option<&D::SpendingKey>,
     ) -> Option<Self> {
         // Include only notes that haven't been spent, or haven't been included in an unconfirmed spend yet.
         if note_and_metadata.spent().is_none()
@@ -909,7 +909,7 @@ where
                     *note_and_metadata.diversifier(),
                     note_and_metadata.note().clone(),
                     w.clone(),
-                    spend_key.clone().unwrap(),
+                    spend_key,
                 )
             })
         } else {
@@ -924,14 +924,14 @@ where
         diversifier: <D::WalletNote as ReceivedNoteAndMetadata>::Diversifier,
         note: D::Note,
         witness: IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node>,
-        sk: D::SpendingKey,
+        sk: Option<&D::SpendingKey>,
     ) -> Self;
     fn transaction_id(&self) -> TxId;
     fn nullifier(&self) -> <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier;
     fn diversifier(&self) -> <D::WalletNote as ReceivedNoteAndMetadata>::Diversifier;
     fn note(&self) -> &D::Note;
     fn witness(&self) -> &IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node>;
-    fn spend_key(&self) -> &D::SpendingKey;
+    fn spend_key(&self) -> Option<&D::SpendingKey>;
 }
 
 impl SpendableNote<SaplingDomain<ChainType>> for SpendableSaplingNote {
@@ -941,7 +941,7 @@ impl SpendableNote<SaplingDomain<ChainType>> for SpendableSaplingNote {
         diversifier: SaplingDiversifier,
         note: SaplingNote,
         witness: IncrementalWitness<SaplingNode>,
-        extsk: SaplingExtendedSpendingKey,
+        extsk: Option<&SaplingExtendedSpendingKey>,
     ) -> Self {
         SpendableSaplingNote {
             transaction_id,
@@ -949,7 +949,7 @@ impl SpendableNote<SaplingDomain<ChainType>> for SpendableSaplingNote {
             diversifier,
             note,
             witness,
-            extsk,
+            extsk: extsk.cloned(),
         }
     }
 
@@ -973,8 +973,8 @@ impl SpendableNote<SaplingDomain<ChainType>> for SpendableSaplingNote {
         &self.witness
     }
 
-    fn spend_key(&self) -> &SaplingExtendedSpendingKey {
-        &self.extsk
+    fn spend_key(&self) -> Option<&SaplingExtendedSpendingKey> {
+        self.extsk.as_ref()
     }
 }
 
@@ -985,7 +985,7 @@ impl SpendableNote<OrchardDomain> for SpendableOrchardNote {
         diversifier: OrchardDiversifier,
         note: OrchardNote,
         witness: IncrementalWitness<MerkleHashOrchard>,
-        sk: OrchardSpendingKey,
+        sk: Option<&OrchardSpendingKey>,
     ) -> Self {
         SpendableOrchardNote {
             transaction_id,
@@ -993,7 +993,7 @@ impl SpendableNote<OrchardDomain> for SpendableOrchardNote {
             diversifier,
             note,
             witness,
-            spend_key: sk,
+            spend_key: sk.cloned(),
         }
     }
     fn transaction_id(&self) -> TxId {
@@ -1016,8 +1016,8 @@ impl SpendableNote<OrchardDomain> for SpendableOrchardNote {
         &self.witness
     }
 
-    fn spend_key(&self) -> &OrchardSpendingKey {
-        &self.spend_key
+    fn spend_key(&self) -> Option<&OrchardSpendingKey> {
+        self.spend_key.as_ref()
     }
 }
 
