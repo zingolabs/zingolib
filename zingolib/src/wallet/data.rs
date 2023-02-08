@@ -752,7 +752,7 @@ pub struct SpendableSaplingNote {
     pub diversifier: SaplingDiversifier,
     pub note: SaplingNote,
     pub witness: IncrementalWitness<SaplingNode>,
-    pub extsk: ExtendedSpendingKey,
+    pub extsk: Option<ExtendedSpendingKey>,
 }
 
 pub struct SpendableOrchardNote {
@@ -761,7 +761,7 @@ pub struct SpendableOrchardNote {
     pub diversifier: OrchardDiversifier,
     pub note: OrchardNote,
     pub witness: IncrementalWitness<MerkleHashOrchard>,
-    pub spend_key: OrchardSpendingKey,
+    pub spend_key: Option<OrchardSpendingKey>,
 }
 
 // Struct that tracks the latest and historical price of ZEC in the wallet
