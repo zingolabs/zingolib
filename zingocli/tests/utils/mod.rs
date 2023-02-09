@@ -17,7 +17,7 @@ async fn get_synced_wallet_height(client: &LightClient) -> u32 {
 fn poll_server_height(manager: &RegtestManager) -> JsonValue {
     let temp_tips = manager.get_chain_tip().unwrap().stdout;
     let tips = json::parse(&String::from_utf8_lossy(&temp_tips)).unwrap();
-    dbg!(tips[0]["height"].clone())
+    tips[0]["height"].clone()
 }
 // This function _DOES NOT SYNC THE CLIENT/WALLET_.
 pub async fn increase_server_height(manager: &RegtestManager, n: u32) {
@@ -29,7 +29,7 @@ pub async fn increase_server_height(manager: &RegtestManager, n: u32) {
     let mut count = 0;
     while poll_server_height(&manager).as_fixed_point_u64(2).unwrap() < target {
         sleep(Duration::from_millis(50)).await;
-        count = dbg!(count + 1);
+        count = count + 1;
     }
 }
 // This function increases the chain height reliably (with polling) but
@@ -88,7 +88,6 @@ pub mod scenarios {
                     regtest_manager.zingo_datadir.clone(),
                     data::seeds::ABANDON_ART_SEED,
                 );
-                dbg!(&regtest_manager.zcashd_config);
                 let child_process_handler = None;
                 Self {
                     test_env,
@@ -142,7 +141,6 @@ pub mod scenarios {
                     self.zingo_datadir.to_string_lossy().to_string(),
                     self.client_number
                 );
-                dbg!(&conf_path);
                 std::fs::create_dir(&conf_path).unwrap();
 
                 zingolib::create_zingoconf_from_datadir(self.server_id.clone(), Some(conf_path))
@@ -204,8 +202,6 @@ pub mod scenarios {
             }
             pub(crate) fn create_unfunded_zcash_conf(&self) -> PathBuf {
                 //! Side effect only fn, writes to FS.
-                dbg!(&self.zcashd_rpcservice_port);
-                dbg!(&self.lightwalletd_rpcservice_port);
                 self.write_contents_and_return_path(
                     "zcash",
                     data::config_template_fillers::zcashd::basic(&self.zcashd_rpcservice_port, ""),
@@ -255,20 +251,45 @@ pub mod scenarios {
     /// and zcashd (in regtest mode). This setup is intended to produce the most basic  
     /// of scenarios.  As scenarios with even less requirements
     /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
-    pub fn sapling_funded_client() -> (RegtestManager, ChildProcessHandler, setup::ClientBuilder) {
-        let mut sb = setup::ScenarioBuilder::new();
-        //tracing_subscriber::fmt::init();
-        sb.test_env
-            .create_funded_zcash_conf(REGSAP_ADDR_FROM_ABANDONART);
-        sb.test_env.create_lightwalletd_conf();
-        sb.launch();
-        (
-            sb.regtest_manager,
-            sb.child_process_handler.unwrap(),
-            sb.client_builder,
-        )
-    }
+    pub mod mineraddress {
+        use super::*;
+        pub fn sapling() -> (RegtestManager, ChildProcessHandler, setup::ClientBuilder) {
+            let mut sb = setup::ScenarioBuilder::new();
+            //tracing_subscriber::fmt::init();
+            sb.test_env
+                .create_funded_zcash_conf(REGSAP_ADDR_FROM_ABANDONART);
+            sb.test_env.create_lightwalletd_conf();
+            sb.launch();
+            (
+                sb.regtest_manager,
+                sb.child_process_handler.unwrap(),
+                sb.client_builder,
+            )
+        }
+        pub fn empty() -> (RegtestManager, ChildProcessHandler, LightClient) {
+            let mut scenario_builder = setup::ScenarioBuilder::new();
+            scenario_builder.test_env.create_unfunded_zcash_conf();
+            scenario_builder.test_env.create_lightwalletd_conf();
+            scenario_builder.launch();
+            (
+                scenario_builder.regtest_manager,
+                scenario_builder.child_process_handler.unwrap(),
+                scenario_builder.client_builder.build_unfunded_client(0),
+            )
+        }
 
+        pub fn taddr() -> (RegtestManager, ChildProcessHandler, LightClient) {
+            let mut scenario_builder = setup::ScenarioBuilder::new();
+            scenario_builder.test_env.create_unfunded_zcash_conf();
+            scenario_builder.test_env.create_lightwalletd_conf();
+            scenario_builder.launch();
+            (
+                scenario_builder.regtest_manager,
+                scenario_builder.child_process_handler.unwrap(),
+                scenario_builder.client_builder.build_unfunded_client(0),
+            )
+        }
+    }
     #[cfg(feature = "cross_version")]
     pub fn saplingcoinbasebacked_spendcapable_cross_version(
     ) -> (RegtestManager, ChildProcessHandler, LightClient, String) {
@@ -311,7 +332,7 @@ pub mod scenarios {
         ChildProcessHandler,
         setup::ClientBuilder,
     ) {
-        let (regtest_manager, child_process_handler, mut client_builder) = sapling_funded_client();
+        let (regtest_manager, child_process_handler, mut client_builder) = mineraddress::sapling();
         let client_one = client_builder.build_funded_client(0, false);
         let seed_phrase_of_two = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
             .unwrap()
@@ -361,19 +382,6 @@ pub mod scenarios {
             current_client,
             fixed_taddr_client,
             child_process_handler,
-        )
-    }
-
-    pub fn basic_no_spendable() -> (RegtestManager, ChildProcessHandler, LightClient) {
-        let mut scenario_builder = setup::ScenarioBuilder::new();
-        dbg!("scenario_built");
-        scenario_builder.test_env.create_unfunded_zcash_conf();
-        scenario_builder.test_env.create_lightwalletd_conf();
-        scenario_builder.launch();
-        (
-            scenario_builder.regtest_manager,
-            scenario_builder.child_process_handler.unwrap(),
-            scenario_builder.client_builder.build_unfunded_client(0),
         )
     }
 }

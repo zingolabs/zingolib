@@ -5,24 +5,15 @@ mod utils;
 use data::seeds::HOSPITAL_MUSEUM_SEED;
 use json::JsonValue;
 use tokio::runtime::Runtime;
-use utils::scenarios;
 
 #[test]
-fn compare_sync_times() {
-    //! How long does it take to sync?  Given which params?
-    let (regtest_manager, child_process_handler, mut client_builder) = scenarios::funded_client();
-    let empty_client =
-        client_builder.build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false);
+fn generate_one_block_with_no_funds_controller() {
+    let (regtest_manager, child_process_handler, mut _client_builder) =
+        scenarios::mineraddress::empty();
     Runtime::new().unwrap().block_on(async {
         // Ensure that the client has confirmed spendable funds
         let then = std::time::Instant::now();
-        utils::increase_server_height(&regtest_manager, 5000).await;
-        let now = std::time::Instant::now();
-        let duration = now - then;
-        println!("Height 5000, Batch Size 100 No Transactions Received:");
-        println!("{:?}", duration);
-        let then = std::time::Instant::now();
-        utils::increase_height_and_sync_client(&regtest_manager, &empty_client, 0).await;
+        utils::increase_server_height(&regtest_manager, 1).await;
         let now = std::time::Instant::now();
         let duration = now - then;
         println!("{:?}", duration);
@@ -31,12 +22,41 @@ fn compare_sync_times() {
 }
 
 #[test]
+fn generate_one_block_with_taddr_controller() {
+    let (regtest_manager, child_process_handler, mut _client_builder) =
+        scenarios::mineraddress::empty();
+    Runtime::new().unwrap().block_on(async {
+        // Ensure that the client has confirmed spendable funds
+        let then = std::time::Instant::now();
+        utils::increase_server_height(&regtest_manager, 1).await;
+        let now = std::time::Instant::now();
+        let duration = now - then;
+        println!("{:?}", duration);
+    });
+    drop(child_process_handler);
+}
+
+#[test]
+fn generate_one_block_with_sapling_controller() {
+    let (regtest_manager, child_process_handler, mut _client_builder) =
+        scenarios::mineraddress::sapling();
+    Runtime::new().unwrap().block_on(async {
+        // Ensure that the client has confirmed spendable funds
+        let then = std::time::Instant::now();
+        utils::increase_server_height(&regtest_manager, 1).await;
+        let now = std::time::Instant::now();
+        let duration = now - then;
+        println!("{:?}", duration);
+    });
+    drop(child_process_handler);
+}
+#[test]
 fn zcashd_sapling_commitment_tree() {
     //!  TODO:  Make this test assert something, what is this a test of?
     //!  TODO:  Add doc-comment explaining what constraints this test
     //!  enforces
     let (regtest_manager, child_process_handler, _client_builder) =
-        scenarios::sapling_funded_client();
+        scenarios::mineraddress::sapling();
     let trees = regtest_manager
         .get_cli_handle()
         .args(["z_gettreestate", "1"])
@@ -57,7 +77,7 @@ fn verify_old_wallet_uses_server_height_in_send() {
     //! the wrong height to use!  The correct height is the
     //! "mempool height" which is the server_height + 1
     let (regtest_manager, child_process_handler, mut client_builder) =
-        scenarios::sapling_funded_client();
+        scenarios::mineraddress::sapling();
     let client_sending = client_builder.build_funded_client(0, false);
     let client_receiving =
         client_builder.build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false);
@@ -95,7 +115,7 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
         "ae2935f1dfd8a24aed7c70df7de3a668eb7a49b1319880dde2bbd9031ae5d82f";
     let finalstates = "000000";
     // Setup
-    let (regtest_manager, child_process_handler, _client) = scenarios::basic_no_spendable();
+    let (regtest_manager, child_process_handler, _client) = scenarios::mineraddress::empty();
     // Execution:
     let trees = regtest_manager
         .get_cli_handle()
@@ -135,7 +155,7 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
 #[test]
 fn mine_sapling_to_self() {
     let (regtest_manager, child_process_handler, mut client_builder) =
-        scenarios::sapling_funded_client();
+        scenarios::mineraddress::sapling();
     let client = client_builder.build_funded_client(0, false);
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
@@ -153,7 +173,7 @@ fn send_mined_sapling_to_orchard() {
     //! consistent with all the notes in the relevant block changing state.
     //! NOTE that the balance doesn't give insight into the distribution across notes.
     let (regtest_manager, child_process_handler, mut client_builder) =
-        scenarios::sapling_funded_client();
+        scenarios::mineraddress::sapling();
     let client = client_builder.build_funded_client(0, false);
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
@@ -680,7 +700,7 @@ fn rescan_still_have_outgoing_metadata() {
 #[test]
 fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
     let (regtest_manager, child_process_handler, mut client_builder) =
-        scenarios::sapling_funded_client();
+        scenarios::mineraddress::sapling();
     let client = client_builder.build_funded_client(0, false);
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
@@ -848,7 +868,7 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
 #[test]
 fn ensure_taddrs_from_old_seeds_work() {
     let (_regtest_manager, child_process_handler, mut client_builder) =
-        scenarios::sapling_funded_client();
+        scenarios::mineraddress::sapling();
     // The first taddr generated on commit 9e71a14eb424631372fd08503b1bd83ea763c7fb
     let transparent_address = "tmFLszfkjgim4zoUMAXpuohnFBAKy99rr2i";
 
