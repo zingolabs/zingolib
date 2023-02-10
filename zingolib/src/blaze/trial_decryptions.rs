@@ -7,7 +7,7 @@ use crate::{
     compact_formats::{CompactBlock, CompactTx},
     wallet::{
         data::{PoolNullifier, TransactionMetadata},
-        keys::unified::UnifiedSpendCapability,
+        keys::unified::WalletCapability,
         traits::{CompactOutput as _, DomainWalletExt, ReceivedNoteAndMetadata as _},
         transactions::TransactionMetadataSet,
         MemoDownloadOption,
@@ -35,7 +35,7 @@ use zingoconfig::ZingoConfig;
 use super::syncdata::BlazeSyncData;
 
 pub struct TrialDecryptions {
-    usc: Arc<RwLock<UnifiedSpendCapability>>,
+    wc: Arc<RwLock<WalletCapability>>,
     transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
     config: Arc<ZingoConfig>,
 }
@@ -43,12 +43,12 @@ pub struct TrialDecryptions {
 impl TrialDecryptions {
     pub fn new(
         config: Arc<ZingoConfig>,
-        usc: Arc<RwLock<UnifiedSpendCapability>>,
+        wc: Arc<RwLock<WalletCapability>>,
         transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
     ) -> Self {
         Self {
             config,
-            usc,
+            wc,
             transaction_metadata_set,
         }
     }
@@ -75,7 +75,7 @@ impl TrialDecryptions {
         // Create a new channel where we'll receive the blocks
         let (transmitter, mut receiver) = unbounded_channel::<CompactBlock>();
 
-        let usc = self.usc.clone();
+        let wc = self.wc.clone();
         let transaction_metadata_set = self.transaction_metadata_set.clone();
 
         let config = self.config.clone();
@@ -83,8 +83,8 @@ impl TrialDecryptions {
             let mut workers = FuturesUnordered::new();
             let mut cbs = vec![];
 
-            let sapling_ivk = SaplingIvk::from(&*usc.read().await);
-            let orchard_ivk = orchard::keys::IncomingViewingKey::from(&*usc.read().await);
+            let sapling_ivk = SaplingIvk::try_from(&*wc.read().await).ok();
+            let orchard_ivk = orchard::keys::IncomingViewingKey::try_from(&*wc.read().await).ok();
 
             while let Some(cb) = receiver.recv().await {
                 cbs.push(cb);
@@ -92,7 +92,7 @@ impl TrialDecryptions {
                 if cbs.len() >= 125 {
                     // We seem to have enough to delegate to a new thread.
                     // Why 1000?
-                    let usc = usc.clone();
+                    let wc = wc.clone();
                     let sapling_ivk = sapling_ivk.clone();
                     let orchard_ivk = orchard_ivk.clone();
                     let transaction_metadata_set = transaction_metadata_set.clone();
@@ -103,7 +103,7 @@ impl TrialDecryptions {
                     workers.push(tokio::spawn(Self::trial_decrypt_batch(
                         config,
                         cbs.split_off(0), // This allocates all received cbs to the spawn.
-                        usc,
+                        wc,
                         bsync_data,
                         sapling_ivk,
                         orchard_ivk,
@@ -118,7 +118,7 @@ impl TrialDecryptions {
             workers.push(tokio::spawn(Self::trial_decrypt_batch(
                 config,
                 cbs,
-                usc,
+                wc,
                 bsync_data,
                 sapling_ivk,
                 orchard_ivk,
@@ -144,10 +144,10 @@ impl TrialDecryptions {
     async fn trial_decrypt_batch(
         config: Arc<ZingoConfig>,
         compact_blocks: Vec<CompactBlock>,
-        usc: Arc<RwLock<UnifiedSpendCapability>>,
+        wc: Arc<RwLock<WalletCapability>>,
         bsync_data: Arc<RwLock<BlazeSyncData>>,
-        sapling_ivk: SaplingIvk,
-        orchard_ivk: OrchardIvk,
+        sapling_ivk: Option<SaplingIvk>,
+        orchard_ivk: Option<OrchardIvk>,
         transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
         transaction_size_filter: Option<u32>,
         detected_transaction_id_sender: UnboundedSender<(
@@ -178,35 +178,41 @@ impl TrialDecryptions {
                 }
                 let mut transaction_metadata = false;
 
-                Self::trial_decrypt_domain_specific_outputs::<SaplingDomain<zingoconfig::ChainType>>(
-                    &mut transaction_metadata,
-                    &compact_transaction,
-                    transaction_num,
-                    &compact_block,
-                    sapling_ivk.clone(),
-                    height,
-                    &config,
-                    &usc,
-                    &bsync_data,
-                    &transaction_metadata_set,
-                    &detected_transaction_id_sender,
-                    &workers,
-                );
+                if sapling_ivk.is_some() {
+                    Self::trial_decrypt_domain_specific_outputs::<
+                        SaplingDomain<zingoconfig::ChainType>,
+                    >(
+                        &mut transaction_metadata,
+                        &compact_transaction,
+                        transaction_num,
+                        &compact_block,
+                        sapling_ivk.clone().unwrap(),
+                        height,
+                        &config,
+                        &wc,
+                        &bsync_data,
+                        &transaction_metadata_set,
+                        &detected_transaction_id_sender,
+                        &workers,
+                    );
+                }
 
-                Self::trial_decrypt_domain_specific_outputs::<OrchardDomain>(
-                    &mut transaction_metadata,
-                    &compact_transaction,
-                    transaction_num,
-                    &compact_block,
-                    orchard_ivk.clone(),
-                    height,
-                    &config,
-                    &usc,
-                    &bsync_data,
-                    &transaction_metadata_set,
-                    &detected_transaction_id_sender,
-                    &workers,
-                );
+                if orchard_ivk.is_some() {
+                    Self::trial_decrypt_domain_specific_outputs::<OrchardDomain>(
+                        &mut transaction_metadata,
+                        &compact_transaction,
+                        transaction_num,
+                        &compact_block,
+                        orchard_ivk.clone().unwrap(),
+                        height,
+                        &config,
+                        &wc,
+                        &bsync_data,
+                        &transaction_metadata_set,
+                        &detected_transaction_id_sender,
+                        &workers,
+                    );
+                }
 
                 // Check option to see if we are fetching all transactions.
                 // grabs all memos regardless of decryption status.
@@ -250,7 +256,7 @@ impl TrialDecryptions {
         ivk: D::IncomingViewingKey,
         height: BlockHeight,
         config: &zingoconfig::ZingoConfig,
-        usc: &Arc<RwLock<UnifiedSpendCapability>>,
+        wc: &Arc<RwLock<WalletCapability>>,
         bsync_data: &Arc<RwLock<BlazeSyncData>>,
         transaction_metadata_set: &Arc<RwLock<TransactionMetadataSet>>,
         detected_transaction_id_sender: &UnboundedSender<(
@@ -276,7 +282,7 @@ impl TrialDecryptions {
             if let (i, Some(((note, to), _ivk_num))) = maybe_decrypted_output {
                 *transaction_metadata = true; // i.e. we got metadata
 
-                let usc = usc.clone();
+                let wc = wc.clone();
                 let bsync_data = bsync_data.clone();
                 let transaction_metadata_set = transaction_metadata_set.clone();
                 let detected_transaction_id_sender = detected_transaction_id_sender.clone();
@@ -285,8 +291,11 @@ impl TrialDecryptions {
                 let config = config.clone();
 
                 workers.push(tokio::spawn(async move {
-                    let usc = usc.read().await;
-                    let fvk = D::usc_to_fvk(&*usc);
+                    let wc = wc.read().await;
+                    let Ok(fvk) = D::wc_to_fvk(&*wc) else {
+                        // skip any scanning if the wallet doesn't have viewing capability
+                        return Ok::<_, String>(());
+                    };
 
                     // We don't have fvk import, all our keys are spending
                     let have_spending_key = true;
