@@ -1,6 +1,6 @@
 use crate::compact_formats::RawTransaction;
 use crate::wallet::keys::address_from_pubkeyhash;
-use crate::wallet::keys::unified::UnifiedSpendCapability;
+use crate::wallet::keys::unified::WalletCapability;
 
 use std::sync::Arc;
 use tokio::join;
@@ -19,13 +19,13 @@ use zcash_primitives::transaction::Transaction;
 use zingoconfig::ZingoConfig;
 
 pub struct FetchTaddrTransactions {
-    usc: Arc<RwLock<UnifiedSpendCapability>>,
+    wc: Arc<RwLock<WalletCapability>>,
     config: Arc<ZingoConfig>,
 }
 
 impl FetchTaddrTransactions {
-    pub fn new(usc: Arc<RwLock<UnifiedSpendCapability>>, config: Arc<ZingoConfig>) -> Self {
-        Self { usc, config }
+    pub fn new(wc: Arc<RwLock<WalletCapability>>, config: Arc<ZingoConfig>) -> Self {
+        Self { wc, config }
     }
 
     pub async fn start(
@@ -39,10 +39,10 @@ impl FetchTaddrTransactions {
         full_transaction_scanner: UnboundedSender<(Transaction, BlockHeight)>,
         network: impl Parameters + Send + Copy + 'static,
     ) -> JoinHandle<Result<(), String>> {
-        let usc = self.usc.clone();
+        let wc = self.wc.clone();
         let config = self.config.clone();
         tokio::spawn(async move {
-            let taddrs = usc
+            let taddrs = wc
                 .read()
                 .await
                 .addresses()

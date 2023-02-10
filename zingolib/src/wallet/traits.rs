@@ -6,7 +6,7 @@ use super::{
         PoolNullifier, ReceivedOrchardNoteAndMetadata, ReceivedSaplingNoteAndMetadata,
         SpendableOrchardNote, SpendableSaplingNote, TransactionMetadata, WitnessCache,
     },
-    keys::unified::UnifiedSpendCapability,
+    keys::unified::WalletCapability,
     transactions::TransactionMetadataSet,
 };
 use crate::compact_formats::{
@@ -729,7 +729,7 @@ where
         + Diversifiable<Note = Self::WalletNote, Address = Self::Recipient>
         + PartialEq;
 
-    type SpendingKey: for<'a> From<&'a UnifiedSpendCapability> + Clone;
+    type SpendingKey: for<'a> TryFrom<&'a WalletCapability> + Clone;
     type CompactOutput: CompactOutput<Self>;
     type WalletNote: ReceivedNoteAndMetadata<
         Fvk = Self::Fvk,
@@ -743,14 +743,14 @@ where
 
     fn to_notes_vec_mut(_: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote>;
     fn ua_from_contained_receiver<'a>(
-        unified_spend_auth: &'a UnifiedSpendCapability,
+        unified_spend_auth: &'a WalletCapability,
         receiver: &Self::Recipient,
     ) -> Option<&'a UnifiedAddress>;
     fn get_tree(tree_state: &TreeState) -> &String;
-    fn usc_to_sk(usc: &UnifiedSpendCapability) -> Self::SpendingKey;
-    fn usc_to_fvk(usc: &UnifiedSpendCapability) -> Self::Fvk;
-    fn usc_to_ivk(usc: &UnifiedSpendCapability) -> Self::IncomingViewingKey;
-    fn usc_to_ovk(usc: &UnifiedSpendCapability) -> Self::OutgoingViewingKey;
+    fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String>;
+    fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, String>;
+    fn wc_to_ivk(wc: &WalletCapability) -> Result<Self::IncomingViewingKey, String>;
+    fn wc_to_ovk(wc: &WalletCapability) -> Result<Self::OutgoingViewingKey, String>;
 }
 
 impl DomainWalletExt for SaplingDomain<ChainType> {
@@ -773,7 +773,7 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
     }
 
     fn ua_from_contained_receiver<'a>(
-        unified_spend_auth: &'a UnifiedSpendCapability,
+        unified_spend_auth: &'a WalletCapability,
         receiver: &Self::Recipient,
     ) -> Option<&'a UnifiedAddress> {
         unified_spend_auth
@@ -785,17 +785,17 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
     fn get_tree(tree_state: &TreeState) -> &String {
         &tree_state.sapling_tree
     }
-    fn usc_to_sk(usc: &UnifiedSpendCapability) -> Self::SpendingKey {
-        Self::SpendingKey::from(usc)
+    fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String> {
+        Self::SpendingKey::try_from(wc)
     }
-    fn usc_to_fvk(usc: &UnifiedSpendCapability) -> Self::Fvk {
-        Self::Fvk::from(usc)
+    fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, String> {
+        Self::Fvk::try_from(wc)
     }
-    fn usc_to_ivk(usc: &UnifiedSpendCapability) -> Self::IncomingViewingKey {
-        Self::IncomingViewingKey::from(usc)
+    fn wc_to_ivk(wc: &WalletCapability) -> Result<Self::IncomingViewingKey, String> {
+        Self::IncomingViewingKey::try_from(wc)
     }
-    fn usc_to_ovk(usc: &UnifiedSpendCapability) -> Self::OutgoingViewingKey {
-        Self::OutgoingViewingKey::from(usc)
+    fn wc_to_ovk(wc: &WalletCapability) -> Result<Self::OutgoingViewingKey, String> {
+        Self::OutgoingViewingKey::try_from(wc)
     }
 }
 
@@ -819,7 +819,7 @@ impl DomainWalletExt for OrchardDomain {
     }
 
     fn ua_from_contained_receiver<'a>(
-        unified_spend_capability: &'a UnifiedSpendCapability,
+        unified_spend_capability: &'a WalletCapability,
         receiver: &Self::Recipient,
     ) -> Option<&'a UnifiedAddress> {
         unified_spend_capability
@@ -831,17 +831,17 @@ impl DomainWalletExt for OrchardDomain {
     fn get_tree(tree_state: &TreeState) -> &String {
         &tree_state.orchard_tree
     }
-    fn usc_to_sk(usc: &UnifiedSpendCapability) -> Self::SpendingKey {
-        Self::SpendingKey::from(usc)
+    fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String> {
+        Self::SpendingKey::try_from(wc)
     }
-    fn usc_to_fvk(usc: &UnifiedSpendCapability) -> Self::Fvk {
-        Self::Fvk::from(usc)
+    fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, String> {
+        Self::Fvk::try_from(wc)
     }
-    fn usc_to_ivk(usc: &UnifiedSpendCapability) -> Self::IncomingViewingKey {
-        Self::IncomingViewingKey::from(usc)
+    fn wc_to_ivk(wc: &WalletCapability) -> Result<Self::IncomingViewingKey, String> {
+        Self::IncomingViewingKey::try_from(wc)
     }
-    fn usc_to_ovk(usc: &UnifiedSpendCapability) -> Self::OutgoingViewingKey {
-        Self::OutgoingViewingKey::from(usc)
+    fn wc_to_ovk(wc: &WalletCapability) -> Result<Self::OutgoingViewingKey, String> {
+        Self::OutgoingViewingKey::try_from(wc)
     }
 }
 
@@ -1039,6 +1039,38 @@ pub trait ReadableWriteable<Input>: Sized {
         } else {
             Ok(version)
         }
+    }
+}
+
+impl ReadableWriteable<()> for OrchardSpendingKey {
+    const VERSION: u8 = 0; //Not applicable
+
+    fn read<R: Read>(mut reader: R, _: ()) -> io::Result<Self> {
+        let mut data = [0u8; 32];
+        reader.read_exact(&mut data)?;
+
+        Option::from(Self::from_bytes(data)).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Unable to deserialize a valid Orchard SpendingKey from bytes".to_owned(),
+            )
+        })
+    }
+
+    fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+        writer.write_all(self.to_bytes())
+    }
+}
+
+impl ReadableWriteable<()> for SaplingExtendedSpendingKey {
+    const VERSION: u8 = 0; //Not applicable
+
+    fn read<R: Read>(reader: R, _: ()) -> io::Result<Self> {
+        Self::read(reader)
+    }
+
+    fn write<W: Write>(&self, writer: W) -> io::Result<()> {
+        self.write(writer)
     }
 }
 
