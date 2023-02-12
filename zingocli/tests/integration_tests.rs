@@ -378,10 +378,11 @@ fn rescan_still_have_outgoing_metadata() {
         scenarios::two_clients_one_saplingcoinbase_backed();
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client_one, 5).await;
-        let sapling_addr_of_two = client_two.do_new_address("tz").await.unwrap();
+        let sapling_addr_of_two =
+            client_two.do_addresses().await[0]["receivers"]["sapling"].to_string();
         client_one
             .do_send(vec![(
-                sapling_addr_of_two[0].as_str().unwrap(),
+                sapling_addr_of_two.as_str(),
                 1_000,
                 Some("foo".to_string()),
             )])
