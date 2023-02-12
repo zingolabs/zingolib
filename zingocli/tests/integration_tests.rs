@@ -42,7 +42,7 @@ fn verify_old_wallet_uses_server_height_in_send() {
 
         // Without sync push server forward 100 blocks
         utils::increase_server_height(&regtest_manager, 100).await;
-        let ua = client_receiving.do_new_address("o").await.unwrap()[0].to_string();
+        let orchard_receiver = client_receiving.do_addresses().await[0]["address"].take();
         let client_wallet_height = client_sending.do_wallet_last_scanned_height().await;
 
         // Verify that wallet is still back at 6.
@@ -50,7 +50,11 @@ fn verify_old_wallet_uses_server_height_in_send() {
 
         // Interrupt generating send
         client_sending
-            .do_send(vec![(&ua, 10_000, Some("Interrupting sync!!".to_string()))])
+            .do_send(vec![(
+                &orchard_receiver.to_string().as_str(),
+                10_000,
+                Some("Interrupting sync!!".to_string()),
+            )])
             .await
             .unwrap();
     });
@@ -128,7 +132,7 @@ fn send_mined_sapling_to_orchard() {
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
 
-        let o_addr = client.do_new_address("o").await.unwrap()[0].take();
+        let o_addr = client.do_addresses().await[0]["address"].take();
         let amount_to_send = 5_000;
         client
             .do_send(vec![(
