@@ -15,7 +15,11 @@ pub mod seeds {
     pub const HOSPITAL_MUSEUM_SEED: &str = "hospital museum valve antique skate museum \
      unfold vocal weird milk scale social vessel identify \
      crowd hospital control album rib bulb path oven civil tank";
+    pub const MINERTO_TADDR_SEED: &str = "helmet broken lock river outdoor galaxy fossil \
+     home nature decline electric stay hour reveal always \
+     fiber equip charge sorry town senior guitar leaf trip";
 }
+pub const TADDRESS_FROM_MINERTO_TADDR_SEED: &str = "tmGsB15HXVHpmAH4HfoL1h8VRYi6F8M3Lfz";
 pub const REGSAP_ADDR_FROM_ABANDONART: &str =
     "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
 pub mod config_template_fillers {

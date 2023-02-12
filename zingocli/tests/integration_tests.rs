@@ -2,6 +2,8 @@
 #![cfg(feature = "local_env")]
 mod data;
 mod utils;
+use std::time::Duration;
+
 use data::seeds::HOSPITAL_MUSEUM_SEED;
 use json::JsonValue;
 use tokio::runtime::Runtime;
@@ -24,14 +26,22 @@ fn generate_one_block_with_no_funds_controller() {
 #[test]
 fn generate_one_block_with_taddr_controller() {
     let (regtest_manager, child_process_handler, mut _client_builder) =
-        scenarios::mineraddress::empty();
+        scenarios::mineraddress::transparent_address();
     Runtime::new().unwrap().block_on(async {
-        // Ensure that the client has confirmed spendable funds
-        let then = std::time::Instant::now();
-        utils::increase_server_height(&regtest_manager, 1).await;
-        let now = std::time::Instant::now();
-        let duration = now - then;
-        println!("{:?}", duration);
+        let mut times = vec![];
+        for _ in 1..=100 {
+            // Ensure that the client has confirmed spendable funds
+            let then = std::time::Instant::now();
+            utils::increase_server_height(&regtest_manager, 1).await;
+            let now = std::time::Instant::now();
+            let duration = now - then;
+            //println!("{:?}", &duration);
+            times.push(duration);
+        }
+        times.remove(0);
+        let total_times = times.len();
+        let total = times.iter().fold(Duration::new(0, 0), |x, y| *y + x);
+        println!("{:?}", total.as_millis() / total_times as u128);
     });
     drop(child_process_handler);
 }
@@ -50,6 +60,7 @@ fn generate_one_block_with_sapling_controller() {
     });
     drop(child_process_handler);
 }
+
 #[test]
 fn zcashd_sapling_commitment_tree() {
     //!  TODO:  Make this test assert something, what is this a test of?
@@ -104,6 +115,7 @@ fn verify_old_wallet_uses_server_height_in_send() {
     });
     drop(child_process_handler);
 }
+
 #[test]
 fn actual_empty_zcashd_sapling_commitment_tree() {
     // Expectations:

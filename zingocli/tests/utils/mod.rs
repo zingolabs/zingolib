@@ -252,6 +252,8 @@ pub mod scenarios {
     /// of scenarios.  As scenarios with even less requirements
     /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
     pub mod mineraddress {
+        use crate::data::TADDRESS_FROM_MINERTO_TADDR_SEED;
+
         use super::*;
         pub fn sapling() -> (RegtestManager, ChildProcessHandler, setup::ClientBuilder) {
             let mut sb = setup::ScenarioBuilder::new();
@@ -266,19 +268,21 @@ pub mod scenarios {
                 sb.client_builder,
             )
         }
-        pub fn empty() -> (RegtestManager, ChildProcessHandler, LightClient) {
-            let mut scenario_builder = setup::ScenarioBuilder::new();
-            scenario_builder.test_env.create_unfunded_zcash_conf();
-            scenario_builder.test_env.create_lightwalletd_conf();
-            scenario_builder.launch();
+        pub fn transparent_address() -> (RegtestManager, ChildProcessHandler, setup::ClientBuilder)
+        {
+            let mut sb = setup::ScenarioBuilder::new();
+            //tracing_subscriber::fmt::init();
+            sb.test_env
+                .create_funded_zcash_conf(TADDRESS_FROM_MINERTO_TADDR_SEED);
+            sb.test_env.create_lightwalletd_conf();
+            sb.launch();
             (
-                scenario_builder.regtest_manager,
-                scenario_builder.child_process_handler.unwrap(),
-                scenario_builder.client_builder.build_unfunded_client(0),
+                sb.regtest_manager,
+                sb.child_process_handler.unwrap(),
+                sb.client_builder,
             )
         }
-
-        pub fn taddr() -> (RegtestManager, ChildProcessHandler, LightClient) {
+        pub fn empty() -> (RegtestManager, ChildProcessHandler, LightClient) {
             let mut scenario_builder = setup::ScenarioBuilder::new();
             scenario_builder.test_env.create_unfunded_zcash_conf();
             scenario_builder.test_env.create_lightwalletd_conf();
