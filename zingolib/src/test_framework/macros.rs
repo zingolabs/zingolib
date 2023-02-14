@@ -14,3 +14,21 @@ macro_rules! apply_scenario {
         );
     };
 }
+
+#[macro_export]
+macro_rules! get_address_string {
+    ($client:ident, $address_protocol:literal) => {
+        match $address_protocol {
+            "orchard" => $client.do_addresses().await[0]["address"]
+                .take()
+                .to_string(),
+            "sapling" => $client.do_addresses().await[0]["receivers"]["sapling"]
+                .clone()
+                .to_string(),
+            "transparent" => $client.do_addresses().await[0]["receivers"]["transparent"]
+                .clone()
+                .to_string(),
+            _ => "ERROR".to_string(),
+        }
+    };
+}
