@@ -22,6 +22,7 @@ macro_rules! apply_scenario {
 macro_rules! get_base_address {
     ($client:ident, $address_protocol:literal) => {
         match $address_protocol {
+            "unified" => $client.do_addresses().await[0].clone().to_string(),
             "orchard" => $client.do_addresses().await[0]["address"]
                 .take()
                 .to_string(),

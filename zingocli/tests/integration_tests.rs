@@ -194,13 +194,13 @@ fn note_selection_order() {
             .unwrap();
 
         utils::increase_height_and_sync_client(&regtest_manager, &client_2, 5).await;
-        let client_1_unifiedaddress = client_1.do_addresses().await[0]["address"].clone();
+        let client_1_orchard = get_base_address!(client_1, "orchard");
         // We know that the largest single note that 2 received from 1 was 3000, for 2 to send
         // 3000 back to 1 it will have to collect funds from two notes to pay the full 3000
         // plus the transaction fee.
         client_2
             .do_send(vec![(
-                &client_1_unifiedaddress.to_string(),
+                &client_1_orchard,
                 3000,
                 Some("Sending back, should have 2 inputs".to_string()),
             )])
