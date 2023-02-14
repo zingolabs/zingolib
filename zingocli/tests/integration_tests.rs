@@ -42,7 +42,6 @@ fn verify_old_wallet_uses_server_height_in_send() {
 
         // Without sync push server forward 100 blocks
         utils::increase_server_height(&regtest_manager, 100).await;
-        let orchard_receiver = get_base_address!(client_receiving, "orchard");
         let client_wallet_height = client_sending.do_wallet_last_scanned_height().await;
 
         // Verify that wallet is still back at 6.
@@ -51,7 +50,7 @@ fn verify_old_wallet_uses_server_height_in_send() {
         // Interrupt generating send
         client_sending
             .do_send(vec![(
-                &orchard_receiver.as_str(),
+                &get_base_address!(client_receiving, "orchard"),
                 10_000,
                 Some("Interrupting sync!!".to_string()),
             )])
