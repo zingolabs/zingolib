@@ -42,7 +42,7 @@ fn verify_old_wallet_uses_server_height_in_send() {
 
         // Without sync push server forward 100 blocks
         utils::increase_server_height(&regtest_manager, 100).await;
-        let orchard_receiver = get_address_string!(client_receiving, "orchard");
+        let orchard_receiver = get_base_address!(client_receiving, "orchard");
         let client_wallet_height = client_sending.do_wallet_last_scanned_height().await;
 
         // Verify that wallet is still back at 6.
@@ -132,11 +132,10 @@ fn send_mined_sapling_to_orchard() {
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
 
-        let o_addr = client.do_addresses().await[0]["address"].take();
         let amount_to_send = 5_000;
         client
             .do_send(vec![(
-                o_addr.to_string().as_str(),
+                get_base_address!(client, "orchard").as_str(),
                 amount_to_send,
                 Some("Scenario test: engage!".to_string()),
             )])
@@ -160,7 +159,7 @@ fn extract_value_as_u64(input: &JsonValue) -> u64 {
     note.clone()
 }
 use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
-use zingolib::get_address_string;
+use zingolib::get_base_address;
 
 #[test]
 fn note_selection_order() {
@@ -175,13 +174,7 @@ fn note_selection_order() {
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client_1, 5).await;
 
-        // Note that do_addresses returns an array, each element is a JSON representation
-        // of a UA.  Legacy addresses can be extracted from the receivers, per:
-        // <https://zips.z.cash/zip-0316>
-        //let client_2_saplingaddress = client_2.do_addresses().await[0]["receivers"]["sapling"]
-        //    .clone()
-        //    .to_string();
-        let client_2_saplingaddress = get_address_string!(client_2, "sapling");
+        let client_2_saplingaddress = get_base_address!(client_2, "sapling");
         // Send three transfers in increasing 1000 zat increments
         // These are sent from the coinbase funded client which will
         // subequently receive funding via it's orchard-packed UA.
@@ -405,7 +398,7 @@ fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
     let client = client_builder.build_funded_client(0, false);
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
-        let sapling_addr = get_address_string!(client, "sapling");
+        let sapling_addr = get_base_address!(client, "sapling");
         for memo in [None, Some("foo")] {
             client
                 .do_send(vec![(
@@ -574,9 +567,8 @@ fn ensure_taddrs_from_old_seeds_work() {
     let client_b = client_builder.build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false);
 
     Runtime::new().unwrap().block_on(async {
-        //client_b.do_new_address("zt").await.unwrap();
         assert_eq!(
-            get_address_string!(client_b, "transparent"),
+            get_base_address!(client_b, "transparent"),
             transparent_address
         )
     });
