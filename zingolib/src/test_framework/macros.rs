@@ -15,8 +15,11 @@ macro_rules! apply_scenario {
     };
 }
 
+// Note that do_addresses returns an array, each element is a JSON representation
+// of a UA.  Legacy addresses can be extracted from the receivers, per:
+// <https://zips.z.cash/zip-0316>
 #[macro_export]
-macro_rules! get_address_string {
+macro_rules! get_base_address {
     ($client:ident, $address_protocol:literal) => {
         match $address_protocol {
             "orchard" => $client.do_addresses().await[0]["address"]
