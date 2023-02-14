@@ -42,9 +42,7 @@ fn verify_old_wallet_uses_server_height_in_send() {
 
         // Without sync push server forward 100 blocks
         utils::increase_server_height(&regtest_manager, 100).await;
-        let orchard_receiver = client_receiving.do_addresses().await[0]["address"]
-            .take()
-            .to_string();
+        let orchard_receiver = get_address_string!(client_receiving, "orchard");
         let client_wallet_height = client_sending.do_wallet_last_scanned_height().await;
 
         // Verify that wallet is still back at 6.
@@ -576,11 +574,9 @@ fn ensure_taddrs_from_old_seeds_work() {
     let client_b = client_builder.build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false);
 
     Runtime::new().unwrap().block_on(async {
-        client_b.do_new_address("zt").await.unwrap();
-        let addresses = client_b.do_addresses().await;
-        println!("{}", json::stringify_pretty(addresses.clone(), 4));
+        //client_b.do_new_address("zt").await.unwrap();
         assert_eq!(
-            addresses[0]["receivers"]["transparent"].to_string(),
+            get_address_string!(client_b, "transparent"),
             transparent_address
         )
     });
