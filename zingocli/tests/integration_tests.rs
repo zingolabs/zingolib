@@ -283,9 +283,12 @@ fn send_orchard_back_and_forth() {
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client_a, 5).await;
 
-        let ua_of_b = client_b.do_addresses().await[0]["address"].to_string();
         client_a
-            .do_send(vec![(&ua_of_b, 10_000, Some("Orcharding".to_string()))])
+            .do_send(vec![(
+                &get_base_address!(client_b, "orchard"),
+                10_000,
+                Some("Orcharding".to_string()),
+            )])
             .await
             .unwrap();
 
@@ -299,9 +302,12 @@ fn send_orchard_back_and_forth() {
         );
         assert_eq!(client_b.do_balance().await["orchard_balance"], 10_000);
 
-        let ua_of_a = client_a.do_addresses().await[0]["address"].to_string();
         client_b
-            .do_send(vec![(&ua_of_a, 5_000, Some("Sending back".to_string()))])
+            .do_send(vec![(
+                &get_base_address!(client_a, "orchard"),
+                5_000,
+                Some("Sending back".to_string()),
+            )])
             .await
             .unwrap();
 
@@ -372,11 +378,9 @@ fn rescan_still_have_outgoing_metadata() {
         scenarios::two_clients_one_saplingcoinbase_backed();
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client_one, 5).await;
-        let sapling_addr_of_two =
-            client_two.do_addresses().await[0]["receivers"]["sapling"].to_string();
         client_one
             .do_send(vec![(
-                sapling_addr_of_two.as_str(),
+                get_base_address!(client_two, "sapling").as_str(),
                 1_000,
                 Some("foo".to_string()),
             )])
@@ -470,8 +474,10 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
         hjnfanxnnrnwscmz6szv2ghrurhu3jsqdx25y2yh";
     let seed_of_recipient = Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &sender, 5).await;
-        let addresses = recipient.do_addresses().await;
-        assert_eq!(&addresses[0]["address"], &original_recipient_address);
+        assert_eq!(
+            &get_base_address!(recipient, "orchard"),
+            &original_recipient_address
+        );
         let recipient_addr = recipient.do_new_address("tz").await.unwrap();
         sender
             .do_send(vec![(
@@ -535,9 +541,8 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
 
         //The first address in a wallet should always contain all three currently extant
         //receiver types.
-        let sender_address = &sender.do_addresses().await[0]["address"];
         recipient_restored
-            .do_send(vec![(sender_address.as_str().unwrap(), 4_000, None)])
+            .do_send(vec![(&get_base_address!(sender, "orchard"), 4_000, None)])
             .await
             .unwrap();
         let sender_balance = sender.do_balance().await;
@@ -595,16 +600,17 @@ fn ensure_taddrs_from_old_seeds_work() {
 #[cfg(feature = "cross_version")]
 #[test]
 fn cross_compat() {
-    let (_regtest_manager, current_client, fixed_taddr_client, child_process_handler) =
+    let (_regtest_manager, current_client, fixed_address_client, child_process_handler) =
         scenarios::cross_version_setup();
 
     tokio::runtime::Runtime::new().unwrap().block_on(async {
-        let fixed_taddr_seed = fixed_taddr_client.do_seed_phrase().await.unwrap();
+        let fixed_taddr_seed = fixed_address_client.do_seed_phrase().await.unwrap();
         let current_seed = current_client.do_seed_phrase().await.unwrap();
         assert_eq!(fixed_taddr_seed["seed"], current_seed["seed"]);
-        let fixed_taddresses = fixed_taddr_client.do_addresses().await;
-        let current_addresses = fixed_taddr_client.do_addresses().await;
-        assert_eq!(fixed_taddresses, current_addresses);
+        assert_eq!(
+            get_base_address!(fixed_address_client, "unified"),
+            get_base_address!(current_client, "unified")
+        );
     });
     drop(child_process_handler);
 }
@@ -617,11 +623,11 @@ fn t_incoming_t_outgoing() {
     tokio::runtime::Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &sender, 9).await;
         // 2. Get an incoming transaction to a t address
-        let taddr = recipient.do_addresses().await[0]["receivers"]["transparent"].clone();
+        let taddr = get_base_address!(recipient, "transparent");
         let value = 100_000;
 
         sender
-            .do_send(vec![(taddr.as_str().unwrap(), value, None)])
+            .do_send(vec![(taddr.as_str(), value, None)])
             .await
             .unwrap();
 
@@ -751,14 +757,10 @@ fn send_to_ua_saves_full_ua_in_wallet() {
         scenarios::two_clients_one_saplingcoinbase_backed();
     tokio::runtime::Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &sender, 5).await;
-        let recipient_address = recipient.do_addresses().await[0]["address"].take();
+        let recipient_orchard_address = get_base_address!(recipient, "orchard");
         let sent_value = 50_000;
         sender
-            .do_send(vec![(
-                recipient_address.as_str().unwrap(),
-                sent_value,
-                None,
-            )])
+            .do_send(vec![(recipient_orchard_address.as_str(), sent_value, None)])
             .await
             .unwrap();
         utils::increase_height_and_sync_client(&regtest_manager, &sender, 3).await;
@@ -766,7 +768,7 @@ fn send_to_ua_saves_full_ua_in_wallet() {
         assert!(list.members().any(|transaction| {
             transaction.entries().any(|(key, value)| {
                 if key == "outgoing_metadata" {
-                    value[0]["address"] == recipient_address
+                    value[0]["address"] == recipient_orchard_address
                 } else {
                     false
                 }
@@ -777,7 +779,7 @@ fn send_to_ua_saves_full_ua_in_wallet() {
         assert!(new_list.members().any(|transaction| {
             transaction.entries().any(|(key, value)| {
                 if key == "outgoing_metadata" {
-                    value[0]["address"] == recipient_address
+                    value[0]["address"] == recipient_orchard_address
                 } else {
                     false
                 }
