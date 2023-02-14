@@ -407,11 +407,11 @@ fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
     let client = client_builder.build_funded_client(0, false);
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
-        let sapling_addr = client.do_new_address("tz").await.unwrap();
+        let sapling_addr = get_address_string!(client, "sapling");
         for memo in [None, Some("foo")] {
             client
                 .do_send(vec![(
-                    sapling_addr[0].as_str().unwrap(),
+                    sapling_addr.as_str(),
                     {
                         let balance = client.do_balance().await;
                         balance["spendable_sapling_balance"].as_u64().unwrap()
