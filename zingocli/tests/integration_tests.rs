@@ -42,7 +42,9 @@ fn verify_old_wallet_uses_server_height_in_send() {
 
         // Without sync push server forward 100 blocks
         utils::increase_server_height(&regtest_manager, 100).await;
-        let orchard_receiver = client_receiving.do_addresses().await[0]["address"].take();
+        let orchard_receiver = client_receiving.do_addresses().await[0]["address"]
+            .take()
+            .to_string();
         let client_wallet_height = client_sending.do_wallet_last_scanned_height().await;
 
         // Verify that wallet is still back at 6.
@@ -51,7 +53,7 @@ fn verify_old_wallet_uses_server_height_in_send() {
         // Interrupt generating send
         client_sending
             .do_send(vec![(
-                &orchard_receiver.to_string().as_str(),
+                &orchard_receiver.as_str(),
                 10_000,
                 Some("Interrupting sync!!".to_string()),
             )])
@@ -160,6 +162,7 @@ fn extract_value_as_u64(input: &JsonValue) -> u64 {
     note.clone()
 }
 use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
+use zingolib::get_address_string;
 
 #[test]
 fn note_selection_order() {
@@ -177,10 +180,10 @@ fn note_selection_order() {
         // Note that do_addresses returns an array, each element is a JSON representation
         // of a UA.  Legacy addresses can be extracted from the receivers, per:
         // <https://zips.z.cash/zip-0316>
-        let client_2_saplingaddress = client_2.do_addresses().await[0]["receivers"]["sapling"]
-            .clone()
-            .to_string();
-
+        //let client_2_saplingaddress = client_2.do_addresses().await[0]["receivers"]["sapling"]
+        //    .clone()
+        //    .to_string();
+        let client_2_saplingaddress = get_address_string!(client_2, "sapling");
         // Send three transfers in increasing 1000 zat increments
         // These are sent from the coinbase funded client which will
         // subequently receive funding via it's orchard-packed UA.
@@ -398,7 +401,6 @@ fn rescan_still_have_outgoing_metadata() {
     });
 }
 
-///
 #[test]
 fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
     let (regtest_manager, child_process_handler, mut client_builder) = scenarios::funded_client();
