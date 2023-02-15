@@ -302,7 +302,7 @@ fn send_orchard_back_and_forth() {
 
         client_b
             .do_send(vec![(
-                &get_base_address!(client_a, "orchard"),
+                &get_base_address!(client_a, "unified"),
                 5_000,
                 Some("Sending back".to_string()),
             )])
@@ -473,7 +473,7 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
     let seed_of_recipient = Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &sender, 5).await;
         assert_eq!(
-            &get_base_address!(recipient, "orchard"),
+            &get_base_address!(recipient, "unified"),
             &original_recipient_address
         );
         let recipient_addr = recipient.do_new_address("tz").await.unwrap();
@@ -540,7 +540,7 @@ fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
         //The first address in a wallet should always contain all three currently extant
         //receiver types.
         recipient_restored
-            .do_send(vec![(&get_base_address!(sender, "orchard"), 4_000, None)])
+            .do_send(vec![(&get_base_address!(sender, "unified"), 4_000, None)])
             .await
             .unwrap();
         let sender_balance = sender.do_balance().await;
@@ -755,7 +755,7 @@ fn send_to_ua_saves_full_ua_in_wallet() {
         scenarios::two_clients_one_saplingcoinbase_backed();
     tokio::runtime::Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &sender, 5).await;
-        let recipient_orchard_address = get_base_address!(recipient, "orchard");
+        let recipient_orchard_address = get_base_address!(recipient, "unified");
         let sent_value = 50_000;
         sender
             .do_send(vec![(recipient_orchard_address.as_str(), sent_value, None)])
