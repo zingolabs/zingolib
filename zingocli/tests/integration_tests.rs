@@ -50,7 +50,7 @@ fn verify_old_wallet_uses_server_height_in_send() {
         // Interrupt generating send
         client_sending
             .do_send(vec![(
-                &get_base_address!(client_receiving, "orchard"),
+                &get_base_address!(client_receiving, "unified"),
                 10_000,
                 Some("Interrupting sync!!".to_string()),
             )])
@@ -134,7 +134,7 @@ fn send_mined_sapling_to_orchard() {
         let amount_to_send = 5_000;
         client
             .do_send(vec![(
-                get_base_address!(client, "orchard").as_str(),
+                get_base_address!(client, "unified").as_str(),
                 amount_to_send,
                 Some("Scenario test: engage!".to_string()),
             )])
@@ -193,13 +193,12 @@ fn note_selection_order() {
             .unwrap();
 
         utils::increase_height_and_sync_client(&regtest_manager, &client_2, 5).await;
-        let client_1_orchard = get_base_address!(client_1, "orchard");
         // We know that the largest single note that 2 received from 1 was 3000, for 2 to send
         // 3000 back to 1 it will have to collect funds from two notes to pay the full 3000
         // plus the transaction fee.
         client_2
             .do_send(vec![(
-                &client_1_orchard,
+                &get_base_address!(client_1, "unified"),
                 3000,
                 Some("Sending back, should have 2 inputs".to_string()),
             )])
@@ -284,7 +283,7 @@ fn send_orchard_back_and_forth() {
 
         client_a
             .do_send(vec![(
-                &get_base_address!(client_b, "orchard"),
+                &get_base_address!(client_b, "unified"),
                 10_000,
                 Some("Orcharding".to_string()),
             )])
