@@ -222,7 +222,8 @@ impl Command for SyncStatusCommand {
                     "witnesses_updated" => *status.witnesses_updated.values().min().unwrap_or(&0),
                     "total_blocks" => status.blocks_total,
                     "batch_num" => status.batch_num,
-                    "batch_total" => status.batch_total
+                    "batch_total" => status.batch_total,
+                    "sync_interrupt" => lightclient.get_sync_interrupt().await
                 }
             } else {
                 object! {

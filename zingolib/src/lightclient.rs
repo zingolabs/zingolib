@@ -694,6 +694,10 @@ impl LightClient {
         }
     }
 
+    pub(crate) async fn get_sync_interrupt(&self) -> bool {
+        *self.interrupt_sync.read().await
+    }
+
     pub async fn do_send_progress(&self) -> Result<JsonValue, String> {
         let progress = self.wallet.get_send_progress().await;
 
@@ -704,6 +708,7 @@ impl LightClient {
             "total" => progress.total,
             "txid" => progress.last_transaction_id,
             "error" => progress.last_error,
+            "sync_interrupt" => *self.interrupt_sync.read().await
         })
     }
 
