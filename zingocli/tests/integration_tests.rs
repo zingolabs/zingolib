@@ -364,6 +364,41 @@ fn from_t_z_o_tz_to_tzo_to_orchard() {
             &pool_migration_client.do_balance().await["orchard_balance"],
             7_000
         );
+        // transparent and sapling to orchard
+        pool_migration_client
+            .do_send(vec![(&pmc_taddr, 3_000, None), (&pmc_sapling, 3_000, None)])
+            .await
+            .unwrap();
+        utils::increase_height_and_sync_client(&regtest_manager, &pool_migration_client, 5).await;
+        assert_eq!(
+            &pool_migration_client.do_balance().await["transparent_balance"],
+            3_000
+        );
+        assert_eq!(
+            &pool_migration_client.do_balance().await["sapling_balance"],
+            3_000
+        );
+        assert_eq!(
+            &pool_migration_client.do_balance().await["orchard_balance"],
+            0_000
+        );
+        pool_migration_client
+            .do_send(vec![(&pmc_unified, 5_000, None)])
+            .await
+            .unwrap();
+        utils::increase_height_and_sync_client(&regtest_manager, &pool_migration_client, 15).await;
+        assert_eq!(
+            &pool_migration_client.do_balance().await["transparent_balance"],
+            0_000
+        );
+        assert_eq!(
+            &pool_migration_client.do_balance().await["sapling_balance"],
+            0_000
+        );
+        assert_eq!(
+            &pool_migration_client.do_balance().await["orchard_balance"],
+            5_000
+        );
     });
     drop(child_process_handler);
 }
