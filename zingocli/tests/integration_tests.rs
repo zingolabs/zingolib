@@ -74,7 +74,7 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
     // Setup
     let (regtest_manager, child_process_handler, _client) = scenarios::basic_no_spendable();
     // Execution:
-    let trees = handling_of_nonregenerated_diversified_addresses_after_seed_restore
+    let trees = regtest_manager
         .get_cli_handle()
         .args(["z_gettreestate", "1"])
         .output()
@@ -283,29 +283,87 @@ fn from_t_z_o_tz_to_tzo_to_orchard() {
     //! Test all possible promoting note source combinations
     let (regtest_manager, child_process_handler, mut client_builder) =
         scenarios::sapling_funded_client();
-    let client_sending = client_builder.build_funded_client(0, false);
-    let client_receiving =
+    let sapling_fund_source = client_builder.build_funded_client(0, false);
+    let pool_migration_client =
         client_builder.build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false);
     Runtime::new().unwrap().block_on(async {
+        let pmc_taddr = get_base_address!(pool_migration_client, "transparent");
+        let pmc_sapling = get_base_address!(pool_migration_client, "sapling");
+        let pmc_unified = get_base_address!(pool_migration_client, "unified");
         // Ensure that the client has confirmed spendable funds
-        utils::increase_height_and_sync_client(&regtest_manager, &client_sending, 5).await;
-
-        // Without sync push server forward 100 blocks
-        utils::increase_server_height(&regtest_manager, 100).await;
-        let client_wallet_height = client_sending.do_wallet_last_scanned_height().await;
-
-        // Verify that wallet is still back at 6.
-        assert_eq!(client_wallet_height, 6);
-
-        // Interrupt generating send
-        client_sending
-            .do_send(vec![(
-                &get_base_address!(client_receiving, "unified"),
-                10_000,
-                Some("Interrupting sync!!".to_string()),
-            )])
+        utils::increase_height_and_sync_client(&regtest_manager, &sapling_fund_source, 5).await;
+        // Test of a send from a taddr only client to its own unified address
+        sapling_fund_source
+            .do_send(vec![(&pmc_taddr, 5_000, None)])
             .await
             .unwrap();
+        utils::increase_height_and_sync_client(&regtest_manager, &pool_migration_client, 5).await;
+        assert_eq!(
+            &pool_migration_client.do_balance().await["transparent_balance"],
+            5_000
+        );
+        assert_eq!(
+            &pool_migration_client.do_balance().await["orchard_balance"],
+            0_000
+        );
+        pool_migration_client
+            .do_send(vec![(&pmc_unified, 4_000, None)])
+            .await
+            .unwrap();
+        utils::increase_height_and_sync_client(&regtest_manager, &pool_migration_client, 5).await;
+        assert_eq!(
+            &pool_migration_client.do_balance().await["transparent_balance"],
+            0_000
+        );
+        assert_eq!(
+            &pool_migration_client.do_balance().await["orchard_balance"],
+            4_000
+        );
+        // Test of a send from a sapling only client to its own unified address
+        sapling_fund_source
+            .do_send(vec![(&pmc_sapling, 5_000, None)])
+            .await
+            .unwrap();
+        utils::increase_height_and_sync_client(&regtest_manager, &pool_migration_client, 5).await;
+        assert_eq!(
+            &pool_migration_client.do_balance().await["transparent_balance"],
+            0_000
+        );
+        assert_eq!(
+            &pool_migration_client.do_balance().await["sapling_balance"],
+            5_000
+        );
+        pool_migration_client
+            .do_send(vec![(&pmc_unified, 4_000, None)])
+            .await
+            .unwrap();
+        utils::increase_height_and_sync_client(&regtest_manager, &pool_migration_client, 5).await;
+        assert_eq!(
+            &pool_migration_client.do_balance().await["sapling_balance"],
+            0_000
+        );
+        assert_eq!(
+            &pool_migration_client.do_balance().await["orchard_balance"],
+            8_000
+        );
+        // Test of an orchard-only client to itself
+        assert_eq!(
+            &pool_migration_client.do_balance().await["transparent_balance"],
+            0_000
+        );
+        assert_eq!(
+            &pool_migration_client.do_balance().await["sapling_balance"],
+            0_000
+        );
+        pool_migration_client
+            .do_send(vec![(&pmc_unified, 7_000, None)])
+            .await
+            .unwrap();
+        utils::increase_height_and_sync_client(&regtest_manager, &pool_migration_client, 5).await;
+        assert_eq!(
+            &pool_migration_client.do_balance().await["orchard_balance"],
+            7_000
+        );
     });
     drop(child_process_handler);
 }
