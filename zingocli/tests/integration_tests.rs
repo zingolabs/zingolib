@@ -1017,10 +1017,10 @@ fn send_to_ua_saves_full_ua_in_wallet() {
         scenarios::two_clients_one_saplingcoinbase_backed();
     tokio::runtime::Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &sender, 5).await;
-        let recipient_orchard_address = get_base_address!(recipient, "unified");
+        let recipient_unified_address = get_base_address!(recipient, "unified");
         let sent_value = 50_000;
         sender
-            .do_send(vec![(recipient_orchard_address.as_str(), sent_value, None)])
+            .do_send(vec![(recipient_unified_address.as_str(), sent_value, None)])
             .await
             .unwrap();
         utils::increase_height_and_sync_client(&regtest_manager, &sender, 3).await;
@@ -1028,7 +1028,7 @@ fn send_to_ua_saves_full_ua_in_wallet() {
         assert!(list.members().any(|transaction| {
             transaction.entries().any(|(key, value)| {
                 if key == "outgoing_metadata" {
-                    value[0]["address"] == recipient_orchard_address
+                    value[0]["address"] == recipient_unified_address
                 } else {
                     false
                 }
@@ -1039,7 +1039,7 @@ fn send_to_ua_saves_full_ua_in_wallet() {
         assert!(new_list.members().any(|transaction| {
             transaction.entries().any(|(key, value)| {
                 if key == "outgoing_metadata" {
-                    value[0]["address"] == recipient_orchard_address
+                    value[0]["address"] == recipient_unified_address
                 } else {
                     false
                 }
