@@ -14,3 +14,24 @@ macro_rules! apply_scenario {
         );
     };
 }
+
+// Note that do_addresses returns an array, each element is a JSON representation
+// of a UA.  Legacy addresses can be extracted from the receivers, per:
+// <https://zips.z.cash/zip-0316>
+#[macro_export]
+macro_rules! get_base_address {
+    ($client:ident, $address_protocol:literal) => {
+        match $address_protocol {
+            "unified" => $client.do_addresses().await[0]["address"]
+                .take()
+                .to_string(),
+            "sapling" => $client.do_addresses().await[0]["receivers"]["sapling"]
+                .clone()
+                .to_string(),
+            "transparent" => $client.do_addresses().await[0]["receivers"]["transparent"]
+                .clone()
+                .to_string(),
+            _ => "ERROR".to_string(),
+        }
+    };
+}
