@@ -2,6 +2,8 @@
 #![cfg(feature = "local_env")]
 mod data;
 mod utils;
+use std::fs::File;
+
 use data::seeds::HOSPITAL_MUSEUM_SEED;
 use json::JsonValue;
 use tokio::runtime::Runtime;
@@ -127,22 +129,37 @@ fn mine_sapling_to_self() {
 fn remove_unspent_from_wallet() {
     let (regtest_manager, child_process_handler, mut client_builder) =
         scenarios::sapling_funded_client();
-    let client = client_builder.build_funded_client(0, false);
+    let faucet = client_builder.build_funded_client(0, false);
     let client_receiving =
         client_builder.build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false);
     Runtime::new().unwrap().block_on(async {
-        utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
+        utils::increase_height_and_sync_client(&regtest_manager, &faucet, 5).await;
 
-        let balance = client.do_balance().await;
+        let balance = faucet.do_balance().await;
         assert_eq!(balance["sapling_balance"], 3_750_000_000u64);
-        client
+        faucet
             .do_send(vec![(
                 get_base_address!(client_receiving, "unified").as_str(),
                 5_000,
                 Some("this note never makes it to the wallet! or chain".to_string()),
             )])
             .await
-            .unwrap()
+            .unwrap();
+        let _outgoingmetadata =
+            faucet.do_list_transactions(false).await.pop()["outgoing_metadata"].clone();
+        dbg!(faucet.do_save().await.unwrap());
+        let mut wallet_location = regtest_manager.zingo_datadir;
+        wallet_location.pop();
+        dbg!(wallet_location.push("zingo_client_1"));
+        let zingo_config = ZingoConfig::create_unconnected(
+            zingoconfig::ChainType::Regtest,
+            Some(wallet_location.to_string_lossy().to_string()),
+        );
+        wallet_location.push("zingo-wallet.dat");
+        let read_buffer = File::open(wallet_location).unwrap();
+        zingolib::wallet::LightWallet::read_internal(read_buffer, &zingo_config)
+            .await
+            .unwrap();
     });
     drop(child_process_handler);
 }
@@ -184,8 +201,9 @@ fn extract_value_as_u64(input: &JsonValue) -> u64 {
     let note = &input["value"].as_fixed_point_u64(0).unwrap();
     note.clone()
 }
-use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
-use zingolib::get_base_address;
+use zcash_primitives::{consensus::Network, transaction::components::amount::DEFAULT_FEE};
+use zingoconfig::ZingoConfig;
+use zingolib::{get_base_address, lightclient::LightClient};
 
 #[test]
 fn note_selection_order() {
