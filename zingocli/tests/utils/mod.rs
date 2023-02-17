@@ -77,7 +77,7 @@ pub mod scenarios {
                 //! ScenarioBuilder::new constructor.  If you need to set some value
                 //! once, per test, consider adding environment config (e.g. ports, OS) to
                 //! TestEnvironmentGenerator and for scenario specific add to this constructor
-                let test_env = TestEnvironmentGenerator::new();
+                let test_env = TestEnvironmentGenerator::with_sapling_faucet();
                 let regtest_manager = test_env.regtest_manager.clone();
                 let lightwalletd_port = test_env.lightwalletd_rpcservice_port.clone();
                 let server_id = zingoconfig::construct_server_uri(Some(format!(
@@ -177,23 +177,48 @@ pub mod scenarios {
             lightwalletd_rpcservice_port: String,
             regtest_manager: RegtestManager,
         }
+        // https://doc.rust-lang.org/std/fs/fn.read_dir.html#examples
+
+        use std::fs::{self, DirEntry};
+        use std::io;
+        use std::path::Path;
+
+        // one possible implementation of walking a directory only visiting files
+        /*fn recursive_copy_to_temp_testdir(dir: &Path) -> io::Result<()> {
+            if dir.is_dir() {
+                for entry in fs::read_dir(dir)? {
+                    let entry = entry?;
+                    let path = entry.path();
+                    if path.is_dir() {
+                        visit_dirs(&path)?;
+                    } else {
+                        std::fs::copy(&entry);
+                    }
+                }
+            }
+            Ok(())
+        }*/
         impl TestEnvironmentGenerator {
-            fn new() -> Self {
+            fn with_sapling_faucet() -> Self {
                 let mut common_path = zingo_cli::regtest::get_git_rootdir();
-                common_path.push("cli");
-                common_path.push("tests");
-                common_path.push("data");
+                common_path.push("zingocli/tests/data/faucet/zcashd/");
+                //dbg!(&common_path);
                 let zcashd_rpcservice_port = portpicker::pick_unused_port()
                     .expect("Port unpickable!")
                     .to_string();
                 let lightwalletd_rpcservice_port = portpicker::pick_unused_port()
                     .expect("Port unpickable!")
                     .to_string();
-                let regtest_manager = RegtestManager::new(Some(
-                    tempdir::TempDir::new("zingo_integration_test")
-                        .unwrap()
-                        .into_path(),
-                ));
+                let test_dir = tempdir::TempDir::new("zingo_integration_test")
+                    .unwrap()
+                    .into_path();
+                // The regtest_manager now knows where things are.
+                let regtest_manager = RegtestManager::new(Some(test_dir));
+                let paths = std::fs::read_dir(&common_path)
+                    .unwrap()
+                    .map(|entry| entry.unwrap())
+                    .collect::<Vec<_>>();
+                dbg!(paths);
                 Self {
                     zcashd_rpcservice_port,
                     lightwalletd_rpcservice_port,
