@@ -184,28 +184,36 @@ impl TransactionContext {
                             .current
                             .get_mut(&txid)
                         {
-                            let outgoing_potential_receivers = [
-                                ua.orchard()
-                                    .map(|oaddr| oaddr.b32encode_for_network(&self.config.chain)),
-                                ua.sapling()
-                                    .map(|zaddr| zaddr.b32encode_for_network(&self.config.chain)),
-                                address_from_pubkeyhash(&self.config, ua.transparent().cloned()),
-                            ];
-                            if let Some(out_metadata) =
-                                transaction.outgoing_metadata.iter_mut().find(|out_meta| {
-                                    outgoing_potential_receivers
-                                        .contains(&Some(out_meta.to_address.clone()))
-                                })
-                            {
-                                out_metadata.ua = Some(ua.encode(&self.config.chain));
-                            } else {
-                                log::error!(
-                                    "Recieved memo indicating you sent to \
+                            if transaction.outgoing_metadata.len() != 0 {
+                                let outgoing_potential_receivers = [
+                                    ua.orchard().map(|oaddr| {
+                                        oaddr.b32encode_for_network(&self.config.chain)
+                                    }),
+                                    ua.sapling().map(|zaddr| {
+                                        zaddr.b32encode_for_network(&self.config.chain)
+                                    }),
+                                    address_from_pubkeyhash(
+                                        &self.config,
+                                        ua.transparent().cloned(),
+                                    ),
+                                    Some(ua.encode(&self.config.chain)),
+                                ];
+                                if let Some(out_metadata) =
+                                    transaction.outgoing_metadata.iter_mut().find(|out_meta| {
+                                        outgoing_potential_receivers
+                                            .contains(&Some(out_meta.to_address.clone()))
+                                    })
+                                {
+                                    out_metadata.ua = Some(ua.encode(&self.config.chain));
+                                } else {
+                                    log::error!(
+                                        "Recieved memo indicating you sent to \
                                     an address you don't have on record.\n({})\n\
                                     This may mean you are being sent malicious data.\n\
                                     Some information may not be displayed correctly",
-                                    ua.encode(&self.config.chain)
-                                )
+                                        ua.encode(&self.config.chain)
+                                    )
+                                }
                             }
                         }
                     }
