@@ -66,7 +66,7 @@ pub mod scenarios {
         pub struct ScenarioBuilder {
             pub test_env: TestEnvironmentGenerator,
             pub regtest_manager: RegtestManager,
-            pub client_builder: ClientBuilder,
+            pub client_builder: ClientManager,
             pub child_process_handler: Option<ChildProcessHandler>,
         }
         impl ScenarioBuilder {
@@ -83,7 +83,7 @@ pub mod scenarios {
                 let server_id = zingoconfig::construct_server_uri(Some(format!(
                     "http://127.0.0.1:{lightwalletd_port}"
                 )));
-                let client_builder = ClientBuilder::new(
+                let client_builder = ClientManager::new(
                     server_id,
                     regtest_manager.zingo_datadir.clone(),
                     data::seeds::ABANDON_ART_SEED,
@@ -116,24 +116,24 @@ pub mod scenarios {
 
         /// Internally (and perhaps in wider scopes) we say "Sprout" to mean
         /// take a seed, and generate a client from the seed (planted in the chain).
-        pub struct ClientBuilder {
+        pub struct ClientManager {
             server_id: http::Uri,
             zingo_datadir: PathBuf,
             seed: String,
             client_number: u8,
         }
-        impl ClientBuilder {
+        impl ClientManager {
             pub fn new(server_id: http::Uri, zingo_datadir: PathBuf, seed: &str) -> Self {
                 let seed = seed.to_string();
                 let client_number = 0;
-                ClientBuilder {
+                ClientManager {
                     server_id,
                     zingo_datadir,
                     seed,
                     client_number,
                 }
             }
-            fn make_config(&mut self) -> (zingoconfig::ZingoConfig, u64) {
+            fn make_new_zing_configdir(&mut self) -> (zingoconfig::ZingoConfig, u64) {
                 //! Each client requires a unique data_dir, we use the
                 //! client_number counter for this.
                 self.client_number += 1;
@@ -142,18 +142,16 @@ pub mod scenarios {
                     self.zingo_datadir.to_string_lossy().to_string(),
                     self.client_number
                 );
-                dbg!(&conf_path);
                 std::fs::create_dir(&conf_path).unwrap();
-
                 zingolib::create_zingoconf_from_datadir(self.server_id.clone(), Some(conf_path))
                     .unwrap()
             }
-            pub fn build_unfunded_client(&mut self, birthday: u64) -> LightClient {
-                let (zingo_config, _) = self.make_config();
+            pub fn build_new_unfunded_client(&mut self, birthday: u64) -> LightClient {
+                let (zingo_config, _) = self.make_new_zing_configdir();
                 LightClient::new(&zingo_config, birthday).unwrap()
             }
-            pub fn build_funded_client(&mut self, birthday: u64, overwrite: bool) -> LightClient {
-                let (zingo_config, _) = self.make_config();
+            pub fn build_new_faucet(&mut self, birthday: u64, overwrite: bool) -> LightClient {
+                let (zingo_config, _) = self.make_new_zing_configdir();
                 LightClient::create_with_seedorkey_wallet(
                     self.seed.clone(),
                     &zingo_config,
@@ -169,7 +167,7 @@ pub mod scenarios {
                 birthday: u64,
                 overwrite: bool,
             ) -> LightClient {
-                let (zingo_config, _) = self.make_config();
+                let (zingo_config, _) = self.make_new_zing_configdir();
                 LightClient::create_with_seedorkey_wallet(seed, &zingo_config, birthday, overwrite)
                     .unwrap()
             }
@@ -204,8 +202,6 @@ pub mod scenarios {
             }
             pub(crate) fn create_unfunded_zcash_conf(&self) -> PathBuf {
                 //! Side effect only fn, writes to FS.
-                dbg!(&self.zcashd_rpcservice_port);
-                dbg!(&self.lightwalletd_rpcservice_port);
                 self.write_contents_and_return_path(
                     "zcash",
                     data::config_template_fillers::zcashd::basic(&self.zcashd_rpcservice_port, ""),
@@ -255,7 +251,7 @@ pub mod scenarios {
     /// and zcashd (in regtest mode). This setup is intended to produce the most basic  
     /// of scenarios.  As scenarios with even less requirements
     /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
-    pub fn sapling_funded_client() -> (RegtestManager, ChildProcessHandler, setup::ClientBuilder) {
+    pub fn sapling_funded_client() -> (RegtestManager, ChildProcessHandler, setup::ClientManager) {
         let mut sb = setup::ScenarioBuilder::new();
         //tracing_subscriber::fmt::init();
         sb.test_env
@@ -309,10 +305,10 @@ pub mod scenarios {
         LightClient,
         LightClient,
         ChildProcessHandler,
-        setup::ClientBuilder,
+        setup::ClientManager,
     ) {
         let (regtest_manager, child_process_handler, mut client_builder) = sapling_funded_client();
-        let client_one = client_builder.build_funded_client(0, false);
+        let client_one = client_builder.build_new_faucet(0, false);
         let seed_phrase_of_two = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
             .unwrap()
             .to_string();
@@ -373,7 +369,7 @@ pub mod scenarios {
         (
             scenario_builder.regtest_manager,
             scenario_builder.child_process_handler.unwrap(),
-            scenario_builder.client_builder.build_unfunded_client(0),
+            scenario_builder.client_builder.build_new_unfunded_client(0),
         )
     }
 }
