@@ -200,12 +200,12 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
 fn mine_sapling_to_self() {
     let (regtest_manager, child_process_handler, mut client_builder) =
         scenarios::mineraddress::sapling();
-    let client = client_builder.build_miner_faucet(0, false);
+    let faucet = client_builder.build_miner_faucet(0, false);
     Runtime::new().unwrap().block_on(async {
-        utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
+        utils::increase_height_and_sync_client(&regtest_manager, &faucet, 0).await;
 
-        let balance = client.do_balance().await;
-        assert_eq!(balance["sapling_balance"], 3_750_000_000u64);
+        let balance = faucet.do_balance().await;
+        assert_eq!(balance["sapling_balance"], 625_000_000u64);
     });
     drop(child_process_handler);
 }
