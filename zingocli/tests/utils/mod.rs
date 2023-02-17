@@ -184,20 +184,21 @@ pub mod scenarios {
         use std::path::Path;
 
         // one possible implementation of walking a directory only visiting files
-        /*fn recursive_copy_to_temp_testdir(dir: &Path) -> io::Result<()> {
+        fn recursive_copy_to_temp_testdir(base: &Path, dir: &Path) -> io::Result<()> {
             if dir.is_dir() {
                 for entry in fs::read_dir(dir)? {
                     let entry = entry?;
                     let path = entry.path();
                     if path.is_dir() {
-                        visit_dirs(&path)?;
+                        recursive_copy_to_temp_testdir(&base, &path)?;
                     } else {
-                        std::fs::copy(&entry);
+                        //std::fs::copy(&entry);
+                        dbg!(base.join(path));
                     }
                 }
             }
             Ok(())
-        }*/
+        }
         impl TestEnvironmentGenerator {
             fn with_sapling_faucet() -> Self {
                 let mut common_path = zingo_cli::regtest::get_git_rootdir();
@@ -213,12 +214,13 @@ pub mod scenarios {
                     .unwrap()
                     .into_path();
                 // The regtest_manager now knows where things are.
-                let regtest_manager = RegtestManager::new(Some(test_dir));
+                let regtest_manager = RegtestManager::new(Some(test_dir.clone()));
                 let paths = std::fs::read_dir(&common_path)
                     .unwrap()
                     .map(|entry| entry.unwrap())
                     .collect::<Vec<_>>();
                 dbg!(paths);
+                recursive_copy_to_temp_testdir(&test_dir, &common_path).unwrap();
                 Self {
                     zcashd_rpcservice_port,
                     lightwalletd_rpcservice_port,
