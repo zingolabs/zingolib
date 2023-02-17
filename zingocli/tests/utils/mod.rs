@@ -55,10 +55,23 @@ async fn check_wallet_chainheight_value(client: &LightClient, target: u32) -> bo
 }
 #[cfg(test)]
 pub mod scenarios {
-    use crate::data::{self, REGSAP_ADDR_FROM_ABANDONART};
+    //! In practice there are several common scenarios for which helpers are provided.
+    //! These scenarios vary in the configuration of clients in use.  Most scenarios
+    //! require some funds, the simplest way to access funds is to use a "faucet".
+    //! A "faucet" is a client that receives mining rewards (because its spend capability
+    //! generated the address registered as the `minetoaddress` in the zcash.conf that's
+    //! used by the 'regetst mode' zcashs backing these tests.).
+    //! HELPERS:
+    //! If you just need a faucet, use the "faucet_only" helper.
+    //! If you need a faucet, and a single recipient, use 'faucet_recipient`
+    //! For less common client configurations use the client_manager directly with
+    //! custom_clients
+    use crate::data::{self, seeds::HOSPITAL_MUSEUM_SEED, REGSAP_ADDR_FROM_ABANDONART};
 
     use zingo_cli::regtest::{ChildProcessHandler, RegtestManager};
     use zingolib::lightclient::LightClient;
+
+    use self::setup::ClientManager;
     pub mod setup {
         use super::{data, ChildProcessHandler, RegtestManager};
         use std::path::PathBuf;
@@ -133,7 +146,7 @@ pub mod scenarios {
                     client_number,
                 }
             }
-            fn make_new_zing_configdir(&mut self) -> (zingoconfig::ZingoConfig, u64) {
+            pub fn make_new_zing_configdir(&mut self) -> (zingoconfig::ZingoConfig, u64) {
                 //! Each client requires a unique data_dir, we use the
                 //! client_number counter for this.
                 self.client_number += 1;
@@ -151,6 +164,7 @@ pub mod scenarios {
                 LightClient::new(&zingo_config, birthday).unwrap()
             }
             pub fn build_new_faucet(&mut self, birthday: u64, overwrite: bool) -> LightClient {
+                //! A "faucet" is a lightclient that receives mining rewards
                 let (zingo_config, _) = self.make_new_zing_configdir();
                 LightClient::new_from_wallet_base(
                     WalletBase::MnemonicPhrase(self.seed.clone()),
@@ -246,17 +260,7 @@ pub mod scenarios {
             }
         }
     }
-    /// Many scenarios need to start with spendable funds.  This setup provides
-    /// 1 block worth of coinbase to a preregistered spend capability.
-    ///
-    /// This key is registered to receive block rewards by corresponding to the
-    /// address registered as the "mineraddress" field in zcash.conf
-    ///
-    /// The general scenario framework requires instances of zingo-cli, lightwalletd,  
-    /// and zcashd (in regtest mode). This setup is intended to produce the most basic  
-    /// of scenarios.  As scenarios with even less requirements
-    /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
-    pub fn sapling_funded_client() -> (RegtestManager, ChildProcessHandler, setup::ClientManager) {
+    pub fn custom_clients() -> (RegtestManager, ChildProcessHandler, ClientManager) {
         let mut sb = setup::ScenarioBuilder::new();
         //tracing_subscriber::fmt::init();
         sb.test_env
@@ -269,7 +273,54 @@ pub mod scenarios {
             sb.client_builder,
         )
     }
+    /// Many scenarios need to start with spendable funds.  This setup provides
+    /// 1 block worth of coinbase to a preregistered spend capability.
+    ///
+    /// This key is registered to receive block rewards by corresponding to the
+    /// address registered as the "mineraddress" field in zcash.conf
+    ///
+    /// The general scenario framework requires instances of zingo-cli, lightwalletd,  
+    /// and zcashd (in regtest mode). This setup is intended to produce the most basic  
+    /// of scenarios.  As scenarios with even less requirements
+    /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
+    pub fn faucet_only() -> (RegtestManager, ChildProcessHandler, LightClient) {
+        let mut sb = setup::ScenarioBuilder::new();
+        //tracing_subscriber::fmt::init();
+        sb.test_env
+            .create_funded_zcash_conf(REGSAP_ADDR_FROM_ABANDONART);
+        sb.test_env.create_lightwalletd_conf();
+        sb.launch();
+        let faucet = sb.client_builder.build_new_faucet(0, false);
+        (
+            sb.regtest_manager,
+            sb.child_process_handler.unwrap(),
+            faucet,
+        )
+    }
 
+    pub fn faucet_recipient() -> (
+        RegtestManager,
+        ChildProcessHandler,
+        LightClient,
+        LightClient,
+    ) {
+        let mut sb = setup::ScenarioBuilder::new();
+        //tracing_subscriber::fmt::init();
+        sb.test_env
+            .create_funded_zcash_conf(REGSAP_ADDR_FROM_ABANDONART);
+        sb.test_env.create_lightwalletd_conf();
+        sb.launch();
+        let faucet = sb.client_builder.build_new_faucet(0, false);
+        let recipient =
+            sb.client_builder
+                .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false);
+        (
+            sb.regtest_manager,
+            sb.child_process_handler.unwrap(),
+            faucet,
+            recipient,
+        )
+    }
     #[cfg(feature = "cross_version")]
     pub fn saplingcoinbasebacked_spendcapable_cross_version(
     ) -> (RegtestManager, ChildProcessHandler, LightClient, String) {
@@ -300,30 +351,6 @@ pub mod scenarios {
             scenario_builder.child_process_handler.unwrap(),
             light_client,
             cross_version_seed_phrase,
-        )
-    }
-    /// This creates two so-called "LightClient"s "client_one" controls a spend capability
-    /// that has furnished a receiving address in the mineraddress configuration field
-    /// of the "generating" regtest-zcashd
-    pub fn two_clients_one_saplingcoinbase_backed() -> (
-        RegtestManager,
-        LightClient,
-        LightClient,
-        ChildProcessHandler,
-        setup::ClientManager,
-    ) {
-        let (regtest_manager, child_process_handler, mut client_builder) = sapling_funded_client();
-        let client_one = client_builder.build_new_faucet(0, false);
-        let seed_phrase_of_two = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
-            .unwrap()
-            .to_string();
-        let client_two = client_builder.build_newseed_client(seed_phrase_of_two, 0, false);
-        (
-            regtest_manager,
-            client_one,
-            client_two,
-            child_process_handler,
-            client_builder,
         )
     }
 
