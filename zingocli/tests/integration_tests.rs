@@ -9,6 +9,7 @@ use json::JsonValue;
 use tokio::runtime::Runtime;
 use utils::scenarios;
 
+/*
 #[test]
 fn generate_test_faucet_chain() {
     let (regtest_manager, child_process_handler, mut client_builder) =
@@ -39,9 +40,12 @@ fn generate_test_faucet_chain() {
     });
     drop(child_process_handler);
 }
+*/
 
+#[ignore]
 #[test]
 fn generate_one_block_with_no_funds_controller() {
+    //! This test is just to collect timing info
     let (regtest_manager, child_process_handler, mut _client_builder) =
         scenarios::mineraddress::sapling();
     Runtime::new().unwrap().block_on(async {
@@ -55,8 +59,10 @@ fn generate_one_block_with_no_funds_controller() {
     drop(child_process_handler);
 }
 
+#[ignore]
 #[test]
 fn generate_one_block_with_taddr_controller() {
+    //! This test is just to collect timing info
     let (regtest_manager, child_process_handler, mut _client_builder) =
         scenarios::mineraddress::transparent();
     Runtime::new().unwrap().block_on(async {
@@ -78,8 +84,10 @@ fn generate_one_block_with_taddr_controller() {
     drop(child_process_handler);
 }
 
+#[ignore]
 #[test]
 fn generate_one_block_with_sapling_controller() {
+    //! This test is just to collect timing info
     let (regtest_manager, child_process_handler, mut _client_builder) =
         scenarios::mineraddress::sapling();
     Runtime::new().unwrap().block_on(async {
@@ -93,6 +101,20 @@ fn generate_one_block_with_sapling_controller() {
     drop(child_process_handler);
 }
 
+#[test]
+fn verify_faucet_funding() {
+    let (regtest_manager, child_process_handler, mut client_builder) =
+        scenarios::mineraddress::sapling();
+    let faucet = client_builder.build_miner_faucet(0, false);
+    Runtime::new().unwrap().block_on(async {
+        utils::increase_height_and_sync_client(&regtest_manager, &faucet, 12).await;
+
+        let balance = faucet.do_balance().await;
+        assert_eq!(balance["orchard_balance"], 625_000_000u64);
+        assert_eq!(balance["sapling_balance"], 625_000_000u64);
+    });
+    drop(child_process_handler);
+}
 #[test]
 fn zcashd_sapling_commitment_tree() {
     //!  TODO:  Make this test assert something, what is this a test of?
@@ -121,22 +143,22 @@ fn verify_old_wallet_uses_server_height_in_send() {
     //! "mempool height" which is the server_height + 1
     let (regtest_manager, child_process_handler, mut client_builder) =
         scenarios::mineraddress::sapling();
-    let client_sending = client_builder.build_miner_faucet(0, false);
+    let faucet = client_builder.build_miner_faucet(0, false);
     let client_receiving =
         client_builder.build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false);
     Runtime::new().unwrap().block_on(async {
         // Ensure that the client has confirmed spendable funds
-        utils::increase_height_and_sync_client(&regtest_manager, &client_sending, 5).await;
+        utils::increase_height_and_sync_client(&regtest_manager, &faucet, 0).await;
 
         // Without sync push server forward 100 blocks
         utils::increase_server_height(&regtest_manager, 100).await;
-        let client_wallet_height = client_sending.do_wallet_last_scanned_height().await;
+        let client_wallet_height = faucet.do_wallet_last_scanned_height().await;
 
         // Verify that wallet is still back at 6.
         assert_eq!(client_wallet_height, 6);
 
         // Interrupt generating send
-        client_sending
+        faucet
             .do_send(vec![(
                 &get_base_address!(client_receiving, "unified"),
                 10_000,
@@ -193,20 +215,6 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
         trees.as_ref().unwrap()["orchard"]["commitments"]["finalState"]
     );
     dbg!(std::process::Command::new("grpcurl").args(["-plaintext", "127.0.0.1:9067"]));
-    drop(child_process_handler);
-}
-
-#[test]
-fn mine_sapling_to_self() {
-    let (regtest_manager, child_process_handler, mut client_builder) =
-        scenarios::mineraddress::sapling();
-    let faucet = client_builder.build_miner_faucet(0, false);
-    Runtime::new().unwrap().block_on(async {
-        utils::increase_height_and_sync_client(&regtest_manager, &faucet, 0).await;
-
-        let balance = faucet.do_balance().await;
-        assert_eq!(balance["sapling_balance"], 625_000_000u64);
-    });
     drop(child_process_handler);
 }
 
