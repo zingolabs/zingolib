@@ -70,7 +70,7 @@ pub mod scenarios {
             pub child_process_handler: Option<ChildProcessHandler>,
         }
         impl ScenarioBuilder {
-            pub fn new_sapling_faucet() -> Self {
+            pub fn load_sapling_faucet() -> Self {
                 //! TestEnvironmentGenerator sets particular parameters, specific filenames,
                 //! port numbers, etc.  in general no test_config should be used for
                 //! more than one test, and usually is only invoked via this
@@ -256,7 +256,7 @@ pub mod scenarios {
 
         use super::*;
         pub fn sapling() -> (RegtestManager, ChildProcessHandler, setup::ClientBuilder) {
-            let mut sb = setup::ScenarioBuilder::new_sapling_faucet();
+            let mut sb = setup::ScenarioBuilder::load_sapling_faucet();
             //tracing_subscriber::fmt::init();
             sb.test_env
                 .create_funded_zcash_conf(REGSAP_ADDR_FROM_ABANDONART);
@@ -269,7 +269,7 @@ pub mod scenarios {
             )
         }
         pub fn transparent() -> (RegtestManager, ChildProcessHandler, setup::ClientBuilder) {
-            let mut sb = setup::ScenarioBuilder::new_sapling_faucet();
+            let mut sb = setup::ScenarioBuilder::load_sapling_faucet();
             //tracing_subscriber::fmt::init();
             sb.test_env
                 .create_funded_zcash_conf(TADDRESS_FROM_MINERTO_TADDR_SEED);
@@ -282,7 +282,7 @@ pub mod scenarios {
             )
         }
         pub fn empty() -> (RegtestManager, ChildProcessHandler, LightClient) {
-            let mut scenario_builder = setup::ScenarioBuilder::new_sapling_faucet();
+            let mut scenario_builder = setup::ScenarioBuilder::load_sapling_faucet();
             scenario_builder.test_env.create_unfunded_zcash_conf();
             scenario_builder.test_env.create_lightwalletd_conf();
             scenario_builder.launch();
@@ -307,7 +307,7 @@ pub mod scenarios {
              adapt blossom school alcohol coral light army hold"
         );
         let first_z_addr_from_seed_phrase = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
-        let mut scenario_builder = setup::ScenarioBuilder::new_sapling_faucet();
+        let mut scenario_builder = setup::ScenarioBuilder::load_sapling_faucet();
         scenario_builder
             .test_env
             .create_funded_zcash_conf(first_z_addr_from_seed_phrase);
