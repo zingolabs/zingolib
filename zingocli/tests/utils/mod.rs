@@ -179,21 +179,26 @@ pub mod scenarios {
         }
         // https://doc.rust-lang.org/std/fs/fn.read_dir.html#examples
 
-        use std::fs::{self, DirEntry};
+        use std::fs;
         use std::io;
         use std::path::Path;
 
         // one possible implementation of walking a directory only visiting files
-        fn recursive_copy_to_temp_testdir(base: &Path, dir: &Path) -> io::Result<()> {
-            if dir.is_dir() {
-                for entry in fs::read_dir(dir)? {
+        fn recursive_copy_to_temp_testdir(
+            test_target: &Path,
+            source_file: &Path,
+        ) -> io::Result<()> {
+            if source_file.is_dir() {
+                for entry in fs::read_dir(source_file)? {
                     let entry = entry?;
                     let path = entry.path();
+                    let test_target = test_target.join(&path.file_name().unwrap());
                     if path.is_dir() {
-                        recursive_copy_to_temp_testdir(&base, &path)?;
+                        std::fs::create_dir_all(&test_target).unwrap();
+                        recursive_copy_to_temp_testdir(&test_target, &path)?;
                     } else {
                         //std::fs::copy(&entry);
-                        dbg!(base.join(path));
+                        std::fs::copy(path, test_target).unwrap();
                     }
                 }
             }
@@ -201,8 +206,8 @@ pub mod scenarios {
         }
         impl TestEnvironmentGenerator {
             fn with_sapling_faucet() -> Self {
-                let mut common_path = zingo_cli::regtest::get_git_rootdir();
-                common_path.push("zingocli/tests/data/faucet/zcashd/");
+                let mut blockchain_source = zingo_cli::regtest::get_git_rootdir();
+                blockchain_source.push("zingocli/tests/data/faucet/zcashd/regtest/");
                 //dbg!(&common_path);
                 let zcashd_rpcservice_port = portpicker::pick_unused_port()
                     .expect("Port unpickable!")
@@ -210,17 +215,14 @@ pub mod scenarios {
                 let lightwalletd_rpcservice_port = portpicker::pick_unused_port()
                     .expect("Port unpickable!")
                     .to_string();
-                let test_dir = tempdir::TempDir::new("zingo_integration_test")
+                let mut test_target = tempdir::TempDir::new("zingo_integration_test")
                     .unwrap()
                     .into_path();
                 // The regtest_manager now knows where things are.
-                let regtest_manager = RegtestManager::new(Some(test_dir.clone()));
-                let paths = std::fs::read_dir(&common_path)
-                    .unwrap()
-                    .map(|entry| entry.unwrap())
-                    .collect::<Vec<_>>();
-                dbg!(paths);
-                recursive_copy_to_temp_testdir(&test_dir, &common_path).unwrap();
+                let regtest_manager = RegtestManager::new(Some(test_target.clone()));
+                test_target.push("data/zcashd/regtest/");
+                // Copy in repo blockcahin cache to the relevent test directory
+                recursive_copy_to_temp_testdir(&test_target, &blockchain_source).unwrap();
                 Self {
                     zcashd_rpcservice_port,
                     lightwalletd_rpcservice_port,
