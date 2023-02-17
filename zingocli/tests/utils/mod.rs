@@ -150,7 +150,7 @@ pub mod scenarios {
                 let (zingo_config, _) = self.make_config();
                 LightClient::new(&zingo_config, birthday).unwrap()
             }
-            pub fn build_miner_client(&mut self, birthday: u64, overwrite: bool) -> LightClient {
+            pub fn build_miner_faucet(&mut self, birthday: u64, overwrite: bool) -> LightClient {
                 let (zingo_config, _) = self.make_config();
                 LightClient::create_with_seedorkey_wallet(
                     self.seed.clone(),
@@ -336,7 +336,7 @@ pub mod scenarios {
         setup::ClientBuilder,
     ) {
         let (regtest_manager, child_process_handler, mut client_builder) = mineraddress::sapling();
-        let client_one = client_builder.build_miner_client(0, false);
+        let client_one = client_builder.build_miner_faucet(0, false);
         let seed_phrase_of_two = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
             .unwrap()
             .to_string();

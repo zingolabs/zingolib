@@ -10,23 +10,23 @@ use tokio::runtime::Runtime;
 use utils::scenarios;
 
 #[test]
-fn generate_blockchain_for_tests() {
+fn generate_test_faucet_chain() {
     let (regtest_manager, child_process_handler, mut client_builder) =
         scenarios::mineraddress::sapling();
-    let miner_client = client_builder.build_miner_client(0, false);
+    let faucet = client_builder.build_miner_faucet(0, false);
     Runtime::new().unwrap().block_on(async {
         // Ensure that the client has confirmed spendable funds
         let then = std::time::Instant::now();
-        utils::increase_height_and_sync_client(&regtest_manager, &miner_client, 1).await;
-        miner_client
+        utils::increase_height_and_sync_client(&regtest_manager, &faucet, 1).await;
+        faucet
             .do_send(vec![
                 (
-                    &get_base_address!(miner_client, "sapling"),
+                    &get_base_address!(faucet, "sapling"),
                     300_000,
                     Some("Initial Sapling Funds".to_string()),
                 ),
                 (
-                    &get_base_address!(miner_client, "unified"),
+                    &get_base_address!(faucet, "unified"),
                     300_000,
                     Some("Initial Orchard Funds".to_string()),
                 ),
@@ -121,7 +121,7 @@ fn verify_old_wallet_uses_server_height_in_send() {
     //! "mempool height" which is the server_height + 1
     let (regtest_manager, child_process_handler, mut client_builder) =
         scenarios::mineraddress::sapling();
-    let client_sending = client_builder.build_miner_client(0, false);
+    let client_sending = client_builder.build_miner_faucet(0, false);
     let client_receiving =
         client_builder.build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false);
     Runtime::new().unwrap().block_on(async {
@@ -200,7 +200,7 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
 fn mine_sapling_to_self() {
     let (regtest_manager, child_process_handler, mut client_builder) =
         scenarios::mineraddress::sapling();
-    let client = client_builder.build_miner_client(0, false);
+    let client = client_builder.build_miner_faucet(0, false);
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
 
@@ -218,7 +218,7 @@ fn send_mined_sapling_to_orchard() {
     //! NOTE that the balance doesn't give insight into the distribution across notes.
     let (regtest_manager, child_process_handler, mut client_builder) =
         scenarios::mineraddress::sapling();
-    let client = client_builder.build_miner_client(0, false);
+    let client = client_builder.build_miner_faucet(0, false);
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
 
@@ -370,7 +370,7 @@ fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     //! Test all possible promoting note source combinations
     let (regtest_manager, child_process_handler, mut client_builder) =
         scenarios::mineraddress::sapling();
-    let sapling_fund_source = client_builder.build_miner_client(0, false);
+    let sapling_fund_source = client_builder.build_miner_faucet(0, false);
     let pool_migration_client =
         client_builder.build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false);
     Runtime::new().unwrap().block_on(async {
@@ -745,7 +745,7 @@ fn rescan_still_have_outgoing_metadata() {
 fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
     let (regtest_manager, child_process_handler, mut client_builder) =
         scenarios::mineraddress::sapling();
-    let client = client_builder.build_miner_client(0, false);
+    let client = client_builder.build_miner_faucet(0, false);
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
         let sapling_addr = get_base_address!(client, "sapling");
