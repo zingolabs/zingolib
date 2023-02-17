@@ -268,8 +268,7 @@ pub mod scenarios {
                 sb.client_builder,
             )
         }
-        pub fn transparent_address() -> (RegtestManager, ChildProcessHandler, setup::ClientBuilder)
-        {
+        pub fn transparent() -> (RegtestManager, ChildProcessHandler, setup::ClientBuilder) {
             let mut sb = setup::ScenarioBuilder::new();
             //tracing_subscriber::fmt::init();
             sb.test_env

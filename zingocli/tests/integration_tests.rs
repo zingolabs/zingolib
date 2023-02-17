@@ -7,6 +7,7 @@ use std::time::Duration;
 use data::seeds::HOSPITAL_MUSEUM_SEED;
 use json::JsonValue;
 use tokio::runtime::Runtime;
+use utils::scenarios;
 
 #[test]
 fn generate_one_block_with_no_funds_controller() {
@@ -26,7 +27,7 @@ fn generate_one_block_with_no_funds_controller() {
 #[test]
 fn generate_one_block_with_taddr_controller() {
     let (regtest_manager, child_process_handler, mut _client_builder) =
-        scenarios::mineraddress::transparent_address();
+        scenarios::mineraddress::transparent();
     Runtime::new().unwrap().block_on(async {
         let mut times = vec![];
         for _ in 1..=100 {
@@ -337,7 +338,7 @@ fn note_selection_order() {
 fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     //! Test all possible promoting note source combinations
     let (regtest_manager, child_process_handler, mut client_builder) =
-        scenarios::sapling_funded_client();
+        scenarios::mineraddress::sapling();
     let sapling_fund_source = client_builder.build_funded_client(0, false);
     let pool_migration_client =
         client_builder.build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false);
