@@ -57,7 +57,7 @@ pub fn read_wallet_internal_memo(memo: [u8; 511]) -> io::Result<ParsedMemo> {
 
 /// A helper function to encode a UA as a CompactSize specifying the number
 /// of receivers, followed by the UA's raw encoding as specified in
-/// https://zips.z.cash/zip-0316#encoding-of-unified-addresses
+/// <https://zips.z.cash/zip-0316#encoding-of-unified-addresses>
 pub fn write_unified_address_to_raw_encoding<W: Write>(
     ua: &UnifiedAddress,
     writer: W,
@@ -81,7 +81,7 @@ pub fn write_unified_address_to_raw_encoding<W: Write>(
 
 /// A helper function to decode a UA from a CompactSize specifying the number of
 /// receivers, followed by the UA's raw encoding as specified in
-/// https://zips.z.cash/zip-0316#encoding-of-unified-addresses
+/// <https://zips.z.cash/zip-0316#encoding-of-unified-addresses>
 pub fn read_unified_address_from_raw_encoding<R: Read>(reader: R) -> io::Result<UnifiedAddress> {
     let receivers = Vector::read(reader, |mut r| {
         let typecode: usize = CompactSize::read_t(&mut r)?;
