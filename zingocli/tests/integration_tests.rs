@@ -165,14 +165,7 @@ fn remove_unspent_from_wallet() {
                 .await
                 .unwrap();
 
-        let lc = LightClient {
-            wallet: faucet_wallet,
-            config: zingo_config.clone(),
-            mempool_monitor: std::sync::RwLock::new(None),
-            sync_lock: Mutex::new(()),
-            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&zingo_config))),
-            interrupt_sync: Arc::new(RwLock::new(false)),
-        };
+        let lc = LightClient::create_with_wallet(faucet_wallet, zingo_config);
         assert_eq!(
             &lc.do_seed_phrase().await.unwrap(),
             &faucet.do_seed_phrase().await.unwrap()
