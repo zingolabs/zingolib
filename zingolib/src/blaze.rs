@@ -3,7 +3,7 @@ pub(super) mod fetch_compact_blocks;
 pub(super) mod fetch_full_transaction;
 pub(super) mod fetch_taddr_transactions;
 pub(super) mod sync_status;
-pub(super) mod syncdata;
+pub mod syncdata;
 pub(super) mod trial_decryptions;
 pub(super) mod update_notes;
 

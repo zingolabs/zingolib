@@ -2,11 +2,14 @@
 #![cfg(feature = "local_env")]
 mod data;
 mod utils;
-use std::fs::File;
+use std::{fs::File, sync::Arc};
 
 use data::seeds::HOSPITAL_MUSEUM_SEED;
 use json::JsonValue;
-use tokio::runtime::Runtime;
+use tokio::{
+    runtime::Runtime,
+    sync::{Mutex, RwLock},
+};
 use utils::scenarios;
 
 #[test]
@@ -145,7 +148,7 @@ fn remove_unspent_from_wallet() {
             )])
             .await
             .unwrap();
-        let _outgoingmetadata =
+        let outgoingmetadata1 =
             faucet.do_list_transactions(false).await.pop()["outgoing_metadata"].clone();
         dbg!(faucet.do_save().await.unwrap());
         let mut wallet_location = regtest_manager.zingo_datadir;
@@ -157,12 +160,29 @@ fn remove_unspent_from_wallet() {
         );
         wallet_location.push("zingo-wallet.dat");
         let read_buffer = File::open(wallet_location).unwrap();
-        zingolib::wallet::LightWallet::read_internal(read_buffer, &zingo_config)
-            .await
-            .unwrap();
+        let faucet_wallet =
+            zingolib::wallet::LightWallet::read_internal(read_buffer, &zingo_config)
+                .await
+                .unwrap();
+
+        let lc = LightClient {
+            wallet: faucet_wallet,
+            config: zingo_config.clone(),
+            mempool_monitor: std::sync::RwLock::new(None),
+            sync_lock: Mutex::new(()),
+            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&zingo_config))),
+            interrupt_sync: Arc::new(RwLock::new(false)),
+        };
+        assert_eq!(
+            &lc.do_seed_phrase().await.unwrap(),
+            &faucet.do_seed_phrase().await.unwrap()
+        );
+        let outgoingmetadata2 = lc.do_list_transactions(false).await; //.pop()["outgoing_metadata"].clone();
+                                                                      //assert_eq!(outgoingmetadata1, outgoingmetadata2);
     });
     drop(child_process_handler);
 }
+
 #[test]
 fn send_mined_sapling_to_orchard() {
     //! This test shows the 5th confirmation changing the state of balance by
@@ -203,7 +223,9 @@ fn extract_value_as_u64(input: &JsonValue) -> u64 {
 }
 use zcash_primitives::{consensus::Network, transaction::components::amount::DEFAULT_FEE};
 use zingoconfig::ZingoConfig;
-use zingolib::{get_base_address, lightclient::LightClient};
+use zingolib::{blaze::syncdata::BlazeSyncData, get_base_address, lightclient::LightClient};
+
+use crate::data::seeds;
 
 #[test]
 fn note_selection_order() {
