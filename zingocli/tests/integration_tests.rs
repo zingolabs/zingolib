@@ -159,19 +159,31 @@ fn remove_unspent_from_wallet() {
             Some(wallet_location.to_string_lossy().to_string()),
         );
         wallet_location.push("zingo-wallet.dat");
-        let read_buffer = File::open(wallet_location).unwrap();
+        let read_buffer = File::open(wallet_location.clone()).unwrap();
         let faucet_wallet =
             zingolib::wallet::LightWallet::read_internal(read_buffer, &zingo_config)
                 .await
                 .unwrap();
 
-        let lc = LightClient::create_with_wallet(faucet_wallet, zingo_config);
+        let lc = LightClient::create_with_wallet(faucet_wallet, zingo_config.clone());
         assert_eq!(
             &lc.do_seed_phrase().await.unwrap(),
             &faucet.do_seed_phrase().await.unwrap()
         );
-        let outgoingmetadata2 = lc.do_list_transactions(false).await; //.pop()["outgoing_metadata"].clone();
-                                                                      //assert_eq!(outgoingmetadata1, outgoingmetadata2);
+        let outgoingmetadata2 =
+            lc.do_list_transactions(false).await.pop()["outgoing_metadata"].clone();
+        //dbg!(&outgoingmetadata1);
+        assert_eq!(outgoingmetadata1, outgoingmetadata2);
+        lc.do_save().await.unwrap();
+        let read_buffer = File::open(wallet_location).unwrap();
+        let faucet_wallet =
+            zingolib::wallet::LightWallet::read_internal(read_buffer, &zingo_config)
+                .await
+                .unwrap();
+        let lc = LightClient::create_with_wallet(faucet_wallet, zingo_config);
+        let outgoingmetadata3 =
+            lc.do_list_transactions(false).await.pop()["outgoing_metadata"].clone();
+        assert_eq!(outgoingmetadata1, outgoingmetadata3);
     });
     drop(child_process_handler);
 }
@@ -214,11 +226,9 @@ fn extract_value_as_u64(input: &JsonValue) -> u64 {
     let note = &input["value"].as_fixed_point_u64(0).unwrap();
     note.clone()
 }
-use zcash_primitives::{consensus::Network, transaction::components::amount::DEFAULT_FEE};
+use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
 use zingoconfig::ZingoConfig;
-use zingolib::{blaze::syncdata::BlazeSyncData, get_base_address, lightclient::LightClient};
-
-use crate::data::seeds;
+use zingolib::{get_base_address, lightclient::LightClient};
 
 #[test]
 fn note_selection_order() {
