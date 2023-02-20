@@ -1,9 +1,12 @@
+use bip0039::Mnemonic;
 use ff::{Field, PrimeField};
 use group::GroupEncoding;
 use json::JsonValue;
 use rand::rngs::OsRng;
 use tokio::runtime::Runtime;
 use zcash_client_backend::address::RecipientAddress;
+
+use orchard::keys::SpendingKey as OrchardSpendingKey;
 
 use zcash_client_backend::encoding::encode_payment_address;
 use zcash_note_encryption::EphemeralKeyBytes;
@@ -16,7 +19,7 @@ use zcash_primitives::sapling::{Note, Rseed, ValueCommitment};
 use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
 use zcash_primitives::transaction::components::{OutputDescription, GROTH_PROOF_SIZE};
 use zcash_primitives::transaction::Transaction;
-use zcash_primitives::zip32::{ExtendedFullViewingKey, ExtendedSpendingKey};
+use zcash_primitives::zip32::{ExtendedFullViewingKey, ExtendedSpendingKey as SaplingSpendingKey};
 
 use crate::apply_scenario;
 use crate::blaze::block_witness_data::CommitmentTreesForBlock;
@@ -24,17 +27,20 @@ use crate::blaze::test_utils::{FakeCompactBlockList, FakeTransaction};
 use crate::lightclient::testmocks;
 
 use crate::compact_formats::{CompactSaplingOutput, CompactTx};
+use crate::lightclient::checkpoints;
 use crate::lightclient::test_server::{
     clean_shutdown, create_test_server, mine_numblocks_each_with_two_sap_txs, mine_pending_blocks,
+    NBlockFCBLScenario,
 };
 use crate::lightclient::LightClient;
 use crate::wallet::data::{ReceivedSaplingNoteAndMetadata, TransactionMetadata};
-use crate::wallet::keys::unified::get_transparent_secretkey_pubkey_taddr;
+use crate::wallet::keys::extended_transparent::ExtendedPrivKey;
+use crate::wallet::keys::unified::{
+    get_transparent_secretkey_pubkey_taddr, Capability, WalletCapability,
+};
 use crate::wallet::traits::{ReadableWriteable, ReceivedNoteAndMetadata};
-use crate::wallet::WalletBase;
+use crate::wallet::{LightWallet, WalletBase};
 
-use super::checkpoints;
-use super::test_server::NBlockFCBLScenario;
 use zingoconfig::{ChainType, ZingoConfig};
 
 #[test]
@@ -684,7 +690,7 @@ async fn sapling_to_sapling_scan_together() {
     let mut fake_compactblock_list = FakeCompactBlockList::new(0);
 
     // 2. Send an incoming sapling transaction to fill the wallet
-    let (mockuser_spendkey, mockuser_fvk): (ExtendedSpendingKey, SaplingFvk) = {
+    let (mockuser_spendkey, mockuser_fvk): (SaplingSpendingKey, SaplingFvk) = {
         let wc_readlock = lightclient.wallet.wallet_capability();
         let wc = &*wc_readlock.read().await;
         (wc.try_into().unwrap(), wc.try_into().unwrap())
@@ -764,7 +770,7 @@ async fn sapling_incoming_viewkey(scenario: NBlockFCBLScenario) {
     );
 
     // 2. Create a new Viewkey and import it
-    let iextsk = ExtendedSpendingKey::master(&[1u8; 32]);
+    let iextsk = SaplingSpendingKey::master(&[1u8; 32]);
     let ifvk = SaplingFvk::from(&iextsk);
     let iaddr = encode_payment_address(config.hrp_sapling_address(), &ifvk.default_address().1);
     let addrs = lightclient
@@ -1620,6 +1626,76 @@ async fn read_write_block_data(scenario: NBlockFCBLScenario) {
             cb,
             crate::wallet::data::BlockData::read(&*block_bytes).unwrap()
         );
+    }
+}
+
+#[tokio::test]
+async fn load_wallet_from_v26_dat_file() {
+    // We test that the LightWallet can be read from v26 .dat file
+    // Changes in version 27:
+    //   - The wallet does not have to have a mnemonic.
+    //     Absence of mnemonic is represented by an empty byte vector in v27.
+    //     v26 serialized wallet is always loaded with `Some(mnemonic)`.
+    //   - The wallet capabilities can be restricted from spending to view-only or none.
+    //     We introduce `Capability` type represent different capability types in v27.
+    //     v26 serialized wallet is always loaded with `Capability::Spend(sk)`.
+
+    // A testnet wallet initiated with
+    // --seed "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise"
+    // --birthday 0
+    // --nosync
+    // with 3 addresses containig all receivers.
+    let data = include_bytes!("zingo-wallet-v26.dat");
+
+    let config = zingoconfig::ZingoConfig::create_unconnected(ChainType::Testnet, None);
+    let wallet = LightWallet::read_internal(&data[..], &config)
+        .await
+        .map_err(|e| format!("Cannot deserialize LightWallet version 26 file: {}", e))
+        .unwrap();
+
+    let expected_mnemonic = Mnemonic::from_phrase(TEST_SEED.to_string()).unwrap();
+    assert_eq!(wallet.mnemonic(), Some(&expected_mnemonic));
+
+    let expected_wc = WalletCapability::new_from_phrase(&config, &expected_mnemonic, 0).unwrap();
+    let wc = wallet.wallet_capability().read().await.clone();
+
+    // We don't want the WalletCapability to impl. `Eq` (because it stores secret keys)
+    // so we have to compare each component instead
+
+    // Compare Orchard
+    let Capability::Spend(orchard_sk) = &wc.orchard else {
+        panic!("Expected Orchard Spending Key");
+    };
+    assert_eq!(
+        orchard_sk.to_bytes(),
+        OrchardSpendingKey::try_from(&expected_wc)
+            .unwrap()
+            .to_bytes()
+    );
+
+    // Compare Sapling
+    let Capability::Spend(sapling_sk) = &wc.sapling else {
+        panic!("Expected Sapling Spending Key");
+    };
+    assert_eq!(
+        sapling_sk,
+        &SaplingSpendingKey::try_from(&expected_wc).unwrap()
+    );
+
+    // Compare transparent
+    let Capability::Spend(transparent_sk) = &wc.transparent else {
+        panic!("Expected transparent extended private key");
+    };
+    assert_eq!(
+        transparent_sk,
+        &ExtendedPrivKey::try_from(&expected_wc).unwrap()
+    );
+
+    assert_eq!(wc.addresses().len(), 3);
+    for addr in wc.addresses() {
+        assert!(addr.orchard().is_some());
+        assert!(addr.sapling().is_some());
+        assert!(addr.transparent().is_some());
     }
 }
 
