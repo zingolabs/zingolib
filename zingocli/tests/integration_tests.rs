@@ -2,14 +2,11 @@
 #![cfg(feature = "local_env")]
 mod data;
 mod utils;
-use std::{fs::File, sync::Arc};
+use std::fs::File;
 
 use data::seeds::HOSPITAL_MUSEUM_SEED;
 use json::JsonValue;
-use tokio::{
-    runtime::Runtime,
-    sync::{Mutex, RwLock},
-};
+use tokio::runtime::Runtime;
 use utils::scenarios;
 
 #[test]
