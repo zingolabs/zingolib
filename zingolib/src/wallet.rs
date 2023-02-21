@@ -258,10 +258,7 @@ impl LightWallet {
     /// some source ("external") and which is represented as a source-code constant
     /// ("internal").
 
-    pub(crate) async fn read_internal<R: Read>(
-        mut reader: R,
-        config: &ZingoConfig,
-    ) -> io::Result<Self> {
+    pub async fn read_internal<R: Read>(mut reader: R, config: &ZingoConfig) -> io::Result<Self> {
         let external_version = reader.read_u64::<LittleEndian>()?;
         if external_version > Self::serialized_version() {
             let e = format!(
