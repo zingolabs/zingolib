@@ -249,6 +249,8 @@ impl LightClient {
         }
     }
 }
+
+#[cfg(feature = "integration_test")]
 impl LightClient {
     pub fn create_with_wallet(wallet: LightWallet, config: ZingoConfig) -> Self {
         LightClient {
@@ -260,6 +262,8 @@ impl LightClient {
             interrupt_sync: Arc::new(RwLock::new(false)),
         }
     }
+}
+impl LightClient {
     pub fn create_unconnected(
         config: &ZingoConfig,
         seed_phrase: Option<String>,
