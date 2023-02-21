@@ -140,7 +140,11 @@ pub mod scenarios {
                 )
                 .unwrap()
             }
-            fn make_config(&mut self) -> (zingoconfig::ZingoConfig, u64) {
+            pub fn clone_faucet_with_wallet(&self) -> LightClient {
+                let (zingconf, _) = self.get_faucet_zingo_config();
+                LightClient::new(&zingconf, 0).unwrap()
+            }
+            fn make_new_zing_configdir(&mut self) -> (zingoconfig::ZingoConfig, u64) {
                 //! Each client requires a unique data_dir, we use the
                 //! client_number counter for this.
                 self.client_number += 1;
@@ -154,11 +158,11 @@ pub mod scenarios {
                     .unwrap()
             }
             pub fn build_new_unfunded_client(&mut self, birthday: u64) -> LightClient {
-                let (zingo_config, _) = self.make_config();
+                let (zingo_config, _) = self.make_new_zing_configdir();
                 LightClient::new(&zingo_config, birthday).unwrap()
             }
             pub fn build_new_faucet(&mut self, birthday: u64, overwrite: bool) -> LightClient {
-                let (zingo_config, _) = self.make_config();
+                let (zingo_config, _) = self.make_new_zing_configdir();
                 LightClient::create_with_seedorkey_wallet(
                     self.seed.clone(),
                     &zingo_config,
@@ -174,7 +178,7 @@ pub mod scenarios {
                 birthday: u64,
                 overwrite: bool,
             ) -> LightClient {
-                let (zingo_config, _) = self.make_config();
+                let (zingo_config, _) = self.make_new_zing_configdir();
                 LightClient::create_with_seedorkey_wallet(seed, &zingo_config, birthday, overwrite)
                     .unwrap()
             }

@@ -185,7 +185,7 @@ fn remove_unspent_from_wallet() {
         let lc = LightClient::create_with_wallet(faucet_wallet, zingo_config);
         let outgoingmetadata3 =
             lc.do_list_transactions(false).await.pop()["outgoing_metadata"].clone();
-        //assert_eq!(outgoingmetadata1, outgoingmetadata3);
+        assert_eq!(outgoingmetadata1, outgoingmetadata3);
     });
     drop(child_process_handler);
 }
