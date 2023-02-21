@@ -8,6 +8,7 @@ edition = "2021"
 
 [features]
 default = ["embed_params"]
+integration_test = []
 embed_params = []
 
 [dependencies]
