@@ -132,9 +132,6 @@ pub mod scenarios {
             testclients: std::collections::HashMap<String, TestClient>,
         }
         impl ClientManager {
-            pub fn get_zingo_datadir(&self) -> PathBuf {
-                self.zingo_datadir.clone()
-            }
             pub fn new(server_id: http::Uri, zingo_datadir: PathBuf, seed: &str) -> Self {
                 let seed = seed.to_string();
                 let client_number = 0;
@@ -145,17 +142,6 @@ pub mod scenarios {
                     client_number,
                     testclients: std::collections::HashMap::new(),
                 }
-            }
-            fn get_faucet_zingo_config(&self) -> (zingoconfig::ZingoConfig, u64) {
-                zingolib::create_zingoconf_from_datadir(
-                    self.server_id.clone(),
-                    Some(self.zingo_datadir.to_string_lossy().to_string()),
-                )
-                .unwrap()
-            }
-            pub fn clone_faucet_with_wallet(&self) -> LightClient {
-                let (zingconf, _) = self.get_faucet_zingo_config();
-                LightClient::new(&zingconf, 0).unwrap()
             }
             fn make_new_zing_configdir(&mut self) -> (zingoconfig::ZingoConfig, u64) {
                 //! Each client requires a unique data_dir, we use the
