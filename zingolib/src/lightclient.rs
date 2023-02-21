@@ -270,6 +270,8 @@ impl LightClient {
             interrupt_sync: Arc::new(RwLock::new(false)),
         }
     }
+}
+impl LightClient {
     pub fn create_unconnected(
         config: &ZingoConfig,
         wallet_base: WalletBase,
