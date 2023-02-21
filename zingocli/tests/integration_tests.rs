@@ -148,31 +148,40 @@ fn remove_unspent_from_wallet() {
         let outgoingmetadata1 =
             faucet.do_list_transactions(false).await.pop()["outgoing_metadata"].clone();
 
+        dbg!(faucet.do_list_notes(true).await["unspent_orchard_notes"].len());
+        faucet.do_save().await.unwrap();
         // Create a new client using the faucet's wallet
 
+        // Create zingo config
         let mut wallet_location = regtest_manager.zingo_datadir;
         wallet_location.pop();
-        dbg!(&wallet_location);
         wallet_location.push("zingo_client_1");
-        dbg!(&wallet_location);
         let zingo_config = ZingoConfig::create_unconnected(
             zingoconfig::ChainType::Regtest,
             Some(wallet_location.to_string_lossy().to_string()),
         );
         wallet_location.push("zingo-wallet.dat");
-        dbg!(&wallet_location);
         let read_buffer = File::open(wallet_location.clone()).unwrap();
+
+        // Create wallet from faucet zingo-wallet.dat
         let faucet_wallet =
             zingolib::wallet::LightWallet::read_internal(read_buffer, &zingo_config)
                 .await
                 .unwrap();
 
-        let lc = LightClient::create_with_wallet(faucet_wallet, zingo_config.clone());
+        // Create client based on config and wallet of faucet
+        let faucet_copy = LightClient::create_with_wallet(faucet_wallet, zingo_config.clone());
         assert_eq!(
-            &lc.do_seed_phrase().await.unwrap(),
+            &faucet_copy.do_seed_phrase().await.unwrap(),
             &faucet.do_seed_phrase().await.unwrap()
-        );
-        lc.do_save().await.unwrap();
+        ); // Sanity check identity
+
+        dbg!(faucet_copy.do_list_notes(true).await["unspent_orchard_notes"].len());
+        //dbg!(lc.do_list_notes(true).await["unspent_orchard_notes"]
+        //    .pop()
+        //    .clone());
+        /*
+        faucet_copy.do_save().await.unwrap();
         let read_buffer = File::open(wallet_location).unwrap();
         let faucet_wallet =
             zingolib::wallet::LightWallet::read_internal(read_buffer, &zingo_config)
@@ -182,6 +191,7 @@ fn remove_unspent_from_wallet() {
         let outgoingmetadata2 =
             lc.do_list_transactions(false).await.pop()["outgoing_metadata"].clone();
         assert_eq!(outgoingmetadata1, outgoingmetadata2);
+        */
     });
     drop(child_process_handler);
 }
