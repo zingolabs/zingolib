@@ -66,7 +66,7 @@ pub mod scenarios {
         pub struct ScenarioBuilder {
             pub test_env: TestEnvironmentGenerator,
             pub regtest_manager: RegtestManager,
-            pub client_builder: ClientBuilder,
+            pub client_builder: ClientManager,
             pub child_process_handler: Option<ChildProcessHandler>,
         }
         impl ScenarioBuilder {
@@ -83,7 +83,7 @@ pub mod scenarios {
                 let server_id = zingoconfig::construct_server_uri(Some(format!(
                     "http://127.0.0.1:{lightwalletd_port}"
                 )));
-                let client_builder = ClientBuilder::new(
+                let client_builder = ClientManager::new(
                     server_id,
                     regtest_manager.zingo_datadir.clone(),
                     data::seeds::ABANDON_ART_SEED,
@@ -114,23 +114,36 @@ pub mod scenarios {
             }
         }
 
+        /// Ergonomic interface to client info, including the client and it's construction
+        /// parameters.
+        struct TestClient {
+            client: LightClient,
+            zingo_datadir: PathBuf,
+            seed: String,
+            server_id: http::Uri,
+        }
         /// Internally (and perhaps in wider scopes) we say "Sprout" to mean
         /// take a seed, and generate a client from the seed (planted in the chain).
-        pub struct ClientBuilder {
+        pub struct ClientManager {
             server_id: http::Uri,
             zingo_datadir: PathBuf,
             seed: String,
             client_number: u8,
+            testclients: std::collections::HashMap<String, TestClient>,
         }
-        impl ClientBuilder {
+        impl ClientManager {
+            pub fn get_zingo_datadir(&self) -> PathBuf {
+                self.zingo_datadir.clone()
+            }
             pub fn new(server_id: http::Uri, zingo_datadir: PathBuf, seed: &str) -> Self {
                 let seed = seed.to_string();
                 let client_number = 0;
-                ClientBuilder {
+                ClientManager {
                     server_id,
                     zingo_datadir,
                     seed,
                     client_number,
+                    testclients: std::collections::HashMap::new(),
                 }
             }
             fn get_faucet_zingo_config(&self) -> (zingoconfig::ZingoConfig, u64) {
@@ -262,7 +275,7 @@ pub mod scenarios {
     /// and zcashd (in regtest mode). This setup is intended to produce the most basic  
     /// of scenarios.  As scenarios with even less requirements
     /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
-    pub fn sapling_funded_client() -> (RegtestManager, ChildProcessHandler, setup::ClientBuilder) {
+    pub fn sapling_funded_client() -> (RegtestManager, ChildProcessHandler, setup::ClientManager) {
         let mut sb = setup::ScenarioBuilder::new();
         //tracing_subscriber::fmt::init();
         sb.test_env
@@ -316,7 +329,7 @@ pub mod scenarios {
         LightClient,
         LightClient,
         ChildProcessHandler,
-        setup::ClientBuilder,
+        setup::ClientManager,
     ) {
         let (regtest_manager, child_process_handler, mut client_builder) = sapling_funded_client();
         let client_one = client_builder.build_new_faucet(0, false);
