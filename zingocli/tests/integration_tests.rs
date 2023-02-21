@@ -184,6 +184,12 @@ fn unspent_notes_are_not_saved() {
             faucet_copy.do_list_notes(true).await["unspent_orchard_notes"].len(),
             0
         );
+        let mut faucet_transactions = faucet.do_list_transactions(false).await;
+        faucet_transactions.pop();
+        faucet_transactions.pop();
+        let mut faucet_copy_transactions = faucet_copy.do_list_transactions(false).await;
+        faucet_copy_transactions.pop();
+        assert_eq!(faucet_transactions, faucet_copy_transactions);
     });
     drop(child_process_handler);
 }
