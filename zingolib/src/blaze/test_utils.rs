@@ -25,6 +25,7 @@ use zcash_primitives::{
     merkle_tree::{CommitmentTree, Hashable, IncrementalWitness, MerklePath},
     sapling::{
         self,
+        keys::DiversifiableFullViewingKey as SaplingFvk,
         note_encryption::{sapling_note_encryption, SaplingDomain},
         prover::TxProver,
         redjubjub::Signature,
@@ -284,12 +285,8 @@ impl FakeTransaction {
 
     // Add a new transaction into the block, paying the given address the amount.
     // Returns the nullifier of the new note.
-    pub fn add_sapling_transaction_paying(
-        &mut self,
-        extfvk: &ExtendedFullViewingKey,
-        value: u64,
-    ) -> Note {
-        let to = extfvk.default_address().1;
+    pub fn add_sapling_transaction_paying(&mut self, fvk: &SaplingFvk, value: u64) -> Note {
+        let to = fvk.default_address().1;
         self.add_sapling_output(value, None, &to)
     }
 
@@ -388,8 +385,9 @@ impl FakeCompactBlock {
     pub fn add_random_sapling_transaction(&mut self, num_outputs: usize) {
         let xsk_m = ExtendedSpendingKey::master(&[1u8; 32]);
         let extfvk = ExtendedFullViewingKey::from(&xsk_m);
+        let fvk = SaplingFvk::from(extfvk);
 
-        let to = extfvk.default_address().1;
+        let to = fvk.default_address().1;
         let value = Amount::from_u64(1).unwrap();
 
         let mut compact_transaction = CompactTx::default();
@@ -555,13 +553,13 @@ impl FakeCompactBlockList {
     // 2. passes that transaction to self.add_fake_transaction
     pub fn create_sapling_coinbase_transaction(
         &mut self,
-        extfvk: &ExtendedFullViewingKey,
+        fvk: &SaplingFvk,
         value: u64,
     ) -> (&Transaction, u64, Note) {
         //! If this is a "coinbase" transaction why does it take
         //! an arbitrary "value"?
         let mut fake_transaction = FakeTransaction::new(false);
-        let note = fake_transaction.add_sapling_transaction_paying(extfvk, value);
+        let note = fake_transaction.add_sapling_transaction_paying(fvk, value);
 
         let (transaction, height) = self.add_fake_transaction(fake_transaction);
 

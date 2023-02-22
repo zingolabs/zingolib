@@ -230,7 +230,9 @@ pub mod tests {
     use rand::{rngs::OsRng, Rng};
     use zcash_primitives::{
         memo::Memo,
-        sapling::{PaymentAddress, Rseed, SaplingIvk},
+        sapling::{
+            keys::DiversifiableFullViewingKey as SaplingFvk, PaymentAddress, Rseed, SaplingIvk,
+        },
         zip32::{ExtendedFullViewingKey, ExtendedSpendingKey},
     };
 
@@ -242,10 +244,11 @@ pub mod tests {
         rng.fill(&mut seed);
 
         let extsk = ExtendedSpendingKey::master(&seed);
-        let ivk = ExtendedFullViewingKey::from(&extsk);
-        let (_, addr) = ivk.default_address();
+        let extfvk = ExtendedFullViewingKey::from(&extsk);
+        let fvk = SaplingFvk::from(extfvk);
+        let (_, addr) = fvk.default_address();
 
-        (extsk, ivk.fvk.vk.ivk(), addr)
+        (extsk, fvk.fvk().vk.ivk(), addr)
     }
 
     #[test]

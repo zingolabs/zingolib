@@ -18,11 +18,10 @@ use zcash_primitives::{
     memo::Memo,
     merkle_tree::IncrementalWitness,
     sapling::{
-        note_encryption::SaplingDomain, Node as SaplingNode, Note as SaplingNote,
-        Nullifier as SaplingNullifier, PaymentAddress,
+        keys::DiversifiableFullViewingKey as SaplingFvk, note_encryption::SaplingDomain,
+        Node as SaplingNode, Note as SaplingNote, Nullifier as SaplingNullifier, PaymentAddress,
     },
     transaction::{components::TxOut, TxId},
-    zip32::ExtendedFullViewingKey,
 };
 
 use zingoconfig::{ChainType, MAX_REORG};
@@ -155,10 +154,10 @@ impl TransactionMetadataSet {
         self.current.clear();
     }
 
-    pub fn adjust_spendable_status(&mut self, spendable_keys: Vec<ExtendedFullViewingKey>) {
+    pub fn adjust_spendable_status(&mut self, spendable_keys: Vec<SaplingFvk>) {
         self.current.values_mut().for_each(|tx| {
             tx.sapling_notes.iter_mut().for_each(|nd| {
-                nd.have_spending_key = spendable_keys.contains(&nd.extfvk);
+                nd.have_spending_key = spendable_keys.contains(&nd.fvk);
                 if !nd.have_spending_key {
                     nd.witnesses.clear();
                 }
@@ -770,7 +769,7 @@ impl TransactionMetadataSet {
         timestamp: u64,
         note: SaplingNote,
         to: PaymentAddress,
-        extfvk: &ExtendedFullViewingKey,
+        fvk: &SaplingFvk,
         have_spending_key: bool,
         witness: IncrementalWitness<SaplingNode>,
     ) {
@@ -781,7 +780,7 @@ impl TransactionMetadataSet {
             timestamp,
             note,
             to,
-            extfvk,
+            fvk,
             have_spending_key,
             witness,
         )
