@@ -30,7 +30,7 @@ use crate::lightclient::test_server::{
 use crate::lightclient::LightClient;
 use crate::wallet::data::{ReceivedSaplingNoteAndMetadata, TransactionMetadata};
 use crate::wallet::keys::unified::get_transparent_secretkey_pubkey_taddr;
-use crate::wallet::traits::ReadableWriteable;
+use crate::wallet::traits::{ReadableWriteable, ReceivedNoteAndMetadata};
 use crate::wallet::WalletBase;
 
 use super::checkpoints;
@@ -1463,13 +1463,16 @@ async fn mempool_clearing(scenario: NBlockFCBLScenario) {
         for note in sapling_notes {
             let mut note_bytes = Vec::new();
             note.write(&mut note_bytes).unwrap();
-            assert_eq!(
-                format!("{:#?}", note),
-                format!(
-                    "{:#?}",
-                    ReceivedSaplingNoteAndMetadata::read(&*note_bytes, ()).unwrap()
-                )
-            );
+            let note2 = ReceivedSaplingNoteAndMetadata::read(&*note_bytes, ()).unwrap();
+            assert_eq!(note.fvk().to_bytes(), note2.fvk().to_bytes());
+            assert_eq!(note.nullifier(), note2.nullifier());
+            assert_eq!(note.diversifier, note2.diversifier);
+            assert_eq!(note.note, note2.note);
+            assert_eq!(note.spent, note2.spent);
+            assert_eq!(note.unconfirmed_spent, note2.unconfirmed_spent);
+            assert_eq!(note.memo, note2.memo);
+            assert_eq!(note.is_change, note2.is_change);
+            assert_eq!(note.have_spending_key, note2.have_spending_key);
         }
     }
     let notes_after = lightclient.do_list_notes(true).await;
