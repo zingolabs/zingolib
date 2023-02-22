@@ -1617,7 +1617,10 @@ fn decode_orchard_spending_key(
 #[cfg(test)]
 mod test {
     use orchard::tree::MerkleHashOrchard;
-    use zcash_primitives::{merkle_tree::CommitmentTree, transaction::components::Amount};
+    use zcash_primitives::{
+        merkle_tree::CommitmentTree, sapling::keys::DiversifiableFullViewingKey as SaplingFvk,
+        transaction::components::Amount,
+    };
 
     use crate::{
         apply_scenario,
@@ -1649,10 +1652,9 @@ mod test {
                 mut fake_compactblock_list,
                 ..
             } = scenario;
-            let extended_fvk = zcash_primitives::zip32::ExtendedFullViewingKey::try_from(
-                &*lightclient.wallet.wallet_capability().read().await,
-            )
-            .unwrap();
+            let extended_fvk =
+                SaplingFvk::try_from(&*lightclient.wallet.wallet_capability().read().await)
+                    .unwrap();
             let (_, _, _) =
                 fake_compactblock_list.create_sapling_coinbase_transaction(&extended_fvk, 1);
             mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
@@ -1677,10 +1679,9 @@ mod test {
                 mut fake_compactblock_list,
                 ..
             } = scenario;
-            let extended_fvk = zcash_primitives::zip32::ExtendedFullViewingKey::try_from(
-                &*lightclient.wallet.wallet_capability().read().await,
-            )
-            .unwrap();
+            let extended_fvk =
+                SaplingFvk::try_from(&*lightclient.wallet.wallet_capability().read().await)
+                    .unwrap();
             use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
             let (_, _, _) = fake_compactblock_list
                 .create_sapling_coinbase_transaction(&extended_fvk, 1 + u64::from(DEFAULT_FEE));
@@ -1711,13 +1712,11 @@ mod test {
             ..
         } = scenario;
         // 2. Send an incoming transaction to fill the wallet
-        let extfvk1 = zcash_primitives::zip32::ExtendedFullViewingKey::try_from(
-            &*lightclient.wallet.wallet_capability().read().await,
-        )
-        .unwrap();
+        let fvk1 =
+            SaplingFvk::try_from(&*lightclient.wallet.wallet_capability().read().await).unwrap();
         let value = 100_000;
         let (transaction, _height, _) =
-            fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, value);
+            fake_compactblock_list.create_sapling_coinbase_transaction(&fvk1, value);
         let txid = transaction.txid();
         mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
@@ -1900,13 +1899,11 @@ mod test {
             ..
         } = scenario;
         // 2. Send an incoming transaction to fill the wallet
-        let extfvk1 = zcash_primitives::zip32::ExtendedFullViewingKey::try_from(
-            &*lightclient.wallet.wallet_capability().read().await,
-        )
-        .unwrap();
+        let fvk1 =
+            SaplingFvk::try_from(&*lightclient.wallet.wallet_capability().read().await).unwrap();
         let value1 = 100_000;
         let (transaction, _height, _) =
-            fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, value1);
+            fake_compactblock_list.create_sapling_coinbase_transaction(&fvk1, value1);
         let txid = transaction.txid();
         mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
@@ -1961,7 +1958,7 @@ mod test {
         // 4. Send another incoming transaction.
         let value2 = 200_000;
         let (_transaction, _height, _) =
-            fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, value2);
+            fake_compactblock_list.create_sapling_coinbase_transaction(&fvk1, value2);
         mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
         // Now, try to select a small amount, it should prefer the older note
