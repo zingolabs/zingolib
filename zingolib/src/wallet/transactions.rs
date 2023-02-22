@@ -154,17 +154,6 @@ impl TransactionMetadataSet {
         self.current.clear();
     }
 
-    pub fn adjust_spendable_status(&mut self, spendable_keys: Vec<SaplingFvk>) {
-        self.current.values_mut().for_each(|tx| {
-            tx.sapling_notes.iter_mut().for_each(|nd| {
-                nd.have_spending_key = spendable_keys.contains(&nd.fvk);
-                if !nd.have_spending_key {
-                    nd.witnesses.clear();
-                }
-            })
-        });
-    }
-
     pub fn remove_txids(&mut self, txids_to_remove: Vec<TxId>) {
         for txid in &txids_to_remove {
             self.current.remove(&txid);
