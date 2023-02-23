@@ -510,7 +510,8 @@ impl TransactionMetadataSet {
         });
     }
 
-    fn get_or_create_transaction_metadata(
+    /// Always called internally during addition of a transaction to the WalletTransactions
+    fn get_wallet_transaction(
         &mut self,
         txid: &TxId,
         height: BlockHeight,
@@ -679,12 +680,8 @@ impl TransactionMetadataSet {
         output_num: u32,
     ) {
         // Read or create the current TxId
-        let transaction_metadata = self.get_or_create_transaction_metadata(
-            &txid,
-            BlockHeight::from(height),
-            unconfirmed,
-            timestamp,
-        );
+        let transaction_metadata =
+            self.get_wallet_transaction(&txid, BlockHeight::from(height), unconfirmed, timestamp);
 
         // Add this UTXO if it doesn't already exist
         if let Some(utxo) = transaction_metadata
