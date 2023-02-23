@@ -172,7 +172,7 @@ impl WalletCapability {
                 Capability::Spend(ext_sk) => {
                     let child_sk = ext_sk
                         .derive_private_key(child_index)
-                        .expect("Transparent private key derivation failed")
+                        .map_err(|e| format!("Transparent private key derivation failed: {e}"))?
                         .private_key;
                     let secp = secp256k1::Secp256k1::new();
                     let child_pk = secp256k1::PublicKey::from_secret_key(&secp, &child_sk);
@@ -183,7 +183,7 @@ impl WalletCapability {
                 Capability::View(ext_pk) => {
                     let child_pk = ext_pk
                         .derive_public_key(child_index)
-                        .expect("Transparent public key derivation failed")
+                        .map_err(|e| format!("Transparent public key derivation failed: {e}"))?
                         .public_key;
                     Some(child_pk)
                 }
@@ -309,7 +309,7 @@ impl WalletCapability {
                 Fvk::P2pkh(key_bytes) => {
                     wc.transparent = Capability::View(ExtendedPubKey {
                         chain_code: (&key_bytes[0..32]).to_vec(),
-                        public_key: secp256k1::PublicKey::read(&key_bytes[32..65], ())
+                        public_key: secp256k1::PublicKey::from_slice(&key_bytes[32..65])
                             .map_err(|e| e.to_string())?,
                     });
                 }
