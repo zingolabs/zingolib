@@ -27,7 +27,7 @@ use crate::lightclient::test_server::{
     clean_shutdown, create_test_server, mine_numblocks_each_with_two_sap_txs, mine_pending_blocks,
 };
 use crate::lightclient::LightClient;
-use crate::wallet::data::{ReceivedSaplingNoteAndMetadata, TransactionMetadata};
+use crate::wallet::data::{ReceivedSaplingNoteAndMetadata, WalletTransaction};
 use crate::wallet::keys::unified::get_transparent_secretkey_pubkey_taddr;
 use crate::wallet::traits::ReadableWriteable;
 
@@ -1032,7 +1032,7 @@ async fn aborted_resync(scenario: NBlockFCBLScenario) {
         .read()
         .await
         .current
-        .get(&TransactionMetadata::new_txid(
+        .get(&WalletTransaction::new_txid(
             &hex::decode(sent_transaction_id.clone())
                 .unwrap()
                 .into_iter()
@@ -1065,7 +1065,7 @@ async fn aborted_resync(scenario: NBlockFCBLScenario) {
         .read()
         .await
         .current
-        .get(&TransactionMetadata::new_txid(
+        .get(&WalletTransaction::new_txid(
             &hex::decode(sent_transaction_id)
                 .unwrap()
                 .into_iter()

@@ -3,9 +3,9 @@ use crate::{
     grpc_connector::GrpcConnector,
     lightclient::checkpoints::get_all_main_checkpoints,
     wallet::{
-        data::{BlockData, PoolNullifier, TransactionMetadata, WitnessCache},
+        data::{BlockData, PoolNullifier, WalletTransaction, WitnessCache},
         traits::{DomainWalletExt, FromCommitment, ReceivedNoteAndMetadata},
-        transactions::TransactionMetadataSet,
+        transactions::WalletTransactions,
     },
 };
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
@@ -352,7 +352,7 @@ impl BlockAndWitnessData {
     pub async fn invalidate_block(
         reorg_height: u64,
         existing_blocks: Arc<RwLock<Vec<BlockData>>>,
-        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+        transaction_metadata_set: Arc<RwLock<WalletTransactions>>,
     ) {
         // First, pop the first block (which is the top block) in the existing_blocks.
         let top_wallet_block = existing_blocks.write().await.drain(0..1).next().unwrap();
@@ -372,7 +372,7 @@ impl BlockAndWitnessData {
         &self,
         start_block: u64,
         end_block: u64,
-        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+        transaction_metadata_set: Arc<RwLock<WalletTransactions>>,
         reorg_transmitter: UnboundedSender<Option<u64>>,
     ) -> (
         JoinHandle<Result<u64, String>>,
@@ -767,7 +767,7 @@ impl BlockAndWitnessData {
             let cb = &blocks.get(pos as usize).unwrap().cb();
             for compact_transaction in &cb.vtx {
                 if !transaction_id_found
-                    && TransactionMetadata::new_txid(&compact_transaction.hash) == *transaction_id
+                    && WalletTransaction::new_txid(&compact_transaction.hash) == *transaction_id
                 {
                     transaction_id_found = true;
                 }
@@ -913,7 +913,7 @@ mod test {
 
     use crate::blaze::sync_status::BatchSyncStatus;
     use crate::compact_formats::CompactBlock;
-    use crate::wallet::transactions::TransactionMetadataSet;
+    use crate::wallet::transactions::WalletTransactions;
     use crate::{
         blaze::test_utils::{FakeCompactBlock, FakeCompactBlockList},
         wallet::data::BlockData,
@@ -1024,7 +1024,7 @@ mod test {
             .start(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(TransactionMetadataSet::new())),
+                Arc::new(RwLock::new(WalletTransactions::new())),
                 reorg_transmitter,
             )
             .await;
@@ -1075,7 +1075,7 @@ mod test {
             .start(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(TransactionMetadataSet::new())),
+                Arc::new(RwLock::new(WalletTransactions::new())),
                 reorg_transmitter,
             )
             .await;
@@ -1173,7 +1173,7 @@ mod test {
             .start(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(TransactionMetadataSet::new())),
+                Arc::new(RwLock::new(WalletTransactions::new())),
                 reorg_transmitter,
             )
             .await;

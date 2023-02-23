@@ -30,20 +30,20 @@ use zingoconfig::{ChainType, MAX_REORG};
 use super::{
     data::{
         OutgoingTxMetadata, PoolNullifier, ReceivedOrchardNoteAndMetadata,
-        ReceivedSaplingNoteAndMetadata, TransactionMetadata, Utxo, WitnessCache,
+        ReceivedSaplingNoteAndMetadata, Utxo, WalletTransaction, WitnessCache,
     },
     traits::{DomainWalletExt, FromBytes, Nullifier, ReceivedNoteAndMetadata, Recipient},
 };
 
-/// List of all transactions in a wallet.
+/// All transactions in a wallet.
 /// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
 /// this struct are threadsafe/locked properly.
-pub struct TransactionMetadataSet {
-    pub(crate) current: HashMap<TxId, TransactionMetadata>,
+pub struct WalletTransactions {
+    pub(crate) current: HashMap<TxId, WalletTransaction>,
     pub(crate) some_txid_from_highest_wallet_block: Option<TxId>,
 }
 
-impl TransactionMetadataSet {
+impl WalletTransactions {
     pub fn serialized_version() -> u64 {
         return 21;
     }
@@ -62,13 +62,13 @@ impl TransactionMetadataSet {
 
             Ok((
                 TxId::from_bytes(txid_bytes),
-                TransactionMetadata::read(r).unwrap(),
+                WalletTransaction::read(r).unwrap(),
             ))
         })?;
 
         let txs = txs_tuples
             .into_iter()
-            .collect::<HashMap<TxId, TransactionMetadata>>();
+            .collect::<HashMap<TxId, WalletTransaction>>();
 
         Ok(Self {
             current: txs,
@@ -91,13 +91,13 @@ impl TransactionMetadataSet {
 
             Ok((
                 TxId::from_bytes(txid_bytes),
-                TransactionMetadata::read(r).unwrap(),
+                WalletTransaction::read(r).unwrap(),
             ))
         })?;
 
         let current = txs_tuples
             .into_iter()
-            .collect::<HashMap<TxId, TransactionMetadata>>();
+            .collect::<HashMap<TxId, WalletTransaction>>();
         let some_txid_from_highest_wallet_block = current
             .values()
             .fold(None, |c: Option<(TxId, BlockHeight)>, w| {
@@ -113,7 +113,7 @@ impl TransactionMetadataSet {
             Vector::read(&mut reader, |r| {
                 let mut txid_bytes = [0u8; 32];
                 r.read_exact(&mut txid_bytes)?;
-                let transaction_metadata = TransactionMetadata::read(r)?;
+                let transaction_metadata = WalletTransaction::read(r)?;
 
                 Ok((TxId::from_bytes(txid_bytes), transaction_metadata))
             })?
@@ -139,7 +139,7 @@ impl TransactionMetadataSet {
             let mut transaction_metadatas = self
                 .current
                 .iter()
-                .collect::<Vec<(&TxId, &TransactionMetadata)>>();
+                .collect::<Vec<(&TxId, &WalletTransaction)>>();
             // Don't write down metadata for transactions in the mempool, we'll rediscover
             // it on reload
             transaction_metadatas.retain(|metadata| !metadata.1.unconfirmed);
@@ -308,7 +308,7 @@ impl TransactionMetadataSet {
     pub fn total_funds_spent_in(&self, txid: &TxId) -> u64 {
         self.current
             .get(&txid)
-            .map(TransactionMetadata::total_value_spent)
+            .map(WalletTransaction::total_value_spent)
             .unwrap_or(0)
     }
 
@@ -516,11 +516,11 @@ impl TransactionMetadataSet {
         height: BlockHeight,
         unconfirmed: bool,
         datetime: u64,
-    ) -> &'_ mut TransactionMetadata {
+    ) -> &'_ mut WalletTransaction {
         if !self.current.contains_key(&txid) {
             self.current.insert(
                 txid.clone(),
-                TransactionMetadata::new(BlockHeight::from(height), datetime, &txid, unconfirmed),
+                WalletTransaction::new(BlockHeight::from(height), datetime, &txid, unconfirmed),
             );
             self.some_txid_from_highest_wallet_block = Some(txid.clone());
         }

@@ -1,8 +1,8 @@
 use crate::wallet::traits::{DomainWalletExt, ReceivedNoteAndMetadata};
 use crate::wallet::MemoDownloadOption;
 use crate::wallet::{
-    data::{PoolNullifier, TransactionMetadata},
-    transactions::TransactionMetadataSet,
+    data::{PoolNullifier, WalletTransaction},
+    transactions::WalletTransactions,
 };
 use std::sync::Arc;
 
@@ -30,11 +30,11 @@ use super::syncdata::BlazeSyncData;
 /// If No, then:
 ///    - Update the witness for this note
 pub struct UpdateNotes {
-    transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+    transaction_metadata_set: Arc<RwLock<WalletTransactions>>,
 }
 
 impl UpdateNotes {
-    pub fn new(wallet_txns: Arc<RwLock<TransactionMetadataSet>>) -> Self {
+    pub fn new(wallet_txns: Arc<RwLock<WalletTransactions>>) -> Self {
         Self {
             transaction_metadata_set: wallet_txns,
         }
@@ -42,7 +42,7 @@ impl UpdateNotes {
 
     async fn update_witnesses(
         bsync_data: Arc<RwLock<BlazeSyncData>>,
-        wallet_txns: Arc<RwLock<TransactionMetadataSet>>,
+        wallet_txns: Arc<RwLock<WalletTransactions>>,
         txid: TxId,
         nullifier: PoolNullifier,
         output_num: Option<u32>,
@@ -73,7 +73,7 @@ impl UpdateNotes {
 
     async fn update_witnesses_inner<D: DomainWalletExt>(
         bsync_data: Arc<RwLock<BlazeSyncData>>,
-        wallet_txns: Arc<RwLock<TransactionMetadataSet>>,
+        wallet_txns: Arc<RwLock<WalletTransactions>>,
         txid: TxId,
         nullifier: <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier,
         output_num: Option<u32>,
@@ -202,7 +202,7 @@ impl UpdateNotes {
                             .await;
 
                         let spent_transaction_id =
-                            TransactionMetadata::new_txid(&compact_transaction.hash);
+                            WalletTransaction::new_txid(&compact_transaction.hash);
                         let spent_at_height = BlockHeight::from_u32(spent_height as u32);
 
                         // Mark this note as being spent

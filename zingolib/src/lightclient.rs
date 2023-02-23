@@ -8,7 +8,7 @@ use crate::{
     compact_formats::RawTransaction,
     grpc_connector::GrpcConnector,
     wallet::{
-        data::TransactionMetadata,
+        data::WalletTransaction,
         keys::{
             address_from_pubkeyhash,
             unified::{ReceiverSelection, UnifiedSpendCapability},
@@ -1043,7 +1043,7 @@ impl LightClient {
 
     fn add_wallet_notes_in_transaction_to_list<'a, 'b, 'c>(
         &'a self,
-        transaction_metadata: &'b TransactionMetadata,
+        transaction_metadata: &'b WalletTransaction,
         include_memo_hex: &'b bool,
         unified_spend_auth: &'c UnifiedSpendCapability,
     ) -> impl Iterator<Item = JsonValue> + 'b
@@ -1067,7 +1067,7 @@ impl LightClient {
 
     fn add_wallet_notes_in_transaction_to_list_inner<'a, 'b, 'c, D>(
         &'a self,
-        transaction_metadata: &'b TransactionMetadata,
+        transaction_metadata: &'b WalletTransaction,
         include_memo_hex: &'b bool,
         unified_spend_auth: &'c UnifiedSpendCapability,
     ) -> impl Iterator<Item = JsonValue> + 'b
@@ -1236,7 +1236,7 @@ impl LightClient {
                                 BlockHeight::from_u32(rtransaction.height as u32),
                                 true,
                                 now() as u32,
-                                TransactionMetadata::get_price(now(), &price),
+                                WalletTransaction::get_price(now(), &price),
                             )
                             .await;
                         }

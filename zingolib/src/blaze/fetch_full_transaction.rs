@@ -6,9 +6,9 @@ use crate::wallet::{
         ReceivedNoteAndMetadata as _, Recipient as _, ShieldedOutputExt as _, Spend as _,
         ToBytes as _,
     },
-    transactions::TransactionMetadataSet,
+    transactions::WalletTransactions,
 };
-use zingo_memo::{read_wallet_internal_memo, ParsedMemo};
+use zingo_memo::ParsedMemo;
 
 use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
 use log::info;
@@ -46,14 +46,14 @@ use zingoconfig::{ChainType, ZingoConfig};
 pub struct TransactionContext {
     pub(crate) config: ZingoConfig,
     pub(crate) key: Arc<RwLock<UnifiedSpendCapability>>,
-    pub(crate) transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+    pub(crate) transaction_metadata_set: Arc<RwLock<WalletTransactions>>,
 }
 
 impl TransactionContext {
     pub fn new(
         config: &ZingoConfig,
         key: Arc<RwLock<UnifiedSpendCapability>>,
-        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+        transaction_metadata_set: Arc<RwLock<WalletTransactions>>,
     ) -> Self {
         Self {
             config: config.clone(),
@@ -174,7 +174,7 @@ impl TransactionContext {
         arbitrary_memos_with_txids: Vec<([u8; 511], TxId)>,
     ) {
         for (wallet_internal_data, txid) in arbitrary_memos_with_txids {
-            match read_wallet_internal_memo(wallet_internal_data) {
+            match zingo_memo::read_plaintext(wallet_internal_data) {
                 Ok(ParsedMemo::Version0 { uas }) => {
                     for ua in uas {
                         if let Some(transaction) = self

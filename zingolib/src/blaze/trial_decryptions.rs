@@ -6,10 +6,10 @@
 use crate::{
     compact_formats::{CompactBlock, CompactTx},
     wallet::{
-        data::{PoolNullifier, TransactionMetadata},
+        data::{PoolNullifier, WalletTransaction},
         keys::unified::UnifiedSpendCapability,
         traits::{CompactOutput as _, DomainWalletExt, ReceivedNoteAndMetadata as _},
-        transactions::TransactionMetadataSet,
+        transactions::WalletTransactions,
         MemoDownloadOption,
     },
 };
@@ -36,7 +36,7 @@ use super::syncdata::BlazeSyncData;
 
 pub struct TrialDecryptions {
     usc: Arc<RwLock<UnifiedSpendCapability>>,
-    transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+    transaction_metadata_set: Arc<RwLock<WalletTransactions>>,
     config: Arc<ZingoConfig>,
 }
 
@@ -44,7 +44,7 @@ impl TrialDecryptions {
     pub fn new(
         config: Arc<ZingoConfig>,
         usc: Arc<RwLock<UnifiedSpendCapability>>,
-        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+        transaction_metadata_set: Arc<RwLock<WalletTransactions>>,
     ) -> Self {
         Self {
             config,
@@ -148,7 +148,7 @@ impl TrialDecryptions {
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         sapling_ivk: SaplingIvk,
         orchard_ivk: OrchardIvk,
-        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+        transaction_metadata_set: Arc<RwLock<WalletTransactions>>,
         transaction_size_filter: Option<u32>,
         detected_transaction_id_sender: UnboundedSender<(
             TxId,
@@ -213,7 +213,7 @@ impl TrialDecryptions {
                 // Note the memos are immediately discarded.
                 // Perhaps this obfuscates the memos of interest?
                 if !transaction_metadata && download_memos == MemoDownloadOption::AllMemos {
-                    let transaction_id = TransactionMetadata::new_txid(&compact_transaction.hash);
+                    let transaction_id = WalletTransaction::new_txid(&compact_transaction.hash);
                     let (transmitter, receiver) = oneshot::channel();
                     full_transaction_fetcher
                         .send((transaction_id, transmitter))
@@ -252,7 +252,7 @@ impl TrialDecryptions {
         config: &zingoconfig::ZingoConfig,
         usc: &Arc<RwLock<UnifiedSpendCapability>>,
         bsync_data: &Arc<RwLock<BlazeSyncData>>,
-        transaction_metadata_set: &Arc<RwLock<TransactionMetadataSet>>,
+        transaction_metadata_set: &Arc<RwLock<WalletTransactions>>,
         detected_transaction_id_sender: &UnboundedSender<(
             TxId,
             PoolNullifier,
@@ -306,7 +306,7 @@ impl TrialDecryptions {
                         )
                         .await?;
 
-                    let transaction_id = TransactionMetadata::new_txid(&compact_transaction.hash);
+                    let transaction_id = WalletTransaction::new_txid(&compact_transaction.hash);
                     let nullifier = D::WalletNote::get_nullifier_from_note_fvk_and_witness_position(
                         &note,
                         &fvk,

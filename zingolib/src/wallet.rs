@@ -2,7 +2,7 @@
 //! from a source outside of the code-base e.g. a wallet-file.
 use crate::blaze::fetch_full_transaction::TransactionContext;
 use crate::compact_formats::TreeState;
-use crate::wallet::data::{SpendableSaplingNote, TransactionMetadata};
+use crate::wallet::data::{SpendableSaplingNote, WalletTransaction};
 
 use bip0039::Mnemonic;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -40,7 +40,6 @@ use zcash_primitives::{
         components::{amount::DEFAULT_FEE, Amount, OutPoint, TxOut},
     },
 };
-use zingo_memo::create_wallet_internal_memo_version_0;
 
 use self::data::SpendableOrchardNote;
 use self::keys::unified::ReceiverSelection;
@@ -53,7 +52,7 @@ use self::{
         WalletZecPriceInfo,
     },
     message::Message,
-    transactions::TransactionMetadataSet,
+    transactions::WalletTransactions,
 };
 use zingoconfig::ZingoConfig;
 
@@ -232,7 +231,7 @@ impl LightWallet {
             transparent: true,
         })
         .unwrap();
-        let transaction_metadata_set = Arc::new(RwLock::new(TransactionMetadataSet::new()));
+        let transaction_metadata_set = Arc::new(RwLock::new(WalletTransactions::new()));
         let transaction_context = TransactionContext::new(
             &config,
             Arc::new(RwLock::new(usc)),
@@ -281,9 +280,9 @@ impl LightWallet {
         }
 
         let transactions = if external_version <= 14 {
-            TransactionMetadataSet::read_old(&mut reader)
+            WalletTransactions::read_old(&mut reader)
         } else {
-            TransactionMetadataSet::read(&mut reader)
+            WalletTransactions::read(&mut reader)
         }?;
 
         let chain_name = utils::read_string(&mut reader)?;
@@ -462,7 +461,7 @@ impl LightWallet {
         self.transaction_context.key.clone()
     }
 
-    pub fn transactions(&self) -> Arc<RwLock<TransactionMetadataSet>> {
+    pub fn transactions(&self) -> Arc<RwLock<WalletTransactions>> {
         self.transaction_context.transaction_metadata_set.clone()
     }
 
@@ -692,7 +691,7 @@ impl LightWallet {
     async fn shielded_balance<NnMd>(
         &self,
         target_addr: Option<String>,
-        filters: &[Box<dyn Fn(&&NnMd, &TransactionMetadata) -> bool + '_>],
+        filters: &[Box<dyn Fn(&&NnMd, &WalletTransaction) -> bool + '_>],
     ) -> u64
     where
         NnMd: traits::ReceivedNoteAndMetadata,
@@ -771,8 +770,8 @@ impl LightWallet {
         let anchor_height = self.get_anchor_height().await;
 
         let filters: &[Box<
-            dyn Fn(&&ReceivedSaplingNoteAndMetadata, &TransactionMetadata) -> bool,
-        >] = &[Box::new(|_, transaction: &TransactionMetadata| {
+            dyn Fn(&&ReceivedSaplingNoteAndMetadata, &WalletTransaction) -> bool,
+        >] = &[Box::new(|_, transaction: &WalletTransaction| {
             transaction.block_height > BlockHeight::from_u32(anchor_height)
         })];
         self.shielded_balance(target_addr, filters).await
@@ -782,8 +781,8 @@ impl LightWallet {
         let anchor_height = self.get_anchor_height().await;
 
         let filters: &[Box<
-            dyn Fn(&&ReceivedOrchardNoteAndMetadata, &TransactionMetadata) -> bool,
-        >] = &[Box::new(|_, transaction: &TransactionMetadata| {
+            dyn Fn(&&ReceivedOrchardNoteAndMetadata, &WalletTransaction) -> bool,
+        >] = &[Box::new(|_, transaction: &WalletTransaction| {
             transaction.block_height > BlockHeight::from_u32(anchor_height)
         })];
         self.shielded_balance(target_addr, filters).await
@@ -804,7 +803,7 @@ impl LightWallet {
         target_addr: Option<String>,
     ) -> u64 {
         let anchor_height = self.get_anchor_height().await;
-        let filters: &[Box<dyn Fn(&&NnMd, &TransactionMetadata) -> bool>] =
+        let filters: &[Box<dyn Fn(&&NnMd, &WalletTransaction) -> bool>] =
             &[Box::new(|_, transaction| {
                 transaction.block_height <= BlockHeight::from_u32(anchor_height)
             })];
@@ -814,7 +813,7 @@ impl LightWallet {
     pub async fn spendable_sapling_balance(&self, target_addr: Option<String>) -> u64 {
         let anchor_height = self.get_anchor_height().await;
         let filters: &[Box<
-            dyn Fn(&&ReceivedSaplingNoteAndMetadata, &TransactionMetadata) -> bool,
+            dyn Fn(&&ReceivedSaplingNoteAndMetadata, &WalletTransaction) -> bool,
         >] = &[
             Box::new(|_, transaction| {
                 transaction.block_height <= BlockHeight::from_u32(anchor_height)
@@ -827,7 +826,7 @@ impl LightWallet {
     pub async fn spendable_orchard_balance(&self, target_addr: Option<String>) -> u64 {
         let anchor_height = self.get_anchor_height().await;
         let filters: &[Box<
-            dyn Fn(&&ReceivedOrchardNoteAndMetadata, &TransactionMetadata) -> bool,
+            dyn Fn(&&ReceivedOrchardNoteAndMetadata, &WalletTransaction) -> bool,
         >] = &[
             Box::new(|_, transaction| {
                 transaction.block_height <= BlockHeight::from_u32(anchor_height)
@@ -1335,7 +1334,7 @@ impl LightWallet {
                 return Err(e);
             }
         }
-        let uas_bytes = match create_wallet_internal_memo_version_0(&destination_uas) {
+        let uas_bytes = match zingo_memo::pack_with_uas(&destination_uas) {
             Ok(bytes) => bytes,
             Err(e) => {
                 log::error!(
@@ -1479,7 +1478,7 @@ impl LightWallet {
                     submission_height.into(),
                     true,
                     now() as u32,
-                    TransactionMetadata::get_price(now(), &price),
+                    WalletTransaction::get_price(now(), &price),
                 )
                 .await;
         }

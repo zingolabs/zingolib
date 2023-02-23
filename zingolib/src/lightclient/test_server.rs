@@ -11,7 +11,7 @@ use crate::compact_formats::{
     LightdInfo, PingResponse, RawTransaction, SendResponse, TransparentAddressBlockFilter,
     TreeState, TxFilter,
 };
-use crate::wallet::data::TransactionMetadata;
+use crate::wallet::data::WalletTransaction;
 use futures::{FutureExt, Stream};
 use rand::rngs::OsRng;
 use rand::Rng;
@@ -560,7 +560,7 @@ impl CompactTxStreamer for TestGRPCService {
     ) -> Result<Response<RawTransaction>, Status> {
         Self::wait_random().await;
 
-        let transaction_id = TransactionMetadata::new_txid(&request.into_inner().hash);
+        let transaction_id = WalletTransaction::new_txid(&request.into_inner().hash);
         match self.data.read().await.transactions.get(&transaction_id) {
             Some((_taddrs, transaction)) => Ok(Response::new(transaction.clone())),
             None => Err(Status::invalid_argument(format!(

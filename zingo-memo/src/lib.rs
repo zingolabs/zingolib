@@ -18,7 +18,7 @@ pub enum ParsedMemo {
 /// Note that a UA's raw representation is 1 byte for length, +21 for a T-receiver,
 /// +44 for a Sapling receiver, and +44 for an Orchard receiver. This totals a maximum
 /// of 110 bytes per UA, and attempting to write more than 510 bytes will cause an error.
-pub fn create_wallet_internal_memo_version_0(uas: &[UnifiedAddress]) -> io::Result<[u8; 511]> {
+pub fn pack_with_uas(uas: &[UnifiedAddress]) -> io::Result<[u8; 511]> {
     let mut uas_bytes_vec = Vec::new();
     CompactSize::write(&mut uas_bytes_vec, 0usize)?;
     Vector::write(&mut uas_bytes_vec, uas, |mut w, ua| {
@@ -37,7 +37,7 @@ pub fn create_wallet_internal_memo_version_0(uas: &[UnifiedAddress]) -> io::Resu
 }
 
 /// Attempts to parse the 511 bytes of an arbitrary data memo
-pub fn read_wallet_internal_memo(memo: [u8; 511]) -> io::Result<ParsedMemo> {
+pub fn read_plaintext(memo: [u8; 511]) -> io::Result<ParsedMemo> {
     let mut reader: &[u8] = &memo;
     match CompactSize::read(&mut reader)? {
         0 => Ok(ParsedMemo::Version0 {
