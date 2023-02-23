@@ -208,9 +208,10 @@ impl ExtendedPubKey {
         };
         let sig_bytes = signature.as_ref();
         let (key, chain_code) = sig_bytes.split_at(sig_bytes.len() / 2);
-        let new_public_key = PublicKey::from_slice(key)?;
+        let new_sk = SecretKey::from_slice(key)?;
+        let new_pk = PublicKey::from_secret_key(&Secp256k1::new(), &new_sk);
         Ok(Self {
-            public_key: new_public_key.combine(&self.public_key)?,
+            public_key: new_pk.combine(&self.public_key)?,
             chain_code: chain_code.to_vec(),
         })
     }
@@ -259,4 +260,26 @@ impl From<&ExtendedPrivKey> for ExtendedPubKey {
             chain_code: sk.chain_code.clone(),
         }
     }
+}
+
+#[test]
+fn test_commutativity_of_key_derivation_mechanisms() {
+    // sk ---> sk_i
+    //  |       |
+    //  v       v
+    // pk ---> pk_i
+
+    // initial key derivation material
+    let i = KeyIndex::from_index(42).unwrap();
+    let sk = ExtendedPrivKey::with_seed(&[0xcd; 64]).unwrap();
+
+    // sk -> sk_i -> pk_i derivation
+    let sk_i = sk.derive_private_key(i).unwrap();
+    let pk_i = ExtendedPubKey::from(&sk_i);
+
+    // sk -> pk -> pk_i derivation
+    let pk = ExtendedPubKey::from(&sk);
+    let pk_i_ = pk.derive_public_key(i).unwrap();
+
+    assert_eq!(pk_i, pk_i_);
 }
