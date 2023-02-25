@@ -120,7 +120,7 @@ fn start_interactive(
     resp_receiver: Receiver<String>,
 ) {
     // `()` can be used when no completer is required
-    let mut rl = rustyline::Editor::<()>::new();
+    let mut rl = rustyline::DefaultEditor::new().expect("Default rustyline Editor not creatable!");
 
     println!("Ready!");
 
@@ -159,7 +159,8 @@ fn start_interactive(
         ));
         match readline {
             Ok(line) => {
-                rl.add_history_entry(line.as_str());
+                rl.add_history_entry(line.as_str())
+                    .expect("Ability to add history entry");
                 // Parse command line arguments
                 let mut cmd_args = match shellwords::split(&line) {
                     Ok(args) => args,

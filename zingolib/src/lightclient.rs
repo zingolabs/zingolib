@@ -260,18 +260,6 @@ impl LightClient {
     }
 }
 impl LightClient {
-    pub fn create_with_wallet(wallet: LightWallet, config: ZingoConfig) -> Self {
-        LightClient {
-            wallet,
-            config: config.clone(),
-            mempool_monitor: std::sync::RwLock::new(None),
-            sync_lock: Mutex::new(()),
-            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
-            interrupt_sync: Arc::new(RwLock::new(false)),
-        }
-    }
-}
-impl LightClient {
     pub fn create_unconnected(
         config: &ZingoConfig,
         wallet_base: WalletBase,
