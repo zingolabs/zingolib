@@ -1376,8 +1376,6 @@ impl LightClient {
             latest_block_batches.push(batch);
         }
 
-        //println!("Batches are {:?}", latest_block_batches);
-
         // Increment the sync ID so the caller can determine when it is over
         self.bsync_data
             .write()
@@ -1388,11 +1386,14 @@ impl LightClient {
             .start_new(latest_block_batches.len());
 
         let mut res = Err("No batches were run!".to_string());
+        let mut approximate_last_synced_height = last_scanned_height;
         for (batch_num, batch_latest_block) in latest_block_batches.into_iter().enumerate() {
             res = self.sync_nth_batch(batch_latest_block, batch_num).await;
             if res.is_err() {
                 return res;
             }
+            approximate_last_synced_height = approximate_last_synced_height + batch_size;
+            println!("approximate_last_synced_height: {approximate_last_synced_height}");
             if *self.interrupt_sync.read().await {
                 log::debug!("LightClient interrupt_sync is true");
                 break;
