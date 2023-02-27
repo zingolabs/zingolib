@@ -194,20 +194,9 @@ impl LightClient {
     /// Method to create a test-only version of the LightClient
     pub async fn test_new(
         config: &ZingoConfig,
-        seed_phrase: Option<String>,
+        wallet_base: WalletBase,
         height: u64,
     ) -> io::Result<Self> {
-        if seed_phrase.is_some() && config.wallet_exists() {
-            return Err(Error::new(
-                ErrorKind::AlreadyExists,
-                "Cannot create a new wallet from seed, because a wallet already exists",
-            ));
-        }
-        let wallet_base = match seed_phrase {
-            None => WalletBase::FreshEntropy,
-            Some(phrase) => WalletBase::MnemonicPhrase(phrase),
-        };
-
         let l = LightClient::create_unconnected(config, wallet_base, height)
             .expect("Unconnected client creation failed!");
         l.set_wallet_initial_state(height).await;
