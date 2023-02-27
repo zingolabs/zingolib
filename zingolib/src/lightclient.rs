@@ -514,7 +514,8 @@ impl LightClient {
                 return Err(Error::new(
                     ErrorKind::AlreadyExists,
                     format!(
-                        "Cannot create a new wallet from seed, because a wallet already exists"
+                        "Cannot create a new wallet from seed, because a wallet already exists at:\n{:?}",
+                        config.get_wallet_path().as_os_str()
                     ),
                 ));
             }
