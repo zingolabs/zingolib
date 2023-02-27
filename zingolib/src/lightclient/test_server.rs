@@ -11,7 +11,7 @@ use crate::compact_formats::{
     LightdInfo, PingResponse, RawTransaction, SendResponse, TransparentAddressBlockFilter,
     TreeState, TxFilter,
 };
-use crate::wallet::data::TransactionMetadata;
+use crate::wallet::{data::TransactionMetadata, WalletBase::FreshEntropy};
 use futures::{FutureExt, Stream};
 use rand::rngs::OsRng;
 use rand::Rng;
@@ -232,7 +232,9 @@ pub async fn setup_n_block_fcbl_scenario(
         create_test_server().await;
     ready_receiver.await.unwrap();
 
-    let lightclient = LightClient::test_new(&config, None, 0).await.unwrap();
+    let lightclient = LightClient::test_new(&config, FreshEntropy, 0)
+        .await
+        .unwrap();
 
     let mut fake_compactblock_list = FakeCompactBlockList::new(0);
 
@@ -299,7 +301,9 @@ async fn test_direct_grpc_and_lightclient_blockchain_height_agreement() {
 
     //let info_getter = &mut client.get_lightd_info(Request::new(Empty {}));
     ready_receiver.await.unwrap();
-    let lightclient = LightClient::test_new(&config, None, 0).await.unwrap();
+    let lightclient = LightClient::test_new(&config, FreshEntropy, 0)
+        .await
+        .unwrap();
     let mut fake_compactblock_list = FakeCompactBlockList::new(0);
 
     let observed_pre_answer = format!(
