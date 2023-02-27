@@ -6,8 +6,9 @@ use rand::rngs::OsRng;
 use tokio::runtime::Runtime;
 use zcash_client_backend::address::RecipientAddress;
 
-use orchard::keys::SpendingKey as OrchardSpendingKey;
+use orchard::keys::{FullViewingKey as OrchardFvk, SpendingKey as OrchardSpendingKey};
 
+use zcash_address::unified::{Address as UAddress, Encoding, Fvk, Receiver, Ufvk};
 use zcash_client_backend::encoding::encode_payment_address;
 use zcash_note_encryption::EphemeralKeyBytes;
 use zcash_primitives::consensus::{BlockHeight, BranchId, Parameters, TestNetwork};
@@ -34,9 +35,10 @@ use crate::lightclient::test_server::{
 };
 use crate::lightclient::LightClient;
 use crate::wallet::data::{ReceivedSaplingNoteAndMetadata, TransactionMetadata};
-use crate::wallet::keys::extended_transparent::ExtendedPrivKey;
-use crate::wallet::keys::unified::{
-    get_transparent_secretkey_pubkey_taddr, Capability, WalletCapability,
+use crate::wallet::keys::extended_transparent::{ExtendedPrivKey, ExtendedPubKey};
+use crate::wallet::keys::{
+    address_from_pubkeyhash,
+    unified::{get_transparent_secretkey_pubkey_taddr, Capability, WalletCapability},
 };
 use crate::wallet::traits::{ReadableWriteable, ReceivedNoteAndMetadata};
 use crate::wallet::{LightWallet, WalletBase};
@@ -686,7 +688,9 @@ async fn sapling_to_sapling_scan_together() {
 
     ready_receiver.await.unwrap();
 
-    let lightclient = LightClient::test_new(&config, None, 0).await.unwrap();
+    let lightclient = LightClient::test_new(&config, WalletBase::FreshEntropy, 0)
+        .await
+        .unwrap();
     let mut fake_compactblock_list = FakeCompactBlockList::new(0);
 
     // 2. Send an incoming sapling transaction to fill the wallet
@@ -1216,9 +1220,13 @@ async fn recover_at_checkpoint() {
     data.write().await.add_blocks(cbs.clone());
 
     // 4. Test1: create a new lightclient, restoring at exactly the checkpoint
-    let lc = LightClient::test_new(&config, Some(TEST_SEED.to_string()), ckpt_height)
-        .await
-        .unwrap();
+    let lc = LightClient::test_new(
+        &config,
+        WalletBase::MnemonicPhrase(TEST_SEED.to_string()),
+        ckpt_height,
+    )
+    .await
+    .unwrap();
     //lc.init_logging().unwrap();
     assert_eq!(
         json::parse(lc.do_info().await.as_str()).unwrap()["latest_block_height"]
@@ -1250,9 +1258,13 @@ async fn recover_at_checkpoint() {
         .args(["-f", wallet_name])
         .output()
         .expect("Wallet should always be removed.");
-    let lc = LightClient::test_new(&config, Some(TEST_SEED.to_string()), ckpt_height + 100)
-        .await
-        .unwrap();
+    let lc = LightClient::test_new(
+        &config,
+        WalletBase::MnemonicPhrase(TEST_SEED.to_string()),
+        ckpt_height + 100,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(
         json::parse(lc.do_info().await.as_str()).unwrap()["latest_block_height"]
@@ -1696,6 +1708,205 @@ async fn load_wallet_from_v26_dat_file() {
         assert!(addr.orchard().is_some());
         assert!(addr.sapling().is_some());
         assert!(addr.transparent().is_some());
+    }
+}
+
+#[tokio::test]
+async fn test_scanning_in_watch_only_mode() {
+    // # Scenario:
+    // 1. fill wallet with a coinbase transaction
+    // 2. send a transaction contaning all types of outputs
+    // 3. reset wallet
+    // 4. for every combination of FVKs
+    //     4.1. init a wallet with UFVK
+    //     4.2. check that the wallet is empty
+    //     4.3. rescan
+    //     4.4. check that notes and utxos were detected by the wallet
+    //
+    // # Current watch-only mode limitations:
+    // - wallet will not detect funds on all transparent addresses
+    //   see: https://github.com/zingolabs/zingolib/issues/245
+    // - wallet will not detect funds on internal addresses
+    //   see: https://github.com/zingolabs/zingolib/issues/246
+
+    // wait for test server to start
+    let (data, config, ready_receiver, _stop_transmitter, _test_server_handle) =
+        create_test_server().await;
+    ready_receiver.await.unwrap();
+
+    let lightclient = LightClient::test_new(
+        &config,
+        WalletBase::MnemonicPhrase(TEST_SEED.to_string()),
+        0,
+    )
+    .await
+    .unwrap();
+
+    let mut fake_compactblock_list = FakeCompactBlockList::new(0);
+    let wc = lightclient.wallet.wallet_capability().read().await.clone();
+
+    // create a coinbase transaction
+    let extfvk: SaplingFvk = (&wc).try_into().unwrap();
+    let value = 1_111_000;
+    let (transaction, _height, _note) =
+        fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk, value);
+    let txid = transaction.txid();
+
+    // make the coinbase transaction spendable
+    mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
+    mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
+
+    // test that we have the transaction
+    let list = lightclient.do_list_transactions(false).await;
+    assert_eq!(list[0]["txid"], txid.to_string());
+    assert_eq!(list[0]["amount"].as_u64().unwrap(), value);
+    let addr_0 = wc.addresses()[0].clone();
+    assert_eq!(list[0]["address"], addr_0.encode(&config.chain));
+    assert_eq!(
+        lightclient.do_balance().await["sapling_balance"]
+            .as_u64()
+            .unwrap(),
+        value
+    );
+
+    // send a transaction we want to watch
+    let o_addr = addr_0.orchard().clone().unwrap();
+    let s_addr = addr_0.sapling().clone().unwrap();
+    let t_addr = addr_0.transparent().clone().unwrap();
+    let o_addr_str =
+        UAddress::try_from_items(vec![Receiver::Orchard(o_addr.to_raw_address_bytes())])
+            .unwrap()
+            .encode(&config.chain.to_zcash_address_network());
+    let s_addr_str = UAddress::try_from_items(vec![Receiver::Sapling(s_addr.to_bytes())])
+        .unwrap()
+        .encode(&config.chain.to_zcash_address_network());
+    let t_addr_str = address_from_pubkeyhash(&config, Some(t_addr.clone())).unwrap();
+    let sent_o_value = 1_000_000;
+    let sent_s_value = 100_000;
+    let sent_t_value = 10_000;
+    let sent_o_memo = "Some Orchard memo".to_string();
+    let sent_s_memo = "Some Sapling memo".to_string();
+    let tos = vec![
+        (&o_addr_str[..], sent_o_value, Some(sent_o_memo.clone())),
+        (&s_addr_str[..], sent_s_value, Some(sent_s_memo.clone())),
+        (&t_addr_str[..], sent_t_value, None),
+    ];
+    lightclient.test_do_send(tos).await.unwrap();
+
+    // confirm that transaction
+    fake_compactblock_list.add_pending_sends(&data).await;
+    mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
+    mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
+
+    // check that the wallet has received the transansaction
+    {
+        let balance = lightclient.do_balance().await;
+        assert_eq!(balance["sapling_balance"], sent_s_value);
+        assert_eq!(balance["verified_sapling_balance"], sent_s_value);
+        assert_eq!(balance["unverified_sapling_balance"], 0);
+        assert_eq!(balance["orchard_balance"], sent_o_value);
+        assert_eq!(balance["verified_orchard_balance"], sent_o_value);
+        assert_eq!(balance["unverified_orchard_balance"], 0);
+        assert_eq!(balance["transparent_balance"], sent_t_value);
+    }
+
+    // check that do_rescan works
+    lightclient.do_rescan().await.unwrap();
+    {
+        let balance = lightclient.do_balance().await;
+        assert_eq!(balance["sapling_balance"], sent_s_value);
+        assert_eq!(balance["verified_sapling_balance"], sent_s_value);
+        assert_eq!(balance["unverified_sapling_balance"], 0);
+        assert_eq!(balance["orchard_balance"], sent_o_value);
+        assert_eq!(balance["verified_orchard_balance"], sent_o_value);
+        assert_eq!(balance["unverified_orchard_balance"], 0);
+        assert_eq!(balance["transparent_balance"], sent_t_value);
+    }
+
+    let o_fvk = Fvk::Orchard(OrchardFvk::try_from(&wc).unwrap().to_bytes());
+    let s_fvk = Fvk::Sapling(SaplingFvk::try_from(&wc).unwrap().to_bytes());
+    let mut t_fvk_bytes = [0u8; 65];
+    let t_ext_pk: ExtendedPubKey = (&wc).try_into().unwrap();
+    t_fvk_bytes[0..32].copy_from_slice(&t_ext_pk.chain_code[..]);
+    t_fvk_bytes[32..65].copy_from_slice(&t_ext_pk.public_key.serialize()[..]);
+    let t_fvk = Fvk::P2pkh(t_fvk_bytes);
+    let fvks_sets = vec![
+        vec![&o_fvk],
+        vec![&s_fvk],
+        vec![&o_fvk, &s_fvk],
+        vec![&o_fvk, &t_fvk],
+        vec![&s_fvk, &t_fvk],
+        vec![&o_fvk, &s_fvk, &t_fvk],
+    ];
+    for fvks_set in fvks_sets.iter() {
+        log::debug!("testing UFVK containig:");
+        log::debug!("    orchard fvk: {}", fvks_set.contains(&&o_fvk));
+        log::debug!("    sapling fvk: {}", fvks_set.contains(&&s_fvk));
+        log::debug!("    transparent fvk: {}", fvks_set.contains(&&t_fvk));
+
+        let ufvk = Ufvk::try_from_items(fvks_set.clone().into_iter().map(|x| x.clone()).collect())
+            .unwrap()
+            .encode(&config.chain.to_zcash_address_network());
+
+        let watch_client = LightClient::test_new(&config, WalletBase::Ufvk(ufvk), 0)
+            .await
+            .unwrap();
+
+        let watch_wc = watch_client.wallet.wallet_capability().read().await.clone();
+
+        // assert empty wallet before rescan
+        {
+            let balance = watch_client.do_balance().await;
+            assert_eq!(balance["sapling_balance"], 0);
+            assert_eq!(balance["verified_sapling_balance"], 0);
+            assert_eq!(balance["unverified_sapling_balance"], 0);
+            assert_eq!(balance["orchard_balance"], 0);
+            assert_eq!(balance["verified_orchard_balance"], 0);
+            assert_eq!(balance["unverified_orchard_balance"], 0);
+            assert_eq!(balance["transparent_balance"], 0);
+        }
+
+        watch_client.do_rescan().await.unwrap();
+        let balance = watch_client.do_balance().await;
+        let notes = watch_client.do_list_notes(true).await;
+
+        // Orchard
+        if fvks_set.contains(&&o_fvk) {
+            assert!(watch_wc.orchard.can_view());
+            assert_eq!(balance["orchard_balance"], sent_o_value);
+            assert_eq!(balance["verified_orchard_balance"], sent_o_value);
+            // assert 1 Orchard note, or 2 notes if a dummy output is included
+            let orchard_notes_count = notes["unspent_orchard_notes"].members().count();
+            assert!((1..=2).contains(&orchard_notes_count));
+        } else {
+            assert!(!watch_wc.orchard.can_view());
+            assert_eq!(balance["orchard_balance"], 0);
+            assert_eq!(balance["verified_orchard_balance"], 0);
+            assert_eq!(notes["unspent_orchard_notes"].members().count(), 0);
+        }
+
+        // Sapling
+        if fvks_set.contains(&&s_fvk) {
+            assert!(watch_wc.sapling.can_view());
+            assert_eq!(balance["sapling_balance"], sent_s_value);
+            assert_eq!(balance["verified_sapling_balance"], sent_s_value);
+            assert_eq!(notes["unspent_sapling_notes"].members().count(), 1);
+        } else {
+            assert!(!watch_wc.sapling.can_view());
+            assert_eq!(balance["sapling_balance"], 0);
+            assert_eq!(balance["verified_sapling_balance"], 0);
+            assert_eq!(notes["unspent_sapling_notes"].members().count(), 0);
+        }
+
+        // transparent
+        if fvks_set.contains(&&t_fvk) {
+            assert!(watch_wc.transparent.can_view());
+            assert_eq!(balance["transparent_balance"], sent_t_value);
+            assert_eq!(notes["utxos"].members().count(), 1);
+        } else {
+            assert!(!watch_wc.transparent.can_view());
+            assert_eq!(notes["utxos"].members().count(), 0);
+        }
     }
 }
 
