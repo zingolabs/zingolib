@@ -36,6 +36,7 @@ use crate::lightclient::test_server::{
 use crate::lightclient::LightClient;
 use crate::wallet::data::{ReceivedSaplingNoteAndMetadata, TransactionMetadata};
 use crate::wallet::keys::extended_transparent::{ExtendedPrivKey, ExtendedPubKey};
+use crate::wallet::keys::unified::ReceiverSelection;
 use crate::wallet::keys::{
     address_from_pubkeyhash,
     unified::{get_transparent_secretkey_pubkey_taddr, Capability, WalletCapability},
@@ -1945,6 +1946,99 @@ async fn refuse_spending_in_watch_only_mode() {
             watch_client.do_send(vec![(EXT_TADDR, 1000, None)]).await,
             Err("Wallet is in watch-only mode a thus it cannot spend".to_string())
         );
+    }
+}
+
+#[tokio::test]
+async fn test_do_rescan() {
+    // we test that do_rescan re-detect all Sapling and Orchard notes
+
+    // wait for test server to start
+    let (data, config, ready_receiver, _stop_transmitter, _test_server_handle) =
+        create_test_server().await;
+    ready_receiver.await.unwrap();
+
+    let lightclient = LightClient::test_new(
+        &config,
+        WalletBase::MnemonicPhrase(TEST_SEED.to_string()),
+        0,
+    )
+    .await
+    .unwrap();
+
+    let mut fake_compactblock_list = FakeCompactBlockList::new(0);
+    let wc = lightclient.wallet.wallet_capability().read().await.clone();
+
+    // create transaction funding
+    let extfvk: SaplingFvk = (&wc).try_into().unwrap();
+    let value = 1_000_000 + 1_000;
+    let (transaction, _height, _note) =
+        fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk, value);
+    let txid = transaction.txid();
+
+    // make funding transaction spendable
+    mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
+    mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
+
+    // test that we have the transaction
+    let list = lightclient.do_list_transactions(false).await;
+    assert_eq!(list[0]["txid"], txid.to_string());
+    assert_eq!(list[0]["amount"].as_u64().unwrap(), value);
+    let addr_0 = wc.addresses()[0].clone().encode(&config.chain);
+    assert_eq!(list[0]["address"], addr_0);
+
+    // check the balance
+    {
+        let balance = lightclient.do_balance().await;
+        assert_eq!(balance["sapling_balance"].as_u64().unwrap(), value);
+        assert_eq!(balance["orchard_balance"], 0);
+    }
+
+    // send funds to orchard addresss
+    let send_o_value = 600_000;
+    let send_s_value = 400_000;
+    // create new Sapling-only address
+    let s_addr = lightclient
+        .wallet
+        .wallet_capability()
+        .write()
+        .await
+        .new_address(ReceiverSelection {
+            orchard: false,
+            sapling: true,
+            transparent: false,
+        })
+        .unwrap()
+        .encode(&config.chain);
+    let tos = vec![
+        (&addr_0[..], send_o_value, None),
+        (&s_addr[..], send_s_value, None),
+    ];
+    lightclient.test_do_send(tos).await.unwrap();
+
+    // mine the transaction
+    fake_compactblock_list.add_pending_sends(&data).await;
+    mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
+    mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
+
+    // we assert these amounts
+    {
+        let balance = lightclient.do_balance().await;
+        assert_eq!(balance["sapling_balance"], send_s_value);
+        assert_eq!(balance["verified_sapling_balance"], send_s_value);
+        assert_eq!(balance["orchard_balance"], send_o_value);
+        assert_eq!(balance["verified_orchard_balance"], send_o_value);
+    }
+
+    lightclient.do_rescan().await.unwrap();
+
+    // we assert same amounts after the rescan
+    {
+        let balance = lightclient.do_balance().await;
+        assert_eq!(balance["sapling_balance"], send_s_value);
+        assert_eq!(balance["verified_sapling_balance"], send_s_value);
+        assert_eq!(balance["orchard_balance"], send_o_value);
+        assert_eq!(balance["verified_orchard_balance"], send_o_value);
     }
 }
 
