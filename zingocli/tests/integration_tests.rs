@@ -2,6 +2,8 @@
 #![cfg(feature = "local_env")]
 mod data;
 mod utils;
+use std::fs::File;
+
 use data::seeds::HOSPITAL_MUSEUM_SEED;
 use json::JsonValue;
 use tokio::runtime::Runtime;
@@ -35,7 +37,7 @@ fn verify_old_wallet_uses_server_height_in_send() {
     //! "mempool height" which is the server_height + 1
     let (regtest_manager, child_process_handler, mut client_builder) =
         scenarios::sapling_funded_client();
-    let client_sending = client_builder.build_funded_client(0, false);
+    let client_sending = client_builder.build_new_faucet(0, false);
     let client_receiving =
         client_builder.build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false);
     Runtime::new().unwrap().block_on(async {
@@ -113,12 +115,81 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
 fn mine_sapling_to_self() {
     let (regtest_manager, child_process_handler, mut client_builder) =
         scenarios::sapling_funded_client();
-    let client = client_builder.build_funded_client(0, false);
+    let client = client_builder.build_new_faucet(0, false);
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
 
         let balance = client.do_balance().await;
         assert_eq!(balance["sapling_balance"], 3_750_000_000u64);
+    });
+    drop(child_process_handler);
+}
+
+#[test]
+fn unspent_notes_are_not_saved() {
+    let (regtest_manager, child_process_handler, mut client_builder) =
+        scenarios::sapling_funded_client();
+    let faucet = client_builder.build_new_faucet(0, false);
+    let client_receiving =
+        client_builder.build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false);
+    Runtime::new().unwrap().block_on(async {
+        utils::increase_height_and_sync_client(&regtest_manager, &faucet, 5).await;
+
+        let balance = faucet.do_balance().await;
+        assert_eq!(balance["sapling_balance"], 3_750_000_000u64);
+        faucet
+            .do_send(vec![(
+                get_base_address!(client_receiving, "unified").as_str(),
+                5_000,
+                Some("this note never makes it to the wallet! or chain".to_string()),
+            )])
+            .await
+            .unwrap();
+
+        assert_eq!(
+            faucet.do_list_notes(true).await["unspent_orchard_notes"].len(),
+            1
+        );
+        faucet.do_save().await.unwrap();
+        // Create a new client using the faucet's wallet
+
+        // Create zingo config
+        let mut wallet_location = regtest_manager.zingo_datadir;
+        wallet_location.pop();
+        wallet_location.push("zingo_client_1");
+        let zingo_config = ZingoConfig::create_unconnected(
+            zingoconfig::ChainType::Regtest,
+            Some(wallet_location.to_string_lossy().to_string()),
+        );
+        wallet_location.push("zingo-wallet.dat");
+        let read_buffer = File::open(wallet_location.clone()).unwrap();
+
+        // Create wallet from faucet zingo-wallet.dat
+        let faucet_wallet =
+            zingolib::wallet::LightWallet::read_internal(read_buffer, &zingo_config)
+                .await
+                .unwrap();
+
+        // Create client based on config and wallet of faucet
+        let faucet_copy = LightClient::create_with_wallet(faucet_wallet, zingo_config.clone());
+        assert_eq!(
+            &faucet_copy.do_seed_phrase().await.unwrap(),
+            &faucet.do_seed_phrase().await.unwrap()
+        ); // Sanity check identity
+        assert_eq!(
+            faucet.do_list_notes(true).await["unspent_orchard_notes"].len(),
+            1
+        );
+        assert_eq!(
+            faucet_copy.do_list_notes(true).await["unspent_orchard_notes"].len(),
+            0
+        );
+        let mut faucet_transactions = faucet.do_list_transactions(false).await;
+        faucet_transactions.pop();
+        faucet_transactions.pop();
+        let mut faucet_copy_transactions = faucet_copy.do_list_transactions(false).await;
+        faucet_copy_transactions.pop();
+        assert_eq!(faucet_transactions, faucet_copy_transactions);
     });
     drop(child_process_handler);
 }
@@ -131,7 +202,7 @@ fn send_mined_sapling_to_orchard() {
     //! NOTE that the balance doesn't give insight into the distribution across notes.
     let (regtest_manager, child_process_handler, mut client_builder) =
         scenarios::sapling_funded_client();
-    let client = client_builder.build_funded_client(0, false);
+    let client = client_builder.build_new_faucet(0, false);
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
 
@@ -162,7 +233,8 @@ fn extract_value_as_u64(input: &JsonValue) -> u64 {
     note.clone()
 }
 use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
-use zingolib::get_base_address;
+use zingoconfig::ZingoConfig;
+use zingolib::{get_base_address, lightclient::LightClient};
 
 #[test]
 fn note_selection_order() {
@@ -283,7 +355,7 @@ fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     //! Test all possible promoting note source combinations
     let (regtest_manager, child_process_handler, mut client_builder) =
         scenarios::sapling_funded_client();
-    let sapling_fund_source = client_builder.build_funded_client(0, false);
+    let sapling_fund_source = client_builder.build_new_faucet(0, false);
     let pool_migration_client =
         client_builder.build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false);
     Runtime::new().unwrap().block_on(async {
@@ -658,7 +730,7 @@ fn rescan_still_have_outgoing_metadata() {
 fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
     let (regtest_manager, child_process_handler, mut client_builder) =
         scenarios::sapling_funded_client();
-    let client = client_builder.build_funded_client(0, false);
+    let client = client_builder.build_new_faucet(0, false);
     Runtime::new().unwrap().block_on(async {
         utils::increase_height_and_sync_client(&regtest_manager, &client, 5).await;
         let sapling_addr = get_base_address!(client, "sapling");
