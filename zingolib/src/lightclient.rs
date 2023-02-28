@@ -1393,7 +1393,7 @@ impl LightClient {
                 return res;
             }
             approximate_last_synced_height = approximate_last_synced_height + batch_size;
-            println!("approximate_last_synced_height: {approximate_last_synced_height}");
+            // println!("approximate_last_synced_height: {approximate_last_synced_height}");
             if *self.interrupt_sync.read().await {
                 log::debug!("LightClient interrupt_sync is true");
                 break;
