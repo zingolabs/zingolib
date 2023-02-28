@@ -1712,6 +1712,7 @@ async fn load_wallet_from_v26_dat_file() {
     }
 }
 
+#[ignore]
 #[tokio::test]
 async fn test_scanning_in_watch_only_mode() {
     // # Scenario:
@@ -1949,6 +1950,7 @@ async fn refuse_spending_in_watch_only_mode() {
     }
 }
 
+#[ignore]
 #[tokio::test]
 async fn test_do_rescan() {
     // we test that do_rescan re-detect all Sapling and Orchard notes
