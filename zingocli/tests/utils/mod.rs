@@ -149,9 +149,10 @@ pub mod scenarios {
             pub fn build_new_unfunded_client(&mut self, birthday: u64) -> LightClient {
                 let (zingo_config, _) = self.make_new_zing_configdir();
                 LightClient::new(&zingo_config, birthday).unwrap()
+            }
 
             pub fn build_new_faucet(&mut self, birthday: u64, overwrite: bool) -> LightClient {
-                let (zingo_config, _) = self.make_config();
+                let (zingo_config, _) = self.make_new_zing_configdir();
                 LightClient::new_from_wallet_base(
                     WalletBase::MnemonicPhrase(self.seed.clone()),
                     &zingo_config,
