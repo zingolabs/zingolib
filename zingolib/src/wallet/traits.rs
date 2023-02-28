@@ -6,7 +6,7 @@ use super::{
         PoolNullifier, ReceivedOrchardNoteAndMetadata, ReceivedSaplingNoteAndMetadata,
         SpendableOrchardNote, SpendableSaplingNote, TransactionMetadata, WitnessCache,
     },
-    keys::unified::UnifiedSpendCapability,
+    keys::unified::WalletCapability,
     transactions::TransactionMetadataSet,
 };
 use crate::compact_formats::{
@@ -38,8 +38,9 @@ use zcash_primitives::{
     memo::{Memo, MemoBytes},
     merkle_tree::{Hashable, IncrementalWitness},
     sapling::{
-        note_encryption::SaplingDomain, Diversifier as SaplingDiversifier, Node as SaplingNode,
-        Note as SaplingNote, Nullifier as SaplingNullifier, PaymentAddress as SaplingAddress,
+        keys::DiversifiableFullViewingKey as SaplingFvk, note_encryption::SaplingDomain,
+        Diversifier as SaplingDiversifier, Node as SaplingNode, Note as SaplingNote,
+        Nullifier as SaplingNullifier, PaymentAddress as SaplingAddress,
     },
     transaction::{
         components::{
@@ -51,10 +52,7 @@ use zcash_primitives::{
         },
         Transaction, TxId,
     },
-    zip32::{
-        ExtendedFullViewingKey as SaplingExtendedFullViewingKey,
-        ExtendedSpendingKey as SaplingExtendedSpendingKey,
-    },
+    zip32::ExtendedSpendingKey as SaplingExtendedSpendingKey,
 };
 use zingoconfig::ChainType;
 
@@ -420,7 +418,7 @@ pub trait ReceivedNoteAndMetadata: Sized {
         WitnessCache<Self::Node>,
     );
     fn from_parts(
-        extfvk: Self::Fvk,
+        fvk: Self::Fvk,
         diversifier: Self::Diversifier,
         note: Self::Note,
         witnesses: WitnessCache<Self::Node>,
@@ -467,7 +465,7 @@ pub trait ReceivedNoteAndMetadata: Sized {
 }
 
 impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
-    type Fvk = SaplingExtendedFullViewingKey;
+    type Fvk = SaplingFvk;
     type Diversifier = SaplingDiversifier;
     type Note = SaplingNote;
     type Node = SaplingNode;
@@ -490,7 +488,7 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
     ) = TransactionMetadataSet::set_sapling_note_witnesses;
 
     fn from_parts(
-        extfvk: SaplingExtendedFullViewingKey,
+        fvk: SaplingFvk,
         diversifier: SaplingDiversifier,
         note: SaplingNote,
         witnesses: WitnessCache<SaplingNode>,
@@ -502,7 +500,7 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         have_spending_key: bool,
     ) -> Self {
         Self {
-            extfvk,
+            fvk,
             diversifier,
             note,
             witnesses,
@@ -520,7 +518,7 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
     }
 
     fn fvk(&self) -> &Self::Fvk {
-        &self.extfvk
+        &self.fvk
     }
 
     fn diversifier(&self) -> &Self::Diversifier {
@@ -541,10 +539,10 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
 
     fn get_nullifier_from_note_fvk_and_witness_position(
         note: &Self::Note,
-        extfvk: &Self::Fvk,
+        fvk: &Self::Fvk,
         position: u64,
     ) -> Self::Nullifier {
-        note.nf(&extfvk.fvk.vk.nk, position)
+        note.nf(&fvk.fvk().vk.nk, position)
     }
 
     fn nullifier(&self) -> Self::Nullifier {
@@ -724,12 +722,9 @@ where
 {
     const NU: NetworkUpgrade;
 
-    type Fvk: Clone
-        + Send
-        + Diversifiable<Note = Self::WalletNote, Address = Self::Recipient>
-        + PartialEq;
+    type Fvk: Clone + Send + Diversifiable<Note = Self::WalletNote, Address = Self::Recipient>;
 
-    type SpendingKey: for<'a> From<&'a UnifiedSpendCapability> + Clone;
+    type SpendingKey: for<'a> TryFrom<&'a WalletCapability> + Clone;
     type CompactOutput: CompactOutput<Self>;
     type WalletNote: ReceivedNoteAndMetadata<
         Fvk = Self::Fvk,
@@ -743,20 +738,20 @@ where
 
     fn to_notes_vec_mut(_: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote>;
     fn ua_from_contained_receiver<'a>(
-        unified_spend_auth: &'a UnifiedSpendCapability,
+        unified_spend_auth: &'a WalletCapability,
         receiver: &Self::Recipient,
     ) -> Option<&'a UnifiedAddress>;
     fn get_tree(tree_state: &TreeState) -> &String;
-    fn usc_to_sk(usc: &UnifiedSpendCapability) -> Self::SpendingKey;
-    fn usc_to_fvk(usc: &UnifiedSpendCapability) -> Self::Fvk;
-    fn usc_to_ivk(usc: &UnifiedSpendCapability) -> Self::IncomingViewingKey;
-    fn usc_to_ovk(usc: &UnifiedSpendCapability) -> Self::OutgoingViewingKey;
+    fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String>;
+    fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, String>;
+    fn wc_to_ivk(wc: &WalletCapability) -> Result<Self::IncomingViewingKey, String>;
+    fn wc_to_ovk(wc: &WalletCapability) -> Result<Self::OutgoingViewingKey, String>;
 }
 
 impl DomainWalletExt for SaplingDomain<ChainType> {
     const NU: NetworkUpgrade = NetworkUpgrade::Sapling;
 
-    type Fvk = SaplingExtendedFullViewingKey;
+    type Fvk = SaplingFvk;
 
     type SpendingKey = SaplingExtendedSpendingKey;
 
@@ -773,7 +768,7 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
     }
 
     fn ua_from_contained_receiver<'a>(
-        unified_spend_auth: &'a UnifiedSpendCapability,
+        unified_spend_auth: &'a WalletCapability,
         receiver: &Self::Recipient,
     ) -> Option<&'a UnifiedAddress> {
         unified_spend_auth
@@ -785,17 +780,17 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
     fn get_tree(tree_state: &TreeState) -> &String {
         &tree_state.sapling_tree
     }
-    fn usc_to_sk(usc: &UnifiedSpendCapability) -> Self::SpendingKey {
-        Self::SpendingKey::from(usc)
+    fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String> {
+        Self::SpendingKey::try_from(wc)
     }
-    fn usc_to_fvk(usc: &UnifiedSpendCapability) -> Self::Fvk {
-        Self::Fvk::from(usc)
+    fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, String> {
+        Self::Fvk::try_from(wc)
     }
-    fn usc_to_ivk(usc: &UnifiedSpendCapability) -> Self::IncomingViewingKey {
-        Self::IncomingViewingKey::from(usc)
+    fn wc_to_ivk(wc: &WalletCapability) -> Result<Self::IncomingViewingKey, String> {
+        Self::IncomingViewingKey::try_from(wc)
     }
-    fn usc_to_ovk(usc: &UnifiedSpendCapability) -> Self::OutgoingViewingKey {
-        Self::OutgoingViewingKey::from(usc)
+    fn wc_to_ovk(wc: &WalletCapability) -> Result<Self::OutgoingViewingKey, String> {
+        Self::OutgoingViewingKey::try_from(wc)
     }
 }
 
@@ -819,7 +814,7 @@ impl DomainWalletExt for OrchardDomain {
     }
 
     fn ua_from_contained_receiver<'a>(
-        unified_spend_capability: &'a UnifiedSpendCapability,
+        unified_spend_capability: &'a WalletCapability,
         receiver: &Self::Recipient,
     ) -> Option<&'a UnifiedAddress> {
         unified_spend_capability
@@ -831,17 +826,17 @@ impl DomainWalletExt for OrchardDomain {
     fn get_tree(tree_state: &TreeState) -> &String {
         &tree_state.orchard_tree
     }
-    fn usc_to_sk(usc: &UnifiedSpendCapability) -> Self::SpendingKey {
-        Self::SpendingKey::from(usc)
+    fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String> {
+        Self::SpendingKey::try_from(wc)
     }
-    fn usc_to_fvk(usc: &UnifiedSpendCapability) -> Self::Fvk {
-        Self::Fvk::from(usc)
+    fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, String> {
+        Self::Fvk::try_from(wc)
     }
-    fn usc_to_ivk(usc: &UnifiedSpendCapability) -> Self::IncomingViewingKey {
-        Self::IncomingViewingKey::from(usc)
+    fn wc_to_ivk(wc: &WalletCapability) -> Result<Self::IncomingViewingKey, String> {
+        Self::IncomingViewingKey::try_from(wc)
     }
-    fn usc_to_ovk(usc: &UnifiedSpendCapability) -> Self::OutgoingViewingKey {
-        Self::OutgoingViewingKey::from(usc)
+    fn wc_to_ovk(wc: &WalletCapability) -> Result<Self::OutgoingViewingKey, String> {
+        Self::OutgoingViewingKey::try_from(wc)
     }
 }
 
@@ -854,16 +849,16 @@ pub trait Diversifiable {
     ) -> Option<Self::Address>;
 }
 
-impl Diversifiable for SaplingExtendedFullViewingKey {
+impl Diversifiable for SaplingFvk {
     type Note = ReceivedSaplingNoteAndMetadata;
 
     type Address = zcash_primitives::sapling::PaymentAddress;
 
     fn diversified_address(
         &self,
-        div: <<zcash_primitives::zip32::ExtendedFullViewingKey as Diversifiable>::Note as ReceivedNoteAndMetadata>::Diversifier,
+        div: <<SaplingFvk as Diversifiable>::Note as ReceivedNoteAndMetadata>::Diversifier,
     ) -> Option<Self::Address> {
-        self.fvk.vk.to_payment_address(div)
+        self.fvk().vk.to_payment_address(div)
     }
 }
 
@@ -890,7 +885,7 @@ where
         transaction_id: TxId,
         note_and_metadata: &D::WalletNote,
         anchor_offset: usize,
-        spend_key: &Option<D::SpendingKey>,
+        spend_key: Option<&D::SpendingKey>,
     ) -> Option<Self> {
         // Include only notes that haven't been spent, or haven't been included in an unconfirmed spend yet.
         if note_and_metadata.spent().is_none()
@@ -909,7 +904,7 @@ where
                     *note_and_metadata.diversifier(),
                     note_and_metadata.note().clone(),
                     w.clone(),
-                    spend_key.clone().unwrap(),
+                    spend_key,
                 )
             })
         } else {
@@ -924,14 +919,14 @@ where
         diversifier: <D::WalletNote as ReceivedNoteAndMetadata>::Diversifier,
         note: D::Note,
         witness: IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node>,
-        sk: D::SpendingKey,
+        sk: Option<&D::SpendingKey>,
     ) -> Self;
     fn transaction_id(&self) -> TxId;
     fn nullifier(&self) -> <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier;
     fn diversifier(&self) -> <D::WalletNote as ReceivedNoteAndMetadata>::Diversifier;
     fn note(&self) -> &D::Note;
     fn witness(&self) -> &IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node>;
-    fn spend_key(&self) -> &D::SpendingKey;
+    fn spend_key(&self) -> Option<&D::SpendingKey>;
 }
 
 impl SpendableNote<SaplingDomain<ChainType>> for SpendableSaplingNote {
@@ -941,7 +936,7 @@ impl SpendableNote<SaplingDomain<ChainType>> for SpendableSaplingNote {
         diversifier: SaplingDiversifier,
         note: SaplingNote,
         witness: IncrementalWitness<SaplingNode>,
-        extsk: SaplingExtendedSpendingKey,
+        extsk: Option<&SaplingExtendedSpendingKey>,
     ) -> Self {
         SpendableSaplingNote {
             transaction_id,
@@ -949,7 +944,7 @@ impl SpendableNote<SaplingDomain<ChainType>> for SpendableSaplingNote {
             diversifier,
             note,
             witness,
-            extsk,
+            extsk: extsk.cloned(),
         }
     }
 
@@ -973,8 +968,8 @@ impl SpendableNote<SaplingDomain<ChainType>> for SpendableSaplingNote {
         &self.witness
     }
 
-    fn spend_key(&self) -> &SaplingExtendedSpendingKey {
-        &self.extsk
+    fn spend_key(&self) -> Option<&SaplingExtendedSpendingKey> {
+        self.extsk.as_ref()
     }
 }
 
@@ -985,7 +980,7 @@ impl SpendableNote<OrchardDomain> for SpendableOrchardNote {
         diversifier: OrchardDiversifier,
         note: OrchardNote,
         witness: IncrementalWitness<MerkleHashOrchard>,
-        sk: OrchardSpendingKey,
+        sk: Option<&OrchardSpendingKey>,
     ) -> Self {
         SpendableOrchardNote {
             transaction_id,
@@ -993,7 +988,7 @@ impl SpendableNote<OrchardDomain> for SpendableOrchardNote {
             diversifier,
             note,
             witness,
-            spend_key: sk,
+            spend_key: sk.cloned(),
         }
     }
     fn transaction_id(&self) -> TxId {
@@ -1016,8 +1011,8 @@ impl SpendableNote<OrchardDomain> for SpendableOrchardNote {
         &self.witness
     }
 
-    fn spend_key(&self) -> &OrchardSpendingKey {
-        &self.spend_key
+    fn spend_key(&self) -> Option<&OrchardSpendingKey> {
+        self.spend_key.as_ref()
     }
 }
 
@@ -1042,7 +1037,27 @@ pub trait ReadableWriteable<Input>: Sized {
     }
 }
 
-impl ReadableWriteable<()> for SaplingExtendedFullViewingKey {
+impl ReadableWriteable<()> for OrchardSpendingKey {
+    const VERSION: u8 = 0; //Not applicable
+
+    fn read<R: Read>(mut reader: R, _: ()) -> io::Result<Self> {
+        let mut data = [0u8; 32];
+        reader.read_exact(&mut data)?;
+
+        Option::from(Self::from_bytes(data)).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Unable to deserialize a valid Orchard SpendingKey from bytes".to_owned(),
+            )
+        })
+    }
+
+    fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+        writer.write_all(self.to_bytes())
+    }
+}
+
+impl ReadableWriteable<()> for SaplingExtendedSpendingKey {
     const VERSION: u8 = 0; //Not applicable
 
     fn read<R: Read>(reader: R, _: ()) -> io::Result<Self> {
@@ -1051,6 +1066,23 @@ impl ReadableWriteable<()> for SaplingExtendedFullViewingKey {
 
     fn write<W: Write>(&self, writer: W) -> io::Result<()> {
         self.write(writer)
+    }
+}
+
+impl ReadableWriteable<()> for SaplingFvk {
+    const VERSION: u8 = 0; //Not applicable
+
+    fn read<R: Read>(mut reader: R, _: ()) -> io::Result<Self> {
+        let mut fvk_bytes = [0u8; 128];
+        reader.read_exact(&mut fvk_bytes)?;
+        SaplingFvk::from_bytes(&fvk_bytes).ok_or(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Couldn't read a Sapling Diversifiable Full Viewing Key",
+        ))
+    }
+
+    fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+        writer.write_all(&self.to_bytes())
     }
 }
 
@@ -1066,19 +1098,19 @@ impl ReadableWriteable<()> for OrchardFullViewingKey {
     }
 }
 
-impl ReadableWriteable<(SaplingExtendedFullViewingKey, SaplingDiversifier)> for SaplingNote {
+impl ReadableWriteable<(SaplingFvk, SaplingDiversifier)> for SaplingNote {
     const VERSION: u8 = 1;
 
     fn read<R: Read>(
         mut reader: R,
-        (extfvk, diversifier): (SaplingExtendedFullViewingKey, SaplingDiversifier),
+        (fvk, diversifier): (SaplingFvk, SaplingDiversifier),
     ) -> io::Result<Self> {
         let _version = Self::get_version(&mut reader)?;
         let value = reader.read_u64::<LittleEndian>()?;
         let rseed = super::data::read_sapling_rseed(&mut reader)?;
 
-        let maybe_note = extfvk
-            .fvk
+        let maybe_note = fvk
+            .fvk()
             .vk
             .to_payment_address(diversifier)
             .unwrap()

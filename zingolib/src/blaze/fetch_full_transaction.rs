@@ -1,6 +1,6 @@
 use crate::wallet::{
     data::OutgoingTxMetadata,
-    keys::{address_from_pubkeyhash, unified::UnifiedSpendCapability, ToBase58Check},
+    keys::{address_from_pubkeyhash, unified::WalletCapability, ToBase58Check},
     traits::{
         self as zingo_traits, Bundle as _, DomainWalletExt, Nullifier as _,
         ReceivedNoteAndMetadata as _, Recipient as _, ShieldedOutputExt as _, Spend as _,
@@ -45,14 +45,14 @@ use zingoconfig::{ChainType, ZingoConfig};
 #[derive(Clone)]
 pub struct TransactionContext {
     pub(crate) config: ZingoConfig,
-    pub(crate) key: Arc<RwLock<UnifiedSpendCapability>>,
+    pub(crate) key: Arc<RwLock<WalletCapability>>,
     pub(crate) transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
 }
 
 impl TransactionContext {
     pub fn new(
         config: &ZingoConfig,
-        key: Arc<RwLock<UnifiedSpendCapability>>,
+        key: Arc<RwLock<WalletCapability>>,
         transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
     ) -> Self {
         Self {
@@ -444,7 +444,15 @@ impl TransactionContext {
                 })
                 .collect::<Vec<_>>();
 
-        let ivk = D::usc_to_ivk(&*unified_spend_capability);
+        let (Ok(ivk), Ok(ovk), Ok(fvk)) = (
+            D::wc_to_ivk(&*unified_spend_capability),
+            D::wc_to_ovk(&*unified_spend_capability),
+            D::wc_to_fvk(&*unified_spend_capability)
+        ) else {
+            // skip scanning if wallet has not viewing capability
+            return;
+        };
+
         let mut decrypt_attempts =
             zcash_note_encryption::batch::try_note_decryption(&[ivk], &domain_tagged_outputs)
                 .into_iter();
@@ -464,7 +472,7 @@ impl TransactionContext {
                         block_time as u64,
                         note.clone(),
                         to,
-                        &D::usc_to_fvk(&*unified_spend_capability),
+                        &fvk,
                     );
             }
             let memo = memo_bytes
@@ -487,7 +495,7 @@ impl TransactionContext {
                     <FnGenBundle<D> as zingo_traits::Bundle<D>>::Output,
                 >(
                     &output.domain(transaction_block_height, self.config.chain),
-                    &D::usc_to_ovk(&*unified_spend_capability),
+                    &ovk,
                     &output,
                     &output.value_commitment(),
                     &output.out_ciphertext(),

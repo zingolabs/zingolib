@@ -1330,7 +1330,7 @@ pub fn do_user_command(cmd: &str, args: &Vec<&str>, lightclient: &LightClient) -
 #[cfg(test)]
 pub mod tests {
     use super::do_user_command;
-    use crate::lightclient::LightClient;
+    use crate::{lightclient::LightClient, wallet::WalletBase};
     use lazy_static::lazy_static;
     use tokio::runtime::Runtime;
     use zingoconfig::ZingoConfig;
@@ -1344,7 +1344,7 @@ pub mod tests {
             .unwrap()
             .block_on(LightClient::test_new(
                 &ZingoConfig::create_unconnected(zingoconfig::ChainType::FakeMainnet, None),
-                Some(TEST_SEED.to_string()),
+                WalletBase::MnemonicPhrase(TEST_SEED.to_string()),
                 0,
             ))
             .unwrap();

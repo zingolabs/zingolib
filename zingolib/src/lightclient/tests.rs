@@ -1,3 +1,4 @@
+use bip0039::Mnemonic;
 use ff::{Field, PrimeField};
 use group::GroupEncoding;
 use json::JsonValue;
@@ -5,17 +6,21 @@ use rand::rngs::OsRng;
 use tokio::runtime::Runtime;
 use zcash_client_backend::address::RecipientAddress;
 
+use orchard::keys::{FullViewingKey as OrchardFvk, SpendingKey as OrchardSpendingKey};
+
+use zcash_address::unified::{Address as UAddress, Encoding, Fvk, Receiver, Ufvk};
 use zcash_client_backend::encoding::encode_payment_address;
 use zcash_note_encryption::EphemeralKeyBytes;
 use zcash_primitives::consensus::{BlockHeight, BranchId, Parameters, TestNetwork};
 use zcash_primitives::memo::Memo;
 use zcash_primitives::merkle_tree::IncrementalWitness;
+use zcash_primitives::sapling::keys::DiversifiableFullViewingKey as SaplingFvk;
 use zcash_primitives::sapling::note_encryption::sapling_note_encryption;
 use zcash_primitives::sapling::{Note, Rseed, ValueCommitment};
 use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
 use zcash_primitives::transaction::components::{OutputDescription, GROTH_PROOF_SIZE};
 use zcash_primitives::transaction::Transaction;
-use zcash_primitives::zip32::{ExtendedFullViewingKey, ExtendedSpendingKey};
+use zcash_primitives::zip32::{ExtendedFullViewingKey, ExtendedSpendingKey as SaplingSpendingKey};
 
 use crate::apply_scenario;
 use crate::blaze::block_witness_data::CommitmentTreesForBlock;
@@ -23,16 +28,22 @@ use crate::blaze::test_utils::{FakeCompactBlockList, FakeTransaction};
 use crate::lightclient::testmocks;
 
 use crate::compact_formats::{CompactSaplingOutput, CompactTx};
+use crate::lightclient::checkpoints;
 use crate::lightclient::test_server::{
     clean_shutdown, create_test_server, mine_numblocks_each_with_two_sap_txs, mine_pending_blocks,
+    NBlockFCBLScenario,
 };
 use crate::lightclient::LightClient;
 use crate::wallet::data::{ReceivedSaplingNoteAndMetadata, TransactionMetadata};
-use crate::wallet::keys::unified::get_transparent_secretkey_pubkey_taddr;
-use crate::wallet::traits::ReadableWriteable;
+use crate::wallet::keys::extended_transparent::{ExtendedPrivKey, ExtendedPubKey};
+use crate::wallet::keys::unified::ReceiverSelection;
+use crate::wallet::keys::{
+    address_from_pubkeyhash,
+    unified::{get_transparent_secretkey_pubkey_taddr, Capability, WalletCapability},
+};
+use crate::wallet::traits::{ReadableWriteable, ReceivedNoteAndMetadata};
+use crate::wallet::{LightWallet, WalletBase};
 
-use super::checkpoints;
-use super::test_server::NBlockFCBLScenario;
 use zingoconfig::{ChainType, ZingoConfig};
 
 #[test]
@@ -47,14 +58,24 @@ fn new_wallet_from_phrase() {
         .to_string();
 
     let config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, Some(data_dir));
-    let lc = LightClient::create_with_seedorkey_wallet(TEST_SEED.to_string(), &config, 0, false)
-        .unwrap();
+    let lc = LightClient::new_from_wallet_base(
+        WalletBase::MnemonicPhrase(TEST_SEED.to_string()),
+        &config,
+        0,
+        false,
+    )
+    .unwrap();
     assert_eq!(
         format!(
             "{:?}",
-            LightClient::create_with_seedorkey_wallet(TEST_SEED.to_string(), &config, 0, false)
-                .err()
-                .unwrap()
+            LightClient::new_from_wallet_base(
+                WalletBase::MnemonicPhrase(TEST_SEED.to_string()),
+                &config,
+                0,
+                false
+            )
+            .err()
+            .unwrap()
         ),
         format!(
             "{:?}",
@@ -94,7 +115,10 @@ fn new_wallet_from_sapling_esk() {
 
     let config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, Some(data_dir));
     let sk = "secret-extended-key-main1qvpa0qr8qqqqpqxn4l054nzxpxzp3a8r2djc7sekdek5upce8mc2j2z0arzps4zv940qeg706hd0wq6g5snzvhp332y6vhwyukdn8dhekmmsk7fzvzkqm6ypc99uy63tpesqwxhpre78v06cx8k5xpp9mrhtgqs5dvp68cqx2yrvthflmm2ynl8c0506dekul0f6jkcdmh0292lpphrksyc5z3pxwws97zd5els3l2mjt2s7hntap27mlmt6w0drtfmz36vz8pgu7ec0twfrq";
-    let lc = LightClient::create_with_seedorkey_wallet(sk.to_string(), &config, 0, false).unwrap();
+    // This will panic.
+    // TODO: add Sapling spending key import
+    let lc = LightClient::new_from_wallet_base(WalletBase::Ufvk(sk.to_string()), &config, 0, false)
+        .unwrap();
     Runtime::new().unwrap().block_on(async move {
         let addresses = lc.do_addresses().await;
         assert_eq!(addresses["sapling_addresses"].len(), 1);
@@ -161,7 +185,10 @@ fn new_wallet_from_zvk() {
 
     let config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, Some(data_dir));
     let vk = "zxviews1qvpa0qr8qqqqpqxn4l054nzxpxzp3a8r2djc7sekdek5upce8mc2j2z0arzps4zv9kdvg28gjzvxd47ant6jn4svln5psw3htx93cq93ahw4e7lptrtlq7he5r6p6rcm3s0z6l24ype84sgqfrmghu449htrjspfv6qg2zfx2yrvthflmm2ynl8c0506dekul0f6jkcdmh0292lpphrksyc5z3pxwws97zd5els3l2mjt2s7hntap27mlmt6w0drtfmz36vz8pgu7ecrxzsls";
-    let lc = LightClient::create_with_seedorkey_wallet(vk.to_string(), &config, 0, false).unwrap();
+    // This will panic
+    // TODO: add Sapling FVKs import
+    let lc = LightClient::new_from_wallet_base(WalletBase::Ufvk(vk.to_string()), &config, 0, false)
+        .unwrap();
 
     Runtime::new().unwrap().block_on(async move {
         let addresses = lc.do_addresses().await;
@@ -196,11 +223,10 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
     } = scenario;
     // 2. Send an incoming transaction to fill the wallet
     // Note:  This creates a new block via ->add_fake_transaction->add_empty_block
-    let extfvk1 =
-        ExtendedFullViewingKey::from(&*lightclient.wallet.unified_spend_capability().read().await);
+    let fvk1 = SaplingFvk::try_from(&*lightclient.wallet.wallet_capability().read().await).unwrap();
     let value = 100_000;
     let (transaction, _height, _) =
-        fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, value);
+        fake_compactblock_list.create_sapling_coinbase_transaction(&fvk1, value);
     let mineraddr_funding_txid = transaction.txid();
     // This is to mine the block used to add the coinbase transaction?
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
@@ -219,7 +245,7 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
             lightclient.config.chain.hrp_sapling_payment_address(),
             lightclient
                 .wallet
-                .unified_spend_capability()
+                .wallet_capability()
                 .read()
                 .await
                 .addresses()[0]
@@ -242,7 +268,7 @@ async fn sapling_incoming_sapling_outgoing(scenario: NBlockFCBLScenario) {
             mineraddress_transaction["address"],
             lightclient
                 .wallet
-                .unified_spend_capability()
+                .wallet_capability()
                 .read()
                 .await
                 .addresses()[0]
@@ -413,11 +439,12 @@ async fn multiple_incoming_same_transaction(scenario: NBlockFCBLScenario) {
         ..
     } = scenario;
 
-    let extfvk1: ExtendedFullViewingKey =
-        (&*lightclient.wallet.unified_spend_capability().read().await).into();
+    let fvk1: SaplingFvk = (&*lightclient.wallet.wallet_capability().read().await)
+        .try_into()
+        .unwrap();
     let value = 100_000;
     // 2. Construct the Fake transaction.
-    let to = extfvk1.default_address().1;
+    let to = fvk1.default_address().1;
 
     // Create fake note for the account
     let td = testmocks::new_transactiondata();
@@ -509,7 +536,7 @@ async fn multiple_incoming_same_transaction(scenario: NBlockFCBLScenario) {
                 unspent_notes[i]["address"],
                 lightclient
                     .wallet
-                    .unified_spend_capability()
+                    .wallet_capability()
                     .read()
                     .await
                     .addresses()[0]
@@ -597,10 +624,12 @@ async fn sapling_incoming_multisapling_outgoing(scenario: NBlockFCBLScenario) {
         ..
     } = scenario;
     // 2. Send an incoming transaction to fill the wallet
-    let extfvk1 = (&*lightclient.wallet.unified_spend_capability().read().await).into();
+    let fvk1 = (&*lightclient.wallet.wallet_capability().read().await)
+        .try_into()
+        .unwrap();
     let value = 100_000;
     let (_transaction, _height, _) =
-        fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, value);
+        fake_compactblock_list.create_sapling_coinbase_transaction(&fvk1, value);
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
     mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
 
@@ -660,19 +689,21 @@ async fn sapling_to_sapling_scan_together() {
 
     ready_receiver.await.unwrap();
 
-    let lightclient = LightClient::test_new(&config, None, 0).await.unwrap();
+    let lightclient = LightClient::test_new(&config, WalletBase::FreshEntropy, 0)
+        .await
+        .unwrap();
     let mut fake_compactblock_list = FakeCompactBlockList::new(0);
 
     // 2. Send an incoming sapling transaction to fill the wallet
-    let (mockuser_spendkey, mockuser_extfvk): (ExtendedSpendingKey, ExtendedFullViewingKey) = {
-        let usc_readlock = lightclient.wallet.unified_spend_capability();
-        let usc = &*usc_readlock.read().await;
-        (usc.into(), usc.into())
+    let (mockuser_spendkey, mockuser_fvk): (SaplingSpendingKey, SaplingFvk) = {
+        let wc_readlock = lightclient.wallet.wallet_capability();
+        let wc = &*wc_readlock.read().await;
+        (wc.try_into().unwrap(), wc.try_into().unwrap())
     };
     let value = 100_000;
     let (transaction, _height, note) = fake_compactblock_list // NOTE: Extracting fvk this way for future proof.
         .create_sapling_coinbase_transaction(
-            &ExtendedFullViewingKey::from(&mockuser_spendkey),
+            &SaplingFvk::from(ExtendedFullViewingKey::from(&mockuser_spendkey)),
             value,
         );
     let txid = transaction.txid();
@@ -681,7 +712,7 @@ async fn sapling_to_sapling_scan_together() {
     let trees = crate::blaze::test_utils::trees_from_cblocks(&fake_compactblock_list.blocks);
     let witness_from_last_sapling_tree = IncrementalWitness::from_tree(trees.0.last().unwrap());
     let nf = note.nf(
-        &mockuser_extfvk.fvk.vk.nk,
+        &mockuser_fvk.fvk().vk.nk,
         witness_from_last_sapling_tree.position() as u64,
     );
 
@@ -697,7 +728,7 @@ async fn sapling_to_sapling_scan_together() {
 
     // Construct transaction to wallet-external recipient-address.
     let spent_txid = fake_compactblock_list
-        .create_spend_transaction_from_ovk(&nf, spent_value, &mockuser_extfvk.fvk.ovk, &pa)
+        .create_spend_transaction_from_ovk(&nf, spent_value, &mockuser_fvk.fvk().ovk, &pa)
         .txid();
 
     // 4. Mine the blocks and sync the lightwallet, that is, execute transactions:
@@ -744,12 +775,12 @@ async fn sapling_incoming_viewkey(scenario: NBlockFCBLScenario) {
     );
 
     // 2. Create a new Viewkey and import it
-    let iextsk = ExtendedSpendingKey::master(&[1u8; 32]);
-    let iextfvk = ExtendedFullViewingKey::from(&iextsk);
-    let iaddr = encode_payment_address(config.hrp_sapling_address(), &iextfvk.default_address().1);
+    let iextsk = SaplingSpendingKey::master(&[1u8; 32]);
+    let ifvk = SaplingFvk::from(&iextsk);
+    let iaddr = encode_payment_address(config.hrp_sapling_address(), &ifvk.default_address().1);
     let addrs = lightclient
         .do_import_sapling_full_view_key(
-            encode_extended_full_viewing_key(config.hrp_sapling_viewing_key(), &iextfvk),
+            encode_extended_full_viewing_key(config.hrp_sapling_viewing_key(), &ifvk),
             1,
         )
         .await
@@ -759,7 +790,7 @@ async fn sapling_incoming_viewkey(scenario: NBlockFCBLScenario) {
 
     let value = 100_000;
     let (transaction, _height, _) =
-        fake_compactblock_list.create_sapling_coinbase_transaction(&iextfvk, value);
+        fake_compactblock_list.create_sapling_coinbase_transaction(&ifvk, value);
     let txid = transaction.txid();
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
     mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
@@ -779,7 +810,7 @@ async fn sapling_incoming_viewkey(scenario: NBlockFCBLScenario) {
         .keys()
         .read()
         .await
-        .have_sapling_spending_key(&iextfvk));
+        .have_sapling_spending_key(&ifvk));
     assert_eq!(
         lightclient.do_balance().await["spendable_sapling_balance"]
             .as_u64()
@@ -887,15 +918,17 @@ async fn mixed_transaction(scenario: NBlockFCBLScenario) {
         ..
     } = scenario;
     // 2. Send an incoming transaction to fill the wallet
-    let extfvk1 = (&*lightclient.wallet.unified_spend_capability().read().await).into();
+    let fvk1 = (&*lightclient.wallet.wallet_capability().read().await)
+        .try_into()
+        .unwrap();
     let zvalue = 100_000;
     let (_ztransaction, _height, _) =
-        fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, zvalue);
+        fake_compactblock_list.create_sapling_coinbase_transaction(&fvk1, zvalue);
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
     mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
 
     // 3. Send an incoming t-address transaction
-    let (_sk, pk, taddr) = get_transparent_secretkey_pubkey_taddr(&lightclient).await;
+    let (_sk, Some(pk), Some(taddr)) = get_transparent_secretkey_pubkey_taddr(&lightclient).await else { panic!() };
     let tvalue = 200_000;
 
     let mut fake_transaction = FakeTransaction::new(true);
@@ -993,15 +1026,17 @@ async fn aborted_resync(scenario: NBlockFCBLScenario) {
         ..
     } = scenario;
     // 2. Send an incoming transaction to fill the wallet
-    let extfvk1 = (&*lightclient.wallet.unified_spend_capability().read().await).into();
+    let fvk1 = (&*lightclient.wallet.wallet_capability().read().await)
+        .try_into()
+        .unwrap();
     let zvalue = 100_000;
     let (_ztransaction, _height, _) =
-        fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, zvalue);
+        fake_compactblock_list.create_sapling_coinbase_transaction(&fvk1, zvalue);
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
     mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
 
     // 3. Send an incoming t-address transaction
-    let (_sk, pk, taddr) = get_transparent_secretkey_pubkey_taddr(&lightclient).await;
+    let (_sk, Some(pk), Some(taddr)) = get_transparent_secretkey_pubkey_taddr(&lightclient).await else { panic!() };
     let tvalue = 200_000;
 
     let mut fake_transaction = FakeTransaction::new(true);
@@ -1111,15 +1146,17 @@ async fn no_change(scenario: NBlockFCBLScenario) {
         ..
     } = scenario;
     // 2. Send an incoming transaction to fill the wallet
-    let extfvk1 = (&*lightclient.wallet.unified_spend_capability().read().await).into();
+    let fvk1 = (&*lightclient.wallet.wallet_capability().read().await)
+        .try_into()
+        .unwrap();
     let zvalue = 100_000;
     let (_ztransaction, _height, _) =
-        fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, zvalue);
+        fake_compactblock_list.create_sapling_coinbase_transaction(&fvk1, zvalue);
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
     mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
 
     // 3. Send an incoming t-address transaction
-    let (_sk, pk, taddr) = get_transparent_secretkey_pubkey_taddr(&lightclient).await;
+    let (_sk, Some(pk), Some(taddr)) = get_transparent_secretkey_pubkey_taddr(&lightclient).await else { panic!() };
     let tvalue = 200_000;
 
     let mut fake_transaction = FakeTransaction::new(true);
@@ -1184,9 +1221,13 @@ async fn recover_at_checkpoint() {
     data.write().await.add_blocks(cbs.clone());
 
     // 4. Test1: create a new lightclient, restoring at exactly the checkpoint
-    let lc = LightClient::test_new(&config, Some(TEST_SEED.to_string()), ckpt_height)
-        .await
-        .unwrap();
+    let lc = LightClient::test_new(
+        &config,
+        WalletBase::MnemonicPhrase(TEST_SEED.to_string()),
+        ckpt_height,
+    )
+    .await
+    .unwrap();
     //lc.init_logging().unwrap();
     assert_eq!(
         json::parse(lc.do_info().await.as_str()).unwrap()["latest_block_height"]
@@ -1218,9 +1259,13 @@ async fn recover_at_checkpoint() {
         .args(["-f", wallet_name])
         .output()
         .expect("Wallet should always be removed.");
-    let lc = LightClient::test_new(&config, Some(TEST_SEED.to_string()), ckpt_height + 100)
-        .await
-        .unwrap();
+    let lc = LightClient::test_new(
+        &config,
+        WalletBase::MnemonicPhrase(TEST_SEED.to_string()),
+        ckpt_height + 100,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(
         json::parse(lc.do_info().await.as_str()).unwrap()["latest_block_height"]
@@ -1271,10 +1316,12 @@ async fn witness_clearing(scenario: NBlockFCBLScenario) {
         ..
     } = scenario;
     // 2. Send an incoming transaction to fill the wallet
-    let extfvk1 = (&*lightclient.wallet.unified_spend_capability().read().await).into();
+    let fvk1 = (&*lightclient.wallet.wallet_capability().read().await)
+        .try_into()
+        .unwrap();
     let value = 100_000;
     let (transaction, _height, _) =
-        fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, value);
+        fake_compactblock_list.create_sapling_coinbase_transaction(&fvk1, value);
     let txid = transaction.txid();
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
     mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
@@ -1370,10 +1417,12 @@ async fn mempool_clearing(scenario: NBlockFCBLScenario) {
         ..
     } = scenario;
     // 2. Send an incoming transaction to fill the wallet
-    let extfvk1 = (&*lightclient.wallet.unified_spend_capability().read().await).into();
+    let fvk1 = (&*lightclient.wallet.wallet_capability().read().await)
+        .try_into()
+        .unwrap();
     let value = 100_000;
     let (transaction, _height, _) =
-        fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, value);
+        fake_compactblock_list.create_sapling_coinbase_transaction(&fvk1, value);
     let orig_transaction_id = transaction.txid().to_string();
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
     mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
@@ -1433,13 +1482,16 @@ async fn mempool_clearing(scenario: NBlockFCBLScenario) {
         for note in sapling_notes {
             let mut note_bytes = Vec::new();
             note.write(&mut note_bytes).unwrap();
-            assert_eq!(
-                format!("{:#?}", note),
-                format!(
-                    "{:#?}",
-                    ReceivedSaplingNoteAndMetadata::read(&*note_bytes, ()).unwrap()
-                )
-            );
+            let note2 = ReceivedSaplingNoteAndMetadata::read(&*note_bytes, ()).unwrap();
+            assert_eq!(note.fvk().to_bytes(), note2.fvk().to_bytes());
+            assert_eq!(note.nullifier(), note2.nullifier());
+            assert_eq!(note.diversifier, note2.diversifier);
+            assert_eq!(note.note, note2.note);
+            assert_eq!(note.spent, note2.spent);
+            assert_eq!(note.unconfirmed_spent, note2.unconfirmed_spent);
+            assert_eq!(note.memo, note2.memo);
+            assert_eq!(note.is_change, note2.is_change);
+            assert_eq!(note.have_spending_key, note2.have_spending_key);
         }
     }
     let notes_after = lightclient.do_list_notes(true).await;
@@ -1504,10 +1556,12 @@ async fn mempool_and_balance(scenario: NBlockFCBLScenario) {
     } = scenario;
 
     // 2. Send an incoming transaction to fill the wallet
-    let extfvk1 = (&*lightclient.wallet.unified_spend_capability().read().await).into();
+    let fvk1 = (&*lightclient.wallet.wallet_capability().read().await)
+        .try_into()
+        .unwrap();
     let value = 100_000;
     let (_transaction, _height, _) =
-        fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, value);
+        fake_compactblock_list.create_sapling_coinbase_transaction(&fvk1, value);
     mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
     let bal = lightclient.do_balance().await;
@@ -1560,7 +1614,8 @@ fn test_read_wallet_from_buffer() {
     let mut buf = Vec::new();
     let config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, None);
     Runtime::new().unwrap().block_on(async {
-        let wallet = crate::wallet::LightWallet::new(config.clone(), None, 0).unwrap();
+        let wallet =
+            crate::wallet::LightWallet::new(config.clone(), WalletBase::FreshEntropy, 0).unwrap();
         wallet.write(&mut buf).await.unwrap();
     });
     let client = LightClient::read_wallet_from_buffer(&config, &buf[..]).unwrap();
@@ -1584,6 +1639,406 @@ async fn read_write_block_data(scenario: NBlockFCBLScenario) {
             cb,
             crate::wallet::data::BlockData::read(&*block_bytes).unwrap()
         );
+    }
+}
+
+#[tokio::test]
+async fn load_wallet_from_v26_dat_file() {
+    // We test that the LightWallet can be read from v26 .dat file
+    // Changes in version 27:
+    //   - The wallet does not have to have a mnemonic.
+    //     Absence of mnemonic is represented by an empty byte vector in v27.
+    //     v26 serialized wallet is always loaded with `Some(mnemonic)`.
+    //   - The wallet capabilities can be restricted from spending to view-only or none.
+    //     We introduce `Capability` type represent different capability types in v27.
+    //     v26 serialized wallet is always loaded with `Capability::Spend(sk)`.
+
+    // A testnet wallet initiated with
+    // --seed "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise"
+    // --birthday 0
+    // --nosync
+    // with 3 addresses containig all receivers.
+    let data = include_bytes!("zingo-wallet-v26.dat");
+
+    let config = zingoconfig::ZingoConfig::create_unconnected(ChainType::Testnet, None);
+    let wallet = LightWallet::read_internal(&data[..], &config)
+        .await
+        .map_err(|e| format!("Cannot deserialize LightWallet version 26 file: {}", e))
+        .unwrap();
+
+    let expected_mnemonic = Mnemonic::from_phrase(TEST_SEED.to_string()).unwrap();
+    assert_eq!(wallet.mnemonic(), Some(&expected_mnemonic));
+
+    let expected_wc = WalletCapability::new_from_phrase(&config, &expected_mnemonic, 0).unwrap();
+    let wc = wallet.wallet_capability().read().await.clone();
+
+    // We don't want the WalletCapability to impl. `Eq` (because it stores secret keys)
+    // so we have to compare each component instead
+
+    // Compare Orchard
+    let Capability::Spend(orchard_sk) = &wc.orchard else {
+        panic!("Expected Orchard Spending Key");
+    };
+    assert_eq!(
+        orchard_sk.to_bytes(),
+        OrchardSpendingKey::try_from(&expected_wc)
+            .unwrap()
+            .to_bytes()
+    );
+
+    // Compare Sapling
+    let Capability::Spend(sapling_sk) = &wc.sapling else {
+        panic!("Expected Sapling Spending Key");
+    };
+    assert_eq!(
+        sapling_sk,
+        &SaplingSpendingKey::try_from(&expected_wc).unwrap()
+    );
+
+    // Compare transparent
+    let Capability::Spend(transparent_sk) = &wc.transparent else {
+        panic!("Expected transparent extended private key");
+    };
+    assert_eq!(
+        transparent_sk,
+        &ExtendedPrivKey::try_from(&expected_wc).unwrap()
+    );
+
+    assert_eq!(wc.addresses().len(), 3);
+    for addr in wc.addresses() {
+        assert!(addr.orchard().is_some());
+        assert!(addr.sapling().is_some());
+        assert!(addr.transparent().is_some());
+    }
+}
+
+#[tokio::test]
+async fn test_scanning_in_watch_only_mode() {
+    // # Scenario:
+    // 1. fill wallet with a coinbase transaction
+    // 2. send a transaction contaning all types of outputs
+    // 3. reset wallet
+    // 4. for every combination of FVKs
+    //     4.1. init a wallet with UFVK
+    //     4.2. check that the wallet is empty
+    //     4.3. rescan
+    //     4.4. check that notes and utxos were detected by the wallet
+    //
+    // # Current watch-only mode limitations:
+    // - wallet will not detect funds on all transparent addresses
+    //   see: https://github.com/zingolabs/zingolib/issues/245
+    // - wallet will not detect funds on internal addresses
+    //   see: https://github.com/zingolabs/zingolib/issues/246
+
+    // wait for test server to start
+    let (data, config, ready_receiver, _stop_transmitter, _test_server_handle) =
+        create_test_server().await;
+    ready_receiver.await.unwrap();
+
+    let lightclient = LightClient::test_new(
+        &config,
+        WalletBase::MnemonicPhrase(TEST_SEED.to_string()),
+        0,
+    )
+    .await
+    .unwrap();
+
+    let mut fake_compactblock_list = FakeCompactBlockList::new(0);
+    let wc = lightclient.wallet.wallet_capability().read().await.clone();
+
+    // create a coinbase transaction
+    let extfvk: SaplingFvk = (&wc).try_into().unwrap();
+    let value = 1_111_000;
+    let (transaction, _height, _note) =
+        fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk, value);
+    let txid = transaction.txid();
+
+    // make the coinbase transaction spendable
+    mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
+    mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
+
+    // test that we have the transaction
+    let list = lightclient.do_list_transactions(false).await;
+    assert_eq!(list[0]["txid"], txid.to_string());
+    assert_eq!(list[0]["amount"].as_u64().unwrap(), value);
+    let addr_0 = wc.addresses()[0].clone();
+    assert_eq!(list[0]["address"], addr_0.encode(&config.chain));
+    assert_eq!(
+        lightclient.do_balance().await["sapling_balance"]
+            .as_u64()
+            .unwrap(),
+        value
+    );
+
+    // send a transaction we want to watch
+    let o_addr = addr_0.orchard().clone().unwrap();
+    let s_addr = addr_0.sapling().clone().unwrap();
+    let t_addr = addr_0.transparent().clone().unwrap();
+    let o_addr_str =
+        UAddress::try_from_items(vec![Receiver::Orchard(o_addr.to_raw_address_bytes())])
+            .unwrap()
+            .encode(&config.chain.to_zcash_address_network());
+    let s_addr_str = UAddress::try_from_items(vec![Receiver::Sapling(s_addr.to_bytes())])
+        .unwrap()
+        .encode(&config.chain.to_zcash_address_network());
+    let t_addr_str = address_from_pubkeyhash(&config, Some(t_addr.clone())).unwrap();
+    let sent_o_value = 1_000_000;
+    let sent_s_value = 100_000;
+    let sent_t_value = 10_000;
+    let sent_o_memo = "Some Orchard memo".to_string();
+    let sent_s_memo = "Some Sapling memo".to_string();
+    let tos = vec![
+        (&o_addr_str[..], sent_o_value, Some(sent_o_memo.clone())),
+        (&s_addr_str[..], sent_s_value, Some(sent_s_memo.clone())),
+        (&t_addr_str[..], sent_t_value, None),
+    ];
+    lightclient.test_do_send(tos).await.unwrap();
+
+    // confirm that transaction
+    fake_compactblock_list.add_pending_sends(&data).await;
+    mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
+    mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
+
+    // check that the wallet has received the transansaction
+    {
+        let balance = lightclient.do_balance().await;
+        assert_eq!(balance["sapling_balance"], sent_s_value);
+        assert_eq!(balance["verified_sapling_balance"], sent_s_value);
+        assert_eq!(balance["unverified_sapling_balance"], 0);
+        assert_eq!(balance["orchard_balance"], sent_o_value);
+        assert_eq!(balance["verified_orchard_balance"], sent_o_value);
+        assert_eq!(balance["unverified_orchard_balance"], 0);
+        assert_eq!(balance["transparent_balance"], sent_t_value);
+    }
+
+    // check that do_rescan works
+    lightclient.do_rescan().await.unwrap();
+    {
+        let balance = lightclient.do_balance().await;
+        assert_eq!(balance["sapling_balance"], sent_s_value);
+        assert_eq!(balance["verified_sapling_balance"], sent_s_value);
+        assert_eq!(balance["unverified_sapling_balance"], 0);
+        assert_eq!(balance["orchard_balance"], sent_o_value);
+        assert_eq!(balance["verified_orchard_balance"], sent_o_value);
+        assert_eq!(balance["unverified_orchard_balance"], 0);
+        assert_eq!(balance["transparent_balance"], sent_t_value);
+    }
+
+    let o_fvk = Fvk::Orchard(OrchardFvk::try_from(&wc).unwrap().to_bytes());
+    let s_fvk = Fvk::Sapling(SaplingFvk::try_from(&wc).unwrap().to_bytes());
+    let mut t_fvk_bytes = [0u8; 65];
+    let t_ext_pk: ExtendedPubKey = (&wc).try_into().unwrap();
+    t_fvk_bytes[0..32].copy_from_slice(&t_ext_pk.chain_code[..]);
+    t_fvk_bytes[32..65].copy_from_slice(&t_ext_pk.public_key.serialize()[..]);
+    let t_fvk = Fvk::P2pkh(t_fvk_bytes);
+    let fvks_sets = vec![
+        vec![&o_fvk],
+        vec![&s_fvk],
+        vec![&o_fvk, &s_fvk],
+        vec![&o_fvk, &t_fvk],
+        vec![&s_fvk, &t_fvk],
+        vec![&o_fvk, &s_fvk, &t_fvk],
+    ];
+    for fvks_set in fvks_sets.iter() {
+        log::debug!("testing UFVK containig:");
+        log::debug!("    orchard fvk: {}", fvks_set.contains(&&o_fvk));
+        log::debug!("    sapling fvk: {}", fvks_set.contains(&&s_fvk));
+        log::debug!("    transparent fvk: {}", fvks_set.contains(&&t_fvk));
+
+        let ufvk = Ufvk::try_from_items(fvks_set.clone().into_iter().map(|x| x.clone()).collect())
+            .unwrap()
+            .encode(&config.chain.to_zcash_address_network());
+
+        let watch_client = LightClient::test_new(&config, WalletBase::Ufvk(ufvk), 0)
+            .await
+            .unwrap();
+
+        let watch_wc = watch_client.wallet.wallet_capability().read().await.clone();
+
+        // assert empty wallet before rescan
+        {
+            let balance = watch_client.do_balance().await;
+            assert_eq!(balance["sapling_balance"], 0);
+            assert_eq!(balance["verified_sapling_balance"], 0);
+            assert_eq!(balance["unverified_sapling_balance"], 0);
+            assert_eq!(balance["orchard_balance"], 0);
+            assert_eq!(balance["verified_orchard_balance"], 0);
+            assert_eq!(balance["unverified_orchard_balance"], 0);
+            assert_eq!(balance["transparent_balance"], 0);
+        }
+
+        watch_client.do_rescan().await.unwrap();
+        let balance = watch_client.do_balance().await;
+        let notes = watch_client.do_list_notes(true).await;
+
+        // Orchard
+        if fvks_set.contains(&&o_fvk) {
+            assert!(watch_wc.orchard.can_view());
+            assert_eq!(balance["orchard_balance"], sent_o_value);
+            assert_eq!(balance["verified_orchard_balance"], sent_o_value);
+            // assert 1 Orchard note, or 2 notes if a dummy output is included
+            let orchard_notes_count = notes["unspent_orchard_notes"].members().count();
+            assert!((1..=2).contains(&orchard_notes_count));
+        } else {
+            assert!(!watch_wc.orchard.can_view());
+            assert_eq!(balance["orchard_balance"], 0);
+            assert_eq!(balance["verified_orchard_balance"], 0);
+            assert_eq!(notes["unspent_orchard_notes"].members().count(), 0);
+        }
+
+        // Sapling
+        if fvks_set.contains(&&s_fvk) {
+            assert!(watch_wc.sapling.can_view());
+            assert_eq!(balance["sapling_balance"], sent_s_value);
+            assert_eq!(balance["verified_sapling_balance"], sent_s_value);
+            assert_eq!(notes["unspent_sapling_notes"].members().count(), 1);
+        } else {
+            assert!(!watch_wc.sapling.can_view());
+            assert_eq!(balance["sapling_balance"], 0);
+            assert_eq!(balance["verified_sapling_balance"], 0);
+            assert_eq!(notes["unspent_sapling_notes"].members().count(), 0);
+        }
+
+        // transparent
+        if fvks_set.contains(&&t_fvk) {
+            assert!(watch_wc.transparent.can_view());
+            assert_eq!(balance["transparent_balance"], sent_t_value);
+            assert_eq!(notes["utxos"].members().count(), 1);
+        } else {
+            assert!(!watch_wc.transparent.can_view());
+            assert_eq!(notes["utxos"].members().count(), 0);
+        }
+    }
+}
+
+#[tokio::test]
+async fn refuse_spending_in_watch_only_mode() {
+    // create a test enviroment
+    let (data, config, ready_receiver, _stop_transmitter, _test_server_handle) =
+        create_test_server().await;
+    {
+        ready_receiver.await.unwrap();
+        let mut fake_compactblock_list = FakeCompactBlockList::new(0);
+        let lightclient = LightClient::test_new(&config, WalletBase::FreshEntropy, 0)
+            .await
+            .unwrap();
+        mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5)
+            .await;
+    }
+
+    // we run the test for several UFVKs
+    let some_ufvks = vec![
+        "uview10gy6gvvdhxg8r36frvpc35mgnmgjgnzxtd06wlwsrmllhuc9j6tw6mgdtyz82d6vfzlvwrf3ejz9njngyr2l88wpq833fll6mpmfuvz4g3c46t2r5vxa8vatlhreeqazka6l7z70yh7jwycuk8vz8e74xatt4zwn5utrr56ylpclngy9t9gn6qgejve7z".to_string(),
+        "uview1gyq8hc0apfr54lp3x7rl4y2me74rlhqla4f5eh9prtunx32x0ck45dxltvjk9atewzr3uhq9fl2j3gm4uk4aayn2tqpue83s53fxkgr0zumg4arad7uhmhhc488y3d06aeyjy6f7farnxcfprrw005q7wey7x8gz52jlhaxka98hfp65gq5er6dwtyraxzzauc8k9n2uw7u864zjraq4dqshjqngq3qxwlgqhhpcwvf76x36".to_string(),
+        "uview1hvy0kh9xxqn6z54scnt6hhvlkp6psdv3vcrhzspnrnusd6zwuyqnvjnz9dstd99vm6xv4984p7lg2hsru5z22zc8ze02a83r4qzkytrur7s5gky0gv2e9kgkkpqr6ylaswysmuenqg03s8qf9cukkju8v765dvpun3jp6vyv6u8f2qgxnsdyq8v6424w0ewu9djaq2npcpf0mmuur8xhfxtnmxj36ezyl276sszy967pumlnshsl8qfllnyk57emyl40rnt4w0tug9zxepyw5ehal5vkw9sa6nemlg35vtrw6qtsu536sg54rsv6y8lw5ksrgnc5n5w03dz3xuem52ltq0x24ylzfp5u8hmu2u8vx4rs2fsn9085qnr8vpgpxwujujqzwmu3z".to_string(),
+        "uview1hq3tvgethyxrqrxcah70j0w8zxsm7lsjukpk45ykj3uhq0dzfavygas7tfhxnqsqujlgv35nguewd9apl3errdz8q9erz2z78700zmlswltd88qxlnx5eqr4qn0dhc2k320u988anrp9vh60c9qnwrhxrlq8fcartuxg6qslzdlylnz30xlnpzgc2erlgl9326sqgs3mfjfrh40x5nu82yp5qnl46ulj522x387j5cw5l7kxtyjjkzlwfkcptnpp5dam7hy4308pg9vgs558n9xmwkgcypepcs7k8wyq".to_string(),
+        "uview1vyga9aepl8hs2k4dpenvxdhdw69ue8y4yr4c9w0y4p5c9heu505mt3w5gdcrk0n0epyqaztuxuuqfhd7nxxrk2dekwhhl0wlhnltc4pj280wk2ml8vdfgvzy24zlaqc8dehdwp3dyxe8700mg2mh0tp5t5mpqngwxup8xqgq687nypga8jzgsrrh8q880lljam88c4q0c60vlkdpfm5xq5c8fz57a83feurknu7kh95xh659anqzu5gkacls6zrgquj9ct00q3vjupy80r48a2q66ws2t28l7hx5a2czuj2vknd7xrqc866qmuyfujfvey9x7v90986c36y7f90gycyd7z7".to_string(),
+        "uview13c2v3h2qxz954frrwxjzy5s3q3v3kmzh48qjs7nvcwvl9h6g47ytt8392f85n9qd6flyhj8gzslght9p6nfqpdlv6vpfc6gevygj4u22nsvnyt9jhy98eq0n0udcxmxst886j6vycukk3f0p57rpgn2v994yzcph933xhk42822wh822uej4yztj2cvcvc6qfxmva707rtjqml48k80j05gkj3920k0y8qxxze8wfjw42hgg3tzdytdn8nvyuzv5sqet77hha3q8jh6sr4vcl4n90hggayjum4lmkte5x27ne3hsaz7fee5rf0l47uwdgzy84etngcr7zy9mpx36hdyfkrkcype6rd9l46duht8qj27qgsqdk0p2puxzx00rtx246ua09f8j3eak8zvl809xuyjahzquz6zm4pslyr0m0490ay6y0lq78uh6d2z9zpke7l2fsljujtx4gsd4muczr4h7jzelu986t43vcem2sksezsgkstxe".to_string(),
+    ];
+
+    for ufvk in some_ufvks.into_iter() {
+        let wallet_base = WalletBase::Ufvk(ufvk);
+        let watch_client = LightClient::test_new(&config, wallet_base, 0)
+            .await
+            .unwrap();
+        watch_client.do_rescan().await.unwrap();
+        assert_eq!(
+            watch_client.do_send(vec![(EXT_TADDR, 1000, None)]).await,
+            Err("Wallet is in watch-only mode a thus it cannot spend".to_string())
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_do_rescan() {
+    // we test that do_rescan re-detect all Sapling and Orchard notes
+
+    // wait for test server to start
+    let (data, config, ready_receiver, _stop_transmitter, _test_server_handle) =
+        create_test_server().await;
+    ready_receiver.await.unwrap();
+
+    let lightclient = LightClient::test_new(
+        &config,
+        WalletBase::MnemonicPhrase(TEST_SEED.to_string()),
+        0,
+    )
+    .await
+    .unwrap();
+
+    let mut fake_compactblock_list = FakeCompactBlockList::new(0);
+    let wc = lightclient.wallet.wallet_capability().read().await.clone();
+
+    // create transaction funding
+    let extfvk: SaplingFvk = (&wc).try_into().unwrap();
+    let value = 1_000_000 + 1_000;
+    let (transaction, _height, _note) =
+        fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk, value);
+    let txid = transaction.txid();
+
+    // make funding transaction spendable
+    mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
+    mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
+
+    // test that we have the transaction
+    let list = lightclient.do_list_transactions(false).await;
+    assert_eq!(list[0]["txid"], txid.to_string());
+    assert_eq!(list[0]["amount"].as_u64().unwrap(), value);
+    let addr_0 = wc.addresses()[0].clone().encode(&config.chain);
+    assert_eq!(list[0]["address"], addr_0);
+
+    // check the balance
+    {
+        let balance = lightclient.do_balance().await;
+        assert_eq!(balance["sapling_balance"].as_u64().unwrap(), value);
+        assert_eq!(balance["orchard_balance"], 0);
+    }
+
+    // send funds to orchard addresss
+    let send_o_value = 600_000;
+    let send_s_value = 400_000;
+    // create new Sapling-only address
+    let s_addr = lightclient
+        .wallet
+        .wallet_capability()
+        .write()
+        .await
+        .new_address(ReceiverSelection {
+            orchard: false,
+            sapling: true,
+            transparent: false,
+        })
+        .unwrap()
+        .encode(&config.chain);
+    let tos = vec![
+        (&addr_0[..], send_o_value, None),
+        (&s_addr[..], send_s_value, None),
+    ];
+    lightclient.test_do_send(tos).await.unwrap();
+
+    // mine the transaction
+    fake_compactblock_list.add_pending_sends(&data).await;
+    mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
+    mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
+
+    // we assert these amounts
+    {
+        let balance = lightclient.do_balance().await;
+        assert_eq!(balance["sapling_balance"], send_s_value);
+        assert_eq!(balance["verified_sapling_balance"], send_s_value);
+        assert_eq!(balance["orchard_balance"], send_o_value);
+        assert_eq!(balance["verified_orchard_balance"], send_o_value);
+    }
+
+    lightclient.do_rescan().await.unwrap();
+
+    // we assert same amounts after the rescan
+    {
+        let balance = lightclient.do_balance().await;
+        assert_eq!(balance["sapling_balance"], send_s_value);
+        assert_eq!(balance["verified_sapling_balance"], send_s_value);
+        assert_eq!(balance["orchard_balance"], send_o_value);
+        assert_eq!(balance["verified_orchard_balance"], send_o_value);
     }
 }
 

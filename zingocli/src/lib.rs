@@ -7,6 +7,7 @@ use log::{error, info};
 use clap::{self, Arg};
 use regtest::ChildProcessHandler;
 use zingoconfig::{ChainType, ZingoConfig};
+use zingolib::wallet::WalletBase;
 use zingolib::{commands, create_zingoconf_from_datadir, lightclient::LightClient};
 
 pub mod regtest;
@@ -32,6 +33,11 @@ pub fn build_clap_app() -> clap::App<'static> {
                 .long("seed")
                 .value_name("seed_phrase")
                 .help("Create a new wallet with the given 24-word seed phrase. Will fail if wallet already exists")
+                .takes_value(true))
+            .arg(Arg::with_name("viewing-key")
+                .long("viewing-key")
+                .value_name("viewing-key")
+                .help("Create a new watch-only wallet with the given unified viewing key. Will fail if wallet already exists")
                 .takes_value(true))
             .arg(Arg::with_name("birthday")
                 .long("birthday")
@@ -242,6 +248,7 @@ pub struct ConfigTemplate {
     params: Vec<String>,
     server: http::Uri,
     seed: Option<String>,
+    viewing_key: Option<String>,
     birthday: u64,
     maybe_data_dir: Option<String>,
     sync: bool,
@@ -302,6 +309,7 @@ impl ConfigTemplate {
             None
         };
         let seed = matches.value_of("seed").map(|s| s.to_string());
+        let viewing_key = matches.value_of("viewing-key").map(|s| s.to_string());
         let maybe_birthday = matches.value_of("birthday");
         if seed.is_some() && maybe_birthday.is_none() {
             eprintln!("ERROR!");
@@ -359,6 +367,7 @@ to scan from the start of the blockchain."
             params,
             server,
             seed,
+            viewing_key,
             birthday,
             maybe_data_dir,
             sync,
@@ -384,14 +393,29 @@ pub fn startup(
     )?;
     regtest_config_check(&filled_template.regtest_manager, &config.chain);
 
-    let lightclient = match filled_template.seed.clone() {
-        Some(phrase) => Arc::new(LightClient::create_with_seedorkey_wallet(
-            phrase,
+    let lightclient = match (
+        filled_template.seed.clone(),
+        filled_template.viewing_key.clone(),
+    ) {
+        (Some(_), Some(_)) => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Cannot initiate a wallet with a seed and a viewing key simultaneously",
+            ));
+        }
+        (Some(phrase), None) => Arc::new(LightClient::new_from_wallet_base(
+            WalletBase::MnemonicPhrase(phrase),
             &config,
             filled_template.birthday,
             false,
         )?),
-        None => {
+        (None, Some(ufvk)) => Arc::new(LightClient::new_from_wallet_base(
+            WalletBase::Ufvk(ufvk),
+            &config,
+            filled_template.birthday,
+            false,
+        )?),
+        (None, None) => {
             if config.wallet_exists() {
                 Arc::new(LightClient::read_wallet_from_disk(&config)?)
             } else {

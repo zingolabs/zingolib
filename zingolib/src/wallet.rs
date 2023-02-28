@@ -43,8 +43,7 @@ use zcash_primitives::{
 use zingo_memo::create_wallet_internal_memo_version_0;
 
 use self::data::SpendableOrchardNote;
-use self::keys::unified::ReceiverSelection;
-use self::keys::unified::UnifiedSpendCapability;
+use self::keys::unified::{Capability, ReceiverSelection, WalletCapability};
 use self::traits::Recipient;
 use self::traits::{DomainWalletExt, ReceivedNoteAndMetadata, SpendableNote};
 use self::{
@@ -167,13 +166,23 @@ impl WalletOptions {
     }
 }
 
+/// Data used to initialize new instance of LightWallet
+pub enum WalletBase {
+    FreshEntropy,
+    SeedBytes([u8; 32]),
+    MnemonicPhrase(String),
+    Mnemonic(Mnemonic),
+    Ufvk(String),
+}
+
 pub struct LightWallet {
     // The block at which this wallet was born. Rescans
     // will start from here.
     birthday: AtomicU64,
 
     /// The seed for the wallet, stored as a bip0039 Mnemonic
-    mnemonic: Mnemonic,
+    /// Can be `None` in case of wallet without spending capability.
+    mnemonic: Option<Mnemonic>,
 
     // The last 100 blocks, used if something gets re-orged
     pub(super) blocks: Arc<RwLock<Vec<BlockData>>>,
@@ -198,46 +207,59 @@ pub struct LightWallet {
 use crate::wallet::traits::{Diversifiable as _, ReadableWriteable};
 impl LightWallet {
     pub fn serialized_version() -> u64 {
-        return 26;
+        return 27;
     }
 
-    pub fn new(config: ZingoConfig, seed_phrase: Option<String>, height: u64) -> io::Result<Self> {
-        let mnemonic = if seed_phrase.is_none() {
-            let mut seed_bytes = [0u8; 32];
-            // Create a random seed.
-            let mut system_rng = OsRng;
-            system_rng.fill(&mut seed_bytes);
-            Mnemonic::from_entropy(seed_bytes)
-        } else {
-            let mnemonic = Mnemonic::from_phrase(seed_phrase.unwrap().as_str());
+    pub fn new(config: ZingoConfig, base: WalletBase, height: u64) -> io::Result<Self> {
+        let (mut wc, mnemonic) = match base {
+            WalletBase::FreshEntropy => {
+                let mut seed_bytes = [0u8; 32];
+                // Create a random seed.
+                let mut system_rng = OsRng;
+                system_rng.fill(&mut seed_bytes);
+                return Self::new(config, WalletBase::SeedBytes(seed_bytes), height);
+            }
+            WalletBase::SeedBytes(seed_bytes) => {
+                let mnemonic = Mnemonic::from_entropy(seed_bytes).map_err(|e| {
+                    Error::new(
+                        ErrorKind::InvalidData,
+                        format!("Error parsing phrase: {}", e),
+                    )
+                })?;
+                return Self::new(config, WalletBase::Mnemonic(mnemonic), height);
+            }
+            WalletBase::MnemonicPhrase(phrase) => {
+                let mnemonic = Mnemonic::from_phrase(phrase)
+                    .and_then(|m| Mnemonic::from_entropy(m.entropy()))
+                    .map_err(|e| {
+                        Error::new(
+                            ErrorKind::InvalidData,
+                            format!("Error parsing phrase: {}", e),
+                        )
+                    })?;
+                // Notice that `.and_then(|m| Mnemonic::from_entropy(m.entropy()))`
+                // should be a no-op, but seems to be needed on android for some reason
+                // TODO: Test the this cfg actually works
+                //#[cfg(target_os = "android")]
+                return Self::new(config, WalletBase::Mnemonic(mnemonic), height);
+            }
+            WalletBase::Mnemonic(mnemonic) => {
+                let wc = WalletCapability::new_from_phrase(&config, &mnemonic, 0)
+                    .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
+                (wc, Some(mnemonic))
+            }
+            WalletBase::Ufvk(ufvk_encoded) => {
+                let wc = WalletCapability::new_from_ufvk(&config, ufvk_encoded).map_err(|e| {
+                    Error::new(ErrorKind::InvalidData, format!("Error parsing UFVK: {}", e))
+                })?;
+                (wc, None)
+            }
+        };
 
-            // This should be a no-op, but seems to be needed on android for some reason
-            // TODO: Test the this cfg actually works
-            //#[cfg(target_os = "android")]
-
-            let mnemonic = mnemonic.and_then(|m| Mnemonic::from_entropy(m.entropy()));
-
-            mnemonic
-        }
-        .map_err(|e| {
-            let e = format!("Error parsing phrase: {}", e);
-            //error!("{}", e);
-            Error::new(ErrorKind::InvalidData, e)
-        })?;
-        let mut usc = UnifiedSpendCapability::new_from_phrase(&config, &mnemonic, 0)
-            .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
-        usc.new_address(ReceiverSelection {
-            sapling: true,
-            orchard: true,
-            transparent: true,
-        })
-        .unwrap();
+        wc.new_address(wc.can_view()).unwrap();
         let transaction_metadata_set = Arc::new(RwLock::new(TransactionMetadataSet::new()));
-        let transaction_context = TransactionContext::new(
-            &config,
-            Arc::new(RwLock::new(usc)),
-            transaction_metadata_set,
-        );
+        let transaction_context =
+            TransactionContext::new(&config, Arc::new(RwLock::new(wc)), transaction_metadata_set);
         Ok(Self {
             blocks: Arc::new(RwLock::new(vec![])),
             mnemonic,
@@ -274,7 +296,23 @@ impl LightWallet {
         }
 
         info!("Reading wallet version {}", external_version);
-        let key = UnifiedSpendCapability::read(&mut reader, ())?;
+        let key = WalletCapability::read(&mut reader, ())?;
+        info!("Keys in this wallet:");
+        match &key.orchard {
+            Capability::None => (),
+            Capability::View(_) => info!("  - Orchard Full Viewing Key"),
+            Capability::Spend(_) => info!("  - Orchard Spending Key"),
+        };
+        match &key.sapling {
+            Capability::None => (),
+            Capability::View(_) => info!("  - Sapling Extended Full Viewing Key"),
+            Capability::Spend(_) => info!("  - Sapling Extended Spending Key"),
+        };
+        match &key.orchard {
+            Capability::None => (),
+            Capability::View(_) => info!("  - transparent extended public key"),
+            Capability::Spend(_) => info!("  - transparent extended private key"),
+        };
 
         let mut blocks = Vector::read(&mut reader, |r| BlockData::read(r))?;
         if external_version <= 14 {
@@ -361,8 +399,14 @@ impl LightWallet {
         };
 
         let seed_bytes = Vector::read(&mut reader, |r| r.read_u8())?;
-        let mnemonic = Mnemonic::from_entropy(seed_bytes)
-            .map_err(|e| Error::new(ErrorKind::InvalidData, e.to_string()))?;
+        let mnemonic = if seed_bytes.len() > 0 {
+            Some(
+                Mnemonic::from_entropy(seed_bytes)
+                    .map_err(|e| Error::new(ErrorKind::InvalidData, e.to_string()))?,
+            )
+        } else {
+            None
+        };
 
         let mut lw = Self {
             blocks: Arc::new(RwLock::new(blocks)),
@@ -427,17 +471,17 @@ impl LightWallet {
         // Price info
         self.price.read().await.write(&mut writer)?;
 
-        Vector::write(
-            &mut writer,
-            &self.mnemonic.clone().into_entropy(),
-            |w, byte| w.write_u8(*byte),
-        )?;
+        let seed_bytes = match &self.mnemonic {
+            Some(m) => m.clone().into_entropy(),
+            None => vec![],
+        };
+        Vector::write(&mut writer, &seed_bytes, |w, byte| w.write_u8(*byte))?;
 
         Ok(())
     }
 
-    pub fn mnemonic(&self) -> &Mnemonic {
-        &self.mnemonic
+    pub fn mnemonic(&self) -> Option<&Mnemonic> {
+        (&self.mnemonic).as_ref()
     }
 
     // Before version 20, witnesses didn't store their height, so we need to update them.
@@ -461,7 +505,7 @@ impl LightWallet {
         // compile_error!("Haven't gotten around to removing this yet")
     }*/
 
-    pub fn unified_spend_capability(&self) -> Arc<RwLock<UnifiedSpendCapability>> {
+    pub fn wallet_capability(&self) -> Arc<RwLock<WalletCapability>> {
         self.transaction_context.key.clone()
     }
 
@@ -483,7 +527,7 @@ impl LightWallet {
     pub(crate) fn note_address<D: DomainWalletExt>(
         network: &zingoconfig::ChainType,
         note: &D::WalletNote,
-        unified_spend_auth: &UnifiedSpendCapability,
+        unified_spend_auth: &WalletCapability,
     ) -> String
     where
         <D as Domain>::Recipient: Recipient,
@@ -841,16 +885,15 @@ impl LightWallet {
     }
 
     ///TODO: Make this work for orchard too
-    pub async fn decrypt_message(&self, enc: Vec<u8>) -> Option<Message> {
-        let sapling_ivk = SaplingIvk::from(&*self.unified_spend_capability().read().await);
+    pub async fn decrypt_message(&self, enc: Vec<u8>) -> Result<Message, String> {
+        let sapling_ivk = SaplingIvk::try_from(&*self.wallet_capability().read().await)?;
 
         if let Ok(msg) = Message::decrypt(&enc, &sapling_ivk) {
             // If decryption succeeded for this IVK, return the decrypted memo and the matched address
-            return Some(msg);
+            return Ok(msg);
         }
 
-        // If nothing matched
-        None
+        Err("No message matched".to_string())
     }
 
     // Add the spent_at_height for each sapling note that has been spent. This field was added in wallet version 8,
@@ -947,7 +990,10 @@ impl LightWallet {
         if prefer_orchard_over_sapling {
             let sapling_candidates = self
                 .get_all_domain_specific_notes::<SaplingDomain<zingoconfig::ChainType>>()
-                .await;
+                .await
+                .into_iter()
+                .filter(|x| x.spend_key().is_some())
+                .collect();
             (sapling_notes, sapling_value_selected) =
                 Self::add_notes_to_total::<SaplingDomain<zingoconfig::ChainType>>(
                     sapling_candidates,
@@ -962,7 +1008,12 @@ impl LightWallet {
                 );
             }
         }
-        let orchard_candidates = self.get_all_domain_specific_notes::<OrchardDomain>().await;
+        let orchard_candidates = self
+            .get_all_domain_specific_notes::<OrchardDomain>()
+            .await
+            .into_iter()
+            .filter(|x| x.spend_key().is_some())
+            .collect();
         let (orchard_notes, orchard_value_selected) = Self::add_notes_to_total::<OrchardDomain>(
             orchard_candidates,
             (target_amount - total_transparent_value - sapling_value_selected).unwrap(),
@@ -1010,8 +1061,8 @@ impl LightWallet {
         <D as Domain>::Recipient: traits::Recipient,
         <D as Domain>::Note: PartialEq + Clone,
     {
-        let usc_lth = self.unified_spend_capability();
-        let usc = usc_lth.read().await;
+        let wc_lth = self.wallet_capability();
+        let wc = wc_lth.read().await;
         let tranmds_lth = self.transactions();
         let transaction_metadata_set = tranmds_lth.read().await;
         let mut candidate_notes = transaction_metadata_set
@@ -1029,12 +1080,12 @@ impl LightWallet {
                     None
                 } else {
                     // Get the spending key for the selected fvk, if we have it
-                    let extsk = D::usc_to_sk(&usc);
+                    let extsk = D::wc_to_sk(&wc);
                     SpendableNote::from(
                         transaction_id,
                         note,
                         self.transaction_context.config.reorg_buffer_offset as usize,
-                        &Some(extsk),
+                        extsk.ok().as_ref(),
                     )
                 }
             })
@@ -1125,6 +1176,21 @@ impl LightWallet {
             return Err("Need at least one destination address".to_string());
         }
 
+        if self.wallet_capability().read().await.can_spend()
+            != (ReceiverSelection {
+                orchard: true,
+                sapling: true,
+                transparent: true,
+            })
+        {
+            // Creating transactions in context of all possible combinations
+            // of wallet capabilities requires a rigorous case study
+            // and can have undesired effects if not implemented properly.
+            //
+            // Thus we forbid spending for wallets without complete spending capability for now
+            return Err("Wallet is in watch-only mode a thus it cannot spend".to_string());
+        }
+
         let total_value = tos.iter().map(|to| to.1).sum::<u64>();
         println!(
             "0: Creating transaction sending {} ztoshis to {} addresses",
@@ -1176,10 +1242,11 @@ impl LightWallet {
         // Create a map from address -> sk for all taddrs, so we can spend from the
         // right address
         let address_to_sk = self
-            .unified_spend_capability()
+            .wallet_capability()
             .read()
             .await
-            .get_taddr_to_secretkey_map(&self.transaction_context.config);
+            .get_taddr_to_secretkey_map(&self.transaction_context.config)
+            .unwrap();
 
         let (orchard_notes, sapling_notes, utxos, selected_value) = self
             .select_notes_and_utxos(
@@ -1246,7 +1313,7 @@ impl LightWallet {
         for selected in sapling_notes.iter() {
             println!("Adding sapling spend");
             if let Err(e) = builder.add_sapling_spend(
-                selected.extsk.clone(),
+                selected.extsk.clone().unwrap(),
                 selected.diversifier,
                 selected.note.clone(),
                 selected.witness.path().unwrap(),
@@ -1261,7 +1328,7 @@ impl LightWallet {
             println!("Adding orchard spend");
             let path = selected.witness.path().unwrap();
             if let Err(e) = builder.add_orchard_spend(
-                selected.spend_key.clone(),
+                selected.spend_key.clone().unwrap(),
                 selected.note.clone(),
                 orchard::tree::MerklePath::from((
                     incrementalmerkletree::Position::from(path.position as usize),
@@ -1278,11 +1345,13 @@ impl LightWallet {
         }
 
         // We'll use the first ovk to encrypt outgoing transactions
-        let sapling_ovk = zcash_primitives::keys::OutgoingViewingKey::from(
-            &*self.unified_spend_capability().read().await,
-        );
+        let sapling_ovk = zcash_primitives::keys::OutgoingViewingKey::try_from(
+            &*self.wallet_capability().read().await,
+        )
+        .unwrap();
         let orchard_ovk =
-            orchard::keys::OutgoingViewingKey::from(&*self.unified_spend_capability().read().await);
+            orchard::keys::OutgoingViewingKey::try_from(&*self.wallet_capability().read().await)
+                .unwrap();
 
         let mut total_z_recipients = 0u32;
         for (recipient_address, value, memo) in recipients {
@@ -1353,7 +1422,7 @@ impl LightWallet {
         dbg!(selected_value, target_amount);
         if let Err(e) = builder.add_orchard_output(
             Some(orchard_ovk.clone()),
-            *self.unified_spend_capability().read().await.addresses()[0]
+            *self.wallet_capability().read().await.addresses()[0]
                 .orchard()
                 .unwrap(),
             dbg!(u64::from(selected_value) - u64::from(target_amount)),
@@ -1548,7 +1617,10 @@ fn decode_orchard_spending_key(
 #[cfg(test)]
 mod test {
     use orchard::tree::MerkleHashOrchard;
-    use zcash_primitives::{merkle_tree::CommitmentTree, transaction::components::Amount};
+    use zcash_primitives::{
+        merkle_tree::CommitmentTree, sapling::keys::DiversifiableFullViewingKey as SaplingFvk,
+        transaction::components::Amount,
+    };
 
     use crate::{
         apply_scenario,
@@ -1580,9 +1652,9 @@ mod test {
                 mut fake_compactblock_list,
                 ..
             } = scenario;
-            let extended_fvk = zcash_primitives::zip32::ExtendedFullViewingKey::from(
-                &*lightclient.wallet.unified_spend_capability().read().await,
-            );
+            let extended_fvk =
+                SaplingFvk::try_from(&*lightclient.wallet.wallet_capability().read().await)
+                    .unwrap();
             let (_, _, _) =
                 fake_compactblock_list.create_sapling_coinbase_transaction(&extended_fvk, 1);
             mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
@@ -1607,9 +1679,9 @@ mod test {
                 mut fake_compactblock_list,
                 ..
             } = scenario;
-            let extended_fvk = zcash_primitives::zip32::ExtendedFullViewingKey::from(
-                &*lightclient.wallet.unified_spend_capability().read().await,
-            );
+            let extended_fvk =
+                SaplingFvk::try_from(&*lightclient.wallet.wallet_capability().read().await)
+                    .unwrap();
             use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
             let (_, _, _) = fake_compactblock_list
                 .create_sapling_coinbase_transaction(&extended_fvk, 1 + u64::from(DEFAULT_FEE));
@@ -1640,12 +1712,11 @@ mod test {
             ..
         } = scenario;
         // 2. Send an incoming transaction to fill the wallet
-        let extfvk1 = zcash_primitives::zip32::ExtendedFullViewingKey::from(
-            &*lightclient.wallet.unified_spend_capability().read().await,
-        );
+        let fvk1 =
+            SaplingFvk::try_from(&*lightclient.wallet.wallet_capability().read().await).unwrap();
         let value = 100_000;
         let (transaction, _height, _) =
-            fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, value);
+            fake_compactblock_list.create_sapling_coinbase_transaction(&fvk1, value);
         let txid = transaction.txid();
         mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
@@ -1775,7 +1846,7 @@ mod test {
         assert_eq!(utxos.len(), 0);
 
         // 4. Get an incoming transaction to a t address
-        let (_sk, pk, taddr) = get_transparent_secretkey_pubkey_taddr(&lightclient).await;
+        let (_sk, Some(pk), Some(taddr)) = get_transparent_secretkey_pubkey_taddr(&lightclient).await else {panic!()};
         let tvalue = 100_000;
 
         let mut fake_transaction = FakeTransaction::new(true);
@@ -1828,12 +1899,11 @@ mod test {
             ..
         } = scenario;
         // 2. Send an incoming transaction to fill the wallet
-        let extfvk1 = zcash_primitives::zip32::ExtendedFullViewingKey::from(
-            &*lightclient.wallet.unified_spend_capability().read().await,
-        );
+        let fvk1 =
+            SaplingFvk::try_from(&*lightclient.wallet.wallet_capability().read().await).unwrap();
         let value1 = 100_000;
         let (transaction, _height, _) =
-            fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, value1);
+            fake_compactblock_list.create_sapling_coinbase_transaction(&fvk1, value1);
         let txid = transaction.txid();
         mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
@@ -1888,7 +1958,7 @@ mod test {
         // 4. Send another incoming transaction.
         let value2 = 200_000;
         let (_transaction, _height, _) =
-            fake_compactblock_list.create_sapling_coinbase_transaction(&extfvk1, value2);
+            fake_compactblock_list.create_sapling_coinbase_transaction(&fvk1, value2);
         mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
 
         // Now, try to select a small amount, it should prefer the older note

@@ -11,16 +11,16 @@ use std::convert::TryFrom;
 use std::io::{self, Read, Write};
 use std::usize;
 use zcash_encoding::{Optional, Vector};
-use zcash_primitives::{consensus::BlockHeight, zip32::ExtendedSpendingKey};
+use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::{
     memo::Memo,
     merkle_tree::{CommitmentTree, IncrementalWitness},
     sapling::{
-        Diversifier as SaplingDiversifier, Node as SaplingNode, Note as SaplingNote,
-        Nullifier as SaplingNullifier, Rseed,
+        keys::DiversifiableFullViewingKey as SaplingFvk, Diversifier as SaplingDiversifier,
+        Node as SaplingNode, Note as SaplingNote, Nullifier as SaplingNullifier, Rseed,
     },
     transaction::{components::OutPoint, TxId},
-    zip32::ExtendedFullViewingKey,
+    zip32::ExtendedSpendingKey,
 };
 use zcash_primitives::{memo::MemoBytes, merkle_tree::Hashable};
 
@@ -220,7 +220,7 @@ impl<Node: Hashable> WitnessCache<Node> {
 pub struct ReceivedSaplingNoteAndMetadata {
     // Technically, this should be recoverable from the account number,
     // but we're going to refactor this in the future, so I'll write it again here.
-    pub(super) extfvk: ExtendedFullViewingKey,
+    pub(super) fvk: SaplingFvk,
 
     pub diversifier: SaplingDiversifier,
     pub note: SaplingNote,
@@ -264,14 +264,13 @@ pub struct ReceivedOrchardNoteAndMetadata {
 impl std::fmt::Debug for ReceivedSaplingNoteAndMetadata {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SaplingNoteData")
-            .field("extfvk", &self.extfvk)
+            .field("fvk", &self.fvk)
             .field("diversifier", &self.diversifier)
             .field("note", &self.note)
             .field("nullifier", &self.nullifier)
             .field("spent", &self.spent)
             .field("unconfirmed_spent", &self.unconfirmed_spent)
             .field("memo", &self.memo)
-            .field("extfvk", &self.extfvk)
             .field("diversifier", &self.diversifier)
             .field("note", &self.note)
             .field("nullifier", &self.nullifier)
@@ -752,7 +751,7 @@ pub struct SpendableSaplingNote {
     pub diversifier: SaplingDiversifier,
     pub note: SaplingNote,
     pub witness: IncrementalWitness<SaplingNode>,
-    pub extsk: ExtendedSpendingKey,
+    pub extsk: Option<ExtendedSpendingKey>,
 }
 
 pub struct SpendableOrchardNote {
@@ -761,7 +760,7 @@ pub struct SpendableOrchardNote {
     pub diversifier: OrchardDiversifier,
     pub note: OrchardNote,
     pub witness: IncrementalWitness<MerkleHashOrchard>,
-    pub spend_key: OrchardSpendingKey,
+    pub spend_key: Option<OrchardSpendingKey>,
 }
 
 // Struct that tracks the latest and historical price of ZEC in the wallet

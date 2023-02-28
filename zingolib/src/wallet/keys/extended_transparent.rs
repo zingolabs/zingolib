@@ -146,15 +146,26 @@ impl ExtendedPrivKey {
     }
 }
 
+impl ReadableWriteable<()> for SecretKey {
+    const VERSION: u8 = 0; // not applicable
+    fn read<R: std::io::Read>(mut reader: R, _: ()) -> std::io::Result<Self> {
+        let mut secret_key_bytes = [0; 32];
+        reader.read_exact(&mut secret_key_bytes)?;
+        SecretKey::from_slice(&secret_key_bytes)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
+    }
+
+    fn write<W: std::io::Write>(&self, mut writer: W) -> std::io::Result<()> {
+        writer.write(&self.serialize_secret()).map(|_| ())
+    }
+}
+
 impl ReadableWriteable<()> for ExtendedPrivKey {
     const VERSION: u8 = 1;
 
     fn read<R: std::io::Read>(mut reader: R, _: ()) -> std::io::Result<Self> {
         Self::get_version(&mut reader)?;
-        let mut secret_key_bytes = [0; 32];
-        reader.read_exact(&mut secret_key_bytes)?;
-        let private_key = SecretKey::from_slice(&secret_key_bytes)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+        let private_key = SecretKey::read(&mut reader, ())?;
         let chain_code = Vector::read(&mut reader, |r| r.read_u8())?;
         Ok(Self {
             private_key,
@@ -164,8 +175,111 @@ impl ReadableWriteable<()> for ExtendedPrivKey {
 
     fn write<W: std::io::Write>(&self, mut writer: W) -> std::io::Result<()> {
         writer.write_u8(Self::VERSION)?;
-        writer.write(&self.private_key.serialize_secret())?;
+        self.private_key.write(&mut writer)?;
         Vector::write(&mut writer, &self.chain_code, |w, byte| w.write_u8(*byte))?;
         Ok(())
     }
+}
+
+/// ExtendedPubKey is used for child pub key derivation in watch-only mode
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExtendedPubKey {
+    pub public_key: PublicKey,
+    pub chain_code: ChainCode,
+}
+
+impl ExtendedPubKey {
+    fn sign_normal_key(&self, index: u32) -> ring::hmac::Tag {
+        let signing_key = Key::new(hmac::HMAC_SHA512, &self.chain_code);
+        let mut h = Context::with_key(&signing_key);
+        h.update(&self.public_key.serialize());
+        h.update(&index.to_be_bytes());
+        h.sign()
+    }
+
+    /// Derive a child key from ExtendedPubKey.
+    pub fn derive_public_key(&self, key_index: KeyIndex) -> Result<ExtendedPubKey, Error> {
+        if !key_index.is_valid() {
+            return Err(Error::InvalidTweak);
+        }
+        let signature = match key_index {
+            KeyIndex::Hardened(_) => return Err(Error::InvalidTweak),
+            KeyIndex::Normal(index) => self.sign_normal_key(index),
+        };
+        let sig_bytes = signature.as_ref();
+        let (key, chain_code) = sig_bytes.split_at(sig_bytes.len() / 2);
+        let new_sk = SecretKey::from_slice(key)?;
+        let new_pk = PublicKey::from_secret_key(&Secp256k1::new(), &new_sk);
+        Ok(Self {
+            public_key: new_pk.combine(&self.public_key)?,
+            chain_code: chain_code.to_vec(),
+        })
+    }
+}
+
+impl ReadableWriteable<()> for PublicKey {
+    const VERSION: u8 = 0; // not applicable
+    fn read<R: std::io::Read>(mut reader: R, _: ()) -> std::io::Result<Self> {
+        let mut public_key_bytes = [0; 33];
+        reader.read_exact(&mut public_key_bytes)?;
+        PublicKey::from_slice(&public_key_bytes)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
+    }
+
+    fn write<W: std::io::Write>(&self, mut writer: W) -> std::io::Result<()> {
+        writer.write(&self.serialize()).map(|_| ())
+    }
+}
+
+impl ReadableWriteable<()> for ExtendedPubKey {
+    const VERSION: u8 = 1;
+
+    fn read<R: std::io::Read>(mut reader: R, _: ()) -> std::io::Result<Self> {
+        Self::get_version(&mut reader)?;
+        let public_key = PublicKey::read(&mut reader, ())?;
+        let chain_code = Vector::read(&mut reader, |r| r.read_u8())?;
+        Ok(Self {
+            public_key,
+            chain_code,
+        })
+    }
+
+    fn write<W: std::io::Write>(&self, mut writer: W) -> std::io::Result<()> {
+        writer.write_u8(Self::VERSION)?;
+        self.public_key.write(&mut writer)?;
+        Vector::write(&mut writer, &self.chain_code, |w, byte| w.write_u8(*byte))?;
+        Ok(())
+    }
+}
+
+impl From<&ExtendedPrivKey> for ExtendedPubKey {
+    fn from(sk: &ExtendedPrivKey) -> Self {
+        let secp = Secp256k1::new();
+        ExtendedPubKey {
+            public_key: PublicKey::from_secret_key(&secp, &sk.private_key),
+            chain_code: sk.chain_code.clone(),
+        }
+    }
+}
+
+#[test]
+fn test_commutativity_of_key_derivation_mechanisms() {
+    // sk ---> sk_i
+    //  |       |
+    //  v       v
+    // pk ---> pk_i
+
+    // initial key derivation material
+    let i = KeyIndex::from_index(42).unwrap();
+    let sk = ExtendedPrivKey::with_seed(&[0xcd; 64]).unwrap();
+
+    // sk -> sk_i -> pk_i derivation
+    let sk_i = sk.derive_private_key(i).unwrap();
+    let pk_i = ExtendedPubKey::from(&sk_i);
+
+    // sk -> pk -> pk_i derivation
+    let pk = ExtendedPubKey::from(&sk);
+    let pk_i_ = pk.derive_public_key(i).unwrap();
+
+    assert_eq!(pk_i, pk_i_);
 }
