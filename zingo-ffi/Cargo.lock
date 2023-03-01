@@ -537,9 +537,9 @@ dependencies = [
 
 [[package]]
 name = "crossbeam-channel"
-version = "0.5.6"
+version = "0.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2dd04ddaf88237dc3b8d8f9a3c1004b506b54b3313403944054d23c0870c521"
+checksum = "cf2b3e8478797446514c91ef04bafcb59faba183e621ad488df88983cc14128c"
 dependencies = [
  "cfg-if",
  "crossbeam-utils",
@@ -547,9 +547,9 @@ dependencies = [
 
 [[package]]
 name = "crossbeam-deque"
-version = "0.8.2"
+version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "715e8152b692bba2d374b53d4875445368fdf21a94751410af607a5ac677d1fc"
+checksum = "ce6fd6f855243022dcecf8702fef0c297d4338e226845fe067f6341ad9fa0cef"
 dependencies = [
  "cfg-if",
  "crossbeam-epoch",
@@ -558,9 +558,9 @@ dependencies = [
 
 [[package]]
 name = "crossbeam-epoch"
-version = "0.9.13"
+version = "0.9.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "01a9af1f4c2ef74bb8aa1f7e19706bc72d03598c8a570bb5de72243c7a9d9d5a"
+checksum = "46bd5f3f85273295a9d14aedfb86f6aadbff6d8f5295c4a9edb08e819dcf5695"
 dependencies = [
  "autocfg",
  "cfg-if",
@@ -571,9 +571,9 @@ dependencies = [
 
 [[package]]
 name = "crossbeam-utils"
-version = "0.8.14"
+version = "0.8.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fb766fa798726286dbbb842f174001dab8abc7b627a1dd86e0b7222a95d929f"
+checksum = "3c063cd8cc95f5c377ed0d4b49a4b21f632396ff690e8470c29b3359b346984b"
 dependencies = [
  "cfg-if",
 ]
@@ -761,6 +761,27 @@ source = "git+https://github.com/zingolabs/librustzcash?rev=d66f7f70516e6da5c240
 dependencies = [
  "blake2b_simd",
  "byteorder",
+]
+
+[[package]]
+name = "errno"
+version = "0.2.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f639046355ee4f37944e44f60642c6f3a7efa3cf6b78c78a0d989a8ce6c396a1"
+dependencies = [
+ "errno-dragonfly",
+ "libc",
+ "winapi",
+]
+
+[[package]]
+name = "errno-dragonfly"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aa68f1b12764fab894d2755d2518754e71b4fd80ecfb822714a1206c2aab39bf"
+dependencies = [
+ "cc",
+ "libc",
 ]
 
 [[package]]
@@ -970,9 +991,9 @@ dependencies = [
 
 [[package]]
 name = "h2"
-version = "0.3.15"
+version = "0.3.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f9f29bc9dda355256b2916cf526ab02ce0aeaaaf2bad60d65ef3f12f11dd0f4"
+checksum = "5be7b54589b581f624f566bf5d8eb2bab1db736c51528720b6bd36b96b55924d"
 dependencies = [
  "bytes 1.4.0",
  "fnv",
@@ -1230,9 +1251,9 @@ dependencies = [
 
 [[package]]
 name = "incrementalmerkletree"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "068c5bdd31006d55536655cf1eb0d22d84d28de7c725b419480fd5d005c83216"
+checksum = "d5ad43a3f5795945459d577f6589cf62a476e92c79b75e70cd954364e14ce17b"
 dependencies = [
  "serde",
 ]
@@ -1254,6 +1275,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a5bbe824c507c5da5956355e86a746d82e0e1464f65d862cc5e71da70e94b2c"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "io-lifetimes"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1abeb7a0dd0f8181267ff8adc397075586500b81b28a73e8a0208b00fc170fb3"
+dependencies = [
+ "libc",
+ "windows-sys 0.45.0",
 ]
 
 [[package]]
@@ -1380,6 +1411,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0717cef1bc8b636c6e1c1bbdefc09e6322da8a9321966e8928ef80d20f7f770f"
 
 [[package]]
+name = "linux-raw-sys"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f051f77a7c8e6957c0696eac88f26b0117e54f52d3fc682ab19397a8812846a4"
+
+[[package]]
 name = "lock_api"
 version = "0.4.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1445,9 +1482,9 @@ checksum = "2dffe52ecf27772e601905b7522cb4ef790d2cc203488bbd0e2fe85fcb74566d"
 
 [[package]]
 name = "memoffset"
-version = "0.7.1"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5de893c32cde5f383baa4c04c5d6dbdd735cfd4a794b0debdb2bb1b421da5ff4"
+checksum = "d61c719bcfbcf5d62b3a09efa6088de8c54bc0bfcd3ea7ae39fcc186108b8de1"
 dependencies = [
  "autocfg",
 ]
@@ -2110,15 +2147,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "456c603be3e8d448b072f410900c09faf164fbce2d480456f50eea6e25f9c848"
 
 [[package]]
-name = "remove_dir_all"
-version = "0.5.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3acd125665422973a33ac9d3dd2df85edad0f4ae9b00dafb1a05e43a9f5ef8e7"
-dependencies = [
- "winapi",
-]
-
-[[package]]
 name = "reqwest"
 version = "0.11.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2249,6 +2277,20 @@ version = "1.0.1"
 dependencies = [
  "log",
  "rustlib",
+]
+
+[[package]]
+name = "rustix"
+version = "0.36.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f43abb88211988493c1abb44a70efa56ff0ce98f233b7b276146f1f3f7ba9644"
+dependencies = [
+ "bitflags",
+ "errno",
+ "io-lifetimes",
+ "libc",
+ "linux-raw-sys",
+ "windows-sys 0.45.0",
 ]
 
 [[package]]
@@ -2688,16 +2730,15 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
 name = "tempfile"
-version = "3.3.0"
+version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5cdb1ef4eaeeaddc8fbd371e5017057064af0911902ef36b39801f67cc6d79e4"
+checksum = "af18f7ae1acd354b992402e9ec5864359d693cd8a79dcbef59f76891701c1e95"
 dependencies = [
  "cfg-if",
  "fastrand",
- "libc",
  "redox_syscall",
- "remove_dir_all",
- "winapi",
+ "rustix",
+ "windows-sys 0.42.0",
 ]
 
 [[package]]
@@ -2816,9 +2857,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.25.0"
+version = "1.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c8e00990ebabbe4c14c08aca901caed183ecd5c09562a12c824bb53d3c3fd3af"
+checksum = "03201d01c3c27a29c8a5cee5b55a93ddae1ccf6f08f65365c2c918f8c1b76f64"
 dependencies = [
  "autocfg",
  "bytes 1.4.0",
@@ -2831,7 +2872,7 @@ dependencies = [
  "signal-hook-registry",
  "socket2",
  "tokio-macros",
- "windows-sys 0.42.0",
+ "windows-sys 0.45.0",
 ]
 
 [[package]]
@@ -3663,7 +3704,7 @@ dependencies = [
 [[package]]
 name = "zingo-memo"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#d23559d22f341002440c0dc9acffc292bf110438"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#7181040894630a3ffa2607f3fe328920143321fb"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -3675,7 +3716,7 @@ dependencies = [
 [[package]]
 name = "zingoconfig"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#d23559d22f341002440c0dc9acffc292bf110438"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#7181040894630a3ffa2607f3fe328920143321fb"
 dependencies = [
  "dirs",
  "http",
@@ -3688,7 +3729,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#d23559d22f341002440c0dc9acffc292bf110438"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#7181040894630a3ffa2607f3fe328920143321fb"
 dependencies = [
  "base58",
  "base64 0.13.1",

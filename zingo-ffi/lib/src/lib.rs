@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 use base64::{decode, encode};
 
 use zingoconfig::construct_server_uri;
+use zingolib::wallet::WalletBase;
 use zingolib::{commands, lightclient::LightClient};
 
 // We'll use a MUTEX to store a global lightclient instance,
@@ -24,16 +25,20 @@ pub fn init_new(
     data_dir: String,
 ) -> String {
     let server = construct_server_uri(Some(server_uri));
-    let (mut config, latest_block_height) = match zingolib::create_zingoconf_from_datadir(server, None) {
-        Ok((c, h)) => (c, h),
-        Err(e) => {
-            return format!("Error: {}", e);
-        }
-    };
+    let (mut config, latest_block_height) =
+        match zingolib::create_zingoconf_from_datadir(server, None) {
+            Ok((c, h)) => (c, h),
+            Err(e) => {
+                return format!("Error: {}", e);
+            }
+        };
 
     config.set_data_dir(data_dir);
 
-    let lightclient = match LightClient::new(&config, latest_block_height.saturating_sub(100)) {
+    let lightclient = match LightClient::new(
+        &config,
+        latest_block_height.saturating_sub(100),
+    ) {
         Ok(mut l) => {
             match l.set_sapling_params(
                 &decode(&sapling_output_b64).unwrap(),
@@ -72,16 +77,22 @@ pub fn init_from_seed(
     data_dir: String,
 ) -> String {
     let server = construct_server_uri(Some(server_uri));
-    let (mut config, _latest_block_height) = match zingolib::create_zingoconf_from_datadir(server, None) {
-        Ok((c, h)) => (c, h),
-        Err(e) => {
-            return format!("Error: {}", e);
-        }
-    };
+    let (mut config, _latest_block_height) =
+        match zingolib::create_zingoconf_from_datadir(server, None) {
+            Ok((c, h)) => (c, h),
+            Err(e) => {
+                return format!("Error: {}", e);
+            }
+        };
 
     config.set_data_dir(data_dir);
 
-    let lightclient = match LightClient::create_with_seedorkey_wallet(seed, &config, birthday, false) {
+    let lightclient = match LightClient::new_from_wallet_base(
+        WalletBase::MnemonicPhrase(seed),
+        &config,
+        birthday,
+        false,
+    ) {
         Ok(mut l) => {
             match l.set_sapling_params(
                 &decode(&sapling_output_b64).unwrap(),
@@ -119,12 +130,13 @@ pub fn init_from_b64(
     data_dir: String,
 ) -> String {
     let server = construct_server_uri(Some(server_uri));
-    let (mut config, _latest_block_height) = match zingolib::create_zingoconf_from_datadir(server, None) {
-        Ok((c, h)) => (c, h),
-        Err(e) => {
-            return format!("Error: {}", e);
-        }
-    };
+    let (mut config, _latest_block_height) =
+        match zingolib::create_zingoconf_from_datadir(server, None) {
+            Ok((c, h)) => (c, h),
+            Err(e) => {
+                return format!("Error: {}", e);
+            }
+        };
 
     config.set_data_dir(data_dir);
 
@@ -135,20 +147,22 @@ pub fn init_from_b64(
         }
     };
 
-    let lightclient = match LightClient::read_wallet_from_buffer(&config, &decoded_bytes[..]) {
-        Ok(mut l) => {
-            match l.set_sapling_params(
-                &decode(&sapling_output_b64).unwrap(),
-                &decode(&sapling_spend_b64).unwrap(),
-            ) {
-                Ok(_) => l,
-                Err(e) => return format!("Error: {}", e),
+    let lightclient =
+        match LightClient::read_wallet_from_buffer(&config, &decoded_bytes[..])
+        {
+            Ok(mut l) => {
+                match l.set_sapling_params(
+                    &decode(&sapling_output_b64).unwrap(),
+                    &decode(&sapling_spend_b64).unwrap(),
+                ) {
+                    Ok(_) => l,
+                    Err(e) => return format!("Error: {}", e),
+                }
             }
-        }
-        Err(e) => {
-            return format!("Error: {}", e);
-        }
-    };
+            Err(e) => {
+                return format!("Error: {}", e);
+            }
+        };
 
     let seed = match lightclient.do_seed_phrase_sync() {
         Ok(s) => s.dump(),
@@ -205,22 +219,22 @@ pub fn execute(cmd: String, args_list: String) -> String {
         } else {
             vec![args_list.as_ref()]
         };
-        resp = commands::do_user_command(&cmd, &args, lightclient.as_ref()).clone();
+        resp = commands::do_user_command(&cmd, &args, lightclient.as_ref())
+            .clone();
     };
 
     resp
 }
 
-pub fn get_latest_block(
-    server_uri: String,
-) -> String {
+pub fn get_latest_block(server_uri: String) -> String {
     let server = construct_server_uri(Some(server_uri));
-    let (_config, latest_block_height) = match zingolib::create_zingoconf_from_datadir(server, None) {
-        Ok((c, h)) => (c, h),
-        Err(e) => {
-            return format!("Error: {}", e);
-        }
-    };
+    let (_config, latest_block_height) =
+        match zingolib::create_zingoconf_from_datadir(server, None) {
+            Ok((c, h)) => (c, h),
+            Err(e) => {
+                return format!("Error: {}", e);
+            }
+        };
 
     let resp: String = latest_block_height.to_string();
 
