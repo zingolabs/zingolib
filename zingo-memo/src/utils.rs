@@ -3,6 +3,7 @@ use std::io::{self, Read, Write};
 use zcash_address::unified::{Address, Container, Encoding, Receiver};
 use zcash_client_backend::address::UnifiedAddress;
 use zcash_encoding::{CompactSize, Vector};
+use zcash_primitives::consensus::BlockHeight;
 
 /// A helper function to encode a UA as a CompactSize specifying the number
 /// of receivers, followed by the UA's raw encoding as specified in
@@ -87,4 +88,22 @@ fn decode_receiver(typecode: usize, data: Vec<u8>) -> io::Result<Receiver> {
             data,
         },
     })
+}
+
+pub fn write_transaction_height_and_index<W: Write>(
+    target_height: &BlockHeight,
+    tx_height: &BlockHeight,
+    index: usize,
+    mut writer: W,
+) -> io::Result<()> {
+    if target_height < tx_height {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Attempted to write down a transaction in a higher block than previous transaction \
+        or initial target height",
+        ))
+    } else {
+        CompactSize::write(&mut writer, u32::from(*target_height - *tx_height) as usize)?;
+        CompactSize::write(writer, index)
+    }
 }

@@ -1,20 +1,24 @@
 use std::io;
 
 use crate::{
-    utils::{read_unified_address_from_raw_encoding, write_unified_address_to_raw_encoding},
+    utils::{
+        read_unified_address_from_raw_encoding, write_transaction_height_and_index,
+        write_unified_address_to_raw_encoding,
+    },
     ParsedMemo,
 };
 use zcash_client_backend::address::UnifiedAddress;
 use zcash_encoding::{CompactSize, Vector};
+use zcash_primitives::consensus::BlockHeight;
 
 /// Packs a list of UAs into a memo. The UA only memo is version 0 of the protocol
 /// Note that a UA's raw representation is 1 byte for length, +21 for a T-receiver,
 /// +44 for a Sapling receiver, and +44 for an Orchard receiver. This totals a maximum
 /// of 110 bytes per UA, and attempting to write more than 510 bytes will cause an error.
-pub fn create_memo_v0(uas: &[UnifiedAddress]) -> io::Result<[u8; 511]> {
+pub fn create_memo_v0(uas: impl AsRef<[UnifiedAddress]>) -> io::Result<[u8; 511]> {
     let mut uas_bytes_vec = Vec::new();
     CompactSize::write(&mut uas_bytes_vec, 0usize)?;
-    Vector::write(&mut uas_bytes_vec, uas, |mut w, ua| {
+    Vector::write(&mut uas_bytes_vec, uas.as_ref(), |mut w, ua| {
         write_unified_address_to_raw_encoding(&ua, &mut w)
     })?;
     let mut uas_bytes = [0u8; 511];
@@ -26,6 +30,44 @@ pub fn create_memo_v0(uas: &[UnifiedAddress]) -> io::Result<[u8; 511]> {
     } else {
         uas_bytes[..uas_bytes_vec.len()].copy_from_slice(uas_bytes_vec.as_slice());
         Ok(uas_bytes)
+    }
+}
+
+pub fn create_memo_v1(
+    uas: impl AsRef<[UnifiedAddress]>,
+    mut target_height: BlockHeight,
+    transaction_heights_and_indexes: impl AsRef<[(BlockHeight, usize)]>,
+) -> io::Result<[u8; 511]> {
+    let mut memo_bytes_vec = Vec::new();
+    CompactSize::write(&mut memo_bytes_vec, 1usize)?;
+    Vector::write(&mut memo_bytes_vec, uas.as_ref(), |mut w, ua| {
+        write_unified_address_to_raw_encoding(&ua, &mut w)
+    })?;
+    let heights_indexes_and_target_heights = transaction_heights_and_indexes.as_ref().iter().fold(
+        Vec::new(),
+        |mut acc, (height, index)| {
+            acc.push((*height, *index, target_height));
+            target_height = *height;
+            acc
+        },
+    );
+    Vector::write(
+        &mut memo_bytes_vec,
+        &heights_indexes_and_target_heights,
+        |mut w, (height, index, target_height)| {
+            let result = write_transaction_height_and_index(&target_height, height, *index, &mut w);
+            result
+        },
+    )?;
+    let mut memo_bytes = [0u8; 511];
+    if memo_bytes_vec.len() > 511 {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Too much to fit in memo field",
+        ))
+    } else {
+        memo_bytes[..memo_bytes_vec.len()].copy_from_slice(memo_bytes_vec.as_slice());
+        Ok(memo_bytes)
     }
 }
 
