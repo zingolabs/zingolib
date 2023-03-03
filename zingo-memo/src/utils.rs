@@ -90,7 +90,7 @@ fn decode_receiver(typecode: usize, data: Vec<u8>) -> io::Result<Receiver> {
     })
 }
 
-pub fn write_transaction_height_and_index<W: Write>(
+pub(crate) fn write_transaction_height_and_index<W: Write>(
     target_height: &BlockHeight,
     tx_height: &BlockHeight,
     index: usize,
@@ -106,4 +106,33 @@ pub fn write_transaction_height_and_index<W: Write>(
         CompactSize::write(&mut writer, u32::from(*target_height - *tx_height) as usize)?;
         CompactSize::write(writer, index)
     }
+}
+pub(crate) fn read_transaction_relative_height_and_index<R: Read>(
+    mut reader: R,
+) -> io::Result<(BlockHeight, usize)> {
+    let relative_height = BlockHeight::from_u32(CompactSize::read_t(&mut reader)?);
+    let index = CompactSize::read_t(&mut reader)?;
+    Ok((relative_height, index))
+}
+
+pub(crate) fn recover_absolute_transaction_heights(
+    // The initial value is the height of the transaction that the memo was encoded in
+    mut last_noted_height: BlockHeight,
+    relative_heights_and_indexes: Vec<(BlockHeight, usize)>,
+) -> io::Result<Vec<(BlockHeight, usize)>> {
+    relative_heights_and_indexes
+        .iter()
+        .try_fold(Vec::new(), |mut acc, (height, index)| {
+            let absolute_height = u32::from(last_noted_height)
+                .checked_sub(u32::from(*height))
+                .ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "Found transaction at height below 0",
+                    )
+                })?;
+            acc.push((BlockHeight::from_u32(absolute_height), *index));
+            last_noted_height = *height;
+            Ok(acc)
+        })
 }

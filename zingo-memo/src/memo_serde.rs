@@ -2,7 +2,8 @@ use std::io;
 
 use crate::{
     utils::{
-        read_unified_address_from_raw_encoding, write_transaction_height_and_index,
+        read_transaction_relative_height_and_index, read_unified_address_from_raw_encoding,
+        recover_absolute_transaction_heights, write_transaction_height_and_index,
         write_unified_address_to_raw_encoding,
     },
     ParsedMemo,
@@ -72,7 +73,7 @@ pub fn create_memo_v1(
 }
 
 /// Attempts to parse the 511 bytes of an arbitrary data memo
-pub fn parse_memo(memo: [u8; 511]) -> io::Result<ParsedMemo> {
+pub fn parse_memo(memo: [u8; 511], height: BlockHeight) -> io::Result<ParsedMemo> {
     let mut reader: &[u8] = &memo;
     match CompactSize::read(&mut reader)? {
         0 => Ok(ParsedMemo::Version0 {
@@ -80,6 +81,22 @@ pub fn parse_memo(memo: [u8; 511]) -> io::Result<ParsedMemo> {
                 read_unified_address_from_raw_encoding(&mut r)
             })?,
         }),
+        1 => {
+            let uas = Vector::read(&mut reader, |mut r| {
+                read_unified_address_from_raw_encoding(&mut r)
+            })?;
+            let transaction_relative_heights_and_indexes = Vector::read(&mut reader, |r| {
+                read_transaction_relative_height_and_index(r)
+            })?;
+            let transaction_heights_and_indexes = recover_absolute_transaction_heights(
+                height,
+                transaction_relative_heights_and_indexes,
+            )?;
+            Ok(ParsedMemo::Version1 {
+                uas,
+                transaction_heights_and_indexes,
+            })
+        }
         _ => {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,

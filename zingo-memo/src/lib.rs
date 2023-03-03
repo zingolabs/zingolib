@@ -1,4 +1,5 @@
 use zcash_client_backend::address::UnifiedAddress;
+use zcash_primitives::consensus::BlockHeight;
 
 pub mod memo_serde;
 pub mod utils;
@@ -10,7 +11,13 @@ pub mod utils;
 #[non_exhaustive]
 #[derive(Debug)]
 pub enum ParsedMemo {
-    Version0 { uas: Vec<UnifiedAddress> },
+    Version0 {
+        uas: Vec<UnifiedAddress>,
+    },
+    Version1 {
+        uas: Vec<UnifiedAddress>,
+        transaction_heights_and_indexes: Vec<(BlockHeight, usize)>,
+    },
 }
 
 #[cfg(test)]
