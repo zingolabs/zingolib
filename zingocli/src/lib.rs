@@ -429,12 +429,14 @@ pub fn startup(
         }
     };
 
-    // Print startup Messages
-    info!(""); // Blank line
-    info!("Starting Zingo-CLI");
-    info!("Light Client config {:?}", config);
+    if filled_template.command.is_none() {
+        // Print startup Messages
+        info!(""); // Blank line
+        info!("Starting Zingo-CLI");
+        info!("Light Client config {:?}", config);
 
-    println!("Lightclient connecting to {}", config.get_server_uri());
+        info!("Lightclient connecting to {}", config.get_server_uri());
+    }
 
     // At startup, run a sync.
     if filled_template.sync {

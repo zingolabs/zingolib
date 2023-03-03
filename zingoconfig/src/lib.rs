@@ -5,7 +5,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use log::{info, LevelFilter};
+use log::LevelFilter;
 use log4rs::{
     append::rolling_file::{
         policy::compound::{
@@ -150,7 +150,7 @@ impl ZingoConfig {
                 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
                 {
                     if dirs::home_dir().is_none() {
-                        info!("Couldn't determine home dir!");
+                        log::info!("Couldn't determine home dir!");
                     }
                     zcash_data_location =
                         dirs::home_dir().expect("Couldn't determine home directory!");
