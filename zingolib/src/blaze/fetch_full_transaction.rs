@@ -8,7 +8,7 @@ use crate::wallet::{
     },
     transactions::TransactionMetadataSet,
 };
-use zingo_memo::{read_wallet_internal_memo, ParsedMemo};
+use zingo_memo::{memo_serde::parse_memo, ParsedMemo};
 
 use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
 use log::info;
@@ -174,7 +174,7 @@ impl TransactionContext {
         arbitrary_memos_with_txids: Vec<([u8; 511], TxId)>,
     ) {
         for (wallet_internal_data, txid) in arbitrary_memos_with_txids {
-            match read_wallet_internal_memo(wallet_internal_data) {
+            match parse_memo(wallet_internal_data) {
                 Ok(ParsedMemo::Version0 { uas }) => {
                     for ua in uas {
                         if let Some(transaction) = self

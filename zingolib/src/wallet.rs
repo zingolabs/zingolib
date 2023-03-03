@@ -40,7 +40,7 @@ use zcash_primitives::{
         components::{amount::DEFAULT_FEE, Amount, OutPoint, TxOut},
     },
 };
-use zingo_memo::create_wallet_internal_memo_version_0;
+use zingo_memo::memo_serde::create_memo_v0;
 
 use self::data::SpendableOrchardNote;
 use self::keys::unified::{Capability, ReceiverSelection, WalletCapability};
@@ -1407,7 +1407,7 @@ impl LightWallet {
                 return Err(e);
             }
         }
-        let uas_bytes = match create_wallet_internal_memo_version_0(&destination_uas) {
+        let uas_bytes = match create_memo_v0(&destination_uas) {
             Ok(bytes) => bytes,
             Err(e) => {
                 log::error!(
