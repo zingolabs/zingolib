@@ -123,16 +123,44 @@ pub(crate) fn recover_absolute_transaction_heights(
     relative_heights_and_indexes
         .iter()
         .try_fold(Vec::new(), |mut acc, (height, index)| {
-            let absolute_height = u32::from(last_noted_height)
-                .checked_sub(u32::from(*height))
-                .ok_or_else(|| {
-                    io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "Found transaction at height below 0",
-                    )
-                })?;
-            acc.push((BlockHeight::from_u32(absolute_height), *index));
-            last_noted_height = *height;
+            let absolute_height = BlockHeight::from_u32(
+                u32::from(last_noted_height)
+                    .checked_sub(u32::from(*height))
+                    .ok_or_else(|| {
+                        io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "Found transaction at height below 0",
+                        )
+                    })?,
+            );
+            acc.push((absolute_height, *index));
+            last_noted_height = absolute_height;
             Ok(acc)
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::iter::repeat;
+    #[test]
+    fn recover_correct_transaction_heights_including_relative_zeroes() -> io::Result<()> {
+        let relative_heights_and_indexes = [10, 5, 0, 2, 0, 3]
+            .into_iter()
+            .map(BlockHeight::from)
+            .zip(repeat(0))
+            .collect();
+        assert_eq!(
+            recover_absolute_transaction_heights(
+                BlockHeight::from(100),
+                relative_heights_and_indexes
+            )?,
+            [90, 85, 85, 83, 83, 80]
+                .into_iter()
+                .map(BlockHeight::from)
+                .zip(repeat(0))
+                .collect::<Vec<(BlockHeight, usize)>>()
+        );
+        Ok(())
+    }
 }
