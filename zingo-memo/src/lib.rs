@@ -1,5 +1,5 @@
 use zcash_client_backend::address::UnifiedAddress;
-use zcash_primitives::consensus::BlockHeight;
+use zcash_primitives::consensus::{BlockHeight, MAIN_NETWORK};
 
 pub mod memo_serde;
 pub mod utils;
@@ -18,6 +18,36 @@ pub enum ParsedMemo {
         uas: Vec<UnifiedAddress>,
         transaction_heights_and_indexes: Vec<(BlockHeight, usize)>,
     },
+}
+
+impl PartialEq for ParsedMemo {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (ParsedMemo::Version0 { uas: uas_self }, ParsedMemo::Version0 { uas: uas_other }) => {
+                uas_self
+                    .iter()
+                    .map(|ua| ua.encode(&MAIN_NETWORK))
+                    .eq(uas_other.iter().map(|ua| ua.encode(&MAIN_NETWORK)))
+            }
+            (
+                ParsedMemo::Version1 {
+                    uas: uas_self,
+                    transaction_heights_and_indexes: transaction_heights_and_indexes_self,
+                },
+                ParsedMemo::Version1 {
+                    uas: uas_other,
+                    transaction_heights_and_indexes: transaction_heights_and_indexes_other,
+                },
+            ) => {
+                uas_self
+                    .iter()
+                    .map(|ua| ua.encode(&MAIN_NETWORK))
+                    .eq(uas_other.iter().map(|ua| ua.encode(&MAIN_NETWORK)))
+                    && transaction_heights_and_indexes_self == transaction_heights_and_indexes_other
+            }
+            _ => false,
+        }
+    }
 }
 
 #[cfg(test)]

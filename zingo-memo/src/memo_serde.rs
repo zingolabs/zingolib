@@ -130,4 +130,27 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn ser_deser_v1_memo() {
+        use std::iter::repeat;
+        let uas = Vec::new();
+        let height = BlockHeight::from(1000);
+        let transaction_heights_and_indexes =
+            [997, 997, 993, 991, 931, 757, 757, 700, 666, 665, 200]
+                .into_iter()
+                .map(BlockHeight::from)
+                .zip(repeat(0))
+                .collect();
+
+        let memo_bytes =
+            create_memo_v1(uas.clone(), height, &transaction_heights_and_indexes).unwrap();
+        assert_eq!(
+            ParsedMemo::Version1 {
+                uas,
+                transaction_heights_and_indexes
+            },
+            parse_memo(memo_bytes, height).unwrap()
+        )
+    }
 }
