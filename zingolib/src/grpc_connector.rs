@@ -358,14 +358,13 @@ impl GrpcConnector {
     }
 
     pub async fn get_info(uri: http::Uri) -> Result<LightdInfo, String> {
-        let client = Arc::new(GrpcConnector::new(dbg!(uri.clone())));
+        let client = Arc::new(GrpcConnector::new(uri.clone()));
 
         let mut client = client
             .get_client()
             .await
             .map_err(|e| format!("Error getting client: {:?}", e))?;
 
-        dbg!(&client);
         let request = Request::new(Empty {});
 
         let response = client
