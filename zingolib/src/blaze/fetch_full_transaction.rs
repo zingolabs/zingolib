@@ -182,7 +182,12 @@ impl TransactionContext {
                 .get_mut(&txid)
             {
                 match parse_memo(wallet_internal_data, transaction.block_height) {
-                    Ok(ParsedMemo::Version0 { uas }) => {
+                    Ok(ParsedMemo::Version0 { uas })
+                    | Ok(ParsedMemo::Version1 {
+                        uas,
+                        // We only care about this during explicit memo_sync rescan/restore
+                        transaction_heights_and_indexes: _,
+                    }) => {
                         for ua in uas {
                             let outgoing_potential_receivers = [
                                 ua.orchard()
