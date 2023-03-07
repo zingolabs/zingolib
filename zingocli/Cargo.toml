@@ -4,7 +4,7 @@ version = "0.2.0"
 edition = "2021"
 
 [dependencies]
-rustyline = "9.1.2"
+rustyline = "11.0.0"
 clap = "3.2.20"
 log = "0.4.17"
 shellwords = "1.1.0"

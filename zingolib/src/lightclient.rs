@@ -502,7 +502,8 @@ impl LightClient {
                 return Err(Error::new(
                     ErrorKind::AlreadyExists,
                     format!(
-                        "Cannot create a new wallet from seed, because a wallet already exists"
+                        "Cannot create a new wallet from seed, because a wallet already exists at:\n{:?}",
+                        config.get_wallet_path().as_os_str()
                     ),
                 ));
             }
@@ -1356,8 +1357,6 @@ impl LightClient {
             prev = batch;
             latest_block_batches.push(batch);
         }
-
-        //println!("Batches are {:?}", latest_block_batches);
 
         // Increment the sync ID so the caller can determine when it is over
         self.bsync_data

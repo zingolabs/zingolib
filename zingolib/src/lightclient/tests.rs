@@ -54,6 +54,7 @@ fn new_wallet_from_phrase() {
         .unwrap()
         .to_string();
 
+    let wallet_name = format!("{}/{}", &data_dir, "zingo-wallet.dat");
     let config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, Some(data_dir));
     let lc = LightClient::new_from_wallet_base(
         WalletBase::MnemonicPhrase(TEST_SEED.to_string()),
@@ -78,7 +79,7 @@ fn new_wallet_from_phrase() {
             "{:?}",
             std::io::Error::new(
                 std::io::ErrorKind::AlreadyExists,
-                format!("Cannot create a new wallet from seed, because a wallet already exists"),
+                format!("Cannot create a new wallet from seed, because a wallet already exists at:\n{:?}", wallet_name),
             )
         )
     );
