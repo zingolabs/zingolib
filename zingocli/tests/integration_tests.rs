@@ -274,15 +274,13 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
     drop(child_process_handler);
 }
 
-#[test]
-fn mine_sapling_to_self() {
-    let (regtest_manager, child_process_handler, faucet) = scenarios::faucet_only();
-    Runtime::new().unwrap().block_on(async {
-        utils::increase_height_and_sync_client(&regtest_manager, &faucet, 5).await;
+#[tokio::test]
+async fn mine_sapling_to_self() {
+    let (regtest_manager, child_process_handler, faucet) = scenarios::faucet_async().await;
+    utils::increase_height_and_sync_client(&regtest_manager, &faucet, 5).await;
 
-        let balance = faucet.do_balance().await;
-        assert_eq!(balance["sapling_balance"], 3_750_000_000u64);
-    });
+    let balance = faucet.do_balance().await;
+    assert_eq!(balance["sapling_balance"], 3_750_000_000u64);
     drop(child_process_handler);
 }
 
