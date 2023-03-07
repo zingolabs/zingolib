@@ -20,11 +20,10 @@ lazy_static! {
 
 pub fn init_new(
     server_uri: String,
-    sapling_output_b64: String,
-    sapling_spend_b64: String,
     data_dir: String,
 ) -> String {
     let server = construct_server_uri(Some(server_uri));
+
     let (mut config, latest_block_height) =
         match zingolib::create_zingoconf_from_datadir(server, None) {
             Ok((c, h)) => (c, h),
@@ -39,15 +38,7 @@ pub fn init_new(
         &config,
         latest_block_height.saturating_sub(100),
     ) {
-        Ok(mut l) => {
-            match l.set_sapling_params(
-                &decode(&sapling_output_b64).unwrap(),
-                &decode(&sapling_spend_b64).unwrap(),
-            ) {
-                Ok(_) => l,
-                Err(e) => return format!("Error: {}", e),
-            }
-        }
+        Ok(l) => l,
         Err(e) => {
             return format!("Error: {}", e);
         }
@@ -72,11 +63,10 @@ pub fn init_from_seed(
     server_uri: String,
     seed: String,
     birthday: u64,
-    sapling_output_b64: String,
-    sapling_spend_b64: String,
     data_dir: String,
 ) -> String {
     let server = construct_server_uri(Some(server_uri));
+
     let (mut config, _latest_block_height) =
         match zingolib::create_zingoconf_from_datadir(server, None) {
             Ok((c, h)) => (c, h),
@@ -93,15 +83,7 @@ pub fn init_from_seed(
         birthday,
         false,
     ) {
-        Ok(mut l) => {
-            match l.set_sapling_params(
-                &decode(&sapling_output_b64).unwrap(),
-                &decode(&sapling_spend_b64).unwrap(),
-            ) {
-                Ok(_) => l,
-                Err(e) => return format!("Error: {}", e),
-            }
-        }
+        Ok(l) => l,
         Err(e) => {
             return format!("Error: {}", e);
         }
@@ -125,11 +107,10 @@ pub fn init_from_seed(
 pub fn init_from_b64(
     server_uri: String,
     base64_data: String,
-    sapling_output_b64: String,
-    sapling_spend_b64: String,
     data_dir: String,
 ) -> String {
     let server = construct_server_uri(Some(server_uri));
+
     let (mut config, _latest_block_height) =
         match zingolib::create_zingoconf_from_datadir(server, None) {
             Ok((c, h)) => (c, h),
@@ -150,15 +131,7 @@ pub fn init_from_b64(
     let lightclient =
         match LightClient::read_wallet_from_buffer(&config, &decoded_bytes[..])
         {
-            Ok(mut l) => {
-                match l.set_sapling_params(
-                    &decode(&sapling_output_b64).unwrap(),
-                    &decode(&sapling_spend_b64).unwrap(),
-                ) {
-                    Ok(_) => l,
-                    Err(e) => return format!("Error: {}", e),
-                }
-            }
+            Ok(l) => l,
             Err(e) => {
                 return format!("Error: {}", e);
             }
