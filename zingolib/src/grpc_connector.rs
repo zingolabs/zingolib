@@ -226,12 +226,11 @@ impl GrpcConnector {
         (h, transmitter)
     }
 
-    pub async fn get_block_range(
+    pub async fn stream_block_range(
         &self,
         start_height: u64,
         end_height: u64,
-        senders: &[UnboundedSender<CompactBlock>; 2],
-    ) -> Result<(), String> {
+    ) -> Result<tonic::Streaming<CompactBlock>, String> {
         let mut client = self.get_client().await.map_err(|e| format!("{}", e))?;
 
         let bs = BlockId {
@@ -248,13 +247,26 @@ impl GrpcConnector {
             end: Some(be),
         });
 
-        let mut response = client
+        Ok(client
             .get_block_range(request)
             .await
             .map_err(|e| format!("{}", e))?
-            .into_inner();
+            .into_inner())
+    }
 
-        while let Some(block) = response.message().await.map_err(|e| format!("{}", e))? {
+    pub async fn get_block_range(
+        &self,
+        start_height: u64,
+        end_height: u64,
+        senders: &[UnboundedSender<CompactBlock>; 2],
+    ) -> Result<(), String> {
+        while let Some(block) = self
+            .stream_block_range(start_height, end_height)
+            .await?
+            .message()
+            .await
+            .map_err(|e| format!("{}", e))?
+        {
             senders[0]
                 .send(block.clone())
                 .map_err(|e| format!("{}", e))?;

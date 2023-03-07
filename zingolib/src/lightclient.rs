@@ -1115,6 +1115,49 @@ impl LightClient {
         Ok(array![new_address.encode(&self.config.chain)])
     }
 
+    async fn setup_for_sync(&self) -> Result<tokio::sync::MutexGuard<()>, String> {
+        // We can only do one sync at a time because we sync blocks in serial order
+        // If we allow multiple syncs, they'll all get jumbled up.
+        // TODO:  We run on resource constrained systems, where a single thread of
+        // execution often consumes most of the memory available, on other systems
+        // we might parallelize sync.
+        let lightclient_exclusion_lock = self.sync_lock.lock().await;
+
+        // The top of the wallet
+        let last_synced_height = self.wallet.last_synced_height().await;
+
+        let latest_blockid = GrpcConnector::get_latest_block(self.config.get_server_uri()).await?;
+        if latest_blockid.height < last_synced_height {
+            let w = format!(
+                "Server's latest block({}) is behind ours({})",
+                latest_blockid.height, last_synced_height
+            );
+            warn!("{}", w);
+            return Err(w);
+        }
+
+        if latest_blockid.height == last_synced_height {
+            if !latest_blockid.hash.is_empty()
+                && BlockHash::from_slice(&latest_blockid.hash).to_string()
+                    != self.wallet.last_synced_hash().await
+            {
+                warn!("One block reorg at height {}", last_synced_height);
+                // This is a one-block reorg, so pop the last block. Even if there are more blocks to reorg, this is enough
+                // to trigger a sync, which will then reorg the remaining blocks
+                BlockAndWitnessData::invalidate_block(
+                    last_synced_height,
+                    self.wallet.blocks.clone(),
+                    self.wallet
+                        .transaction_context
+                        .transaction_metadata_set
+                        .clone(),
+                )
+                .await;
+            }
+        }
+        Ok(lightclient_exclusion_lock)
+    }
+
     pub async fn clear_state(&self) {
         // First, clear the state from the wallet
         self.wallet.clear_all().await;
@@ -1304,50 +1347,35 @@ impl LightClient {
         sync_result
     }
 
-    /// Start syncing in batches with the max size, to manage memory consumption.
-    async fn start_sync(&self) -> Result<JsonValue, String> {
-        // We can only do one sync at a time because we sync blocks in serial order
-        // If we allow multiple syncs, they'll all get jumbled up.
-        // TODO:  We run on resource constrained systems, where a single thread of
-        // execution often consumes most of the memory available, on other systems
-        // we might parallelize sync.
-        let lightclient_exclusion_lock = self.sync_lock.lock().await;
-
-        // The top of the wallet
-        let last_synced_height = self.wallet.last_synced_height().await;
-
-        let latest_blockid = GrpcConnector::get_latest_block(self.config.get_server_uri()).await?;
-        if latest_blockid.height < last_synced_height {
-            let w = format!(
-                "Server's latest block({}) is behind ours({})",
-                latest_blockid.height, last_synced_height
-            );
-            warn!("{}", w);
-            return Err(w);
-        }
-
-        if latest_blockid.height == last_synced_height {
-            if !latest_blockid.hash.is_empty()
-                && BlockHash::from_slice(&latest_blockid.hash).to_string()
-                    != self.wallet.last_synced_hash().await
-            {
-                warn!("One block reorg at height {}", last_synced_height);
-                // This is a one-block reorg, so pop the last block. Even if there are more blocks to reorg, this is enough
-                // to trigger a sync, which will then reorg the remaining blocks
-                BlockAndWitnessData::invalidate_block(
-                    last_synced_height,
-                    self.wallet.blocks.clone(),
-                    self.wallet
-                        .transaction_context
-                        .transaction_metadata_set
-                        .clone(),
-                )
-                .await;
-            }
-        }
-
+    pub async fn do_memo_sync(&self) -> Result<JsonValue, String> {
+        let lightclient_exclusion_lock = self.setup_for_sync().await?;
         // Re-read the last scanned height
         let last_scanned_height = self.wallet.last_synced_height().await;
+        let latest_blockid = GrpcConnector::get_latest_block(self.config.get_server_uri()).await?;
+
+        let grpc_client = Arc::new(GrpcConnector::new(self.config.get_server_uri()));
+        let mut block_stream = grpc_client
+            .stream_block_range(last_scanned_height, latest_blockid.height)
+            .await?;
+        for i in (last_scanned_height..latest_blockid.height).rev() {
+            let next_block = block_stream
+                .message()
+                .await
+                .map_err(|e| format!("{e}"))?
+                .ok_or_else(|| String::from("No block {i}"))?;
+            assert_eq!(i, next_block.height);
+        }
+
+        drop(lightclient_exclusion_lock);
+        todo!()
+    }
+
+    /// Start syncing in batches with the max size, to manage memory consumption.
+    async fn start_sync(&self) -> Result<JsonValue, String> {
+        let lightclient_exclusion_lock = self.setup_for_sync().await?;
+        // Re-read the last scanned height
+        let last_scanned_height = self.wallet.last_synced_height().await;
+        let latest_blockid = GrpcConnector::get_latest_block(self.config.get_server_uri()).await?;
         let batch_size = 100;
 
         let mut latest_block_batches = vec![];
