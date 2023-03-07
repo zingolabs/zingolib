@@ -314,21 +314,6 @@ pub mod scenarios {
     /// and zcashd (in regtest mode). This setup is intended to produce the most basic  
     /// of scenarios.  As scenarios with even less requirements
     /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
-    pub fn faucet_only() -> (RegtestManager, ChildProcessHandler, LightClient) {
-        let mut sb = setup::ScenarioBuilder::new();
-        //tracing_subscriber::fmt::init();
-        sb.test_env
-            .create_funded_zcash_conf(REGSAP_ADDR_FROM_ABANDONART);
-        sb.test_env.create_lightwalletd_conf();
-        sb.launch();
-        let faucet = sb.client_builder.build_new_faucet(0, false);
-        (
-            sb.regtest_manager,
-            sb.child_process_handler.unwrap(),
-            faucet,
-        )
-    }
-
     pub async fn faucet_async() -> (RegtestManager, ChildProcessHandler, LightClient) {
         let mut sb = setup::ScenarioBuilder::new();
         //tracing_subscriber::fmt::init();

@@ -177,12 +177,12 @@ fn test_scanning_in_watch_only_mode() {
     drop(child_process_handler);
 }
 
-#[test]
-fn zcashd_sapling_commitment_tree() {
+#[tokio::test]
+async fn zcashd_sapling_commitment_tree() {
     //!  TODO:  Make this test assert something, what is this a test of?
     //!  TODO:  Add doc-comment explaining what constraints this test
     //!  enforces
-    let (regtest_manager, child_process_handler, _faucet) = scenarios::faucet_only();
+    let (regtest_manager, child_process_handler, _faucet) = scenarios::faucet_async().await;
     let trees = regtest_manager
         .get_cli_handle()
         .args(["z_gettreestate", "1"])
@@ -349,36 +349,34 @@ fn unspent_notes_are_not_saved() {
     drop(child_process_handler);
 }
 
-#[test]
-fn send_mined_sapling_to_orchard() {
+#[tokio::test]
+async fn send_mined_sapling_to_orchard() {
     //! This test shows the 5th confirmation changing the state of balance by
     //! debiting unverified_orchard_balance and crediting verified_orchard_balance.  The debit amount is
     //! consistent with all the notes in the relevant block changing state.
     //! NOTE that the balance doesn't give insight into the distribution across notes.
-    let (regtest_manager, child_process_handler, faucet) = scenarios::faucet_only();
-    Runtime::new().unwrap().block_on(async {
-        utils::increase_height_and_sync_client(&regtest_manager, &faucet, 5).await;
+    let (regtest_manager, child_process_handler, faucet) = scenarios::faucet_async().await;
+    utils::increase_height_and_sync_client(&regtest_manager, &faucet, 5).await;
 
-        let amount_to_send = 5_000;
-        faucet
-            .do_send(vec![(
-                get_base_address!(faucet, "unified").as_str(),
-                amount_to_send,
-                Some("Scenario test: engage!".to_string()),
-            )])
-            .await
-            .unwrap();
+    let amount_to_send = 5_000;
+    faucet
+        .do_send(vec![(
+            get_base_address!(faucet, "unified").as_str(),
+            amount_to_send,
+            Some("Scenario test: engage!".to_string()),
+        )])
+        .await
+        .unwrap();
 
-        utils::increase_height_and_sync_client(&regtest_manager, &faucet, 4).await;
-        let balance = faucet.do_balance().await;
-        // We send change to orchard now, so we should have the full value of the note
-        // we spent, minus the transaction fee
-        assert_eq!(balance["unverified_orchard_balance"], 0);
-        assert_eq!(
-            balance["verified_orchard_balance"],
-            625_000_000 - u64::from(DEFAULT_FEE)
-        );
-    });
+    utils::increase_height_and_sync_client(&regtest_manager, &faucet, 4).await;
+    let balance = faucet.do_balance().await;
+    // We send change to orchard now, so we should have the full value of the note
+    // we spent, minus the transaction fee
+    assert_eq!(balance["unverified_orchard_balance"], 0);
+    assert_eq!(
+        balance["verified_orchard_balance"],
+        625_000_000 - u64::from(DEFAULT_FEE)
+    );
     drop(child_process_handler);
 }
 fn extract_value_as_u64(input: &JsonValue) -> u64 {
@@ -872,52 +870,50 @@ fn rescan_still_have_outgoing_metadata() {
     });
 }
 
-#[test]
-fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
-    let (regtest_manager, child_process_handler, faucet) = scenarios::faucet_only();
-    Runtime::new().unwrap().block_on(async {
+#[tokio::test]
+async fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
+    let (regtest_manager, child_process_handler, faucet) = scenarios::faucet_async().await;
+    utils::increase_height_and_sync_client(&regtest_manager, &faucet, 5).await;
+    let sapling_addr = get_base_address!(faucet, "sapling");
+    for memo in [None, Some("foo")] {
+        faucet
+            .do_send(vec![(
+                sapling_addr.as_str(),
+                {
+                    let balance = faucet.do_balance().await;
+                    balance["spendable_sapling_balance"].as_u64().unwrap()
+                        + balance["spendable_orchard_balance"].as_u64().unwrap()
+                } - 1_000,
+                memo.map(ToString::to_string),
+            )])
+            .await
+            .unwrap();
         utils::increase_height_and_sync_client(&regtest_manager, &faucet, 5).await;
-        let sapling_addr = get_base_address!(faucet, "sapling");
-        for memo in [None, Some("foo")] {
-            faucet
-                .do_send(vec![(
-                    sapling_addr.as_str(),
-                    {
-                        let balance = faucet.do_balance().await;
-                        balance["spendable_sapling_balance"].as_u64().unwrap()
-                            + balance["spendable_orchard_balance"].as_u64().unwrap()
-                    } - 1_000,
-                    memo.map(ToString::to_string),
-                )])
-                .await
-                .unwrap();
-            utils::increase_height_and_sync_client(&regtest_manager, &faucet, 5).await;
-        }
-        let transactions = faucet.do_list_transactions(false).await;
-        let notes = faucet.do_list_notes(true).await;
-        faucet.do_rescan().await.unwrap();
-        let post_rescan_transactions = faucet.do_list_transactions(false).await;
-        let post_rescan_notes = faucet.do_list_notes(true).await;
-        assert_eq!(
-            transactions,
-            post_rescan_transactions,
-            "Pre-Rescan: {}\n\n\nPost-Rescan: {}",
-            json::stringify_pretty(transactions.clone(), 4),
-            json::stringify_pretty(post_rescan_transactions.clone(), 4)
-        );
+    }
+    let transactions = faucet.do_list_transactions(false).await;
+    let notes = faucet.do_list_notes(true).await;
+    faucet.do_rescan().await.unwrap();
+    let post_rescan_transactions = faucet.do_list_transactions(false).await;
+    let post_rescan_notes = faucet.do_list_notes(true).await;
+    assert_eq!(
+        transactions,
+        post_rescan_transactions,
+        "Pre-Rescan: {}\n\n\nPost-Rescan: {}",
+        json::stringify_pretty(transactions.clone(), 4),
+        json::stringify_pretty(post_rescan_transactions.clone(), 4)
+    );
 
-        // Notes are not in deterministic order after rescan. Insead, iterate over all
-        // the notes and check that they exist post-rescan
-        for (field_name, field) in notes.entries() {
-            for note in field.members() {
-                assert!(post_rescan_notes[field_name]
-                    .members()
-                    .any(|post_rescan_note| post_rescan_note == note));
-            }
-            assert_eq!(field.len(), post_rescan_notes[field_name].len());
+    // Notes are not in deterministic order after rescan. Insead, iterate over all
+    // the notes and check that they exist post-rescan
+    for (field_name, field) in notes.entries() {
+        for note in field.members() {
+            assert!(post_rescan_notes[field_name]
+                .members()
+                .any(|post_rescan_note| post_rescan_note == note));
         }
-        drop(child_process_handler);
-    });
+        assert_eq!(field.len(), post_rescan_notes[field_name].len());
+    }
+    drop(child_process_handler);
 }
 
 /// An arbitrary number of diversified addresses may be generated
