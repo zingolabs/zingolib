@@ -57,6 +57,9 @@ use self::{
 use zingoconfig::ZingoConfig;
 
 pub(crate) mod data;
+#[cfg(feature = "integration_test")]
+pub mod keys;
+#[cfg(not(feature = "integration_test"))]
 pub(crate) mod keys;
 pub(crate) mod message;
 pub(crate) mod traits;

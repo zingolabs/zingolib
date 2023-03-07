@@ -12,6 +12,9 @@ use zcash_primitives::{
 };
 use zingoconfig::ZingoConfig;
 
+#[cfg(feature = "integration_test")]
+pub mod extended_transparent;
+#[cfg(not(feature = "integration_test"))]
 pub(crate) mod extended_transparent;
 pub(crate) mod unified;
 

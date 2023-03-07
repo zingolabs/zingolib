@@ -255,6 +255,9 @@ impl LightClient {
             interrupt_sync: Arc::new(RwLock::new(false)),
         }
     }
+    pub fn extract_unified_capability(&self) -> Arc<RwLock<WalletCapability>> {
+        self.wallet.wallet_capability()
+    }
 }
 impl LightClient {
     pub fn create_unconnected(
