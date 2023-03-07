@@ -5,7 +5,7 @@ use crate::{
         fetch_taddr_transactions::FetchTaddrTransactions, sync_status::BatchSyncStatus,
         syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions, update_notes::UpdateNotes,
     },
-    compact_formats::RawTransaction,
+    compact_formats::{self, CompactBlock, RawTransaction},
     grpc_connector::GrpcConnector,
     wallet::{
         data::TransactionMetadata,
@@ -19,7 +19,7 @@ use crate::{
         LightWallet, WalletBase,
     },
 };
-use futures::future::join_all;
+use futures::{future::join_all, StreamExt};
 use json::{array, object, JsonValue};
 use log::{debug, error, warn};
 use orchard::note_encryption::OrchardDomain;
@@ -38,6 +38,7 @@ use tokio::{
     task::yield_now,
     time::sleep,
 };
+use tonic::Streaming;
 use zcash_note_encryption::Domain;
 
 use zcash_client_backend::{
@@ -1350,20 +1351,24 @@ impl LightClient {
     pub async fn do_memo_sync(&self) -> Result<JsonValue, String> {
         let lightclient_exclusion_lock = self.setup_for_sync().await?;
         // Re-read the last scanned height
-        let last_scanned_height = self.wallet.last_synced_height().await;
+        let first_unscanned_height = 1 + self.wallet.last_synced_height().await;
         let latest_blockid = GrpcConnector::get_latest_block(self.config.get_server_uri()).await?;
 
         let grpc_client = Arc::new(GrpcConnector::new(self.config.get_server_uri()));
-        let mut block_stream = grpc_client
-            .stream_block_range(last_scanned_height, latest_blockid.height)
-            .await?;
-        for i in (last_scanned_height..latest_blockid.height).rev() {
-            let next_block = block_stream
-                .message()
+        let block_stream = dbg!(
+            grpc_client
+                .stream_block_range(first_unscanned_height, latest_blockid.height)
                 .await
-                .map_err(|e| format!("{e}"))?
-                .ok_or_else(|| String::from("No block {i}"))?;
-            assert_eq!(i, next_block.height);
+        )?;
+        let mut blocks = <Streaming<_> as StreamExt>::collect::<Vec<_>>(block_stream)
+            .await
+            .into_iter()
+            .rev();
+        for i in (first_unscanned_height..=latest_blockid.height).rev() {
+            let next_block = blocks
+                .next()
+                .ok_or_else(|| String::from("No block {i}"))?
+                .map_err(|e| format!("error reading block: {e:#?}"))?;
         }
 
         drop(lightclient_exclusion_lock);

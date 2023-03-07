@@ -2,11 +2,11 @@
 #![cfg(feature = "local_env")]
 mod data;
 mod utils;
-use std::fs::File;
+use std::{fs::File, time::Duration};
 
 use data::seeds::HOSPITAL_MUSEUM_SEED;
 use json::JsonValue;
-use tokio::runtime::Runtime;
+use tokio::{runtime::Runtime, time::sleep};
 use utils::scenarios;
 
 #[test]
@@ -1269,6 +1269,18 @@ fn send_to_ua_saves_full_ua_in_wallet() {
             json::stringify_pretty(new_list.clone(), 4)
         );
     });
+    drop(child_process_handler);
+}
+
+#[test]
+fn do_memo_sync_block_height_saniry_check_assert_passes() {
+    let (regtest_manager, child_process_handler, faucet) = scenarios::faucet_only();
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        regtest_manager.generate_n_blocks(20).unwrap();
+        sleep(Duration::from_secs(1)).await;
+        faucet.do_memo_sync().await.unwrap();
+    });
+
     drop(child_process_handler);
 }
 
