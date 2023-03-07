@@ -260,18 +260,6 @@ impl LightClient {
     }
 }
 impl LightClient {
-    pub fn create_with_wallet(wallet: LightWallet, config: ZingoConfig) -> Self {
-        LightClient {
-            wallet,
-            config: config.clone(),
-            mempool_monitor: std::sync::RwLock::new(None),
-            sync_lock: Mutex::new(()),
-            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
-            interrupt_sync: Arc::new(RwLock::new(false)),
-        }
-    }
-}
-impl LightClient {
     pub fn create_unconnected(
         config: &ZingoConfig,
         wallet_base: WalletBase,
@@ -1380,14 +1368,11 @@ impl LightClient {
             .start_new(latest_block_batches.len());
 
         let mut res = Err("No batches were run!".to_string());
-        let mut approximate_last_synced_height = last_scanned_height;
         for (batch_num, batch_latest_block) in latest_block_batches.into_iter().enumerate() {
             res = self.sync_nth_batch(batch_latest_block, batch_num).await;
             if res.is_err() {
                 return res;
             }
-            approximate_last_synced_height = approximate_last_synced_height + batch_size;
-            println!("approximate_last_synced_height: {approximate_last_synced_height}");
             if *self.interrupt_sync.read().await {
                 log::debug!("LightClient interrupt_sync is true");
                 break;
