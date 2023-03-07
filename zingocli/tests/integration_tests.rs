@@ -9,6 +9,10 @@ use json::JsonValue;
 use tokio::runtime::Runtime;
 use utils::scenarios;
 
+#[tokio::test]
+async fn async_client_fundamentals() {
+    let (_regtest_manager, _child_process_handler, _faucet) = scenarios::faucet_async().await;
+}
 #[test]
 fn test_scanning_in_watch_only_mode() {
     // # Scenario:

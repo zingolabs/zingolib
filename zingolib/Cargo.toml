@@ -9,6 +9,7 @@ edition = "2021"
 [features]
 default = ["embed_params"]
 integration_test = []
+async_client = []
 embed_params = []
 
 [dependencies]

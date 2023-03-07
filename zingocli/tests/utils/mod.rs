@@ -101,7 +101,6 @@ pub mod scenarios {
                     regtest_manager.zingo_datadir.clone(),
                     data::seeds::ABANDON_ART_SEED,
                 );
-                dbg!(&regtest_manager.zcashd_config);
                 let child_process_handler = None;
                 Self {
                     test_env,
@@ -145,6 +144,38 @@ pub mod scenarios {
                     seed,
                     client_number,
                 }
+            }
+            pub async fn make_new_zing_configdir_async(
+                &mut self,
+            ) -> (zingoconfig::ZingoConfig, u64) {
+                //! Each client requires a unique data_dir, we use the
+                //! client_number counter for this.
+                self.client_number += 1;
+                let conf_path = format!(
+                    "{}_client_{}",
+                    self.zingo_datadir.to_string_lossy().to_string(),
+                    self.client_number
+                );
+                std::fs::create_dir(&conf_path).unwrap();
+                zingolib::create_zingoconfdir_async(self.server_id.clone(), Some(conf_path))
+                    .await
+                    .unwrap()
+            }
+            pub async fn build_new_faucet_async(
+                &mut self,
+                birthday: u64,
+                overwrite: bool,
+            ) -> LightClient {
+                //! A "faucet" is a lightclient that receives mining rewards
+                let (zingo_config, _) = self.make_new_zing_configdir_async().await;
+                LightClient::new_from_wallet_base_async(
+                    WalletBase::MnemonicPhrase(self.seed.clone()),
+                    &zingo_config,
+                    birthday,
+                    overwrite,
+                )
+                .await
+                .unwrap()
             }
             pub fn make_new_zing_configdir(&mut self) -> (zingoconfig::ZingoConfig, u64) {
                 //! Each client requires a unique data_dir, we use the
@@ -291,6 +322,21 @@ pub mod scenarios {
         sb.test_env.create_lightwalletd_conf();
         sb.launch();
         let faucet = sb.client_builder.build_new_faucet(0, false);
+        (
+            sb.regtest_manager,
+            sb.child_process_handler.unwrap(),
+            faucet,
+        )
+    }
+
+    pub async fn faucet_async() -> (RegtestManager, ChildProcessHandler, LightClient) {
+        let mut sb = setup::ScenarioBuilder::new();
+        //tracing_subscriber::fmt::init();
+        sb.test_env
+            .create_funded_zcash_conf(REGSAP_ADDR_FROM_ABANDONART);
+        sb.test_env.create_lightwalletd_conf();
+        sb.launch();
+        let faucet = sb.client_builder.build_new_faucet_async(0, false).await;
         (
             sb.regtest_manager,
             sb.child_process_handler.unwrap(),
