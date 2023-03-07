@@ -75,14 +75,13 @@ fn test_scanning_in_watch_only_mode() {
             .read()
             .await
             .clone();
-        use zcash_primitives::sapling::keys::DiversifiableFullViewingKey as SaplingFvk;
-        //let extfvk: SaplingFvk = (&wc).try_into().unwrap();
         use orchard::keys::FullViewingKey as OrchardFvk;
         use zcash_address::unified::Fvk;
+        use zcash_primitives::sapling::keys::DiversifiableFullViewingKey as SaplingFvk;
+        use zingolib::wallet::keys::extended_transparent::ExtendedPubKey;
         let o_fvk = Fvk::Orchard(OrchardFvk::try_from(&wc).unwrap().to_bytes());
         let s_fvk = Fvk::Sapling(SaplingFvk::try_from(&wc).unwrap().to_bytes());
         let mut t_fvk_bytes = [0u8; 65];
-        use zingolib::wallet::keys::extended_transparent::ExtendedPubKey;
         let t_ext_pk: ExtendedPubKey = (&wc).try_into().unwrap();
         t_fvk_bytes[0..32].copy_from_slice(&t_ext_pk.chain_code[..]);
         t_fvk_bytes[32..65].copy_from_slice(&t_ext_pk.public_key.serialize()[..]);
