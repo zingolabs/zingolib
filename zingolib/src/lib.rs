@@ -28,10 +28,38 @@ pub async fn create_zingoconfdir_async(
 ) -> Result<(ZingoConfig, u64)> {
     //! This call depends on a running lightwalletd it uses the ligthtwalletd
     //! to find out what kind of chain it's running against.
-    use std::net::ToSocketAddrs;
 
     // Test for a connection first
+    // Do a getinfo first, before opening the wallet
+    let info = grpc_connector::GrpcConnector::get_info(server.clone())
+        .await
+        .map_err(|e| std::io::Error::new(ErrorKind::ConnectionRefused, e))?;
+    create_zingoconf_internal(server, data_dir, info)
+}
 
+pub fn create_zingoconf_from_datadir(
+    server: http::Uri,
+    data_dir: Option<String>,
+) -> Result<(ZingoConfig, u64)> {
+    //! This call depends on a running lightwalletd it uses the ligthtwalletd
+    //! to find out what kind of chain it's running against.
+
+    Runtime::new().unwrap().block_on(async move {
+        // Test for a connection first
+        // Do a getinfo first, before opening the wallet
+        let info = grpc_connector::GrpcConnector::get_info(server.clone())
+            .await
+            .map_err(|e| std::io::Error::new(ErrorKind::ConnectionRefused, e))?;
+        create_zingoconf_internal(server, data_dir, info)
+    })
+}
+
+fn create_zingoconf_internal(
+    server: http::Uri,
+    data_dir: Option<String>,
+    info: compact_formats::LightdInfo,
+) -> Result<(ZingoConfig, u64)> {
+    use std::net::ToSocketAddrs;
     format!("{}:{}", server.host().unwrap(), server.port().unwrap())
         .to_socket_addrs()?
         .next()
@@ -39,11 +67,6 @@ pub async fn create_zingoconfdir_async(
             ErrorKind::ConnectionRefused,
             "Couldn't resolve server!",
         ))?;
-
-    // Do a getinfo first, before opening the wallet
-    let info = grpc_connector::GrpcConnector::get_info(server.clone())
-        .await
-        .map_err(|e| std::io::Error::new(ErrorKind::ConnectionRefused, e))?;
 
     // Create a Light Client Config
     let config = ZingoConfig {
@@ -61,47 +84,4 @@ pub async fn create_zingoconfdir_async(
     };
 
     Ok((config, info.block_height))
-}
-
-pub fn create_zingoconf_from_datadir(
-    server: http::Uri,
-    data_dir: Option<String>,
-) -> Result<(ZingoConfig, u64)> {
-    //! This call depends on a running lightwalletd it uses the ligthtwalletd
-    //! to find out what kind of chain it's running against.
-    use std::net::ToSocketAddrs;
-
-    Runtime::new().unwrap().block_on(async move {
-        // Test for a connection first
-
-        format!("{}:{}", server.host().unwrap(), server.port().unwrap())
-            .to_socket_addrs()?
-            .next()
-            .ok_or(std::io::Error::new(
-                ErrorKind::ConnectionRefused,
-                "Couldn't resolve server!",
-            ))?;
-
-        // Do a getinfo first, before opening the wallet
-        let info = grpc_connector::GrpcConnector::get_info(server.clone())
-            .await
-            .map_err(|e| std::io::Error::new(ErrorKind::ConnectionRefused, e))?;
-
-        // Create a Light Client Config
-        let config = ZingoConfig {
-            server_uri: Arc::new(RwLock::new(server)),
-            chain: match info.chain_name.as_str() {
-                "main" => ChainType::Mainnet,
-                "test" => ChainType::Testnet,
-                "regtest" => ChainType::Regtest,
-                "fakemainnet" => ChainType::FakeMainnet,
-                _ => panic!("Unknown network"),
-            },
-            monitor_mempool: true,
-            reorg_buffer_offset: zingoconfig::REORG_BUFFER_OFFSET,
-            data_dir,
-        };
-
-        Ok((config, info.block_height))
-    })
 }
