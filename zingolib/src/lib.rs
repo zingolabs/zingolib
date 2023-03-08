@@ -21,7 +21,6 @@ use std::{
 use tokio::runtime::Runtime;
 use zingoconfig::{ChainType, ZingoConfig};
 
-#[cfg(feature = "async_client")]
 pub async fn create_zingoconfdir_async(
     server: http::Uri,
     data_dir: Option<String>,
@@ -34,31 +33,7 @@ pub async fn create_zingoconfdir_async(
     let info = grpc_connector::GrpcConnector::get_info(server.clone())
         .await
         .map_err(|e| std::io::Error::new(ErrorKind::ConnectionRefused, e))?;
-    create_zingoconf_internal(server, data_dir, info)
-}
 
-pub fn create_zingoconf_from_datadir(
-    server: http::Uri,
-    data_dir: Option<String>,
-) -> Result<(ZingoConfig, u64)> {
-    //! This call depends on a running lightwalletd it uses the ligthtwalletd
-    //! to find out what kind of chain it's running against.
-
-    Runtime::new().unwrap().block_on(async move {
-        // Test for a connection first
-        // Do a getinfo first, before opening the wallet
-        let info = grpc_connector::GrpcConnector::get_info(server.clone())
-            .await
-            .map_err(|e| std::io::Error::new(ErrorKind::ConnectionRefused, e))?;
-        create_zingoconf_internal(server, data_dir, info)
-    })
-}
-
-fn create_zingoconf_internal(
-    server: http::Uri,
-    data_dir: Option<String>,
-    info: compact_formats::LightdInfo,
-) -> Result<(ZingoConfig, u64)> {
     use std::net::ToSocketAddrs;
     format!("{}:{}", server.host().unwrap(), server.port().unwrap())
         .to_socket_addrs()?
@@ -84,4 +59,18 @@ fn create_zingoconf_internal(
     };
 
     Ok((config, info.block_height))
+}
+
+pub fn create_zingoconf_from_datadir(
+    server: http::Uri,
+    data_dir: Option<String>,
+) -> Result<(ZingoConfig, u64)> {
+    //! This call depends on a running lightwalletd it uses the ligthtwalletd
+    //! to find out what kind of chain it's running against.
+
+    Runtime::new().unwrap().block_on(async move {
+        // Test for a connection first
+        // Do a getinfo first, before opening the wallet
+        create_zingoconfdir_async(server, data_dir).await
+    })
 }
