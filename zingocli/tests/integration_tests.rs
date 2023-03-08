@@ -262,7 +262,7 @@ async fn actual_empty_zcashd_sapling_commitment_tree() {
         finalstates,
         trees.as_ref().unwrap()["orchard"]["commitments"]["finalState"]
     );
-    dbg!(std::process::Command::new("grpcurl").args(["-plaintext", "127.0.0.1:9067"]));
+    //dbg!(std::process::Command::new("grpcurl").args(["-plaintext", "127.0.0.1:9067"]));
     drop(child_process_handler);
 }
 

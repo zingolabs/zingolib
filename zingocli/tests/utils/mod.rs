@@ -175,11 +175,6 @@ pub mod scenarios {
                 .await
                 .unwrap()
             }
-            pub async fn build_new_unfunded_client(&mut self, birthday: u64) -> LightClient {
-                let (zingo_config, _) = self.make_new_zing_configdir().await;
-                LightClient::new(&zingo_config, birthday).unwrap()
-            }
-
             pub async fn build_newseed_client(
                 &mut self,
                 mnemonic_phrase: String,
@@ -408,7 +403,7 @@ pub mod scenarios {
             scenario_builder.child_process_handler.unwrap(),
             scenario_builder
                 .client_builder
-                .build_new_unfunded_client(0)
+                .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
                 .await,
         )
     }
