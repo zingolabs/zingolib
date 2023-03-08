@@ -262,7 +262,6 @@ impl LightClient {
 impl LightClient {
     /// The wallet this fn associates with the lightclient is specifically derived from
     /// a spend authority.
-    #[cfg(feature = "async_client")]
     pub async fn new_from_wallet_base_async(
         wallet_base: WalletBase,
         config: &ZingoConfig,
@@ -310,46 +309,10 @@ impl LightClient {
         overwrite: bool,
     ) -> io::Result<Self> {
         Runtime::new().unwrap().block_on(async move {
-            LightClient::new_from_wallet_internal(wallet_base, config, birthday, overwrite).await
+            LightClient::new_from_wallet_base_async(wallet_base, config, birthday, overwrite).await
         })
     }
-    async fn new_from_wallet_internal(
-        wallet_base: WalletBase,
-        config: &ZingoConfig,
-        birthday: u64,
-        overwrite: bool,
-    ) -> io::Result<Self> {
-        #[cfg(not(any(target_os = "ios", target_os = "android")))]
-        {
-            if !overwrite && config.wallet_exists() {
-                return Err(Error::new(
-                        ErrorKind::AlreadyExists,
-                        format!(
-                            "Cannot create a new wallet from seed, because a wallet already exists at:\n{:?}",
-                            config.get_wallet_path().as_os_str()
-                        ),
-                    ));
-            }
-        }
-        let lightclient = LightClient {
-            wallet: LightWallet::new(config.clone(), wallet_base, birthday)?,
-            config: config.clone(),
-            mempool_monitor: std::sync::RwLock::new(None),
-            sync_lock: Mutex::new(()),
-            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
-            interrupt_sync: Arc::new(RwLock::new(false)),
-        };
 
-        lightclient.set_wallet_initial_state(birthday).await;
-        lightclient
-            .do_save()
-            .await
-            .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
-
-        debug!("Created new wallet!");
-
-        Ok(lightclient)
-    }
     pub fn create_unconnected(
         config: &ZingoConfig,
         wallet_base: WalletBase,
