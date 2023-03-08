@@ -15,7 +15,7 @@ use crate::{
         },
         message::Message,
         now,
-        traits::{DomainWalletExt, ReceivedNoteAndMetadata, Recipient},
+        traits::{CompactOutput, DomainWalletExt, ReceivedNoteAndMetadata, Recipient},
         LightWallet, WalletBase,
     },
 };
@@ -39,7 +39,7 @@ use tokio::{
     time::sleep,
 };
 use tonic::Streaming;
-use zcash_note_encryption::Domain;
+use zcash_note_encryption::{batch::try_compact_note_decryption, Domain};
 
 use zcash_client_backend::{
     address::RecipientAddress,
@@ -1349,6 +1349,9 @@ impl LightClient {
     }
 
     pub async fn do_memo_sync(&self) -> Result<JsonValue, String> {
+        let ivk = orchard::keys::IncomingViewingKey::try_from(
+            &*self.extract_unified_capability().read().await,
+        )?;
         let lightclient_exclusion_lock = self.setup_for_sync().await?;
         // Re-read the last scanned height
         let first_unscanned_height = 1 + self.wallet.last_synced_height().await;
@@ -1360,6 +1363,9 @@ impl LightClient {
                 .stream_block_range(first_unscanned_height, latest_blockid.height)
                 .await
         )?;
+
+        // Thos fetches all the blocks in one chunk, which isn't very efficient
+        // TODO: Optimize
         let mut blocks = <Streaming<_> as StreamExt>::collect::<Vec<_>>(block_stream)
             .await
             .into_iter()
@@ -1369,6 +1375,22 @@ impl LightClient {
                 .next()
                 .ok_or_else(|| String::from("No block {i}"))?
                 .map_err(|e| format!("error reading block: {e:#?}"))?;
+
+            let height = next_block.height();
+            for transaction in next_block.vtx {
+                // Change only goes to Orchard, so the relevant memo payload will be
+                // in an orchard Action.
+                // After we handle memo-sync, we'll use regular sync to go the rest of
+                // the way up the chain
+                let decrypted_actions = try_compact_note_decryption(
+                    &[ivk.clone()],
+                    &transaction
+                        .actions
+                        .iter()
+                        .map(|action| (action.domain(self.config.chain, height), action.clone()))
+                        .collect::<Vec<_>>(),
+                );
+            }
         }
 
         drop(lightclient_exclusion_lock);
