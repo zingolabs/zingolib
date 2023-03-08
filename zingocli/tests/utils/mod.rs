@@ -201,7 +201,7 @@ pub mod scenarios {
                 birthday: u64,
                 overwrite: bool,
             ) -> LightClient {
-                let (zingo_config, _) = self.make_new_zing_configdir();
+                let (zingo_config, _) = self.make_new_zing_configdir_async().await;
                 LightClient::new_from_wallet_base_async(
                     WalletBase::MnemonicPhrase(mnemonic_phrase),
                     &zingo_config,

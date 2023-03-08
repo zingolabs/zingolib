@@ -6,7 +6,6 @@ use std::fs::File;
 
 use data::seeds::HOSPITAL_MUSEUM_SEED;
 use json::JsonValue;
-use tokio::runtime::Runtime;
 use utils::scenarios;
 
 #[tokio::test]
@@ -34,7 +33,7 @@ async fn test_scanning_in_watch_only_mode() {
     let original_recipient = client_builder
         .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
         .await;
-    let (zingo_config, _) = client_builder.make_new_zing_configdir();
+    let (zingo_config, _) = client_builder.make_new_zing_configdir_async().await;
 
     let (recipient_taddr, recipient_sapling, recipient_unified) = (
         get_base_address!(original_recipient, "transparent"),
@@ -940,7 +939,7 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
         uregtest1qtqr46fwkhmdn336uuyvvxyrv0l7trgc0z9clpryx6vtladnpyt4wvq99p59f4rcyuvpmmd0hm4k5vv6j\
         8edj6n8ltk45sdkptlk7rtzlm4uup4laq8ka8vtxzqemj3yhk6hqhuypupzryhv66w65lah9ms03xa8nref7gux2zz\
         hjnfanxnnrnwscmz6szv2ghrurhu3jsqdx25y2yh";
-    let seed_of_recipient = Runtime::new().unwrap().block_on(async {
+    let seed_of_recipient = {
         utils::increase_height_and_sync_client(&regtest_manager, &faucet, 5).await;
         assert_eq!(
             &get_base_address!(recipient1, "unified"),
@@ -973,7 +972,7 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
             json::stringify_pretty(note.clone(), 4)
         );
         recipient1.do_seed_phrase().await.unwrap()
-    });
+    };
     drop(recipient1); // Discard original to ensure subsequent data is fresh.
     let mut expected_unspent_sapling_notes_after_restore_from_seed =
         expected_unspent_sapling_notes.clone();
@@ -988,7 +987,7 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
             true,
         )
         .await;
-    let seed_of_recipient_restored = Runtime::new().unwrap().block_on(async {
+    let seed_of_recipient_restored = {
         recipient_restored.do_sync(true).await.unwrap();
         let restored_addresses = recipient_restored.do_addresses().await;
         assert_eq!(
@@ -1028,7 +1027,7 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
                 + 4_000
         );
         recipient_restored.do_seed_phrase().await.unwrap()
-    });
+    };
     assert_eq!(seed_of_recipient, seed_of_recipient_restored);
     drop(child_process_handler);
 }
@@ -1043,12 +1042,10 @@ async fn ensure_taddrs_from_old_seeds_work() {
         .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
         .await;
 
-    Runtime::new().unwrap().block_on(async {
-        assert_eq!(
-            get_base_address!(client_b, "transparent"),
-            transparent_address
-        )
-    });
+    assert_eq!(
+        get_base_address!(client_b, "transparent"),
+        transparent_address
+    );
     drop(child_process_handler);
 }
 
