@@ -159,6 +159,23 @@ pub mod scenarios {
                     .await
                     .unwrap()
             }
+
+            #[cfg(feature = "cross_version")]
+            pub fn make_new_zing_configdir_cross_version(
+                &mut self,
+            ) -> (zingoconfig::ZingoConfig, u64) {
+                //! Each client requires a unique data_dir, we use the
+                //! client_number counter for this.
+                self.client_number += 1;
+                let conf_path = format!(
+                    "{}_client_{}",
+                    self.zingo_datadir.to_string_lossy().to_string(),
+                    self.client_number
+                );
+                std::fs::create_dir(&conf_path).unwrap();
+                zingolib::create_zingoconf_from_datadir(self.server_id.clone(), Some(conf_path))
+                    .unwrap()
+            }
             pub async fn build_new_faucet(
                 &mut self,
                 birthday: u64,
@@ -189,6 +206,22 @@ pub mod scenarios {
                     overwrite,
                 )
                 .await
+                .unwrap()
+            }
+            #[cfg(feature = "cross_version")]
+            pub fn build_cross_version_client(
+                &mut self,
+                mnemonic_phrase: String,
+                birthday: u64,
+                overwrite: bool,
+            ) -> LightClient {
+                let (zingo_config, _) = self.make_new_zing_configdir_cross_version();
+                LightClient::new_from_wallet_base(
+                    WalletBase::MnemonicPhrase(mnemonic_phrase),
+                    &zingo_config,
+                    birthday,
+                    overwrite,
+                )
                 .unwrap()
             }
         }
@@ -324,7 +357,7 @@ pub mod scenarios {
         )
     }
     #[cfg(feature = "cross_version")]
-    pub async fn saplingcoinbasebacked_spendcapable_cross_version(
+    pub fn saplingcoinbasebacked_spendcapable_cross_version(
     ) -> (RegtestManager, ChildProcessHandler, LightClient, String) {
         //tracing_subscriber::fmt::init();
         let cross_version_seed_phrase = zcash_primitives::zip339::Mnemonic::from_entropy([3; 32])
@@ -343,10 +376,11 @@ pub mod scenarios {
             .create_funded_zcash_conf(first_z_addr_from_seed_phrase);
         scenario_builder.test_env.create_lightwalletd_conf();
         scenario_builder.launch();
-        let light_client = scenario_builder
-            .client_builder
-            .build_newseed_client(cross_version_seed_phrase.clone(), 0, false)
-            .await;
+        let light_client = scenario_builder.client_builder.build_cross_version_client(
+            cross_version_seed_phrase.clone(),
+            0,
+            false,
+        );
         (
             scenario_builder.regtest_manager,
             scenario_builder.child_process_handler.unwrap(),
@@ -359,14 +393,14 @@ pub mod scenarios {
     /// that has furnished a receiving address in the mineraddress configuration field
     /// of the "generating" regtest-zcashd
     #[cfg(feature = "cross_version")]
-    pub async fn cross_version_setup() -> (
+    pub fn cross_version_setup() -> (
         RegtestManager,
         LightClient,
         zingtaddrfix::lightclient::LightClient,
         ChildProcessHandler,
     ) {
         let (regtest_manager, child_process_handler, current_client, current_seed_phrase) =
-            saplingcoinbasebacked_spendcapable_cross_version().await;
+            saplingcoinbasebacked_spendcapable_cross_version();
         let current_version_client_zingoconf_path = format!(
             "{}_two",
             regtest_manager.zingo_datadir.to_string_lossy().to_string()
