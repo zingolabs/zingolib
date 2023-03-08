@@ -9,10 +9,6 @@ use json::JsonValue;
 use utils::scenarios;
 
 #[tokio::test]
-async fn async_client_fundamentals() {
-    let (_regtest_manager, _child_process_handler, _faucet) = scenarios::faucet_async().await;
-}
-#[tokio::test]
 async fn test_scanning_in_watch_only_mode() {
     // # Scenario:
     // 3. reset wallet
@@ -179,7 +175,7 @@ async fn zcashd_sapling_commitment_tree() {
     //!  TODO:  Make this test assert something, what is this a test of?
     //!  TODO:  Add doc-comment explaining what constraints this test
     //!  enforces
-    let (regtest_manager, child_process_handler, _faucet) = scenarios::faucet_async().await;
+    let (regtest_manager, child_process_handler, _faucet) = scenarios::faucet().await;
     let trees = regtest_manager
         .get_cli_handle()
         .args(["z_gettreestate", "1"])
@@ -272,7 +268,7 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
 
 #[tokio::test]
 async fn mine_sapling_to_self() {
-    let (regtest_manager, child_process_handler, faucet) = scenarios::faucet_async().await;
+    let (regtest_manager, child_process_handler, faucet) = scenarios::faucet().await;
     utils::increase_height_and_sync_client(&regtest_manager, &faucet, 5).await;
 
     let balance = faucet.do_balance().await;
@@ -349,7 +345,7 @@ async fn send_mined_sapling_to_orchard() {
     //! debiting unverified_orchard_balance and crediting verified_orchard_balance.  The debit amount is
     //! consistent with all the notes in the relevant block changing state.
     //! NOTE that the balance doesn't give insight into the distribution across notes.
-    let (regtest_manager, child_process_handler, faucet) = scenarios::faucet_async().await;
+    let (regtest_manager, child_process_handler, faucet) = scenarios::faucet().await;
     utils::increase_height_and_sync_client(&regtest_manager, &faucet, 5).await;
 
     let amount_to_send = 5_000;
@@ -861,7 +857,7 @@ async fn rescan_still_have_outgoing_metadata() {
 
 #[tokio::test]
 async fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
-    let (regtest_manager, child_process_handler, faucet) = scenarios::faucet_async().await;
+    let (regtest_manager, child_process_handler, faucet) = scenarios::faucet().await;
     utils::increase_height_and_sync_client(&regtest_manager, &faucet, 5).await;
     let sapling_addr = get_base_address!(faucet, "sapling");
     for memo in [None, Some("foo")] {

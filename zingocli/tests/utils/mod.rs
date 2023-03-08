@@ -304,7 +304,7 @@ pub mod scenarios {
     /// and zcashd (in regtest mode). This setup is intended to produce the most basic  
     /// of scenarios.  As scenarios with even less requirements
     /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
-    pub async fn faucet_async() -> (RegtestManager, ChildProcessHandler, LightClient) {
+    pub async fn faucet() -> (RegtestManager, ChildProcessHandler, LightClient) {
         let mut sb = setup::ScenarioBuilder::new();
         //tracing_subscriber::fmt::init();
         sb.test_env
