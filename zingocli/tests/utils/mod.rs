@@ -145,9 +145,7 @@ pub mod scenarios {
                     client_number,
                 }
             }
-            pub async fn make_new_zing_configdir_async(
-                &mut self,
-            ) -> (zingoconfig::ZingoConfig, u64) {
+            pub async fn make_new_zing_configdir(&mut self) -> (zingoconfig::ZingoConfig, u64) {
                 //! Each client requires a unique data_dir, we use the
                 //! client_number counter for this.
                 self.client_number += 1;
@@ -167,7 +165,7 @@ pub mod scenarios {
                 overwrite: bool,
             ) -> LightClient {
                 //! A "faucet" is a lightclient that receives mining rewards
-                let (zingo_config, _) = self.make_new_zing_configdir_async().await;
+                let (zingo_config, _) = self.make_new_zing_configdir().await;
                 LightClient::new_from_wallet_base_async(
                     WalletBase::MnemonicPhrase(self.seed.clone()),
                     &zingo_config,
@@ -177,21 +175,8 @@ pub mod scenarios {
                 .await
                 .unwrap()
             }
-            pub fn make_new_zing_configdir(&mut self) -> (zingoconfig::ZingoConfig, u64) {
-                //! Each client requires a unique data_dir, we use the
-                //! client_number counter for this.
-                self.client_number += 1;
-                let conf_path = format!(
-                    "{}_client_{}",
-                    self.zingo_datadir.to_string_lossy().to_string(),
-                    self.client_number
-                );
-                std::fs::create_dir(&conf_path).unwrap();
-                zingolib::create_zingoconf_from_datadir(self.server_id.clone(), Some(conf_path))
-                    .unwrap()
-            }
-            pub fn build_new_unfunded_client(&mut self, birthday: u64) -> LightClient {
-                let (zingo_config, _) = self.make_new_zing_configdir();
+            pub async fn build_new_unfunded_client(&mut self, birthday: u64) -> LightClient {
+                let (zingo_config, _) = self.make_new_zing_configdir().await;
                 LightClient::new(&zingo_config, birthday).unwrap()
             }
 
@@ -201,7 +186,7 @@ pub mod scenarios {
                 birthday: u64,
                 overwrite: bool,
             ) -> LightClient {
-                let (zingo_config, _) = self.make_new_zing_configdir_async().await;
+                let (zingo_config, _) = self.make_new_zing_configdir().await;
                 LightClient::new_from_wallet_base_async(
                     WalletBase::MnemonicPhrase(mnemonic_phrase),
                     &zingo_config,
@@ -413,16 +398,18 @@ pub mod scenarios {
         )
     }
 
-    pub fn basic_no_spendable() -> (RegtestManager, ChildProcessHandler, LightClient) {
+    pub async fn basic_no_spendable() -> (RegtestManager, ChildProcessHandler, LightClient) {
         let mut scenario_builder = setup::ScenarioBuilder::new();
-        dbg!("scenario_built");
         scenario_builder.test_env.create_unfunded_zcash_conf();
         scenario_builder.test_env.create_lightwalletd_conf();
         scenario_builder.launch();
         (
             scenario_builder.regtest_manager,
             scenario_builder.child_process_handler.unwrap(),
-            scenario_builder.client_builder.build_new_unfunded_client(0),
+            scenario_builder
+                .client_builder
+                .build_new_unfunded_client(0)
+                .await,
         )
     }
 }

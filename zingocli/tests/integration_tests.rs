@@ -29,7 +29,7 @@ async fn test_scanning_in_watch_only_mode() {
     let original_recipient = client_builder
         .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
         .await;
-    let (zingo_config, _) = client_builder.make_new_zing_configdir_async().await;
+    let (zingo_config, _) = client_builder.make_new_zing_configdir().await;
 
     let (recipient_taddr, recipient_sapling, recipient_unified) = (
         get_base_address!(original_recipient, "transparent"),
@@ -218,8 +218,8 @@ async fn verify_old_wallet_uses_server_height_in_send() {
         .unwrap();
     drop(child_process_handler);
 }
-#[test]
-fn actual_empty_zcashd_sapling_commitment_tree() {
+#[tokio::test]
+async fn actual_empty_zcashd_sapling_commitment_tree() {
     // Expectations:
     let sprout_commitments_finalroot =
         "59d2cde5e65c1414c32ba54f0fe4bdb3d67618125286e6a191317917c812c6d7";
@@ -229,7 +229,7 @@ fn actual_empty_zcashd_sapling_commitment_tree() {
         "ae2935f1dfd8a24aed7c70df7de3a668eb7a49b1319880dde2bbd9031ae5d82f";
     let finalstates = "000000";
     // Setup
-    let (regtest_manager, child_process_handler, _client) = scenarios::basic_no_spendable();
+    let (regtest_manager, child_process_handler, _client) = scenarios::basic_no_spendable().await;
     // Execution:
     let trees = regtest_manager
         .get_cli_handle()
