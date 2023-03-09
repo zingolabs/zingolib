@@ -343,6 +343,11 @@ pub mod scenarios {
         );
         let first_z_addr_from_seed_phrase = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
         let mut scenario_builder = setup::ScenarioBuilder::new();
+        scenario_builder
+            .test_env
+            .create_funded_zcash_conf(first_z_addr_from_seed_phrase);
+        scenario_builder.test_env.create_lightwalletd_conf();
+        scenario_builder.launch();
         let current_client = scenario_builder
             .client_builder
             .build_newseed_client(cross_version_seed_phrase.clone(), 0, false)
@@ -369,11 +374,6 @@ pub mod scenarios {
         )
         .await
         .unwrap();
-        scenario_builder
-            .test_env
-            .create_funded_zcash_conf(first_z_addr_from_seed_phrase);
-        scenario_builder.test_env.create_lightwalletd_conf();
-        scenario_builder.launch();
         (
             scenario_builder.regtest_manager,
             scenario_builder.child_process_handler.unwrap(),
