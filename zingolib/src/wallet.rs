@@ -76,8 +76,15 @@ pub fn now() -> u64 {
         .as_secs()
 }
 
+/// Report on the state of a send transaction
 #[derive(Debug, Clone)]
 pub struct SendProgress {
+    /// An increasing value, that's incremented
+    /// by 1 each time "send_to_address" is invoked.
+    /// This means that this value is counting _attempted_
+    /// _TRANSACTION_ constructions (by this LightWallet instance).
+    /// This value is the `nth` send transaction this
+    /// wallet has started.
     pub id: u32,
     pub is_send_in_progress: bool,
     pub progress: u32,
