@@ -325,7 +325,7 @@ pub mod scenarios {
         )
     }
     #[cfg(feature = "cross_version")]
-    pub async fn saplingcoinbasebacked_spendcapable_cross_version() -> (
+    pub async fn current_and_fixed_clients() -> (
         RegtestManager,
         ChildProcessHandler,
         LightClient,
@@ -379,31 +379,6 @@ pub mod scenarios {
             scenario_builder.child_process_handler.unwrap(),
             current_client,
             fixed_client,
-        )
-    }
-
-    /// This creates two so-called "LightClient"s "client_one" controls a spend capability
-    /// that has furnished a receiving address in the mineraddress configuration field
-    /// of the "generating" regtest-zcashd
-    #[cfg(feature = "cross_version")]
-    pub async fn cross_version_setup() -> (
-        RegtestManager,
-        LightClient,
-        zingtaddrfix::lightclient::LightClient,
-        ChildProcessHandler,
-    ) {
-        let (regtest_manager, child_process_handler, current_client, fixed_client) =
-            saplingcoinbasebacked_spendcapable_cross_version().await;
-        let current_version_client_zingoconf_path = format!(
-            "{}_two",
-            regtest_manager.zingo_datadir.to_string_lossy().to_string()
-        );
-        std::fs::create_dir(&current_version_client_zingoconf_path).unwrap();
-        (
-            regtest_manager,
-            current_client,
-            fixed_client,
-            child_process_handler,
         )
     }
 

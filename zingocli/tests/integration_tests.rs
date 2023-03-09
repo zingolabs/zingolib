@@ -1244,8 +1244,8 @@ const EXT_TADDR: &str = "tmJTBtMwPU96XteSiP89xDz1WARNgRddEHq";
 #[cfg(feature = "cross_version")]
 #[tokio::test]
 async fn cross_compat() {
-    let (_regtest_manager, current_client, fixed_address_client, child_process_handler) =
-        scenarios::cross_version_setup().await;
+    let (_regtest_manager, child_process_handler, current_client, fixed_address_client) =
+        scenarios::current_and_fixed_clients().await;
 
     let fixed_taddr_seed = fixed_address_client.do_seed_phrase().await.unwrap();
     let current_seed = current_client.do_seed_phrase().await.unwrap();
