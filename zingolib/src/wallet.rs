@@ -1135,6 +1135,7 @@ impl LightWallet {
         (notes, running_total)
     }
 
+    ///
     pub async fn send_to_address<F, Fut, P: TxProver>(
         &self,
         prover: P,
