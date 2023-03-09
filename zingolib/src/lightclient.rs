@@ -19,7 +19,10 @@ use crate::{
         LightWallet, WalletBase,
     },
 };
-use futures::{future::join_all, FutureExt, StreamExt};
+use futures::{
+    future::{join_all, try_join_all},
+    FutureExt, StreamExt,
+};
 use json::{array, object, JsonValue};
 use log::{debug, error, warn};
 use orchard::note_encryption::OrchardDomain;
@@ -1383,26 +1386,40 @@ impl LightClient {
                     self.config.get_server_uri(),
                     &txid,
                     self.config.chain,
-                );
+                )
+                .then(|tx| async { tx.map(|tx| Arc::new(tx)) })
+                .shared();
                 // Change only goes to Orchard, so the relevant memo payload will be
                 // in an orchard Action.
                 // After we handle memo-sync, we'll use regular sync to go the rest of
                 // the way up the chain
-                try_compact_note_decryption(
-                    &[ivk.clone()],
-                    &transaction
-                        .actions
-                        .iter()
-                        .map(|action| (action.domain(self.config.chain, height), action.clone()))
-                        .collect::<Vec<_>>(),
-                )
-                .into_iter()
-                .enumerate()
-                .filter_map(|(action_index, maybe_decrypted)| {
-                    maybe_decrypted.map(|((note, decrypted), _ivk_index)| async {
-                        let full_tx = full_tx_fut.shared().clone().await;
+                try_join_all(
+                    try_compact_note_decryption(
+                        &[ivk.clone()],
+                        &transaction
+                            .actions
+                            .iter()
+                            .map(|action| {
+                                (action.domain(self.config.chain, height), action.clone())
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                    .into_iter()
+                    .enumerate()
+                    .filter_map(|(action_index, maybe_decrypted)| {
+                        maybe_decrypted.map(|((note, decrypted), _ivk_index)| async {
+                            match full_tx_fut.clone().await {
+                                // TODO: Actually handle the fancy memo
+                                Ok(full_transaction) => todo!(),
+                                Err(fetch_transaction_error) => {
+                                    Err::<(), _>(format!("{fetch_transaction_error}"))
+                                }
+                            }
+                        })
                     })
-                });
+                    .collect::<Vec<_>>(),
+                )
+                .await?;
             }
         }
 
