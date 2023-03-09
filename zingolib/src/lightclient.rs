@@ -5,7 +5,7 @@ use crate::{
         fetch_taddr_transactions::FetchTaddrTransactions, sync_status::BatchSyncStatus,
         syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions, update_notes::UpdateNotes,
     },
-    compact_formats::RawTransaction,
+    compact_formats::{self, CompactBlock, RawTransaction},
     grpc_connector::GrpcConnector,
     wallet::{
         data::TransactionMetadata,
@@ -15,11 +15,11 @@ use crate::{
         },
         message::Message,
         now,
-        traits::{DomainWalletExt, ReceivedNoteAndMetadata, Recipient},
+        traits::{CompactOutput, DomainWalletExt, ReceivedNoteAndMetadata, Recipient},
         LightWallet, WalletBase,
     },
 };
-use futures::future::join_all;
+use futures::{future::join_all, FutureExt, StreamExt};
 use json::{array, object, JsonValue};
 use log::{debug, error, warn};
 use orchard::note_encryption::OrchardDomain;
@@ -38,7 +38,8 @@ use tokio::{
     task::yield_now,
     time::sleep,
 };
-use zcash_note_encryption::Domain;
+use tonic::Streaming;
+use zcash_note_encryption::{batch::try_compact_note_decryption, Domain};
 
 use zcash_client_backend::{
     address::RecipientAddress,
@@ -1115,6 +1116,49 @@ impl LightClient {
         Ok(array![new_address.encode(&self.config.chain)])
     }
 
+    async fn setup_for_sync(&self) -> Result<tokio::sync::MutexGuard<()>, String> {
+        // We can only do one sync at a time because we sync blocks in serial order
+        // If we allow multiple syncs, they'll all get jumbled up.
+        // TODO:  We run on resource constrained systems, where a single thread of
+        // execution often consumes most of the memory available, on other systems
+        // we might parallelize sync.
+        let lightclient_exclusion_lock = self.sync_lock.lock().await;
+
+        // The top of the wallet
+        let last_synced_height = self.wallet.last_synced_height().await;
+
+        let latest_blockid = GrpcConnector::get_latest_block(self.config.get_server_uri()).await?;
+        if latest_blockid.height < last_synced_height {
+            let w = format!(
+                "Server's latest block({}) is behind ours({})",
+                latest_blockid.height, last_synced_height
+            );
+            warn!("{}", w);
+            return Err(w);
+        }
+
+        if latest_blockid.height == last_synced_height {
+            if !latest_blockid.hash.is_empty()
+                && BlockHash::from_slice(&latest_blockid.hash).to_string()
+                    != self.wallet.last_synced_hash().await
+            {
+                warn!("One block reorg at height {}", last_synced_height);
+                // This is a one-block reorg, so pop the last block. Even if there are more blocks to reorg, this is enough
+                // to trigger a sync, which will then reorg the remaining blocks
+                BlockAndWitnessData::invalidate_block(
+                    last_synced_height,
+                    self.wallet.blocks.clone(),
+                    self.wallet
+                        .transaction_context
+                        .transaction_metadata_set
+                        .clone(),
+                )
+                .await;
+            }
+        }
+        Ok(lightclient_exclusion_lock)
+    }
+
     pub async fn clear_state(&self) {
         // First, clear the state from the wallet
         self.wallet.clear_all().await;
@@ -1304,50 +1348,74 @@ impl LightClient {
         sync_result
     }
 
-    /// Start syncing in batches with the max size, to manage memory consumption.
-    async fn start_sync(&self) -> Result<JsonValue, String> {
-        // We can only do one sync at a time because we sync blocks in serial order
-        // If we allow multiple syncs, they'll all get jumbled up.
-        // TODO:  We run on resource constrained systems, where a single thread of
-        // execution often consumes most of the memory available, on other systems
-        // we might parallelize sync.
-        let lightclient_exclusion_lock = self.sync_lock.lock().await;
-
-        // The top of the wallet
-        let last_synced_height = self.wallet.last_synced_height().await;
-
+    pub async fn do_memo_sync(&self) -> Result<JsonValue, String> {
+        let ivk = orchard::keys::IncomingViewingKey::try_from(
+            &*self.extract_unified_capability().read().await,
+        )?;
+        let lightclient_exclusion_lock = self.setup_for_sync().await?;
+        // Re-read the last scanned height
+        let first_unscanned_height = 1 + self.wallet.last_synced_height().await;
         let latest_blockid = GrpcConnector::get_latest_block(self.config.get_server_uri()).await?;
-        if latest_blockid.height < last_synced_height {
-            let w = format!(
-                "Server's latest block({}) is behind ours({})",
-                latest_blockid.height, last_synced_height
-            );
-            warn!("{}", w);
-            return Err(w);
-        }
 
-        if latest_blockid.height == last_synced_height {
-            if !latest_blockid.hash.is_empty()
-                && BlockHash::from_slice(&latest_blockid.hash).to_string()
-                    != self.wallet.last_synced_hash().await
-            {
-                warn!("One block reorg at height {}", last_synced_height);
-                // This is a one-block reorg, so pop the last block. Even if there are more blocks to reorg, this is enough
-                // to trigger a sync, which will then reorg the remaining blocks
-                BlockAndWitnessData::invalidate_block(
-                    last_synced_height,
-                    self.wallet.blocks.clone(),
-                    self.wallet
-                        .transaction_context
-                        .transaction_metadata_set
-                        .clone(),
+        let grpc_client = Arc::new(GrpcConnector::new(self.config.get_server_uri()));
+        let block_stream = dbg!(
+            grpc_client
+                .stream_block_range(first_unscanned_height, latest_blockid.height)
+                .await
+        )?;
+
+        // Thos fetches all the blocks in one chunk, which isn't very efficient
+        // TODO: Optimize
+        let mut blocks = <Streaming<_> as StreamExt>::collect::<Vec<_>>(block_stream)
+            .await
+            .into_iter()
+            .rev();
+        for i in (first_unscanned_height..=latest_blockid.height).rev() {
+            let next_block = blocks
+                .next()
+                .ok_or_else(|| String::from("No block {i}"))?
+                .map_err(|e| format!("error reading block: {e:#?}"))?;
+
+            let height = next_block.height();
+            for transaction in next_block.vtx {
+                let txid = TransactionMetadata::new_txid(&transaction.hash.to_vec());
+                let full_tx_fut = GrpcConnector::get_full_transaction(
+                    self.config.get_server_uri(),
+                    &txid,
+                    self.config.chain,
+                );
+                // Change only goes to Orchard, so the relevant memo payload will be
+                // in an orchard Action.
+                // After we handle memo-sync, we'll use regular sync to go the rest of
+                // the way up the chain
+                try_compact_note_decryption(
+                    &[ivk.clone()],
+                    &transaction
+                        .actions
+                        .iter()
+                        .map(|action| (action.domain(self.config.chain, height), action.clone()))
+                        .collect::<Vec<_>>(),
                 )
-                .await;
+                .into_iter()
+                .enumerate()
+                .filter_map(|(action_index, maybe_decrypted)| {
+                    maybe_decrypted.map(|((note, decrypted), _ivk_index)| async {
+                        let full_tx = full_tx_fut.shared().clone().await;
+                    })
+                });
             }
         }
 
+        drop(lightclient_exclusion_lock);
+        todo!()
+    }
+
+    /// Start syncing in batches with the max size, to manage memory consumption.
+    async fn start_sync(&self) -> Result<JsonValue, String> {
+        let lightclient_exclusion_lock = self.setup_for_sync().await?;
         // Re-read the last scanned height
         let last_scanned_height = self.wallet.last_synced_height().await;
+        let latest_blockid = GrpcConnector::get_latest_block(self.config.get_server_uri()).await?;
         let batch_size = 100;
 
         let mut latest_block_batches = vec![];

@@ -8,7 +8,7 @@ use crate::wallet::{
     },
     transactions::TransactionMetadataSet,
 };
-use zingo_memo::{read_wallet_internal_memo, ParsedMemo};
+use zingo_memo::{memo_serde::parse_memo, ParsedMemo};
 
 use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
 use log::info;
@@ -174,16 +174,21 @@ impl TransactionContext {
         arbitrary_memos_with_txids: Vec<([u8; 511], TxId)>,
     ) {
         for (wallet_internal_data, txid) in arbitrary_memos_with_txids {
-            match read_wallet_internal_memo(wallet_internal_data) {
-                Ok(ParsedMemo::Version0 { uas }) => {
-                    for ua in uas {
-                        if let Some(transaction) = self
-                            .transaction_metadata_set
-                            .write()
-                            .await
-                            .current
-                            .get_mut(&txid)
-                        {
+            if let Some(transaction) = self
+                .transaction_metadata_set
+                .write()
+                .await
+                .current
+                .get_mut(&txid)
+            {
+                match parse_memo(wallet_internal_data, transaction.block_height) {
+                    Ok(ParsedMemo::Version0 { uas })
+                    | Ok(ParsedMemo::Version1 {
+                        uas,
+                        // We only care about this during explicit memo_sync rescan/restore
+                        transaction_heights_and_indexes: _,
+                    }) => {
+                        for ua in uas {
                             let outgoing_potential_receivers = [
                                 ua.orchard()
                                     .map(|oaddr| oaddr.b32encode_for_network(&self.config.chain)),
@@ -209,20 +214,20 @@ impl TransactionContext {
                             }
                         }
                     }
-                }
-                Ok(other_memo_version) => {
-                    log::error!(
-                        "Wallet internal memo is from a future version of the protocol\n\
+                    Ok(other_memo_version) => {
+                        log::error!(
+                            "Wallet internal memo is from a future version of the protocol\n\
                         Please ensure that your software is up-to-date.\n\
                         Memo: {other_memo_version:?}"
-                    )
-                }
-                Err(e) => log::error!(
-                    "Could not decode wallet internal memo: {e}.\n\
+                        )
+                    }
+                    Err(e) => log::error!(
+                        "Could not decode wallet internal memo: {e}.\n\
                     Have you recently used a more up-to-date version of\
                     this software?\nIf not, this may mean you are being sent\
                     malicious data.\nSome information may not display correctly"
-                ),
+                    ),
+                }
             }
         }
     }
