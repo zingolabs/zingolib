@@ -3908,12 +3908,24 @@ dependencies = [
  "zcash_primitives",
  "zingoconfig 0.1.0",
  "zingolib 0.2.0",
- "zingolib 0.2.0 (git+https://github.com/zingolabs/zingolib?rev=f8fb624237fd4923512cc065620b55230676ab82)",
+ "zingolib 0.2.0 (git+https://github.com/zingolabs/zingolib?rev=3d42b916d46cc3d7c0e79609a6fcde6425f9c526)",
 ]
 
 [[package]]
 name = "zingo-memo"
 version = "0.1.0"
+dependencies = [
+ "zcash_address",
+ "zcash_client_backend",
+ "zcash_encoding",
+ "zcash_note_encryption",
+ "zcash_primitives",
+]
+
+[[package]]
+name = "zingo-memo"
+version = "0.1.0"
+source = "git+https://github.com/zingolabs/zingolib?rev=3d42b916d46cc3d7c0e79609a6fcde6425f9c526#3d42b916d46cc3d7c0e79609a6fcde6425f9c526"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -3937,7 +3949,7 @@ dependencies = [
 [[package]]
 name = "zingoconfig"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?rev=f8fb624237fd4923512cc065620b55230676ab82#f8fb624237fd4923512cc065620b55230676ab82"
+source = "git+https://github.com/zingolabs/zingolib?rev=3d42b916d46cc3d7c0e79609a6fcde6425f9c526#3d42b916d46cc3d7c0e79609a6fcde6425f9c526"
 dependencies = [
  "dirs",
  "http",
@@ -4006,14 +4018,14 @@ dependencies = [
  "zcash_note_encryption",
  "zcash_primitives",
  "zcash_proofs",
- "zingo-memo",
+ "zingo-memo 0.1.0",
  "zingoconfig 0.1.0",
 ]
 
 [[package]]
 name = "zingolib"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/zingolib?rev=f8fb624237fd4923512cc065620b55230676ab82#f8fb624237fd4923512cc065620b55230676ab82"
+source = "git+https://github.com/zingolabs/zingolib?rev=3d42b916d46cc3d7c0e79609a6fcde6425f9c526#3d42b916d46cc3d7c0e79609a6fcde6425f9c526"
 dependencies = [
  "base58",
  "base64 0.13.1",
@@ -4067,5 +4079,6 @@ dependencies = [
  "zcash_note_encryption",
  "zcash_primitives",
  "zcash_proofs",
- "zingoconfig 0.1.0 (git+https://github.com/zingolabs/zingolib?rev=f8fb624237fd4923512cc065620b55230676ab82)",
+ "zingo-memo 0.1.0 (git+https://github.com/zingolabs/zingolib?rev=3d42b916d46cc3d7c0e79609a6fcde6425f9c526)",
+ "zingoconfig 0.1.0 (git+https://github.com/zingolabs/zingolib?rev=3d42b916d46cc3d7c0e79609a6fcde6425f9c526)",
 ]
