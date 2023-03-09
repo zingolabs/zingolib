@@ -276,7 +276,7 @@ impl GrpcConnector {
         Ok(())
     }
 
-    async fn get_full_transaction(
+    pub(crate) async fn get_full_transaction(
         uri: http::Uri,
         transaction_id: &TxId,
         network: impl Parameters,

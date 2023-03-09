@@ -19,7 +19,7 @@ use crate::{
         LightWallet, WalletBase,
     },
 };
-use futures::{future::join_all, StreamExt};
+use futures::{future::join_all, FutureExt, StreamExt};
 use json::{array, object, JsonValue};
 use log::{debug, error, warn};
 use orchard::note_encryption::OrchardDomain;
@@ -1378,18 +1378,31 @@ impl LightClient {
 
             let height = next_block.height();
             for transaction in next_block.vtx {
+                let txid = TransactionMetadata::new_txid(&transaction.hash.to_vec());
+                let full_tx_fut = GrpcConnector::get_full_transaction(
+                    self.config.get_server_uri(),
+                    &txid,
+                    self.config.chain,
+                );
                 // Change only goes to Orchard, so the relevant memo payload will be
                 // in an orchard Action.
                 // After we handle memo-sync, we'll use regular sync to go the rest of
                 // the way up the chain
-                let decrypted_actions = try_compact_note_decryption(
+                try_compact_note_decryption(
                     &[ivk.clone()],
                     &transaction
                         .actions
                         .iter()
                         .map(|action| (action.domain(self.config.chain, height), action.clone()))
                         .collect::<Vec<_>>(),
-                );
+                )
+                .into_iter()
+                .enumerate()
+                .filter_map(|(action_index, maybe_decrypted)| {
+                    maybe_decrypted.map(|((note, decrypted), _ivk_index)| async {
+                        let full_tx = full_tx_fut.shared().clone().await;
+                    })
+                });
             }
         }
 
