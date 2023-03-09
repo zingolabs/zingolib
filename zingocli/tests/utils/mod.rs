@@ -348,7 +348,13 @@ pub mod scenarios {
             .build_newseed_client(cross_version_seed_phrase.clone(), 0, false)
             .await;
         // Fixed client creation
-        let conf_path = current_client.get_zingoconfig_datadir().unwrap();
+        let conf_path = scenario_builder
+            .regtest_manager
+            .zingo_datadir
+            .clone()
+            .into_os_string()
+            .into_string()
+            .unwrap();
         let (fixed_zingoconfig, _) = zingtaddrfix::create_zingoconfdir_async(
             scenario_builder.client_builder.server_id.clone(),
             Some(conf_path),

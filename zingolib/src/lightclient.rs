@@ -258,9 +258,6 @@ impl LightClient {
     pub fn extract_unified_capability(&self) -> Arc<RwLock<WalletCapability>> {
         self.wallet.wallet_capability()
     }
-    pub fn get_zingoconfig_datadir(&self) -> Option<String> {
-        self.config.data_dir.clone()
-    }
 }
 impl LightClient {
     /// The wallet this fn associates with the lightclient is specifically derived from
