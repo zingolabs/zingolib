@@ -83,7 +83,7 @@ pub mod scenarios {
             pub child_process_handler: Option<ChildProcessHandler>,
         }
         impl ScenarioBuilder {
-            pub fn new() -> Self {
+            fn new() -> Self {
                 //! TestEnvironmentGenerator sets particular parameters, specific filenames,
                 //! port numbers, etc.  in general no test_config should be used for
                 //! more than one test, and usually is only invoked via this
@@ -109,7 +109,7 @@ pub mod scenarios {
                     child_process_handler,
                 }
             }
-            pub fn launch(&mut self) {
+            fn launch(&mut self) {
                 self.child_process_handler = Some(
                     self.regtest_manager
                         .launch(true)
@@ -123,6 +123,17 @@ pub mod scenarios {
                             }
                         }),
                 );
+            }
+            pub fn launcher(funded: Option<String>) -> Self {
+                let mut sb = ScenarioBuilder::new();
+                if let Some(funding_seed) = funded {
+                    sb.test_env.create_funded_zcash_conf(&funding_seed);
+                } else {
+                    sb.test_env.create_unfunded_zcash_conf();
+                };
+                sb.test_env.create_lightwalletd_conf();
+                sb.launch();
+                sb
             }
         }
 
@@ -263,12 +274,7 @@ pub mod scenarios {
         }
     }
     pub fn custom_clients() -> (RegtestManager, ChildProcessHandler, ClientManager) {
-        let mut sb = setup::ScenarioBuilder::new();
-        //tracing_subscriber::fmt::init();
-        sb.test_env
-            .create_funded_zcash_conf(REGSAP_ADDR_FROM_ABANDONART);
-        sb.test_env.create_lightwalletd_conf();
-        sb.launch();
+        let sb = setup::ScenarioBuilder::launcher(Some(REGSAP_ADDR_FROM_ABANDONART.to_string()));
         (
             sb.regtest_manager,
             sb.child_process_handler.unwrap(),
@@ -286,12 +292,8 @@ pub mod scenarios {
     /// of scenarios.  As scenarios with even less requirements
     /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
     pub async fn faucet() -> (RegtestManager, ChildProcessHandler, LightClient) {
-        let mut sb = setup::ScenarioBuilder::new();
-        //tracing_subscriber::fmt::init();
-        sb.test_env
-            .create_funded_zcash_conf(REGSAP_ADDR_FROM_ABANDONART);
-        sb.test_env.create_lightwalletd_conf();
-        sb.launch();
+        let mut sb =
+            setup::ScenarioBuilder::launcher(Some(REGSAP_ADDR_FROM_ABANDONART.to_string()));
         let faucet = sb.client_builder.build_new_faucet(0, false).await;
         (
             sb.regtest_manager,
@@ -306,12 +308,8 @@ pub mod scenarios {
         LightClient,
         LightClient,
     ) {
-        let mut sb = setup::ScenarioBuilder::new();
-        //tracing_subscriber::fmt::init();
-        sb.test_env
-            .create_funded_zcash_conf(REGSAP_ADDR_FROM_ABANDONART);
-        sb.test_env.create_lightwalletd_conf();
-        sb.launch();
+        let mut sb =
+            setup::ScenarioBuilder::launcher(Some(REGSAP_ADDR_FROM_ABANDONART.to_string()));
         let faucet = sb.client_builder.build_new_faucet(0, false).await;
         let recipient = sb
             .client_builder
@@ -342,12 +340,8 @@ pub mod scenarios {
              adapt blossom school alcohol coral light army hold"
         );
         let first_z_addr_from_seed_phrase = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
-        let mut scenario_builder = setup::ScenarioBuilder::new();
-        scenario_builder
-            .test_env
-            .create_funded_zcash_conf(first_z_addr_from_seed_phrase);
-        scenario_builder.test_env.create_lightwalletd_conf();
-        scenario_builder.launch();
+        let mut scenario_builder =
+            setup::ScenarioBuilder::launcher(Some(first_z_addr_from_seed_phrase.to_string()));
         let current_client = scenario_builder
             .client_builder
             .build_newseed_client(cross_version_seed_phrase.clone(), 0, false)
@@ -383,10 +377,7 @@ pub mod scenarios {
     }
 
     pub async fn basic_no_spendable() -> (RegtestManager, ChildProcessHandler, LightClient) {
-        let mut scenario_builder = setup::ScenarioBuilder::new();
-        scenario_builder.test_env.create_unfunded_zcash_conf();
-        scenario_builder.test_env.create_lightwalletd_conf();
-        scenario_builder.launch();
+        let mut scenario_builder = setup::ScenarioBuilder::launcher(None);
         (
             scenario_builder.regtest_manager,
             scenario_builder.child_process_handler.unwrap(),
