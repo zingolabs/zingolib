@@ -43,6 +43,7 @@ use tokio::{
 };
 use tonic::Streaming;
 use zcash_note_encryption::{batch::try_compact_note_decryption, try_note_decryption, Domain};
+use zingo_memo::memo_serde::parse_memo;
 
 use zcash_client_backend::{
     address::RecipientAddress,
@@ -1407,13 +1408,12 @@ impl LightClient {
                     .into_iter()
                     .enumerate()
                     .filter_map(|(action_index, maybe_decrypted)| {
-                        maybe_decrypted.map(|((note, recipient), _ivk_index)| {
+                        maybe_decrypted.map(|((_note, _recipient), _ivk_index)| {
                             let full_tx_fut = full_tx_fut.clone();
                             let ivk = &ivk;
                             async move {
                                 let action_index = action_index;
                                 match full_tx_fut.await {
-                                    // TODO: Actually handle the fancy memo
                                     Ok(full_transaction) => {
                                         let action = full_transaction
                                             .orchard_bundle()
@@ -1435,6 +1435,22 @@ impl LightClient {
                                             )
                                         {
                                             match Memo::from_bytes(&memo) {
+                                                Ok(Memo::Arbitrary(wallet_internal_memo)) => {
+                                                    let parsed_memo =
+                                                        parse_memo(*wallet_internal_memo, height)
+                                                            .map_err(|e| e.to_string())?;
+                                                    match parsed_memo {
+                                                        zingo_memo::ParsedMemo::Version0 {
+                                                            uas,
+                                                        } => (),
+                                                        zingo_memo::ParsedMemo::Version1 {
+                                                            uas,
+                                                            transaction_heights_and_indexes,
+                                                        } => todo!(),
+                                                        _ => todo!(),
+                                                    }
+                                                    todo!()
+                                                }
                                                 Ok(_) => todo!(),
                                                 Err(_) => todo!(),
                                             }
