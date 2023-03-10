@@ -42,7 +42,7 @@ use tokio::{
     time::sleep,
 };
 use tonic::Streaming;
-use zcash_note_encryption::{batch::try_compact_note_decryption, Domain};
+use zcash_note_encryption::{batch::try_compact_note_decryption, try_note_decryption, Domain};
 
 use zcash_client_backend::{
     address::RecipientAddress,
@@ -1407,12 +1407,43 @@ impl LightClient {
                     .into_iter()
                     .enumerate()
                     .filter_map(|(action_index, maybe_decrypted)| {
-                        maybe_decrypted.map(|((note, decrypted), _ivk_index)| async {
-                            match full_tx_fut.clone().await {
-                                // TODO: Actually handle the fancy memo
-                                Ok(full_transaction) => todo!(),
-                                Err(fetch_transaction_error) => {
-                                    Err::<(), _>(format!("{fetch_transaction_error}"))
+                        maybe_decrypted.map(|((note, recipient), _ivk_index)| {
+                            let full_tx_fut = full_tx_fut.clone();
+                            let ivk = &ivk;
+                            async move {
+                                let action_index = action_index;
+                                match full_tx_fut.await {
+                                    // TODO: Actually handle the fancy memo
+                                    Ok(full_transaction) => {
+                                        let action = full_transaction
+                                            .orchard_bundle()
+                                            .ok_or(
+                                                "Orchard bundle does not exist,\
+                                             despite decryping a compact action in this \
+                                                transaction. This could mean the \
+                                                lightwalletd server you're connected \
+                                                to has been compromised.",
+                                            )?
+                                            .actions()
+                                            .get(action_index)
+                                            .unwrap();
+                                        if let Some((_note, _address, memo)) =
+                                            try_note_decryption::<OrchardDomain, _>(
+                                                &OrchardDomain::for_action(&action),
+                                                ivk,
+                                                action,
+                                            )
+                                        {
+                                            match Memo::from_bytes(&memo) {
+                                                Ok(_) => todo!(),
+                                                Err(_) => todo!(),
+                                            }
+                                        };
+                                        todo!()
+                                    }
+                                    Err(fetch_transaction_error) => {
+                                        Err::<(), _>(format!("{fetch_transaction_error}"))
+                                    }
                                 }
                             }
                         })
