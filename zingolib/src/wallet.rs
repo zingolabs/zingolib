@@ -1462,8 +1462,8 @@ impl LightWallet {
             return Err(e);
         }
 
-        // Set up a channel to recieve updates on the progress of building the transaction.
-        let (transmitter, receiver) = channel::<Progress>();
+        // Set up a channel to receive updates on the progress of building the transaction.
+        let (transmitter, receiver) = channel::<zcash_primitives::transaction::builder::Progress>();
         let progress = self.send_progress.clone();
 
         // Use a separate thread to handle sending from std::mpsc to tokio::sync::mpsc
