@@ -1215,7 +1215,7 @@ impl LightWallet {
             tos.len()
         );
 
-        // Convert address (str) to RecepientAddress and value to Amount
+        // Convert address (str) to RecipientAddress and value to Amount
         let recipients = tos
             .iter()
             .map(|to| {
