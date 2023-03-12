@@ -295,6 +295,7 @@ pub mod scenarios {
         let mut sb =
             setup::ScenarioBuilder::launcher(Some(REGSAP_ADDR_FROM_ABANDONART.to_string()));
         let faucet = sb.client_builder.build_new_faucet(0, false).await;
+        faucet.do_sync(false).await.unwrap();
         (
             sb.regtest_manager,
             sb.child_process_handler.unwrap(),
@@ -311,6 +312,7 @@ pub mod scenarios {
         let mut sb =
             setup::ScenarioBuilder::launcher(Some(REGSAP_ADDR_FROM_ABANDONART.to_string()));
         let faucet = sb.client_builder.build_new_faucet(0, false).await;
+        faucet.do_sync(false).await.unwrap();
         let recipient = sb
             .client_builder
             .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)

@@ -35,3 +35,24 @@ macro_rules! get_base_address {
         }
     };
 }
+#[macro_export]
+macro_rules! check_client_balances {
+    ($client:ident, o: $orchard:tt s: $sapling:tt t: $transparent:tt) => {
+        let balance = $client.do_balance().await;
+        assert_eq!(
+            balance["orchard_balance"], $orchard,
+            "\no_balance: {} expectation: {} ",
+            balance["orchard_balance"], $orchard
+        );
+        assert_eq!(
+            balance["sapling_balance"], $sapling,
+            "\ns_balance: {} expectation: {} ",
+            balance["sapling_balance"], $sapling
+        );
+        assert_eq!(
+            balance["transparent_balance"], $transparent,
+            "\nt_balance: {} expectation: {} ",
+            balance["transparent_balance"], $transparent
+        );
+    };
+}
