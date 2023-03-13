@@ -91,21 +91,28 @@ fn decode_receiver(typecode: usize, data: Vec<u8>) -> io::Result<Receiver> {
 }
 
 pub(crate) fn write_transaction_height_and_index<W: Write>(
-    target_height: &BlockHeight,
+    last_noted_height: &Option<BlockHeight>,
     tx_height: &BlockHeight,
     index: usize,
     mut writer: W,
 ) -> io::Result<()> {
-    if target_height < tx_height {
-        Err(io::Error::new(
+    if let Some(last_noted_height) = last_noted_height {
+        if last_noted_height < tx_height {
+            Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "Attempted to write down a transaction in a higher block than previous transaction \
         or initial target height",
         ))
+        } else {
+            CompactSize::write(
+                &mut writer,
+                u32::from(*last_noted_height - *tx_height) as usize,
+            )
+        }
     } else {
-        CompactSize::write(&mut writer, u32::from(*target_height - *tx_height) as usize)?;
-        CompactSize::write(writer, index)
-    }
+        CompactSize::write(&mut writer, u32::from(*tx_height) as usize)
+    }?;
+    CompactSize::write(writer, index)
 }
 pub(crate) fn read_transaction_relative_height_and_index<R: Read>(
     mut reader: R,
@@ -117,24 +124,27 @@ pub(crate) fn read_transaction_relative_height_and_index<R: Read>(
 
 pub(crate) fn recover_absolute_transaction_heights(
     // The initial value is the height of the transaction that the memo was encoded in
-    mut last_noted_height: BlockHeight,
     relative_heights_and_indexes: Vec<(BlockHeight, usize)>,
 ) -> io::Result<Vec<(BlockHeight, usize)>> {
+    let mut last_noted_height = None;
     relative_heights_and_indexes
         .iter()
         .try_fold(Vec::new(), |mut acc, (height, index)| {
-            let absolute_height = BlockHeight::from_u32(
-                u32::from(last_noted_height)
-                    .checked_sub(u32::from(*height))
-                    .ok_or_else(|| {
-                        io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            "Found transaction at height below 0",
-                        )
-                    })?,
-            );
+            let absolute_height =
+                BlockHeight::from_u32(if let Some(last_noted_height) = last_noted_height {
+                    u32::from(last_noted_height)
+                        .checked_sub(u32::from(*height))
+                        .ok_or_else(|| {
+                            io::Error::new(
+                                io::ErrorKind::InvalidData,
+                                "Found transaction at height below 0",
+                            )
+                        })?
+                } else {
+                    u32::from(*height)
+                });
             acc.push((absolute_height, *index));
-            last_noted_height = absolute_height;
+            last_noted_height = Some(absolute_height);
             Ok(acc)
         })
 }
@@ -145,16 +155,13 @@ mod tests {
     use std::iter::repeat;
     #[test]
     fn recover_correct_transaction_heights_including_relative_zeroes() -> io::Result<()> {
-        let relative_heights_and_indexes = [10, 5, 0, 2, 0, 3]
+        let relative_heights_and_indexes = [90, 5, 0, 2, 0, 3]
             .into_iter()
             .map(BlockHeight::from)
             .zip(repeat(0))
             .collect();
         assert_eq!(
-            recover_absolute_transaction_heights(
-                BlockHeight::from(100),
-                relative_heights_and_indexes
-            )?,
+            recover_absolute_transaction_heights(relative_heights_and_indexes)?,
             [90, 85, 85, 83, 83, 80]
                 .into_iter()
                 .map(BlockHeight::from)

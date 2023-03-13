@@ -36,7 +36,6 @@ pub fn create_memo_v0(uas: impl AsRef<[UnifiedAddress]>) -> io::Result<[u8; 511]
 
 pub fn create_memo_v1(
     uas: impl AsRef<[UnifiedAddress]>,
-    mut target_height: BlockHeight,
     transaction_heights_and_indexes: impl AsRef<[(BlockHeight, usize)]>,
 ) -> io::Result<[u8; 511]> {
     let mut memo_bytes_vec = Vec::new();
@@ -44,19 +43,21 @@ pub fn create_memo_v1(
     Vector::write(&mut memo_bytes_vec, uas.as_ref(), |mut w, ua| {
         write_unified_address_to_raw_encoding(&ua, &mut w)
     })?;
+    let mut last_noted_height = None;
     let heights_indexes_and_target_heights = transaction_heights_and_indexes.as_ref().iter().fold(
         Vec::new(),
         |mut acc, (height, index)| {
-            acc.push((*height, *index, target_height));
-            target_height = *height;
+            acc.push((*height, *index, last_noted_height));
+            last_noted_height = Some(*height);
             acc
         },
     );
     Vector::write(
         &mut memo_bytes_vec,
         &heights_indexes_and_target_heights,
-        |mut w, (height, index, target_height)| {
-            let result = write_transaction_height_and_index(&target_height, height, *index, &mut w);
+        |mut w, (height, index, last_noted_height)| {
+            let result =
+                write_transaction_height_and_index(last_noted_height, height, *index, &mut w);
             result
         },
     )?;
@@ -73,7 +74,7 @@ pub fn create_memo_v1(
 }
 
 /// Attempts to parse the 511 bytes of an arbitrary data memo
-pub fn parse_memo(memo: [u8; 511], height: BlockHeight) -> io::Result<ParsedMemo> {
+pub fn parse_memo(memo: [u8; 511]) -> io::Result<ParsedMemo> {
     let mut reader: &[u8] = &memo;
     match CompactSize::read(&mut reader)? {
         0 => Ok(ParsedMemo::Version0 {
@@ -88,10 +89,8 @@ pub fn parse_memo(memo: [u8; 511], height: BlockHeight) -> io::Result<ParsedMemo
             let transaction_relative_heights_and_indexes = Vector::read(&mut reader, |r| {
                 read_transaction_relative_height_and_index(r)
             })?;
-            let transaction_heights_and_indexes = recover_absolute_transaction_heights(
-                height,
-                transaction_relative_heights_and_indexes,
-            )?;
+            let transaction_heights_and_indexes =
+                recover_absolute_transaction_heights(transaction_relative_heights_and_indexes)?;
             Ok(ParsedMemo::Version1 {
                 uas,
                 transaction_heights_and_indexes,
@@ -135,7 +134,6 @@ mod tests {
     fn ser_deser_v1_memo() {
         use std::iter::repeat;
         let uas = Vec::new();
-        let height = BlockHeight::from(1000);
         let transaction_heights_and_indexes =
             [997, 997, 993, 991, 931, 757, 757, 700, 666, 665, 200]
                 .into_iter()
@@ -143,14 +141,13 @@ mod tests {
                 .zip(repeat(0))
                 .collect();
 
-        let memo_bytes =
-            create_memo_v1(uas.clone(), height, &transaction_heights_and_indexes).unwrap();
+        let memo_bytes = create_memo_v1(uas.clone(), &transaction_heights_and_indexes).unwrap();
         assert_eq!(
             ParsedMemo::Version1 {
                 uas,
                 transaction_heights_and_indexes
             },
-            parse_memo(memo_bytes, height).unwrap()
+            parse_memo(memo_bytes).unwrap()
         )
     }
 }

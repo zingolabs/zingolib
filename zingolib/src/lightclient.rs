@@ -1437,7 +1437,7 @@ impl LightClient {
                                             match Memo::from_bytes(&memo) {
                                                 Ok(Memo::Arbitrary(wallet_internal_memo)) => {
                                                     let parsed_memo =
-                                                        parse_memo(*wallet_internal_memo, height)
+                                                        parse_memo(*wallet_internal_memo)
                                                             .map_err(|e| e.to_string())?;
                                                     match parsed_memo {
                                                         zingo_memo::ParsedMemo::Version0 {
