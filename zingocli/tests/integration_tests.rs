@@ -16,7 +16,7 @@ use zingolib::{
 };
 #[tokio::test]
 async fn factor_do_shield_to_call_do_send() {
-    let (regtest_manager, child_process_handler, faucet, recipient) =
+    let (regtest_manager, _child_process_handler, faucet, recipient) =
         scenarios::faucet_recipient().await;
     utils::increase_height_and_sync_client(&regtest_manager, &faucet, 2).await;
     faucet
