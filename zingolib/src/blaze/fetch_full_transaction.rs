@@ -181,7 +181,7 @@ impl TransactionContext {
                 .current
                 .get_mut(&txid)
             {
-                match parse_memo(wallet_internal_data, transaction.block_height) {
+                match parse_memo(wallet_internal_data) {
                     Ok(ParsedMemo::Version0 { uas })
                     | Ok(ParsedMemo::Version1 {
                         uas,
