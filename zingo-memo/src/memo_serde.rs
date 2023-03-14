@@ -36,7 +36,7 @@ pub fn create_memo_v0(uas: impl AsRef<[UnifiedAddress]>) -> io::Result<[u8; 511]
 
 pub fn create_memo_v1(
     uas: impl AsRef<[UnifiedAddress]>,
-    transaction_heights_and_indexes: impl AsRef<[(BlockHeight, usize)]>,
+    mut transaction_heights_and_indexes: Vec<(BlockHeight, usize)>,
 ) -> io::Result<[u8; 511]> {
     let mut memo_bytes_vec = Vec::new();
     CompactSize::write(&mut memo_bytes_vec, 1usize)?;
@@ -44,14 +44,16 @@ pub fn create_memo_v1(
         write_unified_address_to_raw_encoding(&ua, &mut w)
     })?;
     let mut last_noted_height = None;
-    let heights_indexes_and_target_heights = transaction_heights_and_indexes.as_ref().iter().fold(
-        Vec::new(),
-        |mut acc, (height, index)| {
-            acc.push((*height, *index, last_noted_height));
-            last_noted_height = Some(*height);
-            acc
-        },
-    );
+    transaction_heights_and_indexes.sort_unstable();
+    transaction_heights_and_indexes.reverse();
+    let heights_indexes_and_target_heights =
+        transaction_heights_and_indexes
+            .iter()
+            .fold(Vec::new(), |mut acc, (height, index)| {
+                acc.push((*height, *index, last_noted_height));
+                last_noted_height = Some(*height);
+                acc
+            });
     Vector::write(
         &mut memo_bytes_vec,
         &heights_indexes_and_target_heights,
@@ -134,14 +136,15 @@ mod tests {
     fn ser_deser_v1_memo() {
         use std::iter::repeat;
         let uas = Vec::new();
-        let transaction_heights_and_indexes =
+        let transaction_heights_and_indexes: Vec<_> =
             [997, 997, 993, 991, 931, 757, 757, 700, 666, 665, 200]
                 .into_iter()
                 .map(BlockHeight::from)
                 .zip(repeat(0))
                 .collect();
 
-        let memo_bytes = create_memo_v1(uas.clone(), &transaction_heights_and_indexes).unwrap();
+        let memo_bytes =
+            create_memo_v1(uas.clone(), transaction_heights_and_indexes.clone()).unwrap();
         assert_eq!(
             ParsedMemo::Version1 {
                 uas,
