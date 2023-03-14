@@ -4,11 +4,11 @@ use zcash_primitives::consensus::{BlockHeight, MAIN_NETWORK};
 pub mod memo_serde;
 pub mod utils;
 
-/// A parsed memo. Currently there are two version of this protocol.
+/// A parsed memo. Currently there are two versions of this protocol.
 ///
 /// Version zero is a list of UAs. The main use-case for this is to record the
-/// UAs sent from, as the blockchain only records the pool-specific receiver
-/// corresponding to the key we sent with.
+/// UAs sent to, as the blockchain only records the pool-specific receiver
+/// corresponding to the key we are sending to.
 ///
 /// Version one extends version zero with a vec of heights and indexes.
 /// The intended use for this format is to encode the height-on-chain, and
