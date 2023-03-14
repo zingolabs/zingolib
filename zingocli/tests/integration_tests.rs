@@ -8,6 +8,26 @@ use data::seeds::HOSPITAL_MUSEUM_SEED;
 use json::JsonValue;
 use utils::scenarios;
 
+use zcash_address::unified::Ufvk;
+use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
+use zingoconfig::ZingoConfig;
+use zingolib::{
+    check_client_balances, get_base_address, lightclient::LightClient, wallet::WalletBase,
+};
+#[tokio::test]
+async fn factor_do_shield_to_call_do_send() {
+    let (regtest_manager, _child_process_handler, faucet, recipient) =
+        scenarios::faucet_recipient().await;
+    utils::increase_height_and_sync_client(&regtest_manager, &faucet, 2).await;
+    faucet
+        .do_send(vec![(
+            &get_base_address!(recipient, "transparent"),
+            1_000u64,
+            None,
+        )])
+        .await
+        .unwrap();
+}
 #[tokio::test]
 async fn test_scanning_in_watch_only_mode() {
     // # Scenario:
@@ -46,27 +66,17 @@ async fn test_scanning_in_watch_only_mode() {
     // 2. send a transaction contaning all types of outputs
     faucet.do_send(addr_amount_memos).await.unwrap();
     utils::increase_height_and_sync_client(&regtest_manager, &original_recipient, 1).await;
-    let sent_t_value = original_recipient.do_balance().await["transparent_balance"].clone();
-    let sent_s_value = original_recipient.do_balance().await["sapling_balance"].clone();
-    let sent_o_value = original_recipient.do_balance().await["orchard_balance"].clone();
+    let original_recipient_balance = original_recipient.do_balance().await;
+    let sent_t_value = original_recipient_balance["transparent_balance"].clone();
+    let sent_s_value = original_recipient_balance["sapling_balance"].clone();
+    let sent_o_value = original_recipient_balance["orchard_balance"].clone();
     assert_eq!(sent_t_value, 1000u64);
     assert_eq!(sent_s_value, 2000u64);
     assert_eq!(sent_o_value, 3000u64);
 
     // check that do_rescan works
     original_recipient.do_rescan().await.unwrap();
-    assert_eq!(
-        original_recipient.do_balance().await["transparent_balance"],
-        1000u64
-    );
-    assert_eq!(
-        original_recipient.do_balance().await["sapling_balance"],
-        2000u64
-    );
-    assert_eq!(
-        original_recipient.do_balance().await["orchard_balance"],
-        3000u64
-    );
+    check_client_balances!(original_recipient, o: sent_o_value s: sent_s_value t: sent_t_value);
 
     // Extract viewing keys
     let wc = original_recipient
@@ -200,8 +210,8 @@ async fn verify_old_wallet_uses_server_height_in_send() {
     // Ensure that the client has confirmed spendable funds
     utils::increase_height_and_sync_client(&regtest_manager, &faucet, 5).await;
 
-    // Without sync push server forward 100 blocks
-    utils::increase_server_height(&regtest_manager, 100).await;
+    // Without sync push server forward 2 blocks
+    utils::increase_server_height(&regtest_manager, 2).await;
     let client_wallet_height = faucet.do_wallet_last_scanned_height().await;
 
     // Verify that wallet is still back at 6.
@@ -269,10 +279,8 @@ async fn actual_empty_zcashd_sapling_commitment_tree() {
 #[tokio::test]
 async fn mine_sapling_to_self() {
     let (regtest_manager, child_process_handler, faucet) = scenarios::faucet().await;
-    utils::increase_height_and_sync_client(&regtest_manager, &faucet, 5).await;
-
-    let balance = faucet.do_balance().await;
-    assert_eq!(balance["sapling_balance"], 3_750_000_000u64);
+    utils::increase_height_and_sync_client(&regtest_manager, &faucet, 1).await;
+    check_client_balances!(faucet, o: 0u64 s: 1_250_000_000u64 t: 0u64);
     drop(child_process_handler);
 }
 
@@ -280,10 +288,9 @@ async fn mine_sapling_to_self() {
 async fn unspent_notes_are_not_saved() {
     let (regtest_manager, child_process_handler, faucet, recipient) =
         scenarios::faucet_recipient().await;
-    utils::increase_height_and_sync_client(&regtest_manager, &faucet, 5).await;
+    utils::increase_height_and_sync_client(&regtest_manager, &faucet, 1).await;
 
-    let balance = faucet.do_balance().await;
-    assert_eq!(balance["sapling_balance"], 3_750_000_000u64);
+    check_client_balances!(faucet, o: 0u64 s: 1_250_000_000u64 t: 0u64);
     faucet
         .do_send(vec![(
             get_base_address!(recipient, "unified").as_str(),
@@ -346,7 +353,7 @@ async fn send_mined_sapling_to_orchard() {
     //! consistent with all the notes in the relevant block changing state.
     //! NOTE that the balance doesn't give insight into the distribution across notes.
     let (regtest_manager, child_process_handler, faucet) = scenarios::faucet().await;
-    utils::increase_height_and_sync_client(&regtest_manager, &faucet, 5).await;
+    utils::increase_height_and_sync_client(&regtest_manager, &faucet, 1).await;
 
     let amount_to_send = 5_000;
     faucet
@@ -358,7 +365,7 @@ async fn send_mined_sapling_to_orchard() {
         .await
         .unwrap();
 
-    utils::increase_height_and_sync_client(&regtest_manager, &faucet, 4).await;
+    utils::increase_height_and_sync_client(&regtest_manager, &faucet, 1).await;
     let balance = faucet.do_balance().await;
     // We send change to orchard now, so we should have the full value of the note
     // we spent, minus the transaction fee
@@ -373,10 +380,6 @@ fn extract_value_as_u64(input: &JsonValue) -> u64 {
     let note = &input["value"].as_fixed_point_u64(0).unwrap();
     note.clone()
 }
-use zcash_address::unified::Ufvk;
-use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
-use zingoconfig::ZingoConfig;
-use zingolib::{get_base_address, lightclient::LightClient, wallet::WalletBase};
 
 #[tokio::test]
 async fn note_selection_order() {
@@ -502,298 +505,164 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     let pmc_sapling = get_base_address!(pool_migration_client, "sapling");
     let pmc_unified = get_base_address!(pool_migration_client, "unified");
     // Ensure that the client has confirmed spendable funds
-    utils::increase_height_and_sync_client(&regtest_manager, &sapling_faucet, 5).await;
+    utils::increase_height_and_sync_client(&regtest_manager, &sapling_faucet, 3).await;
     // 1 t Test of a send from a taddr only client to its own unified address
+    macro_rules! bump_and_check {
+        (o: $o:tt s: $s:tt t: $t:tt) => {
+            utils::increase_height_and_sync_client(&regtest_manager, &pool_migration_client, 1).await;
+            check_client_balances!(pool_migration_client, o:$o s:$s t:$t);
+        };
+    }
+
     sapling_faucet
         .do_send(vec![(&pmc_taddr, 5_000, None)])
         .await
         .unwrap();
-    utils::increase_height_and_sync_client(&regtest_manager, &pool_migration_client, 5).await;
-    assert_eq!(
-        &pool_migration_client.do_balance().await["transparent_balance"],
-        5_000
-    );
-    assert_eq!(
-        &pool_migration_client.do_balance().await["orchard_balance"],
-        0_000
-    );
+    bump_and_check!(o: 0 s: 0 t: 5_000);
+
     pool_migration_client
         .do_send(vec![(&pmc_unified, 4_000, None)])
         .await
         .unwrap();
-    utils::increase_height_and_sync_client(&regtest_manager, &pool_migration_client, 5).await;
-    assert_eq!(
-        &pool_migration_client.do_balance().await["transparent_balance"],
-        0_000
-    );
-    assert_eq!(
-        &pool_migration_client.do_balance().await["orchard_balance"],
-        4_000
-    );
+    bump_and_check!(o: 4_000 s: 0 t: 0);
+
     // 2 Test of a send from a sapling only client to its own unified address
     sapling_faucet
         .do_send(vec![(&pmc_sapling, 5_000, None)])
         .await
         .unwrap();
-    utils::increase_height_and_sync_client(&regtest_manager, &pool_migration_client, 5).await;
-    assert_eq!(
-        &pool_migration_client.do_balance().await["transparent_balance"],
-        0_000
-    );
-    assert_eq!(
-        &pool_migration_client.do_balance().await["sapling_balance"],
-        5_000
-    );
+    bump_and_check!(o: 4_000 s: 5_000 t: 0);
+
     pool_migration_client
         .do_send(vec![(&pmc_unified, 4_000, None)])
         .await
         .unwrap();
-    utils::increase_height_and_sync_client(&regtest_manager, &pool_migration_client, 5).await;
-    assert_eq!(
-        &pool_migration_client.do_balance().await["sapling_balance"],
-        0_000
-    );
-    assert_eq!(
-        &pool_migration_client.do_balance().await["orchard_balance"],
-        8_000
-    );
+    bump_and_check!(o: 8_000 s: 0 t: 0);
+
     // 3 Test of an orchard-only client to itself
-    assert_eq!(
-        &pool_migration_client.do_balance().await["transparent_balance"],
-        0_000
-    );
-    assert_eq!(
-        &pool_migration_client.do_balance().await["sapling_balance"],
-        0_000
-    );
     pool_migration_client
         .do_send(vec![(&pmc_unified, 7_000, None)])
         .await
         .unwrap();
-    utils::increase_height_and_sync_client(&regtest_manager, &pool_migration_client, 5).await;
-    assert_eq!(
-        &pool_migration_client.do_balance().await["orchard_balance"],
-        7_000
-    );
+    bump_and_check!(o: 7_000 s: 0 t: 0);
+
     // 4 tz transparent and sapling to orchard
     pool_migration_client
         .do_send(vec![(&pmc_taddr, 3_000, None), (&pmc_sapling, 3_000, None)])
         .await
         .unwrap();
-    utils::increase_height_and_sync_client(&regtest_manager, &pool_migration_client, 5).await;
-    assert_eq!(
-        &pool_migration_client.do_balance().await["transparent_balance"],
-        3_000
-    );
-    assert_eq!(
-        &pool_migration_client.do_balance().await["sapling_balance"],
-        3_000
-    );
-    assert_eq!(
-        &pool_migration_client.do_balance().await["orchard_balance"],
-        0_000
-    );
+    bump_and_check!(o: 0 s: 3_000 t: 3_000);
+
     pool_migration_client
         .do_send(vec![(&pmc_unified, 5_000, None)])
         .await
         .unwrap();
-    utils::increase_height_and_sync_client(&regtest_manager, &pool_migration_client, 5).await;
-    assert_eq!(
-        &pool_migration_client.do_balance().await["transparent_balance"],
-        0_000
-    );
-    assert_eq!(
-        &pool_migration_client.do_balance().await["sapling_balance"],
-        0_000
-    );
-    assert_eq!(
-        &pool_migration_client.do_balance().await["orchard_balance"],
-        5_000
-    );
+    bump_and_check!(o: 5_000 s: 0 t: 0);
+
+    // 5 to transparent and orchard to orchard
     pool_migration_client
         .do_send(vec![(&pmc_taddr, 2_000, None)])
         .await
         .unwrap();
-    utils::increase_height_and_sync_client(&regtest_manager, &pool_migration_client, 5).await;
-    // 5 to transparent and orchard to orchard
-    assert_eq!(
-        &pool_migration_client.do_balance().await["transparent_balance"],
-        2_000
-    );
-    assert_eq!(
-        &pool_migration_client.do_balance().await["sapling_balance"],
-        0_000
-    );
-    assert_eq!(
-        &pool_migration_client.do_balance().await["orchard_balance"],
-        2_000
-    );
+    bump_and_check!(o: 2_000 s: 0 t: 2_000);
+
     pool_migration_client
         .do_send(vec![(&pmc_unified, 3_000, None)])
         .await
         .unwrap();
-    utils::increase_height_and_sync_client(&regtest_manager, &pool_migration_client, 5).await;
-    assert_eq!(
-        &pool_migration_client.do_balance().await["orchard_balance"],
-        3_000
-    );
+    bump_and_check!(o: 3_000 s: 0 t: 0);
+
     // 6 sapling and orchard to orchard
     sapling_faucet
         .do_send(vec![(&pmc_sapling, 2_000, None)])
         .await
         .unwrap();
-    utils::increase_height_and_sync_client(&regtest_manager, &pool_migration_client, 5).await;
-    assert_eq!(
-        &pool_migration_client.do_balance().await["transparent_balance"],
-        0_000
-    );
-    assert_eq!(
-        &pool_migration_client.do_balance().await["sapling_balance"],
-        2_000
-    );
-    assert_eq!(
-        &pool_migration_client.do_balance().await["orchard_balance"],
-        3_000
-    );
+    bump_and_check!(o: 3_000 s: 2_000 t: 0);
+
     pool_migration_client
         .do_send(vec![(&pmc_unified, 4_000, None)])
         .await
         .unwrap();
-    utils::increase_height_and_sync_client(&regtest_manager, &pool_migration_client, 5).await;
-    assert_eq!(
-        &pool_migration_client.do_balance().await["orchard_balance"],
-        4_000
-    );
-    assert_eq!(
-        &pool_migration_client.do_balance().await["transparent_balance"],
-        0_000
-    );
-    assert_eq!(
-        &pool_migration_client.do_balance().await["sapling_balance"],
-        0_000
-    );
+    bump_and_check!(o: 4_000 s: 0 t: 0);
+
     // 7 tzo --> o
     sapling_faucet
         .do_send(vec![(&pmc_taddr, 2_000, None), (&pmc_sapling, 2_000, None)])
         .await
         .unwrap();
-    utils::increase_height_and_sync_client(&regtest_manager, &pool_migration_client, 5).await;
-    assert_eq!(
-        &pool_migration_client.do_balance().await["transparent_balance"],
-        2_000
-    );
-    assert_eq!(
-        &pool_migration_client.do_balance().await["sapling_balance"],
-        2_000
-    );
-    assert_eq!(
-        &pool_migration_client.do_balance().await["orchard_balance"],
-        4_000
-    );
+    bump_and_check!(o: 4_000 s: 2_000 t: 2_000);
+
     pool_migration_client
         .do_send(vec![(&pmc_unified, 7_000, None)])
         .await
         .unwrap();
-    utils::increase_height_and_sync_client(&regtest_manager, &pool_migration_client, 5).await;
-    assert_eq!(
-        &pool_migration_client.do_balance().await["transparent_balance"],
-        0_000
-    );
-    assert_eq!(
-        &pool_migration_client.do_balance().await["sapling_balance"],
-        0_000
-    );
-    assert_eq!(
-        &pool_migration_client.do_balance().await["orchard_balance"],
-        7_000
-    );
+    bump_and_check!(o: 7_000 s: 0 t: 0);
+
     // Send from Sapling into empty Orchard pool
     pool_migration_client
         .do_send(vec![(&pmc_sapling, 6_000, None)])
         .await
         .unwrap();
-    utils::increase_height_and_sync_client(&regtest_manager, &pool_migration_client, 5).await;
-    assert_eq!(
-        &pool_migration_client.do_balance().await["transparent_balance"],
-        0_000
-    );
-    assert_eq!(
-        &pool_migration_client.do_balance().await["sapling_balance"],
-        6_000
-    );
-    assert_eq!(
-        &pool_migration_client.do_balance().await["orchard_balance"],
-        0_000
-    );
+    bump_and_check!(o: 0 s: 6_000 t: 0);
+
     pool_migration_client
         .do_send(vec![(&pmc_unified, 5_000, None)])
         .await
         .unwrap();
-    utils::increase_height_and_sync_client(&regtest_manager, &pool_migration_client, 5).await;
-    assert_eq!(
-        &pool_migration_client.do_balance().await["transparent_balance"],
-        0_000
-    );
-    assert_eq!(
-        &pool_migration_client.do_balance().await["sapling_balance"],
-        0_000
-    );
-    assert_eq!(
-        &pool_migration_client.do_balance().await["orchard_balance"],
-        5_000
-    );
+    bump_and_check!(o: 5_000 s: 0 t: 0);
     drop(child_process_handler);
 }
 #[tokio::test]
 async fn send_orchard_back_and_forth() {
+    // setup
     let (regtest_manager, child_process_handler, faucet, recipient) =
         scenarios::faucet_recipient().await;
-    utils::increase_height_and_sync_client(&regtest_manager, &faucet, 5).await;
+    let block_reward = 625_000_000u64;
+    let faucet_to_recipient_amount = 10_000u64;
+    let recipient_to_faucet_amount = 5_000u64;
+    // check start state
+    faucet.do_sync(true).await.unwrap();
+    let wallet_height = faucet.do_wallet_last_scanned_height().await;
+    assert_eq!(wallet_height, 1);
+    check_client_balances!(faucet, o: 0 s: block_reward t: 0);
 
+    // post transfer to recipient, and verify
     faucet
         .do_send(vec![(
             &get_base_address!(recipient, "unified"),
-            10_000,
+            faucet_to_recipient_amount,
             Some("Orcharding".to_string()),
         )])
         .await
         .unwrap();
-
-    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 5).await;
+    let orch_change = block_reward - (faucet_to_recipient_amount + u64::from(DEFAULT_FEE));
+    let reward_and_fee = block_reward + u64::from(DEFAULT_FEE);
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1).await;
     faucet.do_sync(true).await.unwrap();
+    check_client_balances!(recipient, o: faucet_to_recipient_amount s: 0 t: 0);
+    check_client_balances!(faucet, o: orch_change s: reward_and_fee t: 0);
 
-    // Regtest is generating notes with a block reward of 625_000_000 zats.
-    assert_eq!(
-        faucet.do_balance().await["orchard_balance"],
-        625_000_000 - 10_000 - u64::from(DEFAULT_FEE)
-    );
-    assert_eq!(recipient.do_balance().await["orchard_balance"], 10_000);
-
+    // post half back to faucet, and verify
     recipient
         .do_send(vec![(
             &get_base_address!(faucet, "unified"),
-            5_000,
+            recipient_to_faucet_amount,
             Some("Sending back".to_string()),
         )])
         .await
         .unwrap();
-
-    utils::increase_height_and_sync_client(&regtest_manager, &faucet, 3).await;
+    utils::increase_height_and_sync_client(&regtest_manager, &faucet, 1).await;
     recipient.do_sync(true).await.unwrap();
 
-    assert_eq!(
-        faucet.do_balance().await["orchard_balance"],
-        625_000_000 - 10_000 - u64::from(DEFAULT_FEE) + 5_000
+    let recipient_final_orch =
+        faucet_to_recipient_amount - (u64::from(DEFAULT_FEE) + recipient_to_faucet_amount);
+    let faucet_final_orch = orch_change + recipient_to_faucet_amount;
+    let faucet_final_block = 2 * block_reward + u64::from(DEFAULT_FEE) * 2;
+    check_client_balances!(
+        faucet,
+        o: faucet_final_orch s: faucet_final_block t: 0
     );
-    assert_eq!(recipient.do_balance().await["sapling_balance"], 0);
-    assert_eq!(recipient.do_balance().await["orchard_balance"], 4_000);
-    println!(
-        "{}",
-        json::stringify_pretty(faucet.do_list_transactions(false).await, 4)
-    );
-
-    // Unneeded, but more explicit than having child_process_handler be an
-    // unused variable
+    check_client_balances!(recipient, o: recipient_final_orch s: 0 t: 0);
     drop(child_process_handler);
 }
 
@@ -801,18 +670,16 @@ async fn send_orchard_back_and_forth() {
 async fn diversified_addresses_receive_funds_in_best_pool() {
     let (regtest_manager, child_process_handler, faucet, recipient) =
         scenarios::faucet_recipient().await;
-    recipient.do_new_address("o").await.unwrap();
-    recipient.do_new_address("zo").await.unwrap();
-    recipient.do_new_address("z").await.unwrap();
-
-    utils::increase_height_and_sync_client(&regtest_manager, &faucet, 5).await;
+    for code in ["o", "zo", "z"] {
+        recipient.do_new_address(code).await.unwrap();
+    }
     let addresses = recipient.do_addresses().await;
     let address_5000_nonememo_tuples = addresses
         .members()
         .map(|ua| (ua["address"].as_str().unwrap(), 5_000, None))
         .collect::<Vec<(&str, u64, Option<String>)>>();
     faucet.do_send(address_5000_nonememo_tuples).await.unwrap();
-    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 5).await;
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1).await;
     let balance_b = recipient.do_balance().await;
     assert_eq!(
         balance_b,
@@ -837,7 +704,6 @@ async fn diversified_addresses_receive_funds_in_best_pool() {
 async fn rescan_still_have_outgoing_metadata() {
     let (regtest_manager, child_process_handler, faucet, recipient) =
         scenarios::faucet_recipient().await;
-    utils::increase_height_and_sync_client(&regtest_manager, &faucet, 5).await;
     faucet
         .do_send(vec![(
             get_base_address!(recipient, "sapling").as_str(),
@@ -846,7 +712,7 @@ async fn rescan_still_have_outgoing_metadata() {
         )])
         .await
         .unwrap();
-    utils::increase_height_and_sync_client(&regtest_manager, &faucet, 5).await;
+    utils::increase_height_and_sync_client(&regtest_manager, &faucet, 1).await;
     let transactions = faucet.do_list_transactions(false).await;
     faucet.do_rescan().await.unwrap();
     let post_rescan_transactions = faucet.do_list_transactions(false).await;
@@ -858,7 +724,6 @@ async fn rescan_still_have_outgoing_metadata() {
 #[tokio::test]
 async fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
     let (regtest_manager, child_process_handler, faucet) = scenarios::faucet().await;
-    utils::increase_height_and_sync_client(&regtest_manager, &faucet, 5).await;
     let sapling_addr = get_base_address!(faucet, "sapling");
     for memo in [None, Some("foo")] {
         faucet
@@ -873,7 +738,7 @@ async fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
             )])
             .await
             .unwrap();
-        utils::increase_height_and_sync_client(&regtest_manager, &faucet, 5).await;
+        utils::increase_height_and_sync_client(&regtest_manager, &faucet, 1).await;
     }
     let transactions = faucet.do_list_transactions(false).await;
     let notes = faucet.do_list_notes(true).await;
@@ -910,6 +775,7 @@ async fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
 async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
     let (regtest_manager, child_process_handler, mut client_builder) = scenarios::custom_clients();
     let faucet = client_builder.build_new_faucet(0, false).await;
+    faucet.do_sync(false).await.unwrap();
     let seed_phrase_of_recipient1 = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
         .unwrap()
         .to_string();
@@ -918,7 +784,7 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
         .await;
     let mut expected_unspent_sapling_notes = json::object! {
 
-            "created_in_block" =>  7,
+            "created_in_block" =>  2,
             "datetime" =>  1666631643,
             "created_in_txid" => "4eeaca8d292f07f9cbe26a276f7658e75f0ef956fb21646e3907e912c5af1ec5",
             "value" =>  5_000,
@@ -936,7 +802,6 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
         8edj6n8ltk45sdkptlk7rtzlm4uup4laq8ka8vtxzqemj3yhk6hqhuypupzryhv66w65lah9ms03xa8nref7gux2zz\
         hjnfanxnnrnwscmz6szv2ghrurhu3jsqdx25y2yh";
     let seed_of_recipient = {
-        utils::increase_height_and_sync_client(&regtest_manager, &faucet, 5).await;
         assert_eq!(
             &get_base_address!(recipient1, "unified"),
             &original_recipient_address
@@ -950,7 +815,7 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
             )])
             .await
             .unwrap();
-        utils::increase_height_and_sync_client(&regtest_manager, &faucet, 5).await;
+        utils::increase_height_and_sync_client(&regtest_manager, &faucet, 1).await;
         recipient1.do_sync(true).await.unwrap();
         let notes = recipient1.do_list_notes(true).await;
         assert_eq!(notes["unspent_sapling_notes"].members().len(), 1);
@@ -1011,7 +876,7 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
             .await
             .unwrap();
         let sender_balance = faucet.do_balance().await;
-        utils::increase_height_and_sync_client(&regtest_manager, &faucet, 5).await;
+        utils::increase_height_and_sync_client(&regtest_manager, &faucet, 1).await;
 
         //Ensure that recipient_restored was still able to spend the note, despite not having the
         //diversified address associated with it
@@ -1045,29 +910,11 @@ async fn ensure_taddrs_from_old_seeds_work() {
     drop(child_process_handler);
 }
 
-// Proposed Test:
-//#[test]
-//fn two_zcashds_with_colliding_configs() {
-// Expectations:
-//   The children are terminated by the test run end.
-// Setup:
-//   Two different zcashds are configured to launch with 1 config-location
-//todo!("let _regtest_manager = setup::basic_funded_zcashd_lwd_zingolib_connected();");
-// Execution:
-//   Launch the two "bonking" zcashd instances
-// Assertions:
-//   zcashd A is terminated
-//   zcashd B is terminated
-//   The incorrectly configured location is still present (and not checked in)
-//   The test-or-scenario that caused this situation has failed/panicked.
-//}
-
 #[tokio::test]
 async fn t_incoming_t_outgoing() {
     let (regtest_manager, child_process_handler, faucet, recipient) =
         scenarios::faucet_recipient().await;
 
-    utils::increase_height_and_sync_client(&regtest_manager, &faucet, 9).await;
     // 2. Get an incoming transaction to a t address
     let taddr = get_base_address!(recipient, "transparent");
     let value = 100_000;
@@ -1077,12 +924,12 @@ async fn t_incoming_t_outgoing() {
         .await
         .unwrap();
 
-    recipient.do_sync(true).await.unwrap();
     utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1).await;
+    recipient.do_sync(true).await.unwrap();
 
     // 3. Test the list
     let list = recipient.do_list_transactions(false).await;
-    assert_eq!(list[0]["block_height"].as_u64().unwrap(), 11);
+    assert_eq!(list[0]["block_height"].as_u64().unwrap(), 2);
     assert_eq!(list[0]["address"], taddr);
     assert_eq!(list[0]["amount"].as_u64().unwrap(), value);
 
@@ -1096,7 +943,7 @@ async fn t_incoming_t_outgoing() {
 
     // 5. Test the unconfirmed send.
     let list = recipient.do_list_transactions(false).await;
-    assert_eq!(list[1]["block_height"].as_u64().unwrap(), 12);
+    assert_eq!(list[1]["block_height"].as_u64().unwrap(), 3);
     assert_eq!(list[1]["txid"], sent_transaction_id);
     assert_eq!(
         list[1]["amount"].as_i64().unwrap(),
@@ -1114,11 +961,11 @@ async fn t_incoming_t_outgoing() {
         notes["spent_utxos"][0]["created_in_block"]
             .as_u64()
             .unwrap(),
-        11
+        2
     );
     assert_eq!(
         notes["spent_utxos"][0]["spent_at_height"].as_u64().unwrap(),
-        12
+        3
     );
     assert_eq!(notes["spent_utxos"][0]["spent"], sent_transaction_id);
 
@@ -1127,7 +974,7 @@ async fn t_incoming_t_outgoing() {
         notes["unspent_orchard_notes"][0]["created_in_block"]
             .as_u64()
             .unwrap(),
-        12
+        3
     );
     assert_eq!(
         notes["unspent_orchard_notes"][0]["created_in_txid"],
@@ -1147,7 +994,7 @@ async fn t_incoming_t_outgoing() {
     let list = recipient.do_list_transactions(false).await;
     println!("{}", json::stringify_pretty(list.clone(), 4));
 
-    assert_eq!(list[1]["block_height"].as_u64().unwrap(), 12);
+    assert_eq!(list[1]["block_height"].as_u64().unwrap(), 3);
     assert_eq!(list[1]["txid"], sent_transaction_id);
     assert_eq!(list[1]["unconfirmed"].as_bool().unwrap(), false);
     assert_eq!(list[1]["outgoing_metadata"][0]["address"], EXT_TADDR);
@@ -1162,7 +1009,7 @@ async fn t_incoming_t_outgoing() {
 
     let list = recipient.do_list_transactions(false).await;
     println!("{}", json::stringify_pretty(list.clone(), 4));
-    assert_eq!(list[1]["block_height"].as_u64().unwrap(), 12);
+    assert_eq!(list[1]["block_height"].as_u64().unwrap(), 3);
     assert_eq!(list[1]["txid"], sent_transaction_id);
     assert_eq!(list[1]["unconfirmed"].as_bool().unwrap(), false);
     assert_eq!(list[1]["outgoing_metadata"][0]["address"], EXT_TADDR);
@@ -1177,7 +1024,7 @@ async fn t_incoming_t_outgoing() {
         notes["unspent_orchard_notes"][0]["created_in_block"]
             .as_u64()
             .unwrap(),
-        12
+        3
     );
     assert_eq!(
         notes["unspent_orchard_notes"][0]["created_in_txid"],
@@ -1200,14 +1047,14 @@ async fn t_incoming_t_outgoing() {
 async fn send_to_ua_saves_full_ua_in_wallet() {
     let (regtest_manager, child_process_handler, faucet, recipient) =
         scenarios::faucet_recipient().await;
-    utils::increase_height_and_sync_client(&regtest_manager, &faucet, 5).await;
+    //utils::increase_height_and_sync_client(&regtest_manager, &faucet, 5).await;
     let recipient_unified_address = get_base_address!(recipient, "unified");
     let sent_value = 50_000;
     faucet
         .do_send(vec![(recipient_unified_address.as_str(), sent_value, None)])
         .await
         .unwrap();
-    utils::increase_height_and_sync_client(&regtest_manager, &faucet, 3).await;
+    utils::increase_height_and_sync_client(&regtest_manager, &faucet, 1).await;
     let list = faucet.do_list_transactions(false).await;
     assert!(list.members().any(|transaction| {
         transaction.entries().any(|(key, value)| {
