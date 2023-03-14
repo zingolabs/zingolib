@@ -16,7 +16,7 @@ use zcash_primitives::consensus::BlockHeight;
 /// Note that a UA's raw representation is 1 byte for length, +21 for a T-receiver,
 /// +44 for a Sapling receiver, and +44 for an Orchard receiver. This totals a maximum
 /// of 110 bytes per UA, and attempting to write more than 510 bytes will cause an error.
-pub fn create_memo_v0(uas: impl AsRef<[UnifiedAddress]>) -> io::Result<[u8; 511]> {
+pub fn create_memo_v0<T: AsRef<[UnifiedAddress]>>(uas: T) -> io::Result<[u8; 511]> {
     let mut uas_bytes_vec = Vec::new();
     CompactSize::write(&mut uas_bytes_vec, 0usize)?;
     Vector::write(&mut uas_bytes_vec, uas.as_ref(), |mut w, ua| {
@@ -34,8 +34,8 @@ pub fn create_memo_v0(uas: impl AsRef<[UnifiedAddress]>) -> io::Result<[u8; 511]
     }
 }
 
-pub fn create_memo_v1(
-    uas: impl AsRef<[UnifiedAddress]>,
+pub fn create_memo_v1<T: AsRef<[UnifiedAddress]>>(
+    uas: T,
     mut transaction_heights_and_indexes: Vec<(BlockHeight, usize)>,
 ) -> io::Result<[u8; 511]> {
     let mut memo_bytes_vec = Vec::new();
