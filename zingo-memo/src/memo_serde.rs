@@ -12,10 +12,7 @@ use zcash_client_backend::address::UnifiedAddress;
 use zcash_encoding::{CompactSize, Vector};
 use zcash_primitives::consensus::BlockHeight;
 
-fn write_version_and_uas_to_vec<T: AsRef<[UnifiedAddress]>>(
-    uas: T,
-    version: usize,
-) -> io::Result<Vec<u8>> {
+fn write_to_vec<T: AsRef<[UnifiedAddress]>>(uas: T, version: usize) -> io::Result<Vec<u8>> {
     let mut uas_bytes_vec = Vec::new();
     CompactSize::write(&mut uas_bytes_vec, version)?;
     Vector::write(&mut uas_bytes_vec, uas.as_ref(), |mut w, ua| {
@@ -28,7 +25,7 @@ fn write_version_and_uas_to_vec<T: AsRef<[UnifiedAddress]>>(
 /// +44 for a Sapling receiver, and +44 for an Orchard receiver. This totals a maximum
 /// of 110 bytes per UA, and attempting to write more than 510 bytes will cause an error.
 pub fn create_memo_v0<T: AsRef<[UnifiedAddress]>>(uas: T) -> io::Result<[u8; 511]> {
-    let uas_bytes_vec = write_version_and_uas_to_vec(uas, 0usize)?;
+    let uas_bytes_vec = write_to_vec(uas, 0usize)?;
     let mut uas_bytes = [0u8; 511];
     if uas_bytes_vec.len() > 511 {
         Err(io::Error::new(
@@ -45,7 +42,7 @@ pub fn create_memo_v1<T: AsRef<[UnifiedAddress]>>(
     uas: T,
     mut transaction_heights_and_indexes: Vec<(BlockHeight, usize)>,
 ) -> io::Result<[u8; 511]> {
-    let mut memo_bytes_vec = write_version_and_uas_to_vec(uas, 1usize)?;
+    let mut memo_bytes_vec = write_to_vec(uas, 1usize)?;
     let mut last_noted_height = None;
     transaction_heights_and_indexes.sort_unstable();
     transaction_heights_and_indexes.reverse();
