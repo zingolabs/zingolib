@@ -20,22 +20,25 @@ fn write_to_vec<T: AsRef<[UnifiedAddress]>>(uas: T, version: usize) -> io::Resul
     })?;
     Ok(uas_bytes_vec)
 }
-/// Packs a list of UAs into a memo. The UA only memo is version 0 of the protocol
-/// Note that a UA's raw representation is 1 byte for length, +21 for a T-receiver,
-/// +44 for a Sapling receiver, and +44 for an Orchard receiver. This totals a maximum
-/// of 110 bytes per UA, and attempting to write more than 510 bytes will cause an error.
-pub fn create_memo_v0<T: AsRef<[UnifiedAddress]>>(uas: T) -> io::Result<[u8; 511]> {
-    let uas_bytes_vec = write_to_vec(uas, 0usize)?;
+fn packed_to_array(packed: Vec<u8>) -> io::Result<[u8; 511]> {
     let mut uas_bytes = [0u8; 511];
-    if uas_bytes_vec.len() > 511 {
+    if packed.len() > 511 {
         Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "Too many uas to fit in memo field",
         ))
     } else {
-        uas_bytes[..uas_bytes_vec.len()].copy_from_slice(uas_bytes_vec.as_slice());
+        uas_bytes[..packed.len()].copy_from_slice(packed.as_slice());
         Ok(uas_bytes)
     }
+}
+/// Packs a list of UAs into a memo. The UA only memo is version 0 of the protocol
+/// Note that a UA's raw representation is 1 byte for length, +21 for a T-receiver,
+/// +44 for a Sapling receiver, and +44 for an Orchard receiver. This totals a maximum
+/// of 110 bytes per UA, and attempting to write more than 510 bytes will cause an error.
+pub fn create_memo_v0<T: AsRef<[UnifiedAddress]>>(uas: T) -> io::Result<[u8; 511]> {
+    let memo_bytes_vec = write_to_vec(uas, 0usize)?;
+    packed_to_array(memo_bytes_vec)
 }
 
 pub fn create_memo_v1<T: AsRef<[UnifiedAddress]>>(
@@ -63,16 +66,7 @@ pub fn create_memo_v1<T: AsRef<[UnifiedAddress]>>(
             result
         },
     )?;
-    let mut memo_bytes = [0u8; 511];
-    if memo_bytes_vec.len() > 511 {
-        Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "Too much to fit in memo field",
-        ))
-    } else {
-        memo_bytes[..memo_bytes_vec.len()].copy_from_slice(memo_bytes_vec.as_slice());
-        Ok(memo_bytes)
-    }
+    packed_to_array(memo_bytes_vec)
 }
 
 /// Attempts to parse the 511 bytes of an arbitrary data memo
