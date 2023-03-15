@@ -32,6 +32,32 @@ fn packed_to_array(packed: Vec<u8>) -> io::Result<[u8; 511]> {
         Ok(uas_bytes)
     }
 }
+fn add_txdata(
+    memo_bytes_vec: &mut Vec<u8>,
+    mut transaction_heights_and_indices: Vec<(BlockHeight, usize)>,
+) -> io::Result<()> {
+    let mut last_noted_height = None;
+    transaction_heights_and_indices.sort_unstable();
+    transaction_heights_and_indices.reverse();
+    let heights_indexes_and_target_heights =
+        transaction_heights_and_indices
+            .iter()
+            .fold(Vec::new(), |mut acc, (height, index)| {
+                acc.push((*height, *index, last_noted_height));
+                last_noted_height = Some(*height);
+                acc
+            });
+    Vector::write(
+        memo_bytes_vec,
+        &heights_indexes_and_target_heights,
+        |mut w, (height, index, last_noted_height)| {
+            let result =
+                write_transaction_height_and_index(last_noted_height, height, *index, &mut w);
+            result
+        },
+    )?;
+    Ok(())
+}
 /// Packs a list of UAs into a memo. The UA only memo is version 0 of the protocol
 /// Note that a UA's raw representation is 1 byte for length, +21 for a T-receiver,
 /// +44 for a Sapling receiver, and +44 for an Orchard receiver. This totals a maximum
@@ -43,29 +69,10 @@ pub fn create_memo_v0<T: AsRef<[UnifiedAddress]>>(uas: T) -> io::Result<[u8; 511
 
 pub fn create_memo_v1<T: AsRef<[UnifiedAddress]>>(
     uas: T,
-    mut transaction_heights_and_indexes: Vec<(BlockHeight, usize)>,
+    transaction_heights_and_indices: Vec<(BlockHeight, usize)>,
 ) -> io::Result<[u8; 511]> {
     let mut memo_bytes_vec = write_to_vec(uas, 1usize)?;
-    let mut last_noted_height = None;
-    transaction_heights_and_indexes.sort_unstable();
-    transaction_heights_and_indexes.reverse();
-    let heights_indexes_and_target_heights =
-        transaction_heights_and_indexes
-            .iter()
-            .fold(Vec::new(), |mut acc, (height, index)| {
-                acc.push((*height, *index, last_noted_height));
-                last_noted_height = Some(*height);
-                acc
-            });
-    Vector::write(
-        &mut memo_bytes_vec,
-        &heights_indexes_and_target_heights,
-        |mut w, (height, index, last_noted_height)| {
-            let result =
-                write_transaction_height_and_index(last_noted_height, height, *index, &mut w);
-            result
-        },
-    )?;
+    add_txdata(&mut memo_bytes_vec, transaction_heights_and_indices)?;
     packed_to_array(memo_bytes_vec)
 }
 
