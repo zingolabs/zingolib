@@ -216,6 +216,7 @@ impl UpdateNotes {
                         // Record the future transaction, the one that has spent the nullifiers received in this transaction in the wallet
                         wallet_transactions.write().await.add_new_spent(
                             spent_transaction_id,
+                            None,
                             spent_at_height,
                             false,
                             ts,

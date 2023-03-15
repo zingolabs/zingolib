@@ -501,6 +501,7 @@ impl TransactionMetadataSet {
     fn get_or_create_transaction_metadata(
         &mut self,
         txid: &TxId,
+        txindex: Option<usize>,
         height: BlockHeight,
         unconfirmed: bool,
         datetime: u64,
@@ -508,7 +509,13 @@ impl TransactionMetadataSet {
         if !self.current.contains_key(&txid) {
             self.current.insert(
                 txid.clone(),
-                TransactionMetadata::new(BlockHeight::from(height), datetime, &txid, unconfirmed),
+                TransactionMetadata::new(
+                    BlockHeight::from(height),
+                    txindex,
+                    datetime,
+                    &txid,
+                    unconfirmed,
+                ),
             );
             self.some_txid_from_highest_wallet_block = Some(txid.clone());
         }
@@ -532,6 +539,7 @@ impl TransactionMetadataSet {
     pub fn add_new_spent(
         &mut self,
         txid: TxId,
+        txindex: Option<usize>,
         height: BlockHeight,
         unconfirmed: bool,
         timestamp: u32,
@@ -543,6 +551,7 @@ impl TransactionMetadataSet {
             PoolNullifier::Orchard(nullifier) => self
                 .add_new_spent_internal::<ReceivedOrchardNoteAndMetadata>(
                     txid,
+                    txindex,
                     height,
                     unconfirmed,
                     timestamp,
@@ -553,6 +562,7 @@ impl TransactionMetadataSet {
             PoolNullifier::Sapling(nullifier) => self
                 .add_new_spent_internal::<ReceivedSaplingNoteAndMetadata>(
                     txid,
+                    txindex,
                     height,
                     unconfirmed,
                     timestamp,
@@ -566,6 +576,7 @@ impl TransactionMetadataSet {
     fn add_new_spent_internal<NnMd: ReceivedNoteAndMetadata>(
         &mut self,
         txid: TxId,
+        txindex: Option<usize>,
         height: BlockHeight,
         unconfirmed: bool,
         timestamp: u32,
@@ -576,6 +587,7 @@ impl TransactionMetadataSet {
         // Record this Tx as having spent some funds
         let transaction_metadata = self.get_or_create_transaction_metadata(
             &txid,
+            txindex,
             BlockHeight::from(height),
             unconfirmed,
             timestamp as u64,
@@ -614,6 +626,7 @@ impl TransactionMetadataSet {
     pub fn add_taddr_spent(
         &mut self,
         txid: TxId,
+        txindex: Option<usize>,
         height: BlockHeight,
         unconfirmed: bool,
         timestamp: u64,
@@ -621,6 +634,7 @@ impl TransactionMetadataSet {
     ) {
         let transaction_metadata = self.get_or_create_transaction_metadata(
             &txid,
+            txindex,
             BlockHeight::from(height),
             unconfirmed,
             timestamp,
@@ -666,6 +680,7 @@ impl TransactionMetadataSet {
     pub fn add_new_taddr_output(
         &mut self,
         txid: TxId,
+        txindex: Option<usize>,
         taddr: String,
         height: u32,
         unconfirmed: bool,
@@ -676,6 +691,7 @@ impl TransactionMetadataSet {
         // Read or create the current TxId
         let transaction_metadata = self.get_or_create_transaction_metadata(
             &txid,
+            txindex,
             BlockHeight::from(height),
             unconfirmed,
             timestamp,
@@ -707,6 +723,7 @@ impl TransactionMetadataSet {
     pub(crate) fn add_pending_note<D>(
         &mut self,
         txid: TxId,
+        txindex: Option<usize>,
         height: BlockHeight,
         timestamp: u64,
         note: D::Note,
@@ -722,6 +739,7 @@ impl TransactionMetadataSet {
 
         let transaction_metadata = self.get_or_create_transaction_metadata(
             &txid,
+            txindex,
             BlockHeight::from(height),
             true,
             timestamp,
@@ -756,6 +774,7 @@ impl TransactionMetadataSet {
     pub fn add_new_sapling_note(
         &mut self,
         txid: TxId,
+        txindex: Option<usize>,
         height: BlockHeight,
         unconfirmed: bool,
         timestamp: u64,
@@ -767,6 +786,7 @@ impl TransactionMetadataSet {
     ) {
         self.add_new_note::<SaplingDomain<zingoconfig::ChainType>>(
             txid,
+            txindex,
             height,
             unconfirmed,
             timestamp,
@@ -780,6 +800,7 @@ impl TransactionMetadataSet {
     pub fn add_new_orchard_note(
         &mut self,
         txid: TxId,
+        txindex: Option<usize>,
         height: BlockHeight,
         unconfirmed: bool,
         timestamp: u64,
@@ -791,6 +812,7 @@ impl TransactionMetadataSet {
     ) {
         self.add_new_note::<OrchardDomain>(
             txid,
+            txindex,
             height,
             unconfirmed,
             timestamp,
@@ -805,6 +827,7 @@ impl TransactionMetadataSet {
     pub(crate) fn add_new_note<D: DomainWalletExt>(
         &mut self,
         txid: TxId,
+        txindex: Option<usize>,
         height: BlockHeight,
         unconfirmed: bool,
         timestamp: u64,
@@ -822,6 +845,7 @@ impl TransactionMetadataSet {
 
         let transaction_metadata = self.get_or_create_transaction_metadata(
             &txid,
+            txindex,
             BlockHeight::from(height),
             unconfirmed,
             timestamp,

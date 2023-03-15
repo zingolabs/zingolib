@@ -324,6 +324,7 @@ impl TrialDecryptions {
 
                     transaction_metadata_set.write().await.add_new_note::<D>(
                         transaction_id.clone(),
+                        Some(transaction_num),
                         height,
                         false,
                         timestamp,
