@@ -99,11 +99,14 @@ pub fn parse_memo(memo: [u8; 511]) -> io::Result<ParsedMemo> {
                 transaction_heights_and_indexes,
             })
         }
-        _ => {
+        x @ _ => {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "Received memo from a future version of this protocol.\n\
+                format!(
+                    "Received memo from '{}', a future version of this protocol.\n\
             Please ensure your software is up-to-date",
+                    x
+                ),
             ))
         }
     }
@@ -153,5 +156,14 @@ mod tests {
             },
             parse_memo(memo_bytes).unwrap()
         )
+    }
+    #[test]
+    fn parse_detects_future_version() {
+        let mut future_version = [0u8; 511];
+        future_version[0] = 2u8;
+        if let Err(error) = parse_memo(future_version) {
+            //let string_repr = format!("{:?}", repr);
+            assert_eq!(error.to_string(), "Received memo from '2', a future version of this protocol.\nPlease ensure your software is up-to-date");
+        }
     }
 }
