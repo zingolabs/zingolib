@@ -528,6 +528,10 @@ impl TransactionMetadataSet {
             transaction_metadata.datetime = datetime;
         }
 
+        if let (Some(_), None) = (txindex, transaction_metadata.txindex) {
+            transaction_metadata.txindex = txindex;
+        }
+
         transaction_metadata
     }
 
