@@ -12,42 +12,35 @@ use zcash_client_backend::address::UnifiedAddress;
 use zcash_encoding::{CompactSize, Vector};
 use zcash_primitives::consensus::BlockHeight;
 
-/// Packs a list of UAs into a memo. The UA only memo is version 0 of the protocol
-/// Note that a UA's raw representation is 1 byte for length, +21 for a T-receiver,
-/// +44 for a Sapling receiver, and +44 for an Orchard receiver. This totals a maximum
-/// of 110 bytes per UA, and attempting to write more than 510 bytes will cause an error.
-pub fn create_memo_v0<T: AsRef<[UnifiedAddress]>>(uas: T) -> io::Result<[u8; 511]> {
+fn write_to_vec<T: AsRef<[UnifiedAddress]>>(uas: T, version: usize) -> io::Result<Vec<u8>> {
     let mut uas_bytes_vec = Vec::new();
-    CompactSize::write(&mut uas_bytes_vec, 0usize)?;
+    CompactSize::write(&mut uas_bytes_vec, version)?;
     Vector::write(&mut uas_bytes_vec, uas.as_ref(), |mut w, ua| {
         write_unified_address_to_raw_encoding(&ua, &mut w)
     })?;
+    Ok(uas_bytes_vec)
+}
+fn packed_to_array(packed: Vec<u8>) -> io::Result<[u8; 511]> {
     let mut uas_bytes = [0u8; 511];
-    if uas_bytes_vec.len() > 511 {
+    if packed.len() > 511 {
         Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "Too many uas to fit in memo field",
         ))
     } else {
-        uas_bytes[..uas_bytes_vec.len()].copy_from_slice(uas_bytes_vec.as_slice());
+        uas_bytes[..packed.len()].copy_from_slice(packed.as_slice());
         Ok(uas_bytes)
     }
 }
-
-pub fn create_memo_v1<T: AsRef<[UnifiedAddress]>>(
-    uas: T,
-    mut transaction_heights_and_indexes: Vec<(BlockHeight, usize)>,
-) -> io::Result<[u8; 511]> {
-    let mut memo_bytes_vec = Vec::new();
-    CompactSize::write(&mut memo_bytes_vec, 1usize)?;
-    Vector::write(&mut memo_bytes_vec, uas.as_ref(), |mut w, ua| {
-        write_unified_address_to_raw_encoding(&ua, &mut w)
-    })?;
+fn add_txdata(
+    memo_bytes_vec: &mut Vec<u8>,
+    mut transaction_heights_and_indices: Vec<(BlockHeight, usize)>,
+) -> io::Result<()> {
     let mut last_noted_height = None;
-    transaction_heights_and_indexes.sort_unstable();
-    transaction_heights_and_indexes.reverse();
+    transaction_heights_and_indices.sort_unstable();
+    transaction_heights_and_indices.reverse();
     let heights_indexes_and_target_heights =
-        transaction_heights_and_indexes
+        transaction_heights_and_indices
             .iter()
             .fold(Vec::new(), |mut acc, (height, index)| {
                 acc.push((*height, *index, last_noted_height));
@@ -55,7 +48,7 @@ pub fn create_memo_v1<T: AsRef<[UnifiedAddress]>>(
                 acc
             });
     Vector::write(
-        &mut memo_bytes_vec,
+        memo_bytes_vec,
         &heights_indexes_and_target_heights,
         |mut w, (height, index, last_noted_height)| {
             let result =
@@ -63,16 +56,24 @@ pub fn create_memo_v1<T: AsRef<[UnifiedAddress]>>(
             result
         },
     )?;
-    let mut memo_bytes = [0u8; 511];
-    if memo_bytes_vec.len() > 511 {
-        Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "Too much to fit in memo field",
-        ))
-    } else {
-        memo_bytes[..memo_bytes_vec.len()].copy_from_slice(memo_bytes_vec.as_slice());
-        Ok(memo_bytes)
-    }
+    Ok(())
+}
+/// Packs a list of UAs into a memo. The UA only memo is version 0 of the protocol
+/// Note that a UA's raw representation is 1 byte for length, +21 for a T-receiver,
+/// +44 for a Sapling receiver, and +44 for an Orchard receiver. This totals a maximum
+/// of 110 bytes per UA, and attempting to write more than 510 bytes will cause an error.
+pub fn create_memo_v0<T: AsRef<[UnifiedAddress]>>(uas: T) -> io::Result<[u8; 511]> {
+    let memo_bytes_vec = write_to_vec(uas, 0usize)?;
+    packed_to_array(memo_bytes_vec)
+}
+
+pub fn create_memo_v1<T: AsRef<[UnifiedAddress]>>(
+    uas: T,
+    transaction_heights_and_indices: Vec<(BlockHeight, usize)>,
+) -> io::Result<[u8; 511]> {
+    let mut memo_bytes_vec = write_to_vec(uas, 1usize)?;
+    add_txdata(&mut memo_bytes_vec, transaction_heights_and_indices)?;
+    packed_to_array(memo_bytes_vec)
 }
 
 /// Attempts to parse the 511 bytes of an arbitrary data memo
@@ -98,11 +99,14 @@ pub fn parse_memo(memo: [u8; 511]) -> io::Result<ParsedMemo> {
                 transaction_heights_and_indexes,
             })
         }
-        _ => {
+        x => {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "Received memo from a future version of this protocol.\n\
+                format!(
+                    "Received memo from '{}', a future version of this protocol.\n\
             Please ensure your software is up-to-date",
+                    x
+                ),
             ))
         }
     }
@@ -152,5 +156,14 @@ mod tests {
             },
             parse_memo(memo_bytes).unwrap()
         )
+    }
+    #[test]
+    fn parse_detects_future_version() {
+        let mut future_version = [0u8; 511];
+        future_version[0] = 2u8;
+        if let Err(error) = parse_memo(future_version) {
+            //let string_repr = format!("{:?}", repr);
+            assert_eq!(error.to_string(), "Received memo from '2', a future version of this protocol.\nPlease ensure your software is up-to-date");
+        }
     }
 }
