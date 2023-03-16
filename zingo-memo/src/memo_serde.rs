@@ -99,7 +99,7 @@ pub fn parse_memo(memo: [u8; 511]) -> io::Result<ParsedMemo> {
                 transaction_heights_and_indexes,
             })
         }
-        x @ _ => {
+        x => {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!(
