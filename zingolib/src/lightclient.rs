@@ -1459,6 +1459,15 @@ impl LightClient {
             )
             .await;
 
+        let transaction_index_updater_handle = grpc_connector
+            .start_transaction_index_updater(
+                self.wallet
+                    .transaction_context
+                    .transaction_metadata_set
+                    .clone(),
+            )
+            .await;
+
         // Full Tx GRPC fetcher
         let (full_transaction_fetcher_handle, full_transaction_fetcher_transmitter) =
             grpc_connector
@@ -1571,6 +1580,7 @@ impl LightClient {
             taddr_transactions_handle,
             fetch_compact_blocks_handle,
             fetch_full_transactions_handle,
+            transaction_index_updater_handle,
             r1,
         ])
         .await
