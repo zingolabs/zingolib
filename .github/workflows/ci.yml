@@ -35,7 +35,7 @@ jobs:
           files:                ./cobertura.xml
           # fail_ci_if_error:     true
         
-  build_zingo-mobile:
+  build_mobile:
     name:                       Build Zingo Mobile
     runs-on:                    ubuntu-22.04
     outputs:
@@ -62,12 +62,12 @@ jobs:
           name:                 zingolib-jniLibs-${{ steps.create-timestamp.outputs.timestamp }}
           path:                 android/app/src/main/jniLibs/
         
-  test_zingo-mobile:
+  test_mobile:
     name:                       Test Zingo Mobile
     runs-on:                    macos-12
-    needs:                      build
+    needs:                      build_mobile
     env:
-      timestamp:                ${{ needs.build.outputs.timestamp }}
+      timestamp:                ${{ needs.build_mobile.outputs.timestamp }}
     steps:
       - name:                   Setup Java
         uses:                   actions/setup-java@v3
