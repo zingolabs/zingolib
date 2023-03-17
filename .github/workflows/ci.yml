@@ -8,7 +8,8 @@ on:
       - dev
 
 jobs:
-  Test:
+  test:
+    name:                       Test
     runs-on:                    ubuntu-22.04
     env:
       RUSTFLAGS:                -D warnings
@@ -34,9 +35,15 @@ jobs:
           files:                ./cobertura.xml
           # fail_ci_if_error:     true
         
-  Build_zingo-mobile:
+  build_zingo-mobile:
+    name:                       Build Zingo Mobile
     runs-on:                    ubuntu-22.04
+    outputs:
+      timestamp:                ${{ steps.create-timestamp.outputs.timestamp }}
     steps:
+      - name:                   Create timestamp
+        id:                     create-timestamp
+        run:                    echo "timestamp=$(date +%Y%m%d%H%M)" >> $GITHUB_OUTPUT
       - name:                   Store zingolib github ref
         run:                    echo "zingolib_ref=$(echo ${GITHUB_REF} | sed 's/\//\\\//g')" >> $GITHUB_ENV
       - name:                   Checkout zingo-mobile
@@ -49,3 +56,40 @@ jobs:
         run:                    if cat rust/lib/Cargo.toml | grep "^zingolib\|^zingoconfig" | grep -q "branch"; then exit 1; fi
       - name:                   Build NDK
         run:                    cd rust/ && ./build.sh
+      - name:                   Upload native rust
+        uses:                   actions/upload-artifact@v3
+        with:
+          name:                 zingolib-jniLibs-${{ steps.create-timestamp.outputs.timestamp }}
+          path:                 android/app/src/main/jniLibs/
+        
+  test_zingo-mobile:
+    name:                       Test Zingo Mobile
+    runs-on:                    macos-12
+    needs:                      build
+    env:
+      timestamp:                ${{ needs.build.outputs.timestamp }}
+    steps:
+      - name:                   Setup Java
+        uses:                   actions/setup-java@v3
+        with:
+          distribution:         'temurin'
+          java-version:         '11'
+      - name:                   Checkout repository
+        uses:                   actions/checkout@v3
+        with:
+          repository:           zingolabs/zingo-mobile
+      - name:                   Create native rust directory
+        run:                    mkdir android/app/src/main/jniLibs
+      - name:                   Download native rust
+        uses:                   actions/download-artifact@v3
+        with:                
+          name:                 zingolib-jniLibs-${{ env.timestamp }}
+          path:                 android/app/src/main/jniLibs/
+      - run:                    yarn install
+      - name:                   Run integration tests
+        uses:                   reactivecircus/android-emulator-runner@v2
+        with:
+          working-directory:    ./android
+          api-level:            30
+          arch:                 x86_64
+          script:               ./gradlew connectedCheck -Pandroid.testInstrumentationRunnerArguments.class=org.ZingoLabs.Zingo.IntegrationTestSuite
