@@ -93,6 +93,6 @@ jobs:
         uses:                   reactivecircus/android-emulator-runner@v2
         with:
           working-directory:    ./android
-          api-level:            29
+          api-level:            27
           arch:                 ${{ matrix.arch }}
           script:               ./gradlew connectedCheck -Pandroid.testInstrumentationRunnerArguments.class=org.ZingoLabs.Zingo.IntegrationTestSuite
