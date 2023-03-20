@@ -1008,13 +1008,7 @@ impl LightClient {
                 let amount = total_transparent_received as i64 - wallet_transaction.total_transparent_value_spent as i64;
                 let address = wallet_transaction.utxos.iter().map(|u| u.address.clone()).collect::<Vec<String>>().join(",");
                 if total_transparent_received > wallet_transaction.total_transparent_value_spent {
-                    if let Some(transaction) = transactions.iter_mut().find(|transaction| transaction["txid"] == wallet_transaction.txid.to_string()) {
-                        let old_address = transaction.remove("address");
-                        transaction.insert("address", match old_address {
-                            JsonValue::String(addr) => [addr, address].join(","),
-                            _ => address
-                        }).unwrap();
-                    } else {
+                    if  transactions.iter_mut().find(|transaction| transaction["txid"] == wallet_transaction.txid.to_string()).is_none() {
                     // Create an input transaction for the transparent value as well.
                     let block_height: u32 = wallet_transaction.block_height.into();
                     transactions.push(object! {

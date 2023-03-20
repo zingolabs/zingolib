@@ -1155,6 +1155,23 @@ async fn self_send_to_t_displays_as_one_transaction() {
         ])
         .await
         .unwrap();
+    faucet.do_sync(false).await.unwrap();
+    faucet
+        .do_send(vec![
+            (recipient_taddr.as_str(), sent_to_taddr_value, None),
+            (
+                recipient_zaddr.as_str(),
+                sent_to_zaddr_value,
+                Some("foo2".to_string()),
+            ),
+            (
+                recipient_unified_address.as_str(),
+                sent_to_self_orchard_value,
+                Some("bar2".to_string()),
+            ),
+        ])
+        .await
+        .unwrap();
     utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1).await;
     println!(
         "{}",
