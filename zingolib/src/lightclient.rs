@@ -24,7 +24,7 @@ use json::{array, object, JsonValue};
 use log::{debug, error, warn};
 use orchard::note_encryption::OrchardDomain;
 use std::{
-    cmp,
+    cmp::{self, Ordering},
     fs::File,
     io::{self, BufReader, Error, ErrorKind, Read, Write},
     path::Path,
@@ -1008,7 +1008,14 @@ impl LightClient {
                 let amount = total_transparent_received as i64 - wallet_transaction.total_transparent_value_spent as i64;
                 let address = wallet_transaction.utxos.iter().map(|u| u.address.clone()).collect::<Vec<String>>().join(",");
                 if total_transparent_received > wallet_transaction.total_transparent_value_spent {
-                    if  transactions.iter_mut().find(|transaction| transaction["txid"] == wallet_transaction.txid.to_string()).is_none() {
+                    if let Some(transaction) = transactions.iter_mut().find(|transaction| transaction["txid"] == wallet_transaction.txid.to_string()) {
+                        // If we have change, we've already accounted for the entire balance. If not, we've added sapling/orchard,
+                        // and need to add transparent
+                        if wallet_transaction.total_value_spent() == 0 {
+                            let old_amount = transaction.remove("amount").as_i64().unwrap();
+                            transaction.insert("amount", old_amount + amount).unwrap();
+                        }
+                    } else {
                     // Create an input transaction for the transparent value as well.
                     let block_height: u32 = wallet_transaction.block_height.into();
                     transactions.push(object! {
@@ -1027,6 +1034,26 @@ impl LightClient {
             })
             .collect::<Vec<JsonValue>>();
 
+        let match_by_txid =
+            |a: &JsonValue, b: &JsonValue| a["txid"].to_string().cmp(&b["txid"].to_string());
+        transaction_list.sort_by(match_by_txid);
+        transaction_list.dedup_by(|a, b| {
+            if match_by_txid(a, b) == Ordering::Equal {
+                let val_b = b.remove("amount").as_i64().unwrap();
+                b.insert(
+                    "amount",
+                    JsonValue::from(val_b + a.remove("amount").as_i64().unwrap()),
+                )
+                .unwrap();
+                let memo_b = b.remove("memo").to_string();
+                b.insert("memo", [a.remove("memo").to_string(), memo_b].join(", "))
+                    .unwrap();
+
+                true
+            } else {
+                false
+            }
+        });
         transaction_list.sort_by(|a, b| {
             if a["block_height"] == b["block_height"] {
                 a["txid"].as_str().cmp(&b["txid"].as_str())
