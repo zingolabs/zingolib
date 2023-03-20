@@ -2,6 +2,7 @@
 #![cfg(feature = "local_env")]
 mod data;
 mod utils;
+use itertools::Itertools;
 use std::fs::File;
 
 use data::seeds::HOSPITAL_MUSEUM_SEED;
@@ -1114,6 +1115,36 @@ async fn send_to_ua_saves_full_ua_in_wallet() {
         json::stringify_pretty(list.clone(), 4),
         json::stringify_pretty(new_list.clone(), 4)
     );
+    drop(child_process_handler);
+}
+
+#[tokio::test]
+async fn self_send_to_t_displays_as_one_transaction() {
+    let (regtest_manager, child_process_handler, faucet, recipient) =
+        scenarios::faucet_recipient().await;
+    let recipient_unified_address = get_base_address!(recipient, "unified");
+    let sent_value = 50_000;
+    faucet
+        .do_send(vec![(recipient_unified_address.as_str(), sent_value, None)])
+        .await
+        .unwrap();
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1).await;
+    let recipient_taddr = get_base_address!(recipient, "transparent");
+    let sent_to_taddr_value = 5_000;
+    recipient
+        .do_send(vec![(recipient_taddr.as_str(), sent_to_taddr_value, None)])
+        .await
+        .unwrap();
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1).await;
+    println!(
+        "{}",
+        json::stringify_pretty(recipient.do_list_transactions(false).await, 4)
+    );
+    let transactions = recipient.do_list_transactions(false).await;
+    let mut txids = transactions
+        .members()
+        .map(|transaction| transaction["txid"].as_str());
+    assert!(txids.all_unique());
     drop(child_process_handler);
 }
 
