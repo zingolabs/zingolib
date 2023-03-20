@@ -1130,9 +1130,29 @@ async fn self_send_to_t_displays_as_one_transaction() {
         .unwrap();
     utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1).await;
     let recipient_taddr = get_base_address!(recipient, "transparent");
+    let recipient_zaddr = get_base_address!(recipient, "sapling");
     let sent_to_taddr_value = 5_000;
+    let sent_to_zaddr_value = 11_000;
+    let sent_to_self_orchard_value = 1_000;
     recipient
         .do_send(vec![(recipient_taddr.as_str(), sent_to_taddr_value, None)])
+        .await
+        .unwrap();
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1).await;
+    recipient
+        .do_send(vec![
+            (recipient_taddr.as_str(), sent_to_taddr_value, None),
+            (
+                recipient_zaddr.as_str(),
+                sent_to_zaddr_value,
+                Some("foo".to_string()),
+            ),
+            (
+                recipient_unified_address.as_str(),
+                sent_to_self_orchard_value,
+                Some("bar".to_string()),
+            ),
+        ])
         .await
         .unwrap();
     utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1).await;

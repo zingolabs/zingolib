@@ -1000,12 +1000,21 @@ impl LightClient {
                     });
                 }
 
-                // For each sapling note that is not a change, add a transaction.
+                // For each note that is not a change, add a transaction.
                 transactions.extend(self.add_wallet_notes_in_transaction_to_list(&wallet_transaction, &include_memo_hex, &**unified_spend_capability));
 
                 // Get the total transparent received
                 let total_transparent_received = wallet_transaction.utxos.iter().map(|u| u.value).sum::<u64>();
+                let amount = total_transparent_received as i64 - wallet_transaction.total_transparent_value_spent as i64;
+                let address = wallet_transaction.utxos.iter().map(|u| u.address.clone()).collect::<Vec<String>>().join(",");
                 if total_transparent_received > wallet_transaction.total_transparent_value_spent {
+                    if let Some(transaction) = transactions.iter_mut().find(|transaction| transaction["txid"] == wallet_transaction.txid.to_string()) {
+                        let old_address = transaction.remove("address");
+                        transaction.insert("address", match old_address {
+                            JsonValue::String(addr) => [addr, address].join(","),
+                            _ => address
+                        }).unwrap();
+                    } else {
                     // Create an input transaction for the transparent value as well.
                     let block_height: u32 = wallet_transaction.block_height.into();
                     transactions.push(object! {
@@ -1013,11 +1022,11 @@ impl LightClient {
                         "unconfirmed" => wallet_transaction.unconfirmed,
                         "datetime"     => wallet_transaction.datetime,
                         "txid"         => format!("{}", wallet_transaction.txid),
-                        "amount"       => total_transparent_received as i64 - wallet_transaction.total_transparent_value_spent as i64,
+                        "amount"       => amount,
                         "zec_price"    => wallet_transaction.zec_price.map(|p| (p * 100.0).round() / 100.0),
-                        "address"      => wallet_transaction.utxos.iter().map(|u| u.address.clone()).collect::<Vec<String>>().join(","),
+                        "address"      => address,
                         "memo"         => None::<String>
-                    })
+                    })}
                 }
 
                 transactions
