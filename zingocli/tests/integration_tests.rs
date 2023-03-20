@@ -2,7 +2,6 @@
 #![cfg(feature = "local_env")]
 mod data;
 mod utils;
-use itertools::Itertools;
 use std::fs::File;
 
 use data::seeds::HOSPITAL_MUSEUM_SEED;
@@ -1181,7 +1180,7 @@ async fn self_send_to_t_displays_as_one_transaction() {
     let mut txids = transactions
         .members()
         .map(|transaction| transaction["txid"].as_str());
-    assert!(txids.all_unique());
+    assert!(itertools::Itertools::all_unique(&mut txids));
     drop(child_process_handler);
 }
 
