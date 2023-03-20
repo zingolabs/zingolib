@@ -545,24 +545,17 @@ async fn multiple_incoming_same_transaction(scenario: NBlockFCBLScenario) {
         panic!("unspent notes not found");
     }
 
-    if let JsonValue::Array(mut sorted_transactions) = transactions.clone() {
-        sorted_transactions.sort_by_cached_key(|t| t["amount"].as_u64().unwrap());
-
-        for i in 0..4 {
-            //assert_eq!(sorted_transactions[i]["txid"], transaction.txid().to_string());
-            assert_eq!(sorted_transactions[i]["block_height"].as_u64().unwrap(), 11);
-            assert_eq!(
-                sorted_transactions[i]["address"],
-                lightclient.do_addresses().await[0]["address"]
-            );
-            assert_eq!(
-                sorted_transactions[i]["amount"].as_u64().unwrap(),
-                value + i as u64
-            );
-        }
-    } else {
-        panic!("transactions is not array");
-    }
+    assert_eq!(transactions.len(), 1);
+    assert_eq!(transactions[0]["block_height"].as_u64().unwrap(), 11);
+    assert_eq!(
+        transactions[0]["address"],
+        lightclient.do_addresses().await[0]["address"]
+    );
+    assert_eq!(
+        transactions[0]["amount"].as_u64().unwrap(),
+        // 4 values + 0 + 1 + 2 + 3
+        value * 4 + 6
+    );
 
     // 3. Send a big transaction, so all the value is spent
     let sent_value = value * 3 + u64::from(DEFAULT_FEE);
@@ -591,24 +584,24 @@ async fn multiple_incoming_same_transaction(scenario: NBlockFCBLScenario) {
             17
         );
     }
-    assert_eq!(transactions[4]["txid"], sent_transaction_id);
-    assert_eq!(transactions[4]["block_height"], 17 as u32);
+    assert_eq!(transactions[1]["txid"], sent_transaction_id);
+    assert_eq!(transactions[1]["block_height"], 17 as u32);
     assert_eq!(
-        transactions[4]["amount"].as_i64().unwrap(),
+        transactions[1]["amount"].as_i64().unwrap(),
         -(sent_value as i64) - i64::from(DEFAULT_FEE)
     );
     assert_eq!(
-        transactions[4]["outgoing_metadata"][0]["address"],
+        transactions[1]["outgoing_metadata"][0]["address"],
         EXT_ZADDR.to_string()
     );
     assert_eq!(
-        transactions[4]["outgoing_metadata"][0]["value"]
+        transactions[1]["outgoing_metadata"][0]["value"]
             .as_u64()
             .unwrap(),
         sent_value
     );
     assert_eq!(
-        transactions[4]["outgoing_metadata"][0]["memo"].is_null(),
+        transactions[1]["outgoing_metadata"][0]["memo"].is_null(),
         true
     );
 }
