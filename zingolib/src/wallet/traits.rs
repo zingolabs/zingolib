@@ -38,9 +38,8 @@ use zcash_primitives::{
     memo::{Memo, MemoBytes},
     merkle_tree::{Hashable, IncrementalWitness},
     sapling::{
-        keys::DiversifiableFullViewingKey as SaplingFvk, note_encryption::SaplingDomain,
-        Diversifier as SaplingDiversifier, Node as SaplingNode, Note as SaplingNote,
-        Nullifier as SaplingNullifier, PaymentAddress as SaplingAddress,
+        note_encryption::SaplingDomain, Diversifier as SaplingDiversifier, Node as SaplingNode,
+        Note as SaplingNote, Nullifier as SaplingNullifier, PaymentAddress as SaplingAddress,
     },
     transaction::{
         components::{
@@ -52,7 +51,10 @@ use zcash_primitives::{
         },
         Transaction, TxId,
     },
-    zip32::ExtendedSpendingKey as SaplingExtendedSpendingKey,
+    zip32::{
+        DiversifiableFullViewingKey as SaplingFvk,
+        ExtendedSpendingKey as SaplingExtendedSpendingKey,
+    },
 };
 use zingoconfig::ChainType;
 
@@ -133,11 +135,11 @@ impl ShieldedOutputExt<SaplingDomain<ChainType>> for OutputDescription<GrothProo
     }
 
     fn out_ciphertext(&self) -> [u8; 80] {
-        self.out_ciphertext
+        *self.out_ciphertext()
     }
 
     fn value_commitment(&self) -> <SaplingDomain<ChainType> as Domain>::ValueCommitment {
-        self.cv
+        self.cv().clone()
     }
 }
 
@@ -180,7 +182,11 @@ where
 
 impl FromCommitment for SaplingNode {
     fn from_commitment(from: &[u8; 32]) -> CtOption<Self> {
-        CtOption::new(Self::new(*from), subtle::Choice::from(1))
+        let maybe_node = Self::read(from.as_slice());
+        match maybe_node {
+            Ok(node) => CtOption::new(node, subtle::Choice::from(1)),
+            Err(_) => CtOption::new(Self::empty_root(0), subtle::Choice::from(0)),
+        }
     }
 }
 impl FromCommitment for MerkleHashOrchard {
@@ -198,7 +204,7 @@ pub trait Spend {
 impl<Auth: SaplingAuthorization> Spend for SpendDescription<Auth> {
     type Nullifier = SaplingNullifier;
     fn nullifier(&self) -> &Self::Nullifier {
-        &self.nullifier
+        self.nullifier()
     }
 }
 
@@ -328,18 +334,18 @@ where
 impl Bundle<SaplingDomain<ChainType>> for SaplingBundle<SaplingAuthorized> {
     type Spend = SpendDescription<SaplingAuthorized>;
     type Output = OutputDescription<GrothProofBytes>;
-    type Spends<'a> = &'a Vec<Self::Spend>;
-    type Outputs<'a> = &'a Vec<Self::Output>;
+    type Spends<'a> = &'a [Self::Spend];
+    type Outputs<'a> = &'a [Self::Output];
     fn from_transaction(transaction: &Transaction) -> Option<&Self> {
         transaction.sapling_bundle()
     }
 
     fn output_elements(&self) -> Self::Outputs<'_> {
-        &self.shielded_outputs
+        self.shielded_outputs()
     }
 
     fn spend_elements(&self) -> Self::Spends<'_> {
-        &self.shielded_spends
+        self.shielded_spends()
     }
 }
 
@@ -550,7 +556,7 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
     }
 
     fn value_from_note(note: &Self::Note) -> u64 {
-        note.value
+        note.value().inner()
     }
 
     fn spent(&self) -> &Option<(TxId, u32)> {
@@ -1109,26 +1115,18 @@ impl ReadableWriteable<(SaplingFvk, SaplingDiversifier)> for SaplingNote {
         let value = reader.read_u64::<LittleEndian>()?;
         let rseed = super::data::read_sapling_rseed(&mut reader)?;
 
-        let maybe_note = fvk
+        Ok(fvk
             .fvk()
             .vk
             .to_payment_address(diversifier)
             .unwrap()
-            .create_note(value, rseed);
-
-        match maybe_note {
-            Some(n) => Ok(n),
-            None => Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Couldn't create the note for the address",
-            )),
-        }
+            .create_note(value, rseed))
     }
 
     fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         writer.write_u8(Self::VERSION)?;
-        writer.write_u64::<LittleEndian>(self.value)?;
-        super::data::write_sapling_rseed(&mut writer, &self.rseed)?;
+        writer.write_u64::<LittleEndian>(self.value().inner())?;
+        super::data::write_sapling_rseed(&mut writer, &self.rseed())?;
         Ok(())
     }
 }
@@ -1171,7 +1169,7 @@ impl ReadableWriteable<(OrchardFullViewingKey, OrchardDiversifier)> for OrchardN
         writer.write_u8(Self::VERSION)?;
         writer.write_u64::<LittleEndian>(self.value().inner())?;
         writer.write_all(&self.rho().to_bytes())?;
-        writer.write_all(self.random_seed().as_bytes())?;
+        writer.write_all(self.rseed().as_bytes())?;
         Ok(())
     }
 }

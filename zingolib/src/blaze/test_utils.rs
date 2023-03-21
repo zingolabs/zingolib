@@ -6,9 +6,9 @@ use rand::{rngs::OsRng, RngCore};
 use zcash_primitives::{
     block::BlockHash,
     merkle_tree::{CommitmentTree, Hashable, IncrementalWitness},
-    sapling::{self, keys::DiversifiableFullViewingKey as SaplingFvk, Note, Rseed},
+    sapling::{self, value::NoteValue, Note, Rseed},
     transaction::components::Amount,
-    zip32::{ExtendedFullViewingKey, ExtendedSpendingKey},
+    zip32::{DiversifiableFullViewingKey as SaplingFvk, ExtendedSpendingKey},
 };
 
 // This function can be used by TestServerData, or other test code
@@ -67,7 +67,7 @@ pub fn list_all_witness_nodes(cb: &CompactBlock) -> Vec<sapling::Node> {
     let mut nodes = vec![];
     for transaction in &cb.vtx {
         for co in &transaction.outputs {
-            nodes.push(sapling::Node::new(co.cmu().unwrap().into()))
+            nodes.push(sapling::Node::from_scalar(co.cmu().unwrap()))
         }
     }
 
@@ -105,8 +105,8 @@ impl FakeCompactBlock {
     // Returns the nullifier of the new note.
     pub fn add_random_sapling_transaction(&mut self, num_outputs: usize) {
         let xsk_m = ExtendedSpendingKey::master(&[1u8; 32]);
-        let extfvk = ExtendedFullViewingKey::from(&xsk_m);
-        let fvk = SaplingFvk::from(extfvk);
+        let dfvk = xsk_m.to_diversifiable_full_viewing_key();
+        let fvk = SaplingFvk::from(dfvk);
 
         let to = fvk.default_address().1;
         let value = Amount::from_u64(1).unwrap();
@@ -116,12 +116,11 @@ impl FakeCompactBlock {
 
         for _ in 0..num_outputs {
             // Create a fake Note for the account
-            let note = Note {
-                g_d: to.diversifier().g_d().unwrap(),
-                pk_d: to.pk_d().clone(),
-                value: value.into(),
-                rseed: Rseed::AfterZip212(random_u8_32()),
-            };
+            let note = Note::from_parts(
+                to,
+                NoteValue::from_raw(value.into()),
+                Rseed::AfterZip212(random_u8_32()),
+            );
 
             // Create a fake CompactBlock containing the note
             let mut cout = CompactSaplingOutput::default();

@@ -14,6 +14,7 @@ use orchard::tree::MerkleHashOrchard;
 use orchard::Anchor;
 use rand::rngs::OsRng;
 use rand::Rng;
+use std::convert::Infallible;
 use std::{
     cmp,
     collections::HashMap,
@@ -29,7 +30,9 @@ use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::merkle_tree::CommitmentTree;
 use zcash_primitives::sapling::note_encryption::SaplingDomain;
 use zcash_primitives::sapling::SaplingIvk;
+use zcash_primitives::transaction;
 use zcash_primitives::transaction::builder::Progress;
+use zcash_primitives::transaction::fees::fixed::FeeRule as FixedFeeRule;
 use zcash_primitives::{
     consensus::BlockHeight,
     legacy::Script,
@@ -1297,18 +1300,24 @@ impl LightWallet {
 
                 let coin = TxOut {
                     value: Amount::from_u64(utxo.value).unwrap(),
-                    script_pubkey: Script { 0: utxo.script.clone() },
+                    script_pubkey: Script {
+                        0: utxo.script.clone(),
+                    },
                 };
 
                 match address_to_sk.get(&utxo.address) {
-                    Some(sk) => builder.add_transparent_input(*sk, outpoint.clone(), coin.clone()),
+                    Some(sk) => builder
+                        .add_transparent_input(*sk, outpoint.clone(), coin.clone())
+                        .map_err(|e| {
+                            transaction::builder::Error::<Infallible>::TransparentBuild(e)
+                        }),
                     None => {
                         // Something is very wrong
                         let e = format!("Couldn't find the secreykey for taddr {}", utxo.address);
                         error!("{}", e);
 
-                        Err(zcash_primitives::transaction::builder::Error::TransparentBuild(
-                            zcash_primitives::transaction::components::transparent::builder::Error::InvalidAddress,
+                        Err(transaction::builder::Error::TransparentBuild(
+                            transaction::components::transparent::builder::Error::InvalidAddress,
                         ))
                     }
                 }
@@ -1333,7 +1342,7 @@ impl LightWallet {
         for selected in orchard_notes.iter() {
             println!("Adding orchard spend");
             let path = selected.witness.path().unwrap();
-            if let Err(e) = builder.add_orchard_spend(
+            if let Err(e) = builder.add_orchard_spend::<transaction::fees::fixed::FeeRule>(
                 selected.spend_key.clone().unwrap(),
                 selected.note.clone(),
                 orchard::tree::MerklePath::from((
@@ -1382,14 +1391,16 @@ impl LightWallet {
             if let Err(e) = match recipient_address {
                 address::RecipientAddress::Shielded(to) => {
                     total_z_recipients += 1;
-                    builder.add_sapling_output(Some(sapling_ovk), to.clone(), value, validated_memo)
+                    builder
+                        .add_sapling_output(Some(sapling_ovk), to.clone(), value, validated_memo)
+                        .map_err(transaction::builder::Error::<Infallible>::SaplingBuild)
                 }
-                address::RecipientAddress::Transparent(to) => {
-                    builder.add_transparent_output(&to, value)
-                }
+                address::RecipientAddress::Transparent(to) => builder
+                    .add_transparent_output(&to, value)
+                    .map_err(transaction::builder::Error::TransparentBuild),
                 address::RecipientAddress::Unified(ua) => {
                     if let Some(orchard_addr) = ua.orchard() {
-                        builder.add_orchard_output(
+                        builder.add_orchard_output::<FixedFeeRule>(
                             Some(orchard_ovk.clone()),
                             orchard_addr.clone(),
                             u64::from(value),
@@ -1397,12 +1408,14 @@ impl LightWallet {
                         )
                     } else if let Some(sapling_addr) = ua.sapling() {
                         total_z_recipients += 1;
-                        builder.add_sapling_output(
-                            Some(sapling_ovk),
-                            sapling_addr.clone(),
-                            value,
-                            validated_memo,
-                        )
+                        builder
+                            .add_sapling_output(
+                                Some(sapling_ovk),
+                                sapling_addr.clone(),
+                                value,
+                                validated_memo,
+                            )
+                            .map_err(transaction::builder::Error::SaplingBuild)
                     } else {
                         return Err("Received UA with no Orchard or Sapling receiver".to_string());
                     }
@@ -1426,7 +1439,7 @@ impl LightWallet {
         };
 
         dbg!(selected_value, target_amount);
-        if let Err(e) = builder.add_orchard_output(
+        if let Err(e) = builder.add_orchard_output::<FixedFeeRule>(
             Some(orchard_ovk.clone()),
             *self.wallet_capability().read().await.addresses()[0]
                 .orchard()
@@ -1472,15 +1485,16 @@ impl LightWallet {
         println!("{}: Building transaction", now() - start_time);
 
         builder.with_progress_notifier(transmitter);
-        let (transaction, _) = match builder.build(&prover) {
-            Ok(res) => res,
-            Err(e) => {
-                let e = format!("Error creating transaction: {:?}", e);
-                error!("{}", e);
-                self.send_progress.write().await.is_send_in_progress = false;
-                return Err(e);
-            }
-        };
+        let (transaction, _) =
+            match builder.build(&prover, &transaction::fees::fixed::FeeRule::standard()) {
+                Ok(res) => res,
+                Err(e) => {
+                    let e = format!("Error creating transaction: {:?}", e);
+                    error!("{}", e);
+                    self.send_progress.write().await.is_send_in_progress = false;
+                    return Err(e);
+                }
+            };
 
         // Wait for all the progress to be updated
         progress_handle.await.unwrap();

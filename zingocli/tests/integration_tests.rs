@@ -204,7 +204,7 @@ async fn test_scanning_in_watch_only_mode() {
         .clone();
     use orchard::keys::FullViewingKey as OrchardFvk;
     use zcash_address::unified::Fvk;
-    use zcash_primitives::sapling::keys::DiversifiableFullViewingKey as SaplingFvk;
+    use zcash_primitives::zip32::DiversifiableFullViewingKey as SaplingFvk;
     use zingolib::wallet::keys::extended_transparent::ExtendedPubKey;
     let o_fvk = Fvk::Orchard(OrchardFvk::try_from(&wc).unwrap().to_bytes());
     let s_fvk = Fvk::Sapling(SaplingFvk::try_from(&wc).unwrap().to_bytes());
