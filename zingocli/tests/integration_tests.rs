@@ -49,7 +49,12 @@ async fn test_scanning_in_watch_only_mode() {
     let original_recipient = client_builder
         .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
         .await;
-    let (zingo_config, _) = client_builder.make_new_zing_configdir().await;
+    let (zingo_config, _) = zingolib::load_clientconfig_async(
+        client_builder.server_id,
+        Some(client_builder.zingo_datadir),
+    )
+    .await
+    .unwrap();
 
     let (recipient_taddr, recipient_sapling, recipient_unified) = (
         get_base_address!(original_recipient, "transparent"),
@@ -346,6 +351,32 @@ async fn unspent_notes_are_not_saved() {
     drop(child_process_handler);
 }
 
+#[ignore]
+#[tokio::test]
+async fn load_v26_7d49fdce31() {
+    let (_regtest_manager, child_process_handler, client_manager) = scenarios::custom_config(
+        "zingocli/tests/data/wallets/v26/202302_release/regtest/zingo-wallet.dat",
+    );
+    let zingoconfig = client_manager
+        .create_clientconfig(client_manager.zingo_datadir.clone())
+        .await;
+    //let mut wallet_location = zingo_cli::regtest::get_git_rootdir();
+    //wallet_location.push();
+    //dbg!(wallet_location);
+    //assert_eq!(false, true);
+    drop(child_process_handler);
+    /*
+    let read_buffer = File::open(wallet_location.clone()).unwrap();
+
+    // Create wallet from faucet zingo-wallet.dat
+    let faucet_wallet = zingolib::wallet::LightWallet::read_internal(read_buffer, &zingo_config)
+        .await
+        .unwrap();
+
+    // Create client based on config and wallet of faucet
+    let faucet_copy = LightClient::create_with_wallet(faucet_wallet, zingo_config.clone());
+    */
+}
 #[tokio::test]
 async fn send_mined_sapling_to_orchard() {
     //! This test shows the 5th confirmation changing the state of balance by
