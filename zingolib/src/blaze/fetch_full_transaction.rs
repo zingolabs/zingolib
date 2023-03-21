@@ -62,6 +62,49 @@ impl TransactionContext {
         }
     }
 
+    async fn execute_bundlescans_internal(
+        &self,
+        transaction: &Transaction,
+        height: BlockHeight,
+        unconfirmed: bool,
+        block_time: u32,
+        is_outgoing_transaction: &mut bool,
+        outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
+        arbitrary_memos_with_txids: &mut Vec<([u8; 511], TxId)>,
+        taddrs_set: &HashSet<String>,
+    ) {
+        //todo: investigate scanning all bundles simultaneously
+        self.scan_transparent_bundle(
+            &transaction,
+            height,
+            unconfirmed,
+            block_time,
+            is_outgoing_transaction,
+            &taddrs_set,
+        )
+        .await;
+
+        self.scan_sapling_bundle(
+            &transaction,
+            height,
+            unconfirmed,
+            block_time,
+            is_outgoing_transaction,
+            outgoing_metadatas,
+            arbitrary_memos_with_txids,
+        )
+        .await;
+        self.scan_orchard_bundle(
+            &transaction,
+            height,
+            unconfirmed,
+            block_time,
+            is_outgoing_transaction,
+            outgoing_metadatas,
+            arbitrary_memos_with_txids,
+        )
+        .await;
+    }
     pub(crate) async fn scan_full_tx(
         &self,
         transaction: Transaction,
@@ -70,46 +113,12 @@ impl TransactionContext {
         block_time: u32,
         price: Option<f64>,
     ) {
+        // Set up data structures to record scan results
         let mut arbitrary_memos_with_txids = Vec::new();
         // Remember if this is an outgoing Tx. Useful for when we want to grab the outgoing metadata.
         let mut is_outgoing_transaction = false;
-
         // Collect our t-addresses for easy checking
         let taddrs_set = self.key.read().await.get_all_taddrs(&self.config);
-
-        //todo: investigate scanning all bundles simultaneously
-        self.scan_transparent_bundle(
-            &transaction,
-            height,
-            unconfirmed,
-            block_time,
-            &mut is_outgoing_transaction,
-            &taddrs_set,
-        )
-        .await;
-
-        let mut outgoing_metadatas = vec![];
-        self.scan_sapling_bundle(
-            &transaction,
-            height,
-            unconfirmed,
-            block_time,
-            &mut is_outgoing_transaction,
-            &mut outgoing_metadatas,
-            &mut arbitrary_memos_with_txids,
-        )
-        .await;
-        self.scan_orchard_bundle(
-            &transaction,
-            height,
-            unconfirmed,
-            block_time,
-            &mut is_outgoing_transaction,
-            &mut outgoing_metadatas,
-            &mut arbitrary_memos_with_txids,
-        )
-        .await;
-
         // Process t-address outputs
         // we need to grab all transparent outputs as the outgoing metadata
         if self
@@ -121,7 +130,20 @@ impl TransactionContext {
         {
             is_outgoing_transaction = true;
         }
-
+        let mut outgoing_metadatas = vec![];
+        // Execute scanning operations
+        self.execute_bundlescans_internal(
+            &transaction,
+            height,
+            unconfirmed,
+            block_time,
+            &mut is_outgoing_transaction,
+            &mut outgoing_metadatas,
+            &mut arbitrary_memos_with_txids,
+            &taddrs_set,
+        )
+        .await;
+        // Post process scan results
         if let Some(t_bundle) = transaction.transparent_bundle() {
             for vout in &t_bundle.vout {
                 if let Some(taddr) =
