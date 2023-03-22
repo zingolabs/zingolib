@@ -206,36 +206,6 @@ impl LightClient {
         Ok(l)
     }
 
-    //TODO: Add migrate_sapling_to_orchard argument
-    pub async fn test_do_send(
-        &self,
-        addrs: Vec<(&str, u64, Option<String>)>,
-    ) -> Result<String, String> {
-        let transaction_submission_height = self.get_submission_height().await;
-        // First, get the concensus branch ID
-        debug!("Creating transaction");
-
-        let result = {
-            let _lock = self.sync_lock.lock().await;
-            let prover = crate::blaze::test_utils::FakeTransactionProver {};
-
-            self.wallet
-                .send_to_address(
-                    prover,
-                    false,
-                    false,
-                    addrs,
-                    transaction_submission_height,
-                    |transaction_bytes| {
-                        GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
-                    },
-                )
-                .await
-        };
-
-        result.map(|(transaction_id, _)| transaction_id)
-    }
-
     pub async fn do_maybe_recent_txid(&self) -> JsonValue {
         object! {
             "last_txid" => self.wallet.transactions().read().await.get_some_txid_from_highest_wallet_block().map(|t| t.to_string())
@@ -759,7 +729,7 @@ impl LightClient {
                                 "created_in_block"   => created_block,
                                 "datetime"           => transaction_metadata.datetime,
                                 "created_in_txid"    => format!("{}", transaction_id.clone()),
-                                "value"              => note_metadata.note.value,
+                                "value"              => note_metadata.note.value().inner(),
                                 "unconfirmed"        => transaction_metadata.unconfirmed,
                                 "is_change"          => note_metadata.is_change,
                                 "address"            => address,
