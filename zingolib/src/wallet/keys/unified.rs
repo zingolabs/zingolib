@@ -558,6 +558,14 @@ impl TryFrom<&WalletCapability> for orchard::keys::IncomingViewingKey {
     }
 }
 
+impl TryFrom<&WalletCapability> for orchard::keys::PreparedIncomingViewingKey {
+    type Error = String;
+    fn try_from(wc: &WalletCapability) -> Result<Self, String> {
+        orchard::keys::IncomingViewingKey::try_from(wc)
+            .map(|k| orchard::keys::PreparedIncomingViewingKey::new(&k))
+    }
+}
+
 impl TryFrom<&WalletCapability> for zcash_primitives::sapling::SaplingIvk {
     type Error = String;
     fn try_from(wc: &WalletCapability) -> Result<Self, String> {

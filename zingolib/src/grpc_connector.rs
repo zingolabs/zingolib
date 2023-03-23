@@ -474,7 +474,8 @@ impl GrpcConnector {
 
 #[cfg(test)]
 fn add_test_cert_to_roots(roots: &mut RootCertStore) {
-    let fd = std::fs::File::open(crate::lightclient::test_server::TEST_PEMFILE_PATH).unwrap();
+    const TEST_PEMFILE_PATH: &'static str = "test-data/localhost.pem";
+    let fd = std::fs::File::open(TEST_PEMFILE_PATH).unwrap();
     let mut buf = std::io::BufReader::new(&fd);
     let certs = rustls_pemfile::certs(&mut buf).unwrap();
     roots.add_parsable_certificates(&certs);

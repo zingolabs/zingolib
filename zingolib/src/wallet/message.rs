@@ -1,6 +1,5 @@
 use byteorder::ReadBytesExt;
 use bytes::{Buf, Bytes, IntoBuf};
-use ff::Field;
 use group::GroupEncoding;
 use rand::{rngs::OsRng, CryptoRng, Rng, RngCore};
 use std::{
@@ -20,6 +19,7 @@ use zcash_primitives::{
         PaymentAddress, Rseed, SaplingIvk, ValueCommitment,
     },
 };
+use zingoconfig::ChainType;
 
 pub struct Message {
     pub to: PaymentAddress,
@@ -83,7 +83,10 @@ impl Message {
         );
 
         // EPK, which needs to be sent to the receiver.
-        let epk = ne.epk().to_bytes().into();
+        // A very awkward unpack-repack here, as EphemeralPublicKey doesn't implement Clone,
+        // So in order to get the EPK instead of a reference, we convert it to epk_bytes and back
+        let epk = SaplingDomain::<ChainType>::epk(&SaplingDomain::<ChainType>::epk_bytes(ne.epk()))
+            .unwrap();
 
         // enc_ciphertext is the encrypted note, out_ciphertext is the outgoing cipher text that the
         // sender can recover
@@ -97,7 +100,14 @@ impl Message {
             None
         };
 
-        Ok((ock, cv, cmu, *ne.epk(), enc_ciphertext, out_ciphertext))
+        Ok((
+            ock,
+            value_commitment,
+            cmu,
+            epk,
+            enc_ciphertext,
+            out_ciphertext,
+        ))
     }
 
     pub fn encrypt(&self) -> Result<Vec<u8>, String> {
@@ -226,15 +236,14 @@ impl Message {
 #[cfg(test)]
 pub mod tests {
     use ff::Field;
-    use group::GroupEncoding;
     use rand::{rngs::OsRng, Rng};
+    use zcash_note_encryption::{Domain, OUT_PLAINTEXT_SIZE};
     use zcash_primitives::{
         memo::Memo,
-        sapling::{
-            keys::DiversifiableFullViewingKey as SaplingFvk, PaymentAddress, Rseed, SaplingIvk,
-        },
-        zip32::{ExtendedFullViewingKey, ExtendedSpendingKey},
+        sapling::{note_encryption::SaplingDomain, PaymentAddress, Rseed, SaplingIvk},
+        zip32::{DiversifiableFullViewingKey as SaplingFvk, ExtendedSpendingKey},
     };
+    use zingoconfig::ChainType;
 
     use super::{Message, ENC_CIPHERTEXT_SIZE};
 
@@ -244,8 +253,8 @@ pub mod tests {
         rng.fill(&mut seed);
 
         let extsk = ExtendedSpendingKey::master(&seed);
-        let extfvk = ExtendedFullViewingKey::from(&extsk);
-        let fvk = SaplingFvk::from(extfvk);
+        let dfvk = extsk.to_diversifiable_full_viewing_key();
+        let fvk = SaplingFvk::from(dfvk);
         let (_, addr) = fvk.default_address();
 
         (extsk, fvk.fvk().vk.ivk(), addr)
@@ -323,14 +332,21 @@ pub mod tests {
         assert!(dec_success.is_err());
 
         // Create a new, random EPK
-        let note = to
-            .create_note(0, Rseed::BeforeZip212(jubjub::Fr::random(&mut rng)))
-            .unwrap();
-        let esk = note.generate_or_derive_esk(&mut rng);
-        let epk_bad: jubjub::ExtendedPoint = (note.g_d * esk).into();
+        let note = to.create_note(0, Rseed::BeforeZip212(jubjub::Fr::random(&mut rng)));
+        let mut random_bytes = [0; OUT_PLAINTEXT_SIZE];
+        random_bytes[32..OUT_PLAINTEXT_SIZE]
+            .copy_from_slice(&jubjub::Scalar::random(&mut rng).to_bytes());
+        let epk_bad =
+            SaplingDomain::<ChainType>::epk_bytes(&SaplingDomain::<ChainType>::ka_derive_public(
+                &note,
+                &SaplingDomain::<ChainType>::extract_esk(
+                    &zcash_note_encryption::OutPlaintextBytes(random_bytes),
+                )
+                .unwrap(),
+            ));
 
         let mut bad_enc = enc.clone();
-        bad_enc.splice(prefix_len..prefix_len + 33, epk_bad.to_bytes().to_vec());
+        bad_enc.splice(prefix_len..prefix_len + 33, epk_bad.0.to_vec());
         let dec_success = Message::decrypt(&bad_enc, &ivk);
         assert!(dec_success.is_err());
 

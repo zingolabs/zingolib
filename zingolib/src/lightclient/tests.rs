@@ -1,6 +1,5 @@
 use bip0039::Mnemonic;
-use ff::{Field, PrimeField};
-use group::GroupEncoding;
+use ff::Field;
 use json::JsonValue;
 use rand::rngs::OsRng;
 use tokio::runtime::Runtime;
@@ -10,12 +9,12 @@ use orchard::keys::SpendingKey as OrchardSpendingKey;
 
 use zcash_client_backend::encoding::encode_payment_address;
 use zcash_note_encryption::EphemeralKeyBytes;
-use zcash_primitives::consensus::{BlockHeight, BranchId, Parameters, TestNetwork};
+use zcash_primitives::consensus::{BlockHeight, BranchId, TestNetwork};
 use zcash_primitives::memo::Memo;
 use zcash_primitives::merkle_tree::IncrementalWitness;
 use zcash_primitives::sapling::keys::DiversifiableFullViewingKey as SaplingFvk;
 use zcash_primitives::sapling::note_encryption::sapling_note_encryption;
-use zcash_primitives::sapling::{Note, Rseed, ValueCommitment};
+use zcash_primitives::sapling::{Note, Rseed};
 use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
 use zcash_primitives::transaction::components::{OutputDescription, GROTH_PROOF_SIZE};
 use zcash_primitives::transaction::Transaction;
@@ -23,15 +22,10 @@ use zcash_primitives::zip32::{ExtendedFullViewingKey, ExtendedSpendingKey as Sap
 
 use crate::apply_scenario;
 use crate::blaze::block_witness_data::CommitmentTreesForBlock;
-use crate::blaze::test_utils::{FakeCompactBlockList, FakeTransaction};
 use crate::lightclient::testmocks;
 
 use crate::compact_formats::{CompactSaplingOutput, CompactTx};
 use crate::lightclient::checkpoints;
-use crate::lightclient::test_server::{
-    clean_shutdown, create_test_server, mine_numblocks_each_with_two_sap_txs, mine_pending_blocks,
-    NBlockFCBLScenario,
-};
 use crate::lightclient::LightClient;
 use crate::wallet::data::{ReceivedSaplingNoteAndMetadata, TransactionMetadata};
 use crate::wallet::keys::extended_transparent::ExtendedPrivKey;

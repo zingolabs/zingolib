@@ -6,11 +6,9 @@ use rand::{rngs::OsRng, RngCore};
 use zcash_primitives::{
     block::BlockHash,
     merkle_tree::{CommitmentTree, Hashable, IncrementalWitness},
-    sapling::{self, redjubjub::Signature, value::NoteValue, Note, Rseed},
-    transaction::components::{transparent, Amount},
-    zip32::{
-        DiversifiableFullViewingKey as SaplingFvk, ExtendedFullViewingKey, ExtendedSpendingKey,
-    },
+    sapling::{self, value::NoteValue, Note, Rseed},
+    transaction::components::Amount,
+    zip32::{DiversifiableFullViewingKey as SaplingFvk, ExtendedSpendingKey},
 };
 
 // This function can be used by TestServerData, or other test code
@@ -76,33 +74,7 @@ pub fn list_all_witness_nodes(cb: &CompactBlock) -> Vec<sapling::Node> {
     nodes
 }
 
-use zcash_primitives::transaction::components::sapling as sapling_transaction;
-
 use super::block_witness_data::update_trees_with_compact_transaction;
-fn sapling_bundle() -> Option<sapling_transaction::Bundle<sapling_transaction::Authorized>> {
-    let authorization = sapling_transaction::Authorized {
-        binding_sig: Signature::read(&vec![0u8; 64][..]).expect("Signature read error!"),
-    };
-    Some(sapling_transaction::Bundle {
-        shielded_spends: vec![],
-        shielded_outputs: vec![],
-        value_balance: Amount::zero(),
-        authorization,
-    })
-}
-fn optional_transparent_bundle(
-    include_tbundle: bool,
-) -> Option<transparent::Bundle<transparent::Authorized>> {
-    if include_tbundle {
-        return Some(transparent::Bundle {
-            vin: vec![],
-            vout: vec![],
-            authorization: transparent::Authorized,
-        });
-    } else {
-        return None;
-    }
-}
 
 pub struct FakeCompactBlock {
     pub block: CompactBlock,
@@ -133,8 +105,8 @@ impl FakeCompactBlock {
     // Returns the nullifier of the new note.
     pub fn add_random_sapling_transaction(&mut self, num_outputs: usize) {
         let xsk_m = ExtendedSpendingKey::master(&[1u8; 32]);
-        let extfvk = ExtendedFullViewingKey::from(&xsk_m);
-        let fvk = SaplingFvk::from(extfvk);
+        let dfvk = xsk_m.to_diversifiable_full_viewing_key();
+        let fvk = SaplingFvk::from(dfvk);
 
         let to = fvk.default_address().1;
         let value = Amount::from_u64(1).unwrap();
