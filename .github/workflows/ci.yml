@@ -70,7 +70,11 @@ jobs:
       timestamp:                ${{ needs.build_mobile.outputs.timestamp }}
     strategy:
       matrix:
-        arch:                   [x86, x86_64, arm64-v8a]
+        include:
+          - arch:               x86
+            api-level:          29
+          - arch:               x86_64
+            api-level:          30
     steps:
       - name:                   Setup Java
         uses:                   actions/setup-java@v3
@@ -93,6 +97,6 @@ jobs:
         uses:                   reactivecircus/android-emulator-runner@v2
         with:
           working-directory:    ./android
-          api-level:            27
+          api-level:            ${{ matrix.api-level }}
           arch:                 ${{ matrix.arch }}
           script:               ./gradlew connectedCheck -Pandroid.testInstrumentationRunnerArguments.class=org.ZingoLabs.Zingo.IntegrationTestSuite
