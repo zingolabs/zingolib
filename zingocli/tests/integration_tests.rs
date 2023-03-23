@@ -1231,18 +1231,17 @@ async fn sapling_to_sapling_scan_together() {
     let value = 100_000;
 
     // Send some sapling value to the recipient
-    let txid = faucet
-        .do_send(vec![(
-            &get_base_address!(recipient, "sapling"),
-            value,
-            None,
-        )])
-        .await
-        .unwrap();
+    let txid = utils::send_value_between_clients_and_sync(
+        &regtest_manager,
+        &faucet,
+        &recipient,
+        value,
+        "sapling",
+    )
+    .await;
 
     let spent_value = 250;
 
-    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1).await;
     // Construct transaction to wallet-external recipient-address.
     let exit_zaddr = get_base_address!(faucet, "sapling");
     let spent_txid = recipient
@@ -1268,6 +1267,114 @@ async fn sapling_to_sapling_scan_together() {
     assert_eq!(
         list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
         spent_value
+    );
+
+    drop(child_process_handler);
+}
+
+#[tokio::test]
+async fn mixed_transaction() {
+    let zvalue = 100_000;
+    let (regtest_manager, child_process_handler, faucet, recipient, _txid) =
+        scenarios::faucet_prefunded_orchard_recipient(zvalue).await;
+
+    // 3. Send an incoming t-address transaction
+    let tvalue = 200_000;
+    utils::send_value_between_clients_and_sync(
+        &regtest_manager,
+        &faucet,
+        &recipient,
+        tvalue,
+        "transparent",
+    )
+    .await;
+
+    let (faucet_sapling, faucet_transparent) = (
+        get_base_address!(faucet, "sapling"),
+        get_base_address!(faucet, "transparent"),
+    );
+    // 4. Send a transaction to both external t-addr and external z addr and mine it
+    let sent_zvalue = 80_000;
+    let sent_tvalue = 140_000;
+    let sent_zmemo = "Ext z".to_string();
+    let tos = vec![
+        (
+            faucet_sapling.as_str(),
+            sent_zvalue,
+            Some(sent_zmemo.clone()),
+        ),
+        (faucet_transparent.as_str(), sent_tvalue, None),
+    ];
+    recipient.do_send(tos).await.unwrap();
+
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1).await;
+
+    let notes = recipient.do_list_notes(true).await;
+    let list = recipient.do_list_transactions(false).await;
+
+    // 5. Check everything
+    assert_eq!(notes["unspent_orchard_notes"].len(), 1);
+    assert_eq!(
+        notes["unspent_orchard_notes"][0]["created_in_block"]
+            .as_u64()
+            .unwrap(),
+        5
+    );
+    assert_eq!(
+        notes["unspent_orchard_notes"][0]["is_change"]
+            .as_bool()
+            .unwrap(),
+        true
+    );
+    assert_eq!(
+        notes["unspent_orchard_notes"][0]["value"].as_u64().unwrap(),
+        tvalue + zvalue - sent_tvalue - sent_zvalue - u64::from(DEFAULT_FEE)
+    );
+
+    assert_eq!(notes["spent_orchard_notes"].len(), 1);
+    assert_eq!(
+        notes["spent_orchard_notes"][0]["spent"],
+        notes["unspent_orchard_notes"][0]["created_in_txid"]
+    );
+
+    assert_eq!(notes["pending_sapling_notes"].len(), 0);
+    assert_eq!(notes["pending_orchard_notes"].len(), 0);
+    assert_eq!(notes["utxos"].len(), 0);
+    assert_eq!(notes["pending_utxos"].len(), 0);
+
+    assert_eq!(notes["spent_utxos"].len(), 1);
+    assert_eq!(
+        notes["spent_utxos"][0]["spent"],
+        notes["unspent_orchard_notes"][0]["created_in_txid"]
+    );
+
+    assert_eq!(list.len(), 3);
+    assert_eq!(list[2]["block_height"].as_u64().unwrap(), 5);
+    assert_eq!(
+        list[2]["amount"].as_i64().unwrap(),
+        0 - (sent_tvalue + sent_zvalue + u64::from(DEFAULT_FEE)) as i64
+    );
+    assert_eq!(
+        list[2]["txid"],
+        notes["unspent_orchard_notes"][0]["created_in_txid"]
+    );
+    assert_eq!(
+        list[2]["outgoing_metadata"]
+            .members()
+            .find(|j| j["address"].to_string() == faucet_sapling
+                && j["value"].as_u64().unwrap() == sent_zvalue)
+            .unwrap()["memo"]
+            .to_string(),
+        sent_zmemo
+    );
+    assert_eq!(
+        list[2]["outgoing_metadata"]
+            .members()
+            .find(|j| j["address"].to_string() == faucet_transparent)
+            .unwrap()["value"]
+            .as_u64()
+            .unwrap(),
+        sent_tvalue
     );
 
     drop(child_process_handler);

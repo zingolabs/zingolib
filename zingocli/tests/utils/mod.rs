@@ -32,6 +32,27 @@ pub async fn increase_server_height(manager: &RegtestManager, n: u32) {
         count = dbg!(count + 1);
     }
 }
+
+pub async fn send_value_between_clients_and_sync(
+    manager: &RegtestManager,
+    sender: &LightClient,
+    recipient: &LightClient,
+    value: u64,
+    pool: &str,
+) -> String {
+    let txid = sender
+        .do_send(vec![(
+            &zingolib::get_base_address!(recipient, pool),
+            value,
+            None,
+        )])
+        .await
+        .unwrap();
+    increase_height_and_sync_client(manager, sender, 1).await;
+    recipient.do_sync(false).await.unwrap();
+    txid
+}
+
 // This function increases the chain height reliably (with polling) but
 // it _also_ ensures that the client state is synced.
 // Unsynced clients are very interesting to us.  See increate_server_height
@@ -69,9 +90,11 @@ pub mod scenarios {
     use crate::data::{self, seeds::HOSPITAL_MUSEUM_SEED, REGSAP_ADDR_FROM_ABANDONART};
 
     use zingo_cli::regtest::{ChildProcessHandler, RegtestManager};
-    use zingolib::lightclient::LightClient;
+    use zingolib::{get_base_address, lightclient::LightClient};
 
     use self::setup::ClientManager;
+
+    use super::increase_height_and_sync_client;
     pub mod setup {
         use super::{data, ChildProcessHandler, RegtestManager};
         use std::path::PathBuf;
@@ -326,6 +349,36 @@ pub mod scenarios {
             sb.regtest_manager,
             sb.child_process_handler.unwrap(),
             faucet,
+        )
+    }
+
+    pub async fn faucet_prefunded_orchard_recipient<T: Into<u64>>(
+        value: T,
+    ) -> (
+        RegtestManager,
+        ChildProcessHandler,
+        LightClient,
+        LightClient,
+        String,
+    ) {
+        let (regtest_manager, child_process_handler, faucet, recipient) = faucet_recipient().await;
+        increase_height_and_sync_client(&regtest_manager, &faucet, 1).await;
+        let txid = faucet
+            .do_send(vec![(
+                &get_base_address!(recipient, "unified"),
+                value.into(),
+                None,
+            )])
+            .await
+            .unwrap();
+        increase_height_and_sync_client(&regtest_manager, &recipient, 1).await;
+        faucet.do_sync(false).await.unwrap();
+        (
+            regtest_manager,
+            child_process_handler,
+            faucet,
+            recipient,
+            txid,
         )
     }
 

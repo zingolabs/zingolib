@@ -20,7 +20,7 @@ macro_rules! apply_scenario {
 // <https://zips.z.cash/zip-0316>
 #[macro_export]
 macro_rules! get_base_address {
-    ($client:ident, $address_protocol:literal) => {
+    ($client:ident, $address_protocol:expr) => {
         match $address_protocol {
             "unified" => $client.do_addresses().await[0]["address"]
                 .take()
