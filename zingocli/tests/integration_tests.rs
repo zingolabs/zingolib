@@ -1201,3 +1201,74 @@ async fn cross_compat() {
     );
     drop(child_process_handler);
 }
+
+#[tokio::test]
+async fn sapling_to_sapling_scan_together() {
+    // Create an incoming transaction, and then send that transaction, and scan everything together, to make sure it works.
+    // (For this test, the Sapling Domain is assumed in all cases.)
+    // Sender Setup:
+    // 1. create a spend key: SpendK_S
+    // 2. derive a Shielded Payment Address from SpendK_S: SPA_KS
+    // 3. construct a Block Reward Transaction where SPA_KS receives a block reward: BRT
+    // 4. publish BRT
+    // 5. optionally mine a block including BRT <-- There are two separate tests to run
+    // 6. optionally mine sufficient subsequent blocks to "validate" BRT
+    // Recipient Setup:
+    // 1. create a spend key: "SpendK_R"
+    // 2. from SpendK_R derive a Shielded Payment Address: SPA_R
+    // Test Procedure:
+    // 1. construct a transaction "spending" from a SpendK_S output to SPA_R
+    // 2. publish the transaction to the mempool
+    // 3. mine a block
+    // Constraints:
+    // 1. SpendK_S controls start - spend funds
+    // 2. SpendK_R controls 0 + spend funds
+    let (regtest_manager, child_process_handler, faucet, recipient) =
+        scenarios::faucet_recipient().await;
+
+    // Give the faucet a block reward
+    utils::increase_height_and_sync_client(&regtest_manager, &faucet, 1).await;
+    let value = 100_000;
+
+    // Send some sapling value to the recipient
+    let txid = faucet
+        .do_send(vec![(
+            &get_base_address!(recipient, "sapling"),
+            value,
+            None,
+        )])
+        .await
+        .unwrap();
+
+    let spent_value = 250;
+
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1).await;
+    // Construct transaction to wallet-external recipient-address.
+    let exit_zaddr = get_base_address!(faucet, "sapling");
+    let spent_txid = recipient
+        .do_send(vec![(&exit_zaddr, spent_value, None)])
+        .await
+        .unwrap();
+
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1).await;
+    // 5. Check the transaction list to make sure we got all transactions
+    let list = recipient.do_list_transactions(false).await;
+
+    assert_eq!(list[0]["block_height"].as_u64().unwrap(), 3);
+    assert_eq!(list[0]["txid"], txid.to_string());
+    assert_eq!(list[0]["amount"].as_i64().unwrap(), (value as i64));
+
+    assert_eq!(list[1]["block_height"].as_u64().unwrap(), 4);
+    assert_eq!(list[1]["txid"], spent_txid.to_string());
+    assert_eq!(
+        list[1]["amount"].as_i64().unwrap(),
+        -((spent_value + u64::from(DEFAULT_FEE)) as i64)
+    );
+    assert_eq!(list[1]["outgoing_metadata"][0]["address"], exit_zaddr);
+    assert_eq!(
+        list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
+        spent_value
+    );
+
+    drop(child_process_handler);
+}
