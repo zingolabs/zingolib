@@ -357,7 +357,7 @@ async fn load_v26_7d49fdce31() {
     let (_regtest_manager, child_process_handler, client_manager) = scenarios::custom_config(
         "zingocli/tests/data/wallets/v26/202302_release/regtest/zingo-wallet.dat",
     );
-    let zingoconfig = client_manager
+    let _zingoconfig = client_manager
         .create_clientconfig(client_manager.zingo_datadir.clone())
         .await;
     //let mut wallet_location = zingo_cli::regtest::get_git_rootdir();
