@@ -10,6 +10,10 @@ members = [
 debug = false
 
 [patch.crates-io]
-zcash_note_encryption = { git = "https://github.com/zingolabs/librustzcash", rev = "d66f7f70516e6da5c24008874a926d41221b1346" }
-zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", rev = "d66f7f70516e6da5c24008874a926d41221b1346" }
-orchard = { git = "https://github.com/zingolabs/orchard", rev = "49874b31da4fedcb31fcfadf5ba8804bf860c4bf" }
+zcash_note_encryption = { git = "https://github.com/zingolabs/librustzcash", rev = "42928cb3f40c67c855d4db6769ce258030921ce6" }
+zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", rev = "42928cb3f40c67c855d4db6769ce258030921ce6" }
+orchard = { git = "https://github.com/zcash/orchard.git", rev = "dca33119b4d082048a098e9fdc0c87c508ed056e" }
+# Copied from librustzcash, these are only needed until the latest release of Halo lands
+halo2_gadgets = { git = "https://github.com/zcash/halo2.git", rev = "642924d614305d882cc122739c59144109f4bd3f" }
+halo2_proofs = { git = "https://github.com/zcash/halo2.git", rev = "642924d614305d882cc122739c59144109f4bd3f" }
+
