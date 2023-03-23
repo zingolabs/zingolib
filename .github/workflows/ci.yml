@@ -9,94 +9,93 @@ on:
 
 jobs:
   test:
-    name:                       Test
-    runs-on:                    ubuntu-22.04
+    name: Test
+    runs-on: ubuntu-22.04
     env:
-      RUSTFLAGS:                -D warnings
+      RUSTFLAGS: -D warnings
     container:
-      image:                    zingodevops/ci-build:stable
-      options:                  --security-opt seccomp=unconfined
+      image: zingodevops/ci-build:stable
+      options: --security-opt seccomp=unconfined
     steps:
-      - name:                   Checkout repository
-        uses:                   actions/checkout@v3
-      - name:                   Symlink lightwalletd and zcash binaries
-        run:                    ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./regtest/bin/
-      - name:                   Symlink zcash parameters and rustup files
-        run:                    ln -s /root/.zcash-params /root/.rustup /github/home
-      - name:                   Check formatting of code
-        run:                    cargo fmt --check
-      - name:                   Generate code coverage
-        run:
-          cargo tarpaulin --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 300 --out xml
-      - name:                   Upload to codecov.io
-        uses:                   codecov/codecov-action@v3
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Symlink lightwalletd and zcash binaries
+        run: ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./regtest/bin/
+      - name: Symlink zcash parameters and rustup files
+        run: ln -s /root/.zcash-params /root/.rustup /github/home
+      - name: Check formatting of code
+        run: cargo fmt --check
+      - name: Generate code coverage
+        run: cargo tarpaulin --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 300 --out xml
+      - name: Upload to codecov.io
+        uses: codecov/codecov-action@v3
         with:
-          token:                ${{ secrets.CODECOV_TOKEN }}
-          files:                ./cobertura.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./cobertura.xml
           # fail_ci_if_error:     true
         
   build_mobile:
-    name:                       Build Zingo Mobile
-    runs-on:                    ubuntu-22.04
+    name: Build Zingo Mobile
+    runs-on: ubuntu-22.04
     outputs:
-      timestamp:                ${{ steps.create-timestamp.outputs.timestamp }}
+      timestamp: ${{ steps.create-timestamp.outputs.timestamp }}
     steps:
-      - name:                   Create timestamp
-        id:                     create-timestamp
-        run:                    echo "timestamp=$(date +%Y%m%d%H%M)" >> $GITHUB_OUTPUT
-      - name:                   Store zingolib github ref
-        run:                    echo "zingolib_ref=$(echo ${GITHUB_REF} | sed 's/\//\\\//g')" >> $GITHUB_ENV
-      - name:                   Checkout zingo-mobile
-        uses:                   actions/checkout@v3
+      - name: Create timestamp
+        id: create-timestamp
+        run: echo "timestamp=$(date +%Y%m%d%H%M)" >> $GITHUB_OUTPUT
+      - name: Store zingolib github ref
+        run: echo "zingolib_ref=$(echo ${GITHUB_REF} | sed 's/\//\\\//g')" >> $GITHUB_ENV
+      - name: Checkout zingo-mobile
+        uses: actions/checkout@v3
         with:
-          repository:           zingolabs/zingo-mobile
-      - name:                   Update zingo-mobile dependencies
-        run:                    sed -i "/^zingolib\|^zingoconfig/ s/branch = \"dev\"/rev = \"${{ env.zingolib_ref }}\"/" "rust/lib/Cargo.toml"
-      - name:                   Check update was successful
-        run:                    if cat rust/lib/Cargo.toml | grep "^zingolib\|^zingoconfig" | grep -q "branch"; then exit 1; fi
-      - name:                   Build NDK
-        run:                    cd rust/ && ./build.sh
-      - name:                   Upload native rust
-        uses:                   actions/upload-artifact@v3
+          repository: zingolabs/zingo-mobile
+      - name: Update zingo-mobile dependencies
+        run: sed -i "/^zingolib\|^zingoconfig/ s/branch = \"dev\"/rev = \"${{ env.zingolib_ref }}\"/" "rust/lib/Cargo.toml"
+      - name: Check update was successful
+        run: if cat rust/lib/Cargo.toml | grep "^zingolib\|^zingoconfig" | grep -q "branch"; then exit 1; fi
+      - name: Build NDK
+        run: cd rust/ && ./build.sh
+      - name: Upload native rust
+        uses: actions/upload-artifact@v3
         with:
-          name:                 zingolib-jniLibs-${{ steps.create-timestamp.outputs.timestamp }}
-          path:                 android/app/src/main/jniLibs/
+          name: zingolib-jniLibs-${{ steps.create-timestamp.outputs.timestamp }}
+          path: android/app/src/main/jniLibs/
         
   test_mobile:
-    name:                       Test Zingo Mobile
-    runs-on:                    macos-12
-    needs:                      build_mobile
+    name: Test Zingo Mobile
+    runs-on: macos-12
+    needs: build_mobile
     env:
-      timestamp:                ${{ needs.build_mobile.outputs.timestamp }}
+      timestamp: ${{ needs.build_mobile.outputs.timestamp }}
     strategy:
       matrix:
         include:
-          - arch:               x86
-            api-level:          29
-          - arch:               x86_64
-            api-level:          30
+          - arch: x86
+            api-level: 29
+          - arch: x86_64
+            api-level: 30
     steps:
-      - name:                   Setup Java
-        uses:                   actions/setup-java@v3
+      - name: Setup Java
+        uses: actions/setup-java@v3
         with:
-          distribution:         'temurin'
-          java-version:         '11'
-      - name:                   Checkout repository
-        uses:                   actions/checkout@v3
+          distribution: 'temurin'
+          java-version: '11'
+      - name: Checkout repository
+        uses: actions/checkout@v3
         with:
-          repository:           zingolabs/zingo-mobile
-      - name:                   Create native rust directory
-        run:                    mkdir android/app/src/main/jniLibs
-      - name:                   Download native rust
-        uses:                   actions/download-artifact@v3
+          repository: zingolabs/zingo-mobile
+      - name: Create native rust directory
+        run: mkdir android/app/src/main/jniLibs
+      - name: Download native rust
+        uses: actions/download-artifact@v3
         with:                
-          name:                 zingolib-jniLibs-${{ env.timestamp }}
-          path:                 android/app/src/main/jniLibs/
-      - run:                    yarn install
-      - name:                   Run integration tests
-        uses:                   reactivecircus/android-emulator-runner@v2
+          name: zingolib-jniLibs-${{ env.timestamp }}
+          path: android/app/src/main/jniLibs/
+      - run: yarn install
+      - name: Run integration tests
+        uses: reactivecircus/android-emulator-runner@v2
         with:
-          working-directory:    ./android
-          api-level:            ${{ matrix.api-level }}
-          arch:                 ${{ matrix.arch }}
-          script:               ./gradlew connectedCheck -Pandroid.testInstrumentationRunnerArguments.class=org.ZingoLabs.Zingo.IntegrationTestSuite
+          working-directory: ./android
+          api-level: ${{ matrix.api-level }}
+          arch: ${{ matrix.arch }}
+          script: ./gradlew connectedCheck -Pandroid.testInstrumentationRunnerArguments.class=org.ZingoLabs.Zingo.IntegrationTestSuite
