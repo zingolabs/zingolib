@@ -1467,4 +1467,56 @@ async fn load_wallet_from_v26_dat_file() {
     }
 }
 
+#[tokio::test]
+async fn mempool_and_balance() {
+    let value = 100_000;
+
+    let (regtest_manager, child_process_handler, faucet, recipient, _txid) =
+        scenarios::faucet_prefunded_orchard_recipient(value).await;
+
+    let bal = recipient.do_balance().await;
+    println!("{}", json::stringify_pretty(bal.clone(), 4));
+    assert_eq!(bal["orchard_balance"].as_u64().unwrap(), value);
+    assert_eq!(bal["unverified_orchard_balance"].as_u64().unwrap(), 0);
+    assert_eq!(bal["verified_orchard_balance"].as_u64().unwrap(), value);
+
+    // 3. Mine 10 blocks
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 10).await;
+    let bal = recipient.do_balance().await;
+    assert_eq!(bal["orchard_balance"].as_u64().unwrap(), value);
+    assert_eq!(bal["verified_orchard_balance"].as_u64().unwrap(), value);
+    assert_eq!(bal["unverified_orchard_balance"].as_u64().unwrap(), 0);
+
+    // 4. Spend the funds
+    let sent_value = 2000;
+    let outgoing_memo = "Outgoing Memo".to_string();
+
+    let _sent_transaction_id = recipient
+        .do_send(vec![(
+            &get_base_address!(faucet, "unified"),
+            sent_value,
+            Some(outgoing_memo.clone()),
+        )])
+        .await
+        .unwrap();
+
+    let bal = recipient.do_balance().await;
+
+    // Even though the transaction is not mined (in the mempool) the balances should be updated to reflect the spent funds
+    let new_bal = value - (sent_value + u64::from(DEFAULT_FEE));
+    assert_eq!(bal["orchard_balance"].as_u64().unwrap(), new_bal);
+    assert_eq!(bal["verified_orchard_balance"].as_u64().unwrap(), 0);
+    assert_eq!(bal["unverified_orchard_balance"].as_u64().unwrap(), new_bal);
+
+    // 5. Mine the pending block, making the funds verified and spendable.
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 10).await;
+
+    let bal = recipient.do_balance().await;
+
+    assert_eq!(bal["orchard_balance"].as_u64().unwrap(), new_bal);
+    assert_eq!(bal["verified_orchard_balance"].as_u64().unwrap(), new_bal);
+    assert_eq!(bal["unverified_orchard_balance"].as_u64().unwrap(), 0);
+
+    drop(child_process_handler);
+}
 pub const TEST_SEED: &str = "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise";
