@@ -9,6 +9,11 @@ members = [
 [profile.release]
 debug = false
 
+[workspace.dependencies]
+# Version 0.11.0 removes an Eq impl we need for tests
+# We can update once we can use https://github.com/koushiro/rust-bips/pull/66
+bip0039 = "=0.10.1"
+
 [patch.crates-io]
 zcash_note_encryption = { git = "https://github.com/zingolabs/librustzcash", rev = "42928cb3f40c67c855d4db6769ce258030921ce6" }
 zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", rev = "42928cb3f40c67c855d4db6769ce258030921ce6" }

@@ -42,7 +42,7 @@ ripemd160 = "0.9.1"
 sha2 = "0.9.5"
 base58 = "0.1.0"
 bech32 = "0.9.0"
-bip0039 = "0.10.1"
+bip0039 = { workspace = true }
 sodiumoxide = "0.2.5"
 byteorder = "1"
 pairing = "0.22"

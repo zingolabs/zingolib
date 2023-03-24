@@ -16,6 +16,9 @@ use zingoconfig::ZingoConfig;
 pub mod extended_transparent;
 #[cfg(not(feature = "integration_test"))]
 pub(crate) mod extended_transparent;
+#[cfg(feature = "integration_test")]
+pub mod unified;
+#[cfg(not(feature = "integration_test"))]
 pub(crate) mod unified;
 
 /// Sha256(Sha256(value))

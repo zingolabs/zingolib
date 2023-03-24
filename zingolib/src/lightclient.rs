@@ -189,7 +189,7 @@ async fn get_recent_median_price_from_gemini() -> Result<f64, PriceFetchError> {
     Ok(trades[5])
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "integration_test"))]
 impl LightClient {
     /// Method to create a test-only version of the LightClient
     pub async fn test_new(

@@ -189,7 +189,7 @@ pub mod scenarios {
                     client_number,
                 }
             }
-            async fn make_unique_data_dir_and_load_config(
+            pub async fn make_unique_data_dir_and_load_config(
                 &mut self,
             ) -> (zingoconfig::ZingoConfig, u64) {
                 //! Each client requires a unique data_dir, we use the
