@@ -1735,3 +1735,68 @@ impl LightClient {
 
 #[cfg(test)]
 pub(crate) mod testmocks;
+
+#[cfg(test)]
+mod tests {
+    use tokio::runtime::Runtime;
+    use zingoconfig::{ChainType, ZingoConfig};
+
+    use crate::{lightclient::LightClient, wallet::WalletBase};
+
+    #[test]
+    fn new_wallet_from_phrase() {
+        let temp_dir = tempfile::Builder::new().prefix("test").tempdir().unwrap();
+        let data_dir = temp_dir
+            .into_path()
+            .canonicalize()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
+
+        let wallet_name = format!("{}/{}", &data_dir, "zingo-wallet.dat");
+        let config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, Some(data_dir));
+        let lc = LightClient::new_from_wallet_base(
+            WalletBase::MnemonicPhrase(TEST_SEED.to_string()),
+            &config,
+            0,
+            false,
+        )
+        .unwrap();
+        assert_eq!(
+        format!(
+            "{:?}",
+            LightClient::new_from_wallet_base(
+                WalletBase::MnemonicPhrase(TEST_SEED.to_string()),
+                &config,
+                0,
+                false
+            )
+            .err()
+            .unwrap()
+        ),
+        format!(
+            "{:?}",
+            std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                format!("Cannot create a new wallet from seed, because a wallet already exists at:\n{:?}", wallet_name),
+            )
+        )
+    );
+
+        // The first t address and z address should be derived
+        Runtime::new().unwrap().block_on(async move {
+            let addresses = lc.do_addresses().await;
+            assert_eq!(
+                "zs1q6xk3q783t5k92kjqt2rkuuww8pdw2euzy5rk6jytw97enx8fhpazdv3th4xe7vsk6e9sfpawfg"
+                    .to_string(),
+                addresses[0]["receivers"]["sapling"]
+            );
+            assert_eq!(
+                "t1eQ63fwkQ4n4Eo5uCrPGaAV8FWB2tmx7ui",
+                addresses[0]["receivers"]["transparent"]
+            );
+        });
+    }
+    pub const TEST_SEED: &str = "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise";
+}
