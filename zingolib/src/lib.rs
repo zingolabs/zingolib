@@ -21,7 +21,7 @@ use std::{
 use tokio::runtime::Runtime;
 use zingoconfig::{ChainType, ZingoConfig};
 
-pub async fn create_zingoconfdir_async(
+pub async fn load_clientconfig_async(
     server: http::Uri,
     data_dir: Option<String>,
 ) -> Result<(ZingoConfig, u64)> {
@@ -61,7 +61,7 @@ pub async fn create_zingoconfdir_async(
     Ok((config, info.block_height))
 }
 
-pub fn create_zingoconf_from_datadir(
+pub fn load_clientconfig(
     server: http::Uri,
     data_dir: Option<String>,
 ) -> Result<(ZingoConfig, u64)> {
@@ -71,6 +71,6 @@ pub fn create_zingoconf_from_datadir(
     Runtime::new().unwrap().block_on(async move {
         // Test for a connection first
         // Do a getinfo first, before opening the wallet
-        create_zingoconfdir_async(server, data_dir).await
+        load_clientconfig_async(server, data_dir).await
     })
 }

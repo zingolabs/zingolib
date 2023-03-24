@@ -83,7 +83,7 @@ pub mod scenarios {
             pub child_process_handler: Option<ChildProcessHandler>,
         }
         impl ScenarioBuilder {
-            fn new() -> Self {
+            fn new(custom_client_config: Option<String>) -> Self {
                 //! TestEnvironmentGenerator sets particular parameters, specific filenames,
                 //! port numbers, etc.  in general no test_config should be used for
                 //! more than one test, and usually is only invoked via this
@@ -96,11 +96,17 @@ pub mod scenarios {
                 let server_id = zingoconfig::construct_server_uri(Some(format!(
                     "http://127.0.0.1:{lightwalletd_port}"
                 )));
-                let client_builder = ClientManager::new(
-                    server_id,
-                    regtest_manager.zingo_datadir.clone(),
-                    data::seeds::ABANDON_ART_SEED,
-                );
+                let data_dir = if let Some(data_dir) = custom_client_config {
+                    data_dir
+                } else {
+                    regtest_manager
+                        .zingo_datadir
+                        .clone()
+                        .to_string_lossy()
+                        .to_string()
+                };
+                let client_builder =
+                    ClientManager::new(server_id, data_dir, data::seeds::ABANDON_ART_SEED);
                 let child_process_handler = None;
                 Self {
                     test_env,
@@ -124,8 +130,12 @@ pub mod scenarios {
                         }),
                 );
             }
-            pub fn launcher(funded: Option<String>) -> Self {
-                let mut sb = ScenarioBuilder::new();
+            pub fn launcher(funded: Option<String>, custom_conf: Option<String>) -> Self {
+                let mut sb = if let Some(conf) = custom_conf {
+                    ScenarioBuilder::new(Some(conf))
+                } else {
+                    ScenarioBuilder::new(None)
+                };
                 if let Some(funding_seed) = funded {
                     sb.test_env.create_funded_zcash_conf(&funding_seed);
                 } else {
@@ -141,12 +151,12 @@ pub mod scenarios {
         /// take a seed, and generate a client from the seed (planted in the chain).
         pub struct ClientManager {
             pub server_id: http::Uri,
-            zingo_datadir: PathBuf,
+            pub zingo_datadir: String,
             seed: String,
             client_number: u8,
         }
         impl ClientManager {
-            pub fn new(server_id: http::Uri, zingo_datadir: PathBuf, seed: &str) -> Self {
+            pub fn new(server_id: http::Uri, zingo_datadir: String, seed: &str) -> Self {
                 let seed = seed.to_string();
                 let client_number = 0;
                 ClientManager {
@@ -156,17 +166,21 @@ pub mod scenarios {
                     client_number,
                 }
             }
-            pub async fn make_new_zing_configdir(&mut self) -> (zingoconfig::ZingoConfig, u64) {
+            async fn make_unique_data_dir_and_load_config(
+                &mut self,
+            ) -> (zingoconfig::ZingoConfig, u64) {
                 //! Each client requires a unique data_dir, we use the
                 //! client_number counter for this.
                 self.client_number += 1;
-                let conf_path = format!(
-                    "{}_client_{}",
-                    self.zingo_datadir.to_string_lossy().to_string(),
-                    self.client_number
-                );
+                let conf_path = format!("{}_client_{}", self.zingo_datadir, self.client_number);
+                self.create_clientconfig(conf_path).await
+            }
+            pub async fn create_clientconfig(
+                &self,
+                conf_path: String,
+            ) -> (zingoconfig::ZingoConfig, u64) {
                 std::fs::create_dir(&conf_path).unwrap();
-                zingolib::create_zingoconfdir_async(self.server_id.clone(), Some(conf_path))
+                zingolib::load_clientconfig_async(self.server_id.clone(), Some(conf_path))
                     .await
                     .unwrap()
             }
@@ -177,7 +191,7 @@ pub mod scenarios {
                 overwrite: bool,
             ) -> LightClient {
                 //! A "faucet" is a lightclient that receives mining rewards
-                let (zingo_config, _) = self.make_new_zing_configdir().await;
+                let (zingo_config, _) = self.make_unique_data_dir_and_load_config().await;
                 LightClient::new_from_wallet_base_async(
                     WalletBase::MnemonicPhrase(self.seed.clone()),
                     &zingo_config,
@@ -193,7 +207,7 @@ pub mod scenarios {
                 birthday: u64,
                 overwrite: bool,
             ) -> LightClient {
-                let (zingo_config, _) = self.make_new_zing_configdir().await;
+                let (zingo_config, _) = self.make_unique_data_dir_and_load_config().await;
                 LightClient::new_from_wallet_base_async(
                     WalletBase::MnemonicPhrase(mnemonic_phrase),
                     &zingo_config,
@@ -274,7 +288,19 @@ pub mod scenarios {
         }
     }
     pub fn custom_clients() -> (RegtestManager, ChildProcessHandler, ClientManager) {
-        let sb = setup::ScenarioBuilder::launcher(Some(REGSAP_ADDR_FROM_ABANDONART.to_string()));
+        let sb =
+            setup::ScenarioBuilder::launcher(Some(REGSAP_ADDR_FROM_ABANDONART.to_string()), None);
+        (
+            sb.regtest_manager,
+            sb.child_process_handler.unwrap(),
+            sb.client_builder,
+        )
+    }
+    pub fn custom_config(config: &str) -> (RegtestManager, ChildProcessHandler, ClientManager) {
+        let sb = setup::ScenarioBuilder::launcher(
+            Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
+            Some(config.to_string()),
+        );
         (
             sb.regtest_manager,
             sb.child_process_handler.unwrap(),
@@ -293,7 +319,7 @@ pub mod scenarios {
     /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
     pub async fn faucet() -> (RegtestManager, ChildProcessHandler, LightClient) {
         let mut sb =
-            setup::ScenarioBuilder::launcher(Some(REGSAP_ADDR_FROM_ABANDONART.to_string()));
+            setup::ScenarioBuilder::launcher(Some(REGSAP_ADDR_FROM_ABANDONART.to_string()), None);
         let faucet = sb.client_builder.build_new_faucet(0, false).await;
         faucet.do_sync(false).await.unwrap();
         (
@@ -310,7 +336,7 @@ pub mod scenarios {
         LightClient,
     ) {
         let mut sb =
-            setup::ScenarioBuilder::launcher(Some(REGSAP_ADDR_FROM_ABANDONART.to_string()));
+            setup::ScenarioBuilder::launcher(Some(REGSAP_ADDR_FROM_ABANDONART.to_string()), None);
         let faucet = sb.client_builder.build_new_faucet(0, false).await;
         faucet.do_sync(false).await.unwrap();
         let recipient = sb
@@ -343,7 +369,7 @@ pub mod scenarios {
         );
         let first_z_addr_from_seed_phrase = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
         let mut scenario_builder =
-            setup::ScenarioBuilder::launcher(Some(first_z_addr_from_seed_phrase.to_string()));
+            setup::ScenarioBuilder::launcher(Some(first_z_addr_from_seed_phrase.to_string()), None);
         let current_client = scenario_builder
             .client_builder
             .build_newseed_client(cross_version_seed_phrase.clone(), 0, false)
@@ -379,7 +405,7 @@ pub mod scenarios {
     }
 
     pub async fn basic_no_spendable() -> (RegtestManager, ChildProcessHandler, LightClient) {
-        let mut scenario_builder = setup::ScenarioBuilder::launcher(None);
+        let mut scenario_builder = setup::ScenarioBuilder::launcher(None, None);
         (
             scenario_builder.regtest_manager,
             scenario_builder.child_process_handler.unwrap(),
