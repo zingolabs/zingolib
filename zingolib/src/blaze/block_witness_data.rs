@@ -318,17 +318,7 @@ impl BlockAndWitnessData {
             } else {
                 // Parentless trees are encoded differently by zcashd for Orchard than for Sapling
                 // this hack allows the case of a parentless orchard_tree
-                if determined_orchard_tree[..132] == unverified_tree.orchard_tree[..132]
-                    && &determined_orchard_tree[132..] == "00"
-                    && unverified_tree.orchard_tree[134..]
-                        .chars()
-                        .all(|character| character == '0')
-                {
-                    true
-                } else {
-                    dbg!(determined_orchard_tree, unverified_tree.orchard_tree);
-                    false
-                }
+                is_orchard_tree_verified(determined_orchard_tree, unverified_tree)
             }
         })
     }
@@ -811,6 +801,20 @@ impl BlockAndWitnessData {
     }
 }
 
+fn is_orchard_tree_verified(determined_orchard_tree: String, unverified_tree: TreeState) -> bool {
+    if determined_orchard_tree[..132] == unverified_tree.orchard_tree[..132]
+        && &determined_orchard_tree[132..] == "00"
+        && unverified_tree.orchard_tree[134..]
+            .chars()
+            .all(|character| character == '0')
+    {
+        true
+    } else {
+        dbg!(determined_orchard_tree, unverified_tree.orchard_tree);
+        false
+    }
+}
+
 /// The sapling tree and orchard tree for a given block height, with the block hash.
 /// The hash is likely used for reorgs.
 #[derive(Debug, Clone)]
@@ -1276,5 +1280,18 @@ mod test {
         let end_tree =
             CommitmentTree::<MerkleHashOrchard>::read(&*hex::decode(ORCHARD_END).unwrap()).unwrap();
         assert_eq!(start_tree, end_tree);
+    }
+    
+    #[test]
+    fn test_verified_parentless_orchard_tree() {
+        let checkpoint = crate::lightclient::checkpoints::get_closest_checkpoint(&ChainType::Mainnet, 663150).unwrap();
+
+        let tree_state = CommitmentTreesForBlock::from_pre_orchard_checkpoint(
+            checkpoint.0,
+            checkpoint.1.to_string(),
+            checkpoint.2.to_string()
+        )
+        .to_tree_state();
+        assert!(is_orchard_tree_verified(ORCHARD_START.to_string(), tree_state));
     }
 }
