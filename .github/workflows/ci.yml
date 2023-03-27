@@ -109,7 +109,7 @@ jobs:
       - name: Upload native rust
         uses: actions/upload-artifact@v3
         with:
-          name: zingolib-${{ matrix.arch }}-${{ env.timestamp }}
+          name: ${{ matrix.arch }}-${{ env.timestamp }}
           path: rust/target/${{ matrix.target }}/release/librust.so
            
   integration_test_android:
@@ -154,7 +154,7 @@ jobs:
       - name: Download native rust
         uses: actions/download-artifact@v3
         with: 
-          name: zingolib-${{ matrix.arch }}-${{ env.timestamp }}
+          name: ${{ matrix.arch }}-${{ env.timestamp }}
           path: android/app/src/main/jniLibs/${{ matrix.jniLibs_dir }}
       - run: yarn install
       - name: Create AVD and generate snapshot for caching
