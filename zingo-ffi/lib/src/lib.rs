@@ -18,26 +18,19 @@ lazy_static! {
         Mutex::new(RefCell::new(None));
 }
 
-pub fn init_new(
-    server_uri: String,
-    data_dir: String,
-) -> String {
+pub fn init_new(server_uri: String, data_dir: String) -> String {
     let server = construct_server_uri(Some(server_uri));
 
-    let (mut config, latest_block_height) =
-        match zingolib::create_zingoconf_from_datadir(server, None) {
-            Ok((c, h)) => (c, h),
-            Err(e) => {
-                return format!("Error: {}", e);
-            }
-        };
+    let (mut config, latest_block_height) = match zingolib::load_clientconfig(server, None) {
+        Ok((c, h)) => (c, h),
+        Err(e) => {
+            return format!("Error: {}", e);
+        }
+    };
 
     config.set_data_dir(data_dir);
 
-    let lightclient = match LightClient::new(
-        &config,
-        latest_block_height.saturating_sub(100),
-    ) {
+    let lightclient = match LightClient::new(&config, latest_block_height.saturating_sub(100)) {
         Ok(l) => l,
         Err(e) => {
             return format!("Error: {}", e);
@@ -59,21 +52,15 @@ pub fn init_new(
     seed
 }
 
-pub fn init_from_seed(
-    server_uri: String,
-    seed: String,
-    birthday: u64,
-    data_dir: String,
-) -> String {
+pub fn init_from_seed(server_uri: String, seed: String, birthday: u64, data_dir: String) -> String {
     let server = construct_server_uri(Some(server_uri));
 
-    let (mut config, _latest_block_height) =
-        match zingolib::create_zingoconf_from_datadir(server, None) {
-            Ok((c, h)) => (c, h),
-            Err(e) => {
-                return format!("Error: {}", e);
-            }
-        };
+    let (mut config, _latest_block_height) = match zingolib::load_clientconfig(server, None) {
+        Ok((c, h)) => (c, h),
+        Err(e) => {
+            return format!("Error: {}", e);
+        }
+    };
 
     config.set_data_dir(data_dir);
 
@@ -104,20 +91,15 @@ pub fn init_from_seed(
     seed
 }
 
-pub fn init_from_b64(
-    server_uri: String,
-    base64_data: String,
-    data_dir: String,
-) -> String {
+pub fn init_from_b64(server_uri: String, base64_data: String, data_dir: String) -> String {
     let server = construct_server_uri(Some(server_uri));
 
-    let (mut config, _latest_block_height) =
-        match zingolib::create_zingoconf_from_datadir(server, None) {
-            Ok((c, h)) => (c, h),
-            Err(e) => {
-                return format!("Error: {}", e);
-            }
-        };
+    let (mut config, _latest_block_height) = match zingolib::load_clientconfig(server, None) {
+        Ok((c, h)) => (c, h),
+        Err(e) => {
+            return format!("Error: {}", e);
+        }
+    };
 
     config.set_data_dir(data_dir);
 
@@ -128,14 +110,12 @@ pub fn init_from_b64(
         }
     };
 
-    let lightclient =
-        match LightClient::read_wallet_from_buffer(&config, &decoded_bytes[..])
-        {
-            Ok(l) => l,
-            Err(e) => {
-                return format!("Error: {}", e);
-            }
-        };
+    let lightclient = match LightClient::read_wallet_from_buffer(&config, &decoded_bytes[..]) {
+        Ok(l) => l,
+        Err(e) => {
+            return format!("Error: {}", e);
+        }
+    };
 
     let seed = match lightclient.do_seed_phrase_sync() {
         Ok(s) => s.dump(),
@@ -192,8 +172,7 @@ pub fn execute(cmd: String, args_list: String) -> String {
         } else {
             vec![args_list.as_ref()]
         };
-        resp = commands::do_user_command(&cmd, &args, lightclient.as_ref())
-            .clone();
+        resp = commands::do_user_command(&cmd, &args, lightclient.as_ref()).clone();
     };
 
     resp
@@ -201,13 +180,12 @@ pub fn execute(cmd: String, args_list: String) -> String {
 
 pub fn get_latest_block(server_uri: String) -> String {
     let server = construct_server_uri(Some(server_uri));
-    let (_config, latest_block_height) =
-        match zingolib::create_zingoconf_from_datadir(server, None) {
-            Ok((c, h)) => (c, h),
-            Err(e) => {
-                return format!("Error: {}", e);
-            }
-        };
+    let (_config, latest_block_height) = match zingolib::load_clientconfig(server, None) {
+        Ok((c, h)) => (c, h),
+        Err(e) => {
+            return format!("Error: {}", e);
+        }
+    };
 
     let resp: String = latest_block_height.to_string();
 

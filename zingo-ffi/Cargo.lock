@@ -3704,7 +3704,7 @@ dependencies = [
 [[package]]
 name = "zingo-memo"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#72bf10e0b8c17916664725ca1296c689414ed3c2"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#06b01c56190562cb36351a24a457cd6c335419cb"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -3716,7 +3716,7 @@ dependencies = [
 [[package]]
 name = "zingoconfig"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#72bf10e0b8c17916664725ca1296c689414ed3c2"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#06b01c56190562cb36351a24a457cd6c335419cb"
 dependencies = [
  "dirs",
  "http",
@@ -3729,7 +3729,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#72bf10e0b8c17916664725ca1296c689414ed3c2"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#06b01c56190562cb36351a24a457cd6c335419cb"
 dependencies = [
  "base58",
  "base64 0.13.1",
