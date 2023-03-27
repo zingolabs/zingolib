@@ -5,7 +5,6 @@ members = [
     "zingoconfig",
     "zingo-memo"
 ]
-exclude = [ "lsp_failer" ]
 
 [workspace.dependencies]
 zcash_address = { git = "https://github.com/zingolabs/librustzcash", rev = "42928cb3f40c67c855d4db6769ce258030921ce6"}
