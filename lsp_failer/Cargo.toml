@@ -1,8 +1,34 @@
 [package]
-name = "lsp_failer"
-version = "0.1.0"
+name = "lsp-failer"
+version = "0.2.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
+rustyline = "11.0.0"
+clap = "3.2.20"
+log = "0.4.17"
+shellwords = "1.1.0"
+json = "0.12.4"
+http = "0.2.8"
+tokio =  { version = "1.24.2", features = ["full"] }
+
+zingolib = { path = "../zingolib/" }
+zingoconfig = { path = "../zingoconfig/" }
+zingtaddrfix = { git = "https://github.com/zingolabs/zingolib", package = "zingolib", rev = "3d42b916d46cc3d7c0e79609a6fcde6425f9c526", optional = true }
+
+[dev-dependencies]
+zingolib = { path = "../zingolib/", features = ["integration_test"] }
+bech32 = "0.9.0"
+portpicker = "0.1.1"
+rand = "0.8.5"
+tempdir = "0.3.7"
+tracing-subscriber = "0.3.15"
+orchard = "0.3.0"
+zcash_address = { git = "https://github.com/zingolabs/librustzcash", rev = "01e6bf65542d3ad8190c798a01436d9edcd9f990"}
+zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash", rev = "01e6bf65542d3ad8190c798a01436d9edcd9f990"}
+zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", rev = "01e6bf65542d3ad8190c798a01436d9edcd9f990", features = ["transparent-inputs", "test-dependencies"] }
+
+[features]
+default = ["local_env"]
+cross_version = [ "dep:zingtaddrfix" ]
+local_env =[]
