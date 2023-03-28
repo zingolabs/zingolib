@@ -1519,4 +1519,147 @@ async fn mempool_and_balance() {
 
     drop(child_process_handler);
 }
+
+async fn mempool_clearing() {
+    let value = 100_000;
+    let (regtest_manager, child_process_handler, faucet, recipient, orig_transaction_id) =
+        scenarios::faucet_prefunded_orchard_recipient(value).await;
+
+    // Put some transactions we don't care about on-chain, to get some clutter
+    for _ in 0..5 {
+        utils::send_value_between_clients_and_sync(
+            &regtest_manager,
+            &faucet,
+            &faucet,
+            5_000,
+            "orchard",
+        )
+        .await;
+    }
+    assert_eq!(
+        recipient.do_maybe_recent_txid().await["last_txid"],
+        orig_transaction_id
+    );
+
+    // 3. Send z-to-z transaction to external z address with a memo
+    let sent_value = 2000;
+    let outgoing_memo = "Outgoing Memo".to_string();
+
+    let sent_transaction_id = recipient
+        .do_send(vec![(
+            &get_base_address!(faucet, "sapling"),
+            sent_value,
+            Some(outgoing_memo.clone()),
+        )])
+        .await
+        .unwrap();
+
+    // 4. The transaction is not yet sent, it is just sitting in the test GRPC server, so remove it from there to make sure it doesn't get mined.
+    assert_eq!(
+        recipient.do_maybe_recent_txid().await["last_txid"],
+        sent_transaction_id
+    );
+    let mut sent_transactions = data
+        .write()
+        .await
+        .sent_transactions
+        .drain(..)
+        .collect::<Vec<_>>();
+    assert_eq!(sent_transactions.len(), 1);
+    let sent_transaction = sent_transactions.remove(0);
+
+    // 5. At this point, the raw transaction is already been parsed, but we'll parse it again just to make sure it doesn't create any duplicates.
+    let notes_before = lightclient.do_list_notes(true).await;
+    let transactions_before = lightclient.do_list_transactions(false).await;
+
+    let transaction = Transaction::read(&sent_transaction.data[..], BranchId::Sapling).unwrap();
+    lightclient
+        .wallet
+        .transaction_context
+        .scan_full_tx(transaction, BlockHeight::from_u32(17), true, 0, None)
+        .await;
+
+    {
+        let transactions_reader = lightclient
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .clone();
+        let wallet_transactions = transactions_reader.read().await;
+        let sapling_notes: Vec<_> = wallet_transactions
+            .current
+            .values()
+            .map(|wallet_tx| &wallet_tx.sapling_notes)
+            .flatten()
+            .collect();
+        assert_ne!(sapling_notes.len(), 0);
+        for note in sapling_notes {
+            let mut note_bytes = Vec::new();
+            note.write(&mut note_bytes).unwrap();
+            let note2 = ReceivedSaplingNoteAndMetadata::read(&*note_bytes, ()).unwrap();
+            assert_eq!(note.fvk().to_bytes(), note2.fvk().to_bytes());
+            assert_eq!(note.nullifier(), note2.nullifier());
+            assert_eq!(note.diversifier, note2.diversifier);
+            assert_eq!(note.note, note2.note);
+            assert_eq!(note.spent, note2.spent);
+            assert_eq!(note.unconfirmed_spent, note2.unconfirmed_spent);
+            assert_eq!(note.memo, note2.memo);
+            assert_eq!(note.is_change, note2.is_change);
+            assert_eq!(note.have_spending_key, note2.have_spending_key);
+        }
+    }
+    let notes_after = lightclient.do_list_notes(true).await;
+    let transactions_after = lightclient.do_list_transactions(false).await;
+
+    assert_eq!(notes_before.pretty(2), notes_after.pretty(2));
+    assert_eq!(transactions_before.pretty(2), transactions_after.pretty(2));
+
+    // 6. Mine 10 blocks, the unconfirmed transaction should still be there.
+    mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 10)
+        .await;
+    assert_eq!(lightclient.wallet.last_synced_height().await, 26);
+
+    let notes = lightclient.do_list_notes(true).await;
+
+    let transactions = lightclient.do_list_transactions(false).await;
+
+    // There is 1 unspent note, which is the unconfirmed transaction
+    println!("{}", json::stringify_pretty(notes.clone(), 4));
+    println!("{}", json::stringify_pretty(transactions.clone(), 4));
+    // One unspent note, change, unconfirmed
+    assert_eq!(notes["unspent_orchard_notes"].len(), 1);
+    assert_eq!(notes["unspent_sapling_notes"].len(), 0);
+    let note = notes["unspent_orchard_notes"][0].clone();
+    assert_eq!(note["created_in_txid"], sent_transaction_id);
+    assert_eq!(
+        note["value"].as_u64().unwrap(),
+        value - sent_value - u64::from(DEFAULT_FEE)
+    );
+    assert_eq!(note["unconfirmed"].as_bool().unwrap(), true);
+    assert_eq!(transactions.len(), 2);
+
+    // 7. Mine 100 blocks, so the mempool expires
+    mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 100)
+        .await;
+    assert_eq!(lightclient.wallet.last_synced_height().await, 126);
+
+    let notes = lightclient.do_list_notes(true).await;
+    let transactions = lightclient.do_list_transactions(false).await;
+
+    // There is now again 1 unspent note, but it is the original (confirmed) note.
+    assert_eq!(notes["unspent_sapling_notes"].len(), 1);
+    assert_eq!(
+        notes["unspent_sapling_notes"][0]["created_in_txid"],
+        orig_transaction_id
+    );
+    assert_eq!(
+        notes["unspent_sapling_notes"][0]["unconfirmed"]
+            .as_bool()
+            .unwrap(),
+        false
+    );
+    assert_eq!(notes["pending_sapling_notes"].len(), 0);
+    assert_eq!(transactions.len(), 1);
+}
+
 pub const TEST_SEED: &str = "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise";
