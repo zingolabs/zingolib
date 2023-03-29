@@ -5,6 +5,7 @@ use crate::compact_formats::{
     BlockId, BlockRange, ChainSpec, CompactBlock, Empty, LightdInfo, RawTransaction,
     TransparentAddressBlockFilter, TreeState, TxFilter,
 };
+use crate::wallet::transactions::TransactionMetadataSet;
 use futures::future::join_all;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
@@ -13,7 +14,7 @@ use http_body::combinators::UnsyncBoxBody;
 use hyper::{client::HttpConnector, Uri};
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, RwLock};
 use tokio::task::JoinHandle;
 use tokio_rustls::rustls::{ClientConfig, RootCertStore};
 use tonic::Request;
@@ -38,10 +39,28 @@ impl GrpcConnector {
         Self { uri }
     }
 
+    pub async fn get_block(&self, height: u64) -> Result<CompactBlock, String> {
+        Ok(self
+            .get_client()
+            .await
+            .map_err(|e| format!("{}", e))?
+            .get_block(BlockId {
+                height,
+                // This is unused, but part of the protobuf type definition
+                hash: Vec::new(),
+            })
+            .await
+            .map_err(|e| e.to_string())?
+            .into_inner())
+    }
+
     pub(crate) fn get_client(
         &self,
     ) -> impl std::future::Future<
-        Output = Result<CompactTxStreamerClient<UnderlyingService>, Box<dyn std::error::Error>>,
+        Output = Result<
+            CompactTxStreamerClient<UnderlyingService>,
+            Box<dyn std::error::Error + Send + Sync + 'static>,
+        >,
     > {
         let uri = Arc::new(self.uri.clone());
         async move {
@@ -469,6 +488,42 @@ impl GrpcConnector {
         } else {
             Err(format!("Error: {:?}", sendresponse))
         }
+    }
+
+    pub(crate) async fn start_transaction_index_updater(
+        &self,
+        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+    ) -> JoinHandle<Result<(), String>> {
+        let connector = self.clone();
+        tokio::spawn(async move {
+            let transaction_set_read_lock = transaction_metadata_set.read().await;
+            if transaction_set_read_lock
+                .current
+                .values()
+                .all(|txmd| txmd.txindex.is_some())
+            {
+                drop(transaction_set_read_lock);
+                let mut transaction_set_write_lock = transaction_metadata_set.write().await;
+                for transaction_metadata in transaction_set_write_lock.current.values_mut() {
+                    if transaction_metadata.txindex.is_none() {
+                        transaction_metadata.txindex = connector
+                            .get_block(transaction_metadata.block_height.into())
+                            .await?
+                            .vtx
+                            .into_iter()
+                            .enumerate()
+                            .find_map(|(index, compact_transaction)| {
+                                if &compact_transaction.hash == transaction_metadata.txid.as_ref() {
+                                    Some(index)
+                                } else {
+                                    None
+                                }
+                            });
+                    }
+                }
+            }
+            Ok(())
+        })
     }
 }
 

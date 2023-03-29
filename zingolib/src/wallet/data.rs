@@ -10,7 +10,7 @@ use prost::Message;
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
 use std::usize;
-use zcash_encoding::{Optional, Vector};
+use zcash_encoding::{CompactSize, Optional, Vector};
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::{
     memo::Memo,
@@ -496,6 +496,9 @@ pub struct TransactionMetadata {
     // Block in which this tx was included
     pub block_height: BlockHeight,
 
+    // The transaction's location in the block it exists in, if recorded
+    pub txindex: Option<usize>,
+
     // Is this Tx unconfirmed (i.e., not yet mined)
     pub unconfirmed: bool,
 
@@ -542,7 +545,7 @@ pub struct TransactionMetadata {
 
 impl TransactionMetadata {
     pub fn serialized_version() -> u64 {
-        return 23;
+        return 24;
     }
 
     pub fn new_txid(txid: &Vec<u8>) -> TxId {
@@ -580,12 +583,14 @@ impl TransactionMetadata {
 
     pub fn new(
         height: BlockHeight,
+        txindex: Option<usize>,
         datetime: u64,
         transaction_id: &TxId,
         unconfirmed: bool,
     ) -> Self {
         TransactionMetadata {
             block_height: height,
+            txindex,
             unconfirmed,
             datetime,
             txid: transaction_id.clone(),
@@ -607,6 +612,11 @@ impl TransactionMetadata {
         let version = reader.read_u64::<LittleEndian>()?;
 
         let block = BlockHeight::from_u32(reader.read_i32::<LittleEndian>()? as u32);
+        let txindex: Option<usize> = if version >= 24 {
+            Optional::read(&mut reader, |r| CompactSize::read_t(r))?
+        } else {
+            None
+        };
 
         let unconfirmed = if version <= 20 {
             false
@@ -675,6 +685,7 @@ impl TransactionMetadata {
 
         Ok(Self {
             block_height: block,
+            txindex,
             unconfirmed,
             datetime,
             txid: transaction_id,
@@ -697,6 +708,7 @@ impl TransactionMetadata {
 
         let block: u32 = self.block_height.into();
         writer.write_i32::<LittleEndian>(block as i32)?;
+        Optional::write(&mut writer, self.txindex, CompactSize::write)?;
 
         writer.write_u8(if self.unconfirmed { 1 } else { 0 })?;
 
