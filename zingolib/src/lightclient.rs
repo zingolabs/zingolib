@@ -26,7 +26,7 @@ use orchard::note_encryption::OrchardDomain;
 use std::{
     cmp::{self, Ordering},
     fs::File,
-    io::{self, BufReader, Error, ErrorKind, Read, Write},
+    io::{self, Error, ErrorKind, Write},
     path::Path,
     sync::Arc,
     time::Duration,
@@ -511,9 +511,7 @@ impl LightClient {
     }
 
     pub fn read_wallet_from_disk(config: &ZingoConfig) -> io::Result<Self> {
-        let wallet_path = if config.wallet_exists() {
-            config.get_wallet_path()
-        } else {
+        if !config.wallet_exists() {
             return Err(Error::new(
                 ErrorKind::AlreadyExists,
                 format!(
@@ -522,18 +520,15 @@ impl LightClient {
                 ),
             ));
         };
-        LightClient::read_wallet_from_buffer(&config, BufReader::new(File::open(wallet_path)?))
+        LightClient::read_wallet_from_buffer(&config)
     }
 
     /// This constructor depends on a wallet that's read from a buffer.
     /// It is used internally by read_from_disk, and directly called by
     /// zingo-mobile.
-    pub fn read_wallet_from_buffer<R: Read>(
-        config: &ZingoConfig,
-        mut reader: R,
-    ) -> io::Result<Self> {
+    pub fn read_wallet_from_buffer(config: &ZingoConfig) -> io::Result<Self> {
         Runtime::new().unwrap().block_on(async move {
-            let wallet = LightWallet::read_internal(&mut reader, config).await?;
+            let wallet = LightWallet::read_internal(config).await?;
 
             let lc = LightClient {
                 wallet,

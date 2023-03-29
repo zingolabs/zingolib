@@ -292,8 +292,10 @@ impl LightWallet {
     /// some source ("external") and which is represented as a source-code constant
     /// ("internal").
 
-    pub async fn read_internal<R: Read>(mut reader: R, config: &ZingoConfig) -> io::Result<Self> {
+    pub async fn read_internal(config: &ZingoConfig) -> io::Result<Self> {
+        let mut reader = io::BufReader::new(std::fs::File::open(config.get_wallet_path())?);
         let external_version = reader.read_u64::<LittleEndian>()?;
+
         if external_version > Self::serialized_version() {
             let e = format!(
                 "Don't know how to read wallet version {}. Do you have the latest version?\n{}",

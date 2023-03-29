@@ -451,10 +451,9 @@ async fn unspent_notes_are_not_saved() {
         Some(wallet_location.clone()),
     );
     wallet_location.push("zingo-wallet.dat");
-    let read_buffer = File::open(wallet_location.clone()).unwrap();
 
     // Create wallet from faucet zingo-wallet.dat
-    let faucet_wallet = zingolib::wallet::LightWallet::read_internal(read_buffer, &zingo_config)
+    let faucet_wallet = zingolib::wallet::LightWallet::read_internal(&zingo_config)
         .await
         .unwrap();
 
