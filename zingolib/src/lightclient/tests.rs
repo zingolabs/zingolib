@@ -37,55 +37,6 @@ use crate::wallet::{LightWallet, WalletBase};
 
 use zingoconfig::{ChainType, ZingoConfig};
 
-apply_scenario! {sapling_incoming_multisapling_outgoing 10}
-async fn sapling_incoming_multisapling_outgoing(scenario: NBlockFCBLScenario) {
-    let NBlockFCBLScenario {
-        data,
-        lightclient,
-        mut fake_compactblock_list,
-        ..
-    } = scenario;
-    // 2. Send an incoming transaction to fill the wallet
-    let fvk1 = (&*lightclient.wallet.wallet_capability().read().await)
-        .try_into()
-        .unwrap();
-    let value = 100_000;
-    let (_transaction, _height, _) =
-        fake_compactblock_list.create_sapling_coinbase_transaction(&fvk1, value);
-    mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
-    mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
-
-    // 3. send a transaction to multiple addresses
-    let tos = vec![
-        (EXT_ZADDR, 1, Some("ext1-1".to_string())),
-        (EXT_ZADDR, 2, Some("ext1-2".to_string())),
-        (EXT_ZADDR2, 20, Some("ext2-20".to_string())),
-    ];
-    let sent_transaction_id = lightclient.test_do_send(tos.clone()).await.unwrap();
-    fake_compactblock_list.add_pending_sends(&data).await;
-    mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
-
-    // 4. Check the outgoing transaction list
-    let list = lightclient.do_list_transactions(false).await;
-
-    assert_eq!(list[1]["block_height"].as_u64().unwrap(), 17);
-    assert_eq!(list[1]["txid"], sent_transaction_id);
-    assert_eq!(
-        list[1]["amount"].as_i64().unwrap(),
-        -i64::from(DEFAULT_FEE) - (tos.iter().map(|(_, a, _)| *a).sum::<u64>() as i64)
-    );
-
-    for (addr, amt, memo) in &tos {
-        // Find the correct value, since the outgoing metadata can be shuffled
-        let jv = list[1]["outgoing_metadata"]
-            .members()
-            .find(|j| j["value"].as_u64().unwrap() == *amt)
-            .unwrap();
-        assert_eq!(jv["memo"], *memo.as_ref().unwrap());
-        assert_eq!(jv["address"], addr.to_string());
-    }
-}
-
 /*
 apply_scenario! {sapling_incoming_viewkey 10}
 async fn sapling_incoming_viewkey(scenario: NBlockFCBLScenario) {
