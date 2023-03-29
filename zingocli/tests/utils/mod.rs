@@ -352,8 +352,8 @@ pub mod scenarios {
         )
     }
 
-    pub async fn faucet_prefunded_orchard_recipient<T: Into<u64>>(
-        value: T,
+    pub async fn faucet_prefunded_orchard_recipient(
+        value: u64,
     ) -> (
         RegtestManager,
         ChildProcessHandler,

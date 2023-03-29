@@ -20,6 +20,7 @@ use zingolib::{
     check_client_balances, get_base_address,
     lightclient::LightClient,
     wallet::{
+        data::TransactionMetadata,
         keys::{
             extended_transparent::ExtendedPrivKey,
             unified::{Capability, WalletCapability},
@@ -1980,6 +1981,124 @@ async fn sapling_incoming_sapling_outgoing() {
             .unwrap(),
         3
     );
+
+    drop(child_process_handler);
+}
+
+#[tokio::test]
+async fn aborted_resync() {
+    let zvalue = 100_000;
+    let (regtest_manager, child_process_handler, faucet, recipient, _txid) =
+        scenarios::faucet_prefunded_orchard_recipient(zvalue).await;
+
+    // 3. Send an incoming t-address transaction
+    let tvalue = 200_000;
+    let _ttxid = faucet
+        .do_send(vec![(
+            &get_base_address!(recipient, "transparent"),
+            tvalue,
+            None,
+        )])
+        .await
+        .unwrap();
+
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 15).await;
+
+    // 4. Send a transaction to both external t-addr and external z addr and mine it
+    let sent_zvalue = 80_000;
+    let sent_tvalue = 140_000;
+    let sent_zmemo = "Ext z".to_string();
+    let sent_transaction_id = recipient
+        .do_send(vec![
+            (
+                &get_base_address!(faucet, "sapling"),
+                sent_zvalue,
+                Some(sent_zmemo.clone()),
+            ),
+            (&get_base_address!(faucet, "transparent"), sent_tvalue, None),
+        ])
+        .await
+        .unwrap();
+
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 5).await;
+
+    let notes_before = recipient.do_list_notes(true).await;
+    let list_before = recipient.do_list_transactions(false).await;
+    let witness_before = recipient
+        .wallet
+        .transaction_context
+        .transaction_metadata_set
+        .read()
+        .await
+        .current
+        .get(&zingolib::wallet::data::TransactionMetadata::new_txid(
+            &hex::decode(sent_transaction_id.clone())
+                .unwrap()
+                .into_iter()
+                .rev()
+                .collect(),
+        ))
+        .unwrap()
+        .orchard_notes
+        .get(0)
+        .unwrap()
+        .witnesses
+        .clone();
+
+    // 5. Now, we'll manually remove some of the blocks in the wallet, pretending that the sync was aborted in the middle.
+    // We'll remove the top 20 blocks, so now the wallet only has the first 3 blocks
+    recipient.wallet.blocks.write().await.drain(0..20);
+    assert_eq!(recipient.wallet.last_synced_height().await, 3);
+
+    // 6. Do a sync again
+    recipient.do_sync(true).await.unwrap();
+    assert_eq!(recipient.wallet.last_synced_height().await, 23);
+
+    // 7. Should be exactly the same
+    let notes_after = recipient.do_list_notes(true).await;
+    let list_after = recipient.do_list_transactions(false).await;
+    let witness_after = recipient
+        .wallet
+        .transaction_context
+        .transaction_metadata_set
+        .read()
+        .await
+        .current
+        .get(&TransactionMetadata::new_txid(
+            &hex::decode(sent_transaction_id)
+                .unwrap()
+                .into_iter()
+                .rev()
+                .collect(),
+        ))
+        .unwrap()
+        .orchard_notes
+        .get(0)
+        .unwrap()
+        .witnesses
+        .clone();
+
+    assert_eq!(notes_before, notes_after);
+    assert_eq!(list_before, list_after);
+    assert_eq!(witness_before.top_height, witness_after.top_height);
+    assert_eq!(witness_before.len(), witness_after.len());
+    for i in 0..witness_before.len() {
+        let mut before_bytes = vec![];
+        witness_before
+            .get(i)
+            .unwrap()
+            .write(&mut before_bytes)
+            .unwrap();
+
+        let mut after_bytes = vec![];
+        witness_after
+            .get(i)
+            .unwrap()
+            .write(&mut after_bytes)
+            .unwrap();
+
+        assert_eq!(hex::encode(before_bytes), hex::encode(after_bytes));
+    }
 
     drop(child_process_handler);
 }

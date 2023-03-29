@@ -153,7 +153,7 @@ impl BlockData {
 #[derive(Clone)]
 pub struct WitnessCache<Node: Hashable> {
     pub(crate) witnesses: Vec<IncrementalWitness<Node>>,
-    pub(crate) top_height: u64,
+    pub top_height: u64,
 }
 
 impl<Node: Hashable> WitnessCache<Node> {

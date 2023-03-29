@@ -46,7 +46,10 @@ use zingoconfig::{ChainType, ZingoConfig};
 pub struct TransactionContext {
     pub(crate) config: ZingoConfig,
     pub(crate) key: Arc<RwLock<WalletCapability>>,
+    #[cfg(not(feature = "integration_test"))]
     pub(crate) transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+    #[cfg(feature = "integration_test")]
+    pub transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
 }
 
 impl TransactionContext {
