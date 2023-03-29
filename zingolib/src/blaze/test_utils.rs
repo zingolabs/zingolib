@@ -6,9 +6,9 @@ use rand::{rngs::OsRng, RngCore};
 use zcash_primitives::{
     block::BlockHash,
     merkle_tree::{CommitmentTree, Hashable, IncrementalWitness},
-    sapling::{self, value::NoteValue, Note, Rseed},
+    sapling::{self, keys::DiversifiableFullViewingKey as SaplingFvk, Note, Rseed},
     transaction::components::Amount,
-    zip32::{DiversifiableFullViewingKey as SaplingFvk, ExtendedSpendingKey},
+    zip32::{ExtendedFullViewingKey, ExtendedSpendingKey},
 };
 
 // This function can be used by TestServerData, or other test code
@@ -105,8 +105,8 @@ impl FakeCompactBlock {
     // Returns the nullifier of the new note.
     pub fn add_random_sapling_transaction(&mut self, num_outputs: usize) {
         let xsk_m = ExtendedSpendingKey::master(&[1u8; 32]);
-        let dfvk = xsk_m.to_diversifiable_full_viewing_key();
-        let fvk = SaplingFvk::from(dfvk);
+        let extfvk = ExtendedFullViewingKey::from(&xsk_m);
+        let fvk = SaplingFvk::from(extfvk);
 
         let to = fvk.default_address().1;
         let value = Amount::from_u64(1).unwrap();
@@ -116,11 +116,12 @@ impl FakeCompactBlock {
 
         for _ in 0..num_outputs {
             // Create a fake Note for the account
-            let note = Note::from_parts(
-                to,
-                NoteValue::from_raw(value.into()),
-                Rseed::AfterZip212(random_u8_32()),
-            );
+            let note = Note {
+                g_d: to.diversifier().g_d().unwrap(),
+                pk_d: to.pk_d().clone(),
+                value: value.into(),
+                rseed: Rseed::AfterZip212(random_u8_32()),
+            };
 
             // Create a fake CompactBlock containing the note
             let mut cout = CompactSaplingOutput::default();

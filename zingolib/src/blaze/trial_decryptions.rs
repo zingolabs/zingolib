@@ -178,7 +178,7 @@ impl TrialDecryptions {
                 }
                 let mut transaction_metadata = false;
 
-                if sapling_ivk.is_some() {
+                if let Some(ref sapling_ivk) = sapling_ivk {
                     Self::trial_decrypt_domain_specific_outputs::<
                         SaplingDomain<zingoconfig::ChainType>,
                     >(
@@ -186,9 +186,7 @@ impl TrialDecryptions {
                         &compact_transaction,
                         transaction_num,
                         &compact_block,
-                        zcash_primitives::sapling::note_encryption::PreparedIncomingViewingKey::new(
-                            &sapling_ivk.clone().unwrap(),
-                        ),
+                        sapling_ivk.clone(),
                         height,
                         &config,
                         &wc,
@@ -199,15 +197,13 @@ impl TrialDecryptions {
                     );
                 }
 
-                if orchard_ivk.is_some() {
+                if let Some(ref orchard_ivk) = orchard_ivk {
                     Self::trial_decrypt_domain_specific_outputs::<OrchardDomain>(
                         &mut transaction_metadata,
                         &compact_transaction,
                         transaction_num,
                         &compact_block,
-                        orchard::keys::PreparedIncomingViewingKey::new(
-                            &orchard_ivk.clone().unwrap(),
-                        ),
+                        orchard_ivk.clone(),
                         height,
                         &config,
                         &wc,

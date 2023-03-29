@@ -133,11 +133,11 @@ impl ShieldedOutputExt<SaplingDomain<ChainType>> for OutputDescription<GrothProo
     }
 
     fn out_ciphertext(&self) -> [u8; 80] {
-        *self.out_ciphertext()
+        self.out_ciphertext
     }
 
     fn value_commitment(&self) -> <SaplingDomain<ChainType> as Domain>::ValueCommitment {
-        self.cv().clone()
+        self.cv
     }
 }
 
@@ -198,7 +198,7 @@ pub trait Spend {
 impl<Auth: SaplingAuthorization> Spend for SpendDescription<Auth> {
     type Nullifier = SaplingNullifier;
     fn nullifier(&self) -> &Self::Nullifier {
-        self.nullifier()
+        &self.nullifier
     }
 }
 
@@ -328,18 +328,18 @@ where
 impl Bundle<SaplingDomain<ChainType>> for SaplingBundle<SaplingAuthorized> {
     type Spend = SpendDescription<SaplingAuthorized>;
     type Output = OutputDescription<GrothProofBytes>;
-    type Spends<'a> = &'a [Self::Spend];
-    type Outputs<'a> = &'a [Self::Output];
+    type Spends<'a> = &'a Vec<Self::Spend>;
+    type Outputs<'a> = &'a Vec<Self::Output>;
     fn from_transaction(transaction: &Transaction) -> Option<&Self> {
         transaction.sapling_bundle()
     }
 
     fn output_elements(&self) -> Self::Outputs<'_> {
-        self.shielded_outputs()
+        &self.shielded_outputs
     }
 
     fn spend_elements(&self) -> Self::Spends<'_> {
-        self.shielded_spends()
+        &self.shielded_spends
     }
 }
 
@@ -550,7 +550,7 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
     }
 
     fn value_from_note(note: &Self::Note) -> u64 {
-        note.value().inner()
+        note.value
     }
 
     fn spent(&self) -> &Option<(TxId, u32)> {
@@ -1109,18 +1109,26 @@ impl ReadableWriteable<(SaplingFvk, SaplingDiversifier)> for SaplingNote {
         let value = reader.read_u64::<LittleEndian>()?;
         let rseed = super::data::read_sapling_rseed(&mut reader)?;
 
-        Ok(fvk
+        let maybe_note = fvk
             .fvk()
             .vk
             .to_payment_address(diversifier)
             .unwrap()
-            .create_note(value, rseed))
+            .create_note(value, rseed);
+
+        match maybe_note {
+            Some(n) => Ok(n),
+            None => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Couldn't create the note for the address",
+            )),
+        }
     }
 
     fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         writer.write_u8(Self::VERSION)?;
-        writer.write_u64::<LittleEndian>(self.value().inner())?;
-        super::data::write_sapling_rseed(&mut writer, &self.rseed())?;
+        writer.write_u64::<LittleEndian>(self.value)?;
+        super::data::write_sapling_rseed(&mut writer, &self.rseed)?;
         Ok(())
     }
 }

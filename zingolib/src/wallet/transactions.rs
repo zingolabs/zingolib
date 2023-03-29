@@ -311,7 +311,7 @@ impl TransactionMetadataSet {
                     .map(move |nd| {
                         (
                             nd.nullifier.clone(),
-                            nd.note.value().inner(),
+                            nd.note.value,
                             transaction_metadata.txid.clone(),
                         )
                     })
@@ -465,7 +465,7 @@ impl TransactionMetadataSet {
                     .unwrap();
                 note_data.spent = Some((spent_txid.clone(), spent_at_height.into()));
                 note_data.unconfirmed_spent = None;
-                note_data.note.value().inner()
+                note_data.note.value
             }
             PoolNullifier::Orchard(nf) => {
                 let mut note_data = self

@@ -3892,6 +3892,7 @@ name = "zingo-cli"
 version = "0.2.0"
 dependencies = [
  "bech32 0.9.1",
+ "bip0039 0.10.1",
  "clap",
  "http",
  "itertools",
