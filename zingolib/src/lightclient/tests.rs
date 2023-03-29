@@ -189,56 +189,6 @@ async fn sapling_incoming_viewkey(scenario: NBlockFCBLScenario) {
     );
 }*/
 
-apply_scenario! {no_change 10}
-async fn no_change(scenario: NBlockFCBLScenario) {
-    let NBlockFCBLScenario {
-        data,
-        lightclient,
-        mut fake_compactblock_list,
-        ..
-    } = scenario;
-    // 2. Send an incoming transaction to fill the wallet
-    let fvk1 = (&*lightclient.wallet.wallet_capability().read().await)
-        .try_into()
-        .unwrap();
-    let zvalue = 100_000;
-    let (_ztransaction, _height, _) =
-        fake_compactblock_list.create_sapling_coinbase_transaction(&fvk1, zvalue);
-    mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
-    mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 5).await;
-
-    // 3. Send an incoming t-address transaction
-    let (_sk, Some(pk), Some(taddr)) = get_transparent_secretkey_pubkey_taddr(&lightclient).await else { panic!() };
-    let tvalue = 200_000;
-
-    let mut fake_transaction = FakeTransaction::new(true);
-    fake_transaction.add_t_output(&pk, taddr.clone(), tvalue);
-    let (_t_transaction, _) = fake_compactblock_list.add_fake_transaction(fake_transaction);
-    mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
-
-    // 4. Send a transaction to both external t-addr and external z addr and mine it
-    let sent_zvalue = tvalue + zvalue - u64::from(DEFAULT_FEE);
-    let tos = vec![(EXT_ZADDR, sent_zvalue, None)];
-    let sent_transaction_id = lightclient.test_do_send(tos).await.unwrap();
-
-    fake_compactblock_list.add_pending_sends(&data).await;
-    mine_pending_blocks(&mut fake_compactblock_list, &data, &lightclient).await;
-
-    let notes = lightclient.do_list_notes(true).await;
-    assert_eq!(notes["unspent_sapling_notes"].len(), 0);
-    assert_eq!(notes["pending_sapling_notes"].len(), 0);
-    assert_eq!(notes["utxos"].len(), 0);
-    assert_eq!(notes["pending_utxos"].len(), 0);
-
-    assert_eq!(notes["spent_sapling_notes"].len(), 1);
-    assert_eq!(notes["spent_utxos"].len(), 1);
-    assert_eq!(
-        notes["spent_sapling_notes"][0]["spent"],
-        sent_transaction_id
-    );
-    assert_eq!(notes["spent_utxos"][0]["spent"], sent_transaction_id);
-}
-
 #[tokio::test]
 async fn recover_at_checkpoint() {
     // 1. Wait for test server to start

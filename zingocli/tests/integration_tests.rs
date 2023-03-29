@@ -2103,4 +2103,63 @@ async fn aborted_resync() {
     drop(child_process_handler);
 }
 
+#[tokio::test]
+async fn no_change() {
+    // 2. Send an incoming transaction to fill the wallet
+    let zvalue = 100_000;
+    let (regtest_manager, child_process_handler, faucet, recipient, _txid) =
+        scenarios::faucet_prefunded_orchard_recipient(zvalue).await;
+
+    // 3. Send an incoming t-address transaction
+    let tvalue = 200_000;
+    let _ttxid = faucet
+        .do_send(vec![(
+            &get_base_address!(recipient, "transparent"),
+            tvalue,
+            None,
+        )])
+        .await
+        .unwrap();
+
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 15).await;
+
+    // Obscelete comment, we're only sending to one external address??
+    // 4. Send a transaction to both external t-addr and external z addr and mine it
+
+    let sent_zvalue = tvalue + zvalue - u64::from(DEFAULT_FEE);
+    let sent_transaction_id = recipient
+        .do_send(vec![(
+            &get_base_address!(faucet, "unified"),
+            sent_zvalue,
+            None,
+        )])
+        .await
+        .unwrap();
+
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 5).await;
+
+    let notes = recipient.do_list_notes(true).await;
+    assert_eq!(notes["unspent_sapling_notes"].len(), 0);
+    assert_eq!(notes["pending_sapling_notes"].len(), 0);
+    assert_eq!(notes["unspent_orchard_notes"].len(), 1);
+    assert_eq!(notes["pending_orchard_notes"].len(), 0);
+    assert_eq!(notes["utxos"].len(), 0);
+    assert_eq!(notes["pending_utxos"].len(), 0);
+
+    assert_eq!(notes["spent_sapling_notes"].len(), 0);
+    assert_eq!(notes["spent_orchard_notes"].len(), 1);
+    assert_eq!(notes["spent_utxos"].len(), 1);
+    assert_eq!(
+        notes["spent_orchard_notes"][0]["spent"],
+        sent_transaction_id
+    );
+    // We should still have a change note even of zero value, as we send
+    // ourself a wallet-readable memo
+    assert_eq!(notes["unspent_orchard_notes"][0]["value"], 0);
+    assert_eq!(notes["spent_utxos"][0]["spent"], sent_transaction_id);
+
+    check_client_balances!(recipient, o: 0 s: 0 t: 0);
+    drop(child_process_handler);
+}
+
 pub const TEST_SEED: &str = "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise";
