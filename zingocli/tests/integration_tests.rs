@@ -10,7 +10,11 @@ use json::JsonValue;
 use utils::scenarios;
 
 use zcash_address::unified::Ufvk;
-use zcash_primitives::transaction::{components::amount::DEFAULT_FEE, TxId};
+use zcash_client_backend::encoding::encode_payment_address;
+use zcash_primitives::{
+    consensus::Parameters,
+    transaction::{components::amount::DEFAULT_FEE, TxId},
+};
 use zingoconfig::{ChainType, ZingoConfig};
 use zingolib::{
     check_client_balances, get_base_address,
@@ -424,6 +428,7 @@ async fn send_mined_sapling_to_orchard() {
     );
     drop(child_process_handler);
 }
+
 fn extract_value_as_u64(input: &JsonValue) -> u64 {
     let note = &input["value"].as_fixed_point_u64(0).unwrap();
     note.clone()
@@ -1760,5 +1765,223 @@ async fn witness_clearing() {
     assert_eq!(notes["pending_sapling_notes"].len(), 0);
     assert_eq!(transactions.len(), 1);
 }*/
+
+#[tokio::test]
+async fn sapling_incoming_sapling_outgoing() {
+    let (regtest_manager, child_process_handler, faucet, recipient) =
+        scenarios::faucet_recipient().await;
+    let value = 100_000;
+
+    // 2. Send an incoming transaction to fill the wallet
+    let faucet_funding_txid = faucet
+        .do_send(vec![(
+            &get_base_address!(recipient, "sapling"),
+            value,
+            None,
+        )])
+        .await
+        .unwrap();
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1).await;
+
+    assert_eq!(recipient.wallet.last_synced_height().await, 2);
+
+    // 3. Check the balance is correct, and we received the incoming transaction from ?outside?
+    let b = recipient.do_balance().await;
+    let addresses = recipient.do_addresses().await;
+    assert_eq!(b["sapling_balance"].as_u64().unwrap(), value);
+    assert_eq!(b["unverified_sapling_balance"].as_u64().unwrap(), 0);
+    assert_eq!(b["spendable_sapling_balance"].as_u64().unwrap(), value);
+    assert_eq!(
+        addresses[0]["receivers"]["sapling"],
+        encode_payment_address(
+            recipient.config().chain.hrp_sapling_payment_address(),
+            recipient
+                .wallet
+                .wallet_capability()
+                .read()
+                .await
+                .addresses()[0]
+                .sapling()
+                .unwrap()
+        ),
+    );
+
+    let list = recipient.do_list_transactions(false).await;
+    if let JsonValue::Array(list) = list {
+        assert_eq!(list.len(), 1);
+        let faucet_sent_transaction = list[0].clone();
+
+        assert_eq!(
+            faucet_sent_transaction["txid"],
+            faucet_funding_txid.to_string()
+        );
+        assert_eq!(faucet_sent_transaction["amount"].as_u64().unwrap(), value);
+        assert_eq!(
+            faucet_sent_transaction["address"],
+            recipient
+                .wallet
+                .wallet_capability()
+                .read()
+                .await
+                .addresses()[0]
+                .encode(&recipient.config().chain)
+        );
+        assert_eq!(faucet_sent_transaction["block_height"].as_u64().unwrap(), 2);
+    } else {
+        panic!("Expecting an array");
+    }
+
+    // 4. Send z-to-z transaction to external z address with a memo
+    let sent_value = 2000;
+    let outgoing_memo = "Outgoing Memo".to_string();
+
+    let sent_transaction_id = recipient
+        .do_send(vec![(
+            &get_base_address!(faucet, "sapling"),
+            sent_value,
+            Some(outgoing_memo.clone()),
+        )])
+        .await
+        .unwrap();
+
+    // 5. Check the unconfirmed transaction is present
+    // 5.1 Check notes
+
+    let notes = recipient.do_list_notes(true).await;
+    // Has a new (unconfirmed) unspent note (the change)
+    assert_eq!(notes["unspent_orchard_notes"].len(), 1);
+    assert_eq!(
+        notes["unspent_orchard_notes"][0]["created_in_txid"],
+        sent_transaction_id
+    );
+    assert_eq!(
+        notes["unspent_orchard_notes"][0]["unconfirmed"]
+            .as_bool()
+            .unwrap(),
+        true
+    );
+
+    assert_eq!(notes["spent_sapling_notes"].len(), 0);
+    assert_eq!(notes["pending_sapling_notes"].len(), 1);
+    assert_eq!(
+        notes["pending_sapling_notes"][0]["created_in_txid"],
+        faucet_funding_txid.to_string()
+    );
+    assert_eq!(
+        notes["pending_sapling_notes"][0]["unconfirmed_spent"],
+        sent_transaction_id
+    );
+    assert_eq!(notes["pending_sapling_notes"][0]["spent"].is_null(), true);
+    assert_eq!(
+        notes["pending_sapling_notes"][0]["spent_at_height"].is_null(),
+        true
+    );
+
+    // Check transaction list
+    let list = recipient.do_list_transactions(false).await;
+
+    assert_eq!(list.len(), 2);
+    let send_transaction = list
+        .members()
+        .find(|transaction| transaction["txid"] == sent_transaction_id)
+        .unwrap();
+
+    assert_eq!(send_transaction["txid"], sent_transaction_id);
+    assert_eq!(
+        send_transaction["amount"].as_i64().unwrap(),
+        -(sent_value as i64 + i64::from(DEFAULT_FEE))
+    );
+    assert_eq!(send_transaction["unconfirmed"].as_bool().unwrap(), true);
+    assert_eq!(send_transaction["block_height"].as_u64().unwrap(), 3);
+
+    assert_eq!(
+        send_transaction["outgoing_metadata"][0]["address"],
+        get_base_address!(faucet, "sapling").to_string()
+    );
+    assert_eq!(
+        send_transaction["outgoing_metadata"][0]["memo"],
+        outgoing_memo
+    );
+    assert_eq!(
+        send_transaction["outgoing_metadata"][0]["value"]
+            .as_u64()
+            .unwrap(),
+        sent_value
+    );
+
+    // 6. Mine the sent transaction
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1).await;
+
+    assert_eq!(send_transaction.contains("unconfirmed"), false);
+    assert_eq!(send_transaction["block_height"].as_u64().unwrap(), 3);
+
+    // 7. Check the notes to see that we have one spent sapling note and one unspent orchard note (change)
+    // Which is immediately spendable.
+    let notes = recipient.do_list_notes(true).await;
+    println!("{}", json::stringify_pretty(notes.clone(), 4));
+    assert_eq!(notes["unspent_orchard_notes"].len(), 1);
+    assert_eq!(
+        notes["unspent_orchard_notes"][0]["created_in_block"]
+            .as_u64()
+            .unwrap(),
+        3
+    );
+    assert_eq!(
+        notes["unspent_orchard_notes"][0]["created_in_txid"],
+        sent_transaction_id
+    );
+    assert_eq!(
+        notes["unspent_orchard_notes"][0]["value"].as_u64().unwrap(),
+        value - sent_value - u64::from(DEFAULT_FEE)
+    );
+    assert_eq!(
+        notes["unspent_orchard_notes"][0]["is_change"]
+            .as_bool()
+            .unwrap(),
+        true
+    );
+    assert_eq!(
+        notes["unspent_orchard_notes"][0]["spendable"]
+            .as_bool()
+            .unwrap(),
+        true
+    ); // Spendable
+
+    assert_eq!(notes["spent_sapling_notes"].len(), 1);
+    assert_eq!(
+        notes["spent_sapling_notes"][0]["created_in_block"]
+            .as_u64()
+            .unwrap(),
+        2
+    );
+    assert_eq!(
+        notes["spent_sapling_notes"][0]["value"].as_u64().unwrap(),
+        value
+    );
+    assert_eq!(
+        notes["spent_sapling_notes"][0]["is_change"]
+            .as_bool()
+            .unwrap(),
+        false
+    );
+    assert_eq!(
+        notes["spent_sapling_notes"][0]["spendable"]
+            .as_bool()
+            .unwrap(),
+        false
+    ); // Already spent
+    assert_eq!(
+        notes["spent_sapling_notes"][0]["spent"],
+        sent_transaction_id
+    );
+    assert_eq!(
+        notes["spent_sapling_notes"][0]["spent_at_height"]
+            .as_u64()
+            .unwrap(),
+        3
+    );
+
+    drop(child_process_handler);
+}
 
 pub const TEST_SEED: &str = "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise";

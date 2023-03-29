@@ -273,6 +273,10 @@ impl LightClient {
         Ok(lightclient)
     }
 
+    pub fn config(&self) -> &ZingoConfig {
+        &self.config
+    }
+
     /// The wallet this fn associates with the lightclient is specifically derived from
     /// a spend authority.
     pub fn new_from_wallet_base(
