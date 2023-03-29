@@ -247,7 +247,10 @@ pub struct ReceivedOrchardNoteAndMetadata {
     pub note: OrchardNote,
 
     // Witnesses for the last 100 blocks. witnesses.last() is the latest witness
+    #[cfg(not(feature = "integration_test"))]
     pub(crate) witnesses: WitnessCache<MerkleHashOrchard>,
+    #[cfg(feature = "integration_test")]
+    pub witnesses: WitnessCache<MerkleHashOrchard>,
     pub(super) nullifier: OrchardNullifier,
     pub spent: Option<(TxId, u32)>, // If this note was confirmed spent
 

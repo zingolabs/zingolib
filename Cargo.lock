@@ -3894,6 +3894,7 @@ dependencies = [
  "bech32 0.9.1",
  "bip0039 0.10.1",
  "clap",
+ "hex 0.3.2",
  "http",
  "itertools",
  "json",

@@ -75,7 +75,10 @@ impl WalletStatus {
 
 pub struct LightClient {
     pub(crate) config: ZingoConfig,
+    #[cfg(not(feature = "integration_test"))]
     pub(crate) wallet: LightWallet,
+    #[cfg(feature = "integration_test")]
+    pub wallet: LightWallet,
 
     mempool_monitor: std::sync::RwLock<Option<std::thread::JoinHandle<()>>>,
 

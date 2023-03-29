@@ -10,7 +10,7 @@ use json::JsonValue;
 use utils::scenarios;
 
 use zcash_address::unified::Ufvk;
-use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
+use zcash_primitives::transaction::{components::amount::DEFAULT_FEE, TxId};
 use zingoconfig::{ChainType, ZingoConfig};
 use zingolib::{
     check_client_balances, get_base_address,
@@ -1520,7 +1520,106 @@ async fn mempool_and_balance() {
     drop(child_process_handler);
 }
 
-async fn mempool_clearing() {
+#[tokio::test]
+async fn witness_clearing() {
+    let value: u64 = 100_000;
+    let (regtest_manager, child_process_handler, faucet, recipient, txid) =
+        scenarios::faucet_prefunded_orchard_recipient(value).await;
+    dbg!(&txid);
+    let mut txid_bytes = <[u8; 32]>::try_from(hex::decode(txid).unwrap()).unwrap();
+    // TxId byte order is displayed in the reverse order from how it's encoded, for some reason
+    txid_bytes.reverse();
+    let txid = TxId::from_bytes(txid_bytes);
+    dbg!(&txid);
+
+    // 3. Send z-to-z transaction to external z address with a memo
+    let sent_value = 2000;
+    let outgoing_memo = "Outgoing Memo".to_string();
+
+    let faucet_ua = get_base_address!(faucet, "unified");
+
+    let _sent_transaction_id = recipient
+        .do_send(vec![(&faucet_ua, sent_value, Some(outgoing_memo.clone()))])
+        .await
+        .unwrap();
+
+    for txid_known in recipient.wallet.transactions().read().await.current.keys() {
+        dbg!(txid_known);
+    }
+
+    // transaction is not yet mined, so witnesses should still be there
+    let witnesses = recipient
+        .wallet
+        .transactions()
+        .read()
+        .await
+        .current
+        .get(&txid)
+        .unwrap()
+        .orchard_notes
+        .get(0)
+        .unwrap()
+        .witnesses
+        .clone();
+    assert_eq!(witnesses.len(), 1);
+
+    // 4. Mine the sent transaction
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1).await;
+
+    // transaction is now mined, but witnesses should still be there because not 100 blocks yet (i.e., could get reorged)
+    let witnesses = recipient
+        .wallet
+        .transactions()
+        .read()
+        .await
+        .current
+        .get(&txid)
+        .unwrap()
+        .orchard_notes
+        .get(0)
+        .unwrap()
+        .witnesses
+        .clone();
+    assert_eq!(witnesses.len(), 1);
+
+    // 5. Mine 50 blocks, witness should still be there
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 50).await;
+    let witnesses = recipient
+        .wallet
+        .transactions()
+        .read()
+        .await
+        .current
+        .get(&txid)
+        .unwrap()
+        .orchard_notes
+        .get(0)
+        .unwrap()
+        .witnesses
+        .clone();
+    assert_eq!(witnesses.len(), 1);
+
+    // 5. Mine 100 blocks, witness should now disappear
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 100).await;
+    let witnesses = recipient
+        .wallet
+        .transactions()
+        .read()
+        .await
+        .current
+        .get(&txid)
+        .unwrap()
+        .orchard_notes
+        .get(0)
+        .unwrap()
+        .witnesses
+        .clone();
+    assert_eq!(witnesses.len(), 0);
+
+    drop(child_process_handler);
+}
+
+/*async fn mempool_clearing() {
     let value = 100_000;
     let (regtest_manager, child_process_handler, faucet, recipient, orig_transaction_id) =
         scenarios::faucet_prefunded_orchard_recipient(value).await;
@@ -1660,6 +1759,6 @@ async fn mempool_clearing() {
     );
     assert_eq!(notes["pending_sapling_notes"].len(), 0);
     assert_eq!(transactions.len(), 1);
-}
+}*/
 
 pub const TEST_SEED: &str = "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise";
