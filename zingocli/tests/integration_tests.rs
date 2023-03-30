@@ -1631,6 +1631,10 @@ async fn mempool_clearing() {
     let (regtest_manager, child_process_handler, faucet, recipient, orig_transaction_id) =
         scenarios::faucet_prefunded_orchard_recipient(value).await;
 
+    assert_eq!(
+        recipient.do_maybe_recent_txid().await["last_txid"],
+        orig_transaction_id
+    );
     // Put some transactions we don't care about on-chain, to get some clutter
     for _ in 0..5 {
         utils::send_value_between_clients_and_sync(
@@ -1642,12 +1646,8 @@ async fn mempool_clearing() {
         )
         .await;
     }
-    /*
-    assert_eq!(
-        recipient.do_maybe_recent_txid().await["last_txid"],
-        orig_transaction_id
-    );
 
+    /*
     // 3. Send z-to-z transaction to external z address with a memo
     let sent_value = 2000;
     let outgoing_memo = "Outgoing Memo".to_string();
