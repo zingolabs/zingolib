@@ -32,8 +32,8 @@ jobs:
           files: ./cobertura.xml
           # fail_ci_if_error:     true
         
-  generate-uid:
-    name: Generate UID
+  timestamp:
+    name: Create timestamp
     runs-on: ubuntu-22.04
     outputs:
       timestamp: ${{ steps.create-timestamp.outputs.timestamp }}
@@ -64,9 +64,9 @@ jobs:
             target: aarch64-linux-android
             cc: aarch64-linux-android
             openssl_path: aarch64
-    needs: generate-uid
+    needs: timestamp
     env:
-      timestamp: ${{ needs.generate-uid.outputs.timestamp }}
+      timestamp: ${{ needs.timestamp.outputs.timestamp }}
       RUSTUP_HOME: /root/.rustup
     container:
       image: zingodevops/android_builder:stable
@@ -85,11 +85,12 @@ jobs:
         uses: actions/cache@v3
         id: cargo-cache
         with:
+          # TODO: ref paths from cargo
           path: |
             /root/.cargo/.crates.toml
             /root/.cargo/.crates2.json
             /root/.cargo/bin/
-            /root/.cargo/registry/index/            
+            /root/.cargo/registry/index/
             /root/.cargo/registry/cache/
             /root/.cargo/registry/git/db/
           key: cargo-${{ matrix.arch }}-${{ hashFiles('rust/Cargo.lock') }}
@@ -120,13 +121,11 @@ jobs:
         include:
           - arch : x86
             api-level: 29
-            jniLibs_dir: x86
           - arch : x86_64
             api-level: 30
-            jniLibs_dir: x86_64
-    needs: [generate-uid, build_android]
+    needs: [timestamp, build_android]
     env:
-      timestamp: ${{ needs.generate-uid.outputs.timestamp }}
+      timestamp: ${{ needs.timestamp.outputs.timestamp }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -155,7 +154,7 @@ jobs:
         uses: actions/download-artifact@v3
         with: 
           name: ${{ matrix.arch }}-${{ env.timestamp }}
-          path: android/app/src/main/jniLibs/${{ matrix.jniLibs_dir }}
+          path: android/app/src/main/jniLibs/${{ matrix.arch }}
       - run: yarn install
       - name: Create AVD and generate snapshot for caching
         if: steps.avd-cache.outputs.cache-hit != 'true'
