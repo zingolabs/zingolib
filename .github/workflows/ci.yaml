@@ -1,0 +1,178 @@
+name: CI
+
+on: 
+  pull_request:
+  push:
+    branches: [main, dev]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-22.04
+    env:
+      RUSTFLAGS: -D warnings
+    container:
+      image: zingodevops/ci-build:stable
+      options: --security-opt seccomp=unconfined
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Symlink lightwalletd and zcash binaries
+        run: ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./regtest/bin/
+      - name: Symlink zcash parameters and rustup files
+        run: ln -s /root/.zcash-params /root/.rustup /github/home
+      - name: Check formatting of code
+        run: cargo fmt --check
+      - name: Generate code coverage
+        run: cargo tarpaulin --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 300 --out xml
+      - name: Upload to codecov.io
+        uses: codecov/codecov-action@v3
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./cobertura.xml
+          # fail_ci_if_error:     true
+        
+  timestamp:
+    name: Create timestamp
+    runs-on: ubuntu-22.04
+    outputs:
+      timestamp: ${{ steps.create-timestamp.outputs.timestamp }}
+    steps:
+      - name: Create timestamp
+        id: create-timestamp
+        run: echo "timestamp=$(date +%Y%m%d%H%M%S)" >> $GITHUB_OUTPUT
+
+  build_android:
+    name: Build android (${{ matrix.arch }})
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        include:
+          - arch: x86
+            target: i686-linux-android
+            cc: i686-linux-android
+            openssl_path: x86
+          - arch: x86_64
+            target: x86_64-linux-android
+            cc: x86_64-linux-android
+            openssl_path: x86_64
+          - arch: armeabi-v7a
+            target: armv7-linux-androideabi
+            cc: armv7a-linux-androideabi
+            openssl_path: armv7
+          - arch: arm64-v8a
+            target: aarch64-linux-android
+            cc: aarch64-linux-android
+            openssl_path: aarch64
+    needs: timestamp
+    env:
+      timestamp: ${{ needs.timestamp.outputs.timestamp }}
+      RUSTUP_HOME: /root/.rustup
+    container:
+      image: zingodevops/android_builder:stable
+    steps:
+      - name: Checkout zingo-mobile
+        uses: actions/checkout@v3
+        with:
+          repository: zingolabs/zingo-mobile
+      - name: Store zingolib github ref
+        run: echo "zingolib_ref=$(echo ${GITHUB_REF} | sed 's/\//\\\//g')" >> $GITHUB_ENV
+      - name: Update zingo-mobile dependencies
+        run: sed -i "/^zingolib\|^zingoconfig/ s/branch = \"dev\"/rev = \"${{ env.zingolib_ref }}\"/" "rust/lib/Cargo.toml"
+      - name: Check update was successful
+        run: if cat rust/lib/Cargo.toml | grep "^zingolib\|^zingoconfig" | grep -q "branch"; then exit 1; fi
+      - name: Cargo cache
+        uses: actions/cache@v3
+        id: cargo-cache
+        with:
+          # TODO: ref paths from cargo
+          path: |
+            /root/.cargo/.crates.toml
+            /root/.cargo/.crates2.json
+            /root/.cargo/bin/
+            /root/.cargo/registry/index/
+            /root/.cargo/registry/cache/
+            /root/.cargo/registry/git/db/
+          key: cargo-${{ matrix.arch }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: cargo-${{ matrix.arch }}
+      - name: Cargo build
+        working-directory: ./rust/android
+        run: cargo +nightly build -Z build-std --target ${{ matrix.target }} --release
+        env:
+          AR: llvm-ar
+          LD: ld
+          RANLIB: llvm-ranlib
+          CC: ${{ matrix.cc }}23-clang
+          OPENSSL_DIR: /opt/openssl-3.0.5/${{ matrix.openssl_path }}
+      - name: LLVM Strip
+        working-directory: ./rust/target
+        run: llvm-strip ./${{ matrix.target }}/release/librust.so
+      - name: Upload native rust
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.arch }}-${{ env.timestamp }}
+          path: rust/target/${{ matrix.target }}/release/librust.so
+           
+  integration_test_android:
+    name: Integration test android
+    runs-on: macos-12
+    strategy:
+      matrix:
+        include:
+          - arch : x86
+            api-level: 29
+          - arch : x86_64
+            api-level: 30
+    needs: [timestamp, build_android]
+    env:
+      timestamp: ${{ needs.timestamp.outputs.timestamp }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          repository: zingolabs/zingo-mobile
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+      - name: Gradle cache
+        uses: gradle/gradle-build-action@v2
+        with:
+          gradle-version: 7.3.3
+          build-root-directory: ./android
+          cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
+      - name: AVD cache
+        uses: actions/cache@v3
+        id: avd-cache
+        with: 
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-${{ matrix.arch }}-api-${{ matrix.api-level }}      
+      - name: Download native rust
+        uses: actions/download-artifact@v3
+        with: 
+          name: ${{ matrix.arch }}-${{ env.timestamp }}
+          path: android/app/src/main/jniLibs/${{ matrix.arch }}
+      - run: yarn install
+      - name: Create AVD and generate snapshot for caching
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          arch: ${{ matrix.arch }}
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: echo "Generated AVD snapshot for caching."      i
+      - name: Run integration tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          working-directory: ./android
+          api-level: ${{ matrix.api-level }}
+          arch: ${{ matrix.arch }}
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: ./gradlew connectedCheck -Pandroid.testInstrumentationRunnerArguments.class=org.ZingoLabs.Zingo.IntegrationTestSuite
