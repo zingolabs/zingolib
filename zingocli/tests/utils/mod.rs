@@ -39,7 +39,7 @@ pub async fn send_value_between_clients_and_sync(
     sender: &LightClient,
     recipient: &LightClient,
     value: u64,
-    pool: &str,
+    address_type: &str,
 ) -> String {
     debug!(
         "recipient address is: {}",
@@ -47,7 +47,7 @@ pub async fn send_value_between_clients_and_sync(
     );
     let txid = sender
         .do_send(vec![(
-            &zingolib::get_base_address!(recipient, pool),
+            &zingolib::get_base_address!(recipient, address_type),
             value,
             None,
         )])
