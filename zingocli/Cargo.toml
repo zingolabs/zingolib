@@ -17,6 +17,7 @@ zingoconfig = { path = "../zingoconfig/" }
 zingtaddrfix = { git = "https://github.com/zingolabs/zingolib", package = "zingolib", rev = "3d42b916d46cc3d7c0e79609a6fcde6425f9c526", optional = true }
 
 [dev-dependencies]
+env_logger = "0.10.0"
 zingolib = { path = "../zingolib/", features = ["integration_test"] }
 bech32 = "0.9.0"
 portpicker = "0.1.1"

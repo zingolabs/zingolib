@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use json::JsonValue;
+use log::debug;
 use tokio::time::sleep;
 use zingo_cli::regtest::RegtestManager;
 use zingolib::lightclient::LightClient;
@@ -40,6 +41,10 @@ pub async fn send_value_between_clients_and_sync(
     value: u64,
     pool: &str,
 ) -> String {
+    debug!(
+        "recipient address is: {}",
+        &recipient.do_addresses().await[0]["address"]
+    );
     let txid = sender
         .do_send(vec![(
             &zingolib::get_base_address!(recipient, pool),
@@ -113,6 +118,7 @@ pub mod scenarios {
                 //! ScenarioBuilder::new constructor.  If you need to set some value
                 //! once, per test, consider adding environment config (e.g. ports, OS) to
                 //! TestEnvironmentGenerator and for scenario specific add to this constructor
+                env_logger::init();
                 let test_env = TestEnvironmentGenerator::new();
                 let regtest_manager = test_env.regtest_manager.clone();
                 let lightwalletd_port = test_env.lightwalletd_rpcservice_port.clone();
