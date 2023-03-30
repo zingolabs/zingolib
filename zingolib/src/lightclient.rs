@@ -54,8 +54,6 @@ use zcash_primitives::{
 use zcash_proofs::prover::LocalTxProver;
 use zingoconfig::{ChainType, ZingoConfig, MAX_REORG};
 
-pub(crate) mod checkpoints;
-
 #[derive(Clone, Debug)]
 pub struct WalletStatus {
     pub is_syncing: bool,
@@ -457,16 +455,8 @@ impl LightClient {
                 Some((tree_state.height, hash, tree))
             }
             Err(e) => {
-                error!(
-                    "Error getting sapling tree:{}\nWill return checkpoint instead.",
-                    e
-                );
-                match checkpoints::get_closest_checkpoint(&self.config.chain, height) {
-                    Some((height, hash, tree)) => {
-                        Some((height, hash.to_string(), tree.to_string()))
-                    }
-                    None => None,
-                }
+                error!("Error getting sapling tree:{e}.");
+                None
             }
         }
     }

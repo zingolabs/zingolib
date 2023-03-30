@@ -1,7 +1,6 @@
 use crate::{
     compact_formats::{CompactBlock, CompactTx, TreeState},
     grpc_connector::GrpcConnector,
-    lightclient::checkpoints::get_all_main_checkpoints,
     wallet::{
         data::{BlockData, PoolNullifier, TransactionMetadata, WitnessCache},
         traits::{DomainWalletExt, FromCommitment, ReceivedNoteAndMetadata},
@@ -198,21 +197,6 @@ impl BlockAndWitnessData {
             .map(|treestate| treestate.clone());
 
         let mut start_trees = vec![];
-
-        // Collect all the checkpoints
-        start_trees.extend(
-            get_all_main_checkpoints()
-                .into_iter()
-                .map(|(h, hash, tree)| {
-                    let mut trees_state = TreeState::default();
-                    trees_state.height = h;
-                    trees_state.hash = hash.to_string();
-                    trees_state.sapling_tree = tree.to_string();
-                    trees_state.orchard_tree = String::from("000000");
-
-                    trees_state
-                }),
-        );
 
         // Add all the verification trees as verified, so they can be used as starting points.
         // If any of them fails to verify, then we will fail the whole thing anyway.
