@@ -1647,7 +1647,6 @@ async fn mempool_clearing() {
         .await;
     }
 
-    /*
     // 3. Send z-to-z transaction to external z address with a memo
     let sent_value = 2000;
     let outgoing_memo = "Outgoing Memo".to_string();
@@ -1666,6 +1665,7 @@ async fn mempool_clearing() {
         recipient.do_maybe_recent_txid().await["last_txid"],
         sent_transaction_id
     );
+    /*
     let mut sent_transactions = data
         .write()
         .await
