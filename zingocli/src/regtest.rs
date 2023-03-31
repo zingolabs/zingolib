@@ -36,11 +36,11 @@ pub struct RegtestManager {
     logs_dir: PathBuf,
     data_dir: PathBuf,
     pub zcashd_data_dir: PathBuf,
-    zcashd_logs_dir: PathBuf,
-    zcashd_stdout_log: PathBuf,
+    pub zcashd_logs_dir: PathBuf,
+    pub zcashd_stdout_log: PathBuf,
     pub zcashd_config: PathBuf,
     pub lightwalletd_config: PathBuf,
-    lightwalletd_logs_dir: PathBuf,
+    pub lightwalletd_logs_dir: PathBuf,
     lightwalletd_log: PathBuf,
     lightwalletd_stdout_log: PathBuf,
     lightwalletd_stderr_log: PathBuf,
@@ -253,16 +253,54 @@ impl RegtestManager {
         if clean_regtest_data {
             self.prepare_working_directories();
         } else {
-            // backup log file so it doesn't get in our way
-            match std::fs::copy(
+            log::info!(
+                "zcash logs dir {:#?}",
+                std::fs::read_dir(&self.zcashd_logs_dir)
+                    .unwrap()
+                    .collect::<Vec<_>>()
+            );
+            log::info!(
+                "lightwallet logs dir {:#?}",
+                std::fs::read_dir(&self.lightwalletd_logs_dir)
+                    .unwrap()
+                    .collect::<Vec<_>>()
+            );
+            if let Err(e) = std::fs::rename(
                 &self.zcashd_stdout_log,
                 format!("{}_backup", self.zcashd_stdout_log.to_string_lossy()),
             ) {
-                Ok(_) => {
-                    std::fs::remove_file(&self.zcashd_stdout_log).unwrap();
-                }
-                Err(_) => todo!(),
-            };
+                log::warn!(
+                    "failed to move log file {}: {e}",
+                    self.zcashd_stdout_log.to_string_lossy()
+                )
+            }
+            if let Err(e) = std::fs::rename(
+                &self.lightwalletd_log,
+                format!("{}_backup", self.lightwalletd_log.to_string_lossy()),
+            ) {
+                log::warn!(
+                    "failed to move log file {}: {e}",
+                    self.lightwalletd_log.to_string_lossy()
+                )
+            }
+            if let Err(e) = std::fs::rename(
+                &self.lightwalletd_stdout_log,
+                format!("{}_backup", self.lightwalletd_stdout_log.to_string_lossy()),
+            ) {
+                log::warn!(
+                    "failed to move log file {}: {e}",
+                    self.lightwalletd_stdout_log.to_string_lossy()
+                )
+            }
+            if let Err(e) = std::fs::rename(
+                &self.lightwalletd_stderr_log,
+                format!("{}_backup", self.lightwalletd_stderr_log.to_string_lossy()),
+            ) {
+                log::warn!(
+                    "failed to move log file {}: {e}",
+                    self.lightwalletd_stderr_log.to_string_lossy()
+                )
+            }
         }
 
         let (mut zcashd_handle, mut zcashd_logfile) = self.zcashd_launch();

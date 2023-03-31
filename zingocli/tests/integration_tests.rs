@@ -1748,7 +1748,32 @@ async fn mempool_clearing() {
     // 4b write down state before clearing the mempool
     let notes_before = recipient.do_list_notes(true).await;
     let transactions_before = recipient.do_list_transactions(false).await;
+
+    log::info!(
+        "zcash logs dir {:#?}",
+        std::fs::read_dir(&regtest_manager.zcashd_logs_dir)
+            .unwrap()
+            .collect::<Vec<_>>()
+    );
+    log::info!(
+        "lightwallet logs dir {:#?}",
+        std::fs::read_dir(&regtest_manager.lightwalletd_logs_dir)
+            .unwrap()
+            .collect::<Vec<_>>()
+    );
     drop(child_process_handler); // Turn off zcashd and lightwalletd
+    log::info!(
+        "zcash logs dir {:#?}",
+        std::fs::read_dir(&regtest_manager.zcashd_logs_dir)
+            .unwrap()
+            .collect::<Vec<_>>()
+    );
+    log::info!(
+        "lightwallet logs dir {:#?}",
+        std::fs::read_dir(&regtest_manager.lightwalletd_logs_dir)
+            .unwrap()
+            .collect::<Vec<_>>()
+    );
 
     // 5. check that the sent transaction is correctly marked in the client
     let mut transactions = recipient.do_list_transactions(true).await;
