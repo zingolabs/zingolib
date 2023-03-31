@@ -6,13 +6,13 @@ use tokio::time::sleep;
 use zingo_cli::regtest::RegtestManager;
 use zingolib::lightclient::LightClient;
 
-async fn get_synced_wallet_height(client: &LightClient) -> u32 {
-    client.do_sync(true).await.unwrap();
-    client
+async fn get_synced_wallet_height(client: &LightClient) -> Result<u32, String> {
+    client.do_sync(true).await?;
+    Ok(client
         .do_wallet_last_scanned_height()
         .await
         .as_u32()
-        .unwrap()
+        .unwrap())
 }
 
 fn poll_server_height(manager: &RegtestManager) -> JsonValue {
@@ -40,7 +40,7 @@ pub async fn send_value_between_clients_and_sync(
     recipient: &LightClient,
     value: u64,
     address_type: &str,
-) -> String {
+) -> Result<String, String> {
     debug!(
         "recipient address is: {}",
         &recipient.do_addresses().await[0]["address"]
@@ -53,9 +53,9 @@ pub async fn send_value_between_clients_and_sync(
         )])
         .await
         .unwrap();
-    increase_height_and_sync_client(manager, sender, 1).await;
-    recipient.do_sync(false).await.unwrap();
-    txid
+    increase_height_and_sync_client(manager, sender, 1).await?;
+    recipient.do_sync(false).await?;
+    Ok(txid)
 }
 
 // This function increases the chain height reliably (with polling) but
@@ -66,18 +66,19 @@ pub async fn increase_height_and_sync_client(
     manager: &RegtestManager,
     client: &LightClient,
     n: u32,
-) {
-    let start_height = get_synced_wallet_height(&client).await;
+) -> Result<(), String> {
+    let start_height = get_synced_wallet_height(&client).await?;
     let target = start_height + n;
     manager
         .generate_n_blocks(n)
         .expect("Called for side effect, failed!");
-    while check_wallet_chainheight_value(&client, target).await {
+    while check_wallet_chainheight_value(&client, target).await? {
         sleep(Duration::from_millis(50)).await;
     }
+    Ok(())
 }
-async fn check_wallet_chainheight_value(client: &LightClient, target: u32) -> bool {
-    get_synced_wallet_height(&client).await != target
+async fn check_wallet_chainheight_value(client: &LightClient, target: u32) -> Result<bool, String> {
+    Ok(get_synced_wallet_height(&client).await? != target)
 }
 #[cfg(test)]
 pub mod scenarios {
@@ -368,7 +369,9 @@ pub mod scenarios {
         String,
     ) {
         let (regtest_manager, child_process_handler, faucet, recipient) = faucet_recipient().await;
-        increase_height_and_sync_client(&regtest_manager, &faucet, 1).await;
+        increase_height_and_sync_client(&regtest_manager, &faucet, 1)
+            .await
+            .unwrap();
         let txid = faucet
             .do_send(vec![(
                 &get_base_address!(recipient, "unified"),
@@ -377,7 +380,9 @@ pub mod scenarios {
             )])
             .await
             .unwrap();
-        increase_height_and_sync_client(&regtest_manager, &recipient, 1).await;
+        increase_height_and_sync_client(&regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
         faucet.do_sync(false).await.unwrap();
         (
             regtest_manager,
