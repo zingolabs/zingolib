@@ -252,6 +252,17 @@ impl RegtestManager {
     ) -> Result<ChildProcessHandler, LaunchChildProcessError> {
         if clean_regtest_data {
             self.prepare_working_directories();
+        } else {
+            // backup log file so it doesn't get in our way
+            match std::fs::copy(
+                &self.zcashd_stdout_log,
+                format!("{}_backup", self.zcashd_stdout_log.to_string_lossy()),
+            ) {
+                Ok(_) => {
+                    std::fs::remove_file(&self.zcashd_stdout_log).unwrap();
+                }
+                Err(_) => todo!(),
+            };
         }
 
         let (mut zcashd_handle, mut zcashd_logfile) = self.zcashd_launch();
