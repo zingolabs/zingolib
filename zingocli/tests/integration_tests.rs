@@ -1707,11 +1707,19 @@ async fn mempool_clearing() {
         .output()
         .expect("directory copy failed");
     std::process::Command::new("cp")
-        .arg("-rf")
+        .arg("--recursive")
+        .arg("--remove-destination")
         .arg(dest)
         .arg(source)
         .output()
         .expect("directory copy failed");
+    assert_eq!(
+        source,
+        &regtest_manager
+            .zcashd_data_dir
+            .to_string_lossy()
+            .to_string()
+    );
     let child_process_handler = regtest_manager.launch(false).unwrap();
     /*
     let mut sent_transactions = data
@@ -1764,20 +1772,20 @@ async fn mempool_clearing() {
             assert_eq!(note.have_spending_key, note2.have_spending_key);
         }
     }
-    let notes_after = lightclient.do_list_notes(true).await;
-    let transactions_after = lightclient.do_list_transactions(false).await;
+    */
+    let notes_after = recipient.do_list_notes(true).await;
+    let transactions_after = recipient.do_list_transactions(false).await;
 
     assert_eq!(notes_before.pretty(2), notes_after.pretty(2));
     assert_eq!(transactions_before.pretty(2), transactions_after.pretty(2));
 
     // 6. Mine 10 blocks, the unconfirmed transaction should still be there.
-    mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 10)
-        .await;
-    assert_eq!(lightclient.wallet.last_synced_height().await, 26);
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 10).await;
+    assert_eq!(recipient.wallet.last_synced_height().await, 26);
 
-    let notes = lightclient.do_list_notes(true).await;
+    let notes = recipient.do_list_notes(true).await;
 
-    let transactions = lightclient.do_list_transactions(false).await;
+    let transactions = recipient.do_list_transactions(false).await;
 
     // There is 1 unspent note, which is the unconfirmed transaction
     println!("{}", json::stringify_pretty(notes.clone(), 4));
@@ -1795,12 +1803,11 @@ async fn mempool_clearing() {
     assert_eq!(transactions.len(), 2);
 
     // 7. Mine 100 blocks, so the mempool expires
-    mine_numblocks_each_with_two_sap_txs(&mut fake_compactblock_list, &data, &lightclient, 100)
-        .await;
-    assert_eq!(lightclient.wallet.last_synced_height().await, 126);
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 100).await;
+    assert_eq!(recipient.wallet.last_synced_height().await, 126);
 
-    let notes = lightclient.do_list_notes(true).await;
-    let transactions = lightclient.do_list_transactions(false).await;
+    let notes = recipient.do_list_notes(true).await;
+    let transactions = recipient.do_list_transactions(false).await;
 
     // There is now again 1 unspent note, but it is the original (confirmed) note.
     assert_eq!(notes["unspent_sapling_notes"].len(), 1);
@@ -1816,7 +1823,6 @@ async fn mempool_clearing() {
     );
     assert_eq!(notes["pending_sapling_notes"].len(), 0);
     assert_eq!(transactions.len(), 1);
-    */
     drop(child_process_handler);
 }
 #[tokio::test]
