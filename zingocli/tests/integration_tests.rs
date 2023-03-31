@@ -2,7 +2,7 @@
 #![cfg(feature = "local_env")]
 mod data;
 mod utils;
-use std::fs::File;
+use std::{fs::File, path::Path};
 
 use bip0039::Mnemonic;
 use data::seeds::HOSPITAL_MUSEUM_SEED;
@@ -1647,6 +1647,23 @@ async fn mempool_clearing() {
         .await;
     }
 
+    // 3a. stash zcashd state
+    let zcd_datadir = &regtest_manager.zcashd_data_dir;
+    let zcashd_parent = Path::new(zcd_datadir).parent().unwrap();
+    let original_zcashd_directory = zcashd_parent.join("original_zcashd");
+    log::info!(
+        "The original zcashd directory is at: {}",
+        &original_zcashd_directory.to_string_lossy().to_string()
+    );
+    let source = &zcd_datadir.to_string_lossy().to_string();
+    let dest = &original_zcashd_directory.to_string_lossy().to_string();
+    std::process::Command::new("cp")
+        .arg("-rf")
+        .arg(source)
+        .arg(dest)
+        .output()
+        .expect("directory copy failed");
+
     // 3. Send z-to-z transaction to external z address with a memo
     let sent_value = 2000;
     let outgoing_memo = "Outgoing Memo".to_string();
@@ -1665,6 +1682,37 @@ async fn mempool_clearing() {
         recipient.do_maybe_recent_txid().await["last_txid"],
         sent_transaction_id
     );
+
+    // 4b write down state before clearing the mempool
+    let notes_before = recipient.do_list_notes(true).await;
+    let transactions_before = recipient.do_list_transactions(false).await;
+    drop(child_process_handler); // Turn off zcashd and lightwalletd
+
+    // 5. check that the sent transaction is correctly marked in the client
+    let mut transactions = recipient.do_list_transactions(true).await;
+    let mempool_only_tx = transactions.pop();
+    log::info!("the transactions are: {}", &mempool_only_tx);
+    assert_eq!(
+        mempool_only_tx["outgoing_metadata"][0]["memo"],
+        "Outgoing Memo"
+    );
+    assert_eq!(mempool_only_tx["txid"], sent_transaction_id);
+
+    // 6. note that the client correctly considers the note unconfirmed
+    assert_eq!(mempool_only_tx["unconfirmed"], true);
+
+    std::process::Command::new("rm")
+        .arg("-rf")
+        .arg(source)
+        .output()
+        .expect("directory copy failed");
+    std::process::Command::new("cp")
+        .arg("-rf")
+        .arg(dest)
+        .arg(source)
+        .output()
+        .expect("directory copy failed");
+    let child_process_handler = regtest_manager.launch(false).unwrap();
     /*
     let mut sent_transactions = data
         .write()
@@ -1675,7 +1723,8 @@ async fn mempool_clearing() {
     assert_eq!(sent_transactions.len(), 1);
     let sent_transaction = sent_transactions.remove(0);
 
-    // 5. At this point, the raw transaction is already been parsed, but we'll parse it again just to make sure it doesn't create any duplicates.
+    // 5. At this point, the raw transaction is already been parsed, but we'll parse it
+    //    again just to make sure it doesn't create any duplicates.
     let notes_before = lightclient.do_list_notes(true).await;
     let transactions_before = lightclient.do_list_transactions(false).await;
 

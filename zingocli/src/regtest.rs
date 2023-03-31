@@ -35,7 +35,7 @@ pub struct RegtestManager {
     zingo_cli_bin: PathBuf,
     logs_dir: PathBuf,
     data_dir: PathBuf,
-    zcashd_data_dir: PathBuf,
+    pub zcashd_data_dir: PathBuf,
     zcashd_logs_dir: PathBuf,
     zcashd_stdout_log: PathBuf,
     pub zcashd_config: PathBuf,
