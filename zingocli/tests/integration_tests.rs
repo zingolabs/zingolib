@@ -1710,13 +1710,44 @@ async fn mempool_clearing() {
     }
 
     // 3a. stash zcashd state
+    log::info!(
+        "old zcashd chain info {}",
+        std::str::from_utf8(
+            &regtest_manager
+                .get_cli_handle()
+                .arg("getblockchaininfo")
+                .output()
+                .unwrap()
+                .stdout
+        )
+        .unwrap()
+    );
+
+    // Turn zcashd off and on again, to write down the blocks
+    drop(child_process_handler); // Turn off zcashd and lightwalletd
+    let child_process_handler = regtest_manager.launch(false).unwrap();
+    log::info!(
+        "new zcashd chain info {}",
+        std::str::from_utf8(
+            &regtest_manager
+                .get_cli_handle()
+                .arg("getblockchaininfo")
+                .output()
+                .unwrap()
+                .stdout
+        )
+        .unwrap()
+    );
+
     let zcd_datadir = &regtest_manager.zcashd_data_dir;
     let zcashd_parent = Path::new(zcd_datadir).parent().unwrap();
     let original_zcashd_directory = zcashd_parent.join("original_zcashd");
+
     log::info!(
         "The original zcashd directory is at: {}",
         &original_zcashd_directory.to_string_lossy().to_string()
     );
+
     let source = &zcd_datadir.to_string_lossy().to_string();
     let dest = &original_zcashd_directory.to_string_lossy().to_string();
     std::process::Command::new("cp")
@@ -1749,31 +1780,7 @@ async fn mempool_clearing() {
     let notes_before = recipient.do_list_notes(true).await;
     let transactions_before = recipient.do_list_transactions(false).await;
 
-    log::info!(
-        "zcash logs dir {:#?}",
-        std::fs::read_dir(&regtest_manager.zcashd_logs_dir)
-            .unwrap()
-            .collect::<Vec<_>>()
-    );
-    log::info!(
-        "lightwallet logs dir {:#?}",
-        std::fs::read_dir(&regtest_manager.lightwalletd_logs_dir)
-            .unwrap()
-            .collect::<Vec<_>>()
-    );
     drop(child_process_handler); // Turn off zcashd and lightwalletd
-    log::info!(
-        "zcash logs dir {:#?}",
-        std::fs::read_dir(&regtest_manager.zcashd_logs_dir)
-            .unwrap()
-            .collect::<Vec<_>>()
-    );
-    log::info!(
-        "lightwallet logs dir {:#?}",
-        std::fs::read_dir(&regtest_manager.lightwalletd_logs_dir)
-            .unwrap()
-            .collect::<Vec<_>>()
-    );
 
     // 5. check that the sent transaction is correctly marked in the client
     let mut transactions = recipient.do_list_transactions(true).await;

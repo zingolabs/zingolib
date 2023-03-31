@@ -1646,7 +1646,7 @@ impl LightClient {
     }
 
     pub async fn do_shield(&self, address: Option<String>) -> Result<String, String> {
-        let transaction_submission_height = self.get_submission_height().await;
+        let transaction_submission_height = self.get_submission_height().await?;
         let fee = u64::from(DEFAULT_FEE);
         let tbal = self.wallet.tbalance(None).await;
 
@@ -1685,20 +1685,19 @@ impl LightClient {
         result.map(|(transaction_id, _)| transaction_id)
     }
 
-    async fn get_submission_height(&self) -> BlockHeight {
-        BlockHeight::from_u32(
+    async fn get_submission_height(&self) -> Result<BlockHeight, String> {
+        Ok(BlockHeight::from_u32(
             GrpcConnector::get_latest_block(self.config.get_server_uri())
-                .await
-                .unwrap()
+                .await?
                 .height as u32,
-        ) + 1
+        ) + 1)
     }
     //TODO: Add migrate_sapling_to_orchard argument
     pub async fn do_send(
         &self,
         address_amount_memo_tuples: Vec<(&str, u64, Option<String>)>,
     ) -> Result<String, String> {
-        let transaction_submission_height = self.get_submission_height().await;
+        let transaction_submission_height = self.get_submission_height().await?;
         // First, get the concensus branch ID
         debug!("Creating transaction");
 

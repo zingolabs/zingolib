@@ -53,10 +53,13 @@ pub struct ChildProcessHandler {
     lightwalletd: Child,
 }
 impl Drop for ChildProcessHandler {
-    #[allow(unused_must_use)]
     fn drop(&mut self) {
-        self.zcashd.kill();
-        self.lightwalletd.kill();
+        if let Err(e) = self.zcashd.kill() {
+            log::warn!("zcashd has already terminated: {e}")
+        };
+        if let Err(e) = self.lightwalletd.kill() {
+            log::warn!("lightwalletd has already terminated: {e}")
+        }
     }
 }
 #[derive(Debug)]
