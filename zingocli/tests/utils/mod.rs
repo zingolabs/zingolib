@@ -119,7 +119,6 @@ pub mod scenarios {
                 //! ScenarioBuilder::new constructor.  If you need to set some value
                 //! once, per test, consider adding environment config (e.g. ports, OS) to
                 //! TestEnvironmentGenerator and for scenario specific add to this constructor
-                env_logger::init();
                 let test_env = TestEnvironmentGenerator::new();
                 let regtest_manager = test_env.regtest_manager.clone();
                 let lightwalletd_port = test_env.lightwalletd_rpcservice_port.clone();

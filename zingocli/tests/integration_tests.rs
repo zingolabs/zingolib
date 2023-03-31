@@ -1143,7 +1143,7 @@ async fn t_incoming_t_outgoing() {
 async fn send_to_ua_saves_full_ua_in_wallet() {
     let (regtest_manager, child_process_handler, faucet, recipient) =
         scenarios::faucet_recipient().await;
-    //utils::increase_height_and_sync_client(&regtest_manager, &faucet, 5).await.unwrap();
+    //utils::increase_height_and_sync_client(&regtest_manager, &faucet, 5).await;
     let recipient_unified_address = get_base_address!(recipient, "unified");
     let sent_value = 50_000;
     faucet
@@ -1307,7 +1307,8 @@ async fn sapling_to_sapling_scan_together() {
         value,
         "sapling",
     )
-    .await;
+    .await
+    .unwrap();
 
     let spent_value = 250;
 
@@ -1325,7 +1326,7 @@ async fn sapling_to_sapling_scan_together() {
     let list = recipient.do_list_transactions(false).await;
 
     assert_eq!(list[0]["block_height"].as_u64().unwrap(), 3);
-    assert_eq!(list[0]["txid"], txid.unwrap().to_string());
+    assert_eq!(list[0]["txid"], txid.to_string());
     assert_eq!(list[0]["amount"].as_i64().unwrap(), (value as i64));
 
     assert_eq!(list[1]["block_height"].as_u64().unwrap(), 4);
@@ -1779,7 +1780,6 @@ async fn mempool_clearing() {
     // 4b write down state before clearing the mempool
     let notes_before = recipient.do_list_notes(true).await;
     let transactions_before = recipient.do_list_transactions(false).await;
-
     drop(child_process_handler); // Turn off zcashd and lightwalletd
 
     // 5. check that the sent transaction is correctly marked in the client
@@ -1922,6 +1922,58 @@ async fn mempool_clearing() {
     assert_eq!(notes["pending_sapling_notes"].len(), 0);
     assert_eq!(transactions.len(), 1);
     drop(child_process_handler);
+}
+
+pub mod framework_validation {
+    use super::*;
+    #[tokio::test]
+    async fn reboot_zcashd() {
+        let (regtest_manager, child_process_handler, _faucet) =
+            scenarios::basic_no_spendable().await;
+
+        // 3a. stash zcashd state
+        let zcd_datadir = &regtest_manager.zcashd_data_dir;
+        let zcashd_parent = Path::new(zcd_datadir).parent().unwrap();
+        let original_zcashd_directory = zcashd_parent.join("original_zcashd");
+        log::info!(
+            "The original zcashd directory is at: {}",
+            &original_zcashd_directory.to_string_lossy().to_string()
+        );
+        let source = &zcd_datadir.to_string_lossy().to_string();
+        let dest = &original_zcashd_directory.to_string_lossy().to_string();
+        std::process::Command::new("cp")
+            .arg("-rf")
+            .arg(source)
+            .arg(dest)
+            .output()
+            .expect("directory copy failed");
+
+        drop(child_process_handler); // Turn off zcashd and lightwalletd
+
+        // 5. check that the sent transaction is correctly marked in the client
+
+        std::process::Command::new("rm")
+            .arg("-rf")
+            .arg(source)
+            .output()
+            .expect("directory copy failed");
+        std::process::Command::new("cp")
+            .arg("--recursive")
+            .arg("--remove-destination")
+            .arg(dest)
+            .arg(source)
+            .output()
+            .expect("directory copy failed");
+        assert_eq!(
+            source,
+            &regtest_manager
+                .zcashd_data_dir
+                .to_string_lossy()
+                .to_string()
+        );
+        let child_process_handler = regtest_manager.launch(false).unwrap();
+        drop(child_process_handler);
+    }
 }
 #[tokio::test]
 async fn sapling_incoming_sapling_outgoing() {
