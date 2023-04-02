@@ -14,8 +14,6 @@ use zingolib::{commands, lightclient::LightClient, load_clientconfig};
 pub mod regtest;
 pub mod version;
 
-
-
 pub fn build_clap_app() -> clap::App<'static> {
     clap::App::new("Zingo CLI").version(version::VERSION)
             .arg(Arg::new("nosync")

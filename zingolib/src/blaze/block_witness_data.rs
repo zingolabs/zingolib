@@ -1276,17 +1276,22 @@ mod test {
             CommitmentTree::<MerkleHashOrchard>::read(&*hex::decode(ORCHARD_END).unwrap()).unwrap();
         assert_eq!(start_tree, end_tree);
     }
-    
+
     #[test]
     fn test_verified_parentless_orchard_tree() {
-        let checkpoint = crate::lightclient::checkpoints::get_closest_checkpoint(&ChainType::Mainnet, 663150).unwrap();
+        let checkpoint =
+            crate::lightclient::checkpoints::get_closest_checkpoint(&ChainType::Mainnet, 663150)
+                .unwrap();
 
         let tree_state = CommitmentTreesForBlock::from_pre_orchard_checkpoint(
             checkpoint.0,
             checkpoint.1.to_string(),
-            checkpoint.2.to_string()
+            checkpoint.2.to_string(),
         )
         .to_tree_state();
-        assert!(is_orchard_tree_verified(ORCHARD_START.to_string(), tree_state));
+        assert!(is_orchard_tree_verified(
+            ORCHARD_START.to_string(),
+            tree_state
+        ));
     }
 }
