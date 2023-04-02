@@ -2,6 +2,7 @@ use crate::utils::scenarios::setup::ClientManager;
 use json::JsonValue;
 use rand::Rng;
 use tempdir::{self, TempDir};
+
 #[tokio::test]
 async fn test_simple_sync() {
     let mut rng = rand::thread_rng();
