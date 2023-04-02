@@ -159,7 +159,7 @@ pub mod scenarios {
                         }),
                 );
             }
-            pub fn launcher(funded: Option<String>, custom_conf: Option<String>) -> Self {
+            pub fn build_and_launch(funded: Option<String>, custom_conf: Option<String>) -> Self {
                 let mut sb = if let Some(conf) = custom_conf {
                     ScenarioBuilder::new(Some(conf))
                 } else {
@@ -317,8 +317,10 @@ pub mod scenarios {
         }
     }
     pub fn custom_clients() -> (RegtestManager, ChildProcessHandler, ClientManager) {
-        let sb =
-            setup::ScenarioBuilder::launcher(Some(REGSAP_ADDR_FROM_ABANDONART.to_string()), None);
+        let sb = setup::ScenarioBuilder::build_and_launch(
+            Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
+            None,
+        );
         (
             sb.regtest_manager,
             sb.child_process_handler.unwrap(),
@@ -326,7 +328,7 @@ pub mod scenarios {
         )
     }
     pub fn custom_config(config: &str) -> (RegtestManager, ChildProcessHandler, ClientManager) {
-        let sb = setup::ScenarioBuilder::launcher(
+        let sb = setup::ScenarioBuilder::build_and_launch(
             Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
             Some(config.to_string()),
         );
@@ -347,8 +349,10 @@ pub mod scenarios {
     /// of scenarios.  As scenarios with even less requirements
     /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
     pub async fn faucet() -> (RegtestManager, ChildProcessHandler, LightClient) {
-        let mut sb =
-            setup::ScenarioBuilder::launcher(Some(REGSAP_ADDR_FROM_ABANDONART.to_string()), None);
+        let mut sb = setup::ScenarioBuilder::build_and_launch(
+            Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
+            None,
+        );
         let faucet = sb.client_builder.build_new_faucet(0, false).await;
         faucet.do_sync(false).await.unwrap();
         (
@@ -398,8 +402,10 @@ pub mod scenarios {
         LightClient,
         LightClient,
     ) {
-        let mut sb =
-            setup::ScenarioBuilder::launcher(Some(REGSAP_ADDR_FROM_ABANDONART.to_string()), None);
+        let mut sb = setup::ScenarioBuilder::build_and_launch(
+            Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
+            None,
+        );
         let faucet = sb.client_builder.build_new_faucet(0, false).await;
         faucet.do_sync(false).await.unwrap();
         let recipient = sb
@@ -467,8 +473,12 @@ pub mod scenarios {
         )
     }
 
+    pub async fn without_clients() -> (RegtestManager, ChildProcessHandler) {
+        let sb = setup::ScenarioBuilder::build_and_launch(None, None);
+        (sb.regtest_manager, sb.child_process_handler.unwrap())
+    }
     pub async fn basic_no_spendable() -> (RegtestManager, ChildProcessHandler, LightClient) {
-        let mut scenario_builder = setup::ScenarioBuilder::launcher(None, None);
+        let mut scenario_builder = setup::ScenarioBuilder::build_and_launch(None, None);
         (
             scenario_builder.regtest_manager,
             scenario_builder.child_process_handler.unwrap(),

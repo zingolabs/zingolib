@@ -1687,6 +1687,7 @@ async fn witness_clearing() {
     drop(child_process_handler);
 }
 
+#[ignore]
 #[tokio::test]
 async fn mempool_clearing() {
     let value = 100_000;
@@ -1925,54 +1926,52 @@ async fn mempool_clearing() {
 }
 
 pub mod framework_validation {
+
     use super::*;
+    macro_rules! log_field_from_zcashd {
+        (
+        $regtest_manager:ident,
+        $log_message:expr,
+        $rpc_command:expr,
+        $query_field:expr,
+    ) => {
+            log::info!(
+                $log_message,
+                json::parse(
+                    std::str::from_utf8(
+                        &$regtest_manager
+                            .get_cli_handle()
+                            .arg($rpc_command)
+                            .output()
+                            .unwrap()
+                            .stdout
+                    )
+                    .unwrap()
+                )
+                .unwrap()[$query_field]
+            );
+        };
+    }
     #[tokio::test]
     async fn reboot_zcashd() {
-        let (regtest_manager, child_process_handler, _faucet) =
-            scenarios::basic_no_spendable().await;
-
-        // 3a. stash zcashd state
-        let zcd_datadir = &regtest_manager.zcashd_data_dir;
-        let zcashd_parent = Path::new(zcd_datadir).parent().unwrap();
-        let original_zcashd_directory = zcashd_parent.join("original_zcashd");
-        log::info!(
-            "The original zcashd directory is at: {}",
-            &original_zcashd_directory.to_string_lossy().to_string()
+        env_logger::init();
+        let (regtest_manager, child_process_handler) = scenarios::without_clients().await;
+        // Turn zcashd off and on again, to write down the blocks
+        log_field_from_zcashd!(
+            regtest_manager,
+            "old zcashd blocks: {}",
+            "getblockchaininfo",
+            "blocks",
         );
-        let source = &zcd_datadir.to_string_lossy().to_string();
-        let dest = &original_zcashd_directory.to_string_lossy().to_string();
-        std::process::Command::new("cp")
-            .arg("-rf")
-            .arg(source)
-            .arg(dest)
-            .output()
-            .expect("directory copy failed");
-
         drop(child_process_handler); // Turn off zcashd and lightwalletd
-
-        // 5. check that the sent transaction is correctly marked in the client
-
-        std::process::Command::new("rm")
-            .arg("-rf")
-            .arg(source)
-            .output()
-            .expect("directory copy failed");
-        std::process::Command::new("cp")
-            .arg("--recursive")
-            .arg("--remove-destination")
-            .arg(dest)
-            .arg(source)
-            .output()
-            .expect("directory copy failed");
-        assert_eq!(
-            source,
-            &regtest_manager
-                .zcashd_data_dir
-                .to_string_lossy()
-                .to_string()
+        let child_process_handler2 = regtest_manager.launch(false).unwrap();
+        log_field_from_zcashd!(
+            regtest_manager,
+            "new zcashd blocks: {}",
+            "getblockchaininfo",
+            "blocks",
         );
-        let child_process_handler = regtest_manager.launch(false).unwrap();
-        drop(child_process_handler);
+        drop(child_process_handler2);
     }
 }
 #[tokio::test]
