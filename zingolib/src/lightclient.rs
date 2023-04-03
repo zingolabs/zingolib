@@ -1005,15 +1005,15 @@ impl LightClient {
 
                 // Get the total transparent received
                 let total_transparent_received = wallet_transaction.utxos.iter().map(|u| u.value).sum::<u64>();
-                let amount = total_transparent_received as i64 - wallet_transaction.total_transparent_value_spent as i64;
-                let address = wallet_transaction.utxos.iter().map(|u| u.address.clone()).collect::<Vec<String>>().join(",");
-                if total_transparent_received > wallet_transaction.total_transparent_value_spent {
+                let wallet_transparent_value_delta = total_transparent_received as i64 - wallet_transaction.total_transparent_value_spent as i64;
+                let address = wallet_transaction.utxos.iter().map(|utxo| utxo.address.clone()).collect::<Vec<String>>().join(",");
+                if wallet_transparent_value_delta > 0 {
                     if let Some(transaction) = transactions.iter_mut().find(|transaction| transaction["txid"] == wallet_transaction.txid.to_string()) {
                         // If we have change, we've already accounted for the entire balance. If not, we've added sapling/orchard,
                         // and need to add transparent
                         if wallet_transaction.total_value_spent() == 0 {
                             let old_amount = transaction.remove("amount").as_i64().unwrap();
-                            transaction.insert("amount", old_amount + amount).unwrap();
+                            transaction.insert("amount", old_amount + wallet_transparent_value_delta).unwrap();
                         }
                     } else {
                     // Create an input transaction for the transparent value as well.
@@ -1023,7 +1023,7 @@ impl LightClient {
                         "unconfirmed" => wallet_transaction.unconfirmed,
                         "datetime"     => wallet_transaction.datetime,
                         "txid"         => format!("{}", wallet_transaction.txid),
-                        "amount"       => amount,
+                        "amount"       => wallet_transparent_value_delta,
                         "zec_price"    => wallet_transaction.zec_price.map(|p| (p * 100.0).round() / 100.0),
                         "address"      => address,
                         "memo"         => None::<String>
