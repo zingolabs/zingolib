@@ -1026,8 +1026,9 @@ impl LightClient {
                             "amount"       => wallet_transparent_value_delta,
                             "zec_price"    => wallet_transaction.zec_price.map(|p| (p * 100.0).round() / 100.0),
                             "address"      => address,
-                            "memo"         => None::<String>
-                    })}
+                            "memo"         => None::<String> 
+                        })
+                    }
                 }
 
                 transactions
