@@ -1697,12 +1697,12 @@ async fn mempool_clearing() {
         recipient.do_maybe_recent_txid().await["last_txid"],
         orig_transaction_id
     );
-    // Put some transactions we don't care about on-chain, to get some clutter
+    // Put some transactions unrelated to the recipient (faucet->faucet) on-chain, to get some clutter
     for _ in 0..5 {
         utils::send_value_between_clients_and_sync(
             &regtest_manager,
             &faucet,
-            &recipient,
+            &faucet,
             5_000,
             "unified",
         )
@@ -1877,7 +1877,7 @@ async fn mempool_clearing() {
     utils::increase_height_and_sync_client(&regtest_manager, &recipient, 10)
         .await
         .unwrap();
-    assert_eq!(recipient.wallet.last_synced_height().await, 26);
+    assert_eq!(recipient.wallet.last_synced_height().await, 18);
 
     let notes = recipient.do_list_notes(true).await;
 
@@ -1902,24 +1902,24 @@ async fn mempool_clearing() {
     utils::increase_height_and_sync_client(&regtest_manager, &recipient, 100)
         .await
         .unwrap();
-    assert_eq!(recipient.wallet.last_synced_height().await, 126);
+    assert_eq!(recipient.wallet.last_synced_height().await, 118);
 
     let notes = recipient.do_list_notes(true).await;
     let transactions = recipient.do_list_transactions(false).await;
 
     // There is now again 1 unspent note, but it is the original (confirmed) note.
-    assert_eq!(notes["unspent_sapling_notes"].len(), 1);
+    assert_eq!(notes["unspent_orchard_notes"].len(), 1);
     assert_eq!(
-        notes["unspent_sapling_notes"][0]["created_in_txid"],
+        notes["unspent_orchard_notes"][0]["created_in_txid"],
         orig_transaction_id
     );
     assert_eq!(
-        notes["unspent_sapling_notes"][0]["unconfirmed"]
+        notes["unspent_orchard_notes"][0]["unconfirmed"]
             .as_bool()
             .unwrap(),
         false
     );
-    assert_eq!(notes["pending_sapling_notes"].len(), 0);
+    assert_eq!(notes["pending_orchard_notes"].len(), 0);
     assert_eq!(transactions.len(), 1);
     drop(child_process_handler);
 }
