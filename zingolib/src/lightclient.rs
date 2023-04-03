@@ -1016,17 +1016,17 @@ impl LightClient {
                             transaction.insert("amount", old_amount + wallet_transparent_value_delta).unwrap();
                         }
                     } else {
-                    // Create an input transaction for the transparent value as well.
-                    let block_height: u32 = wallet_transaction.block_height.into();
-                    transactions.push(object! {
-                        "block_height" => block_height,
-                        "unconfirmed" => wallet_transaction.unconfirmed,
-                        "datetime"     => wallet_transaction.datetime,
-                        "txid"         => format!("{}", wallet_transaction.txid),
-                        "amount"       => wallet_transparent_value_delta,
-                        "zec_price"    => wallet_transaction.zec_price.map(|p| (p * 100.0).round() / 100.0),
-                        "address"      => address,
-                        "memo"         => None::<String>
+                        // Create an input transaction for the transparent value as well.
+                        let block_height: u32 = wallet_transaction.block_height.into();
+                        transactions.push(object! {
+                            "block_height" => block_height,
+                            "unconfirmed"  => wallet_transaction.unconfirmed,
+                            "datetime"     => wallet_transaction.datetime,
+                            "txid"         => format!("{}", wallet_transaction.txid),
+                            "amount"       => wallet_transparent_value_delta,
+                            "zec_price"    => wallet_transaction.zec_price.map(|p| (p * 100.0).round() / 100.0),
+                            "address"      => address,
+                            "memo"         => None::<String>
                     })}
                 }
 
