@@ -120,7 +120,8 @@ impl TransactionContext {
         // Collect our t-addresses for easy checking
         let taddrs_set = self.key.read().await.get_all_taddrs(&self.config);
         // Process t-address outputs
-        // we need to grab all transparent outputs as the outgoing metadata
+        // If this transaction in outgoing, i.e., we recieved sent some money in this transaction, then we need to grab all transparent outputs
+        // that don't belong to us as the outgoing metadata
         if self
             .transaction_metadata_set
             .read()
@@ -144,21 +145,21 @@ impl TransactionContext {
         )
         .await;
         // Post process scan results
-        if let Some(t_bundle) = transaction.transparent_bundle() {
-            for vout in &t_bundle.vout {
-                if let Some(taddr) =
-                    address_from_pubkeyhash(&self.config, vout.script_pubkey.address())
-                {
-                    outgoing_metadatas.push(OutgoingTxMetadata {
-                        to_address: taddr,
-                        value: vout.value.into(),
-                        memo: Memo::Empty,
-                        ua: None,
-                    });
+        if is_outgoing_transaction {
+            if let Some(t_bundle) = transaction.transparent_bundle() {
+                for vout in &t_bundle.vout {
+                    if let Some(taddr) =
+                        address_from_pubkeyhash(&self.config, vout.script_pubkey.address())
+                    {
+                        outgoing_metadatas.push(OutgoingTxMetadata {
+                            to_address: taddr,
+                            value: vout.value.into(),
+                            memo: Memo::Empty,
+                            ua: None,
+                        });
+                    }
                 }
             }
-        }
-        if is_outgoing_transaction {
             // Also, if this is an outgoing transaction, then mark all the *incoming* sapling notes to this transaction as change.
             // Note that this is also done in `WalletTxns::add_new_spent`, but that doesn't take into account transparent spends,
             // so we'll do it again here.
