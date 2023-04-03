@@ -30,6 +30,37 @@ use zingolib::{
 };
 
 #[tokio::test]
+async fn load_and_parse_different_wallet_versions() {
+    let one_orch_conf_path = format!(
+        "{}/zingocli/tests/data/wallets/v26/202302_release/regtest/one_only/zingo-wallet.dat",
+        zingo_cli::regtest::get_git_rootdir()
+            .to_string_lossy()
+            .to_string()
+    );
+    let (_regtest_manager, child_process_handler, client_manager) =
+        scenarios::custom_config(&one_orch_conf_path);
+    let (zingoconfig, _) = zingolib::load_clientconfig_async(
+        client_manager.server_id.clone(),
+        Some(one_orch_conf_path.clone()),
+    )
+    .await
+    .unwrap();
+    let read_buffer = File::open(one_orch_conf_path.clone()).unwrap();
+
+    let feb_2023_wallet = zingolib::wallet::LightWallet::read_internal(read_buffer, &zingoconfig)
+        .await
+        .unwrap();
+
+    // Create client based on config and wallet of faucet
+    let febwallet_client = LightClient::create_with_wallet(feb_2023_wallet, zingoconfig.clone());
+    /*
+     */
+    //let faucet_copy = LightClient::create_with_wallet(faucet_wallet, zingoconfig.clone());
+    assert_eq!(true, false);
+    drop(child_process_handler);
+}
+
+#[tokio::test]
 async fn factor_do_shield_to_call_do_send() {
     let (regtest_manager, _child_process_handler, faucet, recipient) =
         scenarios::faucet_recipient().await;
@@ -1926,8 +1957,6 @@ async fn mempool_clearing() {
 
 pub mod framework_validation {
 
-    use std::time::Duration;
-
     use crate::utils::scenarios::setup::{self, ScenarioBuilder};
 
     macro_rules! log_field_from_zcashd {
@@ -1956,7 +1985,6 @@ pub mod framework_validation {
     }
     #[tokio::test]
     async fn reboot_zcashd() {
-        env_logger::init();
         let ScenarioBuilder {
             regtest_manager,
             child_process_handler,
