@@ -384,9 +384,6 @@ to scan from the start of the blockchain."
 pub fn startup(
     filled_template: &ConfigTemplate,
 ) -> std::io::Result<(Sender<(String, Vec<String>)>, Receiver<String>)> {
-    // Initialize logging
-    LightClient::init_logging()?;
-
     // Try to get the configuration
     let (config, latest_block_height) = load_clientconfig(
         filled_template.server.clone(),
@@ -508,6 +505,10 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
     }
 }
 pub fn run_cli() {
+    // Initialize logging
+    if let Err(e) = LightClient::init_logging() {
+        eprintln!("Could not initialize logging: {e}")
+    };
     let cli_config = ConfigTemplate::fill(build_clap_app()).unwrap();
     dispatch_command_or_start_interactive(&cli_config);
 }
