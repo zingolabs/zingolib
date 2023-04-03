@@ -160,6 +160,9 @@ pub mod scenarios {
                 );
             }
             pub fn build_and_launch(funded: Option<String>, custom_conf: Option<String>) -> Self {
+                if let Err(e) = LightClient::init_logging() {
+                    eprintln!("Can't initiate logging: {e}")
+                }
                 let mut sb = if let Some(conf) = custom_conf {
                     ScenarioBuilder::new(Some(conf))
                 } else {
