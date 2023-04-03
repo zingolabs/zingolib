@@ -54,6 +54,8 @@ use zcash_primitives::{
 use zcash_proofs::prover::LocalTxProver;
 use zingoconfig::{ChainType, ZingoConfig, MAX_REORG};
 
+static LOG_INIT: std::sync::Once = std::sync::Once::new();
+
 #[derive(Clone, Debug)]
 pub struct WalletStatus {
     pub is_syncing: bool,
@@ -553,7 +555,7 @@ impl LightClient {
     }
     pub fn init_logging() -> io::Result<()> {
         // Configure logging first.
-        tracing_subscriber::fmt::init();
+        LOG_INIT.call_once(|| tracing_subscriber::fmt::init());
 
         Ok(())
     }
