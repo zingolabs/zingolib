@@ -1687,7 +1687,6 @@ async fn witness_clearing() {
     drop(child_process_handler);
 }
 
-#[ignore]
 #[tokio::test]
 async fn mempool_clearing() {
     let value = 100_000;

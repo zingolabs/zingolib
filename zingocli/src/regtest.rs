@@ -51,14 +51,29 @@ pub struct RegtestManager {
 pub struct ChildProcessHandler {
     zcashd: Child,
     lightwalletd: Child,
+    zcash_cli_command: std::process::Command,
 }
 impl Drop for ChildProcessHandler {
     fn drop(&mut self) {
-        if let Err(e) = self.zcashd.kill() {
-            log::warn!("zcashd has already terminated: {e}")
-        };
-        if let Err(e) = self.lightwalletd.kill() {
-            log::warn!("lightwalletd has already terminated: {e}")
+        match self.zcash_cli_command.arg("stop").output() {
+            Ok(_) => {
+                if let Err(e) = self.zcashd.wait() {
+                    log::warn!("zcashd process didn't start properly: {e}")
+                };
+            }
+            Err(e) => {
+                log::error!(
+                    "Can't stop zcashd from zcash-cli: {e}\n\
+                    Sending SIGKILL to zcashd process."
+                );
+                if let Err(e) = self.zcashd.kill() {
+                    log::warn!("zcashd has already terminated: {e}")
+                };
+
+                if let Err(e) = self.lightwalletd.kill() {
+                    log::warn!("lightwalletd has already terminated: {e}")
+                }
+            }
         }
     }
 }
@@ -405,6 +420,7 @@ impl RegtestManager {
         Ok(ChildProcessHandler {
             zcashd: zcashd_handle,
             lightwalletd: lightwalletd_child,
+            zcash_cli_command: self.get_cli_handle(),
         })
     }
 }
