@@ -554,6 +554,9 @@ impl TransactionMetadata {
     pub fn total_value_spent(&self) -> u64 {
         self.value_spent_by_pool().iter().sum()
     }
+    pub fn is_outgoing_transaction(&self) -> bool {
+        self.total_value_spent() > 0
+    }
     pub fn value_spent_by_pool(&self) -> [u64; 3] {
         [
             self.total_transparent_value_spent,
