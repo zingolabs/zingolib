@@ -112,7 +112,7 @@ pub mod scenarios {
             pub child_process_handler: Option<ChildProcessHandler>,
         }
         impl ScenarioBuilder {
-            fn new(custom_client_config: Option<String>) -> Self {
+            pub fn new(custom_client_config: Option<String>) -> Self {
                 //! TestEnvironmentGenerator sets particular parameters, specific filenames,
                 //! port numbers, etc.  in general no test_config should be used for
                 //! more than one test, and usually is only invoked via this
@@ -144,10 +144,10 @@ pub mod scenarios {
                     child_process_handler,
                 }
             }
-            fn launch(&mut self) {
+            pub fn launch(&mut self, clean: bool) {
                 self.child_process_handler = Some(
                     self.regtest_manager
-                        .launch(true)
+                        .launch(clean)
                         .unwrap_or_else(|e| match e {
                             zingo_cli::regtest::LaunchChildProcessError::ZcashdState {
                                 errorcode,
@@ -171,7 +171,7 @@ pub mod scenarios {
                     sb.test_env.create_unfunded_zcash_conf();
                 };
                 sb.test_env.create_lightwalletd_conf();
-                sb.launch();
+                sb.launch(true);
                 sb
             }
         }
@@ -473,10 +473,6 @@ pub mod scenarios {
         )
     }
 
-    pub async fn without_clients() -> (RegtestManager, ChildProcessHandler) {
-        let sb = setup::ScenarioBuilder::build_and_launch(None, None);
-        (sb.regtest_manager, sb.child_process_handler.unwrap())
-    }
     pub async fn basic_no_spendable() -> (RegtestManager, ChildProcessHandler, LightClient) {
         let mut scenario_builder = setup::ScenarioBuilder::build_and_launch(None, None);
         (

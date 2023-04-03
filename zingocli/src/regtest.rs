@@ -24,7 +24,7 @@ fn get_regtest_dir() -> PathBuf {
 ///   * sets up paths to config and log directories
 ///   * optionally receives parameters that allow configs to be set in nonstandard
 ///     locations.  We use this to input configs for the integration_tests
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub struct RegtestManager {
     regtest_dir: PathBuf,
@@ -41,7 +41,7 @@ pub struct RegtestManager {
     pub zcashd_config: PathBuf,
     pub lightwalletd_config: PathBuf,
     pub lightwalletd_logs_dir: PathBuf,
-    lightwalletd_log: PathBuf,
+    pub lightwalletd_log: PathBuf,
     lightwalletd_stdout_log: PathBuf,
     lightwalletd_stderr_log: PathBuf,
     lightwalletd_data_dir: PathBuf,
@@ -255,55 +255,6 @@ impl RegtestManager {
     ) -> Result<ChildProcessHandler, LaunchChildProcessError> {
         if clean_regtest_data {
             self.prepare_working_directories();
-        } else {
-            log::info!(
-                "zcash logs dir {:#?}",
-                std::fs::read_dir(&self.zcashd_logs_dir)
-                    .unwrap()
-                    .collect::<Vec<_>>()
-            );
-            log::info!(
-                "lightwallet logs dir {:#?}",
-                std::fs::read_dir(&self.lightwalletd_logs_dir)
-                    .unwrap()
-                    .collect::<Vec<_>>()
-            );
-            if let Err(e) = std::fs::rename(
-                &self.zcashd_stdout_log,
-                format!("{}_backup", self.zcashd_stdout_log.to_string_lossy()),
-            ) {
-                log::warn!(
-                    "failed to move log file {}: {e}",
-                    self.zcashd_stdout_log.to_string_lossy()
-                )
-            }
-            if let Err(e) = std::fs::rename(
-                &self.lightwalletd_log,
-                format!("{}_backup", self.lightwalletd_log.to_string_lossy()),
-            ) {
-                log::warn!(
-                    "failed to move log file {}: {e}",
-                    self.lightwalletd_log.to_string_lossy()
-                )
-            }
-            if let Err(e) = std::fs::rename(
-                &self.lightwalletd_stdout_log,
-                format!("{}_backup", self.lightwalletd_stdout_log.to_string_lossy()),
-            ) {
-                log::warn!(
-                    "failed to move log file {}: {e}",
-                    self.lightwalletd_stdout_log.to_string_lossy()
-                )
-            }
-            if let Err(e) = std::fs::rename(
-                &self.lightwalletd_stderr_log,
-                format!("{}_backup", self.lightwalletd_stderr_log.to_string_lossy()),
-            ) {
-                log::warn!(
-                    "failed to move log file {}: {e}",
-                    self.lightwalletd_stderr_log.to_string_lossy()
-                )
-            }
         }
 
         let (mut zcashd_handle, mut zcashd_logfile) = self.zcashd_launch();
@@ -317,6 +268,10 @@ impl RegtestManager {
 
         let mut zcashd_log_open =
             File::open(&self.zcashd_stdout_log).expect("can't open zcashd log");
+        log::info!(
+            "Opened zcashd_stdout_log: {}",
+            &self.zcashd_stdout_log.to_string_lossy().to_string()
+        );
         let mut zcashd_logfile_state = String::new();
 
         let check_interval = std::time::Duration::from_millis(500);
@@ -359,7 +314,8 @@ impl RegtestManager {
         log::info!("zcashd start section completed, zcashd reports it is done loading.");
 
         if clean_regtest_data {
-            log::info!("Generating initial block");
+            log::info!("Generating initial block[s]");
+            //std::thread::sleep(std::time::Duration::new(15, 0));
             let generate_output = &self.generate_n_blocks(1);
 
             match generate_output {

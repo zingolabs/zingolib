@@ -1800,7 +1800,7 @@ async fn mempool_clearing() {
         .arg("-rf")
         .arg(source)
         .output()
-        .expect("directory copy failed");
+        .expect("recursive rm failed");
     std::process::Command::new("cp")
         .arg("--recursive")
         .arg("--remove-destination")
@@ -1927,7 +1927,10 @@ async fn mempool_clearing() {
 
 pub mod framework_validation {
 
-    use super::*;
+    use std::time::Duration;
+
+    use crate::utils::scenarios::setup::{self, ScenarioBuilder};
+
     macro_rules! log_field_from_zcashd {
         (
         $regtest_manager:ident,
@@ -1955,7 +1958,12 @@ pub mod framework_validation {
     #[tokio::test]
     async fn reboot_zcashd() {
         env_logger::init();
-        let (regtest_manager, child_process_handler) = scenarios::without_clients().await;
+        let ScenarioBuilder {
+            regtest_manager,
+            child_process_handler,
+            ..
+        } = setup::ScenarioBuilder::build_and_launch(None, None);
+        log::debug!("regtest_manager: {:#?}", &regtest_manager);
         // Turn zcashd off and on again, to write down the blocks
         log_field_from_zcashd!(
             regtest_manager,
@@ -1963,6 +1971,27 @@ pub mod framework_validation {
             "getblockchaininfo",
             "blocks",
         );
+        log::info!(
+            "stopping..  {}",
+            std::str::from_utf8(
+                &regtest_manager
+                    .get_cli_handle()
+                    .arg("stop")
+                    .output()
+                    .unwrap()
+                    .stdout,
+            )
+            .unwrap()
+        );
+        std::thread::sleep(std::time::Duration::new(5, 0));
+        std::process::Command::new("rm")
+            .arg(&regtest_manager.zcashd_stdout_log)
+            .output()
+            .expect("to remove zcashd log");
+        std::process::Command::new("rm")
+            .arg(&regtest_manager.lightwalletd_log)
+            .output()
+            .expect("to remove ligthwalletd log");
         drop(child_process_handler); // Turn off zcashd and lightwalletd
         let child_process_handler2 = regtest_manager.launch(false).unwrap();
         log_field_from_zcashd!(

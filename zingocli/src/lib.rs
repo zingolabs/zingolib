@@ -122,7 +122,7 @@ fn start_interactive(
     // `()` can be used when no completer is required
     let mut rl = rustyline::DefaultEditor::new().expect("Default rustyline Editor not creatable!");
 
-    println!("Ready!");
+    log::debug!("Ready!");
 
     let send_command = |cmd: String, args: Vec<String>| -> String {
         command_transmitter.send((cmd.clone(), args)).unwrap();
