@@ -937,23 +937,7 @@ impl LightClient {
         }
     }
 
-    pub async fn do_list_transactions(&self, include_memo_hex: bool) -> JsonValue {
-        // Create a list of TransactionItems from wallet transactions
-        let unified_spend_capability_arc = self.wallet.wallet_capability();
-        let unified_spend_capability = &unified_spend_capability_arc.read().await;
-        let mut transaction_list = self
-            .wallet
-            .transaction_context.transaction_metadata_set
-            .read()
-            .await
-            .current
-            .iter()
-            .flat_map(|(_k, wallet_transaction)| {
-                let mut transactions: Vec<JsonValue> = vec![];
-
-                if wallet_transaction.is_outgoing_transaction() {
-                    // If money was spent, create a transaction. For this, we'll subtract
-                    // all the change notes + Utxos
+    fn append_change_notes(wallet_transaction: &TransactionMetadata, include_memo_hex: bool) -> JsonValue {
                     let total_change = wallet_transaction
                         .sapling_notes
                         .iter()
@@ -989,7 +973,7 @@ impl LightClient {
                         .collect::<Vec<JsonValue>>();
 
                     let block_height: u32 = wallet_transaction.block_height.into();
-                    transactions.push(object! {
+                    object! {
                         "block_height" => block_height,
                         "unconfirmed" => wallet_transaction.unconfirmed,
                         "datetime"     => wallet_transaction.datetime,
@@ -997,7 +981,26 @@ impl LightClient {
                         "zec_price"    => wallet_transaction.zec_price.map(|p| (p * 100.0).round() / 100.0),
                         "amount"       => total_change as i64 - wallet_transaction.total_value_spent() as i64,
                         "outgoing_metadata" => outgoing_json,
-                    });
+                    }
+    }
+    pub async fn do_list_transactions(&self, include_memo_hex: bool) -> JsonValue {
+        // Create a list of TransactionItems from wallet transactions
+        let unified_spend_capability_arc = self.wallet.wallet_capability();
+        let unified_spend_capability = &unified_spend_capability_arc.read().await;
+        let mut transaction_list = self
+            .wallet
+            .transaction_context.transaction_metadata_set
+            .read()
+            .await
+            .current
+            .iter()
+            .flat_map(|(_k, wallet_transaction)| {
+                let mut transactions: Vec<JsonValue> = vec![];
+
+                if wallet_transaction.is_outgoing_transaction() {
+                    // If money was spent, create a transaction. For this, we'll subtract
+                    // all the change notes + Utxos
+                    transactions.push(Self::append_change_notes(wallet_transaction, include_memo_hex));
                 }
 
                 // For each note that is not a change, add a transaction.
