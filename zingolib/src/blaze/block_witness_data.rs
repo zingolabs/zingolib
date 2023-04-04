@@ -903,6 +903,306 @@ mod test {
 
     use super::*;
 
+    fn make_fake_block_list(numblocks: u64) -> Vec<BlockData> {
+        let mut prev_hash = BlockHash([0; 32]);
+        (1..=numblocks)
+            .map(|n| {
+                let fake_block = FakeCompactBlock::new(n, prev_hash).block;
+                prev_hash = BlockHash(fake_block.hash.clone().try_into().unwrap());
+                BlockData::new(fake_block)
+            })
+            .rev()
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn verify_block_and_witness_data_blocks_order() {
+        let mut scenario_bawd = BlockAndWitnessData::new_with_batchsize(
+            &ZingoConfig::create_unconnected(ChainType::FakeMainnet, None),
+            25_000,
+        );
+
+        for numblocks in [0, 1, 2, 10] {
+            let existing_blocks = make_fake_block_list(numblocks);
+            scenario_bawd
+                .setup_sync(existing_blocks.clone(), None)
+                .await;
+            assert_eq!(
+                scenario_bawd.existing_blocks.read().await.len(),
+                numblocks as usize
+            );
+            let finished_blks = scenario_bawd
+                .drain_existingblocks_into_blocks_with_truncation(100)
+                .await;
+            assert_eq!(scenario_bawd.existing_blocks.read().await.len(), 0);
+            assert_eq!(finished_blks.len(), numblocks as usize);
+
+            for (i, finished_blk) in finished_blks.iter().enumerate() {
+                assert_eq!(existing_blocks[i].hash(), finished_blk.hash());
+                assert_eq!(existing_blocks[i].height, finished_blk.height);
+                if i > 0 {
+                    // Prove that height decreases as index increases
+                    assert_eq!(finished_blk.height, finished_blks[i - 1].height - 1);
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn setup_finish_large() {
+        let mut nw = BlockAndWitnessData::new_with_batchsize(
+            &ZingoConfig::create_unconnected(ChainType::FakeMainnet, None),
+            25_000,
+        );
+
+        let existing_blocks = make_fake_block_list(200);
+        nw.setup_sync(existing_blocks.clone(), None).await;
+        let finished_blks = nw
+            .drain_existingblocks_into_blocks_with_truncation(100)
+            .await;
+
+        assert_eq!(finished_blks.len(), 100);
+
+        for (i, finished_blk) in finished_blks.into_iter().enumerate() {
+            assert_eq!(existing_blocks[i].hash(), finished_blk.hash());
+            assert_eq!(existing_blocks[i].height, finished_blk.height);
+        }
+    }
+
+    #[tokio::test]
+    async fn from_sapling_genesis() {
+        let config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, None);
+
+        let blocks = make_fake_block_list(200);
+
+        // Blocks are in reverse order
+        assert!(blocks.first().unwrap().height > blocks.last().unwrap().height);
+
+        let start_block = blocks.first().unwrap().height;
+        let end_block = blocks.last().unwrap().height;
+
+        let sync_status = Arc::new(RwLock::new(BatchSyncStatus::default()));
+        let mut nw = BlockAndWitnessData::new(&config, sync_status);
+        nw.setup_sync(vec![], None).await;
+
+        let (reorg_transmitter, mut reorg_receiver) = mpsc::unbounded_channel();
+
+        let (h, cb_sender) = nw
+            .start(
+                start_block,
+                end_block,
+                Arc::new(RwLock::new(TransactionMetadataSet::new())),
+                reorg_transmitter,
+            )
+            .await;
+
+        let send_h: JoinHandle<Result<(), String>> = tokio::spawn(async move {
+            for block in blocks {
+                cb_sender
+                    .send(block.cb())
+                    .map_err(|e| format!("Couldn't send block: {}", e))?;
+            }
+            if let Some(Some(_h)) = reorg_receiver.recv().await {
+                return Err(format!("Should not have requested a reorg!"));
+            }
+            Ok(())
+        });
+
+        assert_eq!(h.await.unwrap().unwrap(), end_block);
+
+        join_all(vec![send_h])
+            .await
+            .into_iter()
+            .collect::<Result<Result<(), String>, _>>()
+            .unwrap()
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn with_existing_batched() {
+        let config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, None);
+
+        let mut blocks = make_fake_block_list(200);
+
+        // Blocks are in reverse order
+        assert!(blocks.first().unwrap().height > blocks.last().unwrap().height);
+
+        // Use the first 50 blocks as "existing", and then sync the other 150 blocks.
+        let existing_blocks = blocks.split_off(150);
+
+        let start_block = blocks.first().unwrap().height;
+        let end_block = blocks.last().unwrap().height;
+
+        let mut nw = BlockAndWitnessData::new_with_batchsize(&config, 25);
+        nw.setup_sync(existing_blocks, None).await;
+
+        let (reorg_transmitter, mut reorg_receiver) = mpsc::unbounded_channel();
+
+        let (h, cb_sender) = nw
+            .start(
+                start_block,
+                end_block,
+                Arc::new(RwLock::new(TransactionMetadataSet::new())),
+                reorg_transmitter,
+            )
+            .await;
+
+        let send_h: JoinHandle<Result<(), String>> = tokio::spawn(async move {
+            for block in blocks {
+                cb_sender
+                    .send(block.cb())
+                    .map_err(|e| format!("Couldn't send block: {}", e))?;
+            }
+            if let Some(Some(_h)) = reorg_receiver.recv().await {
+                return Err(format!("Should not have requested a reorg!"));
+            }
+            Ok(())
+        });
+
+        assert_eq!(h.await.unwrap().unwrap(), end_block);
+
+        join_all(vec![send_h])
+            .await
+            .into_iter()
+            .collect::<Result<Result<(), String>, _>>()
+            .unwrap()
+            .unwrap();
+
+        let finished_blks = nw
+            .drain_existingblocks_into_blocks_with_truncation(100)
+            .await;
+        assert_eq!(finished_blks.len(), 100);
+        assert_eq!(finished_blks.first().unwrap().height, start_block);
+        assert_eq!(finished_blks.last().unwrap().height, start_block - 100 + 1);
+    }
+
+    #[tokio::test]
+    async fn with_reorg() {
+        let config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, None);
+
+        let mut blocks = make_fake_block_list(100);
+
+        // Blocks are in reverse order
+        assert!(blocks.first().unwrap().height > blocks.last().unwrap().height);
+
+        // Use the first 50 blocks as "existing", and then sync the other 50 blocks.
+        let existing_blocks = blocks.split_off(50);
+
+        // The first 5 blocks, blocks 46-50 will be reorg'd, so duplicate them
+        let num_reorged = 5;
+        let mut reorged_blocks = existing_blocks
+            .iter()
+            .take(num_reorged)
+            .map(|b| b.clone())
+            .collect::<Vec<_>>();
+
+        // Reset the hashes
+        for i in 0..num_reorged {
+            let mut hash = [0u8; 32];
+            rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut hash);
+
+            if i == 0 {
+                let mut cb = blocks.pop().unwrap().cb();
+                cb.prev_hash = hash.to_vec();
+                blocks.push(BlockData::new(cb));
+            } else {
+                let mut cb = reorged_blocks[i - 1].cb();
+                cb.prev_hash = hash.to_vec();
+                reorged_blocks[i - 1] = BlockData::new(cb);
+            }
+
+            let mut cb = reorged_blocks[i].cb();
+            cb.hash = hash.to_vec();
+            reorged_blocks[i] = BlockData::new(cb);
+        }
+        {
+            let mut cb = reorged_blocks[4].cb();
+            cb.prev_hash = existing_blocks
+                .iter()
+                .find(|b| b.height == 45)
+                .unwrap()
+                .cb()
+                .hash
+                .to_vec();
+            reorged_blocks[4] = BlockData::new(cb);
+        }
+
+        let start_block = blocks.first().unwrap().height;
+        let end_block = blocks.last().unwrap().height;
+
+        let sync_status = Arc::new(RwLock::new(BatchSyncStatus::default()));
+        let mut nw = BlockAndWitnessData::new(&config, sync_status);
+        nw.setup_sync(existing_blocks, None).await;
+
+        let (reorg_transmitter, mut reorg_receiver) = mpsc::unbounded_channel();
+
+        let (h, cb_sender) = nw
+            .start(
+                start_block,
+                end_block,
+                Arc::new(RwLock::new(TransactionMetadataSet::new())),
+                reorg_transmitter,
+            )
+            .await;
+
+        let send_h: JoinHandle<Result<(), String>> = tokio::spawn(async move {
+            // Send the normal blocks
+            for block in blocks {
+                cb_sender
+                    .send(block.cb())
+                    .map_err(|e| format!("Couldn't send block: {}", e))?;
+            }
+
+            // Expect and send the reorg'd blocks
+            let mut expecting_height = 50;
+            let mut sent_ctr = 0;
+
+            while let Some(Some(h)) = reorg_receiver.recv().await {
+                assert_eq!(h, expecting_height);
+
+                expecting_height -= 1;
+                sent_ctr += 1;
+
+                cb_sender
+                    .send(reorged_blocks.drain(0..1).next().unwrap().cb())
+                    .map_err(|e| format!("Couldn't send block: {}", e))?;
+            }
+
+            assert_eq!(sent_ctr, num_reorged);
+            assert!(reorged_blocks.is_empty());
+
+            Ok(())
+        });
+
+        assert_eq!(h.await.unwrap().unwrap(), end_block - num_reorged as u64);
+
+        join_all(vec![send_h])
+            .await
+            .into_iter()
+            .collect::<Result<Result<(), String>, _>>()
+            .unwrap()
+            .unwrap();
+
+        let finished_blks = nw
+            .drain_existingblocks_into_blocks_with_truncation(100)
+            .await;
+        assert_eq!(finished_blks.len(), 100);
+        assert_eq!(finished_blks.first().unwrap().height, start_block);
+        assert_eq!(finished_blks.last().unwrap().height, start_block - 100 + 1);
+
+        // Verify the hashes
+        for i in 0..(finished_blks.len() - 1) {
+            assert_eq!(
+                finished_blks[i].cb().prev_hash,
+                finished_blks[i + 1].cb().hash
+            );
+            assert_eq!(
+                finished_blks[i].hash(),
+                finished_blks[i].cb().hash().to_string()
+            );
+        }
+    }
+
     #[tokio::test]
     async fn setup_finish_simple() {
         let mut nw = BlockAndWitnessData::new_with_batchsize(
