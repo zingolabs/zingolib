@@ -1355,6 +1355,7 @@ impl LightClient {
                 && BlockHash::from_slice(&latest_blockid.hash).to_string()
                     != self.wallet.last_synced_hash().await
             {
+                #[cfg(not(feature = "integration_test"))]
                 warn!("One block reorg at height {}", last_synced_height);
                 // This is a one-block reorg, so pop the last block. Even if there are more blocks to reorg, this is enough
                 // to trigger a sync, which will then reorg the remaining blocks

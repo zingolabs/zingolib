@@ -1742,7 +1742,7 @@ async fn mempool_clearing() {
     }
 
     // 3a. stash zcashd state
-    log::info!(
+    log::debug!(
         "old zcashd chain info {}",
         std::str::from_utf8(
             &regtest_manager
@@ -1758,7 +1758,7 @@ async fn mempool_clearing() {
     // Turn zcashd off and on again, to write down the blocks
     drop(child_process_handler); // Turn off zcashd and lightwalletd
     let child_process_handler = regtest_manager.launch(false).unwrap();
-    log::info!(
+    log::debug!(
         "new zcashd chain info {}",
         std::str::from_utf8(
             &regtest_manager
@@ -1775,7 +1775,7 @@ async fn mempool_clearing() {
     let zcashd_parent = Path::new(zcd_datadir).parent().unwrap();
     let original_zcashd_directory = zcashd_parent.join("original_zcashd");
 
-    log::info!(
+    log::debug!(
         "The original zcashd directory is at: {}",
         &original_zcashd_directory.to_string_lossy().to_string()
     );
@@ -1816,7 +1816,7 @@ async fn mempool_clearing() {
     // 5. check that the sent transaction is correctly marked in the client
     let mut transactions = recipient.do_list_transactions(true).await;
     let mempool_only_tx = transactions.pop();
-    log::info!("the transactions are: {}", &mempool_only_tx);
+    log::debug!("the transactions are: {}", &mempool_only_tx);
     assert_eq!(
         mempool_only_tx["outgoing_metadata"][0]["memo"],
         "Outgoing Memo"
@@ -1966,7 +1966,7 @@ pub mod framework_validation {
         $rpc_command:expr,
         $query_field:expr,
     ) => {
-            log::info!(
+            log::debug!(
                 $log_message,
                 json::parse(
                     std::str::from_utf8(
@@ -1998,7 +1998,7 @@ pub mod framework_validation {
             "getblockchaininfo",
             "blocks",
         );
-        log::info!(
+        log::debug!(
             "stopping..  {}",
             std::str::from_utf8(
                 &regtest_manager
