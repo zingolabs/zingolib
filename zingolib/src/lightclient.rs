@@ -1011,7 +1011,7 @@ impl LightClient {
                     if let Some(transaction) = transactions.iter_mut().find(|transaction| transaction["txid"] == wallet_transaction.txid.to_string()) {
                         // If this transaction is outgoing:
                         // Then we've already accounted for the entire balance.
-                        
+
                         if !wallet_transaction.is_outgoing_transaction() {
                             // If not, we've added sapling/orchard, and need to add transparent
                             let old_amount = transaction.remove("amount").as_i64().unwrap();
