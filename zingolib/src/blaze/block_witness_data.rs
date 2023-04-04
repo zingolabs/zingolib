@@ -904,15 +904,19 @@ mod test {
     use super::*;
 
     fn make_fake_block_list(numblocks: u64) -> Vec<BlockData> {
+        if numblocks == 0 {
+            return Vec::new();
+        }
         let mut prev_hash = BlockHash([0; 32]);
-        (1..=numblocks)
+        let mut blocks: Vec<_> = (1..=numblocks)
             .map(|n| {
                 let fake_block = FakeCompactBlock::new(n, prev_hash).block;
                 prev_hash = BlockHash(fake_block.hash.clone().try_into().unwrap());
                 BlockData::new(fake_block)
             })
-            .rev()
-            .collect()
+            .collect();
+        blocks.reverse();
+        blocks
     }
 
     #[tokio::test]
