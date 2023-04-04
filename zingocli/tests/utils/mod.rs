@@ -121,10 +121,6 @@ pub mod scenarios {
                 //! TestEnvironmentGenerator and for scenario specific add to this constructor
                 let test_env = TestEnvironmentGenerator::new();
                 let regtest_manager = test_env.regtest_manager.clone();
-                let lightwalletd_port = test_env.lightwalletd_rpcservice_port.clone();
-                let server_id = zingoconfig::construct_server_uri(Some(format!(
-                    "http://127.0.0.1:{lightwalletd_port}"
-                )));
                 let data_dir = if let Some(data_dir) = custom_client_config {
                     data_dir
                 } else {
@@ -134,8 +130,11 @@ pub mod scenarios {
                         .to_string_lossy()
                         .to_string()
                 };
-                let client_builder =
-                    ClientManager::new(server_id, data_dir, data::seeds::ABANDON_ART_SEED);
+                let client_builder = ClientManager::new(
+                    test_env.get_lightwalletd_uri(),
+                    data_dir,
+                    data::seeds::ABANDON_ART_SEED,
+                );
                 let child_process_handler = None;
                 Self {
                     test_env,
@@ -251,6 +250,7 @@ pub mod scenarios {
             zcashd_rpcservice_port: String,
             lightwalletd_rpcservice_port: String,
             regtest_manager: RegtestManager,
+            lightwalletd_uri: http::Uri,
         }
         impl TestEnvironmentGenerator {
             fn new() -> Self {
@@ -269,10 +269,14 @@ pub mod scenarios {
                         .unwrap()
                         .into_path(),
                 ));
+                let server_uri = zingoconfig::construct_server_uri(Some(format!(
+                    "http://127.0.0.1:{lightwalletd_rpcservice_port}"
+                )));
                 Self {
                     zcashd_rpcservice_port,
                     lightwalletd_rpcservice_port,
                     regtest_manager,
+                    lightwalletd_uri: server_uri,
                 }
             }
             pub(crate) fn create_unfunded_zcash_conf(&self) -> PathBuf {
@@ -313,6 +317,9 @@ pub mod scenarios {
                 std::io::Write::write(&mut output, contents.as_bytes())
                     .expect(&format!("Couldn't write {contents}!"));
                 loc.clone()
+            }
+            pub(crate) fn get_lightwalletd_uri(&self) -> http::Uri {
+                self.lightwalletd_uri.clone()
             }
         }
     }
