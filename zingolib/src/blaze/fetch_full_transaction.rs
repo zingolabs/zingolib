@@ -80,6 +80,7 @@ impl TransactionContext {
         //todo: investigate scanning all bundles simultaneously
         self.scan_transparent_bundle(
             &transaction,
+            None,
             height,
             unconfirmed,
             block_time,
@@ -91,6 +92,7 @@ impl TransactionContext {
         let mut outgoing_metadatas = vec![];
         self.scan_sapling_bundle(
             &transaction,
+            None,
             height,
             unconfirmed,
             block_time,
@@ -101,6 +103,7 @@ impl TransactionContext {
         .await;
         self.scan_orchard_bundle(
             &transaction,
+            None,
             height,
             unconfirmed,
             block_time,
@@ -230,6 +233,7 @@ impl TransactionContext {
     async fn scan_transparent_bundle(
         &self,
         transaction: &Transaction,
+        txindex: Option<usize>,
         height: BlockHeight,
         unconfirmed: bool,
         block_time: u32,
@@ -250,6 +254,7 @@ impl TransactionContext {
                                 .await
                                 .add_new_taddr_output(
                                     transaction.txid(),
+                                    txindex,
                                     output_taddr.clone(),
                                     height.into(),
                                     unconfirmed,
@@ -324,6 +329,7 @@ impl TransactionContext {
 
             self.transaction_metadata_set.write().await.add_taddr_spent(
                 transaction.txid(),
+                txindex,
                 height,
                 unconfirmed,
                 block_time as u64,
@@ -334,6 +340,7 @@ impl TransactionContext {
     async fn scan_sapling_bundle(
         &self,
         transaction: &Transaction,
+        txindex: Option<usize>,
         height: BlockHeight,
         pending: bool,
         block_time: u32,
@@ -343,6 +350,7 @@ impl TransactionContext {
     ) {
         self.scan_bundle::<SaplingDomain<ChainType>>(
             transaction,
+            txindex,
             height,
             pending,
             block_time,
@@ -355,6 +363,7 @@ impl TransactionContext {
     async fn scan_orchard_bundle(
         &self,
         transaction: &Transaction,
+        txindex: Option<usize>,
         height: BlockHeight,
         pending: bool,
         block_time: u32,
@@ -364,6 +373,7 @@ impl TransactionContext {
     ) {
         self.scan_bundle::<OrchardDomain>(
             transaction,
+            txindex,
             height,
             pending,
             block_time,
@@ -382,6 +392,7 @@ impl TransactionContext {
     async fn scan_bundle<D>(
         &self,
         transaction: &Transaction,
+        txindex: Option<usize>,
         transaction_block_height: BlockHeight, // TODO: Note that this parameter is NA in the case of "unconfirmed"
         pending: bool, // TODO: This is true when called by wallet.send_to_address_internal, investigate.
         block_time: u32,
@@ -415,6 +426,7 @@ impl TransactionContext {
                 {
                     self.transaction_metadata_set.write().await.add_new_spent(
                         transaction.txid(),
+                        txindex,
                         transaction_block_height,
                         true, // this was "unconfirmed" but this fn is invoked inside `if unconfirmed` TODO: add regression test to protect against movement
                         block_time,
@@ -468,6 +480,7 @@ impl TransactionContext {
                     .await
                     .add_pending_note::<D>(
                         transaction.txid(),
+                        txindex,
                         transaction_block_height,
                         block_time as u64,
                         note.clone(),
