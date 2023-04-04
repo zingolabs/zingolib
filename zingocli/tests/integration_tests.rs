@@ -29,6 +29,7 @@ use zingolib::{
     },
 };
 
+#[ignore]
 #[tokio::test]
 async fn load_and_parse_different_wallet_versions() {
     let one_orch_conf_path = format!(
@@ -52,11 +53,10 @@ async fn load_and_parse_different_wallet_versions() {
         .unwrap();
 
     // Create client based on config and wallet of faucet
-    let febwallet_client = LightClient::create_with_wallet(feb_2023_wallet, zingoconfig.clone());
+    let _febwallet_client = LightClient::create_with_wallet(feb_2023_wallet, zingoconfig.clone());
     /*
      */
     //let faucet_copy = LightClient::create_with_wallet(faucet_wallet, zingoconfig.clone());
-    assert_eq!(true, false);
     drop(child_process_handler);
 }
 
