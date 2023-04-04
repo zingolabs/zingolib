@@ -49,7 +49,7 @@ pub fn build_clap_app() -> clap::App<'static> {
                 .value_name("server")
                 .help("Lightwalletd server to connect to.")
                 .takes_value(true)
-                .default_value(zingoconfig::DEFAULT_SERVER)
+                .default_value(zingoconfig::DEFAULT_LIGHTWALLETD_SERVER)
                 .takes_value(true))
             .arg(Arg::with_name("data-dir")
                 .long("data-dir")
@@ -237,7 +237,7 @@ pub fn command_loop(
 pub fn attempt_recover_seed(_password: Option<String>) {
     // Create a Light Client Config in an attempt to recover the file.
     ZingoConfig {
-        server_uri: Arc::new(RwLock::new("0.0.0.0:0".parse().unwrap())),
+        lightwalletd_uri: Arc::new(RwLock::new("0.0.0.0:0".parse().unwrap())),
         chain: zingoconfig::ChainType::Mainnet,
         monitor_mempool: false,
         reorg_buffer_offset: 0,
@@ -257,6 +257,7 @@ pub struct ConfigTemplate {
     regtest_manager: Option<regtest::RegtestManager>,
     #[allow(dead_code)] // This field is defined so that it can be used in Drop::drop
     child_process_handler: Option<ChildProcessHandler>,
+    chaintype: ChainType,
 }
 use commands::ShortCircuitedCommand;
 fn short_circuit_on_help(params: Vec<String>) {
@@ -354,7 +355,13 @@ to scan from the start of the blockchain."
         } else {
             None
         };
-        let server = zingoconfig::construct_server_uri(maybe_server);
+        let server = zingoconfig::construct_lightwalletd_uri(maybe_server);
+        let chaintype = match server.to_string() {
+            x if x.contains("main") => ChainType::Mainnet,
+            x if x.contains("test") => ChainType::Testnet,
+            x if x.contains("127.0.0.1") => ChainType::Regtest,
+            _ => panic!("error"),
+        };
 
         // Test to make sure the server has all of scheme, host and port
         if server.scheme_str().is_none() || server.host().is_none() || server.port().is_none() {
@@ -375,6 +382,7 @@ to scan from the start of the blockchain."
             command,
             regtest_manager,
             child_process_handler,
+            chaintype,
         })
     }
 }
@@ -385,10 +393,12 @@ pub fn startup(
     filled_template: &ConfigTemplate,
 ) -> std::io::Result<(Sender<(String, Vec<String>)>, Receiver<String>)> {
     // Try to get the configuration
-    let (config, latest_block_height) = load_clientconfig(
+    let config = load_clientconfig(
         filled_template.server.clone(),
         filled_template.maybe_data_dir.clone(),
-    )?;
+        filled_template.chaintype,
+    )
+    .unwrap();
     regtest_config_check(&filled_template.regtest_manager, &config.chain);
 
     let lightclient = match (
@@ -418,11 +428,12 @@ pub fn startup(
                 Arc::new(LightClient::read_wallet_from_disk(&config)?)
             } else {
                 println!("Creating a new wallet");
+                // Call the lightwalletd server to get the current block-height
+                // Do a getinfo first, before opening the wallet
+                let server_uri = config.get_lightwalletd_uri();
+                let block_height = zingolib::get_latest_block_height(server_uri);
                 // Create a wallet with height - 100, to protect against reorgs
-                Arc::new(LightClient::new(
-                    &config,
-                    latest_block_height.saturating_sub(100),
-                )?)
+                Arc::new(LightClient::new(&config, block_height.saturating_sub(100))?)
             }
         }
     };
@@ -433,7 +444,10 @@ pub fn startup(
         info!("Starting Zingo-CLI");
         info!("Light Client config {:?}", config);
 
-        info!("Lightclient connecting to {}", config.get_server_uri());
+        info!(
+            "Lightclient connecting to {}",
+            config.get_lightwalletd_uri()
+        );
     }
 
     // At startup, run a sync.

@@ -205,7 +205,7 @@ impl LightClient {
         l.set_wallet_initial_state(height).await;
 
         debug!("Created new wallet!");
-        debug!("Created LightClient to {}", &config.get_server_uri());
+        debug!("Created LightClient to {}", &config.get_lightwalletd_uri());
         Ok(l)
     }
 
@@ -305,11 +305,11 @@ impl LightClient {
         })
     }
     pub fn set_server(&self, server: http::Uri) {
-        *self.config.server_uri.write().unwrap() = server
+        *self.config.lightwalletd_uri.write().unwrap() = server
     }
 
     pub fn get_server(&self) -> std::sync::RwLockReadGuard<http::Uri> {
-        self.config.server_uri.read().unwrap()
+        self.config.lightwalletd_uri.read().unwrap()
     }
 
     fn write_file_if_not_exists(dir: &Box<Path>, name: &str, bytes: &[u8]) -> io::Result<()> {
@@ -450,7 +450,7 @@ impl LightClient {
             "Getting sapling tree from LightwalletD at height {}",
             height
         );
-        match GrpcConnector::get_trees(self.config.get_server_uri(), height).await {
+        match GrpcConnector::get_trees(self.config.get_lightwalletd_uri(), height).await {
             Ok(tree_state) => {
                 let hash = tree_state.hash.clone();
                 let tree = tree_state.sapling_tree.clone();
@@ -483,7 +483,7 @@ impl LightClient {
             l.set_wallet_initial_state(height).await;
 
             debug!("Created new wallet with a new seed!");
-            debug!("Created LightClient to {}", &config.get_server_uri());
+            debug!("Created LightClient to {}", &config.get_lightwalletd_uri());
 
             // Save
             l.do_save()
@@ -548,7 +548,7 @@ impl LightClient {
                 "Read wallet with birthday {}",
                 lc.wallet.get_birthday().await
             );
-            debug!("Created LightClient to {}", &config.get_server_uri());
+            debug!("Created LightClient to {}", &config.get_lightwalletd_uri());
 
             Ok(lc)
         })
@@ -645,7 +645,7 @@ impl LightClient {
     }
 
     pub fn get_server_uri(&self) -> http::Uri {
-        self.config.get_server_uri()
+        self.config.get_lightwalletd_uri()
     }
 
     pub async fn do_info(&self) -> String {
@@ -1204,7 +1204,7 @@ impl LightClient {
 
         debug!("Mempool monitoring starting");
 
-        let uri = lc.config.get_server_uri();
+        let uri = lc.config.get_lightwalletd_uri();
         // Start monitoring the mempool in a new thread
         let h = std::thread::spawn(move || {
             // Start a new async runtime, which is fine because we are in a new thread.
@@ -1340,7 +1340,8 @@ impl LightClient {
         // The top of the wallet
         let last_synced_height = self.wallet.last_synced_height().await;
 
-        let latest_blockid = GrpcConnector::get_latest_block(self.config.get_server_uri()).await?;
+        let latest_blockid =
+            GrpcConnector::get_latest_block(self.config.get_lightwalletd_uri()).await?;
         if latest_blockid.height < last_synced_height {
             let w = format!(
                 "Server's latest block({}) is behind ours({})",
@@ -1452,7 +1453,7 @@ impl LightClient {
         //self.update_current_price().await;
 
         // Sapling Tree GRPC Fetcher
-        let grpc_connector = GrpcConnector::new(self.config.get_server_uri());
+        let grpc_connector = GrpcConnector::new(self.config.get_lightwalletd_uri());
 
         // A signal to detect reorgs, and if so, ask the block_fetcher to fetch new blocks.
         let (reorg_transmitter, reorg_receiver) = unbounded_channel();
@@ -1690,7 +1691,7 @@ impl LightClient {
 
     async fn get_submission_height(&self) -> Result<BlockHeight, String> {
         Ok(BlockHeight::from_u32(
-            GrpcConnector::get_latest_block(self.config.get_server_uri())
+            GrpcConnector::get_latest_block(self.config.get_lightwalletd_uri())
                 .await?
                 .height as u32,
         ) + 1)

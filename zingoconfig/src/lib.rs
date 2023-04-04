@@ -23,7 +23,7 @@ use zcash_primitives::{
     constants,
 };
 
-pub const DEFAULT_SERVER: &str = "https://mainnet.lightwalletd.com:9067";
+pub const DEFAULT_LIGHTWALLETD_SERVER: &str = "https://mainnet.lightwalletd.com:9067";
 pub const MAX_REORG: usize = 100;
 pub const WALLET_NAME: &str = "zingo-wallet.dat";
 pub const LOGFILE_NAME: &str = "zingo-wallet.debug.log";
@@ -35,7 +35,7 @@ pub const GAP_RULE_UNUSED_ADDRESSES: usize = 0;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub const GAP_RULE_UNUSED_ADDRESSES: usize = 5;
 
-pub fn construct_server_uri(server: Option<String>) -> http::Uri {
+pub fn construct_lightwalletd_uri(server: Option<String>) -> http::Uri {
     match server {
         Some(s) => {
             let mut s = if s.starts_with("http") {
@@ -49,7 +49,7 @@ pub fn construct_server_uri(server: Option<String>) -> http::Uri {
             }
             s
         }
-        None => DEFAULT_SERVER.to_string(),
+        None => DEFAULT_LIGHTWALLETD_SERVER.to_string(),
     }
     .parse()
     .unwrap()
@@ -58,7 +58,7 @@ pub fn construct_server_uri(server: Option<String>) -> http::Uri {
 /// Configuration data that is necessary? and sufficient? for the creation of a LightClient.
 #[derive(Clone, Debug)]
 pub struct ZingoConfig {
-    pub server_uri: Arc<RwLock<http::Uri>>,
+    pub lightwalletd_uri: Arc<RwLock<http::Uri>>,
     pub chain: ChainType,
     pub reorg_buffer_offset: u32,
     pub monitor_mempool: bool,
@@ -69,7 +69,7 @@ impl ZingoConfig {
     // Create an unconnected (to any server) config to test for local wallet etc...
     pub fn create_unconnected(chain: ChainType, dir: Option<String>) -> ZingoConfig {
         ZingoConfig {
-            server_uri: Arc::new(RwLock::new(http::Uri::default())),
+            lightwalletd_uri: Arc::new(RwLock::new(http::Uri::default())),
             chain,
             monitor_mempool: false,
             reorg_buffer_offset: REORG_BUFFER_OFFSET,
@@ -212,8 +212,8 @@ impl ZingoConfig {
         }
     }
 
-    pub fn get_server_uri(&self) -> http::Uri {
-        self.server_uri
+    pub fn get_lightwalletd_uri(&self) -> http::Uri {
+        self.lightwalletd_uri
             .read()
             .expect("Couldn't read configured server URI!")
             .clone()
