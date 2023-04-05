@@ -53,8 +53,8 @@ fn get_wallet_nym(nym: &str) -> Result<(String, PathBuf, PathBuf), String> {
         _ => Err(format!("nym {nym} not a valid wallet directory")),
     }
 }
-async fn load_wallet(wallet_directory: PathBuf) -> zingolib::wallet::LightWallet {
-    let dir = wallet_directory.to_str().unwrap().to_string();
+async fn load_wallet(wallet: PathBuf) -> zingolib::wallet::LightWallet {
+    let dir = wallet.to_str().unwrap().to_string();
     let lightwalletd_uri = TestEnvironmentGenerator::new().get_lightwalletd_uri();
     let zingo_config =
         zingolib::load_clientconfig(lightwalletd_uri, Some(dir.clone()), ChainType::Regtest)
@@ -104,7 +104,6 @@ async fn send_to_self_causes_memo_error_with_no_user_specified_memo() {
     drop(child_process_handler)
 }
 
-#[ignore]
 #[test_log::test(tokio::test)]
 #[traced_test]
 async fn load_and_parse_different_wallet_versions() {
