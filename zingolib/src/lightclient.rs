@@ -937,51 +937,59 @@ impl LightClient {
         }
     }
 
-    fn append_change_notes(wallet_transaction: &TransactionMetadata, include_memo_hex: bool) -> JsonValue {
-                    let total_change = wallet_transaction
-                        .sapling_notes
-                        .iter()
-                        .filter(|nd| nd.is_change)
-                        .map(|nd| nd.note.value)
-                        .sum::<u64>()
-                        + wallet_transaction
-                        .orchard_notes
-                        .iter()
-                        .filter(|nd| nd.is_change)
-                        .map(|nd| nd.note.value().inner())
-                        .sum::<u64>()
-                        + wallet_transaction.utxos.iter().map(|ut| ut.value).sum::<u64>();
+    fn append_change_notes(
+        wallet_transaction: &TransactionMetadata,
+        include_memo_hex: bool,
+    ) -> JsonValue {
+        let total_change = wallet_transaction
+            .sapling_notes
+            .iter()
+            .filter(|nd| nd.is_change)
+            .map(|nd| nd.note.value)
+            .sum::<u64>()
+            + wallet_transaction
+                .orchard_notes
+                .iter()
+                .filter(|nd| nd.is_change)
+                .map(|nd| nd.note.value().inner())
+                .sum::<u64>()
+            + wallet_transaction
+                .utxos
+                .iter()
+                .map(|ut| ut.value)
+                .sum::<u64>();
 
-                    // Collect outgoing metadata
-                    let outgoing_json = wallet_transaction
-                        .outgoing_metadata
-                        .iter()
-                        .map(|om| {
-                            let mut o = object! {
-                                "address" => om.ua.clone().unwrap_or(om.to_address.clone()),
-                                "value"   => om.value,
-                                "memo"    => LightWallet::memo_str(Some(om.memo.clone()))
-                            };
+        // Collect outgoing metadata
+        let outgoing_json = wallet_transaction
+            .outgoing_metadata
+            .iter()
+            .map(|om| {
+                let mut o = object! {
+                    "address" => om.ua.clone().unwrap_or(om.to_address.clone()),
+                    "value"   => om.value,
+                    "memo"    => LightWallet::memo_str(Some(om.memo.clone()))
+                };
 
-                            if include_memo_hex {
-                                let memo_bytes: MemoBytes = om.memo.clone().into();
-                                o.insert("memohex", hex::encode(memo_bytes.as_slice())).unwrap();
-                            }
+                if include_memo_hex {
+                    let memo_bytes: MemoBytes = om.memo.clone().into();
+                    o.insert("memohex", hex::encode(memo_bytes.as_slice()))
+                        .unwrap();
+                }
 
-                            return o;
-                        })
-                        .collect::<Vec<JsonValue>>();
+                return o;
+            })
+            .collect::<Vec<JsonValue>>();
 
-                    let block_height: u32 = wallet_transaction.block_height.into();
-                    object! {
-                        "block_height" => block_height,
-                        "unconfirmed" => wallet_transaction.unconfirmed,
-                        "datetime"     => wallet_transaction.datetime,
-                        "txid"         => format!("{}", wallet_transaction.txid),
-                        "zec_price"    => wallet_transaction.zec_price.map(|p| (p * 100.0).round() / 100.0),
-                        "amount"       => total_change as i64 - wallet_transaction.total_value_spent() as i64,
-                        "outgoing_metadata" => outgoing_json,
-                    }
+        let block_height: u32 = wallet_transaction.block_height.into();
+        object! {
+            "block_height" => block_height,
+            "unconfirmed" => wallet_transaction.unconfirmed,
+            "datetime"     => wallet_transaction.datetime,
+            "txid"         => format!("{}", wallet_transaction.txid),
+            "zec_price"    => wallet_transaction.zec_price.map(|p| (p * 100.0).round() / 100.0),
+            "amount"       => total_change as i64 - wallet_transaction.total_value_spent() as i64,
+            "outgoing_metadata" => outgoing_json,
+        }
     }
     pub async fn do_list_transactions(&self, include_memo_hex: bool) -> JsonValue {
         // Create a list of TransactionItems from wallet transactions
