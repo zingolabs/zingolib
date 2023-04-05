@@ -224,7 +224,7 @@ impl TransactionContext {
                                 out_metadata.ua = Some(ua.encode(&self.config.chain));
                             } else {
                                 log::error!(
-                                    "Recieved memo indicating you sent to \
+                                    "Received memo indicating you sent to \
                                     an address you don't have on record.\n({})\n\
                                     This may mean you are being sent malicious data.\n\
                                     Some information may not be displayed correctly",
