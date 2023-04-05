@@ -158,8 +158,14 @@ pub mod scenarios {
                         }),
                 );
             }
-            pub fn build_and_launch(funded: Option<String>, custom_conf: Option<String>) -> Self {
-                let mut sb = if let Some(conf) = custom_conf {
+            pub fn build_and_launch(
+                funded: Option<String>,
+                zingo_wallet_dir: Option<String>,
+            ) -> Self {
+                if let Err(e) = LightClient::init_logging() {
+                    eprintln!("Can't initiate logging: {e}")
+                }
+                let mut sb = if let Some(conf) = zingo_wallet_dir {
                     ScenarioBuilder::new(Some(conf))
                 } else {
                     ScenarioBuilder::new(None)
@@ -194,23 +200,21 @@ pub mod scenarios {
                     client_number,
                 }
             }
-            pub async fn make_unique_data_dir_and_load_config(
-                &mut self,
-            ) -> (zingoconfig::ZingoConfig, u64) {
+            pub fn make_unique_data_dir_and_load_config(&mut self) -> zingoconfig::ZingoConfig {
                 //! Each client requires a unique data_dir, we use the
                 //! client_number counter for this.
                 self.client_number += 1;
                 let conf_path = format!("{}_client_{}", self.zingo_datadir, self.client_number);
-                self.create_clientconfig(conf_path).await
+                self.create_clientconfig(conf_path)
             }
-            pub async fn create_clientconfig(
-                &self,
-                conf_path: String,
-            ) -> (zingoconfig::ZingoConfig, u64) {
+            pub fn create_clientconfig(&self, conf_path: String) -> zingoconfig::ZingoConfig {
                 std::fs::create_dir(&conf_path).unwrap();
-                zingolib::load_clientconfig_async(self.server_id.clone(), Some(conf_path))
-                    .await
-                    .unwrap()
+                zingolib::load_clientconfig(
+                    self.server_id.clone(),
+                    Some(conf_path),
+                    zingoconfig::ChainType::Regtest,
+                )
+                .unwrap()
             }
 
             pub async fn build_new_faucet(
@@ -219,7 +223,7 @@ pub mod scenarios {
                 overwrite: bool,
             ) -> LightClient {
                 //! A "faucet" is a lightclient that receives mining rewards
-                let (zingo_config, _) = self.make_unique_data_dir_and_load_config().await;
+                let zingo_config = self.make_unique_data_dir_and_load_config();
                 LightClient::new_from_wallet_base_async(
                     WalletBase::MnemonicPhrase(self.seed.clone()),
                     &zingo_config,
@@ -235,7 +239,7 @@ pub mod scenarios {
                 birthday: u64,
                 overwrite: bool,
             ) -> LightClient {
-                let (zingo_config, _) = self.make_unique_data_dir_and_load_config().await;
+                let zingo_config = self.make_unique_data_dir_and_load_config();
                 LightClient::new_from_wallet_base_async(
                     WalletBase::MnemonicPhrase(mnemonic_phrase),
                     &zingo_config,
@@ -253,7 +257,7 @@ pub mod scenarios {
             lightwalletd_uri: http::Uri,
         }
         impl TestEnvironmentGenerator {
-            fn new() -> Self {
+            pub(crate) fn new() -> Self {
                 let mut common_path = zingo_cli::regtest::get_git_rootdir();
                 common_path.push("cli");
                 common_path.push("tests");
@@ -269,7 +273,7 @@ pub mod scenarios {
                         .unwrap()
                         .into_path(),
                 ));
-                let server_uri = zingoconfig::construct_server_uri(Some(format!(
+                let server_uri = zingoconfig::construct_lightwalletd_uri(Some(format!(
                     "http://127.0.0.1:{lightwalletd_rpcservice_port}"
                 )));
                 Self {
@@ -327,17 +331,6 @@ pub mod scenarios {
         let sb = setup::ScenarioBuilder::build_and_launch(
             Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
             None,
-        );
-        (
-            sb.regtest_manager,
-            sb.child_process_handler.unwrap(),
-            sb.client_builder,
-        )
-    }
-    pub fn custom_config(config: &str) -> (RegtestManager, ChildProcessHandler, ClientManager) {
-        let sb = setup::ScenarioBuilder::build_and_launch(
-            Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
-            Some(config.to_string()),
         );
         (
             sb.regtest_manager,

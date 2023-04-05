@@ -18,22 +18,13 @@ use std::{
     io::{ErrorKind, Result},
     sync::{Arc, RwLock},
 };
-use tokio::runtime::Runtime;
 use zingoconfig::{ChainType, ZingoConfig};
 
-pub async fn load_clientconfig_async(
+pub fn load_clientconfig(
     server: http::Uri,
     data_dir: Option<String>,
-) -> Result<(ZingoConfig, u64)> {
-    //! This call depends on a running lightwalletd it uses the ligthtwalletd
-    //! to find out what kind of chain it's running against.
-
-    // Test for a connection first
-    // Do a getinfo first, before opening the wallet
-    let info = grpc_connector::GrpcConnector::get_info(server.clone())
-        .await
-        .map_err(|e| std::io::Error::new(ErrorKind::ConnectionRefused, e))?;
-
+    chain: ChainType,
+) -> Result<ZingoConfig> {
     use std::net::ToSocketAddrs;
     format!("{}:{}", server.host().unwrap(), server.port().unwrap())
         .to_socket_addrs()?
@@ -45,32 +36,23 @@ pub async fn load_clientconfig_async(
 
     // Create a Light Client Config
     let config = ZingoConfig {
-        server_uri: Arc::new(RwLock::new(server)),
-        chain: match info.chain_name.as_str() {
-            "main" => ChainType::Mainnet,
-            "test" => ChainType::Testnet,
-            "regtest" => ChainType::Regtest,
-            "fakemainnet" => ChainType::FakeMainnet,
-            _ => panic!("Unknown network"),
-        },
+        lightwalletd_uri: Arc::new(RwLock::new(server)),
+        chain,
         monitor_mempool: true,
         reorg_buffer_offset: zingoconfig::REORG_BUFFER_OFFSET,
         data_dir,
     };
 
-    Ok((config, info.block_height))
+    Ok(config)
 }
-
-pub fn load_clientconfig(
-    server: http::Uri,
-    data_dir: Option<String>,
-) -> Result<(ZingoConfig, u64)> {
-    //! This call depends on a running lightwalletd it uses the ligthtwalletd
-    //! to find out what kind of chain it's running against.
-
-    Runtime::new().unwrap().block_on(async move {
-        // Test for a connection first
-        // Do a getinfo first, before opening the wallet
-        load_clientconfig_async(server, data_dir).await
-    })
+pub fn get_latest_block_height(lightwalletd_uri: http::Uri) -> u64 {
+    tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(async move {
+            crate::grpc_connector::GrpcConnector::get_info(lightwalletd_uri)
+                .await
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::ConnectionRefused, e))
+                .unwrap()
+        })
+        .block_height
 }

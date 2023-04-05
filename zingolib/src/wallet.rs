@@ -1576,7 +1576,7 @@ impl LightWallet {
             let trees = crate::grpc_connector::GrpcConnector::get_trees(
                 self.transaction_context
                     .config
-                    .server_uri
+                    .lightwalletd_uri
                     .read()
                     .unwrap()
                     .clone(),
