@@ -1031,6 +1031,16 @@ impl LightClient {
                 let memo_b = b.remove("memo").to_string();
                 b.insert("memo", [a.remove("memo").to_string(), memo_b].join(", "))
                     .unwrap();
+                for (key, a_val) in a.entries_mut() {
+                    let b_val = b.remove(key);
+                    if b_val == JsonValue::Null {
+                        b.insert(key, a_val.clone()).unwrap();
+                    } else {
+                        if a_val != &b_val {
+                            log::error!("{a_val} does not match {b_val}");
+                        }
+                    }
+                }
 
                 true
             } else {
