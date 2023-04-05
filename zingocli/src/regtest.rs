@@ -423,4 +423,7 @@ impl RegtestManager {
             zcash_cli_command: self.get_cli_handle(),
         })
     }
+    pub fn get_zingo_data_dir(&self) -> PathBuf {
+        self.zingo_datadir.clone()
+    }
 }

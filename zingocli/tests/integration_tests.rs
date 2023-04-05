@@ -53,17 +53,24 @@ fn get_wallet_nym(nym: &str) -> Result<(String, PathBuf, PathBuf), String> {
         _ => Err(format!("nym {nym} not a valid wallet directory")),
     }
 }
-async fn load_wallet(wallet: PathBuf) -> zingolib::wallet::LightWallet {
-    let dir = wallet.to_str().unwrap().to_string();
+async fn load_wallet(dir: PathBuf) -> zingolib::wallet::LightWallet {
+    log::info!("The wallet directory is: {}", &dir.to_str().unwrap());
     let lightwalletd_uri = TestEnvironmentGenerator::new().get_lightwalletd_uri();
     let zingo_config =
         zingolib::load_clientconfig(lightwalletd_uri, Some(dir.clone()), ChainType::Regtest)
             .unwrap();
-    let read_buffer = std::fs::File::open(dir.clone()).unwrap();
+    let read_buffer = std::fs::File::open(wallet.clone()).unwrap();
 
     zingolib::wallet::LightWallet::read_internal(read_buffer, &zingo_config)
         .await
         .unwrap()
+}
+
+#[test_log::test(tokio::test)]
+#[traced_test]
+async fn load_and_parse_different_wallet_versions() {
+    let (_sap_wallet, _sap_path, sap_dir) = get_wallet_nym("sap_only").unwrap();
+    let _loaded_wallet = load_wallet(sap_dir).await;
 }
 
 #[test_log::test(tokio::test)]
@@ -102,13 +109,6 @@ async fn send_to_self_causes_memo_error_with_no_user_specified_memo() {
         "Received memo indicating you send to an address you don't have on record."
     ));
     drop(child_process_handler)
-}
-
-#[test_log::test(tokio::test)]
-#[traced_test]
-async fn load_and_parse_different_wallet_versions() {
-    let (_sap_wallet, _sap_path, sap_dir) = get_wallet_nym("sap_only").unwrap();
-    let _loaded_wallet = load_wallet(sap_dir).await;
 }
 
 #[test_log::test(tokio::test)]

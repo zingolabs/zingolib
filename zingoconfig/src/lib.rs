@@ -62,12 +62,12 @@ pub struct ZingoConfig {
     pub chain: ChainType,
     pub reorg_buffer_offset: u32,
     pub monitor_mempool: bool,
-    pub data_dir: Option<String>,
+    pub data_dir: Option<PathBuf>,
 }
 
 impl ZingoConfig {
     // Create an unconnected (to any server) config to test for local wallet etc...
-    pub fn create_unconnected(chain: ChainType, dir: Option<String>) -> ZingoConfig {
+    pub fn create_unconnected(chain: ChainType, dir: Option<PathBuf>) -> ZingoConfig {
         ZingoConfig {
             lightwalletd_uri: Arc::new(RwLock::new(http::Uri::default())),
             chain,
@@ -92,7 +92,7 @@ impl ZingoConfig {
             .into()
     }
     pub fn set_data_dir(&mut self, dir_str: String) {
-        self.data_dir = Some(dir_str);
+        self.data_dir = Some(PathBuf::from(dir_str));
     }
 
     /// Build the Logging config

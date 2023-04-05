@@ -16,13 +16,14 @@ pub mod wallet;
 pub struct SaplingParams;
 use std::{
     io::{ErrorKind, Result},
+    path::PathBuf,
     sync::{Arc, RwLock},
 };
 use zingoconfig::{ChainType, ZingoConfig};
 
 pub fn load_clientconfig(
     lightwallet_uri: http::Uri,
-    data_dir: Option<String>,
+    data_dir: Option<PathBuf>,
     chain: ChainType,
 ) -> Result<ZingoConfig> {
     use std::net::ToSocketAddrs;

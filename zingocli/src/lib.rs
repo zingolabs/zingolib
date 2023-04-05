@@ -1,4 +1,5 @@
 #![forbid(unsafe_code)]
+use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, RwLock};
 
@@ -251,7 +252,7 @@ pub struct ConfigTemplate {
     seed: Option<String>,
     viewing_key: Option<String>,
     birthday: u64,
-    maybe_data_dir: Option<String>,
+    zingo_data_dir: PathBuf,
     sync: bool,
     command: Option<String>,
     regtest_manager: Option<regtest::RegtestManager>,
@@ -336,18 +337,18 @@ to scan from the start of the blockchain."
         };
 
         let clean_regtest_data = !matches.is_present("no-clean");
-        let mut maybe_data_dir = matches.value_of("data-dir").map(|s| s.to_string());
+        let mut maybe_data_dir = matches.get_one::<PathBuf>("data-dir");
         let mut maybe_server = matches.value_of("server").map(|s| s.to_string());
         let mut child_process_handler = None;
+        let mut zingo_data_dir: PathBuf;
         // Regtest specific launch:
         //   * spawn zcashd in regtest mode
         //   * spawn lighwalletd and connect it to zcashd
         let regtest_manager = if matches.is_present("regtest") {
             let regtest_manager = regtest::RegtestManager::new(None);
             if maybe_data_dir.is_none() {
-                maybe_data_dir = Some(String::from(
-                    regtest_manager.zingo_datadir.to_str().unwrap(),
-                ));
+                zingo_data_dir = regtest_manager.zingo_datadir.clone();
+                maybe_data_dir = Some(&zingo_data_dir);
             };
             child_process_handler = Some(regtest_manager.launch(clean_regtest_data)?);
             maybe_server = Some("http://127.0.0.1".to_string());
@@ -355,6 +356,7 @@ to scan from the start of the blockchain."
         } else {
             None
         };
+        let zingo_data_dir = *maybe_data_dir.expect("This is now populated with a PathBuf.");
         let server = zingoconfig::construct_lightwalletd_uri(maybe_server);
         let chaintype = match server.to_string() {
             x if x.contains("main") => ChainType::Mainnet,
@@ -377,7 +379,7 @@ to scan from the start of the blockchain."
             seed,
             viewing_key,
             birthday,
-            maybe_data_dir,
+            zingo_data_dir,
             sync,
             command,
             regtest_manager,
@@ -395,7 +397,7 @@ pub fn startup(
     // Try to get the configuration
     let config = load_clientconfig(
         filled_template.server.clone(),
-        filled_template.maybe_data_dir.clone(),
+        Some(filled_template.zingo_data_dir),
         filled_template.chaintype,
     )
     .unwrap();
