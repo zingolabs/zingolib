@@ -24,7 +24,7 @@ use json::{array, object, JsonValue};
 use log::{debug, error, warn};
 use orchard::note_encryption::OrchardDomain;
 use std::{
-    cmp,
+    cmp::{self, Ordering},
     fs::File,
     io::{self, BufReader, Error, ErrorKind, Read, Write},
     path::Path,
@@ -937,6 +937,60 @@ impl LightClient {
         }
     }
 
+    fn append_change_notes(
+        wallet_transaction: &TransactionMetadata,
+        include_memo_hex: bool,
+    ) -> JsonValue {
+        let total_change = wallet_transaction
+            .sapling_notes
+            .iter()
+            .filter(|nd| nd.is_change)
+            .map(|nd| nd.note.value)
+            .sum::<u64>()
+            + wallet_transaction
+                .orchard_notes
+                .iter()
+                .filter(|nd| nd.is_change)
+                .map(|nd| nd.note.value().inner())
+                .sum::<u64>()
+            + wallet_transaction
+                .utxos
+                .iter()
+                .map(|ut| ut.value)
+                .sum::<u64>();
+
+        // Collect outgoing metadata
+        let outgoing_json = wallet_transaction
+            .outgoing_metadata
+            .iter()
+            .map(|om| {
+                let mut o = object! {
+                    "address" => om.ua.clone().unwrap_or(om.to_address.clone()),
+                    "value"   => om.value,
+                    "memo"    => LightWallet::memo_str(Some(om.memo.clone()))
+                };
+
+                if include_memo_hex {
+                    let memo_bytes: MemoBytes = om.memo.clone().into();
+                    o.insert("memohex", hex::encode(memo_bytes.as_slice()))
+                        .unwrap();
+                }
+
+                return o;
+            })
+            .collect::<Vec<JsonValue>>();
+
+        let block_height: u32 = wallet_transaction.block_height.into();
+        object! {
+            "block_height" => block_height,
+            "unconfirmed" => wallet_transaction.unconfirmed,
+            "datetime"     => wallet_transaction.datetime,
+            "txid"         => format!("{}", wallet_transaction.txid),
+            "zec_price"    => wallet_transaction.zec_price.map(|p| (p * 100.0).round() / 100.0),
+            "amount"       => total_change as i64 - wallet_transaction.total_value_spent() as i64,
+            "outgoing_metadata" => outgoing_json,
+        }
+    }
     pub async fn do_list_transactions(&self, include_memo_hex: bool) -> JsonValue {
         // Create a list of TransactionItems from wallet transactions
         let unified_spend_capability_arc = self.wallet.wallet_capability();
@@ -951,79 +1005,69 @@ impl LightClient {
             .flat_map(|(_k, wallet_transaction)| {
                 let mut transactions: Vec<JsonValue> = vec![];
 
-                if wallet_transaction.total_value_spent() > 0 {
+                if wallet_transaction.is_outgoing_transaction() {
                     // If money was spent, create a transaction. For this, we'll subtract
                     // all the change notes + Utxos
-                    let total_change = wallet_transaction
-                        .sapling_notes
-                        .iter()
-                        .filter(|nd| nd.is_change)
-                        .map(|nd| nd.note.value)
-                        .sum::<u64>()
-                        + wallet_transaction
-                        .orchard_notes
-                        .iter()
-                        .filter(|nd| nd.is_change)
-                        .map(|nd| nd.note.value().inner())
-                        .sum::<u64>()
-                        + wallet_transaction.utxos.iter().map(|ut| ut.value).sum::<u64>();
-
-                    // Collect outgoing metadata
-                    let outgoing_json = wallet_transaction
-                        .outgoing_metadata
-                        .iter()
-                        .map(|om| {
-                            let mut o = object! {
-                                "address" => om.ua.clone().unwrap_or(om.to_address.clone()),
-                                "value"   => om.value,
-                                "memo"    => LightWallet::memo_str(Some(om.memo.clone()))
-                            };
-
-                            if include_memo_hex {
-                                let memo_bytes: MemoBytes = om.memo.clone().into();
-                                o.insert("memohex", hex::encode(memo_bytes.as_slice())).unwrap();
-                            }
-
-                            return o;
-                        })
-                        .collect::<Vec<JsonValue>>();
-
-                    let block_height: u32 = wallet_transaction.block_height.into();
-                    transactions.push(object! {
-                        "block_height" => block_height,
-                        "unconfirmed" => wallet_transaction.unconfirmed,
-                        "datetime"     => wallet_transaction.datetime,
-                        "txid"         => format!("{}", wallet_transaction.txid),
-                        "zec_price"    => wallet_transaction.zec_price.map(|p| (p * 100.0).round() / 100.0),
-                        "amount"       => total_change as i64 - wallet_transaction.total_value_spent() as i64,
-                        "outgoing_metadata" => outgoing_json,
-                    });
+                    transactions.push(Self::append_change_notes(wallet_transaction, include_memo_hex));
                 }
 
-                // For each sapling note that is not a change, add a transaction.
+                // For each note that is not a change, add a transaction.
                 transactions.extend(self.add_wallet_notes_in_transaction_to_list(&wallet_transaction, &include_memo_hex, &**unified_spend_capability));
 
-                // Get the total transparent received
+                // Get the total transparent value received in this transaction
                 let total_transparent_received = wallet_transaction.utxos.iter().map(|u| u.value).sum::<u64>();
-                if total_transparent_received > wallet_transaction.total_transparent_value_spent {
-                    // Create an input transaction for the transparent value as well.
-                    let block_height: u32 = wallet_transaction.block_height.into();
-                    transactions.push(object! {
-                        "block_height" => block_height,
-                        "unconfirmed" => wallet_transaction.unconfirmed,
-                        "datetime"     => wallet_transaction.datetime,
-                        "txid"         => format!("{}", wallet_transaction.txid),
-                        "amount"       => total_transparent_received as i64 - wallet_transaction.total_transparent_value_spent as i64,
-                        "zec_price"    => wallet_transaction.zec_price.map(|p| (p * 100.0).round() / 100.0),
-                        "address"      => wallet_transaction.utxos.iter().map(|u| u.address.clone()).collect::<Vec<String>>().join(","),
-                        "memo"         => None::<String>
-                    })
+                let wallet_transparent_value_delta = total_transparent_received as i64 - wallet_transaction.total_transparent_value_spent as i64;
+                let address = wallet_transaction.utxos.iter().map(|utxo| utxo.address.clone()).collect::<Vec<String>>().join(",");
+                if wallet_transparent_value_delta > 0 {
+                    if let Some(transaction) = transactions.iter_mut().find(|transaction| transaction["txid"] == wallet_transaction.txid.to_string()) {
+                        // If this transaction is outgoing:
+                        // Then we've already accounted for the entire balance.
+
+                        if !wallet_transaction.is_outgoing_transaction() {
+                            // If not, we've added sapling/orchard, and need to add transparent
+                            let old_amount = transaction.remove("amount").as_i64().unwrap();
+                            transaction.insert("amount", old_amount + wallet_transparent_value_delta).unwrap();
+                        }
+                    } else {
+                        // Create an input transaction for the transparent value as well.
+                        let block_height: u32 = wallet_transaction.block_height.into();
+                        transactions.push(object! {
+                            "block_height" => block_height,
+                            "unconfirmed"  => wallet_transaction.unconfirmed,
+                            "datetime"     => wallet_transaction.datetime,
+                            "txid"         => format!("{}", wallet_transaction.txid),
+                            "amount"       => wallet_transparent_value_delta,
+                            "zec_price"    => wallet_transaction.zec_price.map(|p| (p * 100.0).round() / 100.0),
+                            "address"      => address,
+                            "memo"         => None::<String> 
+                        })
+                    }
                 }
 
                 transactions
             })
             .collect::<Vec<JsonValue>>();
 
+        let match_by_txid =
+            |a: &JsonValue, b: &JsonValue| a["txid"].to_string().cmp(&b["txid"].to_string());
+        transaction_list.sort_by(match_by_txid);
+        transaction_list.dedup_by(|a, b| {
+            if match_by_txid(a, b) == Ordering::Equal {
+                let val_b = b.remove("amount").as_i64().unwrap();
+                b.insert(
+                    "amount",
+                    JsonValue::from(val_b + a.remove("amount").as_i64().unwrap()),
+                )
+                .unwrap();
+                let memo_b = b.remove("memo").to_string();
+                b.insert("memo", [a.remove("memo").to_string(), memo_b].join(", "))
+                    .unwrap();
+
+                true
+            } else {
+                false
+            }
+        });
         transaction_list.sort_by(|a, b| {
             if a["block_height"] == b["block_height"] {
                 a["txid"].as_str().cmp(&b["txid"].as_str())

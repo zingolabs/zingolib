@@ -62,6 +62,49 @@ impl TransactionContext {
         }
     }
 
+    async fn execute_bundlescans_internal(
+        &self,
+        transaction: &Transaction,
+        height: BlockHeight,
+        unconfirmed: bool,
+        block_time: u32,
+        is_outgoing_transaction: &mut bool,
+        outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
+        arbitrary_memos_with_txids: &mut Vec<([u8; 511], TxId)>,
+        taddrs_set: &HashSet<String>,
+    ) {
+        //todo: investigate scanning all bundles simultaneously
+        self.scan_transparent_bundle(
+            &transaction,
+            height,
+            unconfirmed,
+            block_time,
+            is_outgoing_transaction,
+            &taddrs_set,
+        )
+        .await;
+
+        self.scan_sapling_bundle(
+            &transaction,
+            height,
+            unconfirmed,
+            block_time,
+            is_outgoing_transaction,
+            outgoing_metadatas,
+            arbitrary_memos_with_txids,
+        )
+        .await;
+        self.scan_orchard_bundle(
+            &transaction,
+            height,
+            unconfirmed,
+            block_time,
+            is_outgoing_transaction,
+            outgoing_metadatas,
+            arbitrary_memos_with_txids,
+        )
+        .await;
+    }
     pub(crate) async fn scan_full_tx(
         &self,
         transaction: Transaction,
@@ -70,46 +113,12 @@ impl TransactionContext {
         block_time: u32,
         price: Option<f64>,
     ) {
+        // Set up data structures to record scan results
         let mut arbitrary_memos_with_txids = Vec::new();
         // Remember if this is an outgoing Tx. Useful for when we want to grab the outgoing metadata.
         let mut is_outgoing_transaction = false;
-
         // Collect our t-addresses for easy checking
         let taddrs_set = self.key.read().await.get_all_taddrs(&self.config);
-
-        //todo: investigate scanning all bundles simultaneously
-        self.scan_transparent_bundle(
-            &transaction,
-            height,
-            unconfirmed,
-            block_time,
-            &mut is_outgoing_transaction,
-            &taddrs_set,
-        )
-        .await;
-
-        let mut outgoing_metadatas = vec![];
-        self.scan_sapling_bundle(
-            &transaction,
-            height,
-            unconfirmed,
-            block_time,
-            &mut is_outgoing_transaction,
-            &mut outgoing_metadatas,
-            &mut arbitrary_memos_with_txids,
-        )
-        .await;
-        self.scan_orchard_bundle(
-            &transaction,
-            height,
-            unconfirmed,
-            block_time,
-            &mut is_outgoing_transaction,
-            &mut outgoing_metadatas,
-            &mut arbitrary_memos_with_txids,
-        )
-        .await;
-
         // Process t-address outputs
         // If this transaction in outgoing, i.e., we recieved sent some money in this transaction, then we need to grab all transparent outputs
         // that don't belong to us as the outgoing metadata
@@ -122,15 +131,28 @@ impl TransactionContext {
         {
             is_outgoing_transaction = true;
         }
-
+        let mut outgoing_metadatas = vec![];
+        // Execute scanning operations
+        self.execute_bundlescans_internal(
+            &transaction,
+            height,
+            unconfirmed,
+            block_time,
+            &mut is_outgoing_transaction,
+            &mut outgoing_metadatas,
+            &mut arbitrary_memos_with_txids,
+            &taddrs_set,
+        )
+        .await;
+        // Post process scan results
         if is_outgoing_transaction {
             if let Some(t_bundle) = transaction.transparent_bundle() {
                 for vout in &t_bundle.vout {
-                    let taddr = address_from_pubkeyhash(&self.config, vout.script_pubkey.address());
-
-                    if taddr.is_some() && !taddrs_set.contains(taddr.as_ref().unwrap()) {
+                    if let Some(taddr) =
+                        address_from_pubkeyhash(&self.config, vout.script_pubkey.address())
+                    {
                         outgoing_metadatas.push(OutgoingTxMetadata {
-                            to_address: taddr.unwrap(),
+                            to_address: taddr,
                             value: vout.value.into(),
                             memo: Memo::Empty,
                             ua: None,
@@ -138,7 +160,6 @@ impl TransactionContext {
                     }
                 }
             }
-
             // Also, if this is an outgoing transaction, then mark all the *incoming* sapling notes to this transaction as change.
             // Note that this is also done in `WalletTxns::add_new_spent`, but that doesn't take into account transparent spends,
             // so we'll do it again here.
