@@ -1210,7 +1210,9 @@ async fn self_send_to_t_displays_as_one_transaction() {
         .do_send(vec![(recipient_unified_address.as_str(), sent_value, None)])
         .await
         .unwrap();
-    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1).await;
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1)
+        .await
+        .unwrap();
     let recipient_taddr = get_base_address!(recipient, "transparent");
     let recipient_zaddr = get_base_address!(recipient, "sapling");
     let sent_to_taddr_value = 5_000;
@@ -1220,7 +1222,9 @@ async fn self_send_to_t_displays_as_one_transaction() {
         .do_send(vec![(recipient_taddr.as_str(), sent_to_taddr_value, None)])
         .await
         .unwrap();
-    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1).await;
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1)
+        .await
+        .unwrap();
     recipient
         .do_send(vec![
             (recipient_taddr.as_str(), sent_to_taddr_value, None),
@@ -1254,7 +1258,9 @@ async fn self_send_to_t_displays_as_one_transaction() {
         ])
         .await
         .unwrap();
-    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1).await;
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1)
+        .await
+        .unwrap();
     println!(
         "{}",
         json::stringify_pretty(recipient.do_list_transactions(false).await, 4)
