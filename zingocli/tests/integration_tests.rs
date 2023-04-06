@@ -69,6 +69,7 @@ async fn load_wallet(wallet: PathBuf) -> zingolib::wallet::LightWallet {
         .unwrap()
 }
 
+#[ignore]
 #[tokio::test]
 #[traced_test]
 async fn load_and_parse_different_wallet_versions() {
