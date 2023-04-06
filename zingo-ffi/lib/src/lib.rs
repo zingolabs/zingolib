@@ -18,25 +18,7 @@ lazy_static! {
         Mutex::new(RefCell::new(None));
 }
 
-pub fn init_new(server_uri: String, data_dir: String) -> String {
-    let server = construct_server_uri(Some(server_uri));
-
-    let (mut config, latest_block_height) = match zingolib::load_clientconfig(server, None) {
-        Ok((c, h)) => (c, h),
-        Err(e) => {
-            return format!("Error: {}", e);
-        }
-    };
-
-    config.set_data_dir(data_dir);
-
-    let lightclient = match LightClient::new(&config, latest_block_height.saturating_sub(100)) {
-        Ok(l) => l,
-        Err(e) => {
-            return format!("Error: {}", e);
-        }
-    };
-
+fn lock_client_return_seed(lightclient: LightClient) -> String {
     let seed = match lightclient.do_seed_phrase_sync() {
         Ok(s) => s.dump(),
         Err(e) => {
@@ -51,19 +33,43 @@ pub fn init_new(server_uri: String, data_dir: String) -> String {
 
     seed
 }
+fn construct_uri_load_config(
+    uri: String,
+    data_dir: String,
+) -> Result<(zingoconfig::ZingoConfig, u64), String> {
+    let server = construct_server_uri(Some(uri));
 
-pub fn init_from_seed(server_uri: String, seed: String, birthday: u64, data_dir: String) -> String {
-    let server = construct_server_uri(Some(server_uri));
-
-    let (mut config, _latest_block_height) = match zingolib::load_clientconfig(server, None) {
+    let (mut config, latest_block_height) = match zingolib::load_clientconfig(server, None) {
         Ok((c, h)) => (c, h),
         Err(e) => {
-            return format!("Error: {}", e);
+            return Err(format!("Error: Config load: {}", e));
         }
     };
 
     config.set_data_dir(data_dir);
+    Ok((config, latest_block_height))
+}
+pub fn init_new(server_uri: String, data_dir: String) -> String {
+    let (config, latest_block_height);
+    match construct_uri_load_config(server_uri, data_dir) {
+        Ok((c, h)) => (config, latest_block_height) = (c, h),
+        Err(s) => return s,
+    }
+    let lightclient = match LightClient::new(&config, latest_block_height.saturating_sub(100)) {
+        Ok(l) => l,
+        Err(e) => {
+            return format!("Error: {}", e);
+        }
+    };
+    lock_client_return_seed(lightclient)
+}
 
+pub fn init_from_seed(server_uri: String, seed: String, birthday: u64, data_dir: String) -> String {
+    let (config, _latest_block_height);
+    match construct_uri_load_config(server_uri, data_dir) {
+        Ok((c, h)) => (config, _latest_block_height) = (c, h),
+        Err(s) => return s,
+    }
     let lightclient = match LightClient::new_from_wallet_base(
         WalletBase::MnemonicPhrase(seed),
         &config,
@@ -75,34 +81,15 @@ pub fn init_from_seed(server_uri: String, seed: String, birthday: u64, data_dir:
             return format!("Error: {}", e);
         }
     };
-
-    let seed = match lightclient.do_seed_phrase_sync() {
-        Ok(s) => s.dump(),
-        Err(e) => {
-            return format!("Error: {}", e);
-        }
-    };
-
-    let lc = Arc::new(lightclient);
-    LightClient::start_mempool_monitor(lc.clone());
-
-    LIGHTCLIENT.lock().unwrap().replace(Some(lc));
-
-    seed
+    lock_client_return_seed(lightclient)
 }
 
 pub fn init_from_b64(server_uri: String, base64_data: String, data_dir: String) -> String {
-    let server = construct_server_uri(Some(server_uri));
-
-    let (mut config, _latest_block_height) = match zingolib::load_clientconfig(server, None) {
-        Ok((c, h)) => (c, h),
-        Err(e) => {
-            return format!("Error: {}", e);
-        }
-    };
-
-    config.set_data_dir(data_dir);
-
+    let (config, _latest_block_height);
+    match construct_uri_load_config(server_uri, data_dir) {
+        Ok((c, h)) => (config, _latest_block_height) = (c, h),
+        Err(s) => return s,
+    }
     let decoded_bytes = match decode(&base64_data) {
         Ok(b) => b,
         Err(e) => {
@@ -116,20 +103,7 @@ pub fn init_from_b64(server_uri: String, base64_data: String, data_dir: String) 
             return format!("Error: {}", e);
         }
     };
-
-    let seed = match lightclient.do_seed_phrase_sync() {
-        Ok(s) => s.dump(),
-        Err(e) => {
-            return format!("Error: {}", e);
-        }
-    };
-
-    let lc = Arc::new(lightclient);
-    LightClient::start_mempool_monitor(lc.clone());
-
-    LIGHTCLIENT.lock().unwrap().replace(Some(lc));
-
-    seed
+    lock_client_return_seed(lightclient)
 }
 
 pub fn save_to_b64() -> String {
@@ -179,14 +153,11 @@ pub fn execute(cmd: String, args_list: String) -> String {
 }
 
 pub fn get_latest_block(server_uri: String) -> String {
-    let server = construct_server_uri(Some(server_uri));
-    let (_config, latest_block_height) = match zingolib::load_clientconfig(server, None) {
-        Ok((c, h)) => (c, h),
-        Err(e) => {
-            return format!("Error: {}", e);
-        }
-    };
-
+    let (_config, latest_block_height);
+    match construct_uri_load_config(server_uri, "".to_string()) {
+        Ok((c, h)) => (_config, latest_block_height) = (c, h),
+        Err(s) => return s,
+    }
     let resp: String = latest_block_height.to_string();
 
     resp
