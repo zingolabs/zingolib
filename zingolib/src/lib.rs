@@ -45,7 +45,7 @@ pub fn load_clientconfig(
         chain,
         monitor_mempool: true,
         reorg_buffer_offset: zingoconfig::REORG_BUFFER_OFFSET,
-        data_dir,
+        zingo_wallet_dir: data_dir,
     };
 
     Ok(config)

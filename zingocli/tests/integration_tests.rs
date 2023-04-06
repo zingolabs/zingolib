@@ -53,12 +53,15 @@ fn get_wallet_nym(nym: &str) -> Result<(String, PathBuf, PathBuf), String> {
         _ => Err(format!("nym {nym} not a valid wallet directory")),
     }
 }
-async fn load_wallet(dir: PathBuf) -> zingolib::wallet::LightWallet {
-    log::info!("The wallet directory is: {}", &dir.to_str().unwrap());
+async fn load_wallet(wallet: PathBuf) -> zingolib::wallet::LightWallet {
+    log::info!("The wallet is: {}", &wallet.to_str().unwrap());
+    let dir = wallet
+        .parent()
+        .expect("The wallet file is in a directory.")
+        .to_path_buf();
     let lightwalletd_uri = TestEnvironmentGenerator::new().get_lightwalletd_uri();
     let zingo_config =
-        zingolib::load_clientconfig(lightwalletd_uri, Some(dir.clone()), ChainType::Regtest)
-            .unwrap();
+        zingolib::load_clientconfig(lightwalletd_uri, Some(dir), ChainType::Regtest).unwrap();
     let read_buffer = std::fs::File::open(wallet.clone()).unwrap();
 
     zingolib::wallet::LightWallet::read_internal(read_buffer, &zingo_config)
@@ -441,7 +444,7 @@ async fn unspent_notes_are_not_saved() {
     wallet_location.push("zingo_client_1");
     let zingo_config = ZingoConfig::create_unconnected(
         zingoconfig::ChainType::Regtest,
-        Some(wallet_location.to_string_lossy().to_string()),
+        Some(wallet_location.clone()),
     );
     wallet_location.push("zingo-wallet.dat");
     let read_buffer = File::open(wallet_location.clone()).unwrap();

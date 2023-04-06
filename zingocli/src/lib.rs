@@ -16,62 +16,62 @@ pub mod version;
 
 pub fn build_clap_app() -> clap::App<'static> {
     clap::App::new("Zingo CLI").version(version::VERSION)
-            .arg(Arg::with_name("nosync")
+            .arg(Arg::new("nosync")
                 .help("By default, zingo-cli will sync the wallet at startup. Pass --nosync to prevent the automatic sync at startup.")
                 .long("nosync")
                 .short('n')
                 .takes_value(false))
-            .arg(Arg::with_name("recover")
+            .arg(Arg::new("recover")
                 .long("recover")
                 .help("Attempt to recover the seed from the wallet")
                 .takes_value(false))
-            .arg(Arg::with_name("password")
+            .arg(Arg::new("password")
                 .long("password")
                 .help("When recovering seed, specify a password for the encrypted wallet")
                 .takes_value(true))
-            .arg(Arg::with_name("seed")
+            .arg(Arg::new("seed")
                 .short('s')
                 .long("seed")
                 .value_name("seed_phrase")
                 .help("Create a new wallet with the given 24-word seed phrase. Will fail if wallet already exists")
                 .takes_value(true))
-            .arg(Arg::with_name("viewing-key")
+            .arg(Arg::new("viewing-key")
                 .long("viewing-key")
                 .value_name("viewing-key")
                 .help("Create a new watch-only wallet with the given unified viewing key. Will fail if wallet already exists")
                 .takes_value(true))
-            .arg(Arg::with_name("birthday")
+            .arg(Arg::new("birthday")
                 .long("birthday")
                 .value_name("birthday")
                 .help("Specify wallet birthday when restoring from seed. This is the earlist block height where the wallet has a transaction.")
                 .takes_value(true))
-            .arg(Arg::with_name("server")
+            .arg(Arg::new("server")
                 .long("server")
                 .value_name("server")
                 .help("Lightwalletd server to connect to.")
                 .takes_value(true)
                 .default_value(zingoconfig::DEFAULT_LIGHTWALLETD_SERVER)
                 .takes_value(true))
-            .arg(Arg::with_name("data-dir")
-                .long("data-dir")
-                .value_name("data-dir")
+            .arg(Arg::new("zingo-wallet-dir")
+                .long("zingo-wallet-dir")
+                .value_name("zingo-wallet-dir")
                 .help("Absolute path to use as data directory")
                 .takes_value(true))
-            .arg(Arg::with_name("regtest")
+            .arg(Arg::new("regtest")
                 .long("regtest")
                 .value_name("regtest")
                 .help("Regtest mode")
                 .takes_value(false))
-            .arg(Arg::with_name("no-clean")
+            .arg(Arg::new("no-clean")
                 .long("no-clean")
                 .value_name("no-clean")
                 .help("Don't clean regtest state before running. Regtest mode only")
                 .takes_value(false))
-            .arg(Arg::with_name("COMMAND")
+            .arg(Arg::new("COMMAND")
                 .help("Command to execute. If a command is not specified, zingo-cli will start in interactive mode.")
                 .required(false)
                 .index(1))
-            .arg(Arg::with_name("PARAMS")
+            .arg(Arg::new("PARAMS")
                 .help("Params to execute command with. Run the 'help' command to get usage help.")
                 .required(false)
                 .multiple(true)
@@ -242,7 +242,7 @@ pub fn attempt_recover_seed(_password: Option<String>) {
         chain: zingoconfig::ChainType::Mainnet,
         monitor_mempool: false,
         reorg_buffer_offset: 0,
-        data_dir: None,
+        zingo_wallet_dir: None,
     };
 }
 
@@ -252,7 +252,7 @@ pub struct ConfigTemplate {
     seed: Option<String>,
     viewing_key: Option<String>,
     birthday: u64,
-    zingo_data_dir: PathBuf,
+    zingo_wallet_dir: PathBuf,
     sync: bool,
     command: Option<String>,
     regtest_manager: Option<regtest::RegtestManager>,
@@ -337,26 +337,29 @@ to scan from the start of the blockchain."
         };
 
         let clean_regtest_data = !matches.is_present("no-clean");
-        let mut maybe_data_dir = matches.get_one::<PathBuf>("data-dir");
+        let zingo_wallet_dir = if let Some(dir) = matches.get_one::<PathBuf>("zingo-wallet-dir") {
+            dir.clone()
+        } else {
+            if !matches.is_present("regtest") {
+                panic!("No zingo wallet dir specified!");
+            }
+            let mut rd = regtest::get_regtest_dir();
+            rd.push("zingo");
+            rd
+        };
         let mut maybe_server = matches.value_of("server").map(|s| s.to_string());
         let mut child_process_handler = None;
-        let mut zingo_data_dir: PathBuf;
         // Regtest specific launch:
         //   * spawn zcashd in regtest mode
         //   * spawn lighwalletd and connect it to zcashd
         let regtest_manager = if matches.is_present("regtest") {
-            let regtest_manager = regtest::RegtestManager::new(None);
-            if maybe_data_dir.is_none() {
-                zingo_data_dir = regtest_manager.zingo_datadir.clone();
-                maybe_data_dir = Some(&zingo_data_dir);
-            };
+            let regtest_manager = regtest::RegtestManager::new(zingo_wallet_dir.clone());
             child_process_handler = Some(regtest_manager.launch(clean_regtest_data)?);
             maybe_server = Some("http://127.0.0.1".to_string());
             Some(regtest_manager)
         } else {
             None
         };
-        let zingo_data_dir = *maybe_data_dir.expect("This is now populated with a PathBuf.");
         let server = zingoconfig::construct_lightwalletd_uri(maybe_server);
         let chaintype = match server.to_string() {
             x if x.contains("main") => ChainType::Mainnet,
@@ -379,7 +382,7 @@ to scan from the start of the blockchain."
             seed,
             viewing_key,
             birthday,
-            zingo_data_dir,
+            zingo_wallet_dir,
             sync,
             command,
             regtest_manager,
@@ -397,7 +400,7 @@ pub fn startup(
     // Try to get the configuration
     let config = load_clientconfig(
         filled_template.server.clone(),
-        Some(filled_template.zingo_data_dir),
+        Some(filled_template.zingo_wallet_dir.clone()),
         filled_template.chaintype,
     )
     .unwrap();
