@@ -18,6 +18,21 @@ lazy_static! {
         Mutex::new(RefCell::new(None));
 }
 
+fn lock_client_return_seed(lightclient: LightClient) -> String {
+    let seed = match lightclient.do_seed_phrase_sync() {
+        Ok(s) => s.dump(),
+        Err(e) => {
+            return format!("Error: {}", e);
+        }
+    };
+
+    let lc = Arc::new(lightclient);
+    LightClient::start_mempool_monitor(lc.clone());
+
+    LIGHTCLIENT.lock().unwrap().replace(Some(lc));
+
+    seed
+}
 pub fn init_new(server_uri: String, data_dir: String) -> String {
     let server = construct_server_uri(Some(server_uri));
 
@@ -36,20 +51,7 @@ pub fn init_new(server_uri: String, data_dir: String) -> String {
             return format!("Error: {}", e);
         }
     };
-
-    let seed = match lightclient.do_seed_phrase_sync() {
-        Ok(s) => s.dump(),
-        Err(e) => {
-            return format!("Error: {}", e);
-        }
-    };
-
-    let lc = Arc::new(lightclient);
-    LightClient::start_mempool_monitor(lc.clone());
-
-    LIGHTCLIENT.lock().unwrap().replace(Some(lc));
-
-    seed
+    lock_client_return_seed(lightclient)
 }
 
 pub fn init_from_seed(server_uri: String, seed: String, birthday: u64, data_dir: String) -> String {
@@ -75,20 +77,7 @@ pub fn init_from_seed(server_uri: String, seed: String, birthday: u64, data_dir:
             return format!("Error: {}", e);
         }
     };
-
-    let seed = match lightclient.do_seed_phrase_sync() {
-        Ok(s) => s.dump(),
-        Err(e) => {
-            return format!("Error: {}", e);
-        }
-    };
-
-    let lc = Arc::new(lightclient);
-    LightClient::start_mempool_monitor(lc.clone());
-
-    LIGHTCLIENT.lock().unwrap().replace(Some(lc));
-
-    seed
+    lock_client_return_seed(lightclient)
 }
 
 pub fn init_from_b64(server_uri: String, base64_data: String, data_dir: String) -> String {
@@ -116,20 +105,7 @@ pub fn init_from_b64(server_uri: String, base64_data: String, data_dir: String) 
             return format!("Error: {}", e);
         }
     };
-
-    let seed = match lightclient.do_seed_phrase_sync() {
-        Ok(s) => s.dump(),
-        Err(e) => {
-            return format!("Error: {}", e);
-        }
-    };
-
-    let lc = Arc::new(lightclient);
-    LightClient::start_mempool_monitor(lc.clone());
-
-    LIGHTCLIENT.lock().unwrap().replace(Some(lc));
-
-    seed
+    lock_client_return_seed(lightclient)
 }
 
 pub fn save_to_b64() -> String {
