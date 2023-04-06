@@ -69,18 +69,17 @@ async fn load_wallet(wallet: PathBuf) -> zingolib::wallet::LightWallet {
         .unwrap()
 }
 
-#[test_log::test(tokio::test)]
+#[tokio::test]
 #[traced_test]
 async fn load_and_parse_different_wallet_versions() {
     let (_sap_wallet, _sap_path, sap_dir) = get_wallet_nym("sap_only").unwrap();
     let _loaded_wallet = load_wallet(sap_dir).await;
 }
 
-#[test_log::test(tokio::test)]
+#[tokio::test]
 #[traced_test]
 async fn send_to_self_causes_memo_error_with_no_user_specified_memo() {
-    log::info!("I'm a log message!");
-    assert!(logs_contain("I'm a log message"));
+    tracing_log::LogTracer::init().unwrap();
     let (regtest_manager, child_process_handler, _faucet, recipient, _txid) =
         scenarios::faucet_prefunded_orchard_recipient(100_000).await;
     recipient
@@ -94,8 +93,9 @@ async fn send_to_self_causes_memo_error_with_no_user_specified_memo() {
     utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1)
         .await
         .unwrap();
+    // With user-specified memo, we list the metadata
     assert!(!logs_contain(
-        "Received memo indicating you send to an address you don't have on record."
+        "Received memo indicating you sent to an address you don't have on record."
     ));
     recipient
         .do_send(vec![(
@@ -108,13 +108,16 @@ async fn send_to_self_causes_memo_error_with_no_user_specified_memo() {
     utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1)
         .await
         .unwrap();
+    // With a memo-less send to self, we hide the metadata from the UI, which
+    // tricks the error detector. This test, therefore, asserts the presence
+    // of a known bug
     assert!(logs_contain(
-        "Received memo indicating you send to an address you don't have on record."
+        "Received memo indicating you sent to an address you don't have on record."
     ));
     drop(child_process_handler)
 }
 
-#[test_log::test(tokio::test)]
+#[tokio::test]
 #[traced_test]
 async fn factor_do_shield_to_call_do_send() {
     let (regtest_manager, _child_process_handler, faucet, recipient) =
@@ -132,7 +135,7 @@ async fn factor_do_shield_to_call_do_send() {
         .unwrap();
 }
 
-#[test_log::test(tokio::test)]
+#[tokio::test]
 #[traced_test]
 async fn test_scanning_in_watch_only_mode() {
     // # Scenario:
@@ -300,7 +303,7 @@ async fn test_scanning_in_watch_only_mode() {
     drop(child_process_handler);
 }
 
-#[test_log::test(tokio::test)]
+#[tokio::test]
 #[traced_test]
 async fn zcashd_sapling_commitment_tree() {
     //  TODO:  Make this test assert something, what is this a test of?
@@ -318,7 +321,7 @@ async fn zcashd_sapling_commitment_tree() {
     drop(child_process_handler);
 }
 
-#[test_log::test(tokio::test)]
+#[tokio::test]
 #[traced_test]
 async fn verify_old_wallet_uses_server_height_in_send() {
     // An earlier version of zingolib used the _wallet's_ 'height' when
@@ -352,7 +355,7 @@ async fn verify_old_wallet_uses_server_height_in_send() {
         .unwrap();
     drop(child_process_handler);
 }
-#[test_log::test(tokio::test)]
+#[tokio::test]
 #[traced_test]
 async fn actual_empty_zcashd_sapling_commitment_tree() {
     // Expectations:
@@ -401,7 +404,7 @@ async fn actual_empty_zcashd_sapling_commitment_tree() {
     drop(child_process_handler);
 }
 
-#[test_log::test(tokio::test)]
+#[tokio::test]
 #[traced_test]
 async fn mine_sapling_to_self() {
     let (regtest_manager, child_process_handler, faucet) = scenarios::faucet().await;
@@ -412,7 +415,7 @@ async fn mine_sapling_to_self() {
     drop(child_process_handler);
 }
 
-#[test_log::test(tokio::test)]
+#[tokio::test]
 #[traced_test]
 async fn unspent_notes_are_not_saved() {
     let (regtest_manager, child_process_handler, faucet, recipient) =
@@ -477,7 +480,7 @@ async fn unspent_notes_are_not_saved() {
     drop(child_process_handler);
 }
 
-#[test_log::test(tokio::test)]
+#[tokio::test]
 #[traced_test]
 async fn send_mined_sapling_to_orchard() {
     // This test shows the 5th confirmation changing the state of balance by
@@ -518,7 +521,7 @@ fn extract_value_as_u64(input: &JsonValue) -> u64 {
     note.clone()
 }
 
-#[test_log::test(tokio::test)]
+#[tokio::test]
 #[traced_test]
 async fn note_selection_order() {
     // In order to fund a transaction multiple notes may be selected and consumed.
@@ -637,7 +640,7 @@ async fn note_selection_order() {
     drop(child_process_handler);
 }
 
-#[test_log::test(tokio::test)]
+#[tokio::test]
 #[traced_test]
 async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     // Test all possible promoting note source combinations
@@ -763,7 +766,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     );
     drop(child_process_handler);
 }
-#[test_log::test(tokio::test)]
+#[tokio::test]
 #[traced_test]
 async fn send_orchard_back_and_forth() {
     // setup
@@ -822,7 +825,7 @@ async fn send_orchard_back_and_forth() {
     drop(child_process_handler);
 }
 
-#[test_log::test(tokio::test)]
+#[tokio::test]
 #[traced_test]
 async fn diversified_addresses_receive_funds_in_best_pool() {
     let (regtest_manager, child_process_handler, faucet, recipient) =
@@ -859,7 +862,7 @@ async fn diversified_addresses_receive_funds_in_best_pool() {
     drop(child_process_handler);
 }
 
-#[test_log::test(tokio::test)]
+#[tokio::test]
 #[traced_test]
 async fn rescan_still_have_outgoing_metadata() {
     let (regtest_manager, child_process_handler, faucet, recipient) =
@@ -883,7 +886,7 @@ async fn rescan_still_have_outgoing_metadata() {
     drop(child_process_handler);
 }
 
-#[test_log::test(tokio::test)]
+#[tokio::test]
 #[traced_test]
 async fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
     let (regtest_manager, child_process_handler, faucet) = scenarios::faucet().await;
@@ -936,7 +939,7 @@ async fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
 /// wallet-regeneration-from-seed (sprouting) doesn't regenerate
 /// the previous diversifier list. <-- But the spend capability
 /// is capable of recovering the diversified _receiver_.
-#[test_log::test(tokio::test)]
+#[tokio::test]
 #[traced_test]
 async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
     let (regtest_manager, child_process_handler, mut client_builder) = scenarios::custom_clients();
@@ -1063,7 +1066,7 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
     drop(child_process_handler);
 }
 
-#[test_log::test(tokio::test)]
+#[tokio::test]
 #[traced_test]
 async fn ensure_taddrs_from_old_seeds_work() {
     let (_regtest_manager, child_process_handler, mut client_builder) = scenarios::custom_clients();
@@ -1081,7 +1084,7 @@ async fn ensure_taddrs_from_old_seeds_work() {
     drop(child_process_handler);
 }
 
-#[test_log::test(tokio::test)]
+#[tokio::test]
 #[traced_test]
 async fn t_incoming_t_outgoing() {
     let (regtest_manager, child_process_handler, faucet, recipient) =
@@ -1219,7 +1222,7 @@ async fn t_incoming_t_outgoing() {
     drop(child_process_handler);
 }
 
-#[test_log::test(tokio::test)]
+#[tokio::test]
 #[traced_test]
 async fn send_to_ua_saves_full_ua_in_wallet() {
     let (regtest_manager, child_process_handler, faucet, recipient) =
@@ -1265,7 +1268,7 @@ async fn send_to_ua_saves_full_ua_in_wallet() {
     drop(child_process_handler);
 }
 
-#[test_log::test(tokio::test)]
+#[tokio::test]
 #[traced_test]
 async fn self_send_to_t_displays_as_one_transaction() {
     let (regtest_manager, child_process_handler, faucet, recipient) =
@@ -1342,7 +1345,7 @@ async fn self_send_to_t_displays_as_one_transaction() {
 // Burn-to regtest address generated by `zcash-cli getnewaddress`
 const EXT_TADDR: &str = "tmJTBtMwPU96XteSiP89xDz1WARNgRddEHq";
 #[cfg(feature = "cross_version")]
-#[test_log::test(tokio::test)]
+#[tokio::test]
 #[traced_test]
 async fn cross_compat() {
     let (_regtest_manager, child_process_handler, current_client, fixed_address_client) =
@@ -1358,7 +1361,7 @@ async fn cross_compat() {
     drop(child_process_handler);
 }
 
-#[test_log::test(tokio::test)]
+#[tokio::test]
 #[traced_test]
 async fn sapling_to_sapling_scan_together() {
     // Create an incoming transaction, and then send that transaction, and scan everything together, to make sure it works.
@@ -1434,7 +1437,7 @@ async fn sapling_to_sapling_scan_together() {
     drop(child_process_handler);
 }
 
-#[test_log::test(tokio::test)]
+#[tokio::test]
 #[traced_test]
 async fn mixed_transaction() {
     let zvalue = 100_000;
@@ -1546,7 +1549,7 @@ async fn mixed_transaction() {
     drop(child_process_handler);
 }
 
-#[test_log::test(tokio::test)]
+#[tokio::test]
 #[traced_test]
 async fn load_wallet_from_v26_dat_file() {
     // We test that the LightWallet can be read from v26 .dat file
@@ -1617,7 +1620,7 @@ async fn load_wallet_from_v26_dat_file() {
     }
 }
 
-#[test_log::test(tokio::test)]
+#[tokio::test]
 #[traced_test]
 async fn mempool_and_balance() {
     let value = 100_000;
@@ -1675,7 +1678,7 @@ async fn mempool_and_balance() {
     drop(child_process_handler);
 }
 
-#[test_log::test(tokio::test)]
+#[tokio::test]
 #[traced_test]
 async fn witness_clearing() {
     let value: u64 = 100_000;
@@ -1781,7 +1784,7 @@ async fn witness_clearing() {
     drop(child_process_handler);
 }
 
-#[test_log::test(tokio::test)]
+#[tokio::test]
 #[traced_test]
 async fn mempool_clearing() {
     let value = 100_000;
@@ -2048,7 +2051,7 @@ pub mod framework_validation {
             );
         };
     }
-    #[test_log::test(tokio::test)]
+    #[tokio::test]
     #[traced_test]
     async fn reboot_zcashd() {
         let ScenarioBuilder {
@@ -2096,7 +2099,7 @@ pub mod framework_validation {
         drop(child_process_handler2);
     }
 }
-#[test_log::test(tokio::test)]
+#[tokio::test]
 #[traced_test]
 async fn sapling_incoming_sapling_outgoing() {
     let (regtest_manager, child_process_handler, faucet, recipient) =
@@ -2319,7 +2322,7 @@ async fn sapling_incoming_sapling_outgoing() {
     drop(child_process_handler);
 }
 
-#[test_log::test(tokio::test)]
+#[tokio::test]
 #[traced_test]
 async fn aborted_resync() {
     let zvalue = 100_000;
@@ -2442,7 +2445,7 @@ async fn aborted_resync() {
     drop(child_process_handler);
 }
 
-#[test_log::test(tokio::test)]
+#[tokio::test]
 #[traced_test]
 async fn no_change() {
     // 2. Send an incoming transaction to fill the wallet
