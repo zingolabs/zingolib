@@ -158,9 +158,6 @@ pub mod scenarios {
                 funded: Option<String>,
                 zingo_wallet_dir: Option<PathBuf>,
             ) -> Self {
-                if let Err(e) = LightClient::init_logging() {
-                    eprintln!("Can't initiate logging: {e}")
-                }
                 let mut sb = if let Some(conf) = zingo_wallet_dir {
                     ScenarioBuilder::new(Some(conf))
                 } else {
