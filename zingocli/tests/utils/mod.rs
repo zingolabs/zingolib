@@ -112,7 +112,7 @@ pub mod scenarios {
             pub child_process_handler: Option<ChildProcessHandler>,
         }
         impl ScenarioBuilder {
-            pub fn new(custom_client_config: Option<String>) -> Self {
+            pub fn new(custom_client_config: Option<PathBuf>) -> Self {
                 //! TestEnvironmentGenerator sets particular parameters, specific filenames,
                 //! port numbers, etc.  in general no test_config should be used for
                 //! more than one test, and usually is only invoked via this
@@ -124,11 +124,7 @@ pub mod scenarios {
                 let data_dir = if let Some(data_dir) = custom_client_config {
                     data_dir
                 } else {
-                    regtest_manager
-                        .zingo_datadir
-                        .clone()
-                        .to_string_lossy()
-                        .to_string()
+                    regtest_manager.zingo_datadir.clone()
                 };
                 let client_builder = ClientManager::new(
                     test_env.get_lightwalletd_uri(),
@@ -160,7 +156,7 @@ pub mod scenarios {
             }
             pub fn build_and_launch(
                 funded: Option<String>,
-                zingo_wallet_dir: Option<String>,
+                zingo_wallet_dir: Option<PathBuf>,
             ) -> Self {
                 if let Err(e) = LightClient::init_logging() {
                     eprintln!("Can't initiate logging: {e}")
@@ -185,12 +181,12 @@ pub mod scenarios {
         /// take a seed, and generate a client from the seed (planted in the chain).
         pub struct ClientManager {
             pub server_id: http::Uri,
-            pub zingo_datadir: String,
+            pub zingo_datadir: PathBuf,
             seed: String,
             client_number: u8,
         }
         impl ClientManager {
-            pub fn new(server_id: http::Uri, zingo_datadir: String, seed: &str) -> Self {
+            pub fn new(server_id: http::Uri, zingo_datadir: PathBuf, seed: &str) -> Self {
                 let seed = seed.to_string();
                 let client_number = 0;
                 ClientManager {
@@ -204,10 +200,14 @@ pub mod scenarios {
                 //! Each client requires a unique data_dir, we use the
                 //! client_number counter for this.
                 self.client_number += 1;
-                let conf_path = format!("{}_client_{}", self.zingo_datadir, self.client_number);
-                self.create_clientconfig(conf_path)
+                let conf_path = format!(
+                    "{}_client_{}",
+                    self.zingo_datadir.to_string_lossy().to_string(),
+                    self.client_number
+                );
+                self.create_clientconfig(PathBuf::from(conf_path))
             }
-            pub fn create_clientconfig(&self, conf_path: String) -> zingoconfig::ZingoConfig {
+            pub fn create_clientconfig(&self, conf_path: PathBuf) -> zingoconfig::ZingoConfig {
                 std::fs::create_dir(&conf_path).unwrap();
                 zingolib::load_clientconfig(
                     self.server_id.clone(),
@@ -268,11 +268,11 @@ pub mod scenarios {
                 let lightwalletd_rpcservice_port = portpicker::pick_unused_port()
                     .expect("Port unpickable!")
                     .to_string();
-                let regtest_manager = RegtestManager::new(Some(
+                let regtest_manager = RegtestManager::new(
                     tempdir::TempDir::new("zingo_integration_test")
                         .unwrap()
                         .into_path(),
-                ));
+                );
                 let server_uri = zingoconfig::construct_lightwalletd_uri(Some(format!(
                     "http://127.0.0.1:{lightwalletd_rpcservice_port}"
                 )));

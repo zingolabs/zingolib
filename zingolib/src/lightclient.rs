@@ -1759,12 +1759,9 @@ mod tests {
         let data_dir = temp_dir
             .into_path()
             .canonicalize()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .to_string();
+            .expect("This path is available.");
 
-        let wallet_name = format!("{}/{}", &data_dir, "zingo-wallet.dat");
+        let wallet_name = data_dir.join("zingo-wallet.dat");
         let config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, Some(data_dir));
         let lc = LightClient::new_from_wallet_base(
             WalletBase::MnemonicPhrase(TEST_SEED.to_string()),

@@ -16,7 +16,7 @@ pub fn get_git_rootdir() -> PathBuf {
     )
     .to_path_buf()
 }
-fn get_regtest_dir() -> PathBuf {
+pub(crate) fn get_regtest_dir() -> PathBuf {
     get_git_rootdir().join("regtest")
 }
 
@@ -86,8 +86,8 @@ pub enum LaunchChildProcessError {
     },
 }
 impl RegtestManager {
-    pub fn new(rootpathname: Option<PathBuf>) -> Self {
-        let regtest_dir = rootpathname.unwrap_or_else(get_regtest_dir);
+    pub fn new(rootpathname: PathBuf) -> Self {
+        let regtest_dir = rootpathname;
         let confs_dir = regtest_dir.join("conf");
         std::fs::create_dir_all(&confs_dir).expect("Couldn't create dir.");
         let bin_dir = get_regtest_dir().join("bin");
@@ -422,5 +422,8 @@ impl RegtestManager {
             lightwalletd: lightwalletd_child,
             zcash_cli_command: self.get_cli_handle(),
         })
+    }
+    pub fn get_zingo_data_dir(&self) -> PathBuf {
+        self.zingo_datadir.clone()
     }
 }

@@ -16,31 +16,36 @@ pub mod wallet;
 pub struct SaplingParams;
 use std::{
     io::{ErrorKind, Result},
+    path::PathBuf,
     sync::{Arc, RwLock},
 };
 use zingoconfig::{ChainType, ZingoConfig};
 
 pub fn load_clientconfig(
-    server: http::Uri,
-    data_dir: Option<String>,
+    lightwallet_uri: http::Uri,
+    data_dir: Option<PathBuf>,
     chain: ChainType,
 ) -> Result<ZingoConfig> {
     use std::net::ToSocketAddrs;
-    format!("{}:{}", server.host().unwrap(), server.port().unwrap())
-        .to_socket_addrs()?
-        .next()
-        .ok_or(std::io::Error::new(
-            ErrorKind::ConnectionRefused,
-            "Couldn't resolve server!",
-        ))?;
+    format!(
+        "{}:{}",
+        lightwallet_uri.host().unwrap(),
+        lightwallet_uri.port().unwrap()
+    )
+    .to_socket_addrs()?
+    .next()
+    .ok_or(std::io::Error::new(
+        ErrorKind::ConnectionRefused,
+        "Couldn't resolve server!",
+    ))?;
 
     // Create a Light Client Config
     let config = ZingoConfig {
-        lightwalletd_uri: Arc::new(RwLock::new(server)),
+        lightwalletd_uri: Arc::new(RwLock::new(lightwallet_uri)),
         chain,
         monitor_mempool: true,
         reorg_buffer_offset: zingoconfig::REORG_BUFFER_OFFSET,
-        data_dir,
+        zingo_wallet_dir: data_dir,
     };
 
     Ok(config)
