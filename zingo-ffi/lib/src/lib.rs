@@ -42,7 +42,7 @@ fn construct_uri_load_config(
     let (mut config, latest_block_height) = match zingolib::load_clientconfig(server, None) {
         Ok((c, h)) => (c, h),
         Err(e) => {
-            return Err(format!("Config load Error: {}", e));
+            return Err(format!("Error: Config load: {}", e));
         }
     };
 
