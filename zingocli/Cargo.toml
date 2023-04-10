@@ -17,17 +17,23 @@ zingoconfig = { path = "../zingoconfig/" }
 zingtaddrfix = { git = "https://github.com/zingolabs/zingolib", package = "zingolib", rev = "3d42b916d46cc3d7c0e79609a6fcde6425f9c526", optional = true }
 
 [dev-dependencies]
+env_logger = "0.10.0"
 zingolib = { path = "../zingolib/", features = ["integration_test"] }
 bech32 = "0.9.0"
 portpicker = "0.1.1"
 rand = "0.8.5"
+hex = "0.3"
 tempdir = "0.3.7"
 tracing-subscriber = "0.3.15"
+itertools = "0.10.5"
 orchard = "0.2.0"
 zcash_address = { git = "https://github.com/zingolabs/librustzcash", rev = "d66f7f70516e6da5c24008874a926d41221b1346"}
 zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash", rev = "d66f7f70516e6da5c24008874a926d41221b1346"}
 zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", rev = "d66f7f70516e6da5c24008874a926d41221b1346", features = ["transparent-inputs", "test-dependencies"] }
-itertools = "0.10.5"
+bip0039 = "0.10.1"
+tracing-test = { version = "0.2.4", features = ["no-env-filter"] }
+tracing = "0.1.37"
+tracing-log = "0.1.3"
 
 [features]
 default = ["local_env"]

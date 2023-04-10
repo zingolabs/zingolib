@@ -23,7 +23,7 @@ use zcash_primitives::{
     constants,
 };
 
-pub const DEFAULT_SERVER: &str = "https://mainnet.lightwalletd.com:9067";
+pub const DEFAULT_LIGHTWALLETD_SERVER: &str = "https://mainnet.lightwalletd.com:9067";
 pub const MAX_REORG: usize = 100;
 pub const WALLET_NAME: &str = "zingo-wallet.dat";
 pub const LOGFILE_NAME: &str = "zingo-wallet.debug.log";
@@ -35,7 +35,7 @@ pub const GAP_RULE_UNUSED_ADDRESSES: usize = 0;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub const GAP_RULE_UNUSED_ADDRESSES: usize = 5;
 
-pub fn construct_server_uri(server: Option<String>) -> http::Uri {
+pub fn construct_lightwalletd_uri(server: Option<String>) -> http::Uri {
     match server {
         Some(s) => {
             let mut s = if s.starts_with("http") {
@@ -49,7 +49,7 @@ pub fn construct_server_uri(server: Option<String>) -> http::Uri {
             }
             s
         }
-        None => DEFAULT_SERVER.to_string(),
+        None => DEFAULT_LIGHTWALLETD_SERVER.to_string(),
     }
     .parse()
     .unwrap()
@@ -58,22 +58,22 @@ pub fn construct_server_uri(server: Option<String>) -> http::Uri {
 /// Configuration data that is necessary? and sufficient? for the creation of a LightClient.
 #[derive(Clone, Debug)]
 pub struct ZingoConfig {
-    pub server_uri: Arc<RwLock<http::Uri>>,
+    pub lightwalletd_uri: Arc<RwLock<http::Uri>>,
     pub chain: ChainType,
     pub reorg_buffer_offset: u32,
     pub monitor_mempool: bool,
-    pub data_dir: Option<String>,
+    pub zingo_wallet_dir: Option<PathBuf>,
 }
 
 impl ZingoConfig {
     // Create an unconnected (to any server) config to test for local wallet etc...
-    pub fn create_unconnected(chain: ChainType, dir: Option<String>) -> ZingoConfig {
+    pub fn create_unconnected(chain: ChainType, dir: Option<PathBuf>) -> ZingoConfig {
         ZingoConfig {
-            server_uri: Arc::new(RwLock::new(http::Uri::default())),
+            lightwalletd_uri: Arc::new(RwLock::new(http::Uri::default())),
             chain,
             monitor_mempool: false,
             reorg_buffer_offset: REORG_BUFFER_OFFSET,
-            data_dir: dir,
+            zingo_wallet_dir: dir,
         }
     }
 
@@ -92,7 +92,7 @@ impl ZingoConfig {
             .into()
     }
     pub fn set_data_dir(&mut self, dir_str: String) {
-        self.data_dir = Some(dir_str);
+        self.zingo_wallet_dir = Some(PathBuf::from(dir_str));
     }
 
     /// Build the Logging config
@@ -127,7 +127,7 @@ impl ZingoConfig {
             .map_err(|e| Error::new(ErrorKind::Other, format!("{}", e)))
     }
 
-    pub fn get_zcash_data_path(&self) -> Box<Path> {
+    pub fn get_zingo_wallet_dir(&self) -> Box<Path> {
         #[cfg(any(target_os = "ios", target_os = "android"))]
         {
             PathBuf::from(&self.data_dir.as_ref().unwrap()).into_boxed_path()
@@ -137,8 +137,8 @@ impl ZingoConfig {
         {
             let mut zcash_data_location;
             // If there's some --data-dir path provided, use it
-            if self.data_dir.is_some() {
-                zcash_data_location = PathBuf::from(&self.data_dir.as_ref().unwrap());
+            if self.zingo_wallet_dir.is_some() {
+                zcash_data_location = PathBuf::from(&self.zingo_wallet_dir.as_ref().unwrap());
             } else {
                 #[cfg(any(target_os = "macos", target_os = "windows"))]
                 {
@@ -184,6 +184,7 @@ impl ZingoConfig {
             Ok(PathBuf::from(&self.data_dir.as_ref().unwrap()).into_boxed_path())
         }
 
+        //TODO:  This fn is not correct for regtest mode
         #[cfg(not(any(target_os = "ios", target_os = "android")))]
         {
             if dirs::home_dir().is_none() {
@@ -193,7 +194,7 @@ impl ZingoConfig {
                 ));
             }
 
-            let mut zcash_params = self.get_zcash_data_path().into_path_buf();
+            let mut zcash_params = self.get_zingo_wallet_dir().into_path_buf();
             zcash_params.push("..");
 
             #[cfg(any(target_os = "macos", target_os = "windows"))]
@@ -212,14 +213,14 @@ impl ZingoConfig {
         }
     }
 
-    pub fn get_server_uri(&self) -> http::Uri {
-        self.server_uri
+    pub fn get_lightwalletd_uri(&self) -> http::Uri {
+        self.lightwalletd_uri
             .read()
             .expect("Couldn't read configured server URI!")
             .clone()
     }
     pub fn get_wallet_path(&self) -> Box<Path> {
-        let mut wallet_location = self.get_zcash_data_path().into_path_buf();
+        let mut wallet_location = self.get_zingo_wallet_dir().into_path_buf();
         wallet_location.push(WALLET_NAME);
 
         wallet_location.into_boxed_path()
@@ -238,7 +239,7 @@ impl ZingoConfig {
         }
         use std::time::{SystemTime, UNIX_EPOCH};
 
-        let mut backup_file_path = self.get_zcash_data_path().into_path_buf();
+        let mut backup_file_path = self.get_zingo_wallet_dir().into_path_buf();
         backup_file_path.push(&format!(
             "zingo-wallet.backup.{}.dat",
             SystemTime::now()
@@ -254,7 +255,7 @@ impl ZingoConfig {
     }
 
     pub fn get_log_path(&self) -> Box<Path> {
-        let mut log_path = self.get_zcash_data_path().into_path_buf();
+        let mut log_path = self.get_zingo_wallet_dir().into_path_buf();
         log_path.push(LOGFILE_NAME);
         //println!("LogFile:\n{}", log_path.to_str().unwrap());
 

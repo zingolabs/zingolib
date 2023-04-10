@@ -1,7 +1,6 @@
 use crate::{
     compact_formats::{CompactBlock, CompactTx, TreeState},
     grpc_connector::GrpcConnector,
-    lightclient::checkpoints::get_all_main_checkpoints,
     wallet::{
         data::{BlockData, PoolNullifier, TransactionMetadata, WitnessCache},
         traits::{DomainWalletExt, FromCommitment, ReceivedNoteAndMetadata},
@@ -198,21 +197,6 @@ impl BlockAndWitnessData {
             .map(|treestate| treestate.clone());
 
         let mut start_trees = vec![];
-
-        // Collect all the checkpoints
-        start_trees.extend(
-            get_all_main_checkpoints()
-                .into_iter()
-                .map(|(h, hash, tree)| {
-                    let mut trees_state = TreeState::default();
-                    trees_state.height = h;
-                    trees_state.hash = hash.to_string();
-                    trees_state.sapling_tree = tree.to_string();
-                    trees_state.orchard_tree = String::from("000000");
-
-                    trees_state
-                }),
-        );
 
         // Add all the verification trees as verified, so they can be used as starting points.
         // If any of them fails to verify, then we will fail the whole thing anyway.
@@ -909,21 +893,9 @@ pub fn update_tree_with_compact_transaction<D: DomainWalletExt>(
 
 #[cfg(test)]
 mod test {
-    use std::sync::Arc;
-
-    use crate::blaze::sync_status::BatchSyncStatus;
     use crate::compact_formats::CompactBlock;
-    use crate::wallet::transactions::TransactionMetadataSet;
-    use crate::{
-        blaze::test_utils::{FakeCompactBlock, FakeCompactBlockList},
-        wallet::data::BlockData,
-    };
-    use futures::future::join_all;
+    use crate::{blaze::test_utils::FakeCompactBlock, wallet::data::BlockData};
     use orchard::tree::MerkleHashOrchard;
-    use rand::rngs::OsRng;
-    use rand::RngCore;
-    use tokio::sync::RwLock;
-    use tokio::{sync::mpsc::unbounded_channel, task::JoinHandle};
     use zcash_primitives::block::BlockHash;
     use zcash_primitives::merkle_tree::CommitmentTree;
     use zcash_primitives::sapling;
@@ -931,21 +903,20 @@ mod test {
 
     use super::*;
 
-    #[tokio::test]
-    async fn setup_finish_simple() {
-        let mut nw = BlockAndWitnessData::new_with_batchsize(
-            &ZingoConfig::create_unconnected(ChainType::FakeMainnet, None),
-            25_000,
-        );
-
-        let cb = FakeCompactBlock::new(1, BlockHash([0u8; 32])).into_cb();
-        let blks = vec![BlockData::new(cb)];
-
-        nw.setup_sync(blks.clone(), None).await;
-        let finished_blks = nw.drain_existingblocks_into_blocks_with_truncation(1).await;
-
-        assert_eq!(blks[0].hash(), finished_blks[0].hash());
-        assert_eq!(blks[0].height, finished_blks[0].height);
+    fn make_fake_block_list(numblocks: u64) -> Vec<BlockData> {
+        if numblocks == 0 {
+            return Vec::new();
+        }
+        let mut prev_hash = BlockHash([0; 32]);
+        let mut blocks: Vec<_> = (1..=numblocks)
+            .map(|n| {
+                let fake_block = FakeCompactBlock::new(n, prev_hash).block;
+                prev_hash = BlockHash(fake_block.hash.clone().try_into().unwrap());
+                BlockData::new(fake_block)
+            })
+            .collect();
+        blocks.reverse();
+        blocks
     }
 
     #[tokio::test]
@@ -956,7 +927,7 @@ mod test {
         );
 
         for numblocks in [0, 1, 2, 10] {
-            let existing_blocks = FakeCompactBlockList::new(numblocks).into_blockdatas();
+            let existing_blocks = make_fake_block_list(numblocks);
             scenario_bawd
                 .setup_sync(existing_blocks.clone(), None)
                 .await;
@@ -988,7 +959,7 @@ mod test {
             25_000,
         );
 
-        let existing_blocks = FakeCompactBlockList::new(200).into_blockdatas();
+        let existing_blocks = make_fake_block_list(200);
         nw.setup_sync(existing_blocks.clone(), None).await;
         let finished_blks = nw
             .drain_existingblocks_into_blocks_with_truncation(100)
@@ -1006,7 +977,7 @@ mod test {
     async fn from_sapling_genesis() {
         let config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, None);
 
-        let blocks = FakeCompactBlockList::new(200).into_blockdatas();
+        let blocks = make_fake_block_list(200);
 
         // Blocks are in reverse order
         assert!(blocks.first().unwrap().height > blocks.last().unwrap().height);
@@ -1018,7 +989,7 @@ mod test {
         let mut nw = BlockAndWitnessData::new(&config, sync_status);
         nw.setup_sync(vec![], None).await;
 
-        let (reorg_transmitter, mut reorg_receiver) = unbounded_channel();
+        let (reorg_transmitter, mut reorg_receiver) = mpsc::unbounded_channel();
 
         let (h, cb_sender) = nw
             .start(
@@ -1055,7 +1026,7 @@ mod test {
     async fn with_existing_batched() {
         let config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, None);
 
-        let mut blocks = FakeCompactBlockList::new(200).into_blockdatas();
+        let mut blocks = make_fake_block_list(200);
 
         // Blocks are in reverse order
         assert!(blocks.first().unwrap().height > blocks.last().unwrap().height);
@@ -1069,7 +1040,7 @@ mod test {
         let mut nw = BlockAndWitnessData::new_with_batchsize(&config, 25);
         nw.setup_sync(existing_blocks, None).await;
 
-        let (reorg_transmitter, mut reorg_receiver) = unbounded_channel();
+        let (reorg_transmitter, mut reorg_receiver) = mpsc::unbounded_channel();
 
         let (h, cb_sender) = nw
             .start(
@@ -1113,7 +1084,7 @@ mod test {
     async fn with_reorg() {
         let config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, None);
 
-        let mut blocks = FakeCompactBlockList::new(100).into_blockdatas();
+        let mut blocks = make_fake_block_list(100);
 
         // Blocks are in reverse order
         assert!(blocks.first().unwrap().height > blocks.last().unwrap().height);
@@ -1132,7 +1103,7 @@ mod test {
         // Reset the hashes
         for i in 0..num_reorged {
             let mut hash = [0u8; 32];
-            OsRng.fill_bytes(&mut hash);
+            rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut hash);
 
             if i == 0 {
                 let mut cb = blocks.pop().unwrap().cb();
@@ -1167,7 +1138,7 @@ mod test {
         let mut nw = BlockAndWitnessData::new(&config, sync_status);
         nw.setup_sync(existing_blocks, None).await;
 
-        let (reorg_transmitter, mut reorg_receiver) = unbounded_channel();
+        let (reorg_transmitter, mut reorg_receiver) = mpsc::unbounded_channel();
 
         let (h, cb_sender) = nw
             .start(
@@ -1234,6 +1205,23 @@ mod test {
                 finished_blks[i].cb().hash().to_string()
             );
         }
+    }
+
+    #[tokio::test]
+    async fn setup_finish_simple() {
+        let mut nw = BlockAndWitnessData::new_with_batchsize(
+            &ZingoConfig::create_unconnected(ChainType::FakeMainnet, None),
+            25_000,
+        );
+
+        let cb = FakeCompactBlock::new(1, BlockHash([0u8; 32])).into_cb();
+        let blks = vec![BlockData::new(cb)];
+
+        nw.setup_sync(blks.clone(), None).await;
+        let finished_blks = nw.drain_existingblocks_into_blocks_with_truncation(1).await;
+
+        assert_eq!(blks[0].hash(), finished_blks[0].hash());
+        assert_eq!(blks[0].height, finished_blks[0].height);
     }
 
     const SAPLING_START: &'static str = "01f2e6144dbd45cf3faafd337fe59916fe5659b4932a4a008b535b8912a8f5c0000131ac2795ef458f5223f929680085935ebd5cb84d4849b3813b03aeb80d812241020001bcc10bd2116f34cd46d0dedef75c489d6ef9b6b551c0521e3b2e56b7f641fb01";

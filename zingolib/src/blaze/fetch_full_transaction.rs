@@ -46,7 +46,10 @@ use zingoconfig::{ChainType, ZingoConfig};
 pub struct TransactionContext {
     pub(crate) config: ZingoConfig,
     pub(crate) key: Arc<RwLock<WalletCapability>>,
+    #[cfg(not(feature = "integration_test"))]
     pub(crate) transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+    #[cfg(feature = "integration_test")]
+    pub transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
 }
 
 impl TransactionContext {
@@ -221,7 +224,7 @@ impl TransactionContext {
                                 out_metadata.ua = Some(ua.encode(&self.config.chain));
                             } else {
                                 log::error!(
-                                    "Recieved memo indicating you sent to \
+                                    "Received memo indicating you sent to \
                                     an address you don't have on record.\n({})\n\
                                     This may mean you are being sent malicious data.\n\
                                     Some information may not be displayed correctly",

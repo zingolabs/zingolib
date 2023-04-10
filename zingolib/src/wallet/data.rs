@@ -153,7 +153,7 @@ impl BlockData {
 #[derive(Clone)]
 pub struct WitnessCache<Node: Hashable> {
     pub(crate) witnesses: Vec<IncrementalWitness<Node>>,
-    pub(crate) top_height: u64,
+    pub top_height: u64,
 }
 
 impl<Node: Hashable> WitnessCache<Node> {
@@ -247,7 +247,10 @@ pub struct ReceivedOrchardNoteAndMetadata {
     pub note: OrchardNote,
 
     // Witnesses for the last 100 blocks. witnesses.last() is the latest witness
+    #[cfg(not(feature = "integration_test"))]
     pub(crate) witnesses: WitnessCache<MerkleHashOrchard>,
+    #[cfg(feature = "integration_test")]
+    pub witnesses: WitnessCache<MerkleHashOrchard>,
     pub(super) nullifier: OrchardNullifier,
     pub spent: Option<(TxId, u32)>, // If this note was confirmed spent
 

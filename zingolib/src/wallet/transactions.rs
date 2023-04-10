@@ -38,7 +38,10 @@ use super::{
 /// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
 /// this struct are threadsafe/locked properly.
 pub struct TransactionMetadataSet {
+    #[cfg(not(feature = "integration_test"))]
     pub(crate) current: HashMap<TxId, TransactionMetadata>,
+    #[cfg(feature = "integration_test")]
+    pub current: HashMap<TxId, TransactionMetadata>,
     pub(crate) some_txid_from_highest_wallet_block: Option<TxId>,
 }
 

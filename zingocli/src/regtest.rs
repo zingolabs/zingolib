@@ -16,7 +16,7 @@ pub fn get_git_rootdir() -> PathBuf {
     )
     .to_path_buf()
 }
-fn get_regtest_dir() -> PathBuf {
+pub(crate) fn get_regtest_dir() -> PathBuf {
     get_git_rootdir().join("regtest")
 }
 
@@ -24,7 +24,7 @@ fn get_regtest_dir() -> PathBuf {
 ///   * sets up paths to config and log directories
 ///   * optionally receives parameters that allow configs to be set in nonstandard
 ///     locations.  We use this to input configs for the integration_tests
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub struct RegtestManager {
     regtest_dir: PathBuf,
@@ -35,13 +35,13 @@ pub struct RegtestManager {
     zingo_cli_bin: PathBuf,
     logs_dir: PathBuf,
     data_dir: PathBuf,
-    zcashd_data_dir: PathBuf,
-    zcashd_logs_dir: PathBuf,
-    zcashd_stdout_log: PathBuf,
+    pub zcashd_data_dir: PathBuf,
+    pub zcashd_logs_dir: PathBuf,
+    pub zcashd_stdout_log: PathBuf,
     pub zcashd_config: PathBuf,
     pub lightwalletd_config: PathBuf,
-    lightwalletd_logs_dir: PathBuf,
-    lightwalletd_log: PathBuf,
+    pub lightwalletd_logs_dir: PathBuf,
+    pub lightwalletd_log: PathBuf,
     lightwalletd_stdout_log: PathBuf,
     lightwalletd_stderr_log: PathBuf,
     lightwalletd_data_dir: PathBuf,
@@ -51,12 +51,30 @@ pub struct RegtestManager {
 pub struct ChildProcessHandler {
     zcashd: Child,
     lightwalletd: Child,
+    zcash_cli_command: std::process::Command,
 }
 impl Drop for ChildProcessHandler {
-    #[allow(unused_must_use)]
     fn drop(&mut self) {
-        self.zcashd.kill();
-        self.lightwalletd.kill();
+        match self.zcash_cli_command.arg("stop").output() {
+            Ok(_) => {
+                if let Err(e) = self.zcashd.wait() {
+                    log::warn!("zcashd process didn't start properly: {e}")
+                };
+            }
+            Err(e) => {
+                log::error!(
+                    "Can't stop zcashd from zcash-cli: {e}\n\
+                    Sending SIGKILL to zcashd process."
+                );
+                if let Err(e) = self.zcashd.kill() {
+                    log::warn!("zcashd has already terminated: {e}")
+                };
+
+                if let Err(e) = self.lightwalletd.kill() {
+                    log::warn!("lightwalletd has already terminated: {e}")
+                }
+            }
+        }
     }
 }
 #[derive(Debug)]
@@ -68,8 +86,8 @@ pub enum LaunchChildProcessError {
     },
 }
 impl RegtestManager {
-    pub fn new(rootpathname: Option<PathBuf>) -> Self {
-        let regtest_dir = rootpathname.unwrap_or_else(get_regtest_dir);
+    pub fn new(rootpathname: PathBuf) -> Self {
+        let regtest_dir = rootpathname;
         let confs_dir = regtest_dir.join("conf");
         std::fs::create_dir_all(&confs_dir).expect("Couldn't create dir.");
         let bin_dir = get_regtest_dir().join("bin");
@@ -236,7 +254,7 @@ impl RegtestManager {
 
         let child = command.spawn()
         .expect("failed to start zcashd. It's possible the zcashd binary is not in the /zingolib/regtest/bin/ directory, see /regtest/README.md");
-        println!("zcashd is starting in regtest mode, please standby...");
+        log::debug!("zcashd is starting in regtest mode, please standby...");
 
         (
             child,
@@ -265,6 +283,10 @@ impl RegtestManager {
 
         let mut zcashd_log_open =
             File::open(&self.zcashd_stdout_log).expect("can't open zcashd log");
+        log::debug!(
+            "Opened zcashd_stdout_log: {}",
+            &self.zcashd_stdout_log.to_string_lossy().to_string()
+        );
         let mut zcashd_logfile_state = String::new();
 
         let check_interval = std::time::Duration::from_millis(500);
@@ -304,20 +326,21 @@ impl RegtestManager {
             std::thread::sleep(check_interval);
         }
 
-        println!("zcashd start section completed, zcashd reports it is done loading.");
+        log::debug!("zcashd start section completed, zcashd reports it is done loading.");
 
         if clean_regtest_data {
-            println!("Generating initial block");
+            log::debug!("generating initial block[s]");
+            //std::thread::sleep(std::time::Duration::new(15, 0));
             let generate_output = &self.generate_n_blocks(1);
 
             match generate_output {
-                Ok(output) => println!(
+                Ok(output) => log::debug!(
                     "generated block {}",
                     std::str::from_utf8(&output.stdout).unwrap()
                 ),
                 Err(e) => {
-                    println!("generating initial block returned error {e}");
-                    println!("exiting!");
+                    log::debug!("generating initial block returned error {e}");
+                    log::debug!("exiting!");
                     zcashd_handle
                         .kill()
                         .expect("Stop! Stop! Zcash is already dead!");
@@ -325,9 +348,9 @@ impl RegtestManager {
                 }
             }
         } else {
-            println!("Keeping old regtest data")
+            log::debug!("Keeping old regtest data")
         }
-        println!("lightwalletd is about to start. This should only take a moment.");
+        log::debug!("lightwalletd is about to start. This should only take a moment.");
 
         File::create(&self.lightwalletd_log).expect("file::create Result error");
         let mut lightwalletd_stdout_logfile =
@@ -377,7 +400,7 @@ impl RegtestManager {
             });
         }
 
-        println!("lightwalletd is now started in regtest mode, please standby...");
+        log::debug!("lightwalletd is now started in regtest mode, please standby...");
 
         let mut lwd_log_opened = File::open(&self.lightwalletd_log).expect("can't open lwd log");
         let mut lwd_logfile_state = String::new();
@@ -387,8 +410,8 @@ impl RegtestManager {
             std::io::Read::read_to_string(&mut lwd_log_opened, &mut lwd_logfile_state)
                 .expect("problem reading lwd_logfile into rust string");
             if lwd_logfile_state.contains("Starting insecure no-TLS (plaintext) server") {
-                println!("lwd start section completed, lightwalletd should be running!");
-                println!("Standby, Zingo-cli should be running in regtest mode momentarily...");
+                log::debug!("lwd start section completed, lightwalletd should be running!");
+                log::debug!("Standby, Zingo-cli should be running in regtest mode momentarily...");
                 break;
             }
             // we need to sleep because even after the last message is detected, lwd needs a moment to become ready for regtest mode
@@ -397,6 +420,10 @@ impl RegtestManager {
         Ok(ChildProcessHandler {
             zcashd: zcashd_handle,
             lightwalletd: lightwalletd_child,
+            zcash_cli_command: self.get_cli_handle(),
         })
+    }
+    pub fn get_zingo_data_dir(&self) -> PathBuf {
+        self.zingo_datadir.clone()
     }
 }

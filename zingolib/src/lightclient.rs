@@ -54,7 +54,7 @@ use zcash_primitives::{
 use zcash_proofs::prover::LocalTxProver;
 use zingoconfig::{ChainType, ZingoConfig, MAX_REORG};
 
-pub(crate) mod checkpoints;
+static LOG_INIT: std::sync::Once = std::sync::Once::new();
 
 #[derive(Clone, Debug)]
 pub struct WalletStatus {
@@ -75,7 +75,10 @@ impl WalletStatus {
 
 pub struct LightClient {
     pub(crate) config: ZingoConfig,
+    #[cfg(not(feature = "integration_test"))]
     pub(crate) wallet: LightWallet,
+    #[cfg(feature = "integration_test")]
+    pub wallet: LightWallet,
 
     mempool_monitor: std::sync::RwLock<Option<std::thread::JoinHandle<()>>>,
 
@@ -189,7 +192,7 @@ async fn get_recent_median_price_from_gemini() -> Result<f64, PriceFetchError> {
     Ok(trades[5])
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "integration_test"))]
 impl LightClient {
     /// Method to create a test-only version of the LightClient
     pub async fn test_new(
@@ -202,38 +205,8 @@ impl LightClient {
         l.set_wallet_initial_state(height).await;
 
         debug!("Created new wallet!");
-        debug!("Created LightClient to {}", &config.get_server_uri());
+        debug!("Created LightClient to {}", &config.get_lightwalletd_uri());
         Ok(l)
-    }
-
-    //TODO: Add migrate_sapling_to_orchard argument
-    pub async fn test_do_send(
-        &self,
-        addrs: Vec<(&str, u64, Option<String>)>,
-    ) -> Result<String, String> {
-        let transaction_submission_height = self.get_submission_height().await;
-        // First, get the concensus branch ID
-        debug!("Creating transaction");
-
-        let result = {
-            let _lock = self.sync_lock.lock().await;
-            let prover = crate::blaze::test_utils::FakeTransactionProver {};
-
-            self.wallet
-                .send_to_address(
-                    prover,
-                    false,
-                    false,
-                    addrs,
-                    transaction_submission_height,
-                    |transaction_bytes| {
-                        GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
-                    },
-                )
-                .await
-        };
-
-        result.map(|(transaction_id, _)| transaction_id)
     }
 
     pub async fn do_maybe_recent_txid(&self) -> JsonValue {
@@ -300,6 +273,10 @@ impl LightClient {
         Ok(lightclient)
     }
 
+    pub fn config(&self) -> &ZingoConfig {
+        &self.config
+    }
+
     /// The wallet this fn associates with the lightclient is specifically derived from
     /// a spend authority.
     pub fn new_from_wallet_base(
@@ -328,11 +305,11 @@ impl LightClient {
         })
     }
     pub fn set_server(&self, server: http::Uri) {
-        *self.config.server_uri.write().unwrap() = server
+        *self.config.lightwalletd_uri.write().unwrap() = server
     }
 
     pub fn get_server(&self) -> std::sync::RwLockReadGuard<http::Uri> {
-        self.config.server_uri.read().unwrap()
+        self.config.lightwalletd_uri.read().unwrap()
     }
 
     fn write_file_if_not_exists(dir: &Box<Path>, name: &str, bytes: &[u8]) -> io::Result<()> {
@@ -473,23 +450,15 @@ impl LightClient {
             "Getting sapling tree from LightwalletD at height {}",
             height
         );
-        match GrpcConnector::get_trees(self.config.get_server_uri(), height).await {
+        match GrpcConnector::get_trees(self.config.get_lightwalletd_uri(), height).await {
             Ok(tree_state) => {
                 let hash = tree_state.hash.clone();
                 let tree = tree_state.sapling_tree.clone();
                 Some((tree_state.height, hash, tree))
             }
             Err(e) => {
-                error!(
-                    "Error getting sapling tree:{}\nWill return checkpoint instead.",
-                    e
-                );
-                match checkpoints::get_closest_checkpoint(&self.config.chain, height) {
-                    Some((height, hash, tree)) => {
-                        Some((height, hash.to_string(), tree.to_string()))
-                    }
-                    None => None,
-                }
+                error!("Error getting sapling tree:{e}.");
+                None
             }
         }
     }
@@ -514,7 +483,7 @@ impl LightClient {
             l.set_wallet_initial_state(height).await;
 
             debug!("Created new wallet with a new seed!");
-            debug!("Created LightClient to {}", &config.get_server_uri());
+            debug!("Created LightClient to {}", &config.get_lightwalletd_uri());
 
             // Save
             l.do_save()
@@ -579,14 +548,14 @@ impl LightClient {
                 "Read wallet with birthday {}",
                 lc.wallet.get_birthday().await
             );
-            debug!("Created LightClient to {}", &config.get_server_uri());
+            debug!("Created LightClient to {}", &config.get_lightwalletd_uri());
 
             Ok(lc)
         })
     }
     pub fn init_logging() -> io::Result<()> {
         // Configure logging first.
-        tracing_subscriber::fmt::init();
+        LOG_INIT.call_once(|| tracing_subscriber::fmt::init());
 
         Ok(())
     }
@@ -676,7 +645,7 @@ impl LightClient {
     }
 
     pub fn get_server_uri(&self) -> http::Uri {
-        self.config.get_server_uri()
+        self.config.get_lightwalletd_uri()
     }
 
     pub async fn do_info(&self) -> String {
@@ -1062,6 +1031,16 @@ impl LightClient {
                 let memo_b = b.remove("memo").to_string();
                 b.insert("memo", [a.remove("memo").to_string(), memo_b].join(", "))
                     .unwrap();
+                for (key, a_val) in a.entries_mut() {
+                    let b_val = b.remove(key);
+                    if b_val == JsonValue::Null {
+                        b.insert(key, a_val.clone()).unwrap();
+                    } else {
+                        if a_val != &b_val {
+                            log::error!("{a_val} does not match {b_val}");
+                        }
+                    }
+                }
 
                 true
             } else {
@@ -1235,7 +1214,7 @@ impl LightClient {
 
         debug!("Mempool monitoring starting");
 
-        let uri = lc.config.get_server_uri();
+        let uri = lc.config.get_lightwalletd_uri();
         // Start monitoring the mempool in a new thread
         let h = std::thread::spawn(move || {
             // Start a new async runtime, which is fine because we are in a new thread.
@@ -1371,7 +1350,8 @@ impl LightClient {
         // The top of the wallet
         let last_synced_height = self.wallet.last_synced_height().await;
 
-        let latest_blockid = GrpcConnector::get_latest_block(self.config.get_server_uri()).await?;
+        let latest_blockid =
+            GrpcConnector::get_latest_block(self.config.get_lightwalletd_uri()).await?;
         if latest_blockid.height < last_synced_height {
             let w = format!(
                 "Server's latest block({}) is behind ours({})",
@@ -1386,6 +1366,7 @@ impl LightClient {
                 && BlockHash::from_slice(&latest_blockid.hash).to_string()
                     != self.wallet.last_synced_hash().await
             {
+                #[cfg(not(feature = "integration_test"))]
                 warn!("One block reorg at height {}", last_synced_height);
                 // This is a one-block reorg, so pop the last block. Even if there are more blocks to reorg, this is enough
                 // to trigger a sync, which will then reorg the remaining blocks
@@ -1482,7 +1463,7 @@ impl LightClient {
         //self.update_current_price().await;
 
         // Sapling Tree GRPC Fetcher
-        let grpc_connector = GrpcConnector::new(self.config.get_server_uri());
+        let grpc_connector = GrpcConnector::new(self.config.get_lightwalletd_uri());
 
         // A signal to detect reorgs, and if so, ask the block_fetcher to fetch new blocks.
         let (reorg_transmitter, reorg_receiver) = unbounded_channel();
@@ -1679,7 +1660,7 @@ impl LightClient {
     }
 
     pub async fn do_shield(&self, address: Option<String>) -> Result<String, String> {
-        let transaction_submission_height = self.get_submission_height().await;
+        let transaction_submission_height = self.get_submission_height().await?;
         let fee = u64::from(DEFAULT_FEE);
         let tbal = self.wallet.tbalance(None).await;
 
@@ -1718,20 +1699,19 @@ impl LightClient {
         result.map(|(transaction_id, _)| transaction_id)
     }
 
-    async fn get_submission_height(&self) -> BlockHeight {
-        BlockHeight::from_u32(
-            GrpcConnector::get_latest_block(self.config.get_server_uri())
-                .await
-                .unwrap()
+    async fn get_submission_height(&self) -> Result<BlockHeight, String> {
+        Ok(BlockHeight::from_u32(
+            GrpcConnector::get_latest_block(self.config.get_lightwalletd_uri())
+                .await?
                 .height as u32,
-        ) + 1
+        ) + 1)
     }
     //TODO: Add migrate_sapling_to_orchard argument
     pub async fn do_send(
         &self,
         address_amount_memo_tuples: Vec<(&str, u64, Option<String>)>,
     ) -> Result<String, String> {
-        let transaction_submission_height = self.get_submission_height().await;
+        let transaction_submission_height = self.get_submission_height().await?;
         // First, get the concensus branch ID
         debug!("Creating transaction");
 
@@ -1764,10 +1744,66 @@ impl LightClient {
 }
 
 #[cfg(test)]
-pub mod tests;
-
-#[cfg(test)]
-pub(crate) mod test_server;
-
-#[cfg(test)]
 pub(crate) mod testmocks;
+
+#[cfg(test)]
+mod tests {
+    use tokio::runtime::Runtime;
+    use zingoconfig::{ChainType, ZingoConfig};
+
+    use crate::{lightclient::LightClient, wallet::WalletBase};
+
+    #[test]
+    fn new_wallet_from_phrase() {
+        let temp_dir = tempfile::Builder::new().prefix("test").tempdir().unwrap();
+        let data_dir = temp_dir
+            .into_path()
+            .canonicalize()
+            .expect("This path is available.");
+
+        let wallet_name = data_dir.join("zingo-wallet.dat");
+        let config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, Some(data_dir));
+        let lc = LightClient::new_from_wallet_base(
+            WalletBase::MnemonicPhrase(TEST_SEED.to_string()),
+            &config,
+            0,
+            false,
+        )
+        .unwrap();
+        assert_eq!(
+        format!(
+            "{:?}",
+            LightClient::new_from_wallet_base(
+                WalletBase::MnemonicPhrase(TEST_SEED.to_string()),
+                &config,
+                0,
+                false
+            )
+            .err()
+            .unwrap()
+        ),
+        format!(
+            "{:?}",
+            std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                format!("Cannot create a new wallet from seed, because a wallet already exists at:\n{:?}", wallet_name),
+            )
+        )
+    );
+
+        // The first t address and z address should be derived
+        Runtime::new().unwrap().block_on(async move {
+            let addresses = lc.do_addresses().await;
+            assert_eq!(
+                "zs1q6xk3q783t5k92kjqt2rkuuww8pdw2euzy5rk6jytw97enx8fhpazdv3th4xe7vsk6e9sfpawfg"
+                    .to_string(),
+                addresses[0]["receivers"]["sapling"]
+            );
+            assert_eq!(
+                "t1eQ63fwkQ4n4Eo5uCrPGaAV8FWB2tmx7ui",
+                addresses[0]["receivers"]["transparent"]
+            );
+        });
+    }
+    pub const TEST_SEED: &str = "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise";
+}

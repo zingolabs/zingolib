@@ -1,4 +1,5 @@
 #![forbid(unsafe_code)]
+use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, RwLock};
 
@@ -15,62 +16,62 @@ pub mod version;
 
 pub fn build_clap_app() -> clap::App<'static> {
     clap::App::new("Zingo CLI").version(version::VERSION)
-            .arg(Arg::with_name("nosync")
+            .arg(Arg::new("nosync")
                 .help("By default, zingo-cli will sync the wallet at startup. Pass --nosync to prevent the automatic sync at startup.")
                 .long("nosync")
                 .short('n')
                 .takes_value(false))
-            .arg(Arg::with_name("recover")
+            .arg(Arg::new("recover")
                 .long("recover")
                 .help("Attempt to recover the seed from the wallet")
                 .takes_value(false))
-            .arg(Arg::with_name("password")
+            .arg(Arg::new("password")
                 .long("password")
                 .help("When recovering seed, specify a password for the encrypted wallet")
                 .takes_value(true))
-            .arg(Arg::with_name("seed")
+            .arg(Arg::new("seed")
                 .short('s')
                 .long("seed")
                 .value_name("seed_phrase")
                 .help("Create a new wallet with the given 24-word seed phrase. Will fail if wallet already exists")
                 .takes_value(true))
-            .arg(Arg::with_name("viewing-key")
+            .arg(Arg::new("viewing-key")
                 .long("viewing-key")
                 .value_name("viewing-key")
                 .help("Create a new watch-only wallet with the given unified viewing key. Will fail if wallet already exists")
                 .takes_value(true))
-            .arg(Arg::with_name("birthday")
+            .arg(Arg::new("birthday")
                 .long("birthday")
                 .value_name("birthday")
                 .help("Specify wallet birthday when restoring from seed. This is the earlist block height where the wallet has a transaction.")
                 .takes_value(true))
-            .arg(Arg::with_name("server")
+            .arg(Arg::new("server")
                 .long("server")
                 .value_name("server")
                 .help("Lightwalletd server to connect to.")
                 .takes_value(true)
-                .default_value(zingoconfig::DEFAULT_SERVER)
+                .default_value(zingoconfig::DEFAULT_LIGHTWALLETD_SERVER)
                 .takes_value(true))
-            .arg(Arg::with_name("data-dir")
+            .arg(Arg::new("data-dir")
                 .long("data-dir")
                 .value_name("data-dir")
                 .help("Absolute path to use as data directory")
                 .takes_value(true))
-            .arg(Arg::with_name("regtest")
+            .arg(Arg::new("regtest")
                 .long("regtest")
                 .value_name("regtest")
                 .help("Regtest mode")
                 .takes_value(false))
-            .arg(Arg::with_name("no-clean")
+            .arg(Arg::new("no-clean")
                 .long("no-clean")
                 .value_name("no-clean")
                 .help("Don't clean regtest state before running. Regtest mode only")
                 .takes_value(false))
-            .arg(Arg::with_name("COMMAND")
+            .arg(Arg::new("COMMAND")
                 .help("Command to execute. If a command is not specified, zingo-cli will start in interactive mode.")
                 .required(false)
                 .index(1))
-            .arg(Arg::with_name("PARAMS")
+            .arg(Arg::new("PARAMS")
                 .help("Params to execute command with. Run the 'help' command to get usage help.")
                 .required(false)
                 .multiple(true)
@@ -122,7 +123,7 @@ fn start_interactive(
     // `()` can be used when no completer is required
     let mut rl = rustyline::DefaultEditor::new().expect("Default rustyline Editor not creatable!");
 
-    println!("Ready!");
+    log::debug!("Ready!");
 
     let send_command = |cmd: String, args: Vec<String>| -> String {
         command_transmitter.send((cmd.clone(), args)).unwrap();
@@ -237,11 +238,11 @@ pub fn command_loop(
 pub fn attempt_recover_seed(_password: Option<String>) {
     // Create a Light Client Config in an attempt to recover the file.
     ZingoConfig {
-        server_uri: Arc::new(RwLock::new("0.0.0.0:0".parse().unwrap())),
+        lightwalletd_uri: Arc::new(RwLock::new("0.0.0.0:0".parse().unwrap())),
         chain: zingoconfig::ChainType::Mainnet,
         monitor_mempool: false,
         reorg_buffer_offset: 0,
-        data_dir: None,
+        zingo_wallet_dir: None,
     };
 }
 
@@ -251,12 +252,13 @@ pub struct ConfigTemplate {
     seed: Option<String>,
     viewing_key: Option<String>,
     birthday: u64,
-    maybe_data_dir: Option<String>,
+    data_dir: PathBuf,
     sync: bool,
     command: Option<String>,
     regtest_manager: Option<regtest::RegtestManager>,
     #[allow(dead_code)] // This field is defined so that it can be used in Drop::drop
     child_process_handler: Option<ChildProcessHandler>,
+    chaintype: ChainType,
 }
 use commands::ShortCircuitedCommand;
 fn short_circuit_on_help(params: Vec<String>) {
@@ -335,26 +337,35 @@ to scan from the start of the blockchain."
         };
 
         let clean_regtest_data = !matches.is_present("no-clean");
-        let mut maybe_data_dir = matches.value_of("data-dir").map(|s| s.to_string());
+        let data_dir = if let Some(dir) = matches.get_one::<String>("data-dir") {
+            PathBuf::from(dir.clone())
+        } else {
+            if !matches.is_present("regtest") {
+                panic!("No zingo wallet dir specified!");
+            }
+            regtest::get_regtest_dir()
+        };
+        log::info!("data_dir: {}", &data_dir.to_str().unwrap());
         let mut maybe_server = matches.value_of("server").map(|s| s.to_string());
         let mut child_process_handler = None;
         // Regtest specific launch:
         //   * spawn zcashd in regtest mode
         //   * spawn lighwalletd and connect it to zcashd
         let regtest_manager = if matches.is_present("regtest") {
-            let regtest_manager = regtest::RegtestManager::new(None);
-            if maybe_data_dir.is_none() {
-                maybe_data_dir = Some(String::from(
-                    regtest_manager.zingo_datadir.to_str().unwrap(),
-                ));
-            };
+            let regtest_manager = regtest::RegtestManager::new(data_dir.clone());
             child_process_handler = Some(regtest_manager.launch(clean_regtest_data)?);
             maybe_server = Some("http://127.0.0.1".to_string());
             Some(regtest_manager)
         } else {
             None
         };
-        let server = zingoconfig::construct_server_uri(maybe_server);
+        let server = zingoconfig::construct_lightwalletd_uri(maybe_server);
+        let chaintype = match server.to_string() {
+            x if x.contains("main") => ChainType::Mainnet,
+            x if x.contains("test") => ChainType::Testnet,
+            x if x.contains("127.0.0.1") => ChainType::Regtest,
+            _ => panic!("error"),
+        };
 
         // Test to make sure the server has all of scheme, host and port
         if server.scheme_str().is_none() || server.host().is_none() || server.port().is_none() {
@@ -370,11 +381,12 @@ to scan from the start of the blockchain."
             seed,
             viewing_key,
             birthday,
-            maybe_data_dir,
+            data_dir,
             sync,
             command,
             regtest_manager,
             child_process_handler,
+            chaintype,
         })
     }
 }
@@ -384,14 +396,13 @@ to scan from the start of the blockchain."
 pub fn startup(
     filled_template: &ConfigTemplate,
 ) -> std::io::Result<(Sender<(String, Vec<String>)>, Receiver<String>)> {
-    // Initialize logging
-    LightClient::init_logging()?;
-
     // Try to get the configuration
-    let (config, latest_block_height) = load_clientconfig(
+    let config = load_clientconfig(
         filled_template.server.clone(),
-        filled_template.maybe_data_dir.clone(),
-    )?;
+        Some(filled_template.data_dir.clone()),
+        filled_template.chaintype,
+    )
+    .unwrap();
     regtest_config_check(&filled_template.regtest_manager, &config.chain);
 
     let lightclient = match (
@@ -421,11 +432,12 @@ pub fn startup(
                 Arc::new(LightClient::read_wallet_from_disk(&config)?)
             } else {
                 println!("Creating a new wallet");
+                // Call the lightwalletd server to get the current block-height
+                // Do a getinfo first, before opening the wallet
+                let server_uri = config.get_lightwalletd_uri();
+                let block_height = zingolib::get_latest_block_height(server_uri);
                 // Create a wallet with height - 100, to protect against reorgs
-                Arc::new(LightClient::new(
-                    &config,
-                    latest_block_height.saturating_sub(100),
-                )?)
+                Arc::new(LightClient::new(&config, block_height.saturating_sub(100))?)
             }
         }
     };
@@ -436,7 +448,10 @@ pub fn startup(
         info!("Starting Zingo-CLI");
         info!("Light Client config {:?}", config);
 
-        info!("Lightclient connecting to {}", config.get_server_uri());
+        info!(
+            "Lightclient connecting to {}",
+            config.get_lightwalletd_uri()
+        );
     }
 
     // At startup, run a sync.
@@ -508,6 +523,10 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
     }
 }
 pub fn run_cli() {
+    // Initialize logging
+    if let Err(e) = LightClient::init_logging() {
+        eprintln!("Could not initialize logging: {e}")
+    };
     let cli_config = ConfigTemplate::fill(build_clap_app()).unwrap();
     dispatch_command_or_start_interactive(&cli_config);
 }

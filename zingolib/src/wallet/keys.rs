@@ -7,7 +7,7 @@ use std::io::{self, ErrorKind};
 use zcash_client_backend::address;
 use zcash_primitives::{
     legacy::TransparentAddress,
-    sapling::{keys::DiversifiableFullViewingKey, PaymentAddress},
+    sapling::PaymentAddress,
     zip32::{ChildIndex, ExtendedFullViewingKey, ExtendedSpendingKey},
 };
 use zingoconfig::ZingoConfig;
@@ -16,6 +16,9 @@ use zingoconfig::ZingoConfig;
 pub mod extended_transparent;
 #[cfg(not(feature = "integration_test"))]
 pub(crate) mod extended_transparent;
+#[cfg(feature = "integration_test")]
+pub mod unified;
+#[cfg(not(feature = "integration_test"))]
 pub(crate) mod unified;
 
 /// Sha256(Sha256(value))
@@ -89,11 +92,7 @@ pub fn get_zaddr_from_bip39seed(
     config: &ZingoConfig,
     bip39_seed: &[u8],
     pos: u32,
-) -> (
-    ExtendedSpendingKey,
-    DiversifiableFullViewingKey,
-    PaymentAddress,
-) {
+) -> (ExtendedSpendingKey, ExtendedFullViewingKey, PaymentAddress) {
     assert_eq!(bip39_seed.len(), 64);
 
     let extsk: ExtendedSpendingKey = ExtendedSpendingKey::from_path(
@@ -104,7 +103,7 @@ pub fn get_zaddr_from_bip39seed(
             ChildIndex::Hardened(pos),
         ],
     );
-    let extfvk = ExtendedFullViewingKey::from(&extsk);
+    let fvk = ExtendedFullViewingKey::from(&extsk);
     // Now we convert `ExtendedFullViewingKey` (EFVK) to `DiversifiableFullViewingKey` (DFVK).
     // DFVK is a subset of EFVK with same capabilities excluding the capability
     // of non-hardened key derivation. This is not a problem because Sapling non-hardened
@@ -116,7 +115,6 @@ pub fn get_zaddr_from_bip39seed(
     //
     // If the non-hardened key derivation is ever needed, we can recover EFVK easily
     // from Sapling extended spending key.
-    let fvk = DiversifiableFullViewingKey::from(extfvk);
     let address = fvk.default_address().1;
 
     (extsk, fvk, address)
