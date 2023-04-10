@@ -6,6 +6,15 @@ members = [
     "zingo-memo"
 ]
 
+[workspace.dependencies]
+zcash_address = { git = "https://github.com/zingolabs/librustzcash", rev = "42928cb3f40c67c855d4db6769ce258030921ce6"}
+zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash", rev = "42928cb3f40c67c855d4db6769ce258030921ce6"}
+zcash_encoding = { git = "https://github.com/zingolabs/librustzcash", rev = "42928cb3f40c67c855d4db6769ce258030921ce6"}
+zcash_note_encryption = { git = "https://github.com/zingolabs/librustzcash", rev = "42928cb3f40c67c855d4db6769ce258030921ce6", features = ["pre-zip-212"] }
+zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", rev = "42928cb3f40c67c855d4db6769ce258030921ce6", features = ["transparent-inputs", "test-dependencies"] }
+zcash_proofs = { git = "https://github.com/zingolabs/librustzcash", rev = "42928cb3f40c67c855d4db6769ce258030921ce6", features = ["multicore"]}
+orchard = { git = "https://github.com/zcash/orchard.git", rev = "dca33119b4d082048a098e9fdc0c87c508ed056e" }
+
 [profile.release]
 debug = false
 

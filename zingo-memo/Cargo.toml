@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-zcash_address = { git = "https://github.com/zingolabs/librustzcash", rev = "42928cb3f40c67c855d4db6769ce258030921ce6"}
-zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", rev = "42928cb3f40c67c855d4db6769ce258030921ce6", features = ["transparent-inputs", "test-dependencies"] }
-zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash", rev = "42928cb3f40c67c855d4db6769ce258030921ce6"}
-zcash_encoding = { git = "https://github.com/zingolabs/librustzcash", rev = "42928cb3f40c67c855d4db6769ce258030921ce6"}
-zcash_note_encryption = { git = "https://github.com/zingolabs/librustzcash", rev = "42928cb3f40c67c855d4db6769ce258030921ce6", features = ["pre-zip-212"]}
+zcash_address = { workspace = true }
+zcash_client_backend = { workspace = true }
+zcash_encoding = { workspace = true }
+zcash_note_encryption = { workspace = true }
+zcash_primitives = { workspace = true }
