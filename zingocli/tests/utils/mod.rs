@@ -434,8 +434,10 @@ pub mod scenarios {
              adapt blossom school alcohol coral light army hold"
         );
         let first_z_addr_from_seed_phrase = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
-        let mut scenario_builder =
-            setup::ScenarioBuilder::launcher(Some(first_z_addr_from_seed_phrase.to_string()), None);
+        let mut scenario_builder = setup::ScenarioBuilder::build_and_launch(
+            Some(first_z_addr_from_seed_phrase.to_string()),
+            None,
+        );
         let current_client = scenario_builder
             .client_builder
             .build_newseed_client(cross_version_seed_phrase.clone(), 0, false)
