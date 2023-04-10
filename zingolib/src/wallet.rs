@@ -1313,10 +1313,10 @@ impl LightWallet {
                         }),
                     None => {
                         // Something is very wrong
-                        let e = format!("Couldn't find the secreykey for taddr {}", utxo.address);
+                        let e = format!("Couldn't find the secretkey for taddr {}", utxo.address);
                         error!("{}", e);
 
-                        Err(transaction::builder::Error::TransparentBuild(
+                        Err(transaction::builder::Error::<Infallible>::TransparentBuild(
                             transaction::components::transparent::builder::Error::InvalidAddress,
                         ))
                     }
@@ -1397,7 +1397,7 @@ impl LightWallet {
                 }
                 address::RecipientAddress::Transparent(to) => builder
                     .add_transparent_output(&to, value)
-                    .map_err(transaction::builder::Error::TransparentBuild),
+                    .map_err(transaction::builder::Error::<Infallible>::TransparentBuild),
                 address::RecipientAddress::Unified(ua) => {
                     if let Some(orchard_addr) = ua.orchard() {
                         builder.add_orchard_output::<FixedFeeRule>(
@@ -1415,7 +1415,7 @@ impl LightWallet {
                                 value,
                                 validated_memo,
                             )
-                            .map_err(transaction::builder::Error::SaplingBuild)
+                            .map_err(transaction::builder::Error::<Infallible>::SaplingBuild)
                     } else {
                         return Err("Received UA with no Orchard or Sapling receiver".to_string());
                     }
