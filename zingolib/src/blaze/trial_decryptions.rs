@@ -187,7 +187,7 @@ impl TrialDecryptions {
                         transaction_num,
                         &compact_block,
                         zcash_primitives::sapling::note_encryption::PreparedIncomingViewingKey::new(
-                            &sapling_ivk.clone(),
+                            sapling_ivk,
                         ),
                         height,
                         &config,
@@ -205,7 +205,7 @@ impl TrialDecryptions {
                         &compact_transaction,
                         transaction_num,
                         &compact_block,
-                        orchard::keys::PreparedIncomingViewingKey::new(&orchard_ivk.clone()),
+                        orchard::keys::PreparedIncomingViewingKey::new(orchard_ivk),
                         height,
                         &config,
                         &wc,
