@@ -416,61 +416,6 @@ pub mod scenarios {
             recipient,
         )
     }
-    #[cfg(feature = "cross_version")]
-    pub async fn current_and_fixed_clients() -> (
-        RegtestManager,
-        ChildProcessHandler,
-        LightClient,
-        zingtaddrfix::lightclient::LightClient,
-    ) {
-        //tracing_subscriber::fmt::init();
-        let cross_version_seed_phrase = zcash_primitives::zip339::Mnemonic::from_entropy([3; 32])
-            .unwrap()
-            .to_string();
-        assert_eq!(
-            &cross_version_seed_phrase,
-            "adapt blossom school alcohol coral light army gather \
-             adapt blossom school alcohol coral light army gather \
-             adapt blossom school alcohol coral light army hold"
-        );
-        let first_z_addr_from_seed_phrase = "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
-        let mut scenario_builder = setup::ScenarioBuilder::build_and_launch(
-            Some(first_z_addr_from_seed_phrase.to_string()),
-            None,
-        );
-        let current_client = scenario_builder
-            .client_builder
-            .build_newseed_client(cross_version_seed_phrase.clone(), 0, false)
-            .await;
-        // Fixed client creation
-        let conf_path = scenario_builder
-            .regtest_manager
-            .zingo_datadir
-            .clone()
-            .into_os_string()
-            .into_string()
-            .unwrap();
-        let (fixed_zingoconfig, _) = zingtaddrfix::create_zingoconfdir_async(
-            scenario_builder.client_builder.server_id.clone(),
-            Some(conf_path),
-        )
-        .await
-        .unwrap();
-        let fixed_client = zingtaddrfix::lightclient::LightClient::new_from_wallet_base_async(
-            zingtaddrfix::wallet::WalletBase::MnemonicPhrase(cross_version_seed_phrase.clone()),
-            &fixed_zingoconfig,
-            0,
-            false,
-        )
-        .await
-        .unwrap();
-        (
-            scenario_builder.regtest_manager,
-            scenario_builder.child_process_handler.unwrap(),
-            current_client,
-            fixed_client,
-        )
-    }
 
     pub async fn basic_no_spendable() -> (RegtestManager, ChildProcessHandler, LightClient) {
         let mut scenario_builder = setup::ScenarioBuilder::build_and_launch(None, None);

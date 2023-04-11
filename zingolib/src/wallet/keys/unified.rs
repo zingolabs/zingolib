@@ -11,8 +11,9 @@ use zcash_address::unified::{Container, Encoding, Fvk, Ufvk};
 use zcash_client_backend::address::UnifiedAddress;
 use zcash_encoding::Vector;
 use zcash_primitives::{
-    legacy::TransparentAddress, sapling::keys::DiversifiableFullViewingKey as SaplingFvk,
-    zip32::DiversifierIndex,
+    legacy::TransparentAddress,
+    sapling::note_encryption::PreparedIncomingViewingKey,
+    zip32::{DiversifiableFullViewingKey as SaplingFvk, DiversifierIndex},
 };
 use zingoconfig::ZingoConfig;
 
@@ -539,14 +540,23 @@ impl TryFrom<&WalletCapability> for SaplingFvk {
     fn try_from(wc: &WalletCapability) -> Result<Self, String> {
         match &wc.sapling {
             Capability::Spend(sk) => {
-                let extfvk: zcash_primitives::zip32::ExtendedFullViewingKey = sk.into();
-                Ok(SaplingFvk::from(extfvk))
+                let dfvk = sk.to_diversifiable_full_viewing_key();
+                Ok(SaplingFvk::from(dfvk))
             }
             Capability::View(fvk) => Ok(fvk.clone()),
             Capability::None => {
                 Err("The wallet is not capable of viewing Sapling funds".to_string())
             }
         }
+    }
+}
+
+impl TryFrom<&WalletCapability> for PreparedIncomingViewingKey {
+    type Error = String;
+
+    fn try_from(value: &WalletCapability) -> Result<Self, Self::Error> {
+        zcash_primitives::sapling::SaplingIvk::try_from(value)
+            .map(|k| PreparedIncomingViewingKey::new(&k))
     }
 }
 
@@ -558,13 +568,13 @@ impl TryFrom<&WalletCapability> for orchard::keys::IncomingViewingKey {
     }
 }
 
-/*impl TryFrom<&WalletCapability> for orchard::keys::IncomingViewingKey {
+impl TryFrom<&WalletCapability> for orchard::keys::PreparedIncomingViewingKey {
     type Error = String;
     fn try_from(wc: &WalletCapability) -> Result<Self, String> {
         orchard::keys::IncomingViewingKey::try_from(wc)
             .map(|k| orchard::keys::PreparedIncomingViewingKey::new(&k))
     }
-}*/
+}
 
 impl TryFrom<&WalletCapability> for zcash_primitives::sapling::SaplingIvk {
     type Error = String;

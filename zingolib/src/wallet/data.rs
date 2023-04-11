@@ -16,11 +16,11 @@ use zcash_primitives::{
     memo::Memo,
     merkle_tree::{CommitmentTree, IncrementalWitness},
     sapling::{
-        keys::DiversifiableFullViewingKey as SaplingFvk, Diversifier as SaplingDiversifier,
-        Node as SaplingNode, Note as SaplingNote, Nullifier as SaplingNullifier, Rseed,
+        Diversifier as SaplingDiversifier, Node as SaplingNode, Note as SaplingNote,
+        Nullifier as SaplingNullifier, Rseed,
     },
     transaction::{components::OutPoint, TxId},
-    zip32::ExtendedSpendingKey,
+    zip32::{DiversifiableFullViewingKey as SaplingFvk, ExtendedSpendingKey},
 };
 use zcash_primitives::{memo::MemoBytes, merkle_tree::Hashable};
 
