@@ -372,10 +372,7 @@ impl LightWallet {
 
                 let buf = Vector::read(r, |r| r.read_u8())?;
                 TreeState::decode(&buf[..]).map_err(|e| {
-                    io::Error::new(
-                        ErrorKind::InvalidData,
-                        format!("Read Error: {}", e),
-                    )
+                    io::Error::new(ErrorKind::InvalidData, format!("Read Error: {}", e))
                 })
             })?
         };
@@ -804,7 +801,8 @@ impl LightWallet {
             .await
             .current
             .values()
-            .flat_map(|transaction| transaction.utxos.iter().filter(|utxo| utxo.spent.is_none())).cloned()
+            .flat_map(|transaction| transaction.utxos.iter().filter(|utxo| utxo.spent.is_none()))
+            .cloned()
             .collect::<Vec<Utxo>>()
     }
 
@@ -931,8 +929,7 @@ impl LightWallet {
                     .filter(|nd| nd.spent.is_some() && nd.spent.unwrap().1 == 0)
                     .for_each(|nd| {
                         let transaction_id = nd.spent.unwrap().0;
-                        if let Some(height) =
-                            spent_transaction_id_map.get(&transaction_id).copied()
+                        if let Some(height) = spent_transaction_id_map.get(&transaction_id).copied()
                         {
                             nd.spent = Some((transaction_id, height.into()));
                         }
@@ -975,7 +972,8 @@ impl LightWallet {
             self.get_utxos()
                 .await
                 .iter()
-                .filter(|utxo| utxo.unconfirmed_spent.is_none() && utxo.spent.is_none()).cloned()
+                .filter(|utxo| utxo.unconfirmed_spent.is_none() && utxo.spent.is_none())
+                .cloned()
                 .collect::<Vec<_>>()
         } else {
             vec![]
@@ -1343,10 +1341,7 @@ impl LightWallet {
                 selected.note,
                 orchard::tree::MerklePath::from((
                     incrementalmerkletree::Position::from(path.position as usize),
-                    path.auth_path
-                        .iter()
-                        .map(|(node, _)| *node)
-                        .collect(),
+                    path.auth_path.iter().map(|(node, _)| *node).collect(),
                 )),
             ) {
                 let e = format!("Error adding note: {:?}", e);
@@ -1583,13 +1578,16 @@ impl LightWallet {
         if let Some(note) = orchard_notes.get(0) {
             Ok(orchard::Anchor::from(note.witness.root()))
         } else {
-            let trees = crate::grpc_connector::GrpcConnector::get_trees(
+            let uri = {
                 self.transaction_context
                     .config
                     .lightwalletd_uri
                     .read()
                     .unwrap()
-                    .clone(),
+                    .clone()
+            };
+            let trees = crate::grpc_connector::GrpcConnector::get_trees(
+                uri,
                 u64::from(target_height)
                     - self.transaction_context.config.reorg_buffer_offset as u64,
             )
