@@ -41,17 +41,13 @@ pub fn read_wallet_internal_memo(memo: [u8; 511]) -> io::Result<ParsedMemo> {
     let mut reader: &[u8] = &memo;
     match CompactSize::read(&mut reader)? {
         0 => Ok(ParsedMemo::Version0 {
-            uas: Vector::read(&mut reader, |r| {
-                read_unified_address_from_raw_encoding(r)
-            })?,
+            uas: Vector::read(&mut reader, |r| read_unified_address_from_raw_encoding(r))?,
         }),
-        _ => {
-            Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Received memo from a future version of this protocol.\n\
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Received memo from a future version of this protocol.\n\
             Please ensure your software is up-to-date",
-            ))
-        }
+        )),
     }
 }
 

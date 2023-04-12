@@ -381,7 +381,9 @@ impl LightClient {
         const SAPLING_SPEND_HASH: &str =
             "8e48ffd23abb3a5fd9c5589204f32d9c31285a04b78096ba40a79b75677efc13";
 
-        if !sapling_output.is_empty() && *SAPLING_OUTPUT_HASH != hex::encode(Sha256::digest(sapling_output)) {
+        if !sapling_output.is_empty()
+            && *SAPLING_OUTPUT_HASH != hex::encode(Sha256::digest(sapling_output))
+        {
             return Err(format!(
                 "sapling-output hash didn't match. expected {}, found {}",
                 SAPLING_OUTPUT_HASH,
@@ -389,7 +391,9 @@ impl LightClient {
             ));
         }
 
-        if !sapling_spend.is_empty() && *SAPLING_SPEND_HASH != hex::encode(Sha256::digest(sapling_spend)) {
+        if !sapling_spend.is_empty()
+            && *SAPLING_SPEND_HASH != hex::encode(Sha256::digest(sapling_spend))
+        {
             return Err(format!(
                 "sapling-spend hash didn't match. expected {}, found {}",
                 SAPLING_SPEND_HASH,
@@ -1353,8 +1357,11 @@ impl LightClient {
             return Err(w);
         }
 
-        if latest_blockid.height == last_synced_height && !latest_blockid.hash.is_empty() && BlockHash::from_slice(&latest_blockid.hash).to_string()
-                    != self.wallet.last_synced_hash().await {
+        if latest_blockid.height == last_synced_height
+            && !latest_blockid.hash.is_empty()
+            && BlockHash::from_slice(&latest_blockid.hash).to_string()
+                != self.wallet.last_synced_hash().await
+        {
             #[cfg(not(feature = "integration_test"))]
             warn!("One block reorg at height {}", last_synced_height);
             // This is a one-block reorg, so pop the last block. Even if there are more blocks to reorg, this is enough
@@ -1569,7 +1576,8 @@ impl LightClient {
                 taddr_fetcher_handle,
             ])
             .await
-            .into_iter().try_for_each(|r| r.map_err(|e| format!("{}", e)))
+            .into_iter()
+            .try_for_each(|r| r.map_err(|e| format!("{}", e)))
         });
 
         join_all(vec![
@@ -1580,7 +1588,8 @@ impl LightClient {
             r1,
         ])
         .await
-        .into_iter().try_for_each(|r| r.map_err(|e| format!("{}", e))?)?;
+        .into_iter()
+        .try_for_each(|r| r.map_err(|e| format!("{}", e))?)?;
 
         let verify_handle =
             tokio::spawn(async move { block_data.read().await.block_data.verify_trees().await });

@@ -703,7 +703,8 @@ pub async fn start(
     let h = tokio::spawn(async move {
         join_all(vec![h1, h2])
             .await
-            .into_iter().try_for_each(|r| r.map_err(|e| format!("{}", e))?)
+            .into_iter()
+            .try_for_each(|r| r.map_err(|e| format!("{}", e))?)
     });
 
     (h, transaction_id_transmitter, transaction_transmitter)

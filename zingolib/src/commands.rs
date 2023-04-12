@@ -903,9 +903,9 @@ impl Command for TransactionsCommand {
 
         RT.block_on(async move {
             lightclient
-                    .do_list_transactions(include_memo_hex)
-                    .await
-                    .pretty(2)
+                .do_list_transactions(include_memo_hex)
+                .await
+                .pretty(2)
         })
     }
 }
@@ -1199,9 +1199,7 @@ impl Command for NotesCommand {
             false
         };
 
-        RT.block_on(
-            async move { lightclient.do_list_notes(all_notes).await.pretty(2) },
-        )
+        RT.block_on(async move { lightclient.do_list_notes(all_notes).await.pretty(2) })
     }
 }
 

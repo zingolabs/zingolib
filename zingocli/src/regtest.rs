@@ -150,9 +150,7 @@ impl RegtestManager {
             .output()
     }
     pub fn get_chain_tip(&self) -> Result<std::process::Output, std::io::Error> {
-        self.get_cli_handle()
-            .arg("getchaintips")
-            .output()
+        self.get_cli_handle().arg("getchaintips").output()
     }
     fn prepare_working_directories(&self) {
         // remove contents of existing data directories

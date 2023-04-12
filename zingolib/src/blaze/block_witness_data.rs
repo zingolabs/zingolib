@@ -93,7 +93,9 @@ impl BlockAndWitnessData {
         existing_blocks: Vec<BlockData>,
         verified_tree: Option<TreeState>,
     ) {
-        if !existing_blocks.is_empty() && existing_blocks.first().unwrap().height < existing_blocks.last().unwrap().height {
+        if !existing_blocks.is_empty()
+            && existing_blocks.first().unwrap().height < existing_blocks.last().unwrap().height
+        {
             panic!("Blocks are in wrong order");
         }
         self.unverified_treestates.write().await.clear();
@@ -190,8 +192,7 @@ impl BlockAndWitnessData {
         unverified_tree_states.dedup_by_key(|treestate| treestate.height);
 
         // Remember the highest tree that will be verified, and return that.
-        let highest_tree = unverified_tree_states
-            .last().cloned();
+        let highest_tree = unverified_tree_states.last().cloned();
 
         let mut start_trees = vec![];
 
@@ -1091,7 +1092,8 @@ mod test {
         let num_reorged = 5;
         let mut reorged_blocks = existing_blocks
             .iter()
-            .take(num_reorged).cloned()
+            .take(num_reorged)
+            .cloned()
             .collect::<Vec<_>>();
 
         // Reset the hashes

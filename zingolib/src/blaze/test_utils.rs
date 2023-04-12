@@ -8,7 +8,7 @@ use zcash_primitives::{
     merkle_tree::{CommitmentTree, Hashable, IncrementalWitness},
     sapling::{self, value::NoteValue, Note, Rseed},
     transaction::components::Amount,
-    zip32::{ExtendedSpendingKey},
+    zip32::ExtendedSpendingKey,
 };
 
 // This function can be used by TestServerData, or other test code
