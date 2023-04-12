@@ -1,13 +1,13 @@
 #![forbid(unsafe_code)]
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use log::{error, info};
 
 use clap::{self, Arg};
 use regtest::ChildProcessHandler;
-use zingoconfig::{ChainType, ZingoConfig};
+use zingoconfig::ChainType;
 use zingolib::wallet::WalletBase;
 use zingolib::{commands, lightclient::LightClient, load_clientconfig};
 
@@ -133,7 +133,7 @@ fn start_interactive(
                 let e = format!("Error executing command {}: {}", cmd, e);
                 eprintln!("{}", e);
                 error!("{}", e);
-                return "".to_string();
+                "".to_string()
             }
         }
     };
@@ -211,39 +211,24 @@ pub fn command_loop(
     let (command_transmitter, command_receiver) = channel::<(String, Vec<String>)>();
     let (resp_transmitter, resp_receiver) = channel::<String>();
 
-    let lc = lightclient.clone();
+    let lc = lightclient;
     std::thread::spawn(move || {
         LightClient::start_mempool_monitor(lc.clone());
 
-        loop {
-            if let Ok((cmd, args)) = command_receiver.recv() {
-                let args = args.iter().map(|s| s.as_ref()).collect();
+        while let Ok((cmd, args)) = command_receiver.recv() {
+            let args = args.iter().map(|s| s.as_ref()).collect();
 
-                let cmd_response = commands::do_user_command(&cmd, &args, lc.as_ref());
-                resp_transmitter.send(cmd_response).unwrap();
+            let cmd_response = commands::do_user_command(&cmd, &args, lc.as_ref());
+            resp_transmitter.send(cmd_response).unwrap();
 
-                if cmd == "quit" {
-                    info!("Quit");
-                    break;
-                }
-            } else {
+            if cmd == "quit" {
+                info!("Quit");
                 break;
             }
         }
     });
 
     (command_transmitter, resp_receiver)
-}
-
-pub fn attempt_recover_seed(_password: Option<String>) {
-    // Create a Light Client Config in an attempt to recover the file.
-    ZingoConfig {
-        lightwalletd_uri: Arc::new(RwLock::new("0.0.0.0:0".parse().unwrap())),
-        chain: zingoconfig::ChainType::Mainnet,
-        monitor_mempool: false,
-        reorg_buffer_offset: 0,
-        zingo_wallet_dir: None,
-    };
 }
 
 pub struct ConfigTemplate {
@@ -298,8 +283,7 @@ impl ConfigTemplate {
         let params: Vec<String> = matches
             .values_of("PARAMS")
             .map(|v| v.collect())
-            .or(Some(vec![]))
-            .unwrap()
+            .unwrap_or(Vec::new())
             .iter()
             .map(|s| s.to_string())
             .collect();
@@ -393,6 +377,7 @@ to scan from the start of the blockchain."
 /// Used by the zingocli crate, and the zingo-mobile application:
 /// <https://github.com/zingolabs/zingolib/tree/dev/cli>
 /// <https://github.com/zingolabs/zingo-mobile>
+#[allow(clippy::type_complexity)]
 pub fn startup(
     filled_template: &ConfigTemplate,
 ) -> std::io::Result<(Sender<(String, Vec<String>)>, Receiver<String>)> {
@@ -461,7 +446,7 @@ pub fn startup(
     }
 
     // Start the command loop
-    let (command_transmitter, resp_receiver) = command_loop(lightclient.clone());
+    let (command_transmitter, resp_receiver) = command_loop(lightclient);
 
     Ok((command_transmitter, resp_receiver))
 }
@@ -476,11 +461,8 @@ fn start_cli_service(
             error!("{}", emsg);
             #[cfg(target_os = "linux")]
             // TODO: Test report_permission_error() for macos and change to target_family = "unix"
-            {
-                match e.raw_os_error() {
-                    Some(13) => report_permission_error(),
-                    _ => {}
-                }
+            if e.raw_os_error() == Some(13) {
+                report_permission_error();
             }
             panic!();
         }
@@ -493,7 +475,7 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
     } else {
         command_transmitter
             .send((
-                cli_config.command.clone().unwrap().to_string(),
+                cli_config.command.clone().unwrap(),
                 cli_config
                     .params
                     .iter()
