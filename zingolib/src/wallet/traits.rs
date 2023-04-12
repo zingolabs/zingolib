@@ -157,7 +157,7 @@ impl FromBytes<32> for SaplingNullifier {
 impl FromBytes<32> for OrchardNullifier {
     fn from_bytes(bytes: [u8; 32]) -> Self {
         Option::from(OrchardNullifier::from_bytes(&bytes))
-            .expect(&format!("Invalid nullifier {:?}", bytes))
+            .unwrap_or_else(|| panic!("Invalid nullifier {:?}", bytes))
     }
 }
 
@@ -240,7 +240,7 @@ impl Recipient for OrchardAddress {
     type Diversifier = OrchardDiversifier;
 
     fn diversifier(&self) -> Self::Diversifier {
-        OrchardAddress::diversifier(&self)
+        OrchardAddress::diversifier(self)
     }
 
     fn b32encode_for_network(&self, chain: &ChainType) -> String {
@@ -254,7 +254,7 @@ impl Recipient for SaplingAddress {
     type Diversifier = SaplingDiversifier;
 
     fn diversifier(&self) -> Self::Diversifier {
-        *SaplingAddress::diversifier(&self)
+        *SaplingAddress::diversifier(self)
     }
 
     fn b32encode_for_network(&self, chain: &ChainType) -> String {
@@ -1126,7 +1126,7 @@ impl ReadableWriteable<(SaplingFvk, SaplingDiversifier)> for SaplingNote {
     fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         writer.write_u8(Self::VERSION)?;
         writer.write_u64::<LittleEndian>(self.value().inner())?;
-        super::data::write_sapling_rseed(&mut writer, &self.rseed())?;
+        super::data::write_sapling_rseed(&mut writer, self.rseed())?;
         Ok(())
     }
 }

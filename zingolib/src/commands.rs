@@ -111,7 +111,7 @@ impl Command for ParseCommand {
                     zingoconfig::ChainType::Regtest,
                 ]
                 .iter()
-                .find_map(|chain| RecipientAddress::decode(chain, &args[0]).zip(Some(chain)))
+                .find_map(|chain| RecipientAddress::decode(chain, args[0]).zip(Some(chain)))
                 .map(|(recipient_address, chain_name)| {
                     let chain_name_string = match chain_name {
                         zingoconfig::ChainType::Mainnet => "main",
@@ -343,7 +343,7 @@ impl Command for HelpCommand {
         // Print a list of all commands
         match args.len() {
             0 => {
-                responses.push(format!("Available commands:"));
+                responses.push("Available commands:".to_string());
                 get_commands().iter().for_each(|(cmd, obj)| {
                     responses.push(format!("{} - {}", cmd, obj.short_help()));
                 });
@@ -366,7 +366,7 @@ impl ShortCircuitedCommand for HelpCommand {
         // Print a list of all commands
         match args.len() {
             0 => {
-                responses.push(format!("Available commands:"));
+                responses.push("Available commands:".to_string());
                 get_commands().iter().for_each(|(cmd, obj)| {
                     responses.push(format!("{} - {}", cmd, obj.short_help()));
                 });
@@ -443,7 +443,7 @@ impl Command for BalanceCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        RT.block_on(async move { format!("{}", lightclient.do_balance().await.pretty(2)) })
+        RT.block_on(async move { lightclient.do_balance().await.pretty(2) })
     }
 }
 
@@ -464,7 +464,7 @@ impl Command for AddressCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        RT.block_on(async move { format!("{}", lightclient.do_addresses().await.pretty(2)) })
+        RT.block_on(async move { lightclient.do_addresses().await.pretty(2) })
     }
 }
 
@@ -519,7 +519,7 @@ impl Command for ShieldCommand {
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
         // Parse the address or amount
-        let address = if args.len() > 0 {
+        let address = if !args.is_empty() {
             Some(args[0].to_string())
         } else {
             None
@@ -561,14 +561,14 @@ impl Command for EncryptMessageCommand {
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        if args.len() < 1 || args.len() > 3 {
+        if args.is_empty() || args.len() > 3 {
             return self.help();
         }
 
         // Check for a single argument that can be parsed as JSON
         let (to, memo) = if args.len() == 1 {
             let arg_list = args[0];
-            let j = match json::parse(&arg_list) {
+            let j = match json::parse(arg_list) {
                 Ok(j) => j,
                 Err(e) => {
                     let es = format!("Couldn't understand JSON: {}", e);
@@ -577,7 +577,7 @@ impl Command for EncryptMessageCommand {
             };
 
             if !j.has_key("address") || !j.has_key("memo") {
-                let es = format!("Need 'address' and 'memo'\n");
+                let es = "Need 'address' and 'memo'\n".to_string();
                 return format!("{}\n{}", es, self.help());
             }
 
@@ -607,7 +607,7 @@ impl Command for EncryptMessageCommand {
         if let Ok(m) = memo.try_into() {
             lightclient.do_encrypt_message(to, m).pretty(2)
         } else {
-            return format!("Couldn't encode memo");
+            "Couldn't encode memo".to_string()
         }
     }
 }
@@ -673,7 +673,7 @@ impl Command for SendCommand {
         // Parse the args. There are two argument types.
         // 1 - A set of 2(+1 optional) arguments for a single address send representing address, value, memo?
         // 2 - A single argument in the form of a JSON string that is "[{address: address, value: value, memo: memo},...]"
-        if args.len() < 1 || args.len() > 3 {
+        if args.is_empty() || args.len() > 3 {
             return self.help();
         }
 
@@ -682,7 +682,7 @@ impl Command for SendCommand {
             let send_args = if args.len() == 1 {
                 let arg_list = args[0];
 
-                let json_args = match json::parse(&arg_list) {
+                let json_args = match json::parse(arg_list) {
                     Ok(j) => j,
                     Err(e) => {
                         let es = format!("Couldn't understand JSON: {}", e);
@@ -705,7 +705,7 @@ impl Command for SendCommand {
                     .members()
                     .map(|j| {
                         if !j.has_key("address") || !j.has_key("amount") {
-                            Err(format!("Need 'address' and 'amount'\n"))
+                            Err("Need 'address' and 'amount'\n".to_string())
                         } else {
                             let amount = match j["amount"].as_str() {
                                 Some("entire-verified-zbalance") => all_zbalance,
@@ -714,9 +714,9 @@ impl Command for SendCommand {
 
                             match amount {
                                 Some(amt) => Ok((
-                                    j["address"].as_str().unwrap().to_string().clone(),
+                                    j["address"].as_str().unwrap().to_string(),
                                     amt,
-                                    j["memo"].as_str().map(|s| s.to_string().clone()),
+                                    j["memo"].as_str().map(|s| s.to_string()),
                                 )),
                                 None => Err(format!(
                                     "Not enough in wallet to pay transaction fee of {}",
@@ -833,7 +833,7 @@ impl Command for SaveCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        wallet_saver(&lightclient)
+        wallet_saver(lightclient)
     }
 }
 
@@ -902,13 +902,10 @@ impl Command for TransactionsCommand {
         };
 
         RT.block_on(async move {
-            format!(
-                "{}",
-                lightclient
+            lightclient
                     .do_list_transactions(include_memo_hex)
                     .await
                     .pretty(2)
-            )
         })
     }
 }
@@ -936,10 +933,10 @@ impl Command for SetOptionCommand {
         }
 
         let option = args[0];
-        let values: Vec<&str> = option.split("=").collect();
+        let values: Vec<&str> = option.split('=').collect();
 
         if values.len() != 2 {
-            return format!("Error: Please set option value like: <optionname>=<optionvalue>");
+            return "Error: Please set option value like: <optionname>=<optionvalue>".to_string();
         }
 
         let option_name = values[0];
@@ -1095,10 +1092,7 @@ impl Command for HeightCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
         RT.block_on(async move {
-            format!(
-                "{}",
-                object! { "height" => lightclient.do_wallet_last_scanned_height().await}.pretty(2)
-            )
+            object! { "height" => lightclient.do_wallet_last_scanned_height().await}.pretty(2)
         })
     }
 }
@@ -1206,7 +1200,7 @@ impl Command for NotesCommand {
         };
 
         RT.block_on(
-            async move { format!("{}", lightclient.do_list_notes(all_notes).await.pretty(2)) },
+            async move { lightclient.do_list_notes(all_notes).await.pretty(2) },
         )
     }
 }
@@ -1245,14 +1239,14 @@ impl Command for QuitCommand {
 
             let owned_child_processes: String = String::from_utf8(raw_child_processes.stdout)
                 .expect("error unwraping stdout of ps");
-            let child_processes = owned_child_processes.split("\n").collect::<Vec<&str>>();
+            let child_processes = owned_child_processes.split('\n').collect::<Vec<&str>>();
 
             // &str representation of PIDs
             let mut spawned_pids: Vec<&str> = Vec::new();
 
             for child in child_processes {
                 if !child.is_empty() {
-                    let ch: Vec<&str> = child.trim_start().split_whitespace().collect();
+                    let ch: Vec<&str> = child.split_whitespace().collect();
                     spawned_pids.push(ch[0]);
                 }
             }
@@ -1265,7 +1259,7 @@ impl Command for QuitCommand {
             }
         }
 
-        wallet_saver(&lightclient)
+        wallet_saver(lightclient)
     }
 }
 

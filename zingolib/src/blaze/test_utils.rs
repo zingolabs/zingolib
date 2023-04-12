@@ -25,16 +25,16 @@ pub fn trees_from_cblocks(
         let mut sapling_tree = sapling_trees
             .last()
             .map(Clone::clone)
-            .unwrap_or_else(|| CommitmentTree::empty());
+            .unwrap_or_else(CommitmentTree::empty);
         let mut orchard_tree = orchard_trees
             .last()
             .map(Clone::clone)
-            .unwrap_or_else(|| CommitmentTree::empty());
+            .unwrap_or_else(CommitmentTree::empty);
         for compact_transaction in &fake_compact_block.block.vtx {
             update_trees_with_compact_transaction(
                 &mut sapling_tree,
                 &mut orchard_tree,
-                &compact_transaction,
+                compact_transaction,
             )
         }
         sapling_trees.push(sapling_tree);
@@ -106,9 +106,8 @@ impl FakeCompactBlock {
     pub fn add_random_sapling_transaction(&mut self, num_outputs: usize) {
         let xsk_m = ExtendedSpendingKey::master(&[1u8; 32]);
         let dfvk = xsk_m.to_diversifiable_full_viewing_key();
-        let fvk = SaplingFvk::from(dfvk);
 
-        let to = fvk.default_address().1;
+        let to = dfvk.default_address().1;
         let value = Amount::from_u64(1).unwrap();
 
         let mut compact_transaction = CompactTx::default();

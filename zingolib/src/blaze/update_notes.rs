@@ -85,7 +85,7 @@ impl UpdateNotes {
         let wtn = D::WalletNote::GET_NOTE_WITNESSES(&*wallet_txns.read().await, &txid, &nullifier);
 
         if let Some((witnesses, created_height)) = wtn {
-            if witnesses.len() == 0 {
+            if witnesses.is_empty() {
                 // No witnesses, likely a Viewkey or we don't have spending key, so don't bother
                 return;
             }
@@ -265,6 +265,6 @@ impl UpdateNotes {
             r1.map_err(|e| format!("{}", e))
         });
 
-        return (h, blocks_done_transmitter, transmitter);
+        (h, blocks_done_transmitter, transmitter)
     }
 }

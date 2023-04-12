@@ -59,7 +59,7 @@ pub struct BlockData {
 
 impl BlockData {
     pub fn serialized_version() -> u64 {
-        return 20;
+        20
     }
 
     pub(crate) fn new_with(height: u64, hash: &str) -> Self {
@@ -333,7 +333,7 @@ pub struct Utxo {
 
 impl Utxo {
     pub fn serialized_version() -> u64 {
-        return 3;
+        3
     }
 
     pub fn to_outpoint(&self) -> OutPoint {
@@ -545,7 +545,7 @@ pub struct TransactionMetadata {
 
 impl TransactionMetadata {
     pub fn serialized_version() -> u64 {
-        return 23;
+        23
     }
 
     pub fn new_txid(txid: &Vec<u8>) -> TxId {
@@ -594,7 +594,7 @@ impl TransactionMetadata {
             block_height: height,
             unconfirmed,
             datetime,
-            txid: transaction_id.clone(),
+            txid: *transaction_id,
             spent_sapling_nullifiers: vec![],
             spent_orchard_nullifiers: vec![],
             sapling_notes: vec![],
@@ -796,7 +796,7 @@ impl WalletZecPriceInfo {
     }
 
     pub fn serialized_version() -> u64 {
-        return 20;
+        20
     }
 
     pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {

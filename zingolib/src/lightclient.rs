@@ -102,7 +102,7 @@ impl std::fmt::Display for PriceFetchError {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use PriceFetchError::*;
         fmt.write_str(
-            match &*self {
+            match self {
                 ReqwestError(e) => format!("ReqwestError: {}", e),
                 NotJson => "NotJson".to_string(),
                 NoElements => "NoElements".to_string(),
@@ -123,7 +123,7 @@ impl std::fmt::Display for PriceReprError {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use PriceReprError::*;
         fmt.write_str(
-            match &*self {
+            match self {
                 NoValue => "NoValue".to_string(),
                 NoAsStrValue => "NoAsStrValue".to_string(),
                 NotParseable => "NotParseable".to_string(),
@@ -168,7 +168,7 @@ async fn get_recent_median_price_from_gemini() -> Result<f64, PriceFetchError> {
             return Err(PriceFetchError::NoElements);
         }
     };
-    let mut trades: Vec<f64> = match elements.into_iter().map(repr_price_as_f64).collect() {
+    let mut trades: Vec<f64> = match elements.iter().map(repr_price_as_f64).collect() {
         Ok(trades) => trades,
         Err(e) => {
             return Err(PriceFetchError::PriceReprError(e));
@@ -256,7 +256,7 @@ impl LightClient {
             config: config.clone(),
             mempool_monitor: std::sync::RwLock::new(None),
             sync_lock: Mutex::new(()),
-            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
+            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
             interrupt_sync: Arc::new(RwLock::new(false)),
         };
 
@@ -297,7 +297,7 @@ impl LightClient {
             wallet: LightWallet::new(config.clone(), wallet_base, height)?,
             config: config.clone(),
             mempool_monitor: std::sync::RwLock::new(None),
-            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
+            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
             sync_lock: Mutex::new(()),
             interrupt_sync: Arc::new(RwLock::new(false)),
         })
@@ -381,24 +381,20 @@ impl LightClient {
         const SAPLING_SPEND_HASH: &str =
             "8e48ffd23abb3a5fd9c5589204f32d9c31285a04b78096ba40a79b75677efc13";
 
-        if sapling_output.len() > 0 {
-            if SAPLING_OUTPUT_HASH.to_string() != hex::encode(Sha256::digest(&sapling_output)) {
-                return Err(format!(
-                    "sapling-output hash didn't match. expected {}, found {}",
-                    SAPLING_OUTPUT_HASH,
-                    hex::encode(Sha256::digest(&sapling_output))
-                ));
-            }
+        if !sapling_output.is_empty() && *SAPLING_OUTPUT_HASH != hex::encode(Sha256::digest(sapling_output)) {
+            return Err(format!(
+                "sapling-output hash didn't match. expected {}, found {}",
+                SAPLING_OUTPUT_HASH,
+                hex::encode(Sha256::digest(sapling_output))
+            ));
         }
 
-        if sapling_spend.len() > 0 {
-            if SAPLING_SPEND_HASH.to_string() != hex::encode(Sha256::digest(&sapling_spend)) {
-                return Err(format!(
-                    "sapling-spend hash didn't match. expected {}, found {}",
-                    SAPLING_SPEND_HASH,
-                    hex::encode(Sha256::digest(&sapling_spend))
-                ));
-            }
+        if !sapling_spend.is_empty() && *SAPLING_SPEND_HASH != hex::encode(Sha256::digest(sapling_spend)) {
+            return Err(format!(
+                "sapling-spend hash didn't match. expected {}, found {}",
+                SAPLING_SPEND_HASH,
+                hex::encode(Sha256::digest(sapling_spend))
+            ));
         }
 
         // Ensure that the sapling params are stored on disk properly as well. Only on desktop
@@ -408,7 +404,7 @@ impl LightClient {
                 match LightClient::write_file_if_not_exists(
                     &zcash_params_dir,
                     "sapling-output.params",
-                    &sapling_output,
+                    sapling_output,
                 ) {
                     Ok(_) => {}
                     Err(e) => {
@@ -419,7 +415,7 @@ impl LightClient {
                 match LightClient::write_file_if_not_exists(
                     &zcash_params_dir,
                     "sapling-spend.params",
-                    &sapling_spend,
+                    sapling_spend,
                 ) {
                     Ok(_) => {}
                     Err(e) => {
@@ -468,7 +464,7 @@ impl LightClient {
             Some((height, hash, tree)) => {
                 debug!("Setting initial state to height {}, tree {}", height, tree);
                 self.wallet
-                    .set_initial_block(height, &hash.as_str(), &tree.as_str())
+                    .set_initial_block(height, hash.as_str(), tree.as_str())
                     .await;
             }
             _ => {}
@@ -477,7 +473,7 @@ impl LightClient {
 
     fn new_wallet(config: &ZingoConfig, height: u64) -> io::Result<Self> {
         Runtime::new().unwrap().block_on(async move {
-            let l = LightClient::create_unconnected(&config, WalletBase::FreshEntropy, height)?;
+            let l = LightClient::create_unconnected(config, WalletBase::FreshEntropy, height)?;
             l.set_wallet_initial_state(height).await;
 
             debug!("Created new wallet with a new seed!");
@@ -520,7 +516,7 @@ impl LightClient {
                 ),
             ));
         };
-        LightClient::read_wallet_from_buffer(&config, BufReader::new(File::open(wallet_path)?))
+        LightClient::read_wallet_from_buffer(config, BufReader::new(File::open(wallet_path)?))
     }
 
     /// This constructor depends on a wallet that's read from a buffer.
@@ -538,7 +534,7 @@ impl LightClient {
                 config: config.clone(),
                 mempool_monitor: std::sync::RwLock::new(None),
                 sync_lock: Mutex::new(()),
-                bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
+                bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
                 interrupt_sync: Arc::new(RwLock::new(false)),
             };
 
@@ -553,7 +549,7 @@ impl LightClient {
     }
     pub fn init_logging() -> io::Result<()> {
         // Configure logging first.
-        LOG_INIT.call_once(|| tracing_subscriber::fmt::init());
+        LOG_INIT.call_once(tracing_subscriber::fmt::init);
 
         Ok(())
     }
@@ -718,7 +714,7 @@ impl LightClient {
                         if !all_notes && note_metadata.spent.is_some() {
                             None
                         } else {
-                            let address = LightWallet::note_address::<SaplingDomain<ChainType>>(&self.config.chain, note_metadata, &unified_spend_capability);
+                            let address = LightWallet::note_address::<SaplingDomain<ChainType>>(&self.config.chain, note_metadata, unified_spend_capability);
                             let spendable = transaction_metadata.block_height <= anchor_height && note_metadata.spent.is_none() && note_metadata.unconfirmed_spent.is_none();
 
                             let created_block:u32 = transaction_metadata.block_height.into();
@@ -762,7 +758,7 @@ impl LightClient {
                         if !all_notes && orch_note_metadata.is_spent() {
                             None
                         } else {
-                            let address = LightWallet::note_address::<OrchardDomain>(&self.config.chain, orch_note_metadata, &unified_spend_auth);
+                            let address = LightWallet::note_address::<OrchardDomain>(&self.config.chain, orch_note_metadata, unified_spend_auth);
                             let spendable = transaction_metadata.block_height <= anchor_height && orch_note_metadata.spent.is_none() && orch_note_metadata.unconfirmed_spent.is_none();
 
                             let created_block:u32 = transaction_metadata.block_height.into();
@@ -943,7 +939,7 @@ impl LightClient {
                         .unwrap();
                 }
 
-                return o;
+                o
             })
             .collect::<Vec<JsonValue>>();
 
@@ -979,7 +975,7 @@ impl LightClient {
                 }
 
                 // For each note that is not a change, add a transaction.
-                transactions.extend(self.add_wallet_notes_in_transaction_to_list(&wallet_transaction, &include_memo_hex, &**unified_spend_capability));
+                transactions.extend(self.add_wallet_notes_in_transaction_to_list(wallet_transaction, &include_memo_hex, unified_spend_capability));
 
                 // Get the total transparent value received in this transaction
                 let total_transparent_received = wallet_transaction.utxos.iter().map(|u| u.value).sum::<u64>();
@@ -1033,10 +1029,8 @@ impl LightClient {
                     let b_val = b.remove(key);
                     if b_val == JsonValue::Null {
                         b.insert(key, a_val.clone()).unwrap();
-                    } else {
-                        if a_val != &b_val {
-                            log::error!("{a_val} does not match {b_val}");
-                        }
+                    } else if a_val != &b_val {
+                        log::error!("{a_val} does not match {b_val}");
                     }
                 }
 
@@ -1094,7 +1088,7 @@ impl LightClient {
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
     {
-        D::WalletNote::transaction_metadata_notes(&transaction_metadata).iter().filter(|nd| !nd.is_change()).enumerate().map(|(i, nd)| {
+        D::WalletNote::transaction_metadata_notes(transaction_metadata).iter().filter(|nd| !nd.is_change()).enumerate().map(|(i, nd)| {
                     let block_height: u32 = transaction_metadata.block_height.into();
                     let mut o = object! {
                         "block_height" => block_height,
@@ -1122,7 +1116,7 @@ impl LightClient {
                         .unwrap();
                     }
 
-                    return o;
+                    o
                 })
     }
 
@@ -1179,11 +1173,11 @@ impl LightClient {
         match get_recent_median_price_from_gemini().await {
             Ok(price) => {
                 self.wallet.set_latest_zec_price(price).await;
-                return price.to_string();
+                price.to_string()
             }
             Err(s) => {
                 error!("Error fetching latest price: {}", s);
-                return s.to_string();
+                s.to_string()
             }
         }
     }
@@ -1359,25 +1353,21 @@ impl LightClient {
             return Err(w);
         }
 
-        if latest_blockid.height == last_synced_height {
-            if !latest_blockid.hash.is_empty()
-                && BlockHash::from_slice(&latest_blockid.hash).to_string()
-                    != self.wallet.last_synced_hash().await
-            {
-                #[cfg(not(feature = "integration_test"))]
-                warn!("One block reorg at height {}", last_synced_height);
-                // This is a one-block reorg, so pop the last block. Even if there are more blocks to reorg, this is enough
-                // to trigger a sync, which will then reorg the remaining blocks
-                BlockAndWitnessData::invalidate_block(
-                    last_synced_height,
-                    self.wallet.blocks.clone(),
-                    self.wallet
-                        .transaction_context
-                        .transaction_metadata_set
-                        .clone(),
-                )
-                .await;
-            }
+        if latest_blockid.height == last_synced_height && !latest_blockid.hash.is_empty() && BlockHash::from_slice(&latest_blockid.hash).to_string()
+                    != self.wallet.last_synced_hash().await {
+            #[cfg(not(feature = "integration_test"))]
+            warn!("One block reorg at height {}", last_synced_height);
+            // This is a one-block reorg, so pop the last block. Even if there are more blocks to reorg, this is enough
+            // to trigger a sync, which will then reorg the remaining blocks
+            BlockAndWitnessData::invalidate_block(
+                last_synced_height,
+                self.wallet.blocks.clone(),
+                self.wallet
+                    .transaction_context
+                    .transaction_metadata_set
+                    .clone(),
+            )
+            .await;
         }
 
         // Re-read the last scanned height
@@ -1404,9 +1394,7 @@ impl LightClient {
         let mut res = Err("No batches were run!".to_string());
         for (batch_num, batch_latest_block) in latest_block_batches.into_iter().enumerate() {
             res = self.sync_nth_batch(batch_latest_block, batch_num).await;
-            if res.is_err() {
-                return res;
-            }
+            res.as_ref()?;
             if *self.interrupt_sync.read().await {
                 log::debug!("LightClient interrupt_sync is true");
                 break;
@@ -1581,9 +1569,7 @@ impl LightClient {
                 taddr_fetcher_handle,
             ])
             .await
-            .into_iter()
-            .map(|r| r.map_err(|e| format!("{}", e)))
-            .collect::<Result<(), _>>()
+            .into_iter().try_for_each(|r| r.map_err(|e| format!("{}", e)))
         });
 
         join_all(vec![
@@ -1594,9 +1580,7 @@ impl LightClient {
             r1,
         ])
         .await
-        .into_iter()
-        .map(|r| r.map_err(|e| format!("{}", e))?)
-        .collect::<Result<(), String>>()?;
+        .into_iter().try_for_each(|r| r.map_err(|e| format!("{}", e))?)?;
 
         let verify_handle =
             tokio::spawn(async move { block_data.read().await.block_data.verify_trees().await });

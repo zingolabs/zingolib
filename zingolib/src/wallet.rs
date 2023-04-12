@@ -131,7 +131,7 @@ impl Default for WalletOptions {
 
 impl WalletOptions {
     pub fn serialized_version() -> u64 {
-        return 2;
+        2
     }
 
     pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
@@ -219,7 +219,7 @@ pub struct LightWallet {
 use crate::wallet::traits::{Diversifiable as _, ReadableWriteable};
 impl LightWallet {
     pub fn serialized_version() -> u64 {
-        return 27;
+        27
     }
 
     pub fn new(config: ZingoConfig, base: WalletBase, height: u64) -> io::Result<Self> {
@@ -374,7 +374,7 @@ impl LightWallet {
                 TreeState::decode(&buf[..]).map_err(|e| {
                     io::Error::new(
                         ErrorKind::InvalidData,
-                        format!("Read Error: {}", e.to_string()),
+                        format!("Read Error: {}", e),
                     )
                 })
             })?
@@ -387,7 +387,7 @@ impl LightWallet {
         };
 
         let transaction_context = TransactionContext::new(
-            &config,
+            config,
             Arc::new(RwLock::new(key)),
             Arc::new(RwLock::new(transactions)),
         );
@@ -408,7 +408,7 @@ impl LightWallet {
         };
 
         let seed_bytes = Vector::read(&mut reader, |r| r.read_u8())?;
-        let mnemonic = if seed_bytes.len() > 0 {
+        let mnemonic = if !seed_bytes.is_empty() {
             Some(
                 Mnemonic::from_entropy(seed_bytes)
                     .map_err(|e| Error::new(ErrorKind::InvalidData, e.to_string()))?,
@@ -490,7 +490,7 @@ impl LightWallet {
     }
 
     pub fn mnemonic(&self) -> Option<&Mnemonic> {
-        (&self.mnemonic).as_ref()
+        self.mnemonic.as_ref()
     }
 
     // Before version 20, witnesses didn't store their height, so we need to update them.
@@ -530,7 +530,7 @@ impl LightWallet {
 
     /// Return a copy of the blocks currently in the wallet, needed to process possible reorgs
     pub async fn get_blocks(&self) -> Vec<BlockData> {
-        self.blocks.read().await.iter().map(|b| b.clone()).collect()
+        self.blocks.read().await.iter().cloned().collect()
     }
 
     pub(crate) fn note_address<D: DomainWalletExt>(
@@ -723,7 +723,7 @@ impl LightWallet {
     pub async fn get_anchor_height(&self) -> u32 {
         match self.get_target_height_and_anchor_offset().await {
             Some((height, anchor_offset)) => height - anchor_offset as u32 - 1,
-            None => return 0,
+            None => 0,
         }
     }
 
@@ -804,8 +804,7 @@ impl LightWallet {
             .await
             .current
             .values()
-            .flat_map(|transaction| transaction.utxos.iter().filter(|utxo| utxo.spent.is_none()))
-            .map(|utxo| utxo.clone())
+            .flat_map(|transaction| transaction.utxos.iter().filter(|utxo| utxo.spent.is_none())).cloned()
             .collect::<Vec<Utxo>>()
     }
 
@@ -875,7 +874,7 @@ impl LightWallet {
             Box::new(|_, transaction| {
                 transaction.block_height <= BlockHeight::from_u32(anchor_height)
             }),
-            Box::new(|nnmd, _| nnmd.witnesses.len() > 0),
+            Box::new(|nnmd, _| !nnmd.witnesses.is_empty()),
         ];
         self.shielded_balance(target_addr, filters).await
     }
@@ -888,7 +887,7 @@ impl LightWallet {
             Box::new(|_, transaction| {
                 transaction.block_height <= BlockHeight::from_u32(anchor_height)
             }),
-            Box::new(|nnmd, _| nnmd.witnesses.len() > 0),
+            Box::new(|nnmd, _| !nnmd.witnesses.is_empty()),
         ];
         self.shielded_balance(target_addr, filters).await
     }
@@ -916,7 +915,7 @@ impl LightWallet {
             .await
             .current
             .iter()
-            .map(|(transaction_id, wtx)| (transaction_id.clone(), wtx.block_height))
+            .map(|(transaction_id, wtx)| (*transaction_id, wtx.block_height))
             .collect();
 
         // Go over all the sapling notes that might need updating
@@ -933,7 +932,7 @@ impl LightWallet {
                     .for_each(|nd| {
                         let transaction_id = nd.spent.unwrap().0;
                         if let Some(height) =
-                            spent_transaction_id_map.get(&transaction_id).map(|b| *b)
+                            spent_transaction_id_map.get(&transaction_id).copied()
                         {
                             nd.spent = Some((transaction_id, height.into()));
                         }
@@ -976,8 +975,7 @@ impl LightWallet {
             self.get_utxos()
                 .await
                 .iter()
-                .filter(|utxo| utxo.unconfirmed_spent.is_none() && utxo.spent.is_none())
-                .map(|utxo| utxo.clone())
+                .filter(|utxo| utxo.unconfirmed_spent.is_none() && utxo.spent.is_none()).cloned()
                 .collect::<Vec<_>>()
         } else {
             vec![]
@@ -1100,8 +1098,8 @@ impl LightWallet {
             })
             .collect::<Vec<D::SpendableNoteAT>>();
         candidate_notes.sort_unstable_by(|spendable_note_1, spendable_note_2| {
-            D::WalletNote::value_from_note(&spendable_note_2.note())
-                .cmp(&D::WalletNote::value_from_note(&spendable_note_1.note()))
+            D::WalletNote::value_from_note(spendable_note_2.note())
+                .cmp(&D::WalletNote::value_from_note(spendable_note_1.note()))
         });
         candidate_notes
     }
@@ -1120,7 +1118,7 @@ impl LightWallet {
             if running_total >= target_amount {
                 break;
             }
-            running_total += Amount::from_u64(D::WalletNote::value_from_note(&note.note()))
+            running_total += Amount::from_u64(D::WalletNote::value_from_note(note.note()))
                 .expect("Note value overflow error");
             notes.push(note);
         }
@@ -1161,7 +1159,7 @@ impl LightWallet {
                 Ok((transaction_id, raw_transaction))
             }
             Err(e) => {
-                self.set_send_error(format!("{}", e)).await;
+                self.set_send_error(e.to_string()).await;
                 Err(e)
             }
         }
@@ -1181,7 +1179,7 @@ impl LightWallet {
         Fut: Future<Output = Result<String, String>>,
     {
         let start_time = now();
-        if tos.len() == 0 {
+        if tos.is_empty() {
             return Err("Need at least one destination address".to_string());
         }
 
@@ -1300,14 +1298,12 @@ impl LightWallet {
 
                 let coin = TxOut {
                     value: Amount::from_u64(utxo.value).unwrap(),
-                    script_pubkey: Script {
-                        0: utxo.script.clone(),
-                    },
+                    script_pubkey: Script(utxo.script.clone()),
                 };
 
                 match address_to_sk.get(&utxo.address) {
                     Some(sk) => builder
-                        .add_transparent_input(*sk, outpoint.clone(), coin.clone())
+                        .add_transparent_input(*sk, outpoint, coin)
                         .map_err(|e| {
                             transaction::builder::Error::<Infallible>::TransparentBuild(e)
                         }),
@@ -1343,13 +1339,13 @@ impl LightWallet {
             println!("Adding orchard spend");
             let path = selected.witness.path().unwrap();
             if let Err(e) = builder.add_orchard_spend::<transaction::fees::fixed::FeeRule>(
-                selected.spend_key.clone().unwrap(),
-                selected.note.clone(),
+                selected.spend_key.unwrap(),
+                selected.note,
                 orchard::tree::MerklePath::from((
                     incrementalmerkletree::Position::from(path.position as usize),
                     path.auth_path
                         .iter()
-                        .map(|(node, _)| node.clone())
+                        .map(|(node, _)| *node)
                         .collect(),
                 )),
             ) {
@@ -1392,7 +1388,7 @@ impl LightWallet {
                 address::RecipientAddress::Shielded(to) => {
                     total_z_recipients += 1;
                     builder
-                        .add_sapling_output(Some(sapling_ovk), to.clone(), value, validated_memo)
+                        .add_sapling_output(Some(sapling_ovk), to, value, validated_memo)
                         .map_err(transaction::builder::Error::<Infallible>::SaplingBuild)
                 }
                 address::RecipientAddress::Transparent(to) => builder
@@ -1402,7 +1398,7 @@ impl LightWallet {
                     if let Some(orchard_addr) = ua.orchard() {
                         builder.add_orchard_output::<FixedFeeRule>(
                             Some(orchard_ovk.clone()),
-                            orchard_addr.clone(),
+                            *orchard_addr,
                             u64::from(value),
                             validated_memo,
                         )
@@ -1411,7 +1407,7 @@ impl LightWallet {
                         builder
                             .add_sapling_output(
                                 Some(sapling_ovk),
-                                sapling_addr.clone(),
+                                *sapling_addr,
                                 value,
                                 validated_memo,
                             )
@@ -1568,7 +1564,7 @@ impl LightWallet {
             self.transaction_context
                 .scan_full_tx(
                     transaction,
-                    submission_height.into(),
+                    submission_height,
                     true,
                     now() as u32,
                     TransactionMetadata::get_price(now(), &price),
@@ -1599,7 +1595,7 @@ impl LightWallet {
             )
             .await?;
             let orchard_tree = CommitmentTree::<MerkleHashOrchard>::read(
-                hex::decode(&trees.orchard_tree).unwrap().as_slice(),
+                hex::decode(trees.orchard_tree).unwrap().as_slice(),
             )
             .unwrap_or(CommitmentTree::empty());
             Ok(Anchor::from(orchard_tree.root()))
@@ -1613,7 +1609,7 @@ fn decode_orchard_spending_key(
     expected_hrp: &str,
     s: &str,
 ) -> Result<Option<OrchardSpendingKey>, String> {
-    match bech32::decode(&s) {
+    match bech32::decode(s) {
         Ok((hrp, bytes, variant)) => {
             use bech32::FromBase32;
             if hrp != expected_hrp {

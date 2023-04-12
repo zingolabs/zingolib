@@ -40,7 +40,6 @@ fn get_wallet_nym(nym: &str) -> Result<(String, PathBuf, PathBuf), String> {
                 "{}/zingocli/tests/data/wallets/v26/202302_release/regtest/{nym}/zingo-wallet.dat",
                 zingo_cli::regtest::get_git_rootdir()
                     .to_string_lossy()
-                    .to_string()
             );
             let wallet_path = Path::new(&one_sapling_wallet);
             let wallet_dir = wallet_path.parent().unwrap();
@@ -228,7 +227,7 @@ async fn test_scanning_in_watch_only_mode() {
         log::debug!("    transparent fvk: {}", fvks_set.contains(&&t_fvk));
 
         use zcash_address::{unified::Encoding, Network::Regtest};
-        let ufvk = Ufvk::try_from_items(fvks_set.clone().into_iter().map(|x| x.clone()).collect())
+        let ufvk = Ufvk::try_from_items(fvks_set.clone().into_iter().cloned().collect())
             .unwrap()
             .encode(&Regtest);
 
@@ -519,7 +518,7 @@ async fn send_mined_sapling_to_orchard() {
 
 fn extract_value_as_u64(input: &JsonValue) -> u64 {
     let note = &input["value"].as_fixed_point_u64(0).unwrap();
-    note.clone()
+    *note
 }
 
 #[tokio::test]
@@ -597,7 +596,7 @@ async fn note_selection_order() {
     let non_change_note_values = client_2_notes["unspent_sapling_notes"]
         .members()
         .filter(|note| !note["is_change"].as_bool().unwrap())
-        .map(|x| extract_value_as_u64(x))
+        .map(extract_value_as_u64)
         .collect::<Vec<_>>();
     // client_2 got a total of 3000+2000+1000
     // It sent 3000 to the client_1, and also
@@ -626,13 +625,11 @@ async fn note_selection_order() {
     assert_eq!(
         client_2_post_transaction_notes["unspent_sapling_notes"]
             .members()
-            .into_iter()
             .chain(
                 client_2_post_transaction_notes["unspent_orchard_notes"]
                     .members()
-                    .into_iter()
             )
-            .map(|x| extract_value_as_u64(x))
+            .map(extract_value_as_u64)
             .sum::<u64>(),
         2000u64 // 1000 received and unused + (2000 - 1000 txfee)
     );
@@ -1514,7 +1511,7 @@ async fn mixed_transaction() {
     assert_eq!(
         list[2]["outgoing_metadata"]
             .members()
-            .find(|j| j["address"].to_string() == faucet_sapling
+            .find(|j| j["address"] == faucet_sapling
                 && j["value"].as_u64().unwrap() == sent_zvalue)
             .unwrap()["memo"]
             .to_string(),
@@ -1523,7 +1520,7 @@ async fn mixed_transaction() {
     assert_eq!(
         list[2]["outgoing_metadata"]
             .members()
-            .find(|j| j["address"].to_string() == faucet_transparent)
+            .find(|j| j["address"] == faucet_transparent)
             .unwrap()["value"]
             .as_u64()
             .unwrap(),
@@ -2216,7 +2213,7 @@ async fn sapling_incoming_sapling_outgoing() {
 
     assert_eq!(
         send_transaction["outgoing_metadata"][0]["address"],
-        get_base_address!(faucet, "sapling").to_string()
+        get_base_address!(faucet, "sapling")
     );
     assert_eq!(
         send_transaction["outgoing_metadata"][0]["memo"],

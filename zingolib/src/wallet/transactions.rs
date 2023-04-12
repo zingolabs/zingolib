@@ -48,7 +48,7 @@ pub struct TransactionMetadataSet {
 
 impl TransactionMetadataSet {
     pub fn serialized_version() -> u64 {
-        return 21;
+        21
     }
 
     pub fn new() -> Self {
@@ -105,7 +105,7 @@ impl TransactionMetadataSet {
             .values()
             .fold(None, |c: Option<(TxId, BlockHeight)>, w| {
                 if c.is_none() || w.block_height > c.unwrap().1 {
-                    Some((w.txid.clone(), w.block_height))
+                    Some((w.txid, w.block_height))
                 } else {
                     c
                 }
@@ -163,7 +163,7 @@ impl TransactionMetadataSet {
 
     pub fn remove_txids(&mut self, txids_to_remove: Vec<TxId>) {
         for txid in &txids_to_remove {
-            self.current.remove(&txid);
+            self.current.remove(txid);
         }
         self.current.values_mut().for_each(|transaction_metadata| {
             // Update UTXOs to rollback any spent utxos
@@ -219,7 +219,7 @@ impl TransactionMetadataSet {
             .values()
             .filter_map(|transaction_metadata| {
                 if transaction_metadata.block_height >= reorg_height {
-                    Some(transaction_metadata.txid.clone())
+                    Some(transaction_metadata.txid)
                 } else {
                     None
                 }
@@ -236,10 +236,10 @@ impl TransactionMetadataSet {
                     // The latest witness is at the last() position, so just pop() it.
                     // We should be checking if there is a witness at all, but if there is none, it is an
                     // empty vector, for which pop() is a no-op.
-                    let _discard = nd.witnesses.pop(u64::from(reorg_height));
+                    nd.witnesses.pop(u64::from(reorg_height));
                 }
                 for nd in tx.orchard_notes.iter_mut() {
-                    let _discard = nd.witnesses.pop(u64::from(reorg_height));
+                    nd.witnesses.pop(u64::from(reorg_height));
                 }
             }
         }
@@ -264,12 +264,12 @@ impl TransactionMetadataSet {
                     .filter_map(move |sapling_note_description| {
                         if transaction_metadata.block_height <= before_block
                             && sapling_note_description.have_spending_key
-                            && sapling_note_description.witnesses.len() > 0
+                            && !sapling_note_description.witnesses.is_empty()
                             && sapling_note_description.spent.is_none()
                         {
                             Some((
-                                txid.clone(),
-                                PoolNullifier::Sapling(sapling_note_description.nullifier.clone()),
+                                *txid,
+                                PoolNullifier::Sapling(sapling_note_description.nullifier),
                             ))
                         } else {
                             None
@@ -279,13 +279,13 @@ impl TransactionMetadataSet {
                         move |orchard_note_description| {
                             if transaction_metadata.block_height <= before_block
                                 && orchard_note_description.have_spending_key
-                                && orchard_note_description.witnesses.len() > 0
+                                && !orchard_note_description.witnesses.is_empty()
                                 && orchard_note_description.spent.is_none()
                             {
                                 Some((
-                                    txid.clone(),
+                                    *txid,
                                     PoolNullifier::Orchard(
-                                        orchard_note_description.nullifier.clone(),
+                                        orchard_note_description.nullifier,
                                     ),
                                 ))
                             } else {
@@ -299,7 +299,7 @@ impl TransactionMetadataSet {
 
     pub fn total_funds_spent_in(&self, txid: &TxId) -> u64 {
         self.current
-            .get(&txid)
+            .get(txid)
             .map(TransactionMetadata::total_value_spent)
             .unwrap_or(0)
     }
@@ -314,9 +314,9 @@ impl TransactionMetadataSet {
                     .filter(|nd| nd.spent.is_none())
                     .map(move |nd| {
                         (
-                            nd.nullifier.clone(),
+                            nd.nullifier,
                             nd.note.value().inner(),
-                            transaction_metadata.txid.clone(),
+                            transaction_metadata.txid,
                         )
                     })
             })
@@ -333,9 +333,9 @@ impl TransactionMetadataSet {
                     .filter(|nd| nd.spent.is_none())
                     .map(move |nd| {
                         (
-                            nd.nullifier.clone(),
+                            nd.nullifier,
                             nd.note.value().inner(),
-                            transaction_metadata.txid.clone(),
+                            transaction_metadata.txid,
                         )
                     })
             })
@@ -439,7 +439,7 @@ impl TransactionMetadataSet {
             .filter(|(_, transaction_metadata)| {
                 transaction_metadata.unconfirmed && transaction_metadata.block_height < cutoff
             })
-            .map(|(_, transaction_metadata)| transaction_metadata.txid.clone())
+            .map(|(_, transaction_metadata)| transaction_metadata.txid)
             .collect::<Vec<_>>();
 
         txids_to_remove
@@ -467,7 +467,7 @@ impl TransactionMetadataSet {
                     .iter_mut()
                     .find(|n| n.nullifier == *nf)
                     .unwrap();
-                note_data.spent = Some((spent_txid.clone(), spent_at_height.into()));
+                note_data.spent = Some((*spent_txid, spent_at_height.into()));
                 note_data.unconfirmed_spent = None;
                 note_data.note.value().inner()
             }
@@ -480,7 +480,7 @@ impl TransactionMetadataSet {
                     .iter_mut()
                     .find(|n| n.nullifier == *nf)
                     .unwrap();
-                note_data.spent = Some((spent_txid.clone(), spent_at_height.into()));
+                note_data.spent = Some((*spent_txid, spent_at_height.into()));
                 note_data.unconfirmed_spent = None;
                 note_data.note.value().inner()
             }
@@ -509,14 +509,14 @@ impl TransactionMetadataSet {
         unconfirmed: bool,
         datetime: u64,
     ) -> &'_ mut TransactionMetadata {
-        if !self.current.contains_key(&txid) {
+        if !self.current.contains_key(txid) {
             self.current.insert(
-                txid.clone(),
-                TransactionMetadata::new(BlockHeight::from(height), datetime, &txid, unconfirmed),
+                *txid,
+                TransactionMetadata::new(height, datetime, txid, unconfirmed),
             );
-            self.some_txid_from_highest_wallet_block = Some(txid.clone());
+            self.some_txid_from_highest_wallet_block = Some(*txid);
         }
-        let transaction_metadata = self.current.get_mut(&txid).expect("Txid should be present");
+        let transaction_metadata = self.current.get_mut(txid).expect("Txid should be present");
 
         // Make sure the unconfirmed status matches
         if transaction_metadata.unconfirmed != unconfirmed {
@@ -580,17 +580,15 @@ impl TransactionMetadataSet {
         // Record this Tx as having spent some funds
         let transaction_metadata = self.get_or_create_transaction_metadata(
             &txid,
-            BlockHeight::from(height),
+            height,
             unconfirmed,
             timestamp as u64,
         );
 
         // Mark the height correctly, in case this was previously a mempool or unconfirmed tx.
         transaction_metadata.block_height = height;
-        if NnMd::Nullifier::get_nullifiers_spent_in_transaction(transaction_metadata)
-            .iter()
-            .find(|nf| **nf == nullifier)
-            .is_none()
+        if !NnMd::Nullifier::get_nullifiers_spent_in_transaction(transaction_metadata)
+            .iter().any(|nf| *nf == nullifier)
         {
             transaction_metadata.add_spent_nullifier(nullifier.into(), value)
         }
@@ -605,13 +603,9 @@ impl TransactionMetadataSet {
                 .get_mut(&source_txid)
                 .expect("Txid should be present");
 
-            NnMd::transaction_metadata_notes_mut(transaction_metadata)
+            if let Some(nd) = NnMd::transaction_metadata_notes_mut(transaction_metadata)
                 .iter_mut()
-                .find(|n| n.nullifier() == nullifier)
-                .map(|nd| {
-                    // Record the spent height
-                    *nd.spent_mut() = Some((txid, height.into()));
-                });
+                .find(|n| n.nullifier() == nullifier) { *nd.spent_mut() = Some((txid, height.into())); }
         }
     }
 
@@ -625,7 +619,7 @@ impl TransactionMetadataSet {
     ) {
         let transaction_metadata = self.get_or_create_transaction_metadata(
             &txid,
-            BlockHeight::from(height),
+            height,
             unconfirmed,
             timestamp,
         );
@@ -649,7 +643,7 @@ impl TransactionMetadataSet {
                 .find(|u| u.txid == spent_txid && u.output_index == output_num as u64)
             {
                 // Mark this one as spent
-                spent_utxo.spent = Some(source_txid.clone());
+                spent_utxo.spent = Some(source_txid);
                 spent_utxo.spent_at_height = Some(source_height as i32);
                 spent_utxo.unconfirmed_spent = None;
 
@@ -696,7 +690,7 @@ impl TransactionMetadataSet {
         } else {
             transaction_metadata.utxos.push(Utxo {
                 address: taddr,
-                txid: txid.clone(),
+                txid,
                 output_index: output_num as u64,
                 script: vout.script_pubkey.0.clone(),
                 value: vout.value.into(),
@@ -726,7 +720,7 @@ impl TransactionMetadataSet {
 
         let transaction_metadata = self.get_or_create_transaction_metadata(
             &txid,
-            BlockHeight::from(height),
+            height,
             true,
             timestamp,
         );
@@ -826,7 +820,7 @@ impl TransactionMetadataSet {
 
         let transaction_metadata = self.get_or_create_transaction_metadata(
             &txid,
-            BlockHeight::from(height),
+            height,
             unconfirmed,
             timestamp,
         );
@@ -835,7 +829,7 @@ impl TransactionMetadataSet {
 
         let nullifier = D::WalletNote::get_nullifier_from_note_fvk_and_witness_position(
             &note,
-            &fvk,
+            fvk,
             witness.position() as u64,
         );
         let witnesses = if have_spending_key {
@@ -886,12 +880,10 @@ impl TransactionMetadataSet {
         note: Nd::Note,
         memo: Memo,
     ) {
-        self.current.get_mut(txid).map(|transaction_metadata| {
-            Nd::transaction_metadata_notes_mut(transaction_metadata)
+        if let Some(transaction_metadata) = self.current.get_mut(txid) { Nd::transaction_metadata_notes_mut(transaction_metadata)
                 .iter_mut()
                 .find(|n| n.note() == &note)
-                .map(|n| *n.memo_mut() = Some(memo));
-        });
+                .map(|n| *n.memo_mut() = Some(memo)); }
     }
 
     pub fn add_outgoing_metadata(
@@ -904,11 +896,9 @@ impl TransactionMetadataSet {
             let new_omd: Vec<_> = outgoing_metadata
                 .into_iter()
                 .filter(|om| {
-                    transaction_metadata
+                    !transaction_metadata
                         .outgoing_metadata
-                        .iter()
-                        .find(|o| **o == *om)
-                        .is_none()
+                        .iter().any(|o| *o == *om)
                 })
                 .collect();
 

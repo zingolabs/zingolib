@@ -93,10 +93,8 @@ impl BlockAndWitnessData {
         existing_blocks: Vec<BlockData>,
         verified_tree: Option<TreeState>,
     ) {
-        if !existing_blocks.is_empty() {
-            if existing_blocks.first().unwrap().height < existing_blocks.last().unwrap().height {
-                panic!("Blocks are in wrong order");
-            }
+        if !existing_blocks.is_empty() && existing_blocks.first().unwrap().height < existing_blocks.last().unwrap().height {
+            panic!("Blocks are in wrong order");
         }
         self.unverified_treestates.write().await.clear();
         self.highest_verified_trees = verified_tree;
@@ -193,14 +191,13 @@ impl BlockAndWitnessData {
 
         // Remember the highest tree that will be verified, and return that.
         let highest_tree = unverified_tree_states
-            .last()
-            .map(|treestate| treestate.clone());
+            .last().cloned();
 
         let mut start_trees = vec![];
 
         // Add all the verification trees as verified, so they can be used as starting points.
         // If any of them fails to verify, then we will fail the whole thing anyway.
-        start_trees.extend(unverified_tree_states.iter().map(|t| t.clone()));
+        start_trees.extend(unverified_tree_states.iter().cloned());
 
         // Also add the wallet's highest tree
         if self.highest_verified_trees.is_some() {
@@ -256,7 +253,7 @@ impl BlockAndWitnessData {
             return (false, None);
         }
 
-        return (true, highest_tree);
+        (true, highest_tree)
     }
 
     ///  This associated fn compares a pair of trees and informs the caller
@@ -293,7 +290,7 @@ impl BlockAndWitnessData {
                 }
 
                 for i in (end_pos..start_pos + 1).rev() {
-                    let cb = &blocks.get(i as usize).unwrap().cb();
+                    let cb = &blocks.get(i).unwrap().cb();
                     for compact_transaction in &cb.vtx {
                         update_trees_with_compact_transaction(
                             &mut sapling_tree,
@@ -390,12 +387,10 @@ impl BlockAndWitnessData {
             let mut last_block_expecting = end_block;
 
             while let Some(compact_block) = receiver.recv().await {
-                if compact_block.height % batch_size == 0 {
-                    if !blks.is_empty() {
-                        // Add these blocks to the list
-                        sync_status.write().await.blocks_done += blks.len() as u64;
-                        blocks.write().await.append(&mut blks);
-                    }
+                if compact_block.height % batch_size == 0 && !blks.is_empty() {
+                    // Add these blocks to the list
+                    sync_status.write().await.blocks_done += blks.len() as u64;
+                    blocks.write().await.append(&mut blks);
                 }
 
                 // Check if this is the last block we are expecting
@@ -450,10 +445,10 @@ impl BlockAndWitnessData {
                 .map_err(|e| format!("Error processing blocks: {}", e))??;
 
             // Return the earlist block that was synced, accounting for all reorgs
-            return Ok(earliest_block);
+            Ok(earliest_block)
         });
 
-        return (h, transmitter);
+        (h, transmitter)
     }
 
     async fn wait_for_first_block(&self) -> u64 {
@@ -609,7 +604,7 @@ impl BlockAndWitnessData {
             {
                 if let Some(node) =
                     <D::WalletNote as ReceivedNoteAndMetadata>::Node::from_commitment(
-                        &compactoutput.cmstar(),
+                        compactoutput.cmstar(),
                     )
                     .into()
                 {
@@ -694,7 +689,7 @@ impl BlockAndWitnessData {
                 for compact_transaction in &cb.vtx {
                     use crate::wallet::traits::CompactOutput as _;
                     for co in D::CompactOutput::from_compact_transaction(compact_transaction) {
-                        if let Some(node) = Node::<D>::from_commitment(&co.cmstar()).into() {
+                        if let Some(node) = Node::<D>::from_commitment(co.cmstar()).into() {
                             w.append(node).unwrap();
                         }
                     }
@@ -719,7 +714,7 @@ impl BlockAndWitnessData {
             top_block
         };
 
-        return WitnessCache::new(fsb.into_vec(), top_block);
+        WitnessCache::new(fsb.into_vec(), top_block)
     }
 
     async fn update_witness_after_reciept_to_block_end<D: DomainWalletExt>(
@@ -763,7 +758,7 @@ impl BlockAndWitnessData {
                         let compact_output = outputs.get(j as usize).unwrap();
                         let node =
                             <D::WalletNote as ReceivedNoteAndMetadata>::Node::from_commitment(
-                                &compact_output.cmstar(),
+                                compact_output.cmstar(),
                             )
                             .unwrap();
                         w.append(node).unwrap();
@@ -885,7 +880,7 @@ pub fn update_tree_with_compact_transaction<D: DomainWalletExt>(
     <D as Domain>::Note: PartialEq + Clone,
 {
     use crate::wallet::traits::CompactOutput;
-    for output in D::CompactOutput::from_compact_transaction(&compact_transaction) {
+    for output in D::CompactOutput::from_compact_transaction(compact_transaction) {
         let node = Node::<D>::from_commitment(output.cmstar()).unwrap();
         tree.append(node).unwrap()
     }
@@ -1007,7 +1002,7 @@ mod test {
                     .map_err(|e| format!("Couldn't send block: {}", e))?;
             }
             if let Some(Some(_h)) = reorg_receiver.recv().await {
-                return Err(format!("Should not have requested a reorg!"));
+                return Err("Should not have requested a reorg!".to_string());
             }
             Ok(())
         });
@@ -1058,7 +1053,7 @@ mod test {
                     .map_err(|e| format!("Couldn't send block: {}", e))?;
             }
             if let Some(Some(_h)) = reorg_receiver.recv().await {
-                return Err(format!("Should not have requested a reorg!"));
+                return Err("Should not have requested a reorg!".to_string());
             }
             Ok(())
         });
@@ -1096,8 +1091,7 @@ mod test {
         let num_reorged = 5;
         let mut reorged_blocks = existing_blocks
             .iter()
-            .take(num_reorged)
-            .map(|b| b.clone())
+            .take(num_reorged).cloned()
             .collect::<Vec<_>>();
 
         // Reset the hashes
@@ -1224,11 +1218,11 @@ mod test {
         assert_eq!(blks[0].height, finished_blks[0].height);
     }
 
-    const SAPLING_START: &'static str = "01f2e6144dbd45cf3faafd337fe59916fe5659b4932a4a008b535b8912a8f5c0000131ac2795ef458f5223f929680085935ebd5cb84d4849b3813b03aeb80d812241020001bcc10bd2116f34cd46d0dedef75c489d6ef9b6b551c0521e3b2e56b7f641fb01";
-    const ORCHARD_START: &'static str = "000000";
-    const SAPLING_END: &'static str = "01ea571adc215d4eac2925efafd854c76a8afc69f07d49155febaa46f979c6616d0003000001dc4b3f1381533d99b536252aaba09b08fa1c1ddc0687eb4ede716e6a5fbfb003";
-    const ORCHARD_END: &'static str = "011e9dcd34e245194b66dff86b1cabaa87b29e96df711e4fff72da64e88656090001c3bf930865f0c2139ce1548b0bfabd8341943571e8af619043d84d12b51355071f00000000000000000000000000000000000000000000000000000000000000";
-    const BLOCK: &'static str = "10071a209bf92fdc55b77cbae5d13d49b4d64374ebe7ac3c5579134100e600bc01208d052220b84a8818a26321dca19ad1007d4bb99fafa07b048a0b471b1a4bbd0199ea3c0828d2fe9299063a4612203bc5bbb7df345e336288a7ffe8fac6f7dcb4ee6e4d3b4e852bcd7d52fef8d66a2a220a20d2f3948ed5e06345446d753d2688cdb1d949e0fed1e0f271e04197d0c63251023ace0308011220d151d78dec5dcf5e0308f7bfbf00d80be27081766d2cb5070c22b4556aadc88122220a20bd5312efa676f7000e5d660f01bfd946fd11102af75e7f969a0d84931e16f3532a220a20601ed4084186c4499a1bb5000490582649da2df8f2ba3e749a07c5c0aaeb9f0e2a220a20ea571adc215d4eac2925efafd854c76a8afc69f07d49155febaa46f979c6616d329c010a2062faac36e47bf420b90379b7c96cc5956daa0deedb4ed392928ba588fa5aac1012201e9dcd34e245194b66dff86b1cabaa87b29e96df711e4fff72da64e8865609001a20f5153d2a8ee2e211a7966b52e6bb3b089f32f8c55a57df1f245e6f1ec3356b982234e26e07bfb0d3c0bae348a6196ba3f069e3a1861fa4da1895ab4ad86ece7934231f6490c6e26b63298d8464560b41b2941add03ac329c010a2028ac227306fb680dc501ba9c8c51312b29b2eb79d61e5645f5486039462a620b1220c3bf930865f0c2139ce1548b0bfabd8341943571e8af619043d84d12b51355071a200803db70afdeb80b0f47a703df68c62e007e162b8b983b6f2f5df8d7b24c18a322342b1f151f67048590976a3a69e1d8a6c7408c3489bd81696cad15a9ac0a92d20f1b17ebf717f52695aeaf123aaab0ac406d6afd4a";
+    const SAPLING_START: &str = "01f2e6144dbd45cf3faafd337fe59916fe5659b4932a4a008b535b8912a8f5c0000131ac2795ef458f5223f929680085935ebd5cb84d4849b3813b03aeb80d812241020001bcc10bd2116f34cd46d0dedef75c489d6ef9b6b551c0521e3b2e56b7f641fb01";
+    const ORCHARD_START: &str = "000000";
+    const SAPLING_END: &str = "01ea571adc215d4eac2925efafd854c76a8afc69f07d49155febaa46f979c6616d0003000001dc4b3f1381533d99b536252aaba09b08fa1c1ddc0687eb4ede716e6a5fbfb003";
+    const ORCHARD_END: &str = "011e9dcd34e245194b66dff86b1cabaa87b29e96df711e4fff72da64e88656090001c3bf930865f0c2139ce1548b0bfabd8341943571e8af619043d84d12b51355071f00000000000000000000000000000000000000000000000000000000000000";
+    const BLOCK: &str = "10071a209bf92fdc55b77cbae5d13d49b4d64374ebe7ac3c5579134100e600bc01208d052220b84a8818a26321dca19ad1007d4bb99fafa07b048a0b471b1a4bbd0199ea3c0828d2fe9299063a4612203bc5bbb7df345e336288a7ffe8fac6f7dcb4ee6e4d3b4e852bcd7d52fef8d66a2a220a20d2f3948ed5e06345446d753d2688cdb1d949e0fed1e0f271e04197d0c63251023ace0308011220d151d78dec5dcf5e0308f7bfbf00d80be27081766d2cb5070c22b4556aadc88122220a20bd5312efa676f7000e5d660f01bfd946fd11102af75e7f969a0d84931e16f3532a220a20601ed4084186c4499a1bb5000490582649da2df8f2ba3e749a07c5c0aaeb9f0e2a220a20ea571adc215d4eac2925efafd854c76a8afc69f07d49155febaa46f979c6616d329c010a2062faac36e47bf420b90379b7c96cc5956daa0deedb4ed392928ba588fa5aac1012201e9dcd34e245194b66dff86b1cabaa87b29e96df711e4fff72da64e8865609001a20f5153d2a8ee2e211a7966b52e6bb3b089f32f8c55a57df1f245e6f1ec3356b982234e26e07bfb0d3c0bae348a6196ba3f069e3a1861fa4da1895ab4ad86ece7934231f6490c6e26b63298d8464560b41b2941add03ac329c010a2028ac227306fb680dc501ba9c8c51312b29b2eb79d61e5645f5486039462a620b1220c3bf930865f0c2139ce1548b0bfabd8341943571e8af619043d84d12b51355071a200803db70afdeb80b0f47a703df68c62e007e162b8b983b6f2f5df8d7b24c18a322342b1f151f67048590976a3a69e1d8a6c7408c3489bd81696cad15a9ac0a92d20f1b17ebf717f52695aeaf123aaab0ac406d6afd4a";
 
     fn decode_block() -> CompactBlock {
         <CompactBlock as prost::Message>::decode(&*hex::decode(BLOCK).unwrap()).unwrap()

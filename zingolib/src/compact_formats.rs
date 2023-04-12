@@ -140,6 +140,6 @@ impl TryFrom<&CompactOrchardAction> for orchard::note_encryption::CompactAction 
 }
 
 pub(crate) fn vec_to_array<'a, const N: usize>(vec: &'a Vec<u8>) -> &'a [u8; N] {
-    <&[u8; N]>::try_from(&vec[..]).unwrap_or_else(|_| &[0; N])
+    <&[u8; N]>::try_from(&vec[..]).unwrap_or(&[0; N])
     //todo: This default feels dangerous. Find better solution
 }
