@@ -250,7 +250,7 @@ pub mod tests {
     use zcash_primitives::{
         memo::Memo,
         sapling::{note_encryption::SaplingDomain, PaymentAddress, Rseed, SaplingIvk},
-        zip32::{DiversifiableFullViewingKey as SaplingFvk, ExtendedSpendingKey},
+        zip32::{ExtendedSpendingKey},
     };
     use zingoconfig::ChainType;
 

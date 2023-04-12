@@ -151,7 +151,7 @@ impl RegtestManager {
     }
     pub fn get_chain_tip(&self) -> Result<std::process::Output, std::io::Error> {
         self.get_cli_handle()
-            .arg("getchaintips".to_string())
+            .arg("getchaintips")
             .output()
     }
     fn prepare_working_directories(&self) {
@@ -222,21 +222,21 @@ impl RegtestManager {
 
         assert_eq!(command.get_args().len(), 4usize);
         assert_eq!(
-            &command.get_args().into_iter().collect::<Vec<&OsStr>>()[0]
+            &command.get_args().collect::<Vec<&OsStr>>()[0]
                 .to_str()
                 .unwrap(),
             &"--printtoconsole"
         );
-        assert!(&command.get_args().into_iter().collect::<Vec<&OsStr>>()[1]
+        assert!(&command.get_args().collect::<Vec<&OsStr>>()[1]
             .to_str()
             .unwrap()
             .starts_with("--conf="));
-        assert!(&command.get_args().into_iter().collect::<Vec<&OsStr>>()[2]
+        assert!(&command.get_args().collect::<Vec<&OsStr>>()[2]
             .to_str()
             .unwrap()
             .starts_with("--datadir="));
         assert_eq!(
-            &command.get_args().into_iter().collect::<Vec<&OsStr>>()[3]
+            &command.get_args().collect::<Vec<&OsStr>>()[3]
                 .to_str()
                 .unwrap(),
             &"-debug=1"
@@ -355,21 +355,21 @@ impl RegtestManager {
         .args([
             "--no-tls-very-insecure",
             "--zcash-conf-path",
-            &self.zcashd_config
+            (self.zcashd_config
                 .to_str()
-                .expect("zcashd_config PathBuf to str fail!"),
+                .expect("zcashd_config PathBuf to str fail!")),
             "--config",
-            &self.lightwalletd_config
+            (self.lightwalletd_config
                 .to_str()
-                .expect("lightwalletd_config PathBuf to str fail!"),
+                .expect("lightwalletd_config PathBuf to str fail!")),
             "--data-dir",
-            &self.lightwalletd_data_dir
+            (self.lightwalletd_data_dir
                 .to_str()
-                .expect("lightwalletd_datadir PathBuf to str fail!"),
+                .expect("lightwalletd_datadir PathBuf to str fail!")),
             "--log-file",
-            &self.lightwalletd_log
+            (self.lightwalletd_log
                 .to_str()
-                .expect("lightwalletd_stdout_log PathBuf to str fail!"),
+                .expect("lightwalletd_stdout_log PathBuf to str fail!")),
         ])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
