@@ -97,21 +97,20 @@ enum PriceFetchError {
     PriceReprError(PriceReprError),
     NanValue,
 }
-impl PriceFetchError {
-    pub(crate) fn to_string(&self) -> String {
-        use PriceFetchError::*;
-        match &*self {
-            ReqwestError(e) => format!("ReqwestError: {}", e),
-            NotJson => "NotJson".to_string(),
-            NoElements => "NoElements".to_string(),
-            PriceReprError(e) => format!("PriceReprError: {}", e),
-            NanValue => "NanValue".to_string(),
-        }
-    }
-}
+
 impl std::fmt::Display for PriceFetchError {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        fmt.write_str(self.to_string().as_str())
+        use PriceFetchError::*;
+        fmt.write_str(
+            match &*self {
+                ReqwestError(e) => format!("ReqwestError: {}", e),
+                NotJson => "NotJson".to_string(),
+                NoElements => "NoElements".to_string(),
+                PriceReprError(e) => format!("PriceReprError: {}", e),
+                NanValue => "NanValue".to_string(),
+            }
+            .as_str(),
+        )
     }
 }
 enum PriceReprError {
@@ -119,19 +118,18 @@ enum PriceReprError {
     NoAsStrValue,
     NotParseable,
 }
-impl PriceReprError {
-    fn to_string(&self) -> String {
-        use PriceReprError::*;
-        match &*self {
-            NoValue => "NoValue".to_string(),
-            NoAsStrValue => "NoAsStrValue".to_string(),
-            NotParseable => "NotParseable".to_string(),
-        }
-    }
-}
+impl PriceReprError {}
 impl std::fmt::Display for PriceReprError {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        fmt.write_str(self.to_string().as_str())
+        use PriceReprError::*;
+        fmt.write_str(
+            match &*self {
+                NoValue => "NoValue".to_string(),
+                NoAsStrValue => "NoAsStrValue".to_string(),
+                NotParseable => "NotParseable".to_string(),
+            }
+            .as_str(),
+        )
     }
 }
 fn repr_price_as_f64(from_gemini: &Value) -> Result<f64, PriceReprError> {
