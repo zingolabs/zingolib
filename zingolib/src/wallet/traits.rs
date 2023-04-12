@@ -1081,6 +1081,7 @@ impl ReadableWriteable<()> for SaplingFvk {
     fn read<R: Read>(mut reader: R, _: ()) -> io::Result<Self> {
         let mut fvk_bytes = [0u8; 128];
         reader.read_exact(&mut fvk_bytes)?;
+        tracing::info!("fvk_bytes: {:?}", fvk_bytes);
         SaplingFvk::from_bytes(&fvk_bytes).ok_or(io::Error::new(
             io::ErrorKind::InvalidInput,
             "Couldn't read a Sapling Diversifiable Full Viewing Key",
@@ -1181,7 +1182,8 @@ where
     const VERSION: u8 = 1;
 
     fn read<R: Read>(mut reader: R, _: ()) -> io::Result<Self> {
-        let _version = Self::get_version(&mut reader)?;
+        let version = Self::get_version(&mut reader)?;
+        tracing::info!("NoteAndMetadata version is: {version}");
 
         let fvk = <T::Fvk as ReadableWriteable<()>>::read(&mut reader, ())?;
 

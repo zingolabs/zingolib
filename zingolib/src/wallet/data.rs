@@ -631,6 +631,7 @@ impl TransactionMetadata {
 
         let transaction_id = TxId::from_bytes(transaction_id_bytes);
 
+        tracing::info!("About to attempt to read a note and metadata");
         let sapling_notes =
             Vector::read(&mut reader, |r| ReceivedSaplingNoteAndMetadata::read(r, ()))?;
         let orchard_notes = if version > 22 {
