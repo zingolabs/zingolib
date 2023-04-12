@@ -742,6 +742,8 @@ impl LightWallet {
             .await
     }
 
+    // Changing the type annotation on `filters` to use a type alias causes lifetime issues
+    #[allow(clippy::type_complexity)]
     async fn shielded_balance<NnMd>(
         &self,
         target_addr: Option<String>,
@@ -818,6 +820,8 @@ impl LightWallet {
             .sum::<u64>()
     }
 
+    // Changing the type annotation on `filters` to use a type alias causes lifetime issues
+    #[allow(clippy::type_complexity)]
     /// The following functions use a filter/map functional approach to
     /// expressively unpack different kinds of transaction data.
     pub async fn unverified_sapling_balance(&self, target_addr: Option<String>) -> u64 {
@@ -831,6 +835,8 @@ impl LightWallet {
         self.shielded_balance(target_addr, filters).await
     }
 
+    // Changing the type annotation on `filters` to use a type alias causes lifetime issues
+    #[allow(clippy::type_complexity)]
     pub async fn unverified_orchard_balance(&self, target_addr: Option<String>) -> u64 {
         let anchor_height = self.get_anchor_height().await;
 
@@ -852,6 +858,8 @@ impl LightWallet {
             .await
     }
 
+    // Changing the type annotation on `filters` to use a type alias causes lifetime issues
+    #[allow(clippy::type_complexity)]
     async fn verified_balance<NnMd: ReceivedNoteAndMetadata>(
         &self,
         target_addr: Option<String>,
@@ -864,6 +872,8 @@ impl LightWallet {
         self.shielded_balance::<NnMd>(target_addr, filters).await
     }
 
+    // Changing the type annotation on `filters` to use a type alias causes lifetime issues
+    #[allow(clippy::type_complexity)]
     pub async fn spendable_sapling_balance(&self, target_addr: Option<String>) -> u64 {
         let anchor_height = self.get_anchor_height().await;
         let filters: &[Box<
@@ -877,6 +887,8 @@ impl LightWallet {
         self.shielded_balance(target_addr, filters).await
     }
 
+    // Changing the type annotation on `filters` to use a type alias causes lifetime issues
+    #[allow(clippy::type_complexity)]
     pub async fn spendable_orchard_balance(&self, target_addr: Option<String>) -> u64 {
         let anchor_height = self.get_anchor_height().await;
         let filters: &[Box<

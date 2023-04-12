@@ -184,7 +184,7 @@ impl TransactionMetadataSet {
         self.remove_domain_specific_txids::<OrchardDomain>(&txids_to_remove);
     }
 
-    fn remove_domain_specific_txids<D: DomainWalletExt>(&mut self, txids_to_remove: &Vec<TxId>)
+    fn remove_domain_specific_txids<D: DomainWalletExt>(&mut self, txids_to_remove: &[TxId])
     where
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
@@ -284,9 +284,7 @@ impl TransactionMetadataSet {
                             {
                                 Some((
                                     *txid,
-                                    PoolNullifier::Orchard(
-                                        orchard_note_description.nullifier,
-                                    ),
+                                    PoolNullifier::Orchard(orchard_note_description.nullifier),
                                 ))
                             } else {
                                 None
@@ -491,15 +489,15 @@ impl TransactionMetadataSet {
     // transction as change. i.e., If any funds were spent in this transaction, all recieved notes are change notes.
     pub fn check_notes_mark_change(&mut self, txid: &TxId) {
         if self.total_funds_spent_in(txid) > 0 {
-            self.current.get_mut(txid).map(|transaction_metadata| {
+            if let Some(transaction_metadata) = self.current.get_mut(txid) {
                 transaction_metadata.sapling_notes.iter_mut().for_each(|n| {
                     n.is_change = true;
                 });
                 transaction_metadata.orchard_notes.iter_mut().for_each(|n| {
                     n.is_change = true;
                 })
-            });
-        }
+            }
+        };
     }
 
     fn get_or_create_transaction_metadata(
@@ -533,6 +531,7 @@ impl TransactionMetadataSet {
     }
 
     // Records a TxId as having spent some nullifiers from the wallet.
+    #[allow(clippy::too_many_arguments)]
     pub fn add_new_spent(
         &mut self,
         txid: TxId,
@@ -567,6 +566,7 @@ impl TransactionMetadataSet {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn add_new_spent_internal<NnMd: ReceivedNoteAndMetadata>(
         &mut self,
         txid: TxId,
@@ -578,17 +578,14 @@ impl TransactionMetadataSet {
         source_txid: TxId,
     ) {
         // Record this Tx as having spent some funds
-        let transaction_metadata = self.get_or_create_transaction_metadata(
-            &txid,
-            height,
-            unconfirmed,
-            timestamp as u64,
-        );
+        let transaction_metadata =
+            self.get_or_create_transaction_metadata(&txid, height, unconfirmed, timestamp as u64);
 
         // Mark the height correctly, in case this was previously a mempool or unconfirmed tx.
         transaction_metadata.block_height = height;
         if !NnMd::Nullifier::get_nullifiers_spent_in_transaction(transaction_metadata)
-            .iter().any(|nf| *nf == nullifier)
+            .iter()
+            .any(|nf| *nf == nullifier)
         {
             transaction_metadata.add_spent_nullifier(nullifier.into(), value)
         }
@@ -605,7 +602,10 @@ impl TransactionMetadataSet {
 
             if let Some(nd) = NnMd::transaction_metadata_notes_mut(transaction_metadata)
                 .iter_mut()
-                .find(|n| n.nullifier() == nullifier) { *nd.spent_mut() = Some((txid, height.into())); }
+                .find(|n| n.nullifier() == nullifier)
+            {
+                *nd.spent_mut() = Some((txid, height.into()));
+            }
         }
     }
 
@@ -617,12 +617,8 @@ impl TransactionMetadataSet {
         timestamp: u64,
         total_transparent_value_spent: u64,
     ) {
-        let transaction_metadata = self.get_or_create_transaction_metadata(
-            &txid,
-            height,
-            unconfirmed,
-            timestamp,
-        );
+        let transaction_metadata =
+            self.get_or_create_transaction_metadata(&txid, height, unconfirmed, timestamp);
         transaction_metadata.total_transparent_value_spent = total_transparent_value_spent;
 
         self.check_notes_mark_change(&txid);
@@ -661,6 +657,7 @@ impl TransactionMetadataSet {
         value
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn add_new_taddr_output(
         &mut self,
         txid: TxId,
@@ -718,12 +715,8 @@ impl TransactionMetadataSet {
         // Check if this is a change note
         let is_change = self.total_funds_spent_in(&txid) > 0;
 
-        let transaction_metadata = self.get_or_create_transaction_metadata(
-            &txid,
-            height,
-            true,
-            timestamp,
-        );
+        let transaction_metadata =
+            self.get_or_create_transaction_metadata(&txid, height, true, timestamp);
         // Update the block height, in case this was a mempool or unconfirmed tx.
         transaction_metadata.block_height = height;
 
@@ -751,6 +744,7 @@ impl TransactionMetadataSet {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn add_new_sapling_note(
         &mut self,
         txid: TxId,
@@ -775,6 +769,7 @@ impl TransactionMetadataSet {
             witness,
         )
     }
+    #[allow(clippy::too_many_arguments)]
     pub fn add_new_orchard_note(
         &mut self,
         txid: TxId,
@@ -800,6 +795,7 @@ impl TransactionMetadataSet {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn add_new_note<D: DomainWalletExt>(
         &mut self,
         txid: TxId,
@@ -818,12 +814,8 @@ impl TransactionMetadataSet {
         // Check if this is a change note
         let is_change = self.total_funds_spent_in(&txid) > 0;
 
-        let transaction_metadata = self.get_or_create_transaction_metadata(
-            &txid,
-            height,
-            unconfirmed,
-            timestamp,
-        );
+        let transaction_metadata =
+            self.get_or_create_transaction_metadata(&txid, height, unconfirmed, timestamp);
         // Update the block height, in case this was a mempool or unconfirmed tx.
         transaction_metadata.block_height = height;
 
@@ -880,10 +872,14 @@ impl TransactionMetadataSet {
         note: Nd::Note,
         memo: Memo,
     ) {
-        if let Some(transaction_metadata) = self.current.get_mut(txid) { Nd::transaction_metadata_notes_mut(transaction_metadata)
+        if let Some(transaction_metadata) = self.current.get_mut(txid) {
+            if let Some(nd) = Nd::transaction_metadata_notes_mut(transaction_metadata)
                 .iter_mut()
                 .find(|n| n.note() == &note)
-                .map(|n| *n.memo_mut() = Some(memo)); }
+            {
+                *nd.memo_mut() = Some(memo);
+            }
+        }
     }
 
     pub fn add_outgoing_metadata(
@@ -898,7 +894,8 @@ impl TransactionMetadataSet {
                 .filter(|om| {
                     !transaction_metadata
                         .outgoing_metadata
-                        .iter().any(|o| *o == *om)
+                        .iter()
+                        .any(|o| *o == *om)
                 })
                 .collect();
 
@@ -909,5 +906,11 @@ impl TransactionMetadataSet {
                 txid
             );
         }
+    }
+}
+
+impl Default for TransactionMetadataSet {
+    fn default() -> Self {
+        Self::new()
     }
 }
