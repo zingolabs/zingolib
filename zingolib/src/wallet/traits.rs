@@ -1028,17 +1028,19 @@ pub trait ReadableWriteable<Input>: Sized {
     fn read<R: Read>(reader: R, input: Input) -> io::Result<Self>;
     fn write<W: Write>(&self, writer: W) -> io::Result<()>;
     fn get_version<R: Read>(mut reader: R) -> io::Result<u8> {
-        let version = reader.read_u8()?;
-        if version > Self::VERSION {
+        let external_version = reader.read_u8()?;
+        log::info!("wallet_capability external_version: {external_version}");
+        log::info!("Self::VERSION: {}", Self::VERSION);
+        if external_version > Self::VERSION {
             Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!(
                     "Wallet file version \"{}\" is from future version of zingo",
-                    version,
+                    external_version,
                 ),
             ))
         } else {
-            Ok(version)
+            Ok(external_version)
         }
     }
 }
@@ -1081,7 +1083,7 @@ impl ReadableWriteable<()> for SaplingFvk {
     fn read<R: Read>(mut reader: R, _: ()) -> io::Result<Self> {
         let mut fvk_bytes = [0u8; 128];
         reader.read_exact(&mut fvk_bytes)?;
-        tracing::info!("fvk_bytes: {:?}", fvk_bytes);
+        tracing::info!("SaplingFvk fvk_bytes: {:?}", fvk_bytes);
         SaplingFvk::from_bytes(&fvk_bytes).ok_or(io::Error::new(
             io::ErrorKind::InvalidInput,
             "Couldn't read a Sapling Diversifiable Full Viewing Key",

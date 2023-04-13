@@ -92,10 +92,7 @@ impl TransactionMetadataSet {
             let mut txid_bytes = [0u8; 32];
             r.read_exact(&mut txid_bytes)?;
 
-            Ok((
-                TxId::from_bytes(txid_bytes),
-                TransactionMetadata::read(r).unwrap(),
-            ))
+            Ok((TxId::from_bytes(txid_bytes), TransactionMetadata::read(r)?))
         })?;
 
         let current = txs_tuples

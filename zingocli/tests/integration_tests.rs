@@ -34,6 +34,22 @@ use zingolib::{
     },
 };
 
+pub struct RecordingReader<Reader> {
+    from: Reader,
+    read_lengths: Vec<usize>,
+}
+impl<T> Read for RecordingReader<T>
+where
+    T: Read,
+{
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let for_info = self.from.read(buf)?;
+        log::info!("{:?}", for_info);
+        self.read_lengths.push(for_info);
+        Ok(for_info)
+    }
+}
+
 fn get_wallet_nym(nym: &str) -> Result<(String, PathBuf, PathBuf), String> {
     match nym {
         "sap_only" | "orch_only" | "orch_and_sapl" | "tadd_only" => {
@@ -55,32 +71,35 @@ fn get_wallet_nym(nym: &str) -> Result<(String, PathBuf, PathBuf), String> {
     }
 }
 async fn load_wallet(dir: PathBuf) -> zingolib::wallet::LightWallet {
+    let release_1_0_0_parsed_offsets =
+        &data::wallet_parse_offsets::V26_SAPLING_ONLY_WALLET_RELEASE_1_0_0[10..];
     let wallet = dir.join("zingo-wallet.dat");
-    log::info!("The wallet is: {}", &wallet.to_str().unwrap());
+    tracing::info!("The wallet is: {}", &wallet.to_str().unwrap());
     let lightwalletd_uri = TestEnvironmentGenerator::new().get_lightwalletd_uri();
     let zingo_config =
         zingolib::load_clientconfig(lightwalletd_uri, Some(dir), ChainType::Regtest).unwrap();
-    let read_buffer = std::fs::File::open(wallet).unwrap();
+    let from = std::fs::File::open(wallet).unwrap();
 
-    zingolib::wallet::LightWallet::read_internal(read_buffer, &zingo_config)
-        .await
-        .unwrap()
-}
+    let read_lengths = vec![];
+    let mut recording_reader = RecordingReader { from, read_lengths };
 
-pub struct RecordingReader<Reader> {
-    from: Reader,
-    read_lengths: Vec<usize>,
-}
-impl<T> Read for RecordingReader<T>
-where
-    T: Read,
-{
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let for_info = self.from.read(buf)?;
-        log::info!("{:?}", for_info);
-        self.read_lengths.push(for_info);
-        Ok(for_info)
+    let read_result =
+        zingolib::wallet::LightWallet::read_internal(&mut recording_reader, &zingo_config).await;
+    tracing::info!("{:?}", recording_reader.read_lengths);
+    tracing::info!("{:?}", recording_reader.read_lengths.len());
+    for (index, (release_off, bug_off)) in release_1_0_0_parsed_offsets
+        .iter()
+        .zip(recording_reader.read_lengths[8..].iter())
+        .enumerate()
+    {
+        let nth = index + 1;
+        assert_eq!(
+            release_off, bug_off,
+            "release_off: {release_off} bug_off: {bug_off}\n At nth: {nth}"
+        )
     }
+
+    read_result.unwrap()
 }
 
 #[tokio::test]
