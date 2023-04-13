@@ -4,6 +4,7 @@ mod data;
 mod utils;
 use std::{
     fs::File,
+    io::Read,
     path::{Path, PathBuf},
 };
 
@@ -66,18 +67,25 @@ async fn load_wallet(dir: PathBuf) -> zingolib::wallet::LightWallet {
         .unwrap()
 }
 
+pub struct RecordingReader<Reader> {
+    from: Reader,
+    read_lengths: Vec<usize>,
+}
+impl<T> Read for RecordingReader<T>
+where
+    T: Read,
+{
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let for_info = self.from.read(buf)?;
+        log::info!("{:?}", for_info);
+        self.read_lengths.push(for_info);
+        Ok(for_info)
+    }
+}
+
 #[tokio::test]
 #[traced_test]
 async fn load_and_parse_different_wallet_versions() {
-    const ARRAY_FROM_SAP_FVK_READ_AGAINST_V26_SAP_ONLY_WALLET: [u8; 128] = [
-        3, 192, 118, 225, 150, 0, 0, 0, 128, 253, 24, 57, 165, 10, 31, 38, 52, 204, 172, 255, 180,
-        226, 170, 173, 181, 27, 179, 142, 101, 127, 195, 198, 130, 108, 53, 95, 145, 148, 110, 133,
-        156, 55, 239, 79, 38, 77, 68, 180, 129, 246, 128, 118, 224, 142, 109, 45, 36, 131, 58, 176,
-        217, 227, 58, 69, 187, 96, 48, 67, 18, 134, 141, 247, 111, 121, 235, 27, 231, 184, 220, 43,
-        240, 178, 12, 198, 162, 53, 180, 53, 42, 103, 170, 56, 186, 132, 169, 167, 198, 219, 247,
-        165, 75, 165, 70, 22, 133, 63, 220, 47, 65, 228, 96, 233, 81, 251, 250, 75, 100, 47, 15,
-        69, 192, 237, 43, 243, 175, 2, 191, 66,
-    ];
     env_logger::init();
     let (_sap_wallet, _sap_path, sap_dir) = get_wallet_nym("sap_only").unwrap();
     let _loaded_wallet = load_wallet(sap_dir).await;
