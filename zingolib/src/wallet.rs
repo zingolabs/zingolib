@@ -306,14 +306,14 @@ impl LightWallet {
         }
 
         info!("Reading wallet version {}", external_version);
-        let key = WalletCapability::read(&mut reader, ())?;
+        let wallet_capability = WalletCapability::read(&mut reader, ())?;
         info!("Keys in this wallet:");
-        match &key.orchard {
+        match &wallet_capability.orchard {
             Capability::None => (),
             Capability::View(_) => info!("  - Orchard Full Viewing Key"),
             Capability::Spend(_) => info!("  - Orchard Spending Key"),
         };
-        match &key.sapling {
+        match &wallet_capability.sapling {
             Capability::None => (),
             Capability::View(_) => info!("  - Sapling Extended Full Viewing Key"),
             Capability::Spend(_) => info!("  - Sapling Extended Spending Key"),
@@ -389,7 +389,7 @@ impl LightWallet {
 
         let transaction_context = TransactionContext::new(
             &config,
-            Arc::new(RwLock::new(key)),
+            Arc::new(RwLock::new(wallet_capability)),
             Arc::new(RwLock::new(transactions)),
         );
 

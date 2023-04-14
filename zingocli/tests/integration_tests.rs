@@ -84,7 +84,9 @@ async fn load_wallet(dir: PathBuf) -> zingolib::wallet::LightWallet {
     let mut recording_reader = RecordingReader { from, read_lengths };
 
     let read_result =
-        zingolib::wallet::LightWallet::read_internal(&mut recording_reader, &zingo_config).await;
+        zingolib::wallet::LightWallet::read_internal(&mut recording_reader, &zingo_config)
+            .await
+            .unwrap();
     tracing::info!("{:?}", recording_reader.read_lengths);
     tracing::info!("{:?}", recording_reader.read_lengths.len());
     for (index, (release_off, bug_off)) in release_1_0_0_parsed_offsets
@@ -99,7 +101,7 @@ async fn load_wallet(dir: PathBuf) -> zingolib::wallet::LightWallet {
         )
     }
 
-    read_result.unwrap()
+    read_result
 }
 
 #[tokio::test]

@@ -402,6 +402,7 @@ pub trait ReceivedNoteAndMetadata: Sized {
     type Note: PartialEq + ReadableWriteable<(Self::Fvk, Self::Diversifier)> + Clone;
     type Node: Hashable + FromCommitment + Send;
     type Nullifier: Nullifier;
+
     const GET_NOTE_WITNESSES: fn(
         &TransactionMetadataSet,
         &TxId,
@@ -413,8 +414,8 @@ pub trait ReceivedNoteAndMetadata: Sized {
         &Self::Nullifier,
         WitnessCache<Self::Node>,
     );
+    fn get_deprecated_serialized_view_key_buffer() -> &'static [u8];
     fn from_parts(
-        fvk: Self::Fvk,
         diversifier: Self::Diversifier,
         note: Self::Note,
         witnesses: WitnessCache<Self::Node>,
@@ -467,6 +468,9 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
     type Node = zcash_primitives::sapling::Node;
     type Nullifier = zcash_primitives::sapling::Nullifier;
 
+    fn get_deprecated_serialized_view_key_buffer() -> &'static [u8] {
+        &[0u8; 169]
+    }
     /// This (and SET_NOTE_WITNESSES) could be associated functions instead of fn
     /// constants, but that would require an additional repetition of the fn arguments.
     const GET_NOTE_WITNESSES: fn(
@@ -484,7 +488,6 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
     ) = TransactionMetadataSet::set_sapling_note_witnesses;
 
     fn from_parts(
-        fvk: zip32::sapling::DiversifiableFullViewingKey,
         diversifier: zcash_primitives::sapling::Diversifier,
         note: zcash_primitives::sapling::Note,
         witnesses: WitnessCache<zcash_primitives::sapling::Node>,
@@ -496,7 +499,6 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         have_spending_key: bool,
     ) -> Self {
         Self {
-            fvk,
             diversifier,
             note,
             witnesses,
@@ -608,7 +610,9 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         &Self::Nullifier,
         WitnessCache<Self::Node>,
     ) = TransactionMetadataSet::set_orchard_note_witnesses;
-
+    fn diversifier(&self) -> &Self::Diversifier {
+        &self.diversifier
+    }
     fn from_parts(
         fvk: Self::Fvk,
         diversifier: Self::Diversifier,
@@ -634,25 +638,11 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
             have_spending_key,
         }
     }
-
-    fn is_change(&self) -> bool {
-        self.is_change
-    }
     fn fvk(&self) -> &Self::Fvk {
         &self.fvk
     }
-    fn diversifier(&self) -> &Self::Diversifier {
-        &self.diversifier
-    }
-    fn memo(&self) -> &Option<Memo> {
-        &self.memo
-    }
-    fn memo_mut(&mut self) -> &mut Option<Memo> {
-        &mut self.memo
-    }
-
-    fn note(&self) -> &Self::Note {
-        &self.note
+    fn get_deprecated_serialized_view_key_buffer() -> &'static [u8] {
+        &[0u8; 96]
     }
 
     fn get_nullifier_from_note_fvk_and_witness_position(
@@ -663,12 +653,28 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         note.nullifier(fvk)
     }
 
-    fn nullifier(&self) -> Self::Nullifier {
-        self.nullifier
+    fn have_spending_key(&self) -> bool {
+        self.have_spending_key
     }
 
-    fn value_from_note(note: &Self::Note) -> u64 {
-        note.value().inner()
+    fn is_change(&self) -> bool {
+        self.is_change
+    }
+
+    fn memo(&self) -> &Option<Memo> {
+        &self.memo
+    }
+
+    fn memo_mut(&mut self) -> &mut Option<Memo> {
+        &mut self.memo
+    }
+
+    fn note(&self) -> &Self::Note {
+        &self.note
+    }
+
+    fn nullifier(&self) -> Self::Nullifier {
+        self.nullifier
     }
 
     fn spent(&self) -> &Option<(TxId, u32)> {
@@ -679,26 +685,6 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         &mut self.spent
     }
 
-    fn unconfirmed_spent(&self) -> &Option<(TxId, u32)> {
-        &self.unconfirmed_spent
-    }
-
-    fn unconfirmed_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
-        &mut self.unconfirmed_spent
-    }
-
-    fn witnesses(&self) -> &WitnessCache<Self::Node> {
-        &self.witnesses
-    }
-
-    fn witnesses_mut(&mut self) -> &mut WitnessCache<Self::Node> {
-        &mut self.witnesses
-    }
-
-    fn have_spending_key(&self) -> bool {
-        self.have_spending_key
-    }
-
     fn transaction_metadata_notes(wallet_transaction: &TransactionMetadata) -> &Vec<Self> {
         &wallet_transaction.orchard_notes
     }
@@ -707,6 +693,26 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         wallet_transaction: &mut TransactionMetadata,
     ) -> &mut Vec<Self> {
         &mut wallet_transaction.orchard_notes
+    }
+
+    fn unconfirmed_spent(&self) -> &Option<(TxId, u32)> {
+        &self.unconfirmed_spent
+    }
+
+    fn unconfirmed_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
+        &mut self.unconfirmed_spent
+    }
+
+    fn value_from_note(note: &Self::Note) -> u64 {
+        note.value().inner()
+    }
+
+    fn witnesses(&self) -> &WitnessCache<Self::Node> {
+        &self.witnesses
+    }
+
+    fn witnesses_mut(&mut self) -> &mut WitnessCache<Self::Node> {
+        &mut self.witnesses
     }
 }
 
@@ -1184,20 +1190,22 @@ impl<T> ReadableWriteable<()> for T
 where
     T: ReceivedNoteAndMetadata,
 {
-    const VERSION: u8 = 1;
+    const VERSION: u8 = 2;
 
     fn read<R: Read>(mut reader: R, _: ()) -> io::Result<Self> {
-        let version = Self::get_version(&mut reader)?;
-        tracing::info!("NoteAndMetadata version is: {version}");
+        let external_version = Self::get_version(&mut reader)?;
+        tracing::info!("NoteAndMetadata version is: {external_version}");
 
-        let fvk = <T::Fvk as ReadableWriteable<()>>::read(&mut reader, ())?;
+        if external_version < 2 {
+            let mut x = <T as ReceivedNoteAndMetadata>::get_deprecated_serialized_view_key_buffer();
+            reader.read_exact(&mut x);
+        }
 
         let mut diversifier_bytes = [0u8; 11];
         reader.read_exact(&mut diversifier_bytes)?;
         let diversifier = T::Diversifier::from_bytes(diversifier_bytes);
 
-        let note =
-            <T::Note as ReadableWriteable<_>>::read(&mut reader, (fvk.clone(), diversifier))?;
+        let note = <T::Note as ReadableWriteable<_>>::read(&mut reader, diversifier)?;
 
         let witnesses_vec = Vector::read(&mut reader, |r| IncrementalWitness::<T::Node>::read(r))?;
         let top_height = reader.read_u64::<LittleEndian>()?;
@@ -1249,7 +1257,6 @@ where
         let have_spending_key = reader.read_u8()? > 0;
 
         Ok(T::from_parts(
-            fvk,
             diversifier,
             note,
             witnesses,
