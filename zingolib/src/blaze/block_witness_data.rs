@@ -25,7 +25,7 @@ use tokio::{
 use zcash_primitives::{
     consensus::{BlockHeight, NetworkUpgrade, Parameters},
     merkle_tree::{CommitmentTree, Hashable, IncrementalWitness},
-    sapling::{note_encryption::SaplingDomain, Node as SaplingNode},
+    sapling::note_encryption::SaplingDomain,
     transaction::TxId,
 };
 
@@ -272,7 +272,7 @@ impl BlockAndWitnessData {
             if closest_lower_verified_tree.height == unverified_tree.height {
                 return true;
             }
-            let mut sapling_tree = CommitmentTree::<SaplingNode>::read(
+            let mut sapling_tree = CommitmentTree::<zcash_primitives::sapling::Node>::read(
                 &hex::decode(closest_lower_verified_tree.sapling_tree).unwrap()[..],
             )
             .unwrap();
@@ -630,7 +630,7 @@ impl BlockAndWitnessData {
         height: BlockHeight,
         transaction_num: usize,
         output_num: usize,
-    ) -> Result<IncrementalWitness<SaplingNode>, String> {
+    ) -> Result<IncrementalWitness<zcash_primitives::sapling::Node>, String> {
         self.get_note_witness::<SaplingDomain<zingoconfig::ChainType>>(
             uri,
             height,
@@ -817,7 +817,7 @@ impl BlockAndWitnessData {
 pub struct CommitmentTreesForBlock {
     pub block_height: u64,
     pub block_hash: String,
-    pub sapling_tree: CommitmentTree<SaplingNode>,
+    pub sapling_tree: CommitmentTree<zcash_primitives::sapling::Node>,
     pub orchard_tree: CommitmentTree<MerkleHashOrchard>,
 }
 
@@ -866,7 +866,7 @@ pub fn tree_to_string<Node: Hashable>(tree: &CommitmentTree<Node>) -> String {
 }
 
 pub fn update_trees_with_compact_transaction(
-    sapling_tree: &mut CommitmentTree<SaplingNode>,
+    sapling_tree: &mut CommitmentTree<zcash_primitives::sapling::Node>,
     orchard_tree: &mut CommitmentTree<MerkleHashOrchard>,
     compact_transaction: &CompactTx,
 ) {

@@ -5,24 +5,17 @@ use std::{
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use log::error;
-use orchard::{
-    keys::FullViewingKey as OrchardFullViewingKey,
-    note::{Note as OrchardNote, Nullifier as OrchardNullifier},
-    note_encryption::OrchardDomain,
-    tree::MerkleHashOrchard,
-};
+use orchard;
+use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
 use zcash_encoding::Vector;
 use zcash_note_encryption::Domain;
 use zcash_primitives::{
     consensus::BlockHeight,
     memo::Memo,
     merkle_tree::IncrementalWitness,
-    sapling::{
-        note_encryption::SaplingDomain, Node as SaplingNode, Note as SaplingNote,
-        Nullifier as SaplingNullifier, PaymentAddress,
-    },
+    sapling::{note_encryption::SaplingDomain, PaymentAddress},
     transaction::{components::TxOut, TxId},
-    zip32::DiversifiableFullViewingKey as SaplingFvk,
+    zip32,
 };
 
 use zingoconfig::{ChainType, MAX_REORG};
@@ -301,7 +294,9 @@ impl TransactionMetadataSet {
             .unwrap_or(0)
     }
 
-    pub fn get_nullifiers_of_unspent_sapling_notes(&self) -> Vec<(SaplingNullifier, u64, TxId)> {
+    pub fn get_nullifiers_of_unspent_sapling_notes(
+        &self,
+    ) -> Vec<(zcash_primitives::sapling::Nullifier, u64, TxId)> {
         self.current
             .iter()
             .flat_map(|(_, transaction_metadata)| {
@@ -320,7 +315,9 @@ impl TransactionMetadataSet {
             .collect()
     }
 
-    pub fn get_nullifiers_of_unspent_orchard_notes(&self) -> Vec<(OrchardNullifier, u64, TxId)> {
+    pub fn get_nullifiers_of_unspent_orchard_notes(
+        &self,
+    ) -> Vec<(orchard::note::Nullifier, u64, TxId)> {
         self.current
             .iter()
             .flat_map(|(_, transaction_metadata)| {
@@ -342,8 +339,8 @@ impl TransactionMetadataSet {
     pub(crate) fn get_sapling_note_witnesses(
         &self,
         txid: &TxId,
-        nullifier: &SaplingNullifier,
-    ) -> Option<(WitnessCache<SaplingNode>, BlockHeight)> {
+        nullifier: &zcash_primitives::sapling::Nullifier,
+    ) -> Option<(WitnessCache<zcash_primitives::sapling::Node>, BlockHeight)> {
         self.current.get(txid).map(|transaction_metadata| {
             transaction_metadata
                 .sapling_notes
@@ -356,7 +353,7 @@ impl TransactionMetadataSet {
     pub(crate) fn get_orchard_note_witnesses(
         &self,
         txid: &TxId,
-        nullifier: &OrchardNullifier,
+        nullifier: &orchard::note::Nullifier,
     ) -> Option<(WitnessCache<MerkleHashOrchard>, BlockHeight)> {
         self.current.get(txid).map(|transaction_metadata| {
             transaction_metadata
@@ -370,8 +367,8 @@ impl TransactionMetadataSet {
     pub(crate) fn set_sapling_note_witnesses(
         &mut self,
         txid: &TxId,
-        nullifier: &SaplingNullifier,
-        witnesses: WitnessCache<SaplingNode>,
+        nullifier: &zcash_primitives::sapling::Nullifier,
+        witnesses: WitnessCache<zcash_primitives::sapling::Node>,
     ) {
         self.current
             .get_mut(txid)
@@ -386,7 +383,7 @@ impl TransactionMetadataSet {
     pub(crate) fn set_orchard_note_witnesses(
         &mut self,
         txid: &TxId,
-        nullifier: &OrchardNullifier,
+        nullifier: &orchard::note::Nullifier,
         witnesses: WitnessCache<MerkleHashOrchard>,
     ) {
         self.current
@@ -760,11 +757,11 @@ impl TransactionMetadataSet {
         height: BlockHeight,
         unconfirmed: bool,
         timestamp: u64,
-        note: SaplingNote,
+        note: zcash_primitives::sapling::Note,
         to: PaymentAddress,
-        fvk: &SaplingFvk,
+        fvk: &zip32::sapling::DiversifiableFullViewingKey,
         have_spending_key: bool,
-        witness: IncrementalWitness<SaplingNode>,
+        witness: IncrementalWitness<zcash_primitives::sapling::Node>,
     ) {
         self.add_new_note::<SaplingDomain<zingoconfig::ChainType>>(
             txid,
@@ -784,9 +781,9 @@ impl TransactionMetadataSet {
         height: BlockHeight,
         unconfirmed: bool,
         timestamp: u64,
-        note: OrchardNote,
+        note: orchard::note::Note,
         to: orchard::Address,
-        fvk: &OrchardFullViewingKey,
+        fvk: &orchard::keys::FullViewingKey,
         have_spending_key: bool,
         witness: IncrementalWitness<MerkleHashOrchard>,
     ) {

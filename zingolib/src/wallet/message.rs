@@ -250,7 +250,7 @@ pub mod tests {
     use zcash_primitives::{
         memo::Memo,
         sapling::{note_encryption::SaplingDomain, PaymentAddress, Rseed, SaplingIvk},
-        zip32::{DiversifiableFullViewingKey as SaplingFvk, ExtendedSpendingKey},
+        zip32::ExtendedSpendingKey,
     };
     use zingoconfig::ChainType;
 
@@ -263,7 +263,7 @@ pub mod tests {
 
         let extsk = ExtendedSpendingKey::master(&seed);
         let dfvk = extsk.to_diversifiable_full_viewing_key();
-        let fvk = SaplingFvk::from(dfvk);
+        let fvk = zcash_primitives::zip32::sapling::DiversifiableFullViewingKey::from(dfvk);
         let (_, addr) = fvk.default_address();
 
         (extsk, fvk.fvk().vk.ivk(), addr)
