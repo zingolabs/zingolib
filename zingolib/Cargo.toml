@@ -51,7 +51,7 @@ jubjub = "0.10.0"
 bls12_381 = "0.8"
 group = "0.13"
 rust-embed = { version = "6.3.0", features = ["debug-embed"] }
-orchard = "0.3.0"
+orchard = { workspace = true }
 subtle = "2.4.1"
 incrementalmerkletree = "0.3.0"
 zcash_address = { workspace = true }
