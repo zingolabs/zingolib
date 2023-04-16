@@ -397,7 +397,6 @@ impl Nullifier for orchard::note::Nullifier {
 }
 
 pub trait ReceivedNoteAndMetadata: Sized {
-    type Fvk: Clone + Diversifiable + ReadableWriteable<()> + Send;
     type Diversifier: Copy + FromBytes<11> + ToBytes<11>;
     type Note: PartialEq + ReadableWriteable<(Self::Fvk, Self::Diversifier)> + Clone;
     type Node: Hashable + FromCommitment + Send;
@@ -462,7 +461,6 @@ pub trait ReceivedNoteAndMetadata: Sized {
 }
 
 impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
-    type Fvk = zip32::sapling::DiversifiableFullViewingKey;
     type Diversifier = zcash_primitives::sapling::Diversifier;
     type Note = zcash_primitives::sapling::Note;
     type Node = zcash_primitives::sapling::Node;
@@ -591,7 +589,6 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
 }
 
 impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
-    type Fvk = orchard::keys::FullViewingKey;
     type Diversifier = orchard::keys::Diversifier;
     type Note = orchard::note::Note;
     type Node = MerkleHashOrchard;
