@@ -1177,13 +1177,13 @@ impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability)> for orch
     }
 }
 
-impl<T> ReadableWriteable<()> for T
+impl<T> ReadableWriteable<&WalletCapability> for T
 where
     T: ReceivedNoteAndMetadata,
 {
     const VERSION: u8 = 2;
 
-    fn read<R: Read>(mut reader: R, _: ()) -> io::Result<Self> {
+    fn read<R: Read>(mut reader: R, wallet_capability: &WalletCapability) -> io::Result<Self> {
         let external_version = Self::get_version(&mut reader)?;
         tracing::info!("NoteAndMetadata version is: {external_version}");
 
@@ -1196,7 +1196,8 @@ where
         reader.read_exact(&mut diversifier_bytes)?;
         let diversifier = T::Diversifier::from_bytes(diversifier_bytes);
 
-        let note = <T::Note as ReadableWriteable<_>>::read(&mut reader, diversifier)?;
+        let note =
+            <T::Note as ReadableWriteable<_>>::read(&mut reader, (diversifier, wallet_capability))?;
 
         let witnesses_vec = Vector::read(&mut reader, |r| IncrementalWitness::<T::Node>::read(r))?;
         let top_height = reader.read_u64::<LittleEndian>()?;

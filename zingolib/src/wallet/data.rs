@@ -15,6 +15,7 @@ use zcash_primitives::{
 };
 use zcash_primitives::{memo::MemoBytes, merkle_tree::Hashable};
 
+use super::keys::unified::WalletCapability;
 use super::traits::ReadableWriteable;
 
 /// This type is motivated by the IPC architecture where (currently) channels traffic in
@@ -600,7 +601,7 @@ impl TransactionMetadata {
         }
     }
 
-    pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
+    pub fn read<R: Read>(mut reader: R, wallet_capability: &WalletCapability) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
 
         let block = BlockHeight::from_u32(reader.read_i32::<LittleEndian>()? as u32);
@@ -623,10 +624,13 @@ impl TransactionMetadata {
         let transaction_id = TxId::from_bytes(transaction_id_bytes);
 
         tracing::info!("About to attempt to read a note and metadata");
-        let sapling_notes =
-            Vector::read(&mut reader, |r| ReceivedSaplingNoteAndMetadata::read(r, ()))?;
+        let sapling_notes = Vector::read(&mut reader, |r| {
+            ReceivedSaplingNoteAndMetadata::read(r, wallet_capability)
+        })?;
         let orchard_notes = if version > 22 {
-            Vector::read(&mut reader, |r| ReceivedOrchardNoteAndMetadata::read(r, ()))?
+            Vector::read(&mut reader, |r| {
+                ReceivedOrchardNoteAndMetadata::read(r, wallet_capability)
+            })?
         } else {
             vec![]
         };
