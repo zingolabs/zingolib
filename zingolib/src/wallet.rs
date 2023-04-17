@@ -537,7 +537,7 @@ impl LightWallet {
     pub(crate) fn note_address<D: DomainWalletExt>(
         network: &zingoconfig::ChainType,
         note: &D::WalletNote,
-        unified_spend_auth: &WalletCapability,
+        wallet_capability: &WalletCapability,
     ) -> String
     where
         <D as Domain>::Recipient: Recipient,
@@ -546,7 +546,7 @@ impl LightWallet {
         note.fvk()
             .diversified_address(*note.diversifier())
             .and_then(|address| {
-                D::ua_from_contained_receiver(unified_spend_auth, &address)
+                D::ua_from_contained_receiver(wallet_capability, &address)
                     .map(|ua| ua.encode(network))
             })
             .unwrap_or("Diversifier not in wallet. Perhaps you restored from seed and didn't restore addresses".to_string())
