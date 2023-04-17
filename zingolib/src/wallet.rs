@@ -543,7 +543,7 @@ impl LightWallet {
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
     {
-        note.fvk()
+        D::wc_to_fvk(wallet_capability).expect("to get fvk from wc")
             .diversified_address(*note.diversifier())
             .and_then(|address| {
                 D::ua_from_contained_receiver(wallet_capability, &address)
