@@ -506,14 +506,6 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         &[0u8; 169]
     }
 
-    fn get_nullifier_from_note_fvk_and_witness_position(
-        note: &Self::Note,
-        fvk: &Self::Fvk,
-        position: u64,
-    ) -> Self::Nullifier {
-        note.nf(&fvk.fvk().vk.nk, position)
-    }
-
     fn have_spending_key(&self) -> bool {
         self.have_spending_key
     }
@@ -628,13 +620,7 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
     fn get_deprecated_serialized_view_key_buffer() -> &'static [u8] {
         &[0u8; 96]
     }
-    fn get_nullifier_from_note_fvk_and_witness_position(
-        note: &Self::Note,
-        fvk: &Self::Fvk,
-        _position: u64,
-    ) -> Self::Nullifier {
-        note.nullifier(fvk)
-    }
+
     fn have_spending_key(&self) -> bool {
         self.have_spending_key
     }
@@ -722,7 +708,7 @@ where
         note: &Self::Note,
         fvk: &Self::Fvk,
         position: u64,
-    ) -> Self::Nullifier;
+    ) -> <Self::WalletNote as ReceivedNoteAndMetadata>::Nullifier;
     fn get_tree(tree_state: &TreeState) -> &String;
     fn to_notes_vec_mut(_: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote>;
     fn ua_from_contained_receiver<'a>(
@@ -749,6 +735,14 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
     type SpendableNoteAT = SpendableSaplingNote;
 
     type Bundle = components::sapling::Bundle<components::sapling::Authorized>;
+
+    fn get_nullifier_from_note_fvk_and_witness_position(
+        note: &Self::Note,
+        fvk: &Self::Fvk,
+        position: u64,
+    ) -> Self::WalletNote::Nullifier {
+        note.nf(&fvk.fvk().vk.nk, position)
+    }
 
     fn get_tree(tree_state: &TreeState) -> &String {
         &tree_state.sapling_tree
@@ -795,6 +789,14 @@ impl DomainWalletExt for OrchardDomain {
     type SpendableNoteAT = SpendableOrchardNote;
 
     type Bundle = orchard::bundle::Bundle<orchard::bundle::Authorized, Amount>;
+
+    fn get_nullifier_from_note_fvk_and_witness_position(
+        note: &Self::Note,
+        fvk: &Self::Fvk,
+        _position: u64,
+    ) -> Self::WalletNote::Nullifier {
+        note.nullifier(fvk)
+    }
 
     fn get_tree(tree_state: &TreeState) -> &String {
         &tree_state.orchard_tree
