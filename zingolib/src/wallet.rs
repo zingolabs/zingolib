@@ -746,21 +746,21 @@ impl LightWallet {
             .await
     }
 
-    async fn shielded_balance<NnMd>(
+    async fn shielded_balance<D>(
         &self,
         target_addr: Option<String>,
-        filters: &[Box<dyn Fn(&&NnMd, &TransactionMetadata) -> bool + '_>],
+        filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionMetadata) -> bool + '_>],
     ) -> u64
     where
-        NnMd: traits::ReceivedNoteAndMetadata,
+        D: DomainWalletExt,
     {
-        let filter_notes_by_target_addr = |notedata: &&NnMd| match target_addr.as_ref() {
+        let fvk =
+            D::wc_to_fvk(&*self.wallet_capability().read().await).expect("to get fvk from wc");
+        let filter_notes_by_target_addr = |notedata: &&D::WalletNote| match target_addr.as_ref() {
             Some(addr) => {
                 use self::traits::Recipient as _;
-                let diversified_address = &notedata
-                    .fvk()
-                    .diversified_address(*notedata.diversifier())
-                    .unwrap();
+                let diversified_address =
+                    &fvk.diversified_address(*notedata.diversifier()).unwrap();
                 *addr
                     == diversified_address
                         .b32encode_for_network(&self.transaction_context.config.chain)
@@ -774,8 +774,8 @@ impl LightWallet {
             .current
             .values()
             .map(|transaction| {
-                let mut filtered_notes: Box<dyn Iterator<Item = &NnMd>> = Box::new(
-                    NnMd::transaction_metadata_notes(transaction)
+                let mut filtered_notes: Box<dyn Iterator<Item = &D::WalletNote>> = Box::new(
+                    D::WalletNote::transaction_metadata_notes(transaction)
                         .iter()
                         .filter(filter_notes_by_target_addr),
                 );
@@ -787,7 +787,7 @@ impl LightWallet {
                 filtered_notes
                     .map(|notedata| {
                         if notedata.spent().is_none() && notedata.unconfirmed_spent().is_none() {
-                            <NnMd as traits::ReceivedNoteAndMetadata>::value(notedata)
+                            <D::WalletNote as traits::ReceivedNoteAndMetadata>::value(notedata)
                         } else {
                             0
                         }
