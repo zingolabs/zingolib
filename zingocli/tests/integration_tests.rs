@@ -89,6 +89,7 @@ async fn load_wallet(dir: PathBuf) -> zingolib::wallet::LightWallet {
             .unwrap();
     tracing::info!("{:?}", recording_reader.read_lengths);
     tracing::info!("{:?}", recording_reader.read_lengths.len());
+    /*
     for (index, (release_off, bug_off)) in release_1_0_0_parsed_offsets
         .iter()
         .zip(recording_reader.read_lengths[8..].iter())
@@ -99,7 +100,7 @@ async fn load_wallet(dir: PathBuf) -> zingolib::wallet::LightWallet {
             release_off, bug_off,
             "release_off: {release_off} bug_off: {bug_off}\n At nth: {nth}"
         )
-    }
+    }*/
 
     read_result
 }
