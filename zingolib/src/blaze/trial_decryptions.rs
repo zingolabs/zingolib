@@ -318,13 +318,8 @@ impl TrialDecryptions {
                         .await?;
 
                     let transaction_id = TransactionMetadata::new_txid(&compact_transaction.hash);
-                    let spend_nullifier =
-                        D::WalletNote::get_nullifier_from_note_fvk_and_witness_position(
-                            &note,
-                            witness.position() as u64,
-                        );
 
-                    transaction_metadata_set.write().await.add_new_note::<D>(
+                    let spend_nullifier = transaction_metadata_set.write().await.add_new_note::<D>(
                         transaction_id.clone(),
                         height,
                         false,

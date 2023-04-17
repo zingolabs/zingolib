@@ -24,7 +24,9 @@ use super::{
         OutgoingTxMetadata, PoolNullifier, ReceivedOrchardNoteAndMetadata,
         ReceivedSaplingNoteAndMetadata, TransactionMetadata, Utxo, WitnessCache,
     },
-    traits::{DomainWalletExt, FromBytes, Nullifier, ReceivedNoteAndMetadata, Recipient},
+    traits::{
+        Bundle, DomainWalletExt, FromBytes, Nullifier, ReceivedNoteAndMetadata, Recipient, Spend,
+    },
 };
 
 /// List of all transactions in a wallet.
@@ -804,7 +806,8 @@ impl TransactionMetadataSet {
         to: D::Recipient,
         have_spending_key: bool,
         witness: IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node>,
-    ) where
+    ) -> <<<D as DomainWalletExt>::Bundle as Bundle<D>>::Spend as Spend>::Nullifier
+    where
         D::Note: PartialEq + Clone,
         D::Recipient: Recipient,
     {
@@ -862,6 +865,7 @@ impl TransactionMetadataSet {
                 *n.witnesses_mut() = witnesses;
             }
         }
+        spend_nullifier
     }
 
     // Update the memo for a note if it already exists. If the note doesn't exist, then nothing happens.
