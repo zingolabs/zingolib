@@ -617,7 +617,15 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
     fn is_change(&self) -> bool {
         self.is_change
     }
-
+    fn fvk(&self) -> &Self::Fvk {
+        &self.fvk
+    }
+    fn get_deprecated_serialized_view_key_buffer() -> &'static [u8] {
+        &[0u8; 96]
+    }
+    fn diversifier(&self) -> &Self::Diversifier {
+        &self.diversifier
+    }
     fn memo(&self) -> &Option<Memo> {
         &self.memo
     }
