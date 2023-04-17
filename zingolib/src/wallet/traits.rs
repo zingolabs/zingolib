@@ -723,16 +723,16 @@ where
 
     type Bundle: Bundle<Self>;
 
+    fn get_tree(tree_state: &TreeState) -> &String;
     fn to_notes_vec_mut(_: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote>;
     fn ua_from_contained_receiver<'a>(
         unified_spend_auth: &'a WalletCapability,
         receiver: &Self::Recipient,
     ) -> Option<&'a UnifiedAddress>;
-    fn get_tree(tree_state: &TreeState) -> &String;
-    fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String>;
     fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, String>;
     fn wc_to_ivk(wc: &WalletCapability) -> Result<Self::IncomingViewingKey, String>;
     fn wc_to_ovk(wc: &WalletCapability) -> Result<Self::OutgoingViewingKey, String>;
+    fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String>;
 }
 
 impl DomainWalletExt for SaplingDomain<ChainType> {
@@ -750,6 +750,10 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
 
     type Bundle = components::sapling::Bundle<components::sapling::Authorized>;
 
+    fn get_tree(tree_state: &TreeState) -> &String {
+        &tree_state.sapling_tree
+    }
+
     fn to_notes_vec_mut(transaction: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote> {
         &mut transaction.sapling_notes
     }
@@ -763,13 +767,6 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
             .iter()
             .find(|ua| ua.sapling() == Some(receiver))
     }
-
-    fn get_tree(tree_state: &TreeState) -> &String {
-        &tree_state.sapling_tree
-    }
-    fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String> {
-        Self::SpendingKey::try_from(wc)
-    }
     fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, String> {
         Self::Fvk::try_from(wc)
     }
@@ -778,6 +775,9 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
     }
     fn wc_to_ovk(wc: &WalletCapability) -> Result<Self::OutgoingViewingKey, String> {
         Self::OutgoingViewingKey::try_from(wc)
+    }
+    fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String> {
+        Self::SpendingKey::try_from(wc)
     }
 }
 
@@ -796,6 +796,10 @@ impl DomainWalletExt for OrchardDomain {
 
     type Bundle = orchard::bundle::Bundle<orchard::bundle::Authorized, Amount>;
 
+    fn get_tree(tree_state: &TreeState) -> &String {
+        &tree_state.orchard_tree
+    }
+
     fn to_notes_vec_mut(transaction: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote> {
         &mut transaction.orchard_notes
     }
@@ -809,13 +813,6 @@ impl DomainWalletExt for OrchardDomain {
             .iter()
             .find(|unified_address| unified_address.orchard() == Some(receiver))
     }
-
-    fn get_tree(tree_state: &TreeState) -> &String {
-        &tree_state.orchard_tree
-    }
-    fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String> {
-        Self::SpendingKey::try_from(wc)
-    }
     fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, String> {
         Self::Fvk::try_from(wc)
     }
@@ -824,6 +821,9 @@ impl DomainWalletExt for OrchardDomain {
     }
     fn wc_to_ovk(wc: &WalletCapability) -> Result<Self::OutgoingViewingKey, String> {
         Self::OutgoingViewingKey::try_from(wc)
+    }
+    fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String> {
+        Self::SpendingKey::try_from(wc)
     }
 }
 
