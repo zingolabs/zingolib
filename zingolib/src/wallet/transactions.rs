@@ -717,7 +717,6 @@ impl TransactionMetadataSet {
         timestamp: u64,
         note: D::Note,
         to: D::Recipient,
-        fvk: &D::Fvk,
     ) where
         D: DomainWalletExt,
         D::Note: PartialEq + Clone,

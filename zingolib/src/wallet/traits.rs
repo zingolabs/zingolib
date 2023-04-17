@@ -1189,7 +1189,7 @@ where
 
         if external_version < 2 {
             let mut x = <T as ReceivedNoteAndMetadata>::get_deprecated_serialized_view_key_buffer();
-            reader.read_exact(&mut x);
+            reader.read_exact(&mut x).expect("To not used this data.");
         }
 
         let mut diversifier_bytes = [0u8; 11];

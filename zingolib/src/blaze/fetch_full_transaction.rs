@@ -468,10 +468,9 @@ impl TransactionContext {
                 })
                 .collect::<Vec<_>>();
 
-        let (Ok(ivk), Ok(ovk), Ok(fvk)) = (
+        let (Ok(ivk), Ok(ovk)) = (
             D::wc_to_ivk(&*unified_spend_capability),
             D::wc_to_ovk(&*unified_spend_capability),
-            D::wc_to_fvk(&*unified_spend_capability)
         ) else {
             // skip scanning if wallet has not viewing capability
             return;
@@ -496,7 +495,6 @@ impl TransactionContext {
                         block_time as u64,
                         note.clone(),
                         to,
-                        &fvk,
                     );
             }
             let memo = memo_bytes
