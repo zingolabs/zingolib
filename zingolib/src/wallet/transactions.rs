@@ -771,7 +771,7 @@ impl TransactionMetadataSet {
             to,
             have_spending_key,
             witness,
-        )
+        );
     }
     pub fn add_new_orchard_note(
         &mut self,
@@ -793,7 +793,7 @@ impl TransactionMetadataSet {
             to,
             have_spending_key,
             witness,
-        )
+        );
     }
 
     pub(crate) fn add_new_note<D: DomainWalletExt>(
