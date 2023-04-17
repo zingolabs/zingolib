@@ -414,9 +414,7 @@ pub trait ReceivedNoteAndMetadata: Sized {
         &Self::Nullifier,
         WitnessCache<Self::Node>,
     );
-    fn diversifier(
-        &self,
-    ) -> &<<Self::Fvk as Diversifiable>::Note as ReceivedNoteAndMetadata>::Diversifier;
+    fn diversifier(&self) -> &Self::Diversifier;
     fn from_parts(
         diversifier: Self::Diversifier,
         note: Self::Note,
