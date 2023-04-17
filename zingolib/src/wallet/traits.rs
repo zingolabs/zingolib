@@ -398,7 +398,8 @@ impl Nullifier for orchard::note::Nullifier {
 
 pub trait ReceivedNoteAndMetadata: Sized {
     type Diversifier: Copy + FromBytes<11> + ToBytes<11>;
-    type Note: PartialEq + ReadableWriteable<(Self::Fvk, Self::Diversifier)> + Clone;
+
+    type Note: PartialEq + ReadableWriteable<Self::Diversifier> + Clone;
     type Node: Hashable + FromCommitment + Send;
     type Nullifier: Nullifier;
 
@@ -426,18 +427,9 @@ pub trait ReceivedNoteAndMetadata: Sized {
         have_spending_key: bool,
     ) -> Self;
     fn is_change(&self) -> bool;
-    fn fvk(&self) -> &Self::Fvk;
-    fn diversifier(
-        &self,
-    ) -> &<<Self::Fvk as Diversifiable>::Note as ReceivedNoteAndMetadata>::Diversifier;
     fn memo(&self) -> &Option<Memo>;
     fn memo_mut(&mut self) -> &mut Option<Memo>;
     fn note(&self) -> &Self::Note;
-    fn get_nullifier_from_note_fvk_and_witness_position(
-        note: &Self::Note,
-        fvk: &Self::Fvk,
-        position: u64,
-    ) -> Self::Nullifier;
     fn nullifier(&self) -> Self::Nullifier;
     fn value_from_note(note: &Self::Note) -> u64;
     fn spent(&self) -> &Option<(TxId, u32)>;
@@ -513,14 +505,6 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         self.is_change
     }
 
-    fn fvk(&self) -> &Self::Fvk {
-        &self.fvk
-    }
-
-    fn diversifier(&self) -> &Self::Diversifier {
-        &self.diversifier
-    }
-
     fn memo(&self) -> &Option<Memo> {
         &self.memo
     }
@@ -531,14 +515,6 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
 
     fn note(&self) -> &Self::Note {
         &self.note
-    }
-
-    fn get_nullifier_from_note_fvk_and_witness_position(
-        note: &Self::Note,
-        fvk: &Self::Fvk,
-        position: u64,
-    ) -> Self::Nullifier {
-        note.nf(&fvk.fvk().vk.nk, position)
     }
 
     fn nullifier(&self) -> Self::Nullifier {
@@ -607,11 +583,7 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         &Self::Nullifier,
         WitnessCache<Self::Node>,
     ) = TransactionMetadataSet::set_orchard_note_witnesses;
-    fn diversifier(&self) -> &Self::Diversifier {
-        &self.diversifier
-    }
     fn from_parts(
-        fvk: Self::Fvk,
         diversifier: Self::Diversifier,
         note: Self::Note,
         witnesses: WitnessCache<Self::Node>,
@@ -623,7 +595,6 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         have_spending_key: bool,
     ) -> Self {
         Self {
-            fvk,
             diversifier,
             note,
             witnesses,
@@ -635,19 +606,8 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
             have_spending_key,
         }
     }
-    fn fvk(&self) -> &Self::Fvk {
-        &self.fvk
-    }
     fn get_deprecated_serialized_view_key_buffer() -> &'static [u8] {
         &[0u8; 96]
-    }
-
-    fn get_nullifier_from_note_fvk_and_witness_position(
-        note: &Self::Note,
-        fvk: &Self::Fvk,
-        _position: u64,
-    ) -> Self::Nullifier {
-        note.nullifier(fvk)
     }
 
     fn have_spending_key(&self) -> bool {
@@ -726,7 +686,6 @@ where
     type SpendingKey: for<'a> TryFrom<&'a WalletCapability> + Clone;
     type CompactOutput: CompactOutput<Self>;
     type WalletNote: ReceivedNoteAndMetadata<
-        Fvk = Self::Fvk,
         Note = <Self as Domain>::Note,
         Diversifier = <<Self as Domain>::Recipient as Recipient>::Diversifier,
         Nullifier = <<<Self as DomainWalletExt>::Bundle as Bundle<Self>>::Spend as Spend>::Nullifier,

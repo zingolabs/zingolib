@@ -8,7 +8,7 @@ use crate::{
     wallet::{
         data::{PoolNullifier, TransactionMetadata},
         keys::unified::WalletCapability,
-        traits::{CompactOutput as _, DomainWalletExt, ReceivedNoteAndMetadata as _},
+        traits::{CompactOutput as _, DomainWalletExt},
         transactions::TransactionMetadataSet,
         MemoDownloadOption,
     },
@@ -320,7 +320,6 @@ impl TrialDecryptions {
                     let transaction_id = TransactionMetadata::new_txid(&compact_transaction.hash);
                     let nullifier = D::WalletNote::get_nullifier_from_note_fvk_and_witness_position(
                         &note,
-                        &fvk,
                         witness.position() as u64,
                     );
 
@@ -331,7 +330,6 @@ impl TrialDecryptions {
                         timestamp,
                         note,
                         to,
-                        &fvk,
                         have_spending_key,
                         witness,
                     );

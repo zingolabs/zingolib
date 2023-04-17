@@ -8,7 +8,6 @@ use std::io::{self, Read, Write};
 use std::usize;
 use zcash_encoding::{Optional, Vector};
 use zcash_primitives::consensus::BlockHeight;
-use zcash_primitives::zip32;
 use zcash_primitives::{
     memo::Memo,
     merkle_tree::{CommitmentTree, IncrementalWitness},
@@ -210,10 +209,6 @@ impl<Node: Hashable> WitnessCache<Node> {
     // }
 }
 pub struct ReceivedSaplingNoteAndMetadata {
-    // Technically, this should be recoverable from the account number,
-    // but we're going to refactor this in the future, so I'll write it again here.
-    pub(super) fvk: zip32::sapling::DiversifiableFullViewingKey,
-
     pub diversifier: zcash_primitives::sapling::Diversifier,
     pub note: zcash_primitives::sapling::Note,
 
