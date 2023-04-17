@@ -332,9 +332,9 @@ impl LightWallet {
         }
 
         let transactions = if external_version <= 14 {
-            TransactionMetadataSet::read_old(&mut reader)
+            TransactionMetadataSet::read_old(&mut reader, &wallet_capability)
         } else {
-            TransactionMetadataSet::read(&mut reader)
+            TransactionMetadataSet::read(&mut reader, &wallet_capability)
         }?;
 
         let chain_name = utils::read_string(&mut reader)?;

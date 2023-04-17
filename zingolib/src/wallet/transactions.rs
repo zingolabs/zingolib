@@ -24,6 +24,7 @@ use super::{
         OutgoingTxMetadata, PoolNullifier, ReceivedOrchardNoteAndMetadata,
         ReceivedSaplingNoteAndMetadata, TransactionMetadata, Utxo, WitnessCache,
     },
+    keys::unified::WalletCapability,
     traits::{
         Bundle, DomainWalletExt, FromBytes, Nullifier, ReceivedNoteAndMetadata, Recipient, Spend,
     },
@@ -52,14 +53,17 @@ impl TransactionMetadataSet {
         }
     }
 
-    pub fn read_old<R: Read>(mut reader: R) -> io::Result<Self> {
+    pub fn read_old<R: Read>(
+        mut reader: R,
+        wallet_capability: &WalletCapability,
+    ) -> io::Result<Self> {
         let txs_tuples = Vector::read(&mut reader, |r| {
             let mut txid_bytes = [0u8; 32];
             r.read_exact(&mut txid_bytes)?;
 
             Ok((
                 TxId::from_bytes(txid_bytes),
-                TransactionMetadata::read(r).unwrap(),
+                TransactionMetadata::read(r, wallet_capability).unwrap(),
             ))
         })?;
 
@@ -73,7 +77,7 @@ impl TransactionMetadataSet {
         })
     }
 
-    pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
+    pub fn read<R: Read>(mut reader: R, wallet_capability: &WalletCapability) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
         if version > Self::serialized_version() {
             return Err(io::Error::new(
@@ -86,7 +90,10 @@ impl TransactionMetadataSet {
             let mut txid_bytes = [0u8; 32];
             r.read_exact(&mut txid_bytes)?;
 
-            Ok((TxId::from_bytes(txid_bytes), TransactionMetadata::read(r)?))
+            Ok((
+                TxId::from_bytes(txid_bytes),
+                TransactionMetadata::read(r, wallet_capability)?,
+            ))
         })?;
 
         let current = txs_tuples
@@ -107,7 +114,7 @@ impl TransactionMetadataSet {
             Vector::read(&mut reader, |r| {
                 let mut txid_bytes = [0u8; 32];
                 r.read_exact(&mut txid_bytes)?;
-                let transaction_metadata = TransactionMetadata::read(r)?;
+                let transaction_metadata = TransactionMetadata::read(r, wallet_capability)?;
 
                 Ok((TxId::from_bytes(txid_bytes), transaction_metadata))
             })?
@@ -753,6 +760,7 @@ impl TransactionMetadataSet {
 
     pub fn add_new_sapling_note(
         &mut self,
+        fvk: &<SaplingDomain<zingoconfig::ChainType> as DomainWalletExt>::Fvk,
         txid: TxId,
         height: BlockHeight,
         unconfirmed: bool,
@@ -763,6 +771,7 @@ impl TransactionMetadataSet {
         witness: IncrementalWitness<zcash_primitives::sapling::Node>,
     ) {
         self.add_new_note::<SaplingDomain<zingoconfig::ChainType>>(
+            fvk,
             txid,
             height,
             unconfirmed,
@@ -775,6 +784,7 @@ impl TransactionMetadataSet {
     }
     pub fn add_new_orchard_note(
         &mut self,
+        fvk: &<OrchardDomain as DomainWalletExt>::Fvk,
         txid: TxId,
         height: BlockHeight,
         unconfirmed: bool,
@@ -785,6 +795,7 @@ impl TransactionMetadataSet {
         witness: IncrementalWitness<MerkleHashOrchard>,
     ) {
         self.add_new_note::<OrchardDomain>(
+            fvk,
             txid,
             height,
             unconfirmed,
@@ -798,6 +809,7 @@ impl TransactionMetadataSet {
 
     pub(crate) fn add_new_note<D: DomainWalletExt>(
         &mut self,
+        fvk: &D::Fvk,
         txid: TxId,
         height: BlockHeight,
         unconfirmed: bool,
@@ -823,8 +835,9 @@ impl TransactionMetadataSet {
         // Update the block height, in case this was a mempool or unconfirmed tx.
         transaction_metadata.block_height = height;
 
-        let spend_nullifier = D::WalletNote::get_nullifier_from_note_fvk_and_witness_position(
+        let spend_nullifier = D::get_nullifier_from_note_fvk_and_witness_position(
             &note,
+            fvk,
             witness.position() as u64,
         );
         let witnesses = if have_spending_key {

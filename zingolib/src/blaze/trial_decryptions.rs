@@ -320,6 +320,7 @@ impl TrialDecryptions {
                     let transaction_id = TransactionMetadata::new_txid(&compact_transaction.hash);
 
                     let spend_nullifier = transaction_metadata_set.write().await.add_new_note::<D>(
+                        &fvk,
                         transaction_id.clone(),
                         height,
                         false,

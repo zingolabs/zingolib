@@ -428,7 +428,7 @@ pub trait ReceivedNoteAndMetadata: Sized {
         is_change: bool,
         have_spending_key: bool,
     ) -> Self;
-    fn get_deprecated_serialized_view_key_buffer() -> &'static [u8];
+    fn get_deprecated_serialized_view_key_buffer() -> Vec<u8>;
     fn have_spending_key(&self) -> bool;
     fn is_change(&self) -> bool;
     fn is_spent(&self) -> bool {
@@ -504,8 +504,8 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         }
     }
 
-    fn get_deprecated_serialized_view_key_buffer() -> &'static [u8] {
-        &[0u8; 169]
+    fn get_deprecated_serialized_view_key_buffer() -> Vec<u8> {
+        vec![0u8; 169]
     }
 
     fn have_spending_key(&self) -> bool {
@@ -619,8 +619,8 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         }
     }
 
-    fn get_deprecated_serialized_view_key_buffer() -> &'static [u8] {
-        &[0u8; 96]
+    fn get_deprecated_serialized_view_key_buffer() -> Vec<u8> {
+        vec![0u8; 96]
     }
 
     fn have_spending_key(&self) -> bool {
