@@ -318,7 +318,7 @@ impl LightWallet {
             Capability::View(_) => info!("  - Sapling Extended Full Viewing Key"),
             Capability::Spend(_) => info!("  - Sapling Extended Spending Key"),
         };
-        match &key.transparent {
+        match &wallet_capability.transparent {
             Capability::None => (),
             Capability::View(_) => info!("  - transparent extended public key"),
             Capability::Spend(_) => info!("  - transparent extended private key"),
