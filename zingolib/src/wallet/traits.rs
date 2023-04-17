@@ -1093,31 +1093,33 @@ impl ReadableWriteable<()> for orchard::keys::FullViewingKey {
     }
 }
 
-impl
-    ReadableWriteable<(
-        zip32::sapling::DiversifiableFullViewingKey,
-        zcash_primitives::sapling::Diversifier,
-    )> for zcash_primitives::sapling::Note
+impl ReadableWriteable<(zcash_primitives::sapling::Diversifier, &WalletCapability)>
+    for zcash_primitives::sapling::Note
 {
     const VERSION: u8 = 1;
 
     fn read<R: Read>(
         mut reader: R,
-        (fvk, diversifier): (
-            zip32::sapling::DiversifiableFullViewingKey,
+        (diversifier, wallet_capability): (
             zcash_primitives::sapling::Diversifier,
+            &WalletCapability,
         ),
     ) -> io::Result<Self> {
         let _version = Self::get_version(&mut reader)?;
         let value = reader.read_u64::<LittleEndian>()?;
         let rseed = super::data::read_sapling_rseed(&mut reader)?;
 
-        Ok(fvk
+        Ok(
+            <SaplingDomain<zingoconfig::ChainType> as DomainWalletExt>::wc_to_fvk(
+                wallet_capability,
+            )
+            .expect("to get an fvk from a wc")
             .fvk()
             .vk
             .to_payment_address(diversifier)
             .unwrap()
-            .create_note(value, rseed))
+            .create_note(value, rseed),
+        )
     }
 
     fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
@@ -1128,14 +1130,12 @@ impl
     }
 }
 
-impl ReadableWriteable<(orchard::keys::FullViewingKey, orchard::keys::Diversifier)>
-    for orchard::note::Note
-{
+impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability)> for orchard::note::Note {
     const VERSION: u8 = 1;
 
     fn read<R: Read>(
         mut reader: R,
-        (fvk, diversifier): (orchard::keys::FullViewingKey, orchard::keys::Diversifier),
+        (diversifier, wallet_capability): (orchard::keys::Diversifier, &WalletCapability),
     ) -> io::Result<Self> {
         let _version = Self::get_version(&mut reader)?;
         let value = reader.read_u64::<LittleEndian>()?;
@@ -1155,6 +1155,8 @@ impl ReadableWriteable<(orchard::keys::FullViewingKey, orchard::keys::Diversifie
             "Nullifier not for note",
         ))?;
 
+        let fvk = <OrchardDomain as DomainWalletExt>::wc_to_fvk(wallet_capability)
+            .expect("to get an fvk from a wc");
         Option::from(orchard::note::Note::from_parts(
             fvk.address(diversifier, orchard::keys::Scope::External),
             orchard::value::NoteValue::from_raw(value),

@@ -881,7 +881,8 @@ impl LightWallet {
             }),
             Box::new(|nnmd, _| nnmd.witnesses.len() > 0),
         ];
-        self.shielded_balance(target_addr, filters).await
+        self.shielded_balance::<SaplingDomain<zingoconfig::ChainType>>(target_addr, filters)
+            .await
     }
 
     pub async fn spendable_orchard_balance(&self, target_addr: Option<String>) -> u64 {
@@ -894,7 +895,8 @@ impl LightWallet {
             }),
             Box::new(|nnmd, _| nnmd.witnesses.len() > 0),
         ];
-        self.shielded_balance(target_addr, filters).await
+        self.shielded_balance::<OrchardDomain>(target_addr, filters)
+            .await
     }
 
     ///TODO: Make this work for orchard too
