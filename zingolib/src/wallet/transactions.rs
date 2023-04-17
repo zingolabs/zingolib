@@ -15,7 +15,6 @@ use zcash_primitives::{
     merkle_tree::IncrementalWitness,
     sapling::{note_encryption::SaplingDomain, PaymentAddress},
     transaction::{components::TxOut, TxId},
-    zip32,
 };
 
 use zingoconfig::{ChainType, MAX_REORG};
@@ -733,7 +732,6 @@ impl TransactionMetadataSet {
         {
             None => {
                 let nd = D::WalletNote::from_parts(
-                    <D::WalletNote as ReceivedNoteAndMetadata>::Fvk::clone(fvk),
                     to.diversifier(),
                     note,
                     WitnessCache::empty(),
@@ -759,7 +757,6 @@ impl TransactionMetadataSet {
         timestamp: u64,
         note: zcash_primitives::sapling::Note,
         to: PaymentAddress,
-        fvk: &zip32::sapling::DiversifiableFullViewingKey,
         have_spending_key: bool,
         witness: IncrementalWitness<zcash_primitives::sapling::Node>,
     ) {
@@ -770,7 +767,6 @@ impl TransactionMetadataSet {
             timestamp,
             note,
             to,
-            fvk,
             have_spending_key,
             witness,
         )
@@ -783,7 +779,6 @@ impl TransactionMetadataSet {
         timestamp: u64,
         note: orchard::note::Note,
         to: orchard::Address,
-        fvk: &orchard::keys::FullViewingKey,
         have_spending_key: bool,
         witness: IncrementalWitness<MerkleHashOrchard>,
     ) {
@@ -794,7 +789,6 @@ impl TransactionMetadataSet {
             timestamp,
             note,
             to,
-            fvk,
             have_spending_key,
             witness,
         )
@@ -808,7 +802,6 @@ impl TransactionMetadataSet {
         timestamp: u64,
         note: <D::WalletNote as ReceivedNoteAndMetadata>::Note,
         to: D::Recipient,
-        fvk: &<D::WalletNote as ReceivedNoteAndMetadata>::Fvk,
         have_spending_key: bool,
         witness: IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node>,
     ) where
@@ -829,7 +822,6 @@ impl TransactionMetadataSet {
 
         let nullifier = D::WalletNote::get_nullifier_from_note_fvk_and_witness_position(
             &note,
-            &fvk,
             witness.position() as u64,
         );
         let witnesses = if have_spending_key {
@@ -844,7 +836,6 @@ impl TransactionMetadataSet {
         {
             None => {
                 let nd = D::WalletNote::from_parts(
-                    fvk.clone(),
                     D::Recipient::diversifier(&to),
                     note,
                     witnesses,
