@@ -399,7 +399,9 @@ impl Nullifier for orchard::note::Nullifier {
 pub trait ReceivedNoteAndMetadata: Sized {
     type Diversifier: Copy + FromBytes<11> + ToBytes<11>;
 
-    type Note: PartialEq + ReadableWriteable<Self::Diversifier> + Clone;
+    type Note: PartialEq
+        + for<'a> ReadableWriteable<(Self::Diversifier, &'a WalletCapability)>
+        + Clone;
     type Node: Hashable + FromCommitment + Send;
     type Nullifier: Nullifier;
 
@@ -1261,8 +1263,6 @@ where
     fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         // Write a version number first, so we can later upgrade this if needed.
         writer.write_u8(Self::VERSION)?;
-
-        self.fvk().write(&mut writer)?;
 
         writer.write_all(&self.diversifier().to_bytes())?;
 
