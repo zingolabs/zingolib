@@ -426,7 +426,6 @@ pub trait ReceivedNoteAndMetadata: Sized {
         is_change: bool,
         have_spending_key: bool,
     ) -> Self;
-    fn fvk(&self) -> &Self::Fvk;
     fn get_deprecated_serialized_view_key_buffer() -> &'static [u8];
     fn get_nullifier_from_note_fvk_and_witness_position(
         note: &Self::Note,
@@ -506,10 +505,6 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
             is_change,
             have_spending_key,
         }
-    }
-
-    fn fvk(&self) -> &Self::Fvk {
-        &self.fvk
     }
 
     fn get_deprecated_serialized_view_key_buffer() -> &'static [u8] {
@@ -634,9 +629,7 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
             have_spending_key,
         }
     }
-    fn fvk(&self) -> &Self::Fvk {
-        &self.fvk
-    }
+
     fn get_deprecated_serialized_view_key_buffer() -> &'static [u8] {
         &[0u8; 96]
     }
