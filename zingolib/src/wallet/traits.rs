@@ -740,7 +740,7 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
         note: &Self::Note,
         fvk: &Self::Fvk,
         position: u64,
-    ) -> Self::WalletNote::Nullifier {
+    ) -> <<Self as DomainWalletExt>::WalletNote as ReceivedNoteAndMetadata>::Nullifier {
         note.nf(&fvk.fvk().vk.nk, position)
     }
 
@@ -794,7 +794,7 @@ impl DomainWalletExt for OrchardDomain {
         note: &Self::Note,
         fvk: &Self::Fvk,
         _position: u64,
-    ) -> Self::WalletNote::Nullifier {
+    ) -> <<Self as DomainWalletExt>::WalletNote as ReceivedNoteAndMetadata>::Nullifier {
         note.nullifier(fvk)
     }
 

@@ -737,13 +737,12 @@ impl LightWallet {
     }
 
     pub async fn maybe_verified_sapling_balance(&self, addr: Option<String>) -> u64 {
-        self.shielded_balance::<ReceivedSaplingNoteAndMetadata>(addr, &[])
+        self.shielded_balance::<SaplingDomain<zingoconfig::ChainType>>(addr, &[])
             .await
     }
 
     pub async fn maybe_verified_orchard_balance(&self, addr: Option<String>) -> u64 {
-        self.shielded_balance::<ReceivedOrchardNoteAndMetadata>(addr, &[])
-            .await
+        self.shielded_balance::<OrchardDomain>(addr, &[]).await
     }
 
     async fn shielded_balance<D>(
@@ -753,6 +752,8 @@ impl LightWallet {
     ) -> u64
     where
         D: DomainWalletExt,
+        <D as Domain>::Note: PartialEq + Clone,
+        <D as Domain>::Recipient: traits::Recipient,
     {
         let fvk =
             D::wc_to_fvk(&*self.wallet_capability().read().await).expect("to get fvk from wc");
@@ -832,7 +833,8 @@ impl LightWallet {
         >] = &[Box::new(|_, transaction: &TransactionMetadata| {
             transaction.block_height > BlockHeight::from_u32(anchor_height)
         })];
-        self.shielded_balance(target_addr, filters).await
+        self.shielded_balance::<SaplingDomain<zingoconfig::ChainType>>(target_addr, filters)
+            .await
     }
 
     pub async fn unverified_orchard_balance(&self, target_addr: Option<String>) -> u64 {
@@ -843,29 +845,30 @@ impl LightWallet {
         >] = &[Box::new(|_, transaction: &TransactionMetadata| {
             transaction.block_height > BlockHeight::from_u32(anchor_height)
         })];
-        self.shielded_balance(target_addr, filters).await
+        self.shielded_balance::<OrchardDomain>(target_addr, filters)
+            .await
     }
 
     pub async fn verified_sapling_balance(&self, target_addr: Option<String>) -> u64 {
-        self.verified_balance::<ReceivedSaplingNoteAndMetadata>(target_addr)
+        self.verified_balance::<SaplingDomain<zingoconfig::ChainType>>(target_addr)
             .await
     }
 
     pub async fn verified_orchard_balance(&self, target_addr: Option<String>) -> u64 {
-        self.verified_balance::<ReceivedOrchardNoteAndMetadata>(target_addr)
-            .await
+        self.verified_balance::<OrchardDomain>(target_addr).await
     }
 
-    async fn verified_balance<NnMd: ReceivedNoteAndMetadata>(
-        &self,
-        target_addr: Option<String>,
-    ) -> u64 {
+    async fn verified_balance<D: DomainWalletExt>(&self, target_addr: Option<String>) -> u64
+    where
+        <D as Domain>::Recipient: Recipient,
+        <D as Domain>::Note: PartialEq + Clone,
+    {
         let anchor_height = self.get_anchor_height().await;
-        let filters: &[Box<dyn Fn(&&NnMd, &TransactionMetadata) -> bool>] =
+        let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionMetadata) -> bool>] =
             &[Box::new(|_, transaction| {
                 transaction.block_height <= BlockHeight::from_u32(anchor_height)
             })];
-        self.shielded_balance::<NnMd>(target_addr, filters).await
+        self.shielded_balance::<D>(target_addr, filters).await
     }
 
     pub async fn spendable_sapling_balance(&self, target_addr: Option<String>) -> u64 {
