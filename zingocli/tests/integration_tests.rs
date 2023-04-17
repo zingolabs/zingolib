@@ -71,8 +71,6 @@ fn get_wallet_nym(nym: &str) -> Result<(String, PathBuf, PathBuf), String> {
     }
 }
 async fn load_wallet(dir: PathBuf) -> zingolib::wallet::LightWallet {
-    let release_1_0_0_parsed_offsets =
-        &data::wallet_parse_offsets::V26_SAPLING_ONLY_WALLET_RELEASE_1_0_0[10..];
     let wallet = dir.join("zingo-wallet.dat");
     tracing::info!("The wallet is: {}", &wallet.to_str().unwrap());
     let lightwalletd_uri = TestEnvironmentGenerator::new().get_lightwalletd_uri();
@@ -83,26 +81,9 @@ async fn load_wallet(dir: PathBuf) -> zingolib::wallet::LightWallet {
     let read_lengths = vec![];
     let mut recording_reader = RecordingReader { from, read_lengths };
 
-    let read_result =
-        zingolib::wallet::LightWallet::read_internal(&mut recording_reader, &zingo_config)
-            .await
-            .unwrap();
-    tracing::info!("{:?}", recording_reader.read_lengths);
-    tracing::info!("{:?}", recording_reader.read_lengths.len());
-    /*
-    for (index, (release_off, bug_off)) in release_1_0_0_parsed_offsets
-        .iter()
-        .zip(recording_reader.read_lengths[8..].iter())
-        .enumerate()
-    {
-        let nth = index + 1;
-        assert_eq!(
-            release_off, bug_off,
-            "release_off: {release_off} bug_off: {bug_off}\n At nth: {nth}"
-        )
-    }*/
-
-    read_result
+    zingolib::wallet::LightWallet::read_internal(&mut recording_reader, &zingo_config)
+        .await
+        .unwrap()
 }
 
 #[tokio::test]
