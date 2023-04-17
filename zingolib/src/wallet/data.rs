@@ -228,8 +228,6 @@ pub struct ReceivedSaplingNoteAndMetadata {
 }
 
 pub struct ReceivedOrchardNoteAndMetadata {
-    pub(super) fvk: orchard::keys::FullViewingKey,
-
     pub diversifier: orchard::keys::Diversifier,
     pub note: orchard::note::Note,
 
@@ -254,7 +252,6 @@ pub struct ReceivedOrchardNoteAndMetadata {
 impl std::fmt::Debug for ReceivedSaplingNoteAndMetadata {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SaplingNoteData")
-            .field("fvk", &self.fvk)
             .field("diversifier", &self.diversifier)
             .field("note", &self.note)
             .field("nullifier", &self.nullifier)
