@@ -414,7 +414,9 @@ pub trait ReceivedNoteAndMetadata: Sized {
         &Self::Nullifier,
         WitnessCache<Self::Node>,
     );
-    fn get_deprecated_serialized_view_key_buffer() -> &'static [u8];
+    fn diversifier(
+        &self,
+    ) -> &<<Self::Fvk as Diversifiable>::Note as ReceivedNoteAndMetadata>::Diversifier;
     fn from_parts(
         diversifier: Self::Diversifier,
         note: Self::Note,
@@ -426,30 +428,37 @@ pub trait ReceivedNoteAndMetadata: Sized {
         is_change: bool,
         have_spending_key: bool,
     ) -> Self;
+    fn fvk(&self) -> &Self::Fvk;
+    fn get_deprecated_serialized_view_key_buffer() -> &'static [u8];
+    fn get_nullifier_from_note_fvk_and_witness_position(
+        note: &Self::Note,
+        fvk: &Self::Fvk,
+        position: u64,
+    ) -> Self::Nullifier;
+    fn have_spending_key(&self) -> bool;
     fn is_change(&self) -> bool;
+    fn is_spent(&self) -> bool {
+        Self::spent(self).is_some()
+    }
     fn memo(&self) -> &Option<Memo>;
     fn memo_mut(&mut self) -> &mut Option<Memo>;
     fn note(&self) -> &Self::Note;
     fn nullifier(&self) -> Self::Nullifier;
-    fn value_from_note(note: &Self::Note) -> u64;
     fn spent(&self) -> &Option<(TxId, u32)>;
     fn spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
-    fn unconfirmed_spent(&self) -> &Option<(TxId, u32)>;
-    fn unconfirmed_spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
-    fn witnesses(&self) -> &WitnessCache<Self::Node>;
-    fn witnesses_mut(&mut self) -> &mut WitnessCache<Self::Node>;
-    fn have_spending_key(&self) -> bool;
     fn transaction_metadata_notes(wallet_transaction: &TransactionMetadata) -> &Vec<Self>;
     fn transaction_metadata_notes_mut(
         wallet_transaction: &mut TransactionMetadata,
     ) -> &mut Vec<Self>;
+    fn unconfirmed_spent(&self) -> &Option<(TxId, u32)>;
+    fn unconfirmed_spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
     ///Convenience function
     fn value(&self) -> u64 {
         Self::value_from_note(self.note())
     }
-    fn is_spent(&self) -> bool {
-        Self::spent(self).is_some()
-    }
+    fn value_from_note(note: &Self::Note) -> u64;
+    fn witnesses(&self) -> &WitnessCache<Self::Node>;
+    fn witnesses_mut(&mut self) -> &mut WitnessCache<Self::Node>;
 }
 
 impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
@@ -458,9 +467,6 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
     type Node = zcash_primitives::sapling::Node;
     type Nullifier = zcash_primitives::sapling::Nullifier;
 
-    fn get_deprecated_serialized_view_key_buffer() -> &'static [u8] {
-        &[0u8; 169]
-    }
     /// This (and SET_NOTE_WITNESSES) could be associated functions instead of fn
     /// constants, but that would require an additional repetition of the fn arguments.
     const GET_NOTE_WITNESSES: fn(
@@ -469,13 +475,16 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         &Self::Nullifier,
     ) -> Option<(WitnessCache<Self::Node>, BlockHeight)> =
         TransactionMetadataSet::get_sapling_note_witnesses;
-
     const SET_NOTE_WITNESSES: fn(
         &mut TransactionMetadataSet,
         &TxId,
         &Self::Nullifier,
         WitnessCache<Self::Node>,
     ) = TransactionMetadataSet::set_sapling_note_witnesses;
+
+    fn diversifier(&self) -> &Self::Diversifier {
+        &self.diversifier
+    }
 
     fn from_parts(
         diversifier: zcash_primitives::sapling::Diversifier,
@@ -501,6 +510,26 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         }
     }
 
+    fn fvk(&self) -> &Self::Fvk {
+        &self.fvk
+    }
+
+    fn get_deprecated_serialized_view_key_buffer() -> &'static [u8] {
+        &[0u8; 169]
+    }
+
+    fn get_nullifier_from_note_fvk_and_witness_position(
+        note: &Self::Note,
+        fvk: &Self::Fvk,
+        position: u64,
+    ) -> Self::Nullifier {
+        note.nf(&fvk.fvk().vk.nk, position)
+    }
+
+    fn have_spending_key(&self) -> bool {
+        self.have_spending_key
+    }
+
     fn is_change(&self) -> bool {
         self.is_change
     }
@@ -521,36 +550,12 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         self.nullifier
     }
 
-    fn value_from_note(note: &Self::Note) -> u64 {
-        note.value().inner()
-    }
-
     fn spent(&self) -> &Option<(TxId, u32)> {
         &self.spent
     }
 
     fn spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
         &mut self.spent
-    }
-
-    fn unconfirmed_spent(&self) -> &Option<(TxId, u32)> {
-        &self.unconfirmed_spent
-    }
-
-    fn unconfirmed_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
-        &mut self.unconfirmed_spent
-    }
-
-    fn witnesses(&self) -> &WitnessCache<Self::Node> {
-        &self.witnesses
-    }
-
-    fn witnesses_mut(&mut self) -> &mut WitnessCache<Self::Node> {
-        &mut self.witnesses
-    }
-
-    fn have_spending_key(&self) -> bool {
-        self.have_spending_key
     }
 
     fn transaction_metadata_notes(wallet_transaction: &TransactionMetadata) -> &Vec<Self> {
@@ -561,6 +566,26 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         wallet_transaction: &mut TransactionMetadata,
     ) -> &mut Vec<Self> {
         &mut wallet_transaction.sapling_notes
+    }
+
+    fn unconfirmed_spent(&self) -> &Option<(TxId, u32)> {
+        &self.unconfirmed_spent
+    }
+
+    fn unconfirmed_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
+        &mut self.unconfirmed_spent
+    }
+
+    fn value_from_note(note: &Self::Note) -> u64 {
+        note.value().inner()
+    }
+
+    fn witnesses(&self) -> &WitnessCache<Self::Node> {
+        &self.witnesses
+    }
+
+    fn witnesses_mut(&mut self) -> &mut WitnessCache<Self::Node> {
+        &mut self.witnesses
     }
 }
 
@@ -583,6 +608,11 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         &Self::Nullifier,
         WitnessCache<Self::Node>,
     ) = TransactionMetadataSet::set_orchard_note_witnesses;
+
+    fn diversifier(&self) -> &Self::Diversifier {
+        &self.diversifier
+    }
+
     fn from_parts(
         diversifier: Self::Diversifier,
         note: Self::Note,
@@ -606,26 +636,26 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
             have_spending_key,
         }
     }
-    fn get_deprecated_serialized_view_key_buffer() -> &'static [u8] {
-        &[0u8; 96]
-    }
-
-    fn have_spending_key(&self) -> bool {
-        self.have_spending_key
-    }
-
-    fn is_change(&self) -> bool {
-        self.is_change
-    }
     fn fvk(&self) -> &Self::Fvk {
         &self.fvk
     }
     fn get_deprecated_serialized_view_key_buffer() -> &'static [u8] {
         &[0u8; 96]
     }
-    fn diversifier(&self) -> &Self::Diversifier {
-        &self.diversifier
+    fn get_nullifier_from_note_fvk_and_witness_position(
+        note: &Self::Note,
+        fvk: &Self::Fvk,
+        _position: u64,
+    ) -> Self::Nullifier {
+        note.nullifier(fvk)
     }
+    fn have_spending_key(&self) -> bool {
+        self.have_spending_key
+    }
+    fn is_change(&self) -> bool {
+        self.is_change
+    }
+
     fn memo(&self) -> &Option<Memo> {
         &self.memo
     }
