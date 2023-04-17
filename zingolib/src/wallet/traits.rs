@@ -427,11 +427,6 @@ pub trait ReceivedNoteAndMetadata: Sized {
         have_spending_key: bool,
     ) -> Self;
     fn get_deprecated_serialized_view_key_buffer() -> &'static [u8];
-    fn get_nullifier_from_note_fvk_and_witness_position(
-        note: &Self::Note,
-        fvk: &Self::Fvk,
-        position: u64,
-    ) -> Self::Nullifier;
     fn have_spending_key(&self) -> bool;
     fn is_change(&self) -> bool;
     fn is_spent(&self) -> bool {
@@ -723,6 +718,11 @@ where
 
     type Bundle: Bundle<Self>;
 
+    fn get_nullifier_from_note_fvk_and_witness_position(
+        note: &Self::Note,
+        fvk: &Self::Fvk,
+        position: u64,
+    ) -> Self::Nullifier;
     fn get_tree(tree_state: &TreeState) -> &String;
     fn to_notes_vec_mut(_: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote>;
     fn ua_from_contained_receiver<'a>(
