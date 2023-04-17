@@ -820,7 +820,7 @@ impl TransactionMetadataSet {
         // Update the block height, in case this was a mempool or unconfirmed tx.
         transaction_metadata.block_height = height;
 
-        let nullifier = D::WalletNote::get_nullifier_from_note_fvk_and_witness_position(
+        let spend_nullifier = D::WalletNote::get_nullifier_from_note_fvk_and_witness_position(
             &note,
             witness.position() as u64,
         );
@@ -832,14 +832,14 @@ impl TransactionMetadataSet {
 
         match D::WalletNote::transaction_metadata_notes_mut(transaction_metadata)
             .iter_mut()
-            .find(|n| n.nullifier() == nullifier)
+            .find(|n| n.nullifier() == spend_nullifier)
         {
             None => {
                 let nd = D::WalletNote::from_parts(
                     D::Recipient::diversifier(&to),
                     note,
                     witnesses,
-                    nullifier,
+                    spend_nullifier,
                     None,
                     None,
                     None,

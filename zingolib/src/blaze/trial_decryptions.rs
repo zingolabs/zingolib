@@ -318,10 +318,11 @@ impl TrialDecryptions {
                         .await?;
 
                     let transaction_id = TransactionMetadata::new_txid(&compact_transaction.hash);
-                    let nullifier = D::WalletNote::get_nullifier_from_note_fvk_and_witness_position(
-                        &note,
-                        witness.position() as u64,
-                    );
+                    let spend_nullifier =
+                        D::WalletNote::get_nullifier_from_note_fvk_and_witness_position(
+                            &note,
+                            witness.position() as u64,
+                        );
 
                     transaction_metadata_set.write().await.add_new_note::<D>(
                         transaction_id.clone(),
@@ -337,7 +338,12 @@ impl TrialDecryptions {
                     debug!("Trial decrypt Detected txid {}", &transaction_id);
 
                     detected_transaction_id_sender
-                        .send((transaction_id, nullifier.into(), height, Some((i) as u32)))
+                        .send((
+                            transaction_id,
+                            spend_nullifier.into(),
+                            height,
+                            Some((i) as u32),
+                        ))
                         .unwrap();
 
                     Ok::<_, String>(())
