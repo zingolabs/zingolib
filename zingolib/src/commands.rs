@@ -695,22 +695,13 @@ impl Command for SendCommand {
                 }
 
                 let fee = u64::from(DEFAULT_FEE);
-                let all_zbalance = lightclient
-                    .wallet
-                    .verified_sapling_balance(None)
-                    .await
-                    .checked_sub(fee);
-
                 let maybe_send_args = json_args
                     .members()
                     .map(|j| {
                         if !j.has_key("address") || !j.has_key("amount") {
                             Err(format!("Need 'address' and 'amount'\n"))
                         } else {
-                            let amount = match j["amount"].as_str() {
-                                Some("entire-verified-zbalance") => all_zbalance,
-                                _ => Some(j["amount"].as_u64().unwrap()),
-                            };
+                            let amount = Some(j["amount"].as_u64().unwrap());
 
                             match amount {
                                 Some(amt) => Ok((
@@ -739,27 +730,7 @@ impl Command for SendCommand {
                 // Make sure we can parse the amount
                 let value = match args[1].parse::<u64>() {
                     Ok(amt) => amt,
-                    Err(e) => {
-                        if args[1] == "entire-verified-zbalance" {
-                            let fee = u64::from(DEFAULT_FEE);
-                            match lightclient
-                                .wallet
-                                .verified_sapling_balance(None)
-                                .await
-                                .checked_sub(fee)
-                            {
-                                Some(amt) => amt,
-                                None => {
-                                    return format!(
-                                        "Not enough in wallet to pay transaction fee of {}",
-                                        fee
-                                    )
-                                }
-                            }
-                        } else {
-                            return format!("Couldn't parse amount: {}", e);
-                        }
-                    }
+                    Err(e) => return format!("Couldn't parse amount: {}", e),
                 };
 
                 let memo = if args.len() == 3 {
