@@ -510,8 +510,10 @@ impl TransactionContext {
                 .try_into()
                 .unwrap_or(Memo::Future(memo_bytes));
             if let Memo::Arbitrary(ref wallet_internal_data) = memo {
-                arbitrary_memos_with_txids
-                    .push((*wallet_internal_data.as_ref(), transaction.txid()));
+                if read_wallet_internal_memo(*wallet_internal_data.as_ref()).is_ok() {
+                    arbitrary_memos_with_txids
+                        .push((*wallet_internal_data.as_ref(), transaction.txid()));
+                }
             }
             self.transaction_metadata_set
                 .write()
