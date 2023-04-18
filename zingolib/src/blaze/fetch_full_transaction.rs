@@ -179,7 +179,7 @@ impl TransactionContext {
                 .add_outgoing_metadata(&transaction.txid(), outgoing_metadatas);
         }
 
-        self.update_outgoing_metadatas_with_uas(arbitrary_memos_with_txids)
+        self.update_outgoing_txdatas_with_uas(arbitrary_memos_with_txids)
             .await;
 
         // Update price if available
@@ -193,7 +193,7 @@ impl TransactionContext {
         //info!("Finished Fetching full transaction {}", tx.txid());
     }
 
-    async fn update_outgoing_metadatas_with_uas(
+    async fn update_outgoing_txdatas_with_uas(
         &self,
         arbitrary_memos_with_txids: Vec<([u8; 511], TxId)>,
     ) {
@@ -208,7 +208,7 @@ impl TransactionContext {
                             .current
                             .get_mut(&txid)
                         {
-                            if transaction.outgoing_metadata.len() != 0 {
+                            if transaction.outgoing_tx_data.len() != 0 {
                                 let outgoing_potential_receivers = [
                                     ua.orchard().map(|oaddr| {
                                         oaddr.b32encode_for_network(&self.config.chain)
@@ -223,7 +223,7 @@ impl TransactionContext {
                                     Some(ua.encode(&self.config.chain)),
                                 ];
                                 if let Some(out_metadata) =
-                                    transaction.outgoing_metadata.iter_mut().find(|out_meta| {
+                                    transaction.outgoing_tx_data.iter_mut().find(|out_meta| {
                                         outgoing_potential_receivers
                                             .contains(&Some(out_meta.to_address.clone()))
                                     })

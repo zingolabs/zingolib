@@ -902,14 +902,14 @@ impl TransactionMetadataSet {
                 .into_iter()
                 .filter(|om| {
                     transaction_metadata
-                        .outgoing_metadata
+                        .outgoing_tx_data
                         .iter()
                         .find(|o| **o == *om)
                         .is_none()
                 })
                 .collect();
 
-            transaction_metadata.outgoing_metadata.extend(new_omd);
+            transaction_metadata.outgoing_tx_data.extend(new_omd);
         } else {
             error!(
                 "TxId {} should be present while adding metadata, but wasn't",

@@ -930,7 +930,7 @@ impl LightClient {
 
         // Collect outgoing metadata
         let outgoing_json = wallet_transaction
-            .outgoing_metadata
+            .outgoing_tx_data
             .iter()
             .map(|om| {
                 let mut o = object! {

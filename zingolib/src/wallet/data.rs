@@ -527,7 +527,7 @@ pub struct TransactionMetadata {
     pub total_transparent_value_spent: u64,
 
     // All outgoing sends
-    pub outgoing_metadata: Vec<OutgoingTxData>,
+    pub outgoing_tx_data: Vec<OutgoingTxData>,
 
     // Whether this TxID was downloaded from the server and scanned for Memos
     pub full_tx_scanned: bool,
@@ -596,7 +596,7 @@ impl TransactionMetadata {
             total_transparent_value_spent: 0,
             total_sapling_value_spent: 0,
             total_orchard_value_spent: 0,
-            outgoing_metadata: vec![],
+            outgoing_tx_data: vec![],
             full_tx_scanned: false,
             zec_price: None,
         }
@@ -689,7 +689,7 @@ impl TransactionMetadata {
             total_sapling_value_spent,
             total_transparent_value_spent,
             total_orchard_value_spent,
-            outgoing_metadata,
+            outgoing_tx_data: outgoing_metadata,
             full_tx_scanned,
             zec_price,
         })
@@ -716,7 +716,7 @@ impl TransactionMetadata {
         }
 
         // Write the outgoing metadata
-        Vector::write(&mut writer, &self.outgoing_metadata, |w, om| om.write(w))?;
+        Vector::write(&mut writer, &self.outgoing_tx_data, |w, om| om.write(w))?;
 
         writer.write_u8(if self.full_tx_scanned { 1 } else { 0 })?;
 
