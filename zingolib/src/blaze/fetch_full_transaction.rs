@@ -117,7 +117,7 @@ impl TransactionContext {
         price: Option<f64>,
     ) {
         // Set up data structures to record scan results
-        let mut arbitrary_memos_with_txids = Vec::new();
+        let mut txid_indexed_zingo_memos = Vec::new();
         // Remember if this is an outgoing Tx. Useful for when we want to grab the outgoing metadata.
         let mut is_outgoing_transaction = false;
         // Collect our t-addresses for easy checking
@@ -143,7 +143,7 @@ impl TransactionContext {
             block_time,
             &mut is_outgoing_transaction,
             &mut outgoing_metadatas,
-            &mut arbitrary_memos_with_txids,
+            &mut txid_indexed_zingo_memos,
             &taddrs_set,
         )
         .await;
@@ -179,7 +179,7 @@ impl TransactionContext {
                 .add_outgoing_metadata(&transaction.txid(), outgoing_metadatas);
         }
 
-        self.update_outgoing_txdatas_with_uas(arbitrary_memos_with_txids)
+        self.update_outgoing_txdatas_with_uas(txid_indexed_zingo_memos)
             .await;
 
         // Update price if available
@@ -195,9 +195,9 @@ impl TransactionContext {
 
     async fn update_outgoing_txdatas_with_uas(
         &self,
-        arbitrary_memos_with_txids: Vec<([u8; 511], TxId)>,
+        txid_indexed_zingo_memos: Vec<([u8; 511], TxId)>,
     ) {
-        for (wallet_internal_data, txid) in arbitrary_memos_with_txids {
+        for (wallet_internal_data, txid) in txid_indexed_zingo_memos {
             match read_wallet_internal_memo(wallet_internal_data) {
                 Ok(ParsedMemo::Version0 { uas }) => {
                     for ua in uas {
