@@ -427,20 +427,20 @@ impl Utxo {
     }
 }
 
-pub struct OutgoingTxMetadata {
+pub struct OutgoingTxData {
     pub to_address: String,
     pub value: u64,
     pub memo: Memo,
-    pub ua: Option<String>,
+    pub recipient_ua: Option<String>,
 }
 
-impl PartialEq for OutgoingTxMetadata {
+impl PartialEq for OutgoingTxData {
     fn eq(&self, other: &Self) -> bool {
         self.to_address == other.to_address && self.value == other.value && self.memo == other.memo
     }
 }
 
-impl OutgoingTxMetadata {
+impl OutgoingTxData {
     pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
         let address_len = reader.read_u64::<LittleEndian>()?;
         let mut address_bytes = vec![0; address_len as usize];
@@ -462,17 +462,17 @@ impl OutgoingTxMetadata {
             )),
         }?;
 
-        Ok(OutgoingTxMetadata {
+        Ok(OutgoingTxData {
             to_address: address,
             value,
             memo,
-            ua: None,
+            recipient_ua: None,
         })
     }
 
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         // Strings are written as len + utf8
-        match &self.ua {
+        match &self.recipient_ua {
             None => {
                 writer.write_u64::<LittleEndian>(self.to_address.as_bytes().len() as u64)?;
                 writer.write_all(self.to_address.as_bytes())?;
@@ -527,7 +527,7 @@ pub struct TransactionMetadata {
     pub total_transparent_value_spent: u64,
 
     // All outgoing sends
-    pub outgoing_metadata: Vec<OutgoingTxMetadata>,
+    pub outgoing_metadata: Vec<OutgoingTxData>,
 
     // Whether this TxID was downloaded from the server and scanned for Memos
     pub full_tx_scanned: bool,
@@ -646,7 +646,7 @@ impl TransactionMetadata {
         };
 
         // Outgoing metadata was only added in version 2
-        let outgoing_metadata = Vector::read(&mut reader, |r| OutgoingTxMetadata::read(r))?;
+        let outgoing_metadata = Vector::read(&mut reader, |r| OutgoingTxData::read(r))?;
 
         let full_tx_scanned = reader.read_u8()? > 0;
 

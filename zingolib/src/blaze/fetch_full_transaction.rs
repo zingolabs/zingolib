@@ -1,5 +1,5 @@
 use crate::wallet::{
-    data::OutgoingTxMetadata,
+    data::OutgoingTxData,
     keys::{address_from_pubkeyhash, unified::WalletCapability, ToBase58Check},
     traits::{
         self as zingo_traits, Bundle as _, DomainWalletExt, Nullifier as _,
@@ -72,7 +72,7 @@ impl TransactionContext {
         unconfirmed: bool,
         block_time: u32,
         is_outgoing_transaction: &mut bool,
-        outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
+        outgoing_metadatas: &mut Vec<OutgoingTxData>,
         arbitrary_memos_with_txids: &mut Vec<([u8; 511], TxId)>,
         taddrs_set: &HashSet<String>,
     ) {
@@ -154,11 +154,11 @@ impl TransactionContext {
                     if let Some(taddr) =
                         address_from_pubkeyhash(&self.config, vout.recipient_address())
                     {
-                        outgoing_metadatas.push(OutgoingTxMetadata {
+                        outgoing_metadatas.push(OutgoingTxData {
                             to_address: taddr,
                             value: vout.value.into(),
                             memo: Memo::Empty,
-                            ua: None,
+                            recipient_ua: None,
                         });
                     }
                 }
@@ -228,7 +228,7 @@ impl TransactionContext {
                                             .contains(&Some(out_meta.to_address.clone()))
                                     })
                                 {
-                                    out_metadata.ua = Some(ua.encode(&self.config.chain));
+                                    out_metadata.recipient_ua = Some(ua.encode(&self.config.chain));
                                 } else {
                                     log::error!(
                                         "Received memo indicating you sent to \
@@ -370,7 +370,7 @@ impl TransactionContext {
         pending: bool,
         block_time: u32,
         is_outgoing_transaction: &mut bool,
-        outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
+        outgoing_metadatas: &mut Vec<OutgoingTxData>,
         arbitrary_memos_with_txids: &mut Vec<([u8; 511], TxId)>,
     ) {
         self.scan_bundle::<SaplingDomain<ChainType>>(
@@ -391,7 +391,7 @@ impl TransactionContext {
         pending: bool,
         block_time: u32,
         is_outgoing_transaction: &mut bool,
-        outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
+        outgoing_metadatas: &mut Vec<OutgoingTxData>,
         arbitrary_memos_with_txids: &mut Vec<([u8; 511], TxId)>,
     ) {
         self.scan_bundle::<OrchardDomain>(
@@ -418,7 +418,7 @@ impl TransactionContext {
         pending: bool, // TODO: This is true when called by wallet.send_to_address_internal, investigate.
         block_time: u32,
         is_outgoing_transaction: &mut bool, // Isn't this also NA for unconfirmed?
-        outgoing_metadatas: &mut Vec<OutgoingTxMetadata>,
+        outgoing_metadatas: &mut Vec<OutgoingTxData>,
         arbitrary_memos_with_txids: &mut Vec<([u8; 511], TxId)>,
     ) where
         D: zingo_traits::DomainWalletExt,
@@ -575,21 +575,21 @@ impl TransactionContext {
                                     },
                                 ) {
                                     if let Memo::Text(_) = memo {
-                                        Some(OutgoingTxMetadata {
+                                        Some(OutgoingTxData {
                                             to_address: address,
                                             value: D::WalletNote::value_from_note(&note),
                                             memo,
-                                            ua: None,
+                                            recipient_ua: None,
                                         })
                                     } else {
                                         None
                                     }
                                 } else {
-                                    Some(OutgoingTxMetadata {
+                                    Some(OutgoingTxData {
                                         to_address: address,
                                         value: D::WalletNote::value_from_note(&note),
                                         memo,
-                                        ua: None,
+                                        recipient_ua: None,
                                     })
                                 }
                             }

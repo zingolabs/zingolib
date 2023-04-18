@@ -21,7 +21,7 @@ use zingoconfig::{ChainType, MAX_REORG};
 
 use super::{
     data::{
-        OutgoingTxMetadata, PoolNullifier, ReceivedOrchardNoteAndMetadata,
+        OutgoingTxData, PoolNullifier, ReceivedOrchardNoteAndMetadata,
         ReceivedSaplingNoteAndMetadata, TransactionMetadata, Utxo, WitnessCache,
     },
     keys::unified::WalletCapability,
@@ -895,11 +895,7 @@ impl TransactionMetadataSet {
         });
     }
 
-    pub fn add_outgoing_metadata(
-        &mut self,
-        txid: &TxId,
-        outgoing_metadata: Vec<OutgoingTxMetadata>,
-    ) {
+    pub fn add_outgoing_metadata(&mut self, txid: &TxId, outgoing_metadata: Vec<OutgoingTxData>) {
         if let Some(transaction_metadata) = self.current.get_mut(txid) {
             // This is n^2 search, but this is likely very small struct, limited by the protocol, so...
             let new_omd: Vec<_> = outgoing_metadata
