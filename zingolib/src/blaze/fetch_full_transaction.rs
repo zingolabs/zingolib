@@ -73,7 +73,7 @@ impl TransactionContext {
         block_time: u32,
         is_outgoing_transaction: &mut bool,
         outgoing_metadatas: &mut Vec<OutgoingTxData>,
-        arbitrary_memos_with_txids: &mut Vec<([u8; 511], TxId)>,
+        arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,
         taddrs_set: &HashSet<String>,
     ) {
         //todo: investigate scanning all bundles simultaneously
@@ -195,11 +195,11 @@ impl TransactionContext {
 
     async fn update_outgoing_txdatas_with_uas(
         &self,
-        txid_indexed_zingo_memos: Vec<([u8; 511], TxId)>,
+        txid_indexed_zingo_memos: Vec<(ParsedMemo, TxId)>,
     ) {
-        for (wallet_internal_data, txid) in txid_indexed_zingo_memos {
-            match read_wallet_internal_memo(wallet_internal_data) {
-                Ok(ParsedMemo::Version0 { uas }) => {
+        for (parsed_zingo_memo, txid) in txid_indexed_zingo_memos {
+            match parsed_zingo_memo {
+                ParsedMemo::Version0 { uas } => {
                     for ua in uas {
                         if let Some(transaction) = self
                             .transaction_metadata_set
@@ -242,19 +242,13 @@ impl TransactionContext {
                         }
                     }
                 }
-                Ok(other_memo_version) => {
+                other_memo_version => {
                     log::error!(
                         "Wallet internal memo is from a future version of the protocol\n\
                         Please ensure that your software is up-to-date.\n\
                         Memo: {other_memo_version:?}"
                     )
                 }
-                Err(e) => log::error!(
-                    "Could not decode wallet internal memo: {e}.\n\
-                    Have you recently used a more up-to-date version of\
-                    this software?\nIf not, this may mean you are being sent\
-                    malicious data.\nSome information may not display correctly"
-                ),
             }
         }
     }
@@ -371,7 +365,7 @@ impl TransactionContext {
         block_time: u32,
         is_outgoing_transaction: &mut bool,
         outgoing_metadatas: &mut Vec<OutgoingTxData>,
-        arbitrary_memos_with_txids: &mut Vec<([u8; 511], TxId)>,
+        arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,
     ) {
         self.scan_bundle::<SaplingDomain<ChainType>>(
             transaction,
@@ -392,7 +386,7 @@ impl TransactionContext {
         block_time: u32,
         is_outgoing_transaction: &mut bool,
         outgoing_metadatas: &mut Vec<OutgoingTxData>,
-        arbitrary_memos_with_txids: &mut Vec<([u8; 511], TxId)>,
+        arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,
     ) {
         self.scan_bundle::<OrchardDomain>(
             transaction,
@@ -419,7 +413,7 @@ impl TransactionContext {
         block_time: u32,
         is_outgoing_transaction: &mut bool, // Isn't this also NA for unconfirmed?
         outgoing_metadatas: &mut Vec<OutgoingTxData>,
-        arbitrary_memos_with_txids: &mut Vec<([u8; 511], TxId)>,
+        arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,
     ) where
         D: zingo_traits::DomainWalletExt,
         D::Note: Clone + PartialEq,
@@ -510,9 +504,17 @@ impl TransactionContext {
                 .try_into()
                 .unwrap_or(Memo::Future(memo_bytes));
             if let Memo::Arbitrary(ref wallet_internal_data) = memo {
-                if read_wallet_internal_memo(*wallet_internal_data.as_ref()).is_ok() {
-                    arbitrary_memos_with_txids
-                        .push((*wallet_internal_data.as_ref(), transaction.txid()));
+                match read_wallet_internal_memo(*wallet_internal_data.as_ref()) {
+                    Ok(parsed_zingo_memo) => {
+                        arbitrary_memos_with_txids.push((parsed_zingo_memo, transaction.txid()));
+                    }
+
+                    Err(e) => log::error!(
+                        "Could not decode wallet internal memo: {e}.\n\
+                    Have you recently used a more up-to-date version of\
+                    this software?\nIf not, this may mean you are being sent\
+                    malicious data.\nSome information may not display correctly"
+                    ),
                 }
             }
             self.transaction_metadata_set
