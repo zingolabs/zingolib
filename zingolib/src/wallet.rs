@@ -736,12 +736,12 @@ impl LightWallet {
         }
     }
 
-    pub async fn maybe_verified_sapling_balance(&self, addr: Option<String>) -> u64 {
+    pub async fn maybe_verified_sapling_balance(&self, addr: Option<String>) -> Option<u64> {
         self.shielded_balance::<SaplingDomain<zingoconfig::ChainType>>(addr, &[])
             .await
     }
 
-    pub async fn maybe_verified_orchard_balance(&self, addr: Option<String>) -> u64 {
+    pub async fn maybe_verified_orchard_balance(&self, addr: Option<String>) -> Option<u64> {
         self.shielded_balance::<OrchardDomain>(addr, &[]).await
     }
 
@@ -749,14 +749,13 @@ impl LightWallet {
         &self,
         target_addr: Option<String>,
         filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionMetadata) -> bool + '_>],
-    ) -> u64
+    ) -> Option<u64>
     where
         D: DomainWalletExt,
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: traits::Recipient,
     {
-        let fvk =
-            D::wc_to_fvk(&*self.wallet_capability().read().await).expect("to get fvk from wc");
+        let fvk = D::wc_to_fvk(&*self.wallet_capability().read().await).ok()?;
         let filter_notes_by_target_addr = |notedata: &&D::WalletNote| match target_addr.as_ref() {
             Some(addr) => {
                 use self::traits::Recipient as _;
@@ -768,34 +767,37 @@ impl LightWallet {
             }
             None => true, // If the addr is none, then get all addrs.
         };
-        self.transaction_context
-            .transaction_metadata_set
-            .read()
-            .await
-            .current
-            .values()
-            .map(|transaction| {
-                let mut filtered_notes: Box<dyn Iterator<Item = &D::WalletNote>> = Box::new(
-                    D::WalletNote::transaction_metadata_notes(transaction)
-                        .iter()
-                        .filter(filter_notes_by_target_addr),
-                );
-                // All filters in iterator are applied, by this loop
-                for filtering_fn in filters {
-                    filtered_notes =
-                        Box::new(filtered_notes.filter(|nnmd| filtering_fn(nnmd, transaction)))
-                }
-                filtered_notes
-                    .map(|notedata| {
-                        if notedata.spent().is_none() && notedata.unconfirmed_spent().is_none() {
-                            <D::WalletNote as traits::ReceivedNoteAndMetadata>::value(notedata)
-                        } else {
-                            0
-                        }
-                    })
-                    .sum::<u64>()
-            })
-            .sum::<u64>()
+        Some(
+            self.transaction_context
+                .transaction_metadata_set
+                .read()
+                .await
+                .current
+                .values()
+                .map(|transaction| {
+                    let mut filtered_notes: Box<dyn Iterator<Item = &D::WalletNote>> = Box::new(
+                        D::WalletNote::transaction_metadata_notes(transaction)
+                            .iter()
+                            .filter(filter_notes_by_target_addr),
+                    );
+                    // All filters in iterator are applied, by this loop
+                    for filtering_fn in filters {
+                        filtered_notes =
+                            Box::new(filtered_notes.filter(|nnmd| filtering_fn(nnmd, transaction)))
+                    }
+                    filtered_notes
+                        .map(|notedata| {
+                            if notedata.spent().is_none() && notedata.unconfirmed_spent().is_none()
+                            {
+                                <D::WalletNote as traits::ReceivedNoteAndMetadata>::value(notedata)
+                            } else {
+                                0
+                            }
+                        })
+                        .sum::<u64>()
+                })
+                .sum::<u64>(),
+        )
     }
 
     // Get all (unspent) utxos. Unconfirmed spent utxos are included
@@ -825,7 +827,7 @@ impl LightWallet {
 
     /// The following functions use a filter/map functional approach to
     /// expressively unpack different kinds of transaction data.
-    pub async fn unverified_sapling_balance(&self, target_addr: Option<String>) -> u64 {
+    pub async fn unverified_sapling_balance(&self, target_addr: Option<String>) -> Option<u64> {
         let anchor_height = self.get_anchor_height().await;
 
         let filters: &[Box<
@@ -837,7 +839,7 @@ impl LightWallet {
             .await
     }
 
-    pub async fn unverified_orchard_balance(&self, target_addr: Option<String>) -> u64 {
+    pub async fn unverified_orchard_balance(&self, target_addr: Option<String>) -> Option<u64> {
         let anchor_height = self.get_anchor_height().await;
 
         let filters: &[Box<
@@ -849,16 +851,16 @@ impl LightWallet {
             .await
     }
 
-    pub async fn verified_sapling_balance(&self, target_addr: Option<String>) -> u64 {
+    pub async fn verified_sapling_balance(&self, target_addr: Option<String>) -> Option<u64> {
         self.verified_balance::<SaplingDomain<zingoconfig::ChainType>>(target_addr)
             .await
     }
 
-    pub async fn verified_orchard_balance(&self, target_addr: Option<String>) -> u64 {
+    pub async fn verified_orchard_balance(&self, target_addr: Option<String>) -> Option<u64> {
         self.verified_balance::<OrchardDomain>(target_addr).await
     }
 
-    async fn verified_balance<D: DomainWalletExt>(&self, target_addr: Option<String>) -> u64
+    async fn verified_balance<D: DomainWalletExt>(&self, target_addr: Option<String>) -> Option<u64>
     where
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
@@ -871,7 +873,7 @@ impl LightWallet {
         self.shielded_balance::<D>(target_addr, filters).await
     }
 
-    pub async fn spendable_sapling_balance(&self, target_addr: Option<String>) -> u64 {
+    pub async fn spendable_sapling_balance(&self, target_addr: Option<String>) -> Option<u64> {
         let anchor_height = self.get_anchor_height().await;
         let filters: &[Box<
             dyn Fn(&&ReceivedSaplingNoteAndMetadata, &TransactionMetadata) -> bool,
@@ -885,7 +887,7 @@ impl LightWallet {
             .await
     }
 
-    pub async fn spendable_orchard_balance(&self, target_addr: Option<String>) -> u64 {
+    pub async fn spendable_orchard_balance(&self, target_addr: Option<String>) -> Option<u64> {
         let anchor_height = self.get_anchor_height().await;
         let filters: &[Box<
             dyn Fn(&&ReceivedOrchardNoteAndMetadata, &TransactionMetadata) -> bool,
