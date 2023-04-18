@@ -487,6 +487,7 @@ impl OutgoingTxMetadata {
     }
 }
 
+///  Everything (SOMETHING) about a transaction
 pub struct TransactionMetadata {
     // Block in which this tx was included
     pub block_height: BlockHeight,
@@ -525,7 +526,7 @@ pub struct TransactionMetadata {
     // Total amount of transparent funds that belong to us that were spent in this Tx.
     pub total_transparent_value_spent: u64,
 
-    // All outgoing sends to addresses outside this wallet
+    // All outgoing sends
     pub outgoing_metadata: Vec<OutgoingTxMetadata>,
 
     // Whether this TxID was downloaded from the server and scanned for Memos
