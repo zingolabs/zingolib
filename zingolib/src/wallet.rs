@@ -736,9 +736,10 @@ impl LightWallet {
         }
     }
 
-    pub async fn maybe_verified_sapling_balance(&self, addr: Option<String>) -> Option<u64> {
+    pub async fn maybe_verified_sapling_balance(&self, addr: Option<String>) -> json::JsonValue {
         self.shielded_balance::<SaplingDomain<zingoconfig::ChainType>>(addr, &[])
             .await
+            .map_or(json::JsonValue::Null, |u| json::JsonValue::from(u))
     }
 
     pub async fn maybe_verified_orchard_balance(&self, addr: Option<String>) -> Option<u64> {
