@@ -1662,7 +1662,12 @@ impl LightClient {
     pub async fn do_shield(&self, address: Option<String>) -> Result<String, String> {
         let transaction_submission_height = self.get_submission_height().await?;
         let fee = u64::from(DEFAULT_FEE);
-        let tbal = self.wallet.tbalance(None).await;
+        let tbal = self
+            .wallet
+            .tbalance(None)
+            .await
+            .as_u64()
+            .expect("To represent Json as u64");
 
         // Make sure there is a balance, and it is greated than the amount
         if tbal <= fee {

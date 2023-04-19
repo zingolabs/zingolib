@@ -10,7 +10,7 @@ use std::{
 
 use bip0039::Mnemonic;
 use data::seeds::HOSPITAL_MUSEUM_SEED;
-use json::JsonValue;
+use json::JsonValue::{self, Null};
 use utils::scenarios::{self, setup::TestEnvironmentGenerator};
 
 use tracing_test::traced_test;
@@ -154,37 +154,44 @@ async fn factor_do_shield_to_call_do_send() {
 }
 
 use zcash_address::unified::Fvk;
-fn check_balance_against_fvk(fvk: Fvk, balance: JsonValue, expected: u64) {
-    use json::JsonValue::Null;
-    match fvk {
-        Fvk::Sapling(_) => {
-            assert_eq!(balance["sapling_balance"], expected);
-            assert_eq!(balance["verified_sapling_balance"], expected);
-            assert_eq!(balance["unverified_sapling_balance"], expected);
-            assert_eq!(balance["orchard_balance"], Null);
-            assert_eq!(balance["verified_orchard_balance"], Null);
-            assert_eq!(balance["unverified_orchard_balance"], Null);
-            assert_eq!(balance["transparent_balance"], Null);
+fn check_balance_against_fvks(
+    fvks: &Vec<&Fvk>,
+    balance: JsonValue,
+    o_expect: u64,
+    s_expect: u64,
+    t_expect: u64,
+) {
+    for fvk in fvks {
+        match fvk {
+            Fvk::Sapling(_) => {
+                assert_eq!(balance["sapling_balance"], s_expect);
+                assert_eq!(balance["verified_sapling_balance"], s_expect);
+                assert_eq!(balance["unverified_sapling_balance"], s_expect);
+                assert_eq!(balance["orchard_balance"], Null);
+                assert_eq!(balance["verified_orchard_balance"], Null);
+                assert_eq!(balance["unverified_orchard_balance"], Null);
+                assert_eq!(balance["transparent_balance"], t_expect);
+            }
+            Fvk::Orchard(_) => {
+                assert_eq!(balance["sapling_balance"], Null);
+                assert_eq!(balance["verified_sapling_balance"], Null);
+                assert_eq!(balance["unverified_sapling_balance"], Null);
+                assert_eq!(balance["orchard_balance"], o_expect);
+                assert_eq!(balance["verified_orchard_balance"], o_expect);
+                assert_eq!(balance["unverified_orchard_balance"], o_expect);
+                assert_eq!(balance["transparent_balance"], t_expect);
+            }
+            Fvk::P2pkh(_) => {
+                assert_eq!(balance["sapling_balance"], Null);
+                assert_eq!(balance["verified_sapling_balance"], Null);
+                assert_eq!(balance["unverified_sapling_balance"], Null);
+                assert_eq!(balance["orchard_balance"], Null);
+                assert_eq!(balance["verified_orchard_balance"], Null);
+                assert_eq!(balance["unverified_orchard_balance"], Null);
+                assert_eq!(balance["transparent_balance"], t_expect);
+            }
+            _ => panic!(),
         }
-        Fvk::Orchard(_) => {
-            assert_eq!(balance["sapling_balance"], Null);
-            assert_eq!(balance["verified_sapling_balance"], Null);
-            assert_eq!(balance["unverified_sapling_balance"], Null);
-            assert_eq!(balance["orchard_balance"], expected);
-            assert_eq!(balance["verified_orchard_balance"], expected);
-            assert_eq!(balance["unverified_orchard_balance"], expected);
-            assert_eq!(balance["transparent_balance"], Null);
-        }
-        Fvk::P2pkh(_) => {
-            assert_eq!(balance["sapling_balance"], Null);
-            assert_eq!(balance["verified_sapling_balance"], Null);
-            assert_eq!(balance["unverified_sapling_balance"], Null);
-            assert_eq!(balance["orchard_balance"], Null);
-            assert_eq!(balance["verified_orchard_balance"], Null);
-            assert_eq!(balance["unverified_orchard_balance"], Null);
-            assert_eq!(balance["transparent_balance"], expected);
-        }
-        _ => panic!(),
     }
 }
 #[tokio::test]
@@ -299,17 +306,8 @@ async fn test_scanning_in_watch_only_mode() {
             .clone();
 
         // assert empty wallet before rescan
-        {
-            let balance = watch_client.do_balance().await;
-            assert_eq!(balance["sapling_balance"], 0);
-            assert_eq!(balance["verified_sapling_balance"], 0);
-            assert_eq!(balance["unverified_sapling_balance"], 0);
-            assert_eq!(balance["orchard_balance"], 0);
-            assert_eq!(balance["verified_orchard_balance"], 0);
-            assert_eq!(balance["unverified_orchard_balance"], 0);
-            assert_eq!(balance["transparent_balance"], 0);
-        }
-
+        let balance = watch_client.do_balance().await;
+        check_balance_against_fvks(fvks_set, balance, 0, 0, 0);
         watch_client.do_rescan().await.unwrap();
         let balance = watch_client.do_balance().await;
         let notes = watch_client.do_list_notes(true).await;
@@ -337,8 +335,8 @@ async fn test_scanning_in_watch_only_mode() {
             assert_eq!(notes["unspent_sapling_notes"].members().count(), 1);
         } else {
             assert!(!watch_wc.sapling.can_view());
-            assert_eq!(balance["sapling_balance"], 0);
-            assert_eq!(balance["verified_sapling_balance"], 0);
+            assert_eq!(balance["sapling_balance"], Null);
+            assert_eq!(balance["verified_sapling_balance"], Null);
             assert_eq!(notes["unspent_sapling_notes"].members().count(), 0);
         }
 

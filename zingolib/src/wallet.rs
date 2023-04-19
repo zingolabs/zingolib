@@ -7,6 +7,7 @@ use crate::wallet::data::{SpendableSaplingNote, TransactionMetadata};
 use bip0039::Mnemonic;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::Future;
+use json::JsonValue;
 use log::{error, info, warn};
 use orchard::keys::SpendingKey as OrchardSpendingKey;
 use orchard::note_encryption::OrchardDomain;
@@ -736,14 +737,16 @@ impl LightWallet {
         }
     }
 
-    pub async fn maybe_verified_sapling_balance(&self, addr: Option<String>) -> json::JsonValue {
+    pub async fn maybe_verified_sapling_balance(&self, addr: Option<String>) -> JsonValue {
         self.shielded_balance::<SaplingDomain<zingoconfig::ChainType>>(addr, &[])
             .await
             .map_or(json::JsonValue::Null, |u| json::JsonValue::from(u))
     }
 
-    pub async fn maybe_verified_orchard_balance(&self, addr: Option<String>) -> Option<u64> {
-        self.shielded_balance::<OrchardDomain>(addr, &[]).await
+    pub async fn maybe_verified_orchard_balance(&self, addr: Option<String>) -> JsonValue {
+        self.shielded_balance::<OrchardDomain>(addr, &[])
+            .await
+            .map_or(json::JsonValue::Null, |u| json::JsonValue::from(u))
     }
 
     async fn shielded_balance<D>(
@@ -814,21 +817,23 @@ impl LightWallet {
             .collect::<Vec<Utxo>>()
     }
 
-    pub async fn tbalance(&self, addr: Option<String>) -> u64 {
-        self.get_utxos()
-            .await
-            .iter()
-            .filter(|utxo| match addr.as_ref() {
-                Some(a) => utxo.address == *a,
-                None => true,
-            })
-            .map(|utxo| utxo.value)
-            .sum::<u64>()
+    pub async fn tbalance(&self, addr: Option<String>) -> JsonValue {
+        JsonValue::from(
+            self.get_utxos()
+                .await
+                .iter()
+                .filter(|utxo| match addr.as_ref() {
+                    Some(a) => utxo.address == *a,
+                    None => true,
+                })
+                .map(|utxo| utxo.value)
+                .sum::<u64>(),
+        )
     }
 
     /// The following functions use a filter/map functional approach to
     /// expressively unpack different kinds of transaction data.
-    pub async fn unverified_sapling_balance(&self, target_addr: Option<String>) -> Option<u64> {
+    pub async fn unverified_sapling_balance(&self, target_addr: Option<String>) -> JsonValue {
         let anchor_height = self.get_anchor_height().await;
 
         let filters: &[Box<
@@ -838,9 +843,10 @@ impl LightWallet {
         })];
         self.shielded_balance::<SaplingDomain<zingoconfig::ChainType>>(target_addr, filters)
             .await
+            .map_or(json::JsonValue::Null, |u| json::JsonValue::from(u))
     }
 
-    pub async fn unverified_orchard_balance(&self, target_addr: Option<String>) -> Option<u64> {
+    pub async fn unverified_orchard_balance(&self, target_addr: Option<String>) -> JsonValue {
         let anchor_height = self.get_anchor_height().await;
 
         let filters: &[Box<
@@ -850,18 +856,19 @@ impl LightWallet {
         })];
         self.shielded_balance::<OrchardDomain>(target_addr, filters)
             .await
+            .map_or(json::JsonValue::Null, |u| json::JsonValue::from(u))
     }
 
-    pub async fn verified_sapling_balance(&self, target_addr: Option<String>) -> Option<u64> {
+    pub async fn verified_sapling_balance(&self, target_addr: Option<String>) -> JsonValue {
         self.verified_balance::<SaplingDomain<zingoconfig::ChainType>>(target_addr)
             .await
     }
 
-    pub async fn verified_orchard_balance(&self, target_addr: Option<String>) -> Option<u64> {
+    pub async fn verified_orchard_balance(&self, target_addr: Option<String>) -> JsonValue {
         self.verified_balance::<OrchardDomain>(target_addr).await
     }
 
-    async fn verified_balance<D: DomainWalletExt>(&self, target_addr: Option<String>) -> Option<u64>
+    async fn verified_balance<D: DomainWalletExt>(&self, target_addr: Option<String>) -> JsonValue
     where
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
@@ -871,10 +878,12 @@ impl LightWallet {
             &[Box::new(|_, transaction| {
                 transaction.block_height <= BlockHeight::from_u32(anchor_height)
             })];
-        self.shielded_balance::<D>(target_addr, filters).await
+        self.shielded_balance::<D>(target_addr, filters)
+            .await
+            .map_or(json::JsonValue::Null, |u| json::JsonValue::from(u))
     }
 
-    pub async fn spendable_sapling_balance(&self, target_addr: Option<String>) -> Option<u64> {
+    pub async fn spendable_sapling_balance(&self, target_addr: Option<String>) -> JsonValue {
         let anchor_height = self.get_anchor_height().await;
         let filters: &[Box<
             dyn Fn(&&ReceivedSaplingNoteAndMetadata, &TransactionMetadata) -> bool,
@@ -886,9 +895,10 @@ impl LightWallet {
         ];
         self.shielded_balance::<SaplingDomain<zingoconfig::ChainType>>(target_addr, filters)
             .await
+            .map_or(json::JsonValue::Null, |u| json::JsonValue::from(u))
     }
 
-    pub async fn spendable_orchard_balance(&self, target_addr: Option<String>) -> Option<u64> {
+    pub async fn spendable_orchard_balance(&self, target_addr: Option<String>) -> JsonValue {
         let anchor_height = self.get_anchor_height().await;
         let filters: &[Box<
             dyn Fn(&&ReceivedOrchardNoteAndMetadata, &TransactionMetadata) -> bool,
@@ -900,6 +910,7 @@ impl LightWallet {
         ];
         self.shielded_balance::<OrchardDomain>(target_addr, filters)
             .await
+            .map_or(json::JsonValue::Null, |u| json::JsonValue::from(u))
     }
 
     ///TODO: Make this work for orchard too
