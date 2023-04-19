@@ -89,7 +89,6 @@ async fn load_wallet(dir: PathBuf) -> zingolib::wallet::LightWallet {
 #[tokio::test]
 #[traced_test]
 async fn load_and_parse_different_wallet_versions() {
-    env_logger::init();
     let (_sap_wallet, _sap_path, sap_dir) = get_wallet_nym("sap_only").unwrap();
     let _loaded_wallet = load_wallet(sap_dir).await;
 }
