@@ -818,17 +818,21 @@ impl LightWallet {
     }
 
     pub async fn tbalance(&self, addr: Option<String>) -> JsonValue {
-        JsonValue::from(
-            self.get_utxos()
-                .await
-                .iter()
-                .filter(|utxo| match addr.as_ref() {
-                    Some(a) => utxo.address == *a,
-                    None => true,
-                })
-                .map(|utxo| utxo.value)
-                .sum::<u64>(),
-        )
+        if self.wallet_capability().read().await.transparent.can_view() {
+            JsonValue::from(
+                self.get_utxos()
+                    .await
+                    .iter()
+                    .filter(|utxo| match addr.as_ref() {
+                        Some(a) => utxo.address == *a,
+                        None => true,
+                    })
+                    .map(|utxo| utxo.value)
+                    .sum::<u64>(),
+            )
+        } else {
+            JsonValue::Null
+        }
     }
 
     /// The following functions use a filter/map functional approach to
