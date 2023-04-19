@@ -1667,7 +1667,7 @@ impl LightClient {
             .tbalance(None)
             .await
             .as_u64()
-            .expect("To represent Json as u64");
+            .ok_or("To represent Json as u64".to_string())?;
 
         // Make sure there is a balance, and it is greated than the amount
         if tbal <= fee {
