@@ -7,6 +7,7 @@ use crate::wallet::data::{SpendableSaplingNote, TransactionMetadata};
 use bip0039::Mnemonic;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::Future;
+use json::JsonValue;
 use log::{error, info, warn};
 use orchard::keys::SpendingKey as OrchardSpendingKey;
 use orchard::note_encryption::OrchardDomain;
@@ -294,6 +295,7 @@ impl LightWallet {
 
     pub async fn read_internal<R: Read>(mut reader: R, config: &ZingoConfig) -> io::Result<Self> {
         let external_version = reader.read_u64::<LittleEndian>()?;
+        log::info!("LightWallet serialized_version read from external: {external_version}");
         if external_version > Self::serialized_version() {
             let e = format!(
                 "Don't know how to read wallet version {}. Do you have the latest version?\n{}",
@@ -305,19 +307,19 @@ impl LightWallet {
         }
 
         info!("Reading wallet version {}", external_version);
-        let key = WalletCapability::read(&mut reader, ())?;
+        let wallet_capability = WalletCapability::read(&mut reader, ())?;
         info!("Keys in this wallet:");
-        match &key.orchard {
+        match &wallet_capability.orchard {
             Capability::None => (),
             Capability::View(_) => info!("  - Orchard Full Viewing Key"),
             Capability::Spend(_) => info!("  - Orchard Spending Key"),
         };
-        match &key.sapling {
+        match &wallet_capability.sapling {
             Capability::None => (),
             Capability::View(_) => info!("  - Sapling Extended Full Viewing Key"),
             Capability::Spend(_) => info!("  - Sapling Extended Spending Key"),
         };
-        match &key.transparent {
+        match &wallet_capability.transparent {
             Capability::None => (),
             Capability::View(_) => info!("  - transparent extended public key"),
             Capability::Spend(_) => info!("  - transparent extended private key"),
@@ -331,9 +333,9 @@ impl LightWallet {
         }
 
         let transactions = if external_version <= 14 {
-            TransactionMetadataSet::read_old(&mut reader)
+            TransactionMetadataSet::read_old(&mut reader, &wallet_capability)
         } else {
-            TransactionMetadataSet::read(&mut reader)
+            TransactionMetadataSet::read(&mut reader, &wallet_capability)
         }?;
 
         let chain_name = utils::read_string(&mut reader)?;
@@ -388,7 +390,7 @@ impl LightWallet {
 
         let transaction_context = TransactionContext::new(
             &config,
-            Arc::new(RwLock::new(key)),
+            Arc::new(RwLock::new(wallet_capability)),
             Arc::new(RwLock::new(transactions)),
         );
 
@@ -536,16 +538,16 @@ impl LightWallet {
     pub(crate) fn note_address<D: DomainWalletExt>(
         network: &zingoconfig::ChainType,
         note: &D::WalletNote,
-        unified_spend_auth: &WalletCapability,
+        wallet_capability: &WalletCapability,
     ) -> String
     where
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
     {
-        note.fvk()
+        D::wc_to_fvk(wallet_capability).expect("to get fvk from wc")
             .diversified_address(*note.diversifier())
             .and_then(|address| {
-                D::ua_from_contained_receiver(unified_spend_auth, &address)
+                D::ua_from_contained_receiver(wallet_capability, &address)
                     .map(|ua| ua.encode(network))
             })
             .unwrap_or("Diversifier not in wallet. Perhaps you restored from seed and didn't restore addresses".to_string())
@@ -735,65 +737,71 @@ impl LightWallet {
         }
     }
 
-    pub async fn maybe_verified_sapling_balance(&self, addr: Option<String>) -> u64 {
-        self.shielded_balance::<ReceivedSaplingNoteAndMetadata>(addr, &[])
+    pub async fn maybe_verified_sapling_balance(&self, addr: Option<String>) -> JsonValue {
+        self.shielded_balance::<SaplingDomain<zingoconfig::ChainType>>(addr, &[])
             .await
+            .map_or(json::JsonValue::Null, |u| json::JsonValue::from(u))
     }
 
-    pub async fn maybe_verified_orchard_balance(&self, addr: Option<String>) -> u64 {
-        self.shielded_balance::<ReceivedOrchardNoteAndMetadata>(addr, &[])
+    pub async fn maybe_verified_orchard_balance(&self, addr: Option<String>) -> JsonValue {
+        self.shielded_balance::<OrchardDomain>(addr, &[])
             .await
+            .map_or(json::JsonValue::Null, |u| json::JsonValue::from(u))
     }
 
-    async fn shielded_balance<NnMd>(
+    async fn shielded_balance<D>(
         &self,
         target_addr: Option<String>,
-        filters: &[Box<dyn Fn(&&NnMd, &TransactionMetadata) -> bool + '_>],
-    ) -> u64
+        filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionMetadata) -> bool + '_>],
+    ) -> Option<u64>
     where
-        NnMd: traits::ReceivedNoteAndMetadata,
+        D: DomainWalletExt,
+        <D as Domain>::Note: PartialEq + Clone,
+        <D as Domain>::Recipient: traits::Recipient,
     {
-        let filter_notes_by_target_addr = |notedata: &&NnMd| match target_addr.as_ref() {
+        let fvk = D::wc_to_fvk(&*self.wallet_capability().read().await).ok()?;
+        let filter_notes_by_target_addr = |notedata: &&D::WalletNote| match target_addr.as_ref() {
             Some(addr) => {
                 use self::traits::Recipient as _;
-                let diversified_address = &notedata
-                    .fvk()
-                    .diversified_address(*notedata.diversifier())
-                    .unwrap();
+                let diversified_address =
+                    &fvk.diversified_address(*notedata.diversifier()).unwrap();
                 *addr
                     == diversified_address
                         .b32encode_for_network(&self.transaction_context.config.chain)
             }
             None => true, // If the addr is none, then get all addrs.
         };
-        self.transaction_context
-            .transaction_metadata_set
-            .read()
-            .await
-            .current
-            .values()
-            .map(|transaction| {
-                let mut filtered_notes: Box<dyn Iterator<Item = &NnMd>> = Box::new(
-                    NnMd::transaction_metadata_notes(transaction)
-                        .iter()
-                        .filter(filter_notes_by_target_addr),
-                );
-                // All filters in iterator are applied, by this loop
-                for filtering_fn in filters {
-                    filtered_notes =
-                        Box::new(filtered_notes.filter(|nnmd| filtering_fn(nnmd, transaction)))
-                }
-                filtered_notes
-                    .map(|notedata| {
-                        if notedata.spent().is_none() && notedata.unconfirmed_spent().is_none() {
-                            <NnMd as traits::ReceivedNoteAndMetadata>::value(notedata)
-                        } else {
-                            0
-                        }
-                    })
-                    .sum::<u64>()
-            })
-            .sum::<u64>()
+        Some(
+            self.transaction_context
+                .transaction_metadata_set
+                .read()
+                .await
+                .current
+                .values()
+                .map(|transaction| {
+                    let mut filtered_notes: Box<dyn Iterator<Item = &D::WalletNote>> = Box::new(
+                        D::WalletNote::transaction_metadata_notes(transaction)
+                            .iter()
+                            .filter(filter_notes_by_target_addr),
+                    );
+                    // All filters in iterator are applied, by this loop
+                    for filtering_fn in filters {
+                        filtered_notes =
+                            Box::new(filtered_notes.filter(|nnmd| filtering_fn(nnmd, transaction)))
+                    }
+                    filtered_notes
+                        .map(|notedata| {
+                            if notedata.spent().is_none() && notedata.unconfirmed_spent().is_none()
+                            {
+                                <D::WalletNote as traits::ReceivedNoteAndMetadata>::value(notedata)
+                            } else {
+                                0
+                            }
+                        })
+                        .sum::<u64>()
+                })
+                .sum::<u64>(),
+        )
     }
 
     // Get all (unspent) utxos. Unconfirmed spent utxos are included
@@ -809,21 +817,27 @@ impl LightWallet {
             .collect::<Vec<Utxo>>()
     }
 
-    pub async fn tbalance(&self, addr: Option<String>) -> u64 {
-        self.get_utxos()
-            .await
-            .iter()
-            .filter(|utxo| match addr.as_ref() {
-                Some(a) => utxo.address == *a,
-                None => true,
-            })
-            .map(|utxo| utxo.value)
-            .sum::<u64>()
+    pub async fn tbalance(&self, addr: Option<String>) -> JsonValue {
+        if self.wallet_capability().read().await.transparent.can_view() {
+            JsonValue::from(
+                self.get_utxos()
+                    .await
+                    .iter()
+                    .filter(|utxo| match addr.as_ref() {
+                        Some(a) => utxo.address == *a,
+                        None => true,
+                    })
+                    .map(|utxo| utxo.value)
+                    .sum::<u64>(),
+            )
+        } else {
+            JsonValue::Null
+        }
     }
 
     /// The following functions use a filter/map functional approach to
     /// expressively unpack different kinds of transaction data.
-    pub async fn unverified_sapling_balance(&self, target_addr: Option<String>) -> u64 {
+    pub async fn unverified_sapling_balance(&self, target_addr: Option<String>) -> JsonValue {
         let anchor_height = self.get_anchor_height().await;
 
         let filters: &[Box<
@@ -831,10 +845,12 @@ impl LightWallet {
         >] = &[Box::new(|_, transaction: &TransactionMetadata| {
             transaction.block_height > BlockHeight::from_u32(anchor_height)
         })];
-        self.shielded_balance(target_addr, filters).await
+        self.shielded_balance::<SaplingDomain<zingoconfig::ChainType>>(target_addr, filters)
+            .await
+            .map_or(json::JsonValue::Null, |u| json::JsonValue::from(u))
     }
 
-    pub async fn unverified_orchard_balance(&self, target_addr: Option<String>) -> u64 {
+    pub async fn unverified_orchard_balance(&self, target_addr: Option<String>) -> JsonValue {
         let anchor_height = self.get_anchor_height().await;
 
         let filters: &[Box<
@@ -842,32 +858,36 @@ impl LightWallet {
         >] = &[Box::new(|_, transaction: &TransactionMetadata| {
             transaction.block_height > BlockHeight::from_u32(anchor_height)
         })];
-        self.shielded_balance(target_addr, filters).await
+        self.shielded_balance::<OrchardDomain>(target_addr, filters)
+            .await
+            .map_or(json::JsonValue::Null, |u| json::JsonValue::from(u))
     }
 
-    pub async fn verified_sapling_balance(&self, target_addr: Option<String>) -> u64 {
-        self.verified_balance::<ReceivedSaplingNoteAndMetadata>(target_addr)
+    pub async fn verified_sapling_balance(&self, target_addr: Option<String>) -> JsonValue {
+        self.verified_balance::<SaplingDomain<zingoconfig::ChainType>>(target_addr)
             .await
     }
 
-    pub async fn verified_orchard_balance(&self, target_addr: Option<String>) -> u64 {
-        self.verified_balance::<ReceivedOrchardNoteAndMetadata>(target_addr)
-            .await
+    pub async fn verified_orchard_balance(&self, target_addr: Option<String>) -> JsonValue {
+        self.verified_balance::<OrchardDomain>(target_addr).await
     }
 
-    async fn verified_balance<NnMd: ReceivedNoteAndMetadata>(
-        &self,
-        target_addr: Option<String>,
-    ) -> u64 {
+    async fn verified_balance<D: DomainWalletExt>(&self, target_addr: Option<String>) -> JsonValue
+    where
+        <D as Domain>::Recipient: Recipient,
+        <D as Domain>::Note: PartialEq + Clone,
+    {
         let anchor_height = self.get_anchor_height().await;
-        let filters: &[Box<dyn Fn(&&NnMd, &TransactionMetadata) -> bool>] =
+        let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionMetadata) -> bool>] =
             &[Box::new(|_, transaction| {
                 transaction.block_height <= BlockHeight::from_u32(anchor_height)
             })];
-        self.shielded_balance::<NnMd>(target_addr, filters).await
+        self.shielded_balance::<D>(target_addr, filters)
+            .await
+            .map_or(json::JsonValue::Null, |u| json::JsonValue::from(u))
     }
 
-    pub async fn spendable_sapling_balance(&self, target_addr: Option<String>) -> u64 {
+    pub async fn spendable_sapling_balance(&self, target_addr: Option<String>) -> JsonValue {
         let anchor_height = self.get_anchor_height().await;
         let filters: &[Box<
             dyn Fn(&&ReceivedSaplingNoteAndMetadata, &TransactionMetadata) -> bool,
@@ -877,10 +897,12 @@ impl LightWallet {
             }),
             Box::new(|nnmd, _| nnmd.witnesses.len() > 0),
         ];
-        self.shielded_balance(target_addr, filters).await
+        self.shielded_balance::<SaplingDomain<zingoconfig::ChainType>>(target_addr, filters)
+            .await
+            .map_or(json::JsonValue::Null, |u| json::JsonValue::from(u))
     }
 
-    pub async fn spendable_orchard_balance(&self, target_addr: Option<String>) -> u64 {
+    pub async fn spendable_orchard_balance(&self, target_addr: Option<String>) -> JsonValue {
         let anchor_height = self.get_anchor_height().await;
         let filters: &[Box<
             dyn Fn(&&ReceivedOrchardNoteAndMetadata, &TransactionMetadata) -> bool,
@@ -890,7 +912,9 @@ impl LightWallet {
             }),
             Box::new(|nnmd, _| nnmd.witnesses.len() > 0),
         ];
-        self.shielded_balance(target_addr, filters).await
+        self.shielded_balance::<OrchardDomain>(target_addr, filters)
+            .await
+            .map_or(json::JsonValue::Null, |u| json::JsonValue::from(u))
     }
 
     ///TODO: Make this work for orchard too

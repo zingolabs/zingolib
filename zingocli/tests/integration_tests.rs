@@ -4,12 +4,13 @@ mod data;
 mod utils;
 use std::{
     fs::File,
+    io::Read,
     path::{Path, PathBuf},
 };
 
 use bip0039::Mnemonic;
 use data::seeds::HOSPITAL_MUSEUM_SEED;
-use json::JsonValue;
+use json::JsonValue::{self, Null};
 use utils::scenarios::{self, setup::TestEnvironmentGenerator};
 
 use tracing_test::traced_test;
@@ -33,6 +34,22 @@ use zingolib::{
     },
 };
 
+pub struct RecordingReader<Reader> {
+    from: Reader,
+    read_lengths: Vec<usize>,
+}
+impl<T> Read for RecordingReader<T>
+where
+    T: Read,
+{
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let for_info = self.from.read(buf)?;
+        log::info!("{:?}", for_info);
+        self.read_lengths.push(for_info);
+        Ok(for_info)
+    }
+}
+
 fn get_wallet_nym(nym: &str) -> Result<(String, PathBuf, PathBuf), String> {
     match nym {
         "sap_only" | "orch_only" | "orch_and_sapl" | "tadd_only" => {
@@ -53,23 +70,22 @@ fn get_wallet_nym(nym: &str) -> Result<(String, PathBuf, PathBuf), String> {
         _ => Err(format!("nym {nym} not a valid wallet directory")),
     }
 }
-async fn load_wallet(wallet: PathBuf) -> zingolib::wallet::LightWallet {
-    log::info!("The wallet is: {}", &wallet.to_str().unwrap());
-    let dir = wallet
-        .parent()
-        .expect("The wallet file is in a directory.")
-        .to_path_buf();
+async fn load_wallet(dir: PathBuf) -> zingolib::wallet::LightWallet {
+    let wallet = dir.join("zingo-wallet.dat");
+    tracing::info!("The wallet is: {}", &wallet.to_str().unwrap());
     let lightwalletd_uri = TestEnvironmentGenerator::new().get_lightwalletd_uri();
     let zingo_config =
         zingolib::load_clientconfig(lightwalletd_uri, Some(dir), ChainType::Regtest).unwrap();
-    let read_buffer = std::fs::File::open(wallet.clone()).unwrap();
+    let from = std::fs::File::open(wallet).unwrap();
 
-    zingolib::wallet::LightWallet::read_internal(read_buffer, &zingo_config)
+    let read_lengths = vec![];
+    let mut recording_reader = RecordingReader { from, read_lengths };
+
+    zingolib::wallet::LightWallet::read_internal(&mut recording_reader, &zingo_config)
         .await
         .unwrap()
 }
 
-#[ignore]
 #[tokio::test]
 #[traced_test]
 async fn load_and_parse_different_wallet_versions() {
@@ -79,7 +95,7 @@ async fn load_and_parse_different_wallet_versions() {
 
 #[tokio::test]
 #[traced_test]
-async fn send_to_self_causes_memo_error_with_no_user_specified_memo() {
+async fn send_to_self_with_no_user_specified_memo_does_not_cause_error() {
     tracing_log::LogTracer::init().unwrap();
     let (regtest_manager, child_process_handler, _faucet, recipient, _txid) =
         scenarios::faucet_prefunded_orchard_recipient(100_000).await;
@@ -112,7 +128,7 @@ async fn send_to_self_causes_memo_error_with_no_user_specified_memo() {
     // With a memo-less send to self, we hide the metadata from the UI, which
     // tricks the error detector. This test, therefore, asserts the presence
     // of a known bug
-    assert!(logs_contain(
+    assert!(!logs_contain(
         "Received memo indicating you sent to an address you don't have on record."
     ));
     drop(child_process_handler)
@@ -136,8 +152,107 @@ async fn factor_do_shield_to_call_do_send() {
         .unwrap();
 }
 
+use zcash_address::unified::Fvk;
+fn check_expected_balance_with_fvks(
+    fvks: &Vec<&Fvk>,
+    balance: JsonValue,
+    o_expect: u64,
+    s_expect: u64,
+    t_expect: u64,
+) {
+    for fvk in fvks {
+        match fvk {
+            Fvk::Sapling(_) => {
+                assert_eq!(balance["sapling_balance"], s_expect);
+                assert_eq!(balance["verified_sapling_balance"], s_expect);
+                assert_eq!(balance["unverified_sapling_balance"], s_expect);
+            }
+            Fvk::Orchard(_) => {
+                assert_eq!(balance["orchard_balance"], o_expect);
+                assert_eq!(balance["verified_orchard_balance"], o_expect);
+                assert_eq!(balance["unverified_orchard_balance"], o_expect);
+            }
+            Fvk::P2pkh(_) => {
+                assert_eq!(balance["transparent_balance"], t_expect);
+            }
+            _ => panic!(),
+        }
+    }
+}
+async fn build_fvk_client_capability(
+    fvks: &Vec<&Fvk>,
+    zingoconfig: &ZingoConfig,
+) -> (LightClient, WalletCapability) {
+    let ufvk = zcash_address::unified::Encoding::encode(
+        &<Ufvk as zcash_address::unified::Encoding>::try_from_items(
+            fvks.clone().into_iter().map(|x| x.clone()).collect(),
+        )
+        .unwrap(),
+        &zcash_address::Network::Regtest,
+    );
+    let viewkey_client =
+        LightClient::create_unconnected(&zingoconfig, WalletBase::Ufvk(ufvk), 0).unwrap();
+    let watch_wc = viewkey_client
+        .extract_unified_capability()
+        .read()
+        .await
+        .clone();
+    (viewkey_client, watch_wc)
+}
+fn check_view_capability_bounds(
+    balance: &JsonValue,
+    watch_wc: &WalletCapability,
+    fvks: &Vec<&Fvk>,
+    ovk: &Fvk,
+    svk: &Fvk,
+    tvk: &Fvk,
+    sent_o_value: &JsonValue,
+    sent_s_value: &JsonValue,
+    sent_t_value: &JsonValue,
+    notes: &JsonValue,
+) {
+    //Orchard
+    if !fvks.contains(&&ovk) {
+        assert!(!watch_wc.orchard.can_view());
+        assert_eq!(balance["orchard_balance"], Null);
+        assert_eq!(balance["verified_orchard_balance"], Null);
+        assert_eq!(balance["unverified_orchard_balance"], Null);
+        assert_eq!(notes["unspent_orchard_notes"].members().count(), 0);
+    } else {
+        assert!(watch_wc.orchard.can_view());
+        assert_eq!(balance["orchard_balance"], *sent_o_value);
+        assert_eq!(balance["verified_orchard_balance"], *sent_o_value);
+        assert_eq!(balance["unverified_orchard_balance"], 0);
+        // assert 1 Orchard note, or 2 notes if a dummy output is included
+        let orchard_notes_count = notes["unspent_orchard_notes"].members().count();
+        assert!((1..=2).contains(&orchard_notes_count));
+    }
+    //Sapling
+    if !fvks.contains(&&svk) {
+        assert!(!watch_wc.sapling.can_view());
+        assert_eq!(balance["sapling_balance"], Null);
+        assert_eq!(balance["verified_sapling_balance"], Null);
+        assert_eq!(balance["unverified_sapling_balance"], Null);
+        assert_eq!(notes["unspent_sapling_notes"].members().count(), 0);
+    } else {
+        assert!(watch_wc.sapling.can_view());
+        assert_eq!(balance["sapling_balance"], *sent_s_value);
+        assert_eq!(balance["verified_sapling_balance"], *sent_s_value);
+        assert_eq!(balance["unverified_sapling_balance"], 0);
+        assert_eq!(notes["unspent_sapling_notes"].members().count(), 1);
+    }
+    if !fvks.contains(&&tvk) {
+        assert!(!watch_wc.transparent.can_view());
+        assert_eq!(balance["transparent_balance"], Null);
+        assert_eq!(notes["utxos"].members().count(), 0);
+    } else {
+        assert!(watch_wc.transparent.can_view());
+        assert_eq!(balance["transparent_balance"], *sent_t_value);
+        assert_eq!(notes["utxos"].members().count(), 1);
+    }
+}
 #[tokio::test]
-#[traced_test]
+//#[traced_test]
 async fn test_scanning_in_watch_only_mode() {
     // # Scenario:
     // 3. reset wallet
@@ -202,12 +317,17 @@ async fn test_scanning_in_watch_only_mode() {
         .read()
         .await
         .clone();
-    use orchard::keys::FullViewingKey as OrchardFvk;
-    use zcash_address::unified::Fvk;
-    use zcash_primitives::zip32::DiversifiableFullViewingKey as SaplingFvk;
     use zingolib::wallet::keys::extended_transparent::ExtendedPubKey;
-    let o_fvk = Fvk::Orchard(OrchardFvk::try_from(&wc).unwrap().to_bytes());
-    let s_fvk = Fvk::Sapling(SaplingFvk::try_from(&wc).unwrap().to_bytes());
+    let o_fvk = Fvk::Orchard(
+        orchard::keys::FullViewingKey::try_from(&wc)
+            .unwrap()
+            .to_bytes(),
+    );
+    let s_fvk = Fvk::Sapling(
+        zcash_primitives::zip32::sapling::DiversifiableFullViewingKey::try_from(&wc)
+            .unwrap()
+            .to_bytes(),
+    );
     let mut t_fvk_bytes = [0u8; 65];
     let t_ext_pk: ExtendedPubKey = (&wc).try_into().unwrap();
     t_fvk_bytes[0..32].copy_from_slice(&t_ext_pk.chain_code[..]);
@@ -221,79 +341,32 @@ async fn test_scanning_in_watch_only_mode() {
         vec![&s_fvk, &t_fvk],
         vec![&o_fvk, &s_fvk, &t_fvk],
     ];
-    for fvks_set in fvks_sets.iter() {
-        log::debug!("testing UFVK containig:");
-        log::debug!("    orchard fvk: {}", fvks_set.contains(&&o_fvk));
-        log::debug!("    sapling fvk: {}", fvks_set.contains(&&s_fvk));
-        log::debug!("    transparent fvk: {}", fvks_set.contains(&&t_fvk));
+    for fvks in fvks_sets.iter() {
+        log::info!("testing UFVK containig:");
+        log::info!("    orchard fvk: {}", fvks.contains(&&o_fvk));
+        log::info!("    sapling fvk: {}", fvks.contains(&&s_fvk));
+        log::info!("    transparent fvk: {}", fvks.contains(&&t_fvk));
 
-        use zcash_address::{unified::Encoding, Network::Regtest};
-        let ufvk = Ufvk::try_from_items(fvks_set.clone().into_iter().map(|x| x.clone()).collect())
-            .unwrap()
-            .encode(&Regtest);
-
-        let watch_client =
-            LightClient::create_unconnected(&zingo_config, WalletBase::Ufvk(ufvk), 0).unwrap();
-
-        let watch_wc = watch_client
-            .extract_unified_capability()
-            .read()
-            .await
-            .clone();
-
+        let (watch_client, watch_wc) = build_fvk_client_capability(fvks, &zingo_config).await;
         // assert empty wallet before rescan
-        {
-            let balance = watch_client.do_balance().await;
-            assert_eq!(balance["sapling_balance"], 0);
-            assert_eq!(balance["verified_sapling_balance"], 0);
-            assert_eq!(balance["unverified_sapling_balance"], 0);
-            assert_eq!(balance["orchard_balance"], 0);
-            assert_eq!(balance["verified_orchard_balance"], 0);
-            assert_eq!(balance["unverified_orchard_balance"], 0);
-            assert_eq!(balance["transparent_balance"], 0);
-        }
-
+        let balance = watch_client.do_balance().await;
+        check_expected_balance_with_fvks(fvks, balance, 0, 0, 0);
         watch_client.do_rescan().await.unwrap();
         let balance = watch_client.do_balance().await;
         let notes = watch_client.do_list_notes(true).await;
 
-        // Orchard
-        if fvks_set.contains(&&o_fvk) {
-            assert!(watch_wc.orchard.can_view());
-            assert_eq!(balance["orchard_balance"], sent_o_value);
-            assert_eq!(balance["verified_orchard_balance"], sent_o_value);
-            // assert 1 Orchard note, or 2 notes if a dummy output is included
-            let orchard_notes_count = notes["unspent_orchard_notes"].members().count();
-            assert!((1..=2).contains(&orchard_notes_count));
-        } else {
-            assert!(!watch_wc.orchard.can_view());
-            assert_eq!(balance["orchard_balance"], 0);
-            assert_eq!(balance["verified_orchard_balance"], 0);
-            assert_eq!(notes["unspent_orchard_notes"].members().count(), 0);
-        }
-
-        // Sapling
-        if fvks_set.contains(&&s_fvk) {
-            assert!(watch_wc.sapling.can_view());
-            assert_eq!(balance["sapling_balance"], sent_s_value);
-            assert_eq!(balance["verified_sapling_balance"], sent_s_value);
-            assert_eq!(notes["unspent_sapling_notes"].members().count(), 1);
-        } else {
-            assert!(!watch_wc.sapling.can_view());
-            assert_eq!(balance["sapling_balance"], 0);
-            assert_eq!(balance["verified_sapling_balance"], 0);
-            assert_eq!(notes["unspent_sapling_notes"].members().count(), 0);
-        }
-
-        // transparent
-        if fvks_set.contains(&&t_fvk) {
-            assert!(watch_wc.transparent.can_view());
-            assert_eq!(balance["transparent_balance"], sent_t_value);
-            assert_eq!(notes["utxos"].members().count(), 1);
-        } else {
-            assert!(!watch_wc.transparent.can_view());
-            assert_eq!(notes["utxos"].members().count(), 0);
-        }
+        check_view_capability_bounds(
+            &balance,
+            &watch_wc,
+            fvks,
+            &o_fvk,
+            &s_fvk,
+            &t_fvk,
+            &sent_o_value,
+            &sent_s_value,
+            &sent_t_value,
+            &notes,
+        );
 
         watch_client.do_rescan().await.unwrap();
         assert_eq!(

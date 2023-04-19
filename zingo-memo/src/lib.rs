@@ -36,8 +36,8 @@ pub fn create_wallet_internal_memo_version_0(uas: &[UnifiedAddress]) -> io::Resu
     }
 }
 
-/// Attempts to parse the 511 bytes of an arbitrary data memo
-pub fn read_wallet_internal_memo(memo: [u8; 511]) -> io::Result<ParsedMemo> {
+/// Attempts to parse the 511 bytes of a version_0 zingo memo
+pub fn parse_zingo_memo(memo: [u8; 511]) -> io::Result<ParsedMemo> {
     let mut reader: &[u8] = &memo;
     match CompactSize::read(&mut reader)? {
         0 => Ok(ParsedMemo::Version0 {

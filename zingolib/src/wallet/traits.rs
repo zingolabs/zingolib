@@ -15,19 +15,13 @@ use crate::compact_formats::{
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use nonempty::NonEmpty;
 use orchard::{
-    bundle::{Authorized as OrchardAuthorized, Bundle as OrchardBundle},
-    keys::{
-        Diversifier as OrchardDiversifier, FullViewingKey as OrchardFullViewingKey,
-        SpendingKey as OrchardSpendingKey,
-    },
-    note::{Note as OrchardNote, Nullifier as OrchardNullifier},
     note_encryption::OrchardDomain,
     primitives::redpallas::{Signature, SpendAuth},
     tree::MerkleHashOrchard,
-    Action, Address as OrchardAddress,
+    Action,
 };
 use subtle::CtOption;
-use zcash_address::unified::{self, Encoding as _, Receiver};
+use zcash_address::unified::{self, Receiver};
 use zcash_client_backend::{address::UnifiedAddress, encoding::encode_payment_address};
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::{
@@ -37,24 +31,12 @@ use zcash_primitives::{
     consensus::{BlockHeight, NetworkUpgrade, Parameters},
     memo::{Memo, MemoBytes},
     merkle_tree::{Hashable, IncrementalWitness},
-    sapling::{
-        note_encryption::SaplingDomain, Diversifier as SaplingDiversifier, Node as SaplingNode,
-        Note as SaplingNote, Nullifier as SaplingNullifier, PaymentAddress as SaplingAddress,
-    },
+    sapling::note_encryption::SaplingDomain,
     transaction::{
-        components::{
-            sapling::{
-                Authorization as SaplingAuthorization, Authorized as SaplingAuthorized,
-                Bundle as SaplingBundle, GrothProofBytes,
-            },
-            Amount, OutputDescription, SpendDescription,
-        },
+        components::{self, sapling::GrothProofBytes, Amount, OutputDescription, SpendDescription},
         Transaction, TxId,
     },
-    zip32::{
-        DiversifiableFullViewingKey as SaplingFvk,
-        ExtendedSpendingKey as SaplingExtendedSpendingKey,
-    },
+    zip32,
 };
 use zingoconfig::ChainType;
 
@@ -63,25 +45,25 @@ pub trait ToBytes<const N: usize> {
     fn to_bytes(&self) -> [u8; N];
 }
 
-impl ToBytes<32> for SaplingNullifier {
+impl ToBytes<32> for zcash_primitives::sapling::Nullifier {
     fn to_bytes(&self) -> [u8; 32] {
         self.0
     }
 }
 
-impl ToBytes<32> for OrchardNullifier {
+impl ToBytes<32> for orchard::note::Nullifier {
     fn to_bytes(&self) -> [u8; 32] {
-        OrchardNullifier::to_bytes(*self)
+        orchard::note::Nullifier::to_bytes(*self)
     }
 }
 
-impl ToBytes<11> for SaplingDiversifier {
+impl ToBytes<11> for zcash_primitives::sapling::Diversifier {
     fn to_bytes(&self) -> [u8; 11] {
         self.0
     }
 }
 
-impl ToBytes<11> for OrchardDiversifier {
+impl ToBytes<11> for orchard::keys::Diversifier {
     fn to_bytes(&self) -> [u8; 11] {
         *self.as_array()
     }
@@ -148,28 +130,28 @@ pub trait FromBytes<const N: usize> {
     fn from_bytes(bytes: [u8; N]) -> Self;
 }
 
-impl FromBytes<32> for SaplingNullifier {
+impl FromBytes<32> for zcash_primitives::sapling::Nullifier {
     fn from_bytes(bytes: [u8; 32]) -> Self {
         Self(bytes)
     }
 }
 
-impl FromBytes<32> for OrchardNullifier {
+impl FromBytes<32> for orchard::note::Nullifier {
     fn from_bytes(bytes: [u8; 32]) -> Self {
-        Option::from(OrchardNullifier::from_bytes(&bytes))
+        Option::from(orchard::note::Nullifier::from_bytes(&bytes))
             .expect(&format!("Invalid nullifier {:?}", bytes))
     }
 }
 
-impl FromBytes<11> for SaplingDiversifier {
+impl FromBytes<11> for zcash_primitives::sapling::Diversifier {
     fn from_bytes(bytes: [u8; 11]) -> Self {
-        SaplingDiversifier(bytes)
+        zcash_primitives::sapling::Diversifier(bytes)
     }
 }
 
-impl FromBytes<11> for OrchardDiversifier {
+impl FromBytes<11> for orchard::keys::Diversifier {
     fn from_bytes(bytes: [u8; 11]) -> Self {
-        OrchardDiversifier::from_bytes(bytes)
+        orchard::keys::Diversifier::from_bytes(bytes)
     }
 }
 
@@ -180,7 +162,7 @@ where
     fn from_commitment(from: &[u8; 32]) -> CtOption<Self>;
 }
 
-impl FromCommitment for SaplingNode {
+impl FromCommitment for zcash_primitives::sapling::Node {
     fn from_commitment(from: &[u8; 32]) -> CtOption<Self> {
         let maybe_node = Self::read(from.as_slice());
         match maybe_node {
@@ -201,28 +183,30 @@ pub trait Spend {
     fn nullifier(&self) -> &Self::Nullifier;
 }
 
-impl<Auth: SaplingAuthorization> Spend for SpendDescription<Auth> {
-    type Nullifier = SaplingNullifier;
+impl<Auth: zcash_primitives::transaction::components::sapling::Authorization> Spend
+    for SpendDescription<Auth>
+{
+    type Nullifier = zcash_primitives::sapling::Nullifier;
     fn nullifier(&self) -> &Self::Nullifier {
         self.nullifier()
     }
 }
 
 impl<Auth> Spend for Action<Auth> {
-    type Nullifier = OrchardNullifier;
+    type Nullifier = orchard::note::Nullifier;
     fn nullifier(&self) -> &Self::Nullifier {
         self.nullifier()
     }
 }
 
-impl From<OrchardNullifier> for PoolNullifier {
-    fn from(n: OrchardNullifier) -> Self {
+impl From<orchard::note::Nullifier> for PoolNullifier {
+    fn from(n: orchard::note::Nullifier) -> Self {
         PoolNullifier::Orchard(n)
     }
 }
 
-impl From<SaplingNullifier> for PoolNullifier {
-    fn from(n: SaplingNullifier) -> Self {
+impl From<zcash_primitives::sapling::Nullifier> for PoolNullifier {
+    fn from(n: zcash_primitives::sapling::Nullifier) -> Self {
         PoolNullifier::Sapling(n)
     }
 }
@@ -236,25 +220,29 @@ pub trait Recipient {
     fn b32encode_for_network(&self, chain: &ChainType) -> String;
 }
 
-impl Recipient for OrchardAddress {
-    type Diversifier = OrchardDiversifier;
+impl Recipient for orchard::Address {
+    type Diversifier = orchard::keys::Diversifier;
 
     fn diversifier(&self) -> Self::Diversifier {
-        OrchardAddress::diversifier(&self)
+        orchard::Address::diversifier(&self)
     }
 
     fn b32encode_for_network(&self, chain: &ChainType) -> String {
-        unified::Address::try_from_items(vec![Receiver::Orchard(self.to_raw_address_bytes())])
-            .expect("Could not create UA from orchard address")
-            .encode(&chain.address_network().unwrap())
+        unified::Encoding::encode(
+            &<unified::Address as unified::Encoding>::try_from_items(vec![Receiver::Orchard(
+                self.to_raw_address_bytes(),
+            )])
+            .expect("Could not create UA from orchard address"),
+            &chain.address_network().unwrap(),
+        )
     }
 }
 
-impl Recipient for SaplingAddress {
-    type Diversifier = SaplingDiversifier;
+impl Recipient for zcash_primitives::sapling::PaymentAddress {
+    type Diversifier = zcash_primitives::sapling::Diversifier;
 
     fn diversifier(&self) -> Self::Diversifier {
-        *SaplingAddress::diversifier(&self)
+        *zcash_primitives::sapling::PaymentAddress::diversifier(&self)
     }
 
     fn b32encode_for_network(&self, chain: &ChainType) -> String {
@@ -297,7 +285,7 @@ impl CompactOutput<OrchardDomain> for CompactOrchardAction {
 
     fn domain(&self, _parameters: ChainType, _heightt: BlockHeight) -> OrchardDomain {
         OrchardDomain::for_nullifier(
-            OrchardNullifier::from_bytes(vec_to_array(&self.nullifier)).unwrap(),
+            orchard::note::Nullifier::from_bytes(vec_to_array(&self.nullifier)).unwrap(),
         )
     }
 }
@@ -331,8 +319,10 @@ where
     fn spend_elements(&self) -> Self::Spends<'_>;
 }
 
-impl Bundle<SaplingDomain<ChainType>> for SaplingBundle<SaplingAuthorized> {
-    type Spend = SpendDescription<SaplingAuthorized>;
+impl Bundle<SaplingDomain<ChainType>>
+    for components::sapling::Bundle<components::sapling::Authorized>
+{
+    type Spend = SpendDescription<components::sapling::Authorized>;
     type Output = OutputDescription<GrothProofBytes>;
     type Spends<'a> = &'a [Self::Spend];
     type Outputs<'a> = &'a [Self::Output];
@@ -349,7 +339,7 @@ impl Bundle<SaplingDomain<ChainType>> for SaplingBundle<SaplingAuthorized> {
     }
 }
 
-impl Bundle<OrchardDomain> for OrchardBundle<OrchardAuthorized, Amount> {
+impl Bundle<OrchardDomain> for orchard::bundle::Bundle<orchard::bundle::Authorized, Amount> {
     type Spend = Action<Signature<SpendAuth>>;
     type Output = Action<Signature<SpendAuth>>;
     type Spends<'a> = &'a NonEmpty<Self::Spend>;
@@ -380,7 +370,7 @@ pub trait Nullifier:
     fn get_nullifiers_spent_in_transaction(transaction: &TransactionMetadata) -> &Vec<Self>;
 }
 
-impl Nullifier for SaplingNullifier {
+impl Nullifier for zcash_primitives::sapling::Nullifier {
     fn get_nullifiers_of_unspent_notes_from_transaction_set(
         transaction_metadata_set: &TransactionMetadataSet,
     ) -> Vec<(Self, u64, TxId)> {
@@ -394,7 +384,7 @@ impl Nullifier for SaplingNullifier {
     }
 }
 
-impl Nullifier for OrchardNullifier {
+impl Nullifier for orchard::note::Nullifier {
     fn get_nullifiers_of_unspent_notes_from_transaction_set(
         transactions: &TransactionMetadataSet,
     ) -> Vec<(Self, u64, TxId)> {
@@ -407,11 +397,14 @@ impl Nullifier for OrchardNullifier {
 }
 
 pub trait ReceivedNoteAndMetadata: Sized {
-    type Fvk: Clone + Diversifiable + ReadableWriteable<()> + Send;
     type Diversifier: Copy + FromBytes<11> + ToBytes<11>;
-    type Note: PartialEq + ReadableWriteable<(Self::Fvk, Self::Diversifier)> + Clone;
+
+    type Note: PartialEq
+        + for<'a> ReadableWriteable<(Self::Diversifier, &'a WalletCapability)>
+        + Clone;
     type Node: Hashable + FromCommitment + Send;
     type Nullifier: Nullifier;
+
     const GET_NOTE_WITNESSES: fn(
         &TransactionMetadataSet,
         &TxId,
@@ -423,8 +416,8 @@ pub trait ReceivedNoteAndMetadata: Sized {
         &Self::Nullifier,
         WitnessCache<Self::Node>,
     );
+    fn diversifier(&self) -> &Self::Diversifier;
     fn from_parts(
-        fvk: Self::Fvk,
         diversifier: Self::Diversifier,
         note: Self::Note,
         witnesses: WitnessCache<Self::Node>,
@@ -435,47 +428,38 @@ pub trait ReceivedNoteAndMetadata: Sized {
         is_change: bool,
         have_spending_key: bool,
     ) -> Self;
+    fn get_deprecated_serialized_view_key_buffer() -> Vec<u8>;
+    fn have_spending_key(&self) -> bool;
     fn is_change(&self) -> bool;
-    fn fvk(&self) -> &Self::Fvk;
-    fn diversifier(
-        &self,
-    ) -> &<<Self::Fvk as Diversifiable>::Note as ReceivedNoteAndMetadata>::Diversifier;
+    fn is_spent(&self) -> bool {
+        Self::spent(self).is_some()
+    }
     fn memo(&self) -> &Option<Memo>;
     fn memo_mut(&mut self) -> &mut Option<Memo>;
     fn note(&self) -> &Self::Note;
-    fn get_nullifier_from_note_fvk_and_witness_position(
-        note: &Self::Note,
-        fvk: &Self::Fvk,
-        position: u64,
-    ) -> Self::Nullifier;
     fn nullifier(&self) -> Self::Nullifier;
-    fn value_from_note(note: &Self::Note) -> u64;
     fn spent(&self) -> &Option<(TxId, u32)>;
     fn spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
-    fn unconfirmed_spent(&self) -> &Option<(TxId, u32)>;
-    fn unconfirmed_spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
-    fn witnesses(&self) -> &WitnessCache<Self::Node>;
-    fn witnesses_mut(&mut self) -> &mut WitnessCache<Self::Node>;
-    fn have_spending_key(&self) -> bool;
     fn transaction_metadata_notes(wallet_transaction: &TransactionMetadata) -> &Vec<Self>;
     fn transaction_metadata_notes_mut(
         wallet_transaction: &mut TransactionMetadata,
     ) -> &mut Vec<Self>;
+    fn unconfirmed_spent(&self) -> &Option<(TxId, u32)>;
+    fn unconfirmed_spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
     ///Convenience function
     fn value(&self) -> u64 {
         Self::value_from_note(self.note())
     }
-    fn is_spent(&self) -> bool {
-        Self::spent(self).is_some()
-    }
+    fn value_from_note(note: &Self::Note) -> u64;
+    fn witnesses(&self) -> &WitnessCache<Self::Node>;
+    fn witnesses_mut(&mut self) -> &mut WitnessCache<Self::Node>;
 }
 
 impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
-    type Fvk = SaplingFvk;
-    type Diversifier = SaplingDiversifier;
-    type Note = SaplingNote;
-    type Node = SaplingNode;
-    type Nullifier = SaplingNullifier;
+    type Diversifier = zcash_primitives::sapling::Diversifier;
+    type Note = zcash_primitives::sapling::Note;
+    type Node = zcash_primitives::sapling::Node;
+    type Nullifier = zcash_primitives::sapling::Nullifier;
 
     /// This (and SET_NOTE_WITNESSES) could be associated functions instead of fn
     /// constants, but that would require an additional repetition of the fn arguments.
@@ -485,7 +469,6 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         &Self::Nullifier,
     ) -> Option<(WitnessCache<Self::Node>, BlockHeight)> =
         TransactionMetadataSet::get_sapling_note_witnesses;
-
     const SET_NOTE_WITNESSES: fn(
         &mut TransactionMetadataSet,
         &TxId,
@@ -493,12 +476,15 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         WitnessCache<Self::Node>,
     ) = TransactionMetadataSet::set_sapling_note_witnesses;
 
+    fn diversifier(&self) -> &Self::Diversifier {
+        &self.diversifier
+    }
+
     fn from_parts(
-        fvk: SaplingFvk,
-        diversifier: SaplingDiversifier,
-        note: SaplingNote,
-        witnesses: WitnessCache<SaplingNode>,
-        nullifier: SaplingNullifier,
+        diversifier: zcash_primitives::sapling::Diversifier,
+        note: zcash_primitives::sapling::Note,
+        witnesses: WitnessCache<zcash_primitives::sapling::Node>,
+        nullifier: zcash_primitives::sapling::Nullifier,
         spent: Option<(TxId, u32)>,
         unconfirmed_spent: Option<(TxId, u32)>,
         memo: Option<Memo>,
@@ -506,7 +492,6 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         have_spending_key: bool,
     ) -> Self {
         Self {
-            fvk,
             diversifier,
             note,
             witnesses,
@@ -519,16 +504,16 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         }
     }
 
+    fn get_deprecated_serialized_view_key_buffer() -> Vec<u8> {
+        vec![0u8; 169]
+    }
+
+    fn have_spending_key(&self) -> bool {
+        self.have_spending_key
+    }
+
     fn is_change(&self) -> bool {
         self.is_change
-    }
-
-    fn fvk(&self) -> &Self::Fvk {
-        &self.fvk
-    }
-
-    fn diversifier(&self) -> &Self::Diversifier {
-        &self.diversifier
     }
 
     fn memo(&self) -> &Option<Memo> {
@@ -543,20 +528,8 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         &self.note
     }
 
-    fn get_nullifier_from_note_fvk_and_witness_position(
-        note: &Self::Note,
-        fvk: &Self::Fvk,
-        position: u64,
-    ) -> Self::Nullifier {
-        note.nf(&fvk.fvk().vk.nk, position)
-    }
-
     fn nullifier(&self) -> Self::Nullifier {
         self.nullifier
-    }
-
-    fn value_from_note(note: &Self::Note) -> u64 {
-        note.value().inner()
     }
 
     fn spent(&self) -> &Option<(TxId, u32)> {
@@ -565,26 +538,6 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
 
     fn spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
         &mut self.spent
-    }
-
-    fn unconfirmed_spent(&self) -> &Option<(TxId, u32)> {
-        &self.unconfirmed_spent
-    }
-
-    fn unconfirmed_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
-        &mut self.unconfirmed_spent
-    }
-
-    fn witnesses(&self) -> &WitnessCache<Self::Node> {
-        &self.witnesses
-    }
-
-    fn witnesses_mut(&mut self) -> &mut WitnessCache<Self::Node> {
-        &mut self.witnesses
-    }
-
-    fn have_spending_key(&self) -> bool {
-        self.have_spending_key
     }
 
     fn transaction_metadata_notes(wallet_transaction: &TransactionMetadata) -> &Vec<Self> {
@@ -596,14 +549,33 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
     ) -> &mut Vec<Self> {
         &mut wallet_transaction.sapling_notes
     }
+
+    fn unconfirmed_spent(&self) -> &Option<(TxId, u32)> {
+        &self.unconfirmed_spent
+    }
+
+    fn unconfirmed_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
+        &mut self.unconfirmed_spent
+    }
+
+    fn value_from_note(note: &Self::Note) -> u64 {
+        note.value().inner()
+    }
+
+    fn witnesses(&self) -> &WitnessCache<Self::Node> {
+        &self.witnesses
+    }
+
+    fn witnesses_mut(&mut self) -> &mut WitnessCache<Self::Node> {
+        &mut self.witnesses
+    }
 }
 
 impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
-    type Fvk = OrchardFullViewingKey;
-    type Diversifier = OrchardDiversifier;
-    type Note = OrchardNote;
+    type Diversifier = orchard::keys::Diversifier;
+    type Note = orchard::note::Note;
     type Node = MerkleHashOrchard;
-    type Nullifier = OrchardNullifier;
+    type Nullifier = orchard::note::Nullifier;
 
     const GET_NOTE_WITNESSES: fn(
         &TransactionMetadataSet,
@@ -619,8 +591,11 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         WitnessCache<Self::Node>,
     ) = TransactionMetadataSet::set_orchard_note_witnesses;
 
+    fn diversifier(&self) -> &Self::Diversifier {
+        &self.diversifier
+    }
+
     fn from_parts(
-        fvk: Self::Fvk,
         diversifier: Self::Diversifier,
         note: Self::Note,
         witnesses: WitnessCache<Self::Node>,
@@ -632,7 +607,6 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         have_spending_key: bool,
     ) -> Self {
         Self {
-            fvk,
             diversifier,
             note,
             witnesses,
@@ -645,18 +619,21 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         }
     }
 
+    fn get_deprecated_serialized_view_key_buffer() -> Vec<u8> {
+        vec![0u8; 96]
+    }
+
+    fn have_spending_key(&self) -> bool {
+        self.have_spending_key
+    }
     fn is_change(&self) -> bool {
         self.is_change
     }
-    fn fvk(&self) -> &Self::Fvk {
-        &self.fvk
-    }
-    fn diversifier(&self) -> &Self::Diversifier {
-        &self.diversifier
-    }
+
     fn memo(&self) -> &Option<Memo> {
         &self.memo
     }
+
     fn memo_mut(&mut self) -> &mut Option<Memo> {
         &mut self.memo
     }
@@ -665,20 +642,8 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         &self.note
     }
 
-    fn get_nullifier_from_note_fvk_and_witness_position(
-        note: &Self::Note,
-        fvk: &Self::Fvk,
-        _position: u64,
-    ) -> Self::Nullifier {
-        note.nullifier(fvk)
-    }
-
     fn nullifier(&self) -> Self::Nullifier {
         self.nullifier
-    }
-
-    fn value_from_note(note: &Self::Note) -> u64 {
-        note.value().inner()
     }
 
     fn spent(&self) -> &Option<(TxId, u32)> {
@@ -689,26 +654,6 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         &mut self.spent
     }
 
-    fn unconfirmed_spent(&self) -> &Option<(TxId, u32)> {
-        &self.unconfirmed_spent
-    }
-
-    fn unconfirmed_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
-        &mut self.unconfirmed_spent
-    }
-
-    fn witnesses(&self) -> &WitnessCache<Self::Node> {
-        &self.witnesses
-    }
-
-    fn witnesses_mut(&mut self) -> &mut WitnessCache<Self::Node> {
-        &mut self.witnesses
-    }
-
-    fn have_spending_key(&self) -> bool {
-        self.have_spending_key
-    }
-
     fn transaction_metadata_notes(wallet_transaction: &TransactionMetadata) -> &Vec<Self> {
         &wallet_transaction.orchard_notes
     }
@@ -717,6 +662,26 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         wallet_transaction: &mut TransactionMetadata,
     ) -> &mut Vec<Self> {
         &mut wallet_transaction.orchard_notes
+    }
+
+    fn unconfirmed_spent(&self) -> &Option<(TxId, u32)> {
+        &self.unconfirmed_spent
+    }
+
+    fn unconfirmed_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
+        &mut self.unconfirmed_spent
+    }
+
+    fn value_from_note(note: &Self::Note) -> u64 {
+        note.value().inner()
+    }
+
+    fn witnesses(&self) -> &WitnessCache<Self::Node> {
+        &self.witnesses
+    }
+
+    fn witnesses_mut(&mut self) -> &mut WitnessCache<Self::Node> {
+        &mut self.witnesses
     }
 }
 
@@ -733,7 +698,6 @@ where
     type SpendingKey: for<'a> TryFrom<&'a WalletCapability> + Clone;
     type CompactOutput: CompactOutput<Self>;
     type WalletNote: ReceivedNoteAndMetadata<
-        Fvk = Self::Fvk,
         Note = <Self as Domain>::Note,
         Diversifier = <<Self as Domain>::Recipient as Recipient>::Diversifier,
         Nullifier = <<<Self as DomainWalletExt>::Bundle as Bundle<Self>>::Spend as Spend>::Nullifier,
@@ -742,24 +706,29 @@ where
 
     type Bundle: Bundle<Self>;
 
+    fn get_nullifier_from_note_fvk_and_witness_position(
+        note: &Self::Note,
+        fvk: &Self::Fvk,
+        position: u64,
+    ) -> <Self::WalletNote as ReceivedNoteAndMetadata>::Nullifier;
+    fn get_tree(tree_state: &TreeState) -> &String;
     fn to_notes_vec_mut(_: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote>;
     fn ua_from_contained_receiver<'a>(
         unified_spend_auth: &'a WalletCapability,
         receiver: &Self::Recipient,
     ) -> Option<&'a UnifiedAddress>;
-    fn get_tree(tree_state: &TreeState) -> &String;
-    fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String>;
     fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, String>;
     fn wc_to_ivk(wc: &WalletCapability) -> Result<Self::IncomingViewingKey, String>;
     fn wc_to_ovk(wc: &WalletCapability) -> Result<Self::OutgoingViewingKey, String>;
+    fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String>;
 }
 
 impl DomainWalletExt for SaplingDomain<ChainType> {
     const NU: NetworkUpgrade = NetworkUpgrade::Sapling;
 
-    type Fvk = SaplingFvk;
+    type Fvk = zip32::sapling::DiversifiableFullViewingKey;
 
-    type SpendingKey = SaplingExtendedSpendingKey;
+    type SpendingKey = zip32::sapling::ExtendedSpendingKey;
 
     type CompactOutput = CompactSaplingOutput;
 
@@ -767,7 +736,19 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
 
     type SpendableNoteAT = SpendableSaplingNote;
 
-    type Bundle = SaplingBundle<SaplingAuthorized>;
+    type Bundle = components::sapling::Bundle<components::sapling::Authorized>;
+
+    fn get_nullifier_from_note_fvk_and_witness_position(
+        note: &Self::Note,
+        fvk: &Self::Fvk,
+        position: u64,
+    ) -> <<Self as DomainWalletExt>::WalletNote as ReceivedNoteAndMetadata>::Nullifier {
+        note.nf(&fvk.fvk().vk.nk, position)
+    }
+
+    fn get_tree(tree_state: &TreeState) -> &String {
+        &tree_state.sapling_tree
+    }
 
     fn to_notes_vec_mut(transaction: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote> {
         &mut transaction.sapling_notes
@@ -782,13 +763,6 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
             .iter()
             .find(|ua| ua.sapling() == Some(receiver))
     }
-
-    fn get_tree(tree_state: &TreeState) -> &String {
-        &tree_state.sapling_tree
-    }
-    fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String> {
-        Self::SpendingKey::try_from(wc)
-    }
     fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, String> {
         Self::Fvk::try_from(wc)
     }
@@ -798,14 +772,17 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
     fn wc_to_ovk(wc: &WalletCapability) -> Result<Self::OutgoingViewingKey, String> {
         Self::OutgoingViewingKey::try_from(wc)
     }
+    fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String> {
+        Self::SpendingKey::try_from(wc)
+    }
 }
 
 impl DomainWalletExt for OrchardDomain {
     const NU: NetworkUpgrade = NetworkUpgrade::Nu5;
 
-    type Fvk = OrchardFullViewingKey;
+    type Fvk = orchard::keys::FullViewingKey;
 
-    type SpendingKey = OrchardSpendingKey;
+    type SpendingKey = orchard::keys::SpendingKey;
 
     type CompactOutput = CompactOrchardAction;
 
@@ -813,7 +790,19 @@ impl DomainWalletExt for OrchardDomain {
 
     type SpendableNoteAT = SpendableOrchardNote;
 
-    type Bundle = OrchardBundle<OrchardAuthorized, Amount>;
+    type Bundle = orchard::bundle::Bundle<orchard::bundle::Authorized, Amount>;
+
+    fn get_nullifier_from_note_fvk_and_witness_position(
+        note: &Self::Note,
+        fvk: &Self::Fvk,
+        _position: u64,
+    ) -> <<Self as DomainWalletExt>::WalletNote as ReceivedNoteAndMetadata>::Nullifier {
+        note.nullifier(fvk)
+    }
+
+    fn get_tree(tree_state: &TreeState) -> &String {
+        &tree_state.orchard_tree
+    }
 
     fn to_notes_vec_mut(transaction: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote> {
         &mut transaction.orchard_notes
@@ -828,13 +817,6 @@ impl DomainWalletExt for OrchardDomain {
             .iter()
             .find(|unified_address| unified_address.orchard() == Some(receiver))
     }
-
-    fn get_tree(tree_state: &TreeState) -> &String {
-        &tree_state.orchard_tree
-    }
-    fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String> {
-        Self::SpendingKey::try_from(wc)
-    }
     fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, String> {
         Self::Fvk::try_from(wc)
     }
@@ -843,6 +825,9 @@ impl DomainWalletExt for OrchardDomain {
     }
     fn wc_to_ovk(wc: &WalletCapability) -> Result<Self::OutgoingViewingKey, String> {
         Self::OutgoingViewingKey::try_from(wc)
+    }
+    fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String> {
+        Self::SpendingKey::try_from(wc)
     }
 }
 
@@ -855,20 +840,20 @@ pub trait Diversifiable {
     ) -> Option<Self::Address>;
 }
 
-impl Diversifiable for SaplingFvk {
+impl Diversifiable for zip32::sapling::DiversifiableFullViewingKey {
     type Note = ReceivedSaplingNoteAndMetadata;
 
     type Address = zcash_primitives::sapling::PaymentAddress;
 
     fn diversified_address(
         &self,
-        div: <<SaplingFvk as Diversifiable>::Note as ReceivedNoteAndMetadata>::Diversifier,
+        div: <<zip32::sapling::DiversifiableFullViewingKey as Diversifiable>::Note as ReceivedNoteAndMetadata>::Diversifier,
     ) -> Option<Self::Address> {
         self.fvk().vk.to_payment_address(div)
     }
 }
 
-impl Diversifiable for OrchardFullViewingKey {
+impl Diversifiable for orchard::keys::FullViewingKey {
     type Note = ReceivedOrchardNoteAndMetadata;
     type Address = orchard::Address;
 
@@ -938,11 +923,11 @@ where
 impl SpendableNote<SaplingDomain<ChainType>> for SpendableSaplingNote {
     fn from_parts_unchecked(
         transaction_id: TxId,
-        nullifier: SaplingNullifier,
-        diversifier: SaplingDiversifier,
-        note: SaplingNote,
-        witness: IncrementalWitness<SaplingNode>,
-        extsk: Option<&SaplingExtendedSpendingKey>,
+        nullifier: zcash_primitives::sapling::Nullifier,
+        diversifier: zcash_primitives::sapling::Diversifier,
+        note: zcash_primitives::sapling::Note,
+        witness: IncrementalWitness<zcash_primitives::sapling::Node>,
+        extsk: Option<&zip32::sapling::ExtendedSpendingKey>,
     ) -> Self {
         SpendableSaplingNote {
             transaction_id,
@@ -958,23 +943,23 @@ impl SpendableNote<SaplingDomain<ChainType>> for SpendableSaplingNote {
         self.transaction_id
     }
 
-    fn nullifier(&self) -> SaplingNullifier {
+    fn nullifier(&self) -> zcash_primitives::sapling::Nullifier {
         self.nullifier
     }
 
-    fn diversifier(&self) -> SaplingDiversifier {
+    fn diversifier(&self) -> zcash_primitives::sapling::Diversifier {
         self.diversifier
     }
 
-    fn note(&self) -> &SaplingNote {
+    fn note(&self) -> &zcash_primitives::sapling::Note {
         &self.note
     }
 
-    fn witness(&self) -> &IncrementalWitness<SaplingNode> {
+    fn witness(&self) -> &IncrementalWitness<zcash_primitives::sapling::Node> {
         &self.witness
     }
 
-    fn spend_key(&self) -> Option<&SaplingExtendedSpendingKey> {
+    fn spend_key(&self) -> Option<&zip32::sapling::ExtendedSpendingKey> {
         self.extsk.as_ref()
     }
 }
@@ -982,11 +967,11 @@ impl SpendableNote<SaplingDomain<ChainType>> for SpendableSaplingNote {
 impl SpendableNote<OrchardDomain> for SpendableOrchardNote {
     fn from_parts_unchecked(
         transaction_id: TxId,
-        nullifier: OrchardNullifier,
-        diversifier: OrchardDiversifier,
-        note: OrchardNote,
+        nullifier: orchard::note::Nullifier,
+        diversifier: orchard::keys::Diversifier,
+        note: orchard::note::Note,
         witness: IncrementalWitness<MerkleHashOrchard>,
-        sk: Option<&OrchardSpendingKey>,
+        sk: Option<&orchard::keys::SpendingKey>,
     ) -> Self {
         SpendableOrchardNote {
             transaction_id,
@@ -1001,11 +986,11 @@ impl SpendableNote<OrchardDomain> for SpendableOrchardNote {
         self.transaction_id
     }
 
-    fn nullifier(&self) -> OrchardNullifier {
+    fn nullifier(&self) -> orchard::note::Nullifier {
         self.nullifier
     }
 
-    fn diversifier(&self) -> OrchardDiversifier {
+    fn diversifier(&self) -> orchard::keys::Diversifier {
         self.diversifier
     }
 
@@ -1017,7 +1002,7 @@ impl SpendableNote<OrchardDomain> for SpendableOrchardNote {
         &self.witness
     }
 
-    fn spend_key(&self) -> Option<&OrchardSpendingKey> {
+    fn spend_key(&self) -> Option<&orchard::keys::SpendingKey> {
         self.spend_key.as_ref()
     }
 }
@@ -1028,22 +1013,24 @@ pub trait ReadableWriteable<Input>: Sized {
     fn read<R: Read>(reader: R, input: Input) -> io::Result<Self>;
     fn write<W: Write>(&self, writer: W) -> io::Result<()>;
     fn get_version<R: Read>(mut reader: R) -> io::Result<u8> {
-        let version = reader.read_u8()?;
-        if version > Self::VERSION {
+        let external_version = reader.read_u8()?;
+        log::info!("wallet_capability external_version: {external_version}");
+        log::info!("Self::VERSION: {}", Self::VERSION);
+        if external_version > Self::VERSION {
             Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!(
                     "Wallet file version \"{}\" is from future version of zingo",
-                    version,
+                    external_version,
                 ),
             ))
         } else {
-            Ok(version)
+            Ok(external_version)
         }
     }
 }
 
-impl ReadableWriteable<()> for OrchardSpendingKey {
+impl ReadableWriteable<()> for orchard::keys::SpendingKey {
     const VERSION: u8 = 0; //Not applicable
 
     fn read<R: Read>(mut reader: R, _: ()) -> io::Result<Self> {
@@ -1063,7 +1050,7 @@ impl ReadableWriteable<()> for OrchardSpendingKey {
     }
 }
 
-impl ReadableWriteable<()> for SaplingExtendedSpendingKey {
+impl ReadableWriteable<()> for zip32::sapling::ExtendedSpendingKey {
     const VERSION: u8 = 0; //Not applicable
 
     fn read<R: Read>(reader: R, _: ()) -> io::Result<Self> {
@@ -1075,13 +1062,17 @@ impl ReadableWriteable<()> for SaplingExtendedSpendingKey {
     }
 }
 
-impl ReadableWriteable<()> for SaplingFvk {
+impl ReadableWriteable<()> for zip32::sapling::DiversifiableFullViewingKey {
     const VERSION: u8 = 0; //Not applicable
 
     fn read<R: Read>(mut reader: R, _: ()) -> io::Result<Self> {
         let mut fvk_bytes = [0u8; 128];
         reader.read_exact(&mut fvk_bytes)?;
-        SaplingFvk::from_bytes(&fvk_bytes).ok_or(io::Error::new(
+        tracing::info!(
+            "zip32::sapling::DiversifiableFullViewingKey fvk_bytes: {:?}",
+            fvk_bytes
+        );
+        zip32::sapling::DiversifiableFullViewingKey::from_bytes(&fvk_bytes).ok_or(io::Error::new(
             io::ErrorKind::InvalidInput,
             "Couldn't read a Sapling Diversifiable Full Viewing Key",
         ))
@@ -1092,7 +1083,7 @@ impl ReadableWriteable<()> for SaplingFvk {
     }
 }
 
-impl ReadableWriteable<()> for OrchardFullViewingKey {
+impl ReadableWriteable<()> for orchard::keys::FullViewingKey {
     const VERSION: u8 = 0; //Not applicable
 
     fn read<R: Read>(reader: R, _: ()) -> io::Result<Self> {
@@ -1104,23 +1095,33 @@ impl ReadableWriteable<()> for OrchardFullViewingKey {
     }
 }
 
-impl ReadableWriteable<(SaplingFvk, SaplingDiversifier)> for SaplingNote {
+impl ReadableWriteable<(zcash_primitives::sapling::Diversifier, &WalletCapability)>
+    for zcash_primitives::sapling::Note
+{
     const VERSION: u8 = 1;
 
     fn read<R: Read>(
         mut reader: R,
-        (fvk, diversifier): (SaplingFvk, SaplingDiversifier),
+        (diversifier, wallet_capability): (
+            zcash_primitives::sapling::Diversifier,
+            &WalletCapability,
+        ),
     ) -> io::Result<Self> {
         let _version = Self::get_version(&mut reader)?;
         let value = reader.read_u64::<LittleEndian>()?;
         let rseed = super::data::read_sapling_rseed(&mut reader)?;
 
-        Ok(fvk
+        Ok(
+            <SaplingDomain<zingoconfig::ChainType> as DomainWalletExt>::wc_to_fvk(
+                wallet_capability,
+            )
+            .expect("to get an fvk from a wc")
             .fvk()
             .vk
             .to_payment_address(diversifier)
             .unwrap()
-            .create_note(value, rseed))
+            .create_note(value, rseed),
+        )
     }
 
     fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
@@ -1131,18 +1132,18 @@ impl ReadableWriteable<(SaplingFvk, SaplingDiversifier)> for SaplingNote {
     }
 }
 
-impl ReadableWriteable<(OrchardFullViewingKey, OrchardDiversifier)> for OrchardNote {
+impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability)> for orchard::note::Note {
     const VERSION: u8 = 1;
 
     fn read<R: Read>(
         mut reader: R,
-        (fvk, diversifier): (OrchardFullViewingKey, OrchardDiversifier),
+        (diversifier, wallet_capability): (orchard::keys::Diversifier, &WalletCapability),
     ) -> io::Result<Self> {
         let _version = Self::get_version(&mut reader)?;
         let value = reader.read_u64::<LittleEndian>()?;
         let mut nullifier_bytes = [0; 32];
         reader.read_exact(&mut nullifier_bytes)?;
-        let nullifier = Option::from(OrchardNullifier::from_bytes(&nullifier_bytes))
+        let nullifier = Option::from(orchard::note::Nullifier::from_bytes(&nullifier_bytes))
             .ok_or(io::Error::new(io::ErrorKind::InvalidInput, "Bad Nullifier"))?;
 
         let mut random_seed_bytes = [0; 32];
@@ -1156,7 +1157,9 @@ impl ReadableWriteable<(OrchardFullViewingKey, OrchardDiversifier)> for OrchardN
             "Nullifier not for note",
         ))?;
 
-        Option::from(OrchardNote::from_parts(
+        let fvk = <OrchardDomain as DomainWalletExt>::wc_to_fvk(wallet_capability)
+            .expect("to get an fvk from a wc");
+        Option::from(orchard::note::Note::from_parts(
             fvk.address(diversifier, orchard::keys::Scope::External),
             orchard::value::NoteValue::from_raw(value),
             nullifier,
@@ -1174,23 +1177,27 @@ impl ReadableWriteable<(OrchardFullViewingKey, OrchardDiversifier)> for OrchardN
     }
 }
 
-impl<T> ReadableWriteable<()> for T
+impl<T> ReadableWriteable<&WalletCapability> for T
 where
     T: ReceivedNoteAndMetadata,
 {
-    const VERSION: u8 = 1;
+    const VERSION: u8 = 2;
 
-    fn read<R: Read>(mut reader: R, _: ()) -> io::Result<Self> {
-        let _version = Self::get_version(&mut reader)?;
+    fn read<R: Read>(mut reader: R, wallet_capability: &WalletCapability) -> io::Result<Self> {
+        let external_version = Self::get_version(&mut reader)?;
+        tracing::info!("NoteAndMetadata version is: {external_version}");
 
-        let fvk = <T::Fvk as ReadableWriteable<()>>::read(&mut reader, ())?;
+        if external_version < 2 {
+            let mut x = <T as ReceivedNoteAndMetadata>::get_deprecated_serialized_view_key_buffer();
+            reader.read_exact(&mut x).expect("To not used this data.");
+        }
 
         let mut diversifier_bytes = [0u8; 11];
         reader.read_exact(&mut diversifier_bytes)?;
         let diversifier = T::Diversifier::from_bytes(diversifier_bytes);
 
         let note =
-            <T::Note as ReadableWriteable<_>>::read(&mut reader, (fvk.clone(), diversifier))?;
+            <T::Note as ReadableWriteable<_>>::read(&mut reader, (diversifier, wallet_capability))?;
 
         let witnesses_vec = Vector::read(&mut reader, |r| IncrementalWitness::<T::Node>::read(r))?;
         let top_height = reader.read_u64::<LittleEndian>()?;
@@ -1242,7 +1249,6 @@ where
         let have_spending_key = reader.read_u8()? > 0;
 
         Ok(T::from_parts(
-            fvk,
             diversifier,
             note,
             witnesses,
@@ -1258,8 +1264,6 @@ where
     fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         // Write a version number first, so we can later upgrade this if needed.
         writer.write_u8(Self::VERSION)?;
-
-        self.fvk().write(&mut writer)?;
 
         writer.write_all(&self.diversifier().to_bytes())?;
 

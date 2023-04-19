@@ -930,11 +930,11 @@ impl LightClient {
 
         // Collect outgoing metadata
         let outgoing_json = wallet_transaction
-            .outgoing_metadata
+            .outgoing_tx_data
             .iter()
             .map(|om| {
                 let mut o = object! {
-                    "address" => om.ua.clone().unwrap_or(om.to_address.clone()),
+                    "address" => om.recipient_ua.clone().unwrap_or(om.to_address.clone()),
                     "value"   => om.value,
                     "memo"    => LightWallet::memo_str(Some(om.memo.clone()))
                 };
@@ -1662,7 +1662,12 @@ impl LightClient {
     pub async fn do_shield(&self, address: Option<String>) -> Result<String, String> {
         let transaction_submission_height = self.get_submission_height().await?;
         let fee = u64::from(DEFAULT_FEE);
-        let tbal = self.wallet.tbalance(None).await;
+        let tbal = self
+            .wallet
+            .tbalance(None)
+            .await
+            .as_u64()
+            .ok_or("To represent Json as u64".to_string())?;
 
         // Make sure there is a balance, and it is greated than the amount
         if tbal <= fee {

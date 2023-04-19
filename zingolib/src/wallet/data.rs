@@ -1,11 +1,7 @@
 use crate::blaze::fixed_size_buffer::FixedSizeBuffer;
 use crate::compact_formats::CompactBlock;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use orchard::{
-    keys::{Diversifier as OrchardDiversifier, SpendingKey as OrchardSpendingKey},
-    note::{Note as OrchardNote, Nullifier as OrchardNullifier},
-    tree::MerkleHashOrchard,
-};
+use orchard::tree::MerkleHashOrchard;
 use prost::Message;
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
@@ -15,15 +11,11 @@ use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::{
     memo::Memo,
     merkle_tree::{CommitmentTree, IncrementalWitness},
-    sapling::{
-        Diversifier as SaplingDiversifier, Node as SaplingNode, Note as SaplingNote,
-        Nullifier as SaplingNullifier, Rseed,
-    },
     transaction::{components::OutPoint, TxId},
-    zip32::{DiversifiableFullViewingKey as SaplingFvk, ExtendedSpendingKey},
 };
 use zcash_primitives::{memo::MemoBytes, merkle_tree::Hashable};
 
+use super::keys::unified::WalletCapability;
 use super::traits::ReadableWriteable;
 
 /// This type is motivated by the IPC architecture where (currently) channels traffic in
@@ -32,8 +24,8 @@ use super::traits::ReadableWriteable;
 /// <https://github.com/zingolabs/zingolib/issues/64>
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PoolNullifier {
-    Sapling(SaplingNullifier),
-    Orchard(OrchardNullifier),
+    Sapling(zcash_primitives::sapling::Nullifier),
+    Orchard(orchard::note::Nullifier),
 }
 
 impl std::hash::Hash for PoolNullifier {
@@ -112,7 +104,7 @@ impl BlockData {
 
         // We don't need this, but because of a quirk, the version is stored later, so we can't actually
         // detect the version here. So we write an empty tree and read it back here
-        let tree = CommitmentTree::<SaplingNode>::read(&mut reader)?;
+        let tree = CommitmentTree::<zcash_primitives::sapling::Node>::read(&mut reader)?;
         let _tree = if tree.size() == 0 { None } else { Some(tree) };
 
         let version = reader.read_u64::<LittleEndian>()?;
@@ -140,7 +132,7 @@ impl BlockData {
             .collect();
         writer.write_all(&hash_bytes[..])?;
 
-        CommitmentTree::<SaplingNode>::empty().write(&mut writer)?;
+        CommitmentTree::<zcash_primitives::sapling::Node>::empty().write(&mut writer)?;
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
         // Write the ecb as well
@@ -218,16 +210,12 @@ impl<Node: Hashable> WitnessCache<Node> {
     // }
 }
 pub struct ReceivedSaplingNoteAndMetadata {
-    // Technically, this should be recoverable from the account number,
-    // but we're going to refactor this in the future, so I'll write it again here.
-    pub(super) fvk: SaplingFvk,
-
-    pub diversifier: SaplingDiversifier,
-    pub note: SaplingNote,
+    pub diversifier: zcash_primitives::sapling::Diversifier,
+    pub note: zcash_primitives::sapling::Note,
 
     // Witnesses for the last 100 blocks. witnesses.last() is the latest witness
-    pub(crate) witnesses: WitnessCache<SaplingNode>,
-    pub(super) nullifier: SaplingNullifier,
+    pub(crate) witnesses: WitnessCache<zcash_primitives::sapling::Node>,
+    pub(super) nullifier: zcash_primitives::sapling::Nullifier,
     pub spent: Option<(TxId, u32)>, // If this note was confirmed spent
 
     // If this note was spent in a send, but has not yet been confirmed.
@@ -241,17 +229,15 @@ pub struct ReceivedSaplingNoteAndMetadata {
 }
 
 pub struct ReceivedOrchardNoteAndMetadata {
-    pub(super) fvk: orchard::keys::FullViewingKey,
-
-    pub diversifier: OrchardDiversifier,
-    pub note: OrchardNote,
+    pub diversifier: orchard::keys::Diversifier,
+    pub note: orchard::note::Note,
 
     // Witnesses for the last 100 blocks. witnesses.last() is the latest witness
     #[cfg(not(feature = "integration_test"))]
     pub(crate) witnesses: WitnessCache<MerkleHashOrchard>,
     #[cfg(feature = "integration_test")]
     pub witnesses: WitnessCache<MerkleHashOrchard>,
-    pub(super) nullifier: OrchardNullifier,
+    pub(super) nullifier: orchard::note::Nullifier,
     pub spent: Option<(TxId, u32)>, // If this note was confirmed spent
 
     // If this note was spent in a send, but has not yet been confirmed.
@@ -267,7 +253,6 @@ pub struct ReceivedOrchardNoteAndMetadata {
 impl std::fmt::Debug for ReceivedSaplingNoteAndMetadata {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SaplingNoteData")
-            .field("fvk", &self.fvk)
             .field("diversifier", &self.diversifier)
             .field("note", &self.note)
             .field("nullifier", &self.nullifier)
@@ -286,31 +271,38 @@ impl std::fmt::Debug for ReceivedSaplingNoteAndMetadata {
 }
 
 // Reading a note also needs the corresponding address to read from.
-pub(crate) fn read_sapling_rseed<R: Read>(mut reader: R) -> io::Result<Rseed> {
+pub(crate) fn read_sapling_rseed<R: Read>(
+    mut reader: R,
+) -> io::Result<zcash_primitives::sapling::Rseed> {
     let note_type = reader.read_u8()?;
 
     let mut r_bytes: [u8; 32] = [0; 32];
     reader.read_exact(&mut r_bytes)?;
 
     let r = match note_type {
-        1 => Rseed::BeforeZip212(jubjub::Fr::from_bytes(&r_bytes).unwrap()),
-        2 => Rseed::AfterZip212(r_bytes),
+        1 => zcash_primitives::sapling::Rseed::BeforeZip212(
+            jubjub::Fr::from_bytes(&r_bytes).unwrap(),
+        ),
+        2 => zcash_primitives::sapling::Rseed::AfterZip212(r_bytes),
         _ => return Err(io::Error::new(io::ErrorKind::InvalidInput, "Bad note type")),
     };
 
     Ok(r)
 }
 
-pub(crate) fn write_sapling_rseed<W: Write>(mut writer: W, rseed: &Rseed) -> io::Result<()> {
+pub(crate) fn write_sapling_rseed<W: Write>(
+    mut writer: W,
+    rseed: &zcash_primitives::sapling::Rseed,
+) -> io::Result<()> {
     let note_type = match rseed {
-        Rseed::BeforeZip212(_) => 1,
-        Rseed::AfterZip212(_) => 2,
+        zcash_primitives::sapling::Rseed::BeforeZip212(_) => 1,
+        zcash_primitives::sapling::Rseed::AfterZip212(_) => 2,
     };
     writer.write_u8(note_type)?;
 
     match rseed {
-        Rseed::BeforeZip212(fr) => writer.write_all(&fr.to_bytes()),
-        Rseed::AfterZip212(b) => writer.write_all(b),
+        zcash_primitives::sapling::Rseed::BeforeZip212(fr) => writer.write_all(&fr.to_bytes()),
+        zcash_primitives::sapling::Rseed::AfterZip212(b) => writer.write_all(b),
     }
 }
 
@@ -435,20 +427,20 @@ impl Utxo {
     }
 }
 
-pub struct OutgoingTxMetadata {
+pub struct OutgoingTxData {
     pub to_address: String,
     pub value: u64,
     pub memo: Memo,
-    pub ua: Option<String>,
+    pub recipient_ua: Option<String>,
 }
 
-impl PartialEq for OutgoingTxMetadata {
+impl PartialEq for OutgoingTxData {
     fn eq(&self, other: &Self) -> bool {
         self.to_address == other.to_address && self.value == other.value && self.memo == other.memo
     }
 }
 
-impl OutgoingTxMetadata {
+impl OutgoingTxData {
     pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
         let address_len = reader.read_u64::<LittleEndian>()?;
         let mut address_bytes = vec![0; address_len as usize];
@@ -470,17 +462,17 @@ impl OutgoingTxMetadata {
             )),
         }?;
 
-        Ok(OutgoingTxMetadata {
+        Ok(OutgoingTxData {
             to_address: address,
             value,
             memo,
-            ua: None,
+            recipient_ua: None,
         })
     }
 
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         // Strings are written as len + utf8
-        match &self.ua {
+        match &self.recipient_ua {
             None => {
                 writer.write_u64::<LittleEndian>(self.to_address.as_bytes().len() as u64)?;
                 writer.write_all(self.to_address.as_bytes())?;
@@ -495,6 +487,7 @@ impl OutgoingTxMetadata {
     }
 }
 
+///  Everything (SOMETHING) about a transaction
 pub struct TransactionMetadata {
     // Block in which this tx was included
     pub block_height: BlockHeight,
@@ -510,10 +503,10 @@ pub struct TransactionMetadata {
     pub txid: TxId,
 
     // List of all nullifiers spent in this Tx. These nullifiers belong to the wallet.
-    pub spent_sapling_nullifiers: Vec<SaplingNullifier>,
+    pub spent_sapling_nullifiers: Vec<zcash_primitives::sapling::Nullifier>,
 
     // List of all nullifiers spent in this Tx. These nullifiers belong to the wallet.
-    pub spent_orchard_nullifiers: Vec<OrchardNullifier>,
+    pub spent_orchard_nullifiers: Vec<orchard::note::Nullifier>,
 
     // List of all sapling notes received in this tx. Some of these might be change notes.
     pub sapling_notes: Vec<ReceivedSaplingNoteAndMetadata>,
@@ -533,8 +526,8 @@ pub struct TransactionMetadata {
     // Total amount of transparent funds that belong to us that were spent in this Tx.
     pub total_transparent_value_spent: u64,
 
-    // All outgoing sends to addresses outside this wallet
-    pub outgoing_metadata: Vec<OutgoingTxMetadata>,
+    // All outgoing sends
+    pub outgoing_tx_data: Vec<OutgoingTxData>,
 
     // Whether this TxID was downloaded from the server and scanned for Memos
     pub full_tx_scanned: bool,
@@ -603,13 +596,13 @@ impl TransactionMetadata {
             total_transparent_value_spent: 0,
             total_sapling_value_spent: 0,
             total_orchard_value_spent: 0,
-            outgoing_metadata: vec![],
+            outgoing_tx_data: vec![],
             full_tx_scanned: false,
             zec_price: None,
         }
     }
 
-    pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
+    pub fn read<R: Read>(mut reader: R, wallet_capability: &WalletCapability) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
 
         let block = BlockHeight::from_u32(reader.read_i32::<LittleEndian>()? as u32);
@@ -631,10 +624,14 @@ impl TransactionMetadata {
 
         let transaction_id = TxId::from_bytes(transaction_id_bytes);
 
-        let sapling_notes =
-            Vector::read(&mut reader, |r| ReceivedSaplingNoteAndMetadata::read(r, ()))?;
+        tracing::info!("About to attempt to read a note and metadata");
+        let sapling_notes = Vector::read(&mut reader, |r| {
+            ReceivedSaplingNoteAndMetadata::read(r, wallet_capability)
+        })?;
         let orchard_notes = if version > 22 {
-            Vector::read(&mut reader, |r| ReceivedOrchardNoteAndMetadata::read(r, ()))?
+            Vector::read(&mut reader, |r| {
+                ReceivedOrchardNoteAndMetadata::read(r, wallet_capability)
+            })?
         } else {
             vec![]
         };
@@ -649,7 +646,7 @@ impl TransactionMetadata {
         };
 
         // Outgoing metadata was only added in version 2
-        let outgoing_metadata = Vector::read(&mut reader, |r| OutgoingTxMetadata::read(r))?;
+        let outgoing_metadata = Vector::read(&mut reader, |r| OutgoingTxData::read(r))?;
 
         let full_tx_scanned = reader.read_u8()? > 0;
 
@@ -665,7 +662,7 @@ impl TransactionMetadata {
             Vector::read(&mut reader, |r| {
                 let mut n = [0u8; 32];
                 r.read_exact(&mut n)?;
-                Ok(SaplingNullifier(n))
+                Ok(zcash_primitives::sapling::Nullifier(n))
             })?
         };
 
@@ -675,7 +672,7 @@ impl TransactionMetadata {
             Vector::read(&mut reader, |r| {
                 let mut n = [0u8; 32];
                 r.read_exact(&mut n)?;
-                Ok(OrchardNullifier::from_bytes(&n).unwrap())
+                Ok(orchard::note::Nullifier::from_bytes(&n).unwrap())
             })?
         };
 
@@ -692,7 +689,7 @@ impl TransactionMetadata {
             total_sapling_value_spent,
             total_transparent_value_spent,
             total_orchard_value_spent,
-            outgoing_metadata,
+            outgoing_tx_data: outgoing_metadata,
             full_tx_scanned,
             zec_price,
         })
@@ -719,7 +716,7 @@ impl TransactionMetadata {
         }
 
         // Write the outgoing metadata
-        Vector::write(&mut writer, &self.outgoing_metadata, |w, om| om.write(w))?;
+        Vector::write(&mut writer, &self.outgoing_tx_data, |w, om| om.write(w))?;
 
         writer.write_u8(if self.full_tx_scanned { 1 } else { 0 })?;
 
@@ -753,20 +750,20 @@ impl TransactionMetadata {
 
 pub struct SpendableSaplingNote {
     pub transaction_id: TxId,
-    pub nullifier: SaplingNullifier,
-    pub diversifier: SaplingDiversifier,
-    pub note: SaplingNote,
-    pub witness: IncrementalWitness<SaplingNode>,
-    pub extsk: Option<ExtendedSpendingKey>,
+    pub nullifier: zcash_primitives::sapling::Nullifier,
+    pub diversifier: zcash_primitives::sapling::Diversifier,
+    pub note: zcash_primitives::sapling::Note,
+    pub witness: IncrementalWitness<zcash_primitives::sapling::Node>,
+    pub extsk: Option<zcash_primitives::zip32::sapling::ExtendedSpendingKey>,
 }
 
 pub struct SpendableOrchardNote {
     pub transaction_id: TxId,
-    pub nullifier: OrchardNullifier,
-    pub diversifier: OrchardDiversifier,
-    pub note: OrchardNote,
+    pub nullifier: orchard::note::Nullifier,
+    pub diversifier: orchard::keys::Diversifier,
+    pub note: orchard::note::Note,
     pub witness: IncrementalWitness<MerkleHashOrchard>,
-    pub spend_key: Option<OrchardSpendingKey>,
+    pub spend_key: Option<orchard::keys::SpendingKey>,
 }
 
 // Struct that tracks the latest and historical price of ZEC in the wallet
@@ -845,11 +842,11 @@ impl WalletZecPriceInfo {
 fn read_write_empty_sapling_tree() {
     let mut buffer = Vec::new();
 
-    CommitmentTree::<SaplingNode>::empty()
+    CommitmentTree::<zcash_primitives::sapling::Node>::empty()
         .write(&mut buffer)
         .unwrap();
     assert_eq!(
-        CommitmentTree::<SaplingNode>::empty(),
-        CommitmentTree::<SaplingNode>::read(&mut buffer.as_slice()).unwrap()
+        CommitmentTree::<zcash_primitives::sapling::Node>::empty(),
+        CommitmentTree::<zcash_primitives::sapling::Node>::read(&mut buffer.as_slice()).unwrap()
     )
 }

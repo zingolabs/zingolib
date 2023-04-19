@@ -8,7 +8,7 @@ use zcash_primitives::{
     merkle_tree::{CommitmentTree, Hashable, IncrementalWitness},
     sapling::{self, value::NoteValue, Note, Rseed},
     transaction::components::Amount,
-    zip32::{DiversifiableFullViewingKey as SaplingFvk, ExtendedSpendingKey},
+    zip32::ExtendedSpendingKey,
 };
 
 // This function can be used by TestServerData, or other test code
@@ -106,7 +106,7 @@ impl FakeCompactBlock {
     pub fn add_random_sapling_transaction(&mut self, num_outputs: usize) {
         let xsk_m = ExtendedSpendingKey::master(&[1u8; 32]);
         let dfvk = xsk_m.to_diversifiable_full_viewing_key();
-        let fvk = SaplingFvk::from(dfvk);
+        let fvk = zcash_primitives::zip32::sapling::DiversifiableFullViewingKey::from(dfvk);
 
         let to = fvk.default_address().1;
         let value = Amount::from_u64(1).unwrap();

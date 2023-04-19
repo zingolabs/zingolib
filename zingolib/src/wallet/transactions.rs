@@ -5,37 +5,32 @@ use std::{
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use log::error;
-use orchard::{
-    keys::FullViewingKey as OrchardFullViewingKey,
-    note::{Note as OrchardNote, Nullifier as OrchardNullifier},
-    note_encryption::OrchardDomain,
-    tree::MerkleHashOrchard,
-};
+use orchard;
+use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
 use zcash_encoding::Vector;
 use zcash_note_encryption::Domain;
 use zcash_primitives::{
     consensus::BlockHeight,
     memo::Memo,
     merkle_tree::IncrementalWitness,
-    sapling::{
-        note_encryption::SaplingDomain, Node as SaplingNode, Note as SaplingNote,
-        Nullifier as SaplingNullifier, PaymentAddress,
-    },
+    sapling::{note_encryption::SaplingDomain, PaymentAddress},
     transaction::{components::TxOut, TxId},
-    zip32::DiversifiableFullViewingKey as SaplingFvk,
 };
 
 use zingoconfig::{ChainType, MAX_REORG};
 
 use super::{
     data::{
-        OutgoingTxMetadata, PoolNullifier, ReceivedOrchardNoteAndMetadata,
+        OutgoingTxData, PoolNullifier, ReceivedOrchardNoteAndMetadata,
         ReceivedSaplingNoteAndMetadata, TransactionMetadata, Utxo, WitnessCache,
     },
-    traits::{DomainWalletExt, FromBytes, Nullifier, ReceivedNoteAndMetadata, Recipient},
+    keys::unified::WalletCapability,
+    traits::{
+        Bundle, DomainWalletExt, FromBytes, Nullifier, ReceivedNoteAndMetadata, Recipient, Spend,
+    },
 };
 
-/// List of all transactions in a wallet.
+/// HashMap of all transactions in a wallet, keyed by txid.
 /// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
 /// this struct are threadsafe/locked properly.
 pub struct TransactionMetadataSet {
@@ -58,14 +53,17 @@ impl TransactionMetadataSet {
         }
     }
 
-    pub fn read_old<R: Read>(mut reader: R) -> io::Result<Self> {
+    pub fn read_old<R: Read>(
+        mut reader: R,
+        wallet_capability: &WalletCapability,
+    ) -> io::Result<Self> {
         let txs_tuples = Vector::read(&mut reader, |r| {
             let mut txid_bytes = [0u8; 32];
             r.read_exact(&mut txid_bytes)?;
 
             Ok((
                 TxId::from_bytes(txid_bytes),
-                TransactionMetadata::read(r).unwrap(),
+                TransactionMetadata::read(r, wallet_capability).unwrap(),
             ))
         })?;
 
@@ -79,7 +77,7 @@ impl TransactionMetadataSet {
         })
     }
 
-    pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
+    pub fn read<R: Read>(mut reader: R, wallet_capability: &WalletCapability) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
         if version > Self::serialized_version() {
             return Err(io::Error::new(
@@ -94,7 +92,7 @@ impl TransactionMetadataSet {
 
             Ok((
                 TxId::from_bytes(txid_bytes),
-                TransactionMetadata::read(r).unwrap(),
+                TransactionMetadata::read(r, wallet_capability)?,
             ))
         })?;
 
@@ -116,7 +114,7 @@ impl TransactionMetadataSet {
             Vector::read(&mut reader, |r| {
                 let mut txid_bytes = [0u8; 32];
                 r.read_exact(&mut txid_bytes)?;
-                let transaction_metadata = TransactionMetadata::read(r)?;
+                let transaction_metadata = TransactionMetadata::read(r, wallet_capability)?;
 
                 Ok((TxId::from_bytes(txid_bytes), transaction_metadata))
             })?
@@ -304,7 +302,9 @@ impl TransactionMetadataSet {
             .unwrap_or(0)
     }
 
-    pub fn get_nullifiers_of_unspent_sapling_notes(&self) -> Vec<(SaplingNullifier, u64, TxId)> {
+    pub fn get_nullifiers_of_unspent_sapling_notes(
+        &self,
+    ) -> Vec<(zcash_primitives::sapling::Nullifier, u64, TxId)> {
         self.current
             .iter()
             .flat_map(|(_, transaction_metadata)| {
@@ -323,7 +323,9 @@ impl TransactionMetadataSet {
             .collect()
     }
 
-    pub fn get_nullifiers_of_unspent_orchard_notes(&self) -> Vec<(OrchardNullifier, u64, TxId)> {
+    pub fn get_nullifiers_of_unspent_orchard_notes(
+        &self,
+    ) -> Vec<(orchard::note::Nullifier, u64, TxId)> {
         self.current
             .iter()
             .flat_map(|(_, transaction_metadata)| {
@@ -345,8 +347,8 @@ impl TransactionMetadataSet {
     pub(crate) fn get_sapling_note_witnesses(
         &self,
         txid: &TxId,
-        nullifier: &SaplingNullifier,
-    ) -> Option<(WitnessCache<SaplingNode>, BlockHeight)> {
+        nullifier: &zcash_primitives::sapling::Nullifier,
+    ) -> Option<(WitnessCache<zcash_primitives::sapling::Node>, BlockHeight)> {
         self.current.get(txid).map(|transaction_metadata| {
             transaction_metadata
                 .sapling_notes
@@ -359,7 +361,7 @@ impl TransactionMetadataSet {
     pub(crate) fn get_orchard_note_witnesses(
         &self,
         txid: &TxId,
-        nullifier: &OrchardNullifier,
+        nullifier: &orchard::note::Nullifier,
     ) -> Option<(WitnessCache<MerkleHashOrchard>, BlockHeight)> {
         self.current.get(txid).map(|transaction_metadata| {
             transaction_metadata
@@ -373,8 +375,8 @@ impl TransactionMetadataSet {
     pub(crate) fn set_sapling_note_witnesses(
         &mut self,
         txid: &TxId,
-        nullifier: &SaplingNullifier,
-        witnesses: WitnessCache<SaplingNode>,
+        nullifier: &zcash_primitives::sapling::Nullifier,
+        witnesses: WitnessCache<zcash_primitives::sapling::Node>,
     ) {
         self.current
             .get_mut(txid)
@@ -389,7 +391,7 @@ impl TransactionMetadataSet {
     pub(crate) fn set_orchard_note_witnesses(
         &mut self,
         txid: &TxId,
-        nullifier: &OrchardNullifier,
+        nullifier: &orchard::note::Nullifier,
         witnesses: WitnessCache<MerkleHashOrchard>,
     ) {
         self.current
@@ -715,7 +717,6 @@ impl TransactionMetadataSet {
         timestamp: u64,
         note: D::Note,
         to: D::Recipient,
-        fvk: &D::Fvk,
     ) where
         D: DomainWalletExt,
         D::Note: PartialEq + Clone,
@@ -739,7 +740,6 @@ impl TransactionMetadataSet {
         {
             None => {
                 let nd = D::WalletNote::from_parts(
-                    <D::WalletNote as ReceivedNoteAndMetadata>::Fvk::clone(fvk),
                     to.diversifier(),
                     note,
                     WitnessCache::empty(),
@@ -759,65 +759,66 @@ impl TransactionMetadataSet {
 
     pub fn add_new_sapling_note(
         &mut self,
+        fvk: &<SaplingDomain<zingoconfig::ChainType> as DomainWalletExt>::Fvk,
         txid: TxId,
         height: BlockHeight,
         unconfirmed: bool,
         timestamp: u64,
-        note: SaplingNote,
+        note: zcash_primitives::sapling::Note,
         to: PaymentAddress,
-        fvk: &SaplingFvk,
         have_spending_key: bool,
-        witness: IncrementalWitness<SaplingNode>,
+        witness: IncrementalWitness<zcash_primitives::sapling::Node>,
     ) {
         self.add_new_note::<SaplingDomain<zingoconfig::ChainType>>(
+            fvk,
             txid,
             height,
             unconfirmed,
             timestamp,
             note,
             to,
-            fvk,
             have_spending_key,
             witness,
-        )
+        );
     }
     pub fn add_new_orchard_note(
         &mut self,
+        fvk: &<OrchardDomain as DomainWalletExt>::Fvk,
         txid: TxId,
         height: BlockHeight,
         unconfirmed: bool,
         timestamp: u64,
-        note: OrchardNote,
+        note: orchard::note::Note,
         to: orchard::Address,
-        fvk: &OrchardFullViewingKey,
         have_spending_key: bool,
         witness: IncrementalWitness<MerkleHashOrchard>,
     ) {
         self.add_new_note::<OrchardDomain>(
+            fvk,
             txid,
             height,
             unconfirmed,
             timestamp,
             note,
             to,
-            fvk,
             have_spending_key,
             witness,
-        )
+        );
     }
 
     pub(crate) fn add_new_note<D: DomainWalletExt>(
         &mut self,
+        fvk: &D::Fvk,
         txid: TxId,
         height: BlockHeight,
         unconfirmed: bool,
         timestamp: u64,
         note: <D::WalletNote as ReceivedNoteAndMetadata>::Note,
         to: D::Recipient,
-        fvk: &<D::WalletNote as ReceivedNoteAndMetadata>::Fvk,
         have_spending_key: bool,
         witness: IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node>,
-    ) where
+    ) -> <<<D as DomainWalletExt>::Bundle as Bundle<D>>::Spend as Spend>::Nullifier
+    where
         D::Note: PartialEq + Clone,
         D::Recipient: Recipient,
     {
@@ -833,9 +834,9 @@ impl TransactionMetadataSet {
         // Update the block height, in case this was a mempool or unconfirmed tx.
         transaction_metadata.block_height = height;
 
-        let nullifier = D::WalletNote::get_nullifier_from_note_fvk_and_witness_position(
+        let spend_nullifier = D::get_nullifier_from_note_fvk_and_witness_position(
             &note,
-            &fvk,
+            fvk,
             witness.position() as u64,
         );
         let witnesses = if have_spending_key {
@@ -846,15 +847,14 @@ impl TransactionMetadataSet {
 
         match D::WalletNote::transaction_metadata_notes_mut(transaction_metadata)
             .iter_mut()
-            .find(|n| n.nullifier() == nullifier)
+            .find(|n| n.nullifier() == spend_nullifier)
         {
             None => {
                 let nd = D::WalletNote::from_parts(
-                    fvk.clone(),
                     D::Recipient::diversifier(&to),
                     note,
                     witnesses,
-                    nullifier,
+                    spend_nullifier,
                     None,
                     None,
                     None,
@@ -877,6 +877,7 @@ impl TransactionMetadataSet {
                 *n.witnesses_mut() = witnesses;
             }
         }
+        spend_nullifier
     }
 
     // Update the memo for a note if it already exists. If the note doesn't exist, then nothing happens.
@@ -894,25 +895,21 @@ impl TransactionMetadataSet {
         });
     }
 
-    pub fn add_outgoing_metadata(
-        &mut self,
-        txid: &TxId,
-        outgoing_metadata: Vec<OutgoingTxMetadata>,
-    ) {
+    pub fn add_outgoing_metadata(&mut self, txid: &TxId, outgoing_metadata: Vec<OutgoingTxData>) {
         if let Some(transaction_metadata) = self.current.get_mut(txid) {
             // This is n^2 search, but this is likely very small struct, limited by the protocol, so...
             let new_omd: Vec<_> = outgoing_metadata
                 .into_iter()
                 .filter(|om| {
                     transaction_metadata
-                        .outgoing_metadata
+                        .outgoing_tx_data
                         .iter()
                         .find(|o| **o == *om)
                         .is_none()
                 })
                 .collect();
 
-            transaction_metadata.outgoing_metadata.extend(new_omd);
+            transaction_metadata.outgoing_tx_data.extend(new_omd);
         } else {
             error!(
                 "TxId {} should be present while adding metadata, but wasn't",
