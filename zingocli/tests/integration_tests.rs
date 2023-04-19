@@ -153,8 +153,42 @@ async fn factor_do_shield_to_call_do_send() {
         .unwrap();
 }
 
+use zcash_address::unified::Fvk;
+fn check_balance_against_fvk(fvk: Fvk, balance: JsonValue, expected: u64) {
+    use json::JsonValue::Null;
+    match fvk {
+        Fvk::Sapling(_) => {
+            assert_eq!(balance["sapling_balance"], expected);
+            assert_eq!(balance["verified_sapling_balance"], expected);
+            assert_eq!(balance["unverified_sapling_balance"], expected);
+            assert_eq!(balance["orchard_balance"], Null);
+            assert_eq!(balance["verified_orchard_balance"], Null);
+            assert_eq!(balance["unverified_orchard_balance"], Null);
+            assert_eq!(balance["transparent_balance"], Null);
+        }
+        Fvk::Orchard(_) => {
+            assert_eq!(balance["sapling_balance"], Null);
+            assert_eq!(balance["verified_sapling_balance"], Null);
+            assert_eq!(balance["unverified_sapling_balance"], Null);
+            assert_eq!(balance["orchard_balance"], expected);
+            assert_eq!(balance["verified_orchard_balance"], expected);
+            assert_eq!(balance["unverified_orchard_balance"], expected);
+            assert_eq!(balance["transparent_balance"], Null);
+        }
+        Fvk::P2pkh(_) => {
+            assert_eq!(balance["sapling_balance"], Null);
+            assert_eq!(balance["verified_sapling_balance"], Null);
+            assert_eq!(balance["unverified_sapling_balance"], Null);
+            assert_eq!(balance["orchard_balance"], Null);
+            assert_eq!(balance["verified_orchard_balance"], Null);
+            assert_eq!(balance["unverified_orchard_balance"], Null);
+            assert_eq!(balance["transparent_balance"], expected);
+        }
+        _ => panic!(),
+    }
+}
 #[tokio::test]
-#[traced_test]
+//#[traced_test]
 async fn test_scanning_in_watch_only_mode() {
     // # Scenario:
     // 3. reset wallet
@@ -219,7 +253,6 @@ async fn test_scanning_in_watch_only_mode() {
         .read()
         .await
         .clone();
-    use zcash_address::unified::Fvk;
     use zingolib::wallet::keys::extended_transparent::ExtendedPubKey;
     let o_fvk = Fvk::Orchard(
         orchard::keys::FullViewingKey::try_from(&wc)
@@ -236,6 +269,7 @@ async fn test_scanning_in_watch_only_mode() {
     t_fvk_bytes[0..32].copy_from_slice(&t_ext_pk.chain_code[..]);
     t_fvk_bytes[32..65].copy_from_slice(&t_ext_pk.public_key.serialize()[..]);
     let t_fvk = Fvk::P2pkh(t_fvk_bytes);
+    env_logger::init();
     let fvks_sets = vec![
         vec![&o_fvk],
         vec![&s_fvk],
@@ -245,10 +279,10 @@ async fn test_scanning_in_watch_only_mode() {
         vec![&o_fvk, &s_fvk, &t_fvk],
     ];
     for fvks_set in fvks_sets.iter() {
-        log::debug!("testing UFVK containig:");
-        log::debug!("    orchard fvk: {}", fvks_set.contains(&&o_fvk));
-        log::debug!("    sapling fvk: {}", fvks_set.contains(&&s_fvk));
-        log::debug!("    transparent fvk: {}", fvks_set.contains(&&t_fvk));
+        log::info!("testing UFVK containig:");
+        log::info!("    orchard fvk: {}", fvks_set.contains(&&o_fvk));
+        log::info!("    sapling fvk: {}", fvks_set.contains(&&s_fvk));
+        log::info!("    transparent fvk: {}", fvks_set.contains(&&t_fvk));
 
         use zcash_address::{unified::Encoding, Network::Regtest};
         let ufvk = Ufvk::try_from_items(fvks_set.clone().into_iter().map(|x| x.clone()).collect())
