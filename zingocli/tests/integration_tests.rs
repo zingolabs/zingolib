@@ -96,7 +96,7 @@ async fn load_and_parse_different_wallet_versions() {
 
 #[tokio::test]
 #[traced_test]
-async fn send_to_self_causes_memo_error_with_no_user_specified_memo() {
+async fn send_to_self_with_no_user_specified_memo_does_not_cause_error() {
     tracing_log::LogTracer::init().unwrap();
     let (regtest_manager, child_process_handler, _faucet, recipient, _txid) =
         scenarios::faucet_prefunded_orchard_recipient(100_000).await;
@@ -129,6 +129,9 @@ async fn send_to_self_causes_memo_error_with_no_user_specified_memo() {
     // With a memo-less send to self, we hide the metadata from the UI, which
     // tricks the error detector. This test, therefore, asserts the presence
     // of a known bug
+    assert!(!logs_contain(
+        "Received memo indicating you sent to an address you don't have on record."
+    ));
     drop(child_process_handler)
 }
 
