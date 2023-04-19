@@ -48,3 +48,6 @@ zcash_primitives = { workspace = true }
 [features]
 default = ["local_env"]
 local_env =[]
+
+[build-dependencies]
+tonic-build = { workspace = true }
