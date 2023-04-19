@@ -651,9 +651,7 @@ impl Command for SendCommand {
         let mut h = vec![];
         h.push("Send ZEC to a given address(es)");
         h.push("Usage:");
-        h.push(
-            "send <address> <amount in zatoshis || \"entire-verified-zbalance\"> \"optional_memo\"",
-        );
+        h.push("send <address> <amount in zatoshis> \"optional_memo\"");
         h.push("OR");
         h.push("send '[{'address': <address>, 'amount': <amount in zatoshis>, 'memo': <optional memo>}, ...]'");
         h.push("");
