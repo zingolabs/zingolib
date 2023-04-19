@@ -14,6 +14,7 @@ zcash_note_encryption = { git = "https://github.com/zingolabs/librustzcash", rev
 zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", rev = "52e4d0c834ff697cae23dad43e580a85658b7764", features = ["transparent-inputs", "test-dependencies"] }
 zcash_proofs = { git = "https://github.com/zingolabs/librustzcash", rev = "52e4d0c834ff697cae23dad43e580a85658b7764", features = ["multicore"]}
 orchard = "0.4.0"
+tonic-build = "0.7.0"
 
 [profile.release]
 debug = false
