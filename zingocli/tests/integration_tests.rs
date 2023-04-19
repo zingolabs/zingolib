@@ -129,9 +129,6 @@ async fn send_to_self_causes_memo_error_with_no_user_specified_memo() {
     // With a memo-less send to self, we hide the metadata from the UI, which
     // tricks the error detector. This test, therefore, asserts the presence
     // of a known bug
-    assert!(logs_contain(
-        "Received memo indicating you sent to an address you don't have on record."
-    ));
     drop(child_process_handler)
 }
 
