@@ -129,7 +129,7 @@ impl DarksideConnector {
     }
 
     define_darkside_connector_methods!(
-        apply_staged(&self, height: i32) {DarksideHeight { height }},
+        apply_staged(&self, height: i32) { DarksideHeight { height } },
         add_tree_state(&self, tree_state: TreeState) { tree_state },
         reset(
             &self,
