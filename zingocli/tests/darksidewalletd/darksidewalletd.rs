@@ -22,6 +22,24 @@ type UnderlyingService = BoxCloneService<
     hyper::Error,
 >;
 
+macro_rules! define_darkside_connector_method(
+    ($name:ident (&$self:ident $(, $param:ident: $param_type:ty),*) {$param_packing:expr}) => {
+        pub(crate) async fn $name(&self$(, $param: $param_type),*) -> ::std::error::Result<(), String> {
+            let request = ::tonic::Request::new($param_packing);
+
+            let mut client = $self.get_client().await.map_err(|e| format!("{e}"))?;
+
+        let response = client
+            .$name(request)
+            .await
+            .map_err(|e| format!("{}", e))?
+            .into_inner();
+        }
+
+        Ok(())
+    }
+);
+
 #[derive(Clone)]
 pub struct DarksideConnector(http::Uri);
 
