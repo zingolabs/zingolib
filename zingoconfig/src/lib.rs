@@ -130,7 +130,7 @@ impl ZingoConfig {
     pub fn get_zingo_wallet_dir(&self) -> Box<Path> {
         #[cfg(any(target_os = "ios", target_os = "android"))]
         {
-            PathBuf::from(&self.data_dir.as_ref().unwrap()).into_boxed_path()
+            PathBuf::from(&self.zingo_wallet_dir.as_ref().unwrap()).into_boxed_path()
         }
 
         #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -181,7 +181,7 @@ impl ZingoConfig {
     pub fn get_zcash_params_path(&self) -> io::Result<Box<Path>> {
         #[cfg(any(target_os = "ios", target_os = "android"))]
         {
-            Ok(PathBuf::from(&self.data_dir.as_ref().unwrap()).into_boxed_path())
+            Ok(PathBuf::from(&self.zingo_wallet_dir.as_ref().unwrap()).into_boxed_path())
         }
 
         //TODO:  This fn is not correct for regtest mode
