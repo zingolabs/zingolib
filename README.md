@@ -2,12 +2,6 @@
 [![license](https://img.shields.io/github/license/zingolabs/zingolib)](LICENSE) [![codecov](https://codecov.io/gh/zingolabs/zingolib/branch/dev/graph/badge.svg?token=WMKTJMQY28)](https://codecov.io/gh/zingolabs/zingolib)
 This repo provides both a library for zingo-mobile, as well as an included cli application to interact with zcashd via lightwalletd.
 
-## WARNING! Experimental
-* This is experimental software.
-* It should not be used in production!
-* It should not be relied upon for custody, transfer, or receipt of ZEC!
-* Please use only if you know specifically what you are doing!!
-
 ## Zingo CLI
 `zingo-cli` is a command line lightwalletd-proxy client. To use it, see "compiling from source" below. Releases are currently only provisional, we will update the README as releases come out.
 
