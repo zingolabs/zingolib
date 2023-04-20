@@ -231,7 +231,7 @@ async fn test_simple_sync() {
     let darkside_server_uri =
         zingoconfig::construct_lightwalletd_uri(Some(format!("http://127.0.0.1:9067")));
 
-    prepare_darksidewalletd(darkside_server_uri).await;
+    prepare_darksidewalletd(darkside_server_uri).await.unwrap();
 
     let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!("http://127.0.0.1:9067")));
 
