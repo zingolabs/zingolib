@@ -5,12 +5,14 @@ members = [
     "ios"
 ]
 
+[workspace.dependencies]
+log = "0.4.8"
+zingolib = { git="https://github.com/zingolabs/zingolib", default-features=true, branch = "dev" }
+zingoconfig = { git="https://github.com/zingolabs/zingolib", default-features=true, branch = "dev" }
+
 [profile.release]
 debug = false
 
 [patch.crates-io]
-bellman = { git = "https://github.com/zingolabs/bellman", rev="c852464b1743d10072ab0521fba939f79da6798e" }
-zcash_note_encryption = { git = "https://github.com/zingolabs/librustzcash", rev = "d66f7f70516e6da5c24008874a926d41221b1346" }
-zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", rev = "d66f7f70516e6da5c24008874a926d41221b1346" }
-orchard = { git = "https://github.com/zingolabs/orchard", rev = "49874b31da4fedcb31fcfadf5ba8804bf860c4bf" }
-sodiumoxide = { git = "https://github.com/juanky201271/sodiumoxide", rev = "2f1b91e031199412ec631a3afd571a7df2450981"}
+zcash_note_encryption = { git = "https://github.com/zingolabs/librustzcash", rev = "52e4d0c834ff697cae23dad43e580a85658b7764" }
+zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", rev = "52e4d0c834ff697cae23dad43e580a85658b7764" }
