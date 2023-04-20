@@ -246,10 +246,8 @@ async fn test_simple_sync() {
 
     println!("{}", result);
     assert!(result.has_key("result"));
-    let res_value = match result {
-        JsonValue::Object(res) => res,
-        _ => panic!("Expected and object got something else"),
-    };
+    let JsonValue::Object(res_value) = result 
+        else { panic!("Expected object, got {result:?}") };
 
     assert_eq!(res_value["result"], "success");
     assert_eq!(res_value["latest_block"], 663200);
