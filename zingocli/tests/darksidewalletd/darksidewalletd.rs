@@ -12,7 +12,6 @@ use std::sync::Arc;
 use http_body::combinators::UnsyncBoxBody;
 use hyper::{client::HttpConnector, Uri};
 use tokio_rustls::rustls::{ClientConfig, RootCertStore};
-use tonic::Request;
 use tonic::Status;
 use tower::{util::BoxCloneService, ServiceExt};
 
@@ -22,22 +21,21 @@ type UnderlyingService = BoxCloneService<
     hyper::Error,
 >;
 
-macro_rules! define_darkside_connector_method(
-    ($name:ident (&$self:ident $(, $param:ident: $param_type:ty),*) {$param_packing:expr}) => {
-        pub(crate) async fn $name(&self$(, $param: $param_type),*) -> ::std::error::Result<(), String> {
+macro_rules! define_darkside_connector_methods(
+    ($($name:ident (&$self:ident, $($param:ident: $param_type:ty),*$(,)?) {$param_packing:expr}),*) => {$(
+        pub(crate) async fn $name(&$self, $($param: $param_type),*) -> ::std::result::Result<(), String> {
             let request = ::tonic::Request::new($param_packing);
 
             let mut client = $self.get_client().await.map_err(|e| format!("{e}"))?;
 
-        let response = client
+        let _response = client
             .$name(request)
             .await
             .map_err(|e| format!("{}", e))?
             .into_inner();
-        }
 
         Ok(())
-    }
+    })*}
 );
 
 #[derive(Clone)]
@@ -130,75 +128,23 @@ impl DarksideConnector {
         }
     }
 
-    pub(crate) async fn applyStaged(&self, height: i32) -> Result<(), String> {
-        let height = DarksideHeight { height };
-        let request = tonic::Request::new(height);
-
-        let mut client = self.get_client().await.map_err(|e| format!("{}", e))?;
-
-        let response = client
-            .apply_staged(request)
-            .await
-            .map_err(|e| format!("{}", e))?
-            .into_inner();
-
-        Ok(())
-    }
-
-    pub(crate) async fn addTreeState(&self, treeState: TreeState) -> Result<(), String> {
-        let request = tonic::Request::new(treeState);
-
-        let mut client = self.get_client().await.map_err(|e| format!("{}", e))?;
-
-        let response = client
-            .add_tree_state(request)
-            .await
-            .map_err(|e| format!("{}", e))?
-            .into_inner();
-
-        Ok(())
-    }
-
-    pub(crate) async fn reset(
-        &self,
-        sapling_activation: i32,
-        branch_id: String,
-        chain_name: String,
-    ) -> Result<(), String> {
-        let mut reset_params = DarksideMetaState {
-            sapling_activation,
-            branch_id,
-            chain_name,
-        };
-
-        let mut request: Request<DarksideMetaState> = tonic::Request::new(reset_params);
-
-        let mut client = self.get_client().await.map_err(|e| format!("{}", e))?;
-
-        let mut response = client
-            .reset(request)
-            .await
-            .map_err(|e| format!("{}", e))?
-            .into_inner();
-
-        Ok(())
-    }
-
-    pub(crate) async fn stageBlocks(&self, url: String) -> Result<(), String> {
-        let url = DarksideBlocksUrl { url };
-
-        let request = tonic::Request::new(url);
-
-        let mut client = self.get_client().await.map_err(|e| format!("{}", e))?;
-
-        let response = client
-            .stage_blocks(request)
-            .await
-            .map_err(|e| format!("{}", e))?
-            .into_inner();
-
-        Ok(())
-    }
+    define_darkside_connector_methods!(
+        apply_staged(&self, height: i32) {DarksideHeight { height }},
+        add_tree_state(&self, tree_state: TreeState) { tree_state },
+        reset(
+            &self,
+            sapling_activation: i32,
+            branch_id: String,
+            chain_name: String,
+        ) {
+            DarksideMetaState {
+                sapling_activation,
+                branch_id,
+                chain_name,
+            }
+        },
+        stage_blocks(&self, url: String) { DarksideBlocksUrl { url } }
+    );
 }
 
 async fn prepare_darksidewalletd(uri: http::Uri) -> Result<(), String> {
@@ -209,7 +155,7 @@ async fn prepare_darksidewalletd(uri: http::Uri) -> Result<(), String> {
         .reset(663_150, String::from("2bb40e60"), String::from("main"))
         .await?;
 
-    connector.stageBlocks(String::from("https://raw.githubusercontent.com/zcash-hackworks/darksidewalletd-test-data/master/tx-height-reorg/before-reorg.txt")).await?;
+    connector.stage_blocks(String::from("https://raw.githubusercontent.com/zcash-hackworks/darksidewalletd-test-data/master/tx-height-reorg/before-reorg.txt")).await?;
 
     sleep(std::time::Duration::new(2, 0)).await;
 
@@ -222,7 +168,7 @@ async fn prepare_darksidewalletd(uri: http::Uri) -> Result<(), String> {
         orchard_tree: String::from(""),
     };
 
-    connector.addTreeState(sapling_activation_tree).await?;
+    connector.add_tree_state(sapling_activation_tree).await?;
 
     let first_transaction_state = TreeState {
         network: String::from("main"),
@@ -233,7 +179,7 @@ async fn prepare_darksidewalletd(uri: http::Uri) -> Result<(), String> {
         orchard_tree: String::from(""),
     };
 
-    connector.addTreeState(first_transaction_state).await?;
+    connector.add_tree_state(first_transaction_state).await?;
 
     let second_transaction_state = TreeState {
         network: String::from("main"),
@@ -244,7 +190,7 @@ async fn prepare_darksidewalletd(uri: http::Uri) -> Result<(), String> {
         orchard_tree: String::from(""),
     };
 
-    connector.addTreeState(second_transaction_state).await?;
+    connector.add_tree_state(second_transaction_state).await?;
 
     let third_transaction_state = TreeState {
         network: String::from("main"),
@@ -255,7 +201,7 @@ async fn prepare_darksidewalletd(uri: http::Uri) -> Result<(), String> {
         orchard_tree: String::from(""),
     };
 
-    connector.addTreeState(third_transaction_state).await?;
+    connector.add_tree_state(third_transaction_state).await?;
 
     let fourth_transaction_state = TreeState {
         network: String::from("main"),
@@ -266,11 +212,10 @@ async fn prepare_darksidewalletd(uri: http::Uri) -> Result<(), String> {
         orchard_tree: String::from(""),
     };
 
-    connector.addTreeState(fourth_transaction_state).await?;
+    connector.add_tree_state(fourth_transaction_state).await?;
 
     sleep(std::time::Duration::new(2, 0)).await;
-
-    connector.applyStaged(663_200).await?;
+    connector.apply_staged(663_200).await?;
 
     Ok(())
 }
