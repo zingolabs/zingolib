@@ -2357,11 +2357,8 @@ dependencies = [
 name = "rustlib"
 version = "1.0.1"
 dependencies = [
- "android_logger",
  "base64 0.11.0",
- "jni",
  "lazy_static",
- "log",
  "zingoconfig",
  "zingolib",
 ]
