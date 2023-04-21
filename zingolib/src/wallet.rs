@@ -88,18 +88,13 @@ pub struct SendProgress {
 }
 
 #[derive(Debug, Clone, Copy)]
-enum PoolPolicy {
-    Disallowed,
-    Allowed,
-    Prefered,
+pub enum Pool {
+    Sapling,
+    Orchard,
+    Transparent,
 }
 
-#[derive(Debug, Clone, Copy)]
-struct NoteSelectionPolicy {
-    transparent: PoolPolicy,
-    sapling: PoolPolicy,
-    orchard: PoolPolicy,
-}
+pub(crate) type NoteSelectionPolicy = Vec<Pool>;
 
 impl SendProgress {
     fn new(id: u32) -> Self {
@@ -1000,99 +995,72 @@ impl LightWallet {
     async fn select_notes_and_utxos(
         &self,
         target_amount: Amount,
-        transparent_only: bool,
-        shield_transparent: bool,
-        prefer_orchard_over_sapling: bool,
+        policy: NoteSelectionPolicy,
     ) -> (
         Vec<SpendableOrchardNote>,
         Vec<SpendableSaplingNote>,
         Vec<Utxo>,
         Amount,
     ) {
-        // First, if we are allowed to pick transparent value, pick them all
-        let utxos = if transparent_only || shield_transparent {
-            self.get_utxos()
-                .await
-                .iter()
-                .filter(|utxo| utxo.unconfirmed_spent.is_none() && utxo.spent.is_none())
-                .map(|utxo| utxo.clone())
-                .collect::<Vec<_>>()
-        } else {
-            vec![]
-        };
-
-        // Check how much we've selected
-        let total_transparent_value = utxos.iter().fold(Amount::zero(), |prev, utxo| {
-            (prev + Amount::from_u64(utxo.value).unwrap()).unwrap()
-        });
-
-        // If we are allowed only transparent funds or we've selected enough then return
-        if transparent_only || total_transparent_value >= target_amount {
-            return (vec![], vec![], utxos, total_transparent_value);
-        }
-
+        let mut transparent_value_selected = Amount::zero();
+        let mut utxos = Vec::new();
         let mut sapling_value_selected = Amount::zero();
-        let mut sapling_notes = vec![];
-        // Select the minimum number of notes required to satisfy the target value
-        if prefer_orchard_over_sapling {
-            let sapling_candidates = self
-                .get_all_domain_specific_notes::<SaplingDomain<zingoconfig::ChainType>>()
-                .await
-                .into_iter()
-                .filter(|x| x.spend_key().is_some())
-                .collect();
-            (sapling_notes, sapling_value_selected) =
-                Self::add_notes_to_total::<SaplingDomain<zingoconfig::ChainType>>(
-                    sapling_candidates,
-                    (target_amount - total_transparent_value).unwrap(),
-                );
-            if total_transparent_value + sapling_value_selected >= Some(target_amount) {
-                return (
-                    vec![],
-                    sapling_notes,
-                    utxos,
-                    (total_transparent_value + sapling_value_selected).unwrap(),
-                );
+        let mut sapling_notes = Vec::new();
+        let mut orchard_value_selected = Amount::zero();
+        let mut orchard_notes = Vec::new();
+        for pool in policy {
+            match pool {
+                Pool::Sapling => {
+                    let sapling_candidates = self
+                        .get_all_domain_specific_notes::<SaplingDomain<zingoconfig::ChainType>>()
+                        .await
+                        .into_iter()
+                        .filter(|x| x.spend_key().is_some())
+                        .collect();
+                    (sapling_notes, sapling_value_selected) =
+                        Self::add_notes_to_total::<SaplingDomain<zingoconfig::ChainType>>(
+                            sapling_candidates,
+                            (target_amount - orchard_value_selected - transparent_value_selected)
+                                .unwrap(),
+                        );
+                }
+                Pool::Orchard => {
+                    let orchard_candidates = self
+                        .get_all_domain_specific_notes::<OrchardDomain>()
+                        .await
+                        .into_iter()
+                        .filter(|x| x.spend_key().is_some())
+                        .collect();
+                    (orchard_notes, orchard_value_selected) =
+                        Self::add_notes_to_total::<OrchardDomain>(
+                            orchard_candidates,
+                            (target_amount - transparent_value_selected - sapling_value_selected)
+                                .unwrap(),
+                        );
+                }
+                Pool::Transparent => {
+                    utxos = self
+                        .get_utxos()
+                        .await
+                        .iter()
+                        .filter(|utxo| utxo.unconfirmed_spent.is_none() && utxo.spent.is_none())
+                        .map(|utxo| utxo.clone())
+                        .collect::<Vec<_>>();
+                    transparent_value_selected = utxos.iter().fold(Amount::zero(), |prev, utxo| {
+                        (prev + Amount::from_u64(utxo.value).unwrap()).unwrap()
+                    });
+                }
             }
-        }
-        let orchard_candidates = self
-            .get_all_domain_specific_notes::<OrchardDomain>()
-            .await
-            .into_iter()
-            .filter(|x| x.spend_key().is_some())
-            .collect();
-        let (orchard_notes, orchard_value_selected) = Self::add_notes_to_total::<OrchardDomain>(
-            orchard_candidates,
-            (target_amount - total_transparent_value - sapling_value_selected).unwrap(),
-        );
-        if total_transparent_value + sapling_value_selected + orchard_value_selected
-            >= Some(target_amount)
-        {
-            return (
-                orchard_notes,
-                sapling_notes,
-                utxos,
-                (total_transparent_value + sapling_value_selected + orchard_value_selected)
-                    .unwrap(),
-            );
-        }
-        if !prefer_orchard_over_sapling {
-            let sapling_candidates = self
-                .get_all_domain_specific_notes::<SaplingDomain<zingoconfig::ChainType>>()
-                .await;
-            (sapling_notes, sapling_value_selected) =
-                Self::add_notes_to_total::<SaplingDomain<zingoconfig::ChainType>>(
-                    sapling_candidates,
-                    (target_amount - total_transparent_value).unwrap(),
-                );
-            if total_transparent_value + sapling_value_selected + orchard_value_selected
-                >= Some(target_amount)
+            // Check how much we've selected
+            if (transparent_value_selected + sapling_value_selected + orchard_value_selected)
+                .unwrap()
+                >= target_amount
             {
                 return (
                     orchard_notes,
                     sapling_notes,
                     utxos,
-                    (total_transparent_value + sapling_value_selected + orchard_value_selected)
+                    (transparent_value_selected + sapling_value_selected + orchard_value_selected)
                         .unwrap(),
                 );
             }
@@ -1169,8 +1137,7 @@ impl LightWallet {
     pub async fn send_to_address<F, Fut, P: TxProver>(
         &self,
         prover: P,
-        transparent_only: bool,
-        migrate_sapling_to_orchard: bool,
+        policy: NoteSelectionPolicy,
         tos: Vec<(&str, u64, Option<String>)>,
         submission_height: BlockHeight,
         broadcast_fn: F,
@@ -1184,14 +1151,7 @@ impl LightWallet {
 
         // Call the internal function
         match self
-            .send_to_address_inner(
-                prover,
-                transparent_only,
-                migrate_sapling_to_orchard,
-                tos,
-                submission_height,
-                broadcast_fn,
-            )
+            .send_to_address_inner(prover, policy, tos, submission_height, broadcast_fn)
             .await
         {
             Ok((transaction_id, raw_transaction)) => {
@@ -1208,8 +1168,7 @@ impl LightWallet {
     async fn send_to_address_inner<F, Fut, P: TxProver>(
         &self,
         prover: P,
-        transparent_only: bool,
-        migrate_sapling_to_orchard: bool,
+        policy: NoteSelectionPolicy,
         tos: Vec<(&str, u64, Option<String>)>,
         submission_height: BlockHeight,
         broadcast_fn: F,
@@ -1295,14 +1254,8 @@ impl LightWallet {
             .get_taddr_to_secretkey_map(&self.transaction_context.config)
             .unwrap();
 
-        let (orchard_notes, sapling_notes, utxos, selected_value) = self
-            .select_notes_and_utxos(
-                target_amount,
-                transparent_only,
-                true,
-                migrate_sapling_to_orchard,
-            )
-            .await;
+        let (orchard_notes, sapling_notes, utxos, selected_value) =
+            self.select_notes_and_utxos(target_amount, policy).await;
         if selected_value < target_amount {
             let e = format!(
                 "Insufficient verified funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent.",

@@ -1690,8 +1690,7 @@ impl LightClient {
             self.wallet
                 .send_to_address(
                     prover,
-                    true,
-                    true,
+                    vec![crate::wallet::Pool::Transparent],
                     vec![(&addr, tbal - fee, None)],
                     transaction_submission_height,
                     |transaction_bytes| {
@@ -1729,8 +1728,11 @@ impl LightClient {
             self.wallet
                 .send_to_address(
                     prover,
-                    false,
-                    false,
+                    vec![
+                        crate::wallet::Pool::Orchard,
+                        crate::wallet::Pool::Sapling,
+                        crate::wallet::Pool::Transparent,
+                    ],
                     address_amount_memo_tuples,
                     transaction_submission_height,
                     |transaction_bytes| {
