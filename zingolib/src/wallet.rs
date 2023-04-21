@@ -87,6 +87,20 @@ pub struct SendProgress {
     pub last_transaction_id: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum PoolPolicy {
+    Disallowed,
+    Allowed,
+    Prefered,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct NoteSelectionPolicy {
+    transparent: PoolPolicy,
+    sapling: PoolPolicy,
+    orchard: PoolPolicy,
+}
+
 impl SendProgress {
     fn new(id: u32) -> Self {
         SendProgress {
