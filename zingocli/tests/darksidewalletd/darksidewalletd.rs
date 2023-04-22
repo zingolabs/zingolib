@@ -189,7 +189,7 @@ async fn prepare_darksidewalletd(uri: http::Uri) -> Result<(), String> {
 
     connector.stageBlocks(String::from("https://raw.githubusercontent.com/zcash-hackworks/darksidewalletd-test-data/master/tx-height-reorg/before-reorg.txt")).await?;
     
-    sleep(std::time::Duration::new(1, 0)).await;
+    sleep(std::time::Duration::new(2, 0)).await;
     
     let sapling_activation_tree = TreeState {
         network: String::from("main"),
@@ -246,6 +246,8 @@ async fn prepare_darksidewalletd(uri: http::Uri) -> Result<(), String> {
 
     connector.addTreeState(fourth_transaction_state).await?;
     
+    sleep(std::time::Duration::new(2, 0)).await;
+    
     connector.applyStaged(663_200).await?;
     
     Ok(())
@@ -259,11 +261,11 @@ async fn test_simple_sync() {
     let temp_dir = TempDir::new(&format!("dwld_test_{num}")).unwrap();
     let path = temp_dir.path().to_path_buf();
 
-    let darkside_server_uri = zingoconfig::construct_server_uri(Some(format!("http://127.0.0.1:9067")));
+    let darkside_server_uri = zingoconfig::construct_lightwalletd_uri(Some(format!("http://127.0.0.1:9067")));
 
     prepare_darksidewalletd(darkside_server_uri).await;
 
-    let server_id = zingoconfig::construct_server_uri(Some(format!("http://127.0.0.1:9067")));
+    let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!("http://127.0.0.1:9067")));
     
     let light_client = ClientManager::new(
             server_id,
