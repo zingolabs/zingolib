@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use base64::{decode, encode};
 
-use zingoconfig::construct_server_uri;
+use zingoconfig::construct_lightwalletd_uri;
 use zingolib::wallet::WalletBase;
 use zingolib::{commands, lightclient::LightClient};
 
@@ -37,14 +37,19 @@ fn construct_uri_load_config(
     uri: String,
     data_dir: String,
 ) -> Result<(zingoconfig::ZingoConfig, u64), String> {
-    let server = construct_server_uri(Some(uri));
+    let lightwalletd_uri = construct_lightwalletd_uri(Some(uri));
 
-    let (mut config, latest_block_height) = match zingolib::load_clientconfig(server, None) {
-        Ok((c, h)) => (c, h),
+    let mut config = match zingolib::load_clientconfig(
+        lightwalletd_uri.clone(),
+        None,
+        zingoconfig::ChainType::Mainnet,
+    ) {
+        Ok(c) => c,
         Err(e) => {
             return Err(format!("Error: Config load: {}", e));
         }
     };
+    let latest_block_height = zingolib::get_latest_block_height(lightwalletd_uri);
 
     config.set_data_dir(data_dir);
     Ok((config, latest_block_height))
