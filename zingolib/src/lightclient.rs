@@ -1586,9 +1586,7 @@ impl LightClient {
             r1,
         ])
         .await
-        .into_iter()
-        .map(|r| r.map_err(|e| format!("{}", e))?)
-        .collect::<Result<(), String>>()?;
+        .into_iter().try_for_each(|r| r.map_err(|e| format!("{}", e))?)?;
 
         let verify_handle =
             tokio::spawn(async move { block_data.read().await.block_data.verify_trees().await });

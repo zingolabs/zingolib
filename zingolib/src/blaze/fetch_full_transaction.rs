@@ -78,17 +78,17 @@ impl TransactionContext {
     ) {
         //todo: investigate scanning all bundles simultaneously
         self.scan_transparent_bundle(
-            &transaction,
+            transaction,
             height,
             unconfirmed,
             block_time,
             is_outgoing_transaction,
-            &taddrs_set,
+            taddrs_set,
         )
         .await;
 
         self.scan_sapling_bundle(
-            &transaction,
+            transaction,
             height,
             unconfirmed,
             block_time,
@@ -98,7 +98,7 @@ impl TransactionContext {
         )
         .await;
         self.scan_orchard_bundle(
-            &transaction,
+            transaction,
             height,
             unconfirmed,
             block_time,
@@ -208,7 +208,7 @@ impl TransactionContext {
                             .current
                             .get_mut(&txid)
                         {
-                            if transaction.outgoing_tx_data.len() != 0 {
+                            if !transaction.outgoing_tx_data.is_empty() {
                                 let outgoing_potential_receivers = [
                                     ua.orchard().map(|oaddr| {
                                         oaddr.b32encode_for_network(&self.config.chain)
@@ -280,7 +280,7 @@ impl TransactionContext {
                                     height.into(),
                                     unconfirmed,
                                     block_time as u64,
-                                    &vout,
+                                    vout,
                                     n as u32,
                                 );
 
@@ -471,17 +471,17 @@ impl TransactionContext {
                 .collect::<Vec<_>>();
 
         let (Ok(ivk), Ok(ovk)) = (
-            D::wc_to_ivk(&*unified_spend_capability),
-            D::wc_to_ovk(&*unified_spend_capability),
+            D::wc_to_ivk(&unified_spend_capability),
+            D::wc_to_ovk(&unified_spend_capability),
         ) else {
             // skip scanning if wallet has not viewing capability
             return;
         };
 
-        let mut decrypt_attempts =
+        let decrypt_attempts =
             zcash_note_encryption::batch::try_note_decryption(&[ivk], &domain_tagged_outputs)
                 .into_iter();
-        while let Some(decrypt_attempt) = decrypt_attempts.next() {
+        for decrypt_attempt in decrypt_attempts {
             let ((note, to, memo_bytes), _ivk_num) = match decrypt_attempt {
                 Some(plaintext) => plaintext,
                 _ => continue,
@@ -573,7 +573,7 @@ impl TransactionContext {
                                             ),
                                         ]
                                         .into_iter()
-                                        .filter_map(std::convert::identity)
+                                        .flatten()
                                         .map(|addr| addr.encode(&self.config.chain))
                                         .any(|addr| addr == address)
                                     },
@@ -713,10 +713,8 @@ pub async fn start(
     let h = tokio::spawn(async move {
         join_all(vec![h1, h2])
             .await
-            .into_iter()
-            .map(|r| r.map_err(|e| format!("{}", e))?)
-            .collect::<Result<(), String>>()
+            .into_iter().try_for_each(|r| r.map_err(|e| format!("{}", e))?)
     });
 
-    return (h, transaction_id_transmitter, transaction_transmitter);
+    (h, transaction_id_transmitter, transaction_transmitter)
 }

@@ -45,7 +45,7 @@ pub fn construct_lightwalletd_uri(server: Option<String>) -> http::Uri {
             };
             let uri: http::Uri = s.parse().unwrap();
             if uri.port().is_none() {
-                s = s + ":9067";
+                s += ":9067";
             }
             s
         }
@@ -227,7 +227,7 @@ impl ZingoConfig {
     }
 
     pub fn wallet_exists(&self) -> bool {
-        return self.get_wallet_path().exists();
+        self.get_wallet_path().exists()
     }
 
     pub fn backup_existing_wallet(&self) -> Result<String, String> {

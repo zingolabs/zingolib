@@ -23,7 +23,7 @@ pub(crate) mod unified;
 
 /// Sha256(Sha256(value))
 pub fn double_sha256(payload: &[u8]) -> Vec<u8> {
-    let h1 = Sha256::digest(&payload);
+    let h1 = Sha256::digest(payload);
     let h2 = Sha256::digest(&h1);
     h2.to_vec()
 }
@@ -71,7 +71,7 @@ impl FromBase58Check for str {
         if payload.len() < 5 {
             return Err(io::Error::new(
                 ErrorKind::InvalidData,
-                format!("Invalid Checksum length"),
+                "Invalid Checksum length".to_string(),
             ));
         }
 
@@ -81,7 +81,7 @@ impl FromBase58Check for str {
         if checksum != provided_checksum {
             return Err(io::Error::new(
                 ErrorKind::InvalidData,
-                format!("Invalid Checksum"),
+                "Invalid Checksum".to_string(),
             ));
         }
         Ok((payload[0], payload[1..].to_vec()))

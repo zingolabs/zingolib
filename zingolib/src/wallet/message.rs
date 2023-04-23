@@ -41,7 +41,7 @@ impl Message {
     }
 
     fn magic_word() -> String {
-        return "ZcashOfflineMemo".to_string();
+        "ZcashOfflineMemo".to_string()
     }
 
     // Internal method that does the actual encryption
@@ -153,7 +153,7 @@ impl Message {
         let mut magic_word_bytes = vec![0u8; Message::magic_word().len()];
         reader.read_exact(&mut magic_word_bytes)?;
         let read_magic_word = String::from_utf8(magic_word_bytes)
-            .map_err(|e| return io::Error::new(ErrorKind::InvalidData, format!("{}", e)))?;
+            .map_err(|e| io::Error::new(ErrorKind::InvalidData, format!("{}", e)))?;
         if read_magic_word != Message::magic_word() {
             return Err(io::Error::new(
                 ErrorKind::InvalidData,
@@ -179,7 +179,7 @@ impl Message {
         if cmu.is_none().into() {
             return Err(io::Error::new(
                 ErrorKind::InvalidData,
-                format!("Can't read CMU bytes"),
+                "Can't read CMU bytes".to_string(),
             ));
         }
 
@@ -189,7 +189,7 @@ impl Message {
         if epk.is_none().into() {
             return Err(io::Error::new(
                 ErrorKind::InvalidData,
-                format!("Can't read EPK bytes"),
+                "Can't read EPK bytes".to_string(),
             ));
         }
 
@@ -231,12 +231,12 @@ impl Message {
             Some((_note, address, memo)) => Ok(Self::new(
                 address,
                 memo.try_into().map_err(|_e| {
-                    io::Error::new(ErrorKind::InvalidData, format!("Failed to decrypt"))
+                    io::Error::new(ErrorKind::InvalidData, "Failed to decrypt".to_string())
                 })?,
             )),
             None => Err(io::Error::new(
                 ErrorKind::InvalidData,
-                format!("Failed to decrypt"),
+                "Failed to decrypt".to_string(),
             )),
         }
     }
@@ -263,7 +263,7 @@ pub mod tests {
 
         let extsk = ExtendedSpendingKey::master(&seed);
         let dfvk = extsk.to_diversifiable_full_viewing_key();
-        let fvk = zcash_primitives::zip32::sapling::DiversifiableFullViewingKey::from(dfvk);
+        let fvk = dfvk;
         let (_, addr) = fvk.default_address();
 
         (extsk, fvk.fvk().vk.ivk(), addr)
@@ -275,8 +275,8 @@ pub mod tests {
 
         let msg = Memo::from_bytes("Hello World with some value!".to_string().as_bytes()).unwrap();
 
-        let enc = Message::new(to.clone(), msg.clone()).encrypt().unwrap();
-        let dec_msg = Message::decrypt(&enc.clone(), &ivk).unwrap();
+        let enc = Message::new(to, msg.clone()).encrypt().unwrap();
+        let dec_msg = Message::decrypt(&enc, &ivk).unwrap();
 
         assert_eq!(dec_msg.memo, msg);
         assert_eq!(dec_msg.to, to);
@@ -288,8 +288,8 @@ pub mod tests {
 
         // Raw memo of 512 bytes
         let msg = Memo::from_bytes(&[255u8; 512]).unwrap();
-        let enc = Message::new(to.clone(), msg.clone()).encrypt().unwrap();
-        let dec_msg = Message::decrypt(&enc.clone(), &ivk).unwrap();
+        let enc = Message::new(to, msg.clone()).encrypt().unwrap();
+        let dec_msg = Message::decrypt(&enc, &ivk).unwrap();
 
         assert_eq!(dec_msg.memo, msg);
         assert_eq!(dec_msg.to, to);
@@ -302,11 +302,11 @@ pub mod tests {
 
         let msg = Memo::from_bytes("Hello World with some value!".to_string().as_bytes()).unwrap();
 
-        let enc = Message::new(to1.clone(), msg.clone()).encrypt().unwrap();
-        let dec_success = Message::decrypt(&enc.clone(), &ivk2);
+        let enc = Message::new(to1, msg.clone()).encrypt().unwrap();
+        let dec_success = Message::decrypt(&enc, &ivk2);
         assert!(dec_success.is_err());
 
-        let dec_success = Message::decrypt(&enc.clone(), &ivk1).unwrap();
+        let dec_success = Message::decrypt(&enc, &ivk1).unwrap();
 
         assert_eq!(dec_success.memo, msg);
         assert_eq!(dec_success.to, to1);
@@ -323,7 +323,7 @@ pub mod tests {
         let msg_str = "Hello World with some value!";
         let msg = Memo::from_bytes(msg_str.to_string().as_bytes()).unwrap();
 
-        let enc = Message::new(to.clone(), msg).encrypt().unwrap();
+        let enc = Message::new(to, msg).encrypt().unwrap();
 
         // Mad magic word
         let mut bad_enc = enc.clone();
@@ -387,7 +387,7 @@ pub mod tests {
         // Bad payload 3
         let c = enc.clone();
         let (bad_enc, _) = c.split_at(bad_enc.len() - 1);
-        let dec_success = Message::decrypt(&bad_enc, &ivk);
+        let dec_success = Message::decrypt(bad_enc, &ivk);
         assert!(dec_success.is_err());
 
         // Bad payload 4
@@ -410,7 +410,7 @@ pub mod tests {
         let msg_str = "Hello World with some value!";
         let msg = Memo::from_bytes(msg_str.to_string().as_bytes()).unwrap();
 
-        let enc = Message::new(to.clone(), msg.clone()).encrypt().unwrap();
+        let enc = Message::new(to, msg.clone()).encrypt().unwrap();
 
         // Replace each individual byte and make sure it breaks. i.e., each byte is important
         for i in 0..enc.len() {
@@ -422,7 +422,7 @@ pub mod tests {
             assert!(dec_success.is_err());
         }
 
-        let dec_success = Message::decrypt(&enc.clone(), &ivk).unwrap();
+        let dec_success = Message::decrypt(&enc, &ivk).unwrap();
 
         assert_eq!(dec_success.memo, msg);
         assert_eq!(dec_success.to, to);

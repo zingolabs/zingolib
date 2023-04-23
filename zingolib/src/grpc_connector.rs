@@ -409,7 +409,7 @@ impl GrpcConnector {
             .map_err(|e| format!("Error getting client: {:?}", e))?;
 
         let b = BlockId {
-            height: height as u64,
+            height,
             hash: vec![],
         };
         let response = client
@@ -461,7 +461,7 @@ impl GrpcConnector {
         let sendresponse = response.into_inner();
         if sendresponse.error_code == 0 {
             let mut transaction_id = sendresponse.error_message;
-            if transaction_id.starts_with("\"") && transaction_id.ends_with("\"") {
+            if transaction_id.starts_with('\"') && transaction_id.ends_with('\"') {
                 transaction_id = transaction_id[1..transaction_id.len() - 1].to_string();
             }
 
@@ -474,7 +474,7 @@ impl GrpcConnector {
 
 #[cfg(test)]
 fn add_test_cert_to_roots(roots: &mut RootCertStore) {
-    const TEST_PEMFILE_PATH: &'static str = "test-data/localhost.pem";
+    const TEST_PEMFILE_PATH: &str = "test-data/localhost.pem";
     let fd = std::fs::File::open(TEST_PEMFILE_PATH).unwrap();
     let mut buf = std::io::BufReader::new(&fd);
     let certs = rustls_pemfile::certs(&mut buf).unwrap();

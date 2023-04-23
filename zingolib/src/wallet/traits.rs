@@ -139,7 +139,7 @@ impl FromBytes<32> for zcash_primitives::sapling::Nullifier {
 impl FromBytes<32> for orchard::note::Nullifier {
     fn from_bytes(bytes: [u8; 32]) -> Self {
         Option::from(orchard::note::Nullifier::from_bytes(&bytes))
-            .expect(&format!("Invalid nullifier {:?}", bytes))
+            .unwrap_or_else(|| panic!("Invalid nullifier {:?}", bytes))
     }
 }
 
@@ -224,7 +224,7 @@ impl Recipient for orchard::Address {
     type Diversifier = orchard::keys::Diversifier;
 
     fn diversifier(&self) -> Self::Diversifier {
-        orchard::Address::diversifier(&self)
+        orchard::Address::diversifier(self)
     }
 
     fn b32encode_for_network(&self, chain: &ChainType) -> String {
@@ -242,7 +242,7 @@ impl Recipient for zcash_primitives::sapling::PaymentAddress {
     type Diversifier = zcash_primitives::sapling::Diversifier;
 
     fn diversifier(&self) -> Self::Diversifier {
-        *zcash_primitives::sapling::PaymentAddress::diversifier(&self)
+        *zcash_primitives::sapling::PaymentAddress::diversifier(self)
     }
 
     fn b32encode_for_network(&self, chain: &ChainType) -> String {
@@ -1127,7 +1127,7 @@ impl ReadableWriteable<(zcash_primitives::sapling::Diversifier, &WalletCapabilit
     fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         writer.write_u8(Self::VERSION)?;
         writer.write_u64::<LittleEndian>(self.value().inner())?;
-        super::data::write_sapling_rseed(&mut writer, &self.rseed())?;
+        super::data::write_sapling_rseed(&mut writer, self.rseed())?;
         Ok(())
     }
 }

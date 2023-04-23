@@ -57,7 +57,6 @@ fn get_wallet_nym(nym: &str) -> Result<(String, PathBuf, PathBuf), String> {
                 "{}/zingocli/tests/data/wallets/v26/202302_release/regtest/{nym}/zingo-wallet.dat",
                 zingo_cli::regtest::get_git_rootdir()
                     .to_string_lossy()
-                    .to_string()
             );
             let wallet_path = Path::new(&one_sapling_wallet);
             let wallet_dir = wallet_path.parent().unwrap();
@@ -185,13 +184,13 @@ async fn build_fvk_client_capability(
 ) -> (LightClient, WalletCapability) {
     let ufvk = zcash_address::unified::Encoding::encode(
         &<Ufvk as zcash_address::unified::Encoding>::try_from_items(
-            fvks.clone().into_iter().map(|x| x.clone()).collect(),
+            fvks.clone().into_iter().cloned().collect(),
         )
         .unwrap(),
         &zcash_address::Network::Regtest,
     );
     let viewkey_client =
-        LightClient::create_unconnected(&zingoconfig, WalletBase::Ufvk(ufvk), 0).unwrap();
+        LightClient::create_unconnected(zingoconfig, WalletBase::Ufvk(ufvk), 0).unwrap();
     let watch_wc = viewkey_client
         .extract_unified_capability()
         .read()
@@ -212,7 +211,7 @@ fn check_view_capability_bounds(
     notes: &JsonValue,
 ) {
     //Orchard
-    if !fvks.contains(&&ovk) {
+    if !fvks.contains(&ovk) {
         assert!(!watch_wc.orchard.can_view());
         assert_eq!(balance["orchard_balance"], Null);
         assert_eq!(balance["verified_orchard_balance"], Null);
@@ -228,7 +227,7 @@ fn check_view_capability_bounds(
         assert!((1..=2).contains(&orchard_notes_count));
     }
     //Sapling
-    if !fvks.contains(&&svk) {
+    if !fvks.contains(&svk) {
         assert!(!watch_wc.sapling.can_view());
         assert_eq!(balance["sapling_balance"], Null);
         assert_eq!(balance["verified_sapling_balance"], Null);
@@ -241,7 +240,7 @@ fn check_view_capability_bounds(
         assert_eq!(balance["unverified_sapling_balance"], 0);
         assert_eq!(notes["unspent_sapling_notes"].members().count(), 1);
     }
-    if !fvks.contains(&&tvk) {
+    if !fvks.contains(&tvk) {
         assert!(!watch_wc.transparent.can_view());
         assert_eq!(balance["transparent_balance"], Null);
         assert_eq!(notes["utxos"].members().count(), 0);
@@ -592,7 +591,7 @@ async fn send_mined_sapling_to_orchard() {
 
 fn extract_value_as_u64(input: &JsonValue) -> u64 {
     let note = &input["value"].as_fixed_point_u64(0).unwrap();
-    note.clone()
+    *note
 }
 
 #[tokio::test]
@@ -670,7 +669,7 @@ async fn note_selection_order() {
     let non_change_note_values = client_2_notes["unspent_sapling_notes"]
         .members()
         .filter(|note| !note["is_change"].as_bool().unwrap())
-        .map(|x| extract_value_as_u64(x))
+        .map(extract_value_as_u64)
         .collect::<Vec<_>>();
     // client_2 got a total of 3000+2000+1000
     // It sent 3000 to the client_1, and also
@@ -699,13 +698,11 @@ async fn note_selection_order() {
     assert_eq!(
         client_2_post_transaction_notes["unspent_sapling_notes"]
             .members()
-            .into_iter()
             .chain(
                 client_2_post_transaction_notes["unspent_orchard_notes"]
                     .members()
-                    .into_iter()
             )
-            .map(|x| extract_value_as_u64(x))
+            .map(extract_value_as_u64)
             .sum::<u64>(),
         2000u64 // 1000 received and unused + (2000 - 1000 txfee)
     );
@@ -1202,7 +1199,7 @@ async fn t_incoming_t_outgoing() {
         list[1]["amount"].as_i64().unwrap(),
         -(sent_value as i64 + i64::from(DEFAULT_FEE))
     );
-    assert_eq!(list[1]["unconfirmed"].as_bool().unwrap(), false);
+    assert!(!list[1]["unconfirmed"].as_bool().unwrap());
     assert_eq!(list[1]["outgoing_metadata"][0]["address"], EXT_TADDR);
     assert_eq!(
         list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
@@ -1233,11 +1230,10 @@ async fn t_incoming_t_outgoing() {
         notes["unspent_orchard_notes"][0]["created_in_txid"],
         sent_transaction_id
     );
-    assert_eq!(
+    assert!(
         notes["unspent_orchard_notes"][0]["is_change"]
             .as_bool()
-            .unwrap(),
-        true
+            .unwrap()
     );
     assert_eq!(
         notes["unspent_orchard_notes"][0]["value"].as_u64().unwrap(),
@@ -1249,7 +1245,7 @@ async fn t_incoming_t_outgoing() {
 
     assert_eq!(list[1]["block_height"].as_u64().unwrap(), 3);
     assert_eq!(list[1]["txid"], sent_transaction_id);
-    assert_eq!(list[1]["unconfirmed"].as_bool().unwrap(), false);
+    assert!(!list[1]["unconfirmed"].as_bool().unwrap());
     assert_eq!(list[1]["outgoing_metadata"][0]["address"], EXT_TADDR);
     assert_eq!(
         list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
@@ -1264,7 +1260,7 @@ async fn t_incoming_t_outgoing() {
     println!("{}", json::stringify_pretty(list.clone(), 4));
     assert_eq!(list[1]["block_height"].as_u64().unwrap(), 3);
     assert_eq!(list[1]["txid"], sent_transaction_id);
-    assert_eq!(list[1]["unconfirmed"].as_bool().unwrap(), false);
+    assert!(!list[1]["unconfirmed"].as_bool().unwrap());
     assert_eq!(list[1]["outgoing_metadata"][0]["address"], EXT_TADDR);
     assert_eq!(
         list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
@@ -1283,11 +1279,10 @@ async fn t_incoming_t_outgoing() {
         notes["unspent_orchard_notes"][0]["created_in_txid"],
         sent_transaction_id
     );
-    assert_eq!(
+    assert!(
         notes["unspent_orchard_notes"][0]["is_change"]
             .as_bool()
-            .unwrap(),
-        true
+            .unwrap()
     );
     assert_eq!(
         notes["unspent_orchard_notes"][0]["value"].as_u64().unwrap(),
@@ -1546,11 +1541,10 @@ async fn mixed_transaction() {
             .unwrap(),
         5
     );
-    assert_eq!(
+    assert!(
         notes["unspent_orchard_notes"][0]["is_change"]
             .as_bool()
-            .unwrap(),
-        true
+            .unwrap()
     );
     assert_eq!(
         notes["unspent_orchard_notes"][0]["value"].as_u64().unwrap(),
@@ -1587,7 +1581,7 @@ async fn mixed_transaction() {
     assert_eq!(
         list[2]["outgoing_metadata"]
             .members()
-            .find(|j| j["address"].to_string() == faucet_sapling
+            .find(|j| j["address"] == faucet_sapling
                 && j["value"].as_u64().unwrap() == sent_zvalue)
             .unwrap()["memo"]
             .to_string(),
@@ -1596,7 +1590,7 @@ async fn mixed_transaction() {
     assert_eq!(
         list[2]["outgoing_metadata"]
             .members()
-            .find(|j| j["address"].to_string() == faucet_transparent)
+            .find(|j| j["address"] == faucet_transparent)
             .unwrap()["value"]
             .as_u64()
             .unwrap(),
@@ -2050,7 +2044,7 @@ async fn mempool_clearing() {
         note["value"].as_u64().unwrap(),
         value - sent_value - u64::from(DEFAULT_FEE)
     );
-    assert_eq!(note["unconfirmed"].as_bool().unwrap(), true);
+    assert!(note["unconfirmed"].as_bool().unwrap());
     assert_eq!(transactions.len(), 2);
 
     // 7. Mine 100 blocks, so the mempool expires
@@ -2068,11 +2062,10 @@ async fn mempool_clearing() {
         notes["unspent_orchard_notes"][0]["created_in_txid"],
         orig_transaction_id
     );
-    assert_eq!(
-        notes["unspent_orchard_notes"][0]["unconfirmed"]
+    assert!(
+        !notes["unspent_orchard_notes"][0]["unconfirmed"]
             .as_bool()
-            .unwrap(),
-        false
+            .unwrap()
     );
     assert_eq!(notes["pending_orchard_notes"].len(), 0);
     assert_eq!(transactions.len(), 1);
@@ -2247,11 +2240,10 @@ async fn sapling_incoming_sapling_outgoing() {
         notes["unspent_orchard_notes"][0]["created_in_txid"],
         sent_transaction_id
     );
-    assert_eq!(
+    assert!(
         notes["unspent_orchard_notes"][0]["unconfirmed"]
             .as_bool()
-            .unwrap(),
-        true
+            .unwrap()
     );
 
     assert_eq!(notes["spent_sapling_notes"].len(), 0);
@@ -2264,10 +2256,9 @@ async fn sapling_incoming_sapling_outgoing() {
         notes["pending_sapling_notes"][0]["unconfirmed_spent"],
         sent_transaction_id
     );
-    assert_eq!(notes["pending_sapling_notes"][0]["spent"].is_null(), true);
-    assert_eq!(
-        notes["pending_sapling_notes"][0]["spent_at_height"].is_null(),
-        true
+    assert!(notes["pending_sapling_notes"][0]["spent"].is_null());
+    assert!(
+        notes["pending_sapling_notes"][0]["spent_at_height"].is_null()
     );
 
     // Check transaction list
@@ -2284,12 +2275,12 @@ async fn sapling_incoming_sapling_outgoing() {
         send_transaction["amount"].as_i64().unwrap(),
         -(sent_value as i64 + i64::from(DEFAULT_FEE))
     );
-    assert_eq!(send_transaction["unconfirmed"].as_bool().unwrap(), true);
+    assert!(send_transaction["unconfirmed"].as_bool().unwrap());
     assert_eq!(send_transaction["block_height"].as_u64().unwrap(), 3);
 
     assert_eq!(
         send_transaction["outgoing_metadata"][0]["address"],
-        get_base_address!(faucet, "sapling").to_string()
+        get_base_address!(faucet, "sapling")
     );
     assert_eq!(
         send_transaction["outgoing_metadata"][0]["memo"],
@@ -2307,7 +2298,7 @@ async fn sapling_incoming_sapling_outgoing() {
         .await
         .unwrap();
 
-    assert_eq!(send_transaction.contains("unconfirmed"), false);
+    assert!(!send_transaction.contains("unconfirmed"));
     assert_eq!(send_transaction["block_height"].as_u64().unwrap(), 3);
 
     // 7. Check the notes to see that we have one spent sapling note and one unspent orchard note (change)
@@ -2329,17 +2320,15 @@ async fn sapling_incoming_sapling_outgoing() {
         notes["unspent_orchard_notes"][0]["value"].as_u64().unwrap(),
         value - sent_value - u64::from(DEFAULT_FEE)
     );
-    assert_eq!(
+    assert!(
         notes["unspent_orchard_notes"][0]["is_change"]
             .as_bool()
-            .unwrap(),
-        true
+            .unwrap()
     );
-    assert_eq!(
+    assert!(
         notes["unspent_orchard_notes"][0]["spendable"]
             .as_bool()
-            .unwrap(),
-        true
+            .unwrap()
     ); // Spendable
 
     assert_eq!(notes["spent_sapling_notes"].len(), 1);
@@ -2353,17 +2342,15 @@ async fn sapling_incoming_sapling_outgoing() {
         notes["spent_sapling_notes"][0]["value"].as_u64().unwrap(),
         value
     );
-    assert_eq!(
-        notes["spent_sapling_notes"][0]["is_change"]
+    assert!(
+        !notes["spent_sapling_notes"][0]["is_change"]
             .as_bool()
-            .unwrap(),
-        false
+            .unwrap()
     );
-    assert_eq!(
-        notes["spent_sapling_notes"][0]["spendable"]
+    assert!(
+        !notes["spent_sapling_notes"][0]["spendable"]
             .as_bool()
-            .unwrap(),
-        false
+            .unwrap()
     ); // Already spent
     assert_eq!(
         notes["spent_sapling_notes"][0]["spent"],
