@@ -206,7 +206,9 @@ impl WalletCapability {
                 // other than implementing it ourselves.
                 .map(zcash_primitives::legacy::keys::pubkey_to_address),
         )
-        .ok_or("Invalid receivers requested! At least one of sapling or orchard required".to_string())?;
+        .ok_or(
+            "Invalid receivers requested! At least one of sapling or orchard required".to_string(),
+        )?;
         self.addresses.push(ua.clone());
         Ok(ua)
     }
@@ -458,8 +460,7 @@ impl ReadableWriteable<()> for WalletCapability {
                 ))
             }
         };
-        let receiver_selections =
-            Vector::read(reader, |r| ReceiverSelection::read(r, ()))?;
+        let receiver_selections = Vector::read(reader, |r| ReceiverSelection::read(r, ()))?;
         for rs in receiver_selections {
             wc.new_address(rs)
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;

@@ -282,9 +282,7 @@ impl TransactionMetadataSet {
                             {
                                 Some((
                                     *txid,
-                                    PoolNullifier::Orchard(
-                                        orchard_note_description.nullifier,
-                                    ),
+                                    PoolNullifier::Orchard(orchard_note_description.nullifier),
                                 ))
                             } else {
                                 None
@@ -580,17 +578,14 @@ impl TransactionMetadataSet {
         source_txid: TxId,
     ) {
         // Record this Tx as having spent some funds
-        let transaction_metadata = self.get_or_create_transaction_metadata(
-            &txid,
-            height,
-            unconfirmed,
-            timestamp as u64,
-        );
+        let transaction_metadata =
+            self.get_or_create_transaction_metadata(&txid, height, unconfirmed, timestamp as u64);
 
         // Mark the height correctly, in case this was previously a mempool or unconfirmed tx.
         transaction_metadata.block_height = height;
         if !NnMd::Nullifier::get_nullifiers_spent_in_transaction(transaction_metadata)
-            .iter().any(|nf| *nf == nullifier)
+            .iter()
+            .any(|nf| *nf == nullifier)
         {
             transaction_metadata.add_spent_nullifier(nullifier.into(), value)
         }
@@ -607,7 +602,10 @@ impl TransactionMetadataSet {
 
             if let Some(nd) = NnMd::transaction_metadata_notes_mut(transaction_metadata)
                 .iter_mut()
-                .find(|n| n.nullifier() == nullifier) { *nd.spent_mut() = Some((txid, height.into())); }
+                .find(|n| n.nullifier() == nullifier)
+            {
+                *nd.spent_mut() = Some((txid, height.into()));
+            }
         }
     }
 
@@ -619,12 +617,8 @@ impl TransactionMetadataSet {
         timestamp: u64,
         total_transparent_value_spent: u64,
     ) {
-        let transaction_metadata = self.get_or_create_transaction_metadata(
-            &txid,
-            height,
-            unconfirmed,
-            timestamp,
-        );
+        let transaction_metadata =
+            self.get_or_create_transaction_metadata(&txid, height, unconfirmed, timestamp);
         transaction_metadata.total_transparent_value_spent = total_transparent_value_spent;
 
         self.check_notes_mark_change(&txid);
@@ -719,12 +713,8 @@ impl TransactionMetadataSet {
         // Check if this is a change note
         let is_change = self.total_funds_spent_in(&txid) > 0;
 
-        let transaction_metadata = self.get_or_create_transaction_metadata(
-            &txid,
-            height,
-            true,
-            timestamp,
-        );
+        let transaction_metadata =
+            self.get_or_create_transaction_metadata(&txid, height, true, timestamp);
         // Update the block height, in case this was a mempool or unconfirmed tx.
         transaction_metadata.block_height = height;
 
@@ -819,12 +809,8 @@ impl TransactionMetadataSet {
         // Check if this is a change note
         let is_change = self.total_funds_spent_in(&txid) > 0;
 
-        let transaction_metadata = self.get_or_create_transaction_metadata(
-            &txid,
-            height,
-            unconfirmed,
-            timestamp,
-        );
+        let transaction_metadata =
+            self.get_or_create_transaction_metadata(&txid, height, unconfirmed, timestamp);
         // Update the block height, in case this was a mempool or unconfirmed tx.
         transaction_metadata.block_height = height;
 
@@ -881,10 +867,12 @@ impl TransactionMetadataSet {
         note: Nd::Note,
         memo: Memo,
     ) {
-        if let Some(transaction_metadata) = self.current.get_mut(txid) { Nd::transaction_metadata_notes_mut(transaction_metadata)
+        if let Some(transaction_metadata) = self.current.get_mut(txid) {
+            Nd::transaction_metadata_notes_mut(transaction_metadata)
                 .iter_mut()
                 .find(|n| n.note() == &note)
-                .map(|n| *n.memo_mut() = Some(memo)); }
+                .map(|n| *n.memo_mut() = Some(memo));
+        }
     }
 
     pub fn add_outgoing_metadata(&mut self, txid: &TxId, outgoing_metadata: Vec<OutgoingTxData>) {
@@ -895,7 +883,8 @@ impl TransactionMetadataSet {
                 .filter(|om| {
                     !transaction_metadata
                         .outgoing_tx_data
-                        .iter().any(|o| *o == *om)
+                        .iter()
+                        .any(|o| *o == *om)
                 })
                 .collect();
 
