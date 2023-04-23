@@ -417,6 +417,7 @@ pub trait ReceivedNoteAndMetadata: Sized {
         WitnessCache<Self::Node>,
     );
     fn diversifier(&self) -> &Self::Diversifier;
+    #[allow(clippy::too_many_arguments)]
     fn from_parts(
         diversifier: Self::Diversifier,
         note: Self::Note,

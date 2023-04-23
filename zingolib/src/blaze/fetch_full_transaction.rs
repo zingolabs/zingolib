@@ -65,6 +65,7 @@ impl TransactionContext {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn execute_bundlescans_internal(
         &self,
         transaction: &Transaction,
@@ -357,6 +358,7 @@ impl TransactionContext {
             );
         }
     }
+    #[allow(clippy::too_many_arguments)]
     async fn scan_sapling_bundle(
         &self,
         transaction: &Transaction,
@@ -378,6 +380,7 @@ impl TransactionContext {
         )
         .await
     }
+    #[allow(clippy::too_many_arguments)]
     async fn scan_orchard_bundle(
         &self,
         transaction: &Transaction,
@@ -405,6 +408,7 @@ impl TransactionContext {
     /// In Sapling the components are "Spends" and "Outputs"
     /// In Orchard the components are "Actions", each of which
     /// _IS_ 1 Spend and 1 Output.
+    #[allow(clippy::too_many_arguments)]
     async fn scan_bundle<D>(
         &self,
         transaction: &Transaction,

@@ -141,6 +141,7 @@ impl TrialDecryptions {
     /// In the case that the User has requested Memos, and transaction_metadata
     /// remains false throughout domain-specific decryptions, a memo-specific
     /// thread is spawned.
+    #[allow(clippy::too_many_arguments)]
     async fn trial_decrypt_batch(
         config: Arc<ZingoConfig>,
         compact_blocks: Vec<CompactBlock>,
@@ -250,6 +251,7 @@ impl TrialDecryptions {
         // Return a nothing-value
         Ok::<(), String>(())
     }
+    #[allow(clippy::too_many_arguments)]
     fn trial_decrypt_domain_specific_outputs<D>(
         transaction_metadata: &mut bool,
         compact_transaction: &CompactTx,

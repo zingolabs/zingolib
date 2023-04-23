@@ -533,6 +533,7 @@ impl TransactionMetadataSet {
     }
 
     // Records a TxId as having spent some nullifiers from the wallet.
+    #[allow(clippy::too_many_arguments)]
     pub fn add_new_spent(
         &mut self,
         txid: TxId,
@@ -567,6 +568,7 @@ impl TransactionMetadataSet {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn add_new_spent_internal<NnMd: ReceivedNoteAndMetadata>(
         &mut self,
         txid: TxId,
@@ -657,6 +659,7 @@ impl TransactionMetadataSet {
         value
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn add_new_taddr_output(
         &mut self,
         txid: TxId,
@@ -741,6 +744,7 @@ impl TransactionMetadataSet {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn add_new_sapling_note(
         &mut self,
         fvk: &<SaplingDomain<zingoconfig::ChainType> as DomainWalletExt>::Fvk,
@@ -765,6 +769,7 @@ impl TransactionMetadataSet {
             witness,
         );
     }
+    #[allow(clippy::too_many_arguments)]
     pub fn add_new_orchard_note(
         &mut self,
         fvk: &<OrchardDomain as DomainWalletExt>::Fvk,
@@ -790,6 +795,7 @@ impl TransactionMetadataSet {
         );
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn add_new_note<D: DomainWalletExt>(
         &mut self,
         fvk: &D::Fvk,
