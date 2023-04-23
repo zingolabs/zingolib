@@ -16,9 +16,9 @@ lazy_static! {
 }
 
 pub trait Command {
-    fn help(&self) -> String;
+    fn help(&self) -> &'static str;
 
-    fn short_help(&self) -> String;
+    fn short_help(&self) -> &'static str;
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String;
 }
@@ -28,7 +28,7 @@ pub trait ShortCircuitedCommand {
 }
 struct ChangeServerCommand {}
 impl Command for ChangeServerCommand {
-    fn help(&self) -> String {
+    fn help(&self) -> &'static str {
         indoc! {r#"
             Change the lightwalletd server to receive blockchain data from
             Usage:
@@ -37,11 +37,10 @@ impl Command for ChangeServerCommand {
             Example:
             changeserver https://mainnet.lightwalletd.com:9067
         "#}
-        .to_string()
     }
 
-    fn short_help(&self) -> String {
-        "Change lightwalletd server".to_string()
+    fn short_help(&self) -> &'static str {
+        "Change lightwalletd server"
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
@@ -54,18 +53,18 @@ impl Command for ChangeServerCommand {
                 Err(_) => "invalid server uri",
             }
             .to_string(),
-            _ => self.help(),
+            _ => self.help().to_string(),
         }
     }
 }
 
 struct InterruptCommand {}
 impl Command for InterruptCommand {
-    fn help(&self) -> String {
-        "Toggle the sync interrupt after batch flag.".to_string()
+    fn help(&self) -> &'static str {
+        "Toggle the sync interrupt after batch flag."
     }
-    fn short_help(&self) -> String {
-        "Toggle the sync interrupt after batch flag.".to_string()
+    fn short_help(&self) -> &'static str {
+        "Toggle the sync interrupt after batch flag."
     }
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
         match args.len() {
@@ -79,17 +78,17 @@ impl Command for InterruptCommand {
                         lightclient.interrupt_sync_after_batch(false).await;
                         "false".to_string()
                     }
-                    _ => self.help(),
+                    _ => self.help().to_string(),
                 }
             }),
-            _ => self.help(),
+            _ => self.help().to_string(),
         }
     }
 }
 
 struct ParseCommand {}
 impl Command for ParseCommand {
-    fn help(&self) -> String {
+    fn help(&self) -> &'static str {
         indoc! {r#"
             Parse an address
             Usage:
@@ -98,11 +97,10 @@ impl Command for ParseCommand {
             Example
             parse tmSwk8bjXdCgBvpS8Kybk5nUyE21QFcDqre
         "#}
-        .to_string()
     }
 
-    fn short_help(&self) -> String {
-        "Parse an address".to_string()
+    fn short_help(&self) -> &'static str {
+        "Parse an address"
     }
 
     fn exec(&self, args: &[&str], _lightclient: &LightClient) -> String {
@@ -161,25 +159,24 @@ impl Command for ParseCommand {
                 }),
                 4,
             ),
-            _ => self.help(),
+            _ => self.help().to_string(),
         }
     }
 }
 
 struct SyncCommand {}
 impl Command for SyncCommand {
-    fn help(&self) -> String {
+    fn help(&self) -> &'static str {
         indoc! {r#"
             Sync the light client with the server
             Usage:
             sync
 
         "#}
-        .to_string()
     }
 
-    fn short_help(&self) -> String {
-        "Download CompactBlocks and sync to the server".to_string()
+    fn short_help(&self) -> &'static str {
+        "Download CompactBlocks and sync to the server"
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
@@ -194,18 +191,17 @@ impl Command for SyncCommand {
 
 struct SyncStatusCommand {}
 impl Command for SyncStatusCommand {
-    fn help(&self) -> String {
+    fn help(&self) -> &'static str {
         indoc! {r#"
             Get the sync status of the wallet
             Usage:
             syncstatus
 
         "#}
-        .to_string()
     }
 
-    fn short_help(&self) -> String {
-        "Get the sync status of the wallet".to_string()
+    fn short_help(&self) -> &'static str {
+        "Get the sync status of the wallet"
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
@@ -242,17 +238,16 @@ impl Command for SyncStatusCommand {
 
 struct SendProgressCommand {}
 impl Command for SendProgressCommand {
-    fn help(&self) -> String {
+    fn help(&self) -> &'static str {
         indoc! {r#"
             Get the progress of any send transactions that are currently computing
             Usage:
             sendprogress
         "#}
-        .to_string()
     }
 
-    fn short_help(&self) -> String {
-        "Get the progress of any send transactions that are currently computing".to_string()
+    fn short_help(&self) -> &'static str {
+        "Get the progress of any send transactions that are currently computing"
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
@@ -267,7 +262,7 @@ impl Command for SendProgressCommand {
 
 struct RescanCommand {}
 impl Command for RescanCommand {
-    fn help(&self) -> String {
+    fn help(&self) -> &'static str {
         indoc! {r#"
             Rescan the wallet, rescanning all blocks for new transactions
             Usage:
@@ -275,11 +270,11 @@ impl Command for RescanCommand {
 
             This command will download all blocks since the intial block again from the light client server
             and attempt to scan each block for transactions belonging to the wallet.
-        "#}.to_string()
+        "#}
     }
 
-    fn short_help(&self) -> String {
-        "Rescan the wallet, downloading and scanning all blocks and transactions".to_string()
+    fn short_help(&self) -> &'static str {
+        "Rescan the wallet, downloading and scanning all blocks and transactions"
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
@@ -294,18 +289,18 @@ impl Command for RescanCommand {
 
 struct ClearCommand {}
 impl Command for ClearCommand {
-    fn help(&self) -> String {
+    fn help(&self) -> &'static str {
         indoc! {r#"
             Clear the wallet state, rolling back the wallet to an empty state.
             Usage:
             clear
 
             This command will clear all notes, utxos and transactions from the wallet, setting up the wallet to be synced from scratch.
-        "#}.to_string()
+        "#}
     }
 
-    fn short_help(&self) -> String {
-        "Clear the wallet state, rolling back the wallet to an empty state.".to_string()
+    fn short_help(&self) -> &'static str {
+        "Clear the wallet state, rolling back the wallet to an empty state."
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
@@ -320,7 +315,7 @@ impl Command for ClearCommand {
 
 pub struct HelpCommand {}
 impl Command for HelpCommand {
-    fn help(&self) -> String {
+    fn help(&self) -> &'static str {
         indoc! {r#"
             List all available commands
             Usage:
@@ -331,11 +326,10 @@ impl Command for HelpCommand {
             help send
 
         "#}
-        .to_string()
     }
 
-    fn short_help(&self) -> String {
-        "Lists all available commands".to_string()
+    fn short_help(&self) -> &'static str {
+        "Lists all available commands"
     }
 
     fn exec(&self, args: &[&str], _: &LightClient) -> String {
@@ -353,10 +347,10 @@ impl Command for HelpCommand {
                 responses.join("\n")
             }
             1 => match get_commands().get(args[0]) {
-                Some(cmd) => cmd.help(),
+                Some(cmd) => cmd.help().to_string(),
                 None => format!("Command {} not found", args[0]),
             },
-            _ => self.help(),
+            _ => self.help().to_string(),
         }
     }
 }
@@ -376,7 +370,7 @@ impl ShortCircuitedCommand for HelpCommand {
                 responses.join("\n")
             }
             1 => match get_commands().get(&args[0]) {
-                Some(cmd) => cmd.help(),
+                Some(cmd) => cmd.help().to_string(),
                 None => format!("Command {} not found", args[0]),
             },
             _ => panic!("Unexpected number of parameters."),
@@ -385,18 +379,17 @@ impl ShortCircuitedCommand for HelpCommand {
 }
 struct InfoCommand {}
 impl Command for InfoCommand {
-    fn help(&self) -> String {
+    fn help(&self) -> &'static str {
         indoc! {r#"
             Get info about the lightwalletd we're connected to
             Usage:
             info
 
         "#}
-        .to_string()
     }
 
-    fn short_help(&self) -> String {
-        "Get the lightwalletd server's info".to_string()
+    fn short_help(&self) -> &'static str {
+        "Get the lightwalletd server's info"
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
@@ -406,7 +399,7 @@ impl Command for InfoCommand {
 
 struct UpdateCurrentPriceCommand {}
 impl Command for UpdateCurrentPriceCommand {
-    fn help(&self) -> String {
+    fn help(&self) -> &'static str {
         indoc! {r#"
             Get the latest ZEC price from Gemini exchange's API.
             Currently using USD.
@@ -414,11 +407,10 @@ impl Command for UpdateCurrentPriceCommand {
             zecprice
 
         "#}
-        .to_string()
     }
 
-    fn short_help(&self) -> String {
-        "Get the latest ZEC price in the wallet's currency (USD)".to_string()
+    fn short_help(&self) -> &'static str {
+        "Get the latest ZEC price in the wallet's currency (USD)"
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
@@ -428,7 +420,7 @@ impl Command for UpdateCurrentPriceCommand {
 
 struct BalanceCommand {}
 impl Command for BalanceCommand {
-    fn help(&self) -> String {
+    fn help(&self) -> &'static str {
         indoc! {r#"
             Show the current ZEC balance in the wallet
             Usage:
@@ -436,11 +428,10 @@ impl Command for BalanceCommand {
 
             Transparent and Shielded balances, along with the addresses they belong to are displayed
         "#}
-        .to_string()
     }
 
-    fn short_help(&self) -> String {
-        "Show the current ZEC balance in the wallet".to_string()
+    fn short_help(&self) -> &'static str {
+        "Show the current ZEC balance in the wallet"
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
@@ -450,18 +441,17 @@ impl Command for BalanceCommand {
 
 struct AddressCommand {}
 impl Command for AddressCommand {
-    fn help(&self) -> String {
+    fn help(&self) -> &'static str {
         indoc! {r#"
             List current addresses in the wallet
             Usage:
             address
 
         "#}
-        .to_string()
     }
 
-    fn short_help(&self) -> String {
-        "List all addresses in the wallet".to_string()
+    fn short_help(&self) -> &'static str {
+        "List all addresses in the wallet"
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
@@ -471,7 +461,7 @@ impl Command for AddressCommand {
 
 struct ExportCommand {}
 impl Command for ExportCommand {
-    fn help(&self) -> String {
+    fn help(&self) -> &'static str {
         indoc! {r#"
             Export private key for an individual wallet addresses.
             Note: To backup the whole wallet, use the 'seed' command insted
@@ -483,11 +473,10 @@ impl Command for ExportCommand {
             Example:
             export ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d
         "#}
-        .to_string()
     }
 
-    fn short_help(&self) -> String {
-        "Export private key for wallet addresses".to_string()
+    fn short_help(&self) -> &'static str {
+        "Export private key for wallet addresses"
     }
 
     fn exec(&self, _args: &[&str], _lightclient: &LightClient) -> String {
@@ -498,7 +487,7 @@ impl Command for ExportCommand {
 
 struct ShieldCommand {}
 impl Command for ShieldCommand {
-    fn help(&self) -> String {
+    fn help(&self) -> &'static str {
         indoc! {r#"
             Shield all your transparent funds
             Usage:
@@ -508,11 +497,11 @@ impl Command for ShieldCommand {
             Example:
             shield
 
-        "#}.to_string()
+        "#}
     }
 
-    fn short_help(&self) -> String {
-        "Shield your transparent ZEC into a sapling address".to_string()
+    fn short_help(&self) -> &'static str {
+        "Shield your transparent ZEC into a sapling address"
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
@@ -538,7 +527,7 @@ impl Command for ShieldCommand {
 
 struct EncryptMessageCommand {}
 impl Command for EncryptMessageCommand {
-    fn help(&self) -> String {
+    fn help(&self) -> &'static str {
         indoc! {r#"
             Encrypt a memo to be sent to a z-address offline
             Usage:
@@ -550,16 +539,16 @@ impl Command for EncryptMessageCommand {
             Example:
             encryptmessage ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d "Hello from the command line"
 
-        "#}.to_string()
+        "#}
     }
 
-    fn short_help(&self) -> String {
-        "Encrypt a memo to be sent to a z-address offline".to_string()
+    fn short_help(&self) -> &'static str {
+        "Encrypt a memo to be sent to a z-address offline"
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
         if args.len() < 1 || args.len() > 3 {
-            return self.help();
+            return self.help().to_string();
         }
 
         // Check for a single argument that can be parsed as JSON
@@ -611,7 +600,7 @@ impl Command for EncryptMessageCommand {
 
 struct DecryptMessageCommand {}
 impl Command for DecryptMessageCommand {
-    fn help(&self) -> String {
+    fn help(&self) -> &'static str {
         indoc! {r#"
             Attempt to decrypt a message with all the view keys in the wallet.
             Usage:
@@ -621,16 +610,15 @@ impl Command for DecryptMessageCommand {
             decryptmessage RW5jb2RlIGFyYml0cmFyeSBvY3RldHMgYXMgYmFzZTY0LiBSZXR1cm5zIGEgU3RyaW5nLg==
 
         "#}
-        .to_string()
     }
 
-    fn short_help(&self) -> String {
-        "Attempt to decrypt a message with all the view keys in the wallet.".to_string()
+    fn short_help(&self) -> &'static str {
+        "Attempt to decrypt a message with all the view keys in the wallet."
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
         if args.len() != 1 {
-            return self.help();
+            return self.help().to_string();
         }
 
         RT.block_on(async move {
@@ -644,7 +632,7 @@ impl Command for DecryptMessageCommand {
 
 struct SendCommand {}
 impl Command for SendCommand {
-    fn help(&self) -> String {
+    fn help(&self) -> &'static str {
         indoc! {r#"
             Send ZEC to a given address(es)
             Usage:
@@ -656,11 +644,11 @@ impl Command for SendCommand {
             Example:
             send ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d 200000 "Hello from the command line"
 
-        "#}.to_string()
+        "#}
     }
 
-    fn short_help(&self) -> String {
-        "Send ZEC to the given address".to_string()
+    fn short_help(&self) -> &'static str {
+        "Send ZEC to the given address"
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
@@ -668,7 +656,7 @@ impl Command for SendCommand {
         // 1 - A set of 2(+1 optional) arguments for a single address send representing address, value, memo?
         // 2 - A single argument in the form of a JSON string that is "[{address: address, value: value, memo: memo},...]"
         if args.len() < 1 || args.len() > 3 {
-            return self.help();
+            return self.help().to_string();
         }
 
         RT.block_on(async move {
@@ -740,7 +728,7 @@ impl Command for SendCommand {
 
                 vec![(args[0].to_string(), value, memo)]
             } else {
-                return self.help();
+                return self.help().to_string();
             };
 
             // Convert to the right format. String -> &str.
@@ -781,7 +769,7 @@ fn wallet_saver(lightclient: &LightClient) -> String {
 }
 struct SaveCommand {}
 impl Command for SaveCommand {
-    fn help(&self) -> String {
+    fn help(&self) -> &'static str {
         indoc! {r#"
             Save the wallet to disk
             Usage:
@@ -790,11 +778,11 @@ impl Command for SaveCommand {
             The wallet is saved to disk. The wallet is periodically saved to disk (and also saved upon exit)
             but you can use this command to explicitly save it to disk
 
-        "#}.to_string()
+        "#}
     }
 
-    fn short_help(&self) -> String {
-        "Save wallet file to disk".to_string()
+    fn short_help(&self) -> &'static str {
+        "Save wallet file to disk"
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
@@ -804,7 +792,7 @@ impl Command for SaveCommand {
 
 struct SeedCommand {}
 impl Command for SeedCommand {
-    fn help(&self) -> String {
+    fn help(&self) -> &'static str {
         indoc! {r#"
             Show the wallet's seed phrase
             Usage:
@@ -812,11 +800,11 @@ impl Command for SeedCommand {
 
             Your wallet is entirely recoverable from the seed phrase. Please save it carefully and don't share it with anyone
 
-        "#}.to_string()
+        "#}
     }
 
-    fn short_help(&self) -> String {
-        "Display the seed phrase".to_string()
+    fn short_help(&self) -> &'static str {
+        "Display the seed phrase"
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
@@ -832,7 +820,7 @@ impl Command for SeedCommand {
 
 struct TransactionsCommand {}
 impl Command for TransactionsCommand {
-    fn help(&self) -> String {
+    fn help(&self) -> &'static str {
         indoc! {r#"
             List all incoming and outgoing transactions from this wallet
             Usage:
@@ -841,11 +829,10 @@ impl Command for TransactionsCommand {
             If you include the 'allmemos' argument, all memos are returned in their raw hex format
 
         "#}
-        .to_string()
     }
 
-    fn short_help(&self) -> String {
-        "List all transactions in the wallet".to_string()
+    fn short_help(&self) -> &'static str {
+        "List all transactions in the wallet"
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
@@ -881,7 +868,7 @@ impl Command for TransactionsCommand {
 
 struct SetOptionCommand {}
 impl Command for SetOptionCommand {
-    fn help(&self) -> String {
+    fn help(&self) -> &'static str {
         indoc! {r#"
             Set a wallet option
             Usage:
@@ -890,11 +877,10 @@ impl Command for SetOptionCommand {
             download_memos : none | wallet | all
 
         "#}
-        .to_string()
     }
 
-    fn short_help(&self) -> String {
-        "Set a wallet option".to_string()
+    fn short_help(&self) -> &'static str {
+        "Set a wallet option"
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
@@ -965,18 +951,17 @@ impl Command for SetOptionCommand {
 
 struct GetOptionCommand {}
 impl Command for GetOptionCommand {
-    fn help(&self) -> String {
+    fn help(&self) -> &'static str {
         indoc! {r#"
             Get a wallet option
             Usage:
             getoption <optionname>
 
         "#}
-        .to_string()
     }
 
-    fn short_help(&self) -> String {
-        "Get a wallet option".to_string()
+    fn short_help(&self) -> &'static str {
+        "Get a wallet option"
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
@@ -1021,7 +1006,7 @@ impl Command for GetOptionCommand {
 
 struct ImportCommand {}
 impl Command for ImportCommand {
-    fn help(&self) -> String {
+    fn help(&self) -> &'static str {
         indoc! {r#"
             Import an external spending or viewing key into the wallet
             Usage:
@@ -1032,11 +1017,11 @@ impl Command for ImportCommand {
             Birthday is the earliest block number that has transactions belonging to the imported key. Rescanning will start from this block. If not sure, you can specify '0', which will start rescanning from the first sapling block.
             Note that you can import only the full spending (private) key or the full viewing key.
 
-        "#}.to_string()
+        "#}
     }
 
-    fn short_help(&self) -> String {
-        "Import spending or viewing keys into the wallet".to_string()
+    fn short_help(&self) -> &'static str {
+        "Import spending or viewing keys into the wallet"
     }
 
     fn exec(&self, _args: &[&str], _lightclient: &LightClient) -> String {
@@ -1046,7 +1031,7 @@ impl Command for ImportCommand {
 
 struct HeightCommand {}
 impl Command for HeightCommand {
-    fn help(&self) -> String {
+    fn help(&self) -> &'static str {
         indoc! {r#"
             Get the latest block height that the wallet is at.
             Usage:
@@ -1054,11 +1039,11 @@ impl Command for HeightCommand {
 
             Pass 'true' (default) to sync to the server to get the latest block height. Pass 'false' to get the latest height in the wallet without checking with the server.
 
-        "#}.to_string()
+        "#}
     }
 
-    fn short_help(&self) -> String {
-        "Get the latest block height that the wallet is at".to_string()
+    fn short_help(&self) -> &'static str {
+        "Get the latest block height that the wallet is at"
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
@@ -1073,7 +1058,7 @@ impl Command for HeightCommand {
 
 struct DefaultFeeCommand {}
 impl Command for DefaultFeeCommand {
-    fn help(&self) -> String {
+    fn help(&self) -> &'static str {
         indoc! {r#"
             Returns the default fee in zats for outgoing transactions
             Usage:
@@ -1082,11 +1067,10 @@ impl Command for DefaultFeeCommand {
             Example:
             defaultfee
         "#}
-        .to_string()
     }
 
-    fn short_help(&self) -> String {
-        "Returns the default fee in zats for outgoing transactions".to_string()
+    fn short_help(&self) -> &'static str {
+        "Returns the default fee in zats for outgoing transactions"
     }
 
     fn exec(&self, args: &[&str], _lightclient: &LightClient) -> String {
@@ -1103,7 +1087,7 @@ impl Command for DefaultFeeCommand {
 
 struct NewAddressCommand {}
 impl Command for NewAddressCommand {
-    fn help(&self) -> String {
+    fn help(&self) -> &'static str {
         indoc! {r#"
             Create a new address in this wallet
             Usage:
@@ -1113,11 +1097,10 @@ impl Command for NewAddressCommand {
             To create a new z address:
             new z
         "#}
-        .to_string()
     }
 
-    fn short_help(&self) -> String {
-        "Create a new address in this wallet".to_string()
+    fn short_help(&self) -> &'static str {
+        "Create a new address in this wallet"
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
@@ -1137,7 +1120,7 @@ impl Command for NewAddressCommand {
 
 struct NotesCommand {}
 impl Command for NotesCommand {
-    fn help(&self) -> String {
+    fn help(&self) -> &'static str {
         indoc! {r#"
             Show all sapling notes and utxos in this wallet
             Usage:
@@ -1145,17 +1128,17 @@ impl Command for NotesCommand {
 
             If you supply the "all" parameter, all previously spent sapling notes and spent utxos are also included
 
-        "#}.to_string()
+        "#}
     }
 
-    fn short_help(&self) -> String {
-        "List all sapling notes and utxos in the wallet".to_string()
+    fn short_help(&self) -> &'static str {
+        "List all sapling notes and utxos in the wallet"
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
         // Parse the args.
         if args.len() > 1 {
-            return self.short_help();
+            return self.short_help().to_string();
         }
 
         // Make sure we can parse the amount
@@ -1181,18 +1164,17 @@ impl Command for NotesCommand {
 
 struct QuitCommand {}
 impl Command for QuitCommand {
-    fn help(&self) -> String {
+    fn help(&self) -> &'static str {
         indoc! {r#"
             Save the wallet to disk and quit
             Usage:
             quit
 
         "#}
-        .to_string()
     }
 
-    fn short_help(&self) -> String {
-        "Quit the lightwallet, saving state to disk".to_string()
+    fn short_help(&self) -> &'static str {
+        "Quit the lightwallet, saving state to disk"
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
