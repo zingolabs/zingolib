@@ -1,6 +1,6 @@
 name: CI
 
-on: 
+on:
   pull_request:
   push:
     branches: [main, dev]
@@ -31,7 +31,7 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./cobertura.xml
           # fail_ci_if_error:     true
-        
+
   timestamp:
     name: Create timestamp
     runs-on: ubuntu-22.04
@@ -112,7 +112,7 @@ jobs:
         with:
           name: ${{ matrix.arch }}-${{ env.timestamp }}
           path: rust/target/${{ matrix.target }}/release/librust.so
-           
+
   integration_test_android:
     name: Integration test android
     runs-on: macos-12
@@ -145,14 +145,14 @@ jobs:
       - name: AVD cache
         uses: actions/cache@v3
         id: avd-cache
-        with: 
+        with:
           path: |
             ~/.android/avd/*
             ~/.android/adb*
-          key: avd-${{ matrix.arch }}-api-${{ matrix.api-level }}      
+          key: avd-${{ matrix.arch }}-api-${{ matrix.api-level }}
       - name: Download native rust
         uses: actions/download-artifact@v3
-        with: 
+        with:
           name: ${{ matrix.arch }}-${{ env.timestamp }}
           path: android/app/src/main/jniLibs/${{ matrix.arch }}
       - run: yarn install

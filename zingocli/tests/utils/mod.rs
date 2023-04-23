@@ -341,8 +341,8 @@ pub mod scenarios {
     /// This key is registered to receive block rewards by corresponding to the
     /// address registered as the "mineraddress" field in zcash.conf
     ///
-    /// The general scenario framework requires instances of zingo-cli, lightwalletd,  
-    /// and zcashd (in regtest mode). This setup is intended to produce the most basic  
+    /// The general scenario framework requires instances of zingo-cli, lightwalletd,
+    /// and zcashd (in regtest mode). This setup is intended to produce the most basic
     /// of scenarios.  As scenarios with even less requirements
     /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
     pub async fn faucet() -> (RegtestManager, ChildProcessHandler, LightClient) {

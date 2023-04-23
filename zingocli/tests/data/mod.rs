@@ -38,7 +38,7 @@ nuparams=c2d6d0b4:1 # NU5
 txindex=1
 # insightexplorer:
 # https://zcash.readthedocs.io/en/latest/rtd_pages/insight_explorer.html?highlight=insightexplorer#additional-getrawtransaction-fields
-insightexplorer=1 
+insightexplorer=1
 experimentalfeatures=1
 
 
@@ -60,7 +60,7 @@ listen=0
                 &format!(
                     "### Zcashd Help provides documentation of the following:
                     mineraddress={mineraddress}
-                    minetolocalwallet=0 # This is set to false so that we can mine to a wallet, other than the zcashd wallet."                   
+                    minetolocalwallet=0 # This is set to false so that we can mine to a wallet, other than the zcashd wallet."
                 )
             )
         }

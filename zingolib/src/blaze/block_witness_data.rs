@@ -114,7 +114,7 @@ impl BlockAndWitnessData {
     ///   self.blocks.len() >= num all existing_blocks are discarded
     ///   self.blocks.len() < num the new self.blocks is:
     ///    self.blocks_original + ((the `num` - self.blocks_original.len()) highest
-    ///     self.existing_blocks.  
+    ///     self.existing_blocks.
     pub async fn drain_existingblocks_into_blocks_with_truncation(
         &self,
         num: usize,
