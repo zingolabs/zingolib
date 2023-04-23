@@ -1220,39 +1220,39 @@ impl Command for QuitCommand {
 }
 
 pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
-    let mut map: HashMap<&'static str, Box<dyn Command>> = HashMap::new();
+    let entries: [(&'static str, Box<dyn Command>); 29] = [
+        ("sync", Box::new(SyncCommand {})),
+        ("syncstatus", Box::new(SyncStatusCommand {})),
+        ("encryptmessage", Box::new(EncryptMessageCommand {})),
+        ("decryptmessage", Box::new(DecryptMessageCommand {})),
+        ("parse", Box::new(ParseCommand {})),
+        ("interrupt_sync_after_batch", Box::new(InterruptCommand {})),
+        ("changeserver", Box::new(ChangeServerCommand {})),
+        ("rescan", Box::new(RescanCommand {})),
+        ("clear", Box::new(ClearCommand {})),
+        ("help", Box::new(HelpCommand {})),
+        ("balance", Box::new(BalanceCommand {})),
+        ("addresses", Box::new(AddressCommand {})),
+        ("height", Box::new(HeightCommand {})),
+        ("sendprogress", Box::new(SendProgressCommand {})),
+        ("setoption", Box::new(SetOptionCommand {})),
+        ("getoption", Box::new(GetOptionCommand {})),
+        ("import", Box::new(ImportCommand {})),
+        ("export", Box::new(ExportCommand {})),
+        ("info", Box::new(InfoCommand {})),
+        ("updatecurrentprice", Box::new(UpdateCurrentPriceCommand {})),
+        ("send", Box::new(SendCommand {})),
+        ("shield", Box::new(ShieldCommand {})),
+        ("save", Box::new(SaveCommand {})),
+        ("quit", Box::new(QuitCommand {})),
+        ("list", Box::new(TransactionsCommand {})),
+        ("notes", Box::new(NotesCommand {})),
+        ("new", Box::new(NewAddressCommand {})),
+        ("defaultfee", Box::new(DefaultFeeCommand {})),
+        ("seed", Box::new(SeedCommand {})),
+    ];
 
-    map.insert("sync", Box::new(SyncCommand {}));
-    map.insert("syncstatus", Box::new(SyncStatusCommand {}));
-    map.insert("encryptmessage", Box::new(EncryptMessageCommand {}));
-    map.insert("decryptmessage", Box::new(DecryptMessageCommand {}));
-    map.insert("parse", Box::new(ParseCommand {}));
-    map.insert("interrupt_sync_after_batch", Box::new(InterruptCommand {}));
-    map.insert("changeserver", Box::new(ChangeServerCommand {}));
-    map.insert("rescan", Box::new(RescanCommand {}));
-    map.insert("clear", Box::new(ClearCommand {}));
-    map.insert("help", Box::new(HelpCommand {}));
-    map.insert("balance", Box::new(BalanceCommand {}));
-    map.insert("addresses", Box::new(AddressCommand {}));
-    map.insert("height", Box::new(HeightCommand {}));
-    map.insert("sendprogress", Box::new(SendProgressCommand {}));
-    map.insert("setoption", Box::new(SetOptionCommand {}));
-    map.insert("getoption", Box::new(GetOptionCommand {}));
-    map.insert("import", Box::new(ImportCommand {}));
-    map.insert("export", Box::new(ExportCommand {}));
-    map.insert("info", Box::new(InfoCommand {}));
-    map.insert("updatecurrentprice", Box::new(UpdateCurrentPriceCommand {}));
-    map.insert("send", Box::new(SendCommand {}));
-    map.insert("shield", Box::new(ShieldCommand {}));
-    map.insert("save", Box::new(SaveCommand {}));
-    map.insert("quit", Box::new(QuitCommand {}));
-    map.insert("list", Box::new(TransactionsCommand {}));
-    map.insert("notes", Box::new(NotesCommand {}));
-    map.insert("new", Box::new(NewAddressCommand {}));
-    map.insert("defaultfee", Box::new(DefaultFeeCommand {}));
-    map.insert("seed", Box::new(SeedCommand {}));
-
-    map
+    HashMap::from(entries)
 }
 
 pub fn do_user_command(cmd: &str, args: &Vec<&str>, lightclient: &LightClient) -> String {
