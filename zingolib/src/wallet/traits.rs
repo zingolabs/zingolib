@@ -405,16 +405,16 @@ pub trait ReceivedNoteAndMetadata: Sized {
     type Node: Hashable + FromCommitment + Send;
     type Nullifier: Nullifier;
 
-    const GET_NOTE_WITNESSES: fn(
-        &TransactionMetadataSet,
-        &TxId,
-        &Self::Nullifier,
+    fn get_note_witnesses(
+        tms: &TransactionMetadataSet,
+        txid: &TxId,
+        nullifier: &Self::Nullifier,
     ) -> Option<(WitnessCache<Self::Node>, BlockHeight)>;
-    const SET_NOTE_WITNESSES: fn(
-        &mut TransactionMetadataSet,
-        &TxId,
-        &Self::Nullifier,
-        WitnessCache<Self::Node>,
+    fn set_note_witnesses(
+        tms: &mut TransactionMetadataSet,
+        txid: &TxId,
+        nullifier: &Self::Nullifier,
+        cache: WitnessCache<Self::Node>,
     );
     fn diversifier(&self) -> &Self::Diversifier;
     #[allow(clippy::too_many_arguments)]
@@ -462,20 +462,21 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
     type Node = zcash_primitives::sapling::Node;
     type Nullifier = zcash_primitives::sapling::Nullifier;
 
-    /// This (and SET_NOTE_WITNESSES) could be associated functions instead of fn
-    /// constants, but that would require an additional repetition of the fn arguments.
-    const GET_NOTE_WITNESSES: fn(
-        &TransactionMetadataSet,
-        &TxId,
-        &Self::Nullifier,
-    ) -> Option<(WitnessCache<Self::Node>, BlockHeight)> =
-        TransactionMetadataSet::get_sapling_note_witnesses;
-    const SET_NOTE_WITNESSES: fn(
-        &mut TransactionMetadataSet,
-        &TxId,
-        &Self::Nullifier,
-        WitnessCache<Self::Node>,
-    ) = TransactionMetadataSet::set_sapling_note_witnesses;
+    fn get_note_witnesses(
+        tms: &TransactionMetadataSet,
+        txid: &TxId,
+        nullifier: &Self::Nullifier,
+    ) -> Option<(WitnessCache<Self::Node>, BlockHeight)> {
+        TransactionMetadataSet::get_sapling_note_witnesses(tms, txid, nullifier)
+    }
+    fn set_note_witnesses(
+        tms: &mut TransactionMetadataSet,
+        txid: &TxId,
+        nullifier: &Self::Nullifier,
+        cache: WitnessCache<Self::Node>,
+    ) {
+        TransactionMetadataSet::set_sapling_note_witnesses(tms, txid, nullifier, cache)
+    }
 
     fn diversifier(&self) -> &Self::Diversifier {
         &self.diversifier
@@ -578,19 +579,22 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
     type Node = MerkleHashOrchard;
     type Nullifier = orchard::note::Nullifier;
 
-    const GET_NOTE_WITNESSES: fn(
-        &TransactionMetadataSet,
-        &TxId,
-        &Self::Nullifier,
-    ) -> Option<(WitnessCache<Self::Node>, BlockHeight)> =
-        TransactionMetadataSet::get_orchard_note_witnesses;
+    fn get_note_witnesses(
+        tms: &TransactionMetadataSet,
+        txid: &TxId,
+        nullifier: &Self::Nullifier,
+    ) -> Option<(WitnessCache<Self::Node>, BlockHeight)> {
+        TransactionMetadataSet::get_orchard_note_witnesses(tms, txid, nullifier)
+    }
 
-    const SET_NOTE_WITNESSES: fn(
-        &mut TransactionMetadataSet,
-        &TxId,
-        &Self::Nullifier,
-        WitnessCache<Self::Node>,
-    ) = TransactionMetadataSet::set_orchard_note_witnesses;
+    fn set_note_witnesses(
+        tms: &mut TransactionMetadataSet,
+        txid: &TxId,
+        nullifier: &Self::Nullifier,
+        cache: WitnessCache<Self::Node>,
+    ) {
+        TransactionMetadataSet::set_orchard_note_witnesses(tms, txid, nullifier, cache)
+    }
 
     fn diversifier(&self) -> &Self::Diversifier {
         &self.diversifier

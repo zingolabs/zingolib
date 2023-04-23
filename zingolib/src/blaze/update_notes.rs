@@ -82,7 +82,7 @@ impl UpdateNotes {
         D::Recipient: crate::wallet::traits::Recipient,
     {
         // Get the data first, so we don't hold on to the lock
-        let wtn = D::WalletNote::GET_NOTE_WITNESSES(&*wallet_txns.read().await, &txid, &nullifier);
+        let wtn = D::WalletNote::get_note_witnesses(&*wallet_txns.read().await, &txid, &nullifier);
 
         if let Some((witnesses, created_height)) = wtn {
             if witnesses.is_empty() {
@@ -117,7 +117,7 @@ impl UpdateNotes {
 
             //info!("Finished updating witnesses for {}", txid);
 
-            D::WalletNote::SET_NOTE_WITNESSES(
+            D::WalletNote::set_note_witnesses(
                 &mut *(*wallet_txns).write().await,
                 &txid,
                 &nullifier,
