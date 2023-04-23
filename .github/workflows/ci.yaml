@@ -21,6 +21,8 @@ jobs:
         run: ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./regtest/bin/
       - name: Symlink zcash parameters and rustup files
         run: ln -s /root/.zcash-params /root/.rustup /github/home
+      - name: Reject trailing whitespace
+        run: ./utils/trailing-whitespace.sh reject
       - name: Check formatting of code
         run: cargo fmt --check
       - name: Generate code coverage
