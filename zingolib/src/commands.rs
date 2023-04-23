@@ -369,7 +369,7 @@ impl ShortCircuitedCommand for HelpCommand {
                 responses.sort();
                 responses.join("\n")
             }
-            1 => match get_commands().get(&args[0]) {
+            1 => match get_commands().get(args[0].as_str()) {
                 Some(cmd) => cmd.help().to_string(),
                 None => format!("Command {} not found", args[0]),
             },
@@ -1219,56 +1219,44 @@ impl Command for QuitCommand {
     }
 }
 
-pub fn get_commands() -> HashMap<String, Box<dyn Command>> {
-    let mut map: HashMap<String, Box<dyn Command>> = HashMap::new();
+pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
+    let mut map: HashMap<&'static str, Box<dyn Command>> = HashMap::new();
 
-    map.insert("sync".to_string(), Box::new(SyncCommand {}));
-    map.insert("syncstatus".to_string(), Box::new(SyncStatusCommand {}));
-    map.insert(
-        "encryptmessage".to_string(),
-        Box::new(EncryptMessageCommand {}),
-    );
-    map.insert(
-        "decryptmessage".to_string(),
-        Box::new(DecryptMessageCommand {}),
-    );
-    map.insert("parse".to_string(), Box::new(ParseCommand {}));
-    map.insert(
-        "interrupt_sync_after_batch".to_string(),
-        Box::new(InterruptCommand {}),
-    );
-    map.insert("changeserver".to_string(), Box::new(ChangeServerCommand {}));
-    map.insert("rescan".to_string(), Box::new(RescanCommand {}));
-    map.insert("clear".to_string(), Box::new(ClearCommand {}));
-    map.insert("help".to_string(), Box::new(HelpCommand {}));
-    map.insert("balance".to_string(), Box::new(BalanceCommand {}));
-    map.insert("addresses".to_string(), Box::new(AddressCommand {}));
-    map.insert("height".to_string(), Box::new(HeightCommand {}));
-    map.insert("sendprogress".to_string(), Box::new(SendProgressCommand {}));
-    map.insert("setoption".to_string(), Box::new(SetOptionCommand {}));
-    map.insert("getoption".to_string(), Box::new(GetOptionCommand {}));
-    map.insert("import".to_string(), Box::new(ImportCommand {}));
-    map.insert("export".to_string(), Box::new(ExportCommand {}));
-    map.insert("info".to_string(), Box::new(InfoCommand {}));
-    map.insert(
-        "updatecurrentprice".to_string(),
-        Box::new(UpdateCurrentPriceCommand {}),
-    );
-    map.insert("send".to_string(), Box::new(SendCommand {}));
-    map.insert("shield".to_string(), Box::new(ShieldCommand {}));
-    map.insert("save".to_string(), Box::new(SaveCommand {}));
-    map.insert("quit".to_string(), Box::new(QuitCommand {}));
-    map.insert("list".to_string(), Box::new(TransactionsCommand {}));
-    map.insert("notes".to_string(), Box::new(NotesCommand {}));
-    map.insert("new".to_string(), Box::new(NewAddressCommand {}));
-    map.insert("defaultfee".to_string(), Box::new(DefaultFeeCommand {}));
-    map.insert("seed".to_string(), Box::new(SeedCommand {}));
+    map.insert("sync", Box::new(SyncCommand {}));
+    map.insert("syncstatus", Box::new(SyncStatusCommand {}));
+    map.insert("encryptmessage", Box::new(EncryptMessageCommand {}));
+    map.insert("decryptmessage", Box::new(DecryptMessageCommand {}));
+    map.insert("parse", Box::new(ParseCommand {}));
+    map.insert("interrupt_sync_after_batch", Box::new(InterruptCommand {}));
+    map.insert("changeserver", Box::new(ChangeServerCommand {}));
+    map.insert("rescan", Box::new(RescanCommand {}));
+    map.insert("clear", Box::new(ClearCommand {}));
+    map.insert("help", Box::new(HelpCommand {}));
+    map.insert("balance", Box::new(BalanceCommand {}));
+    map.insert("addresses", Box::new(AddressCommand {}));
+    map.insert("height", Box::new(HeightCommand {}));
+    map.insert("sendprogress", Box::new(SendProgressCommand {}));
+    map.insert("setoption", Box::new(SetOptionCommand {}));
+    map.insert("getoption", Box::new(GetOptionCommand {}));
+    map.insert("import", Box::new(ImportCommand {}));
+    map.insert("export", Box::new(ExportCommand {}));
+    map.insert("info", Box::new(InfoCommand {}));
+    map.insert("updatecurrentprice", Box::new(UpdateCurrentPriceCommand {}));
+    map.insert("send", Box::new(SendCommand {}));
+    map.insert("shield", Box::new(ShieldCommand {}));
+    map.insert("save", Box::new(SaveCommand {}));
+    map.insert("quit", Box::new(QuitCommand {}));
+    map.insert("list", Box::new(TransactionsCommand {}));
+    map.insert("notes", Box::new(NotesCommand {}));
+    map.insert("new", Box::new(NewAddressCommand {}));
+    map.insert("defaultfee", Box::new(DefaultFeeCommand {}));
+    map.insert("seed", Box::new(SeedCommand {}));
 
     map
 }
 
 pub fn do_user_command(cmd: &str, args: &Vec<&str>, lightclient: &LightClient) -> String {
-    match get_commands().get(&cmd.to_ascii_lowercase()) {
+    match get_commands().get(cmd.to_ascii_lowercase().as_str()) {
         Some(cmd) => cmd.exec(args, lightclient),
         None => format!(
             "Unknown command : {}. Type 'help' for a list of commands",
