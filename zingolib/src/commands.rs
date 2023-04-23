@@ -1219,7 +1219,7 @@ impl Command for QuitCommand {
     }
 }
 
-pub fn get_commands() -> Box<HashMap<String, Box<dyn Command>>> {
+pub fn get_commands() -> HashMap<String, Box<dyn Command>> {
     let mut map: HashMap<String, Box<dyn Command>> = HashMap::new();
 
     map.insert("sync".to_string(), Box::new(SyncCommand {}));
@@ -1264,7 +1264,7 @@ pub fn get_commands() -> Box<HashMap<String, Box<dyn Command>>> {
     map.insert("defaultfee".to_string(), Box::new(DefaultFeeCommand {}));
     map.insert("seed".to_string(), Box::new(SeedCommand {}));
 
-    Box::new(map)
+    map
 }
 
 pub fn do_user_command(cmd: &str, args: &Vec<&str>, lightclient: &LightClient) -> String {
