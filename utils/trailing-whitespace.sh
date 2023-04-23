@@ -43,7 +43,13 @@ function reject
 function process-well-known-text-files
 {
   find . \
-    \( -type d -name .git -prune \) \
+    \( -type d \
+      \( \
+        -name '.git' \
+        -o -name 'target' \
+      \) \
+      -prune \
+    \) \
     -o \( \
       -type f \
       \( \
