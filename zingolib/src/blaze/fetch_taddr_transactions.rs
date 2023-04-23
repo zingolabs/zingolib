@@ -23,6 +23,12 @@ pub struct FetchTaddrTransactions {
     config: Arc<ZingoConfig>,
 }
 
+/// A request to fetch taddrs between a start/end height: `(taddrs, start, end)`
+pub type FetchTaddrRequest = (Vec<String>, u64, u64);
+
+/// A reponse for a particular taddr
+pub type FetchTaddrResponse = Result<RawTransaction, String>;
+
 impl FetchTaddrTransactions {
     pub fn new(wc: Arc<RwLock<WalletCapability>>, config: Arc<ZingoConfig>) -> Self {
         Self { wc, config }
@@ -33,8 +39,8 @@ impl FetchTaddrTransactions {
         start_height: u64,
         end_height: u64,
         taddr_fetcher: oneshot::Sender<(
-            (Vec<String>, u64, u64),
-            oneshot::Sender<Vec<UnboundedReceiver<Result<RawTransaction, String>>>>,
+            FetchTaddrRequest,
+            oneshot::Sender<Vec<UnboundedReceiver<FetchTaddrResponse>>>,
         )>,
         full_transaction_scanner: UnboundedSender<(Transaction, BlockHeight)>,
         network: impl Parameters + Send + Copy + 'static,
