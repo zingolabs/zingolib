@@ -1,6 +1,7 @@
 use crate::wallet::keys::is_shielded_address;
 use crate::wallet::MemoDownloadOption;
 use crate::{lightclient::LightClient, wallet::utils};
+use indoc::indoc;
 use json::object;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
@@ -28,15 +29,15 @@ pub trait ShortCircuitedCommand {
 struct ChangeServerCommand {}
 impl Command for ChangeServerCommand {
     fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("Change the lightwalletd server to receive blockchain data from");
-        h.push("Usage:");
-        h.push("changeserver [server_uri]");
-        h.push("");
-        h.push("Example:");
-        h.push("changeserver https://mainnet.lightwalletd.com:9067");
+        indoc! {r#"
+            Change the lightwalletd server to receive blockchain data from
+            Usage:
+            changeserver [server_uri]
 
-        h.join("\n")
+            Example:
+            changeserver https://mainnet.lightwalletd.com:9067
+        "#}
+        .to_string()
     }
 
     fn short_help(&self) -> String {
@@ -89,13 +90,15 @@ impl Command for InterruptCommand {
 struct ParseCommand {}
 impl Command for ParseCommand {
     fn help(&self) -> String {
-        "Parse an address\n\
-        Usage:\n\
-        parse [address]\n\
-        \n\
-        Example\n\
-        parse tmSwk8bjXdCgBvpS8Kybk5nUyE21QFcDqre"
-            .to_string()
+        indoc! {r#"
+            Parse an address
+            Usage:
+            parse [address]
+
+            Example
+            parse tmSwk8bjXdCgBvpS8Kybk5nUyE21QFcDqre
+        "#}
+        .to_string()
     }
 
     fn short_help(&self) -> String {
@@ -166,13 +169,13 @@ impl Command for ParseCommand {
 struct SyncCommand {}
 impl Command for SyncCommand {
     fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("Sync the light client with the server");
-        h.push("Usage:");
-        h.push("sync");
-        h.push("");
+        indoc! {r#"
+            Sync the light client with the server
+            Usage:
+            sync
 
-        h.join("\n")
+        "#}
+        .to_string()
     }
 
     fn short_help(&self) -> String {
@@ -192,13 +195,13 @@ impl Command for SyncCommand {
 struct SyncStatusCommand {}
 impl Command for SyncStatusCommand {
     fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("Get the sync status of the wallet");
-        h.push("Usage:");
-        h.push("syncstatus");
-        h.push("");
+        indoc! {r#"
+            Get the sync status of the wallet
+            Usage:
+            syncstatus
 
-        h.join("\n")
+        "#}
+        .to_string()
     }
 
     fn short_help(&self) -> String {
@@ -240,12 +243,12 @@ impl Command for SyncStatusCommand {
 struct SendProgressCommand {}
 impl Command for SendProgressCommand {
     fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("Get the progress of any send transactions that are currently computing");
-        h.push("Usage:");
-        h.push("sendprogress");
-
-        h.join("\n")
+        indoc! {r#"
+            Get the progress of any send transactions that are currently computing
+            Usage:
+            sendprogress
+        "#}
+        .to_string()
     }
 
     fn short_help(&self) -> String {
@@ -265,15 +268,14 @@ impl Command for SendProgressCommand {
 struct RescanCommand {}
 impl Command for RescanCommand {
     fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("Rescan the wallet, rescanning all blocks for new transactions");
-        h.push("Usage:");
-        h.push("rescan");
-        h.push("");
-        h.push("This command will download all blocks since the intial block again from the light client server");
-        h.push("and attempt to scan each block for transactions belonging to the wallet.");
+        indoc! {r#"
+            Rescan the wallet, rescanning all blocks for new transactions
+            Usage:
+            rescan
 
-        h.join("\n")
+            This command will download all blocks since the intial block again from the light client server
+            and attempt to scan each block for transactions belonging to the wallet.
+        "#}.to_string()
     }
 
     fn short_help(&self) -> String {
@@ -293,14 +295,13 @@ impl Command for RescanCommand {
 struct ClearCommand {}
 impl Command for ClearCommand {
     fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("Clear the wallet state, rolling back the wallet to an empty state.");
-        h.push("Usage:");
-        h.push("clear");
-        h.push("");
-        h.push("This command will clear all notes, utxos and transactions from the wallet, setting up the wallet to be synced from scratch.");
+        indoc! {r#"
+            Clear the wallet state, rolling back the wallet to an empty state.
+            Usage:
+            clear
 
-        h.join("\n")
+            This command will clear all notes, utxos and transactions from the wallet, setting up the wallet to be synced from scratch.
+        "#}.to_string()
     }
 
     fn short_help(&self) -> String {
@@ -320,17 +321,17 @@ impl Command for ClearCommand {
 pub struct HelpCommand {}
 impl Command for HelpCommand {
     fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("List all available commands");
-        h.push("Usage:");
-        h.push("help [command_name]");
-        h.push("");
-        h.push("If no \"command_name\" is specified, a list of all available commands is returned");
-        h.push("Example:");
-        h.push("help send");
-        h.push("");
+        indoc! {r#"
+            List all available commands
+            Usage:
+            help [command_name]
 
-        h.join("\n")
+            If no "command_name" is specified, a list of all available commands is returned
+            Example:
+            help send
+
+        "#}
+        .to_string()
     }
 
     fn short_help(&self) -> String {
@@ -385,13 +386,13 @@ impl ShortCircuitedCommand for HelpCommand {
 struct InfoCommand {}
 impl Command for InfoCommand {
     fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("Get info about the lightwalletd we're connected to");
-        h.push("Usage:");
-        h.push("info");
-        h.push("");
+        indoc! {r#"
+            Get info about the lightwalletd we're connected to
+            Usage:
+            info
 
-        h.join("\n")
+        "#}
+        .to_string()
     }
 
     fn short_help(&self) -> String {
@@ -406,14 +407,14 @@ impl Command for InfoCommand {
 struct UpdateCurrentPriceCommand {}
 impl Command for UpdateCurrentPriceCommand {
     fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("Get the latest ZEC price from Gemini exchange's API.");
-        h.push("Currently using USD.");
-        h.push("Usage:");
-        h.push("zecprice");
-        h.push("");
+        indoc! {r#"
+            Get the latest ZEC price from Gemini exchange's API.
+            Currently using USD.
+            Usage:
+            zecprice
 
-        h.join("\n")
+        "#}
+        .to_string()
     }
 
     fn short_help(&self) -> String {
@@ -428,14 +429,14 @@ impl Command for UpdateCurrentPriceCommand {
 struct BalanceCommand {}
 impl Command for BalanceCommand {
     fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("Show the current ZEC balance in the wallet");
-        h.push("Usage:");
-        h.push("balance");
-        h.push("");
-        h.push("Transparent and Shielded balances, along with the addresses they belong to are displayed");
+        indoc! {r#"
+            Show the current ZEC balance in the wallet
+            Usage:
+            balance
 
-        h.join("\n")
+            Transparent and Shielded balances, along with the addresses they belong to are displayed
+        "#}
+        .to_string()
     }
 
     fn short_help(&self) -> String {
@@ -450,13 +451,13 @@ impl Command for BalanceCommand {
 struct AddressCommand {}
 impl Command for AddressCommand {
     fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("List current addresses in the wallet");
-        h.push("Usage:");
-        h.push("address");
-        h.push("");
+        indoc! {r#"
+            List current addresses in the wallet
+            Usage:
+            address
 
-        h.join("\n")
+        "#}
+        .to_string()
     }
 
     fn short_help(&self) -> String {
@@ -471,20 +472,18 @@ impl Command for AddressCommand {
 struct ExportCommand {}
 impl Command for ExportCommand {
     fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("Export private key for an individual wallet addresses.");
-        h.push("Note: To backup the whole wallet, use the 'seed' command insted");
-        h.push("Usage:");
-        h.push("export [t-address or z-address]");
-        h.push("");
-        h.push(
-            "If no address is passed, private key for all addresses in the wallet are exported.",
-        );
-        h.push("");
-        h.push("Example:");
-        h.push("export ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d");
+        indoc! {r#"
+            Export private key for an individual wallet addresses.
+            Note: To backup the whole wallet, use the 'seed' command insted
+            Usage:
+            export [t-address or z-address]
 
-        h.join("\n")
+            If no address is passed, private key for all addresses in the wallet are exported.
+
+            Example:
+            export ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d
+        "#}
+        .to_string()
     }
 
     fn short_help(&self) -> String {
@@ -500,17 +499,16 @@ impl Command for ExportCommand {
 struct ShieldCommand {}
 impl Command for ShieldCommand {
     fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("Shield all your transparent funds");
-        h.push("Usage:");
-        h.push("shield [optional address]");
-        h.push("");
-        h.push("NOTE: The fee required to send this transaction (currently ZEC 0.0001) is additionally deducted from your balance.");
-        h.push("Example:");
-        h.push("shield");
-        h.push("");
+        indoc! {r#"
+            Shield all your transparent funds
+            Usage:
+            shield [optional address]
 
-        h.join("\n")
+            NOTE: The fee required to send this transaction (currently ZEC 0.0001) is additionally deducted from your balance.
+            Example:
+            shield
+
+        "#}.to_string()
     }
 
     fn short_help(&self) -> String {
@@ -541,19 +539,18 @@ impl Command for ShieldCommand {
 struct EncryptMessageCommand {}
 impl Command for EncryptMessageCommand {
     fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("Encrypt a memo to be sent to a z-address offline");
-        h.push("Usage:");
-        h.push("encryptmessage <address> \"memo\"");
-        h.push("OR");
-        h.push("encryptmessage \"{'address': <address>, 'memo': <memo>}\" ");
-        h.push("");
-        h.push("NOTE: This command only returns the encrypted payload. It does not broadcast it. You are expected to send the encrypted payload to the recipient offline");
-        h.push("Example:");
-        h.push("encryptmessage ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d \"Hello from the command line\"");
-        h.push("");
+        indoc! {r#"
+            Encrypt a memo to be sent to a z-address offline
+            Usage:
+            encryptmessage <address> "memo"
+            OR
+            encryptmessage "{'address': <address>, 'memo': <memo>}"
 
-        h.join("\n")
+            NOTE: This command only returns the encrypted payload. It does not broadcast it. You are expected to send the encrypted payload to the recipient offline
+            Example:
+            encryptmessage ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d "Hello from the command line"
+
+        "#}.to_string()
     }
 
     fn short_help(&self) -> String {
@@ -615,16 +612,16 @@ impl Command for EncryptMessageCommand {
 struct DecryptMessageCommand {}
 impl Command for DecryptMessageCommand {
     fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("Attempt to decrypt a message with all the view keys in the wallet.");
-        h.push("Usage:");
-        h.push("decryptmessage \"encrypted_message_base64\"");
-        h.push("");
-        h.push("Example:");
-        h.push("decryptmessage RW5jb2RlIGFyYml0cmFyeSBvY3RldHMgYXMgYmFzZTY0LiBSZXR1cm5zIGEgU3RyaW5nLg==");
-        h.push("");
+        indoc! {r#"
+            Attempt to decrypt a message with all the view keys in the wallet.
+            Usage:
+            decryptmessage "encrypted_message_base64"
 
-        h.join("\n")
+            Example:
+            decryptmessage RW5jb2RlIGFyYml0cmFyeSBvY3RldHMgYXMgYmFzZTY0LiBSZXR1cm5zIGEgU3RyaW5nLg==
+
+        "#}
+        .to_string()
     }
 
     fn short_help(&self) -> String {
@@ -648,19 +645,18 @@ impl Command for DecryptMessageCommand {
 struct SendCommand {}
 impl Command for SendCommand {
     fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("Send ZEC to a given address(es)");
-        h.push("Usage:");
-        h.push("send <address> <amount in zatoshis> \"optional_memo\"");
-        h.push("OR");
-        h.push("send '[{'address': <address>, 'amount': <amount in zatoshis>, 'memo': <optional memo>}, ...]'");
-        h.push("");
-        h.push("NOTE: The fee required to send this transaction (currently ZEC 0.0001) is additionally deducted from your balance.");
-        h.push("Example:");
-        h.push("send ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d 200000 \"Hello from the command line\"");
-        h.push("");
+        indoc! {r#"
+            Send ZEC to a given address(es)
+            Usage:
+            send <address> <amount in zatoshis> "optional_memo"
+            OR
+            send '[{'address': <address>, 'amount': <amount in zatoshis>, 'memo': <optional memo>}, ...]'
 
-        h.join("\n")
+            NOTE: The fee required to send this transaction (currently ZEC 0.0001) is additionally deducted from your balance.
+            Example:
+            send ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d 200000 "Hello from the command line"
+
+        "#}.to_string()
     }
 
     fn short_help(&self) -> String {
@@ -786,15 +782,15 @@ fn wallet_saver(lightclient: &LightClient) -> String {
 struct SaveCommand {}
 impl Command for SaveCommand {
     fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("Save the wallet to disk");
-        h.push("Usage:");
-        h.push("save");
-        h.push("");
-        h.push("The wallet is saved to disk. The wallet is periodically saved to disk (and also saved upon exit)");
-        h.push("but you can use this command to explicitly save it to disk");
+        indoc! {r#"
+            Save the wallet to disk
+            Usage:
+            save
 
-        h.join("\n")
+            The wallet is saved to disk. The wallet is periodically saved to disk (and also saved upon exit)
+            but you can use this command to explicitly save it to disk
+
+        "#}.to_string()
     }
 
     fn short_help(&self) -> String {
@@ -809,14 +805,14 @@ impl Command for SaveCommand {
 struct SeedCommand {}
 impl Command for SeedCommand {
     fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("Show the wallet's seed phrase");
-        h.push("Usage:");
-        h.push("seed");
-        h.push("");
-        h.push("Your wallet is entirely recoverable from the seed phrase. Please save it carefully and don't share it with anyone");
+        indoc! {r#"
+            Show the wallet's seed phrase
+            Usage:
+            seed
 
-        h.join("\n")
+            Your wallet is entirely recoverable from the seed phrase. Please save it carefully and don't share it with anyone
+
+        "#}.to_string()
     }
 
     fn short_help(&self) -> String {
@@ -837,14 +833,15 @@ impl Command for SeedCommand {
 struct TransactionsCommand {}
 impl Command for TransactionsCommand {
     fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("List all incoming and outgoing transactions from this wallet");
-        h.push("Usage:");
-        h.push("list [allmemos]");
-        h.push("");
-        h.push("If you include the 'allmemos' argument, all memos are returned in their raw hex format");
+        indoc! {r#"
+            List all incoming and outgoing transactions from this wallet
+            Usage:
+            list [allmemos]
 
-        h.join("\n")
+            If you include the 'allmemos' argument, all memos are returned in their raw hex format
+
+        "#}
+        .to_string()
     }
 
     fn short_help(&self) -> String {
@@ -885,14 +882,15 @@ impl Command for TransactionsCommand {
 struct SetOptionCommand {}
 impl Command for SetOptionCommand {
     fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("Set a wallet option");
-        h.push("Usage:");
-        h.push("setoption <optionname>=<optionvalue>");
-        h.push("List of available options:");
-        h.push("download_memos : none | wallet | all");
+        indoc! {r#"
+            Set a wallet option
+            Usage:
+            setoption <optionname>=<optionvalue>
+            List of available options:
+            download_memos : none | wallet | all
 
-        h.join("\n")
+        "#}
+        .to_string()
     }
 
     fn short_help(&self) -> String {
@@ -968,12 +966,13 @@ impl Command for SetOptionCommand {
 struct GetOptionCommand {}
 impl Command for GetOptionCommand {
     fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("Get a wallet option");
-        h.push("Usage:");
-        h.push("getoption <optionname>");
+        indoc! {r#"
+            Get a wallet option
+            Usage:
+            getoption <optionname>
 
-        h.join("\n")
+        "#}
+        .to_string()
     }
 
     fn short_help(&self) -> String {
@@ -1023,17 +1022,17 @@ impl Command for GetOptionCommand {
 struct ImportCommand {}
 impl Command for ImportCommand {
     fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("Import an external spending or viewing key into the wallet");
-        h.push("Usage:");
-        h.push("import <spending_key | viewing_key> <birthday> [norescan]");
-        h.push("OR");
-        h.push("import '{'key': <spending_key or viewing_key>, 'birthday': <birthday>, 'norescan': <true>}'");
-        h.push("");
-        h.push("Birthday is the earliest block number that has transactions belonging to the imported key. Rescanning will start from this block. If not sure, you can specify '0', which will start rescanning from the first sapling block.");
-        h.push("Note that you can import only the full spending (private) key or the full viewing key.");
+        indoc! {r#"
+            Import an external spending or viewing key into the wallet
+            Usage:
+            import <spending_key | viewing_key> <birthday> [norescan]
+            OR
+            import '{'key': <spending_key or viewing_key>, 'birthday': <birthday>, 'norescan': <true>}'
 
-        h.join("\n")
+            Birthday is the earliest block number that has transactions belonging to the imported key. Rescanning will start from this block. If not sure, you can specify '0', which will start rescanning from the first sapling block.
+            Note that you can import only the full spending (private) key or the full viewing key.
+
+        "#}.to_string()
     }
 
     fn short_help(&self) -> String {
@@ -1048,14 +1047,14 @@ impl Command for ImportCommand {
 struct HeightCommand {}
 impl Command for HeightCommand {
     fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("Get the latest block height that the wallet is at.");
-        h.push("Usage:");
-        h.push("height");
-        h.push("");
-        h.push("Pass 'true' (default) to sync to the server to get the latest block height. Pass 'false' to get the latest height in the wallet without checking with the server.");
+        indoc! {r#"
+            Get the latest block height that the wallet is at.
+            Usage:
+            height
 
-        h.join("\n")
+            Pass 'true' (default) to sync to the server to get the latest block height. Pass 'false' to get the latest height in the wallet without checking with the server.
+
+        "#}.to_string()
     }
 
     fn short_help(&self) -> String {
@@ -1075,14 +1074,15 @@ impl Command for HeightCommand {
 struct DefaultFeeCommand {}
 impl Command for DefaultFeeCommand {
     fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("Returns the default fee in zats for outgoing transactions");
-        h.push("Usage:");
-        h.push("defaultfee <optional_block_height>");
-        h.push("");
-        h.push("Example:");
-        h.push("defaultfee");
-        h.join("\n")
+        indoc! {r#"
+            Returns the default fee in zats for outgoing transactions
+            Usage:
+            defaultfee <optional_block_height>
+
+            Example:
+            defaultfee
+        "#}
+        .to_string()
     }
 
     fn short_help(&self) -> String {
@@ -1104,15 +1104,16 @@ impl Command for DefaultFeeCommand {
 struct NewAddressCommand {}
 impl Command for NewAddressCommand {
     fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("Create a new address in this wallet");
-        h.push("Usage:");
-        h.push("new [z | t | o]");
-        h.push("");
-        h.push("Example:");
-        h.push("To create a new z address:");
-        h.push("new z");
-        h.join("\n")
+        indoc! {r#"
+            Create a new address in this wallet
+            Usage:
+            new [z | t | o]
+
+            Example:
+            To create a new z address:
+            new z
+        "#}
+        .to_string()
     }
 
     fn short_help(&self) -> String {
@@ -1137,16 +1138,14 @@ impl Command for NewAddressCommand {
 struct NotesCommand {}
 impl Command for NotesCommand {
     fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("Show all sapling notes and utxos in this wallet");
-        h.push("Usage:");
-        h.push("notes [all]");
-        h.push("");
-        h.push(
-            "If you supply the \"all\" parameter, all previously spent sapling notes and spent utxos are also included",
-        );
+        indoc! {r#"
+            Show all sapling notes and utxos in this wallet
+            Usage:
+            notes [all]
 
-        h.join("\n")
+            If you supply the "all" parameter, all previously spent sapling notes and spent utxos are also included
+
+        "#}.to_string()
     }
 
     fn short_help(&self) -> String {
@@ -1183,13 +1182,13 @@ impl Command for NotesCommand {
 struct QuitCommand {}
 impl Command for QuitCommand {
     fn help(&self) -> String {
-        let mut h = vec![];
-        h.push("Save the wallet to disk and quit");
-        h.push("Usage:");
-        h.push("quit");
-        h.push("");
+        indoc! {r#"
+            Save the wallet to disk and quit
+            Usage:
+            quit
 
-        h.join("\n")
+        "#}
+        .to_string()
     }
 
     fn short_help(&self) -> String {
