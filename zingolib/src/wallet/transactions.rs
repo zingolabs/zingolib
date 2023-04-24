@@ -485,14 +485,14 @@ impl TransactionMetadataSet {
     // transction as change. i.e., If any funds were spent in this transaction, all recieved notes are change notes.
     pub fn check_notes_mark_change(&mut self, txid: &TxId) {
         if self.total_funds_spent_in(txid) > 0 {
-            self.current.get_mut(txid).map(|transaction_metadata| {
+            if let Some(transaction_metadata) = self.current.get_mut(txid) {
                 transaction_metadata.sapling_notes.iter_mut().for_each(|n| {
                     n.is_change = true;
                 });
                 transaction_metadata.orchard_notes.iter_mut().for_each(|n| {
                     n.is_change = true;
                 })
-            });
+            }
         }
     }
 
@@ -868,10 +868,12 @@ impl TransactionMetadataSet {
         memo: Memo,
     ) {
         if let Some(transaction_metadata) = self.current.get_mut(txid) {
-            Nd::transaction_metadata_notes_mut(transaction_metadata)
+            if let Some(n) = Nd::transaction_metadata_notes_mut(transaction_metadata)
                 .iter_mut()
                 .find(|n| n.note() == &note)
-                .map(|n| *n.memo_mut() = Some(memo));
+            {
+                *n.memo_mut() = Some(memo);
+            }
         }
     }
 
