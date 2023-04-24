@@ -1280,12 +1280,12 @@ pub mod tests {
             .unwrap();
 
         assert_eq!(
-            do_user_command("addresses", &vec![], &lc),
-            do_user_command("AddReSSeS", &vec![], &lc)
+            do_user_command("addresses", &[], &lc),
+            do_user_command("AddReSSeS", &[], &lc)
         );
         assert_eq!(
-            do_user_command("addresses", &vec![], &lc),
-            do_user_command("Addresses", &vec![], &lc)
+            do_user_command("addresses", &[], &lc),
+            do_user_command("Addresses", &[], &lc)
         );
     }
 
