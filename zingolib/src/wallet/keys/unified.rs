@@ -33,10 +33,7 @@ pub enum Capability<ViewingKeyType, SpendKeyType> {
 
 impl<V, S> Capability<V, S> {
     pub fn can_spend(&self) -> bool {
-        match self {
-            Capability::Spend(_) => true,
-            _ => false,
-        }
+        matches!(self, Capability::Spend(_))
     }
 
     pub fn can_view(&self) -> bool {
