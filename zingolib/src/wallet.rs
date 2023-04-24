@@ -87,6 +87,15 @@ pub struct SendProgress {
     pub last_transaction_id: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum Pool {
+    Sapling,
+    Orchard,
+    Transparent,
+}
+
+pub(crate) type NoteSelectionPolicy = Vec<Pool>;
+
 impl SendProgress {
     fn new(id: u32) -> Self {
         SendProgress {
@@ -131,8 +140,8 @@ impl Default for WalletOptions {
 }
 
 impl WalletOptions {
-    pub fn serialized_version() -> u64 {
-        return 2;
+    pub const fn serialized_version() -> u64 {
+        2
     }
 
     pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
@@ -219,8 +228,8 @@ pub struct LightWallet {
 
 use crate::wallet::traits::{Diversifiable as _, ReadableWriteable};
 impl LightWallet {
-    pub fn serialized_version() -> u64 {
-        return 27;
+    pub const fn serialized_version() -> u64 {
+        27
     }
 
     pub fn new(config: ZingoConfig, base: WalletBase, height: u64) -> io::Result<Self> {
@@ -373,12 +382,8 @@ impl LightWallet {
                 use prost::Message;
 
                 let buf = Vector::read(r, |r| r.read_u8())?;
-                TreeState::decode(&buf[..]).map_err(|e| {
-                    io::Error::new(
-                        ErrorKind::InvalidData,
-                        format!("Read Error: {}", e.to_string()),
-                    )
-                })
+                TreeState::decode(&buf[..])
+                    .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.to_string()))
             })?
         };
 
@@ -389,7 +394,7 @@ impl LightWallet {
         };
 
         let transaction_context = TransactionContext::new(
-            &config,
+            config,
             Arc::new(RwLock::new(wallet_capability)),
             Arc::new(RwLock::new(transactions)),
         );
@@ -410,7 +415,7 @@ impl LightWallet {
         };
 
         let seed_bytes = Vector::read(&mut reader, |r| r.read_u8())?;
-        let mnemonic = if seed_bytes.len() > 0 {
+        let mnemonic = if !seed_bytes.is_empty() {
             Some(
                 Mnemonic::from_entropy(seed_bytes)
                     .map_err(|e| Error::new(ErrorKind::InvalidData, e.to_string()))?,
@@ -492,7 +497,7 @@ impl LightWallet {
     }
 
     pub fn mnemonic(&self) -> Option<&Mnemonic> {
-        (&self.mnemonic).as_ref()
+        self.mnemonic.as_ref()
     }
 
     // Before version 20, witnesses didn't store their height, so we need to update them.
@@ -532,7 +537,7 @@ impl LightWallet {
 
     /// Return a copy of the blocks currently in the wallet, needed to process possible reorgs
     pub async fn get_blocks(&self) -> Vec<BlockData> {
-        self.blocks.read().await.iter().map(|b| b.clone()).collect()
+        self.blocks.read().await.iter().cloned().collect()
     }
 
     pub(crate) fn note_address<D: DomainWalletExt>(
@@ -725,7 +730,7 @@ impl LightWallet {
     pub async fn get_anchor_height(&self) -> u32 {
         match self.get_target_height_and_anchor_offset().await {
             Some((height, anchor_offset)) => height - anchor_offset as u32 - 1,
-            None => return 0,
+            None => 0,
         }
     }
 
@@ -740,15 +745,16 @@ impl LightWallet {
     pub async fn maybe_verified_sapling_balance(&self, addr: Option<String>) -> JsonValue {
         self.shielded_balance::<SaplingDomain<zingoconfig::ChainType>>(addr, &[])
             .await
-            .map_or(json::JsonValue::Null, |u| json::JsonValue::from(u))
+            .map_or(json::JsonValue::Null, json::JsonValue::from)
     }
 
     pub async fn maybe_verified_orchard_balance(&self, addr: Option<String>) -> JsonValue {
         self.shielded_balance::<OrchardDomain>(addr, &[])
             .await
-            .map_or(json::JsonValue::Null, |u| json::JsonValue::from(u))
+            .map_or(json::JsonValue::Null, json::JsonValue::from)
     }
 
+    #[allow(clippy::type_complexity)]
     async fn shielded_balance<D>(
         &self,
         target_addr: Option<String>,
@@ -813,7 +819,7 @@ impl LightWallet {
             .current
             .values()
             .flat_map(|transaction| transaction.utxos.iter().filter(|utxo| utxo.spent.is_none()))
-            .map(|utxo| utxo.clone())
+            .cloned()
             .collect::<Vec<Utxo>>()
     }
 
@@ -840,6 +846,7 @@ impl LightWallet {
     pub async fn unverified_sapling_balance(&self, target_addr: Option<String>) -> JsonValue {
         let anchor_height = self.get_anchor_height().await;
 
+        #[allow(clippy::type_complexity)]
         let filters: &[Box<
             dyn Fn(&&ReceivedSaplingNoteAndMetadata, &TransactionMetadata) -> bool,
         >] = &[Box::new(|_, transaction: &TransactionMetadata| {
@@ -847,12 +854,13 @@ impl LightWallet {
         })];
         self.shielded_balance::<SaplingDomain<zingoconfig::ChainType>>(target_addr, filters)
             .await
-            .map_or(json::JsonValue::Null, |u| json::JsonValue::from(u))
+            .map_or(json::JsonValue::Null, json::JsonValue::from)
     }
 
     pub async fn unverified_orchard_balance(&self, target_addr: Option<String>) -> JsonValue {
         let anchor_height = self.get_anchor_height().await;
 
+        #[allow(clippy::type_complexity)]
         let filters: &[Box<
             dyn Fn(&&ReceivedOrchardNoteAndMetadata, &TransactionMetadata) -> bool,
         >] = &[Box::new(|_, transaction: &TransactionMetadata| {
@@ -860,7 +868,7 @@ impl LightWallet {
         })];
         self.shielded_balance::<OrchardDomain>(target_addr, filters)
             .await
-            .map_or(json::JsonValue::Null, |u| json::JsonValue::from(u))
+            .map_or(json::JsonValue::Null, json::JsonValue::from)
     }
 
     pub async fn verified_sapling_balance(&self, target_addr: Option<String>) -> JsonValue {
@@ -878,43 +886,46 @@ impl LightWallet {
         <D as Domain>::Note: PartialEq + Clone,
     {
         let anchor_height = self.get_anchor_height().await;
+        #[allow(clippy::type_complexity)]
         let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionMetadata) -> bool>] =
             &[Box::new(|_, transaction| {
                 transaction.block_height <= BlockHeight::from_u32(anchor_height)
             })];
         self.shielded_balance::<D>(target_addr, filters)
             .await
-            .map_or(json::JsonValue::Null, |u| json::JsonValue::from(u))
+            .map_or(json::JsonValue::Null, json::JsonValue::from)
     }
 
     pub async fn spendable_sapling_balance(&self, target_addr: Option<String>) -> JsonValue {
         let anchor_height = self.get_anchor_height().await;
+        #[allow(clippy::type_complexity)]
         let filters: &[Box<
             dyn Fn(&&ReceivedSaplingNoteAndMetadata, &TransactionMetadata) -> bool,
         >] = &[
             Box::new(|_, transaction| {
                 transaction.block_height <= BlockHeight::from_u32(anchor_height)
             }),
-            Box::new(|nnmd, _| nnmd.witnesses.len() > 0),
+            Box::new(|nnmd, _| !nnmd.witnesses.is_empty()),
         ];
         self.shielded_balance::<SaplingDomain<zingoconfig::ChainType>>(target_addr, filters)
             .await
-            .map_or(json::JsonValue::Null, |u| json::JsonValue::from(u))
+            .map_or(json::JsonValue::Null, json::JsonValue::from)
     }
 
     pub async fn spendable_orchard_balance(&self, target_addr: Option<String>) -> JsonValue {
         let anchor_height = self.get_anchor_height().await;
+        #[allow(clippy::type_complexity)]
         let filters: &[Box<
             dyn Fn(&&ReceivedOrchardNoteAndMetadata, &TransactionMetadata) -> bool,
         >] = &[
             Box::new(|_, transaction| {
                 transaction.block_height <= BlockHeight::from_u32(anchor_height)
             }),
-            Box::new(|nnmd, _| nnmd.witnesses.len() > 0),
+            Box::new(|nnmd, _| !nnmd.witnesses.is_empty()),
         ];
         self.shielded_balance::<OrchardDomain>(target_addr, filters)
             .await
-            .map_or(json::JsonValue::Null, |u| json::JsonValue::from(u))
+            .map_or(json::JsonValue::Null, json::JsonValue::from)
     }
 
     ///TODO: Make this work for orchard too
@@ -940,7 +951,7 @@ impl LightWallet {
             .await
             .current
             .iter()
-            .map(|(transaction_id, wtx)| (transaction_id.clone(), wtx.block_height))
+            .map(|(transaction_id, wtx)| (*transaction_id, wtx.block_height))
             .collect();
 
         // Go over all the sapling notes that might need updating
@@ -956,8 +967,7 @@ impl LightWallet {
                     .filter(|nd| nd.spent.is_some() && nd.spent.unwrap().1 == 0)
                     .for_each(|nd| {
                         let transaction_id = nd.spent.unwrap().0;
-                        if let Some(height) =
-                            spent_transaction_id_map.get(&transaction_id).map(|b| *b)
+                        if let Some(height) = spent_transaction_id_map.get(&transaction_id).copied()
                         {
                             nd.spent = Some((transaction_id, height.into()));
                         }
@@ -986,99 +996,72 @@ impl LightWallet {
     async fn select_notes_and_utxos(
         &self,
         target_amount: Amount,
-        transparent_only: bool,
-        shield_transparent: bool,
-        prefer_orchard_over_sapling: bool,
+        policy: NoteSelectionPolicy,
     ) -> (
         Vec<SpendableOrchardNote>,
         Vec<SpendableSaplingNote>,
         Vec<Utxo>,
         Amount,
     ) {
-        // First, if we are allowed to pick transparent value, pick them all
-        let utxos = if transparent_only || shield_transparent {
-            self.get_utxos()
-                .await
-                .iter()
-                .filter(|utxo| utxo.unconfirmed_spent.is_none() && utxo.spent.is_none())
-                .map(|utxo| utxo.clone())
-                .collect::<Vec<_>>()
-        } else {
-            vec![]
-        };
-
-        // Check how much we've selected
-        let total_transparent_value = utxos.iter().fold(Amount::zero(), |prev, utxo| {
-            (prev + Amount::from_u64(utxo.value).unwrap()).unwrap()
-        });
-
-        // If we are allowed only transparent funds or we've selected enough then return
-        if transparent_only || total_transparent_value >= target_amount {
-            return (vec![], vec![], utxos, total_transparent_value);
-        }
-
+        let mut transparent_value_selected = Amount::zero();
+        let mut utxos = Vec::new();
         let mut sapling_value_selected = Amount::zero();
-        let mut sapling_notes = vec![];
-        // Select the minimum number of notes required to satisfy the target value
-        if prefer_orchard_over_sapling {
-            let sapling_candidates = self
-                .get_all_domain_specific_notes::<SaplingDomain<zingoconfig::ChainType>>()
-                .await
-                .into_iter()
-                .filter(|x| x.spend_key().is_some())
-                .collect();
-            (sapling_notes, sapling_value_selected) =
-                Self::add_notes_to_total::<SaplingDomain<zingoconfig::ChainType>>(
-                    sapling_candidates,
-                    (target_amount - total_transparent_value).unwrap(),
-                );
-            if total_transparent_value + sapling_value_selected >= Some(target_amount) {
-                return (
-                    vec![],
-                    sapling_notes,
-                    utxos,
-                    (total_transparent_value + sapling_value_selected).unwrap(),
-                );
+        let mut sapling_notes = Vec::new();
+        let mut orchard_value_selected = Amount::zero();
+        let mut orchard_notes = Vec::new();
+        for pool in policy {
+            match pool {
+                Pool::Sapling => {
+                    let sapling_candidates = self
+                        .get_all_domain_specific_notes::<SaplingDomain<zingoconfig::ChainType>>()
+                        .await
+                        .into_iter()
+                        .filter(|x| x.spend_key().is_some())
+                        .collect();
+                    (sapling_notes, sapling_value_selected) =
+                        Self::add_notes_to_total::<SaplingDomain<zingoconfig::ChainType>>(
+                            sapling_candidates,
+                            (target_amount - orchard_value_selected - transparent_value_selected)
+                                .unwrap(),
+                        );
+                }
+                Pool::Orchard => {
+                    let orchard_candidates = self
+                        .get_all_domain_specific_notes::<OrchardDomain>()
+                        .await
+                        .into_iter()
+                        .filter(|x| x.spend_key().is_some())
+                        .collect();
+                    (orchard_notes, orchard_value_selected) =
+                        Self::add_notes_to_total::<OrchardDomain>(
+                            orchard_candidates,
+                            (target_amount - transparent_value_selected - sapling_value_selected)
+                                .unwrap(),
+                        );
+                }
+                Pool::Transparent => {
+                    utxos = self
+                        .get_utxos()
+                        .await
+                        .iter()
+                        .filter(|utxo| utxo.unconfirmed_spent.is_none() && utxo.spent.is_none())
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    transparent_value_selected = utxos.iter().fold(Amount::zero(), |prev, utxo| {
+                        (prev + Amount::from_u64(utxo.value).unwrap()).unwrap()
+                    });
+                }
             }
-        }
-        let orchard_candidates = self
-            .get_all_domain_specific_notes::<OrchardDomain>()
-            .await
-            .into_iter()
-            .filter(|x| x.spend_key().is_some())
-            .collect();
-        let (orchard_notes, orchard_value_selected) = Self::add_notes_to_total::<OrchardDomain>(
-            orchard_candidates,
-            (target_amount - total_transparent_value - sapling_value_selected).unwrap(),
-        );
-        if total_transparent_value + sapling_value_selected + orchard_value_selected
-            >= Some(target_amount)
-        {
-            return (
-                orchard_notes,
-                sapling_notes,
-                utxos,
-                (total_transparent_value + sapling_value_selected + orchard_value_selected)
-                    .unwrap(),
-            );
-        }
-        if !prefer_orchard_over_sapling {
-            let sapling_candidates = self
-                .get_all_domain_specific_notes::<SaplingDomain<zingoconfig::ChainType>>()
-                .await;
-            (sapling_notes, sapling_value_selected) =
-                Self::add_notes_to_total::<SaplingDomain<zingoconfig::ChainType>>(
-                    sapling_candidates,
-                    (target_amount - total_transparent_value).unwrap(),
-                );
-            if total_transparent_value + sapling_value_selected + orchard_value_selected
-                >= Some(target_amount)
+            // Check how much we've selected
+            if (transparent_value_selected + sapling_value_selected + orchard_value_selected)
+                .unwrap()
+                >= target_amount
             {
                 return (
                     orchard_notes,
                     sapling_notes,
                     utxos,
-                    (total_transparent_value + sapling_value_selected + orchard_value_selected)
+                    (transparent_value_selected + sapling_value_selected + orchard_value_selected)
                         .unwrap(),
                 );
             }
@@ -1124,8 +1107,8 @@ impl LightWallet {
             })
             .collect::<Vec<D::SpendableNoteAT>>();
         candidate_notes.sort_unstable_by(|spendable_note_1, spendable_note_2| {
-            D::WalletNote::value_from_note(&spendable_note_2.note())
-                .cmp(&D::WalletNote::value_from_note(&spendable_note_1.note()))
+            D::WalletNote::value_from_note(spendable_note_2.note())
+                .cmp(&D::WalletNote::value_from_note(spendable_note_1.note()))
         });
         candidate_notes
     }
@@ -1144,7 +1127,7 @@ impl LightWallet {
             if running_total >= target_amount {
                 break;
             }
-            running_total += Amount::from_u64(D::WalletNote::value_from_note(&note.note()))
+            running_total += Amount::from_u64(D::WalletNote::value_from_note(note.note()))
                 .expect("Note value overflow error");
             notes.push(note);
         }
@@ -1155,8 +1138,7 @@ impl LightWallet {
     pub async fn send_to_address<F, Fut, P: TxProver>(
         &self,
         prover: P,
-        transparent_only: bool,
-        migrate_sapling_to_orchard: bool,
+        policy: NoteSelectionPolicy,
         tos: Vec<(&str, u64, Option<String>)>,
         submission_height: BlockHeight,
         broadcast_fn: F,
@@ -1170,14 +1152,7 @@ impl LightWallet {
 
         // Call the internal function
         match self
-            .send_to_address_inner(
-                prover,
-                transparent_only,
-                migrate_sapling_to_orchard,
-                tos,
-                submission_height,
-                broadcast_fn,
-            )
+            .send_to_address_inner(prover, policy, tos, submission_height, broadcast_fn)
             .await
         {
             Ok((transaction_id, raw_transaction)) => {
@@ -1185,7 +1160,7 @@ impl LightWallet {
                 Ok((transaction_id, raw_transaction))
             }
             Err(e) => {
-                self.set_send_error(format!("{}", e)).await;
+                self.set_send_error(e.to_string()).await;
                 Err(e)
             }
         }
@@ -1194,8 +1169,7 @@ impl LightWallet {
     async fn send_to_address_inner<F, Fut, P: TxProver>(
         &self,
         prover: P,
-        transparent_only: bool,
-        migrate_sapling_to_orchard: bool,
+        policy: NoteSelectionPolicy,
         tos: Vec<(&str, u64, Option<String>)>,
         submission_height: BlockHeight,
         broadcast_fn: F,
@@ -1205,7 +1179,7 @@ impl LightWallet {
         Fut: Future<Output = Result<String, String>>,
     {
         let start_time = now();
-        if tos.len() == 0 {
+        if tos.is_empty() {
             return Err("Need at least one destination address".to_string());
         }
 
@@ -1281,14 +1255,8 @@ impl LightWallet {
             .get_taddr_to_secretkey_map(&self.transaction_context.config)
             .unwrap();
 
-        let (orchard_notes, sapling_notes, utxos, selected_value) = self
-            .select_notes_and_utxos(
-                target_amount,
-                transparent_only,
-                true,
-                migrate_sapling_to_orchard,
-            )
-            .await;
+        let (orchard_notes, sapling_notes, utxos, selected_value) =
+            self.select_notes_and_utxos(target_amount, policy).await;
         if selected_value < target_amount {
             let e = format!(
                 "Insufficient verified funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent.",
@@ -1324,14 +1292,12 @@ impl LightWallet {
 
                 let coin = TxOut {
                     value: Amount::from_u64(utxo.value).unwrap(),
-                    script_pubkey: Script {
-                        0: utxo.script.clone(),
-                    },
+                    script_pubkey: Script(utxo.script.clone()),
                 };
 
                 match address_to_sk.get(&utxo.address) {
                     Some(sk) => builder
-                        .add_transparent_input(*sk, outpoint.clone(), coin.clone())
+                        .add_transparent_input(*sk, outpoint, coin)
                         .map_err(|e| {
                             transaction::builder::Error::<Infallible>::TransparentBuild(e)
                         }),
@@ -1367,14 +1333,11 @@ impl LightWallet {
             println!("Adding orchard spend");
             let path = selected.witness.path().unwrap();
             if let Err(e) = builder.add_orchard_spend::<transaction::fees::fixed::FeeRule>(
-                selected.spend_key.clone().unwrap(),
-                selected.note.clone(),
+                selected.spend_key.unwrap(),
+                selected.note,
                 orchard::tree::MerklePath::from((
                     incrementalmerkletree::Position::from(path.position as usize),
-                    path.auth_path
-                        .iter()
-                        .map(|(node, _)| node.clone())
-                        .collect(),
+                    path.auth_path.iter().map(|(node, _)| *node).collect(),
                 )),
             ) {
                 let e = format!("Error adding note: {:?}", e);
@@ -1416,7 +1379,7 @@ impl LightWallet {
                 address::RecipientAddress::Shielded(to) => {
                     total_z_recipients += 1;
                     builder
-                        .add_sapling_output(Some(sapling_ovk), to.clone(), value, validated_memo)
+                        .add_sapling_output(Some(sapling_ovk), to, value, validated_memo)
                         .map_err(transaction::builder::Error::<Infallible>::SaplingBuild)
                 }
                 address::RecipientAddress::Transparent(to) => builder
@@ -1426,7 +1389,7 @@ impl LightWallet {
                     if let Some(orchard_addr) = ua.orchard() {
                         builder.add_orchard_output::<FixedFeeRule>(
                             Some(orchard_ovk.clone()),
-                            orchard_addr.clone(),
+                            *orchard_addr,
                             u64::from(value),
                             validated_memo,
                         )
@@ -1435,7 +1398,7 @@ impl LightWallet {
                         builder
                             .add_sapling_output(
                                 Some(sapling_ovk),
-                                sapling_addr.clone(),
+                                *sapling_addr,
                                 value,
                                 validated_memo,
                             )
@@ -1592,7 +1555,7 @@ impl LightWallet {
             self.transaction_context
                 .scan_full_tx(
                     transaction,
-                    submission_height.into(),
+                    submission_height,
                     true,
                     now() as u32,
                     TransactionMetadata::get_price(now(), &price),
@@ -1611,19 +1574,15 @@ impl LightWallet {
         if let Some(note) = orchard_notes.get(0) {
             Ok(orchard::Anchor::from(note.witness.root()))
         } else {
+            let uri = self.transaction_context.config.get_lightwalletd_uri();
             let trees = crate::grpc_connector::GrpcConnector::get_trees(
-                self.transaction_context
-                    .config
-                    .lightwalletd_uri
-                    .read()
-                    .unwrap()
-                    .clone(),
+                uri,
                 u64::from(target_height)
                     - self.transaction_context.config.reorg_buffer_offset as u64,
             )
             .await?;
             let orchard_tree = CommitmentTree::<MerkleHashOrchard>::read(
-                hex::decode(&trees.orchard_tree).unwrap().as_slice(),
+                hex::decode(trees.orchard_tree).unwrap().as_slice(),
             )
             .unwrap_or(CommitmentTree::empty());
             Ok(Anchor::from(orchard_tree.root()))
@@ -1637,7 +1596,7 @@ fn decode_orchard_spending_key(
     expected_hrp: &str,
     s: &str,
 ) -> Result<Option<OrchardSpendingKey>, String> {
-    match bech32::decode(&s) {
+    match bech32::decode(s) {
         Ok((hrp, bytes, variant)) => {
             use bech32::FromBase32;
             if hrp != expected_hrp {
