@@ -222,21 +222,21 @@ impl RegtestManager {
 
         assert_eq!(command.get_args().len(), 4usize);
         assert_eq!(
-            &command.get_args().into_iter().collect::<Vec<&OsStr>>()[0]
+            &command.get_args().collect::<Vec<&OsStr>>()[0]
                 .to_str()
                 .unwrap(),
             &"--printtoconsole"
         );
-        assert!(&command.get_args().into_iter().collect::<Vec<&OsStr>>()[1]
+        assert!(&command.get_args().collect::<Vec<&OsStr>>()[1]
             .to_str()
             .unwrap()
             .starts_with("--conf="));
-        assert!(&command.get_args().into_iter().collect::<Vec<&OsStr>>()[2]
+        assert!(&command.get_args().collect::<Vec<&OsStr>>()[2]
             .to_str()
             .unwrap()
             .starts_with("--datadir="));
         assert_eq!(
-            &command.get_args().into_iter().collect::<Vec<&OsStr>>()[3]
+            &command.get_args().collect::<Vec<&OsStr>>()[3]
                 .to_str()
                 .unwrap(),
             &"-debug=1"
