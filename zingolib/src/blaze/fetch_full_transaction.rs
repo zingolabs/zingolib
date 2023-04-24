@@ -266,31 +266,28 @@ impl TransactionContext {
         // Scan all transparent outputs to see if we recieved any money
         if let Some(t_bundle) = transaction.transparent_bundle() {
             for (n, vout) in t_bundle.vout.iter().enumerate() {
-                match vout.recipient_address() {
-                    Some(TransparentAddress::PublicKey(hash)) => {
-                        let output_taddr =
-                            hash.to_base58check(&self.config.base58_pubkey_address(), &[]);
-                        if taddrs_set.contains(&output_taddr) {
-                            // This is our address. Add this as an output to the txid
-                            self.transaction_metadata_set
-                                .write()
-                                .await
-                                .add_new_taddr_output(
-                                    transaction.txid(),
-                                    output_taddr.clone(),
-                                    height.into(),
-                                    unconfirmed,
-                                    block_time as u64,
-                                    vout,
-                                    n as u32,
-                                );
+                if let Some(TransparentAddress::PublicKey(hash)) = vout.recipient_address() {
+                    let output_taddr =
+                        hash.to_base58check(&self.config.base58_pubkey_address(), &[]);
+                    if taddrs_set.contains(&output_taddr) {
+                        // This is our address. Add this as an output to the txid
+                        self.transaction_metadata_set
+                            .write()
+                            .await
+                            .add_new_taddr_output(
+                                transaction.txid(),
+                                output_taddr.clone(),
+                                height.into(),
+                                unconfirmed,
+                                block_time as u64,
+                                vout,
+                                n as u32,
+                            );
 
-                            // Ensure that we add any new HD addresses
-                            // TODO: I don't think we need to do this anymore
-                            // self.keys.write().await.ensure_hd_taddresses(&output_taddr);
-                        }
+                        // Ensure that we add any new HD addresses
+                        // TODO: I don't think we need to do this anymore
+                        // self.keys.write().await.ensure_hd_taddresses(&output_taddr);
                     }
-                    _ => {}
                 }
             }
         }
