@@ -61,19 +61,6 @@ pub fn node_to_string<Node: Hashable>(n: &Node) -> String {
     hex::encode(b1)
 }
 
-///TODO: Is this used? This is probably covered by
-/// block_witness_data::update_tree_with_compact_transaction, consider deletion
-pub fn list_all_witness_nodes(cb: &CompactBlock) -> Vec<sapling::Node> {
-    let mut nodes = vec![];
-    for transaction in &cb.vtx {
-        for co in &transaction.outputs {
-            nodes.push(sapling::Node::from_scalar(co.cmu().unwrap()))
-        }
-    }
-
-    nodes
-}
-
 use super::block_witness_data::update_trees_with_compact_transaction;
 
 pub struct FakeCompactBlock {

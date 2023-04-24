@@ -1,8 +1,4 @@
-use ff::PrimeField;
-use group::GroupEncoding;
 use orchard::{note::ExtractedNoteCommitment, note_encryption::OrchardDomain};
-use std::convert::TryInto;
-
 use zcash_note_encryption::{EphemeralKeyBytes, ShieldedOutput, COMPACT_NOTE_SIZE};
 use zcash_primitives::{
     block::{BlockHash, BlockHeader},
@@ -67,33 +63,6 @@ impl CompactBlock {
     /// [`CompactBlock.height`]: #structfield.height
     pub fn height(&self) -> BlockHeight {
         BlockHeight::from(self.height as u32)
-    }
-}
-
-impl CompactSaplingOutput {
-    /// Returns the note commitment for this output.
-    ///
-    /// A convenience method that parses [`CompactSaplingOutput.cmu`].
-    ///
-    /// [`CompactSaplingOutput.cmu`]: #structfield.cmu
-    pub fn cmu(&self) -> Result<bls12_381::Scalar, ()> {
-        let mut repr = [0; 32];
-        repr.as_mut().copy_from_slice(&self.cmu[..]);
-        Option::from(bls12_381::Scalar::from_repr(repr)).ok_or(())
-    }
-
-    /// Returns the ephemeral public key for this output.
-    ///
-    /// A convenience method that parses [`CompactSaplingOutput.epk`].
-    ///
-    /// [`CompactSaplingOutput.epk`]: #structfield.epk
-    pub fn epk(&self) -> Result<jubjub::ExtendedPoint, ()> {
-        let p = jubjub::ExtendedPoint::from_bytes(&self.epk[..].try_into().map_err(|_| ())?);
-        if p.is_some().into() {
-            Ok(p.unwrap())
-        } else {
-            Err(())
-        }
     }
 }
 
