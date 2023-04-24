@@ -1,9 +1,8 @@
 //! In all cases in this file "external_version" refers to a serialization version that is interpreted
 //! from a source outside of the code-base e.g. a wallet-file.
-use base58::{FromBase58, ToBase58};
+use base58::ToBase58;
 use ripemd160::Digest;
 use sha2::Sha256;
-use std::io::{self, ErrorKind};
 use zcash_client_backend::address;
 use zcash_primitives::{
     legacy::TransparentAddress,
@@ -47,44 +46,6 @@ impl ToBase58Check for [u8] {
         let checksum = double_sha256(&payload);
         payload.append(&mut checksum[..4].to_vec());
         payload.to_base58()
-    }
-}
-
-/// A trait for converting base58check encoded values.
-pub trait FromBase58Check {
-    /// Convert a value of `self`, interpreted as base58check encoded data,
-    /// into the tuple with version and payload as bytes vector.
-    fn from_base58check(&self) -> io::Result<(u8, Vec<u8>)>;
-}
-
-impl FromBase58Check for str {
-    fn from_base58check(&self) -> io::Result<(u8, Vec<u8>)> {
-        let mut payload: Vec<u8> = match self.from_base58() {
-            Ok(payload) => payload,
-            Err(error) => {
-                return Err(io::Error::new(
-                    ErrorKind::InvalidData,
-                    format!("{:?}", error),
-                ))
-            }
-        };
-        if payload.len() < 5 {
-            return Err(io::Error::new(
-                ErrorKind::InvalidData,
-                "Invalid Checksum length".to_string(),
-            ));
-        }
-
-        let checksum_index = payload.len() - 4;
-        let provided_checksum = payload.split_off(checksum_index);
-        let checksum = double_sha256(&payload)[..4].to_vec();
-        if checksum != provided_checksum {
-            return Err(io::Error::new(
-                ErrorKind::InvalidData,
-                "Invalid Checksum".to_string(),
-            ));
-        }
-        Ok((payload[0], payload[1..].to_vec()))
     }
 }
 
