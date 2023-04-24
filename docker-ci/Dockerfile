@@ -16,13 +16,14 @@ RUN apt update \
     unzip \
     procps \
     && update-ca-certificates
-    
+
 # Install Rust and Cargo-Tarpaulin
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y
 ENV HOME=/root
 ENV CARGO_HOME=$HOME/.cargo
 ENV PATH=$PATH:$CARGO_HOME/bin
 RUN rustup toolchain install stable \
+    && rustup component add clippy
     && cargo install cargo-tarpaulin
 
 # Install Zcash and fetch zero-knowledge parameters

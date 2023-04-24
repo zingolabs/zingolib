@@ -25,6 +25,8 @@ jobs:
         run: ./utils/trailing-whitespace.sh reject
       - name: Check formatting of code
         run: cargo fmt --check
+      - name: Clippy Checks
+        run: cargo clippy
       - name: Generate code coverage
         run: cargo tarpaulin --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 300 --out xml
       - name: Upload to codecov.io
