@@ -211,15 +211,14 @@ pub fn command_loop(
     let (command_transmitter, command_receiver) = channel::<(String, Vec<String>)>();
     let (resp_transmitter, resp_receiver) = channel::<String>();
 
-    let lc = lightclient.clone();
     std::thread::spawn(move || {
-        LightClient::start_mempool_monitor(lc.clone());
+        LightClient::start_mempool_monitor(lightclient.clone());
 
         loop {
             if let Ok((cmd, args)) = command_receiver.recv() {
                 let args: Vec<_> = args.iter().map(|s| s.as_ref()).collect();
 
-                let cmd_response = commands::do_user_command(&cmd, &args[..], lc.as_ref());
+                let cmd_response = commands::do_user_command(&cmd, &args[..], lightclient.as_ref());
                 resp_transmitter.send(cmd_response).unwrap();
 
                 if cmd == "quit" {
@@ -461,7 +460,7 @@ pub fn startup(
     }
 
     // Start the command loop
-    let (command_transmitter, resp_receiver) = command_loop(lightclient.clone());
+    let (command_transmitter, resp_receiver) = command_loop(lightclient);
 
     Ok((command_transmitter, resp_receiver))
 }
@@ -493,7 +492,7 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
     } else {
         command_transmitter
             .send((
-                cli_config.command.clone().unwrap().to_string(),
+                cli_config.command.clone().unwrap(),
                 cli_config
                     .params
                     .iter()
