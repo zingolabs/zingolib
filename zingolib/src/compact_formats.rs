@@ -99,24 +99,24 @@ impl CompactSaplingOutput {
 
 impl<P: Parameters> ShieldedOutput<SaplingDomain<P>, COMPACT_NOTE_SIZE> for CompactSaplingOutput {
     fn ephemeral_key(&self) -> EphemeralKeyBytes {
-        EphemeralKeyBytes(*vec_to_array(&self.epk))
+        EphemeralKeyBytes(*slice_to_array(&self.epk))
     }
     fn cmstar_bytes(&self) -> [u8; 32] {
-        *vec_to_array(&self.cmu)
+        *slice_to_array(&self.cmu)
     }
     fn enc_ciphertext(&self) -> &[u8; COMPACT_NOTE_SIZE] {
-        vec_to_array(&self.ciphertext)
+        slice_to_array(&self.ciphertext)
     }
 }
 impl ShieldedOutput<OrchardDomain, COMPACT_NOTE_SIZE> for CompactOrchardAction {
     fn ephemeral_key(&self) -> EphemeralKeyBytes {
-        EphemeralKeyBytes(*vec_to_array(&self.ephemeral_key))
+        EphemeralKeyBytes(*slice_to_array(&self.ephemeral_key))
     }
     fn cmstar_bytes(&self) -> [u8; 32] {
-        *vec_to_array(&self.cmx)
+        *slice_to_array(&self.cmx)
     }
     fn enc_ciphertext(&self) -> &[u8; COMPACT_NOTE_SIZE] {
-        vec_to_array(&self.ciphertext)
+        slice_to_array(&self.ciphertext)
     }
 }
 
@@ -139,7 +139,7 @@ impl TryFrom<&CompactOrchardAction> for orchard::note_encryption::CompactAction 
     }
 }
 
-pub(crate) fn vec_to_array<const N: usize>(vec: &[u8]) -> &[u8; N] {
-    <&[u8; N]>::try_from(&vec[..]).unwrap_or(&[0; N])
+pub(crate) fn slice_to_array<const N: usize>(slice: &[u8]) -> &[u8; N] {
+    <&[u8; N]>::try_from(slice).unwrap_or(&[0; N])
     //todo: This default feels dangerous. Find better solution
 }

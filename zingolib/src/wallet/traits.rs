@@ -10,7 +10,7 @@ use super::{
     transactions::TransactionMetadataSet,
 };
 use crate::compact_formats::{
-    vec_to_array, CompactOrchardAction, CompactSaplingOutput, CompactTx, TreeState,
+    slice_to_array, CompactOrchardAction, CompactSaplingOutput, CompactTx, TreeState,
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use nonempty::NonEmpty;
@@ -267,7 +267,7 @@ impl CompactOutput<SaplingDomain<ChainType>> for CompactSaplingOutput {
     }
 
     fn cmstar(&self) -> &[u8; 32] {
-        vec_to_array(&self.cmu)
+        slice_to_array(&self.cmu)
     }
 
     fn domain(&self, parameters: ChainType, height: BlockHeight) -> SaplingDomain<ChainType> {
@@ -280,12 +280,12 @@ impl CompactOutput<OrchardDomain> for CompactOrchardAction {
         &compact_transaction.actions
     }
     fn cmstar(&self) -> &[u8; 32] {
-        vec_to_array(&self.cmx)
+        slice_to_array(&self.cmx)
     }
 
     fn domain(&self, _parameters: ChainType, _heightt: BlockHeight) -> OrchardDomain {
         OrchardDomain::for_nullifier(
-            orchard::note::Nullifier::from_bytes(vec_to_array(&self.nullifier)).unwrap(),
+            orchard::note::Nullifier::from_bytes(slice_to_array(&self.nullifier)).unwrap(),
         )
     }
 }
