@@ -55,12 +55,16 @@ impl BlockData {
     }
 
     pub(crate) fn new_with(height: u64, hash: &str) -> Self {
-        let mut cb = CompactBlock::default();
-        cb.hash = hex::decode(hash)
+        let hash = hex::decode(hash)
             .unwrap()
             .into_iter()
             .rev()
             .collect::<Vec<_>>();
+
+        let cb = CompactBlock {
+            hash,
+            ..Default::default()
+        };
 
         let mut ecb = vec![];
         cb.encode(&mut ecb).unwrap();
