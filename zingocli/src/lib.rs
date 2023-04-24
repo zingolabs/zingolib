@@ -217,9 +217,9 @@ pub fn command_loop(
 
         loop {
             if let Ok((cmd, args)) = command_receiver.recv() {
-                let args = args.iter().map(|s| s.as_ref()).collect();
+                let args: Vec<_> = args.iter().map(|s| s.as_ref()).collect();
 
-                let cmd_response = commands::do_user_command(&cmd, &args, lc.as_ref());
+                let cmd_response = commands::do_user_command(&cmd, &args[..], lc.as_ref());
                 resp_transmitter.send(cmd_response).unwrap();
 
                 if cmd == "quit" {

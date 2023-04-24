@@ -541,7 +541,7 @@ impl TransactionMetadata {
         23
     }
 
-    pub fn new_txid(txid: &Vec<u8>) -> TxId {
+    pub fn new_txid(txid: &[u8]) -> TxId {
         let mut txid_bytes = [0u8; 32];
         txid_bytes.copy_from_slice(txid);
         TxId::from_bytes(txid_bytes)

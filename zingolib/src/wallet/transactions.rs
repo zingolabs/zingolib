@@ -182,7 +182,7 @@ impl TransactionMetadataSet {
         self.remove_domain_specific_txids::<OrchardDomain>(&txids_to_remove);
     }
 
-    fn remove_domain_specific_txids<D: DomainWalletExt>(&mut self, txids_to_remove: &Vec<TxId>)
+    fn remove_domain_specific_txids<D: DomainWalletExt>(&mut self, txids_to_remove: &[TxId])
     where
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,

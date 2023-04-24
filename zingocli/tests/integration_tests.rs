@@ -2393,11 +2393,12 @@ async fn aborted_resync() {
         .await
         .current
         .get(&zingolib::wallet::data::TransactionMetadata::new_txid(
-            &hex::decode(sent_transaction_id.clone())
+            hex::decode(sent_transaction_id.clone())
                 .unwrap()
                 .into_iter()
                 .rev()
-                .collect(),
+                .collect::<Vec<_>>()
+                .as_slice(),
         ))
         .unwrap()
         .orchard_notes
@@ -2426,11 +2427,12 @@ async fn aborted_resync() {
         .await
         .current
         .get(&TransactionMetadata::new_txid(
-            &hex::decode(sent_transaction_id)
+            hex::decode(sent_transaction_id)
                 .unwrap()
                 .into_iter()
                 .rev()
-                .collect(),
+                .collect::<Vec<_>>()
+                .as_slice(),
         ))
         .unwrap()
         .orchard_notes

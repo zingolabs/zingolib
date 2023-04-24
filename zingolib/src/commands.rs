@@ -1247,7 +1247,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
     HashMap::from(entries)
 }
 
-pub fn do_user_command(cmd: &str, args: &Vec<&str>, lightclient: &LightClient) -> String {
+pub fn do_user_command(cmd: &str, args: &[&str], lightclient: &LightClient) -> String {
     match get_commands().get(cmd.to_ascii_lowercase().as_str()) {
         Some(cmd) => cmd.exec(args, lightclient),
         None => format!(

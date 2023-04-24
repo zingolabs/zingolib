@@ -124,7 +124,7 @@ pub fn get_zaddr_from_bip39seed(
     (extsk, fvk, address)
 }
 
-pub fn is_shielded_address(addr: &String, config: &ZingoConfig) -> bool {
+pub fn is_shielded_address(addr: &str, config: &ZingoConfig) -> bool {
     match address::RecipientAddress::decode(&config.chain, addr) {
         Some(address::RecipientAddress::Shielded(_))
         | Some(address::RecipientAddress::Unified(_)) => true,
