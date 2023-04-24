@@ -21,3 +21,4 @@ cargo fmt -- --check
 cargo check
 cargo test --bins --lib
 #cargo test --doc # No doc tests yet.
+cargo clippy
