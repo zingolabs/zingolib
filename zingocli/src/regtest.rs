@@ -355,19 +355,19 @@ impl RegtestManager {
         .args([
             "--no-tls-very-insecure",
             "--zcash-conf-path",
-            &self.zcashd_config
+            self.zcashd_config
                 .to_str()
                 .expect("zcashd_config PathBuf to str fail!"),
             "--config",
-            &self.lightwalletd_config
+            self.lightwalletd_config
                 .to_str()
                 .expect("lightwalletd_config PathBuf to str fail!"),
             "--data-dir",
-            &self.lightwalletd_data_dir
+            self.lightwalletd_data_dir
                 .to_str()
                 .expect("lightwalletd_datadir PathBuf to str fail!"),
             "--log-file",
-            &self.lightwalletd_log
+            self.lightwalletd_log
                 .to_str()
                 .expect("lightwalletd_stdout_log PathBuf to str fail!"),
         ])
