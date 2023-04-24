@@ -33,6 +33,7 @@ use super::{
 /// HashMap of all transactions in a wallet, keyed by txid.
 /// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
 /// this struct are threadsafe/locked properly.
+#[derive(Default)]
 pub struct TransactionMetadataSet {
     #[cfg(not(feature = "integration_test"))]
     pub(crate) current: HashMap<TxId, TransactionMetadata>,
@@ -44,13 +45,6 @@ pub struct TransactionMetadataSet {
 impl TransactionMetadataSet {
     pub fn serialized_version() -> u64 {
         21
-    }
-
-    pub fn new() -> Self {
-        Self {
-            current: HashMap::new(),
-            some_txid_from_highest_wallet_block: None,
-        }
     }
 
     pub fn read_old<R: Read>(

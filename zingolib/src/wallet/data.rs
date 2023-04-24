@@ -782,8 +782,8 @@ pub struct WalletZecPriceInfo {
     pub historical_prices_retry_count: u64,
 }
 
-impl WalletZecPriceInfo {
-    pub fn new() -> Self {
+impl Default for WalletZecPriceInfo {
+    fn default() -> Self {
         Self {
             zec_price: None,
             currency: "USD".to_string(), // Only USD is supported right now.
@@ -791,7 +791,9 @@ impl WalletZecPriceInfo {
             historical_prices_retry_count: 0,
         }
     }
+}
 
+impl WalletZecPriceInfo {
     pub fn serialized_version() -> u64 {
         20
     }

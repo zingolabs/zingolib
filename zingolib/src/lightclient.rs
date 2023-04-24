@@ -56,7 +56,7 @@ use zingoconfig::{ChainType, ZingoConfig, MAX_REORG};
 
 static LOG_INIT: std::sync::Once = std::sync::Once::new();
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct WalletStatus {
     pub is_syncing: bool,
     pub total_blocks: u64,

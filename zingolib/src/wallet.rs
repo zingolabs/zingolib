@@ -279,7 +279,7 @@ impl LightWallet {
         };
 
         wc.new_address(wc.can_view()).unwrap();
-        let transaction_metadata_set = Arc::new(RwLock::new(TransactionMetadataSet::new()));
+        let transaction_metadata_set = Arc::new(RwLock::new(TransactionMetadataSet::default()));
         let transaction_context =
             TransactionContext::new(&config, Arc::new(RwLock::new(wc)), transaction_metadata_set);
         Ok(Self {
@@ -289,7 +289,7 @@ impl LightWallet {
             birthday: AtomicU64::new(height),
             verified_tree: Arc::new(RwLock::new(None)),
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
-            price: Arc::new(RwLock::new(WalletZecPriceInfo::new())),
+            price: Arc::new(RwLock::new(WalletZecPriceInfo::default())),
             transaction_context,
         })
     }
@@ -388,7 +388,7 @@ impl LightWallet {
         };
 
         let price = if external_version <= 13 {
-            WalletZecPriceInfo::new()
+            WalletZecPriceInfo::default()
         } else {
             WalletZecPriceInfo::read(&mut reader)?
         };
