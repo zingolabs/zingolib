@@ -225,11 +225,7 @@ impl BlockAndWitnessData {
                     }
                 });
 
-                if closest_tree.is_some() {
-                    Some((candidate, closest_tree.unwrap().clone()))
-                } else {
-                    None
-                }
+                closest_tree.map(|t| (candidate, t.clone()))
             })
             .collect::<Vec<_>>();
 
