@@ -1,10 +1,10 @@
 tonic::include_proto!("cash.z.wallet.sdk.rpc");
 
 use crate::utils::scenarios::setup::ClientManager;
+use darkside_streamer_client::DarksideStreamerClient;
 use json::JsonValue;
 use rand::Rng;
 use tempdir::{self, TempDir};
-use darkside_streamer_client::DarksideStreamerClient;
 use tokio::time::sleep;
 
 use std::sync::Arc;
@@ -141,18 +141,24 @@ impl DarksideConnector {
         Ok(())
     }
 
-    pub(crate) async fn reset(&self, sapling_activation: i32, branch_id: String, chain_name: String) -> Result<(), String> {
+    pub(crate) async fn reset(
+        &self,
+        sapling_activation: i32,
+        branch_id: String,
+        chain_name: String,
+    ) -> Result<(), String> {
         let mut reset_params = DarksideMetaState {
             sapling_activation,
             branch_id,
-            chain_name
+            chain_name,
         };
 
         let mut request: Request<DarksideMetaState> = tonic::Request::new(reset_params);
 
         let mut client = self.get_client().await.map_err(|e| format!("{}", e))?;
 
-        let mut response = client.reset(request)
+        let mut response = client
+            .reset(request)
             .await
             .map_err(|e| format!("{}", e))?
             .into_inner();
@@ -161,9 +167,7 @@ impl DarksideConnector {
     }
 
     pub(crate) async fn stageBlocks(&self, url: String) -> Result<(), String> {
-        let url = DarksideBlocksUrl {
-            url
-        };
+        let url = DarksideBlocksUrl { url };
 
         let request = tonic::Request::new(url);
 
@@ -177,15 +181,15 @@ impl DarksideConnector {
 
         Ok(())
     }
-
-
 }
 
 async fn prepare_darksidewalletd(uri: http::Uri) -> Result<(), String> {
     let connector = DarksideConnector(uri);
 
     // reset with parameters
-    connector.reset(663_150, String::from("2bb40e60"), String::from("main")).await?;
+    connector
+        .reset(663_150, String::from("2bb40e60"), String::from("main"))
+        .await?;
 
     connector.stageBlocks(String::from("https://raw.githubusercontent.com/zcash-hackworks/darksidewalletd-test-data/master/tx-height-reorg/before-reorg.txt")).await?;
 
@@ -261,7 +265,8 @@ async fn test_simple_sync() {
     let temp_dir = TempDir::new(&format!("dwld_test_{num}")).unwrap();
     let path = temp_dir.path().to_path_buf();
 
-    let darkside_server_uri = zingoconfig::construct_lightwalletd_uri(Some(format!("http://127.0.0.1:9067")));
+    let darkside_server_uri =
+        zingoconfig::construct_lightwalletd_uri(Some(format!("http://127.0.0.1:9067")));
 
     prepare_darksidewalletd(darkside_server_uri).await;
 
