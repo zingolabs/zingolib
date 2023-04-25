@@ -73,12 +73,6 @@ impl WalletStatus {
     }
 }
 
-impl Default for WalletStatus {
-    fn default() -> Self {
-        WalletStatus::new()
-    }
-}
-
 pub struct LightClient {
     pub(crate) config: ZingoConfig,
     #[cfg(not(feature = "integration_test"))]
