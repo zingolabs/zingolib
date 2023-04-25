@@ -33,7 +33,7 @@ use super::{fixed_size_buffer::FixedSizeBuffer, sync_status::BatchSyncStatus};
 
 type Node<D> = <<D as DomainWalletExt>::WalletNote as ReceivedNoteAndMetadata>::Node;
 
-const ORCHARD_START: &'static str = "000000";
+const ORCHARD_START: &str = "000000";
 pub struct BlockAndWitnessData {
     // List of all downloaded blocks in the current batch and
     // their hashes/commitment trees. Stored with the tallest
@@ -795,13 +795,12 @@ impl BlockAndWitnessData {
 }
 
 fn is_orchard_tree_verified(determined_orchard_tree: String, unverified_tree: TreeState) -> bool {
-    if &determined_orchard_tree == ORCHARD_START {
-        true
-    } else if determined_orchard_tree[..132] == unverified_tree.orchard_tree[..132]
-        && &determined_orchard_tree[132..] == "00"
-        && unverified_tree.orchard_tree[134..]
-            .chars()
-            .all(|character| character == '0')
+    if determined_orchard_tree == ORCHARD_START
+        || determined_orchard_tree[..132] == unverified_tree.orchard_tree[..132]
+            && &determined_orchard_tree[132..] == "00"
+            && unverified_tree.orchard_tree[134..]
+                .chars()
+                .all(|character| character == '0')
     {
         true
     } else {
