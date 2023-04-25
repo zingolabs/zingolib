@@ -8,7 +8,7 @@ RUN apt install -y build-essential mingw-w64 gcc-aarch64-linux-gnu gcc-arm-linux
 RUN curl https://sh.rustup.rs -sSf | bash -s -- --default-toolchain none -y
 ENV PATH="/root/.cargo/bin:${PATH}"
 
-RUN rustup toolchain install 1.49.0
+RUN rustup toolchain install 1.69.0
 
 RUN rustup target add x86_64-pc-windows-gnu
 RUN rustup target add aarch64-unknown-linux-gnu
