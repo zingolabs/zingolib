@@ -23,7 +23,7 @@ ENV HOME=/root
 ENV CARGO_HOME=$HOME/.cargo
 ENV PATH=$PATH:$CARGO_HOME/bin
 RUN rustup toolchain install stable \
-    && rustup component add clippy
+    && rustup component add clippy \
     && cargo install cargo-tarpaulin
     && rustup update
 
