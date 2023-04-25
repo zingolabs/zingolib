@@ -376,24 +376,24 @@ impl LightClient {
         const SAPLING_SPEND_HASH: &str =
             "8e48ffd23abb3a5fd9c5589204f32d9c31285a04b78096ba40a79b75677efc13";
 
-        if !sapling_output.is_empty() {
-            if *SAPLING_OUTPUT_HASH != hex::encode(Sha256::digest(sapling_output)) {
-                return Err(format!(
-                    "sapling-output hash didn't match. expected {}, found {}",
-                    SAPLING_OUTPUT_HASH,
-                    hex::encode(Sha256::digest(sapling_output))
-                ));
-            }
+        if !sapling_output.is_empty()
+            && *SAPLING_OUTPUT_HASH != hex::encode(Sha256::digest(sapling_output))
+        {
+            return Err(format!(
+                "sapling-output hash didn't match. expected {}, found {}",
+                SAPLING_OUTPUT_HASH,
+                hex::encode(Sha256::digest(sapling_output))
+            ));
         }
 
-        if !sapling_spend.is_empty() {
-            if *SAPLING_SPEND_HASH != hex::encode(Sha256::digest(sapling_spend)) {
-                return Err(format!(
-                    "sapling-spend hash didn't match. expected {}, found {}",
-                    SAPLING_SPEND_HASH,
-                    hex::encode(Sha256::digest(sapling_spend))
-                ));
-            }
+        if !sapling_spend.is_empty()
+            && *SAPLING_SPEND_HASH != hex::encode(Sha256::digest(sapling_spend))
+        {
+            return Err(format!(
+                "sapling-spend hash didn't match. expected {}, found {}",
+                SAPLING_SPEND_HASH,
+                hex::encode(Sha256::digest(sapling_spend))
+            ));
         }
 
         // Ensure that the sapling params are stored on disk properly as well. Only on desktop
