@@ -10,7 +10,7 @@ Darkside mode of Lightwalletd lets developers create a synthetic compact blockch
 ### Requirements
 Clients running darksidewalletd tests need to run a lightwalletd client locally, because darkside mode isn't meant to be deployed anywhere and it has safeguards so that nobody deploys a lightwalletd server in darkside mode by mistake.
 
-lightwalletd supported for these tests need to have the TreeState API. This means from commit `5d174f7feb702dc19aec5b09d8be8b3d5b17ce45` onwards. 
+lightwalletd supported for these tests need to have the TreeState API. This means from commit `5d174f7feb702dc19aec5b09d8be8b3d5b17ce45` onwards.
 
 ## running lightwalletd in darkside mode
 ````zsh

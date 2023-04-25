@@ -162,7 +162,7 @@ impl DarksideConnector {
 
     pub(crate) async fn stageBlocks(&self, url: String) -> Result<(), String> {
         let url = DarksideBlocksUrl {
-            url    
+            url
         };
 
         let request = tonic::Request::new(url);
@@ -188,9 +188,9 @@ async fn prepare_darksidewalletd(uri: http::Uri) -> Result<(), String> {
     connector.reset(663_150, String::from("2bb40e60"), String::from("main")).await?;
 
     connector.stageBlocks(String::from("https://raw.githubusercontent.com/zcash-hackworks/darksidewalletd-test-data/master/tx-height-reorg/before-reorg.txt")).await?;
-    
+
     sleep(std::time::Duration::new(2, 0)).await;
-    
+
     let sapling_activation_tree = TreeState {
         network: String::from("main"),
         height: 663150,
@@ -201,7 +201,7 @@ async fn prepare_darksidewalletd(uri: http::Uri) -> Result<(), String> {
     };
 
     connector.addTreeState(sapling_activation_tree).await?;
-    
+
     let first_transaction_state = TreeState {
         network: String::from("main"),
         height: 663173,
@@ -245,11 +245,11 @@ async fn prepare_darksidewalletd(uri: http::Uri) -> Result<(), String> {
     };
 
     connector.addTreeState(fourth_transaction_state).await?;
-    
+
     sleep(std::time::Duration::new(2, 0)).await;
-    
+
     connector.applyStaged(663_200).await?;
-    
+
     Ok(())
 }
 
@@ -266,7 +266,7 @@ async fn test_simple_sync() {
     prepare_darksidewalletd(darkside_server_uri).await;
 
     let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!("http://127.0.0.1:9067")));
-    
+
     let light_client = ClientManager::new(
             server_id,
             path,
