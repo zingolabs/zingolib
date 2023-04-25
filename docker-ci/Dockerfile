@@ -24,7 +24,7 @@ ENV CARGO_HOME=$HOME/.cargo
 ENV PATH=$PATH:$CARGO_HOME/bin
 RUN rustup toolchain install stable \
     && rustup component add clippy \
-    && cargo install cargo-tarpaulin
+    && cargo install cargo-tarpaulin \
     && rustup update
 
 # Install Zcash and fetch zero-knowledge parameters
