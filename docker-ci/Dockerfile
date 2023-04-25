@@ -25,6 +25,7 @@ ENV PATH=$PATH:$CARGO_HOME/bin
 RUN rustup toolchain install stable \
     && rustup component add clippy
     && cargo install cargo-tarpaulin
+    && rustup update
 
 # Install Zcash and fetch zero-knowledge parameters
 RUN curl https://apt.z.cash/zcash.asc | gpg --import \
