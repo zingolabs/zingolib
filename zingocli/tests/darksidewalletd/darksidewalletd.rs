@@ -246,7 +246,7 @@ async fn test_simple_sync() {
 
     println!("{}", result);
     assert!(result.has_key("result"));
-    let JsonValue::Object(res_value) = result 
+    let JsonValue::Object(res_value) = result
         else { panic!("Expected object, got {result:?}") };
 
     assert_eq!(res_value["result"], "success");
