@@ -240,8 +240,7 @@ impl RegtestManager {
             &"-debug=1"
         );
 
-        let child = command.spawn()
-        .expect("failed to start zcashd. It's possible the zcashd binary is not in the /zingolib/regtest/bin/ directory, see /regtest/README.md");
+        let child = command.spawn().unwrap();
         log::debug!("zcashd is starting in regtest mode, please standby...");
 
         (
