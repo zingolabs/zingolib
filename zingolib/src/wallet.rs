@@ -1169,12 +1169,6 @@ impl LightWallet {
         ),
         NoteSelectionError,
     > {
-        //let mut transparent_value_selected = Amount::zero();
-        let /*mut*/ utxos = Vec::new();
-        let mut sapling_value_selected = Amount::zero();
-        let mut sapling_notes = Vec::new();
-        let mut orchard_value_selected = Amount::zero();
-        let mut orchard_notes = Vec::new();
         if target_transparent != Amount::zero()
             && policy > NoteSelectionPolicy::AllowRevealedRecipients
         {
@@ -1182,46 +1176,33 @@ impl LightWallet {
         }
         match policy {
             NoteSelectionPolicy::FullPrivacy => {
-                for pool in [Pool::Sapling, Pool::Orchard] {
-                    match pool {
-                        Pool::Sapling => {
-                            let sapling_candidates = self
-                        .get_all_domain_specific_notes::<SaplingDomain<zingoconfig::ChainType>>()
-                        .await
-                        .into_iter()
-                        .filter(|x| x.spend_key().is_some())
-                        .collect();
-                            (sapling_notes, sapling_value_selected) =
-                                Self::add_notes_to_total::<SaplingDomain<zingoconfig::ChainType>>(
-                                    sapling_candidates,
-                                    target_sapling,
-                                );
-                        }
-                        Pool::Orchard => {
-                            let orchard_candidates = self
-                                .get_all_domain_specific_notes::<OrchardDomain>()
-                                .await
-                                .into_iter()
-                                .filter(|x| x.spend_key().is_some())
-                                .collect();
-                            (orchard_notes, orchard_value_selected) =
-                                Self::add_notes_to_total::<OrchardDomain>(
-                                    orchard_candidates,
-                                    target_orchard,
-                                );
-                        }
-                        Pool::Transparent => {
-                            unreachable!("Fully private transaction")
-                        }
-                    }
-                }
+                let sapling_candidates = self
+                    .get_all_domain_specific_notes::<SaplingDomain<zingoconfig::ChainType>>()
+                    .await
+                    .into_iter()
+                    .filter(|x| x.spend_key().is_some())
+                    .collect();
+                let (sapling_notes, sapling_value_selected) = Self::add_notes_to_total::<
+                    SaplingDomain<zingoconfig::ChainType>,
+                >(
+                    sapling_candidates, target_sapling
+                );
+                let orchard_candidates = self
+                    .get_all_domain_specific_notes::<OrchardDomain>()
+                    .await
+                    .into_iter()
+                    .filter(|x| x.spend_key().is_some())
+                    .collect();
+                let (orchard_notes, orchard_value_selected) =
+                    Self::add_notes_to_total::<OrchardDomain>(orchard_candidates, target_orchard);
+
                 if orchard_value_selected >= target_orchard
                     && sapling_value_selected >= target_sapling
                 {
                     Ok((
                         orchard_notes,
                         sapling_notes,
-                        utxos,
+                        Vec::new(), // No utxos for full privacy
                         (sapling_value_selected + orchard_value_selected).unwrap(),
                     ))
                 } else {
