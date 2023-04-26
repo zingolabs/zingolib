@@ -22,9 +22,9 @@ jobs:
       - name: set default to stable
         run: rustup default stable
       - name: Check formatting of code
-        run: cargo fmt --check
+        run: cargo +stable fmt --check
       - name: Clippy Checks
-        run: cargo clippy
+        run: cargo +stable clippy
 
   test:
     name: Test
