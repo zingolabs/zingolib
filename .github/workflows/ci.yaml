@@ -19,8 +19,6 @@ jobs:
         uses: actions/checkout@v3
       - name: Reject trailing whitespace
         run: ./utils/trailing-whitespace.sh reject
-      - name: set default to stable
-        run: rustup default stable
       - name: Check formatting of code
         run: cargo +stable fmt --check
       - name: Clippy Checks
@@ -42,7 +40,7 @@ jobs:
       - name: Symlink zcash parameters and rustup files
         run: ln -s /root/.zcash-params /root/.rustup /github/home
       - name: where am i?
-        run: ls -la
+        run: ls -la ./regtest/bin/
       - name: Run integration tests and generate coverage
         run: cargo tarpaulin --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 300 --out xml
       - name: Upload to codecov.io
