@@ -112,7 +112,7 @@ pub enum NoteSelectionError {
 }
 
 impl Display for NoteSelectionError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         todo!()
     }
 }
@@ -1170,7 +1170,7 @@ impl LightWallet {
         NoteSelectionError,
     > {
         //let mut transparent_value_selected = Amount::zero();
-        //let mut utxos = Vec::new();
+        let /*mut*/ utxos = Vec::new();
         let mut sapling_value_selected = Amount::zero();
         let mut sapling_notes = Vec::new();
         let mut orchard_value_selected = Amount::zero();
@@ -1215,12 +1215,21 @@ impl LightWallet {
                         }
                     }
                 }
+                if orchard_value_selected >= target_orchard
+                    && sapling_value_selected >= target_sapling
+                {
+                    Ok((
+                        orchard_notes,
+                        sapling_notes,
+                        utxos,
+                        (sapling_value_selected + orchard_value_selected).unwrap(),
+                    ))
+                } else {
+                    Err(NoteSelectionError::InsufficientPrivateFunds)
+                }
             }
             _ => todo!(),
         }
-
-        // If we can't select enough, then we need to return empty handed
-        Err(NoteSelectionError::InsufficientPrivateFunds)
     }
 
     async fn get_all_domain_specific_notes<D>(&self) -> Vec<D::SpendableNoteAT>
