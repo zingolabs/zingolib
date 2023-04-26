@@ -94,7 +94,58 @@ pub enum Pool {
     Transparent,
 }
 
-pub(crate) type NoteSelectionPolicy = Vec<Pool>;
+///The privacy policy for transaction construction, based off the the polcies the zcashd z_sendmany rpc accepts
+pub enum PrivacyPolicy {
+    ///Only allow fully-shielded transactions (involving a single shielded value pool).
+    FullPrivacy,
+    ///Allow funds to cross between shielded value pools, revealing the amount
+    ///that crosses pools.
+    AllowRevealedAmounts,
+    ///Allow transparent recipients. This also implies revealing
+    ///information described under "AllowRevealedAmounts".
+    AllowRevealedRecipients,
+    ///Allow transparent funds to be spent, revealing the sending
+    ///addresses and amounts. This implies revealing information described under "AllowRevealedAmounts".
+    AllowRevealedSenders,
+    ///Allow transaction to both spend transparent funds and have
+    ///transparent recipients. This implies revealing information described under "AllowRevealedSenders"
+    ///and "AllowRevealedRecipients".
+    AllowFullyTransparent,
+    ///Allow selecting transparent coins from the full account,
+    ///rather than just the funds sent to the transparent receiver in the provided Unified Address.
+    ///This implies revealing information described under "AllowRevealedSenders".
+    AllowLinkingAccountAddresses,
+    ///Allow the transaction to reveal any information necessary to create it.
+    ///This implies revealing information described under "AllowFullyTransparent" and
+    ///"AllowLinkingAccountAddresses".
+    NoPrivacy,
+    ///Allows for explicit user-specification of what pools funds can be selected from
+    ///This implies NoPrivacy, it's expected that by selecting this option you understand
+    ///the privacy implications of spending to/from the pools in question. This is not
+    ///reccomended unless you know exactly what you're doing
+    CustomPools(Vec<Pool>),
+}
+
+pub(crate) struct NoteSelectionPolicy {
+    privacy_policy: PrivacyPolicy,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub(crate) struct PoolTargets {
+    target_transparent: Amount,
+    target_sapling: Amount,
+    target_orchard: Amount,
+}
+
+impl Default for PoolTargets {
+    fn default() -> Self {
+        Self {
+            target_transparent: Amount::zero(),
+            target_sapling: Amount::zero(),
+            target_orchard: Amount::zero(),
+        }
+    }
+}
 
 impl SendProgress {
     fn new(id: u32) -> Self {
@@ -995,14 +1046,21 @@ impl LightWallet {
 
     async fn select_notes_and_utxos(
         &self,
-        target_amount: Amount,
         policy: NoteSelectionPolicy,
-    ) -> (
-        Vec<SpendableOrchardNote>,
-        Vec<SpendableSaplingNote>,
-        Vec<Utxo>,
-        Amount,
-    ) {
+        PoolTargets {
+            target_transparent,
+            target_sapling,
+            target_orchard,
+        }: PoolTargets,
+    ) -> Result<
+        (
+            Vec<SpendableOrchardNote>,
+            Vec<SpendableSaplingNote>,
+            Vec<Utxo>,
+            Amount,
+        ),
+        NoteSelectionError,
+    > {
         let mut transparent_value_selected = Amount::zero();
         let mut utxos = Vec::new();
         let mut sapling_value_selected = Amount::zero();
@@ -1198,13 +1256,6 @@ impl LightWallet {
             return Err("Wallet is in watch-only mode a thus it cannot spend".to_string());
         }
 
-        let total_value = tos.iter().map(|to| to.1).sum::<u64>();
-        println!(
-            "0: Creating transaction sending {} ztoshis to {} addresses",
-            total_value,
-            tos.len()
-        );
-
         // Convert address (str) to RecepientAddress and value to Amount
         let recipients = tos
             .iter()
@@ -1227,6 +1278,33 @@ impl LightWallet {
             })
             .collect::<Result<Vec<(address::RecipientAddress, Amount, Option<String>)>, String>>(
             )?;
+
+        let pool_targets = recipients.iter().fold(
+            PoolTargets::default(),
+            |(t_targ, s_targ, o_targ), (recipient, amount, _memo)| {
+                match recipient {
+                    address::RecipientAddress::Shielded(_) => s_targ += *amount,
+                    address::RecipientAddress::Transparent(_) => t_targ += *amount,
+                    address::RecipientAddress::Unified(ua) => {
+                        if ua.orchard().is_some() {
+                            o_targ += *amount;
+                        } else if ua.sapling().is_some() {
+                            s_targ += *amount;
+                        } else if ua.transparent().is_some() {
+                            t_targ += *amount;
+                        }
+                    }
+                };
+                (t_targ, s_targ, o_targ)
+            },
+        );
+
+        let total_value = tos.iter().map(|to| to.1).sum::<u64>();
+        println!(
+            "0: Creating transaction sending {} ztoshis to {} addresses",
+            total_value,
+            tos.len()
+        );
 
         let destination_uas = recipients
             .iter()
