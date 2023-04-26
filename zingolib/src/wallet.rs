@@ -15,6 +15,7 @@ use orchard::tree::MerkleHashOrchard;
 use orchard::Anchor;
 use rand::rngs::OsRng;
 use rand::Rng;
+use std::cmp::Ordering;
 use std::convert::Infallible;
 use std::{
     cmp,
@@ -87,38 +88,59 @@ pub struct SendProgress {
     pub last_transaction_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pool {
     Sapling,
     Orchard,
     Transparent,
 }
 
+/// An error occurred during note selection
+pub enum NoteSelectionError {
+    /// There aren't enough funds in the appropriate pools to create a transaction,
+    /// given the specified privacy policy
+    InsufficientPrivateFunds,
+
+    /// There aren't enough funds in the wallet
+    InsufficientSpendableFunds,
+
+    /// The specified privacy policy doesn't allow sends to transparent receivers
+    DisallowedByPrivacyPolicy,
+}
+
 ///The privacy policy for transaction construction, based off the the polcies the zcashd z_sendmany rpc accepts
-pub enum PrivacyPolicy {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NoteSelectionPolicy {
     ///Only allow fully-shielded transactions (involving a single shielded value pool).
     FullPrivacy,
+
     ///Allow funds to cross between shielded value pools, revealing the amount
     ///that crosses pools.
     AllowRevealedAmounts,
+
     ///Allow transparent recipients. This also implies revealing
     ///information described under "AllowRevealedAmounts".
     AllowRevealedRecipients,
+
     ///Allow transparent funds to be spent, revealing the sending
     ///addresses and amounts. This implies revealing information described under "AllowRevealedAmounts".
     AllowRevealedSenders,
+
     ///Allow transaction to both spend transparent funds and have
     ///transparent recipients. This implies revealing information described under "AllowRevealedSenders"
     ///and "AllowRevealedRecipients".
     AllowFullyTransparent,
+
     ///Allow selecting transparent coins from the full account,
     ///rather than just the funds sent to the transparent receiver in the provided Unified Address.
     ///This implies revealing information described under "AllowRevealedSenders".
     AllowLinkingAccountAddresses,
+
     ///Allow the transaction to reveal any information necessary to create it.
     ///This implies revealing information described under "AllowFullyTransparent" and
     ///"AllowLinkingAccountAddresses".
     NoPrivacy,
+
     ///Allows for explicit user-specification of what pools funds can be selected from
     ///This implies NoPrivacy, it's expected that by selecting this option you understand
     ///the privacy implications of spending to/from the pools in question. This is not
@@ -126,8 +148,53 @@ pub enum PrivacyPolicy {
     CustomPools(Vec<Pool>),
 }
 
-pub(crate) struct NoteSelectionPolicy {
-    privacy_policy: PrivacyPolicy,
+impl NoteSelectionPolicy {
+    //A helper function to make the PartialEq implementation easier
+    fn privacy_strength(&self) -> Option<u8> {
+        use NoteSelectionPolicy::*;
+        match self {
+            // Strongest guarentee
+            FullPrivacy => Some(5),
+
+            // Strictly weaker than 5
+            AllowRevealedAmounts => Some(4),
+
+            // Strictly weaker than 4
+            AllowRevealedRecipients => Some(3),
+
+            // Strictly weaker than 3
+            AllowRevealedSenders => Some(2),
+
+            // Strictly weaker than 2
+            AllowFullyTransparent => Some(1),
+
+            // Strictly weaker than 2
+            AllowLinkingAccountAddresses => Some(1),
+
+            // Combination of both strength 1 allowances
+            NoPrivacy => Some(0),
+
+            // No clear comparison, privacy is based off of specified pools
+            // and recipient addresses
+            CustomPools(_) => None,
+        }
+    }
+}
+
+impl PartialOrd for NoteSelectionPolicy {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        match (self.privacy_strength(), other.privacy_strength()) {
+            (Some(n), Some(m)) => {
+                let strengths_comp = n.cmp(&m);
+                if strengths_comp == Ordering::Equal && self != other {
+                    None
+                } else {
+                    Some(strengths_comp)
+                }
+            }
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -1061,72 +1128,58 @@ impl LightWallet {
         ),
         NoteSelectionError,
     > {
-        let mut transparent_value_selected = Amount::zero();
-        let mut utxos = Vec::new();
+        //let mut transparent_value_selected = Amount::zero();
+        //let mut utxos = Vec::new();
         let mut sapling_value_selected = Amount::zero();
         let mut sapling_notes = Vec::new();
         let mut orchard_value_selected = Amount::zero();
         let mut orchard_notes = Vec::new();
-        for pool in policy {
-            match pool {
-                Pool::Sapling => {
-                    let sapling_candidates = self
+        if target_transparent != Amount::zero()
+            && policy > NoteSelectionPolicy::AllowRevealedRecipients
+        {
+            return Err(NoteSelectionError::DisallowedByPrivacyPolicy);
+        }
+        match policy {
+            NoteSelectionPolicy::FullPrivacy => {
+                for pool in [Pool::Sapling, Pool::Orchard] {
+                    match pool {
+                        Pool::Sapling => {
+                            let sapling_candidates = self
                         .get_all_domain_specific_notes::<SaplingDomain<zingoconfig::ChainType>>()
                         .await
                         .into_iter()
                         .filter(|x| x.spend_key().is_some())
                         .collect();
-                    (sapling_notes, sapling_value_selected) =
-                        Self::add_notes_to_total::<SaplingDomain<zingoconfig::ChainType>>(
-                            sapling_candidates,
-                            (target_amount - orchard_value_selected - transparent_value_selected)
-                                .unwrap(),
-                        );
-                }
-                Pool::Orchard => {
-                    let orchard_candidates = self
-                        .get_all_domain_specific_notes::<OrchardDomain>()
-                        .await
-                        .into_iter()
-                        .filter(|x| x.spend_key().is_some())
-                        .collect();
-                    (orchard_notes, orchard_value_selected) =
-                        Self::add_notes_to_total::<OrchardDomain>(
-                            orchard_candidates,
-                            (target_amount - transparent_value_selected - sapling_value_selected)
-                                .unwrap(),
-                        );
-                }
-                Pool::Transparent => {
-                    utxos = self
-                        .get_utxos()
-                        .await
-                        .iter()
-                        .filter(|utxo| utxo.unconfirmed_spent.is_none() && utxo.spent.is_none())
-                        .cloned()
-                        .collect::<Vec<_>>();
-                    transparent_value_selected = utxos.iter().fold(Amount::zero(), |prev, utxo| {
-                        (prev + Amount::from_u64(utxo.value).unwrap()).unwrap()
-                    });
+                            (sapling_notes, sapling_value_selected) =
+                                Self::add_notes_to_total::<SaplingDomain<zingoconfig::ChainType>>(
+                                    sapling_candidates,
+                                    target_sapling,
+                                );
+                        }
+                        Pool::Orchard => {
+                            let orchard_candidates = self
+                                .get_all_domain_specific_notes::<OrchardDomain>()
+                                .await
+                                .into_iter()
+                                .filter(|x| x.spend_key().is_some())
+                                .collect();
+                            (orchard_notes, orchard_value_selected) =
+                                Self::add_notes_to_total::<OrchardDomain>(
+                                    orchard_candidates,
+                                    target_orchard,
+                                );
+                        }
+                        Pool::Transparent => {
+                            unreachable!("Fully private transaction")
+                        }
+                    }
                 }
             }
-            // Check how much we've selected
-            if (transparent_value_selected + sapling_value_selected + orchard_value_selected)
-                .unwrap()
-                >= target_amount
-            {
-                return (
-                    orchard_notes,
-                    sapling_notes,
-                    utxos,
-                    (transparent_value_selected + sapling_value_selected + orchard_value_selected)
-                        .unwrap(),
-                );
-            }
+            _ => todo!(),
         }
 
         // If we can't select enough, then we need to return empty handed
-        (vec![], vec![], vec![], Amount::zero())
+        Err(NoteSelectionError::InsufficientPrivateFunds)
     }
 
     async fn get_all_domain_specific_notes<D>(&self) -> Vec<D::SpendableNoteAT>
@@ -1281,21 +1334,30 @@ impl LightWallet {
 
         let pool_targets = recipients.iter().fold(
             PoolTargets::default(),
-            |(t_targ, s_targ, o_targ), (recipient, amount, _memo)| {
+            |PoolTargets {
+                 target_transparent,
+                 target_sapling,
+                 target_orchard,
+             },
+             (recipient, amount, _memo)| {
                 match recipient {
-                    address::RecipientAddress::Shielded(_) => s_targ += *amount,
-                    address::RecipientAddress::Transparent(_) => t_targ += *amount,
+                    address::RecipientAddress::Shielded(_) => target_sapling += *amount,
+                    address::RecipientAddress::Transparent(_) => target_transparent += *amount,
                     address::RecipientAddress::Unified(ua) => {
                         if ua.orchard().is_some() {
-                            o_targ += *amount;
+                            target_orchard += *amount;
                         } else if ua.sapling().is_some() {
-                            s_targ += *amount;
+                            target_sapling += *amount;
                         } else if ua.transparent().is_some() {
-                            t_targ += *amount;
+                            target_transparent += *amount;
                         }
                     }
                 };
-                (t_targ, s_targ, o_targ)
+                PoolTargets {
+                    target_transparent,
+                    target_sapling,
+                    target_orchard,
+                }
             },
         );
 
