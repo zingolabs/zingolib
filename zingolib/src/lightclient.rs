@@ -16,7 +16,7 @@ use crate::{
         message::Message,
         now,
         traits::{DomainWalletExt, ReceivedNoteAndMetadata, Recipient},
-        LightWallet, WalletBase,
+        LightWallet, NoteSelectionPolicy, Pool, WalletBase,
     },
 };
 use futures::future::join_all;
@@ -1673,7 +1673,7 @@ impl LightClient {
             self.wallet
                 .send_to_address(
                     prover,
-                    vec![crate::wallet::Pool::Transparent],
+                    NoteSelectionPolicy::CustomPools(vec![Pool::Transparent]),
                     vec![(&addr, tbal - fee, None)],
                     transaction_submission_height,
                     |transaction_bytes| {
@@ -1697,6 +1697,7 @@ impl LightClient {
     pub async fn do_send(
         &self,
         address_amount_memo_tuples: Vec<(&str, u64, Option<String>)>,
+        policy: Option<NoteSelectionPolicy>,
     ) -> Result<String, String> {
         let transaction_submission_height = self.get_submission_height().await?;
         // First, get the concensus branch ID
@@ -1711,11 +1712,7 @@ impl LightClient {
             self.wallet
                 .send_to_address(
                     prover,
-                    vec![
-                        crate::wallet::Pool::Orchard,
-                        crate::wallet::Pool::Sapling,
-                        crate::wallet::Pool::Transparent,
-                    ],
+                    policy.unwrap_or_default(),
                     address_amount_memo_tuples,
                     transaction_submission_height,
                     |transaction_bytes| {

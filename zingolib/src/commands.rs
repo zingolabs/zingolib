@@ -661,7 +661,7 @@ impl Command for SendCommand {
 
         RT.block_on(async move {
             // Check for a single argument that can be parsed as JSON
-            let send_args = if args.len() == 1 {
+            let (send_args, policy) = if args.len() == 1 {
                 let arg_list = args[0];
 
                 let json_args = match json::parse(arg_list) {
@@ -700,13 +700,32 @@ impl Command for SendCommand {
                     })
                     .collect::<Result<Vec<(String, u64, Option<String>)>, String>>();
 
+                let policy = match json_args
+                    .members()
+                    .map(|j| {
+                        j.entries().find_map(|(key, val)| {
+                            if key == "policy" {
+                                Some(val.as_str().map(FromStr::from_str))
+                            } else {
+                                None
+                            }
+                        })
+                    })
+                    .next()
+                    .flatten()
+                    .flatten()
+                    .transpose()
+                {
+                    Ok(maybe_policy) => maybe_policy,
+                    Err(e) => return e,
+                };
                 match maybe_send_args {
-                    Ok(a) => a.clone(),
+                    Ok(a) => (a.clone(), policy),
                     Err(s) => {
                         return format!("Error: {}\n{}", s, self.help());
                     }
                 }
-            } else if args.len() == 2 || args.len() == 3 {
+            } else if args.len() == 2 || args.len() == 3 || args.len() == 4 {
                 let address = args[0].to_string();
 
                 // Make sure we can parse the amount
@@ -715,8 +734,17 @@ impl Command for SendCommand {
                     Err(e) => return format!("Couldn't parse amount: {}", e),
                 };
 
-                let memo = if args.len() == 3 {
+                let memo = if args.len() > 2 {
                     Some(args[2].to_string())
+                } else {
+                    None
+                };
+
+                let policy = if args.len() == 4 {
+                    match args[3].to_string().parse() {
+                        Ok(p) => Some(p),
+                        Err(e) => return e,
+                    }
                 } else {
                     None
                 };
@@ -726,7 +754,7 @@ impl Command for SendCommand {
                     return format!("Can't send a memo to the non-shielded address {}", address);
                 }
 
-                vec![(args[0].to_string(), value, memo)]
+                (vec![(args[0].to_string(), value, memo)], policy)
             } else {
                 return self.help().to_string();
             };
@@ -736,7 +764,7 @@ impl Command for SendCommand {
                 .iter()
                 .map(|(a, v, m)| (a.as_str(), *v, m.clone()))
                 .collect::<Vec<_>>();
-            match lightclient.do_send(tos).await {
+            match lightclient.do_send(tos, policy).await {
                 Ok(transaction_id) => {
                     object! { "txid" => transaction_id }
                 }

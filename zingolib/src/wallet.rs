@@ -17,6 +17,8 @@ use rand::rngs::OsRng;
 use rand::Rng;
 use std::cmp::Ordering;
 use std::convert::Infallible;
+use std::fmt::Display;
+use std::str::FromStr;
 use std::{
     cmp,
     collections::HashMap,
@@ -96,6 +98,7 @@ pub enum Pool {
 }
 
 /// An error occurred during note selection
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NoteSelectionError {
     /// There aren't enough funds in the appropriate pools to create a transaction,
     /// given the specified privacy policy
@@ -106,6 +109,12 @@ pub enum NoteSelectionError {
 
     /// The specified privacy policy doesn't allow sends to transparent receivers
     DisallowedByPrivacyPolicy,
+}
+
+impl Display for NoteSelectionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        todo!()
+    }
 }
 
 ///The privacy policy for transaction construction, based off the the polcies the zcashd z_sendmany rpc accepts
@@ -131,11 +140,6 @@ pub enum NoteSelectionPolicy {
     ///and "AllowRevealedRecipients".
     AllowFullyTransparent,
 
-    ///Allow selecting transparent coins from the full account,
-    ///rather than just the funds sent to the transparent receiver in the provided Unified Address.
-    ///This implies revealing information described under "AllowRevealedSenders".
-    AllowLinkingAccountAddresses,
-
     ///Allow the transaction to reveal any information necessary to create it.
     ///This implies revealing information described under "AllowFullyTransparent" and
     ///"AllowLinkingAccountAddresses".
@@ -146,6 +150,40 @@ pub enum NoteSelectionPolicy {
     ///the privacy implications of spending to/from the pools in question. This is not
     ///reccomended unless you know exactly what you're doing
     CustomPools(Vec<Pool>),
+}
+
+impl FromStr for NoteSelectionPolicy {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        use NoteSelectionPolicy::*;
+        match s {
+            "FullPrivacy" => Ok(FullPrivacy),
+            "AllowRevealedAmounts" => Ok(AllowRevealedAmounts),
+            "AllowRevealedRecipients" => Ok(AllowRevealedRecipients),
+            "AllowRevealedSenders" => Ok(AllowRevealedSenders),
+            "AllowFullyTransparent" => Ok(AllowFullyTransparent),
+            "NoPrivacy" => Ok(NoPrivacy),
+            _ => s
+                .split_whitespace()
+                .map(|pool| match pool {
+                    "Sapling" => Ok(Pool::Sapling),
+                    "Orchard" => Ok(Pool::Orchard),
+                    "Transparent" => Ok(Pool::Transparent),
+                    _ => Err(String::from(
+                        "Policy must be either 'FullPrivacy', TODO: Add more",
+                    )),
+                })
+                .collect::<Result<Vec<Pool>, String>>()
+                .map(CustomPools),
+        }
+    }
+}
+
+impl Default for NoteSelectionPolicy {
+    fn default() -> Self {
+        NoteSelectionPolicy::FullPrivacy
+    }
 }
 
 impl NoteSelectionPolicy {
@@ -168,10 +206,7 @@ impl NoteSelectionPolicy {
             // Strictly weaker than 2
             AllowFullyTransparent => Some(1),
 
-            // Strictly weaker than 2
-            AllowLinkingAccountAddresses => Some(1),
-
-            // Combination of both strength 1 allowances
+            // Strictly weaker than 1
             NoPrivacy => Some(0),
 
             // No clear comparison, privacy is based off of specified pools
@@ -202,6 +237,12 @@ pub(crate) struct PoolTargets {
     target_transparent: Amount,
     target_sapling: Amount,
     target_orchard: Amount,
+}
+
+impl PoolTargets {
+    fn total(&self) -> Amount {
+        (self.target_transparent + self.target_sapling + self.target_orchard).unwrap()
+    }
 }
 
 impl Default for PoolTargets {
@@ -1332,12 +1373,12 @@ impl LightWallet {
             .collect::<Result<Vec<(address::RecipientAddress, Amount, Option<String>)>, String>>(
             )?;
 
-        let pool_targets = recipients.iter().fold(
+        let mut pool_targets = recipients.iter().fold(
             PoolTargets::default(),
             |PoolTargets {
-                 target_transparent,
-                 target_sapling,
-                 target_orchard,
+                 mut target_transparent,
+                 mut target_sapling,
+                 mut target_orchard,
              },
              (recipient, amount, _memo)| {
                 match recipient {
@@ -1361,10 +1402,10 @@ impl LightWallet {
             },
         );
 
-        let total_value = tos.iter().map(|to| to.1).sum::<u64>();
+        let total_value = pool_targets.total();
         println!(
             "0: Creating transaction sending {} ztoshis to {} addresses",
-            total_value,
+            u64::from(total_value),
             tos.len()
         );
 
@@ -1380,7 +1421,7 @@ impl LightWallet {
         // Select notes to cover the target value
         println!("{}: Selecting notes", now() - start_time);
 
-        let target_amount = (Amount::from_u64(total_value).unwrap() + DEFAULT_FEE).unwrap();
+        pool_targets.target_orchard += DEFAULT_FEE;
         let latest_wallet_height = match self.get_latest_wallet_height().await {
             Some(h) => BlockHeight::from_u32(h),
             None => return Err("No blocks in wallet to target, please sync first".to_string()),
@@ -1395,17 +1436,10 @@ impl LightWallet {
             .get_taddr_to_secretkey_map(&self.transaction_context.config)
             .unwrap();
 
-        let (orchard_notes, sapling_notes, utxos, selected_value) =
-            self.select_notes_and_utxos(target_amount, policy).await;
-        if selected_value < target_amount {
-            let e = format!(
-                "Insufficient verified funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent.",
-                u64::from(selected_value), u64::from(target_amount), self.transaction_context.config
-                .reorg_buffer_offset + 1
-            );
-            error!("{}", e);
-            return Err(e);
-        }
+        let (orchard_notes, sapling_notes, utxos, selected_value) = self
+            .select_notes_and_utxos(policy, pool_targets)
+            .await
+            .map_err(|e| e.to_string())?;
         println!("Selected notes worth {}", u64::from(selected_value));
 
         let orchard_anchor = self
@@ -1565,13 +1599,13 @@ impl LightWallet {
             }
         };
 
-        dbg!(selected_value, target_amount);
+        dbg!(selected_value, pool_targets.total());
         if let Err(e) = builder.add_orchard_output::<FixedFeeRule>(
             Some(orchard_ovk.clone()),
             *self.wallet_capability().read().await.addresses()[0]
                 .orchard()
                 .unwrap(),
-            dbg!(u64::from(selected_value) - u64::from(target_amount)),
+            dbg!(u64::from(selected_value) - u64::from(pool_targets.total())),
             // Here we store the uas we sent to in the memo field.
             // These are used to recover the full UA we sent to.
             MemoBytes::from(Memo::Arbitrary(Box::new(uas_bytes))),
