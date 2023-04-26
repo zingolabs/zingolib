@@ -6,6 +6,24 @@ on:
     branches: [main, dev]
 
 jobs:
+  static_checks:
+    name: fmt_check_clippy
+    runs-on: ubuntu-22.04
+    env:
+      RUSTFLAGS: -D warnings
+    container:
+      image: zingodevops/ci-build:stable
+      options: --security-opt seccomp=unconfined
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Reject trailing whitespace
+        run: ./utils/trailing-whitespace.sh reject
+      - name: Check formatting of code
+        run: cargo fmt --check
+      - name: Clippy Checks
+        run: cargo clippy
+
   test:
     name: Test
     runs-on: ubuntu-22.04
@@ -21,13 +39,7 @@ jobs:
         run: ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./regtest/bin/
       - name: Symlink zcash parameters and rustup files
         run: ln -s /root/.zcash-params /root/.rustup /github/home
-      - name: Reject trailing whitespace
-        run: ./utils/trailing-whitespace.sh reject
-      - name: Check formatting of code
-        run: cargo fmt --check
-      - name: Clippy Checks
-        run: cargo clippy
-      - name: Generate code coverage
+      - name: Run integration tests and generate coverage
         run: cargo tarpaulin --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 300 --out xml
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v3
