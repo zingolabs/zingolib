@@ -36,8 +36,6 @@ RUN curl https://apt.z.cash/zcash.asc | gpg --import \
 # Import lightwalletd binary
 COPY /lightwalletd /usr/bin/
 
-RUN rustup default stable
-# Set working directory
 WORKDIR /usr/src
 
 # Apt clean up
