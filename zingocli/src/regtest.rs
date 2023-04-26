@@ -239,6 +239,10 @@ impl RegtestManager {
                 .unwrap(),
             &"-debug=1"
         );
+        log::info(&command.get_current_dir());
+        log::info(&command.get_args());
+        log::info(&command.get_envs());
+        log::info(&command.get_program());
 
         let child = command.spawn().unwrap();
         log::debug!("zcashd is starting in regtest mode, please standby...");
