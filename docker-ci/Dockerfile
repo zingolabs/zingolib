@@ -54,6 +54,7 @@ RUN  cd zcash && ./zcutil/clean.sh && ./zcutil/build.sh -j$(nproc)
 # Import lightwalletd binary
 COPY /lightwalletd /usr/bin/
 
+RUN  ln -s /zcash/src/zcashd /zcash/src/zcash-cli /usr/bin
 WORKDIR /usr/src
 
 # Apt clean up
