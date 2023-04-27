@@ -57,14 +57,16 @@ jobs:
         run: zcashd --help
       - name: lightwalletd --help
         run: lightwalletd --help
-      - name: Run integration tests and generate coverage
-        run: cargo tarpaulin --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 300 --out xml
-      - name: Upload to codecov.io
-        uses: codecov/codecov-action@v3
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./cobertura.xml
-          # fail_ci_if_error:     true
+      - name: run integration tests
+        run: cargo test --release
+      #- name: Run integration tests and generate coverage
+      #  run: cargo tarpaulin --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 300 --out xml
+      #- name: Upload to codecov.io
+      #  uses: codecov/codecov-action@v3
+      #  with:
+      #    token: ${{ secrets.CODECOV_TOKEN }}
+      #    files: ./cobertura.xml
+      #    # fail_ci_if_error:     true
 
   timestamp:
     name: Create timestamp
