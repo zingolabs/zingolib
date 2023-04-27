@@ -46,11 +46,14 @@ pub async fn send_value_between_clients_and_sync(
         &recipient.do_addresses().await[0]["address"]
     );
     let txid = sender
-        .do_send(vec![(
-            &zingolib::get_base_address!(recipient, address_type),
-            value,
+        .do_send(
+            vec![(
+                &zingolib::get_base_address!(recipient, address_type),
+                value,
+                None,
+            )],
             None,
-        )])
+        )
         .await
         .unwrap();
     increase_height_and_sync_client(manager, sender, 1).await?;
@@ -96,7 +99,7 @@ pub mod scenarios {
     use crate::data::{self, seeds::HOSPITAL_MUSEUM_SEED, REGSAP_ADDR_FROM_ABANDONART};
 
     use zingo_cli::regtest::{ChildProcessHandler, RegtestManager};
-    use zingolib::{get_base_address, lightclient::LightClient};
+    use zingolib::{get_base_address, lightclient::LightClient, wallet::NoteSelectionPolicy};
 
     use self::setup::ClientManager;
 
@@ -373,11 +376,10 @@ pub mod scenarios {
             .await
             .unwrap();
         let txid = faucet
-            .do_send(vec![(
-                &get_base_address!(recipient, "unified"),
-                value,
-                None,
-            )])
+            .do_send(
+                vec![(&get_base_address!(recipient, "unified"), value, None)],
+                Some(NoteSelectionPolicy::AllowRevealedAmounts),
+            )
             .await
             .unwrap();
         increase_height_and_sync_client(&regtest_manager, &recipient, 1)

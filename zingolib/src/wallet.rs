@@ -112,8 +112,8 @@ pub enum NoteSelectionError {
 }
 
 impl Display for NoteSelectionError {
-    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!()
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&format!("{self:?}"))
     }
 }
 
@@ -192,18 +192,18 @@ impl NoteSelectionPolicy {
         use NoteSelectionPolicy::*;
         match self {
             // Strongest guarentee
-            FullPrivacy => Some(5),
-
-            // Strictly weaker than 5
-            AllowRevealedAmounts => Some(4),
+            FullPrivacy => Some(4),
 
             // Strictly weaker than 4
-            AllowRevealedRecipients => Some(3),
+            AllowRevealedAmounts => Some(3),
+
+            // Strictly weaker than 3
+            AllowRevealedRecipients => Some(2),
 
             // Strictly weaker than 3
             AllowRevealedSenders => Some(2),
 
-            // Strictly weaker than 2
+            // Combination of both 2s
             AllowFullyTransparent => Some(1),
 
             // Strictly weaker than 1
@@ -1170,29 +1170,24 @@ impl LightWallet {
         NoteSelectionError,
     > {
         if target_transparent != Amount::zero()
-            && policy > NoteSelectionPolicy::AllowRevealedRecipients
+            && policy != NoteSelectionPolicy::AllowRevealedRecipients
+            && !(policy < NoteSelectionPolicy::AllowRevealedRecipients)
         {
             return Err(NoteSelectionError::DisallowedByPrivacyPolicy);
         }
         match policy {
             NoteSelectionPolicy::FullPrivacy => {
                 let sapling_candidates = self
-                    .get_all_domain_specific_notes::<SaplingDomain<zingoconfig::ChainType>>()
-                    .await
-                    .into_iter()
-                    .filter(|x| x.spend_key().is_some())
-                    .collect();
+                    .get_spendable_domain_specific_notes::<SaplingDomain<zingoconfig::ChainType>>()
+                    .await;
                 let (sapling_notes, sapling_value_selected) = Self::add_notes_to_total::<
                     SaplingDomain<zingoconfig::ChainType>,
                 >(
                     sapling_candidates, target_sapling
                 );
                 let orchard_candidates = self
-                    .get_all_domain_specific_notes::<OrchardDomain>()
-                    .await
-                    .into_iter()
-                    .filter(|x| x.spend_key().is_some())
-                    .collect();
+                    .get_spendable_domain_specific_notes::<OrchardDomain>()
+                    .await;
                 let (orchard_notes, orchard_value_selected) =
                     Self::add_notes_to_total::<OrchardDomain>(orchard_candidates, target_orchard);
 
@@ -1209,8 +1204,54 @@ impl LightWallet {
                     Err(NoteSelectionError::InsufficientPrivateFunds)
                 }
             }
+            NoteSelectionPolicy::AllowRevealedAmounts => {
+                let full_target = (target_sapling + target_orchard).unwrap();
+                let sapling_candidates = self
+                    .get_spendable_domain_specific_notes::<SaplingDomain<zingoconfig::ChainType>>()
+                    .await;
+                let (sapling_notes, sapling_value_selected) = Self::add_notes_to_total::<
+                    SaplingDomain<zingoconfig::ChainType>,
+                >(
+                    sapling_candidates, full_target
+                );
+                if sapling_value_selected >= full_target {
+                    return Ok((
+                        Vec::new(),
+                        sapling_notes,
+                        Vec::new(),
+                        sapling_value_selected,
+                    ));
+                }
+                let orchard_candidates = self
+                    .get_spendable_domain_specific_notes::<OrchardDomain>()
+                    .await;
+                let (orchard_notes, orchard_value_selected) =
+                    Self::add_notes_to_total::<OrchardDomain>(
+                        orchard_candidates,
+                        (full_target - sapling_value_selected).unwrap(),
+                    );
+                Ok((
+                    orchard_notes,
+                    sapling_notes,
+                    Vec::new(),
+                    (sapling_value_selected + orchard_value_selected).unwrap(),
+                ))
+            }
             _ => todo!(),
         }
+    }
+
+    async fn get_spendable_domain_specific_notes<D>(&self) -> Vec<D::SpendableNoteAT>
+    where
+        D: DomainWalletExt,
+        <D as Domain>::Recipient: traits::Recipient,
+        <D as Domain>::Note: PartialEq + Clone,
+    {
+        self.get_all_domain_specific_notes::<D>()
+            .await
+            .into_iter()
+            .filter(|x| x.spend_key().is_some())
+            .collect()
     }
 
     async fn get_all_domain_specific_notes<D>(&self) -> Vec<D::SpendableNoteAT>
