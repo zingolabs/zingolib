@@ -51,6 +51,10 @@ jobs:
         run: ln -s /root/.zcash-params /root/.rustup /github/home
       - name: where am i?
         run: ls -la ./regtest/bin/
+      - name: which zcashd
+        run: which zcashd
+      - name: zcashd --help
+        run: zcashd --help
       - name: Run integration tests and generate coverage
         run: cargo tarpaulin --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 300 --out xml
       - name: Upload to codecov.io
