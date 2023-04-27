@@ -1,4 +1,4 @@
-FROM debian:bullseye-slim
+FROM debian:bookworm-slim
 
 # Install dependencies
 RUN apt update \
@@ -27,8 +27,12 @@ RUN apt update \
     apt-transport-https \
     gnupg2 \
     procps \
+    golang \
     && update-ca-certificates
 
+# build lightwalletd
+RUN  git clone https://github.com/zcash/lightwalletd && cd lightwalletd && make && \
+     ln -s lightwalletd /usr/bin
 # Install Rust and Cargo-Tarpaulin
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y
 ENV HOME=/root
@@ -52,12 +56,13 @@ RUN  git clone https://github.com/zcash/zcash.git \
 RUN  cd zcash && ./zcutil/clean.sh && ./zcutil/build.sh -j$(nproc)
 
 # Import lightwalletd binary
-COPY /lightwalletd /usr/bin/
 
 RUN  ln -s /zcash/src/zcashd /zcash/src/zcash-cli /usr/bin
 RUN  rustup install stable && rustup default stable
+
 WORKDIR /usr/src
 
+RUN  mv -f /lightwalletd/lightwalletd /usr/bin
 # Apt clean up
 RUN apt autoremove -y \
     && apt clean \
