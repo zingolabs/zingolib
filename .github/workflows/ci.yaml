@@ -50,6 +50,8 @@ jobs:
       - name: Symlink zcash parameters and rustup files
         run: ln -s /root/.zcash-params /root/.rustup /github/home
       - name: where am i?
+        run: echo `pwd`
+      - name: what is there?
         run: ls -la ./regtest/bin/
       - name: which zcashd
         run: which zcashd
