@@ -255,7 +255,7 @@ pub mod scenarios {
         }
         impl TestEnvironmentGenerator {
             pub(crate) fn new() -> Self {
-                let mut common_path = zingo_cli::regtest::get_git_rootdir();
+                let mut common_path = zingo_cli::regtest::get_cargo_manifest_dir_parent();
                 common_path.push("cli");
                 common_path.push("tests");
                 common_path.push("data");
