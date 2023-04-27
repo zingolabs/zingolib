@@ -55,6 +55,7 @@ RUN  cd zcash && ./zcutil/clean.sh && ./zcutil/build.sh -j$(nproc)
 COPY /lightwalletd /usr/bin/
 
 RUN  ln -s /zcash/src/zcashd /zcash/src/zcash-cli /usr/bin
+RUN  rustup default stable
 WORKDIR /usr/src
 
 # Apt clean up
