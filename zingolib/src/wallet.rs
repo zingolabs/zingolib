@@ -1177,6 +1177,9 @@ impl LightWallet {
             NoteSelectionPolicy::AllowRevealedAmounts => {
                 self.select_notes_revealed_amounts(pool_targets).await
             }
+            NoteSelectionPolicy::AllowRevealedRecipients => {
+                self.select_notes_revealed_recipients(pool_targets).await
+            }
 
             _ => todo!(),
         }
