@@ -22,6 +22,8 @@ jobs:
       - name: whoami
         run:  whoami
       - name: which rustup
+        run:  which rustup
+      - name: rustup show
         run:  rustup show
       - name: Check formatting of code
         run: cargo +stable fmt --check
