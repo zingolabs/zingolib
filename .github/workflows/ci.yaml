@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-22.04
     env:
       RUSTFLAGS: -D warnings
+      RUSTUP_HOME: /root/.rustup
     container:
       image: zingodevops/ci-build:stable
       options: --security-opt seccomp=unconfined
@@ -37,6 +38,7 @@ jobs:
     runs-on: ubuntu-22.04
     env:
       RUSTFLAGS: -D warnings
+      RUSTUP_HOME: /root/.rustup
     container:
       image: zingodevops/ci-build:stable
       options: --security-opt seccomp=unconfined
