@@ -55,6 +55,8 @@ jobs:
         run: which zcashd
       - name: zcashd --help
         run: zcashd --help
+      - name: lightwalletd --help
+        run: lightwalletd --help
       - name: Run integration tests and generate coverage
         run: cargo tarpaulin --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 300 --out xml
       - name: Upload to codecov.io
