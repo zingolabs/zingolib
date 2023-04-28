@@ -1153,8 +1153,7 @@ async fn ensure_taddrs_from_old_seeds_work() {
 }
 
 #[tokio::test]
-#[traced_test]
-async fn t_incoming_t_outgoing() {
+async fn t_incoming_t_outgoing_disallowed() {
     let (regtest_manager, child_process_handler, faucet, recipient) =
         scenarios::faucet_recipient().await;
 
@@ -1178,109 +1177,13 @@ async fn t_incoming_t_outgoing() {
     assert_eq!(list[0]["address"], taddr);
     assert_eq!(list[0]["amount"].as_u64().unwrap(), value);
 
-    // 4. We can spend the funds immediately, since this is a taddr
+    // 4. We can't spend the funds, as they're transparent. We need to shield first
     let sent_value = 20_000;
-    let sent_transaction_id = recipient
+    let sent_transaction_error = recipient
         .do_send(vec![(EXT_TADDR, sent_value, None)])
         .await
-        .unwrap();
-    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1)
-        .await
-        .unwrap();
-
-    // 5. Test the unconfirmed send.
-    let list = recipient.do_list_transactions(false).await;
-    assert_eq!(list[1]["block_height"].as_u64().unwrap(), 3);
-    assert_eq!(list[1]["txid"], sent_transaction_id);
-    assert_eq!(
-        list[1]["amount"].as_i64().unwrap(),
-        -(sent_value as i64 + i64::from(DEFAULT_FEE))
-    );
-    assert!(!list[1]["unconfirmed"].as_bool().unwrap());
-    assert_eq!(list[1]["outgoing_metadata"][0]["address"], EXT_TADDR);
-    assert_eq!(
-        list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
-        sent_value
-    );
-
-    let notes = recipient.do_list_notes(true).await;
-    assert_eq!(
-        notes["spent_utxos"][0]["created_in_block"]
-            .as_u64()
-            .unwrap(),
-        2
-    );
-    assert_eq!(
-        notes["spent_utxos"][0]["spent_at_height"].as_u64().unwrap(),
-        3
-    );
-    assert_eq!(notes["spent_utxos"][0]["spent"], sent_transaction_id);
-
-    // Change shielded note
-    assert_eq!(
-        notes["unspent_orchard_notes"][0]["created_in_block"]
-            .as_u64()
-            .unwrap(),
-        3
-    );
-    assert_eq!(
-        notes["unspent_orchard_notes"][0]["created_in_txid"],
-        sent_transaction_id
-    );
-    assert!(notes["unspent_orchard_notes"][0]["is_change"]
-        .as_bool()
-        .unwrap());
-    assert_eq!(
-        notes["unspent_orchard_notes"][0]["value"].as_u64().unwrap(),
-        value - sent_value - u64::from(DEFAULT_FEE)
-    );
-
-    let list = recipient.do_list_transactions(false).await;
-    println!("{}", json::stringify_pretty(list.clone(), 4));
-
-    assert_eq!(list[1]["block_height"].as_u64().unwrap(), 3);
-    assert_eq!(list[1]["txid"], sent_transaction_id);
-    assert!(!list[1]["unconfirmed"].as_bool().unwrap());
-    assert_eq!(list[1]["outgoing_metadata"][0]["address"], EXT_TADDR);
-    assert_eq!(
-        list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
-        sent_value
-    );
-
-    // Make sure everything is fine even after the rescan
-
-    recipient.do_rescan().await.unwrap();
-
-    let list = recipient.do_list_transactions(false).await;
-    println!("{}", json::stringify_pretty(list.clone(), 4));
-    assert_eq!(list[1]["block_height"].as_u64().unwrap(), 3);
-    assert_eq!(list[1]["txid"], sent_transaction_id);
-    assert!(!list[1]["unconfirmed"].as_bool().unwrap());
-    assert_eq!(list[1]["outgoing_metadata"][0]["address"], EXT_TADDR);
-    assert_eq!(
-        list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
-        sent_value
-    );
-
-    let notes = recipient.do_list_notes(true).await;
-    // Change shielded note
-    assert_eq!(
-        notes["unspent_orchard_notes"][0]["created_in_block"]
-            .as_u64()
-            .unwrap(),
-        3
-    );
-    assert_eq!(
-        notes["unspent_orchard_notes"][0]["created_in_txid"],
-        sent_transaction_id
-    );
-    assert!(notes["unspent_orchard_notes"][0]["is_change"]
-        .as_bool()
-        .unwrap());
-    assert_eq!(
-        notes["unspent_orchard_notes"][0]["value"].as_u64().unwrap(),
-        value - sent_value - u64::from(DEFAULT_FEE)
-    );
+        .unwrap_err();
+    assert_eq!(sent_transaction_error, "Insufficient verified shielded funds. Have 0 zats, need 21000 zats. NOTE: funds need at least 1 confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes");
     drop(child_process_handler);
 }
 
