@@ -764,7 +764,7 @@ impl Command for SendCommand {
                 .iter()
                 .map(|(a, v, m)| (a.as_str(), *v, m.clone()))
                 .collect::<Vec<_>>();
-            match lightclient.do_send(tos, policy).await {
+            match lightclient.do_send(tos, policy.unwrap_or_default()).await {
                 Ok(transaction_id) => {
                     object! { "txid" => transaction_id }
                 }

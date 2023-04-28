@@ -4,7 +4,7 @@ use json::JsonValue;
 use log::debug;
 use tokio::time::sleep;
 use zingo_cli::regtest::RegtestManager;
-use zingolib::lightclient::LightClient;
+use zingolib::{lightclient::LightClient, wallet::NoteSelectionPolicy};
 
 async fn get_synced_wallet_height(client: &LightClient) -> Result<u32, String> {
     client.do_sync(true).await?;
@@ -40,6 +40,7 @@ pub async fn send_value_between_clients_and_sync(
     recipient: &LightClient,
     value: u64,
     address_type: &str,
+    policy: NoteSelectionPolicy,
 ) -> Result<String, String> {
     debug!(
         "recipient address is: {}",
@@ -52,7 +53,7 @@ pub async fn send_value_between_clients_and_sync(
                 value,
                 None,
             )],
-            None,
+            policy,
         )
         .await
         .unwrap();
@@ -378,7 +379,7 @@ pub mod scenarios {
         let txid = faucet
             .do_send(
                 vec![(&get_base_address!(recipient, "unified"), value, None)],
-                Some(NoteSelectionPolicy::AllowRevealedAmounts),
+                NoteSelectionPolicy::AllowRevealedAmounts,
             )
             .await
             .unwrap();

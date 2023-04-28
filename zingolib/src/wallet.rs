@@ -1183,6 +1183,9 @@ impl LightWallet {
             NoteSelectionPolicy::AllowRevealedSenders => {
                 self.select_notes_revealed_senders(pool_targets).await
             }
+            NoteSelectionPolicy::AllowFullyTransparent => {
+                self.select_notes_fully_transparent(pool_targets).await
+            }
 
             _ => todo!(),
         }
@@ -1581,7 +1584,7 @@ impl LightWallet {
         let memo_to_self = MemoBytes::from(Memo::Arbitrary(Box::new(uas_bytes)));
 
         // If we can transfer value between pools, send all change to orchard
-        if policy != NoteSelectionPolicy::FullPrivacy {
+        if dbg!(policy) != NoteSelectionPolicy::FullPrivacy {
             dbg!(selected_value, pool_targets.total());
             if let Err(e) = builder.add_orchard_output::<FixedFeeRule>(
                 Some(orchard_ovk.clone()),

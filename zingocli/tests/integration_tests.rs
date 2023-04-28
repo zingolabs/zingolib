@@ -105,7 +105,7 @@ async fn send_to_self_with_no_user_specified_memo_does_not_cause_error() {
                 5_000,
                 Some(String::from("Here's a memo!")),
             )],
-            None,
+            None.unwrap_or_default(),
         )
         .await
         .unwrap();
@@ -119,7 +119,7 @@ async fn send_to_self_with_no_user_specified_memo_does_not_cause_error() {
     recipient
         .do_send(
             vec![(&get_base_address!(recipient, "unified"), 5_000, None)],
-            None,
+            None.unwrap_or_default(),
         )
         .await
         .unwrap();
@@ -146,7 +146,7 @@ async fn factor_do_shield_to_call_do_send() {
     faucet
         .do_send(
             vec![(&get_base_address!(recipient, "transparent"), 1_000u64, None)],
-            None,
+            None.unwrap_or_default(),
         )
         .await
         .unwrap();
@@ -295,7 +295,10 @@ async fn test_scanning_in_watch_only_mode() {
         .await
         .unwrap();
     // 2. send a transaction contaning all types of outputs
-    faucet.do_send(addr_amount_memos, None).await.unwrap();
+    faucet
+        .do_send(addr_amount_memos, None.unwrap_or_default())
+        .await
+        .unwrap();
     utils::increase_height_and_sync_client(&regtest_manager, &original_recipient, 1)
         .await
         .unwrap();
@@ -371,7 +374,7 @@ async fn test_scanning_in_watch_only_mode() {
         watch_client.do_rescan().await.unwrap();
         assert_eq!(
             watch_client
-                .do_send(vec![(EXT_TADDR, 1000, None)], None)
+                .do_send(vec![(EXT_TADDR, 1000, None)], None.unwrap_or_default())
                 .await,
             Err("Wallet is in watch-only mode a thus it cannot spend".to_string())
         );
@@ -428,7 +431,7 @@ async fn verify_old_wallet_uses_server_height_in_send() {
                 10_000,
                 Some("Interrupting sync!!".to_string()),
             )],
-            None,
+            None.unwrap_or_default(),
         )
         .await
         .unwrap();
@@ -511,7 +514,7 @@ async fn unspent_notes_are_not_saved() {
                 5_000,
                 Some("this note never makes it to the wallet! or chain".to_string()),
             )],
-            None,
+            None.unwrap_or_default(),
         )
         .await
         .unwrap();
@@ -582,7 +585,7 @@ async fn send_mined_sapling_to_orchard() {
                 amount_to_send,
                 Some("Scenario test: engage!".to_string()),
             )],
-            None,
+            None.unwrap_or_default(),
         )
         .await
         .unwrap();
@@ -636,7 +639,7 @@ async fn note_selection_order() {
                     )
                 })
                 .collect(),
-            None,
+            None.unwrap_or_default(),
         )
         .await
         .unwrap();
@@ -654,7 +657,7 @@ async fn note_selection_order() {
                 3000,
                 Some("Sending back, should have 2 inputs".to_string()),
             )],
-            None,
+            None.unwrap_or_default(),
         )
         .await
         .unwrap();
@@ -749,33 +752,33 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     }
 
     sapling_faucet
-        .do_send(vec![(&pmc_taddr, 5_000, None)], None)
+        .do_send(vec![(&pmc_taddr, 5_000, None)], None.unwrap_or_default())
         .await
         .unwrap();
     bump_and_check!(o: 0 s: 0 t: 5_000);
 
     pool_migration_client
-        .do_send(vec![(&pmc_unified, 4_000, None)], None)
+        .do_send(vec![(&pmc_unified, 4_000, None)], None.unwrap_or_default())
         .await
         .unwrap();
     bump_and_check!(o: 4_000 s: 0 t: 0);
 
     // 2 Test of a send from a sapling only client to its own unified address
     sapling_faucet
-        .do_send(vec![(&pmc_sapling, 5_000, None)], None)
+        .do_send(vec![(&pmc_sapling, 5_000, None)], None.unwrap_or_default())
         .await
         .unwrap();
     bump_and_check!(o: 4_000 s: 5_000 t: 0);
 
     pool_migration_client
-        .do_send(vec![(&pmc_unified, 4_000, None)], None)
+        .do_send(vec![(&pmc_unified, 4_000, None)], None.unwrap_or_default())
         .await
         .unwrap();
     bump_and_check!(o: 8_000 s: 0 t: 0);
 
     // 3 Test of an orchard-only client to itself
     pool_migration_client
-        .do_send(vec![(&pmc_unified, 7_000, None)], None)
+        .do_send(vec![(&pmc_unified, 7_000, None)], None.unwrap_or_default())
         .await
         .unwrap();
     bump_and_check!(o: 7_000 s: 0 t: 0);
@@ -784,40 +787,40 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     pool_migration_client
         .do_send(
             vec![(&pmc_taddr, 3_000, None), (&pmc_sapling, 3_000, None)],
-            None,
+            None.unwrap_or_default(),
         )
         .await
         .unwrap();
     bump_and_check!(o: 0 s: 3_000 t: 3_000);
 
     pool_migration_client
-        .do_send(vec![(&pmc_unified, 5_000, None)], None)
+        .do_send(vec![(&pmc_unified, 5_000, None)], None.unwrap_or_default())
         .await
         .unwrap();
     bump_and_check!(o: 5_000 s: 0 t: 0);
 
     // 5 to transparent and orchard to orchard
     pool_migration_client
-        .do_send(vec![(&pmc_taddr, 2_000, None)], None)
+        .do_send(vec![(&pmc_taddr, 2_000, None)], None.unwrap_or_default())
         .await
         .unwrap();
     bump_and_check!(o: 2_000 s: 0 t: 2_000);
 
     pool_migration_client
-        .do_send(vec![(&pmc_unified, 3_000, None)], None)
+        .do_send(vec![(&pmc_unified, 3_000, None)], None.unwrap_or_default())
         .await
         .unwrap();
     bump_and_check!(o: 3_000 s: 0 t: 0);
 
     // 6 sapling and orchard to orchard
     sapling_faucet
-        .do_send(vec![(&pmc_sapling, 2_000, None)], None)
+        .do_send(vec![(&pmc_sapling, 2_000, None)], None.unwrap_or_default())
         .await
         .unwrap();
     bump_and_check!(o: 3_000 s: 2_000 t: 0);
 
     pool_migration_client
-        .do_send(vec![(&pmc_unified, 4_000, None)], None)
+        .do_send(vec![(&pmc_unified, 4_000, None)], None.unwrap_or_default())
         .await
         .unwrap();
     bump_and_check!(o: 4_000 s: 0 t: 0);
@@ -826,27 +829,27 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     sapling_faucet
         .do_send(
             vec![(&pmc_taddr, 2_000, None), (&pmc_sapling, 2_000, None)],
-            None,
+            None.unwrap_or_default(),
         )
         .await
         .unwrap();
     bump_and_check!(o: 4_000 s: 2_000 t: 2_000);
 
     pool_migration_client
-        .do_send(vec![(&pmc_unified, 7_000, None)], None)
+        .do_send(vec![(&pmc_unified, 7_000, None)], None.unwrap_or_default())
         .await
         .unwrap();
     bump_and_check!(o: 7_000 s: 0 t: 0);
 
     // Send from Sapling into empty Orchard pool
     pool_migration_client
-        .do_send(vec![(&pmc_sapling, 6_000, None)], None)
+        .do_send(vec![(&pmc_sapling, 6_000, None)], None.unwrap_or_default())
         .await
         .unwrap();
     bump_and_check!(o: 0 s: 6_000 t: 0);
 
     pool_migration_client
-        .do_send(vec![(&pmc_unified, 5_000, None)], None)
+        .do_send(vec![(&pmc_unified, 5_000, None)], None.unwrap_or_default())
         .await
         .unwrap();
     bump_and_check!(o: 5_000 s: 0 t: 0);
@@ -879,7 +882,7 @@ async fn send_orchard_back_and_forth() {
                 faucet_to_recipient_amount,
                 Some("Orcharding".to_string()),
             )],
-            None,
+            None.unwrap_or_default(),
         )
         .await
         .unwrap();
@@ -900,7 +903,7 @@ async fn send_orchard_back_and_forth() {
                 recipient_to_faucet_amount,
                 Some("Sending back".to_string()),
             )],
-            None,
+            None.unwrap_or_default(),
         )
         .await
         .unwrap();
@@ -935,7 +938,7 @@ async fn diversified_addresses_receive_funds_in_best_pool() {
         .map(|ua| (ua["address"].as_str().unwrap(), 5_000, None))
         .collect::<Vec<(&str, u64, Option<String>)>>();
     faucet
-        .do_send(address_5000_nonememo_tuples, None)
+        .do_send(address_5000_nonememo_tuples, None.unwrap_or_default())
         .await
         .unwrap();
     utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1)
@@ -973,7 +976,7 @@ async fn rescan_still_have_outgoing_metadata() {
                 1_000,
                 Some("foo".to_string()),
             )],
-            None,
+            None.unwrap_or_default(),
         )
         .await
         .unwrap();
@@ -1005,7 +1008,7 @@ async fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
                     } - 1_000,
                     memo.map(ToString::to_string),
                 )],
-                None,
+                None.unwrap_or_default(),
             )
             .await
             .unwrap();
@@ -1088,7 +1091,7 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
                     5_000,
                     Some("foo".to_string()),
                 )],
-                None,
+                None.unwrap_or_default(),
             )
             .await
             .unwrap();
@@ -1153,7 +1156,7 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
         recipient_restored
             .do_send(
                 vec![(&get_base_address!(faucet, "unified"), 4_000, None)],
-                None,
+                None.unwrap_or_default(),
             )
             .await
             .unwrap();
@@ -1206,7 +1209,10 @@ async fn t_incoming_t_outgoing() {
     let value = 100_000;
 
     faucet
-        .do_send(vec![(taddr.as_str(), value, None)], None)
+        .do_send(
+            vec![(taddr.as_str(), value, None)],
+            None.unwrap_or_default(),
+        )
         .await
         .unwrap();
 
@@ -1224,7 +1230,10 @@ async fn t_incoming_t_outgoing() {
     // 4. We can spend the funds immediately, since this is a taddr
     let sent_value = 20_000;
     let sent_transaction_id = recipient
-        .do_send(vec![(EXT_TADDR, sent_value, None)], None)
+        .do_send(
+            vec![(EXT_TADDR, sent_value, None)],
+            None.unwrap_or_default(),
+        )
         .await
         .unwrap();
     utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1)
@@ -1338,7 +1347,7 @@ async fn send_to_ua_saves_full_ua_in_wallet() {
     faucet
         .do_send(
             vec![(recipient_unified_address.as_str(), sent_value, None)],
-            None,
+            None.unwrap_or_default(),
         )
         .await
         .unwrap();
@@ -1386,7 +1395,7 @@ async fn self_send_to_t_displays_as_one_transaction() {
     faucet
         .do_send(
             vec![(recipient_unified_address.as_str(), sent_value, None)],
-            None,
+            None.unwrap_or_default(),
         )
         .await
         .unwrap();
@@ -1401,7 +1410,7 @@ async fn self_send_to_t_displays_as_one_transaction() {
     recipient
         .do_send(
             vec![(recipient_taddr.as_str(), sent_to_taddr_value, None)],
-            None,
+            None.unwrap_or_default(),
         )
         .await
         .unwrap();
@@ -1423,7 +1432,7 @@ async fn self_send_to_t_displays_as_one_transaction() {
                     Some("bar".to_string()),
                 ),
             ],
-            None,
+            None.unwrap_or_default(),
         )
         .await
         .unwrap();
@@ -1443,7 +1452,7 @@ async fn self_send_to_t_displays_as_one_transaction() {
                     Some("bar2".to_string()),
                 ),
             ],
-            None,
+            None.unwrap_or_default(),
         )
         .await
         .unwrap();
@@ -1502,6 +1511,7 @@ async fn sapling_to_sapling_scan_together() {
         &recipient,
         value,
         "sapling",
+        NoteSelectionPolicy::FullPrivacy,
     )
     .await
     .unwrap();
@@ -1511,7 +1521,10 @@ async fn sapling_to_sapling_scan_together() {
     // Construct transaction to wallet-external recipient-address.
     let exit_zaddr = get_base_address!(faucet, "sapling");
     let spent_txid = recipient
-        .do_send(vec![(&exit_zaddr, spent_value, None)], None)
+        .do_send(
+            vec![(&exit_zaddr, spent_value, None)],
+            None.unwrap_or_default(),
+        )
         .await
         .unwrap();
 
@@ -1555,6 +1568,7 @@ async fn mixed_transaction() {
         &recipient,
         tvalue,
         "transparent",
+        NoteSelectionPolicy::AllowRevealedRecipients,
     )
     .await
     .unwrap();
@@ -1575,7 +1589,10 @@ async fn mixed_transaction() {
         ),
         (faucet_transparent.as_str(), sent_tvalue, None),
     ];
-    recipient.do_send(tos, None).await.unwrap();
+    recipient
+        .do_send(tos, None.unwrap_or_default())
+        .await
+        .unwrap();
 
     utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1)
         .await
@@ -1753,7 +1770,7 @@ async fn mempool_and_balance() {
                 sent_value,
                 Some(outgoing_memo.clone()),
             )],
-            None,
+            None.unwrap_or_default(),
         )
         .await
         .unwrap();
@@ -1802,7 +1819,7 @@ async fn witness_clearing() {
     let _sent_transaction_id = recipient
         .do_send(
             vec![(&faucet_ua, sent_value, Some(outgoing_memo.clone()))],
-            None,
+            None.unwrap_or_default(),
         )
         .await
         .unwrap();
@@ -1908,6 +1925,7 @@ async fn mempool_clearing() {
             &faucet,
             5_000,
             "unified",
+            NoteSelectionPolicy::AllowRevealedAmounts,
         )
         .await
         .unwrap();
@@ -1972,7 +1990,7 @@ async fn mempool_clearing() {
                 sent_value,
                 Some(outgoing_memo.clone()),
             )],
-            None,
+            None.unwrap_or_default(),
         )
         .await
         .unwrap();
@@ -2215,7 +2233,7 @@ async fn sapling_incoming_sapling_outgoing() {
     let faucet_funding_txid = faucet
         .do_send(
             vec![(&get_base_address!(recipient, "sapling"), value, None)],
-            None,
+            None.unwrap_or_default(),
         )
         .await
         .unwrap();
@@ -2282,7 +2300,7 @@ async fn sapling_incoming_sapling_outgoing() {
                 sent_value,
                 Some(outgoing_memo.clone()),
             )],
-            None,
+            None.unwrap_or_default(),
         )
         .await
         .unwrap();
@@ -2412,7 +2430,6 @@ async fn sapling_incoming_sapling_outgoing() {
 }
 
 #[tokio::test]
-#[traced_test]
 async fn aborted_resync() {
     let zvalue = 100_000;
     let (regtest_manager, child_process_handler, faucet, recipient, _txid) =
@@ -2423,7 +2440,7 @@ async fn aborted_resync() {
     let _ttxid = faucet
         .do_send(
             vec![(&get_base_address!(recipient, "transparent"), tvalue, None)],
-            None,
+            NoteSelectionPolicy::AllowRevealedRecipients,
         )
         .await
         .unwrap();
@@ -2446,7 +2463,7 @@ async fn aborted_resync() {
                 ),
                 (&get_base_address!(faucet, "transparent"), sent_tvalue, None),
             ],
-            None,
+            NoteSelectionPolicy::AllowFullyTransparent,
         )
         .await
         .unwrap();
@@ -2550,7 +2567,7 @@ async fn no_change() {
     let _ttxid = faucet
         .do_send(
             vec![(&get_base_address!(recipient, "transparent"), tvalue, None)],
-            Some(zingolib::wallet::NoteSelectionPolicy::AllowRevealedRecipients),
+            zingolib::wallet::NoteSelectionPolicy::AllowRevealedRecipients,
         )
         .await
         .unwrap();
@@ -2566,7 +2583,7 @@ async fn no_change() {
     let sent_transaction_id = recipient
         .do_send(
             vec![(&get_base_address!(faucet, "unified"), sent_zvalue, None)],
-            Some(NoteSelectionPolicy::AllowRevealedSenders),
+            NoteSelectionPolicy::AllowRevealedSenders,
         )
         .await
         .unwrap();

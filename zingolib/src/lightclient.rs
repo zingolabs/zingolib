@@ -1697,7 +1697,7 @@ impl LightClient {
     pub async fn do_send(
         &self,
         address_amount_memo_tuples: Vec<(&str, u64, Option<String>)>,
-        policy: Option<NoteSelectionPolicy>,
+        policy: NoteSelectionPolicy,
     ) -> Result<String, String> {
         let transaction_submission_height = self.get_submission_height().await?;
         // First, get the concensus branch ID
@@ -1712,7 +1712,7 @@ impl LightClient {
             self.wallet
                 .send_to_address(
                     prover,
-                    policy.unwrap_or_default(),
+                    policy,
                     address_amount_memo_tuples,
                     transaction_submission_height,
                     |transaction_bytes| {
