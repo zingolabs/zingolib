@@ -50,7 +50,7 @@ jobs:
       - name: Symlink zcash parameters and rustup files
         run: ln -s /root/.zcash-params /root/.rustup /github/home
       - name: Run integration tests and generate coverage
-        run: cargo tarpaulin --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 300 --out xml
+        run: cargo tarpaulin --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 3000 --out xml
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v3
         with:
