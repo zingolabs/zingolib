@@ -75,7 +75,7 @@ impl ExtendedPrivKey {
         let signature = {
             let signing_key = Key::new(hmac::HMAC_SHA512, b"Bitcoin seed");
             let mut h = Context::with_key(&signing_key);
-            h.update(&seed);
+            h.update(seed);
             h.sign()
         };
         let sig_bytes = signature.as_ref();

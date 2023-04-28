@@ -133,7 +133,7 @@ impl TrialDecryptions {
             }
         });
 
-        return (management_thread_handle, transmitter);
+        (management_thread_handle, transmitter)
     }
 
     /// Trial decryption is invoked by spend-or-view key holders to detect
@@ -141,6 +141,7 @@ impl TrialDecryptions {
     /// In the case that the User has requested Memos, and transaction_metadata
     /// remains false throughout domain-specific decryptions, a memo-specific
     /// thread is spawned.
+    #[allow(clippy::too_many_arguments)]
     async fn trial_decrypt_batch(
         config: Arc<ZingoConfig>,
         compact_blocks: Vec<CompactBlock>,
@@ -183,7 +184,7 @@ impl TrialDecryptions {
                         SaplingDomain<zingoconfig::ChainType>,
                     >(
                         &mut transaction_metadata,
-                        &compact_transaction,
+                        compact_transaction,
                         transaction_num,
                         &compact_block,
                         zcash_primitives::sapling::note_encryption::PreparedIncomingViewingKey::new(
@@ -202,7 +203,7 @@ impl TrialDecryptions {
                 if let Some(ref orchard_ivk) = orchard_ivk {
                     Self::trial_decrypt_domain_specific_outputs::<OrchardDomain>(
                         &mut transaction_metadata,
-                        &compact_transaction,
+                        compact_transaction,
                         transaction_num,
                         &compact_block,
                         orchard::keys::PreparedIncomingViewingKey::new(orchard_ivk),
@@ -250,6 +251,7 @@ impl TrialDecryptions {
         // Return a nothing-value
         Ok::<(), String>(())
     }
+    #[allow(clippy::too_many_arguments)]
     fn trial_decrypt_domain_specific_outputs<D>(
         transaction_metadata: &mut bool,
         compact_transaction: &CompactTx,
@@ -274,8 +276,8 @@ impl TrialDecryptions {
         <D as Domain>::Note: PartialEq + Send + 'static + Clone,
         [u8; 32]: From<<D as Domain>::ExtractedCommitmentBytes>,
     {
-        let outputs = D::CompactOutput::from_compact_transaction(&compact_transaction)
-            .into_iter()
+        let outputs = D::CompactOutput::from_compact_transaction(compact_transaction)
+            .iter()
             .map(|output| (output.domain(config.chain, height), output.clone()))
             .collect::<Vec<_>>();
         let maybe_decrypted_outputs =
@@ -294,7 +296,7 @@ impl TrialDecryptions {
 
                 workers.push(tokio::spawn(async move {
                     let wc = wc.read().await;
-                    let Ok(fvk) = D::wc_to_fvk(&*wc) else {
+                    let Ok(fvk) = D::wc_to_fvk(&wc) else {
                         // skip any scanning if the wallet doesn't have viewing capability
                         return Ok::<_, String>(());
                     };
@@ -321,7 +323,7 @@ impl TrialDecryptions {
 
                     let spend_nullifier = transaction_metadata_set.write().await.add_new_note::<D>(
                         &fvk,
-                        transaction_id.clone(),
+                        transaction_id,
                         height,
                         false,
                         timestamp,

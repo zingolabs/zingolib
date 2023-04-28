@@ -2,22 +2,16 @@ use std::fs::File;
 
 use std::io::Read;
 ///  Simple helper to succinctly reference the project root dir.
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Child;
-pub fn get_git_rootdir() -> PathBuf {
-    let revparse_raw = std::process::Command::new("git")
-        .args(["rev-parse", "--show-toplevel"])
-        .output()
-        .expect("problem invoking git rev-parse");
-    Path::new(
-        std::str::from_utf8(&revparse_raw.stdout)
-            .expect("revparse error")
-            .trim(),
-    )
-    .to_path_buf()
+pub fn get_cargo_manifest_dir_parent() -> PathBuf {
+    PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("To be inside a manifested space."))
+        .parent()
+        .unwrap()
+        .to_path_buf()
 }
 pub(crate) fn get_regtest_dir() -> PathBuf {
-    get_git_rootdir().join("regtest")
+    get_cargo_manifest_dir_parent().join("regtest")
 }
 
 ///  To manage the state associated a "regtest" run this type:
@@ -150,9 +144,7 @@ impl RegtestManager {
             .output()
     }
     pub fn get_chain_tip(&self) -> Result<std::process::Output, std::io::Error> {
-        self.get_cli_handle()
-            .arg("getchaintips".to_string())
-            .output()
+        self.get_cli_handle().arg("getchaintips").output()
     }
     fn prepare_working_directories(&self) {
         // remove contents of existing data directories
@@ -222,28 +214,31 @@ impl RegtestManager {
 
         assert_eq!(command.get_args().len(), 4usize);
         assert_eq!(
-            &command.get_args().into_iter().collect::<Vec<&OsStr>>()[0]
+            &command.get_args().collect::<Vec<&OsStr>>()[0]
                 .to_str()
                 .unwrap(),
             &"--printtoconsole"
         );
-        assert!(&command.get_args().into_iter().collect::<Vec<&OsStr>>()[1]
+        assert!(&command.get_args().collect::<Vec<&OsStr>>()[1]
             .to_str()
             .unwrap()
             .starts_with("--conf="));
-        assert!(&command.get_args().into_iter().collect::<Vec<&OsStr>>()[2]
+        assert!(&command.get_args().collect::<Vec<&OsStr>>()[2]
             .to_str()
             .unwrap()
             .starts_with("--datadir="));
         assert_eq!(
-            &command.get_args().into_iter().collect::<Vec<&OsStr>>()[3]
+            &command.get_args().collect::<Vec<&OsStr>>()[3]
                 .to_str()
                 .unwrap(),
             &"-debug=1"
         );
+        log::info!("{:?}", &command.get_current_dir());
+        log::info!("{:?}", &command.get_args());
+        log::info!("{:?}", &command.get_envs());
+        log::info!("{:?}", &command.get_program());
 
-        let child = command.spawn()
-        .expect("failed to start zcashd. It's possible the zcashd binary is not in the /zingolib/regtest/bin/ directory, see /regtest/README.md");
+        let child = command.spawn().unwrap();
         log::debug!("zcashd is starting in regtest mode, please standby...");
 
         (
@@ -355,19 +350,19 @@ impl RegtestManager {
         .args([
             "--no-tls-very-insecure",
             "--zcash-conf-path",
-            &self.zcashd_config
+            self.zcashd_config
                 .to_str()
                 .expect("zcashd_config PathBuf to str fail!"),
             "--config",
-            &self.lightwalletd_config
+            self.lightwalletd_config
                 .to_str()
                 .expect("lightwalletd_config PathBuf to str fail!"),
             "--data-dir",
-            &self.lightwalletd_data_dir
+            self.lightwalletd_data_dir
                 .to_str()
                 .expect("lightwalletd_datadir PathBuf to str fail!"),
             "--log-file",
-            &self.lightwalletd_log
+            self.lightwalletd_log
                 .to_str()
                 .expect("lightwalletd_stdout_log PathBuf to str fail!"),
         ])

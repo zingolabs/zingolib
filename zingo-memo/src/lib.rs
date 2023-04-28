@@ -21,8 +21,8 @@ pub enum ParsedMemo {
 pub fn create_wallet_internal_memo_version_0(uas: &[UnifiedAddress]) -> io::Result<[u8; 511]> {
     let mut uas_bytes_vec = Vec::new();
     CompactSize::write(&mut uas_bytes_vec, 0usize)?;
-    Vector::write(&mut uas_bytes_vec, uas, |mut w, ua| {
-        write_unified_address_to_raw_encoding(&ua, &mut w)
+    Vector::write(&mut uas_bytes_vec, uas, |w, ua| {
+        write_unified_address_to_raw_encoding(ua, w)
     })?;
     let mut uas_bytes = [0u8; 511];
     if uas_bytes_vec.len() > 511 {
@@ -41,17 +41,13 @@ pub fn parse_zingo_memo(memo: [u8; 511]) -> io::Result<ParsedMemo> {
     let mut reader: &[u8] = &memo;
     match CompactSize::read(&mut reader)? {
         0 => Ok(ParsedMemo::Version0 {
-            uas: Vector::read(&mut reader, |mut r| {
-                read_unified_address_from_raw_encoding(&mut r)
-            })?,
+            uas: Vector::read(&mut reader, |r| read_unified_address_from_raw_encoding(r))?,
         }),
-        _ => {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Received memo from a future version of this protocol.\n\
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Received memo from a future version of this protocol.\n\
             Please ensure your software is up-to-date",
-            ))
-        }
+        )),
     }
 }
 

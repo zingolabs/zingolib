@@ -22,13 +22,13 @@ fn poll_server_height(manager: &RegtestManager) -> JsonValue {
 }
 // This function _DOES NOT SYNC THE CLIENT/WALLET_.
 pub async fn increase_server_height(manager: &RegtestManager, n: u32) {
-    let start_height = poll_server_height(&manager).as_fixed_point_u64(2).unwrap();
+    let start_height = poll_server_height(manager).as_fixed_point_u64(2).unwrap();
     let target = start_height + n as u64;
     manager
         .generate_n_blocks(n)
         .expect("Called for side effect, failed!");
     let mut count = 0;
-    while poll_server_height(&manager).as_fixed_point_u64(2).unwrap() < target {
+    while poll_server_height(manager).as_fixed_point_u64(2).unwrap() < target {
         sleep(Duration::from_millis(50)).await;
         count = dbg!(count + 1);
     }
@@ -67,18 +67,18 @@ pub async fn increase_height_and_sync_client(
     client: &LightClient,
     n: u32,
 ) -> Result<(), String> {
-    let start_height = get_synced_wallet_height(&client).await?;
+    let start_height = get_synced_wallet_height(client).await?;
     let target = start_height + n;
     manager
         .generate_n_blocks(n)
         .expect("Called for side effect, failed!");
-    while check_wallet_chainheight_value(&client, target).await? {
+    while check_wallet_chainheight_value(client, target).await? {
         sleep(Duration::from_millis(50)).await;
     }
     Ok(())
 }
 async fn check_wallet_chainheight_value(client: &LightClient, target: u32) -> Result<bool, String> {
-    Ok(get_synced_wallet_height(&client).await? != target)
+    Ok(get_synced_wallet_height(client).await? != target)
 }
 #[cfg(test)]
 pub mod scenarios {
@@ -199,7 +199,7 @@ pub mod scenarios {
                 self.client_number += 1;
                 let conf_path = format!(
                     "{}_client_{}",
-                    self.zingo_datadir.to_string_lossy().to_string(),
+                    self.zingo_datadir.to_string_lossy(),
                     self.client_number
                 );
                 self.create_clientconfig(PathBuf::from(conf_path))
@@ -255,7 +255,7 @@ pub mod scenarios {
         }
         impl TestEnvironmentGenerator {
             pub(crate) fn new() -> Self {
-                let mut common_path = zingo_cli::regtest::get_git_rootdir();
+                let mut common_path = zingo_cli::regtest::get_cargo_manifest_dir_parent();
                 common_path.push("cli");
                 common_path.push("tests");
                 common_path.push("data");
@@ -314,9 +314,9 @@ pub mod scenarios {
                     "lightwalletd" => &self.regtest_manager.lightwalletd_config,
                     _ => panic!("Unepexted configtype!"),
                 };
-                let mut output = std::fs::File::create(&loc).expect("How could path be missing?");
+                let mut output = std::fs::File::create(loc).expect("How could path be missing?");
                 std::io::Write::write(&mut output, contents.as_bytes())
-                    .expect(&format!("Couldn't write {contents}!"));
+                    .unwrap_or_else(|_| panic!("Couldn't write {contents}!"));
                 loc.clone()
             }
             pub(crate) fn get_lightwalletd_uri(&self) -> http::Uri {
@@ -341,8 +341,8 @@ pub mod scenarios {
     /// This key is registered to receive block rewards by corresponding to the
     /// address registered as the "mineraddress" field in zcash.conf
     ///
-    /// The general scenario framework requires instances of zingo-cli, lightwalletd,  
-    /// and zcashd (in regtest mode). This setup is intended to produce the most basic  
+    /// The general scenario framework requires instances of zingo-cli, lightwalletd,
+    /// and zcashd (in regtest mode). This setup is intended to produce the most basic
     /// of scenarios.  As scenarios with even less requirements
     /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
     pub async fn faucet() -> (RegtestManager, ChildProcessHandler, LightClient) {
@@ -375,7 +375,7 @@ pub mod scenarios {
         let txid = faucet
             .do_send(vec![(
                 &get_base_address!(recipient, "unified"),
-                value.into(),
+                value,
                 None,
             )])
             .await

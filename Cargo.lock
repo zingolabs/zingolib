@@ -1352,6 +1352,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "indoc"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9f2cb48b81b1dc9f39676bf99f5499babfec7cd8fe14307f7b3d747208fb5690"
+
+[[package]]
 name = "inout"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4106,22 +4112,35 @@ dependencies = [
  "bip0039",
  "clap",
  "env_logger",
+ "futures",
  "hex 0.3.2",
  "http",
+ "http-body",
+ "hyper",
+ "hyper-rustls",
  "itertools",
  "json",
  "log",
  "orchard",
  "portpicker",
+ "prost 0.10.4",
  "rand 0.8.5",
+ "rustls-pemfile",
  "rustyline",
  "shellwords",
  "tempdir",
  "tokio",
+ "tokio-rustls",
+ "tokio-stream",
+ "tonic",
+ "tonic-build 0.7.2",
+ "tower",
+ "tower-http 0.2.5",
  "tracing",
  "tracing-log",
  "tracing-subscriber",
  "tracing-test",
+ "webpki-roots 0.21.1",
  "zcash_address",
  "zcash_client_backend",
  "zcash_primitives",
@@ -4173,6 +4192,7 @@ dependencies = [
  "hyper",
  "hyper-rustls",
  "incrementalmerkletree",
+ "indoc",
  "json",
  "jubjub",
  "lazy_static",

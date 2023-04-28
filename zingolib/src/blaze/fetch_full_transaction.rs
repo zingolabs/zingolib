@@ -65,6 +65,7 @@ impl TransactionContext {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn execute_bundlescans_internal(
         &self,
         transaction: &Transaction,
@@ -78,17 +79,17 @@ impl TransactionContext {
     ) {
         //todo: investigate scanning all bundles simultaneously
         self.scan_transparent_bundle(
-            &transaction,
+            transaction,
             height,
             unconfirmed,
             block_time,
             is_outgoing_transaction,
-            &taddrs_set,
+            taddrs_set,
         )
         .await;
 
         self.scan_sapling_bundle(
-            &transaction,
+            transaction,
             height,
             unconfirmed,
             block_time,
@@ -98,7 +99,7 @@ impl TransactionContext {
         )
         .await;
         self.scan_orchard_bundle(
-            &transaction,
+            transaction,
             height,
             unconfirmed,
             block_time,
@@ -208,7 +209,7 @@ impl TransactionContext {
                             .current
                             .get_mut(&txid)
                         {
-                            if transaction.outgoing_tx_data.len() != 0 {
+                            if !transaction.outgoing_tx_data.is_empty() {
                                 let outgoing_potential_receivers = [
                                     ua.orchard().map(|oaddr| {
                                         oaddr.b32encode_for_network(&self.config.chain)
@@ -265,31 +266,28 @@ impl TransactionContext {
         // Scan all transparent outputs to see if we recieved any money
         if let Some(t_bundle) = transaction.transparent_bundle() {
             for (n, vout) in t_bundle.vout.iter().enumerate() {
-                match vout.recipient_address() {
-                    Some(TransparentAddress::PublicKey(hash)) => {
-                        let output_taddr =
-                            hash.to_base58check(&self.config.base58_pubkey_address(), &[]);
-                        if taddrs_set.contains(&output_taddr) {
-                            // This is our address. Add this as an output to the txid
-                            self.transaction_metadata_set
-                                .write()
-                                .await
-                                .add_new_taddr_output(
-                                    transaction.txid(),
-                                    output_taddr.clone(),
-                                    height.into(),
-                                    unconfirmed,
-                                    block_time as u64,
-                                    &vout,
-                                    n as u32,
-                                );
+                if let Some(TransparentAddress::PublicKey(hash)) = vout.recipient_address() {
+                    let output_taddr =
+                        hash.to_base58check(&self.config.base58_pubkey_address(), &[]);
+                    if taddrs_set.contains(&output_taddr) {
+                        // This is our address. Add this as an output to the txid
+                        self.transaction_metadata_set
+                            .write()
+                            .await
+                            .add_new_taddr_output(
+                                transaction.txid(),
+                                output_taddr.clone(),
+                                height.into(),
+                                unconfirmed,
+                                block_time as u64,
+                                vout,
+                                n as u32,
+                            );
 
-                            // Ensure that we add any new HD addresses
-                            // TODO: I don't think we need to do this anymore
-                            // self.keys.write().await.ensure_hd_taddresses(&output_taddr);
-                        }
+                        // Ensure that we add any new HD addresses
+                        // TODO: I don't think we need to do this anymore
+                        // self.keys.write().await.ensure_hd_taddresses(&output_taddr);
                     }
-                    _ => {}
                 }
             }
         }
@@ -357,6 +355,7 @@ impl TransactionContext {
             );
         }
     }
+    #[allow(clippy::too_many_arguments)]
     async fn scan_sapling_bundle(
         &self,
         transaction: &Transaction,
@@ -378,6 +377,7 @@ impl TransactionContext {
         )
         .await
     }
+    #[allow(clippy::too_many_arguments)]
     async fn scan_orchard_bundle(
         &self,
         transaction: &Transaction,
@@ -405,6 +405,7 @@ impl TransactionContext {
     /// In Sapling the components are "Spends" and "Outputs"
     /// In Orchard the components are "Actions", each of which
     /// _IS_ 1 Spend and 1 Output.
+    #[allow(clippy::too_many_arguments)]
     async fn scan_bundle<D>(
         &self,
         transaction: &Transaction,
@@ -471,17 +472,17 @@ impl TransactionContext {
                 .collect::<Vec<_>>();
 
         let (Ok(ivk), Ok(ovk)) = (
-            D::wc_to_ivk(&*unified_spend_capability),
-            D::wc_to_ovk(&*unified_spend_capability),
+            D::wc_to_ivk(&unified_spend_capability),
+            D::wc_to_ovk(&unified_spend_capability),
         ) else {
             // skip scanning if wallet has not viewing capability
             return;
         };
 
-        let mut decrypt_attempts =
+        let decrypt_attempts =
             zcash_note_encryption::batch::try_note_decryption(&[ivk], &domain_tagged_outputs)
                 .into_iter();
-        while let Some(decrypt_attempt) = decrypt_attempts.next() {
+        for decrypt_attempt in decrypt_attempts {
             let ((note, to, memo_bytes), _ivk_num) = match decrypt_attempt {
                 Some(plaintext) => plaintext,
                 _ => continue,
@@ -573,7 +574,7 @@ impl TransactionContext {
                                             ),
                                         ]
                                         .into_iter()
-                                        .filter_map(std::convert::identity)
+                                        .flatten()
                                         .map(|addr| addr.encode(&self.config.chain))
                                         .any(|addr| addr == address)
                                     },
@@ -714,9 +715,8 @@ pub async fn start(
         join_all(vec![h1, h2])
             .await
             .into_iter()
-            .map(|r| r.map_err(|e| format!("{}", e))?)
-            .collect::<Result<(), String>>()
+            .try_for_each(|r| r.map_err(|e| format!("{}", e))?)
     });
 
-    return (h, transaction_id_transmitter, transaction_transmitter);
+    (h, transaction_id_transmitter, transaction_transmitter)
 }

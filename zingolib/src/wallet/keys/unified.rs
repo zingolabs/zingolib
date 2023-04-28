@@ -33,10 +33,7 @@ pub enum Capability<ViewingKeyType, SpendKeyType> {
 
 impl<V, S> Capability<V, S> {
     pub fn can_spend(&self) -> bool {
-        match self {
-            Capability::Spend(_) => true,
-            _ => false,
-        }
+        matches!(self, Capability::Spend(_))
     }
 
     pub fn can_view(&self) -> bool {
@@ -108,7 +105,6 @@ impl ReadableWriteable<()> for ReceiverSelection {
 #[test]
 fn read_write_receiver_selections() {
     for (i, receivers_selected) in (0..8)
-        .into_iter()
         .map(|n| ReceiverSelection::read([1, n].as_slice(), ()).unwrap())
         .enumerate()
     {
@@ -207,9 +203,9 @@ impl WalletCapability {
                 // other than implementing it ourselves.
                 .map(zcash_primitives::legacy::keys::pubkey_to_address),
         )
-        .ok_or(format!(
-            "Invalid receivers requested! At least one of sapling or orchard required"
-        ))?;
+        .ok_or(
+            "Invalid receivers requested! At least one of sapling or orchard required".to_string(),
+        )?;
         self.addresses.push(ua.clone());
         Ok(ua)
     }
@@ -237,7 +233,7 @@ impl WalletCapability {
                     };
                     (
                         hash.to_base58check(&config.base58_pubkey_address(), &[]),
-                        key.1.clone(),
+                        key.1,
                     )
                 })
                 .collect())
@@ -302,7 +298,7 @@ impl WalletCapability {
                 Fvk::Orchard(key_bytes) => {
                     wc.orchard = Capability::View(
                         orchard::keys::FullViewingKey::from_bytes(&key_bytes)
-                            .ok_or_else(|| "Orchard FVK deserialization failed")?,
+                            .ok_or("Orchard FVK deserialization failed")?,
                     );
                 }
                 Fvk::Sapling(key_bytes) => {
@@ -316,7 +312,7 @@ impl WalletCapability {
                 }
                 Fvk::P2pkh(key_bytes) => {
                     wc.transparent = Capability::View(ExtendedPubKey {
-                        chain_code: (&key_bytes[0..32]).to_vec(),
+                        chain_code: key_bytes[0..32].to_vec(),
                         public_key: secp256k1::PublicKey::from_slice(&key_bytes[32..65])
                             .map_err(|e| e.to_string())?,
                     });
@@ -338,7 +334,7 @@ impl WalletCapability {
     ) -> Option<UnifiedAddress> {
         self.addresses
             .iter()
-            .find(|ua| ua.transparent() == Some(&receiver))
+            .find(|ua| ua.transparent() == Some(receiver))
             .cloned()
     }
     pub(crate) fn get_all_taddrs(&self, config: &ZingoConfig) -> HashSet<String> {
@@ -461,11 +457,10 @@ impl ReadableWriteable<()> for WalletCapability {
                 ))
             }
         };
-        let receiver_selections =
-            Vector::read(reader, |mut r| ReceiverSelection::read(&mut r, ()))?;
+        let receiver_selections = Vector::read(reader, |r| ReceiverSelection::read(r, ()))?;
         for rs in receiver_selections {
             wc.new_address(rs)
-                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         }
         Ok(wc)
     }
@@ -475,13 +470,13 @@ impl ReadableWriteable<()> for WalletCapability {
         self.orchard.write(&mut writer)?;
         self.sapling.write(&mut writer)?;
         self.transparent.write(&mut writer)?;
-        Vector::write(&mut writer, &self.addresses, |mut w, address| {
+        Vector::write(&mut writer, &self.addresses, |w, address| {
             ReceiverSelection {
                 orchard: address.orchard().is_some(),
                 sapling: address.sapling().is_some(),
                 transparent: address.transparent().is_some(),
             }
-            .write(&mut w)
+            .write(w)
         })
     }
 }
@@ -510,7 +505,7 @@ impl TryFrom<&WalletCapability> for orchard::keys::SpendingKey {
     type Error = String;
     fn try_from(wc: &WalletCapability) -> Result<Self, String> {
         match &wc.orchard {
-            Capability::Spend(sk) => Ok(sk.clone()),
+            Capability::Spend(sk) => Ok(*sk),
             _ => Err("The wallet is not capable of spending Orchard funds".to_string()),
         }
     }
@@ -548,7 +543,7 @@ impl TryFrom<&WalletCapability> for zcash_primitives::zip32::sapling::Diversifia
         match &wc.sapling {
             Capability::Spend(sk) => {
                 let dfvk = sk.to_diversifiable_full_viewing_key();
-                Ok(zcash_primitives::zip32::sapling::DiversifiableFullViewingKey::from(dfvk))
+                Ok(dfvk)
             }
             Capability::View(fvk) => Ok(fvk.clone()),
             Capability::None => {
@@ -627,7 +622,7 @@ pub async fn get_transparent_secretkey_pubkey_taddr(
             (None, child_ext_pk.map(|x| x.public_key))
         }
         Capability::Spend(_) => {
-            let sk = wc.transparent_child_keys[0].1.clone();
+            let sk = wc.transparent_child_keys[0].1;
             let secp = secp256k1::Secp256k1::new();
             let pk = secp256k1::PublicKey::from_secret_key(&secp, &sk);
             (Some(sk), Some(pk))

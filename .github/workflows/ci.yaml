@@ -1,16 +1,44 @@
 name: CI
 
-on: 
+on:
   pull_request:
   push:
     branches: [main, dev]
 
 jobs:
+  static_checks:
+    name: fmt_check_clippy
+    runs-on: ubuntu-22.04
+    env:
+      RUSTFLAGS: -D warnings
+      RUSTUP_HOME: /root/.rustup
+    container:
+      image: zingodevops/ci-build:stable
+      options: --security-opt seccomp=unconfined
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Reject trailing whitespace
+        run: ./utils/trailing-whitespace.sh reject
+      - name: what's my env
+        run:  env
+      - name: whoami
+        run:  whoami
+      - name: which rustup
+        run:  which rustup
+      - name: rustup show
+        run:  rustup show
+      - name: Check formatting of code
+        run: cargo +stable fmt --check
+      - name: Clippy Checks
+        run: cargo +stable clippy
+
   test:
     name: Test
     runs-on: ubuntu-22.04
     env:
       RUSTFLAGS: -D warnings
+      RUSTUP_HOME: /root/.rustup
     container:
       image: zingodevops/ci-build:stable
       options: --security-opt seccomp=unconfined
@@ -21,17 +49,15 @@ jobs:
         run: ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./regtest/bin/
       - name: Symlink zcash parameters and rustup files
         run: ln -s /root/.zcash-params /root/.rustup /github/home
-      - name: Check formatting of code
-        run: cargo fmt --check
-      - name: Generate code coverage
-        run: cargo tarpaulin --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 300 --out xml
+      - name: Run integration tests and generate coverage
+        run: cargo tarpaulin --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 3000 --out xml
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v3
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./cobertura.xml
           # fail_ci_if_error:     true
-        
+
   timestamp:
     name: Create timestamp
     runs-on: ubuntu-22.04
@@ -112,7 +138,7 @@ jobs:
         with:
           name: ${{ matrix.arch }}-${{ env.timestamp }}
           path: rust/target/${{ matrix.target }}/release/librust.so
-           
+
   integration_test_android:
     name: Integration test android
     runs-on: macos-12
@@ -145,14 +171,14 @@ jobs:
       - name: AVD cache
         uses: actions/cache@v3
         id: avd-cache
-        with: 
+        with:
           path: |
             ~/.android/avd/*
             ~/.android/adb*
-          key: avd-${{ matrix.arch }}-api-${{ matrix.api-level }}      
+          key: avd-${{ matrix.arch }}-api-${{ matrix.api-level }}
       - name: Download native rust
         uses: actions/download-artifact@v3
-        with: 
+        with:
           name: ${{ matrix.arch }}-${{ env.timestamp }}
           path: android/app/src/main/jniLibs/${{ matrix.arch }}
       - run: yarn install

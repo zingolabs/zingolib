@@ -51,16 +51,20 @@ pub struct BlockData {
 
 impl BlockData {
     pub fn serialized_version() -> u64 {
-        return 20;
+        20
     }
 
     pub(crate) fn new_with(height: u64, hash: &str) -> Self {
-        let mut cb = CompactBlock::default();
-        cb.hash = hex::decode(hash)
+        let hash = hex::decode(hash)
             .unwrap()
             .into_iter()
             .rev()
             .collect::<Vec<_>>();
+
+        let cb = CompactBlock {
+            hash,
+            ..Default::default()
+        };
 
         let mut ecb = vec![];
         cb.encode(&mut ecb).unwrap();
@@ -325,7 +329,7 @@ pub struct Utxo {
 
 impl Utxo {
     pub fn serialized_version() -> u64 {
-        return 3;
+        3
     }
 
     pub fn to_outpoint(&self) -> OutPoint {
@@ -538,10 +542,10 @@ pub struct TransactionMetadata {
 
 impl TransactionMetadata {
     pub fn serialized_version() -> u64 {
-        return 23;
+        23
     }
 
-    pub fn new_txid(txid: &Vec<u8>) -> TxId {
+    pub fn new_txid(txid: &[u8]) -> TxId {
         let mut txid_bytes = [0u8; 32];
         txid_bytes.copy_from_slice(txid);
         TxId::from_bytes(txid_bytes)
@@ -587,7 +591,7 @@ impl TransactionMetadata {
             block_height: height,
             unconfirmed,
             datetime,
-            txid: transaction_id.clone(),
+            txid: *transaction_id,
             spent_sapling_nullifiers: vec![],
             spent_orchard_nullifiers: vec![],
             sapling_notes: vec![],
@@ -782,8 +786,8 @@ pub struct WalletZecPriceInfo {
     pub historical_prices_retry_count: u64,
 }
 
-impl WalletZecPriceInfo {
-    pub fn new() -> Self {
+impl Default for WalletZecPriceInfo {
+    fn default() -> Self {
         Self {
             zec_price: None,
             currency: "USD".to_string(), // Only USD is supported right now.
@@ -791,9 +795,11 @@ impl WalletZecPriceInfo {
             historical_prices_retry_count: 0,
         }
     }
+}
 
+impl WalletZecPriceInfo {
     pub fn serialized_version() -> u64 {
-        return 20;
+        20
     }
 
     pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {

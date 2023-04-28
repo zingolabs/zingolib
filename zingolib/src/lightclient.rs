@@ -56,7 +56,7 @@ use zingoconfig::{ChainType, ZingoConfig, MAX_REORG};
 
 static LOG_INIT: std::sync::Once = std::sync::Once::new();
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct WalletStatus {
     pub is_syncing: bool,
     pub total_blocks: u64,
@@ -70,12 +70,6 @@ impl WalletStatus {
             total_blocks: 0,
             synced_blocks: 0,
         }
-    }
-}
-
-impl Default for WalletStatus {
-    fn default() -> Self {
-        WalletStatus::new()
     }
 }
 
@@ -382,24 +376,24 @@ impl LightClient {
         const SAPLING_SPEND_HASH: &str =
             "8e48ffd23abb3a5fd9c5589204f32d9c31285a04b78096ba40a79b75677efc13";
 
-        if !sapling_output.is_empty() {
-            if *SAPLING_OUTPUT_HASH != hex::encode(Sha256::digest(sapling_output)) {
-                return Err(format!(
-                    "sapling-output hash didn't match. expected {}, found {}",
-                    SAPLING_OUTPUT_HASH,
-                    hex::encode(Sha256::digest(sapling_output))
-                ));
-            }
+        if !sapling_output.is_empty()
+            && *SAPLING_OUTPUT_HASH != hex::encode(Sha256::digest(sapling_output))
+        {
+            return Err(format!(
+                "sapling-output hash didn't match. expected {}, found {}",
+                SAPLING_OUTPUT_HASH,
+                hex::encode(Sha256::digest(sapling_output))
+            ));
         }
 
-        if !sapling_spend.is_empty() {
-            if *SAPLING_SPEND_HASH != hex::encode(Sha256::digest(sapling_spend)) {
-                return Err(format!(
-                    "sapling-spend hash didn't match. expected {}, found {}",
-                    SAPLING_SPEND_HASH,
-                    hex::encode(Sha256::digest(sapling_spend))
-                ));
-            }
+        if !sapling_spend.is_empty()
+            && *SAPLING_SPEND_HASH != hex::encode(Sha256::digest(sapling_spend))
+        {
+            return Err(format!(
+                "sapling-spend hash didn't match. expected {}, found {}",
+                SAPLING_SPEND_HASH,
+                hex::encode(Sha256::digest(sapling_spend))
+            ));
         }
 
         // Ensure that the sapling params are stored on disk properly as well. Only on desktop
@@ -1004,7 +998,7 @@ impl LightClient {
                             "amount"       => wallet_transparent_value_delta,
                             "zec_price"    => wallet_transaction.zec_price.map(|p| (p * 100.0).round() / 100.0),
                             "address"      => address,
-                            "memo"         => None::<String> 
+                            "memo"         => None::<String>
                         })
                     }
                 }
@@ -1587,8 +1581,7 @@ impl LightClient {
         ])
         .await
         .into_iter()
-        .map(|r| r.map_err(|e| format!("{}", e))?)
-        .collect::<Result<(), String>>()?;
+        .try_for_each(|r| r.map_err(|e| format!("{}", e))?)?;
 
         let verify_handle =
             tokio::spawn(async move { block_data.read().await.block_data.verify_trees().await });
