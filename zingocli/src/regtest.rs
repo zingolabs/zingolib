@@ -238,7 +238,7 @@ impl RegtestManager {
         log::info!("{:?}", &command.get_envs());
         log::info!("{:?}", &command.get_program());
 
-        let child = command.spawn().unwrap();
+        let child = command.spawn().expect("To have launched zcashd.");
         log::debug!("zcashd is starting in regtest mode, please standby...");
 
         (
