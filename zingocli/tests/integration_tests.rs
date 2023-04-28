@@ -86,7 +86,6 @@ async fn load_wallet(dir: PathBuf) -> zingolib::wallet::LightWallet {
 }
 
 #[tokio::test]
-#[traced_test]
 async fn load_and_parse_different_wallet_versions() {
     let (_sap_wallet, _sap_path, sap_dir) = get_wallet_nym("sap_only").unwrap();
     let _loaded_wallet = load_wallet(sap_dir).await;
@@ -134,7 +133,6 @@ async fn send_to_self_with_no_user_specified_memo_does_not_cause_error() {
 }
 
 #[tokio::test]
-#[traced_test]
 async fn factor_do_shield_to_call_do_send() {
     let (regtest_manager, _child_process_handler, faucet, recipient) =
         scenarios::faucet_recipient().await;
@@ -251,7 +249,6 @@ fn check_view_capability_bounds(
     }
 }
 #[tokio::test]
-//#[traced_test]
 async fn test_scanning_in_watch_only_mode() {
     // # Scenario:
     // 3. reset wallet
@@ -377,7 +374,6 @@ async fn test_scanning_in_watch_only_mode() {
 }
 
 #[tokio::test]
-#[traced_test]
 async fn zcashd_sapling_commitment_tree() {
     //  TODO:  Make this test assert something, what is this a test of?
     //  TODO:  Add doc-comment explaining what constraints this test
@@ -395,7 +391,6 @@ async fn zcashd_sapling_commitment_tree() {
 }
 
 #[tokio::test]
-#[traced_test]
 async fn verify_old_wallet_uses_server_height_in_send() {
     // An earlier version of zingolib used the _wallet's_ 'height' when
     // constructing transactions.  This worked well enough when the
@@ -429,7 +424,6 @@ async fn verify_old_wallet_uses_server_height_in_send() {
     drop(child_process_handler);
 }
 #[tokio::test]
-#[traced_test]
 async fn actual_empty_zcashd_sapling_commitment_tree() {
     // Expectations:
     let sprout_commitments_finalroot =
@@ -478,7 +472,6 @@ async fn actual_empty_zcashd_sapling_commitment_tree() {
 }
 
 #[tokio::test]
-#[traced_test]
 async fn mine_sapling_to_self() {
     let (regtest_manager, child_process_handler, faucet) = scenarios::faucet().await;
     utils::increase_height_and_sync_client(&regtest_manager, &faucet, 1)
@@ -489,7 +482,6 @@ async fn mine_sapling_to_self() {
 }
 
 #[tokio::test]
-#[traced_test]
 async fn unspent_notes_are_not_saved() {
     let (regtest_manager, child_process_handler, faucet, recipient) =
         scenarios::faucet_recipient().await;
@@ -554,7 +546,6 @@ async fn unspent_notes_are_not_saved() {
 }
 
 #[tokio::test]
-#[traced_test]
 async fn send_mined_sapling_to_orchard() {
     // This test shows the 5th confirmation changing the state of balance by
     // debiting unverified_orchard_balance and crediting verified_orchard_balance.  The debit amount is
@@ -595,7 +586,6 @@ fn extract_value_as_u64(input: &JsonValue) -> u64 {
 }
 
 #[tokio::test]
-#[traced_test]
 async fn note_selection_order() {
     // In order to fund a transaction multiple notes may be selected and consumed.
     // To minimize note selection operations notes are consumed from largest to smallest.
@@ -709,7 +699,8 @@ async fn note_selection_order() {
 }
 
 #[tokio::test]
-#[traced_test]
+// This test is very long-running, so we ignore to speed CI
+#[ignore]
 async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     // Test all possible promoting note source combinations
     let (regtest_manager, child_process_handler, mut client_builder) = scenarios::custom_clients();
@@ -738,10 +729,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         .unwrap();
     bump_and_check!(o: 0 s: 0 t: 5_000);
 
-    pool_migration_client
-        .do_send(vec![(&pmc_unified, 4_000, None)])
-        .await
-        .unwrap();
+    pool_migration_client.do_shield(None).await.unwrap();
     bump_and_check!(o: 4_000 s: 0 t: 0);
 
     // 2 Test of a send from a sapling only client to its own unified address
@@ -771,18 +759,29 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         .unwrap();
     bump_and_check!(o: 0 s: 3_000 t: 3_000);
 
+    pool_migration_client.do_shield(None).await.unwrap();
     pool_migration_client
-        .do_send(vec![(&pmc_unified, 5_000, None)])
+        .do_send(vec![(&pmc_unified, 2_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 5_000 s: 0 t: 0);
+    bump_and_check!(o: 4_000 s: 0 t: 0);
 
     // 5 to transparent and orchard to orchard
     pool_migration_client
         .do_send(vec![(&pmc_taddr, 2_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 2_000 s: 0 t: 2_000);
+    bump_and_check!(o: 1_000 s: 0 t: 2_000);
+
+    pool_migration_client.do_shield(None).await.unwrap();
+    bump_and_check!(o: 2_000 s: 0 t: 0);
+
+    // 6 sapling and orchard to orchard
+    sapling_faucet
+        .do_send(vec![(&pmc_sapling, 2_000, None)])
+        .await
+        .unwrap();
+    bump_and_check!(o: 2_000 s: 2_000 t: 0);
 
     pool_migration_client
         .do_send(vec![(&pmc_unified, 3_000, None)])
@@ -790,44 +789,32 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         .unwrap();
     bump_and_check!(o: 3_000 s: 0 t: 0);
 
-    // 6 sapling and orchard to orchard
-    sapling_faucet
-        .do_send(vec![(&pmc_sapling, 2_000, None)])
-        .await
-        .unwrap();
-    bump_and_check!(o: 3_000 s: 2_000 t: 0);
-
-    pool_migration_client
-        .do_send(vec![(&pmc_unified, 4_000, None)])
-        .await
-        .unwrap();
-    bump_and_check!(o: 4_000 s: 0 t: 0);
-
     // 7 tzo --> o
     sapling_faucet
         .do_send(vec![(&pmc_taddr, 2_000, None), (&pmc_sapling, 2_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 4_000 s: 2_000 t: 2_000);
+    bump_and_check!(o: 3_000 s: 2_000 t: 2_000);
 
+    pool_migration_client.do_shield(None).await.unwrap();
     pool_migration_client
-        .do_send(vec![(&pmc_unified, 7_000, None)])
-        .await
-        .unwrap();
-    bump_and_check!(o: 7_000 s: 0 t: 0);
-
-    // Send from Sapling into empty Orchard pool
-    pool_migration_client
-        .do_send(vec![(&pmc_sapling, 6_000, None)])
-        .await
-        .unwrap();
-    bump_and_check!(o: 0 s: 6_000 t: 0);
-
-    pool_migration_client
-        .do_send(vec![(&pmc_unified, 5_000, None)])
+        .do_send(vec![(&pmc_unified, 4_000, None)])
         .await
         .unwrap();
     bump_and_check!(o: 5_000 s: 0 t: 0);
+
+    // Send from Sapling into empty Orchard pool
+    pool_migration_client
+        .do_send(vec![(&pmc_sapling, 4_000, None)])
+        .await
+        .unwrap();
+    bump_and_check!(o: 0 s: 4_000 t: 0);
+
+    pool_migration_client
+        .do_send(vec![(&pmc_unified, 3_000, None)])
+        .await
+        .unwrap();
+    bump_and_check!(o: 3_000 s: 0 t: 0);
     log::info!(
         "{}",
         json::stringify_pretty(pool_migration_client.do_list_transactions(false).await, 4)
@@ -835,7 +822,6 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     drop(child_process_handler);
 }
 #[tokio::test]
-#[traced_test]
 async fn send_orchard_back_and_forth() {
     // setup
     let (regtest_manager, child_process_handler, faucet, recipient) =
@@ -894,7 +880,6 @@ async fn send_orchard_back_and_forth() {
 }
 
 #[tokio::test]
-#[traced_test]
 async fn diversified_addresses_receive_funds_in_best_pool() {
     let (regtest_manager, child_process_handler, faucet, recipient) =
         scenarios::faucet_recipient().await;
@@ -931,7 +916,6 @@ async fn diversified_addresses_receive_funds_in_best_pool() {
 }
 
 #[tokio::test]
-#[traced_test]
 async fn rescan_still_have_outgoing_metadata() {
     let (regtest_manager, child_process_handler, faucet, recipient) =
         scenarios::faucet_recipient().await;
@@ -955,7 +939,6 @@ async fn rescan_still_have_outgoing_metadata() {
 }
 
 #[tokio::test]
-#[traced_test]
 async fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
     let (regtest_manager, child_process_handler, faucet) = scenarios::faucet().await;
     let sapling_addr = get_base_address!(faucet, "sapling");
@@ -1008,7 +991,6 @@ async fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
 /// the previous diversifier list. <-- But the spend capability
 /// is capable of recovering the diversified _receiver_.
 #[tokio::test]
-#[traced_test]
 async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
     let (regtest_manager, child_process_handler, mut client_builder) = scenarios::custom_clients();
     let faucet = client_builder.build_new_faucet(0, false).await;
@@ -1135,7 +1117,6 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
 }
 
 #[tokio::test]
-#[traced_test]
 async fn ensure_taddrs_from_old_seeds_work() {
     let (_regtest_manager, child_process_handler, mut client_builder) = scenarios::custom_clients();
     // The first taddr generated on commit 9e71a14eb424631372fd08503b1bd83ea763c7fb
@@ -1153,8 +1134,7 @@ async fn ensure_taddrs_from_old_seeds_work() {
 }
 
 #[tokio::test]
-#[traced_test]
-async fn t_incoming_t_outgoing() {
+async fn t_incoming_t_outgoing_disallowed() {
     let (regtest_manager, child_process_handler, faucet, recipient) =
         scenarios::faucet_recipient().await;
 
@@ -1178,114 +1158,17 @@ async fn t_incoming_t_outgoing() {
     assert_eq!(list[0]["address"], taddr);
     assert_eq!(list[0]["amount"].as_u64().unwrap(), value);
 
-    // 4. We can spend the funds immediately, since this is a taddr
+    // 4. We can't spend the funds, as they're transparent. We need to shield first
     let sent_value = 20_000;
-    let sent_transaction_id = recipient
+    let sent_transaction_error = recipient
         .do_send(vec![(EXT_TADDR, sent_value, None)])
         .await
-        .unwrap();
-    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1)
-        .await
-        .unwrap();
-
-    // 5. Test the unconfirmed send.
-    let list = recipient.do_list_transactions(false).await;
-    assert_eq!(list[1]["block_height"].as_u64().unwrap(), 3);
-    assert_eq!(list[1]["txid"], sent_transaction_id);
-    assert_eq!(
-        list[1]["amount"].as_i64().unwrap(),
-        -(sent_value as i64 + i64::from(DEFAULT_FEE))
-    );
-    assert!(!list[1]["unconfirmed"].as_bool().unwrap());
-    assert_eq!(list[1]["outgoing_metadata"][0]["address"], EXT_TADDR);
-    assert_eq!(
-        list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
-        sent_value
-    );
-
-    let notes = recipient.do_list_notes(true).await;
-    assert_eq!(
-        notes["spent_utxos"][0]["created_in_block"]
-            .as_u64()
-            .unwrap(),
-        2
-    );
-    assert_eq!(
-        notes["spent_utxos"][0]["spent_at_height"].as_u64().unwrap(),
-        3
-    );
-    assert_eq!(notes["spent_utxos"][0]["spent"], sent_transaction_id);
-
-    // Change shielded note
-    assert_eq!(
-        notes["unspent_orchard_notes"][0]["created_in_block"]
-            .as_u64()
-            .unwrap(),
-        3
-    );
-    assert_eq!(
-        notes["unspent_orchard_notes"][0]["created_in_txid"],
-        sent_transaction_id
-    );
-    assert!(notes["unspent_orchard_notes"][0]["is_change"]
-        .as_bool()
-        .unwrap());
-    assert_eq!(
-        notes["unspent_orchard_notes"][0]["value"].as_u64().unwrap(),
-        value - sent_value - u64::from(DEFAULT_FEE)
-    );
-
-    let list = recipient.do_list_transactions(false).await;
-    println!("{}", json::stringify_pretty(list.clone(), 4));
-
-    assert_eq!(list[1]["block_height"].as_u64().unwrap(), 3);
-    assert_eq!(list[1]["txid"], sent_transaction_id);
-    assert!(!list[1]["unconfirmed"].as_bool().unwrap());
-    assert_eq!(list[1]["outgoing_metadata"][0]["address"], EXT_TADDR);
-    assert_eq!(
-        list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
-        sent_value
-    );
-
-    // Make sure everything is fine even after the rescan
-
-    recipient.do_rescan().await.unwrap();
-
-    let list = recipient.do_list_transactions(false).await;
-    println!("{}", json::stringify_pretty(list.clone(), 4));
-    assert_eq!(list[1]["block_height"].as_u64().unwrap(), 3);
-    assert_eq!(list[1]["txid"], sent_transaction_id);
-    assert!(!list[1]["unconfirmed"].as_bool().unwrap());
-    assert_eq!(list[1]["outgoing_metadata"][0]["address"], EXT_TADDR);
-    assert_eq!(
-        list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
-        sent_value
-    );
-
-    let notes = recipient.do_list_notes(true).await;
-    // Change shielded note
-    assert_eq!(
-        notes["unspent_orchard_notes"][0]["created_in_block"]
-            .as_u64()
-            .unwrap(),
-        3
-    );
-    assert_eq!(
-        notes["unspent_orchard_notes"][0]["created_in_txid"],
-        sent_transaction_id
-    );
-    assert!(notes["unspent_orchard_notes"][0]["is_change"]
-        .as_bool()
-        .unwrap());
-    assert_eq!(
-        notes["unspent_orchard_notes"][0]["value"].as_u64().unwrap(),
-        value - sent_value - u64::from(DEFAULT_FEE)
-    );
+        .unwrap_err();
+    assert_eq!(sent_transaction_error, "Insufficient verified shielded funds. Have 0 zats, need 21000 zats. NOTE: funds need at least 1 confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes");
     drop(child_process_handler);
 }
 
 #[tokio::test]
-#[traced_test]
 async fn send_to_ua_saves_full_ua_in_wallet() {
     let (regtest_manager, child_process_handler, faucet, recipient) =
         scenarios::faucet_recipient().await;
@@ -1331,7 +1214,6 @@ async fn send_to_ua_saves_full_ua_in_wallet() {
 }
 
 #[tokio::test]
-#[traced_test]
 async fn self_send_to_t_displays_as_one_transaction() {
     let (regtest_manager, child_process_handler, faucet, recipient) =
         scenarios::faucet_recipient().await;
@@ -1407,7 +1289,6 @@ async fn self_send_to_t_displays_as_one_transaction() {
 // Burn-to regtest address generated by `zcash-cli getnewaddress`
 const EXT_TADDR: &str = "tmJTBtMwPU96XteSiP89xDz1WARNgRddEHq";
 #[tokio::test]
-#[traced_test]
 async fn sapling_to_sapling_scan_together() {
     // Create an incoming transaction, and then send that transaction, and scan everything together, to make sure it works.
     // (For this test, the Sapling Domain is assumed in all cases.)
@@ -1483,115 +1364,6 @@ async fn sapling_to_sapling_scan_together() {
 }
 
 #[tokio::test]
-#[traced_test]
-async fn mixed_transaction() {
-    let zvalue = 100_000;
-    let (regtest_manager, child_process_handler, faucet, recipient, _txid) =
-        scenarios::faucet_prefunded_orchard_recipient(zvalue).await;
-
-    // 3. Send an incoming t-address transaction
-    let tvalue = 200_000;
-    utils::send_value_between_clients_and_sync(
-        &regtest_manager,
-        &faucet,
-        &recipient,
-        tvalue,
-        "transparent",
-    )
-    .await
-    .unwrap();
-
-    let (faucet_sapling, faucet_transparent) = (
-        get_base_address!(faucet, "sapling"),
-        get_base_address!(faucet, "transparent"),
-    );
-    // 4. Send a transaction to both external t-addr and external z addr and mine it
-    let sent_zvalue = 80_000;
-    let sent_tvalue = 140_000;
-    let sent_zmemo = "Ext z".to_string();
-    let tos = vec![
-        (
-            faucet_sapling.as_str(),
-            sent_zvalue,
-            Some(sent_zmemo.clone()),
-        ),
-        (faucet_transparent.as_str(), sent_tvalue, None),
-    ];
-    recipient.do_send(tos).await.unwrap();
-
-    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1)
-        .await
-        .unwrap();
-
-    let notes = recipient.do_list_notes(true).await;
-    let list = recipient.do_list_transactions(false).await;
-
-    // 5. Check everything
-    assert_eq!(notes["unspent_orchard_notes"].len(), 1);
-    assert_eq!(
-        notes["unspent_orchard_notes"][0]["created_in_block"]
-            .as_u64()
-            .unwrap(),
-        5
-    );
-    assert!(notes["unspent_orchard_notes"][0]["is_change"]
-        .as_bool()
-        .unwrap());
-    assert_eq!(
-        notes["unspent_orchard_notes"][0]["value"].as_u64().unwrap(),
-        tvalue + zvalue - sent_tvalue - sent_zvalue - u64::from(DEFAULT_FEE)
-    );
-
-    assert_eq!(notes["spent_orchard_notes"].len(), 1);
-    assert_eq!(
-        notes["spent_orchard_notes"][0]["spent"],
-        notes["unspent_orchard_notes"][0]["created_in_txid"]
-    );
-
-    assert_eq!(notes["pending_sapling_notes"].len(), 0);
-    assert_eq!(notes["pending_orchard_notes"].len(), 0);
-    assert_eq!(notes["utxos"].len(), 0);
-    assert_eq!(notes["pending_utxos"].len(), 0);
-
-    assert_eq!(notes["spent_utxos"].len(), 1);
-    assert_eq!(
-        notes["spent_utxos"][0]["spent"],
-        notes["unspent_orchard_notes"][0]["created_in_txid"]
-    );
-
-    assert_eq!(list.len(), 3);
-    assert_eq!(list[2]["block_height"].as_u64().unwrap(), 5);
-    assert_eq!(
-        list[2]["amount"].as_i64().unwrap(),
-        0 - (sent_tvalue + sent_zvalue + u64::from(DEFAULT_FEE)) as i64
-    );
-    assert_eq!(
-        list[2]["txid"],
-        notes["unspent_orchard_notes"][0]["created_in_txid"]
-    );
-    assert_eq!(
-        list[2]["outgoing_metadata"]
-            .members()
-            .find(|j| j["address"] == faucet_sapling && j["value"].as_u64().unwrap() == sent_zvalue)
-            .unwrap()["memo"]
-            .to_string(),
-        sent_zmemo
-    );
-    assert_eq!(
-        list[2]["outgoing_metadata"]
-            .members()
-            .find(|j| j["address"] == faucet_transparent)
-            .unwrap()["value"]
-            .as_u64()
-            .unwrap(),
-        sent_tvalue
-    );
-
-    drop(child_process_handler);
-}
-
-#[tokio::test]
-#[traced_test]
 async fn load_wallet_from_v26_dat_file() {
     // We test that the LightWallet can be read from v26 .dat file
     // Changes in version 27:
@@ -1662,7 +1434,6 @@ async fn load_wallet_from_v26_dat_file() {
 }
 
 #[tokio::test]
-#[traced_test]
 async fn mempool_and_balance() {
     let value = 100_000;
 
@@ -1720,7 +1491,6 @@ async fn mempool_and_balance() {
 }
 
 #[tokio::test]
-#[traced_test]
 async fn witness_clearing() {
     let value: u64 = 100_000;
     let (regtest_manager, child_process_handler, faucet, recipient, txid) =
@@ -1826,7 +1596,6 @@ async fn witness_clearing() {
 }
 
 #[tokio::test]
-#[traced_test]
 async fn mempool_clearing() {
     let value = 100_000;
     let (regtest_manager, child_process_handler, faucet, recipient, orig_transaction_id) =
@@ -2063,7 +1832,6 @@ async fn mempool_clearing() {
 pub mod framework_validation {
 
     use crate::utils::scenarios::setup::{self, ScenarioBuilder};
-    use tracing_test::traced_test;
 
     macro_rules! log_field_from_zcashd {
         (
@@ -2090,7 +1858,6 @@ pub mod framework_validation {
         };
     }
     #[tokio::test]
-    #[traced_test]
     async fn reboot_zcashd() {
         let ScenarioBuilder {
             regtest_manager,
@@ -2138,7 +1905,6 @@ pub mod framework_validation {
     }
 }
 #[tokio::test]
-#[traced_test]
 async fn sapling_incoming_sapling_outgoing() {
     let (regtest_manager, child_process_handler, faucet, recipient) =
         scenarios::faucet_recipient().await;
@@ -2343,22 +2109,10 @@ async fn sapling_incoming_sapling_outgoing() {
 }
 
 #[tokio::test]
-#[traced_test]
 async fn aborted_resync() {
     let zvalue = 100_000;
     let (regtest_manager, child_process_handler, faucet, recipient, _txid) =
         scenarios::faucet_prefunded_orchard_recipient(zvalue).await;
-
-    // 3. Send an incoming t-address transaction
-    let tvalue = 200_000;
-    let _ttxid = faucet
-        .do_send(vec![(
-            &get_base_address!(recipient, "transparent"),
-            tvalue,
-            None,
-        )])
-        .await
-        .unwrap();
 
     utils::increase_height_and_sync_client(&regtest_manager, &recipient, 15)
         .await
@@ -2366,17 +2120,13 @@ async fn aborted_resync() {
 
     // 4. Send a transaction to both external t-addr and external z addr and mine it
     let sent_zvalue = 80_000;
-    let sent_tvalue = 140_000;
     let sent_zmemo = "Ext z".to_string();
     let sent_transaction_id = recipient
-        .do_send(vec![
-            (
-                &get_base_address!(faucet, "sapling"),
-                sent_zvalue,
-                Some(sent_zmemo.clone()),
-            ),
-            (&get_base_address!(faucet, "transparent"), sent_tvalue, None),
-        ])
+        .do_send(vec![(
+            &get_base_address!(faucet, "sapling"),
+            sent_zvalue,
+            Some(sent_zmemo.clone()),
+        )])
         .await
         .unwrap();
 
@@ -2468,36 +2218,17 @@ async fn aborted_resync() {
 }
 
 #[tokio::test]
-#[traced_test]
-async fn no_change() {
+async fn zero_value_change() {
     // 2. Send an incoming transaction to fill the wallet
-    let zvalue = 100_000;
+    let value = 100_000;
     let (regtest_manager, child_process_handler, faucet, recipient, _txid) =
-        scenarios::faucet_prefunded_orchard_recipient(zvalue).await;
+        scenarios::faucet_prefunded_orchard_recipient(value).await;
 
-    // 3. Send an incoming t-address transaction
-    let tvalue = 200_000;
-    let _ttxid = faucet
-        .do_send(vec![(
-            &get_base_address!(recipient, "transparent"),
-            tvalue,
-            None,
-        )])
-        .await
-        .unwrap();
-
-    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 15)
-        .await
-        .unwrap();
-
-    // Obscelete comment, we're only sending to one external address??
-    // 4. Send a transaction to both external t-addr and external z addr and mine it
-
-    let sent_zvalue = tvalue + zvalue - u64::from(DEFAULT_FEE);
+    let sent_value = value - u64::from(DEFAULT_FEE);
     let sent_transaction_id = recipient
         .do_send(vec![(
             &get_base_address!(faucet, "unified"),
-            sent_zvalue,
+            sent_value,
             None,
         )])
         .await
@@ -2517,15 +2248,14 @@ async fn no_change() {
 
     assert_eq!(notes["spent_sapling_notes"].len(), 0);
     assert_eq!(notes["spent_orchard_notes"].len(), 1);
-    assert_eq!(notes["spent_utxos"].len(), 1);
+    assert_eq!(notes["spent_utxos"].len(), 0);
+    // We should still have a change note even of zero value, as we send
+    // ourself a wallet-readable memo
+    assert_eq!(notes["unspent_orchard_notes"][0]["value"], 0);
     assert_eq!(
         notes["spent_orchard_notes"][0]["spent"],
         sent_transaction_id
     );
-    // We should still have a change note even of zero value, as we send
-    // ourself a wallet-readable memo
-    assert_eq!(notes["unspent_orchard_notes"][0]["value"], 0);
-    assert_eq!(notes["spent_utxos"][0]["spent"], sent_transaction_id);
 
     check_client_balances!(recipient, o: 0 s: 0 t: 0);
     drop(child_process_handler);

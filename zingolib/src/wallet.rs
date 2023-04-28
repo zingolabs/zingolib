@@ -1068,7 +1068,12 @@ impl LightWallet {
         }
 
         // If we can't select enough, then we need to return empty handed
-        (vec![], vec![], vec![], Amount::zero())
+        (
+            vec![],
+            vec![],
+            vec![],
+            (transparent_value_selected + sapling_value_selected + orchard_value_selected).unwrap(),
+        )
     }
 
     async fn get_all_domain_specific_notes<D>(&self) -> Vec<D::SpendableNoteAT>
@@ -1259,7 +1264,7 @@ impl LightWallet {
             self.select_notes_and_utxos(target_amount, policy).await;
         if selected_value < target_amount {
             let e = format!(
-                "Insufficient verified funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent.",
+                "Insufficient verified shielded funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes",
                 u64::from(selected_value), u64::from(target_amount), self.transaction_context.config
                 .reorg_buffer_offset + 1
             );
