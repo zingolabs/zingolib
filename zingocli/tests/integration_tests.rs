@@ -31,7 +31,7 @@ use zingolib::{
             extended_transparent::ExtendedPrivKey,
             unified::{Capability, WalletCapability},
         },
-        LightWallet, WalletBase,
+        LightWallet, NoteSelectionPolicy, WalletBase,
     },
 };
 
@@ -2566,7 +2566,7 @@ async fn no_change() {
     let sent_transaction_id = recipient
         .do_send(
             vec![(&get_base_address!(faucet, "unified"), sent_zvalue, None)],
-            None,
+            Some(NoteSelectionPolicy::AllowRevealedSenders),
         )
         .await
         .unwrap();

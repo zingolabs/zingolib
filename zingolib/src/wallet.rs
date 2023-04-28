@@ -234,24 +234,24 @@ impl PartialOrd for NoteSelectionPolicy {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub(crate) struct PoolTargets {
-    target_transparent: Amount,
-    target_sapling: Amount,
-    target_orchard: Amount,
+pub(crate) struct DomainSpecificAmounts {
+    transparent: Amount,
+    sapling: Amount,
+    orchard: Amount,
 }
 
-impl PoolTargets {
+impl DomainSpecificAmounts {
     fn total(&self) -> Amount {
-        (self.target_transparent + self.target_sapling + self.target_orchard).unwrap()
+        (self.transparent + self.sapling + self.orchard).unwrap()
     }
 }
 
-impl Default for PoolTargets {
+impl Default for DomainSpecificAmounts {
     fn default() -> Self {
         Self {
-            target_transparent: Amount::zero(),
-            target_sapling: Amount::zero(),
-            target_orchard: Amount::zero(),
+            transparent: Amount::zero(),
+            sapling: Amount::zero(),
+            orchard: Amount::zero(),
         }
     }
 }
@@ -1155,20 +1155,20 @@ impl LightWallet {
 
     async fn select_notes_and_utxos(
         &self,
-        policy: NoteSelectionPolicy,
-        pool_targets: PoolTargets,
+        policy: &NoteSelectionPolicy,
+        pool_targets: DomainSpecificAmounts,
     ) -> Result<
         (
             Vec<SpendableOrchardNote>,
             Vec<SpendableSaplingNote>,
             Vec<Utxo>,
-            Amount,
+            DomainSpecificAmounts,
         ),
         NoteSelectionError,
     > {
-        if pool_targets.target_transparent != Amount::zero()
-            && policy != NoteSelectionPolicy::AllowRevealedRecipients
-            && !(policy < NoteSelectionPolicy::AllowRevealedRecipients)
+        if pool_targets.transparent != Amount::zero()
+            && policy != &NoteSelectionPolicy::AllowRevealedRecipients
+            && !(policy < &NoteSelectionPolicy::AllowRevealedRecipients)
         {
             return Err(NoteSelectionError::DisallowedByPrivacyPolicy);
         }
@@ -1179,6 +1179,9 @@ impl LightWallet {
             }
             NoteSelectionPolicy::AllowRevealedRecipients => {
                 self.select_notes_revealed_recipients(pool_targets).await
+            }
+            NoteSelectionPolicy::AllowRevealedSenders => {
+                self.select_notes_revealed_senders(pool_targets).await
             }
 
             _ => todo!(),
@@ -1349,11 +1352,11 @@ impl LightWallet {
             )?;
 
         let mut pool_targets = recipients.iter().fold(
-            PoolTargets::default(),
-            |PoolTargets {
-                 mut target_transparent,
-                 mut target_sapling,
-                 mut target_orchard,
+            DomainSpecificAmounts::default(),
+            |DomainSpecificAmounts {
+                 transparent: mut target_transparent,
+                 sapling: mut target_sapling,
+                 orchard: mut target_orchard,
              },
              (recipient, amount, _memo)| {
                 match recipient {
@@ -1369,10 +1372,10 @@ impl LightWallet {
                         }
                     }
                 };
-                PoolTargets {
-                    target_transparent,
-                    target_sapling,
-                    target_orchard,
+                DomainSpecificAmounts {
+                    transparent: target_transparent,
+                    sapling: target_sapling,
+                    orchard: target_orchard,
                 }
             },
         );
@@ -1396,7 +1399,7 @@ impl LightWallet {
         // Select notes to cover the target value
         println!("{}: Selecting notes", now() - start_time);
 
-        pool_targets.target_orchard += DEFAULT_FEE;
+        pool_targets.orchard += DEFAULT_FEE;
         let latest_wallet_height = match self.get_latest_wallet_height().await {
             Some(h) => BlockHeight::from_u32(h),
             None => return Err("No blocks in wallet to target, please sync first".to_string()),
@@ -1412,10 +1415,10 @@ impl LightWallet {
             .unwrap();
 
         let (orchard_notes, sapling_notes, utxos, selected_value) = self
-            .select_notes_and_utxos(policy, pool_targets)
+            .select_notes_and_utxos(&policy, pool_targets)
             .await
             .map_err(|e| e.to_string())?;
-        println!("Selected notes worth {}", u64::from(selected_value));
+        println!("Selected notes worth {}", u64::from(selected_value.total()));
 
         let orchard_anchor = self
             .get_orchard_anchor(&orchard_notes, latest_wallet_height)
@@ -1573,21 +1576,63 @@ impl LightWallet {
                 [0; 511]
             }
         };
+        // Here we store the uas we sent to in the memo field.
+        // These are used to recover the full UA we sent to.
+        let memo_to_self = MemoBytes::from(Memo::Arbitrary(Box::new(uas_bytes)));
 
-        dbg!(selected_value, pool_targets.total());
-        if let Err(e) = builder.add_orchard_output::<FixedFeeRule>(
-            Some(orchard_ovk.clone()),
-            *self.wallet_capability().read().await.addresses()[0]
-                .orchard()
-                .unwrap(),
-            dbg!(u64::from(selected_value) - u64::from(pool_targets.total())),
-            // Here we store the uas we sent to in the memo field.
-            // These are used to recover the full UA we sent to.
-            MemoBytes::from(Memo::Arbitrary(Box::new(uas_bytes))),
-        ) {
-            let e = format!("Error adding change output: {:?}", e);
-            error!("{}", e);
-            return Err(e);
+        // If we can transfer value between pools, send all change to orchard
+        if policy != NoteSelectionPolicy::FullPrivacy {
+            dbg!(selected_value, pool_targets.total());
+            if let Err(e) = builder.add_orchard_output::<FixedFeeRule>(
+                Some(orchard_ovk.clone()),
+                *self.wallet_capability().read().await.addresses()[0]
+                    .orchard()
+                    .unwrap(),
+                dbg!(u64::from(selected_value.total()) - u64::from(pool_targets.total())),
+                // Here we store the uas we sent to in the memo field.
+                // These are used to recover the full UA we sent to.
+                memo_to_self,
+            ) {
+                let e = format!("Error adding change output: {:?}", e);
+                error!("{}", e);
+                return Err(e);
+            }
+        } else {
+            // If we need full privacy, sapling change must go to sapling
+            if selected_value.orchard != Amount::zero() {
+                if let Err(e) = builder.add_orchard_output::<FixedFeeRule>(
+                    Some(orchard_ovk.clone()),
+                    *self.wallet_capability().read().await.addresses()[0]
+                        .orchard()
+                        .unwrap(),
+                    dbg!(u64::from(selected_value.orchard) - u64::from(pool_targets.orchard)),
+                    // Here we store the uas we sent to in the memo field.
+                    // These are used to recover the full UA we sent to.
+                    MemoBytes::from(Memo::Arbitrary(Box::new(uas_bytes))),
+                ) {
+                    let e = format!("Error adding change output: {:?}", e);
+                    error!("{}", e);
+                    return Err(e);
+                }
+            }
+            if selected_value.sapling != Amount::zero() {
+                if let Err(e) = builder.add_sapling_output(
+                    Some(sapling_ovk.clone()),
+                    *self.wallet_capability().read().await.addresses()[0]
+                        .sapling()
+                        .unwrap(),
+                    (selected_value.sapling - pool_targets.sapling).unwrap(),
+                    if selected_value.orchard == Amount::zero() {
+                        memo_to_self
+                    } else {
+                        MemoBytes::from(Memo::Empty)
+                    },
+                ) {
+                    let e = format!("Error adding change output: {:?}", e);
+                    error!("{}", e);
+                    return Err(e);
+                }
+            }
         }
 
         // Set up a channel to recieve updates on the progress of building the transaction.

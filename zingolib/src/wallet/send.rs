@@ -3,23 +3,23 @@ use zcash_primitives::{sapling::note_encryption::SaplingDomain, transaction::com
 
 use super::{
     data::{SpendableOrchardNote, SpendableSaplingNote, Utxo},
-    LightWallet, NoteSelectionError, PoolTargets,
+    DomainSpecificAmounts, LightWallet, NoteSelectionError,
 };
 
 impl LightWallet {
     pub(super) async fn select_notes_full_privacy(
         &self,
-        PoolTargets {
-            target_transparent,
-            target_sapling,
-            target_orchard,
-        }: PoolTargets,
+        DomainSpecificAmounts {
+            transparent: target_transparent,
+            sapling: target_sapling,
+            orchard: target_orchard,
+        }: DomainSpecificAmounts,
     ) -> Result<
         (
             Vec<SpendableOrchardNote>,
             Vec<SpendableSaplingNote>,
             Vec<Utxo>,
-            Amount,
+            DomainSpecificAmounts,
         ),
         NoteSelectionError,
     > {
@@ -46,7 +46,11 @@ impl LightWallet {
                     orchard_notes,
                     sapling_notes,
                     Vec::new(), // No utxos for full privacy
-                    (sapling_value_selected + orchard_value_selected).unwrap(),
+                    DomainSpecificAmounts {
+                        sapling: sapling_value_selected,
+                        orchard: orchard_value_selected,
+                        transparent: Amount::zero(),
+                    },
                 ))
             } else {
                 Err(NoteSelectionError::InsufficientPrivateFunds)
@@ -55,17 +59,17 @@ impl LightWallet {
     }
     pub(super) async fn select_notes_revealed_amounts(
         &self,
-        pool_targets: PoolTargets,
+        pool_targets: DomainSpecificAmounts,
     ) -> Result<
         (
             Vec<SpendableOrchardNote>,
             Vec<SpendableSaplingNote>,
             Vec<Utxo>,
-            Amount,
+            DomainSpecificAmounts,
         ),
         NoteSelectionError,
     > {
-        if pool_targets.target_transparent != Amount::zero() {
+        if pool_targets.transparent != Amount::zero() {
             Err(NoteSelectionError::DisallowedByPrivacyPolicy)
         } else {
             // We don't select notes any differently, we just enforce no shielded recipients
@@ -74,17 +78,17 @@ impl LightWallet {
     }
     pub(super) async fn select_notes_revealed_recipients(
         &self,
-        PoolTargets {
-            target_transparent,
-            target_sapling,
-            target_orchard,
-        }: PoolTargets,
+        DomainSpecificAmounts {
+            transparent: target_transparent,
+            sapling: target_sapling,
+            orchard: target_orchard,
+        }: DomainSpecificAmounts,
     ) -> Result<
         (
             Vec<SpendableOrchardNote>,
             Vec<SpendableSaplingNote>,
             Vec<Utxo>,
-            Amount,
+            DomainSpecificAmounts,
         ),
         NoteSelectionError,
     > {
@@ -100,7 +104,10 @@ impl LightWallet {
                 Vec::new(),
                 sapling_notes,
                 Vec::new(),
-                sapling_value_selected,
+                DomainSpecificAmounts {
+                    sapling: sapling_value_selected,
+                    ..Default::default()
+                },
             ));
         }
         let orchard_candidates = self
@@ -114,7 +121,66 @@ impl LightWallet {
             orchard_notes,
             sapling_notes,
             Vec::new(),
-            (sapling_value_selected + orchard_value_selected).unwrap(),
+            DomainSpecificAmounts {
+                sapling: sapling_value_selected,
+                orchard: orchard_value_selected,
+                transparent: Amount::zero(),
+            },
         ))
+    }
+
+    pub(super) async fn select_notes_revealed_senders(
+        &self,
+        target_amounts: DomainSpecificAmounts,
+    ) -> Result<
+        (
+            Vec<SpendableOrchardNote>,
+            Vec<SpendableSaplingNote>,
+            Vec<Utxo>,
+            DomainSpecificAmounts,
+        ),
+        NoteSelectionError,
+    > {
+        let mut selected_amounts = DomainSpecificAmounts::default();
+        let utxos = self
+            .get_utxos()
+            .await
+            .iter()
+            .filter(|utxo| utxo.unconfirmed_spent.is_none() && utxo.spent.is_none())
+            .cloned()
+            .collect::<Vec<_>>();
+        selected_amounts.transparent = utxos.iter().fold(Amount::zero(), |prev, utxo| {
+            (prev + Amount::from_u64(utxo.value).unwrap()).unwrap()
+        });
+        if selected_amounts.transparent >= target_amounts.total() {
+            return Ok((Vec::new(), Vec::new(), utxos, selected_amounts));
+        }
+
+        let sapling_candidates = self
+            .get_spendable_domain_specific_notes::<SaplingDomain<zingoconfig::ChainType>>()
+            .await;
+        let (sapling_notes, sapling_value_selected) =
+            Self::add_notes_to_total::<SaplingDomain<zingoconfig::ChainType>>(
+                sapling_candidates,
+                (target_amounts.total() - selected_amounts.total()).unwrap(),
+            );
+        selected_amounts.sapling = sapling_value_selected;
+        if selected_amounts.total() >= target_amounts.total() {
+            return Ok((Vec::new(), sapling_notes, utxos, selected_amounts));
+        }
+
+        let orchard_candidates = self
+            .get_spendable_domain_specific_notes::<OrchardDomain>()
+            .await;
+        let (orchard_notes, orchard_value_selected) = Self::add_notes_to_total::<OrchardDomain>(
+            orchard_candidates,
+            (target_amounts.total() - selected_amounts.total()).unwrap(),
+        );
+        selected_amounts.orchard = orchard_value_selected;
+        if selected_amounts.total() >= target_amounts.total() {
+            return Ok((orchard_notes, sapling_notes, utxos, selected_amounts));
+        } else {
+            Err(NoteSelectionError::InsufficientSpendableFunds)
+        }
     }
 }
