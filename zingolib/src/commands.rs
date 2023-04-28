@@ -636,9 +636,12 @@ impl Command for SendCommand {
         indoc! {r#"
             Send ZEC to a given address(es)
             Usage:
-            send <address> <amount in zatoshis> "optional_memo"
+            send <address> <amount in zatoshis> "optional_memo" "policy"
             OR
-            send '[{'address': <address>, 'amount': <amount in zatoshis>, 'memo': <optional memo>}, ...]'
+            send '[{'address': <address>, 'amount': <amount in zatoshis>, 'memo': <optional memo>, 'policy': <optional_policy>}, ...]'
+
+            Allowed policies are "FullPrivacy", "AllowRevealedAmounts", "AllowRevealedRecipients",
+            "AllowRevealedSenders", and "AllowFullyTransparent"
 
             NOTE: The fee required to send this transaction (currently ZEC 0.0001) is additionally deducted from your balance.
             Example:
