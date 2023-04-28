@@ -43,20 +43,13 @@ RUN rustup toolchain install stable \
     && cargo install cargo-tarpaulin \
     && rustup update
 
-# Install Zcash and fetch zero-knowledge parameters
-#RUN curl https://apt.z.cash/zcash.asc | gpg --import \
-#    && gpg --export 3FE63B67F85EA808DE9B880E6DEF3BAF272766C0 | apt-key add - \
-#    && echo "deb [arch=amd64] https://apt.z.cash/ bullseye main" | tee /etc/apt/sources.list.d/zcash.list \
-#    && apt update && apt install zcash && zcash-fetch-params
+# build zcashd and fetch params
 RUN  git clone https://github.com/zcash/zcash.git \
      && cd zcash/ \
      && git checkout v5.4.2 \
      && ./zcutil/fetch-params.sh
 
 RUN  cd zcash && ./zcutil/clean.sh && ./zcutil/build.sh -j$(nproc)
-
-# Import lightwalletd binary
-
 RUN  ln -s /zcash/src/zcashd /zcash/src/zcash-cli /usr/bin
 RUN  rustup install stable && rustup default stable
 
