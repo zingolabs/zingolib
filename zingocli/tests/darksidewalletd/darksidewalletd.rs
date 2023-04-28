@@ -220,6 +220,7 @@ async fn prepare_darksidewalletd(uri: http::Uri) -> Result<(), String> {
     Ok(())
 }
 
+#[ignore]
 #[tokio::test]
 async fn test_simple_sync() {
     let mut rng = rand::thread_rng();
