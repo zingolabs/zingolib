@@ -69,12 +69,11 @@ fn get_wallet_nym(nym: &str) -> Result<(String, PathBuf, PathBuf), String> {
         _ => Err(format!("nym {nym} not a valid wallet directory")),
     }
 }
-async fn load_wallet(dir: PathBuf) -> zingolib::wallet::LightWallet {
+async fn load_wallet(dir: PathBuf, chaintype: ChainType) -> zingolib::wallet::LightWallet {
     let wallet = dir.join("zingo-wallet.dat");
     tracing::info!("The wallet is: {}", &wallet.to_str().unwrap());
     let lightwalletd_uri = TestEnvironmentGenerator::new().get_lightwalletd_uri();
-    let zingo_config =
-        zingolib::load_clientconfig(lightwalletd_uri, Some(dir), ChainType::Regtest).unwrap();
+    let zingo_config = zingolib::load_clientconfig(lightwalletd_uri, Some(dir), chaintype).unwrap();
     let from = std::fs::File::open(wallet).unwrap();
 
     let read_lengths = vec![];
@@ -88,7 +87,7 @@ async fn load_wallet(dir: PathBuf) -> zingolib::wallet::LightWallet {
 #[tokio::test]
 async fn load_and_parse_different_wallet_versions() {
     let (_sap_wallet, _sap_path, sap_dir) = get_wallet_nym("sap_only").unwrap();
-    let _loaded_wallet = load_wallet(sap_dir).await;
+    let _loaded_wallet = load_wallet(sap_dir, ChainType::Regtest).await;
 }
 
 #[tokio::test]
