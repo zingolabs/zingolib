@@ -1711,11 +1711,7 @@ impl LightClient {
             self.wallet
                 .send_to_address(
                     prover,
-                    vec![
-                        crate::wallet::Pool::Orchard,
-                        crate::wallet::Pool::Sapling,
-                        crate::wallet::Pool::Transparent,
-                    ],
+                    vec![crate::wallet::Pool::Orchard, crate::wallet::Pool::Sapling],
                     address_amount_memo_tuples,
                     transaction_submission_height,
                     |transaction_bytes| {
