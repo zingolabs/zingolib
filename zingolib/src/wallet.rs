@@ -1068,7 +1068,12 @@ impl LightWallet {
         }
 
         // If we can't select enough, then we need to return empty handed
-        (vec![], vec![], vec![], Amount::zero())
+        (
+            vec![],
+            vec![],
+            vec![],
+            (transparent_value_selected + sapling_value_selected + orchard_value_selected).unwrap(),
+        )
     }
 
     async fn get_all_domain_specific_notes<D>(&self) -> Vec<D::SpendableNoteAT>

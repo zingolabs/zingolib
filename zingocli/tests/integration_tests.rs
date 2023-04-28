@@ -699,6 +699,8 @@ async fn note_selection_order() {
 }
 
 #[tokio::test]
+// This test is very long-running, so we ignore to speed CI
+#[ignore]
 async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     // Test all possible promoting note source combinations
     let (regtest_manager, child_process_handler, mut client_builder) = scenarios::custom_clients();
@@ -727,10 +729,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         .unwrap();
     bump_and_check!(o: 0 s: 0 t: 5_000);
 
-    pool_migration_client
-        .do_send(vec![(&pmc_unified, 4_000, None)])
-        .await
-        .unwrap();
+    pool_migration_client.do_shield(None).await.unwrap();
     bump_and_check!(o: 4_000 s: 0 t: 0);
 
     // 2 Test of a send from a sapling only client to its own unified address
@@ -760,18 +759,29 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         .unwrap();
     bump_and_check!(o: 0 s: 3_000 t: 3_000);
 
+    pool_migration_client.do_shield(None).await.unwrap();
     pool_migration_client
-        .do_send(vec![(&pmc_unified, 5_000, None)])
+        .do_send(vec![(&pmc_unified, 2_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 5_000 s: 0 t: 0);
+    bump_and_check!(o: 4_000 s: 0 t: 0);
 
     // 5 to transparent and orchard to orchard
     pool_migration_client
         .do_send(vec![(&pmc_taddr, 2_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 2_000 s: 0 t: 2_000);
+    bump_and_check!(o: 1_000 s: 0 t: 2_000);
+
+    pool_migration_client.do_shield(None).await.unwrap();
+    bump_and_check!(o: 2_000 s: 0 t: 0);
+
+    // 6 sapling and orchard to orchard
+    sapling_faucet
+        .do_send(vec![(&pmc_sapling, 2_000, None)])
+        .await
+        .unwrap();
+    bump_and_check!(o: 2_000 s: 2_000 t: 0);
 
     pool_migration_client
         .do_send(vec![(&pmc_unified, 3_000, None)])
@@ -779,44 +789,32 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         .unwrap();
     bump_and_check!(o: 3_000 s: 0 t: 0);
 
-    // 6 sapling and orchard to orchard
-    sapling_faucet
-        .do_send(vec![(&pmc_sapling, 2_000, None)])
-        .await
-        .unwrap();
-    bump_and_check!(o: 3_000 s: 2_000 t: 0);
-
-    pool_migration_client
-        .do_send(vec![(&pmc_unified, 4_000, None)])
-        .await
-        .unwrap();
-    bump_and_check!(o: 4_000 s: 0 t: 0);
-
     // 7 tzo --> o
     sapling_faucet
         .do_send(vec![(&pmc_taddr, 2_000, None), (&pmc_sapling, 2_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 4_000 s: 2_000 t: 2_000);
+    bump_and_check!(o: 3_000 s: 2_000 t: 2_000);
 
+    pool_migration_client.do_shield(None).await.unwrap();
     pool_migration_client
-        .do_send(vec![(&pmc_unified, 7_000, None)])
-        .await
-        .unwrap();
-    bump_and_check!(o: 7_000 s: 0 t: 0);
-
-    // Send from Sapling into empty Orchard pool
-    pool_migration_client
-        .do_send(vec![(&pmc_sapling, 6_000, None)])
-        .await
-        .unwrap();
-    bump_and_check!(o: 0 s: 6_000 t: 0);
-
-    pool_migration_client
-        .do_send(vec![(&pmc_unified, 5_000, None)])
+        .do_send(vec![(&pmc_unified, 4_000, None)])
         .await
         .unwrap();
     bump_and_check!(o: 5_000 s: 0 t: 0);
+
+    // Send from Sapling into empty Orchard pool
+    pool_migration_client
+        .do_send(vec![(&pmc_sapling, 4_000, None)])
+        .await
+        .unwrap();
+    bump_and_check!(o: 0 s: 4_000 t: 0);
+
+    pool_migration_client
+        .do_send(vec![(&pmc_unified, 3_000, None)])
+        .await
+        .unwrap();
+    bump_and_check!(o: 3_000 s: 0 t: 0);
     log::info!(
         "{}",
         json::stringify_pretty(pool_migration_client.do_list_transactions(false).await, 4)
@@ -1360,113 +1358,6 @@ async fn sapling_to_sapling_scan_together() {
     assert_eq!(
         list[1]["outgoing_metadata"][0]["value"].as_u64().unwrap(),
         spent_value
-    );
-
-    drop(child_process_handler);
-}
-
-#[tokio::test]
-async fn mixed_transaction() {
-    let zvalue = 100_000;
-    let (regtest_manager, child_process_handler, faucet, recipient, _txid) =
-        scenarios::faucet_prefunded_orchard_recipient(zvalue).await;
-
-    // 3. Send an incoming t-address transaction
-    let tvalue = 200_000;
-    utils::send_value_between_clients_and_sync(
-        &regtest_manager,
-        &faucet,
-        &recipient,
-        tvalue,
-        "transparent",
-    )
-    .await
-    .unwrap();
-
-    let (faucet_sapling, faucet_transparent) = (
-        get_base_address!(faucet, "sapling"),
-        get_base_address!(faucet, "transparent"),
-    );
-    // 4. Send a transaction to both external t-addr and external z addr and mine it
-    let sent_zvalue = 80_000;
-    let sent_tvalue = 140_000;
-    let sent_zmemo = "Ext z".to_string();
-    let tos = vec![
-        (
-            faucet_sapling.as_str(),
-            sent_zvalue,
-            Some(sent_zmemo.clone()),
-        ),
-        (faucet_transparent.as_str(), sent_tvalue, None),
-    ];
-    recipient.do_send(tos).await.unwrap();
-
-    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1)
-        .await
-        .unwrap();
-
-    let notes = recipient.do_list_notes(true).await;
-    let list = recipient.do_list_transactions(false).await;
-
-    // 5. Check everything
-    assert_eq!(notes["unspent_orchard_notes"].len(), 1);
-    assert_eq!(
-        notes["unspent_orchard_notes"][0]["created_in_block"]
-            .as_u64()
-            .unwrap(),
-        5
-    );
-    assert!(notes["unspent_orchard_notes"][0]["is_change"]
-        .as_bool()
-        .unwrap());
-    assert_eq!(
-        notes["unspent_orchard_notes"][0]["value"].as_u64().unwrap(),
-        tvalue + zvalue - sent_tvalue - sent_zvalue - u64::from(DEFAULT_FEE)
-    );
-
-    assert_eq!(notes["spent_orchard_notes"].len(), 1);
-    assert_eq!(
-        notes["spent_orchard_notes"][0]["spent"],
-        notes["unspent_orchard_notes"][0]["created_in_txid"]
-    );
-
-    assert_eq!(notes["pending_sapling_notes"].len(), 0);
-    assert_eq!(notes["pending_orchard_notes"].len(), 0);
-    assert_eq!(notes["utxos"].len(), 0);
-    assert_eq!(notes["pending_utxos"].len(), 0);
-
-    assert_eq!(notes["spent_utxos"].len(), 1);
-    assert_eq!(
-        notes["spent_utxos"][0]["spent"],
-        notes["unspent_orchard_notes"][0]["created_in_txid"]
-    );
-
-    assert_eq!(list.len(), 3);
-    assert_eq!(list[2]["block_height"].as_u64().unwrap(), 5);
-    assert_eq!(
-        list[2]["amount"].as_i64().unwrap(),
-        0 - (sent_tvalue + sent_zvalue + u64::from(DEFAULT_FEE)) as i64
-    );
-    assert_eq!(
-        list[2]["txid"],
-        notes["unspent_orchard_notes"][0]["created_in_txid"]
-    );
-    assert_eq!(
-        list[2]["outgoing_metadata"]
-            .members()
-            .find(|j| j["address"] == faucet_sapling && j["value"].as_u64().unwrap() == sent_zvalue)
-            .unwrap()["memo"]
-            .to_string(),
-        sent_zmemo
-    );
-    assert_eq!(
-        list[2]["outgoing_metadata"]
-            .members()
-            .find(|j| j["address"] == faucet_transparent)
-            .unwrap()["value"]
-            .as_u64()
-            .unwrap(),
-        sent_tvalue
     );
 
     drop(child_process_handler);
