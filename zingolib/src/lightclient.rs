@@ -900,6 +900,7 @@ impl LightClient {
         wallet_transaction: &TransactionMetadata,
         include_memo_hex: bool,
     ) -> JsonValue {
+        // TODO:  Understand why sapling and orchard have an "is_change" filter, but transparent does not
         let total_change = wallet_transaction
             .sapling_notes
             .iter()
