@@ -21,6 +21,7 @@ use zcash_primitives::{
     consensus::Parameters,
     transaction::{components::amount::DEFAULT_FEE, TxId},
 };
+use zingo_cli::regtest::get_cargo_manifest_dir_parent;
 use zingoconfig::{ChainType, ZingoConfig};
 use zingolib::{
     check_client_balances, get_base_address,
@@ -56,7 +57,7 @@ fn get_wallet_nym(nym: &str) -> Result<(String, PathBuf, PathBuf), String> {
         "sap_only" | "orch_only" | "orch_and_sapl" | "tadd_only" => {
             let one_sapling_wallet = format!(
                 "{}/zingocli/tests/data/wallets/v26/202302_release/regtest/{nym}/zingo-wallet.dat",
-                zingo_cli::regtest::get_cargo_manifest_dir_parent().to_string_lossy()
+                get_cargo_manifest_dir_parent().to_string_lossy()
             );
             let wallet_path = Path::new(&one_sapling_wallet);
             let wallet_dir = wallet_path.parent().unwrap();
@@ -69,7 +70,10 @@ fn get_wallet_nym(nym: &str) -> Result<(String, PathBuf, PathBuf), String> {
         _ => Err(format!("nym {nym} not a valid wallet directory")),
     }
 }
-async fn load_wallet(dir: PathBuf, chaintype: ChainType) -> zingolib::wallet::LightWallet {
+async fn load_wallet(
+    dir: PathBuf,
+    chaintype: ChainType,
+) -> (zingolib::wallet::LightWallet, ZingoConfig) {
     let wallet = dir.join("zingo-wallet.dat");
     tracing::info!("The wallet is: {}", &wallet.to_str().unwrap());
     let lightwalletd_uri = TestEnvironmentGenerator::new().get_lightwalletd_uri();
@@ -79,17 +83,34 @@ async fn load_wallet(dir: PathBuf, chaintype: ChainType) -> zingolib::wallet::Li
     let read_lengths = vec![];
     let mut recording_reader = RecordingReader { from, read_lengths };
 
-    zingolib::wallet::LightWallet::read_internal(&mut recording_reader, &zingo_config)
-        .await
-        .unwrap()
+    (
+        zingolib::wallet::LightWallet::read_internal(&mut recording_reader, &zingo_config)
+            .await
+            .unwrap(),
+        zingo_config,
+    )
 }
 
 #[tokio::test]
 async fn load_and_parse_different_wallet_versions() {
     let (_sap_wallet, _sap_path, sap_dir) = get_wallet_nym("sap_only").unwrap();
-    let _loaded_wallet = load_wallet(sap_dir, ChainType::Regtest).await;
+    let (_loaded_wallet, _) = load_wallet(sap_dir, ChainType::Regtest).await;
 }
 
+#[tokio::test]
+async fn list_transactions_include_foreign() {
+    let wallet_nym = format!(
+        "{}/zingocli/tests/data/wallets/missing_data_test/zingo-wallet.dat",
+        get_cargo_manifest_dir_parent().to_string_lossy()
+    );
+    let wallet_path = Path::new(&wallet_nym);
+    let wallet_dir = wallet_path.parent().unwrap();
+    let (wallet, config) = load_wallet(wallet_dir.to_path_buf(), ChainType::Mainnet).await;
+    let client = LightClient::create_with_wallet(wallet, config);
+    let transactions = client.do_list_transactions(true).await;
+    env_logger::init();
+    log::info!("transactions");
+}
 #[tokio::test]
 #[traced_test]
 async fn send_to_self_with_no_user_specified_memo_does_not_cause_error() {
