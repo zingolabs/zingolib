@@ -159,18 +159,21 @@ impl TransactionMetadataSet {
         }
         self.current.values_mut().for_each(|transaction_metadata| {
             // Update UTXOs to rollback any spent utxos
-            transaction_metadata.utxos.iter_mut().for_each(|utxo| {
-                if utxo.spent.is_some() && txids_to_remove.contains(&utxo.spent.unwrap()) {
-                    utxo.spent = None;
-                    utxo.spent_at_height = None;
-                }
+            transaction_metadata
+                .received_utxos
+                .iter_mut()
+                .for_each(|utxo| {
+                    if utxo.spent.is_some() && txids_to_remove.contains(&utxo.spent.unwrap()) {
+                        utxo.spent = None;
+                        utxo.spent_at_height = None;
+                    }
 
-                if utxo.unconfirmed_spent.is_some()
-                    && txids_to_remove.contains(&utxo.unconfirmed_spent.unwrap().0)
-                {
-                    utxo.unconfirmed_spent = None;
-                }
-            })
+                    if utxo.unconfirmed_spent.is_some()
+                        && txids_to_remove.contains(&utxo.unconfirmed_spent.unwrap().0)
+                    {
+                        utxo.unconfirmed_spent = None;
+                    }
+                })
         });
         self.remove_domain_specific_txids::<SaplingDomain<ChainType>>(&txids_to_remove);
         self.remove_domain_specific_txids::<OrchardDomain>(&txids_to_remove);
@@ -630,7 +633,7 @@ impl TransactionMetadataSet {
         // Find the UTXO
         let value = if let Some(utxo_transacion_metadata) = self.current.get_mut(&spent_txid) {
             if let Some(spent_utxo) = utxo_transacion_metadata
-                .utxos
+                .received_utxos
                 .iter_mut()
                 .find(|u| u.txid == spent_txid && u.output_index == output_num as u64)
             {
@@ -674,14 +677,14 @@ impl TransactionMetadataSet {
 
         // Add this UTXO if it doesn't already exist
         if let Some(utxo) = transaction_metadata
-            .utxos
+            .received_utxos
             .iter_mut()
             .find(|utxo| utxo.txid == txid && utxo.output_index == output_num as u64)
         {
             // If it already exists, it is likely an mempool tx, so update the height
             utxo.height = height as i32
         } else {
-            transaction_metadata.utxos.push(Utxo {
+            transaction_metadata.received_utxos.push(Utxo {
                 address: taddr,
                 txid,
                 output_index: output_num as u64,

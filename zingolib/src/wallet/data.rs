@@ -491,7 +491,7 @@ impl OutgoingTxData {
     }
 }
 
-pub enum MobileTxOutgoingAddress {
+pub enum ConsumerUIAddress {
     Transparent,
     Sapling,
     Orchard,
@@ -499,20 +499,21 @@ pub enum MobileTxOutgoingAddress {
 /// The MobileTx is the zingolib representation of
 /// transactions in the format most useful for
 /// consumption in mobile and mobile-like UI
-impl From<MobileTx> for json::JsonValue {
-    fn from(value: MobileTx) -> Self {
+impl From<ConsumderUINote> for json::JsonValue {
+    fn from(value: ConsumderUINote) -> Self {
         todo!()
     }
 }
-pub struct MobileTx {
+pub struct ConsumderUINote {
     block_height: u32,
     unconfirmed: bool,
     datetime: u64,
     txid: zcash_primitives::transaction::TxId,
     amount: zcash_primitives::transaction::components::Amount,
     zec_price: WalletZecPriceInfo,
-    address: MobileTxOutgoingAddress,
+    address: ConsumerUIAddress,
     memo: Option<String>,
+    memohex: Option<MemoBytes>,
 }
 ///  Everything (SOMETHING) about a transaction
 pub struct TransactionMetadata {
@@ -542,7 +543,7 @@ pub struct TransactionMetadata {
     pub orchard_notes: Vec<ReceivedOrchardNoteAndMetadata>,
 
     // List of all Utxos received in this Tx. Some of these might be change notes
-    pub utxos: Vec<Utxo>,
+    pub received_utxos: Vec<Utxo>,
 
     // Total value of all the sapling nullifiers that were spent in this Tx
     pub total_sapling_value_spent: u64,
@@ -619,7 +620,7 @@ impl TransactionMetadata {
             spent_orchard_nullifiers: vec![],
             sapling_notes: vec![],
             orchard_notes: vec![],
-            utxos: vec![],
+            received_utxos: vec![],
             total_transparent_value_spent: 0,
             total_sapling_value_spent: 0,
             total_orchard_value_spent: 0,
@@ -710,7 +711,7 @@ impl TransactionMetadata {
             txid: transaction_id,
             sapling_notes,
             orchard_notes,
-            utxos,
+            received_utxos: utxos,
             spent_sapling_nullifiers,
             spent_orchard_nullifiers,
             total_sapling_value_spent,
@@ -736,7 +737,7 @@ impl TransactionMetadata {
 
         Vector::write(&mut writer, &self.sapling_notes, |w, nd| nd.write(w))?;
         Vector::write(&mut writer, &self.orchard_notes, |w, nd| nd.write(w))?;
-        Vector::write(&mut writer, &self.utxos, |w, u| u.write(w))?;
+        Vector::write(&mut writer, &self.received_utxos, |w, u| u.write(w))?;
 
         for pool in self.value_spent_by_pool() {
             writer.write_u64::<LittleEndian>(pool)?;

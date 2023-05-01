@@ -309,7 +309,7 @@ impl TransactionContext {
                     if let Some(wtx) = current.get(&prev_transaction_id) {
                         // One of the tx outputs is a match
                         if let Some(spent_utxo) = wtx
-                            .utxos
+                            .received_utxos
                             .iter()
                             .find(|u| u.txid == prev_transaction_id && u.output_index == prev_n)
                         {

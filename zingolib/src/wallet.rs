@@ -818,7 +818,12 @@ impl LightWallet {
             .await
             .current
             .values()
-            .flat_map(|transaction| transaction.utxos.iter().filter(|utxo| utxo.spent.is_none()))
+            .flat_map(|transaction| {
+                transaction
+                    .received_utxos
+                    .iter()
+                    .filter(|utxo| utxo.spent.is_none())
+            })
             .cloned()
             .collect::<Vec<Utxo>>()
     }
@@ -982,7 +987,7 @@ impl LightWallet {
             .current
             .values_mut()
             .for_each(|wtx| {
-                wtx.utxos
+                wtx.received_utxos
                     .iter_mut()
                     .filter(|utxo| utxo.spent.is_some() && utxo.spent_at_height.is_none())
                     .for_each(|utxo| {
@@ -1544,7 +1549,7 @@ impl LightWallet {
                     .current
                     .get_mut(&utxo.txid)
                     .unwrap()
-                    .utxos
+                    .received_utxos
                     .iter_mut()
                     .find(|u| utxo.txid == u.txid && utxo.output_index == u.output_index)
                     .unwrap();
