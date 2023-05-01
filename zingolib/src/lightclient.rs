@@ -896,7 +896,7 @@ impl LightClient {
     /// This fn is _only_ called insde a block conditioned on "is_outgoing_transaction"
     fn append_change_notes(
         wallet_transaction: &TransactionMetadata,
-        received_utxo_value: u64
+        received_utxo_value: u64,
     ) -> JsonValue {
         // TODO:  Understand why sapling and orchard have an "is_change" filter, but transparent does not
         // It seems like this already depends on an invariant where all outgoing utxos are change.
@@ -929,7 +929,6 @@ impl LightClient {
                     "value"   => om.value,
                     "memo"    => LightWallet::memo_str(Some(om.memo.clone()))
                 }
-
             })
             .collect::<Vec<JsonValue>>();
 
@@ -957,7 +956,7 @@ impl LightClient {
             .await
             .current
             .iter()
-            .flat_map(|(_k, wallet_transaction)| {
+            .flat_map(|(txid, wallet_transaction)| {
                 let mut consumer_notes_by_tx: Vec<JsonValue> = vec![];
 
                 let total_transparent_received = wallet_transaction.received_utxos.iter().map(|u| u.value).sum::<u64>();
@@ -977,17 +976,17 @@ impl LightClient {
 
                 // Get the total transparent value received in this transaction
                 // Again we see the assumption that utxos are incoming.
-                let net_transparent_change = total_transparent_received as i64 - wallet_transaction.total_transparent_value_spent as i64;
+                let net_transparent_value = total_transparent_received as i64 - wallet_transaction.total_transparent_value_spent as i64;
                 let address = wallet_transaction.received_utxos.iter().map(|utxo| utxo.address.clone()).collect::<Vec<String>>().join(",");
-                if net_transparent_change > 0 {
-                    if let Some(transaction) = consumer_notes_by_tx.iter_mut().find(|transaction| transaction["txid"] == wallet_transaction.txid.to_string()) {
+                if net_transparent_value > 0 {
+                    if let Some(transaction) = consumer_notes_by_tx.iter_mut().find(|transaction| transaction["txid"] == txid.to_string()) {
                         // If this transaction is outgoing:
                         // Then we've already accounted for the entire balance.
 
                         if !wallet_transaction.is_outgoing_transaction() {
                             // If not, we've added sapling/orchard, and need to add transparent
                             let old_amount = transaction.remove("amount").as_i64().unwrap();
-                            transaction.insert("amount", old_amount + net_transparent_change).unwrap();
+                            transaction.insert("amount", old_amount + net_transparent_value).unwrap();
                         }
                     } else {
                         // Create an input transaction for the transparent value as well.
@@ -996,8 +995,8 @@ impl LightClient {
                             "block_height" => block_height,
                             "unconfirmed"  => wallet_transaction.unconfirmed,
                             "datetime"     => wallet_transaction.datetime,
-                            "txid"         => format!("{}", wallet_transaction.txid),
-                            "amount"       => net_transparent_change,
+                            "txid"         => format!("{}", txid),
+                            "amount"       => net_transparent_value,
                             "zec_price"    => wallet_transaction.zec_price.map(|p| (p * 100.0).round() / 100.0),
                             "address"      => address,
                             "memo"         => None::<String>
