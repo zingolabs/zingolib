@@ -7,7 +7,7 @@ on:
 
 jobs:
   static_checks:
-    name: fmt_check_clippy
+    name: Format check and clippy
     runs-on: ubuntu-22.04
     env:
       RUSTFLAGS: -D warnings
@@ -18,18 +18,25 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+      
       - name: Reject trailing whitespace
         run: ./utils/trailing-whitespace.sh reject
-      - name: what's my env
+
+      - name: What's my env
         run:  env
-      - name: whoami
+
+      - name: Whoami
         run:  whoami
-      - name: which rustup
+
+      - name: Which rustup
         run:  which rustup
-      - name: rustup show
+
+      - name: Rustup show
         run:  rustup show
+
       - name: Check formatting of code
         run: cargo +stable fmt --check
+
       - name: Clippy Checks
         run: cargo +stable clippy
 
@@ -45,12 +52,32 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+
       - name: Symlink lightwalletd and zcash binaries
         run: ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./regtest/bin/
-      - name: Symlink zcash parameters and rustup files
-        run: ln -s /root/.zcash-params /root/.rustup /github/home
+
+      - name: Symlink zcash parameters
+        run: ln -s /root/.zcash-params /github/home
+ 
+      - name: Cargo cache
+        id: cargo-cache
+        uses: actions/cache@v3
+        with:
+          # Following cargo cache recommendations:
+          # https://doc.rust-lang.org/cargo/guide/cargo-home.html
+          path: |
+            /root/.cargo/.crates.toml
+            /root/.cargo/.crates2.json
+            /root/.cargo/bin/
+            /root/.cargo/registry/index/
+            /root/.cargo/registry/cache/
+            /root/.cargo/registry/git/db/
+          key: cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo
+
       - name: Run integration tests and generate coverage
         run: cargo tarpaulin --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 3000 --out xml
+
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v3
         with:
