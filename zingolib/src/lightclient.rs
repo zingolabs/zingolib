@@ -899,7 +899,7 @@ impl LightClient {
         received_utxo_value: u64
     ) -> JsonValue {
         // TODO:  Understand why sapling and orchard have an "is_change" filter, but transparent does not
-        // It seems like this already depends on an invariant where all outgoing utxos are change.  
+        // It seems like this already depends on an invariant where all outgoing utxos are change.
         // This should never be true _AFTER SOME VERSION_ since we only send change to orchard.
         // If I sent a transaction to a foreign transparent address wouldn't this "total_change" value
         // be wrong?
@@ -929,7 +929,7 @@ impl LightClient {
                     "value"   => om.value,
                     "memo"    => LightWallet::memo_str(Some(om.memo.clone()))
                 }
-                
+
             })
             .collect::<Vec<JsonValue>>();
 
@@ -974,7 +974,7 @@ impl LightClient {
 
                 // TODO:  determine if all notes are either Change-or-NotChange, if that's the case
                 // add a sanity check that asserts all notes are processed by this point
-                
+
                 // Get the total transparent value received in this transaction
                 // Again we see the assumption that utxos are incoming.
                 let net_transparent_change = total_transparent_received as i64 - wallet_transaction.total_transparent_value_spent as i64;
