@@ -494,7 +494,7 @@ impl OutgoingTxData {
 pub enum ConsumerUIAddress {
     Transparent,
     Sapling,
-    Orchard,
+    Unified,
 }
 /// The MobileTx is the zingolib representation of
 /// transactions in the format most useful for
