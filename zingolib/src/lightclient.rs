@@ -988,9 +988,9 @@ impl LightClient {
                 
                 // Get the total transparent value received in this transaction
                 // Again we see the assumption that utxos are incoming.
-                let transparent_received = total_transparent_received as i64 - wallet_transaction.total_transparent_value_spent as i64;
+                let net_transparent_change = total_transparent_received as i64 - wallet_transaction.total_transparent_value_spent as i64;
                 let address = wallet_transaction.received_utxos.iter().map(|utxo| utxo.address.clone()).collect::<Vec<String>>().join(",");
-                if transparent_received > 0 {
+                if net_transparent_change > 0 {
                     if let Some(transaction) = consumer_notes_by_tx.iter_mut().find(|transaction| transaction["txid"] == wallet_transaction.txid.to_string()) {
                         // If this transaction is outgoing:
                         // Then we've already accounted for the entire balance.
@@ -998,7 +998,7 @@ impl LightClient {
                         if !wallet_transaction.is_outgoing_transaction() {
                             // If not, we've added sapling/orchard, and need to add transparent
                             let old_amount = transaction.remove("amount").as_i64().unwrap();
-                            transaction.insert("amount", old_amount + transparent_received).unwrap();
+                            transaction.insert("amount", old_amount + net_transparent_change).unwrap();
                         }
                     } else {
                         // Create an input transaction for the transparent value as well.
@@ -1008,7 +1008,7 @@ impl LightClient {
                             "unconfirmed"  => wallet_transaction.unconfirmed,
                             "datetime"     => wallet_transaction.datetime,
                             "txid"         => format!("{}", wallet_transaction.txid),
-                            "amount"       => transparent_received,
+                            "amount"       => net_transparent_change,
                             "zec_price"    => wallet_transaction.zec_price.map(|p| (p * 100.0).round() / 100.0),
                             "address"      => address,
                             "memo"         => None::<String>
