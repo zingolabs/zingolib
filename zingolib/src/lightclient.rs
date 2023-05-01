@@ -792,7 +792,7 @@ impl LightClient {
         {
             self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
                 .flat_map( |(transaction_id, wtx)| {
-                    wtx.utxos.iter().filter_map(move |utxo|
+                    wtx.received_utxos.iter().filter_map(move |utxo|
                         if !all_notes && utxo.spent.is_some() {
                             None
                         } else {
@@ -919,7 +919,7 @@ impl LightClient {
                 .map(|nd| nd.note.value().inner())
                 .sum::<u64>()
             + wallet_transaction
-                .utxos
+                .received_utxos
                 .iter()
                 .map(|ut| ut.value)
                 .sum::<u64>();
@@ -989,9 +989,10 @@ impl LightClient {
                 // add a sanity check that asserts all notes are processed by this point
                 
                 // Get the total transparent value received in this transaction
-                let total_transparent_received = wallet_transaction.utxos.iter().map(|u| u.value).sum::<u64>();
+                // Again we see the assumption that utxos are incoming.
+                let total_transparent_received = wallet_transaction.received_utxos.iter().map(|u| u.value).sum::<u64>();
                 let wallet_transparent_value_delta = total_transparent_received as i64 - wallet_transaction.total_transparent_value_spent as i64;
-                let address = wallet_transaction.utxos.iter().map(|utxo| utxo.address.clone()).collect::<Vec<String>>().join(",");
+                let address = wallet_transaction.received_utxos.iter().map(|utxo| utxo.address.clone()).collect::<Vec<String>>().join(",");
                 if wallet_transparent_value_delta > 0 {
                     if let Some(transaction) = consumer_notes_by_tx.iter_mut().find(|transaction| transaction["txid"] == wallet_transaction.txid.to_string()) {
                         // If this transaction is outgoing:
