@@ -37,7 +37,7 @@ jobs:
       - name: Check formatting of code
         run: cargo +stable fmt --check
 
-      - name: Clippy Checks
+      - name: Clippy checks
         run: cargo +stable clippy
 
   test:
@@ -72,6 +72,7 @@ jobs:
             /root/.cargo/registry/index/
             /root/.cargo/registry/cache/
             /root/.cargo/registry/git/db/
+            target/
           key: zingolib-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: zingolib-cargo
 
