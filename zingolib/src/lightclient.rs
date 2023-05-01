@@ -75,9 +75,6 @@ impl WalletStatus {
 
 pub struct LightClient {
     pub(crate) config: ZingoConfig,
-    #[cfg(not(feature = "integration_test"))]
-    pub(crate) wallet: LightWallet,
-    #[cfg(feature = "integration_test")]
     pub wallet: LightWallet,
 
     mempool_monitor: std::sync::RwLock<Option<std::thread::JoinHandle<()>>>,
@@ -899,7 +896,6 @@ impl LightClient {
     /// This fn is _only_ called insde a block conditioned on "is_outgoing_transaction"
     fn append_change_notes(
         wallet_transaction: &TransactionMetadata,
-        include_memo_hex: bool,
         received_utxo_value: u64
     ) -> JsonValue {
         // TODO:  Understand why sapling and orchard have an "is_change" filter, but transparent does not
@@ -926,21 +922,14 @@ impl LightClient {
             .outgoing_tx_data
             .iter()
             .map(|om| {
-                let mut o = object! {
+                object! {
                     // Is this address ever different than the address in the containing struct
                     // this is the full UA.
                     "address" => om.recipient_ua.clone().unwrap_or(om.to_address.clone()),
                     "value"   => om.value,
                     "memo"    => LightWallet::memo_str(Some(om.memo.clone()))
-                };
-
-                if include_memo_hex {
-                    let memo_bytes: MemoBytes = om.memo.clone().into();
-                    o.insert("memohex", hex::encode(memo_bytes.as_slice()))
-                        .unwrap();
                 }
-
-                o
+                
             })
             .collect::<Vec<JsonValue>>();
 
@@ -955,7 +944,7 @@ impl LightClient {
             "outgoing_metadata" => outgoing_json,
         }
     }
-    pub async fn do_list_transactions(&self, include_memo_hex: bool) -> JsonValue {
+    pub async fn do_list_transactions(&self) -> JsonValue {
         // Create a list of TransactionItems from wallet transactions
         // TODO:  determine why an interface called "list_transactions" is
         // processing a bunch of transaction contents
@@ -977,11 +966,11 @@ impl LightClient {
                     // all the change notes + Utxos
                     // TODO:  Figure out why we have an insane comment saying that we "create a transaction"
                     // in the middle of the "list transactions" fn/
-                    consumer_notes_by_tx.push(Self::append_change_notes(wallet_transaction, include_memo_hex, total_transparent_received));
+                    consumer_notes_by_tx.push(Self::append_change_notes(wallet_transaction, total_transparent_received));
                 }
 
                 // For each note that is not a change, add a consumer_ui_note.
-                consumer_notes_by_tx.extend(self.add_nonchange_notes(wallet_transaction, &include_memo_hex, unified_spend_capability));
+                consumer_notes_by_tx.extend(self.add_nonchange_notes(wallet_transaction, unified_spend_capability));
 
                 // TODO:  determine if all notes are either Change-or-NotChange, if that's the case
                 // add a sanity check that asserts all notes are processed by this point
@@ -1070,7 +1059,6 @@ impl LightClient {
     fn add_nonchange_notes<'a, 'b, 'c>(
         &'a self,
         transaction_metadata: &'b TransactionMetadata,
-        include_memo_hex: &'b bool,
         unified_spend_auth: &'c WalletCapability,
     ) -> impl Iterator<Item = JsonValue> + 'b
     where
@@ -1079,13 +1067,11 @@ impl LightClient {
     {
         self.add_wallet_notes_in_transaction_to_list_inner::<'a, 'b, 'c, SaplingDomain<ChainType>>(
             transaction_metadata,
-            include_memo_hex,
             unified_spend_auth,
         )
         .chain(
             self.add_wallet_notes_in_transaction_to_list_inner::<'a, 'b, 'c, OrchardDomain>(
                 transaction_metadata,
-                include_memo_hex,
                 unified_spend_auth,
             ),
         )
@@ -1094,7 +1080,6 @@ impl LightClient {
     fn add_wallet_notes_in_transaction_to_list_inner<'a, 'b, 'c, D>(
         &'a self,
         transaction_metadata: &'b TransactionMetadata,
-        include_memo_hex: &'b bool,
         unified_spend_auth: &'c WalletCapability,
     ) -> impl Iterator<Item = JsonValue> + 'b
     where
@@ -1107,7 +1092,7 @@ impl LightClient {
     {
         D::WalletNote::transaction_metadata_notes(transaction_metadata).iter().filter(|nd| !nd.is_change()).enumerate().map(|(i, nd)| {
                     let block_height: u32 = transaction_metadata.block_height.into();
-                    let mut o = object! {
+                    object! {
                         "block_height" => block_height,
                         "unconfirmed" => transaction_metadata.unconfirmed,
                         "datetime"     => transaction_metadata.datetime,
@@ -1117,23 +1102,8 @@ impl LightClient {
                         "zec_price"    => transaction_metadata.zec_price.map(|p| (p * 100.0).round() / 100.0),
                         "address"      => LightWallet::note_address::<D>(&self.config.chain, nd, unified_spend_auth),
                         "memo"         => LightWallet::memo_str(nd.memo().clone())
-                    };
-
-                    if *include_memo_hex {
-                        o.insert(
-                            "memohex",
-                            match &nd.memo() {
-                                Some(m) => {
-                                    let memo_bytes: MemoBytes = m.into();
-                                    hex::encode(memo_bytes.as_slice())
-                                }
-                                _ => "".to_string(),
-                            },
-                        )
-                        .unwrap();
                     }
 
-                    o
                 })
     }
 
