@@ -18,7 +18,7 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
-      
+
       - name: Reject trailing whitespace
         run: ./utils/trailing-whitespace.sh reject
 
@@ -58,7 +58,7 @@ jobs:
 
       - name: Symlink zcash parameters
         run: ln -s /root/.zcash-params /github/home
- 
+
       - name: Cargo cache
         id: cargo-cache
         uses: actions/cache@v3
