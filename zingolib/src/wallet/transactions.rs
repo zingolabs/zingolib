@@ -22,7 +22,8 @@ use zingoconfig::{ChainType, MAX_REORG};
 use super::{
     data::{
         OutgoingTxData, PoolNullifier, ReceivedOrchardNoteAndMetadata,
-        ReceivedSaplingNoteAndMetadata, TransactionMetadata, Utxo, WitnessCache,
+        ReceivedSaplingNoteAndMetadata, ReceivedTransparentOutput, TransactionMetadata,
+        WitnessCache,
     },
     keys::unified::WalletCapability,
     traits::{
@@ -684,17 +685,19 @@ impl TransactionMetadataSet {
             // If it already exists, it is likely an mempool tx, so update the height
             utxo.height = height as i32
         } else {
-            transaction_metadata.received_utxos.push(Utxo {
-                address: taddr,
-                txid,
-                output_index: output_num as u64,
-                script: vout.script_pubkey.0.clone(),
-                value: vout.value.into(),
-                height: height as i32,
-                spent_at_height: None,
-                spent: None,
-                unconfirmed_spent: None,
-            });
+            transaction_metadata
+                .received_utxos
+                .push(ReceivedTransparentOutput {
+                    address: taddr,
+                    txid,
+                    output_index: output_num as u64,
+                    script: vout.script_pubkey.0.clone(),
+                    value: vout.value.into(),
+                    height: height as i32,
+                    spent_at_height: None,
+                    spent: None,
+                    unconfirmed_spent: None,
+                });
         }
     }
 

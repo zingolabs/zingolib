@@ -52,8 +52,8 @@ use self::traits::Recipient;
 use self::traits::{DomainWalletExt, ReceivedNoteAndMetadata, SpendableNote};
 use self::{
     data::{
-        BlockData, ReceivedOrchardNoteAndMetadata, ReceivedSaplingNoteAndMetadata, Utxo,
-        WalletZecPriceInfo,
+        BlockData, ReceivedOrchardNoteAndMetadata, ReceivedSaplingNoteAndMetadata,
+        ReceivedTransparentOutput, WalletZecPriceInfo,
     },
     message::Message,
     transactions::TransactionMetadataSet,
@@ -811,7 +811,7 @@ impl LightWallet {
     }
 
     // Get all (unspent) utxos. Unconfirmed spent utxos are included
-    pub async fn get_utxos(&self) -> Vec<Utxo> {
+    pub async fn get_utxos(&self) -> Vec<ReceivedTransparentOutput> {
         self.transaction_context
             .transaction_metadata_set
             .read()
@@ -825,7 +825,7 @@ impl LightWallet {
                     .filter(|utxo| utxo.spent.is_none())
             })
             .cloned()
-            .collect::<Vec<Utxo>>()
+            .collect::<Vec<ReceivedTransparentOutput>>()
     }
 
     pub async fn tbalance(&self, addr: Option<String>) -> JsonValue {
@@ -1005,7 +1005,7 @@ impl LightWallet {
     ) -> (
         Vec<SpendableOrchardNote>,
         Vec<SpendableSaplingNote>,
-        Vec<Utxo>,
+        Vec<ReceivedTransparentOutput>,
         Amount,
     ) {
         let mut transparent_value_selected = Amount::zero();
