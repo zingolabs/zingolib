@@ -58,7 +58,7 @@ jobs:
           files: ./cobertura.xml
           # fail_ci_if_error:     true
 
-  timestamp:
+  create-timestamp:
     name: Create timestamp
     runs-on: ubuntu-22.04
     outputs:
@@ -68,50 +68,123 @@ jobs:
         id: create-timestamp
         run: echo "timestamp=$(date +%Y%m%d%H%M%S)" >> $GITHUB_OUTPUT
 
-  build_android:
-    name: Build android (${{ matrix.arch }})
+  create-cache-key:
+    name: Create cache key
     runs-on: ubuntu-22.04
-    strategy:
-      matrix:
-        include:
-          - arch: x86
-            target: i686-linux-android
-            cc: i686-linux-android
-            openssl_path: x86
-          - arch: x86_64
-            target: x86_64-linux-android
-            cc: x86_64-linux-android
-            openssl_path: x86_64
-          - arch: armeabi-v7a
-            target: armv7-linux-androideabi
-            cc: armv7a-linux-androideabi
-            openssl_path: armv7
-          - arch: arm64-v8a
-            target: aarch64-linux-android
-            cc: aarch64-linux-android
-            openssl_path: aarch64
-    needs: timestamp
-    env:
-      timestamp: ${{ needs.timestamp.outputs.timestamp }}
-      RUSTUP_HOME: /root/.rustup
     container:
       image: zingodevops/android_builder:stable
+    env:
+      RUSTUP_HOME: /root/.rustup
+    outputs:
+      cache-key: ${{ steps.create-cache-key.outputs.cache-key }}
     steps:
       - name: Checkout zingo-mobile
         uses: actions/checkout@v3
         with:
           repository: zingolabs/zingo-mobile
+
       - name: Store zingolib github ref
         run: echo "zingolib_ref=$(echo ${GITHUB_REF} | sed 's/\//\\\//g')" >> $GITHUB_ENV
+
       - name: Update zingo-mobile dependencies
         run: sed -i "/^zingolib\|^zingoconfig/ s/branch = \"dev\"/rev = \"${{ env.zingolib_ref }}\"/" "rust/lib/Cargo.toml"
+
       - name: Check update was successful
         run: if cat rust/lib/Cargo.toml | grep "^zingolib\|^zingoconfig" | grep -q "branch"; then exit 1; fi
-      - name: Cargo cache
-        uses: actions/cache@v3
-        id: cargo-cache
+
+      - name: Store Cargo version
+        run: echo $(cargo --version) >> rust/cargo_version.txt
+
+      - name: Create cache key
+        id: create-cache-key
+        run: echo "cache-key=${{ hashFiles('rust/**/Cargo.toml', 'rust/**/Cargo.lock', 'rust/**/*.rs', 'rust/cargo_version.txt') }}" >> $GITHUB_OUTPUT
+
+  check-build-cache:
+    name: Check build cache
+    needs: create-cache-key
+    runs-on: macos-12
+    env:
+      CACHE-KEY: ${{ needs.create-cache-key.outputs.cache-key }}
+    outputs:
+      status-x86: ${{ steps.set-output-status.outputs.status-x86 }}
+      status-x86-64: ${{ steps.set-output-status.outputs.status-x86_64 }}
+      status-armeabi-v7a: ${{ steps.set-output-status.outputs.status-armeabi-v7a }}
+      status-arm64-v8a: ${{ steps.set-output-status.outputs.status-arm64-v8a }}
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: [ x86, x86_64, armeabi-v7a, arm64-v8a ]
+    continue-on-error: true
+    steps:
+      - name: Checkout zingo-mobile
+        uses: actions/checkout@v3
         with:
-          # TODO: ref paths from cargo
+          repository: zingolabs/zingo-mobile
+
+      - name: Check if native rust cache exists
+        id: check-build-cache
+        uses: actions/cache@v3
+        with:
+          path: android/app/src/main/jniLibs/${{ matrix.abi }}
+          key: native-rust-${{ matrix.abi }}-${{ env.CACHE-KEY }}
+          lookup-only: true
+          fail-on-cache-miss: true
+
+      - name: Set output status
+        id: set-output-status
+        if: ${{ ! cancelled() }}
+        run: echo "status-${{ matrix.abi }}=${{ steps.check-build-cache.outcome }}" >> $GITHUB_OUTPUT
+
+  build-mobile:
+    name: Build native rust (${{ matrix.abi }})
+    needs: [ create-cache-key, check-build-cache ]
+    if: ${{ contains(needs.*.outputs.*, 'failure') }}
+    runs-on: ubuntu-22.04
+    container:
+      image: zingodevops/android_builder:stable
+    env:
+      CACHE-KEY: ${{ needs.create-cache-key.outputs.cache-key }}
+      RUSTUP_HOME: /root/.rustup
+    strategy:
+      matrix:
+        include:
+          - abi: x86
+            target: i686-linux-android
+            cc: i686-linux-android
+            openssl_path: x86
+          - abi: x86_64
+            target: x86_64-linux-android
+            cc: x86_64-linux-android
+            openssl_path: x86_64
+          - abi: armeabi-v7a
+            target: armv7-linux-androideabi
+            cc: armv7a-linux-androideabi
+            openssl_path: armv7
+          - abi: arm64-v8a
+            target: aarch64-linux-android
+            cc: aarch64-linux-android
+            openssl_path: aarch64
+    steps:
+      - name: Checkout zingo-mobile
+        uses: actions/checkout@v3
+        with:
+          repository: zingolabs/zingo-mobile
+
+      - name: Store zingolib github ref
+        run: echo "zingolib_ref=$(echo ${GITHUB_REF} | sed 's/\//\\\//g')" >> $GITHUB_ENV
+
+      - name: Update zingo-mobile dependencies
+        run: sed -i "/^zingolib\|^zingoconfig/ s/branch = \"dev\"/rev = \"${{ env.zingolib_ref }}\"/" "rust/lib/Cargo.toml"
+
+      - name: Check update was successful
+        run: if cat rust/lib/Cargo.toml | grep "^zingolib\|^zingoconfig" | grep -q "branch"; then exit 1; fi
+
+      - name: Cargo cache
+        id: cargo-cache
+        uses: actions/cache@v3
+        with:
+          # Following cargo cache recommendations:
+          # https://doc.rust-lang.org/cargo/guide/cargo-home.html
           path: |
             /root/.cargo/.crates.toml
             /root/.cargo/.crates2.json
@@ -119,8 +192,9 @@ jobs:
             /root/.cargo/registry/index/
             /root/.cargo/registry/cache/
             /root/.cargo/registry/git/db/
-          key: cargo-${{ matrix.arch }}-${{ hashFiles('rust/Cargo.lock') }}
-          restore-keys: cargo-${{ matrix.arch }}
+          key: cargo-${{ matrix.abi }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: cargo-${{ matrix.abi }}
+
       - name: Cargo build
         working-directory: ./rust/android
         run: cargo +nightly build -Z build-std --target ${{ matrix.target }} --release
@@ -130,44 +204,97 @@ jobs:
           RANLIB: llvm-ranlib
           CC: ${{ matrix.cc }}23-clang
           OPENSSL_DIR: /opt/openssl-3.0.5/${{ matrix.openssl_path }}
+
       - name: LLVM Strip
         working-directory: ./rust/target
         run: llvm-strip ./${{ matrix.target }}/release/librust.so
+
       - name: Upload native rust
         uses: actions/upload-artifact@v3
         with:
-          name: ${{ matrix.arch }}-${{ env.timestamp }}
+          name: ${{ matrix.abi }}-${{ env.CACHE-KEY }}
           path: rust/target/${{ matrix.target }}/release/librust.so
 
-  integration_test_android:
-    name: Integration test android
+  cache-native-rust:
+    name: Cache native rust
+    needs: [ create-cache-key, build-mobile ]
     runs-on: macos-12
+    env:
+      CACHE-KEY: ${{ needs.create-cache-key.outputs.cache-key }}
     strategy:
       matrix:
-        include:
-          - arch : x86
-            api-level: 29
-          - arch : x86_64
-            api-level: 30
-    needs: [timestamp, build_android]
-    env:
-      timestamp: ${{ needs.timestamp.outputs.timestamp }}
+        abi: [ x86, x86_64, armeabi-v7a, arm64-v8a ]
     steps:
-      - name: Checkout repository
+      - name: Checkout zingo-mobile
         uses: actions/checkout@v3
         with:
           repository: zingolabs/zingo-mobile
+
+      - name: Download native rust
+        uses: actions/download-artifact@v3
+        with:
+          name: ${{ matrix.abi }}-${{ env.CACHE-KEY }}
+          path: android/app/src/main/jniLibs/${{ matrix.abi }}
+
+      - name: Cache native rust
+        uses: actions/cache@v3
+        with:
+          path: android/app/src/main/jniLibs/${{ matrix.abi }}
+          key: native-rust-${{ matrix.abi }}-${{ env.CACHE-KEY }}
+
+  integration-test-mobile:
+    name: Integration test
+    needs: [ create-timestamp, create-cache-key, cache-native-rust ]
+    if: ${{ ! cancelled() }}
+    runs-on: macos-12
+    env:
+      CACHE-KEY: ${{ needs.create-cache-key.outputs.cache-key }}
+      TIMESTAMP: ${{ needs.create-timestamp.outputs.timestamp }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: x86
+            avd-arch: x86
+            # api-level: 30
+            # api-target: google_apis_playstore
+          - abi: x86_64
+            avd-arch: x86_64
+            # api-level: 30
+            # api-target: google_apis_playstore
+          - abi: armeabi-v7a
+            avd-arch: x86
+            # api-level: 30
+            # api-target: google_apis_playstore
+          - abi: arm64-v8a
+            avd-arch: x86_64
+            # api-level: 30
+            # api-target: google_apis_playstore
+    steps:
+      - name: Checkout zingo-mobile
+        uses: actions/checkout@v3
+        with:
+          repository: zingolabs/zingo-mobile
+
       - name: Setup Java
         uses: actions/setup-java@v3
         with:
           distribution: 'temurin'
           java-version: '11'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v2
+
+      - name: Add emulator to PATH
+        run: echo "${ANDROID_SDK_ROOT}/emulator" >> $GITHUB_PATH
+
       - name: Gradle cache
         uses: gradle/gradle-build-action@v2
         with:
           gradle-version: 7.3.3
           build-root-directory: ./android
           cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
+
       - name: AVD cache
         uses: actions/cache@v3
         id: avd-cache
@@ -175,13 +302,78 @@ jobs:
           path: |
             ~/.android/avd/*
             ~/.android/adb*
-          key: avd-${{ matrix.arch }}-api-${{ matrix.api-level }}
-      - name: Download native rust
-        uses: actions/download-artifact@v3
+          key: avd-${{ matrix.avd-arch }}-integ
+
+      - name: Native rust cache
+        uses: actions/cache@v3
         with:
-          name: ${{ matrix.arch }}-${{ env.timestamp }}
-          path: android/app/src/main/jniLibs/${{ matrix.arch }}
+          path: android/app/src/main/jniLibs/${{ matrix.abi }}
+          key: native-rust-${{ matrix.abi }}-${{ env.CACHE-KEY }}
+          fail-on-cache-miss: true
+
       - run: yarn install
+
+      - name: Create AVD and generate snapshot for caching
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        run: ./scripts/integration_tests.sh -a ${{ matrix.avd-arch }} -s
+
+      - name: Run integration tests
+        run: ./scripts/integration_tests.sh -a ${{ matrix.abi }}
+
+      - name: Upload test reports
+        if: ${{ ! cancelled() }}
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-reports-${{ matrix.abi }}-${{ env.TIMESTAMP }}
+          path: android/app/build/outputs/integration_test_reports
+
+  e2e-test:
+    name: End-to-End Test
+    needs: [ create-cache-key, cache-native-rust ]
+    if: ${{ ! cancelled() }}
+    runs-on: macos-12
+    strategy:
+      matrix:
+        arch: [ x86_64 ]
+        api-level: [ 30 ]
+    env:
+      CACHE-KEY: ${{ needs.create-cache-key.outputs.cache-key }}
+    continue-on-error: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          repository: zingolabs/zingo-mobile
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+
+      - name: Gradle cache
+        uses: gradle/gradle-build-action@v2
+        with:
+          gradle-version: 7.3.3
+          build-root-directory: ./android
+          cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev'}}
+
+      - name: AVD cache
+        uses: actions/cache@v3
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-${{ matrix.arch }}-api-${{ matrix.api-level }}-e2e
+
+      - name: Native rust cache
+        uses: actions/cache@v3
+        with:
+          path: android/app/src/main/jniLibs/${{ matrix.arch }}
+          key: native-rust-${{ matrix.arch }}-${{ env.CACHE-KEY }}
+          fail-on-cache-miss: true
+
       - name: Create AVD and generate snapshot for caching
         if: steps.avd-cache.outputs.cache-hit != 'true'
         uses: reactivecircus/android-emulator-runner@v2
@@ -191,14 +383,21 @@ jobs:
           force-avd-creation: false
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: false
-          script: echo "Generated AVD snapshot for caching."      i
-      - name: Run integration tests
+          script: echo "Generated AVD snapshot for caching."
+
+      - run: yarn install
+
+      - run: nohup yarn react-native start > "out.yarn_react_native_start" &
+
+      - name: Run Detox Build
+        run: yarn detox build -c android.emu.debug -n test
+
+      - name: Run Detox Test
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          working-directory: ./android
           api-level: ${{ matrix.api-level }}
           arch: ${{ matrix.arch }}
           force-avd-creation: false
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: ./gradlew connectedCheck -Pandroid.testInstrumentationRunnerArguments.class=org.ZingoLabs.Zingo.IntegrationTestSuite
+          script: yarn detox test -c android.emu.debug -n test
