@@ -896,11 +896,14 @@ impl LightClient {
         }
     }
 
+    /// This fn is _only_ called insde a block conditioned on "is_outgoing_transaction"
     fn append_change_notes(
         wallet_transaction: &TransactionMetadata,
         include_memo_hex: bool,
     ) -> JsonValue {
         // TODO:  Understand why sapling and orchard have an "is_change" filter, but transparent does not
+        // It seems like this already depends on an invariant where all outgoing utxos are change.  
+        // This should never be true _AFTER SOME VERSION_ since we only send change to orchard.
         let total_change = wallet_transaction
             .sapling_notes
             .iter()
