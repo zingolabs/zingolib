@@ -953,6 +953,8 @@ impl LightClient {
     }
     pub async fn do_list_transactions(&self, include_memo_hex: bool) -> JsonValue {
         // Create a list of TransactionItems from wallet transactions
+        // TODO:  determine why an interface called "list_transactions" is
+        // processing a bunch of transaction contents
         let unified_spend_capability_arc = self.wallet.wallet_capability();
         let unified_spend_capability = &unified_spend_capability_arc.read().await;
         let mut transaction_list = self
@@ -968,12 +970,17 @@ impl LightClient {
                 if wallet_transaction.is_outgoing_transaction() {
                     // If money was spent, create a transaction. For this, we'll subtract
                     // all the change notes + Utxos
+                    // TODO:  Figure out why we have an insane comment saying that we "create a transaction"
+                    // in the middle of the "list transactions" fn/
                     transactions.push(Self::append_change_notes(wallet_transaction, include_memo_hex));
                 }
 
                 // For each note that is not a change, add a transaction.
                 transactions.extend(self.add_wallet_notes_in_transaction_to_list(wallet_transaction, &include_memo_hex, unified_spend_capability));
 
+                // TODO:  determine if all notes are either Change-or-NotChange, if that's the case
+                // add a sanity check that asserts all notes are processed by this point
+                
                 // Get the total transparent value received in this transaction
                 let total_transparent_received = wallet_transaction.utxos.iter().map(|u| u.value).sum::<u64>();
                 let wallet_transparent_value_delta = total_transparent_received as i64 - wallet_transaction.total_transparent_value_spent as i64;

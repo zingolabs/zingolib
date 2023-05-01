@@ -491,6 +491,29 @@ impl OutgoingTxData {
     }
 }
 
+pub enum MobileTxOutgoingAddress {
+    Transparent,
+    Sapling,
+    Orchard,
+}
+/// The MobileTx is the zingolib representation of
+/// transactions in the format most useful for
+/// consumption in mobile and mobile-like UI
+impl From<MobileTx> for json::JsonValue {
+    fn from(value: MobileTx) -> Self {
+        todo!()
+    }
+}
+pub struct MobileTx {
+    block_height: u32,
+    unconfirmed: bool,
+    datetime: u64,
+    txid: zcash_primitives::transaction::TxId,
+    amount: zcash_primitives::transaction::components::Amount,
+    zec_price: WalletZecPriceInfo,
+    address: MobileTxOutgoingAddress,
+    memo: Option<String>,
+}
 ///  Everything (SOMETHING) about a transaction
 pub struct TransactionMetadata {
     // Block in which this tx was included
