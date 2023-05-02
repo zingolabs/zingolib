@@ -73,8 +73,8 @@ jobs:
             /root/.cargo/registry/cache/
             /root/.cargo/registry/git/db/
             target/
-          key: zingolib-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: zingolib-cargo
+          key: cargo-zingolib-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-zingolib
 
       - name: Run integration tests and generate coverage
         run: cargo tarpaulin --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 3000 --out xml
