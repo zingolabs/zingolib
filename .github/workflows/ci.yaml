@@ -65,6 +65,7 @@ jobs:
         with:
           # Following cargo cache recommendations:
           # https://doc.rust-lang.org/cargo/guide/cargo-home.html
+          # added 'target' directory to skip compiling dependencies
           path: |
             /root/.cargo/.crates.toml
             /root/.cargo/.crates2.json
