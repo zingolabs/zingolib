@@ -109,7 +109,21 @@ async fn list_transactions_include_foreign() {
     let client = LightClient::create_with_wallet(wallet, config);
     let transactions = client.do_list_transactions().await[0].clone();
     //env_logger::init();
-    println!("{}", json::stringify_pretty(transactions, 2));
+    let expected_consumer_ui_note = r#"{
+  "amount": 100000,
+  "memo": "Enviado desde YWallet, Enviado desde YWallet",
+  "block_height": 2060028,
+  "unconfirmed": false,
+  "datetime": 1682127442,
+  "position": 0,
+  "txid": "d93fbb42a101ac148b4e610eea1fe519c0131b17d49af53f29b5e35a778145cb",
+  "zec_price": null,
+  "address": "u1n5zgv8c9px4hfmq7cr9f9t0av6q9nj5dwca9w0z9jxegut65gxs2y4qnx7ppng6k2hyt0asyycqrywalzyasxu2302xt4spfqnkh25nevr3h9exc3clh9tfpr5hyhc9dwee50l0cxm7ajun5xs9ycqhlw8rd39jql8z5zlv9hw4q8azcgpv04dez5547geuvyh8pfzezpw52cg2qknm"
+}"#;
+    assert_eq!(
+        expected_consumer_ui_note,
+        json::stringify_pretty(transactions, 2)
+    );
 }
 #[tokio::test]
 #[traced_test]
