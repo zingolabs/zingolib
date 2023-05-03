@@ -900,7 +900,7 @@ impl LightClient {
     fn append_change_notes(
         wallet_transaction: &TransactionMetadata,
         received_utxo_value: u64,
-    ) -> JsonValue {
+    ) -> crate::wallet::data::ConsumerUINote {
         // TODO:  Understand why sapling and orchard have an "is_change" filter, but transparent does not
         // It seems like this already depends on an invariant where all outgoing utxos are change.
         // This should never be true _AFTER SOME VERSION_ since we only send change to orchard.
@@ -933,7 +933,7 @@ impl LightClient {
                     "memo"    => LightWallet::memo_str(Some(om.memo.clone()))
                 }
             })
-            .collect::<Vec<JsonValue>>();
+            .collect::<Vec<crate::wallet::data::ConsumerUINote>>();
 
         let block_height: u32 = wallet_transaction.block_height.into();
         object! {

@@ -510,13 +510,13 @@ pub enum ConsumerUIAddress {
 /// The MobileTx is the zingolib representation of
 /// transactions in the format most useful for
 /// consumption in mobile and mobile-like UI
-impl From<ConsumderUINote> for json::JsonValue {
-    fn from(_value: ConsumderUINote) -> Self {
+impl From<ConsumerUINote> for json::JsonValue {
+    fn from(_value: ConsumerUINote) -> Self {
         todo!()
     }
 }
 #[allow(dead_code)]
-pub struct ConsumderUINote {
+pub struct ConsumerUINote {
     block_height: u32,
     unconfirmed: bool,
     datetime: u64,
