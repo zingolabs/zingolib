@@ -93,17 +93,13 @@ pub fn is_shielded_address(addr: &str, config: &ZingoConfig) -> bool {
 }
 
 /// STATIC METHODS
-pub fn address_from_pubkeyhash(
-    config: &ZingoConfig,
-    taddr: Option<TransparentAddress>,
-) -> Option<String> {
+pub fn address_from_pubkeyhash(config: &ZingoConfig, taddr: TransparentAddress) -> String {
     match taddr {
-        Some(TransparentAddress::PublicKey(hash)) => {
-            Some(hash.to_base58check(&config.base58_pubkey_address(), &[]))
+        TransparentAddress::PublicKey(hash) => {
+            hash.to_base58check(&config.base58_pubkey_address(), &[])
         }
-        Some(TransparentAddress::Script(hash)) => {
-            Some(hash.to_base58check(&config.base58_script_address(), &[]))
+        TransparentAddress::Script(hash) => {
+            hash.to_base58check(&config.base58_script_address(), &[])
         }
-        _ => None,
     }
 }

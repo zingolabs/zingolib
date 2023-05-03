@@ -551,10 +551,13 @@ impl LightClient {
         let mut objectified_addresses = Vec::new();
         for address in self.wallet.wallet_capability().read().await.addresses() {
             let encoded_ua = address.encode(&self.config.chain);
+            let transparent = address
+                .transparent()
+                .map(|taddr| address_from_pubkeyhash(&self.config, *taddr));
             objectified_addresses.push(object! {
             "address" => encoded_ua,
             "receivers" => object!(
-                "transparent" => address_from_pubkeyhash(&self.config, address.transparent().cloned()),
+                "transparent" => transparent,
                 "sapling" => address.sapling().map(|z_addr| encode_payment_address(self.config.chain.hrp_sapling_payment_address(), z_addr)),
                 "orchard_exists" => address.orchard().is_some(),
                 )
