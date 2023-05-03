@@ -109,7 +109,7 @@ async fn list_transactions_include_foreign() {
     let client = LightClient::create_with_wallet(wallet, config);
     let transactions = client.do_list_transactions().await[0].clone();
     //env_logger::init();
-    //log::info!("{}", json::stringify_pretty(transactions, 2));
+    println!("{}", json::stringify_pretty(transactions, 2));
 }
 #[tokio::test]
 #[traced_test]

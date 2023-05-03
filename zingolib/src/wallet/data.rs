@@ -152,6 +152,15 @@ pub struct WitnessCache<Node: Hashable> {
     pub top_height: u64,
 }
 
+impl<Node: Hashable> std::fmt::Debug for WitnessCache<Node> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WitnessCache")
+            .field("witnesses", &self.witnesses.len())
+            .field("top_height", &self.top_height)
+            .finish_non_exhaustive()
+    }
+}
+
 impl<Node: Hashable> WitnessCache<Node> {
     pub fn new(witnesses: Vec<IncrementalWitness<Node>>, top_height: u64) -> Self {
         Self {
@@ -232,6 +241,7 @@ pub struct ReceivedSaplingNoteAndMetadata {
     pub have_spending_key: bool,
 }
 
+#[derive(Debug)]
 pub struct ReceivedOrchardNoteAndMetadata {
     pub diversifier: orchard::keys::Diversifier,
     pub note: orchard::note::Note,
@@ -431,6 +441,7 @@ impl ReceivedTransparentOutput {
     }
 }
 
+#[derive(Debug)]
 pub struct OutgoingTxData {
     pub to_address: String,
     pub value: u64,
@@ -516,6 +527,7 @@ pub struct ConsumderUINote {
     memohex: Option<MemoBytes>,
 }
 ///  Everything (SOMETHING) about a transaction
+#[derive(Debug)]
 pub struct TransactionMetadata {
     // Block in which this tx was included
     pub block_height: BlockHeight,
