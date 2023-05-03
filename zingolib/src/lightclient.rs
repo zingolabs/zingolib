@@ -8,7 +8,7 @@ use crate::{
     compact_formats::RawTransaction,
     grpc_connector::GrpcConnector,
     wallet::{
-        data::TransactionMetadata,
+        data::{ConsumderUINote, TransactionMetadata},
         keys::{
             address_from_pubkeyhash,
             unified::{ReceiverSelection, WalletCapability},
@@ -954,62 +954,84 @@ impl LightClient {
         let unified_spend_capability = &unified_spend_capability_arc.read().await;
         let mut consumer_ui_notes = self
             .wallet
-            .transaction_context.transaction_metadata_set
+            .transaction_context
+            .transaction_metadata_set
             .read()
             .await
             .current
             .iter()
             .flat_map(|(txid, wallet_transaction)| {
-                let mut consumer_notes_by_tx: Vec<JsonValue> = vec![];
+                let mut consumer_notes_by_tx: Vec<ConsumderUINote> = vec![];
 
-                let total_transparent_received = wallet_transaction.received_utxos.iter().map(|u| u.value).sum::<u64>();
+                let total_transparent_received = wallet_transaction
+                    .received_utxos
+                    .iter()
+                    .map(|u| u.value)
+                    .sum::<u64>();
                 if wallet_transaction.is_outgoing_transaction() {
                     // If money was spent, create a consumer_ui_note. For this, we'll subtract
                     // all the change notes + Utxos
                     // TODO:  Figure out why we have an insane comment saying that we "create a transaction"
                     // in the middle of the "list transactions" fn/
-                    consumer_notes_by_tx.push(Self::append_change_notes(wallet_transaction, total_transparent_received));
+                    consumer_notes_by_tx.push(Self::append_change_notes(
+                        wallet_transaction,
+                        total_transparent_received,
+                    ));
                 }
 
                 // For each note that is not a change, add a consumer_ui_note.
-                consumer_notes_by_tx.extend(self.add_nonchange_notes(wallet_transaction, unified_spend_capability));
+                consumer_notes_by_tx
+                    .extend(self.add_nonchange_notes(wallet_transaction, unified_spend_capability));
 
                 // TODO:  determine if all notes are either Change-or-NotChange, if that's the case
                 // add a sanity check that asserts all notes are processed by this point
 
                 // Get the total transparent value received in this transaction
                 // Again we see the assumption that utxos are incoming.
-                let net_transparent_value = total_transparent_received as i64 - wallet_transaction.total_transparent_value_spent as i64;
-                let address = wallet_transaction.received_utxos.iter().map(|utxo| utxo.address.clone()).collect::<Vec<String>>().join(",");
+                let net_transparent_value = total_transparent_received as i64
+                    - wallet_transaction.total_transparent_value_spent as i64;
+                let address = wallet_transaction
+                    .received_utxos
+                    .iter()
+                    .map(|utxo| utxo.address.clone())
+                    .collect::<Vec<String>>()
+                    .join(",");
                 if net_transparent_value > 0 {
-                    if let Some(transaction) = consumer_notes_by_tx.iter_mut().find(|transaction| transaction["txid"] == txid.to_string()) {
+                    if let Some(transaction) = consumer_notes_by_tx
+                        .iter_mut()
+                        .find(|transaction| transaction["txid"] == txid.to_string())
+                    {
                         // If this transaction is outgoing:
                         // Then we've already accounted for the entire balance.
 
                         if !wallet_transaction.is_outgoing_transaction() {
                             // If not, we've added sapling/orchard, and need to add transparent
                             let old_amount = transaction.remove("amount").as_i64().unwrap();
-                            transaction.insert("amount", old_amount + net_transparent_value).unwrap();
+                            transaction
+                                .insert("amount", old_amount + net_transparent_value)
+                                .unwrap();
                         }
                     } else {
                         // Create an input transaction for the transparent value as well.
                         let block_height: u32 = wallet_transaction.block_height.into();
-                        consumer_notes_by_tx.push(object! {
-                            "block_height" => block_height,
-                            "unconfirmed"  => wallet_transaction.unconfirmed,
-                            "datetime"     => wallet_transaction.datetime,
-                            "txid"         => format!("{}", txid),
-                            "amount"       => net_transparent_value,
-                            "zec_price"    => wallet_transaction.zec_price.map(|p| (p * 100.0).round() / 100.0),
-                            "address"      => address,
-                            "memo"         => None::<String>
+                        consumer_notes_by_tx.push(ConsumderUINote {
+                            block_height,
+                            unconfirmed: wallet_transaction.unconfirmed,
+                            datetime: wallet_transaction.datetime,
+                            txid,
+                            amount: net_transparent_value,
+                            zec_price: wallet_transaction
+                                .zec_price
+                                .map(|p| (p * 100.0).round() / 100.0),
+                            address,
+                            memo: None,
                         })
                     }
                 }
 
                 consumer_notes_by_tx
             })
-            .collect::<Vec<JsonValue>>();
+            .collect::<Vec<ConsumderUINote>>();
         /*
         if let Some(tx) = transaction_list
             .iter_mut()
