@@ -8,7 +8,7 @@ use crate::{
     compact_formats::RawTransaction,
     grpc_connector::GrpcConnector,
     wallet::{
-        data::{ConsumderUINote, TransactionMetadata},
+        data::{ConsumerUINote, TransactionMetadata},
         keys::{
             address_from_pubkeyhash,
             unified::{ReceiverSelection, WalletCapability},
@@ -961,7 +961,7 @@ impl LightClient {
             .current
             .iter()
             .flat_map(|(txid, wallet_transaction)| {
-                let mut consumer_notes_by_tx: Vec<ConsumderUINote> = vec![];
+                let mut consumer_notes_by_tx: Vec<ConsumerUINote> = vec![];
 
                 let total_transparent_received = wallet_transaction
                     .received_utxos
@@ -1014,7 +1014,7 @@ impl LightClient {
                     } else {
                         // Create an input transaction for the transparent value as well.
                         let block_height: u32 = wallet_transaction.block_height.into();
-                        consumer_notes_by_tx.push(ConsumderUINote {
+                        consumer_notes_by_tx.push(ConsumerUINote {
                             block_height,
                             unconfirmed: wallet_transaction.unconfirmed,
                             datetime: wallet_transaction.datetime,
@@ -1031,7 +1031,7 @@ impl LightClient {
 
                 consumer_notes_by_tx
             })
-            .collect::<Vec<ConsumderUINote>>();
+            .collect::<Vec<ConsumerUINote>>();
         /*
         if let Some(tx) = transaction_list
             .iter_mut()
