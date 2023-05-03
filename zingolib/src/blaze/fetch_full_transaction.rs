@@ -1,6 +1,6 @@
 use crate::wallet::{
     data::OutgoingTxData,
-    keys::{address_from_pubkeyhash, unified::WalletCapability, ToBase58Check},
+    keys::{address_from_pubkeyhash, unified::WalletCapability},
     traits::{
         self as zingo_traits, Bundle as _, DomainWalletExt, Nullifier as _,
         ReceivedNoteAndMetadata as _, Recipient as _, ShieldedOutputExt as _, Spend as _,
@@ -33,7 +33,6 @@ use zcash_note_encryption::try_output_recovery_with_ovk;
 
 use zcash_primitives::{
     consensus::BlockHeight,
-    legacy::TransparentAddress,
     memo::{Memo, MemoBytes},
     sapling::note_encryption::SaplingDomain,
     transaction::{Transaction, TxId},
