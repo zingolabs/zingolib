@@ -511,10 +511,11 @@ pub enum ConsumerUIAddress {
 /// transactions in the format most useful for
 /// consumption in mobile and mobile-like UI
 impl From<ConsumderUINote> for json::JsonValue {
-    fn from(value: ConsumderUINote) -> Self {
+    fn from(_value: ConsumderUINote) -> Self {
         todo!()
     }
 }
+#[allow(dead_code)]
 pub struct ConsumderUINote {
     block_height: u32,
     unconfirmed: bool,
