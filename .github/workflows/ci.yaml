@@ -40,8 +40,8 @@ jobs:
       - name: Clippy checks
         run: cargo +stable clippy
 
-  test:
-    name: Test
+  cargo-test:
+    name: Cargo test
     runs-on: ubuntu-22.04
     env:
       RUSTFLAGS: -D warnings
@@ -77,7 +77,7 @@ jobs:
           key: cargo-zingolib-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: cargo-zingolib
 
-      - name: Run integration tests and generate coverage
+      - name: Run tests and generate coverage
         run: cargo tarpaulin --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 3000 --out xml
 
       - name: Upload to codecov.io
