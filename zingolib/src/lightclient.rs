@@ -1087,7 +1087,7 @@ impl LightClient {
         &'a self,
         transaction_metadata: &'b TransactionMetadata,
         unified_spend_auth: &'c WalletCapability,
-    ) -> impl Iterator<Item = JsonValue> + 'b
+    ) -> impl Iterator<Item = ConsumerUINote> + 'b
     where
         'a: 'b,
         'c: 'b,
@@ -1108,7 +1108,7 @@ impl LightClient {
         &'a self,
         transaction_metadata: &'b TransactionMetadata,
         unified_spend_auth: &'c WalletCapability,
-    ) -> impl Iterator<Item = JsonValue> + 'b
+    ) -> impl Iterator<Item = ConsumerUINote> + 'b
     where
         'a: 'b,
         'c: 'b,
