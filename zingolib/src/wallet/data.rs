@@ -533,7 +533,7 @@ struct ConsumerUINoteBuilder {
     memo: Option<String>,
 }
 
-macro_rules! set_build_method {
+macro_rules! set_build_methods {
     [$($field:ident: $field_type:ty),+] => {
         $(
         concat_idents::concat_idents!(setter_name = set, _, $field {
@@ -546,7 +546,7 @@ macro_rules! set_build_method {
     };
 }
 impl ConsumerUINoteBuilder {
-    set_build_method![
+    set_build_methods![
         block_height: u32,
         unconfirmed: bool,
         datetime: u64,
