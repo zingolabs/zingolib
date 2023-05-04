@@ -255,10 +255,6 @@ pub mod scenarios {
         }
         impl TestEnvironmentGenerator {
             pub(crate) fn new() -> Self {
-                let mut common_path = zingo_cli::regtest::get_cargo_manifest_dir_parent();
-                common_path.push("cli");
-                common_path.push("tests");
-                common_path.push("data");
                 let zcashd_rpcservice_port = portpicker::pick_unused_port()
                     .expect("Port unpickable!")
                     .to_string();
