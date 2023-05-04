@@ -2,7 +2,7 @@ use std::fs::File;
 
 use std::io::Read;
 ///  Simple helper to succinctly reference the project root dir.
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Child;
 pub fn get_cargo_manifest_dir_parent() -> PathBuf {
     PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("To be inside a manifested space."))
@@ -10,8 +10,20 @@ pub fn get_cargo_manifest_dir_parent() -> PathBuf {
         .unwrap()
         .to_path_buf()
 }
+pub fn get_git_rootdir() -> PathBuf {
+    let revparse_raw = std::process::Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .expect("problem invoking git rev-parse");
+    Path::new(
+        std::str::from_utf8(&revparse_raw.stdout)
+            .expect("revparse error")
+            .trim(),
+    )
+    .to_path_buf()
+}
 pub(crate) fn get_regtest_dir() -> PathBuf {
-    get_cargo_manifest_dir_parent().join("regtest")
+    get_git_rootdir().join("regtest")
 }
 
 ///  To manage the state associated a "regtest" run this type:
