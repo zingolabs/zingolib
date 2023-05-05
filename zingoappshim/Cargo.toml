@@ -1,11 +1,11 @@
 [package]
-name = "rustlib"
+name = "zingoappshim"
 version = "1.0.1"
 authors = ["Zingolabs <zingo@zingolabs.com>"]
 edition = "2021"
 
 [dependencies]
-zingolib = { workspace = true }
-zingoconfig = { workspace = true }
+zingolib = { path = "../zingolib/" }
+zingoconfig = { path = "../zingoconfig/" }
 lazy_static = "1.4.0"
 base64 = "0.11.0"

@@ -118,7 +118,7 @@ pub fn save_to_b64() -> String {
         let lc = LIGHTCLIENT.lock().unwrap();
 
         if lc.borrow().is_none() {
-            return format!("Error: Light Client is not initialized");
+            return "Error: Light Client is not initialized".to_string();
         }
 
         lightclient = lc.borrow().as_ref().unwrap().clone();
@@ -140,7 +140,7 @@ pub fn execute(cmd: String, args_list: String) -> String {
             let lc = LIGHTCLIENT.lock().unwrap();
 
             if lc.borrow().is_none() {
-                return format!("Error: Light Client is not initialized");
+                return "Error: Light Client is not initialized".to_string();
             }
 
             lightclient = lc.borrow().as_ref().unwrap().clone();
@@ -151,7 +151,7 @@ pub fn execute(cmd: String, args_list: String) -> String {
         } else {
             vec![args_list.as_ref()]
         };
-        resp = commands::do_user_command(&cmd, &args, lightclient.as_ref()).clone();
+        resp = commands::do_user_command(&cmd, &args, lightclient.as_ref());
     };
 
     resp
