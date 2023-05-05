@@ -281,7 +281,6 @@ jobs:
       CACHE-KEY: ${{ needs.create-cache-key.outputs.cache-key }}
       TIMESTAMP: ${{ needs.create-timestamp.outputs.timestamp }}
     strategy:
-      fail-fast: false
       matrix:
         include:
           - abi: x86
