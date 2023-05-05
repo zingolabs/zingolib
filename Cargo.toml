@@ -3,7 +3,8 @@ members = [
     "zingolib",
     "zingocli",
     "zingoconfig",
-    "zingo-memo"
+    "zingo-memo",
+    "zingoappshim"
 ]
 
 [workspace.dependencies]
