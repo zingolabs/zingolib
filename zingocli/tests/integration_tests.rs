@@ -643,7 +643,7 @@ async fn note_selection_order() {
                 .map(|n| {
                     (
                         client_2_saplingaddress.as_str(),
-                        n * 1000,
+                        n * 10000,
                         Some(n.to_string()),
                     )
                 })
@@ -661,7 +661,7 @@ async fn note_selection_order() {
     recipient
         .do_send(vec![(
             &get_base_address!(faucet, "unified"),
-            3000,
+            30000,
             Some("Sending back, should have 2 inputs".to_string()),
         )])
         .await
@@ -675,8 +675,8 @@ async fn note_selection_order() {
         .as_fixed_point_u64(0)
         .unwrap();
     assert!(
-        first_value == 3000u64 && second_value == 2000u64
-            || first_value == 2000u64 && second_value == 3000u64
+        first_value == 30000u64 && second_value == 20000u64
+            || first_value == 20000u64 && second_value == 30000u64
     );
     //);
     // Because the above tx fee won't consume a full note, change will be sent back to 2.
@@ -689,7 +689,7 @@ async fn note_selection_order() {
         .filter(|note| note["is_change"].as_bool().unwrap())
         .collect::<Vec<_>>()[0];
     // Because 2000 is the size of the second largest note.
-    assert_eq!(change_note["value"], 2000 - u64::from(DEFAULT_FEE));
+    assert_eq!(change_note["value"], 20000 - u64::from(DEFAULT_FEE));
     let non_change_note_values = client_2_notes["unspent_sapling_notes"]
         .members()
         .filter(|note| !note["is_change"].as_bool().unwrap())
@@ -701,7 +701,7 @@ async fn note_selection_order() {
     // In non change notes it has 1000.
     // There is an outstanding 2000 that is marked as change.
     // After sync the unspent_sapling_notes should go to 3000.
-    assert_eq!(non_change_note_values.iter().sum::<u64>(), 1000u64);
+    assert_eq!(non_change_note_values.iter().sum::<u64>(), 10000u64);
 
     utils::increase_height_and_sync_client(&regtest_manager, &recipient, 5)
         .await
@@ -725,7 +725,7 @@ async fn note_selection_order() {
             .chain(client_2_post_transaction_notes["unspent_orchard_notes"].members())
             .map(extract_value_as_u64)
             .sum::<u64>(),
-        2000u64 // 1000 received and unused + (2000 - 1000 txfee)
+        20000u64 // 10000 received and unused + (20000 - 10000 txfee)
     );
 
     // More explicit than ignoring the unused variable, we only care about this in order to drop it
@@ -861,7 +861,7 @@ async fn send_orchard_back_and_forth() {
     let (regtest_manager, child_process_handler, faucet, recipient) =
         scenarios::faucet_recipient().await;
     let block_reward = 625_000_000u64;
-    let faucet_to_recipient_amount = 10_000u64;
+    let faucet_to_recipient_amount = 20_000u64;
     let recipient_to_faucet_amount = 5_000u64;
     // check start state
     faucet.do_sync(true).await.unwrap();
@@ -984,7 +984,7 @@ async fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
                     let balance = faucet.do_balance().await;
                     balance["spendable_sapling_balance"].as_u64().unwrap()
                         + balance["spendable_orchard_balance"].as_u64().unwrap()
-                } - 1_000,
+                } - u64::from(DEFAULT_FEE),
                 memo.map(ToString::to_string),
             )])
             .await
@@ -1040,7 +1040,7 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
             "created_in_block" =>  2,
             "datetime" =>  1666631643,
             "created_in_txid" => "4eeaca8d292f07f9cbe26a276f7658e75f0ef956fb21646e3907e912c5af1ec5",
-            "value" =>  5_000,
+            "value" =>  14_000,
             "unconfirmed" =>  false,
             "is_change" =>  false,
             "address" =>  "uregtest1m8un60udl5ac0928aghy4jx6wp59ty7ct4t8ks9udwn8y6fkdmhe6pq0x5huv8v0pprdlq07tclqgl5fzfvvzjf4fatk8cpyktaudmhvjcqufdsfmktgawvne3ksrhs97pf0u8s8f8h",
@@ -1063,7 +1063,7 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
         faucet
             .do_send(vec![(
                 recipient_addr[0].as_str().unwrap(),
-                5_000,
+                14_000,
                 Some("foo".to_string()),
             )])
             .await
@@ -1198,7 +1198,7 @@ async fn t_incoming_t_outgoing_disallowed() {
         .do_send(vec![(EXT_TADDR, sent_value, None)])
         .await
         .unwrap_err();
-    assert_eq!(sent_transaction_error, "Insufficient verified shielded funds. Have 0 zats, need 21000 zats. NOTE: funds need at least 1 confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes");
+    assert_eq!(sent_transaction_error, "Insufficient verified shielded funds. Have 0 zats, need 30000 zats. NOTE: funds need at least 1 confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes");
     drop(child_process_handler);
 }
 
