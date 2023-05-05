@@ -75,9 +75,6 @@ impl WalletStatus {
 
 pub struct LightClient {
     pub(crate) config: ZingoConfig,
-    #[cfg(not(feature = "integration_test"))]
-    pub(crate) wallet: LightWallet,
-    #[cfg(feature = "integration_test")]
     pub wallet: LightWallet,
 
     mempool_monitor: std::sync::RwLock<Option<std::thread::JoinHandle<()>>>,
@@ -554,10 +551,13 @@ impl LightClient {
         let mut objectified_addresses = Vec::new();
         for address in self.wallet.wallet_capability().read().await.addresses() {
             let encoded_ua = address.encode(&self.config.chain);
+            let transparent = address
+                .transparent()
+                .map(|taddr| address_from_pubkeyhash(&self.config, *taddr));
             objectified_addresses.push(object! {
             "address" => encoded_ua,
             "receivers" => object!(
-                "transparent" => address_from_pubkeyhash(&self.config, address.transparent().cloned()),
+                "transparent" => transparent,
                 "sapling" => address.sapling().map(|z_addr| encode_payment_address(self.config.chain.hrp_sapling_payment_address(), z_addr)),
                 "orchard_exists" => address.orchard().is_some(),
                 )
@@ -792,7 +792,7 @@ impl LightClient {
         {
             self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
                 .flat_map( |(transaction_id, wtx)| {
-                    wtx.utxos.iter().filter_map(move |utxo|
+                    wtx.received_utxos.iter().filter_map(move |utxo|
                         if !all_notes && utxo.spent.is_some() {
                             None
                         } else {
@@ -896,10 +896,16 @@ impl LightClient {
         }
     }
 
+    /// This fn is _only_ called insde a block conditioned on "is_outgoing_transaction"
     fn append_change_notes(
         wallet_transaction: &TransactionMetadata,
-        include_memo_hex: bool,
+        received_utxo_value: u64,
     ) -> JsonValue {
+        // TODO:  Understand why sapling and orchard have an "is_change" filter, but transparent does not
+        // It seems like this already depends on an invariant where all outgoing utxos are change.
+        // This should never be true _AFTER SOME VERSION_ since we only send change to orchard.
+        // If I sent a transaction to a foreign transparent address wouldn't this "total_change" value
+        // be wrong?
         let total_change = wallet_transaction
             .sapling_notes
             .iter()
@@ -912,30 +918,20 @@ impl LightClient {
                 .filter(|nd| nd.is_change)
                 .map(|nd| nd.note.value().inner())
                 .sum::<u64>()
-            + wallet_transaction
-                .utxos
-                .iter()
-                .map(|ut| ut.value)
-                .sum::<u64>();
+            + received_utxo_value;
 
         // Collect outgoing metadata
         let outgoing_json = wallet_transaction
             .outgoing_tx_data
             .iter()
             .map(|om| {
-                let mut o = object! {
+                object! {
+                    // Is this address ever different than the address in the containing struct
+                    // this is the full UA.
                     "address" => om.recipient_ua.clone().unwrap_or(om.to_address.clone()),
                     "value"   => om.value,
                     "memo"    => LightWallet::memo_str(Some(om.memo.clone()))
-                };
-
-                if include_memo_hex {
-                    let memo_bytes: MemoBytes = om.memo.clone().into();
-                    o.insert("memohex", hex::encode(memo_bytes.as_slice()))
-                        .unwrap();
                 }
-
-                o
             })
             .collect::<Vec<JsonValue>>();
 
@@ -950,52 +946,60 @@ impl LightClient {
             "outgoing_metadata" => outgoing_json,
         }
     }
-    pub async fn do_list_transactions(&self, include_memo_hex: bool) -> JsonValue {
+    pub async fn do_list_transactions(&self) -> JsonValue {
         // Create a list of TransactionItems from wallet transactions
+        // TODO:  determine why an interface called "list_transactions" is
+        // processing a bunch of transaction contents
         let unified_spend_capability_arc = self.wallet.wallet_capability();
         let unified_spend_capability = &unified_spend_capability_arc.read().await;
-        let mut transaction_list = self
+        let mut consumer_ui_notes = self
             .wallet
             .transaction_context.transaction_metadata_set
             .read()
             .await
             .current
             .iter()
-            .flat_map(|(_k, wallet_transaction)| {
-                let mut transactions: Vec<JsonValue> = vec![];
+            .flat_map(|(txid, wallet_transaction)| {
+                let mut consumer_notes_by_tx: Vec<JsonValue> = vec![];
 
+                let total_transparent_received = wallet_transaction.received_utxos.iter().map(|u| u.value).sum::<u64>();
                 if wallet_transaction.is_outgoing_transaction() {
-                    // If money was spent, create a transaction. For this, we'll subtract
+                    // If money was spent, create a consumer_ui_note. For this, we'll subtract
                     // all the change notes + Utxos
-                    transactions.push(Self::append_change_notes(wallet_transaction, include_memo_hex));
+                    // TODO:  Figure out why we have an insane comment saying that we "create a transaction"
+                    // in the middle of the "list transactions" fn/
+                    consumer_notes_by_tx.push(Self::append_change_notes(wallet_transaction, total_transparent_received));
                 }
 
-                // For each note that is not a change, add a transaction.
-                transactions.extend(self.add_wallet_notes_in_transaction_to_list(wallet_transaction, &include_memo_hex, unified_spend_capability));
+                // For each note that is not a change, add a consumer_ui_note.
+                consumer_notes_by_tx.extend(self.add_nonchange_notes(wallet_transaction, unified_spend_capability));
+
+                // TODO:  determine if all notes are either Change-or-NotChange, if that's the case
+                // add a sanity check that asserts all notes are processed by this point
 
                 // Get the total transparent value received in this transaction
-                let total_transparent_received = wallet_transaction.utxos.iter().map(|u| u.value).sum::<u64>();
-                let wallet_transparent_value_delta = total_transparent_received as i64 - wallet_transaction.total_transparent_value_spent as i64;
-                let address = wallet_transaction.utxos.iter().map(|utxo| utxo.address.clone()).collect::<Vec<String>>().join(",");
-                if wallet_transparent_value_delta > 0 {
-                    if let Some(transaction) = transactions.iter_mut().find(|transaction| transaction["txid"] == wallet_transaction.txid.to_string()) {
+                // Again we see the assumption that utxos are incoming.
+                let net_transparent_value = total_transparent_received as i64 - wallet_transaction.total_transparent_value_spent as i64;
+                let address = wallet_transaction.received_utxos.iter().map(|utxo| utxo.address.clone()).collect::<Vec<String>>().join(",");
+                if net_transparent_value > 0 {
+                    if let Some(transaction) = consumer_notes_by_tx.iter_mut().find(|transaction| transaction["txid"] == txid.to_string()) {
                         // If this transaction is outgoing:
                         // Then we've already accounted for the entire balance.
 
                         if !wallet_transaction.is_outgoing_transaction() {
                             // If not, we've added sapling/orchard, and need to add transparent
                             let old_amount = transaction.remove("amount").as_i64().unwrap();
-                            transaction.insert("amount", old_amount + wallet_transparent_value_delta).unwrap();
+                            transaction.insert("amount", old_amount + net_transparent_value).unwrap();
                         }
                     } else {
                         // Create an input transaction for the transparent value as well.
                         let block_height: u32 = wallet_transaction.block_height.into();
-                        transactions.push(object! {
+                        consumer_notes_by_tx.push(object! {
                             "block_height" => block_height,
                             "unconfirmed"  => wallet_transaction.unconfirmed,
                             "datetime"     => wallet_transaction.datetime,
-                            "txid"         => format!("{}", wallet_transaction.txid),
-                            "amount"       => wallet_transparent_value_delta,
+                            "txid"         => format!("{}", txid),
+                            "amount"       => net_transparent_value,
                             "zec_price"    => wallet_transaction.zec_price.map(|p| (p * 100.0).round() / 100.0),
                             "address"      => address,
                             "memo"         => None::<String>
@@ -1003,14 +1007,22 @@ impl LightClient {
                     }
                 }
 
-                transactions
+                consumer_notes_by_tx
             })
             .collect::<Vec<JsonValue>>();
+        /*
+        if let Some(tx) = transaction_list
+            .iter_mut()
+            .find(|a| a["memo"] == "Enviado desde YWallet, Enviado desde YWallet")
+        {
+            dbg!("{}", json::stringify_pretty(tx.clone(), 2));
+        }
+        */
 
         let match_by_txid =
             |a: &JsonValue, b: &JsonValue| a["txid"].to_string().cmp(&b["txid"].to_string());
-        transaction_list.sort_by(match_by_txid);
-        transaction_list.dedup_by(|a, b| {
+        consumer_ui_notes.sort_by(match_by_txid);
+        consumer_ui_notes.dedup_by(|a, b| {
             if match_by_txid(a, b) == Ordering::Equal {
                 let val_b = b.remove("amount").as_i64().unwrap();
                 b.insert(
@@ -1025,8 +1037,11 @@ impl LightClient {
                     let b_val = b.remove(key);
                     if b_val == JsonValue::Null {
                         b.insert(key, a_val.clone()).unwrap();
-                    } else if a_val != &b_val {
-                        log::error!("{a_val} does not match {b_val}");
+                    } else {
+                        if a_val != &b_val {
+                            log::error!("{a_val} does not match {b_val}");
+                        }
+                        b.insert(key, b_val).unwrap()
                     }
                 }
 
@@ -1035,7 +1050,7 @@ impl LightClient {
                 false
             }
         });
-        transaction_list.sort_by(|a, b| {
+        consumer_ui_notes.sort_by(|a, b| {
             if a["block_height"] == b["block_height"] {
                 a["txid"].as_str().cmp(&b["txid"].as_str())
             } else {
@@ -1043,13 +1058,12 @@ impl LightClient {
             }
         });
 
-        JsonValue::Array(transaction_list)
+        JsonValue::Array(consumer_ui_notes)
     }
 
-    fn add_wallet_notes_in_transaction_to_list<'a, 'b, 'c>(
+    fn add_nonchange_notes<'a, 'b, 'c>(
         &'a self,
         transaction_metadata: &'b TransactionMetadata,
-        include_memo_hex: &'b bool,
         unified_spend_auth: &'c WalletCapability,
     ) -> impl Iterator<Item = JsonValue> + 'b
     where
@@ -1058,13 +1072,11 @@ impl LightClient {
     {
         self.add_wallet_notes_in_transaction_to_list_inner::<'a, 'b, 'c, SaplingDomain<ChainType>>(
             transaction_metadata,
-            include_memo_hex,
             unified_spend_auth,
         )
         .chain(
             self.add_wallet_notes_in_transaction_to_list_inner::<'a, 'b, 'c, OrchardDomain>(
                 transaction_metadata,
-                include_memo_hex,
                 unified_spend_auth,
             ),
         )
@@ -1073,7 +1085,6 @@ impl LightClient {
     fn add_wallet_notes_in_transaction_to_list_inner<'a, 'b, 'c, D>(
         &'a self,
         transaction_metadata: &'b TransactionMetadata,
-        include_memo_hex: &'b bool,
         unified_spend_auth: &'c WalletCapability,
     ) -> impl Iterator<Item = JsonValue> + 'b
     where
@@ -1086,7 +1097,7 @@ impl LightClient {
     {
         D::WalletNote::transaction_metadata_notes(transaction_metadata).iter().filter(|nd| !nd.is_change()).enumerate().map(|(i, nd)| {
                     let block_height: u32 = transaction_metadata.block_height.into();
-                    let mut o = object! {
+                    object! {
                         "block_height" => block_height,
                         "unconfirmed" => transaction_metadata.unconfirmed,
                         "datetime"     => transaction_metadata.datetime,
@@ -1096,23 +1107,8 @@ impl LightClient {
                         "zec_price"    => transaction_metadata.zec_price.map(|p| (p * 100.0).round() / 100.0),
                         "address"      => LightWallet::note_address::<D>(&self.config.chain, nd, unified_spend_auth),
                         "memo"         => LightWallet::memo_str(nd.memo().clone())
-                    };
-
-                    if *include_memo_hex {
-                        o.insert(
-                            "memohex",
-                            match &nd.memo() {
-                                Some(m) => {
-                                    let memo_bytes: MemoBytes = m.into();
-                                    hex::encode(memo_bytes.as_slice())
-                                }
-                                _ => "".to_string(),
-                            },
-                        )
-                        .unwrap();
                     }
 
-                    o
                 })
     }
 

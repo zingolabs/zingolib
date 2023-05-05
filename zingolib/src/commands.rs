@@ -840,26 +840,7 @@ impl Command for TransactionsCommand {
             return format!("Didn't understand arguments\n{}", self.help());
         }
 
-        let include_memo_hex = if args.len() == 1 {
-            if args[0] == "allmemos" || args[0] == "true" || args[0] == "yes" {
-                true
-            } else {
-                return format!(
-                    "Couldn't understand first argument '{}'\n{}",
-                    args[0],
-                    self.help()
-                );
-            }
-        } else {
-            false
-        };
-
-        RT.block_on(async move {
-            lightclient
-                .do_list_transactions(include_memo_hex)
-                .await
-                .pretty(2)
-        })
+        RT.block_on(async move { lightclient.do_list_transactions().await.pretty(2) })
     }
 }
 

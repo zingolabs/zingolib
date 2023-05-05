@@ -21,6 +21,7 @@ use zcash_primitives::{
     consensus::Parameters,
     transaction::{components::amount::DEFAULT_FEE, TxId},
 };
+use zingo_cli::regtest::get_cargo_manifest_dir_parent;
 use zingoconfig::{ChainType, ZingoConfig};
 use zingolib::{
     check_client_balances, get_base_address,
@@ -56,7 +57,7 @@ fn get_wallet_nym(nym: &str) -> Result<(String, PathBuf, PathBuf), String> {
         "sap_only" | "orch_only" | "orch_and_sapl" | "tadd_only" => {
             let one_sapling_wallet = format!(
                 "{}/zingocli/tests/data/wallets/v26/202302_release/regtest/{nym}/zingo-wallet.dat",
-                zingo_cli::regtest::get_cargo_manifest_dir_parent().to_string_lossy()
+                get_cargo_manifest_dir_parent().to_string_lossy()
             );
             let wallet_path = Path::new(&one_sapling_wallet);
             let wallet_dir = wallet_path.parent().unwrap();
@@ -69,28 +70,61 @@ fn get_wallet_nym(nym: &str) -> Result<(String, PathBuf, PathBuf), String> {
         _ => Err(format!("nym {nym} not a valid wallet directory")),
     }
 }
-async fn load_wallet(dir: PathBuf) -> zingolib::wallet::LightWallet {
+async fn load_wallet(
+    dir: PathBuf,
+    chaintype: ChainType,
+) -> (zingolib::wallet::LightWallet, ZingoConfig) {
     let wallet = dir.join("zingo-wallet.dat");
     tracing::info!("The wallet is: {}", &wallet.to_str().unwrap());
     let lightwalletd_uri = TestEnvironmentGenerator::new().get_lightwalletd_uri();
-    let zingo_config =
-        zingolib::load_clientconfig(lightwalletd_uri, Some(dir), ChainType::Regtest).unwrap();
+    let zingo_config = zingolib::load_clientconfig(lightwalletd_uri, Some(dir), chaintype).unwrap();
     let from = std::fs::File::open(wallet).unwrap();
 
     let read_lengths = vec![];
     let mut recording_reader = RecordingReader { from, read_lengths };
 
-    zingolib::wallet::LightWallet::read_internal(&mut recording_reader, &zingo_config)
-        .await
-        .unwrap()
+    (
+        zingolib::wallet::LightWallet::read_internal(&mut recording_reader, &zingo_config)
+            .await
+            .unwrap(),
+        zingo_config,
+    )
 }
 
 #[tokio::test]
 async fn load_and_parse_different_wallet_versions() {
     let (_sap_wallet, _sap_path, sap_dir) = get_wallet_nym("sap_only").unwrap();
-    let _loaded_wallet = load_wallet(sap_dir).await;
+    let (_loaded_wallet, _) = load_wallet(sap_dir, ChainType::Regtest).await;
 }
 
+#[tokio::test]
+async fn list_transactions_include_foreign() {
+    let wallet_nym = format!(
+        "{}/zingocli/tests/data/wallets/missing_data_test/zingo-wallet.dat",
+        get_cargo_manifest_dir_parent().to_string_lossy()
+    );
+    let wallet_path = Path::new(&wallet_nym);
+    let wallet_dir = wallet_path.parent().unwrap();
+    let (wallet, config) = load_wallet(wallet_dir.to_path_buf(), ChainType::Mainnet).await;
+    let client = LightClient::create_with_wallet(wallet, config);
+    let transactions = client.do_list_transactions().await[0].clone();
+    //env_logger::init();
+    let expected_consumer_ui_note = r#"{
+  "amount": 100000,
+  "memo": "Enviado desde YWallet, Enviado desde YWallet",
+  "block_height": 2060028,
+  "unconfirmed": false,
+  "datetime": 1682127442,
+  "position": 0,
+  "txid": "d93fbb42a101ac148b4e610eea1fe519c0131b17d49af53f29b5e35a778145cb",
+  "zec_price": null,
+  "address": "u1n5zgv8c9px4hfmq7cr9f9t0av6q9nj5dwca9w0z9jxegut65gxs2y4qnx7ppng6k2hyt0asyycqrywalzyasxu2302xt4spfqnkh25nevr3h9exc3clh9tfpr5hyhc9dwee50l0cxm7ajun5xs9ycqhlw8rd39jql8z5zlv9hw4q8azcgpv04dez5547geuvyh8pfzezpw52cg2qknm"
+}"#;
+    assert_eq!(
+        expected_consumer_ui_note,
+        json::stringify_pretty(transactions, 2)
+    );
+}
 #[tokio::test]
 #[traced_test]
 async fn send_to_self_with_no_user_specified_memo_does_not_cause_error() {
@@ -536,10 +570,10 @@ async fn unspent_notes_are_not_saved() {
         faucet_copy.do_list_notes(true).await["unspent_orchard_notes"].len(),
         0
     );
-    let mut faucet_transactions = faucet.do_list_transactions(false).await;
+    let mut faucet_transactions = faucet.do_list_transactions().await;
     faucet_transactions.pop();
     faucet_transactions.pop();
-    let mut faucet_copy_transactions = faucet_copy.do_list_transactions(false).await;
+    let mut faucet_copy_transactions = faucet_copy.do_list_transactions().await;
     faucet_copy_transactions.pop();
     assert_eq!(faucet_transactions, faucet_copy_transactions);
     drop(child_process_handler);
@@ -817,7 +851,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     bump_and_check!(o: 3_000 s: 0 t: 0);
     log::info!(
         "{}",
-        json::stringify_pretty(pool_migration_client.do_list_transactions(false).await, 4)
+        json::stringify_pretty(pool_migration_client.do_list_transactions().await, 4)
     );
     drop(child_process_handler);
 }
@@ -930,9 +964,9 @@ async fn rescan_still_have_outgoing_metadata() {
     utils::increase_height_and_sync_client(&regtest_manager, &faucet, 1)
         .await
         .unwrap();
-    let transactions = faucet.do_list_transactions(false).await;
+    let transactions = faucet.do_list_transactions().await;
     faucet.do_rescan().await.unwrap();
-    let post_rescan_transactions = faucet.do_list_transactions(false).await;
+    let post_rescan_transactions = faucet.do_list_transactions().await;
     assert_eq!(transactions, post_rescan_transactions);
 
     drop(child_process_handler);
@@ -959,10 +993,10 @@ async fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
             .await
             .unwrap();
     }
-    let transactions = faucet.do_list_transactions(false).await;
+    let transactions = faucet.do_list_transactions().await;
     let notes = faucet.do_list_notes(true).await;
     faucet.do_rescan().await.unwrap();
-    let post_rescan_transactions = faucet.do_list_transactions(false).await;
+    let post_rescan_transactions = faucet.do_list_transactions().await;
     let post_rescan_notes = faucet.do_list_notes(true).await;
     assert_eq!(
         transactions,
@@ -1153,7 +1187,7 @@ async fn t_incoming_t_outgoing_disallowed() {
     recipient.do_sync(true).await.unwrap();
 
     // 3. Test the list
-    let list = recipient.do_list_transactions(false).await;
+    let list = recipient.do_list_transactions().await;
     assert_eq!(list[0]["block_height"].as_u64().unwrap(), 2);
     assert_eq!(list[0]["address"], taddr);
     assert_eq!(list[0]["amount"].as_u64().unwrap(), value);
@@ -1182,7 +1216,7 @@ async fn send_to_ua_saves_full_ua_in_wallet() {
     utils::increase_height_and_sync_client(&regtest_manager, &faucet, 1)
         .await
         .unwrap();
-    let list = faucet.do_list_transactions(false).await;
+    let list = faucet.do_list_transactions().await;
     assert!(list.members().any(|transaction| {
         transaction.entries().any(|(key, value)| {
             if key == "outgoing_metadata" {
@@ -1193,7 +1227,7 @@ async fn send_to_ua_saves_full_ua_in_wallet() {
         })
     }));
     faucet.do_rescan().await.unwrap();
-    let new_list = faucet.do_list_transactions(false).await;
+    let new_list = faucet.do_list_transactions().await;
     assert!(new_list.members().any(|transaction| {
         transaction.entries().any(|(key, value)| {
             if key == "outgoing_metadata" {
@@ -1276,9 +1310,9 @@ async fn self_send_to_t_displays_as_one_transaction() {
         .unwrap();
     println!(
         "{}",
-        json::stringify_pretty(recipient.do_list_transactions(false).await, 4)
+        json::stringify_pretty(recipient.do_list_transactions().await, 4)
     );
-    let transactions = recipient.do_list_transactions(false).await;
+    let transactions = recipient.do_list_transactions().await;
     let mut txids = transactions
         .members()
         .map(|transaction| transaction["txid"].as_str());
@@ -1342,7 +1376,7 @@ async fn sapling_to_sapling_scan_together() {
         .await
         .unwrap();
     // 5. Check the transaction list to make sure we got all transactions
-    let list = recipient.do_list_transactions(false).await;
+    let list = recipient.do_list_transactions().await;
 
     assert_eq!(list[0]["block_height"].as_u64().unwrap(), 3);
     assert_eq!(list[0]["txid"], txid.to_string());
@@ -1687,11 +1721,11 @@ async fn mempool_clearing() {
 
     // 4b write down state before clearing the mempool
     let notes_before = recipient.do_list_notes(true).await;
-    let transactions_before = recipient.do_list_transactions(false).await;
+    let transactions_before = recipient.do_list_transactions().await;
     drop(child_process_handler); // Turn off zcashd and lightwalletd
 
     // 5. check that the sent transaction is correctly marked in the client
-    let mut transactions = recipient.do_list_transactions(true).await;
+    let mut transactions = recipient.do_list_transactions().await;
     let mempool_only_tx = transactions.pop();
     log::debug!("the transactions are: {}", &mempool_only_tx);
     assert_eq!(
@@ -1736,7 +1770,7 @@ async fn mempool_clearing() {
     // 5. At this point, the raw transaction is already been parsed, but we'll parse it
     //    again just to make sure it doesn't create any duplicates.
     let notes_before = lightclient.do_list_notes(true).await;
-    let transactions_before = lightclient.do_list_transactions(false).await;
+    let transactions_before = lightclient.do_list_transactions().await;
 
     let transaction = Transaction::read(&sent_transaction.data[..], BranchId::Sapling).unwrap();
     lightclient
@@ -1776,7 +1810,7 @@ async fn mempool_clearing() {
     }
     */
     let notes_after = recipient.do_list_notes(true).await;
-    let transactions_after = recipient.do_list_transactions(false).await;
+    let transactions_after = recipient.do_list_transactions().await;
 
     assert_eq!(notes_before.pretty(2), notes_after.pretty(2));
     assert_eq!(transactions_before.pretty(2), transactions_after.pretty(2));
@@ -1789,7 +1823,7 @@ async fn mempool_clearing() {
 
     let notes = recipient.do_list_notes(true).await;
 
-    let transactions = recipient.do_list_transactions(false).await;
+    let transactions = recipient.do_list_transactions().await;
 
     // There is 1 unspent note, which is the unconfirmed transaction
     println!("{}", json::stringify_pretty(notes.clone(), 4));
@@ -1813,7 +1847,7 @@ async fn mempool_clearing() {
     assert_eq!(recipient.wallet.last_synced_height().await, 118);
 
     let notes = recipient.do_list_notes(true).await;
-    let transactions = recipient.do_list_transactions(false).await;
+    let transactions = recipient.do_list_transactions().await;
 
     // There is now again 1 unspent note, but it is the original (confirmed) note.
     assert_eq!(notes["unspent_orchard_notes"].len(), 1);
@@ -1946,7 +1980,7 @@ async fn sapling_incoming_sapling_outgoing() {
         ),
     );
 
-    let list = recipient.do_list_transactions(false).await;
+    let list = recipient.do_list_transactions().await;
     if let JsonValue::Array(list) = list {
         assert_eq!(list.len(), 1);
         let faucet_sent_transaction = list[0].clone();
@@ -2012,7 +2046,7 @@ async fn sapling_incoming_sapling_outgoing() {
     assert!(notes["pending_sapling_notes"][0]["spent_at_height"].is_null());
 
     // Check transaction list
-    let list = recipient.do_list_transactions(false).await;
+    let list = recipient.do_list_transactions().await;
 
     assert_eq!(list.len(), 2);
     let send_transaction = list
@@ -2135,7 +2169,7 @@ async fn aborted_resync() {
         .unwrap();
 
     let notes_before = recipient.do_list_notes(true).await;
-    let list_before = recipient.do_list_transactions(false).await;
+    let list_before = recipient.do_list_transactions().await;
     let witness_before = recipient
         .wallet
         .transaction_context
@@ -2169,7 +2203,7 @@ async fn aborted_resync() {
 
     // 7. Should be exactly the same
     let notes_after = recipient.do_list_notes(true).await;
-    let list_after = recipient.do_list_transactions(false).await;
+    let list_after = recipient.do_list_transactions().await;
     let witness_after = recipient
         .wallet
         .transaction_context

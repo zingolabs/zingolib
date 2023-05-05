@@ -1,6 +1,6 @@
 use crate::wallet::{
     data::OutgoingTxData,
-    keys::{address_from_pubkeyhash, unified::WalletCapability, ToBase58Check},
+    keys::{address_from_pubkeyhash, unified::WalletCapability},
     traits::{
         self as zingo_traits, Bundle as _, DomainWalletExt, Nullifier as _,
         ReceivedNoteAndMetadata as _, Recipient as _, ShieldedOutputExt as _, Spend as _,
@@ -33,7 +33,6 @@ use zcash_note_encryption::try_output_recovery_with_ovk;
 
 use zcash_primitives::{
     consensus::BlockHeight,
-    legacy::TransparentAddress,
     memo::{Memo, MemoBytes},
     sapling::note_encryption::SaplingDomain,
     transaction::{Transaction, TxId},
@@ -46,9 +45,6 @@ use zingoconfig::{ChainType, ZingoConfig};
 pub struct TransactionContext {
     pub(crate) config: ZingoConfig,
     pub(crate) key: Arc<RwLock<WalletCapability>>,
-    #[cfg(not(feature = "integration_test"))]
-    pub(crate) transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
-    #[cfg(feature = "integration_test")]
     pub transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
 }
 
@@ -152,8 +148,9 @@ impl TransactionContext {
         if is_outgoing_transaction {
             if let Some(t_bundle) = transaction.transparent_bundle() {
                 for vout in &t_bundle.vout {
-                    if let Some(taddr) =
-                        address_from_pubkeyhash(&self.config, vout.recipient_address())
+                    if let Some(taddr) = vout
+                        .recipient_address()
+                        .map(|raw_taddr| address_from_pubkeyhash(&self.config, raw_taddr))
                     {
                         outgoing_metadatas.push(OutgoingTxData {
                             to_address: taddr,
@@ -217,10 +214,8 @@ impl TransactionContext {
                                     ua.sapling().map(|zaddr| {
                                         zaddr.b32encode_for_network(&self.config.chain)
                                     }),
-                                    address_from_pubkeyhash(
-                                        &self.config,
-                                        ua.transparent().cloned(),
-                                    ),
+                                    ua.transparent()
+                                        .map(|taddr| address_from_pubkeyhash(&self.config, *taddr)),
                                     Some(ua.encode(&self.config.chain)),
                                 ];
                                 if let Some(out_metadata) =
@@ -266,9 +261,8 @@ impl TransactionContext {
         // Scan all transparent outputs to see if we recieved any money
         if let Some(t_bundle) = transaction.transparent_bundle() {
             for (n, vout) in t_bundle.vout.iter().enumerate() {
-                if let Some(TransparentAddress::PublicKey(hash)) = vout.recipient_address() {
-                    let output_taddr =
-                        hash.to_base58check(&self.config.base58_pubkey_address(), &[]);
+                if let Some(taddr) = vout.recipient_address() {
+                    let output_taddr = address_from_pubkeyhash(&self.config, taddr);
                     if taddrs_set.contains(&output_taddr) {
                         // This is our address. Add this as an output to the txid
                         self.transaction_metadata_set
@@ -309,7 +303,7 @@ impl TransactionContext {
                     if let Some(wtx) = current.get(&prev_transaction_id) {
                         // One of the tx outputs is a match
                         if let Some(spent_utxo) = wtx
-                            .utxos
+                            .received_utxos
                             .iter()
                             .find(|u| u.txid == prev_transaction_id && u.output_index == prev_n)
                         {
