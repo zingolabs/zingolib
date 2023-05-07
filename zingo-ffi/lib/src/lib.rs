@@ -36,7 +36,7 @@ fn lock_client_return_seed(lightclient: LightClient) -> String {
 fn construct_uri_load_config(
     uri: String,
     data_dir: String,
-) -> Result<(zingoconfig::ZingoConfig, u64), String> {
+) -> Result<(zingoconfig::ZingoConfig, http::Uri), String> {
     let lightwalletd_uri = construct_lightwalletd_uri(Some(uri));
 
     let mut config = match zingolib::load_clientconfig(
@@ -49,17 +49,17 @@ fn construct_uri_load_config(
             return Err(format!("Error: Config load: {}", e));
         }
     };
-    let latest_block_height = zingolib::get_latest_block_height(lightwalletd_uri);
 
     config.set_data_dir(data_dir);
-    Ok((config, latest_block_height))
+    Ok((config, lightwalletd_uri))
 }
 pub fn init_new(server_uri: String, data_dir: String) -> String {
-    let (config, latest_block_height);
+    let (config, lightwalletd_uri);
     match construct_uri_load_config(server_uri, data_dir) {
-        Ok((c, h)) => (config, latest_block_height) = (c, h),
+        Ok((c, h)) => (config, lightwalletd_uri) = (c, h),
         Err(s) => return s,
     }
+    let latest_block_height = zingolib::get_latest_block_height(lightwalletd_uri);
     let lightclient = match LightClient::new(&config, latest_block_height.saturating_sub(100)) {
         Ok(l) => l,
         Err(e) => {
@@ -70,9 +70,9 @@ pub fn init_new(server_uri: String, data_dir: String) -> String {
 }
 
 pub fn init_from_seed(server_uri: String, seed: String, birthday: u64, data_dir: String) -> String {
-    let (config, _latest_block_height);
+    let (config, _lightwalletd_uri);
     match construct_uri_load_config(server_uri, data_dir) {
-        Ok((c, h)) => (config, _latest_block_height) = (c, h),
+        Ok((c, h)) => (config, _lightwalletd_uri) = (c, h),
         Err(s) => return s,
     }
     let lightclient = match LightClient::new_from_wallet_base(
@@ -90,9 +90,9 @@ pub fn init_from_seed(server_uri: String, seed: String, birthday: u64, data_dir:
 }
 
 pub fn init_from_b64(server_uri: String, base64_data: String, data_dir: String) -> String {
-    let (config, _latest_block_height);
+    let (config, _lightwalletd_uri);
     match construct_uri_load_config(server_uri, data_dir) {
-        Ok((c, h)) => (config, _latest_block_height) = (c, h),
+        Ok((c, h)) => (config, _lightwalletd_uri) = (c, h),
         Err(s) => return s,
     }
     let decoded_bytes = match decode(&base64_data) {
@@ -158,12 +158,6 @@ pub fn execute(cmd: String, args_list: String) -> String {
 }
 
 pub fn get_latest_block(server_uri: String) -> String {
-    let (_config, latest_block_height);
-    match construct_uri_load_config(server_uri, "".to_string()) {
-        Ok((c, h)) => (_config, latest_block_height) = (c, h),
-        Err(s) => return s,
-    }
-    let resp: String = latest_block_height.to_string();
-
-    resp
+    let lightwalletd_uri: http::Uri = server_uri.parse().expect("To be able to represent a Uri.");
+    zingolib::get_latest_block_height(lightwalletd_uri).to_string()
 }
