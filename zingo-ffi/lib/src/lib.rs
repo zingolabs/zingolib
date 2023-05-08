@@ -59,8 +59,17 @@ pub fn init_new(server_uri: String, data_dir: String) -> String {
         Ok((c, h)) => (config, lightwalletd_uri) = (c, h),
         Err(s) => return s,
     }
-    let latest_block_height = zingolib::get_latest_block_height(lightwalletd_uri);
-    let lightclient = match LightClient::new(&config, latest_block_height.saturating_sub(100)) {
+    let latest_block_height =
+        match zingolib::get_latest_block_height(lightwalletd_uri)
+            .map_err(|e| format! {"Error: {e}"})
+        {
+            Ok(height) => height,
+            Err(e) => return e,
+        };
+    let lightclient = match LightClient::new(
+        &config,
+        latest_block_height.saturating_sub(100),
+    ) {
         Ok(l) => l,
         Err(e) => {
             return format!("Error: {}", e);
@@ -69,7 +78,12 @@ pub fn init_new(server_uri: String, data_dir: String) -> String {
     lock_client_return_seed(lightclient)
 }
 
-pub fn init_from_seed(server_uri: String, seed: String, birthday: u64, data_dir: String) -> String {
+pub fn init_from_seed(
+    server_uri: String,
+    seed: String,
+    birthday: u64,
+    data_dir: String,
+) -> String {
     let (config, _lightwalletd_uri);
     match construct_uri_load_config(server_uri, data_dir) {
         Ok((c, h)) => (config, _lightwalletd_uri) = (c, h),
@@ -89,7 +103,11 @@ pub fn init_from_seed(server_uri: String, seed: String, birthday: u64, data_dir:
     lock_client_return_seed(lightclient)
 }
 
-pub fn init_from_b64(server_uri: String, base64_data: String, data_dir: String) -> String {
+pub fn init_from_b64(
+    server_uri: String,
+    base64_data: String,
+    data_dir: String,
+) -> String {
     let (config, _lightwalletd_uri);
     match construct_uri_load_config(server_uri, data_dir) {
         Ok((c, h)) => (config, _lightwalletd_uri) = (c, h),
@@ -102,12 +120,14 @@ pub fn init_from_b64(server_uri: String, base64_data: String, data_dir: String) 
         }
     };
 
-    let lightclient = match LightClient::read_wallet_from_buffer(&config, &decoded_bytes[..]) {
-        Ok(l) => l,
-        Err(e) => {
-            return format!("Error: {}", e);
-        }
-    };
+    let lightclient =
+        match LightClient::read_wallet_from_buffer(&config, &decoded_bytes[..])
+        {
+            Ok(l) => l,
+            Err(e) => {
+                return format!("Error: {}", e);
+            }
+        };
     lock_client_return_seed(lightclient)
 }
 
@@ -151,13 +171,20 @@ pub fn execute(cmd: String, args_list: String) -> String {
         } else {
             vec![args_list.as_ref()]
         };
-        resp = commands::do_user_command(&cmd, &args, lightclient.as_ref()).clone();
+        resp = commands::do_user_command(&cmd, &args, lightclient.as_ref())
+            .clone();
     };
 
     resp
 }
 
 pub fn get_latest_block(server_uri: String) -> String {
-    let lightwalletd_uri: http::Uri = server_uri.parse().expect("To be able to represent a Uri.");
-    zingolib::get_latest_block_height(lightwalletd_uri).to_string()
+    let lightwalletd_uri: http::Uri =
+        server_uri.parse().expect("To be able to represent a Uri.");
+    match zingolib::get_latest_block_height(lightwalletd_uri)
+        .map_err(|e| format! {"Error: {e}"})
+    {
+        Ok(height) => height.to_string(),
+        Err(e) => e,
+    }
 }
