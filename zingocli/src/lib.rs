@@ -427,7 +427,10 @@ pub fn startup(
                 let server_uri = config.get_lightwalletd_uri();
                 let block_height = zingolib::get_latest_block_height(server_uri);
                 // Create a wallet with height - 100, to protect against reorgs
-                Arc::new(LightClient::new(&config, block_height.saturating_sub(100))?)
+                Arc::new(LightClient::new(
+                    &config,
+                    block_height?.saturating_sub(100),
+                )?)
             }
         }
     };
