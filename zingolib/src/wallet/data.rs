@@ -8,6 +8,7 @@ use std::io::{self, Read, Write};
 use std::usize;
 use zcash_encoding::{Optional, Vector};
 use zcash_primitives::consensus::BlockHeight;
+use zcash_primitives::transaction::components::Amount;
 use zcash_primitives::{
     memo::Memo,
     merkle_tree::{CommitmentTree, IncrementalWitness},
@@ -246,10 +247,6 @@ pub struct ReceivedOrchardNoteAndMetadata {
     pub diversifier: orchard::keys::Diversifier,
     pub note: orchard::note::Note,
 
-    // Witnesses for the last 100 blocks. witnesses.last() is the latest witness
-    #[cfg(not(feature = "integration_test"))]
-    pub(crate) witnesses: WitnessCache<MerkleHashOrchard>,
-    #[cfg(feature = "integration_test")]
     pub witnesses: WitnessCache<MerkleHashOrchard>,
     pub(super) nullifier: orchard::note::Nullifier,
     pub spent: Option<(TxId, u32)>, // If this note was confirmed spent
@@ -510,13 +507,12 @@ pub enum ConsumerUIAddress {
 /// The MobileTx is the zingolib representation of
 /// transactions in the format most useful for
 /// consumption in mobile and mobile-like UI
-impl From<ConsumderUINote> for json::JsonValue {
-    fn from(_value: ConsumderUINote) -> Self {
+impl From<ConsumerUINote> for json::JsonValue {
+    fn from(_value: ConsumerUINote) -> Self {
         todo!()
     }
 }
-#[allow(dead_code)]
-pub struct ConsumderUINote {
+pub struct ConsumerUINote {
     block_height: u32,
     unconfirmed: bool,
     datetime: u64,
@@ -525,7 +521,56 @@ pub struct ConsumderUINote {
     zec_price: WalletZecPriceInfo,
     address: ConsumerUIAddress,
     memo: Option<String>,
-    memohex: Option<MemoBytes>,
+    outgoing_tx_data: Option<Vec<OutgoingTxData>>,
+}
+struct ConsumerUINoteBuilder {
+    block_height: Option<u32>,
+    unconfirmed: Option<bool>,
+    datetime: Option<u64>,
+    txid: Option<zcash_primitives::transaction::TxId>,
+    amount: Option<zcash_primitives::transaction::components::Amount>,
+    zec_price: Option<WalletZecPriceInfo>,
+    address: Option<ConsumerUIAddress>,
+    memo: Option<String>,
+}
+
+macro_rules! set_build_methods {
+    [$($field:ident: $field_type:ty),+] => {
+        $(
+        concat_idents::concat_idents!(setter_name = set, _, $field {
+                pub fn setter_name(&mut self, $field: $field_type) -> &mut Self {
+                    self.$field = Some($field);
+                    self
+                }
+            });
+        )+
+    };
+}
+impl ConsumerUINoteBuilder {
+    set_build_methods![
+        block_height: u32,
+        unconfirmed: bool,
+        datetime: u64,
+        txid: zcash_primitives::transaction::TxId,
+        amount: zcash_primitives::transaction::components::Amount,
+        zec_price: WalletZecPriceInfo,
+        address: ConsumerUIAddress,
+        memo: String
+    ];
+}
+impl ConsumerUINote {
+    pub fn builder() -> ConsumerUINoteBuilder {
+        ConsumerUINoteBuilder {
+            block_height: None,
+            unconfirmed: None,
+            datetime: None,
+            txid: None,
+            amount: None,
+            zec_price: None,
+            address: None,
+            memo: None,
+        }
+    }
 }
 ///  Everything (SOMETHING) about a transaction
 #[derive(Debug)]
