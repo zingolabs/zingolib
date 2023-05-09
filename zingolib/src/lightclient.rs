@@ -946,14 +946,16 @@ impl LightClient {
             "outgoing_metadata" => outgoing_json,
         }
     }
-    pub async fn do_list_txsummaries(&self) -> JsonValue {
-        for (txid, transaction_md) in self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
-        {
-            let tx_value = transaction_md.total_value_spent();
-            let to_addresses = 
-}
-        Vec<TxSummary>
+    /*
+        pub async fn do_list_txsummaries(&self) -> JsonValue {
+            for (txid, transaction_md) in self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
+            {
+                let tx_value = transaction_md.total_value_spent();
+                let to_addresses =
     }
+            Vec<TxSummary>
+        }
+                        */
     pub async fn do_list_transactions(&self) -> JsonValue {
         // Create a list of TransactionItems from wallet transactions
         // TODO:  determine why an interface called "list_transactions" is
