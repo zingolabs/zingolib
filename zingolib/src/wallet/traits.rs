@@ -451,10 +451,10 @@ pub trait ReceivedNoteAndMetadata: Sized {
     fn unconfirmed_spent(&self) -> &Option<(TxId, u32)>;
     fn unconfirmed_spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
     ///Convenience function
-    fn value(&self) -> u64 {
+    fn value(&self) -> NonNegativeAmount {
         Self::value_from_note(self.note())
     }
-    fn value_from_note(note: &Self::Note) -> u64;
+    fn value_from_note(note: &Self::Note) -> NonNegativeAmount;
     fn witnesses(&self) -> &WitnessCache<Self::Node>;
     fn witnesses_mut(&mut self) -> &mut WitnessCache<Self::Node>;
 }

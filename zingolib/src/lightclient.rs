@@ -929,7 +929,7 @@ impl LightClient {
                     // Is this address ever different than the address in the containing struct
                     // this is the full UA.
                     "address" => om.recipient_ua.clone().unwrap_or(om.to_address.clone()),
-                    "value"   => om.value,
+                    "value"   => u64::from(om.value),
                     "memo"    => LightWallet::memo_str(Some(om.memo.clone()))
                 }
             })
