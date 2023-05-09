@@ -444,7 +444,7 @@ impl ReceivedTransparentOutput {
 #[derive(Debug)]
 pub struct OutgoingTxData {
     pub to_address: String,
-    pub value: NonNegativeAmount,
+    pub value: u64,
     pub memo: Memo,
     pub recipient_ua: Option<String>,
 }
@@ -510,18 +510,51 @@ pub enum ConsumerUIAddress {
 /// The MobileTx is the zingolib representation of
 /// transactions in the format most useful for
 /// consumption in mobile and mobile-like UI
-impl From<TransactionSummary> for json::JsonValue {
-    fn from(_value: TransactionSummary) -> Self {
+impl From<ValueTransferSummary> for json::JsonValue {
+    fn from(_value: ValueTransferSummary) -> Self {
         todo!()
     }
 }
-pub struct TransactionSummary {
-    amount: zcash_primitives::transaction::components::Amount,
-    to_addresses: Vec<ConsumerUIAddress>,
-    memos: Vec<Option<Memo>>,
+pub enum ValueTransferSummary {
+    Sent(ValueSendSummary),
+    Received(ValueReceiptSummary),
+    SendToSelf(SendToSelfSummary),
 }
-pub struct transactionSummaryIndex(
-    HashMap<zcash_primitives::transaction::TxId, TransactionSummary>,
+
+pub struct ValueSendSummary {
+    amount: u64,
+    to_address: ConsumerUIAddress,
+    memo: Option<Memo>,
+    block_height: BlockHeight,
+    date_time: u64,
+    price: f64,
+}
+
+pub struct ValueReceiptSummary {
+    amount: u64,
+    memo: Option<Memo>,
+    pool: Pool,
+    block_height: BlockHeight,
+    date_time: u64,
+    price: f64,
+}
+
+pub struct SendToSelfSummary {
+    fee: u64,
+    memo: Option<Memo>,
+    block_height: BlockHeight,
+    date_time: u64,
+    price: f64,
+}
+
+pub enum Pool {
+    Transparent,
+    Sapling,
+    Orchard,
+}
+
+pub struct TransactionSummaryIndex(
+    HashMap<zcash_primitives::transaction::TxId, ValueTransferSummary>,
 );
 
 ///  Everything (SOMETHING) about a transaction
@@ -607,7 +640,7 @@ impl TransactionMetadata {
     pub fn is_outgoing_transaction(&self) -> bool {
         self.total_value_spent() > 0
     }
-    pub fn net_spent(&self) -> NonNegativeAmount {
+    pub fn net_spent(&self) -> u64 {
         assert!(self.is_outgoing_transaction());
         self.total_value_spent() - self.total_change_returned()
     }
@@ -640,7 +673,7 @@ impl TransactionMetadata {
         txid_bytes.copy_from_slice(txid);
         TxId::from_bytes(txid_bytes)
     }
-    fn pool_change_returned<D: DomainWalletExt>(&self) -> NonNegativeAmount
+    fn pool_change_returned<D: DomainWalletExt>(&self) -> u64
     where
         <D as Domain>::Note: PartialEq,
         <D as Domain>::Note: Clone,
@@ -745,7 +778,7 @@ impl TransactionMetadata {
         23
     }
 
-    fn total_change_returned(&self) -> NonNegativeAmount {
+    fn total_change_returned(&self) -> u64 {
         let sapling_change = self
             .sapling_notes
             .iter()
@@ -760,6 +793,14 @@ impl TransactionMetadata {
             .sum::<u64>();
         //let transparent_change = self.
         0
+    }
+
+    pub fn total_value_received(&self) -> u64 {
+        self.value_received_by_pool().iter().sum()
+    }
+
+    pub fn value_received_by_pool(&self) -> [u64; 3] {
+        todo!()
     }
 
     pub fn total_value_spent(&self) -> u64 {
