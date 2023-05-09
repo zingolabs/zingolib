@@ -33,7 +33,10 @@ use zcash_primitives::{
     merkle_tree::{Hashable, IncrementalWitness},
     sapling::note_encryption::SaplingDomain,
     transaction::{
-        components::{self, sapling::GrothProofBytes, Amount, OutputDescription, SpendDescription},
+        components::{
+            self, amount::NonNegativeAmount, sapling::GrothProofBytes, Amount, OutputDescription,
+            SpendDescription,
+        },
         Transaction, TxId,
     },
     zip32,
@@ -711,12 +714,20 @@ where
 
     type Bundle: Bundle<Self>;
 
+    fn sum_pool_change(transaction_md: &TransactionMetadata) -> NonNegativeAmount {
+        Self::to_notes_vec(transaction_md)
+            .iter()
+            .filter(|nd| nd.is_change())
+            .map(|nd| nd.value())
+            .sum()
+    }
     fn get_nullifier_from_note_fvk_and_witness_position(
         note: &Self::Note,
         fvk: &Self::Fvk,
         position: u64,
     ) -> <Self::WalletNote as ReceivedNoteAndMetadata>::Nullifier;
     fn get_tree(tree_state: &TreeState) -> &String;
+    fn to_notes_vec(_: &TransactionMetadata) -> &Vec<Self::WalletNote>;
     fn to_notes_vec_mut(_: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote>;
     fn ua_from_contained_receiver<'a>(
         unified_spend_auth: &'a WalletCapability,
@@ -750,9 +761,12 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
     ) -> <<Self as DomainWalletExt>::WalletNote as ReceivedNoteAndMetadata>::Nullifier {
         note.nf(&fvk.fvk().vk.nk, position)
     }
-
     fn get_tree(tree_state: &TreeState) -> &String {
         &tree_state.sapling_tree
+    }
+
+    fn to_notes_vec(transaction_md: &TransactionMetadata) -> &Vec<Self::WalletNote> {
+        &transaction_md.sapling_notes
     }
 
     fn to_notes_vec_mut(transaction: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote> {
@@ -804,9 +818,12 @@ impl DomainWalletExt for OrchardDomain {
     ) -> <<Self as DomainWalletExt>::WalletNote as ReceivedNoteAndMetadata>::Nullifier {
         note.nullifier(fvk)
     }
-
     fn get_tree(tree_state: &TreeState) -> &String {
         &tree_state.orchard_tree
+    }
+
+    fn to_notes_vec(transaction_md: &TransactionMetadata) -> &Vec<Self::WalletNote> {
+        &transaction_md.orchard_notes
     }
 
     fn to_notes_vec_mut(transaction: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote> {

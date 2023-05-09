@@ -3,6 +3,9 @@ use crate::compact_formats::CompactBlock;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use orchard::tree::MerkleHashOrchard;
 use prost::Message;
+use zcash_note_encryption::Domain;
+use zcash_primitives::transaction::components::amount::NonNegativeAmount;
+use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
 use std::usize;
@@ -17,7 +20,7 @@ use zcash_primitives::{
 use zcash_primitives::{memo::MemoBytes, merkle_tree::Hashable};
 
 use super::keys::unified::WalletCapability;
-use super::traits::ReadableWriteable;
+use super::traits::{ReadableWriteable, DomainWalletExt, self};
 
 /// This type is motivated by the IPC architecture where (currently) channels traffic in
 /// `(TxId, WalletNullifier, BlockHeight, Option<u32>)`.  This enum permits a single channel
@@ -507,71 +510,20 @@ pub enum ConsumerUIAddress {
 /// The MobileTx is the zingolib representation of
 /// transactions in the format most useful for
 /// consumption in mobile and mobile-like UI
-impl From<ConsumerUINote> for json::JsonValue {
-    fn from(_value: ConsumerUINote) -> Self {
+impl From<TransactionSummary> for json::JsonValue {
+    fn from(_value: TransactionSummary) -> Self {
         todo!()
     }
 }
-pub struct ConsumerUINote {
-    block_height: u32,
-    unconfirmed: bool,
-    datetime: u64,
-    txid: zcash_primitives::transaction::TxId,
+pub struct TransactionSummary {
     amount: zcash_primitives::transaction::components::Amount,
-    zec_price: WalletZecPriceInfo,
-    address: ConsumerUIAddress,
-    memo: Option<String>,
-    outgoing_tx_data: Option<Vec<OutgoingTxData>>,
+    to_addresses: Vec<ConsumerUIAddress>,
+    memos: Vec<Option<Memo>>,
 }
-struct ConsumerUINoteBuilder {
-    block_height: Option<u32>,
-    unconfirmed: Option<bool>,
-    datetime: Option<u64>,
-    txid: Option<zcash_primitives::transaction::TxId>,
-    amount: Option<zcash_primitives::transaction::components::Amount>,
-    zec_price: Option<WalletZecPriceInfo>,
-    address: Option<ConsumerUIAddress>,
-    memo: Option<String>,
-}
+pub struct transactionSummaryIndex(
+    HashMap<zcash_primitives::transaction::TxId, TransactionSummary>,
+);
 
-macro_rules! set_build_methods {
-    [$($field:ident: $field_type:ty),+] => {
-        $(
-        concat_idents::concat_idents!(setter_name = set, _, $field {
-                pub fn setter_name(&mut self, $field: $field_type) -> &mut Self {
-                    self.$field = Some($field);
-                    self
-                }
-            });
-        )+
-    };
-}
-impl ConsumerUINoteBuilder {
-    set_build_methods![
-        block_height: u32,
-        unconfirmed: bool,
-        datetime: u64,
-        txid: zcash_primitives::transaction::TxId,
-        amount: zcash_primitives::transaction::components::Amount,
-        zec_price: WalletZecPriceInfo,
-        address: ConsumerUIAddress,
-        memo: String
-    ];
-}
-impl ConsumerUINote {
-    pub fn builder() -> ConsumerUINoteBuilder {
-        ConsumerUINoteBuilder {
-            block_height: None,
-            unconfirmed: None,
-            datetime: None,
-            txid: None,
-            amount: None,
-            zec_price: None,
-            address: None,
-            memo: None,
-        }
-    }
-}
 ///  Everything (SOMETHING) about a transaction
 #[derive(Debug)]
 pub struct TransactionMetadata {
@@ -623,28 +575,17 @@ pub struct TransactionMetadata {
 }
 
 impl TransactionMetadata {
-    pub fn serialized_version() -> u64 {
-        23
-    }
-
-    pub fn new_txid(txid: &[u8]) -> TxId {
-        let mut txid_bytes = [0u8; 32];
-        txid_bytes.copy_from_slice(txid);
-        TxId::from_bytes(txid_bytes)
-    }
-
-    pub fn total_value_spent(&self) -> u64 {
-        self.value_spent_by_pool().iter().sum()
-    }
-    pub fn is_outgoing_transaction(&self) -> bool {
-        self.total_value_spent() > 0
-    }
-    pub fn value_spent_by_pool(&self) -> [u64; 3] {
-        [
-            self.total_transparent_value_spent,
-            self.total_sapling_value_spent,
-            self.total_orchard_value_spent,
-        ]
+    pub(super) fn add_spent_nullifier(&mut self, nullifier: PoolNullifier, value: u64) {
+        match nullifier {
+            PoolNullifier::Sapling(nf) => {
+                self.spent_sapling_nullifiers.push(nf);
+                self.total_sapling_value_spent += value;
+            }
+            PoolNullifier::Orchard(nf) => {
+                self.spent_orchard_nullifiers.push(nf);
+                self.total_orchard_value_spent += value;
+            }
+        }
     }
 
     pub fn get_price(datetime: u64, price: &WalletZecPriceInfo) -> Option<f64> {
@@ -663,6 +604,13 @@ impl TransactionMetadata {
         }
     }
 
+    pub fn is_outgoing_transaction(&self) -> bool {
+        self.total_value_spent() > 0
+    }
+    pub fn net_spent(&self) -> NonNegativeAmount {
+        assert!(self.is_outgoing_transaction());
+        self.total_value_spent() - self.total_change_returned()
+    }
     pub fn new(
         height: BlockHeight,
         datetime: u64,
@@ -687,7 +635,19 @@ impl TransactionMetadata {
             zec_price: None,
         }
     }
-
+    pub fn new_txid(txid: &[u8]) -> TxId {
+        let mut txid_bytes = [0u8; 32];
+        txid_bytes.copy_from_slice(txid);
+        TxId::from_bytes(txid_bytes)
+    }
+    fn pool_change_returned<D: DomainWalletExt>(&self) -> NonNegativeAmount 
+    where 
+        <D as Domain>::Note: PartialEq, 
+        <D as Domain>::Note: Clone, 
+        <D as Domain>::Recipient: traits::Recipient 
+    {
+        D::sum_pool_change(self)
+    }
     pub fn read<R: Read>(mut reader: R, wallet_capability: &WalletCapability) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
 
@@ -781,6 +741,38 @@ impl TransactionMetadata {
         })
     }
 
+    pub fn serialized_version() -> u64 {
+        23
+    }
+
+    fn total_change_returned(&self) -> NonNegativeAmount {
+        let sapling_change = self
+            .sapling_notes
+            .iter()
+            .filter(|nd| nd.is_change)
+            .map(|nd| nd.note.value().inner())
+            .sum::<u64>();
+        let orchard_change = self
+            .orchard_notes
+            .iter()
+            .filter(|nd| nd.is_change)
+            .map(|nd| nd.note.value().inner())
+            .sum::<u64>();
+        let transparent_change = self.
+    }
+
+    pub fn total_value_spent(&self) -> u64 {
+        self.value_spent_by_pool().iter().sum()
+    }
+
+    pub fn value_spent_by_pool(&self) -> [u64; 3] {
+        [
+            self.total_transparent_value_spent,
+            self.total_sapling_value_spent,
+            self.total_orchard_value_spent,
+        ]
+    }
+
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
@@ -818,19 +810,6 @@ impl TransactionMetadata {
         })?;
 
         Ok(())
-    }
-
-    pub(super) fn add_spent_nullifier(&mut self, nullifier: PoolNullifier, value: u64) {
-        match nullifier {
-            PoolNullifier::Sapling(nf) => {
-                self.spent_sapling_nullifiers.push(nf);
-                self.total_sapling_value_spent += value;
-            }
-            PoolNullifier::Orchard(nf) => {
-                self.spent_orchard_nullifiers.push(nf);
-                self.total_orchard_value_spent += value;
-            }
-        }
     }
 }
 
