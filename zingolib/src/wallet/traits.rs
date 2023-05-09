@@ -451,10 +451,10 @@ pub trait ReceivedNoteAndMetadata: Sized {
     fn unconfirmed_spent(&self) -> &Option<(TxId, u32)>;
     fn unconfirmed_spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
     ///Convenience function
-    fn value(&self) -> NonNegativeAmount {
+    fn value(&self) -> u64 {
         Self::value_from_note(self.note())
     }
-    fn value_from_note(note: &Self::Note) -> NonNegativeAmount;
+    fn value_from_note(note: &Self::Note) -> u64;
     fn witnesses(&self) -> &WitnessCache<Self::Node>;
     fn witnesses_mut(&mut self) -> &mut WitnessCache<Self::Node>;
 }
@@ -714,7 +714,7 @@ where
 
     type Bundle: Bundle<Self>;
 
-    fn sum_pool_change(transaction_md: &TransactionMetadata) -> NonNegativeAmount {
+    fn sum_pool_change(transaction_md: &TransactionMetadata) -> u64 {
         Self::to_notes_vec(transaction_md)
             .iter()
             .filter(|nd| nd.is_change())
