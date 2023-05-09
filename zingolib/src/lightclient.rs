@@ -8,7 +8,7 @@ use crate::{
     compact_formats::RawTransaction,
     grpc_connector::GrpcConnector,
     wallet::{
-        data::TransactionMetadata,
+        data::{TransactionMetadata, ValueTransferSummary},
         keys::{
             address_from_pubkeyhash,
             unified::{ReceiverSelection, WalletCapability},
@@ -946,16 +946,36 @@ impl LightClient {
             "outgoing_metadata" => outgoing_json,
         }
     }
-    /*
-        pub async fn do_list_txsummaries(&self) -> JsonValue {
-            for (txid, transaction_md) in self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
-            {
-                let tx_value = transaction_md.total_value_spent();
-                let to_addresses =
-    }
-            Vec<TxSummary>
+    pub async fn do_list_txsummaries(&self) -> Vec<ValueTransferSummary> {
+        for (txid, transaction_md) in self
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .current
+            .iter()
+        {
+            let tx_value_spent = transaction_md.total_value_spent();
+            let tx_value_received = transaction_md.total_value_received();
+            let to_addresses: Vec<&str> = transaction_md
+                .outgoing_tx_data
+                .iter()
+                .map(|tx_data| {
+                    tx_data
+                        .recipient_ua
+                        .as_ref()
+                        .unwrap_or(&tx_data.to_address)
+                        .as_ref()
+                })
+                .collect();
+            match (tx_value_spent,) {
+                //TODO: This is probably an error, if we sent no value,
+                (0, 0) => (),
+            }
         }
-                        */
+        todo!()
+    }
     pub async fn do_list_transactions(&self) -> JsonValue {
         // Create a list of TransactionItems from wallet transactions
         // TODO:  determine why an interface called "list_transactions" is

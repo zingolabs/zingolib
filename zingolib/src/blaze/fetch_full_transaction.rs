@@ -154,7 +154,7 @@ impl TransactionContext {
                     {
                         outgoing_metadatas.push(OutgoingTxData {
                             to_address: taddr,
-                            value: vout.value,
+                            value: u64::from(vout.value),
                             memo: Memo::Empty,
                             recipient_ua: None,
                         });
