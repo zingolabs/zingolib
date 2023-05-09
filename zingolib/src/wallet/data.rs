@@ -3,14 +3,14 @@ use crate::compact_formats::CompactBlock;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use orchard::tree::MerkleHashOrchard;
 use prost::Message;
-use zcash_note_encryption::Domain;
-use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
 use std::usize;
 use zcash_encoding::{Optional, Vector};
+use zcash_note_encryption::Domain;
 use zcash_primitives::consensus::BlockHeight;
+use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::components::Amount;
 use zcash_primitives::{
     memo::Memo,
@@ -20,7 +20,7 @@ use zcash_primitives::{
 use zcash_primitives::{memo::MemoBytes, merkle_tree::Hashable};
 
 use super::keys::unified::WalletCapability;
-use super::traits::{ReadableWriteable, DomainWalletExt, self};
+use super::traits::{self, DomainWalletExt, ReadableWriteable};
 
 /// This type is motivated by the IPC architecture where (currently) channels traffic in
 /// `(TxId, WalletNullifier, BlockHeight, Option<u32>)`.  This enum permits a single channel
@@ -444,7 +444,7 @@ impl ReceivedTransparentOutput {
 #[derive(Debug)]
 pub struct OutgoingTxData {
     pub to_address: String,
-    pub value: u64,
+    pub value: NonNegativeAmount,
     pub memo: Memo,
     pub recipient_ua: Option<String>,
 }
@@ -640,11 +640,11 @@ impl TransactionMetadata {
         txid_bytes.copy_from_slice(txid);
         TxId::from_bytes(txid_bytes)
     }
-    fn pool_change_returned<D: DomainWalletExt>(&self) -> NonNegativeAmount 
-    where 
-        <D as Domain>::Note: PartialEq, 
-        <D as Domain>::Note: Clone, 
-        <D as Domain>::Recipient: traits::Recipient 
+    fn pool_change_returned<D: DomainWalletExt>(&self) -> NonNegativeAmount
+    where
+        <D as Domain>::Note: PartialEq,
+        <D as Domain>::Note: Clone,
+        <D as Domain>::Recipient: traits::Recipient,
     {
         D::sum_pool_change(self)
     }
@@ -758,7 +758,8 @@ impl TransactionMetadata {
             .filter(|nd| nd.is_change)
             .map(|nd| nd.note.value().inner())
             .sum::<u64>();
-        let transparent_change = self.
+        //let transparent_change = self.
+        0
     }
 
     pub fn total_value_spent(&self) -> u64 {

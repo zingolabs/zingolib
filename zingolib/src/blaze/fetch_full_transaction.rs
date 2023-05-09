@@ -35,7 +35,7 @@ use zcash_primitives::{
     consensus::BlockHeight,
     memo::{Memo, MemoBytes},
     sapling::note_encryption::SaplingDomain,
-    transaction::{Transaction, TxId},
+    transaction::{components::amount::NonNegativeAmount, Transaction, TxId},
 };
 
 use super::syncdata::BlazeSyncData;
@@ -154,7 +154,7 @@ impl TransactionContext {
                     {
                         outgoing_metadatas.push(OutgoingTxData {
                             to_address: taddr,
-                            value: vout.value.into(),
+                            value: vout.value,
                             memo: Memo::Empty,
                             recipient_ua: None,
                         });
