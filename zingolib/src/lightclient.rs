@@ -958,6 +958,7 @@ impl LightClient {
         {
             let tx_value_spent = transaction_md.total_value_spent();
             let tx_value_received = transaction_md.total_value_received();
+            let tx_change_received = transaction_md.total_change_returned();
             let to_addresses: Vec<&str> = transaction_md
                 .outgoing_tx_data
                 .iter()
@@ -969,9 +970,17 @@ impl LightClient {
                         .as_ref()
                 })
                 .collect();
-            match (tx_value_spent,) {
-                //TODO: This is probably an error, if we sent no value,
-                (0, 0) => (),
+            match (tx_value_spent, (tx_value_received - tx_change_received)) {
+                //TODO: This is probably an error, if we sent no value and also received no value why
+                //do we have this transaction stored?
+                (0, 0) => unreachable!(),
+                // All received funds were change, this is a normal send
+                (spent, 0) => todo!(),
+                // No funds spent, this is a normal receipt
+                (0, received) => todo!(),
+                // We spent funds, and received them as non-change. This is most likely a send-to-self,
+                // TODO: Figure out what kind of special-case handling we want for these
+                (spent, received) => todo!(),
             }
         }
         todo!()
