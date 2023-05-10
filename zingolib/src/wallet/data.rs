@@ -25,6 +25,7 @@ use zingoconfig::ChainType;
 
 use super::keys::unified::WalletCapability;
 use super::traits::{self, DomainWalletExt, ReadableWriteable};
+use super::Pool;
 
 /// This type is motivated by the IPC architecture where (currently) channels traffic in
 /// `(TxId, WalletNullifier, BlockHeight, Option<u32>)`.  This enum permits a single channel
@@ -529,13 +530,46 @@ pub struct ValueSendSummary {
     pub price: Option<f64>,
 }
 
+impl ValueReceiptSummary {
+    pub fn from_note<Note: ReceivedNoteAndMetadata>(
+        note: &Note,
+        block_height: BlockHeight,
+        date_time: u64,
+        price: Option<f64>,
+    ) -> Self {
+        Self {
+            amount: note.value(),
+            memo: note.memo().clone(),
+            pool: Note::pool(),
+            block_height,
+            date_time,
+            price,
+        }
+    }
+    pub fn from_transparent_output(
+        toutput: &ReceivedTransparentOutput,
+        block_height: BlockHeight,
+        date_time: u64,
+        price: Option<f64>,
+    ) -> Self {
+        Self {
+            amount: toutput.value,
+            memo: None,
+            pool: Pool::Transparent,
+            block_height,
+            date_time,
+            price,
+        }
+    }
+}
+
 pub struct ValueReceiptSummary {
     amount: u64,
     memo: Option<Memo>,
     pool: Pool,
     block_height: BlockHeight,
     date_time: u64,
-    price: f64,
+    price: Option<f64>,
 }
 
 pub struct SendToSelfSummary {
@@ -543,13 +577,7 @@ pub struct SendToSelfSummary {
     memo: Option<Memo>,
     block_height: BlockHeight,
     date_time: u64,
-    price: f64,
-}
-
-pub enum Pool {
-    Transparent,
-    Sapling,
-    Orchard,
+    price: Option<f64>,
 }
 
 pub const POOLS: [Pool; 3] = [Pool::Transparent, Pool::Sapling, Pool::Orchard];
