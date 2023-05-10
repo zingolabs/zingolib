@@ -950,6 +950,99 @@ impl LightClient {
             "outgoing_metadata" => outgoing_json,
         }
     }
+    fn tx_summary_matcher(
+        summaries: &mut Vec<ValueTransfer>,
+        tx_value_spent: u64,
+        tx_value_received: u64,
+        tx_change_received: u64,
+    ) -> () {
+        match (tx_value_spent, (tx_value_received - tx_change_received)) {
+            //TODO: This is probably an error, if we sent no value and also received no value why
+            //do we have this transaction stored?
+            (0, 0) => unreachable!(),
+            // All received funds were change, this is a normal send
+            (_spent, 0) => {
+                for OutgoingTxData {
+                    to_address,
+                    value,
+                    memo,
+                    recipient_ua,
+                } in &transaction_md.outgoing_tx_data
+                {
+                    if let Ok(to_address) =
+                        ZcashAddress::try_from_encoded(recipient_ua.as_ref().unwrap_or(to_address))
+                    {
+                        summaries.push(
+                            Send {
+                                amount: *value,
+                                to_address,
+                                memo: memo.clone(),
+                                block_height: transaction_md.block_height,
+                                date_time: transaction_md.datetime,
+                                price: transaction_md.zec_price,
+                            }
+                            .into(),
+                        )
+                    }
+                }
+            }
+            // No funds spent, this is a normal receipt
+            (0, _received) => {
+                for received_transparent in transaction_md.received_utxos.iter() {
+                    summaries.push(
+                        Receive::from_transparent_output(
+                            received_transparent,
+                            *block_height,
+                            *datetime,
+                            *zec_price,
+                        )
+                        .into(),
+                    );
+                }
+                for received_sapling in transaction_md.sapling_notes.iter() {
+                    summaries.push(
+                        Receive::from_note(received_sapling, *block_height, *datetime, *zec_price)
+                            .into(),
+                    )
+                }
+                for received_orchard in transaction_md.orchard_notes.iter() {
+                    summaries.push(
+                        Receive::from_note(received_orchard, *block_height, *datetime, *zec_price)
+                            .into(),
+                    )
+                }
+            }
+            // We spent funds, and received them as non-change. This is most likely a send-to-self,
+            // TODO: Figure out what kind of special-case handling we want for these
+            (spent, _non_change_received) => summaries.push(
+                SelfSend {
+                    fee: spent - tx_value_received,
+                    memos: transaction_md
+                        .sapling_notes
+                        .iter()
+                        .filter_map(|sapling_note| sapling_note.memo.clone())
+                        .chain(
+                            transaction_md
+                                .orchard_notes
+                                .iter()
+                                .filter_map(|orchard_note| orchard_note.memo.clone()),
+                        )
+                        .filter_map(|memo| {
+                            if let Memo::Text(text_memo) = memo {
+                                Some(text_memo)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect(),
+                    block_height: *block_height,
+                    date_time: *datetime,
+                    price: *zec_price,
+                }
+                .into(),
+            ),
+        }
+    }
     pub async fn do_list_txsummaries(&self) -> Vec<ValueTransfer> {
         let mut summaries: Vec<ValueTransfer> = Vec::new();
 
@@ -971,102 +1064,7 @@ impl LightClient {
                 zec_price,
                 ..
             } = transaction_md;
-            match (tx_value_spent, (tx_value_received - tx_change_received)) {
-                //TODO: This is probably an error, if we sent no value and also received no value why
-                //do we have this transaction stored?
-                (0, 0) => unreachable!(),
-                // All received funds were change, this is a normal send
-                (_spent, 0) => {
-                    for OutgoingTxData {
-                        to_address,
-                        value,
-                        memo,
-                        recipient_ua,
-                    } in &transaction_md.outgoing_tx_data
-                    {
-                        if let Ok(to_address) = ZcashAddress::try_from_encoded(
-                            recipient_ua.as_ref().unwrap_or(to_address),
-                        ) {
-                            summaries.push(
-                                Send {
-                                    amount: *value,
-                                    to_address,
-                                    memo: memo.clone(),
-                                    block_height: transaction_md.block_height,
-                                    date_time: transaction_md.datetime,
-                                    price: transaction_md.zec_price,
-                                }
-                                .into(),
-                            )
-                        }
-                    }
-                }
-                // No funds spent, this is a normal receipt
-                (0, _received) => {
-                    for received_transparent in transaction_md.received_utxos.iter() {
-                        summaries.push(
-                            Receive::from_transparent_output(
-                                received_transparent,
-                                *block_height,
-                                *datetime,
-                                *zec_price,
-                            )
-                            .into(),
-                        );
-                    }
-                    for received_sapling in transaction_md.sapling_notes.iter() {
-                        summaries.push(
-                            Receive::from_note(
-                                received_sapling,
-                                *block_height,
-                                *datetime,
-                                *zec_price,
-                            )
-                            .into(),
-                        )
-                    }
-                    for received_orchard in transaction_md.orchard_notes.iter() {
-                        summaries.push(
-                            Receive::from_note(
-                                received_orchard,
-                                *block_height,
-                                *datetime,
-                                *zec_price,
-                            )
-                            .into(),
-                        )
-                    }
-                }
-                // We spent funds, and received them as non-change. This is most likely a send-to-self,
-                // TODO: Figure out what kind of special-case handling we want for these
-                (spent, _non_change_received) => summaries.push(
-                    SelfSend {
-                        fee: spent - tx_value_received,
-                        memos: transaction_md
-                            .sapling_notes
-                            .iter()
-                            .filter_map(|sapling_note| sapling_note.memo.clone())
-                            .chain(
-                                transaction_md
-                                    .orchard_notes
-                                    .iter()
-                                    .filter_map(|orchard_note| orchard_note.memo.clone()),
-                            )
-                            .filter_map(|memo| {
-                                if let Memo::Text(text_memo) = memo {
-                                    Some(text_memo)
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect(),
-                        block_height: *block_height,
-                        date_time: *datetime,
-                        price: *zec_price,
-                    }
-                    .into(),
-                ),
-            }
+            tx_summary_matcher()
         }
         todo!()
     }
