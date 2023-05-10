@@ -34,10 +34,7 @@ use zcash_primitives::{
     merkle_tree::{Hashable, IncrementalWitness},
     sapling::note_encryption::SaplingDomain,
     transaction::{
-        components::{
-            self, amount::NonNegativeAmount, sapling::GrothProofBytes, Amount, OutputDescription,
-            SpendDescription,
-        },
+        components::{self, sapling::GrothProofBytes, Amount, OutputDescription, SpendDescription},
         Transaction, TxId,
     },
     zip32,

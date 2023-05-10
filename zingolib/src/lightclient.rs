@@ -10,7 +10,7 @@ use crate::{
     wallet::{
         data::{
             OutgoingTxData, SendToSelfSummary, TransactionMetadata, ValueReceiptSummary,
-            ValueSendSummary, ValueTransferSummary, POOLS,
+            ValueSendSummary, ValueTransferSummary,
         },
         keys::{
             address_from_pubkeyhash,
@@ -1046,10 +1046,23 @@ impl LightClient {
                             .sapling_notes
                             .iter()
                             .filter_map(|sapling_note| sapling_note.memo.clone())
+                            .chain(
+                                transaction_md
+                                    .orchard_notes
+                                    .iter()
+                                    .filter_map(|orchard_note| orchard_note.memo.clone()),
+                            )
+                            .filter_map(|memo| {
+                                if let Memo::Text(text_memo) = memo {
+                                    Some(text_memo)
+                                } else {
+                                    None
+                                }
+                            })
                             .collect(),
-                        block_height: todo!(),
-                        date_time: todo!(),
-                        price: todo!(),
+                        block_height: *block_height,
+                        date_time: *datetime,
+                        price: *zec_price,
                     }
                     .into(),
                 ),
