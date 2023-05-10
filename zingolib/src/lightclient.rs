@@ -8,7 +8,7 @@ use crate::{
     compact_formats::RawTransaction,
     grpc_connector::GrpcConnector,
     wallet::{
-        data::{TransactionMetadata, ValueTransferSummary},
+        data::{OutgoingTxData, TransactionMetadata, ValueSendSummary, ValueTransferSummary},
         keys::{
             address_from_pubkeyhash,
             unified::{ReceiverSelection, WalletCapability},
@@ -38,6 +38,7 @@ use tokio::{
     task::yield_now,
     time::sleep,
 };
+use zcash_address::ZcashAddress;
 use zcash_note_encryption::Domain;
 
 use zcash_client_backend::{
@@ -947,6 +948,9 @@ impl LightClient {
         }
     }
     pub async fn do_list_txsummaries(&self) -> Vec<ValueTransferSummary> {
+        let mut sends = Vec::new();
+        let mut receipts = Vec::new();
+
         for (txid, transaction_md) in self
             .wallet
             .transaction_context
@@ -959,25 +963,35 @@ impl LightClient {
             let tx_value_spent = transaction_md.total_value_spent();
             let tx_value_received = transaction_md.total_value_received();
             let tx_change_received = transaction_md.total_change_returned();
-            let to_addresses: Vec<&str> = transaction_md
-                .outgoing_tx_data
-                .iter()
-                .map(|tx_data| {
-                    tx_data
-                        .recipient_ua
-                        .as_ref()
-                        .unwrap_or(&tx_data.to_address)
-                        .as_ref()
-                })
-                .collect();
             match (tx_value_spent, (tx_value_received - tx_change_received)) {
                 //TODO: This is probably an error, if we sent no value and also received no value why
                 //do we have this transaction stored?
                 (0, 0) => unreachable!(),
                 // All received funds were change, this is a normal send
-                (spent, 0) => todo!(),
+                (_spent, 0) => {
+                    for OutgoingTxData {
+                        to_address,
+                        value,
+                        memo,
+                        recipient_ua,
+                    } in &transaction_md.outgoing_tx_data
+                    {
+                        if let Ok(to_address) = ZcashAddress::try_from_encoded(
+                            recipient_ua.as_ref().unwrap_or(to_address),
+                        ) {
+                            sends.push(ValueSendSummary {
+                                amount: *value,
+                                to_address,
+                                memo: memo.clone(),
+                                block_height: transaction_md.block_height,
+                                date_time: transaction_md.datetime,
+                                price: transaction_md.zec_price,
+                            })
+                        }
+                    }
+                }
                 // No funds spent, this is a normal receipt
-                (0, received) => todo!(),
+                (0, received) => for pool in crate::wallet::data::POOLS {},
                 // We spent funds, and received them as non-change. This is most likely a send-to-self,
                 // TODO: Figure out what kind of special-case handling we want for these
                 (spent, received) => todo!(),
