@@ -8,6 +8,7 @@ use super::{
     },
     keys::unified::WalletCapability,
     transactions::TransactionMetadataSet,
+    Pool,
 };
 use crate::compact_formats::{
     slice_to_array, CompactOrchardAction, CompactSaplingOutput, CompactTx, TreeState,
@@ -442,6 +443,7 @@ pub trait ReceivedNoteAndMetadata: Sized {
     fn memo_mut(&mut self) -> &mut Option<Memo>;
     fn note(&self) -> &Self::Note;
     fn nullifier(&self) -> Self::Nullifier;
+    fn pool() -> Pool;
     fn spent(&self) -> &Option<(TxId, u32)>;
     fn spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
     fn transaction_metadata_notes(wallet_transaction: &TransactionMetadata) -> &Vec<Self>;
@@ -535,6 +537,10 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
 
     fn nullifier(&self) -> Self::Nullifier {
         self.nullifier
+    }
+
+    fn pool() -> Pool {
+        Pool::Sapling
     }
 
     fn spent(&self) -> &Option<(TxId, u32)> {
@@ -652,6 +658,10 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
 
     fn nullifier(&self) -> Self::Nullifier {
         self.nullifier
+    }
+
+    fn pool() -> Pool {
+        Pool::Orchard
     }
 
     fn spent(&self) -> &Option<(TxId, u32)> {

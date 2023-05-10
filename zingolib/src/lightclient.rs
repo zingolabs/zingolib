@@ -8,7 +8,10 @@ use crate::{
     compact_formats::RawTransaction,
     grpc_connector::GrpcConnector,
     wallet::{
-        data::{OutgoingTxData, TransactionMetadata, ValueSendSummary, ValueTransferSummary},
+        data::{
+            OutgoingTxData, TransactionMetadata, ValueReceiptSummary, ValueSendSummary,
+            ValueTransferSummary, POOLS,
+        },
         keys::{
             address_from_pubkeyhash,
             unified::{ReceiverSelection, WalletCapability},
@@ -963,6 +966,12 @@ impl LightClient {
             let tx_value_spent = transaction_md.total_value_spent();
             let tx_value_received = transaction_md.total_value_received();
             let tx_change_received = transaction_md.total_change_returned();
+            let TransactionMetadata {
+                block_height,
+                datetime,
+                zec_price,
+                ..
+            } = transaction_md;
             match (tx_value_spent, (tx_value_received - tx_change_received)) {
                 //TODO: This is probably an error, if we sent no value and also received no value why
                 //do we have this transaction stored?
@@ -991,7 +1000,32 @@ impl LightClient {
                     }
                 }
                 // No funds spent, this is a normal receipt
-                (0, received) => for pool in crate::wallet::data::POOLS {},
+                (0, _received) => {
+                    for received_transparent in transaction_md.received_utxos.iter() {
+                        receipts.push(ValueReceiptSummary::from_transparent_output(
+                            received_transparent,
+                            *block_height,
+                            *datetime,
+                            *zec_price,
+                        ));
+                    }
+                    for received_sapling in transaction_md.sapling_notes.iter() {
+                        receipts.push(ValueReceiptSummary::from_note(
+                            received_sapling,
+                            *block_height,
+                            *datetime,
+                            *zec_price,
+                        ))
+                    }
+                    for received_orchard in transaction_md.orchard_notes.iter() {
+                        receipts.push(ValueReceiptSummary::from_note(
+                            received_orchard,
+                            *block_height,
+                            *datetime,
+                            *zec_price,
+                        ))
+                    }
+                }
                 // We spent funds, and received them as non-change. This is most likely a send-to-self,
                 // TODO: Figure out what kind of special-case handling we want for these
                 (spent, received) => todo!(),
