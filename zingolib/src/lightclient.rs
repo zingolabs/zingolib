@@ -9,8 +9,8 @@ use crate::{
     grpc_connector::GrpcConnector,
     wallet::{
         data::{
-            OutgoingTxData, SendToSelfSummary, TransactionMetadata, ValueReceiptSummary,
-            ValueSendSummary, ValueTransferSummary,
+            summaries::{Receive, SelfSend, Send, ValueTransfer},
+            OutgoingTxData, TransactionMetadata,
         },
         keys::{
             address_from_pubkeyhash,
@@ -950,8 +950,8 @@ impl LightClient {
             "outgoing_metadata" => outgoing_json,
         }
     }
-    pub async fn do_list_txsummaries(&self) -> Vec<ValueTransferSummary> {
-        let mut summaries: Vec<ValueTransferSummary> = Vec::new();
+    pub async fn do_list_txsummaries(&self) -> Vec<ValueTransfer> {
+        let mut summaries: Vec<ValueTransfer> = Vec::new();
 
         for (txid, transaction_md) in self
             .wallet
@@ -988,7 +988,7 @@ impl LightClient {
                             recipient_ua.as_ref().unwrap_or(to_address),
                         ) {
                             summaries.push(
-                                ValueSendSummary {
+                                Send {
                                     amount: *value,
                                     to_address,
                                     memo: memo.clone(),
@@ -1005,7 +1005,7 @@ impl LightClient {
                 (0, _received) => {
                     for received_transparent in transaction_md.received_utxos.iter() {
                         summaries.push(
-                            ValueReceiptSummary::from_transparent_output(
+                            Receive::from_transparent_output(
                                 received_transparent,
                                 *block_height,
                                 *datetime,
@@ -1016,7 +1016,7 @@ impl LightClient {
                     }
                     for received_sapling in transaction_md.sapling_notes.iter() {
                         summaries.push(
-                            ValueReceiptSummary::from_note(
+                            Receive::from_note(
                                 received_sapling,
                                 *block_height,
                                 *datetime,
@@ -1027,7 +1027,7 @@ impl LightClient {
                     }
                     for received_orchard in transaction_md.orchard_notes.iter() {
                         summaries.push(
-                            ValueReceiptSummary::from_note(
+                            Receive::from_note(
                                 received_orchard,
                                 *block_height,
                                 *datetime,
@@ -1040,7 +1040,7 @@ impl LightClient {
                 // We spent funds, and received them as non-change. This is most likely a send-to-self,
                 // TODO: Figure out what kind of special-case handling we want for these
                 (spent, _non_change_received) => summaries.push(
-                    SendToSelfSummary {
+                    SelfSend {
                         fee: spent - tx_value_received,
                         memos: transaction_md
                             .sapling_notes

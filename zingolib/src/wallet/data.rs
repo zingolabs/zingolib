@@ -507,99 +507,118 @@ impl OutgoingTxData {
     }
 }
 
-/// The MobileTx is the zingolib representation of
-/// transactions in the format most useful for
-/// consumption in mobile and mobile-like UI
-impl From<ValueTransferSummary> for json::JsonValue {
-    fn from(_value: ValueTransferSummary) -> Self {
-        todo!()
-    }
-}
-pub enum ValueTransferSummary {
-    Sent(ValueSendSummary),
-    Received(ValueReceiptSummary),
-    SendToSelf(SendToSelfSummary),
-}
+pub mod summaries {
+    use std::collections::HashMap;
 
-impl From<ValueSendSummary> for ValueTransferSummary {
-    fn from(value: ValueSendSummary) -> Self {
-        Self::Sent(value)
-    }
-}
-impl From<ValueReceiptSummary> for ValueTransferSummary {
-    fn from(value: ValueReceiptSummary) -> Self {
-        Self::Received(value)
-    }
-}
-impl From<SendToSelfSummary> for ValueTransferSummary {
-    fn from(value: SendToSelfSummary) -> Self {
-        Self::SendToSelf(value)
-    }
-}
-
-pub struct ValueSendSummary {
-    pub amount: u64,
-    pub to_address: ZcashAddress,
-    pub memo: Memo,
-    pub block_height: BlockHeight,
-    pub date_time: u64,
-    pub price: Option<f64>,
-}
-
-impl ValueReceiptSummary {
-    pub fn from_note<Note: ReceivedNoteAndMetadata>(
-        note: &Note,
-        block_height: BlockHeight,
-        date_time: u64,
-        price: Option<f64>,
-    ) -> Self {
-        Self {
-            amount: note.value(),
-            memo: note.memo().clone(),
-            pool: Note::pool(),
-            block_height,
-            date_time,
-            price,
+    /// The MobileTx is the zingolib representation of
+    /// transactions in the format most useful for
+    /// consumption in mobile and mobile-like UI
+    impl From<ValueTransfer> for json::JsonValue {
+        fn from(_value: ValueTransfer) -> Self {
+            todo!()
         }
     }
-    pub fn from_transparent_output(
-        toutput: &ReceivedTransparentOutput,
-        block_height: BlockHeight,
-        date_time: u64,
-        price: Option<f64>,
-    ) -> Self {
-        Self {
-            amount: toutput.value,
-            memo: None,
-            pool: Pool::Transparent,
-            block_height,
-            date_time,
-            price,
+    pub enum ValueTransfer {
+        Sent(Send),
+        Received(Receive),
+        SendToSelf(SelfSend),
+    }
+
+    impl From<Send> for ValueTransfer {
+        fn from(value: Send) -> Self {
+            Self::Sent(value)
         }
     }
+    impl From<Receive> for ValueTransfer {
+        fn from(value: Receive) -> Self {
+            Self::Received(value)
+        }
+    }
+    impl From<SelfSend> for ValueTransfer {
+        fn from(value: SelfSend) -> Self {
+            Self::SendToSelf(value)
+        }
+    }
+
+    pub struct Send {
+        pub amount: u64,
+        pub to_address: ZcashAddress,
+        pub memo: Memo,
+        pub block_height: BlockHeight,
+        pub date_time: u64,
+        pub price: Option<f64>,
+    }
+
+    impl Receive {
+        pub fn from_note<Note: ReceivedNoteAndMetadata>(
+            note: &Note,
+            block_height: BlockHeight,
+            date_time: u64,
+            price: Option<f64>,
+        ) -> Self {
+            Self {
+                amount: note.value(),
+                memo: note.memo().clone(),
+                pool: Note::pool(),
+                block_height,
+                date_time,
+                price,
+            }
+        }
+        pub fn from_transparent_output(
+            toutput: &ReceivedTransparentOutput,
+            block_height: BlockHeight,
+            date_time: u64,
+            price: Option<f64>,
+        ) -> Self {
+            Self {
+                amount: toutput.value,
+                memo: None,
+                pool: Pool::Transparent,
+                block_height,
+                date_time,
+                price,
+            }
+        }
+    }
+
+    pub struct Receive {
+        pub amount: u64,
+        pub memo: Option<Memo>,
+        pub pool: Pool,
+        pub block_height: BlockHeight,
+        pub date_time: u64,
+        pub price: Option<f64>,
+    }
+
+    pub struct SelfSend {
+        pub fee: u64,
+        pub memos: Vec<TextMemo>,
+        pub block_height: BlockHeight,
+        pub date_time: u64,
+        pub price: Option<f64>,
+    }
+
+    impl SelfSend {
+        pub fn new(
+            fee: u64,
+            memos: Vec<TextMemo>,
+            block_height: BlockHeight,
+            date_time: u64,
+            price: Option<f64>,
+        ) -> Self {
+            Self {
+                fee,
+                memos,
+                block_height,
+                date_time,
+                price,
+            }
+        }
+    }
+
+    pub struct TransactionIndex(HashMap<zcash_primitives::transaction::TxId, ValueTransfer>);
 }
-
-pub struct ValueReceiptSummary {
-    pub amount: u64,
-    pub memo: Option<Memo>,
-    pub pool: Pool,
-    pub block_height: BlockHeight,
-    pub date_time: u64,
-    pub price: Option<f64>,
-}
-
-pub struct SendToSelfSummary {
-    pub fee: u64,
-    pub memos: Vec<TextMemo>,
-    pub block_height: BlockHeight,
-    pub date_time: u64,
-    pub price: Option<f64>,
-}
-
-pub struct TransactionSummaryIndex(
-    HashMap<zcash_primitives::transaction::TxId, ValueTransferSummary>,
-);
-
 ///  Everything (SOMETHING) about a transaction
 #[derive(Debug)]
 pub struct TransactionMetadata {
