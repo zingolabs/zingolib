@@ -521,6 +521,22 @@ pub enum ValueTransferSummary {
     SendToSelf(SendToSelfSummary),
 }
 
+impl From<ValueSendSummary> for ValueTransferSummary {
+    fn from(value: ValueSendSummary) -> Self {
+        Self::Sent(value)
+    }
+}
+impl From<ValueReceiptSummary> for ValueTransferSummary {
+    fn from(value: ValueReceiptSummary) -> Self {
+        Self::Received(value)
+    }
+}
+impl From<SendToSelfSummary> for ValueTransferSummary {
+    fn from(value: SendToSelfSummary) -> Self {
+        Self::SendToSelf(value)
+    }
+}
+
 pub struct ValueSendSummary {
     pub amount: u64,
     pub to_address: ZcashAddress,
@@ -573,11 +589,11 @@ pub struct ValueReceiptSummary {
 }
 
 pub struct SendToSelfSummary {
-    fee: u64,
-    memo: Option<Memo>,
-    block_height: BlockHeight,
-    date_time: u64,
-    price: Option<f64>,
+    pub fee: u64,
+    pub memos: Vec<Memo>,
+    pub block_height: BlockHeight,
+    pub date_time: u64,
+    pub price: Option<f64>,
 }
 
 pub const POOLS: [Pool; 3] = [Pool::Transparent, Pool::Sapling, Pool::Orchard];

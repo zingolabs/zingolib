@@ -9,8 +9,8 @@ use crate::{
     grpc_connector::GrpcConnector,
     wallet::{
         data::{
-            OutgoingTxData, TransactionMetadata, ValueReceiptSummary, ValueSendSummary,
-            ValueTransferSummary, POOLS,
+            OutgoingTxData, SendToSelfSummary, TransactionMetadata, ValueReceiptSummary,
+            ValueSendSummary, ValueTransferSummary, POOLS,
         },
         keys::{
             address_from_pubkeyhash,
@@ -951,8 +951,7 @@ impl LightClient {
         }
     }
     pub async fn do_list_txsummaries(&self) -> Vec<ValueTransferSummary> {
-        let mut sends = Vec::new();
-        let mut receipts = Vec::new();
+        let mut summaries: Vec<ValueTransferSummary> = Vec::new();
 
         for (txid, transaction_md) in self
             .wallet
@@ -988,47 +987,72 @@ impl LightClient {
                         if let Ok(to_address) = ZcashAddress::try_from_encoded(
                             recipient_ua.as_ref().unwrap_or(to_address),
                         ) {
-                            sends.push(ValueSendSummary {
-                                amount: *value,
-                                to_address,
-                                memo: memo.clone(),
-                                block_height: transaction_md.block_height,
-                                date_time: transaction_md.datetime,
-                                price: transaction_md.zec_price,
-                            })
+                            summaries.push(
+                                ValueSendSummary {
+                                    amount: *value,
+                                    to_address,
+                                    memo: memo.clone(),
+                                    block_height: transaction_md.block_height,
+                                    date_time: transaction_md.datetime,
+                                    price: transaction_md.zec_price,
+                                }
+                                .into(),
+                            )
                         }
                     }
                 }
                 // No funds spent, this is a normal receipt
                 (0, _received) => {
                     for received_transparent in transaction_md.received_utxos.iter() {
-                        receipts.push(ValueReceiptSummary::from_transparent_output(
-                            received_transparent,
-                            *block_height,
-                            *datetime,
-                            *zec_price,
-                        ));
+                        summaries.push(
+                            ValueReceiptSummary::from_transparent_output(
+                                received_transparent,
+                                *block_height,
+                                *datetime,
+                                *zec_price,
+                            )
+                            .into(),
+                        );
                     }
                     for received_sapling in transaction_md.sapling_notes.iter() {
-                        receipts.push(ValueReceiptSummary::from_note(
-                            received_sapling,
-                            *block_height,
-                            *datetime,
-                            *zec_price,
-                        ))
+                        summaries.push(
+                            ValueReceiptSummary::from_note(
+                                received_sapling,
+                                *block_height,
+                                *datetime,
+                                *zec_price,
+                            )
+                            .into(),
+                        )
                     }
                     for received_orchard in transaction_md.orchard_notes.iter() {
-                        receipts.push(ValueReceiptSummary::from_note(
-                            received_orchard,
-                            *block_height,
-                            *datetime,
-                            *zec_price,
-                        ))
+                        summaries.push(
+                            ValueReceiptSummary::from_note(
+                                received_orchard,
+                                *block_height,
+                                *datetime,
+                                *zec_price,
+                            )
+                            .into(),
+                        )
                     }
                 }
                 // We spent funds, and received them as non-change. This is most likely a send-to-self,
                 // TODO: Figure out what kind of special-case handling we want for these
-                (spent, received) => todo!(),
+                (spent, _non_change_received) => summaries.push(
+                    SendToSelfSummary {
+                        fee: spent - tx_value_received,
+                        memos: transaction_md
+                            .sapling_notes
+                            .iter()
+                            .filter_map(|sapling_note| sapling_note.memo.clone())
+                            .collect(),
+                        block_height: todo!(),
+                        date_time: todo!(),
+                        price: todo!(),
+                    }
+                    .into(),
+                ),
             }
         }
         todo!()
