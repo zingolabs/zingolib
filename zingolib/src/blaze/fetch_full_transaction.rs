@@ -35,7 +35,7 @@ use zcash_primitives::{
     consensus::BlockHeight,
     memo::{Memo, MemoBytes},
     sapling::note_encryption::SaplingDomain,
-    transaction::{components::amount::NonNegativeAmount, Transaction, TxId},
+    transaction::{Transaction, TxId},
 };
 
 use super::syncdata::BlazeSyncData;
