@@ -5,15 +5,12 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use orchard::note_encryption::OrchardDomain;
 use orchard::tree::MerkleHashOrchard;
 use prost::Message;
-use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
 use std::usize;
-use zcash_address::ZcashAddress;
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
 use zcash_primitives::consensus::BlockHeight;
-use zcash_primitives::memo::TextMemo;
 use zcash_primitives::sapling::note_encryption::SaplingDomain;
 use zcash_primitives::{
     memo::Memo,
@@ -25,7 +22,6 @@ use zingoconfig::ChainType;
 
 use super::keys::unified::WalletCapability;
 use super::traits::{self, DomainWalletExt, ReadableWriteable};
-use super::Pool;
 
 /// This type is motivated by the IPC architecture where (currently) channels traffic in
 /// `(TxId, WalletNullifier, BlockHeight, Option<u32>)`.  This enum permits a single channel
@@ -510,6 +506,15 @@ impl OutgoingTxData {
 pub mod summaries {
     use std::collections::HashMap;
 
+    use zcash_primitives::{
+        consensus::BlockHeight,
+        memo::{Memo, TextMemo},
+    };
+
+    use crate::wallet::{traits::ReceivedNoteAndMetadata, Pool};
+
+    use super::ReceivedTransparentOutput;
+
     /// The MobileTx is the zingolib representation of
     /// transactions in the format most useful for
     /// consumption in mobile and mobile-like UI
@@ -542,9 +547,9 @@ pub mod summaries {
 
     pub struct Send {
         pub amount: u64,
-        pub to_address: ZcashAddress,
-        pub memo: Memo,
-        pub block_height: BlockHeight,
+        pub to_address: zcash_address::ZcashAddress,
+        pub memo: zcash_primitives::memo::Memo,
+        pub block_height: zcash_primitives::consensus::BlockHeight,
         pub date_time: u64,
         pub price: Option<f64>,
     }
