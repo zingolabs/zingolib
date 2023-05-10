@@ -1,6 +1,8 @@
 use crate::blaze::fixed_size_buffer::FixedSizeBuffer;
 use crate::compact_formats::CompactBlock;
+use crate::wallet::traits::ReceivedNoteAndMetadata;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use orchard::note_encryption::OrchardDomain;
 use orchard::tree::MerkleHashOrchard;
 use prost::Message;
 use std::collections::HashMap;
@@ -10,14 +12,14 @@ use std::usize;
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
 use zcash_primitives::consensus::BlockHeight;
-use zcash_primitives::transaction::components::amount::NonNegativeAmount;
-use zcash_primitives::transaction::components::Amount;
+use zcash_primitives::sapling::note_encryption::SaplingDomain;
 use zcash_primitives::{
     memo::Memo,
     merkle_tree::{CommitmentTree, IncrementalWitness},
     transaction::{components::OutPoint, TxId},
 };
 use zcash_primitives::{memo::MemoBytes, merkle_tree::Hashable};
+use zingoconfig::ChainType;
 
 use super::keys::unified::WalletCapability;
 use super::traits::{self, DomainWalletExt, ReadableWriteable};
@@ -675,8 +677,7 @@ impl TransactionMetadata {
     }
     fn pool_change_returned<D: DomainWalletExt>(&self) -> u64
     where
-        <D as Domain>::Note: PartialEq,
-        <D as Domain>::Note: Clone,
+        <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: traits::Recipient,
     {
         D::sum_pool_change(self)
@@ -778,29 +779,30 @@ impl TransactionMetadata {
         23
     }
 
-    fn total_change_returned(&self) -> u64 {
-        let sapling_change = self
-            .sapling_notes
-            .iter()
-            .filter(|nd| nd.is_change)
-            .map(|nd| nd.note.value().inner())
-            .sum::<u64>();
-        let orchard_change = self
-            .orchard_notes
-            .iter()
-            .filter(|nd| nd.is_change)
-            .map(|nd| nd.note.value().inner())
-            .sum::<u64>();
-        //let transparent_change = self.
-        0
+    pub fn total_change_returned(&self) -> u64 {
+        self.pool_change_returned::<SaplingDomain<ChainType>>()
+            + self.pool_change_returned::<OrchardDomain>()
     }
 
     pub fn total_value_received(&self) -> u64 {
-        self.value_received_by_pool().iter().sum()
+        self.pool_value_received::<OrchardDomain>()
+            + self.pool_value_received::<SaplingDomain<ChainType>>()
+            + self
+                .received_utxos
+                .iter()
+                .map(|utxo| utxo.value)
+                .sum::<u64>()
     }
 
-    pub fn value_received_by_pool(&self) -> [u64; 3] {
-        todo!()
+    pub fn pool_value_received<D: DomainWalletExt>(&self) -> u64
+    where
+        <D as Domain>::Note: PartialEq + Clone,
+        <D as Domain>::Recipient: traits::Recipient,
+    {
+        D::to_notes_vec(self)
+            .iter()
+            .map(|note_and_metadata| note_and_metadata.value())
+            .sum()
     }
 
     pub fn total_value_spent(&self) -> u64 {
