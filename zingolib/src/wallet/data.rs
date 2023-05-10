@@ -8,12 +8,12 @@ use prost::Message;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
-use std::str::FromStr;
 use std::usize;
 use zcash_address::ZcashAddress;
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
 use zcash_primitives::consensus::BlockHeight;
+use zcash_primitives::memo::TextMemo;
 use zcash_primitives::sapling::note_encryption::SaplingDomain;
 use zcash_primitives::{
     memo::Memo,
@@ -580,23 +580,21 @@ impl ValueReceiptSummary {
 }
 
 pub struct ValueReceiptSummary {
-    amount: u64,
-    memo: Option<Memo>,
-    pool: Pool,
-    block_height: BlockHeight,
-    date_time: u64,
-    price: Option<f64>,
-}
-
-pub struct SendToSelfSummary {
-    pub fee: u64,
-    pub memos: Vec<Memo>,
+    pub amount: u64,
+    pub memo: Option<Memo>,
+    pub pool: Pool,
     pub block_height: BlockHeight,
     pub date_time: u64,
     pub price: Option<f64>,
 }
 
-pub const POOLS: [Pool; 3] = [Pool::Transparent, Pool::Sapling, Pool::Orchard];
+pub struct SendToSelfSummary {
+    pub fee: u64,
+    pub memos: Vec<TextMemo>,
+    pub block_height: BlockHeight,
+    pub date_time: u64,
+    pub price: Option<f64>,
+}
 
 pub struct TransactionSummaryIndex(
     HashMap<zcash_primitives::transaction::TxId, ValueTransferSummary>,
