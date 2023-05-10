@@ -8,7 +8,9 @@ use prost::Message;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
+use std::str::FromStr;
 use std::usize;
+use zcash_address::ZcashAddress;
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
 use zcash_primitives::consensus::BlockHeight;
@@ -504,11 +506,6 @@ impl OutgoingTxData {
     }
 }
 
-pub enum ConsumerUIAddress {
-    Transparent,
-    Sapling,
-    Unified,
-}
 /// The MobileTx is the zingolib representation of
 /// transactions in the format most useful for
 /// consumption in mobile and mobile-like UI
@@ -524,12 +521,12 @@ pub enum ValueTransferSummary {
 }
 
 pub struct ValueSendSummary {
-    amount: u64,
-    to_address: ConsumerUIAddress,
-    memo: Option<Memo>,
-    block_height: BlockHeight,
-    date_time: u64,
-    price: f64,
+    pub amount: u64,
+    pub to_address: ZcashAddress,
+    pub memo: Memo,
+    pub block_height: BlockHeight,
+    pub date_time: u64,
+    pub price: Option<f64>,
 }
 
 pub struct ValueReceiptSummary {
@@ -554,6 +551,8 @@ pub enum Pool {
     Sapling,
     Orchard,
 }
+
+pub const POOLS: [Pool; 3] = [Pool::Transparent, Pool::Sapling, Pool::Orchard];
 
 pub struct TransactionSummaryIndex(
     HashMap<zcash_primitives::transaction::TxId, ValueTransferSummary>,
