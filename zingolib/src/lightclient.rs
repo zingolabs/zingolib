@@ -53,7 +53,7 @@ use zcash_primitives::{
     consensus::{BlockHeight, BranchId, Parameters},
     memo::{Memo, MemoBytes},
     sapling::note_encryption::SaplingDomain,
-    transaction::{components::amount::DEFAULT_FEE, Transaction},
+    transaction::{components::amount::DEFAULT_FEE, Transaction, TxId},
 };
 use zcash_proofs::prover::LocalTxProver;
 use zingoconfig::{ChainType, ZingoConfig, MAX_REORG};
@@ -952,6 +952,7 @@ impl LightClient {
     }
     fn tx_summary_matcher(
         summaries: &mut Vec<ValueTransfer>,
+        txid: TxId,
         transaction_md: &TransactionMetadata,
         tx_value_spent: u64,
         tx_value_received: u64,
@@ -980,12 +981,13 @@ impl LightClient {
                     {
                         summaries.push(
                             Send {
-                                amount: *value,
+                                balance_delta: *value,
                                 to_address,
                                 memo: memo.clone(),
                                 block_height,
                                 datetime,
                                 price,
+                                txid,
                             }
                             .into(),
                         )
@@ -1001,18 +1003,21 @@ impl LightClient {
                             block_height,
                             datetime,
                             price,
+                            txid,
                         )
                         .into(),
                     );
                 }
                 for received_sapling in transaction_md.sapling_notes.iter() {
                     summaries.push(
-                        Receive::from_note(received_sapling, block_height, datetime, price).into(),
+                        Receive::from_note(received_sapling, block_height, datetime, price, txid)
+                            .into(),
                     )
                 }
                 for received_orchard in transaction_md.orchard_notes.iter() {
                     summaries.push(
-                        Receive::from_note(received_orchard, block_height, datetime, price).into(),
+                        Receive::from_note(received_orchard, block_height, datetime, price, txid)
+                            .into(),
                     )
                 }
             }
@@ -1042,6 +1047,7 @@ impl LightClient {
                     block_height,
                     datetime,
                     price,
+                    txid,
                 }
                 .into(),
             ),
@@ -1064,13 +1070,14 @@ impl LightClient {
             let tx_change_received = transaction_md.total_change_returned();
             LightClient::tx_summary_matcher(
                 &mut summaries,
+                *txid,
                 transaction_md,
                 tx_value_spent,
                 tx_value_received,
                 tx_change_received,
             )
         }
-        todo!()
+        summaries
     }
     pub async fn do_list_transactions(&self) -> JsonValue {
         // Create a list of TransactionItems from wallet transactions
@@ -1476,8 +1483,7 @@ impl LightClient {
             && BlockHash::from_slice(&latest_blockid.hash).to_string()
                 != self.wallet.last_synced_hash().await
         {
-            #[cfg(not(feature = "integration_test"))]
-            warn!("One block reorg at height {}", last_synced_height);
+            log::warn!("One block reorg at height {}", last_synced_height);
             // This is a one-block reorg, so pop the last block. Even if there are more blocks to reorg, this is enough
             // to trigger a sync, which will then reorg the remaining blocks
             BlockAndWitnessData::invalidate_block(

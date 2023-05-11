@@ -509,6 +509,7 @@ pub mod summaries {
     use zcash_primitives::{
         consensus::BlockHeight,
         memo::{Memo, TextMemo},
+        transaction::TxId,
     };
 
     use crate::wallet::{traits::ReceivedNoteAndMetadata, Pool};
@@ -546,12 +547,13 @@ pub mod summaries {
     }
 
     pub struct Send {
-        pub amount: u64,
+        pub balance_delta: u64,
         pub to_address: zcash_address::ZcashAddress,
         pub memo: zcash_primitives::memo::Memo,
         pub block_height: zcash_primitives::consensus::BlockHeight,
         pub datetime: u64,
         pub price: Option<f64>,
+        pub txid: TxId,
     }
 
     impl Receive {
@@ -560,6 +562,7 @@ pub mod summaries {
             block_height: BlockHeight,
             date_time: u64,
             price: Option<f64>,
+            txid: TxId,
         ) -> Self {
             Self {
                 amount: note.value(),
@@ -568,6 +571,7 @@ pub mod summaries {
                 block_height,
                 date_time,
                 price,
+                txid,
             }
         }
         pub fn from_transparent_output(
@@ -575,6 +579,7 @@ pub mod summaries {
             block_height: BlockHeight,
             date_time: u64,
             price: Option<f64>,
+            txid: TxId,
         ) -> Self {
             Self {
                 amount: toutput.value,
@@ -583,6 +588,7 @@ pub mod summaries {
                 block_height,
                 date_time,
                 price,
+                txid,
             }
         }
     }
@@ -594,6 +600,7 @@ pub mod summaries {
         pub block_height: BlockHeight,
         pub date_time: u64,
         pub price: Option<f64>,
+        pub txid: TxId,
     }
 
     pub struct SelfSend {
@@ -602,6 +609,7 @@ pub mod summaries {
         pub block_height: BlockHeight,
         pub datetime: u64,
         pub price: Option<f64>,
+        pub txid: TxId,
     }
 
     impl SelfSend {
@@ -611,6 +619,7 @@ pub mod summaries {
             block_height: BlockHeight,
             date_time: u64,
             price: Option<f64>,
+            txid: TxId,
         ) -> Self {
             Self {
                 fee,
@@ -618,6 +627,7 @@ pub mod summaries {
                 block_height,
                 datetime: date_time,
                 price,
+                txid,
             }
         }
     }
