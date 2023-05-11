@@ -979,12 +979,17 @@ impl LightClient {
                     if let Ok(to_address) =
                         ZcashAddress::try_from_encoded(recipient_ua.as_ref().unwrap_or(to_address))
                     {
+                        let memo = if let Memo::Text(textmemo) = memo {
+                            Some(textmemo)
+                        } else {
+                            None
+                        };
                         summaries.push(
                             Send {
                                 amount: *value,
                                 balance_delta: -(*value as i64),
                                 to_address,
-                                memo: memo.clone(),
+                                memo: memo,
                                 block_height,
                                 datetime,
                                 price,
