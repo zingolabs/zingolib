@@ -523,19 +523,19 @@ pub mod summaries {
     impl From<ValueTransfer> for json::JsonValue {
         fn from(value: ValueTransfer) -> Self {
             match value {
-                ValueTransfer::Sent(Send) => Send.into(),
-                ValueTransfer::Received(Receive) => Receive.into(),
-                ValueTransfer::SendToSelf(SelfSend) => SelfSend.into(),
+                ValueTransfer::Sent(sent) => sent.into(),
+                ValueTransfer::Received(receive) => receive.into(),
+                ValueTransfer::SendToSelf(selfsend) => selfsend.into(),
             }
         }
     }
     pub enum ValueTransfer {
-        Sent(Send),
+        Sent(Sent),
         Received(Receive),
         SendToSelf(SelfSend),
     }
-    impl From<Send> for JsonValue {
-        fn from(value: Send) -> Self {
+    impl From<Sent> for JsonValue {
+        fn from(value: Sent) -> Self {
             object! {
                 "type": "Send",
                 "amount": value.amount,
@@ -578,8 +578,8 @@ pub mod summaries {
             }
         }
     }
-    impl From<Send> for ValueTransfer {
-        fn from(value: Send) -> Self {
+    impl From<Sent> for ValueTransfer {
+        fn from(value: Sent) -> Self {
             Self::Sent(value)
         }
     }
@@ -594,7 +594,7 @@ pub mod summaries {
         }
     }
 
-    pub struct Send {
+    pub struct Sent {
         pub amount: u64,
         pub balance_delta: i64,
         pub block_height: zcash_primitives::consensus::BlockHeight,
