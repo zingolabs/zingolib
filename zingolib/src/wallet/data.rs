@@ -506,6 +506,7 @@ impl OutgoingTxData {
 pub mod summaries {
     use std::collections::HashMap;
 
+    use json::object;
     use zcash_primitives::{
         consensus::BlockHeight,
         memo::{Memo, TextMemo},
@@ -520,8 +521,22 @@ pub mod summaries {
     /// transactions in the format most useful for
     /// consumption in mobile and mobile-like UI
     impl From<ValueTransfer> for json::JsonValue {
-        fn from(_value: ValueTransfer) -> Self {
-            todo!()
+        fn from(value: ValueTransfer) -> Self {
+            match value {
+                ValueTransfer::Sent(s) => {
+                    object! {
+                        "type": "Send",
+                        "amount": s.amount,
+                        "balance_delta": s.balance_delta,
+                        "block_height": u32::from(s.block_height),
+                        "datetime": u64::from(s.datetime),
+                        "memo": s.memo.map(String::from),
+                        "price": s.price,
+                        "to_address": s.to_address.encode(),
+                        "txid": s.txid.to_string(),
+                    }
+                }
+            }
         }
     }
     pub enum ValueTransfer {
@@ -551,7 +566,7 @@ pub mod summaries {
         pub balance_delta: i64,
         pub block_height: zcash_primitives::consensus::BlockHeight,
         pub datetime: u64,
-        pub memo: zcash_primitives::memo::Memo,
+        pub memo: Option<zcash_primitives::memo::TextMemo>,
         pub price: Option<f64>,
         pub to_address: zcash_address::ZcashAddress,
         pub txid: TxId,
