@@ -945,17 +945,23 @@ impl LightClient {
             "unconfirmed" => wallet_transaction.unconfirmed,
             "datetime"     => wallet_transaction.datetime,
             "txid"         => format!("{}", wallet_transaction.txid),
-            "zec_price"    => wallet_transaction.zec_price.map(|p| (p * 100.0).round() / 100.0),
+            "zec_price"    => wallet_transaction.price.map(|p| (p * 100.0).round() / 100.0),
             "amount"       => total_change as i64 - wallet_transaction.total_value_spent() as i64,
             "outgoing_metadata" => outgoing_json,
         }
     }
     fn tx_summary_matcher(
         summaries: &mut Vec<ValueTransfer>,
+        transaction_md: &TransactionMetadata,
         tx_value_spent: u64,
         tx_value_received: u64,
         tx_change_received: u64,
     ) -> () {
+        let (block_height, datetime, price) = (
+            transaction_md.block_height,
+            transaction_md.datetime,
+            transaction_md.price,
+        );
         match (tx_value_spent, (tx_value_received - tx_change_received)) {
             //TODO: This is probably an error, if we sent no value and also received no value why
             //do we have this transaction stored?
@@ -977,9 +983,9 @@ impl LightClient {
                                 amount: *value,
                                 to_address,
                                 memo: memo.clone(),
-                                block_height: transaction_md.block_height,
-                                date_time: transaction_md.datetime,
-                                price: transaction_md.zec_price,
+                                block_height,
+                                datetime,
+                                price,
                             }
                             .into(),
                         )
@@ -992,23 +998,21 @@ impl LightClient {
                     summaries.push(
                         Receive::from_transparent_output(
                             received_transparent,
-                            *block_height,
-                            *datetime,
-                            *zec_price,
+                            block_height,
+                            datetime,
+                            price,
                         )
                         .into(),
                     );
                 }
                 for received_sapling in transaction_md.sapling_notes.iter() {
                     summaries.push(
-                        Receive::from_note(received_sapling, *block_height, *datetime, *zec_price)
-                            .into(),
+                        Receive::from_note(received_sapling, block_height, datetime, price).into(),
                     )
                 }
                 for received_orchard in transaction_md.orchard_notes.iter() {
                     summaries.push(
-                        Receive::from_note(received_orchard, *block_height, *datetime, *zec_price)
-                            .into(),
+                        Receive::from_note(received_orchard, block_height, datetime, price).into(),
                     )
                 }
             }
@@ -1035,9 +1039,9 @@ impl LightClient {
                             }
                         })
                         .collect(),
-                    block_height: *block_height,
-                    date_time: *datetime,
-                    price: *zec_price,
+                    block_height,
+                    datetime,
+                    price,
                 }
                 .into(),
             ),
@@ -1058,13 +1062,13 @@ impl LightClient {
             let tx_value_spent = transaction_md.total_value_spent();
             let tx_value_received = transaction_md.total_value_received();
             let tx_change_received = transaction_md.total_change_returned();
-            let TransactionMetadata {
-                block_height,
-                datetime,
-                zec_price,
-                ..
-            } = transaction_md;
-            tx_summary_matcher()
+            LightClient::tx_summary_matcher(
+                &mut summaries,
+                transaction_md,
+                tx_value_spent,
+                tx_value_received,
+                tx_change_received,
+            )
         }
         todo!()
     }
@@ -1122,7 +1126,7 @@ impl LightClient {
                             "datetime"     => wallet_transaction.datetime,
                             "txid"         => format!("{}", txid),
                             "amount"       => net_transparent_value,
-                            "zec_price"    => wallet_transaction.zec_price.map(|p| (p * 100.0).round() / 100.0),
+                            "price"    => wallet_transaction.price.map(|p| (p * 100.0).round() / 100.0),
                             "address"      => address,
                             "memo"         => None::<String>
                         })
@@ -1226,7 +1230,7 @@ impl LightClient {
                         "position"     => i,
                         "txid"         => format!("{}", transaction_metadata.txid),
                         "amount"       => nd.value() as i64,
-                        "zec_price"    => transaction_metadata.zec_price.map(|p| (p * 100.0).round() / 100.0),
+                        "price"    => transaction_metadata.price.map(|p| (p * 100.0).round() / 100.0),
                         "address"      => LightWallet::note_address::<D>(&self.config.chain, nd, unified_spend_auth),
                         "memo"         => LightWallet::memo_str(nd.memo().clone())
                     }

@@ -550,7 +550,7 @@ pub mod summaries {
         pub to_address: zcash_address::ZcashAddress,
         pub memo: zcash_primitives::memo::Memo,
         pub block_height: zcash_primitives::consensus::BlockHeight,
-        pub date_time: u64,
+        pub datetime: u64,
         pub price: Option<f64>,
     }
 
@@ -600,7 +600,7 @@ pub mod summaries {
         pub fee: u64,
         pub memos: Vec<TextMemo>,
         pub block_height: BlockHeight,
-        pub date_time: u64,
+        pub datetime: u64,
         pub price: Option<f64>,
     }
 
@@ -616,7 +616,7 @@ pub mod summaries {
                 fee,
                 memos,
                 block_height,
-                date_time,
+                datetime: date_time,
                 price,
             }
         }
@@ -671,7 +671,7 @@ pub struct TransactionMetadata {
     pub full_tx_scanned: bool,
 
     // Price of Zec when this Tx was created
-    pub zec_price: Option<f64>,
+    pub price: Option<f64>,
 }
 
 impl TransactionMetadata {
@@ -732,7 +732,7 @@ impl TransactionMetadata {
             total_orchard_value_spent: 0,
             outgoing_tx_data: vec![],
             full_tx_scanned: false,
-            zec_price: None,
+            price: None,
         }
     }
     pub fn new_txid(txid: &[u8]) -> TxId {
@@ -836,7 +836,7 @@ impl TransactionMetadata {
             total_orchard_value_spent,
             outgoing_tx_data: outgoing_metadata,
             full_tx_scanned,
-            zec_price,
+            price: zec_price,
         })
     }
 
@@ -907,7 +907,7 @@ impl TransactionMetadata {
 
         writer.write_u8(if self.full_tx_scanned { 1 } else { 0 })?;
 
-        Optional::write(&mut writer, self.zec_price, |w, p| {
+        Optional::write(&mut writer, self.price, |w, p| {
             w.write_f64::<LittleEndian>(p)
         })?;
 

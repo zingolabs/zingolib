@@ -36,9 +36,6 @@ use super::{
 /// this struct are threadsafe/locked properly.
 #[derive(Default)]
 pub struct TransactionMetadataSet {
-    #[cfg(not(feature = "integration_test"))]
-    pub(crate) current: HashMap<TxId, TransactionMetadata>,
-    #[cfg(feature = "integration_test")]
     pub current: HashMap<TxId, TransactionMetadata>,
     pub(crate) some_txid_from_highest_wallet_block: Option<TxId>,
 }
@@ -527,7 +524,7 @@ impl TransactionMetadataSet {
     }
 
     pub fn set_price(&mut self, txid: &TxId, price: Option<f64>) {
-        price.map(|p| self.current.get_mut(txid).map(|tx| tx.zec_price = Some(p)));
+        price.map(|p| self.current.get_mut(txid).map(|tx| tx.price = Some(p)));
     }
 
     // Records a TxId as having spent some nullifiers from the wallet.
