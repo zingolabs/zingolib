@@ -1735,7 +1735,7 @@ impl LightClient {
         tx_value_spent: u64,
         tx_value_received: u64,
         tx_change_received: u64,
-    ) -> () {
+    ) {
         let (block_height, datetime, price) = (
             transaction_md.block_height,
             transaction_md.datetime,
