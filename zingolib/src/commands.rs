@@ -844,6 +844,30 @@ impl Command for TransactionsCommand {
     }
 }
 
+struct ValueTxSummariesCommand {}
+impl Command for ValueTxSummariesCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            List summaries of value transfers for this seed.
+            Usage:
+            summaries
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "List all value transfer summaries for this seed."
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+        if args.len() > 1 {
+            return format!("Didn't understand arguments\n{}", self.help());
+        }
+
+        RT.block_on(async move {
+            json::JsonValue::from(lightclient.do_list_txsummaries().await).pretty(2)
+        })
+    }
+}
 struct SetOptionCommand {}
 impl Command for SetOptionCommand {
     fn help(&self) -> &'static str {
@@ -1193,7 +1217,7 @@ impl Command for QuitCommand {
 }
 
 pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
-    let entries: [(&'static str, Box<dyn Command>); 29] = [
+    let entries: [(&'static str, Box<dyn Command>); 30] = [
         ("sync", Box::new(SyncCommand {})),
         ("syncstatus", Box::new(SyncStatusCommand {})),
         ("encryptmessage", Box::new(EncryptMessageCommand {})),
@@ -1209,6 +1233,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("height", Box::new(HeightCommand {})),
         ("sendprogress", Box::new(SendProgressCommand {})),
         ("setoption", Box::new(SetOptionCommand {})),
+        ("summaries", Box::new(ValueTxSummariesCommand {})),
         ("getoption", Box::new(GetOptionCommand {})),
         ("import", Box::new(ImportCommand {})),
         ("export", Box::new(ExportCommand {})),
