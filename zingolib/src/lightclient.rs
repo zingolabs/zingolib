@@ -9,7 +9,7 @@ use crate::{
     grpc_connector::GrpcConnector,
     wallet::{
         data::{
-            summaries::{Receive, SelfSend, Send, ValueTransfer},
+            summaries::{Receive, SelfSend, ValueTransfer},
             OutgoingTxData, TransactionMetadata,
         },
         keys::{
@@ -985,10 +985,9 @@ impl LightClient {
                             None
                         };
                         summaries.push(
-                            Send {
+                            Receive {
                                 amount: *value,
                                 balance_delta: -(*value as i64),
-                                to_address,
                                 memo: memo,
                                 block_height,
                                 datetime,
