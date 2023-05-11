@@ -523,17 +523,41 @@ pub mod summaries {
     impl From<ValueTransfer> for json::JsonValue {
         fn from(value: ValueTransfer) -> Self {
             match value {
-                ValueTransfer::Sent(s) => {
+                ValueTransfer::Sent(Send) => {
                     object! {
                         "type": "Send",
-                        "amount": s.amount,
-                        "balance_delta": s.balance_delta,
-                        "block_height": u32::from(s.block_height),
-                        "datetime": u64::from(s.datetime),
-                        "memo": s.memo.map(String::from),
-                        "price": s.price,
-                        "to_address": s.to_address.encode(),
-                        "txid": s.txid.to_string(),
+                        "amount": Send.amount,
+                        "balance_delta": Send.balance_delta,
+                        "block_height": u32::from(Send.block_height),
+                        "datetime": u64::from(Send.datetime),
+                        "memo": Send.memo.map(String::from),
+                        "price": Send.price,
+                        "to_address": Send.to_address.encode(),
+                        "txid": Send.txid.to_string(),
+                    }
+                }
+                ValueTransfer::Received(Receive) => {
+                    object! {
+                        "type": "Receive",
+                        "amount": Receive.amount,
+                        "balance_delta": Receive.balance_delta,
+                        "block_height": u32::from(Receive.block_height),
+                        "datetime": u64::from(Receive.datetime),
+                        "memo": Receive.memo.map(String::from),
+                        "price": Receive.price,
+                        "txid": Receive.txid.to_string(),
+                    }
+                }
+                ValueTransfer::SendToSelf(SelfSend) => {
+                    object! {
+                        "type": "SelfSend",
+                        "balance_delta": SelfSend.balance_delta,
+                        "block_height": u32::from(SelfSend.block_height),
+                        "datetime": u64::from(SelfSend.datetime),
+                        "fee": SelfSend.fee,
+                        "memos": SelfSend.memos.iter().cloned().map(|x| String::from(x)).collect::<Vec<_>>(),
+                        "price": SelfSend.price,
+                        "txid": SelfSend.txid.to_string(),
                     }
                 }
             }
@@ -583,10 +607,16 @@ pub mod summaries {
             Self {
                 amount: note.value(),
                 balance_delta: (note.value() as i64),
-                memo: note.memo().clone(),
+                memo: note.memo().clone().and_then(|x| {
+                    if let Memo::Text(textmemo) = x {
+                        Some(textmemo)
+                    } else {
+                        None
+                    }
+                }),
                 pool: Note::pool(),
                 block_height,
-                date_time,
+                datetime: date_time,
                 price,
                 txid,
             }
@@ -604,7 +634,7 @@ pub mod summaries {
                 memo: None,
                 pool: Pool::Transparent,
                 block_height,
-                date_time,
+                datetime: date_time,
                 price,
                 txid,
             }
@@ -615,8 +645,8 @@ pub mod summaries {
         pub amount: u64,
         pub balance_delta: i64,
         pub block_height: BlockHeight,
-        pub date_time: u64,
-        pub memo: Option<Memo>,
+        pub datetime: u64,
+        pub memo: Option<TextMemo>,
         pub pool: Pool,
         pub price: Option<f64>,
         pub txid: TxId,

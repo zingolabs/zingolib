@@ -980,7 +980,7 @@ impl LightClient {
                         ZcashAddress::try_from_encoded(recipient_ua.as_ref().unwrap_or(to_address))
                     {
                         let memo = if let Memo::Text(textmemo) = memo {
-                            Some(textmemo)
+                            Some(*textmemo)
                         } else {
                             None
                         };
