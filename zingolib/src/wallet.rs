@@ -61,10 +61,7 @@ use self::{
 use zingoconfig::ZingoConfig;
 
 pub mod data;
-#[cfg(feature = "integration_test")]
 pub mod keys;
-#[cfg(not(feature = "integration_test"))]
-pub(crate) mod keys;
 pub(crate) mod message;
 pub(crate) mod traits;
 pub(crate) mod transactions;
@@ -201,9 +198,6 @@ pub struct LightWallet {
     mnemonic: Option<Mnemonic>,
 
     // The last 100 blocks, used if something gets re-orged
-    #[cfg(not(feature = "integration_test"))]
-    pub(super) blocks: Arc<RwLock<Vec<BlockData>>>,
-    #[cfg(feature = "integration_test")]
     pub blocks: Arc<RwLock<Vec<BlockData>>>,
 
     // Wallet options
@@ -220,9 +214,6 @@ pub struct LightWallet {
 
     // Local state needed to submit [compact]block-requests to the proxy
     // and interpret responses
-    #[cfg(not(feature = "integration_test"))]
-    pub(crate) transaction_context: TransactionContext,
-    #[cfg(feature = "integration_test")]
     pub transaction_context: TransactionContext,
 }
 
