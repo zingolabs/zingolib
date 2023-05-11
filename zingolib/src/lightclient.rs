@@ -981,7 +981,8 @@ impl LightClient {
                     {
                         summaries.push(
                             Send {
-                                balance_delta: *value,
+                                amount: *value,
+                                balance_delta: -(*value as i64),
                                 to_address,
                                 memo: memo.clone(),
                                 block_height,
@@ -1023,34 +1024,38 @@ impl LightClient {
             }
             // We spent funds, and received them as non-change. This is most likely a send-to-self,
             // TODO: Figure out what kind of special-case handling we want for these
-            (spent, _non_change_received) => summaries.push(
-                SelfSend {
-                    fee: spent - tx_value_received,
-                    memos: transaction_md
-                        .sapling_notes
-                        .iter()
-                        .filter_map(|sapling_note| sapling_note.memo.clone())
-                        .chain(
-                            transaction_md
-                                .orchard_notes
-                                .iter()
-                                .filter_map(|orchard_note| orchard_note.memo.clone()),
-                        )
-                        .filter_map(|memo| {
-                            if let Memo::Text(text_memo) = memo {
-                                Some(text_memo)
-                            } else {
-                                None
-                            }
-                        })
-                        .collect(),
-                    block_height,
-                    datetime,
-                    price,
-                    txid,
-                }
-                .into(),
-            ),
+            (spent, _non_change_received) => {
+                let fee = spent - tx_value_received;
+                summaries.push(
+                    SelfSend {
+                        balance_delta: -(fee as i64),
+                        block_height,
+                        datetime,
+                        fee: spent - tx_value_received,
+                        memos: transaction_md
+                            .sapling_notes
+                            .iter()
+                            .filter_map(|sapling_note| sapling_note.memo.clone())
+                            .chain(
+                                transaction_md
+                                    .orchard_notes
+                                    .iter()
+                                    .filter_map(|orchard_note| orchard_note.memo.clone()),
+                            )
+                            .filter_map(|memo| {
+                                if let Memo::Text(text_memo) = memo {
+                                    Some(text_memo)
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect(),
+                        price,
+                        txid,
+                    }
+                    .into(),
+                );
+            }
         }
     }
     pub async fn do_list_txsummaries(&self) -> Vec<ValueTransfer> {

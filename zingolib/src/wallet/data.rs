@@ -547,12 +547,13 @@ pub mod summaries {
     }
 
     pub struct Send {
-        pub balance_delta: u64,
-        pub to_address: zcash_address::ZcashAddress,
-        pub memo: zcash_primitives::memo::Memo,
+        pub amount: u64,
+        pub balance_delta: i64,
         pub block_height: zcash_primitives::consensus::BlockHeight,
         pub datetime: u64,
+        pub memo: zcash_primitives::memo::Memo,
         pub price: Option<f64>,
+        pub to_address: zcash_address::ZcashAddress,
         pub txid: TxId,
     }
 
@@ -566,6 +567,7 @@ pub mod summaries {
         ) -> Self {
             Self {
                 amount: note.value(),
+                balance_delta: (note.value() as i64),
                 memo: note.memo().clone(),
                 pool: Note::pool(),
                 block_height,
@@ -583,6 +585,7 @@ pub mod summaries {
         ) -> Self {
             Self {
                 amount: toutput.value,
+                balance_delta: (toutput.value as i64),
                 memo: None,
                 pool: Pool::Transparent,
                 block_height,
@@ -595,19 +598,21 @@ pub mod summaries {
 
     pub struct Receive {
         pub amount: u64,
-        pub memo: Option<Memo>,
-        pub pool: Pool,
+        pub balance_delta: i64,
         pub block_height: BlockHeight,
         pub date_time: u64,
+        pub memo: Option<Memo>,
+        pub pool: Pool,
         pub price: Option<f64>,
         pub txid: TxId,
     }
 
     pub struct SelfSend {
-        pub fee: u64,
-        pub memos: Vec<TextMemo>,
+        pub balance_delta: i64,
         pub block_height: BlockHeight,
         pub datetime: u64,
+        pub fee: u64,
+        pub memos: Vec<TextMemo>,
         pub price: Option<f64>,
         pub txid: TxId,
     }
@@ -622,6 +627,7 @@ pub mod summaries {
             txid: TxId,
         ) -> Self {
             Self {
+                balance_delta: -(fee as i64),
                 fee,
                 memos,
                 block_height,
