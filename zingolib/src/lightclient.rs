@@ -227,61 +227,119 @@ impl LightClient {
     }
 }
 impl LightClient {
-    /// The wallet this fn associates with the lightclient is specifically derived from
-    /// a spend authority.
-    pub async fn new_from_wallet_base_async(
-        wallet_base: WalletBase,
-        config: &ZingoConfig,
-        birthday: u64,
-        overwrite: bool,
-    ) -> io::Result<Self> {
-        #[cfg(not(any(target_os = "ios", target_os = "android")))]
-        {
-            if !overwrite && config.wallet_exists() {
-                return Err(Error::new(
-                    ErrorKind::AlreadyExists,
-                    format!(
-                        "Cannot create a new wallet from seed, because a wallet already exists at:\n{:?}",
-                        config.get_wallet_path().as_os_str()
-                    ),
-                ));
-            }
-        }
-        let lightclient = LightClient {
-            wallet: LightWallet::new(config.clone(), wallet_base, birthday)?,
-            config: config.clone(),
-            mempool_monitor: std::sync::RwLock::new(None),
-            sync_lock: Mutex::new(()),
-            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
-            interrupt_sync: Arc::new(RwLock::new(false)),
-        };
-
-        lightclient.set_wallet_initial_state(birthday).await;
-        lightclient
-            .do_save()
-            .await
-            .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
-
-        debug!("Created new wallet!");
-
-        Ok(lightclient)
+    fn add_nonchange_notes<'a, 'b, 'c>(
+        &'a self,
+        transaction_metadata: &'b TransactionMetadata,
+        unified_spend_auth: &'c WalletCapability,
+    ) -> impl Iterator<Item = JsonValue> + 'b
+    where
+        'a: 'b,
+        'c: 'b,
+    {
+        self.add_wallet_notes_in_transaction_to_list_inner::<'a, 'b, 'c, SaplingDomain<ChainType>>(
+            transaction_metadata,
+            unified_spend_auth,
+        )
+        .chain(
+            self.add_wallet_notes_in_transaction_to_list_inner::<'a, 'b, 'c, OrchardDomain>(
+                transaction_metadata,
+                unified_spend_auth,
+            ),
+        )
     }
 
+    fn add_wallet_notes_in_transaction_to_list_inner<'a, 'b, 'c, D>(
+        &'a self,
+        transaction_metadata: &'b TransactionMetadata,
+        unified_spend_auth: &'c WalletCapability,
+    ) -> impl Iterator<Item = JsonValue> + 'b
+    where
+        'a: 'b,
+        'c: 'b,
+        D: DomainWalletExt,
+        D::WalletNote: 'b,
+        <D as Domain>::Recipient: Recipient,
+        <D as Domain>::Note: PartialEq + Clone,
+    {
+        D::WalletNote::transaction_metadata_notes(transaction_metadata).iter().filter(|nd| !nd.is_change()).enumerate().map(|(i, nd)| {
+                    let block_height: u32 = transaction_metadata.block_height.into();
+                    object! {
+                        "block_height" => block_height,
+                        "unconfirmed" => transaction_metadata.unconfirmed,
+                        "datetime"     => transaction_metadata.datetime,
+                        "position"     => i,
+                        "txid"         => format!("{}", transaction_metadata.txid),
+                        "amount"       => nd.value() as i64,
+                        "zec_price"    => transaction_metadata.price.map(|p| (p * 100.0).round() / 100.0),
+                        "address"      => LightWallet::note_address::<D>(&self.config.chain, nd, unified_spend_auth),
+                        "memo"         => LightWallet::memo_str(nd.memo().clone())
+                    }
+
+                })
+    }
+
+    /// This fn is _only_ called insde a block conditioned on "is_outgoing_transaction"
+    fn append_change_notes(
+        wallet_transaction: &TransactionMetadata,
+        received_utxo_value: u64,
+    ) -> JsonValue {
+        // TODO:  Understand why sapling and orchard have an "is_change" filter, but transparent does not
+        // It seems like this already depends on an invariant where all outgoing utxos are change.
+        // This should never be true _AFTER SOME VERSION_ since we only send change to orchard.
+        // If I sent a transaction to a foreign transparent address wouldn't this "total_change" value
+        // be wrong?
+        let total_change = wallet_transaction
+            .sapling_notes
+            .iter()
+            .filter(|nd| nd.is_change)
+            .map(|nd| nd.note.value().inner())
+            .sum::<u64>()
+            + wallet_transaction
+                .orchard_notes
+                .iter()
+                .filter(|nd| nd.is_change)
+                .map(|nd| nd.note.value().inner())
+                .sum::<u64>()
+            + received_utxo_value;
+
+        // Collect outgoing metadata
+        let outgoing_json = wallet_transaction
+            .outgoing_tx_data
+            .iter()
+            .map(|om| {
+                object! {
+                    // Is this address ever different than the address in the containing struct
+                    // this is the full UA.
+                    "address" => om.recipient_ua.clone().unwrap_or(om.to_address.clone()),
+                    "value"   => om.value,
+                    "memo"    => LightWallet::memo_str(Some(om.memo.clone()))
+                }
+            })
+            .collect::<Vec<JsonValue>>();
+
+        let block_height: u32 = wallet_transaction.block_height.into();
+        object! {
+            "block_height" => block_height,
+            "unconfirmed" => wallet_transaction.unconfirmed,
+            "datetime"     => wallet_transaction.datetime,
+            "txid"         => format!("{}", wallet_transaction.txid),
+            "zec_price"    => wallet_transaction.price.map(|p| (p * 100.0).round() / 100.0),
+            "amount"       => total_change as i64 - wallet_transaction.total_value_spent() as i64,
+            "outgoing_metadata" => outgoing_json,
+        }
+    }
+
+    pub async fn clear_state(&self) {
+        // First, clear the state from the wallet
+        self.wallet.clear_all().await;
+
+        // Then set the initial block
+        let birthday = self.wallet.get_birthday().await;
+        self.set_wallet_initial_state(birthday).await;
+        debug!("Cleared wallet state, with birthday at {}", birthday);
+    }
     pub fn config(&self) -> &ZingoConfig {
         &self.config
-    }
-
-    /// The wallet this fn associates with the lightclient is specifically derived from
-    /// a spend authority.
-    pub fn new_from_wallet_base(
-        wallet_base: WalletBase,
-        config: &ZingoConfig,
-        birthday: u64,
-        overwrite: bool,
-    ) -> io::Result<Self> {
-        Runtime::new().unwrap().block_on(async move {
-            LightClient::new_from_wallet_base_async(wallet_base, config, birthday, overwrite).await
-        })
     }
 
     pub fn create_unconnected(
@@ -297,258 +355,6 @@ impl LightClient {
             sync_lock: Mutex::new(()),
             interrupt_sync: Arc::new(RwLock::new(false)),
         })
-    }
-    pub fn set_server(&self, server: http::Uri) {
-        *self.config.lightwalletd_uri.write().unwrap() = server
-    }
-
-    pub fn get_server(&self) -> std::sync::RwLockReadGuard<http::Uri> {
-        self.config.lightwalletd_uri.read().unwrap()
-    }
-
-    fn write_file_if_not_exists(dir: &Path, name: &str, bytes: &[u8]) -> io::Result<()> {
-        let mut file_path = dir.to_path_buf();
-        file_path.push(name);
-        if !file_path.exists() {
-            let mut file = File::create(&file_path)?;
-            file.write_all(bytes)?;
-        }
-
-        Ok(())
-    }
-
-    #[cfg(feature = "embed_params")]
-    fn read_sapling_params(&self) -> Result<(Vec<u8>, Vec<u8>), String> {
-        // Read Sapling Params
-        use crate::SaplingParams;
-        let mut sapling_output = vec![];
-        sapling_output.extend_from_slice(
-            SaplingParams::get("sapling-output.params")
-                .unwrap()
-                .data
-                .as_ref(),
-        );
-
-        let mut sapling_spend = vec![];
-        sapling_spend.extend_from_slice(
-            SaplingParams::get("sapling-spend.params")
-                .unwrap()
-                .data
-                .as_ref(),
-        );
-
-        Ok((sapling_output, sapling_spend))
-    }
-
-    #[cfg(not(feature = "embed_params"))]
-    fn read_sapling_params(&self) -> Result<(Vec<u8>, Vec<u8>), String> {
-        let path = self
-            .config
-            .get_zcash_params_path()
-            .map_err(|e| e.to_string())?;
-
-        let mut path_buf = path.to_path_buf();
-        path_buf.push("sapling-output.params");
-        let mut file = File::open(path_buf).map_err(|e| e.to_string())?;
-        let mut sapling_output = vec![];
-        file.read_to_end(&mut sapling_output)
-            .map_err(|e| e.to_string())?;
-
-        let mut path_buf = path.to_path_buf();
-        path_buf.push("sapling-spend.params");
-        let mut file = File::open(path_buf).map_err(|e| e.to_string())?;
-        let mut sapling_spend = vec![];
-        file.read_to_end(&mut sapling_spend)
-            .map_err(|e| e.to_string())?;
-
-        Ok((sapling_output, sapling_spend))
-    }
-
-    pub fn set_sapling_params(
-        &mut self,
-        sapling_output: &[u8],
-        sapling_spend: &[u8],
-    ) -> Result<(), String> {
-        use sha2::{Digest, Sha256};
-
-        // The hashes of the params need to match
-        const SAPLING_OUTPUT_HASH: &str =
-            "2f0ebbcbb9bb0bcffe95a397e7eba89c29eb4dde6191c339db88570e3f3fb0e4";
-        const SAPLING_SPEND_HASH: &str =
-            "8e48ffd23abb3a5fd9c5589204f32d9c31285a04b78096ba40a79b75677efc13";
-
-        if !sapling_output.is_empty()
-            && *SAPLING_OUTPUT_HASH != hex::encode(Sha256::digest(sapling_output))
-        {
-            return Err(format!(
-                "sapling-output hash didn't match. expected {}, found {}",
-                SAPLING_OUTPUT_HASH,
-                hex::encode(Sha256::digest(sapling_output))
-            ));
-        }
-
-        if !sapling_spend.is_empty()
-            && *SAPLING_SPEND_HASH != hex::encode(Sha256::digest(sapling_spend))
-        {
-            return Err(format!(
-                "sapling-spend hash didn't match. expected {}, found {}",
-                SAPLING_SPEND_HASH,
-                hex::encode(Sha256::digest(sapling_spend))
-            ));
-        }
-
-        // Ensure that the sapling params are stored on disk properly as well. Only on desktop
-        match self.config.get_zcash_params_path() {
-            Ok(zcash_params_dir) => {
-                // Create the sapling output and spend params files
-                match LightClient::write_file_if_not_exists(
-                    &zcash_params_dir,
-                    "sapling-output.params",
-                    sapling_output,
-                ) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        return Err(format!("Warning: Couldn't write the output params!\n{}", e))
-                    }
-                };
-
-                match LightClient::write_file_if_not_exists(
-                    &zcash_params_dir,
-                    "sapling-spend.params",
-                    sapling_spend,
-                ) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        return Err(format!("Warning: Couldn't write the spend params!\n{}", e))
-                    }
-                }
-            }
-            Err(e) => {
-                return Err(format!("{}", e));
-            }
-        };
-
-        Ok(())
-    }
-
-    pub async fn interrupt_sync_after_batch(&self, set_interrupt: bool) {
-        *self.interrupt_sync.write().await = set_interrupt;
-    }
-
-    pub async fn get_initial_state(&self, height: u64) -> Option<(u64, String, String)> {
-        if height <= self.config.sapling_activation_height() {
-            return None;
-        }
-
-        debug!(
-            "Getting sapling tree from LightwalletD at height {}",
-            height
-        );
-        match GrpcConnector::get_trees(self.config.get_lightwalletd_uri(), height).await {
-            Ok(tree_state) => {
-                let hash = tree_state.hash.clone();
-                let tree = tree_state.sapling_tree.clone();
-                Some((tree_state.height, hash, tree))
-            }
-            Err(e) => {
-                error!("Error getting sapling tree:{e}.");
-                None
-            }
-        }
-    }
-
-    pub async fn set_wallet_initial_state(&self, height: u64) {
-        let state = self.get_initial_state(height).await;
-
-        if let Some((height, hash, tree)) = state {
-            debug!("Setting initial state to height {}, tree {}", height, tree);
-            self.wallet
-                .set_initial_block(height, hash.as_str(), tree.as_str())
-                .await;
-        }
-    }
-
-    fn new_wallet(config: &ZingoConfig, height: u64) -> io::Result<Self> {
-        Runtime::new().unwrap().block_on(async move {
-            let l = LightClient::create_unconnected(config, WalletBase::FreshEntropy, height)?;
-            l.set_wallet_initial_state(height).await;
-
-            debug!("Created new wallet with a new seed!");
-            debug!("Created LightClient to {}", &config.get_lightwalletd_uri());
-
-            // Save
-            l.do_save()
-                .await
-                .map_err(|s| io::Error::new(ErrorKind::PermissionDenied, s))?;
-
-            Ok(l)
-        })
-    }
-
-    /// Create a brand new wallet with a new seed phrase. Will fail if a wallet file
-    /// already exists on disk
-    pub fn new(config: &ZingoConfig, latest_block: u64) -> io::Result<Self> {
-        #[cfg(not(any(target_os = "ios", target_os = "android")))]
-        {
-            if config.wallet_exists() {
-                return Err(Error::new(
-                    ErrorKind::AlreadyExists,
-                    "Cannot create a new wallet from seed, because a wallet already exists",
-                ));
-            }
-        }
-
-        Self::new_wallet(config, latest_block)
-    }
-
-    pub fn read_wallet_from_disk(config: &ZingoConfig) -> io::Result<Self> {
-        let wallet_path = if config.wallet_exists() {
-            config.get_wallet_path()
-        } else {
-            return Err(Error::new(
-                ErrorKind::AlreadyExists,
-                format!(
-                    "Cannot read wallet. No file at {}",
-                    config.get_wallet_path().display()
-                ),
-            ));
-        };
-        LightClient::read_wallet_from_buffer(config, BufReader::new(File::open(wallet_path)?))
-    }
-
-    /// This constructor depends on a wallet that's read from a buffer.
-    /// It is used internally by read_from_disk, and directly called by
-    /// zingo-mobile.
-    pub fn read_wallet_from_buffer<R: Read>(
-        config: &ZingoConfig,
-        mut reader: R,
-    ) -> io::Result<Self> {
-        Runtime::new().unwrap().block_on(async move {
-            let wallet = LightWallet::read_internal(&mut reader, config).await?;
-
-            let lc = LightClient {
-                wallet,
-                config: config.clone(),
-                mempool_monitor: std::sync::RwLock::new(None),
-                sync_lock: Mutex::new(()),
-                bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
-                interrupt_sync: Arc::new(RwLock::new(false)),
-            };
-
-            debug!(
-                "Read wallet with birthday {}",
-                lc.wallet.get_birthday().await
-            );
-            debug!("Created LightClient to {}", &config.get_lightwalletd_uri());
-
-            Ok(lc)
-        })
-    }
-    pub fn init_logging() -> io::Result<()> {
-        // Configure logging first.
-        LOG_INIT.call_once(tracing_subscriber::fmt::init);
-
-        Ok(())
     }
 
     pub async fn do_addresses(&self) -> JsonValue {
@@ -584,62 +390,43 @@ impl LightClient {
         }
     }
 
-    pub async fn do_save(&self) -> Result<(), String> {
-        #[cfg(any(target_os = "ios", target_os = "android"))]
-        // On mobile platforms, disable the save, because the saves will be handled by the native layer, and not in rust
-        {
-            log::debug!("do_save entered");
-
-            // On ios and android just return OK
-            Ok(())
-        }
-
-        #[cfg(not(any(target_os = "ios", target_os = "android")))]
-        {
-            log::debug!("do_save entered");
-            log::debug!("target_os is not ios or android");
-            // Prevent any overlapping syncs during save, and don't save in the middle of a sync
-            //let _lock = self.sync_lock.lock().await;
-
-            let mut wallet_bytes = vec![];
-            match self.wallet.write(&mut wallet_bytes).await {
-                Ok(_) => {
-                    let mut file = File::create(self.config.get_wallet_path()).unwrap();
-                    file.write_all(&wallet_bytes)
-                        .map_err(|e| format!("{}", e))?;
-                    log::debug!("In the guts of a successful save!");
-                    Ok(())
-                }
-                Err(e) => {
-                    let err = format!("ERR: {}", e);
-                    error!("{}", err);
-                    log::debug!("SAVE FAIL ON WALLET WRITE LOCK!");
-                    Err(e.to_string())
-                }
-            }
-        }
-    }
-
-    pub fn do_save_to_buffer_sync(&self) -> Result<Vec<u8>, String> {
-        Runtime::new()
-            .unwrap()
-            .block_on(async move { self.do_save_to_buffer().await })
-    }
-
-    pub async fn do_save_to_buffer(&self) -> Result<Vec<u8>, String> {
-        let mut buffer: Vec<u8> = vec![];
-        match self.wallet.write(&mut buffer).await {
-            Ok(_) => Ok(buffer),
+    pub async fn do_decrypt_message(&self, enc_base64: String) -> JsonValue {
+        let data = match base64::decode(enc_base64) {
+            Ok(v) => v,
             Err(e) => {
-                let err = format!("ERR: {}", e);
-                error!("{}", err);
-                Err(e.to_string())
+                return object! {"error" => format!("Couldn't decode base64. Error was {}", e)}
             }
+        };
+
+        match self.wallet.decrypt_message(data).await {
+            Ok(m) => {
+                let memo_bytes: MemoBytes = m.memo.clone().into();
+                object! {
+                    "to" => encode_payment_address(self.config.hrp_sapling_address(), &m.to),
+                    "memo" => LightWallet::memo_str(Some(m.memo)),
+                    "memohex" => hex::encode(memo_bytes.as_slice())
+                }
+            }
+            Err(_) => object! { "error" => "Couldn't decrypt with any of the wallet's keys"},
         }
     }
 
-    pub fn get_server_uri(&self) -> http::Uri {
-        self.config.get_lightwalletd_uri()
+    pub fn do_encrypt_message(&self, to_address_str: String, memo: Memo) -> JsonValue {
+        let to = match decode_payment_address(self.config.hrp_sapling_address(), &to_address_str) {
+            Ok(to) => to,
+            _ => {
+                return object! {"error" => format!("Couldn't parse {} as a z-address", to_address_str) };
+            }
+        };
+
+        match Message::new(to, memo).encrypt() {
+            Ok(v) => {
+                object! {"encrypted_base64" => base64::encode(v) }
+            }
+            Err(e) => {
+                object! {"error" => format!("Couldn't encrypt. Error was {}", e)}
+            }
+        }
     }
 
     pub async fn do_info(&self) -> String {
@@ -659,40 +446,6 @@ impl LightClient {
                 o.pretty(2)
             }
             Err(e) => e,
-        }
-    }
-
-    pub(crate) async fn get_sync_interrupt(&self) -> bool {
-        *self.interrupt_sync.read().await
-    }
-
-    pub async fn do_send_progress(&self) -> Result<JsonValue, String> {
-        let progress = self.wallet.get_send_progress().await;
-
-        Ok(object! {
-            "id" => progress.id,
-            "sending" => progress.is_send_in_progress,
-            "progress" => progress.progress,
-            "total" => progress.total,
-            "txid" => progress.last_transaction_id,
-            "error" => progress.last_error,
-            "sync_interrupt" => *self.interrupt_sync.read().await
-        })
-    }
-
-    pub fn do_seed_phrase_sync(&self) -> Result<JsonValue, &str> {
-        Runtime::new()
-            .unwrap()
-            .block_on(async move { self.do_seed_phrase().await })
-    }
-
-    pub async fn do_seed_phrase(&self) -> Result<JsonValue, &str> {
-        match self.wallet.mnemonic() {
-            Some(m) => Ok(object! {
-                "seed"     => m.to_string(),
-                "birthday" => self.wallet.get_birthday().await
-            }),
-            None => Err("This wallet is watch-only."),
         }
     }
 
@@ -861,233 +614,6 @@ impl LightClient {
         res
     }
 
-    pub fn do_encrypt_message(&self, to_address_str: String, memo: Memo) -> JsonValue {
-        let to = match decode_payment_address(self.config.hrp_sapling_address(), &to_address_str) {
-            Ok(to) => to,
-            _ => {
-                return object! {"error" => format!("Couldn't parse {} as a z-address", to_address_str) };
-            }
-        };
-
-        match Message::new(to, memo).encrypt() {
-            Ok(v) => {
-                object! {"encrypted_base64" => base64::encode(v) }
-            }
-            Err(e) => {
-                object! {"error" => format!("Couldn't encrypt. Error was {}", e)}
-            }
-        }
-    }
-
-    pub async fn do_decrypt_message(&self, enc_base64: String) -> JsonValue {
-        let data = match base64::decode(enc_base64) {
-            Ok(v) => v,
-            Err(e) => {
-                return object! {"error" => format!("Couldn't decode base64. Error was {}", e)}
-            }
-        };
-
-        match self.wallet.decrypt_message(data).await {
-            Ok(m) => {
-                let memo_bytes: MemoBytes = m.memo.clone().into();
-                object! {
-                    "to" => encode_payment_address(self.config.hrp_sapling_address(), &m.to),
-                    "memo" => LightWallet::memo_str(Some(m.memo)),
-                    "memohex" => hex::encode(memo_bytes.as_slice())
-                }
-            }
-            Err(_) => object! { "error" => "Couldn't decrypt with any of the wallet's keys"},
-        }
-    }
-
-    /// This fn is _only_ called insde a block conditioned on "is_outgoing_transaction"
-    fn append_change_notes(
-        wallet_transaction: &TransactionMetadata,
-        received_utxo_value: u64,
-    ) -> JsonValue {
-        // TODO:  Understand why sapling and orchard have an "is_change" filter, but transparent does not
-        // It seems like this already depends on an invariant where all outgoing utxos are change.
-        // This should never be true _AFTER SOME VERSION_ since we only send change to orchard.
-        // If I sent a transaction to a foreign transparent address wouldn't this "total_change" value
-        // be wrong?
-        let total_change = wallet_transaction
-            .sapling_notes
-            .iter()
-            .filter(|nd| nd.is_change)
-            .map(|nd| nd.note.value().inner())
-            .sum::<u64>()
-            + wallet_transaction
-                .orchard_notes
-                .iter()
-                .filter(|nd| nd.is_change)
-                .map(|nd| nd.note.value().inner())
-                .sum::<u64>()
-            + received_utxo_value;
-
-        // Collect outgoing metadata
-        let outgoing_json = wallet_transaction
-            .outgoing_tx_data
-            .iter()
-            .map(|om| {
-                object! {
-                    // Is this address ever different than the address in the containing struct
-                    // this is the full UA.
-                    "address" => om.recipient_ua.clone().unwrap_or(om.to_address.clone()),
-                    "value"   => om.value,
-                    "memo"    => LightWallet::memo_str(Some(om.memo.clone()))
-                }
-            })
-            .collect::<Vec<JsonValue>>();
-
-        let block_height: u32 = wallet_transaction.block_height.into();
-        object! {
-            "block_height" => block_height,
-            "unconfirmed" => wallet_transaction.unconfirmed,
-            "datetime"     => wallet_transaction.datetime,
-            "txid"         => format!("{}", wallet_transaction.txid),
-            "zec_price"    => wallet_transaction.price.map(|p| (p * 100.0).round() / 100.0),
-            "amount"       => total_change as i64 - wallet_transaction.total_value_spent() as i64,
-            "outgoing_metadata" => outgoing_json,
-        }
-    }
-    fn tx_summary_matcher(
-        summaries: &mut Vec<ValueTransfer>,
-        txid: TxId,
-        transaction_md: &TransactionMetadata,
-        tx_value_spent: u64,
-        tx_value_received: u64,
-        tx_change_received: u64,
-    ) -> () {
-        let (block_height, datetime, price) = (
-            transaction_md.block_height,
-            transaction_md.datetime,
-            transaction_md.price,
-        );
-        match (tx_value_spent, (tx_value_received - tx_change_received)) {
-            //TODO: This is probably an error, if we sent no value and also received no value why
-            //do we have this transaction stored?
-            (0, 0) => unreachable!(),
-            // All received funds were change, this is a normal send
-            (_spent, 0) => {
-                for OutgoingTxData {
-                    to_address,
-                    value,
-                    memo,
-                    recipient_ua,
-                } in &transaction_md.outgoing_tx_data
-                {
-                    if let Ok(to_address) =
-                        ZcashAddress::try_from_encoded(recipient_ua.as_ref().unwrap_or(to_address))
-                    {
-                        let memo = if let Memo::Text(textmemo) = memo {
-                            Some(*textmemo)
-                        } else {
-                            None
-                        };
-                        summaries.push(
-                            Receive {
-                                amount: *value,
-                                balance_delta: -(*value as i64),
-                                memo: memo,
-                                block_height,
-                                datetime,
-                                price,
-                                txid,
-                            }
-                            .into(),
-                        )
-                    }
-                }
-            }
-            // No funds spent, this is a normal receipt
-            (0, _received) => {
-                for received_transparent in transaction_md.received_utxos.iter() {
-                    summaries.push(
-                        Receive::from_transparent_output(
-                            received_transparent,
-                            block_height,
-                            datetime,
-                            price,
-                            txid,
-                        )
-                        .into(),
-                    );
-                }
-                for received_sapling in transaction_md.sapling_notes.iter() {
-                    summaries.push(
-                        Receive::from_note(received_sapling, block_height, datetime, price, txid)
-                            .into(),
-                    )
-                }
-                for received_orchard in transaction_md.orchard_notes.iter() {
-                    summaries.push(
-                        Receive::from_note(received_orchard, block_height, datetime, price, txid)
-                            .into(),
-                    )
-                }
-            }
-            // We spent funds, and received them as non-change. This is most likely a send-to-self,
-            // TODO: Figure out what kind of special-case handling we want for these
-            (spent, _non_change_received) => {
-                let fee = spent - tx_value_received;
-                summaries.push(
-                    SelfSend {
-                        balance_delta: -(fee as i64),
-                        block_height,
-                        datetime,
-                        fee: spent - tx_value_received,
-                        memos: transaction_md
-                            .sapling_notes
-                            .iter()
-                            .filter_map(|sapling_note| sapling_note.memo.clone())
-                            .chain(
-                                transaction_md
-                                    .orchard_notes
-                                    .iter()
-                                    .filter_map(|orchard_note| orchard_note.memo.clone()),
-                            )
-                            .filter_map(|memo| {
-                                if let Memo::Text(text_memo) = memo {
-                                    Some(text_memo)
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect(),
-                        price,
-                        txid,
-                    }
-                    .into(),
-                );
-            }
-        }
-    }
-    pub async fn do_list_txsummaries(&self) -> Vec<ValueTransfer> {
-        let mut summaries: Vec<ValueTransfer> = Vec::new();
-
-        for (txid, transaction_md) in self
-            .wallet
-            .transaction_context
-            .transaction_metadata_set
-            .read()
-            .await
-            .current
-            .iter()
-        {
-            let tx_value_spent = transaction_md.total_value_spent();
-            let tx_value_received = transaction_md.total_value_received();
-            let tx_change_received = transaction_md.total_change_returned();
-            LightClient::tx_summary_matcher(
-                &mut summaries,
-                *txid,
-                transaction_md,
-                tx_value_spent,
-                tx_value_received,
-                tx_change_received,
-            )
-        }
-        summaries
-    }
     pub async fn do_list_transactions(&self) -> JsonValue {
         // Create a list of TransactionItems from wallet transactions
         // TODO:  determine why an interface called "list_transactions" is
@@ -1142,7 +668,7 @@ impl LightClient {
                             "datetime"     => wallet_transaction.datetime,
                             "txid"         => format!("{}", txid),
                             "amount"       => net_transparent_value,
-                            "price"    => wallet_transaction.price.map(|p| (p * 100.0).round() / 100.0),
+                            "zec_price"    => wallet_transaction.price.map(|p| (p * 100.0).round() / 100.0),
                             "address"      => address,
                             "memo"         => None::<String>
                         })
@@ -1203,55 +729,31 @@ impl LightClient {
         JsonValue::Array(consumer_ui_notes)
     }
 
-    fn add_nonchange_notes<'a, 'b, 'c>(
-        &'a self,
-        transaction_metadata: &'b TransactionMetadata,
-        unified_spend_auth: &'c WalletCapability,
-    ) -> impl Iterator<Item = JsonValue> + 'b
-    where
-        'a: 'b,
-        'c: 'b,
-    {
-        self.add_wallet_notes_in_transaction_to_list_inner::<'a, 'b, 'c, SaplingDomain<ChainType>>(
-            transaction_metadata,
-            unified_spend_auth,
-        )
-        .chain(
-            self.add_wallet_notes_in_transaction_to_list_inner::<'a, 'b, 'c, OrchardDomain>(
-                transaction_metadata,
-                unified_spend_auth,
-            ),
-        )
-    }
+    pub async fn do_list_txsummaries(&self) -> Vec<ValueTransfer> {
+        let mut summaries: Vec<ValueTransfer> = Vec::new();
 
-    fn add_wallet_notes_in_transaction_to_list_inner<'a, 'b, 'c, D>(
-        &'a self,
-        transaction_metadata: &'b TransactionMetadata,
-        unified_spend_auth: &'c WalletCapability,
-    ) -> impl Iterator<Item = JsonValue> + 'b
-    where
-        'a: 'b,
-        'c: 'b,
-        D: DomainWalletExt,
-        D::WalletNote: 'b,
-        <D as Domain>::Recipient: Recipient,
-        <D as Domain>::Note: PartialEq + Clone,
-    {
-        D::WalletNote::transaction_metadata_notes(transaction_metadata).iter().filter(|nd| !nd.is_change()).enumerate().map(|(i, nd)| {
-                    let block_height: u32 = transaction_metadata.block_height.into();
-                    object! {
-                        "block_height" => block_height,
-                        "unconfirmed" => transaction_metadata.unconfirmed,
-                        "datetime"     => transaction_metadata.datetime,
-                        "position"     => i,
-                        "txid"         => format!("{}", transaction_metadata.txid),
-                        "amount"       => nd.value() as i64,
-                        "price"    => transaction_metadata.price.map(|p| (p * 100.0).round() / 100.0),
-                        "address"      => LightWallet::note_address::<D>(&self.config.chain, nd, unified_spend_auth),
-                        "memo"         => LightWallet::memo_str(nd.memo().clone())
-                    }
-
-                })
+        for (txid, transaction_md) in self
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .current
+            .iter()
+        {
+            let tx_value_spent = transaction_md.total_value_spent();
+            let tx_value_received = transaction_md.total_value_received();
+            let tx_change_received = transaction_md.total_change_returned();
+            LightClient::tx_summary_matcher(
+                &mut summaries,
+                *txid,
+                transaction_md,
+                tx_value_spent,
+                tx_value_received,
+                tx_change_received,
+            )
+        }
+        summaries
     }
 
     /// Create a new address, deriving it from the seed.
@@ -1275,16 +777,6 @@ impl LightClient {
         Ok(array![new_address.encode(&self.config.chain)])
     }
 
-    pub async fn clear_state(&self) {
-        // First, clear the state from the wallet
-        self.wallet.clear_all().await;
-
-        // Then set the initial block
-        let birthday = self.wallet.get_birthday().await;
-        self.set_wallet_initial_state(birthday).await;
-        debug!("Cleared wallet state, with birthday at {}", birthday);
-    }
-
     pub async fn do_rescan(&self) -> Result<JsonValue, String> {
         debug!("Rescan starting");
 
@@ -1302,18 +794,215 @@ impl LightClient {
         response
     }
 
-    pub(crate) async fn update_current_price(&self) -> String {
-        // Get the zec price from the server
-        match get_recent_median_price_from_gemini().await {
-            Ok(price) => {
-                self.wallet.set_latest_zec_price(price).await;
-                price.to_string()
-            }
-            Err(s) => {
-                error!("Error fetching latest price: {}", s);
-                s.to_string()
+    pub async fn do_save(&self) -> Result<(), String> {
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        // On mobile platforms, disable the save, because the saves will be handled by the native layer, and not in rust
+        {
+            log::debug!("do_save entered");
+
+            // On ios and android just return OK
+            Ok(())
+        }
+
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        {
+            log::debug!("do_save entered");
+            log::debug!("target_os is not ios or android");
+            // Prevent any overlapping syncs during save, and don't save in the middle of a sync
+            //let _lock = self.sync_lock.lock().await;
+
+            let mut wallet_bytes = vec![];
+            match self.wallet.write(&mut wallet_bytes).await {
+                Ok(_) => {
+                    let mut file = File::create(self.config.get_wallet_path()).unwrap();
+                    file.write_all(&wallet_bytes)
+                        .map_err(|e| format!("{}", e))?;
+                    log::debug!("In the guts of a successful save!");
+                    Ok(())
+                }
+                Err(e) => {
+                    let err = format!("ERR: {}", e);
+                    error!("{}", err);
+                    log::debug!("SAVE FAIL ON WALLET WRITE LOCK!");
+                    Err(e.to_string())
+                }
             }
         }
+    }
+    pub async fn do_save_to_buffer(&self) -> Result<Vec<u8>, String> {
+        let mut buffer: Vec<u8> = vec![];
+        match self.wallet.write(&mut buffer).await {
+            Ok(_) => Ok(buffer),
+            Err(e) => {
+                let err = format!("ERR: {}", e);
+                error!("{}", err);
+                Err(e.to_string())
+            }
+        }
+    }
+
+    pub fn do_save_to_buffer_sync(&self) -> Result<Vec<u8>, String> {
+        Runtime::new()
+            .unwrap()
+            .block_on(async move { self.do_save_to_buffer().await })
+    }
+
+    pub async fn do_seed_phrase(&self) -> Result<JsonValue, &str> {
+        match self.wallet.mnemonic() {
+            Some(m) => Ok(object! {
+                "seed"     => m.to_string(),
+                "birthday" => self.wallet.get_birthday().await
+            }),
+            None => Err("This wallet is watch-only."),
+        }
+    }
+
+    pub fn do_seed_phrase_sync(&self) -> Result<JsonValue, &str> {
+        Runtime::new()
+            .unwrap()
+            .block_on(async move { self.do_seed_phrase().await })
+    }
+
+    //TODO: Add migrate_sapling_to_orchard argument
+    pub async fn do_send(
+        &self,
+        address_amount_memo_tuples: Vec<(&str, u64, Option<String>)>,
+    ) -> Result<String, String> {
+        let transaction_submission_height = self.get_submission_height().await?;
+        // First, get the concensus branch ID
+        debug!("Creating transaction");
+
+        let result = {
+            let _lock = self.sync_lock.lock().await;
+            let (sapling_output, sapling_spend) = self.read_sapling_params()?;
+
+            let prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+
+            self.wallet
+                .send_to_address(
+                    prover,
+                    vec![crate::wallet::Pool::Orchard, crate::wallet::Pool::Sapling],
+                    address_amount_memo_tuples,
+                    transaction_submission_height,
+                    |transaction_bytes| {
+                        GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
+                    },
+                )
+                .await
+        };
+
+        result.map(|(transaction_id, _)| transaction_id)
+    }
+
+    pub async fn do_send_progress(&self) -> Result<JsonValue, String> {
+        let progress = self.wallet.get_send_progress().await;
+
+        Ok(object! {
+            "id" => progress.id,
+            "sending" => progress.is_send_in_progress,
+            "progress" => progress.progress,
+            "total" => progress.total,
+            "txid" => progress.last_transaction_id,
+            "error" => progress.last_error,
+            "sync_interrupt" => *self.interrupt_sync.read().await
+        })
+    }
+
+    pub async fn do_shield(&self, address: Option<String>) -> Result<String, String> {
+        let transaction_submission_height = self.get_submission_height().await?;
+        let fee = u64::from(DEFAULT_FEE);
+        let tbal = self
+            .wallet
+            .tbalance(None)
+            .await
+            .as_u64()
+            .ok_or("To represent Json as u64".to_string())?;
+
+        // Make sure there is a balance, and it is greated than the amount
+        if tbal <= fee {
+            return Err(format!(
+                "Not enough transparent balance to shield. Have {} zats, need more than {} zats to cover tx fee",
+                tbal, fee
+            ));
+        }
+
+        let addr = address.unwrap_or(
+            self.wallet.wallet_capability().read().await.addresses()[0].encode(&self.config.chain),
+        );
+
+        let result = {
+            let _lock = self.sync_lock.lock().await;
+            let (sapling_output, sapling_spend) = self.read_sapling_params()?;
+
+            let prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+
+            self.wallet
+                .send_to_address(
+                    prover,
+                    vec![crate::wallet::Pool::Transparent],
+                    vec![(&addr, tbal - fee, None)],
+                    transaction_submission_height,
+                    |transaction_bytes| {
+                        GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
+                    },
+                )
+                .await
+        };
+
+        result.map(|(transaction_id, _)| transaction_id)
+    }
+
+    pub async fn do_sync(&self, print_updates: bool) -> Result<JsonValue, String> {
+        // Remember the previous sync id first
+        let prev_sync_id = self
+            .bsync_data
+            .read()
+            .await
+            .sync_status
+            .read()
+            .await
+            .sync_id;
+
+        // Start the sync
+        let r_fut = self.start_sync();
+
+        // If printing updates, start a new task to print updates every 2 seconds.
+        let sync_result = if print_updates {
+            let sync_status = self.bsync_data.read().await.sync_status.clone();
+            let (transmitter, mut receiver) = oneshot::channel::<i32>();
+
+            tokio::spawn(async move {
+                while sync_status.read().await.sync_id == prev_sync_id {
+                    yield_now().await;
+                    sleep(Duration::from_secs(3)).await;
+                }
+
+                loop {
+                    if let Ok(_t) = receiver.try_recv() {
+                        break;
+                    }
+
+                    let progress = format!("{}", sync_status.read().await);
+                    if print_updates {
+                        println!("{}", progress);
+                    }
+
+                    yield_now().await;
+                    sleep(Duration::from_secs(3)).await;
+                }
+            });
+
+            let r = r_fut.await;
+            transmitter.send(1).unwrap();
+            r
+        } else {
+            r_fut.await
+        };
+
+        // Mark the sync data as finished, which should clear everything
+        self.bsync_data.read().await.finish().await;
+
+        sync_result
     }
 
     pub async fn do_sync_status(&self) -> BatchSyncStatus {
@@ -1324,6 +1013,319 @@ impl LightClient {
             .read()
             .await
             .clone()
+    }
+
+    pub async fn do_wallet_last_scanned_height(&self) -> JsonValue {
+        json::JsonValue::from(self.wallet.last_synced_height().await)
+    }
+
+    pub async fn get_initial_state(&self, height: u64) -> Option<(u64, String, String)> {
+        if height <= self.config.sapling_activation_height() {
+            return None;
+        }
+
+        debug!(
+            "Getting sapling tree from LightwalletD at height {}",
+            height
+        );
+        match GrpcConnector::get_trees(self.config.get_lightwalletd_uri(), height).await {
+            Ok(tree_state) => {
+                let hash = tree_state.hash.clone();
+                let tree = tree_state.sapling_tree.clone();
+                Some((tree_state.height, hash, tree))
+            }
+            Err(e) => {
+                error!("Error getting sapling tree:{e}.");
+                None
+            }
+        }
+    }
+
+    pub fn get_server(&self) -> std::sync::RwLockReadGuard<http::Uri> {
+        self.config.lightwalletd_uri.read().unwrap()
+    }
+
+    pub fn get_server_uri(&self) -> http::Uri {
+        self.config.get_lightwalletd_uri()
+    }
+
+    async fn get_submission_height(&self) -> Result<BlockHeight, String> {
+        Ok(BlockHeight::from_u32(
+            GrpcConnector::get_latest_block(self.config.get_lightwalletd_uri())
+                .await?
+                .height as u32,
+        ) + 1)
+    }
+
+    pub(crate) async fn get_sync_interrupt(&self) -> bool {
+        *self.interrupt_sync.read().await
+    }
+
+    pub fn init_logging() -> io::Result<()> {
+        // Configure logging first.
+        LOG_INIT.call_once(tracing_subscriber::fmt::init);
+
+        Ok(())
+    }
+    pub async fn interrupt_sync_after_batch(&self, set_interrupt: bool) {
+        *self.interrupt_sync.write().await = set_interrupt;
+    }
+    /// Create a brand new wallet with a new seed phrase. Will fail if a wallet file
+    /// already exists on disk
+    pub fn new(config: &ZingoConfig, latest_block: u64) -> io::Result<Self> {
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        {
+            if config.wallet_exists() {
+                return Err(Error::new(
+                    ErrorKind::AlreadyExists,
+                    "Cannot create a new wallet from seed, because a wallet already exists",
+                ));
+            }
+        }
+
+        Self::new_wallet(config, latest_block)
+    }
+    /// The wallet this fn associates with the lightclient is specifically derived from
+    /// a spend authority.
+    pub fn new_from_wallet_base(
+        wallet_base: WalletBase,
+        config: &ZingoConfig,
+        birthday: u64,
+        overwrite: bool,
+    ) -> io::Result<Self> {
+        Runtime::new().unwrap().block_on(async move {
+            LightClient::new_from_wallet_base_async(wallet_base, config, birthday, overwrite).await
+        })
+    }
+
+    /// The wallet this fn associates with the lightclient is specifically derived from
+    /// a spend authority.
+    pub async fn new_from_wallet_base_async(
+        wallet_base: WalletBase,
+        config: &ZingoConfig,
+        birthday: u64,
+        overwrite: bool,
+    ) -> io::Result<Self> {
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        {
+            if !overwrite && config.wallet_exists() {
+                return Err(Error::new(
+                    ErrorKind::AlreadyExists,
+                    format!(
+                        "Cannot create a new wallet from seed, because a wallet already exists at:\n{:?}",
+                        config.get_wallet_path().as_os_str()
+                    ),
+                ));
+            }
+        }
+        let lightclient = LightClient {
+            wallet: LightWallet::new(config.clone(), wallet_base, birthday)?,
+            config: config.clone(),
+            mempool_monitor: std::sync::RwLock::new(None),
+            sync_lock: Mutex::new(()),
+            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
+            interrupt_sync: Arc::new(RwLock::new(false)),
+        };
+
+        lightclient.set_wallet_initial_state(birthday).await;
+        lightclient
+            .do_save()
+            .await
+            .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
+
+        debug!("Created new wallet!");
+
+        Ok(lightclient)
+    }
+
+    fn new_wallet(config: &ZingoConfig, height: u64) -> io::Result<Self> {
+        Runtime::new().unwrap().block_on(async move {
+            let l = LightClient::create_unconnected(config, WalletBase::FreshEntropy, height)?;
+            l.set_wallet_initial_state(height).await;
+
+            debug!("Created new wallet with a new seed!");
+            debug!("Created LightClient to {}", &config.get_lightwalletd_uri());
+
+            // Save
+            l.do_save()
+                .await
+                .map_err(|s| io::Error::new(ErrorKind::PermissionDenied, s))?;
+
+            Ok(l)
+        })
+    }
+
+    #[cfg(feature = "embed_params")]
+    fn read_sapling_params(&self) -> Result<(Vec<u8>, Vec<u8>), String> {
+        // Read Sapling Params
+        use crate::SaplingParams;
+        let mut sapling_output = vec![];
+        sapling_output.extend_from_slice(
+            SaplingParams::get("sapling-output.params")
+                .unwrap()
+                .data
+                .as_ref(),
+        );
+
+        let mut sapling_spend = vec![];
+        sapling_spend.extend_from_slice(
+            SaplingParams::get("sapling-spend.params")
+                .unwrap()
+                .data
+                .as_ref(),
+        );
+
+        Ok((sapling_output, sapling_spend))
+    }
+
+    #[cfg(not(feature = "embed_params"))]
+    fn read_sapling_params(&self) -> Result<(Vec<u8>, Vec<u8>), String> {
+        let path = self
+            .config
+            .get_zcash_params_path()
+            .map_err(|e| e.to_string())?;
+
+        let mut path_buf = path.to_path_buf();
+        path_buf.push("sapling-output.params");
+        let mut file = File::open(path_buf).map_err(|e| e.to_string())?;
+        let mut sapling_output = vec![];
+        file.read_to_end(&mut sapling_output)
+            .map_err(|e| e.to_string())?;
+
+        let mut path_buf = path.to_path_buf();
+        path_buf.push("sapling-spend.params");
+        let mut file = File::open(path_buf).map_err(|e| e.to_string())?;
+        let mut sapling_spend = vec![];
+        file.read_to_end(&mut sapling_spend)
+            .map_err(|e| e.to_string())?;
+
+        Ok((sapling_output, sapling_spend))
+    }
+
+    /// This constructor depends on a wallet that's read from a buffer.
+    /// It is used internally by read_from_disk, and directly called by
+    /// zingo-mobile.
+    pub fn read_wallet_from_buffer<R: Read>(
+        config: &ZingoConfig,
+        mut reader: R,
+    ) -> io::Result<Self> {
+        Runtime::new().unwrap().block_on(async move {
+            let wallet = LightWallet::read_internal(&mut reader, config).await?;
+
+            let lc = LightClient {
+                wallet,
+                config: config.clone(),
+                mempool_monitor: std::sync::RwLock::new(None),
+                sync_lock: Mutex::new(()),
+                bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
+                interrupt_sync: Arc::new(RwLock::new(false)),
+            };
+
+            debug!(
+                "Read wallet with birthday {}",
+                lc.wallet.get_birthday().await
+            );
+            debug!("Created LightClient to {}", &config.get_lightwalletd_uri());
+
+            Ok(lc)
+        })
+    }
+
+    pub fn read_wallet_from_disk(config: &ZingoConfig) -> io::Result<Self> {
+        let wallet_path = if config.wallet_exists() {
+            config.get_wallet_path()
+        } else {
+            return Err(Error::new(
+                ErrorKind::AlreadyExists,
+                format!(
+                    "Cannot read wallet. No file at {}",
+                    config.get_wallet_path().display()
+                ),
+            ));
+        };
+        LightClient::read_wallet_from_buffer(config, BufReader::new(File::open(wallet_path)?))
+    }
+
+    pub fn set_sapling_params(
+        &mut self,
+        sapling_output: &[u8],
+        sapling_spend: &[u8],
+    ) -> Result<(), String> {
+        use sha2::{Digest, Sha256};
+
+        // The hashes of the params need to match
+        const SAPLING_OUTPUT_HASH: &str =
+            "2f0ebbcbb9bb0bcffe95a397e7eba89c29eb4dde6191c339db88570e3f3fb0e4";
+        const SAPLING_SPEND_HASH: &str =
+            "8e48ffd23abb3a5fd9c5589204f32d9c31285a04b78096ba40a79b75677efc13";
+
+        if !sapling_output.is_empty()
+            && *SAPLING_OUTPUT_HASH != hex::encode(Sha256::digest(sapling_output))
+        {
+            return Err(format!(
+                "sapling-output hash didn't match. expected {}, found {}",
+                SAPLING_OUTPUT_HASH,
+                hex::encode(Sha256::digest(sapling_output))
+            ));
+        }
+
+        if !sapling_spend.is_empty()
+            && *SAPLING_SPEND_HASH != hex::encode(Sha256::digest(sapling_spend))
+        {
+            return Err(format!(
+                "sapling-spend hash didn't match. expected {}, found {}",
+                SAPLING_SPEND_HASH,
+                hex::encode(Sha256::digest(sapling_spend))
+            ));
+        }
+
+        // Ensure that the sapling params are stored on disk properly as well. Only on desktop
+        match self.config.get_zcash_params_path() {
+            Ok(zcash_params_dir) => {
+                // Create the sapling output and spend params files
+                match LightClient::write_file_if_not_exists(
+                    &zcash_params_dir,
+                    "sapling-output.params",
+                    sapling_output,
+                ) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        return Err(format!("Warning: Couldn't write the output params!\n{}", e))
+                    }
+                };
+
+                match LightClient::write_file_if_not_exists(
+                    &zcash_params_dir,
+                    "sapling-spend.params",
+                    sapling_spend,
+                ) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        return Err(format!("Warning: Couldn't write the spend params!\n{}", e))
+                    }
+                }
+            }
+            Err(e) => {
+                return Err(format!("{}", e));
+            }
+        };
+
+        Ok(())
+    }
+
+    pub fn set_server(&self, server: http::Uri) {
+        *self.config.lightwalletd_uri.write().unwrap() = server
+    }
+
+    pub async fn set_wallet_initial_state(&self, height: u64) {
+        let state = self.get_initial_state(height).await;
+
+        if let Some((height, hash, tree)) = state {
+            debug!("Setting initial state to height {}, tree {}", height, tree);
+            self.wallet
+                .set_initial_block(height, hash.as_str(), tree.as_str())
+                .await;
+        }
     }
 
     pub fn start_mempool_monitor(lc: Arc<LightClient>) {
@@ -1409,59 +1411,6 @@ impl LightClient {
         });
 
         *lc.mempool_monitor.write().unwrap() = Some(h);
-    }
-
-    pub async fn do_sync(&self, print_updates: bool) -> Result<JsonValue, String> {
-        // Remember the previous sync id first
-        let prev_sync_id = self
-            .bsync_data
-            .read()
-            .await
-            .sync_status
-            .read()
-            .await
-            .sync_id;
-
-        // Start the sync
-        let r_fut = self.start_sync();
-
-        // If printing updates, start a new task to print updates every 2 seconds.
-        let sync_result = if print_updates {
-            let sync_status = self.bsync_data.read().await.sync_status.clone();
-            let (transmitter, mut receiver) = oneshot::channel::<i32>();
-
-            tokio::spawn(async move {
-                while sync_status.read().await.sync_id == prev_sync_id {
-                    yield_now().await;
-                    sleep(Duration::from_secs(3)).await;
-                }
-
-                loop {
-                    if let Ok(_t) = receiver.try_recv() {
-                        break;
-                    }
-
-                    let progress = format!("{}", sync_status.read().await);
-                    if print_updates {
-                        println!("{}", progress);
-                    }
-
-                    yield_now().await;
-                    sleep(Duration::from_secs(3)).await;
-                }
-            });
-
-            let r = r_fut.await;
-            transmitter.send(1).unwrap();
-            r
-        } else {
-            r_fut.await
-        };
-
-        // Mark the sync data as finished, which should clear everything
-        self.bsync_data.read().await.finish().await;
-
-        sync_result
     }
 
     /// Start syncing in batches with the max size, to manage memory consumption.
@@ -1779,90 +1728,142 @@ impl LightClient {
         })
     }
 
-    pub async fn do_shield(&self, address: Option<String>) -> Result<String, String> {
-        let transaction_submission_height = self.get_submission_height().await?;
-        let fee = u64::from(DEFAULT_FEE);
-        let tbal = self
-            .wallet
-            .tbalance(None)
-            .await
-            .as_u64()
-            .ok_or("To represent Json as u64".to_string())?;
+    fn tx_summary_matcher(
+        summaries: &mut Vec<ValueTransfer>,
+        txid: TxId,
+        transaction_md: &TransactionMetadata,
+        tx_value_spent: u64,
+        tx_value_received: u64,
+        tx_change_received: u64,
+    ) -> () {
+        let (block_height, datetime, price) = (
+            transaction_md.block_height,
+            transaction_md.datetime,
+            transaction_md.price,
+        );
+        match (tx_value_spent, (tx_value_received - tx_change_received)) {
+            //TODO: This is probably an error, if we sent no value and also received no value why
+            //do we have this transaction stored?
+            (0, 0) => unreachable!(),
+            // All received funds were change, this is a normal send
+            (_spent, 0) => {
+                for OutgoingTxData {
+                    to_address,
+                    value,
+                    memo,
+                    recipient_ua,
+                } in &transaction_md.outgoing_tx_data
+                {
+                    if let Ok(to_address) =
+                        ZcashAddress::try_from_encoded(recipient_ua.as_ref().unwrap_or(to_address))
+                    {
+                        let memo = if let Memo::Text(textmemo) = memo {
+                            Some(textmemo.clone())
+                        } else {
+                            None
+                        };
+                        summaries.push(
+                            crate::wallet::data::summaries::Sent {
+                                amount: *value,
+                                balance_delta: -(*value as i64),
+                                block_height,
+                                datetime,
+                                memo,
+                                to_address,
+                                price,
+                                txid,
+                            }
+                            .into(),
+                        )
+                    }
+                }
+            }
+            // No funds spent, this is a normal receipt
+            (0, _received) => {
+                for received_transparent in transaction_md.received_utxos.iter() {
+                    summaries.push(
+                        Receive::from_transparent_output(
+                            received_transparent,
+                            block_height,
+                            datetime,
+                            price,
+                            txid,
+                        )
+                        .into(),
+                    );
+                }
+                for received_sapling in transaction_md.sapling_notes.iter() {
+                    summaries.push(
+                        Receive::from_note(received_sapling, block_height, datetime, price, txid)
+                            .into(),
+                    )
+                }
+                for received_orchard in transaction_md.orchard_notes.iter() {
+                    summaries.push(
+                        Receive::from_note(received_orchard, block_height, datetime, price, txid)
+                            .into(),
+                    )
+                }
+            }
+            // We spent funds, and received them as non-change. This is most likely a send-to-self,
+            // TODO: Figure out what kind of special-case handling we want for these
+            (spent, _non_change_received) => {
+                let fee = spent - tx_value_received;
+                summaries.push(
+                    SelfSend {
+                        balance_delta: -(fee as i64),
+                        block_height,
+                        datetime,
+                        fee: spent - tx_value_received,
+                        memos: transaction_md
+                            .sapling_notes
+                            .iter()
+                            .filter_map(|sapling_note| sapling_note.memo.clone())
+                            .chain(
+                                transaction_md
+                                    .orchard_notes
+                                    .iter()
+                                    .filter_map(|orchard_note| orchard_note.memo.clone()),
+                            )
+                            .filter_map(|memo| {
+                                if let Memo::Text(text_memo) = memo {
+                                    Some(text_memo)
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect(),
+                        price,
+                        txid,
+                    }
+                    .into(),
+                );
+            }
+        }
+    }
+    pub(crate) async fn update_current_price(&self) -> String {
+        // Get the zec price from the server
+        match get_recent_median_price_from_gemini().await {
+            Ok(price) => {
+                self.wallet.set_latest_zec_price(price).await;
+                price.to_string()
+            }
+            Err(s) => {
+                error!("Error fetching latest price: {}", s);
+                s.to_string()
+            }
+        }
+    }
 
-        // Make sure there is a balance, and it is greated than the amount
-        if tbal <= fee {
-            return Err(format!(
-                "Not enough transparent balance to shield. Have {} zats, need more than {} zats to cover tx fee",
-                tbal, fee
-            ));
+    fn write_file_if_not_exists(dir: &Path, name: &str, bytes: &[u8]) -> io::Result<()> {
+        let mut file_path = dir.to_path_buf();
+        file_path.push(name);
+        if !file_path.exists() {
+            let mut file = File::create(&file_path)?;
+            file.write_all(bytes)?;
         }
 
-        let addr = address.unwrap_or(
-            self.wallet.wallet_capability().read().await.addresses()[0].encode(&self.config.chain),
-        );
-
-        let result = {
-            let _lock = self.sync_lock.lock().await;
-            let (sapling_output, sapling_spend) = self.read_sapling_params()?;
-
-            let prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
-
-            self.wallet
-                .send_to_address(
-                    prover,
-                    vec![crate::wallet::Pool::Transparent],
-                    vec![(&addr, tbal - fee, None)],
-                    transaction_submission_height,
-                    |transaction_bytes| {
-                        GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
-                    },
-                )
-                .await
-        };
-
-        result.map(|(transaction_id, _)| transaction_id)
-    }
-
-    async fn get_submission_height(&self) -> Result<BlockHeight, String> {
-        Ok(BlockHeight::from_u32(
-            GrpcConnector::get_latest_block(self.config.get_lightwalletd_uri())
-                .await?
-                .height as u32,
-        ) + 1)
-    }
-    //TODO: Add migrate_sapling_to_orchard argument
-    pub async fn do_send(
-        &self,
-        address_amount_memo_tuples: Vec<(&str, u64, Option<String>)>,
-    ) -> Result<String, String> {
-        let transaction_submission_height = self.get_submission_height().await?;
-        // First, get the concensus branch ID
-        debug!("Creating transaction");
-
-        let result = {
-            let _lock = self.sync_lock.lock().await;
-            let (sapling_output, sapling_spend) = self.read_sapling_params()?;
-
-            let prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
-
-            self.wallet
-                .send_to_address(
-                    prover,
-                    vec![crate::wallet::Pool::Orchard, crate::wallet::Pool::Sapling],
-                    address_amount_memo_tuples,
-                    transaction_submission_height,
-                    |transaction_bytes| {
-                        GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
-                    },
-                )
-                .await
-        };
-
-        result.map(|(transaction_id, _)| transaction_id)
-    }
-
-    pub async fn do_wallet_last_scanned_height(&self) -> JsonValue {
-        json::JsonValue::from(self.wallet.last_synced_height().await)
+        Ok(())
     }
 }
 
