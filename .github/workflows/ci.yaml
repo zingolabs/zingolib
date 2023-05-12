@@ -7,105 +7,105 @@ on:
   workflow_dispatch:
 
 jobs:
-  # static_checks:
-  #   name: Format check and clippy
-  #   runs-on: ubuntu-22.04
-  #   env:
-  #     RUSTFLAGS: -D warnings
-  #     RUSTUP_HOME: /root/.rustup
-  #   container:
-  #     image: zingodevops/ci-build:stable
-  #     options: --security-opt seccomp=unconfined
-  #   steps:
-  #     - name: Checkout repository
-  #       uses: actions/checkout@v3
+  static_checks:
+    name: Format check and clippy
+    runs-on: ubuntu-22.04
+    env:
+      RUSTFLAGS: -D warnings
+      RUSTUP_HOME: /root/.rustup
+    container:
+      image: zingodevops/ci-build:stable
+      options: --security-opt seccomp=unconfined
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-  #     - name: Reject trailing whitespace
-  #       run: ./utils/trailing-whitespace.sh reject
+      - name: Reject trailing whitespace
+        run: ./utils/trailing-whitespace.sh reject
 
-  #     - name: What's my env
-  #       run:  env
+      - name: What's my env
+        run:  env
 
-  #     - name: Whoami
-  #       run:  whoami
+      - name: Whoami
+        run:  whoami
 
-  #     - name: Which rustup
-  #       run:  which rustup
+      - name: Which rustup
+        run:  which rustup
 
-  #     - name: Rustup show
-  #       run:  rustup show
+      - name: Rustup show
+        run:  rustup show
 
-  #     - name: Check formatting of code
-  #       run: cargo +stable fmt --check
+      - name: Check formatting of code
+        run: cargo +stable fmt --check
 
-  #     - name: Clippy checks
-  #       run: cargo +stable clippy
+      - name: Clippy checks
+        run: cargo +stable clippy
 
-  # cargo-test:
-  #   name: Cargo test
-  #   runs-on: ubuntu-22.04
-  #   env:
-  #     RUSTFLAGS: -D warnings
-  #     RUSTUP_HOME: /root/.rustup
-  #   container:
-  #     image: zingodevops/ci-build:stable
-  #     options: --security-opt seccomp=unconfined
-  #   steps:
-  #     - name: Checkout repository
-  #       uses: actions/checkout@v3
+  cargo-test:
+    name: Cargo test
+    runs-on: ubuntu-22.04
+    env:
+      RUSTFLAGS: -D warnings
+      RUSTUP_HOME: /root/.rustup
+    container:
+      image: zingodevops/ci-build:stable
+      options: --security-opt seccomp=unconfined
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-  #     - name: Symlink lightwalletd and zcash binaries
-  #       run: ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./regtest/bin/
+      - name: Symlink lightwalletd and zcash binaries
+        run: ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./regtest/bin/
 
-  #     - name: Symlink zcash parameters
-  #       run: ln -s /root/.zcash-params /github/home
+      - name: Symlink zcash parameters
+        run: ln -s /root/.zcash-params /github/home
 
-  #     - name: Cargo cache
-  #       id: cargo-cache
-  #       uses: actions/cache@v3
-  #       with:
-  #         # Following cargo cache recommendations:
-  #         # https://doc.rust-lang.org/cargo/guide/cargo-home.html
-  #         # added 'target' directory to skip compiling dependencies
-  #         path: |
-  #           /root/.cargo/.crates.toml
-  #           /root/.cargo/.crates2.json
-  #           /root/.cargo/bin/
-  #           /root/.cargo/registry/index/
-  #           /root/.cargo/registry/cache/
-  #           /root/.cargo/registry/git/db/
-  #           target/
-  #         key: cargo-zingolib-${{ hashFiles('**/Cargo.lock') }}
-  #         restore-keys: cargo-zingolib
+      - name: Cargo cache
+        id: cargo-cache
+        uses: actions/cache@v3
+        with:
+          # Following cargo cache recommendations:
+          # https://doc.rust-lang.org/cargo/guide/cargo-home.html
+          # added 'target' directory to skip compiling dependencies
+          path: |
+            /root/.cargo/.crates.toml
+            /root/.cargo/.crates2.json
+            /root/.cargo/bin/
+            /root/.cargo/registry/index/
+            /root/.cargo/registry/cache/
+            /root/.cargo/registry/git/db/
+            target/
+          key: cargo-zingolib-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-zingolib
 
-  #     - name: Run tests and generate coverage
-  #       run: cargo tarpaulin --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 3000 --out xml
+      - name: Run tests and generate coverage
+        run: cargo tarpaulin --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 3000 --out xml
 
-  #     - name: Upload to codecov.io
-  #       uses: codecov/codecov-action@v3
-  #       with:
-  #         token: ${{ secrets.CODECOV_TOKEN }}
-  #         files: ./cobertura.xml
-  #         # fail_ci_if_error:     true
+      - name: Upload to codecov.io
+        uses: codecov/codecov-action@v3
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./cobertura.xml
+          # fail_ci_if_error:     true
 
   create-timestamp:
-    uses: Oscar-Pepper/zingo-mobile/.github/workflows/create-timestamp.yaml@ci_DRY_2-0
+    uses: zingolabs/zingo-mobile/.github/workflows/create-timestamp.yaml@dev
     
   create-cache-key:
-    uses: Oscar-Pepper/zingo-mobile/.github/workflows/create-cache-key.yaml@ci_DRY_2-0    
+    uses: zingolabs/zingo-mobile/.github/workflows/create-cache-key.yaml@dev    
 
   build-android:
     strategy:
       matrix:
         arch: [ x86_64, armeabi-v7a ]
-    uses: Oscar-Pepper/zingo-mobile/.github/workflows/build.yaml@ci_DRY_2-0
+    uses: zingolabs/zingo-mobile/.github/workflows/build.yaml@dev
     needs: create-cache-key
     with:
       cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
       arch: ${{ matrix.arch }}
        
   integration-test-android:
-    uses: Oscar-Pepper/zingo-mobile/.github/workflows/integration-test.yaml@ci_DRY_2-0
+    uses: zingolabs/zingo-mobile/.github/workflows/integration-test.yaml@dev
     needs: [ create-timestamp, create-cache-key, build-android ]
     if: ${{ ! cancelled() }}
     with:
@@ -114,7 +114,7 @@ jobs:
       abi: armeabi-v7a
   
   e2e-test-android:
-    uses: Oscar-Pepper/zingo-mobile/.github/workflows/e2e-test.yaml@ci_DRY_2-0
+    uses: zingolabs/zingo-mobile/.github/workflows/e2e-test.yaml@dev
     needs: [ create-cache-key, build-android ]
     if: ${{ ! cancelled() }}
     with:
