@@ -530,7 +530,7 @@ pub mod summaries {
         pub memos: Vec<zcash_primitives::memo::TextMemo>,
         pub pool: Option<Pool>, // TODO: Which pool? Receiver's?  Let's rename this type to make it obvious!
         pub price: Option<f64>,
-        pub to_address: zcash_address::ZcashAddress,
+        pub to_address: Some(zcash_address::ZcashAddress),
         pub txid: TxId,
     }
     pub enum ValueTransferKind {

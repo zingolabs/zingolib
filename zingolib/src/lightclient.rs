@@ -9,8 +9,8 @@ use crate::{
     grpc_connector::GrpcConnector,
     wallet::{
         data::{
-            summaries::{Receive, SelfSend, ValueTransfer},
-            OutgoingTxData, TransactionMetadata,
+            summaries::ValueTransfer, summaries::ValueTransferKind, OutgoingTxData,
+            TransactionMetadata,
         },
         keys::{
             address_from_pubkeyhash,
@@ -51,7 +51,7 @@ use zcash_client_backend::{
 use zcash_primitives::{
     block::BlockHash,
     consensus::{BlockHeight, BranchId, Parameters},
-    memo::{Memo, MemoBytes},
+    memo::{Memo, MemoBytes, TextMemo},
     sapling::note_encryption::SaplingDomain,
     transaction::{components::amount::DEFAULT_FEE, Transaction, TxId},
 };
@@ -1757,21 +1757,24 @@ impl LightClient {
                     if let Ok(to_address) =
                         ZcashAddress::try_from_encoded(recipient_ua.as_ref().unwrap_or(to_address))
                     {
-                        let memo = if let Memo::Text(textmemo) = memo {
-                            Some(textmemo.clone())
+                        let memos = if let Memo::Text(textmemo) = memo {
+                            vec![textmemo.clone()]
                         } else {
-                            None
+                            vec![]
                         };
                         summaries.push(
-                            crate::wallet::data::summaries::Sent {
-                                amount: *value,
+                            ValueTransfer {
+                                amount: Some(*value),
                                 balance_delta: -(*value as i64),
                                 block_height,
                                 datetime,
-                                memo,
-                                to_address,
+                                fee: None,
+                                kind: ValueTransferKind::Sent,
+                                pool: None,
                                 price,
+                                to_address,
                                 txid,
+                                memos,
                             }
                             .into(),
                         )
@@ -1781,22 +1784,39 @@ impl LightClient {
             // No funds spent, this is a normal receipt
             (0, _received) => {
                 for received_transparent in transaction_md.received_utxos.iter() {
-                    summaries.push(
-                        Receive::from_transparent_output(
-                            received_transparent,
-                            block_height,
-                            datetime,
-                            price,
-                            txid,
-                        )
-                        .into(),
-                    );
+                    summaries.push(ValueTransfer {
+                        amount: Some(received_transparent.value),
+                        balance_delta: received_transparent.value as i64,
+                        block_height,
+                        datetime,
+                        fee: None,
+                        kind: ValueTransferKind::Received,
+                        memos: vec![],
+                        pool: Some(crate::wallet::Pool::Transparent),
+                        price,
+                        to_address: None,
+                        txid,
+                    });
                 }
                 for received_sapling in transaction_md.sapling_notes.iter() {
-                    summaries.push(
-                        Receive::from_note(received_sapling, block_height, datetime, price, txid)
-                            .into(),
-                    )
+                    let memos = if let Some(Memo::Text(textmemo)) = received_sapling.memo {
+                        vec![textmemo]
+                    } else {
+                        vec![]
+                    };
+                    summaries.push(ValueTransfer {
+                        amount: Some(received_sapling.value),
+                        balance_delta: received_sapling.value as i64,
+                        block_height,
+                        datetime,
+                        fee: None,
+                        kind: ValueTransferKind::Received,
+                        memos,
+                        pool: Some(crate::wallet::Pool::Transparent),
+                        price,
+                        to_address: None,
+                        txid,
+                    });
                 }
                 for received_orchard in transaction_md.orchard_notes.iter() {
                     summaries.push(
@@ -1808,13 +1828,13 @@ impl LightClient {
             // We spent funds, and received them as non-change. This is most likely a send-to-self,
             // TODO: Figure out what kind of special-case handling we want for these
             (spent, _non_change_received) => {
-                let fee = spent - tx_value_received;
                 summaries.push(
-                    SelfSend {
+                    ValueTransfer {
+                        amount: None,
                         balance_delta: -(fee as i64),
                         block_height,
                         datetime,
-                        fee: spent - tx_value_received,
+                        fee: Some(spent - tx_value_received),
                         memos: transaction_md
                             .sapling_notes
                             .iter()
