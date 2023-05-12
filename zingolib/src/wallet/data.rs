@@ -529,30 +529,42 @@ pub mod summaries {
             }
         }
     }
-    pub enum ValueTransfer {
-        Sent(Sent),
-        Received(Receive),
-        SendToSelf(SelfSend),
+    pub struct ValueTransfer {
+        pub amount: Option<u64>,
+        pub balance_delta: i64,
+        pub block_height: zcash_primitives::consensus::BlockHeight,
+        pub datetime: u64,
+        pub fee: Option<u64>,
+        pub kind: ValueTransferKind,
+        pub memos: Vec<zcash_primitives::memo::TextMemo>,
+        pub pool: Option<Pool>,
+        pub price: Option<f64>,
+        pub to_address: zcash_address::ZcashAddress,
+        pub txid: TxId,
     }
-    pub fn balance_delta(vt: ValueTransfer) -> i64 {
-        match vt {
-            ValueTransfer::Sent(s) => s.balance_delta,
-            ValueTransfer::Received(r) => r.balance_delta,
-            ValueTransfer::SendToSelf(sts) => sts.balance_delta,
-        }
+    pub enum ValueTransferKind {
+        Sent,
+        Received,
+        SendToSelf,
     }
-    impl From<Sent> for JsonValue {
-        fn from(value: Sent) -> Self {
-            object! {
-                "type": "Send",
-                "amount": value.amount,
-                "balance_delta": value.balance_delta,
-                "block_height": u32::from(value.block_height),
-                "datetime": value.datetime,
-                "memo": value.memo.map(String::from),
-                "price": value.price,
-                "to_address": value.to_address.encode(),
-                "txid": value.txid.to_string(),
+    impl From<ValueTransfer> for JsonValue {
+        fn from(value: ValueTransfer) -> Self {
+            match value {
+                Sent => object! {
+                    "amount": value.amount.expect("Sends to have amounts."),
+                    "balance_delta": value.balance_delta,
+                    "block_height": u32::from(value.block_height),
+                    "datetime": value.datetime,
+                    "fee": None,
+                    "kind": "Send",
+                    "memos": value.memos.iter().map(String::from),
+                    "pool": if let Some(pool) = value.pool { pool } else { None },
+                    "price": if let Some(price) = value.price { price } else { None },
+                    "to_address": value.to_address.encode(),
+                    "txid": value.txid.to_string(),
+                },
+                Received => {}
+                SendToSelf => {}
             }
         }
     }
@@ -601,17 +613,6 @@ pub mod summaries {
         }
     }
 
-    pub struct Sent {
-        pub amount: u64,
-        pub balance_delta: i64,
-        pub block_height: zcash_primitives::consensus::BlockHeight,
-        pub datetime: u64,
-        pub memo: Option<zcash_primitives::memo::TextMemo>,
-        pub price: Option<f64>,
-        pub to_address: zcash_address::ZcashAddress,
-        pub txid: TxId,
-    }
-
     impl Receive {
         pub fn from_note<Note: ReceivedNoteAndMetadata>(
             note: &Note,
@@ -655,27 +656,6 @@ pub mod summaries {
                 txid,
             }
         }
-    }
-
-    pub struct Receive {
-        pub amount: u64,
-        pub balance_delta: i64,
-        pub block_height: BlockHeight,
-        pub datetime: u64,
-        pub memo: Option<TextMemo>,
-        pub pool: Pool,
-        pub price: Option<f64>,
-        pub txid: TxId,
-    }
-
-    pub struct SelfSend {
-        pub balance_delta: i64,
-        pub block_height: BlockHeight,
-        pub datetime: u64,
-        pub fee: u64,
-        pub memos: Vec<TextMemo>,
-        pub price: Option<f64>,
-        pub txid: TxId,
     }
 
     impl SelfSend {
