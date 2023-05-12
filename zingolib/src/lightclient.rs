@@ -1840,39 +1840,36 @@ impl LightClient {
             // TODO: Figure out what kind of special-case handling we want for these
             (spent, _non_change_received) => {
                 let fee = Some(spent - tx_value_received);
-                summaries.push(
-                    ValueTransfer {
-                        amount: None,
-                        balance_delta: -(fee.unwrap() as i64),
-                        block_height,
-                        datetime,
-                        fee,
-                        kind: ValueTransferKind::SendToSelf,
-                        memos: transaction_md
-                            .sapling_notes
-                            .iter()
-                            .filter_map(|sapling_note| sapling_note.memo.clone())
-                            .chain(
-                                transaction_md
-                                    .orchard_notes
-                                    .iter()
-                                    .filter_map(|orchard_note| orchard_note.memo.clone()),
-                            )
-                            .filter_map(|memo| {
-                                if let Memo::Text(text_memo) = memo {
-                                    Some(text_memo)
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect(),
-                        pool: None,
-                        price,
-                        to_address: None,
-                        txid,
-                    }
-                    .into(),
-                );
+                summaries.push(ValueTransfer {
+                    amount: None,
+                    balance_delta: -(fee.unwrap() as i64),
+                    block_height,
+                    datetime,
+                    fee,
+                    kind: ValueTransferKind::SendToSelf,
+                    memos: transaction_md
+                        .sapling_notes
+                        .iter()
+                        .filter_map(|sapling_note| sapling_note.memo.clone())
+                        .chain(
+                            transaction_md
+                                .orchard_notes
+                                .iter()
+                                .filter_map(|orchard_note| orchard_note.memo.clone()),
+                        )
+                        .filter_map(|memo| {
+                            if let Memo::Text(text_memo) = memo {
+                                Some(text_memo)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect(),
+                    pool: None,
+                    price,
+                    to_address: None,
+                    txid,
+                });
             }
         };
     }
