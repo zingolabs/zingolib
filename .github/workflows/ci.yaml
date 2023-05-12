@@ -94,11 +94,11 @@ jobs:
   create-cache-key:
     uses: Oscar-Pepper/zingo-mobile/.github/workflows/create-cache-key.yaml@ci_DRY_2-0    
 
-  # build:
+  # build-android:
   #   strategy:
   #     matrix:
   #       arch: [ x86_64, armeabi-v7a ]
-  #   uses: ./.github/workflows/build.yaml
+  #   uses: Oscar-Pepper/zingo-mobile/.github/workflows/build.yaml@ci_DRY_2-0
   #   needs: create-cache-key
   #   with:
   #     cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
