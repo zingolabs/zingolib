@@ -563,7 +563,7 @@ pub mod summaries {
             };
             match value.kind {
                 Sent => {
-                    temp_object["fee"] = JsonValue::from(None);
+                    temp_object["fee"] = JsonValue::from("None".to_string());
                     temp_object["kind"] = JsonValue::from(ValueTransferKind::Sent);
                     temp_object["to_address"] = JsonValue::from(
                         value
@@ -574,18 +574,18 @@ pub mod summaries {
                     temp_object
                 }
                 Received => {
-                    temp_object["fee"] = JsonValue::from(None);
+                    temp_object["fee"] = JsonValue::from("None".to_string());
                     temp_object["kind"] = JsonValue::from(ValueTransferKind::Received);
-                    temp_object["to_address"] = JsonValue::from(None);
+                    temp_object["to_address"] = JsonValue::from("None".to_string());
                     temp_object
                 }
                 SendToSelf => {
-                    temp_object["amount"] = JsonValue::from(None);
+                    temp_object["amount"] = JsonValue::from("None".to_string());
                     temp_object["fee"] = JsonValue::from(value.fee);
                     temp_object["kind"] = JsonValue::from(ValueTransferKind::SendToSelf);
-                    temp_object["pool"] = JsonValue::from(None);
-                    temp_object["price"] = JsonValue::from(None);
-                    temp_object["to_address"] = JsonValue::from(None);
+                    temp_object["pool"] = JsonValue::from("None".to_string());
+                    temp_object["price"] = JsonValue::from("None".to_string());
+                    temp_object["to_address"] = JsonValue::from("None".to_string());
                     temp_object
                 }
             }
