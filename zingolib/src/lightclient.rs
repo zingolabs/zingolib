@@ -51,7 +51,7 @@ use zcash_client_backend::{
 use zcash_primitives::{
     block::BlockHash,
     consensus::{BlockHeight, BranchId, Parameters},
-    memo::{Memo, MemoBytes, TextMemo},
+    memo::{Memo, MemoBytes},
     sapling::note_encryption::SaplingDomain,
     transaction::{components::amount::DEFAULT_FEE, Transaction, TxId},
 };

@@ -507,15 +507,9 @@ pub mod summaries {
     use std::collections::HashMap;
 
     use json::{object, JsonValue};
-    use zcash_primitives::{
-        consensus::BlockHeight,
-        memo::{Memo, TextMemo},
-        transaction::TxId,
-    };
+    use zcash_primitives::transaction::TxId;
 
-    use crate::wallet::{traits::ReceivedNoteAndMetadata, Pool};
-
-    use super::ReceivedTransparentOutput;
+    use crate::wallet::Pool;
 
     /// The MobileTx is the zingolib representation of
     /// transactions in the format most useful for
