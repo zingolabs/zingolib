@@ -104,18 +104,18 @@ jobs:
       cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
       arch: ${{ matrix.arch }}
        
-  integration-test:
+  integration-test-android:
     uses: Oscar-Pepper/zingo-mobile/.github/workflows/integration-test.yaml@ci_DRY_2-0
-    needs: [ create-timestamp, create-cache-key, build ]
+    needs: [ create-timestamp, create-cache-key, build-android ]
     if: ${{ ! cancelled() }}
     with:
       timestamp: ${{ needs.create-timestamp.outputs.timestamp }}
       cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
       abi: armeabi-v7a
   
-  e2e-test:
+  e2e-test-android:
     uses: Oscar-Pepper/zingo-mobile/.github/workflows/e2e-test.yaml@ci_DRY_2-0
-    needs: [ create-cache-key, build ]
+    needs: [ create-cache-key, build-android ]
     if: ${{ ! cancelled() }}
     with:
       cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
