@@ -888,6 +888,13 @@ async fn send_orchard_back_and_forth() {
         .unwrap();
     faucet.do_sync(true).await.unwrap();
     check_client_balances!(recipient, o: faucet_to_recipient_amount s: 0 t: 0);
+
+    println!(
+        "{}",
+        JsonValue::from(faucet.do_list_txsummaries().await).pretty(4)
+    );
+    println!("{}", JsonValue::from(faucet.do_balance().await).pretty(4));
+
     check_client_balances!(faucet, o: orch_change s: reward_and_fee t: 0);
 
     // post half back to faucet, and verify

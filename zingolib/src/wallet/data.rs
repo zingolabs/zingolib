@@ -557,7 +557,7 @@ pub mod summaries {
             };
             match value.kind {
                 ValueTransferKind::Sent => {
-                    temp_object["fee"] = JsonValue::from("None".to_string());
+                    temp_object["fee"] = JsonValue::from(value.fee);
                     temp_object["kind"] = JsonValue::from(ValueTransferKind::Sent);
                     temp_object["to_address"] = JsonValue::from(
                         value
