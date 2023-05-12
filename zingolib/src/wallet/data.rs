@@ -544,6 +544,7 @@ pub mod summaries {
                 Sent => JsonValue::String(String::from("Sent")),
                 Received => JsonValue::String(String::from("Received")),
                 SendToSelf => JsonValue::String(String::from("SendToSelf")),
+            }
         }
     }
     impl From<ValueTransfer> for JsonValue {
