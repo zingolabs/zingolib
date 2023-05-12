@@ -91,6 +91,15 @@ pub enum Pool {
     Transparent,
 }
 
+impl From<Pool> for JsonValue {
+    fn from(value: Pool) -> Self {
+        match value {
+            Sapling => JsonValue::String(String::from("Sapling")),
+            Orchard => JsonValue::String(String::from("Orchard")),
+            Transparent => JsonValue::String(String::from("Transparent")),
+        }
+    }
+}
 pub(crate) type NoteSelectionPolicy = Vec<Pool>;
 
 impl SendProgress {

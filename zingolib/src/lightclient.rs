@@ -19,7 +19,7 @@ use crate::{
         message::Message,
         now,
         traits::{DomainWalletExt, ReceivedNoteAndMetadata, Recipient},
-        LightWallet, WalletBase,
+        LightWallet, Pool, WalletBase,
     },
 };
 use futures::future::join_all;
@@ -1735,7 +1735,7 @@ impl LightClient {
         tx_value_spent: u64,
         tx_value_received: u64,
         tx_change_received: u64,
-    ) {
+    ) -> ! {
         let (block_height, datetime, price) = (
             transaction_md.block_height,
             transaction_md.datetime,
@@ -1762,22 +1762,19 @@ impl LightClient {
                         } else {
                             vec![]
                         };
-                        summaries.push(
-                            ValueTransfer {
-                                amount: Some(*value),
-                                balance_delta: -(*value as i64),
-                                block_height,
-                                datetime,
-                                fee: None,
-                                kind: ValueTransferKind::Sent,
-                                pool: None,
-                                price,
-                                to_address,
-                                txid,
-                                memos,
-                            }
-                            .into(),
-                        )
+                        summaries.push(ValueTransfer {
+                            amount: Some(*value),
+                            balance_delta: -(*value as i64),
+                            block_height,
+                            datetime,
+                            fee: None,
+                            kind: ValueTransferKind::Sent,
+                            memos,
+                            pool: None,
+                            price,
+                            to_address: Some(to_address),
+                            txid,
+                        });
                     }
                 }
             }
@@ -1792,7 +1789,7 @@ impl LightClient {
                         fee: None,
                         kind: ValueTransferKind::Received,
                         memos: vec![],
-                        pool: Some(crate::wallet::Pool::Transparent),
+                        pool: Some(Pool::Transparent),
                         price,
                         to_address: None,
                         txid,
@@ -1805,36 +1802,52 @@ impl LightClient {
                         vec![]
                     };
                     summaries.push(ValueTransfer {
-                        amount: Some(received_sapling.value),
-                        balance_delta: received_sapling.value as i64,
+                        amount: Some(received_sapling.value()),
+                        balance_delta: received_sapling.value() as i64,
                         block_height,
                         datetime,
                         fee: None,
                         kind: ValueTransferKind::Received,
                         memos,
-                        pool: Some(crate::wallet::Pool::Transparent),
+                        pool: Some(Pool::Sapling),
                         price,
                         to_address: None,
                         txid,
                     });
                 }
                 for received_orchard in transaction_md.orchard_notes.iter() {
-                    summaries.push(
-                        Receive::from_note(received_orchard, block_height, datetime, price, txid)
-                            .into(),
-                    )
+                    let memos = if let Some(Memo::Text(textmemo)) = received_orchard.memo {
+                        vec![textmemo]
+                    } else {
+                        vec![]
+                    };
+                    summaries.push(ValueTransfer {
+                        amount: Some(received_orchard.value()),
+                        balance_delta: received_orchard.value() as i64,
+                        block_height,
+                        datetime,
+                        fee: None,
+                        kind: ValueTransferKind::Received,
+                        memos,
+                        pool: Some(Pool::Orchard),
+                        price,
+                        to_address: None,
+                        txid,
+                    });
                 }
             }
             // We spent funds, and received them as non-change. This is most likely a send-to-self,
             // TODO: Figure out what kind of special-case handling we want for these
             (spent, _non_change_received) => {
+                let fee = Some(spent - tx_value_received);
                 summaries.push(
                     ValueTransfer {
                         amount: None,
-                        balance_delta: -(fee as i64),
+                        balance_delta: -(fee.unwrap() as i64),
                         block_height,
                         datetime,
-                        fee: Some(spent - tx_value_received),
+                        fee,
+                        kind: ValueTransferKind::SendToSelf,
                         memos: transaction_md
                             .sapling_notes
                             .iter()
@@ -1853,7 +1866,9 @@ impl LightClient {
                                 }
                             })
                             .collect(),
+                        pool: None,
                         price,
+                        to_address: None,
                         txid,
                     }
                     .into(),

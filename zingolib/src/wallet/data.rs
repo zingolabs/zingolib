@@ -530,13 +530,21 @@ pub mod summaries {
         pub memos: Vec<zcash_primitives::memo::TextMemo>,
         pub pool: Option<Pool>, // TODO: Which pool? Receiver's?  Let's rename this type to make it obvious!
         pub price: Option<f64>,
-        pub to_address: Some(zcash_address::ZcashAddress),
+        pub to_address: Option<zcash_address::ZcashAddress>,
         pub txid: TxId,
     }
     pub enum ValueTransferKind {
         Sent,
         Received,
         SendToSelf,
+    }
+    impl From<ValueTransferKind> for JsonValue {
+        fn from(value: ValueTransferKind) -> Self {
+            match value {
+                Sent => JsonValue::String(String::from("Sent")),
+                Received => JsonValue::String(String::from("Received")),
+                SendToSelf => JsonValue::String(String::from("SendToSelf")),
+        }
     }
     impl From<ValueTransfer> for JsonValue {
         fn from(value: ValueTransfer) -> Self {
@@ -548,8 +556,8 @@ pub mod summaries {
                     "fee": None,
                     "kind": "",
                     "memos": JsonValue::from(value.memos.iter().cloned().map(String::from).collect()),
-                    "pool": if let Some(pool) = value.pool { pool } else { None },
-                    "price": if let Some(price) = value.price { price } else { None },
+                    "pool": value.pool,
+                    "price": value.price,
                     "to_address": value.to_address.encode(),
                     "txid": value.txid.to_string(),
             };
@@ -573,72 +581,6 @@ pub mod summaries {
                     temp_object["to_address"] = None;
                     temp_object
                 }
-            }
-        }
-    }
-
-    impl Receive {
-        pub fn from_note<Note: ReceivedNoteAndMetadata>(
-            note: &Note,
-            block_height: BlockHeight,
-            date_time: u64,
-            price: Option<f64>,
-            txid: TxId,
-        ) -> Self {
-            Self {
-                amount: note.value(),
-                balance_delta: (note.value() as i64),
-                memo: note.memo().clone().and_then(|x| {
-                    if let Memo::Text(textmemo) = x {
-                        Some(textmemo)
-                    } else {
-                        None
-                    }
-                }),
-                pool: Note::pool(),
-                block_height,
-                datetime: date_time,
-                price,
-                txid,
-            }
-        }
-        pub fn from_transparent_output(
-            toutput: &ReceivedTransparentOutput,
-            block_height: BlockHeight,
-            date_time: u64,
-            price: Option<f64>,
-            txid: TxId,
-        ) -> Self {
-            Self {
-                amount: toutput.value,
-                balance_delta: (toutput.value as i64),
-                memo: None,
-                pool: Pool::Transparent,
-                block_height,
-                datetime: date_time,
-                price,
-                txid,
-            }
-        }
-    }
-
-    impl SelfSend {
-        pub fn new(
-            fee: u64,
-            memos: Vec<TextMemo>,
-            block_height: BlockHeight,
-            date_time: u64,
-            price: Option<f64>,
-            txid: TxId,
-        ) -> Self {
-            Self {
-                balance_delta: -(fee as i64),
-                fee,
-                memos,
-                block_height,
-                datetime: date_time,
-                price,
-                txid,
             }
         }
     }
