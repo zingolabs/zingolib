@@ -520,15 +520,6 @@ pub mod summaries {
     /// The MobileTx is the zingolib representation of
     /// transactions in the format most useful for
     /// consumption in mobile and mobile-like UI
-    impl From<ValueTransfer> for json::JsonValue {
-        fn from(value: ValueTransfer) -> Self {
-            match value {
-                ValueTransfer::Sent(sent) => sent.into(),
-                ValueTransfer::Received(receive) => receive.into(),
-                ValueTransfer::SendToSelf(selfsend) => selfsend.into(),
-            }
-        }
-    }
     pub struct ValueTransfer {
         pub amount: Option<u64>,
         pub balance_delta: i64,
@@ -537,7 +528,7 @@ pub mod summaries {
         pub fee: Option<u64>,
         pub kind: ValueTransferKind,
         pub memos: Vec<zcash_primitives::memo::TextMemo>,
-        pub pool: Option<Pool>,
+        pub pool: Option<Pool>, // TODO: Which pool? Receiver's?  Let's rename this type to make it obvious!
         pub price: Option<f64>,
         pub to_address: zcash_address::ZcashAddress,
         pub txid: TxId,
@@ -549,67 +540,40 @@ pub mod summaries {
     }
     impl From<ValueTransfer> for JsonValue {
         fn from(value: ValueTransfer) -> Self {
-            match value {
-                Sent => object! {
-                    "amount": value.amount.expect("Sends to have amounts."),
+            let mut temp_object = object! {
+                    "amount": value.amount.expect("Sends to have an amount."),
                     "balance_delta": value.balance_delta,
                     "block_height": u32::from(value.block_height),
                     "datetime": value.datetime,
                     "fee": None,
-                    "kind": "Send",
-                    "memos": value.memos.iter().map(String::from),
+                    "kind": "",
+                    "memos": JsonValue::from(value.memos.iter().cloned().map(String::from).collect()),
                     "pool": if let Some(pool) = value.pool { pool } else { None },
                     "price": if let Some(price) = value.price { price } else { None },
                     "to_address": value.to_address.encode(),
                     "txid": value.txid.to_string(),
-                },
-                Received => {}
-                SendToSelf => {}
+            };
+            match value.kind {
+                Sent => {
+                    temp_object["fee"] = None;
+                    temp_object["kind"] = "Sent";
+                    temp_object
+                }
+                Received => {
+                    temp_object["fee"] = None;
+                    temp_object["kind"] = "Received";
+                    temp_object
+                }
+                SendToSelf => {
+                    temp_object["amount"] = None;
+                    temp_object["fee"] = value.fee;
+                    temp_object["kind"] = "SendToSelf";
+                    temp_object["pool"] = None;
+                    temp_object["price"] = None;
+                    temp_object["to_address"] = None;
+                    temp_object
+                }
             }
-        }
-    }
-
-    impl From<Receive> for JsonValue {
-        fn from(value: Receive) -> Self {
-            object! {
-                "type": "Receive",
-                "amount": value.amount,
-                "balance_delta": value.balance_delta,
-                "block_height": u32::from(value.block_height),
-                "datetime": value.datetime,
-                "memo": value.memo.map(String::from),
-                "price": value.price,
-                "txid": value.txid.to_string(),
-            }
-        }
-    }
-    impl From<SelfSend> for JsonValue {
-        fn from(value: SelfSend) -> Self {
-            object! {
-                "type": "SelfSend",
-                "balance_delta": value.balance_delta,
-                "block_height": u32::from(value.block_height),
-                "datetime": value.datetime,
-                "fee": value.fee,
-                "memos": value.memos.iter().cloned().map(String::from).collect::<Vec<_>>(),
-                "price": value.price,
-                "txid": value.txid.to_string(),
-            }
-        }
-    }
-    impl From<Sent> for ValueTransfer {
-        fn from(value: Sent) -> Self {
-            Self::Sent(value)
-        }
-    }
-    impl From<Receive> for ValueTransfer {
-        fn from(value: Receive) -> Self {
-            Self::Received(value)
-        }
-    }
-    impl From<SelfSend> for ValueTransfer {
-        fn from(value: SelfSend) -> Self {
-            Self::SendToSelf(value)
         }
     }
 
