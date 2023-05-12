@@ -1796,8 +1796,8 @@ impl LightClient {
                     });
                 }
                 for received_sapling in transaction_md.sapling_notes.iter() {
-                    let memos = if let Some(Memo::Text(textmemo)) = received_sapling.memo {
-                        vec![textmemo]
+                    let memos = if let Some(Memo::Text(textmemo)) = &received_sapling.memo {
+                        vec![textmemo.clone()]
                     } else {
                         vec![]
                     };
@@ -1816,8 +1816,8 @@ impl LightClient {
                     });
                 }
                 for received_orchard in transaction_md.orchard_notes.iter() {
-                    let memos = if let Some(Memo::Text(textmemo)) = received_orchard.memo {
-                        vec![textmemo]
+                    let memos = if let Some(Memo::Text(textmemo)) = &received_orchard.memo {
+                        vec![textmemo.clone()]
                     } else {
                         vec![]
                     };

@@ -541,9 +541,9 @@ pub mod summaries {
     impl From<ValueTransferKind> for JsonValue {
         fn from(value: ValueTransferKind) -> Self {
             match value {
-                Sent => JsonValue::String(String::from("Sent")),
-                Received => JsonValue::String(String::from("Received")),
-                SendToSelf => JsonValue::String(String::from("SendToSelf")),
+                ValueTransferKind::Sent => JsonValue::String(String::from("Sent")),
+                ValueTransferKind::Received => JsonValue::String(String::from("Received")),
+                ValueTransferKind::SendToSelf => JsonValue::String(String::from("SendToSelf")),
             }
         }
     }
@@ -562,7 +562,7 @@ pub mod summaries {
                     "txid": value.txid.to_string(),
             };
             match value.kind {
-                Sent => {
+                ValueTransferKind::Sent => {
                     temp_object["fee"] = JsonValue::from("None".to_string());
                     temp_object["kind"] = JsonValue::from(ValueTransferKind::Sent);
                     temp_object["to_address"] = JsonValue::from(
@@ -573,13 +573,13 @@ pub mod summaries {
                     );
                     temp_object
                 }
-                Received => {
+                ValueTransferKind::Received => {
                     temp_object["fee"] = JsonValue::from("None".to_string());
                     temp_object["kind"] = JsonValue::from(ValueTransferKind::Received);
                     temp_object["to_address"] = JsonValue::from("None".to_string());
                     temp_object
                 }
-                SendToSelf => {
+                ValueTransferKind::SendToSelf => {
                     temp_object["amount"] = JsonValue::from("None".to_string());
                     temp_object["fee"] = JsonValue::from(value.fee);
                     temp_object["kind"] = JsonValue::from(ValueTransferKind::SendToSelf);

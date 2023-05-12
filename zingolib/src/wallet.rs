@@ -94,9 +94,9 @@ pub enum Pool {
 impl From<Pool> for JsonValue {
     fn from(value: Pool) -> Self {
         match value {
-            Sapling => JsonValue::String(String::from("Sapling")),
-            Orchard => JsonValue::String(String::from("Orchard")),
-            Transparent => JsonValue::String(String::from("Transparent")),
+            Pool::Sapling => JsonValue::String(String::from("Sapling")),
+            Pool::Orchard => JsonValue::String(String::from("Orchard")),
+            Pool::Transparent => JsonValue::String(String::from("Transparent")),
         }
     }
 }
