@@ -534,6 +534,13 @@ pub mod summaries {
         Received(Receive),
         SendToSelf(SelfSend),
     }
+    pub fn balance_delta(vt: ValueTransfer) -> i64 {
+        match vt {
+            ValueTransfer::Sent(s) => s.balance_delta,
+            ValueTransfer::Received(r) => r.balance_delta,
+            ValueTransfer::SendToSelf(sts) => sts.balance_delta,
+        }
+    }
     impl From<Sent> for JsonValue {
         fn from(value: Sent) -> Self {
             object! {

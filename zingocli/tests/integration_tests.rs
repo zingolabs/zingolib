@@ -785,6 +785,11 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         .await
         .unwrap();
     bump_and_check!(o: 7_000 s: 0 t: 0);
+    let summaries = pool_migration_client.do_list_txsummaries().await;
+    let total = summaries
+        .iter()
+        .map(|x| zingolib::wallet::data::summaries::balance_delta(x))
+        .sum();
 
     // 4 tz transparent and sapling to orchard
     pool_migration_client
