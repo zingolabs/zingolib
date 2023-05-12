@@ -554,32 +554,38 @@ pub mod summaries {
                     "balance_delta": value.balance_delta,
                     "block_height": u32::from(value.block_height),
                     "datetime": value.datetime,
-                    "fee": None,
+                    "fee": JsonValue::from("None".to_string()),
                     "kind": "",
-                    "memos": JsonValue::from(value.memos.iter().cloned().map(String::from).collect()),
+                    "memos": value.memos.iter().cloned().map(String::from).collect::<Vec<String>>(),
                     "pool": value.pool,
                     "price": value.price,
-                    "to_address": value.to_address.encode(),
                     "txid": value.txid.to_string(),
             };
             match value.kind {
                 Sent => {
-                    temp_object["fee"] = None;
-                    temp_object["kind"] = "Sent";
+                    temp_object["fee"] = JsonValue::from(None);
+                    temp_object["kind"] = JsonValue::from(ValueTransferKind::Sent);
+                    temp_object["to_address"] = JsonValue::from(
+                        value
+                            .to_address
+                            .expect("To have a to_address when sending.")
+                            .encode(),
+                    );
                     temp_object
                 }
                 Received => {
-                    temp_object["fee"] = None;
-                    temp_object["kind"] = "Received";
+                    temp_object["fee"] = JsonValue::from(None);
+                    temp_object["kind"] = JsonValue::from(ValueTransferKind::Received);
+                    temp_object["to_address"] = JsonValue::from(None);
                     temp_object
                 }
                 SendToSelf => {
-                    temp_object["amount"] = None;
-                    temp_object["fee"] = value.fee;
-                    temp_object["kind"] = "SendToSelf";
-                    temp_object["pool"] = None;
-                    temp_object["price"] = None;
-                    temp_object["to_address"] = None;
+                    temp_object["amount"] = JsonValue::from(None);
+                    temp_object["fee"] = JsonValue::from(value.fee);
+                    temp_object["kind"] = JsonValue::from(ValueTransferKind::SendToSelf);
+                    temp_object["pool"] = JsonValue::from(None);
+                    temp_object["price"] = JsonValue::from(None);
+                    temp_object["to_address"] = JsonValue::from(None);
                     temp_object
                 }
             }
