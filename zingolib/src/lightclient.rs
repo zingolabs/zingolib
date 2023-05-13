@@ -1743,7 +1743,9 @@ impl LightClient {
         );
         match (tx_value_spent, (tx_value_received - tx_change_received)) {
             //TODO: This is probably an error, if we sent no value and also received no value why
-            //do we have this transaction stored?
+            //do we have this transaction stored? Recall the tx fee is part of the tx_value_spent
+            // Question (1): BUT it's possible to publish a 0-fee tx!!
+            // Question (2): What if we're sent a memo-obly transaction?
             (0, 0) => unreachable!(),
             // All received funds were change, this is a normal send
             (_spent, 0) => {
