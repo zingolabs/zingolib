@@ -515,7 +515,6 @@ pub mod summaries {
     /// transactions in the format most useful for
     /// consumption in mobile and mobile-like UI
     pub struct ValueTransfer {
-        pub balance_delta: i64,
         pub block_height: zcash_primitives::consensus::BlockHeight,
         pub datetime: u64,
         pub kind: ValueTransferKind,
@@ -548,7 +547,6 @@ pub mod summaries {
         fn from(value: ValueTransfer) -> Self {
             let mut temp_object = object! {
                     "amount": "",
-                    "balance_delta": value.balance_delta,
                     "block_height": u32::from(value.block_height),
                     "datetime": value.datetime,
                     "kind": "",

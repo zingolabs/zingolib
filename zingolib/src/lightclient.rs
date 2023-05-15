@@ -1765,7 +1765,6 @@ impl LightClient {
                             vec![]
                         };
                         summaries.push(ValueTransfer {
-                            balance_delta: -(*value as i64 + transaction_md.get_fee() as i64),
                             block_height,
                             datetime,
                             kind: ValueTransferKind::Sent {
@@ -1783,7 +1782,6 @@ impl LightClient {
             (0, _received) => {
                 for received_transparent in transaction_md.received_utxos.iter() {
                     summaries.push(ValueTransfer {
-                        balance_delta: received_transparent.value as i64,
                         block_height,
                         datetime,
                         kind: ValueTransferKind::Received {
@@ -1802,7 +1800,6 @@ impl LightClient {
                         vec![]
                     };
                     summaries.push(ValueTransfer {
-                        balance_delta: received_sapling.value() as i64,
                         block_height,
                         datetime,
                         kind: ValueTransferKind::Received {
@@ -1821,7 +1818,6 @@ impl LightClient {
                         vec![]
                     };
                     summaries.push(ValueTransfer {
-                        balance_delta: received_orchard.value() as i64,
                         block_height,
                         datetime,
                         kind: ValueTransferKind::Received {
@@ -1836,10 +1832,8 @@ impl LightClient {
             }
             // We spent funds, and received them as non-change. This is most likely a send-to-self,
             // TODO: Figure out what kind of special-case handling we want for these
-            (spent, _non_change_received) => {
-                let fee = Some(spent - tx_value_received);
+            (_spent, _non_change_received) => {
                 summaries.push(ValueTransfer {
-                    balance_delta: -(fee.unwrap() as i64),
                     block_height,
                     datetime,
                     kind: ValueTransferKind::SendToSelf,
