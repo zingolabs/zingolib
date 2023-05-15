@@ -710,6 +710,17 @@ impl TransactionMetadata {
     {
         D::sum_pool_change(self)
     }
+    pub fn pool_value_received<D: DomainWalletExt>(&self) -> u64
+    where
+        <D as Domain>::Note: PartialEq + Clone,
+        <D as Domain>::Recipient: traits::Recipient,
+    {
+        D::to_notes_vec(self)
+            .iter()
+            .map(|note_and_metadata| note_and_metadata.value())
+            .sum()
+    }
+
     pub fn read<R: Read>(mut reader: R, wallet_capability: &WalletCapability) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
 
@@ -820,17 +831,6 @@ impl TransactionMetadata {
                 .iter()
                 .map(|utxo| utxo.value)
                 .sum::<u64>()
-    }
-
-    pub fn pool_value_received<D: DomainWalletExt>(&self) -> u64
-    where
-        <D as Domain>::Note: PartialEq + Clone,
-        <D as Domain>::Recipient: traits::Recipient,
-    {
-        D::to_notes_vec(self)
-            .iter()
-            .map(|note_and_metadata| note_and_metadata.value())
-            .sum()
     }
 
     pub fn total_value_spent(&self) -> u64 {
