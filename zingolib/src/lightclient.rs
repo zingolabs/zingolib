@@ -1765,11 +1765,13 @@ impl LightClient {
                             vec![]
                         };
                         summaries.push(ValueTransfer {
-                            amount: Some(*value),
                             balance_delta: -(*value as i64 + transaction_md.get_fee() as i64),
                             block_height,
                             datetime,
-                            kind: ValueTransferKind::Sent { to_address },
+                            kind: ValueTransferKind::Sent {
+                                to_address,
+                                amount: *value,
+                            },
                             memos,
                             price,
                             txid,
@@ -1781,12 +1783,12 @@ impl LightClient {
             (0, _received) => {
                 for received_transparent in transaction_md.received_utxos.iter() {
                     summaries.push(ValueTransfer {
-                        amount: Some(received_transparent.value),
                         balance_delta: received_transparent.value as i64,
                         block_height,
                         datetime,
                         kind: ValueTransferKind::Received {
                             pool: Pool::Transparent,
+                            amount: received_transparent.value,
                         },
                         memos: vec![],
                         price,
@@ -1800,12 +1802,12 @@ impl LightClient {
                         vec![]
                     };
                     summaries.push(ValueTransfer {
-                        amount: Some(received_sapling.value()),
                         balance_delta: received_sapling.value() as i64,
                         block_height,
                         datetime,
                         kind: ValueTransferKind::Received {
                             pool: Pool::Sapling,
+                            amount: received_sapling.value(),
                         },
                         memos,
                         price,
@@ -1819,12 +1821,12 @@ impl LightClient {
                         vec![]
                     };
                     summaries.push(ValueTransfer {
-                        amount: Some(received_orchard.value()),
                         balance_delta: received_orchard.value() as i64,
                         block_height,
                         datetime,
                         kind: ValueTransferKind::Received {
                             pool: Pool::Orchard,
+                            amount: received_orchard.value(),
                         },
                         memos,
                         price,
@@ -1837,7 +1839,6 @@ impl LightClient {
             (spent, _non_change_received) => {
                 let fee = Some(spent - tx_value_received);
                 summaries.push(ValueTransfer {
-                    amount: None,
                     balance_delta: -(fee.unwrap() as i64),
                     block_height,
                     datetime,

@@ -515,7 +515,6 @@ pub mod summaries {
     /// transactions in the format most useful for
     /// consumption in mobile and mobile-like UI
     pub struct ValueTransfer {
-        pub amount: Option<u64>,
         pub balance_delta: i64,
         pub block_height: zcash_primitives::consensus::BlockHeight,
         pub datetime: u64,
@@ -527,10 +526,12 @@ pub mod summaries {
     #[derive(Clone)]
     pub enum ValueTransferKind {
         Sent {
+            amount: u64,
             to_address: zcash_address::ZcashAddress,
         },
         Received {
             pool: Pool,
+            amount: u64,
         },
         SendToSelf,
     }
@@ -546,7 +547,7 @@ pub mod summaries {
     impl From<ValueTransfer> for JsonValue {
         fn from(value: ValueTransfer) -> Self {
             let mut temp_object = object! {
-                    "amount": value.amount.expect("Sends to have an amount."),
+                    "amount": "",
                     "balance_delta": value.balance_delta,
                     "block_height": u32::from(value.block_height),
                     "datetime": value.datetime,
@@ -557,12 +558,17 @@ pub mod summaries {
                     "txid": value.txid.to_string(),
             };
             match value.kind {
-                ValueTransferKind::Sent { ref to_address } => {
+                ValueTransferKind::Sent {
+                    ref to_address,
+                    amount,
+                } => {
+                    temp_object["amount"] = JsonValue::from(amount);
                     temp_object["kind"] = JsonValue::from(&value.kind);
                     temp_object["to_address"] = JsonValue::from(to_address.encode());
                     temp_object
                 }
-                ValueTransferKind::Received { pool } => {
+                ValueTransferKind::Received { pool, amount } => {
+                    temp_object["amount"] = JsonValue::from(amount);
                     temp_object["kind"] = JsonValue::from(&value.kind);
                     temp_object["pool"] = JsonValue::from(pool);
                     temp_object
