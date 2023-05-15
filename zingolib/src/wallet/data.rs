@@ -519,7 +519,6 @@ pub mod summaries {
         pub balance_delta: i64,
         pub block_height: zcash_primitives::consensus::BlockHeight,
         pub datetime: u64,
-        pub fee: Option<u64>,
         pub kind: ValueTransferKind,
         pub memos: Vec<zcash_primitives::memo::TextMemo>,
         pub pool: Option<Pool>, // TODO: Which pool? Receiver's?  Let's rename this type to make it obvious!
