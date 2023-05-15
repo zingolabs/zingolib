@@ -847,7 +847,7 @@ impl TransactionMetadata {
         ]
     }
 
-    pub fn get_fee(&self) -> u64 {
+    pub fn get_transaction_fee(&self) -> u64 {
         self.total_value_spent() - (self.value_outgoing() + self.total_change_returned())
     }
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
