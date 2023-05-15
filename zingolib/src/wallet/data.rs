@@ -522,6 +522,16 @@ pub mod summaries {
         pub price: Option<f64>,
         pub txid: TxId,
     }
+    impl ValueTransfer {
+        fn balance_delta(&self) -> i64 {
+            use ValueTransferKind::*;
+            match self.kind {
+                Sent { amount, .. } => -1 * amount as i64,
+                Received { amount, .. } => amount as i64,
+                SendToSelf => 0,
+            }
+        }
+    }
     #[derive(Clone)]
     pub enum ValueTransferKind {
         Sent {
