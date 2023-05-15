@@ -1749,14 +1749,6 @@ impl LightClient {
             (0, 0) => unreachable!(),
             // All received funds were change, this is a normal send
             (_spent, 0) => {
-                let mut fee = Some(
-                    tx_value_spent
-                        - transaction_md
-                            .outgoing_tx_data
-                            .iter()
-                            .fold(0, |running_total, tx_data| tx_data.value + running_total)
-                        - tx_change_received,
-                );
                 for OutgoingTxData {
                     to_address,
                     value,
@@ -1774,10 +1766,9 @@ impl LightClient {
                         };
                         summaries.push(ValueTransfer {
                             amount: Some(*value),
-                            balance_delta: -(*value as i64 + fee.unwrap_or(0) as i64),
+                            balance_delta: -(*value as i64 + transaction_md.get_fee() as i64),
                             block_height,
                             datetime,
-                            fee,
                             kind: ValueTransferKind::Sent,
                             memos,
                             pool: None,
@@ -1785,9 +1776,6 @@ impl LightClient {
                             to_address: Some(to_address),
                             txid,
                         });
-                        // We've accounted for the fee in the first send, but the fee
-                        // is for the full transaction
-                        fee = None;
                     }
                 }
             }
@@ -1799,7 +1787,6 @@ impl LightClient {
                         balance_delta: received_transparent.value as i64,
                         block_height,
                         datetime,
-                        fee: None,
                         kind: ValueTransferKind::Received,
                         memos: vec![],
                         pool: Some(Pool::Transparent),
@@ -1819,7 +1806,6 @@ impl LightClient {
                         balance_delta: received_sapling.value() as i64,
                         block_height,
                         datetime,
-                        fee: None,
                         kind: ValueTransferKind::Received,
                         memos,
                         pool: Some(Pool::Sapling),
@@ -1839,7 +1825,6 @@ impl LightClient {
                         balance_delta: received_orchard.value() as i64,
                         block_height,
                         datetime,
-                        fee: None,
                         kind: ValueTransferKind::Received,
                         memos,
                         pool: Some(Pool::Orchard),
@@ -1858,7 +1843,6 @@ impl LightClient {
                     balance_delta: -(fee.unwrap() as i64),
                     block_height,
                     datetime,
-                    fee,
                     kind: ValueTransferKind::SendToSelf,
                     memos: transaction_md
                         .sapling_notes
