@@ -2305,4 +2305,30 @@ async fn zero_value_change() {
     drop(child_process_handler);
 }
 
+#[tokio::test]
+async fn dust_sends_change_correctly() {
+    let value = 100_000_000;
+    let (regtest_manager, child_process_handler, faucet, recipient, _txid) =
+        scenarios::faucet_prefunded_orchard_recipient(value).await;
+
+    // Send of less that transaction fee
+    let sent_value = 1000;
+    let _sent_transaction_id = recipient
+        .do_send(vec![(
+            &get_base_address!(faucet, "unified"),
+            sent_value,
+            None,
+        )])
+        .await
+        .unwrap();
+
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 5)
+        .await
+        .unwrap();
+
+    println!("{}", recipient.do_list_transactions().await.pretty(4));
+    println!("{}", recipient.do_balance().await.pretty(4));
+    drop(child_process_handler);
+}
+
 pub const TEST_SEED: &str = "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise";
