@@ -1769,11 +1769,9 @@ impl LightClient {
                             balance_delta: -(*value as i64 + transaction_md.get_fee() as i64),
                             block_height,
                             datetime,
-                            kind: ValueTransferKind::Sent,
+                            kind: ValueTransferKind::Sent { to_address },
                             memos,
-                            pool: None,
                             price,
-                            to_address: Some(to_address),
                             txid,
                         });
                     }
@@ -1787,11 +1785,11 @@ impl LightClient {
                         balance_delta: received_transparent.value as i64,
                         block_height,
                         datetime,
-                        kind: ValueTransferKind::Received,
+                        kind: ValueTransferKind::Received {
+                            pool: Pool::Transparent,
+                        },
                         memos: vec![],
-                        pool: Some(Pool::Transparent),
                         price,
-                        to_address: None,
                         txid,
                     });
                 }
@@ -1806,11 +1804,11 @@ impl LightClient {
                         balance_delta: received_sapling.value() as i64,
                         block_height,
                         datetime,
-                        kind: ValueTransferKind::Received,
+                        kind: ValueTransferKind::Received {
+                            pool: Pool::Sapling,
+                        },
                         memos,
-                        pool: Some(Pool::Sapling),
                         price,
-                        to_address: None,
                         txid,
                     });
                 }
@@ -1825,11 +1823,11 @@ impl LightClient {
                         balance_delta: received_orchard.value() as i64,
                         block_height,
                         datetime,
-                        kind: ValueTransferKind::Received,
+                        kind: ValueTransferKind::Received {
+                            pool: Pool::Orchard,
+                        },
                         memos,
-                        pool: Some(Pool::Orchard),
                         price,
-                        to_address: None,
                         txid,
                     });
                 }
@@ -1862,9 +1860,7 @@ impl LightClient {
                             }
                         })
                         .collect(),
-                    pool: None,
                     price,
-                    to_address: None,
                     txid,
                 });
             }

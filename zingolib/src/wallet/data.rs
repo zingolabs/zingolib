@@ -521,21 +521,24 @@ pub mod summaries {
         pub datetime: u64,
         pub kind: ValueTransferKind,
         pub memos: Vec<zcash_primitives::memo::TextMemo>,
-        pub pool: Option<Pool>, // TODO: Which pool? Receiver's?  Let's rename this type to make it obvious!
         pub price: Option<f64>,
-        pub to_address: Option<zcash_address::ZcashAddress>,
         pub txid: TxId,
     }
+    #[derive(Clone)]
     pub enum ValueTransferKind {
-        Sent,
-        Received,
+        Sent {
+            to_address: zcash_address::ZcashAddress,
+        },
+        Received {
+            pool: Pool,
+        },
         SendToSelf,
     }
-    impl From<ValueTransferKind> for JsonValue {
-        fn from(value: ValueTransferKind) -> Self {
+    impl From<&ValueTransferKind> for JsonValue {
+        fn from(value: &ValueTransferKind) -> Self {
             match value {
-                ValueTransferKind::Sent => JsonValue::String(String::from("Sent")),
-                ValueTransferKind::Received => JsonValue::String(String::from("Received")),
+                ValueTransferKind::Sent { .. } => JsonValue::String(String::from("Sent")),
+                ValueTransferKind::Received { .. } => JsonValue::String(String::from("Received")),
                 ValueTransferKind::SendToSelf => JsonValue::String(String::from("SendToSelf")),
             }
         }
@@ -549,29 +552,24 @@ pub mod summaries {
                     "datetime": value.datetime,
                     "kind": "",
                     "memos": value.memos.iter().cloned().map(String::from).collect::<Vec<String>>(),
-                    "pool": value.pool,
+                    "pool": "",
                     "price": value.price,
                     "txid": value.txid.to_string(),
             };
             match value.kind {
-                ValueTransferKind::Sent => {
-                    temp_object["kind"] = JsonValue::from(ValueTransferKind::Sent);
-                    temp_object["to_address"] = JsonValue::from(
-                        value
-                            .to_address
-                            .expect("To have a to_address when sending.")
-                            .encode(),
-                    );
+                ValueTransferKind::Sent { ref to_address } => {
+                    temp_object["kind"] = JsonValue::from(&value.kind);
+                    temp_object["to_address"] = JsonValue::from(to_address.encode());
                     temp_object
                 }
-                ValueTransferKind::Received => {
-                    temp_object["kind"] = JsonValue::from(ValueTransferKind::Received);
-                    temp_object["to_address"] = JsonValue::from("None".to_string());
+                ValueTransferKind::Received { pool } => {
+                    temp_object["kind"] = JsonValue::from(&value.kind);
+                    temp_object["pool"] = JsonValue::from(pool);
                     temp_object
                 }
                 ValueTransferKind::SendToSelf => {
                     temp_object["amount"] = JsonValue::from("None".to_string());
-                    temp_object["kind"] = JsonValue::from(ValueTransferKind::SendToSelf);
+                    temp_object["kind"] = JsonValue::from(&value.kind);
                     temp_object["pool"] = JsonValue::from("None".to_string());
                     temp_object["price"] = JsonValue::from("None".to_string());
                     temp_object["to_address"] = JsonValue::from("None".to_string());
