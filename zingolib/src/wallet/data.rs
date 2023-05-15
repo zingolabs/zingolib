@@ -547,7 +547,6 @@ pub mod summaries {
                     "balance_delta": value.balance_delta,
                     "block_height": u32::from(value.block_height),
                     "datetime": value.datetime,
-                    "fee": JsonValue::from("None".to_string()),
                     "kind": "",
                     "memos": value.memos.iter().cloned().map(String::from).collect::<Vec<String>>(),
                     "pool": value.pool,
@@ -832,7 +831,11 @@ impl TransactionMetadata {
                 .map(|utxo| utxo.value)
                 .sum::<u64>()
     }
-
+    pub fn value_outgoing(&self) -> u64 {
+        self.outgoing_tx_data
+            .iter()
+            .fold(0, |running_total, tx_data| tx_data.value + running_total)
+    }
     pub fn total_value_spent(&self) -> u64 {
         self.value_spent_by_pool().iter().sum()
     }
@@ -845,6 +848,9 @@ impl TransactionMetadata {
         ]
     }
 
+    pub fn get_fee(&self) -> u64 {
+        self.total_value_spent() - (self.value_outgoing() + self.total_change_returned())
+    }
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
