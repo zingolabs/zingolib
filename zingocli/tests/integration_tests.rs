@@ -211,12 +211,12 @@ fn check_expected_balance_with_fvks(
     }
 }
 async fn build_fvk_client_capability(
-    fvks: &Vec<&Fvk>,
+    fvks: &[&Fvk],
     zingoconfig: &ZingoConfig,
 ) -> (LightClient, WalletCapability) {
     let ufvk = zcash_address::unified::Encoding::encode(
         &<Ufvk as zcash_address::unified::Encoding>::try_from_items(
-            fvks.clone().into_iter().cloned().collect(),
+            fvks.iter().copied().cloned().collect(),
         )
         .unwrap(),
         &zcash_address::Network::Regtest,
@@ -230,10 +230,12 @@ async fn build_fvk_client_capability(
         .clone();
     (viewkey_client, watch_wc)
 }
+
+#[allow(clippy::too_many_arguments)]
 fn check_view_capability_bounds(
     balance: &JsonValue,
     watch_wc: &WalletCapability,
-    fvks: &Vec<&Fvk>,
+    fvks: &[&Fvk],
     ovk: &Fvk,
     svk: &Fvk,
     tvk: &Fvk,
@@ -894,7 +896,7 @@ async fn send_orchard_back_and_forth() {
         "{}",
         JsonValue::from(faucet.do_list_txsummaries().await).pretty(4)
     );
-    println!("{}", JsonValue::from(faucet.do_balance().await).pretty(4));
+    println!("{}", faucet.do_balance().await.pretty(4));
 
     check_client_balances!(faucet, o: orch_change s: reward_and_fee t: 0);
 

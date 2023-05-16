@@ -73,9 +73,10 @@ impl FakeCompactBlock {
         // Create a fake Note for the account
         let mut rng = OsRng;
 
-        let mut cb = CompactBlock::default();
-
-        cb.height = height;
+        let mut cb = CompactBlock {
+            height,
+            ..Default::default()
+        };
         cb.hash.resize(32, 0);
         rng.fill_bytes(&mut cb.hash);
 
@@ -98,8 +99,10 @@ impl FakeCompactBlock {
         let to = fvk.default_address().1;
         let value = Amount::from_u64(1).unwrap();
 
-        let mut compact_transaction = CompactTx::default();
-        compact_transaction.hash = random_u8_32().to_vec();
+        let mut compact_transaction = CompactTx {
+            hash: random_u8_32().to_vec(),
+            ..Default::default()
+        };
 
         for _ in 0..num_outputs {
             // Create a fake Note for the account
@@ -110,8 +113,10 @@ impl FakeCompactBlock {
             );
 
             // Create a fake CompactBlock containing the note
-            let mut cout = CompactSaplingOutput::default();
-            cout.cmu = note.cmu().to_bytes().to_vec();
+            let cout = CompactSaplingOutput {
+                cmu: note.cmu().to_bytes().to_vec(),
+                ..Default::default()
+            };
 
             compact_transaction.outputs.push(cout);
         }
