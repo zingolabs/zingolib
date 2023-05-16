@@ -9,7 +9,7 @@ use crate::{
     grpc_connector::GrpcConnector,
     wallet::{
         data::{
-            summaries::ValueTransfer, summaries::ValueTransferKind, OutgoingTxData,
+            finsight, summaries::ValueTransfer, summaries::ValueTransferKind, OutgoingTxData,
             TransactionMetadata,
         },
         keys::{
@@ -730,7 +730,7 @@ impl LightClient {
         JsonValue::Array(consumer_ui_notes)
     }
 
-    pub async fn do_value_transfer_by_to_address(&self) -> HashMap<String, Vec<u64>> {
+    pub async fn do_value_transfer_by_to_address(&self) -> finsight::ValueToAddress {
         let summaries = self.do_list_txsummaries().await;
         let mut amount_by_address = HashMap::new();
         for summary in summaries {
@@ -738,8 +738,10 @@ impl LightClient {
             match summary.kind {
                 Sent { amount, to_address } => {
                     let address = to_address.encode();
-                    if !amount_by_address.contains_key(&address) {
-                        amount_by_address.insert(address, vec![amount]);
+                    if let std::collections::hash_map::Entry::Vacant(e) =
+                        amount_by_address.entry(address.clone())
+                    {
+                        e.insert(vec![amount]);
                     } else {
                         amount_by_address
                             .get_mut(&address)
@@ -749,8 +751,10 @@ impl LightClient {
                 }
                 Fee { amount } => {
                     let fee_key = "fee".to_string();
-                    if !amount_by_address.contains_key(&fee_key) {
-                        amount_by_address.insert(fee_key, vec![amount]);
+                    if let std::collections::hash_map::Entry::Vacant(e) =
+                        amount_by_address.entry(fee_key.clone())
+                    {
+                        e.insert(vec![amount]);
                     } else {
                         amount_by_address
                             .get_mut(&fee_key)
@@ -761,7 +765,7 @@ impl LightClient {
                 SendToSelf { .. } | Received { .. } => (),
             }
         }
-        amount_by_address
+        finsight::ValueToAddress(amount_by_address)
     }
 
     pub async fn do_list_txsummaries(&self) -> Vec<ValueTransfer> {

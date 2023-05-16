@@ -503,6 +503,9 @@ impl OutgoingTxData {
     }
 }
 
+pub mod finsight {
+    pub struct ValueToAddress(pub std::collections::HashMap<String, Vec<u64>>);
+}
 pub mod summaries {
     use std::collections::HashMap;
 
