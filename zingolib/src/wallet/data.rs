@@ -699,6 +699,12 @@ impl TransactionMetadata {
         }
     }
 
+    pub fn get_transaction_fee(&self) -> u64 {
+        self.total_value_spent().saturating_sub(
+            self.value_outgoing()
+                .saturating_add(self.total_change_returned()),
+        )
+    }
     pub fn is_outgoing_transaction(&self) -> bool {
         self.total_value_spent() > 0
     }
@@ -742,6 +748,7 @@ impl TransactionMetadata {
     {
         D::sum_pool_change(self)
     }
+
     pub fn pool_value_received<D: DomainWalletExt>(&self) -> u64
     where
         <D as Domain>::Note: PartialEq + Clone,
@@ -854,7 +861,6 @@ impl TransactionMetadata {
         self.pool_change_returned::<SaplingDomain<ChainType>>()
             + self.pool_change_returned::<OrchardDomain>()
     }
-
     pub fn total_value_received(&self) -> u64 {
         self.pool_value_received::<OrchardDomain>()
             + self.pool_value_received::<SaplingDomain<ChainType>>()
@@ -864,13 +870,14 @@ impl TransactionMetadata {
                 .map(|utxo| utxo.value)
                 .sum::<u64>()
     }
+    pub fn total_value_spent(&self) -> u64 {
+        self.value_spent_by_pool().iter().sum()
+    }
+
     pub fn value_outgoing(&self) -> u64 {
         self.outgoing_tx_data
             .iter()
             .fold(0, |running_total, tx_data| tx_data.value + running_total)
-    }
-    pub fn total_value_spent(&self) -> u64 {
-        self.value_spent_by_pool().iter().sum()
     }
 
     pub fn value_spent_by_pool(&self) -> [u64; 3] {
@@ -879,10 +886,6 @@ impl TransactionMetadata {
             self.total_sapling_value_spent,
             self.total_orchard_value_spent,
         ]
-    }
-
-    pub fn get_transaction_fee(&self) -> u64 {
-        self.total_value_spent() - (self.value_outgoing() + self.total_change_returned())
     }
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
