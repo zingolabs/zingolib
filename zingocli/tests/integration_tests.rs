@@ -785,6 +785,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         .await
         .unwrap();
     bump_and_check!(o: 7_000 s: 0 t: 0);
+    let summaries = pool_migration_client.do_list_txsummaries().await;
 
     // 4 tz transparent and sapling to orchard
     pool_migration_client
@@ -2325,6 +2326,42 @@ async fn dust_sends_change_correctly() {
 
     println!("{}", recipient.do_list_transactions().await.pretty(4));
     println!("{}", recipient.do_balance().await.pretty(4));
+    drop(child_process_handler);
+}
+
+#[tokio::test]
+async fn zero_value_receipts() {
+    let value = 100_000_000;
+    let (regtest_manager, child_process_handler, faucet, recipient, _txid) =
+        scenarios::faucet_prefunded_orchard_recipient(value).await;
+
+    let sent_value = 0;
+    let _sent_transaction_id = faucet
+        .do_send(vec![(
+            &get_base_address!(recipient, "unified"),
+            sent_value,
+            None,
+        )])
+        .await
+        .unwrap();
+
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 5)
+        .await
+        .unwrap();
+    let _sent_transaction_id = recipient
+        .do_send(vec![(&get_base_address!(faucet, "unified"), 1000, None)])
+        .await
+        .unwrap();
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 5)
+        .await
+        .unwrap();
+
+    println!("{}", recipient.do_list_transactions().await.pretty(4));
+    println!("{}", recipient.do_balance().await.pretty(4));
+    println!(
+        "{}",
+        JsonValue::from(recipient.do_list_txsummaries().await).pretty(4)
+    );
     drop(child_process_handler);
 }
 
