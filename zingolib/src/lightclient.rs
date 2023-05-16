@@ -853,7 +853,7 @@ impl LightClient {
             log::debug!("do_save entered");
 
             // on ios and android just return ok
-            ok(())
+            Ok(())
         }
 
         #[cfg(not(any(target_os = "ios", target_os = "android")))]
