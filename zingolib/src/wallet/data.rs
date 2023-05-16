@@ -700,10 +700,7 @@ impl TransactionMetadata {
     }
 
     pub fn get_transaction_fee(&self) -> u64 {
-        self.total_value_spent().saturating_sub(
-            self.value_outgoing()
-                .saturating_add(self.total_change_returned()),
-        )
+        self.total_value_spent() - (self.value_outgoing() + self.total_change_returned())
     }
     pub fn is_outgoing_transaction(&self) -> bool {
         self.total_value_spent() > 0
