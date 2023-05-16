@@ -523,7 +523,7 @@ pub mod summaries {
         pub txid: TxId,
     }
     impl ValueTransfer {
-        fn amount(&self) -> i64 {
+        pub fn amount(&self) -> i64 {
             use ValueTransferKind::*;
             match self.kind {
                 Sent { amount, .. } => -(amount as i64),

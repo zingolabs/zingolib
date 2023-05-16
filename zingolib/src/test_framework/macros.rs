@@ -43,7 +43,7 @@ macro_rules! check_client_balances {
             .do_list_txsummaries()
             .await
             .iter()
-            .map(|transfer| transfer.kind.amount)
+            .map(|transfer| transfer.amount())
             .sum::<i64>();
         assert_eq!(
             balance["orchard_balance"].as_i64().unwrap_or(0)
