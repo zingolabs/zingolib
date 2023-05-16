@@ -868,6 +868,30 @@ impl Command for ValueTxSummariesCommand {
         })
     }
 }
+struct ValueToAddressCommand {}
+impl Command for ValueToAddressCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Get an object where keys are addresses and values are total value sent to that address.
+            usage:
+            value_to_address
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Show by address value transfers for this seed."
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+        if args.len() > 1 {
+            return format!("didn't understand arguments\n{}", self.help());
+        }
+
+        RT.block_on(async move {
+            json::JsonValue::from(lightclient.do_total_value_to_address().await).pretty(2)
+        })
+    }
+}
 struct SetOptionCommand {}
 impl Command for SetOptionCommand {
     fn help(&self) -> &'static str {
@@ -1217,7 +1241,7 @@ impl Command for QuitCommand {
 }
 
 pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
-    let entries: [(&'static str, Box<dyn Command>); 30] = [
+    let entries: [(&'static str, Box<dyn Command>); 31] = [
         ("sync", Box::new(SyncCommand {})),
         ("syncstatus", Box::new(SyncStatusCommand {})),
         ("encryptmessage", Box::new(EncryptMessageCommand {})),
@@ -1234,6 +1258,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("sendprogress", Box::new(SendProgressCommand {})),
         ("setoption", Box::new(SetOptionCommand {})),
         ("summaries", Box::new(ValueTxSummariesCommand {})),
+        ("value_to_address", Box::new(ValueToAddressCommand {})),
         ("getoption", Box::new(GetOptionCommand {})),
         ("import", Box::new(ImportCommand {})),
         ("export", Box::new(ExportCommand {})),
