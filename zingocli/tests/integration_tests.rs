@@ -785,7 +785,6 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         .await
         .unwrap();
     bump_and_check!(o: 7_000 s: 0 t: 0);
-    let summaries = pool_migration_client.do_list_txsummaries().await;
 
     // 4 tz transparent and sapling to orchard
     pool_migration_client
@@ -850,9 +849,13 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         .await
         .unwrap();
     bump_and_check!(o: 3_000 s: 0 t: 0);
-    log::info!(
+    println!(
         "{}",
         json::stringify_pretty(pool_migration_client.do_list_transactions().await, 4)
+    );
+    println!(
+        "{}",
+        JsonValue::from(pool_migration_client.do_list_txsummaries().await).pretty(4)
     );
     drop(child_process_handler);
 }
