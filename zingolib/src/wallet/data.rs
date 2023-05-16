@@ -504,7 +504,18 @@ impl OutgoingTxData {
 }
 
 pub mod finsight {
-    pub struct ValueToAddress(pub std::collections::HashMap<String, Vec<u64>>);
+    pub struct ValuesSentToAddress(pub std::collections::HashMap<String, Vec<u64>>);
+    pub struct TotalToAddress(pub std::collections::HashMap<String, u64>);
+    impl From<TotalToAddress> for json::JsonValue {
+        fn from(value: TotalToAddress) -> Self {
+            let mut jsonified = json::object!();
+            let hm = value.0;
+            for (key, val) in hm.iter() {
+                jsonified[key] = json::JsonValue::from(*val);
+            }
+            jsonified
+        }
+    }
 }
 pub mod summaries {
     use std::collections::HashMap;

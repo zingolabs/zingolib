@@ -730,7 +730,7 @@ impl LightClient {
         JsonValue::Array(consumer_ui_notes)
     }
 
-    pub async fn do_value_transfer_by_to_address(&self) -> finsight::ValueToAddress {
+    async fn value_transfer_by_to_address(&self) -> finsight::ValuesSentToAddress {
         let summaries = self.do_list_txsummaries().await;
         let mut amount_by_address = HashMap::new();
         for summary in summaries {
@@ -765,9 +765,18 @@ impl LightClient {
                 SendToSelf { .. } | Received { .. } => (),
             }
         }
-        finsight::ValueToAddress(amount_by_address)
+        finsight::ValuesSentToAddress(amount_by_address)
     }
 
+    pub async fn do_total_value_to_address(&self) -> finsight::TotalToAddress {
+        let values_sent_to_addresses = self.value_transfer_by_to_address().await;
+        let mut by_address_total = HashMap::new();
+        for key in values_sent_to_addresses.0.keys() {
+            let sum = values_sent_to_addresses.0[key].iter().sum();
+            by_address_total.insert(key.clone(), sum);
+        }
+        finsight::TotalToAddress(by_address_total)
+    }
     pub async fn do_list_txsummaries(&self) -> Vec<ValueTransfer> {
         let mut summaries: Vec<ValueTransfer> = Vec::new();
 
