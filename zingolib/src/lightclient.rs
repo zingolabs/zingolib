@@ -789,17 +789,7 @@ impl LightClient {
             .current
             .iter()
         {
-            let tx_value_spent = transaction_md.total_value_spent();
-            let tx_value_received = transaction_md.total_value_received();
-            let tx_change_received = transaction_md.total_change_returned();
-            LightClient::tx_summary_matcher(
-                &mut summaries,
-                *txid,
-                transaction_md,
-                tx_value_spent,
-                tx_value_received,
-                tx_change_received,
-            );
+            LightClient::tx_summary_matcher(&mut summaries, *txid, transaction_md);
             let tx_fee = transaction_md.get_transaction_fee();
             let (block_height, datetime, price) = (
                 transaction_md.block_height,
@@ -1794,23 +1784,25 @@ impl LightClient {
         summaries: &mut Vec<ValueTransfer>,
         txid: TxId,
         transaction_md: &TransactionMetadata,
-        tx_value_spent: u64,
-        tx_value_received: u64,
-        tx_change_received: u64,
     ) {
         let (block_height, datetime, price) = (
             transaction_md.block_height,
             transaction_md.datetime,
             transaction_md.price,
         );
-        match (tx_value_spent, (tx_value_received - tx_change_received)) {
+        match (
+            !transaction_md.outgoing_tx_data.is_empty(),
+            !(transaction_md.sapling_notes.is_empty()
+                && transaction_md.orchard_notes.is_empty()
+                && transaction_md.received_utxos.is_empty()),
+        ) {
             //TODO: This is probably an error, if we sent no value and also received no value why
             //do we have this transaction stored? Recall the tx fee is part of the tx_value_spent
             // Question (1): BUT it's possible to publish a 0-fee tx!!
             // Question (2): What if we're sent a memo-obly transaction?
-            (0, 0) => unreachable!(),
+            (false, false) => unreachable!("{:#?}", transaction_md),
             // All received funds were change, this is a normal send
-            (_spent, 0) => {
+            (true, false) => {
                 for OutgoingTxData {
                     to_address,
                     value,
@@ -1841,7 +1833,7 @@ impl LightClient {
                 }
             }
             // No funds spent, this is a normal receipt
-            (0, _received) => {
+            (false, true) => {
                 for received_transparent in transaction_md.received_utxos.iter() {
                     summaries.push(ValueTransfer {
                         block_height,
@@ -1894,7 +1886,7 @@ impl LightClient {
             }
             // We spent funds, and received them as non-change. This is most likely a send-to-self,
             // TODO: Figure out what kind of special-case handling we want for these
-            (_spent, _non_change_received) => {
+            (true, true) => {
                 summaries.push(ValueTransfer {
                     block_height,
                     datetime,
