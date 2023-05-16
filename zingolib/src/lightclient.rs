@@ -28,6 +28,7 @@ use log::{debug, error, warn};
 use orchard::note_encryption::OrchardDomain;
 use std::{
     cmp::{self, Ordering},
+    collections::HashMap,
     fs::File,
     io::{self, BufReader, Error, ErrorKind, Read, Write},
     path::Path,
@@ -729,29 +730,38 @@ impl LightClient {
         JsonValue::Array(consumer_ui_notes)
     }
 
-    pub async fn do_value_transfer_by_to_address(&self) -> Vec<(Address, u64)> {
+    pub async fn do_value_transfer_by_to_address(&self) -> HashMap<String, Vec<u64>> {
         let summaries = self.do_list_txsummaries().await;
         let mut amount_by_address = HashMap::new();
         for summary in summaries {
+            use ValueTransferKind::*;
             match summary.kind {
-                ValueTransferKind::Sent { amount, to_address } => {
-                    let address = to_address.to_string();
-                    if !amount_by_address.contains(address) {
+                Sent { amount, to_address } => {
+                    let address = to_address.encode();
+                    if !amount_by_address.contains_key(&address) {
                         amount_by_address.insert(address, vec![amount]);
                     } else {
-                        amount_by_address.get(address).push(amount);
-                    }
+                        amount_by_address
+                            .get_mut(&address)
+                            .expect("a vec of u64")
+                            .push(amount);
+                    };
                 }
-                ValueTransferKind::Fee { amount } => {
+                Fee { amount } => {
                     let fee_key = "fee".to_string();
-                    if !amount_by_address.contains(fee_key) {
+                    if !amount_by_address.contains_key(&fee_key) {
                         amount_by_address.insert(fee_key, vec![amount]);
                     } else {
-                        amount_by_address.get(fee_key).push(amount);
-                    }
+                        amount_by_address
+                            .get_mut(&fee_key)
+                            .expect("a vec of u64.")
+                            .push(amount);
+                    };
                 }
+                SendToSelf { .. } | Received { .. } => (),
             }
         }
+        amount_by_address
     }
 
     pub async fn do_list_txsummaries(&self) -> Vec<ValueTransfer> {
