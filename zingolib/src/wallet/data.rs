@@ -523,10 +523,11 @@ pub mod summaries {
         pub txid: TxId,
     }
     impl ValueTransfer {
-        fn balance_delta(&self) -> i64 {
+        fn amount(&self) -> i64 {
             use ValueTransferKind::*;
             match self.kind {
-                Sent { amount, .. } => -1 * amount as i64,
+                Sent { amount, .. } => -(amount as i64),
+                Fee { amount, .. } => -(amount as i64),
                 Received { amount, .. } => amount as i64,
                 SendToSelf => 0,
             }
@@ -543,6 +544,9 @@ pub mod summaries {
             amount: u64,
         },
         SendToSelf,
+        Fee {
+            amount: u64,
+        },
     }
     impl From<&ValueTransferKind> for JsonValue {
         fn from(value: &ValueTransferKind) -> Self {
@@ -550,6 +554,7 @@ pub mod summaries {
                 ValueTransferKind::Sent { .. } => JsonValue::String(String::from("Sent")),
                 ValueTransferKind::Received { .. } => JsonValue::String(String::from("Received")),
                 ValueTransferKind::SendToSelf => JsonValue::String(String::from("SendToSelf")),
+                ValueTransferKind::Fee { .. } => JsonValue::String(String::from("Fee")),
             }
         }
     }
@@ -573,6 +578,11 @@ pub mod summaries {
                     temp_object["amount"] = JsonValue::from(amount);
                     temp_object["kind"] = JsonValue::from(&value.kind);
                     temp_object["to_address"] = JsonValue::from(to_address.encode());
+                    temp_object
+                }
+                ValueTransferKind::Fee { amount } => {
+                    temp_object["amount"] = JsonValue::from(amount);
+                    temp_object["kind"] = JsonValue::from(&value.kind);
                     temp_object
                 }
                 ValueTransferKind::Received { pool, amount } => {

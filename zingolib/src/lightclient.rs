@@ -751,7 +751,21 @@ impl LightClient {
                 tx_value_spent,
                 tx_value_received,
                 tx_change_received,
-            )
+            );
+            let tx_fee = transaction_md.get_transaction_fee();
+            let (block_height, datetime, price) = (
+                transaction_md.block_height,
+                transaction_md.datetime,
+                transaction_md.price,
+            );
+            summaries.push(ValueTransfer {
+                block_height,
+                datetime,
+                kind: ValueTransferKind::Fee { amount: tx_fee },
+                memos: vec![],
+                price,
+                txid: *txid,
+            });
         }
         summaries
     }
@@ -796,12 +810,12 @@ impl LightClient {
 
     pub async fn do_save(&self) -> Result<(), String> {
         #[cfg(any(target_os = "ios", target_os = "android"))]
-        // On mobile platforms, disable the save, because the saves will be handled by the native layer, and not in rust
+        // on mobile platforms, disable the save, because the saves will be handled by the native layer, and not in rust
         {
             log::debug!("do_save entered");
 
-            // On ios and android just return OK
-            Ok(())
+            // on ios and android just return ok
+            ok(())
         }
 
         #[cfg(not(any(target_os = "ios", target_os = "android")))]
