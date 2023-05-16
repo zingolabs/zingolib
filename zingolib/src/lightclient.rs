@@ -729,6 +729,31 @@ impl LightClient {
         JsonValue::Array(consumer_ui_notes)
     }
 
+    pub async fn do_value_transfer_by_to_address(&self) -> Vec<(Address, u64)> {
+        let summaries = self.do_list_txsummaries().await;
+        let mut amount_by_address = HashMap::new();
+        for summary in summaries {
+            match summary.kind {
+                ValueTransferKind::Sent { amount, to_address } => {
+                    let address = to_address.to_string();
+                    if !amount_by_address.contains(address) {
+                        amount_by_address.insert(address, vec![amount]);
+                    } else {
+                        amount_by_address.get(address).push(amount);
+                    }
+                }
+                ValueTransferKind::Fee { amount } => {
+                    let fee_key = "fee".to_string();
+                    if !amount_by_address.contains(fee_key) {
+                        amount_by_address.insert(fee_key, vec![amount]);
+                    } else {
+                        amount_by_address.get(fee_key).push(amount);
+                    }
+                }
+            }
+        }
+    }
+
     pub async fn do_list_txsummaries(&self) -> Vec<ValueTransfer> {
         let mut summaries: Vec<ValueTransfer> = Vec::new();
 
