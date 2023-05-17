@@ -49,7 +49,10 @@ macro_rules! check_client_balances {
             balance["orchard_balance"].as_i64().unwrap_or(0)
                 + balance["sapling_balance"].as_i64().unwrap_or(0)
                 + balance["transparent_balance"].as_i64().unwrap_or(0),
-            tx_summary_balance
+            tx_summary_balance,
+            "tx_summaries follow: {}\ndo_list_transactions follow: {}",
+            ::json::JsonValue::from($client.do_list_txsummaries().await).pretty(4),
+            $client.do_list_transactions().await.pretty(4)
         );
         assert_eq!(
             balance["orchard_balance"], $orchard,

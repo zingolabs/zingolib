@@ -1882,7 +1882,7 @@ impl LightClient {
                     });
                 }
             }
-            // We spent funds, and received them as non-change. This is most likely a send-to-self,
+            // We spent funds, and received funds as non-change. This is most likely a send-to-self,
             // TODO: Figure out what kind of special-case handling we want for these
             (true, true) => {
                 summaries.push(ValueTransfer {

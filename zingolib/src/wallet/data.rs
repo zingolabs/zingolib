@@ -706,9 +706,9 @@ impl TransactionMetadata {
         !self.outgoing_tx_data.is_empty()
     }
     pub fn is_incoming_transaction(&self) -> bool {
-        !(self.sapling_notes.is_empty()
-            && self.orchard_notes.is_empty()
-            && self.received_utxos.is_empty())
+        self.sapling_notes.iter().any(|note| !note.is_change())
+            || self.orchard_notes.iter().any(|note| !note.is_change())
+            || !self.received_utxos.is_empty()
     }
     pub fn net_spent(&self) -> u64 {
         assert!(self.is_outgoing_transaction());
