@@ -1790,12 +1790,11 @@ impl LightClient {
             transaction_md.datetime,
             transaction_md.price,
         );
-        match (
-            !transaction_md.outgoing_tx_data.is_empty(),
-            !(transaction_md.sapling_notes.is_empty()
-                && transaction_md.orchard_notes.is_empty()
-                && transaction_md.received_utxos.is_empty()),
-        ) {
+        let send: bool = !transaction_md.outgoing_tx_data.is_empty();
+        let receive: bool = !(transaction_md.sapling_notes.is_empty()
+            && transaction_md.orchard_notes.is_empty()
+            && transaction_md.received_utxos.is_empty());
+        match (send, receive) {
             //TODO: This is probably an error, if we sent no value and also received no value why
             //do we have this transaction stored? Recall the tx fee is part of the tx_value_spent
             // Question (1): BUT it's possible to publish a 0-fee tx!!
