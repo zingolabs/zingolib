@@ -606,7 +606,7 @@ pub mod summaries {
                     temp_object
                 }
                 ValueTransferKind::SendToSelf => {
-                    temp_object["amount"] = JsonValue::from("None".to_string());
+                    temp_object["amount"] = JsonValue::from(0);
                     temp_object["kind"] = JsonValue::from(&value.kind);
                     temp_object["pool"] = JsonValue::from("None".to_string());
                     temp_object["price"] = JsonValue::from("None".to_string());
