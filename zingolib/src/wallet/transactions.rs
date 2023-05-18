@@ -488,19 +488,27 @@ impl TransactionMetadataSet {
         }
     }
 
-    // Check this transaction to see if it is an outgoing transaction, and if it is, mark all recieved notes in this
-    // transction as change. i.e., If any funds were spent in this transaction, all recieved notes are change notes.
+    // Check this transaction to see if it is an outgoing transaction, and if it is, mark all recieved notes without memos in this
+    // transction as change. i.e., If any funds were spent in this transaction, all recieved notes without memos explicitly sent to self are change notes.
     pub fn check_notes_mark_change(&mut self, txid: &TxId) {
         if self.total_funds_spent_in(txid) > 0 {
             if let Some(transaction_metadata) = self.current.get_mut(txid) {
-                transaction_metadata.sapling_notes.iter_mut().for_each(|n| {
-                    n.is_change = true;
-                });
-                transaction_metadata.orchard_notes.iter_mut().for_each(|n| {
-                    n.is_change = true;
-                })
+                Self::mark_notes_as_change_for_pool(&mut transaction_metadata.sapling_notes);
+                Self::mark_notes_as_change_for_pool(&mut transaction_metadata.orchard_notes);
             }
         }
+    }
+    fn mark_notes_as_change_for_pool<Note: ReceivedNoteAndMetadata>(notes: &mut Vec<Note>) {
+        notes.iter_mut().for_each(|n| {
+            *n.is_change_mut() = n
+                .memo()
+                .as_ref()
+                .map(|memo| match memo {
+                    Memo::Text(_) => false,
+                    Memo::Empty | Memo::Arbitrary(_) | Memo::Future(_) => true,
+                })
+                .unwrap_or(true)
+        });
     }
 
     fn get_or_create_transaction_metadata(
@@ -716,9 +724,6 @@ impl TransactionMetadataSet {
         D::Note: PartialEq + Clone,
         D::Recipient: Recipient,
     {
-        // Check if this is a change note
-        let is_change = self.total_funds_spent_in(&txid) > 0;
-
         let transaction_metadata =
             self.get_or_create_transaction_metadata(&txid, height, true, timestamp);
         // Update the block height, in case this was a mempool or unconfirmed tx.
@@ -737,7 +742,8 @@ impl TransactionMetadataSet {
                     None,
                     None,
                     None,
-                    is_change,
+                    // if this is change, we'll mark it later in check_notes_mark_change
+                    false,
                     false,
                 );
 
@@ -815,9 +821,6 @@ impl TransactionMetadataSet {
         D::Note: PartialEq + Clone,
         D::Recipient: Recipient,
     {
-        // Check if this is a change note
-        let is_change = self.total_funds_spent_in(&txid) > 0;
-
         let transaction_metadata =
             self.get_or_create_transaction_metadata(&txid, height, unconfirmed, timestamp);
         // Update the block height, in case this was a mempool or unconfirmed tx.
@@ -847,7 +850,8 @@ impl TransactionMetadataSet {
                     None,
                     None,
                     None,
-                    is_change,
+                    // if this is change, we'll mark it later in check_notes_mark_change
+                    false,
                     have_spending_key,
                 );
 

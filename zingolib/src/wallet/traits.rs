@@ -433,6 +433,7 @@ pub trait ReceivedNoteAndMetadata: Sized {
     fn get_deprecated_serialized_view_key_buffer() -> Vec<u8>;
     fn have_spending_key(&self) -> bool;
     fn is_change(&self) -> bool;
+    fn is_change_mut(&mut self) -> &mut bool;
     fn is_spent(&self) -> bool {
         Self::spent(self).is_some()
     }
@@ -518,6 +519,10 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
 
     fn is_change(&self) -> bool {
         self.is_change
+    }
+
+    fn is_change_mut(&mut self) -> &mut bool {
+        &mut self.is_change
     }
 
     fn memo(&self) -> &Option<Memo> {
@@ -639,6 +644,10 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
     }
     fn is_change(&self) -> bool {
         self.is_change
+    }
+
+    fn is_change_mut(&mut self) -> &mut bool {
+        &mut self.is_change
     }
 
     fn memo(&self) -> &Option<Memo> {
