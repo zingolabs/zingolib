@@ -498,7 +498,7 @@ impl TransactionMetadataSet {
             }
         }
     }
-    fn mark_notes_as_change_for_pool<Note: ReceivedNoteAndMetadata>(notes: &mut Vec<Note>) {
+    fn mark_notes_as_change_for_pool<Note: ReceivedNoteAndMetadata>(notes: &mut [Note]) {
         notes.iter_mut().for_each(|n| {
             *n.is_change_mut() = match n.memo() {
                 Some(Memo::Text(_)) => false,
