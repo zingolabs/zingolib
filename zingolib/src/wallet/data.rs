@@ -537,7 +537,7 @@ pub mod summaries {
         pub txid: TxId,
     }
     impl ValueTransfer {
-        pub fn amount(&self) -> i64 {
+        pub fn balance_delta(&self) -> i64 {
             use ValueTransferKind::*;
             match self.kind {
                 Sent { amount, .. } => -(amount as i64),
