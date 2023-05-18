@@ -341,11 +341,22 @@ impl LightWallet {
             blocks = blocks.into_iter().rev().collect();
         }
 
-        let transactions = if external_version <= 14 {
+        let mut transactions = if external_version <= 14 {
             TransactionMetadataSet::read_old(&mut reader, &wallet_capability)
         } else {
             TransactionMetadataSet::read(&mut reader, &wallet_capability)
         }?;
+        let txids = transactions
+            .current
+            .keys()
+            .cloned()
+            .collect::<Vec<transaction::TxId>>();
+        // We've marked notes as change inconsistently in the past
+        // so we make sure that they are marked as change or not based on our
+        // current definition
+        for txid in txids {
+            transactions.check_notes_mark_change(&txid)
+        }
 
         let chain_name = utils::read_string(&mut reader)?;
 
