@@ -36,9 +36,6 @@ use super::{
 /// this struct are threadsafe/locked properly.
 #[derive(Default)]
 pub struct TransactionMetadataSet {
-    #[cfg(not(feature = "integration_test"))]
-    pub(crate) current: HashMap<TxId, TransactionMetadata>,
-    #[cfg(feature = "integration_test")]
     pub current: HashMap<TxId, TransactionMetadata>,
     pub(crate) some_txid_from_highest_wallet_block: Option<TxId>,
 }
@@ -48,6 +45,12 @@ impl TransactionMetadataSet {
         21
     }
 
+    pub fn get_fee_by_txid(&self, txid: &TxId) -> u64 {
+        self.current
+            .get(txid)
+            .expect("To have the requested txid")
+            .get_transaction_fee()
+    }
     pub fn read_old<R: Read>(
         mut reader: R,
         wallet_capability: &WalletCapability,
@@ -485,19 +488,26 @@ impl TransactionMetadataSet {
         }
     }
 
-    // Check this transaction to see if it is an outgoing transaction, and if it is, mark all recieved notes in this
-    // transction as change. i.e., If any funds were spent in this transaction, all recieved notes are change notes.
+    // Check this transaction to see if it is an outgoing transaction, and if it is, mark all received notes with non-textual memos in this
+    // transction as change. i.e., If any funds were spent in this transaction, all received notes without user-specified memos are change.
+    //
+    // TODO: When we start working on multi-sig, this could cause issues about hiding sends-to-self
     pub fn check_notes_mark_change(&mut self, txid: &TxId) {
+        //TODO: Incorrect with a 0-value fee somehow
         if self.total_funds_spent_in(txid) > 0 {
             if let Some(transaction_metadata) = self.current.get_mut(txid) {
-                transaction_metadata.sapling_notes.iter_mut().for_each(|n| {
-                    n.is_change = true;
-                });
-                transaction_metadata.orchard_notes.iter_mut().for_each(|n| {
-                    n.is_change = true;
-                })
+                Self::mark_notes_as_change_for_pool(&mut transaction_metadata.sapling_notes);
+                Self::mark_notes_as_change_for_pool(&mut transaction_metadata.orchard_notes);
             }
         }
+    }
+    fn mark_notes_as_change_for_pool<Note: ReceivedNoteAndMetadata>(notes: &mut [Note]) {
+        notes.iter_mut().for_each(|n| {
+            *n.is_change_mut() = match n.memo() {
+                Some(Memo::Text(_)) => false,
+                Some(Memo::Empty | Memo::Arbitrary(_) | Memo::Future(_)) | None => true,
+            }
+        });
     }
 
     fn get_or_create_transaction_metadata(
@@ -527,7 +537,7 @@ impl TransactionMetadataSet {
     }
 
     pub fn set_price(&mut self, txid: &TxId, price: Option<f64>) {
-        price.map(|p| self.current.get_mut(txid).map(|tx| tx.zec_price = Some(p)));
+        price.map(|p| self.current.get_mut(txid).map(|tx| tx.price = Some(p)));
     }
 
     // Records a TxId as having spent some nullifiers from the wallet.
@@ -713,9 +723,6 @@ impl TransactionMetadataSet {
         D::Note: PartialEq + Clone,
         D::Recipient: Recipient,
     {
-        // Check if this is a change note
-        let is_change = self.total_funds_spent_in(&txid) > 0;
-
         let transaction_metadata =
             self.get_or_create_transaction_metadata(&txid, height, true, timestamp);
         // Update the block height, in case this was a mempool or unconfirmed tx.
@@ -734,7 +741,8 @@ impl TransactionMetadataSet {
                     None,
                     None,
                     None,
-                    is_change,
+                    // if this is change, we'll mark it later in check_notes_mark_change
+                    false,
                     false,
                 );
 
@@ -812,9 +820,6 @@ impl TransactionMetadataSet {
         D::Note: PartialEq + Clone,
         D::Recipient: Recipient,
     {
-        // Check if this is a change note
-        let is_change = self.total_funds_spent_in(&txid) > 0;
-
         let transaction_metadata =
             self.get_or_create_transaction_metadata(&txid, height, unconfirmed, timestamp);
         // Update the block height, in case this was a mempool or unconfirmed tx.
@@ -844,7 +849,8 @@ impl TransactionMetadataSet {
                     None,
                     None,
                     None,
-                    is_change,
+                    // if this is change, we'll mark it later in check_notes_mark_change
+                    false,
                     have_spending_key,
                 );
 

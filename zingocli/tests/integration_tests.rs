@@ -211,12 +211,12 @@ fn check_expected_balance_with_fvks(
     }
 }
 async fn build_fvk_client_capability(
-    fvks: &Vec<&Fvk>,
+    fvks: &[&Fvk],
     zingoconfig: &ZingoConfig,
 ) -> (LightClient, WalletCapability) {
     let ufvk = zcash_address::unified::Encoding::encode(
         &<Ufvk as zcash_address::unified::Encoding>::try_from_items(
-            fvks.clone().into_iter().cloned().collect(),
+            fvks.iter().copied().cloned().collect(),
         )
         .unwrap(),
         &zcash_address::Network::Regtest,
@@ -230,10 +230,12 @@ async fn build_fvk_client_capability(
         .clone();
     (viewkey_client, watch_wc)
 }
+
+#[allow(clippy::too_many_arguments)]
 fn check_view_capability_bounds(
     balance: &JsonValue,
     watch_wc: &WalletCapability,
-    fvks: &Vec<&Fvk>,
+    fvks: &[&Fvk],
     ovk: &Fvk,
     svk: &Fvk,
     tvk: &Fvk,
@@ -758,101 +760,114 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     }
 
     sapling_faucet
-        .do_send(vec![(&pmc_taddr, 5_000, None)])
+        .do_send(vec![(&pmc_taddr, 50_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 0 s: 0 t: 5_000);
+    bump_and_check!(o: 0 s: 0 t: 50_000);
 
     pool_migration_client.do_shield(None).await.unwrap();
-    bump_and_check!(o: 4_000 s: 0 t: 0);
+    bump_and_check!(o: 40_000 s: 0 t: 0);
 
     // 2 Test of a send from a sapling only client to its own unified address
     sapling_faucet
-        .do_send(vec![(&pmc_sapling, 5_000, None)])
+        .do_send(vec![(&pmc_sapling, 50_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 4_000 s: 5_000 t: 0);
+    bump_and_check!(o: 40_000 s: 50_000 t: 0);
 
     pool_migration_client
-        .do_send(vec![(&pmc_unified, 4_000, None)])
+        .do_send(vec![(&pmc_unified, 40_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 8_000 s: 0 t: 0);
+    bump_and_check!(o: 80_000 s: 0 t: 0);
 
     // 3 Test of an orchard-only client to itself
     pool_migration_client
-        .do_send(vec![(&pmc_unified, 7_000, None)])
+        .do_send(vec![(&pmc_unified, 70_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 7_000 s: 0 t: 0);
+    bump_and_check!(o: 70_000 s: 0 t: 0);
 
     // 4 tz transparent and sapling to orchard
     pool_migration_client
-        .do_send(vec![(&pmc_taddr, 3_000, None), (&pmc_sapling, 3_000, None)])
+        .do_send(vec![
+            (&pmc_taddr, 30_000, None),
+            (&pmc_sapling, 30_000, None),
+        ])
         .await
         .unwrap();
-    bump_and_check!(o: 0 s: 3_000 t: 3_000);
+    bump_and_check!(o: 0 s: 30_000 t: 30_000);
 
     pool_migration_client.do_shield(None).await.unwrap();
     pool_migration_client
-        .do_send(vec![(&pmc_unified, 2_000, None)])
+        .do_send(vec![(&pmc_unified, 20_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 4_000 s: 0 t: 0);
+    bump_and_check!(o: 40_000 s: 0 t: 0);
 
     // 5 to transparent and orchard to orchard
     pool_migration_client
-        .do_send(vec![(&pmc_taddr, 2_000, None)])
+        .do_send(vec![(&pmc_taddr, 20_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 1_000 s: 0 t: 2_000);
+    bump_and_check!(o: 10_000 s: 0 t: 20_000);
 
     pool_migration_client.do_shield(None).await.unwrap();
-    bump_and_check!(o: 2_000 s: 0 t: 0);
+    bump_and_check!(o: 20_000 s: 0 t: 0);
 
     // 6 sapling and orchard to orchard
     sapling_faucet
-        .do_send(vec![(&pmc_sapling, 2_000, None)])
+        .do_send(vec![(&pmc_sapling, 20_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 2_000 s: 2_000 t: 0);
+    bump_and_check!(o: 20_000 s: 20_000 t: 0);
 
     pool_migration_client
-        .do_send(vec![(&pmc_unified, 3_000, None)])
+        .do_send(vec![(&pmc_unified, 30_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 3_000 s: 0 t: 0);
+    bump_and_check!(o: 30_000 s: 0 t: 0);
 
     // 7 tzo --> o
     sapling_faucet
-        .do_send(vec![(&pmc_taddr, 2_000, None), (&pmc_sapling, 2_000, None)])
+        .do_send(vec![
+            (&pmc_taddr, 20_000, None),
+            (&pmc_sapling, 20_000, None),
+        ])
         .await
         .unwrap();
-    bump_and_check!(o: 3_000 s: 2_000 t: 2_000);
+    bump_and_check!(o: 30_000 s: 20_000 t: 20_000);
 
     pool_migration_client.do_shield(None).await.unwrap();
     pool_migration_client
-        .do_send(vec![(&pmc_unified, 4_000, None)])
+        .do_send(vec![(&pmc_unified, 40_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 5_000 s: 0 t: 0);
+    bump_and_check!(o: 50_000 s: 0 t: 0);
 
     // Send from Sapling into empty Orchard pool
     pool_migration_client
-        .do_send(vec![(&pmc_sapling, 4_000, None)])
+        .do_send(vec![(&pmc_sapling, 40_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 0 s: 4_000 t: 0);
+    bump_and_check!(o: 0 s: 40_000 t: 0);
 
     pool_migration_client
-        .do_send(vec![(&pmc_unified, 3_000, None)])
+        .do_send(vec![(&pmc_unified, 30_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 3_000 s: 0 t: 0);
-    log::info!(
-        "{}",
-        json::stringify_pretty(pool_migration_client.do_list_transactions().await, 4)
+    bump_and_check!(o: 30_000 s: 0 t: 0);
+    let mut total_value_to_addrs_iter = pool_migration_client
+        .do_total_value_to_address()
+        .await
+        .0
+        .into_iter();
+    assert_eq!(
+        total_value_to_addrs_iter.next(),
+        Some((String::from("fee"), u64::from((DEFAULT_FEE * 13).unwrap())))
     );
+    assert!(total_value_to_addrs_iter.next().is_none());
+
     drop(child_process_handler);
 }
 #[tokio::test]
@@ -885,6 +900,13 @@ async fn send_orchard_back_and_forth() {
         .unwrap();
     faucet.do_sync(true).await.unwrap();
     check_client_balances!(recipient, o: faucet_to_recipient_amount s: 0 t: 0);
+
+    println!(
+        "{}",
+        JsonValue::from(faucet.do_list_txsummaries().await).pretty(4)
+    );
+    println!("{}", faucet.do_balance().await.pretty(4));
+
     check_client_balances!(faucet, o: orch_change s: reward_and_fee t: 0);
 
     // post half back to faucet, and verify
@@ -2292,6 +2314,68 @@ async fn zero_value_change() {
     );
 
     check_client_balances!(recipient, o: 0 s: 0 t: 0);
+    drop(child_process_handler);
+}
+
+#[tokio::test]
+async fn dust_sends_change_correctly() {
+    let value = 100_000_000;
+    let (regtest_manager, child_process_handler, faucet, recipient, _txid) =
+        scenarios::faucet_prefunded_orchard_recipient(value).await;
+
+    // Send of less that transaction fee
+    let sent_value = 1000;
+    let _sent_transaction_id = recipient
+        .do_send(vec![(
+            &get_base_address!(faucet, "unified"),
+            sent_value,
+            None,
+        )])
+        .await
+        .unwrap();
+
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 5)
+        .await
+        .unwrap();
+
+    println!("{}", recipient.do_list_transactions().await.pretty(4));
+    println!("{}", recipient.do_balance().await.pretty(4));
+    drop(child_process_handler);
+}
+
+#[tokio::test]
+async fn zero_value_receipts() {
+    let value = 100_000_000;
+    let (regtest_manager, child_process_handler, faucet, recipient, _txid) =
+        scenarios::faucet_prefunded_orchard_recipient(value).await;
+
+    let sent_value = 0;
+    let _sent_transaction_id = faucet
+        .do_send(vec![(
+            &get_base_address!(recipient, "unified"),
+            sent_value,
+            None,
+        )])
+        .await
+        .unwrap();
+
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 5)
+        .await
+        .unwrap();
+    let _sent_transaction_id = recipient
+        .do_send(vec![(&get_base_address!(faucet, "unified"), 1000, None)])
+        .await
+        .unwrap();
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 5)
+        .await
+        .unwrap();
+
+    println!("{}", recipient.do_list_transactions().await.pretty(4));
+    println!("{}", recipient.do_balance().await.pretty(4));
+    println!(
+        "{}",
+        JsonValue::from(recipient.do_list_txsummaries().await).pretty(4)
+    );
     drop(child_process_handler);
 }
 

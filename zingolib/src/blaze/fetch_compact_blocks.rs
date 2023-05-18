@@ -56,7 +56,7 @@ impl FetchCompactBlocks {
         self.fetch_blocks_range(&senders, start_block, end_block)
             .await?;
 
-        // After fetching all the normal blocks, we actually wait to see if any re-org'd blocks are recieved
+        // After fetching all the normal blocks, we actually wait to see if any re-org'd blocks are received
         while let Some(Some(reorg_block)) = reorg_receiver.recv().await {
             // Fetch the additional block.
             self.fetch_blocks_range(&senders, reorg_block, reorg_block)

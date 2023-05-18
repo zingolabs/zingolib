@@ -61,10 +61,7 @@ use self::{
 use zingoconfig::ZingoConfig;
 
 pub mod data;
-#[cfg(feature = "integration_test")]
 pub mod keys;
-#[cfg(not(feature = "integration_test"))]
-pub(crate) mod keys;
 pub(crate) mod message;
 pub(crate) mod traits;
 pub(crate) mod transactions;
@@ -94,6 +91,15 @@ pub enum Pool {
     Transparent,
 }
 
+impl From<Pool> for JsonValue {
+    fn from(value: Pool) -> Self {
+        match value {
+            Pool::Sapling => JsonValue::String(String::from("Sapling")),
+            Pool::Orchard => JsonValue::String(String::from("Orchard")),
+            Pool::Transparent => JsonValue::String(String::from("Transparent")),
+        }
+    }
+}
 pub(crate) type NoteSelectionPolicy = Vec<Pool>;
 
 impl SendProgress {
@@ -201,9 +207,6 @@ pub struct LightWallet {
     mnemonic: Option<Mnemonic>,
 
     // The last 100 blocks, used if something gets re-orged
-    #[cfg(not(feature = "integration_test"))]
-    pub(super) blocks: Arc<RwLock<Vec<BlockData>>>,
-    #[cfg(feature = "integration_test")]
     pub blocks: Arc<RwLock<Vec<BlockData>>>,
 
     // Wallet options
@@ -220,9 +223,6 @@ pub struct LightWallet {
 
     // Local state needed to submit [compact]block-requests to the proxy
     // and interpret responses
-    #[cfg(not(feature = "integration_test"))]
-    pub(crate) transaction_context: TransactionContext,
-    #[cfg(feature = "integration_test")]
     pub transaction_context: TransactionContext,
 }
 
@@ -341,11 +341,22 @@ impl LightWallet {
             blocks = blocks.into_iter().rev().collect();
         }
 
-        let transactions = if external_version <= 14 {
+        let mut transactions = if external_version <= 14 {
             TransactionMetadataSet::read_old(&mut reader, &wallet_capability)
         } else {
             TransactionMetadataSet::read(&mut reader, &wallet_capability)
         }?;
+        let txids = transactions
+            .current
+            .keys()
+            .cloned()
+            .collect::<Vec<transaction::TxId>>();
+        // We've marked notes as change inconsistently in the past
+        // so we make sure that they are marked as change or not based on our
+        // current definition
+        for txid in txids {
+            transactions.check_notes_mark_change(&txid)
+        }
 
         let chain_name = utils::read_string(&mut reader)?;
 
@@ -1451,7 +1462,7 @@ impl LightWallet {
             return Err(e);
         }
 
-        // Set up a channel to recieve updates on the progress of building the transaction.
+        // Set up a channel to receive updates on the progress of building the transaction.
         let (transmitter, receiver) = channel::<Progress>();
         let progress = self.send_progress.clone();
 

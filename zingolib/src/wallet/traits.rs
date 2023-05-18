@@ -8,6 +8,7 @@ use super::{
     },
     keys::unified::WalletCapability,
     transactions::TransactionMetadataSet,
+    Pool,
 };
 use crate::compact_formats::{
     slice_to_array, CompactOrchardAction, CompactSaplingOutput, CompactTx, TreeState,
@@ -432,6 +433,7 @@ pub trait ReceivedNoteAndMetadata: Sized {
     fn get_deprecated_serialized_view_key_buffer() -> Vec<u8>;
     fn have_spending_key(&self) -> bool;
     fn is_change(&self) -> bool;
+    fn is_change_mut(&mut self) -> &mut bool;
     fn is_spent(&self) -> bool {
         Self::spent(self).is_some()
     }
@@ -439,6 +441,7 @@ pub trait ReceivedNoteAndMetadata: Sized {
     fn memo_mut(&mut self) -> &mut Option<Memo>;
     fn note(&self) -> &Self::Note;
     fn nullifier(&self) -> Self::Nullifier;
+    fn pool() -> Pool;
     fn spent(&self) -> &Option<(TxId, u32)>;
     fn spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
     fn transaction_metadata_notes(wallet_transaction: &TransactionMetadata) -> &Vec<Self>;
@@ -518,6 +521,10 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         self.is_change
     }
 
+    fn is_change_mut(&mut self) -> &mut bool {
+        &mut self.is_change
+    }
+
     fn memo(&self) -> &Option<Memo> {
         &self.memo
     }
@@ -532,6 +539,10 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
 
     fn nullifier(&self) -> Self::Nullifier {
         self.nullifier
+    }
+
+    fn pool() -> Pool {
+        Pool::Sapling
     }
 
     fn spent(&self) -> &Option<(TxId, u32)> {
@@ -635,6 +646,10 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         self.is_change
     }
 
+    fn is_change_mut(&mut self) -> &mut bool {
+        &mut self.is_change
+    }
+
     fn memo(&self) -> &Option<Memo> {
         &self.memo
     }
@@ -649,6 +664,10 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
 
     fn nullifier(&self) -> Self::Nullifier {
         self.nullifier
+    }
+
+    fn pool() -> Pool {
+        Pool::Orchard
     }
 
     fn spent(&self) -> &Option<(TxId, u32)> {
@@ -711,12 +730,20 @@ where
 
     type Bundle: Bundle<Self>;
 
+    fn sum_pool_change(transaction_md: &TransactionMetadata) -> u64 {
+        Self::to_notes_vec(transaction_md)
+            .iter()
+            .filter(|nd| nd.is_change())
+            .map(|nd| nd.value())
+            .sum()
+    }
     fn get_nullifier_from_note_fvk_and_witness_position(
         note: &Self::Note,
         fvk: &Self::Fvk,
         position: u64,
     ) -> <Self::WalletNote as ReceivedNoteAndMetadata>::Nullifier;
     fn get_tree(tree_state: &TreeState) -> &String;
+    fn to_notes_vec(_: &TransactionMetadata) -> &Vec<Self::WalletNote>;
     fn to_notes_vec_mut(_: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote>;
     fn ua_from_contained_receiver<'a>(
         unified_spend_auth: &'a WalletCapability,
@@ -750,9 +777,12 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
     ) -> <<Self as DomainWalletExt>::WalletNote as ReceivedNoteAndMetadata>::Nullifier {
         note.nf(&fvk.fvk().vk.nk, position)
     }
-
     fn get_tree(tree_state: &TreeState) -> &String {
         &tree_state.sapling_tree
+    }
+
+    fn to_notes_vec(transaction_md: &TransactionMetadata) -> &Vec<Self::WalletNote> {
+        &transaction_md.sapling_notes
     }
 
     fn to_notes_vec_mut(transaction: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote> {
@@ -804,9 +834,12 @@ impl DomainWalletExt for OrchardDomain {
     ) -> <<Self as DomainWalletExt>::WalletNote as ReceivedNoteAndMetadata>::Nullifier {
         note.nullifier(fvk)
     }
-
     fn get_tree(tree_state: &TreeState) -> &String {
         &tree_state.orchard_tree
+    }
+
+    fn to_notes_vec(transaction_md: &TransactionMetadata) -> &Vec<Self::WalletNote> {
+        &transaction_md.orchard_notes
     }
 
     fn to_notes_vec_mut(transaction: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote> {
