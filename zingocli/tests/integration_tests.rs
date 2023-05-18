@@ -857,18 +857,17 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         .await
         .unwrap();
     bump_and_check!(o: 30_000 s: 0 t: 0);
-    println!(
-        "{}",
-        json::stringify_pretty(pool_migration_client.do_list_transactions().await, 4)
+    let mut total_value_to_addrs_iter = pool_migration_client
+        .do_total_value_to_address()
+        .await
+        .0
+        .into_iter();
+    assert_eq!(
+        total_value_to_addrs_iter.next(),
+        Some((String::from("fee"), u64::from((DEFAULT_FEE * 13).unwrap())))
     );
-    println!(
-        "{}",
-        JsonValue::from(pool_migration_client.do_list_txsummaries().await).pretty(4)
-    );
-    println!(
-        "{}",
-        JsonValue::from(pool_migration_client.do_total_value_to_address().await).pretty(4)
-    );
+    assert!(total_value_to_addrs_iter.next().is_none());
+
     drop(child_process_handler);
 }
 #[tokio::test]
