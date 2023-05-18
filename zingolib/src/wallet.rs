@@ -1462,7 +1462,7 @@ impl LightWallet {
             return Err(e);
         }
 
-        // Set up a channel to recieve updates on the progress of building the transaction.
+        // Set up a channel to receive updates on the progress of building the transaction.
         let (transmitter, receiver) = channel::<Progress>();
         let progress = self.send_progress.clone();
 

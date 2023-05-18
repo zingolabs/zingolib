@@ -120,7 +120,7 @@ impl TransactionContext {
         // Collect our t-addresses for easy checking
         let taddrs_set = self.key.read().await.get_all_taddrs(&self.config);
         // Process t-address outputs
-        // If this transaction in outgoing, i.e., we recieved sent some money in this transaction, then we need to grab all transparent outputs
+        // If this transaction in outgoing, i.e., we received sent some money in this transaction, then we need to grab all transparent outputs
         // that don't belong to us as the outgoing metadata
         if self
             .transaction_metadata_set
@@ -258,7 +258,7 @@ impl TransactionContext {
         is_outgoing_transaction: &mut bool,
         taddrs_set: &HashSet<String>,
     ) {
-        // Scan all transparent outputs to see if we recieved any money
+        // Scan all transparent outputs to see if we received any money
         if let Some(t_bundle) = transaction.transparent_bundle() {
             for (n, vout) in t_bundle.vout.iter().enumerate() {
                 if let Some(taddr) = vout.recipient_address() {
@@ -636,7 +636,7 @@ pub async fn start(
             let last_progress = last_progress.clone();
 
             workers.push(tokio::spawn(async move {
-                // It is possible that we recieve the same txid multiple times, so we keep track of all the txids that were fetched
+                // It is possible that we receive the same txid multiple times, so we keep track of all the txids that were fetched
                 let transaction = {
                     // Fetch the TxId from LightwalletD and process all the parts of it.
                     let (transmitter, receiver) = oneshot::channel();

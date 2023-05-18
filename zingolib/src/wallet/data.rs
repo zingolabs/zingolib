@@ -702,6 +702,9 @@ impl TransactionMetadata {
     pub fn get_transaction_fee(&self) -> u64 {
         self.total_value_spent() - (self.value_outgoing() + self.total_change_returned())
     }
+
+    // TODO: This is incorrect in the edge case where where we have a send-to-self with
+    // no text memo and 0-value fee
     pub fn is_outgoing_transaction(&self) -> bool {
         (!self.outgoing_tx_data.is_empty()) || self.total_value_spent() != 0
     }

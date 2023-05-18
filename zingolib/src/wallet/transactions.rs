@@ -488,9 +488,10 @@ impl TransactionMetadataSet {
         }
     }
 
-    // Check this transaction to see if it is an outgoing transaction, and if it is, mark all recieved notes with non-textual memos in this
-    // transction as change. i.e., If any funds were spent in this transaction, all recieved notes without user-specified memos are change.
+    // Check this transaction to see if it is an outgoing transaction, and if it is, mark all received notes with non-textual memos in this
+    // transction as change. i.e., If any funds were spent in this transaction, all received notes without user-specified memos are change.
     pub fn check_notes_mark_change(&mut self, txid: &TxId) {
+        //TODO: Incorrect with a 0-value fee somehow
         if self.total_funds_spent_in(txid) > 0 {
             if let Some(transaction_metadata) = self.current.get_mut(txid) {
                 Self::mark_notes_as_change_for_pool(&mut transaction_metadata.sapling_notes);
