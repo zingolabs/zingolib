@@ -29,6 +29,10 @@ pub fn build_clap_app() -> clap::App<'static> {
                 .long("password")
                 .help("When recovering seed, specify a password for the encrypted wallet")
                 .takes_value(true))
+            .arg(Arg::new("chain")
+                .long("chain").short('c')
+                .help(r#"What chain to expect, if it's not inferrable from the server URI. One of "mainnet", "testnet", or "regtest""#)
+                .takes_value(true))
             .arg(Arg::new("seed")
                 .short('s')
                 .long("seed")
@@ -258,6 +262,7 @@ enum TemplateFillError {
     InvalidBirthday(String),
     MalformedServerURL(String),
     ChildLaunchError(regtest::LaunchChildProcessError),
+    InvalidChain(String),
 }
 
 impl From<regtest::LaunchChildProcessError> for TemplateFillError {
@@ -343,11 +348,20 @@ to scan from the start of the blockchain."
             None
         };
         let server = zingoconfig::construct_lightwalletd_uri(maybe_server);
-        let chaintype = match server.to_string() {
-            x if x.contains("main") => ChainType::Mainnet,
-            x if x.contains("test") => ChainType::Testnet,
-            x if x.contains("127.0.0.1") => ChainType::Regtest,
-            _ => panic!("error"),
+        let chaintype = if let Some(chain) = matches.get_one::<String>("chain") {
+            match chain.as_str() {
+                "mainnet" => ChainType::Mainnet,
+                "testnet" => ChainType::Testnet,
+                "regtest" => ChainType::Regtest,
+                _ => return Err(TemplateFillError::InvalidChain(chain.clone())),
+            }
+        } else {
+            match server.to_string() {
+                x if x.contains("main") => ChainType::Mainnet,
+                x if x.contains("test") => ChainType::Testnet,
+                x if x.contains("127.0.0.1") => ChainType::Regtest,
+                _ => panic!("error"),
+            }
         };
 
         // Test to make sure the server has all of scheme, host and port
