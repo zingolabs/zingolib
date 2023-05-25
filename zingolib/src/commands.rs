@@ -1,5 +1,5 @@
 use crate::wallet::keys::is_shielded_address;
-use crate::wallet::MemoDownloadOption;
+use crate::wallet::{MemoDownloadOption, Pool};
 use crate::{lightclient::LightClient, wallet::utils};
 use indoc::indoc;
 use json::object;
@@ -489,30 +489,39 @@ struct ShieldCommand {}
 impl Command for ShieldCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Shield all your transparent funds
+            Shield all your transparent and/or orchard funds
             Usage:
-            shield [optional address]
+            shield ['transparent' or 'sapling' or 'all'] [optional address]
 
             NOTE: The fee required to send this transaction (currently ZEC 0.0001) is additionally deducted from your balance.
             Example:
-            shield
+            shield all
 
         "#}
     }
 
     fn short_help(&self) -> &'static str {
-        "Shield your transparent ZEC into a sapling address"
+        "Shield your transparent and/or sapling ZEC into the orchard pool"
     }
 
     fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+        if args.is_empty() || args.len() > 2 {
+            return self.help().to_string();
+        }
+        let pools_to_shield: &[Pool] = match args[0] {
+            "transparent" => &[Pool::Transparent],
+            "sapling" => &[Pool::Sapling],
+            "all" => &[Pool::Sapling, Pool::Transparent],
+            _ => return self.help().to_string(),
+        };
         // Parse the address or amount
-        let address = if !args.is_empty() {
-            Some(args[0].to_string())
+        let address = if args.len() != 2 {
+            Some(args[1].to_string())
         } else {
             None
         };
         RT.block_on(async move {
-            match lightclient.do_shield(address).await {
+            match lightclient.do_shield(pools_to_shield, address).await {
                 Ok(transaction_id) => {
                     object! { "txid" => transaction_id }
                 }
