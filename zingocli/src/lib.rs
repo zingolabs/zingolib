@@ -263,6 +263,7 @@ enum TemplateFillError {
     MalformedServerURL(String),
     ChildLaunchError(regtest::LaunchChildProcessError),
     InvalidChain(String),
+    RegtestAndChainSpecified(String),
 }
 
 impl From<regtest::LaunchChildProcessError> for TemplateFillError {
@@ -314,6 +315,11 @@ to scan from the start of the blockchain."
                     .to_string(),
             ));
         }
+        if matches.contains_id("chain") && matches.contains_id("regtest") {
+            return Err(TemplateFillError::RegtestAndChainSpecified(
+                "regtest mode incompatible with custom chain selection".to_string(),
+            ));
+        }
         let birthday = match maybe_birthday.unwrap_or("0").parse::<u64>() {
             Ok(b) => b,
             Err(e) => {
@@ -356,11 +362,10 @@ to scan from the start of the blockchain."
                 _ => return Err(TemplateFillError::InvalidChain(chain.clone())),
             }
         } else {
-            match server.to_string() {
-                x if x.contains("main") => ChainType::Mainnet,
-                x if x.contains("test") => ChainType::Testnet,
-                x if x.contains("127.0.0.1") => ChainType::Regtest,
-                _ => panic!("error"),
+            if matches.is_present("regtest") {
+                ChainType::Regtest
+            } else {
+                ChainType::Mainnet
             }
         };
 
