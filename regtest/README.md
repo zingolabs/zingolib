@@ -19,14 +19,14 @@ The default config includes all network upgrades set to block height 1, therefor
 You must copy your compiled `zcashd`, `zcash-cli` and `lightwalletd` binaries to `zingolib/regtest/bin/` or set up symlinks, etc. `zcash-cli` is also needed if you wish
 to interact with your `zcashd` instance while it is running.
 
-Run `cargo build` to produce the `zingo-cli` binary.
-
 From your `zingolib/` directory, you can run:
-`./target/debug/zingo-cli --regtest`
+`cargo run --release -- --regtest`
+
+Note: Regtest mode only works when invoked with `cargo run`. Running `cargo build` followed by an invocation of the compiled binary will fail.
 
 This will start an interactive session. Individual commands can be passed to zingolib (via the cli), for example:
 
-`./target/debug/zingo-cli --regtest help`
+`cargo run --release -- --regtest help`
 
 This will start `zcashd` and `lightwalletd` and then connect to these tools with an interactive `zingo-cli`.
 It currently takes a few seconds to do so, even on a fast machine, to give the daemons time to boot.
