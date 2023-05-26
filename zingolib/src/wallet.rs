@@ -84,7 +84,7 @@ pub struct SendProgress {
     pub last_transaction_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pool {
     Sapling,
     Orchard,

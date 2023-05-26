@@ -963,7 +963,11 @@ impl LightClient {
         })
     }
 
-    pub async fn do_shield(&self, address: Option<String>) -> Result<String, String> {
+    pub async fn do_shield(
+        &self,
+        pools_to_shield: &[Pool],
+        address: Option<String>,
+    ) -> Result<String, String> {
         let transaction_submission_height = self.get_submission_height().await?;
         let fee = u64::from(DEFAULT_FEE);
         let tbal = self
@@ -972,9 +976,24 @@ impl LightClient {
             .await
             .as_u64()
             .ok_or("To represent Json as u64".to_string())?;
+        let sapling_bal = self
+            .wallet
+            .spendable_sapling_balance(None)
+            .await
+            .as_u64()
+            .ok_or("To represent Json as u64".to_string())?;
 
         // Make sure there is a balance, and it is greated than the amount
-        if tbal <= fee {
+        let balance_to_shield = if pools_to_shield.contains(&Pool::Transparent) {
+            tbal
+        } else {
+            0
+        } + if pools_to_shield.contains(&Pool::Sapling) {
+            sapling_bal
+        } else {
+            0
+        };
+        if balance_to_shield <= fee {
             return Err(format!(
                 "Not enough transparent balance to shield. Have {} zats, need more than {} zats to cover tx fee",
                 tbal, fee
@@ -994,8 +1013,8 @@ impl LightClient {
             self.wallet
                 .send_to_address(
                     prover,
-                    vec![crate::wallet::Pool::Transparent],
-                    vec![(&addr, tbal - fee, None)],
+                    pools_to_shield.to_vec(),
+                    vec![(&addr, balance_to_shield - fee, None)],
                     transaction_submission_height,
                     |transaction_bytes| {
                         GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)

@@ -32,7 +32,7 @@ use zingolib::{
             extended_transparent::ExtendedPrivKey,
             unified::{Capability, WalletCapability},
         },
-        LightWallet, WalletBase,
+        LightWallet, Pool, WalletBase,
     },
 };
 
@@ -765,7 +765,10 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         .unwrap();
     bump_and_check!(o: 0 s: 0 t: 50_000);
 
-    pool_migration_client.do_shield(None).await.unwrap();
+    pool_migration_client
+        .do_shield(&[Pool::Transparent], None)
+        .await
+        .unwrap();
     bump_and_check!(o: 40_000 s: 0 t: 0);
 
     // 2 Test of a send from a sapling only client to its own unified address
@@ -798,7 +801,10 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         .unwrap();
     bump_and_check!(o: 0 s: 30_000 t: 30_000);
 
-    pool_migration_client.do_shield(None).await.unwrap();
+    pool_migration_client
+        .do_shield(&[Pool::Transparent], None)
+        .await
+        .unwrap();
     pool_migration_client
         .do_send(vec![(&pmc_unified, 20_000, None)])
         .await
@@ -812,7 +818,10 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         .unwrap();
     bump_and_check!(o: 10_000 s: 0 t: 20_000);
 
-    pool_migration_client.do_shield(None).await.unwrap();
+    pool_migration_client
+        .do_shield(&[Pool::Transparent], None)
+        .await
+        .unwrap();
     bump_and_check!(o: 20_000 s: 0 t: 0);
 
     // 6 sapling and orchard to orchard
@@ -838,7 +847,10 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         .unwrap();
     bump_and_check!(o: 30_000 s: 20_000 t: 20_000);
 
-    pool_migration_client.do_shield(None).await.unwrap();
+    pool_migration_client
+        .do_shield(&[Pool::Transparent], None)
+        .await
+        .unwrap();
     pool_migration_client
         .do_send(vec![(&pmc_unified, 40_000, None)])
         .await
