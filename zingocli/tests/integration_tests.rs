@@ -779,7 +779,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     bump_and_check!(o: 40_000 s: 50_000 t: 0);
 
     pool_migration_client
-        .do_send(vec![(&pmc_unified, 40_000, None)])
+        .do_shield(&[Pool::Sapling], None)
         .await
         .unwrap();
     bump_and_check!(o: 80_000 s: 0 t: 0);
@@ -2388,6 +2388,79 @@ async fn zero_value_receipts() {
         "{}",
         JsonValue::from(recipient.do_list_txsummaries().await).pretty(4)
     );
+    drop(child_process_handler);
+}
+
+#[tokio::test]
+async fn shield_sapling() {
+    let (regtest_manager, child_process_handler, faucet, recipient) =
+        scenarios::faucet_recipient().await;
+
+    let sapling_dust = 100;
+    let _sent_transaction_id = faucet
+        .do_send(vec![(
+            &get_base_address!(recipient, "sapling"),
+            sapling_dust,
+            None,
+        )])
+        .await
+        .unwrap();
+
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1)
+        .await
+        .unwrap();
+    println!("{}", recipient.do_balance().await.pretty(4));
+
+    assert_eq!(
+        recipient.do_shield(&[Pool::Sapling], None).await,
+        Err(
+            "Not enough transparent/sapling balance to shield. Have 100 zats, \
+        need more than 10000 zats to cover tx fee"
+                .to_string()
+        )
+    );
+
+    let sapling_enough_for_fee = 10_100;
+    faucet.do_sync(false).await.unwrap();
+    let _sent_transaction_id = faucet
+        .do_send(vec![(
+            &get_base_address!(recipient, "sapling"),
+            sapling_enough_for_fee,
+            None,
+        )])
+        .await
+        .unwrap();
+
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1)
+        .await
+        .unwrap();
+    recipient
+        .do_shield(&[Pool::Sapling, Pool::Transparent], None)
+        .await
+        .unwrap();
+
+    // The exact same thing again, but with pre-existing orchard funds
+    // already in the shielding wallet
+    faucet.do_sync(false).await.unwrap();
+    let _sent_transaction_id = faucet
+        .do_send(vec![(
+            &get_base_address!(recipient, "sapling"),
+            sapling_enough_for_fee,
+            None,
+        )])
+        .await
+        .unwrap();
+
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1)
+        .await
+        .unwrap();
+    recipient
+        .do_shield(&[Pool::Sapling, Pool::Transparent], None)
+        .await
+        .unwrap();
+
+    println!("{}", recipient.do_balance().await.pretty(4));
+
     drop(child_process_handler);
 }
 
