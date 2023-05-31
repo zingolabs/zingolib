@@ -907,7 +907,7 @@ impl Command for SendsToAddressCommand {
         indoc! {r#"
             Get an object where keys are addresses and values are total value sent to that address.
             usage:
-            value_to_address
+            sends_to_address
         "#}
     }
 
