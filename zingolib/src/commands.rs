@@ -515,7 +515,7 @@ impl Command for ShieldCommand {
             _ => return self.help().to_string(),
         };
         // Parse the address or amount
-        let address = if args.len() != 2 {
+        let address = if args.len() == 2 {
             Some(args[1].to_string())
         } else {
             None

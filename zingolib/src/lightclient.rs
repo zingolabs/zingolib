@@ -995,8 +995,8 @@ impl LightClient {
         };
         if balance_to_shield <= fee {
             return Err(format!(
-                "Not enough transparent balance to shield. Have {} zats, need more than {} zats to cover tx fee",
-                tbal, fee
+                "Not enough transparent/sapling balance to shield. Have {} zats, need more than {} zats to cover tx fee",
+                balance_to_shield, fee
             ));
         }
 
