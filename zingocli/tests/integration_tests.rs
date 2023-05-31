@@ -2394,14 +2394,30 @@ async fn zero_value_receipts() {
 async fn by_address_finsight() {
     let (regtest_manager, child_process_handler, faucet, recipient) =
         scenarios::faucet_recipient().await;
-    faucet
-        .do_send(vec![(
-            &get_base_address!(recipient, "unified"),
-            1_000u64,
-            Some("1".to_string()),
-        )])
+    let base_uaddress = get_base_address!(recipient, "unified");
+    utils::increase_height_and_sync_client(&regtest_manager, &faucet, 2)
         .await
         .unwrap();
+    faucet
+        .do_send(vec![(&base_uaddress, 1_000u64, Some("1".to_string()))])
+        .await
+        .unwrap();
+    faucet
+        .do_send(vec![(&base_uaddress, 1_000u64, Some("1".to_string()))])
+        .await
+        .unwrap();
+    assert_eq!(
+        JsonValue::from(faucet.do_total_memobytes_to_address().await)[&base_uaddress].pretty(4),
+        "2".to_string()
+    );
+    faucet
+        .do_send(vec![(&base_uaddress, 1_000u64, Some("aaaa".to_string()))])
+        .await
+        .unwrap();
+    assert_eq!(
+        JsonValue::from(faucet.do_total_memobytes_to_address().await)[&base_uaddress].pretty(4),
+        "6".to_string()
+    );
 
     drop(child_process_handler);
 }
