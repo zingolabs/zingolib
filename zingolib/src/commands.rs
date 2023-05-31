@@ -58,6 +58,27 @@ impl Command for ChangeServerCommand {
     }
 }
 
+struct GetBirthdayCommand {}
+impl Command for GetBirthdayCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Introspect over wallet value transfers, and report the lowest observed block height.
+            Usage:
+            get_birthday
+
+            Example:
+            get_birthday
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Get wallet birthday."
+    }
+
+    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
+        RT.block_on(async move { lightclient.do_get_birthday().await.to_string() })
+    }
+}
 struct InterruptCommand {}
 impl Command for InterruptCommand {
     fn help(&self) -> &'static str {
@@ -459,19 +480,17 @@ impl Command for AddressCommand {
     }
 }
 
-struct ExportCommand {}
-impl Command for ExportCommand {
+struct ExportUfvkCommand {}
+impl Command for ExportUfvkCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Export private key for an individual wallet addresses.
-            Note: To backup the whole wallet, use the 'seed' command insted
+            Export Unified full viewing key for the wallet.
+            Note: If you want to backup spend capability, use the 'seed' command insted
             Usage:
-            export [t-address or z-address]
-
-            If no address is passed, private key for all addresses in the wallet are exported.
+            exportufvk
 
             Example:
-            export ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d
+            exportufvk
         "#}
     }
 
@@ -479,9 +498,16 @@ impl Command for ExportCommand {
         "Export private key for wallet addresses"
     }
 
-    fn exec(&self, _args: &[&str], _lightclient: &LightClient) -> String {
-        "Key export currently unimplemented, please use seed phrase to backup/restore keys"
-            .to_string()
+    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
+        let key = RT.block_on(lightclient.wallet.transaction_context.key.read());
+        let ufvk_res = key.ufvk();
+        match ufvk_res {
+            Ok(ufvk) => {
+                use zcash_address::unified::Encoding as _;
+                ufvk.encode(&lightclient.config().chain.to_zcash_address_network())
+            }
+            Err(e) => format!("Error: {e}"),
+        }
     }
 }
 
@@ -1274,7 +1300,7 @@ impl Command for QuitCommand {
 }
 
 pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
-    let entries: [(&'static str, Box<dyn Command>); 32] = [
+    let entries: [(&'static str, Box<dyn Command>); 33] = [
         ("sync", Box::new(SyncCommand {})),
         ("syncstatus", Box::new(SyncStatusCommand {})),
         ("encryptmessage", Box::new(EncryptMessageCommand {})),
@@ -1295,7 +1321,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("sends_to_address", Box::new(SendsToAddressCommand {})),
         ("getoption", Box::new(GetOptionCommand {})),
         ("import", Box::new(ImportCommand {})),
-        ("export", Box::new(ExportCommand {})),
+        ("exportufvk", Box::new(ExportUfvkCommand {})),
         ("info", Box::new(InfoCommand {})),
         ("updatecurrentprice", Box::new(UpdateCurrentPriceCommand {})),
         ("send", Box::new(SendCommand {})),
@@ -1307,6 +1333,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("new", Box::new(NewAddressCommand {})),
         ("defaultfee", Box::new(DefaultFeeCommand {})),
         ("seed", Box::new(SeedCommand {})),
+        ("get_birthday", Box::new(GetBirthdayCommand {})),
     ];
 
     HashMap::from(entries)
