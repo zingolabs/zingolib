@@ -965,6 +965,30 @@ impl Command for ValueTxSummariesCommand {
         })
     }
 }
+struct MemoBytesToAddressCommand {}
+impl Command for MemoBytesToAddressCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Get an object where keys are addresses and values are total bytes of memo sent to that address.
+            usage:
+            memo_bytes_to_address
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Show by address memo_bytes transfers for this seed."
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+        if args.len() > 1 {
+            return format!("didn't understand arguments\n{}", self.help());
+        }
+
+        RT.block_on(async move {
+            json::JsonValue::from(lightclient.do_total_value_to_address().await).pretty(2)
+        })
+    }
+}
 struct ValueToAddressCommand {}
 impl Command for ValueToAddressCommand {
     fn help(&self) -> &'static str {
