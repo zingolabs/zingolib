@@ -768,14 +768,23 @@ impl LightClient {
         finsight::ValuesSentToAddress(amount_by_address)
     }
 
-    pub async fn do_total_value_to_address(&self) -> finsight::TotalToAddress {
+    pub async fn do_total_value_to_address(&self) -> finsight::TotalValueToAddress {
         let values_sent_to_addresses = self.value_transfer_by_to_address().await;
         let mut by_address_total = HashMap::new();
         for key in values_sent_to_addresses.0.keys() {
             let sum = values_sent_to_addresses.0[key].iter().sum();
             by_address_total.insert(key.clone(), sum);
         }
-        finsight::TotalToAddress(by_address_total)
+        finsight::TotalValueToAddress(by_address_total)
+    }
+    pub async fn do_total_spends_to_address(&self) -> finsight::TotalSendsToAddress {
+        let values_sent_to_addresses = self.value_transfer_by_to_address().await;
+        let mut by_address_number_sends = HashMap::new();
+        for key in values_sent_to_addresses.0.keys() {
+            let number_sends = values_sent_to_addresses.0[key].len() as u64;
+            by_address_number_sends.insert(key.clone(), number_sends);
+        }
+        finsight::TotalSendsToAddress(by_address_number_sends)
     }
     pub async fn do_list_txsummaries(&self) -> Vec<ValueTransfer> {
         let mut summaries: Vec<ValueTransfer> = Vec::new();
