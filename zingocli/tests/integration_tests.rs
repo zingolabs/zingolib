@@ -2390,6 +2390,21 @@ async fn zero_value_receipts() {
     );
     drop(child_process_handler);
 }
+#[tokio::test]
+async fn by_address_finsight() {
+    let (regtest_manager, child_process_handler, faucet, recipient) =
+        scenarios::faucet_recipient().await;
+    faucet
+        .do_send(vec![(
+            &get_base_address!(recipient, "unified"),
+            1_000u64,
+            Some("1".to_string()),
+        )])
+        .await
+        .unwrap();
+
+    drop(child_process_handler);
+}
 
 #[tokio::test]
 async fn shield_sapling() {
