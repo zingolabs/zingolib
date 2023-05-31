@@ -58,6 +58,27 @@ impl Command for ChangeServerCommand {
     }
 }
 
+struct GetBirthdayCommand {}
+impl Command for GetBirthdayCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Introspect over wallet value transfers, and report the lowest observed block height.
+            Usage:
+            get_birthday
+
+            Example:
+            get_birthday
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Get wallet birthday."
+    }
+
+    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
+        RT.block_on(async move { lightclient.do_get_birthday().await.to_string() })
+    }
+}
 struct InterruptCommand {}
 impl Command for InterruptCommand {
     fn help(&self) -> &'static str {
@@ -1279,7 +1300,7 @@ impl Command for QuitCommand {
 }
 
 pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
-    let entries: [(&'static str, Box<dyn Command>); 32] = [
+    let entries: [(&'static str, Box<dyn Command>); 33] = [
         ("sync", Box::new(SyncCommand {})),
         ("syncstatus", Box::new(SyncStatusCommand {})),
         ("encryptmessage", Box::new(EncryptMessageCommand {})),
@@ -1312,6 +1333,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("new", Box::new(NewAddressCommand {})),
         ("defaultfee", Box::new(DefaultFeeCommand {})),
         ("seed", Box::new(SeedCommand {})),
+        ("get_birthday", Box::new(GetBirthdayCommand {})),
     ];
 
     HashMap::from(entries)

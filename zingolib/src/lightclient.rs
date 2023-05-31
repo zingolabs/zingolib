@@ -768,6 +768,16 @@ impl LightClient {
         finsight::ValuesSentToAddress(amount_by_address)
     }
 
+    pub async fn do_get_birthday(&self) -> u64 {
+        let summaries = self.do_list_txsummaries().await;
+        let mut min_height = 0;
+        for summary in summaries {
+            if u64::from(summary.block_height) < min_height {
+                min_height = u64::from(summary.block_height);
+            }
+        }
+        min_height
+    }
     pub async fn do_total_value_to_address(&self) -> finsight::TotalValueToAddress {
         let values_sent_to_addresses = self.value_transfer_by_to_address().await;
         let mut by_address_total = HashMap::new();
