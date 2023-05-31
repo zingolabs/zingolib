@@ -361,12 +361,10 @@ to scan from the start of the blockchain."
                 "regtest" => ChainType::Regtest,
                 _ => return Err(TemplateFillError::InvalidChain(chain.clone())),
             }
+        } else if matches.is_present("regtest") {
+            ChainType::Regtest
         } else {
-            if matches.is_present("regtest") {
-                ChainType::Regtest
-            } else {
-                ChainType::Mainnet
-            }
+            ChainType::Mainnet
         };
 
         // Test to make sure the server has all of scheme, host and port
