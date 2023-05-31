@@ -985,7 +985,7 @@ impl Command for MemoBytesToAddressCommand {
         }
 
         RT.block_on(async move {
-            json::JsonValue::from(lightclient.do_total_value_to_address().await).pretty(2)
+            json::JsonValue::from(lightclient.do_total_memobytes_to_address().await).pretty(2)
         })
     }
 }
