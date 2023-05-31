@@ -19,18 +19,18 @@ lazy_static! {
 }
 
 fn lock_client_return_seed(lightclient: LightClient) -> String {
+    let lc = Arc::new(lightclient);
+    LightClient::start_mempool_monitor(lc.clone());
+
+    LIGHTCLIENT.lock().unwrap().replace(Some(lc));
+
     let seed = match lightclient.do_seed_phrase_sync() {
         Ok(s) => s.dump(),
         Err(e) => {
             return format!("Error: {}", e);
         }
     };
-
-    let lc = Arc::new(lightclient);
-    LightClient::start_mempool_monitor(lc.clone());
-
-    LIGHTCLIENT.lock().unwrap().replace(Some(lc));
-
+    
     seed
 }
 fn construct_uri_load_config(
