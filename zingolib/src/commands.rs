@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 use std::str::FromStr;
 use tokio::runtime::Runtime;
+use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_client_backend::address::RecipientAddress;
 use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
 
@@ -173,10 +174,44 @@ impl Command for ParseCommand {
                         }
                     }
                 })
-                .unwrap_or(object! {
-                    "status" => "Invalid address",
-                    "chain_name" => json::JsonValue::Null,
-                    "address_kind" => json::JsonValue::Null
+                .unwrap_or(match Ufvk::decode(args[0]) {
+                    Ok((network, ufvk)) => {
+                        let mut pools_available = vec![];
+                        for fvk in ufvk.items_as_parsed() {
+                            match fvk {
+                                zcash_address::unified::Fvk::Orchard(_) => {
+                                    pools_available.push("orchard")
+                                }
+                                zcash_address::unified::Fvk::Sapling(_) => {
+                                    pools_available.push("sapling")
+                                }
+                                zcash_address::unified::Fvk::P2pkh(_) => {
+                                    pools_available.push("transparent")
+                                }
+                                zcash_address::unified::Fvk::Unknown { .. } => pools_available
+                                    .push(
+                                    "Unknown future protocol. Perhaps you're using old software",
+                                ),
+                            }
+                        }
+                        object! {
+                            "status" => "success",
+                            "chain_name" => match network {
+                                zcash_address::Network::Main => "main",
+                                zcash_address::Network::Test => "test",
+                                zcash_address::Network::Regtest => "regtest",
+                            },
+                            "address_kind" => "ufvk",
+                            "pools_available" => pools_available,
+                        }
+                    }
+                    Err(_) => {
+                        object! {
+                            "status" => "Invalid address",
+                            "chain_name" => json::JsonValue::Null,
+                            "address_kind" => json::JsonValue::Null
+                        }
+                    }
                 }),
                 4,
             ),
