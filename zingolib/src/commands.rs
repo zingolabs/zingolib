@@ -965,6 +965,30 @@ impl Command for ValueTxSummariesCommand {
         })
     }
 }
+struct MemoBytesToAddressCommand {}
+impl Command for MemoBytesToAddressCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Get an object where keys are addresses and values are total bytes of memo sent to that address.
+            usage:
+            memobytes_to_address
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Show by address memo_bytes transfers for this seed."
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+        if args.len() > 1 {
+            return format!("didn't understand arguments\n{}", self.help());
+        }
+
+        RT.block_on(async move {
+            json::JsonValue::from(lightclient.do_total_memobytes_to_address().await).pretty(2)
+        })
+    }
+}
 struct ValueToAddressCommand {}
 impl Command for ValueToAddressCommand {
     fn help(&self) -> &'static str {
@@ -1362,7 +1386,7 @@ impl Command for QuitCommand {
 }
 
 pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
-    let entries: [(&'static str, Box<dyn Command>); 34] = [
+    let entries: [(&'static str, Box<dyn Command>); 35] = [
         ("sync", Box::new(SyncCommand {})),
         ("syncstatus", Box::new(SyncStatusCommand {})),
         ("encryptmessage", Box::new(EncryptMessageCommand {})),
@@ -1382,6 +1406,10 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("summaries", Box::new(ValueTxSummariesCommand {})),
         ("value_to_address", Box::new(ValueToAddressCommand {})),
         ("sends_to_address", Box::new(SendsToAddressCommand {})),
+        (
+            "memobytes_to_address",
+            Box::new(MemoBytesToAddressCommand {}),
+        ),
         ("getoption", Box::new(GetOptionCommand {})),
         ("import", Box::new(ImportCommand {})),
         ("exportufvk", Box::new(ExportUfvkCommand {})),
