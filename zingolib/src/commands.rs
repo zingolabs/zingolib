@@ -233,7 +233,7 @@ impl Command for ParseViewKeyCommand {
                         }
                         Err(_) => {
                             object! {
-                                "status" => "Invalid address",
+                                "status" => "Invalid viewkey",
                                 "chain_name" => json::JsonValue::Null,
                                 "address_kind" => json::JsonValue::Null
                             }
