@@ -508,7 +508,7 @@ pub mod finsight {
     pub struct TotalValueToAddress(pub std::collections::HashMap<String, u64>);
     pub struct TotalSendsToAddress(pub std::collections::HashMap<String, u64>);
     #[derive(Debug)]
-    pub struct TotalMemoBytesToAddress(pub std::collections::HashMap<String, u64>);
+    pub struct TotalMemoBytesToAddress(pub std::collections::HashMap<String, usize>);
     impl From<TotalMemoBytesToAddress> for json::JsonValue {
         fn from(value: TotalMemoBytesToAddress) -> Self {
             let mut jsonified = json::object!();

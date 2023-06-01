@@ -768,6 +768,25 @@ impl LightClient {
         finsight::ValuesSentToAddress(amount_by_address)
     }
 
+    pub async fn do_total_memobytes_to_address(&self) -> finsight::TotalMemoBytesToAddress {
+        let summaries = self.do_list_txsummaries().await;
+        let mut memobytes_by_address = HashMap::new();
+        for summary in summaries {
+            use ValueTransferKind::*;
+            match summary.kind {
+                Sent { to_address, .. } => {
+                    let address = to_address.encode();
+                    let bytes = summary.memos.iter().fold(0, |sum, m| sum + m.len());
+                    memobytes_by_address
+                        .entry(address)
+                        .and_modify(|e| *e += bytes)
+                        .or_insert(bytes);
+                }
+                SendToSelf { .. } | Received { .. } | Fee { .. } => (),
+            }
+        }
+        finsight::TotalMemoBytesToAddress(memobytes_by_address)
+    }
     pub async fn do_get_birthday(&self) -> u64 {
         let summaries = self.do_list_txsummaries().await;
         let mut min_height = 0;
