@@ -971,7 +971,7 @@ impl Command for MemoBytesToAddressCommand {
         indoc! {r#"
             Get an object where keys are addresses and values are total bytes of memo sent to that address.
             usage:
-            memo_bytes_to_address
+            memobytes_to_address
         "#}
     }
 
@@ -1386,7 +1386,7 @@ impl Command for QuitCommand {
 }
 
 pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
-    let entries: [(&'static str, Box<dyn Command>); 34] = [
+    let entries: [(&'static str, Box<dyn Command>); 35] = [
         ("sync", Box::new(SyncCommand {})),
         ("syncstatus", Box::new(SyncStatusCommand {})),
         ("encryptmessage", Box::new(EncryptMessageCommand {})),
@@ -1406,6 +1406,10 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("summaries", Box::new(ValueTxSummariesCommand {})),
         ("value_to_address", Box::new(ValueToAddressCommand {})),
         ("sends_to_address", Box::new(SendsToAddressCommand {})),
+        (
+            "memobytes_to_address",
+            Box::new(MemoBytesToAddressCommand {}),
+        ),
         ("getoption", Box::new(GetOptionCommand {})),
         ("import", Box::new(ImportCommand {})),
         ("exportufvk", Box::new(ExportUfvkCommand {})),
