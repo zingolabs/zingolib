@@ -114,10 +114,10 @@ impl Command for ParseAddressCommand {
         indoc! {r#"
             Parse an address
             Usage:
-            parse [address]
+            parse_address [address]
 
             Example
-            parse tmSwk8bjXdCgBvpS8Kybk5nUyE21QFcDqre
+            parse_address tmSwk8bjXdCgBvpS8Kybk5nUyE21QFcDqre
         "#}
     }
 
@@ -185,17 +185,17 @@ struct ParseViewKeyCommand {}
 impl Command for ParseViewKeyCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Parse an address
+            Parse a View Key
             Usage:
-            parse [address]
+            parse_viewkey viewing_key
 
             Example
-            parse tmSwk8bjXdCgBvpS8Kybk5nUyE21QFcDqre
+            parse_viewkey uviewregtest1l6s73mncrefycjhksvcp3zd6x2rpwddewv852ms8w0j828wu77h8v07fs6ph68kyp0ujwk4qmr3w4v9js4mr3ufqyasr0sddgumzyjamcgreda44kxtv4ar084szez337ld58avd9at4r5lptltgkn6uayzd055upf8cnlkarnxp69kz0vzelfww08xxhm0q0azdsplxff0mn2yyve88jyl8ujfau66pnc37skvl9528zazztf6xgk8aeewswjg4eeahpml77cxh57spgywdsc99h99twmp8sqhmp7g78l3g90equ2l4vh9vy0va6r8p568qr7nm5l5y96qgwmw9j2j788lalpeywy0af86krh4td69xqrrye6dvfx0uff84s3pm50kqx3tg3ktx88j2ujswe25s7pqvv3w4x382x07w0dp5gguqu757wlyf80f5nu9uw7wqttxmvrjhkl22x43de960c7kt97ge0dkt52j7uckht54eq768
         "#}
     }
 
     fn short_help(&self) -> &'static str {
-        "Parse an address"
+        "Parse a view_key."
     }
 
     fn exec(&self, args: &[&str], _lightclient: &LightClient) -> String {
