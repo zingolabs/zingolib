@@ -108,16 +108,16 @@ impl Command for InterruptCommand {
     }
 }
 
-struct ParseCommand {}
-impl Command for ParseCommand {
+struct ParseAddressCommand {}
+impl Command for ParseAddressCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
             Parse an address
             Usage:
-            parse [address]
+            parse_address [address]
 
             Example
-            parse tmSwk8bjXdCgBvpS8Kybk5nUyE21QFcDqre
+            parse_address tmSwk8bjXdCgBvpS8Kybk5nUyE21QFcDqre
         "#}
     }
 
@@ -173,48 +173,75 @@ impl Command for ParseCommand {
                             }
                         }
                     }
-                })
-                .unwrap_or(match Ufvk::decode(args[0]) {
-                    Ok((network, ufvk)) => {
-                        let mut pools_available = vec![];
-                        for fvk in ufvk.items_as_parsed() {
-                            match fvk {
-                                zcash_address::unified::Fvk::Orchard(_) => {
-                                    pools_available.push("orchard")
-                                }
-                                zcash_address::unified::Fvk::Sapling(_) => {
-                                    pools_available.push("sapling")
-                                }
-                                zcash_address::unified::Fvk::P2pkh(_) => {
-                                    pools_available.push("transparent")
-                                }
-                                zcash_address::unified::Fvk::Unknown { .. } => pools_available
-                                    .push(
-                                    "Unknown future protocol. Perhaps you're using old software",
-                                ),
-                            }
-                        }
-                        object! {
-                            "status" => "success",
-                            "chain_name" => match network {
-                                zcash_address::Network::Main => "main",
-                                zcash_address::Network::Test => "test",
-                                zcash_address::Network::Regtest => "regtest",
-                            },
-                            "address_kind" => "ufvk",
-                            "pools_available" => pools_available,
-                        }
-                    }
-                    Err(_) => {
-                        object! {
-                            "status" => "Invalid address",
-                            "chain_name" => json::JsonValue::Null,
-                            "address_kind" => json::JsonValue::Null
-                        }
-                    }
                 }),
                 4,
             ),
+            _ => self.help().to_string(),
+        }
+    }
+}
+
+struct ParseViewKeyCommand {}
+impl Command for ParseViewKeyCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Parse a View Key
+            Usage:
+            parse_viewkey viewing_key
+
+            Example
+            parse_viewkey uviewregtest1l6s73mncrefycjhksvcp3zd6x2rpwddewv852ms8w0j828wu77h8v07fs6ph68kyp0ujwk4qmr3w4v9js4mr3ufqyasr0sddgumzyjamcgreda44kxtv4ar084szez337ld58avd9at4r5lptltgkn6uayzd055upf8cnlkarnxp69kz0vzelfww08xxhm0q0azdsplxff0mn2yyve88jyl8ujfau66pnc37skvl9528zazztf6xgk8aeewswjg4eeahpml77cxh57spgywdsc99h99twmp8sqhmp7g78l3g90equ2l4vh9vy0va6r8p568qr7nm5l5y96qgwmw9j2j788lalpeywy0af86krh4td69xqrrye6dvfx0uff84s3pm50kqx3tg3ktx88j2ujswe25s7pqvv3w4x382x07w0dp5gguqu757wlyf80f5nu9uw7wqttxmvrjhkl22x43de960c7kt97ge0dkt52j7uckht54eq768
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Parse a view_key."
+    }
+
+    fn exec(&self, args: &[&str], _lightclient: &LightClient) -> String {
+        match args.len() {
+            1 => {
+                json::stringify_pretty(
+                    match Ufvk::decode(args[0]) {
+                        Ok((network, ufvk)) => {
+                            let mut pools_available = vec![];
+                            for fvk in ufvk.items_as_parsed() {
+                                match fvk {
+                            zcash_address::unified::Fvk::Orchard(_) => {
+                                pools_available.push("orchard")
+                            }
+                            zcash_address::unified::Fvk::Sapling(_) => {
+                                pools_available.push("sapling")
+                            }
+                            zcash_address::unified::Fvk::P2pkh(_) => {
+                                pools_available.push("transparent")
+                            }
+                            zcash_address::unified::Fvk::Unknown { .. } => pools_available
+                                .push("Unknown future protocol. Perhaps you're using old software"),
+                        }
+                            }
+                            object! {
+                                "status" => "success",
+                                "chain_name" => match network {
+                                    zcash_address::Network::Main => "main",
+                                    zcash_address::Network::Test => "test",
+                                    zcash_address::Network::Regtest => "regtest",
+                                },
+                                "address_kind" => "ufvk",
+                                "pools_available" => pools_available,
+                            }
+                        }
+                        Err(_) => {
+                            object! {
+                                "status" => "Invalid viewkey",
+                                "chain_name" => json::JsonValue::Null,
+                                "address_kind" => json::JsonValue::Null
+                            }
+                        }
+                    },
+                    4,
+                )
+            }
             _ => self.help().to_string(),
         }
     }
@@ -1335,12 +1362,13 @@ impl Command for QuitCommand {
 }
 
 pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
-    let entries: [(&'static str, Box<dyn Command>); 33] = [
+    let entries: [(&'static str, Box<dyn Command>); 34] = [
         ("sync", Box::new(SyncCommand {})),
         ("syncstatus", Box::new(SyncStatusCommand {})),
         ("encryptmessage", Box::new(EncryptMessageCommand {})),
         ("decryptmessage", Box::new(DecryptMessageCommand {})),
-        ("parse", Box::new(ParseCommand {})),
+        ("parse_address", Box::new(ParseAddressCommand {})),
+        ("parse_viewkey", Box::new(ParseViewKeyCommand {})),
         ("interrupt_sync_after_batch", Box::new(InterruptCommand {})),
         ("changeserver", Box::new(ChangeServerCommand {})),
         ("rescan", Box::new(RescanCommand {})),
