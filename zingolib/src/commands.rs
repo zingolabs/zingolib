@@ -80,6 +80,40 @@ impl Command for GetBirthdayCommand {
         RT.block_on(async move { lightclient.do_get_birthday().await.to_string() })
     }
 }
+
+struct WalletKindCommand {}
+impl Command for WalletKindCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Displays the kind of wallet currently loaded
+            If a Ufvk, displays what pools are supported.
+            Currently, spend-capable wallets will always have spend capability for all three pools
+            "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Displays the kind of wallet currently loaded"
+    }
+
+    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
+        RT.block_on(async move {
+            if lightclient.do_seed_phrase().await.is_ok() {
+                object! {"kind" => "Seeded"}.pretty(4)
+            } else {
+                let capability_arc = lightclient.wallet.wallet_capability();
+                let capability = capability_arc.read().await;
+                object! {
+                    "kind" => "Loaded from key",
+                    "transparent" => capability.transparent.kind_str(),
+                    "sapling" => capability.sapling.kind_str(),
+                    "orchard" => capability.orchard.kind_str(),
+                }
+                .pretty(4)
+            }
+        })
+    }
+}
+
 struct InterruptCommand {}
 impl Command for InterruptCommand {
     fn help(&self) -> &'static str {
@@ -1386,7 +1420,7 @@ impl Command for QuitCommand {
 }
 
 pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
-    let entries: [(&'static str, Box<dyn Command>); 35] = [
+    let entries: [(&'static str, Box<dyn Command>); 36] = [
         ("sync", Box::new(SyncCommand {})),
         ("syncstatus", Box::new(SyncStatusCommand {})),
         ("encryptmessage", Box::new(EncryptMessageCommand {})),
@@ -1425,6 +1459,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("defaultfee", Box::new(DefaultFeeCommand {})),
         ("seed", Box::new(SeedCommand {})),
         ("get_birthday", Box::new(GetBirthdayCommand {})),
+        ("wallet_kind", Box::new(WalletKindCommand {})),
     ];
 
     HashMap::from(entries)
