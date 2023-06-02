@@ -43,6 +43,14 @@ impl<V, S> Capability<V, S> {
             Capability::Spend(_) => true,
         }
     }
+
+    pub fn kind_str(&self) -> &'static str {
+        match self {
+            Capability::None => "No key",
+            Capability::View(_) => "View only",
+            Capability::Spend(_) => "Spend capable",
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
