@@ -789,7 +789,7 @@ impl LightClient {
     }
     pub async fn do_get_birthday(&self) -> u64 {
         let summaries = self.do_list_txsummaries().await;
-        let mut min_height = 0;
+        let mut min_height = u64::from(summaries[0].block_height);
         for summary in summaries {
             if u64::from(summary.block_height) < min_height {
                 min_height = u64::from(summary.block_height);
