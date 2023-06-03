@@ -51,8 +51,7 @@ fn construct_uri_load_config(
     let chaintype = match chain_hint {
         "main" => Mainnet,
         "test" => Testnet,
-        "regression" => Regtest,
-        "fakemain" => FakeMainnet,
+        "regtest" => Regtest,
         _ => return Err("Not a valid chain hint!".to_string()),
     };
     let mut config = match zingolib::load_clientconfig(lightwalletd_uri.clone(), None, chaintype) {
