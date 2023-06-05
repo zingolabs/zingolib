@@ -1209,31 +1209,6 @@ impl Command for GetOptionCommand {
     }
 }
 
-struct ImportCommand {}
-impl Command for ImportCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r#"
-            Import an external spending or viewing key into the wallet
-            Usage:
-            import <spending_key | viewing_key> <birthday> [norescan]
-            OR
-            import '{'key': <spending_key or viewing_key>, 'birthday': <birthday>, 'norescan': <true>}'
-
-            Birthday is the earliest block number that has transactions belonging to the imported key. Rescanning will start from this block. If not sure, you can specify '0', which will start rescanning from the first sapling block.
-            Note that you can import only the full spending (private) key or the full viewing key.
-
-        "#}
-    }
-
-    fn short_help(&self) -> &'static str {
-        "Import spending or viewing keys into the wallet"
-    }
-
-    fn exec(&self, _args: &[&str], _lightclient: &LightClient) -> String {
-        "Key import not currently supported".to_string()
-    }
-}
-
 struct HeightCommand {}
 impl Command for HeightCommand {
     fn help(&self) -> &'static str {
@@ -1420,7 +1395,7 @@ impl Command for QuitCommand {
 }
 
 pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
-    let entries: [(&'static str, Box<dyn Command>); 36] = [
+    let entries: [(&'static str, Box<dyn Command>); 35] = [
         ("sync", Box::new(SyncCommand {})),
         ("syncstatus", Box::new(SyncStatusCommand {})),
         ("encryptmessage", Box::new(EncryptMessageCommand {})),
@@ -1445,7 +1420,6 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
             Box::new(MemoBytesToAddressCommand {}),
         ),
         ("getoption", Box::new(GetOptionCommand {})),
-        ("import", Box::new(ImportCommand {})),
         ("exportufvk", Box::new(ExportUfvkCommand {})),
         ("info", Box::new(InfoCommand {})),
         ("updatecurrentprice", Box::new(UpdateCurrentPriceCommand {})),
