@@ -40,19 +40,22 @@ fn lock_client_return_seed(lightclient: LightClient) -> String {
 
     seed
 }
+
 fn construct_uri_load_config(
     uri: String,
     data_dir: String,
-    chain_hint: &str,
+    chain_hint: String,
 ) -> Result<(zingoconfig::ZingoConfig, http::Uri), String> {
     let lightwalletd_uri = construct_lightwalletd_uri(Some(uri));
 
+    let chain_hint_str: &str = chain_hint.as_str();
+
     use zingoconfig::ChainType::*;
-    let chaintype = match chain_hint {
+    let chaintype = match chain_hint_str {
         "main" => Mainnet,
         "test" => Testnet,
         "regtest" => Regtest,
-        _ => return Err("Not a valid chain hint!".to_string()),
+        _ => return Err("Error: Not a valid chain hint!".to_string()),
     };
     let mut config = match zingolib::load_clientconfig(lightwalletd_uri.clone(), None, chaintype) {
         Ok(c) => c,
@@ -64,7 +67,8 @@ fn construct_uri_load_config(
     config.set_data_dir(data_dir);
     Ok((config, lightwalletd_uri))
 }
-pub fn init_new(server_uri: String, data_dir: String, chain_hint: &str) -> String {
+
+pub fn init_new(server_uri: String, data_dir: String, chain_hint: String) -> String {
     let (config, lightwalletd_uri);
     match construct_uri_load_config(server_uri, data_dir, chain_hint) {
         Ok((c, h)) => (config, lightwalletd_uri) = (c, h),
@@ -90,7 +94,7 @@ pub fn init_from_seed(
     seed: String,
     birthday: u64,
     data_dir: String,
-    chain_hint: &str,
+    chain_hint: String,
 ) -> String {
     let (config, _lightwalletd_uri);
     match construct_uri_load_config(server_uri, data_dir, chain_hint) {
@@ -116,7 +120,7 @@ pub fn init_from_ufvk(
     ufvk: String,
     birthday: u64,
     data_dir: String,
-    chain_hint: &str,
+    chain_hint: String,
 ) -> String {
     let (config, _lightwalletd_uri);
     match construct_uri_load_config(server_uri, data_dir, chain_hint) {
@@ -137,7 +141,7 @@ pub fn init_from_b64(
     server_uri: String,
     base64_data: String,
     data_dir: String,
-    chain_hint: &str,
+    chain_hint: String,
 ) -> String {
     let (config, _lightwalletd_uri);
     match construct_uri_load_config(server_uri, data_dir, chain_hint) {
