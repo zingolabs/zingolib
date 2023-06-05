@@ -4126,6 +4126,7 @@ dependencies = [
  "clap",
  "env_logger",
  "futures",
+ "futures-util",
  "hex 0.3.2",
  "http",
  "http-body",

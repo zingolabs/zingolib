@@ -113,7 +113,7 @@ fn regtest_config_check(regtest_manager: &Option<regtest::RegtestManager>, chain
     } else if regtest_manager.is_some() && chain != &ChainType::Regtest {
         panic!("Regtest flag detected, but unexpected network set! Exiting.");
     } else if chain == &ChainType::Regtest {
-        panic!("WARNING! regtest network in use but no regtest flag recognized!");
+        println!("WARNING! regtest network in use but no regtest flag recognized!");
     }
 }
 
