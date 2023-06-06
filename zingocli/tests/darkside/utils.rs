@@ -16,8 +16,9 @@ pub fn generate_darksidewalletd() -> (String, PathBuf) {
 }
 
 pub struct DarksideHandler {
-    lightwalletd_handle: Child,
-    port: String,
+    pub lightwalletd_handle: Child,
+    pub port: String,
+    pub darkside_dir: PathBuf,
 }
 
 impl DarksideHandler {
@@ -29,14 +30,17 @@ impl DarksideHandler {
                 "--no-tls-very-insecure",
                 "--data-dir",
                 &darkside_dir.to_string_lossy().to_string(),
+                "--rpcport",
+                &port,
                 "--log-file",
-                "/dev/stdout",
+                &darkside_dir.join("lwd_log").to_string_lossy().to_string(),
             ])
             .spawn()
             .unwrap();
         Self {
             lightwalletd_handle,
             port,
+            darkside_dir,
         }
     }
 }
