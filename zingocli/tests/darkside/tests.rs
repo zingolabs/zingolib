@@ -1,6 +1,6 @@
 tonic::include_proto!("cash.z.wallet.sdk.rpc");
 
-use crate::utils::scenarios::setup::ClientManager;
+use crate::{darkside::utils::DarksideHandler, utils::scenarios::setup::ClientManager};
 use darkside_streamer_client::DarksideStreamerClient;
 use json::JsonValue;
 use rand::Rng;
@@ -150,12 +150,17 @@ impl DarksideConnector {
 }
 
 async fn prepare_darksidewalletd(uri: http::Uri) -> Result<(), String> {
+    dbg!(&uri);
     let connector = DarksideConnector(uri);
+
+    let mut client = connector.get_client().await.unwrap();
+    client.clear_address_utxo(Empty {}).await.unwrap();
 
     // reset with parameters
     connector
-        .reset(663_150, String::from("2bb40e60"), String::from("main"))
-        .await?;
+        .reset(663_150, String::from("2bb40e60"), String::from("regtest"))
+        .await
+        .unwrap();
 
     connector
         .stage_blocks_stream(vec![String::from(
@@ -228,22 +233,17 @@ async fn prepare_darksidewalletd(uri: http::Uri) -> Result<(), String> {
 
 #[tokio::test]
 async fn test_simple_sync() {
-    let mut rng = rand::thread_rng();
+    let darkside_handler = DarksideHandler::new();
 
-    let num: u32 = rng.gen_range(0..100000);
-    let temp_dir = TempDir::new(&format!("dwld_test_{num}")).unwrap();
-    let path = temp_dir.path().to_path_buf();
-
-    let darkside_server_uri =
-        zingoconfig::construct_lightwalletd_uri(Some(format!("http://127.0.0.1:9067")));
-
-    prepare_darksidewalletd(darkside_server_uri).await.unwrap();
-
-    let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!("http://127.0.0.1:9067")));
+    let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
+        "http://127.0.0.1:{}",
+        darkside_handler.port
+    )));
+    prepare_darksidewalletd(server_id.clone()).await.unwrap();
 
     let light_client = ClientManager::new(
             server_id,
-            path,
+            darkside_handler.darkside_dir.clone(),
             "still champion voice habit trend flight survey between bitter process artefact blind carbon truly provide dizzy crush flush breeze blouse charge solid fish spread"
         )
             .build_new_faucet(663150, true).await;
