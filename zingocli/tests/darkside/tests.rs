@@ -1,6 +1,5 @@
 tonic::include_proto!("cash.z.wallet.sdk.rpc");
 
-use crate::data;
 use crate::utils::scenarios::setup::ClientManager;
 use darkside_streamer_client::DarksideStreamerClient;
 use json::JsonValue;
@@ -160,7 +159,7 @@ async fn prepare_darksidewalletd(uri: http::Uri) -> Result<(), String> {
 
     connector
         .stage_blocks_stream(vec![String::from(
-            crate::darksidewalletd::data::ORCHARD_FUNDED_100ZEC_BLOCK,
+            crate::darkside::constants::ORCHARD_FUNDED_100ZEC_BLOCK,
         )])
         .await?;
 

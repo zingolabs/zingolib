@@ -1,3 +1,4 @@
+#[cfg(feature = "darkside_tests")]
 mod constants;
-#[cfg(feature = "darksidewalletd_tests")]
-pub mod darksidewalletd;
+#[cfg(feature = "darkside_tests")]
+pub mod tests;

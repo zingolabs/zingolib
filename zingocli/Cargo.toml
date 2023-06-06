@@ -49,7 +49,7 @@ zcash_primitives = { workspace = true }
 [features]
 default = ["local_env"]
 local_env = []
-darksidewalletd_tests = []
+darkside_tests = []
 
 [build-dependencies]
 tonic-build = { workspace = true }
