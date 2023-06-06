@@ -10,7 +10,8 @@ pub fn get_cargo_manifest_dir_parent() -> PathBuf {
         .unwrap()
         .to_path_buf()
 }
-pub(crate) fn get_regtest_dir() -> PathBuf {
+
+pub fn get_regtest_dir() -> PathBuf {
     get_cargo_manifest_dir_parent().join("regtest")
 }
 
@@ -50,7 +51,14 @@ impl Drop for ChildProcessHandler {
         match self.zcash_cli_command.arg("stop").output() {
             Ok(_) => {
                 if let Err(e) = self.zcashd.wait() {
-                    log::warn!("zcashd process didn't start properly: {e}")
+                    log::warn!("zcashd cannot be awaited: {e}")
+                } else {
+                    log::debug!("zcashd successfully shut down")
+                };
+                if let Err(e) = self.lightwalletd.wait() {
+                    log::warn!("lightwalletd cannot be awaited: {e}")
+                } else {
+                    log::debug!("lightwalletd successfully shut down")
                 };
             }
             Err(e) => {
