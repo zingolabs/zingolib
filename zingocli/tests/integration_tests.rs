@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 #![cfg(feature = "local_env")]
-pub mod darksidewalletd;
+pub mod darkside;
 mod data;
 mod utils;
 use std::{
