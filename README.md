@@ -16,8 +16,9 @@ Zingo-CLI does automatic note and utxo management, which means it doesn't allow 
 * Defaults to sending shielded transactions, even if you're sending to a transparent address
 * Sapling funds need at least 5 confirmations before they can be spent
 * Can select funds from multiple shielded addresses in the same transaction
-* Will automatically shield your transparent funds at the first opportunity
-    * When sending an outgoing transaction to a shielded address, Zingo-CLI can decide to use the transaction to additionally shield your transparent funds (i.e., send your transparent funds to your own shielded address in the same transaction)
+* Will automatically shield your sapling funds at the first opportunity
+    * When sending an outgoing transaction to a shielded address, Zingo-CLI can decide to use the transaction to additionally shield your sapling funds (i.e., send your sapling funds to your own orchard address in the same transaction)
+* Transparent funds are only spent via explicit shield operations
 
 ## Compiling from source
 
