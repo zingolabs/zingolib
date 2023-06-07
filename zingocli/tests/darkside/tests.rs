@@ -95,7 +95,23 @@ impl DarksideConnector {
             }
         },
         stage_blocks(&self, url: String) { DarksideBlocksUrl { url } },
-        stage_blocks_stream(&self, blocks: Vec<String>) { ::futures_util::stream::iter(blocks.into_iter().map(|block| DarksideBlock { block })) }
+        stage_blocks_create(
+            &self,
+            height: i32,
+            count: i32,
+            nonce: i32
+        ) {
+            DarksideEmptyBlocks {
+                height,
+                count,
+                nonce
+            }
+        },
+        stage_blocks_stream(&self, blocks: Vec<String>) {
+            ::futures_util::stream::iter(
+                blocks.into_iter().map(|block| DarksideBlock { block })
+            )
+        }
     );
 }
 
