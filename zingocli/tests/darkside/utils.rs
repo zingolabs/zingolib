@@ -26,27 +26,19 @@ impl DarksideHandler {
     pub fn new() -> Self {
         let (grpc_port, darkside_dir) = generate_darksidewalletd();
         let log_file = &darkside_dir.join("lwd_log").to_string_lossy().to_string();
-        let grpc_bind_addr = format!("127.0.0.1:{grpc_port}");
+        let grpc_bind_addr = Some(format!("127.0.0.1:{grpc_port}"));
         let darkside_dir_string = darkside_dir.to_string_lossy().to_string();
         println!("Darksidewalletd running at {darkside_dir_string}");
 
-        let lightwalletd_handle = Command::new(get_regtest_dir().join("bin").join("lightwalletd"))
-            .args([
-                "--darkside-very-insecure",
-                "--no-tls-very-insecure",
-                "--data-dir",
-                &darkside_dir_string,
-                "--log-file",
-                log_file,
-                "--grpc-bind-addr",
-                &grpc_bind_addr,
-            ])
-            .spawn()
-            .unwrap();
-
-        //TODO: Actually listen to dwd to see when it's ready
-        std::thread::sleep(Duration::from_secs(1));
-
+        let check_interval = Duration::from_millis(300);
+        let lightwalletd_handle = launch_lightwalletd(
+            darkside_dir.clone(),
+            darkside_dir.clone(),
+            darkside_dir.clone(),
+            get_regtest_dir().join("bin"),
+            check_interval,
+            grpc_bind_addr,
+        );
         Self {
             lightwalletd_handle,
             grpc_port,
