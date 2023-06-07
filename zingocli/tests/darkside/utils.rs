@@ -6,42 +6,43 @@ use std::{
 use zingo_cli::regtest::get_regtest_dir;
 
 pub fn generate_darksidewalletd() -> (String, PathBuf) {
-    let lightwalletd_rpcservice_port = portpicker::pick_unused_port()
+    let darkside_grpc_port = portpicker::pick_unused_port()
         .expect("Port unpickable!")
         .to_string();
     let darkside_dir = tempdir::TempDir::new("zingo_darkside_test")
         .unwrap()
         .into_path();
-    (lightwalletd_rpcservice_port, darkside_dir)
+    (darkside_grpc_port, darkside_dir)
 }
 
 pub struct DarksideHandler {
     pub lightwalletd_handle: Child,
-    pub port: String,
+    pub grpc_port: String,
     pub darkside_dir: PathBuf,
 }
 
 impl DarksideHandler {
     pub fn new() -> Self {
-        let (port, darkside_dir) = generate_darksidewalletd();
+        let (grpc_port, darkside_dir) = generate_darksidewalletd();
         let log_file = &darkside_dir.join("lwd_log").to_string_lossy().to_string();
-        dbg!(&log_file);
+        let grpc_bind_addr = format!("127.0.0.1:{grpc_port}");
         let lightwalletd_handle = Command::new(get_regtest_dir().join("bin").join("lightwalletd"))
             .args([
                 "--darkside-very-insecure",
                 "--no-tls-very-insecure",
                 "--data-dir",
                 &darkside_dir.to_string_lossy().to_string(),
-                "--rpcport",
-                &port,
                 "--log-file",
-                &darkside_dir.join("lwd_log").to_string_lossy().to_string(),
+                log_file,
+                "--grpc-bind-addr",
+                &grpc_bind_addr,
             ])
             .spawn()
             .unwrap();
+
         Self {
             lightwalletd_handle,
-            port,
+            grpc_port,
             darkside_dir,
         }
     }
