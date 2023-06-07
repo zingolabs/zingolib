@@ -4,7 +4,7 @@ use std::{
     time::Duration,
 };
 
-use zingo_cli::regtest::get_regtest_dir;
+use zingo_cli::regtest::{get_regtest_dir, launch_lightwalletd};
 
 pub fn generate_darksidewalletd() -> (String, PathBuf) {
     let darkside_grpc_port = portpicker::pick_unused_port()
