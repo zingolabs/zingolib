@@ -91,6 +91,7 @@ pub fn launch_lightwalletd(
     datadir: PathBuf,
     bindir: PathBuf,
     check_interval: std::time::Duration,
+    darkside: Option<String>,
 ) -> Child {
     let bin = bindir.join("lightwalletd");
     let lightwalletd_config = confsdir.join("lightwalletd.yml");
@@ -433,6 +434,7 @@ impl RegtestManager {
             self.data_dir.clone(),
             self.bin_dir.clone(),
             check_interval,
+            None,
         );
         Ok(ChildProcessHandler {
             zcashd: zcashd_handle,
