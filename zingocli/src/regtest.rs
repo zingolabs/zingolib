@@ -114,24 +114,23 @@ pub fn launch_lightwalletd(
     let mut lightwalletd_stderr_logfile =
         File::create(&lightwalletd_stderr_log).expect("file::create Result error");
 
+    let prepped_args = if let Some(grpcport) = darkside {
+        vec!["to_string".to_string()]
+    } else {
+        vec![
+            "--no-tls-very-insecure".to_string(),
+            "--zcash-conf-path".to_string(),
+            zcashd_config.to_string(),
+            "--config".to_string(),
+            lightwalletd_config.to_string_lossy().to_string(),
+            "--data-dir".to_string(),
+            lightwalletd_data_dir.to_string_lossy().to_string(),
+            "--log-file".to_string(),
+            lightwalletd_log.to_string_lossy().to_string(),
+        ]
+    };
     let mut lightwalletd_child = std::process::Command::new(bin)
-        .args([
-            "--no-tls-very-insecure",
-            "--zcash-conf-path",
-            zcashd_config,
-            "--config",
-            lightwalletd_config
-                .to_str()
-                .expect("lightwalletd_config PathBuf to str fail!"),
-            "--data-dir",
-            lightwalletd_data_dir
-                .to_str()
-                .expect("lightwalletd_datadir PathBuf to str fail!"),
-            "--log-file",
-            lightwalletd_log
-                .to_str()
-                .expect("lightwalletd_stdout_log PathBuf to str fail!"),
-        ])
+        .args(prepped_args)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
