@@ -77,7 +77,7 @@ impl Command for GetBirthdayCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        RT.block_on(async move { lightclient.do_get_birthday().await.to_string() })
+        RT.block_on(async move { lightclient.wallet.get_birthday().await.to_string() })
     }
 }
 
@@ -600,7 +600,11 @@ impl Command for ExportUfvkCommand {
         match ufvk_res {
             Ok(ufvk) => {
                 use zcash_address::unified::Encoding as _;
-                ufvk.encode(&lightclient.config().chain.to_zcash_address_network())
+                object! {
+                    "ufvk" => ufvk.encode(&lightclient.config().chain.to_zcash_address_network()),
+                    "birthday" => RT.block_on(lightclient.wallet.get_birthday())
+                }
+                .pretty(2)
             }
             Err(e) => format!("Error: {e}"),
         }
