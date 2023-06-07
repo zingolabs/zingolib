@@ -24,6 +24,8 @@ pub struct DarksideHandler {
 impl DarksideHandler {
     pub fn new() -> Self {
         let (port, darkside_dir) = generate_darksidewalletd();
+        let log_file = &darkside_dir.join("lwd_log").to_string_lossy().to_string();
+        dbg!(&log_file);
         let lightwalletd_handle = Command::new(get_regtest_dir().join("bin").join("lightwalletd"))
             .args([
                 "--darkside-very-insecure",

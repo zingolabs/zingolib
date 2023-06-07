@@ -56,76 +56,27 @@ impl DarksideConnector {
         async move {
             let mut http_connector = HttpConnector::new();
             http_connector.enforce_http(false);
-            if uri.scheme_str() == Some("https") {
-                let mut roots = RootCertStore::empty();
-                roots.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(
-                    |anchor_ref| {
-                        tokio_rustls::rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
-                            anchor_ref.subject,
-                            anchor_ref.spki,
-                            anchor_ref.name_constraints,
-                        )
-                    },
-                ));
+            let connector = tower::ServiceBuilder::new().service(http_connector);
+            let client = Box::new(hyper::Client::builder().http2_only(true).build(connector));
+            let uri = uri.clone();
+            let svc = tower::ServiceBuilder::new()
+                //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
+                .map_request(move |mut req: http::Request<tonic::body::BoxBody>| {
+                    let uri = Uri::builder()
+                        .scheme(uri.scheme().unwrap().clone())
+                        .authority(uri.authority().unwrap().clone())
+                        //here. The Request's uri contains the path to the GRPC sever and
+                        //the method being called
+                        .path_and_query(req.uri().path_and_query().unwrap().clone())
+                        .build()
+                        .unwrap();
 
-                let tls = ClientConfig::builder()
-                    .with_safe_defaults()
-                    .with_root_certificates(roots)
-                    .with_no_client_auth();
-                let connector = tower::ServiceBuilder::new()
-                    .layer_fn(move |s| {
-                        let tls = tls.clone();
+                    *req.uri_mut() = uri;
+                    req
+                })
+                .service(client);
 
-                        hyper_rustls::HttpsConnectorBuilder::new()
-                            .with_tls_config(tls)
-                            .https_or_http()
-                            .enable_http2()
-                            .wrap_connector(s)
-                    })
-                    .service(http_connector);
-                let client = Box::new(hyper::Client::builder().build(connector));
-                let uri = uri.clone();
-                let svc = tower::ServiceBuilder::new()
-                    //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
-                    .map_request(move |mut req: http::Request<tonic::body::BoxBody>| {
-                        let uri = Uri::builder()
-                            .scheme(uri.scheme().unwrap().clone())
-                            .authority(uri.authority().unwrap().clone())
-                            //here. The Request's uri contains the path to the GRPC sever and
-                            //the method being called
-                            .path_and_query(req.uri().path_and_query().unwrap().clone())
-                            .build()
-                            .unwrap();
-
-                        *req.uri_mut() = uri;
-                        req
-                    })
-                    .service(client);
-
-                Ok(DarksideStreamerClient::new(svc.boxed_clone()))
-            } else {
-                let connector = tower::ServiceBuilder::new().service(http_connector);
-                let client = Box::new(hyper::Client::builder().http2_only(true).build(connector));
-                let uri = uri.clone();
-                let svc = tower::ServiceBuilder::new()
-                    //Here, we take all the pieces of our uri, and add in the path from the Requests's uri
-                    .map_request(move |mut req: http::Request<tonic::body::BoxBody>| {
-                        let uri = Uri::builder()
-                            .scheme(uri.scheme().unwrap().clone())
-                            .authority(uri.authority().unwrap().clone())
-                            //here. The Request's uri contains the path to the GRPC sever and
-                            //the method being called
-                            .path_and_query(req.uri().path_and_query().unwrap().clone())
-                            .build()
-                            .unwrap();
-
-                        *req.uri_mut() = uri;
-                        req
-                    })
-                    .service(client);
-
-                Ok(DarksideStreamerClient::new(svc.boxed_clone()))
-            }
+            Ok(DarksideStreamerClient::new(svc.boxed_clone()))
         }
     }
 
@@ -154,6 +105,7 @@ async fn prepare_darksidewalletd(uri: http::Uri) -> Result<(), String> {
     let connector = DarksideConnector(uri);
 
     let mut client = connector.get_client().await.unwrap();
+    // Setup prodedures.  Up to this point there's no communication between the client and the dswd
     client.clear_address_utxo(Empty {}).await.unwrap();
 
     // reset with parameters
@@ -235,6 +187,7 @@ async fn prepare_darksidewalletd(uri: http::Uri) -> Result<(), String> {
 async fn test_simple_sync() {
     let darkside_handler = DarksideHandler::new();
 
+    let grpc_bind_addr = format!("127.0.0.1:{}", darkside_handler.port);
     let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
         "http://127.0.0.1:{}",
         darkside_handler.port
