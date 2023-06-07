@@ -11,7 +11,6 @@ use std::sync::Arc;
 
 use http_body::combinators::UnsyncBoxBody;
 use hyper::{client::HttpConnector, Uri};
-use tokio_rustls::rustls::{ClientConfig, RootCertStore};
 use tonic::Status;
 use tower::{util::BoxCloneService, ServiceExt};
 
@@ -187,10 +186,9 @@ async fn prepare_darksidewalletd(uri: http::Uri) -> Result<(), String> {
 async fn test_simple_sync() {
     let darkside_handler = DarksideHandler::new();
 
-    let grpc_bind_addr = format!("127.0.0.1:{}", darkside_handler.port);
     let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
         "http://127.0.0.1:{}",
-        darkside_handler.port
+        darkside_handler.grpc_port
     )));
     prepare_darksidewalletd(server_id.clone()).await.unwrap();
 
