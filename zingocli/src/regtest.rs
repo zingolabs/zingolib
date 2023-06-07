@@ -85,7 +85,7 @@ pub enum LaunchChildProcessError {
         stderr: String,
     },
 }
-fn launch_lightwalletd(
+pub fn launch_lightwalletd(
     logsdir: PathBuf,
     confsdir: PathBuf,
     datadir: PathBuf,
