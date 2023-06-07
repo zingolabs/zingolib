@@ -1,6 +1,7 @@
 use std::{
     path::PathBuf,
     process::{Child, Command},
+    time::Duration,
 };
 
 use zingo_cli::regtest::get_regtest_dir;
@@ -26,12 +27,15 @@ impl DarksideHandler {
         let (grpc_port, darkside_dir) = generate_darksidewalletd();
         let log_file = &darkside_dir.join("lwd_log").to_string_lossy().to_string();
         let grpc_bind_addr = format!("127.0.0.1:{grpc_port}");
+        let darkside_dir_string = darkside_dir.to_string_lossy().to_string();
+        println!("Darksidewalletd running at {darkside_dir_string}");
+
         let lightwalletd_handle = Command::new(get_regtest_dir().join("bin").join("lightwalletd"))
             .args([
                 "--darkside-very-insecure",
                 "--no-tls-very-insecure",
                 "--data-dir",
-                &darkside_dir.to_string_lossy().to_string(),
+                &darkside_dir_string,
                 "--log-file",
                 log_file,
                 "--grpc-bind-addr",
@@ -39,6 +43,9 @@ impl DarksideHandler {
             ])
             .spawn()
             .unwrap();
+
+        //TODO: Actually listen to dwd to see when it's ready
+        std::thread::sleep(Duration::from_secs(1));
 
         Self {
             lightwalletd_handle,
