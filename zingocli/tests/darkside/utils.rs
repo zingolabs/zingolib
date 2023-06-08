@@ -25,7 +25,6 @@ pub struct DarksideHandler {
 impl DarksideHandler {
     pub fn new() -> Self {
         let (grpc_port, darkside_dir) = generate_darksidewalletd();
-        let log_file = &darkside_dir.join("lwd_log").to_string_lossy().to_string();
         let grpc_bind_addr = Some(format!("127.0.0.1:{grpc_port}"));
         let darkside_dir_string = darkside_dir.to_string_lossy().to_string();
         println!("Darksidewalletd running at {darkside_dir_string}");
