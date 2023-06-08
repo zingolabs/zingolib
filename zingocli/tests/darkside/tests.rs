@@ -1,7 +1,10 @@
 tonic::include_proto!("cash.z.wallet.sdk.rpc");
 
 use crate::{
-    darkside::{constants::DARKSIDE_SEED, utils::DarksideHandler},
+    darkside::{
+        constants::{self, DARKSIDE_SEED},
+        utils::DarksideHandler,
+    },
     utils::scenarios::setup::ClientManager,
 };
 use darkside_streamer_client::DarksideStreamerClient;
@@ -108,9 +111,20 @@ impl DarksideConnector {
                 nonce
             }
         },
+
         stage_blocks_stream(&self, blocks: Vec<String>) {
             ::futures_util::stream::iter(
                 blocks.into_iter().map(|block| DarksideBlock { block })
+            )
+        },
+        stage_transactions_stream(&self, transactions: Vec<(Vec<u8>, u64)>) {
+            ::futures_util::stream::iter(
+                transactions.into_iter().map(|transaction| {
+                    RawTransaction {
+                        data: transaction.0,
+                        height: transaction.1
+                    }
+                })
             )
         }
     );
@@ -137,6 +151,18 @@ async fn prepare_darksidewalletd(uri: http::Uri) -> Result<(), String> {
         .await?;
 
     connector.stage_blocks_create(2, 2, 0).await.unwrap();
+
+    connector
+        .add_tree_state(constants::first_tree_state())
+        .await
+        .unwrap();
+    connector
+        .stage_transactions_stream(vec![(
+            hex::decode(constants::TRANSACTION_INCOMING_100TAZ).unwrap(),
+            2,
+        )])
+        .await
+        .unwrap();
 
     sleep(std::time::Duration::new(2, 0)).await;
 
