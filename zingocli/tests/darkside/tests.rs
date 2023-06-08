@@ -1,10 +1,11 @@
 tonic::include_proto!("cash.z.wallet.sdk.rpc");
 
-use crate::{darkside::utils::DarksideHandler, utils::scenarios::setup::ClientManager};
+use crate::{
+    darkside::{constants::DARKSIDE_SEED, utils::DarksideHandler},
+    utils::scenarios::setup::ClientManager,
+};
 use darkside_streamer_client::DarksideStreamerClient;
 use json::JsonValue;
-use rand::Rng;
-use tempdir::{self, TempDir};
 use tokio::time::sleep;
 
 use std::sync::Arc;
@@ -155,11 +156,12 @@ async fn test_simple_sync() {
     prepare_darksidewalletd(server_id.clone()).await.unwrap();
 
     let light_client = ClientManager::new(
-            server_id,
-            darkside_handler.darkside_dir.clone(),
-            "still champion voice habit trend flight survey between bitter process artefact blind carbon truly provide dizzy crush flush breeze blouse charge solid fish spread"
-        )
-            .build_new_faucet(1, true).await;
+        server_id,
+        darkside_handler.darkside_dir.clone(),
+        DARKSIDE_SEED,
+    )
+    .build_new_faucet(1, true)
+    .await;
 
     let result = light_client.do_sync(true).await.unwrap();
 
@@ -175,25 +177,21 @@ async fn test_simple_sync() {
 
 #[tokio::test]
 async fn reorg_away_send() {
-    let mut rng = rand::thread_rng();
+    let darkside_handler = DarksideHandler::new();
 
-    let num: u32 = rng.gen_range(0..100000);
-    let temp_dir = TempDir::new(&format!("dwld_test_{num}")).unwrap();
-    let path = temp_dir.path().to_path_buf();
-
-    let darkside_server_uri =
-        zingoconfig::construct_lightwalletd_uri(Some(format!("http://127.0.0.1:9067")));
-
-    prepare_darksidewalletd(darkside_server_uri).await.unwrap();
-
-    let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!("http://127.0.0.1:9067")));
+    let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
+        "http://127.0.0.1:{}",
+        darkside_handler.grpc_port
+    )));
+    prepare_darksidewalletd(server_id.clone()).await.unwrap();
 
     let light_client = ClientManager::new(
-            server_id,
-            path,
-            "still champion voice habit trend flight survey between bitter process artefact blind carbon truly provide dizzy crush flush breeze blouse charge solid fish spread"
-        )
-            .build_new_faucet(663150, true).await;
+        server_id,
+        darkside_handler.darkside_dir.clone(),
+        DARKSIDE_SEED,
+    )
+    .build_new_faucet(663150, true)
+    .await;
 
     light_client.do_sync(true).await.unwrap();
     println!("{}", light_client.do_balance().await.pretty(4));
