@@ -114,34 +114,28 @@ pub fn launch_lightwalletd(
     let mut lightwalletd_stderr_logfile =
         File::create(&lightwalletd_stderr_log).expect("file::create Result error");
 
-    let prepped_args = if let Some(grpcport) = darkside {
-        let grpc_bind_addr = format!("127.0.0.1:{grpcport}");
+    let mut args = vec![
+        "--no-tls-very-insecure".to_string(),
+        "--data-dir".to_string(),
+        lightwalletd_data_dir.to_string_lossy().to_string(),
+        "--log-file".to_string(),
+        lightwalletd_log.to_string_lossy().to_string(),
+    ];
+    args.extend_from_slice(&if let Some(grpc_bind_addr) = darkside {
         vec![
             "--darkside-very-insecure".to_string(),
-            "--no-tls-very-insecure".to_string(),
-            "--data-dir".to_string(),
-            datadir.to_string_lossy().to_string(),
-            "--log-file".to_string(),
-            lightwalletd_log.to_string_lossy().to_string(),
             "--grpc-bind-addr".to_string(),
             grpc_bind_addr,
         ]
     } else {
         vec![
-            "--no-tls-very-insecure",
-            "--zcash-conf-path",
-            zcashd_config,
-            "--config",
-            lightwalletd_config.to_str().unwrap(),
-            "--data-dir",
-            lightwalletd_data_dir.to_str().unwrap(),
-            "--log-file",
-            lightwalletd_log.to_str().unwrap(),
+            "--zcash-conf-path".to_string(),
+            zcashd_config.to_string(),
+            "--config".to_string(),
+            lightwalletd_config.to_string_lossy().to_string(),
         ]
-        .iter()
-        .map(|x| x.to_string())
-        .collect()
-    };
+    });
+    let prepped_args = args.iter().map(|x| x.to_string()).collect::<Vec<_>>();
     let mut lightwalletd_child = std::process::Command::new(bin)
         .args(prepped_args)
         .stdout(std::process::Stdio::piped())
