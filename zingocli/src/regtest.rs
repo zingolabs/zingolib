@@ -128,16 +128,19 @@ pub fn launch_lightwalletd(
         ]
     } else {
         vec![
-            "--no-tls-very-insecure".to_string(),
-            "--zcash-conf-path".to_string(),
-            zcashd_config.to_string(),
-            "--config".to_string(),
-            lightwalletd_config.to_string_lossy().to_string(),
-            "--data-dir".to_string(),
-            lightwalletd_data_dir.to_string_lossy().to_string(),
-            "--log-file".to_string(),
-            lightwalletd_log.to_string_lossy().to_string(),
+            "--no-tls-very-insecure",
+            "--zcash-conf-path",
+            zcashd_config,
+            "--config",
+            lightwalletd_config.to_str().unwrap(),
+            "--data-dir",
+            lightwalletd_data_dir.to_str().unwrap(),
+            "--log-file",
+            lightwalletd_log.to_str().unwrap(),
         ]
+        .iter()
+        .map(|x| x.to_string())
+        .collect()
     };
     let mut lightwalletd_child = std::process::Command::new(bin)
         .args(prepped_args)
