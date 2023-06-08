@@ -32,9 +32,9 @@ impl DarksideHandler {
 
         let check_interval = Duration::from_millis(300);
         let lightwalletd_handle = launch_lightwalletd(
-            darkside_dir.clone(),
-            darkside_dir.clone(),
-            darkside_dir.clone(),
+            darkside_dir.join("logs"),
+            darkside_dir.join("conf"),
+            darkside_dir.join("data"),
             get_regtest_dir().join("bin"),
             check_interval,
             grpc_bind_addr,

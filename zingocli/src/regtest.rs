@@ -115,7 +115,17 @@ pub fn launch_lightwalletd(
         File::create(&lightwalletd_stderr_log).expect("file::create Result error");
 
     let prepped_args = if let Some(grpcport) = darkside {
-        vec!["to_string".to_string()]
+        let grpc_bind_addr = format!("127.0.0.1:{grpcport}");
+        vec![
+            "--darkside-very-insecure".to_string(),
+            "--no-tls-very-insecure".to_string(),
+            "--data-dir".to_string(),
+            datadir.to_string_lossy().to_string(),
+            "--log-file".to_string(),
+            lightwalletd_log.to_string_lossy().to_string(),
+            "--grpc-bind-addr".to_string(),
+            grpc_bind_addr,
+        ]
     } else {
         vec![
             "--no-tls-very-insecure".to_string(),
