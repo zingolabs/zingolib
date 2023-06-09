@@ -130,7 +130,10 @@ impl DarksideConnector {
     );
 }
 
-async fn prepare_darksidewalletd(uri: http::Uri) -> Result<(), String> {
+async fn prepare_darksidewalletd(
+    uri: http::Uri,
+    include_startup_funds: bool,
+) -> Result<(), String> {
     dbg!(&uri);
     let connector = DarksideConnector(uri);
 
@@ -156,13 +159,15 @@ async fn prepare_darksidewalletd(uri: http::Uri) -> Result<(), String> {
         .add_tree_state(constants::first_tree_state())
         .await
         .unwrap();
-    connector
-        .stage_transactions_stream(vec![(
-            hex::decode(constants::TRANSACTION_INCOMING_100TAZ).unwrap(),
-            2,
-        )])
-        .await
-        .unwrap();
+    if include_startup_funds {
+        connector
+            .stage_transactions_stream(vec![(
+                hex::decode(constants::TRANSACTION_INCOMING_100TAZ).unwrap(),
+                2,
+            )])
+            .await
+            .unwrap();
+    }
 
     sleep(std::time::Duration::new(2, 0)).await;
 
@@ -179,7 +184,9 @@ async fn test_simple_sync() {
         "http://127.0.0.1:{}",
         darkside_handler.grpc_port
     )));
-    prepare_darksidewalletd(server_id.clone()).await.unwrap();
+    prepare_darksidewalletd(server_id.clone(), true)
+        .await
+        .unwrap();
 
     let light_client = ClientManager::new(
         server_id,
@@ -199,6 +206,25 @@ async fn test_simple_sync() {
     assert_eq!(res_value["result"], "success");
     assert_eq!(res_value["latest_block"], 3);
     assert_eq!(res_value["total_blocks_synced"], 3);
+    assert_eq!(
+        light_client.do_balance().await,
+        json::parse(
+            r#"
+            {
+                "sapling_balance": 0,
+                "verified_sapling_balance": 0,
+                "spendable_sapling_balance": 0,
+                "unverified_sapling_balance": 0,
+                "orchard_balance": 100000000,
+                "verified_orchard_balance": 100000000,
+                "spendable_orchard_balance": 100000000,
+                "unverified_orchard_balance": 0,
+                "transparent_balance": 0
+            }
+        "#
+        )
+        .unwrap()
+    );
 }
 
 #[tokio::test]
@@ -209,16 +235,59 @@ async fn reorg_away_send() {
         "http://127.0.0.1:{}",
         darkside_handler.grpc_port
     )));
-    prepare_darksidewalletd(server_id.clone()).await.unwrap();
+    prepare_darksidewalletd(server_id.clone(), true)
+        .await
+        .unwrap();
 
     let light_client = ClientManager::new(
-        server_id,
+        server_id.clone(),
         darkside_handler.darkside_dir.clone(),
         DARKSIDE_SEED,
     )
-    .build_new_faucet(663150, true)
+    .build_new_faucet(1, true)
     .await;
 
     light_client.do_sync(true).await.unwrap();
-    println!("{}", light_client.do_balance().await.pretty(4));
+    assert_eq!(
+        light_client.do_balance().await,
+        json::parse(
+            r#"
+            {
+                "sapling_balance": 0,
+                "verified_sapling_balance": 0,
+                "spendable_sapling_balance": 0,
+                "unverified_sapling_balance": 0,
+                "orchard_balance": 100000000,
+                "verified_orchard_balance": 100000000,
+                "spendable_orchard_balance": 100000000,
+                "unverified_orchard_balance": 0,
+                "transparent_balance": 0
+            }
+        "#
+        )
+        .unwrap()
+    );
+    prepare_darksidewalletd(server_id.clone(), false)
+        .await
+        .unwrap();
+    light_client.do_sync(true).await.unwrap();
+    assert_eq!(
+        light_client.do_balance().await,
+        json::parse(
+            r#"
+            {
+                "sapling_balance": 0,
+                "verified_sapling_balance": 0,
+                "spendable_sapling_balance": 0,
+                "unverified_sapling_balance": 0,
+                "orchard_balance": 0,
+                "verified_orchard_balance": 0,
+                "spendable_orchard_balance": 0,
+                "unverified_orchard_balance": 0,
+                "transparent_balance": 0
+            }
+        "#
+        )
+        .unwrap()
+    );
 }
