@@ -34,6 +34,27 @@ pub async fn increase_server_height(manager: &RegtestManager, n: u32) {
     }
 }
 
+/// Transaction creation involves using a nonce, which means a non-deterministic txid.
+/// Datetime is also based on time of run.
+/// Vheck all the other fields
+pub fn check_transaction_equality(first: &JsonValue, second: &JsonValue) -> bool {
+    for (t1, t2) in [(first, second), (second, first)] {
+        for (key1, val1) in t1.entries() {
+            if key1 == "txid" || key1 == "datetime" {
+                continue;
+            }
+            if t2
+                .entries()
+                .find(|(key2, val2)| &key1 == key2 && &val1 == val2)
+                .is_none()
+            {
+                return false;
+            }
+        }
+    }
+    true
+}
+
 pub async fn send_value_between_clients_and_sync(
     manager: &RegtestManager,
     sender: &LightClient,
