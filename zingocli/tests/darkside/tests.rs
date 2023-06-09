@@ -228,7 +228,7 @@ async fn test_simple_sync() {
 }
 
 #[tokio::test]
-async fn reorg_away_send() {
+async fn reorg_away_receipt() {
     let darkside_handler = DarksideHandler::new();
 
     let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
