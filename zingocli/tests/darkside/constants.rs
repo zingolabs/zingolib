@@ -16,6 +16,6 @@ pub fn first_tree_state() -> TreeState {
         sapling_tree: "015fcb897f9314fc5ebac4510b86706f45458c6db1d\
     36dbab6ee23315e9654c54c0000"
             .to_string(),
-        orchard_tree: String::from(""),
+        orchard_tree: String::from("000000"),
     }
 }
