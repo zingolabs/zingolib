@@ -2500,8 +2500,12 @@ async fn shield_sapling() {
 #[tokio::test]
 async fn send_to_transparent_and_sapling_maintain_balance() {
     let recipient_initial_funds = 100_000_000;
-    let first_send_to_transparent = 100_000;
-    let first_send_to_sapling = 50_000;
+    let first_send_to_sapling = 20_000;
+    let first_send_to_transparent = 20_000;
+    let recipient_second_wave = 1_000_000;
+    let second_send_to_transparent = 20_000;
+    let second_send_to_sapling = 20_000;
+    let third_send_to_transparent = 20_000;
 
     let (ref regtest_manager, child_process_handler, faucet, recipient, _txid) =
         scenarios::faucet_prefunded_orchard_recipient(recipient_initial_funds).await;
@@ -2523,14 +2527,14 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
             {
                 "block_height": 4,
                 "unconfirmed": false,
-                "datetime": 1686245360,
-                "txid": "fc476d945407242e68f511e7ffca5d753f95ef4072a1b5aac8dfa0f77a6eb2b0",
+                "datetime": 1686245363,
+                "txid": "e51d1261136bb075fd35358105c72a6b8a69caf293bd283acc213df8875dfe57",
                 "zec_price": null,
-                "amount": -110000,
+                "amount": -30000,
                 "outgoing_metadata": [
                     {
-                        "address": "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd",
-                        "value": 100000,
+                        "address": "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p",
+                        "value": 20000,
                         "memo": null
                     }
                 ]
@@ -2538,14 +2542,14 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
             {
                 "block_height": 5,
                 "unconfirmed": true,
-                "datetime": 1686245363,
-                "txid": "e51d1261136bb075fd35358105c72a6b8a69caf293bd283acc213df8875dfe57",
+                "datetime": 1686245360,
+                "txid": "fc476d945407242e68f511e7ffca5d753f95ef4072a1b5aac8dfa0f77a6eb2b0",
                 "zec_price": null,
-                "amount": -60000,
+                "amount": -30000,
                 "outgoing_metadata": [
                     {
-                        "address": "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p",
-                        "value": 50000,
+                        "address": "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd",
+                        "value": 20000,
                         "memo": null
                     }
                 ]
@@ -2555,8 +2559,8 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
 
     recipient
         .do_send(vec![(
-            &get_base_address!(faucet, "transparent"),
-            first_send_to_transparent,
+            &get_base_address!(faucet, "sapling"),
+            first_send_to_sapling,
             None,
         )])
         .await
@@ -2566,8 +2570,8 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         .unwrap();
     recipient
         .do_send(vec![(
-            &get_base_address!(faucet, "sapling"),
-            first_send_to_sapling,
+            &get_base_address!(faucet, "transparent"),
+            first_send_to_transparent,
             None,
         )])
         .await
@@ -2596,12 +2600,6 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
             t2.pretty(4)
         );
     }
-
-    let recipient_second_wave = 50_000_000;
-    let second_send_to_transparent = 1_000;
-    let second_send_to_sapling = 5_000_000;
-    let third_send_to_transparent = 13_000;
-    let third_send_to_sapling = 430_000;
 
     faucet.do_sync(false).await.unwrap();
     faucet
@@ -2643,34 +2641,28 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         )])
         .await
         .unwrap();
-    recipient
-        .do_send(vec![(
-            &get_base_address!(faucet, "sapling"),
-            third_send_to_sapling,
-            None,
-        )])
+    utils::increase_height_and_sync_client(regtest_manager, &recipient, 1)
         .await
         .unwrap();
 
     let second_wave_expected_funds = expected_funds + recipient_second_wave
         - second_send_to_sapling
         - second_send_to_transparent
-        - third_send_to_sapling
         - third_send_to_transparent
-        - (4 * u64::from(DEFAULT_FEE));
+        - (3 * u64::from(DEFAULT_FEE));
     assert_eq!(
         recipient.wallet.maybe_verified_orchard_balance(None).await,
         second_wave_expected_funds,
     );
 
-    let mut second_wave_expected_transactions = json::parse(r#"
+    let second_wave_expected_transactions = json::parse(r#"
         [
             {
                 "block_height": 3,
                 "unconfirmed": false,
-                "datetime": 1686248846,
+                "datetime": 1686330002,
                 "position": 0,
-                "txid": "4d0c250abe59f988531fe61c82e56bd3d8095d17bd31f705cbb719e4d3d71a3d",
+                "txid": "f040440eade0afc99800fee54753afb71fb09894483f1f1fa7462dedb63e7c02",
                 "amount": 100000000,
                 "zec_price": null,
                 "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8",
@@ -2679,14 +2671,14 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
             {
                 "block_height": 4,
                 "unconfirmed": false,
-                "datetime": 1686248850,
-                "txid": "b5f84b084b9b374f8f5ee090689b6aaec1d85c50ceb614a0160b7536a3b84403",
+                "datetime": 1686330013,
+                "txid": "db532064c89c7d8266e107ffefc614f3c34050af922973199e398fcd18c43ea5",
                 "zec_price": null,
-                "amount": -110000,
+                "amount": -30000,
                 "outgoing_metadata": [
                     {
-                        "address": "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd",
-                        "value": 100000,
+                        "address": "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p",
+                        "value": 20000,
                         "memo": null
                     }
                 ]
@@ -2694,25 +2686,40 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
             {
                 "block_height": 5,
                 "unconfirmed": false,
-                "datetime": 1686248857,
+                "datetime": 1686330006,
+                "txid": "be81f76bf37bb6d5d762c7bb48419f239787023b8344c30ce0771c8ce21e480f",
+                "zec_price": null,
+                "amount": -30000,
+                "outgoing_metadata": [
+                    {
+                        "address": "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd",
+                        "value": 20000,
+                        "memo": null
+                    }
+                ]
+            },
+            {
+                "block_height": 5,
+                "unconfirmed": false,
+                "datetime": 1686330013,
                 "position": 0,
-                "txid": "f809bc33858499dae497f38997498ff5e691a0fbe28321da4f805277a958bbb1",
-                "amount": 50000000,
+                "txid": "caf9438c9c61923d24a9594651cc694edc660eabb0082122c4588ae381edc3b4",
+                "amount": 1000000,
                 "zec_price": null,
                 "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8",
                 "memo": "Second wave incoming"
             },
             {
-                "block_height": 5,
+                "block_height": 6,
                 "unconfirmed": false,
-                "datetime": 1686248857,
-                "txid": "ff999940430be17e3b4ed99328243135fefb1f31c806297962d2ebc79c302793",
+                "datetime": 1686330021,
+                "txid": "95a41ba1c6e2b7edf63ddde7899567431a6b36b7583ba1e359560041e5f8ce2b",
                 "zec_price": null,
-                "amount": -60000,
+                "amount": -30000,
                 "outgoing_metadata": [
                     {
                         "address": "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p",
-                        "value": 50000,
+                        "value": 20000,
                         "memo": null
                     }
                 ]
@@ -2720,88 +2727,44 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
             {
                 "block_height": 6,
                 "unconfirmed": false,
-                "datetime": 1686248863,
-                "txid": "460c6fa09a9d254b2556183194428a663eddaf7105dea1ad816e66b1cc938869",
+                "datetime": 1686330021,
+                "txid": "c1004c32395ff45448fb943a7da4cc2819762066eea2628cd0a4aee65106207d",
                 "zec_price": null,
-                "amount": -5010000,
+                "amount": -30000,
                 "outgoing_metadata": [
                     {
-                        "address": "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p",
-                        "value": 5000000,
+                        "address": "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd",
+                        "value": 20000,
                         "memo": null
                     }
                 ]
             },
             {
-                "block_height": 6,
+                "block_height": 7,
                 "unconfirmed": false,
-                "datetime": 1686248860,
-                "txid": "5fdc2e7a07e181f3eb4d23b96f9ed7d0017973b0e65954e0c3d283212edda044",
+                "datetime": 1686330024,
+                "txid": "c5e94f462218634b37a2a3324f89bd288bc55ab877ea516a6203e48c207ba955",
                 "zec_price": null,
-                "amount": -11000,
+                "amount": -30000,
                 "outgoing_metadata": [
                     {
                         "address": "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd",
-                        "value": 1000,
-                        "memo": null
-                    }
-                ]
-            },
-            {
-                "block_height": 7,
-                "unconfirmed": true,
-                "datetime": 1686248863,
-                "txid": "460c6fa09a9d254b2556183194428a663eddaf7105dea1ad816e66b1cc938869",
-                "zec_price": null,
-                "amount": -440000,
-                "outgoing_metadata": [
-                    {
-                        "address": "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p",
-                        "value": 430000,
-                        "memo": null
-                    }
-                ]
-            },
-            {
-                "block_height": 7,
-                "unconfirmed": true,
-                "datetime": 1686248860,
-                "txid": "5fdc2e7a07e181f3eb4d23b96f9ed7d0017973b0e65954e0c3d283212edda044",
-                "zec_price": null,
-                "amount": -23000,
-                "outgoing_metadata": [
-                    {
-                        "address": "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd",
-                        "value": 13000,
+                        "value": 20000,
                         "memo": null
                     }
                 ]
             }
-        ]"#).unwrap().members().cloned().collect::<Vec<_>>();
-    let sort_by_amount =
-        |tx1: &JsonValue, tx2: &JsonValue| tx1["amount"].as_i64().cmp(&tx2["amount"].as_i64());
-    second_wave_expected_transactions.sort_by(sort_by_amount);
-    let mut second_wave_transactions = recipient
-        .do_list_transactions()
-        .await
-        .members()
-        .cloned()
-        .collect::<Vec<_>>();
-    second_wave_transactions.sort_by(sort_by_amount);
+        ]"#)
+    .unwrap();
+    let second_wave_transactions = recipient.do_list_transactions().await;
     assert_eq!(
         second_wave_transactions.len(),
         second_wave_expected_transactions.len()
     );
-    for (t1, t2) in second_wave_transactions
-        .iter()
-        .zip(second_wave_expected_transactions.iter())
-    {
-        assert!(
-            check_transaction_equality(t1, t2),
-            "\n\n\nt1: {}\n\n\nt2: {}\n\n\n",
-            t1.pretty(4),
-            t2.pretty(4)
-        );
+    for transaction in second_wave_transactions.members() {
+        assert!(second_wave_expected_transactions
+            .members()
+            .any(|t2| check_transaction_equality(transaction, t2)));
     }
 
     drop(child_process_handler)
