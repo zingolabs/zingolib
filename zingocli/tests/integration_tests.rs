@@ -2778,16 +2778,16 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
                 ]
             }
         ]"#).unwrap().members().cloned().collect::<Vec<_>>();
-    second_wave_expected_transactions
-        .sort_by(|tx1, tx2| tx1["amount"].as_i64().cmp(&tx2["amount"].as_i64()));
+    let sort_by_amount =
+        |tx1: &JsonValue, tx2: &JsonValue| tx1["amount"].as_i64().cmp(&tx2["amount"].as_i64());
+    second_wave_expected_transactions.sort_by(sort_by_amount);
     let mut second_wave_transactions = recipient
         .do_list_transactions()
         .await
         .members()
         .cloned()
         .collect::<Vec<_>>();
-    second_wave_transactions
-        .sort_by(|tx1, tx2| tx1["amount"].as_i64().cmp(&tx2["amount"].as_i64()));
+    second_wave_transactions.sort_by(sort_by_amount);
     assert_eq!(
         second_wave_transactions.len(),
         second_wave_expected_transactions.len()
