@@ -177,7 +177,7 @@ async fn prepare_darksidewalletd(
 }
 
 #[tokio::test]
-async fn test_simple_sync() {
+async fn simple_sync() {
     let darkside_handler = DarksideHandler::new();
 
     let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
