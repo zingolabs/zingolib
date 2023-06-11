@@ -7,7 +7,7 @@ There are pre-made directories in this repo to support ready use of regtest mode
 
 There are default config files for these binaries already in place in `/zingolib/regtest/conf/` which can also be edited.
 
-Because regtest mode has no ability to cope with an initial `zcashd` state without any blocks, 
+Because regtest mode has no ability to cope with an initial `zcashd` state without any blocks,
 we have included files to produce an initial block height of one, with no variation between runs.
 These files are copied from a 'passive' directory (`zingolib/regtest/data/regtestvectors/`)
 into a newly cleared 'active' data directory at the beginning of each time regtest mode is run.
@@ -19,14 +19,14 @@ The default config includes all network upgrades set to block height 1, therefor
 You must copy your compiled `zcashd`, `zcash-cli` and `lightwalletd` binaries to `zingolib/regtest/bin/` or set up symlinks, etc. `zcash-cli` is also needed if you wish
 to interact with your `zcashd` instance while it is running.
 
-Run `cargo build` to produce the `zingo-cli` binary.
-
 From your `zingolib/` directory, you can run:
-`./target/debug/zingo-cli --regtest`
+`cargo run --release -- --regtest`
+
+Note: Regtest mode only works when invoked with `cargo run`. Running `cargo build` followed by an invocation of the compiled binary will fail.
 
 This will start an interactive session. Individual commands can be passed to zingolib (via the cli), for example:
 
-`./target/debug/zingo-cli --regtest help`
+`cargo run --release -- --regtest help`
 
 This will start `zcashd` and `lightwalletd` and then connect to these tools with an interactive `zingo-cli`.
 It currently takes a few seconds to do so, even on a fast machine, to give the daemons time to boot.
@@ -46,7 +46,7 @@ at which point the interactive cli application should work with your regtest net
 
 Once regtest mode is running, you can manipulate the simulated chain with `zcash-cli`.
 
-For example, in still another terminal instance in the `zingolib/regtest/bin/` directory, you can run 
+For example, in still another terminal instance in the `zingolib/regtest/bin/` directory, you can run
 `./zcash-cli -regtest -rpcuser=xxxxxx -rpcpassword=xxxxxx generate 11` to generate 11 blocks.
 Please note that by adding more than 100 blocks it is difficult or impossible to rewind the chain. The config means that after the first block all network upgrades should be in place.
 Other `zcash-cli` commands should work similarly.

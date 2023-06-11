@@ -14,10 +14,10 @@ This repo provides both a library for zingo-mobile, as well as an included cli a
 ### Note Management
 Zingo-CLI does automatic note and utxo management, which means it doesn't allow you to manually select which address to send outgoing transactions from. It follows these principles:
 * Defaults to sending shielded transactions, even if you're sending to a transparent address
-* Sapling funds need at least 5 confirmations before they can be spent
 * Can select funds from multiple shielded addresses in the same transaction
-* Will automatically shield your transparent funds at the first opportunity
-    * When sending an outgoing transaction to a shielded address, Zingo-CLI can decide to use the transaction to additionally shield your transparent funds (i.e., send your transparent funds to your own shielded address in the same transaction)
+* Will automatically shield your sapling funds at the first opportunity
+    * When sending an outgoing transaction to a shielded address, Zingo-CLI can decide to use the transaction to additionally shield your sapling funds (i.e., send your sapling funds to your own orchard address in the same transaction)
+* Transparent funds are only spent via explicit shield operations
 
 ## Compiling from source
 
@@ -35,14 +35,14 @@ Zingo-CLI does automatic note and utxo management, which means it doesn't allow 
 git clone https://github.com/zingolabs/zingolib.git
 cd zingolib
 cargo build --release
-./target/release/zingo-cli
+./target/release/zingo-cli --data-dir /path/to/data_directory/
 ```
 
 This will launch the interactive prompt. Type `help` to get a list of commands.
 
 ## Library:
 We currently depend on unreleased patches of orchard and librustzcash, via cargo's patching mechanism.
-Because patching only applies at the top level of a project, in order to use this library as a dependancy, copy the `[patch.crates-io]` section of `Cargo.toml` into your own workspace `Cargo.toml`
+Because patching only applies at the top level of a project, in order to use this library as a dependency, copy the `[patch.crates-io]` section of `Cargo.toml` into your own workspace `Cargo.toml`
 
 ## Notes:
 * If you want to run your own server, please see [zingo lightwalletd](https://github.com/zingolabs/lightwalletd), and then run `./zingo-cli --server http://127.0.0.1:9067`
@@ -56,17 +56,16 @@ Run `zingo-cli help` to see a list of all commands.
 ## Options
 Here are some CLI arguments you can pass to `zingo-cli`. Please run `zingo-cli --help` for the full list.
 
+* `--data-dir`: uses the specified path as data directory. This is required when not using the `--regtest` option.
+    * Example: `./zingo-cli --data-dir /path/to/data_directory/` will use the provided directory to store `zingo-wallet.dat` and logs. If the provided directory does not exist, it will create it.
 * `--server`: Connect to a custom zcash lightwalletd server.
-    * Example: `./zingo-cli --server 127.0.0.1:9067`
+    * Example: `./zingo-cli --data-dir /path/to/data_directory/ --server 127.0.0.1:9067`
 * `--seed`: Restore a wallet from a seed phrase. Note that this will fail if there is an existing wallet. Delete (or move) any existing wallet to restore from the 24-word seed phrase
-    * Example: `./zingo-cli --seed "twenty four words seed phrase"`
- * `--recover`: Attempt to recover the seed phrase from a corrupted wallet
- * `--data-dir`: uses the specified path as data directory.
-    * Example: `./zingo-cli --server 127.0.0.1:9067 --data-dir /Users/ZingoRocks/my-test-wallet` will use the provided directory to store `zingo-wallet.dat` and logs. If the provided directory does not exist, it will create it.
+* `--birthday`: Specify wallet birthday when restoring from seed. This is the earlist block height where the wallet has a transaction.
+    * Example: `./zingo-cli --data-dir /path/to/data_directory/ --seed "twenty four words seed phrase" --birthday 1234567`
+* `--recover`: Attempt to recover the seed phrase from a corrupted wallet
 
 ## Regtest
-
-
 There is an experimental feature flag available with `zingo-cli`, in which the cli works in regtest mode, by also locally running `zcashd` and `lightwalletd`.
 
 For a relatively recent user experience please see: https://free2z.cash/zingo-cli-in-regtest-mode

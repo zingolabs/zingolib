@@ -29,7 +29,7 @@ impl FetchCompactBlocks {
             let start = b;
             let end = max((b as i64) - (STEP as i64) + 1, end_block as i64) as u64;
             if start < end {
-                return Err(format!("Wrong block order"));
+                return Err("Wrong block order".to_string());
             }
 
             debug!("Fetching blocks {}-{}", start, end);
@@ -49,14 +49,14 @@ impl FetchCompactBlocks {
         mut reorg_receiver: UnboundedReceiver<Option<u64>>,
     ) -> Result<(), String> {
         if start_block < end_block {
-            return Err(format!("Expected blocks in reverse order"));
+            return Err("Expected blocks in reverse order".to_string());
         }
 
         //debug!("Starting fetch compact blocks");
         self.fetch_blocks_range(&senders, start_block, end_block)
             .await?;
 
-        // After fetching all the normal blocks, we actually wait to see if any re-org'd blocks are recieved
+        // After fetching all the normal blocks, we actually wait to see if any re-org'd blocks are received
         while let Some(Some(reorg_block)) = reorg_receiver.recv().await {
             // Fetch the additional block.
             self.fetch_blocks_range(&senders, reorg_block, reorg_block)

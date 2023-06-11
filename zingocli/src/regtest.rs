@@ -2,22 +2,16 @@ use std::fs::File;
 
 use std::io::Read;
 ///  Simple helper to succinctly reference the project root dir.
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Child;
-pub fn get_git_rootdir() -> PathBuf {
-    let revparse_raw = std::process::Command::new("git")
-        .args(["rev-parse", "--show-toplevel"])
-        .output()
-        .expect("problem invoking git rev-parse");
-    Path::new(
-        std::str::from_utf8(&revparse_raw.stdout)
-            .expect("revparse error")
-            .trim(),
-    )
-    .to_path_buf()
+pub fn get_cargo_manifest_dir_parent() -> PathBuf {
+    PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("To be inside a manifested space."))
+        .parent()
+        .unwrap()
+        .to_path_buf()
 }
 pub(crate) fn get_regtest_dir() -> PathBuf {
-    get_git_rootdir().join("regtest")
+    get_cargo_manifest_dir_parent().join("regtest")
 }
 
 ///  To manage the state associated a "regtest" run this type:
@@ -82,6 +76,90 @@ pub enum LaunchChildProcessError {
         stdout: String,
         stderr: String,
     },
+}
+fn launch_lightwalletd(
+    logsdir: PathBuf,
+    confsdir: PathBuf,
+    datadir: PathBuf,
+    bindir: PathBuf,
+    check_interval: std::time::Duration,
+) -> Child {
+    let bin = bindir.join("lightwalletd");
+    let lightwalletd_config = confsdir.join("lightwalletd.yml");
+    let lightwalletd_logs_dir = logsdir.join("lightwalletd");
+    std::fs::create_dir_all(&lightwalletd_logs_dir).expect("Couldn't create dir.");
+    let lightwalletd_log = lightwalletd_logs_dir.join("lwd.log");
+    let lightwalletd_stdout_log = lightwalletd_logs_dir.join("stdout.log");
+    let lightwalletd_stderr_log = lightwalletd_logs_dir.join("stderr.log");
+    let lightwalletd_data_dir = datadir.join("lightwalletd");
+    std::fs::create_dir_all(&lightwalletd_data_dir).expect("Couldn't create dir.");
+    let zcashd_config_tmp = confsdir.join("zcash.conf");
+    let zcashd_config = zcashd_config_tmp
+        .to_str()
+        .expect("zcashd_config PathBuf to str fail!");
+    log::debug!("lightwalletd is about to start. This should only take a moment.");
+
+    File::create(&lightwalletd_log).expect("file::create Result error");
+    let mut lightwalletd_stdout_logfile =
+        File::create(&lightwalletd_stdout_log).expect("file::create Result error");
+    let mut lightwalletd_stderr_logfile =
+        File::create(&lightwalletd_stderr_log).expect("file::create Result error");
+
+    let mut lightwalletd_child = std::process::Command::new(bin)
+        .args([
+            "--no-tls-very-insecure",
+            "--zcash-conf-path",
+            zcashd_config,
+            "--config",
+            lightwalletd_config
+                .to_str()
+                .expect("lightwalletd_config PathBuf to str fail!"),
+            "--data-dir",
+            lightwalletd_data_dir
+                .to_str()
+                .expect("lightwalletd_datadir PathBuf to str fail!"),
+            "--log-file",
+            lightwalletd_log
+                .to_str()
+                .expect("lightwalletd_stdout_log PathBuf to str fail!"),
+        ])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to start lightwalletd. It's possible the lightwalletd binary is not in the /zingolib/regtest/bin/ directory, see /regtest/README.md");
+
+    if let Some(mut lwd_stdout_data) = lightwalletd_child.stdout.take() {
+        std::thread::spawn(move || {
+            std::io::copy(&mut lwd_stdout_data, &mut lightwalletd_stdout_logfile)
+                .expect("io::copy error writing lwd_stdout.log");
+        });
+    }
+
+    if let Some(mut lwd_stderr_data) = lightwalletd_child.stderr.take() {
+        std::thread::spawn(move || {
+            std::io::copy(&mut lwd_stderr_data, &mut lightwalletd_stderr_logfile)
+                .expect("io::copy error writing lwd_stderr.log");
+        });
+    }
+
+    log::debug!("lightwalletd is now started in regtest mode, please standby...");
+
+    let mut lwd_log_opened = File::open(&lightwalletd_log).expect("can't open lwd log");
+    let mut lwd_logfile_state = String::new();
+
+    //now enter loop to find string that indicates daemon is ready for next step
+    loop {
+        std::io::Read::read_to_string(&mut lwd_log_opened, &mut lwd_logfile_state)
+            .expect("problem reading lwd_logfile into rust string");
+        if lwd_logfile_state.contains("Starting insecure no-TLS (plaintext) server") {
+            log::debug!("lwd start section completed, lightwalletd should be running!");
+            log::debug!("Standby, Zingo-cli should be running in regtest mode momentarily...");
+            break;
+        }
+        // we need to sleep because even after the last message is detected, lwd needs a moment to become ready for regtest mode
+        std::thread::sleep(check_interval);
+    }
+    lightwalletd_child
 }
 impl RegtestManager {
     pub fn new(rootpathname: PathBuf) -> Self {
@@ -150,9 +228,7 @@ impl RegtestManager {
             .output()
     }
     pub fn get_chain_tip(&self) -> Result<std::process::Output, std::io::Error> {
-        self.get_cli_handle()
-            .arg("getchaintips".to_string())
-            .output()
+        self.get_cli_handle().arg("getchaintips").output()
     }
     fn prepare_working_directories(&self) {
         // remove contents of existing data directories
@@ -222,28 +298,31 @@ impl RegtestManager {
 
         assert_eq!(command.get_args().len(), 4usize);
         assert_eq!(
-            &command.get_args().into_iter().collect::<Vec<&OsStr>>()[0]
+            &command.get_args().collect::<Vec<&OsStr>>()[0]
                 .to_str()
                 .unwrap(),
             &"--printtoconsole"
         );
-        assert!(&command.get_args().into_iter().collect::<Vec<&OsStr>>()[1]
+        assert!(&command.get_args().collect::<Vec<&OsStr>>()[1]
             .to_str()
             .unwrap()
             .starts_with("--conf="));
-        assert!(&command.get_args().into_iter().collect::<Vec<&OsStr>>()[2]
+        assert!(&command.get_args().collect::<Vec<&OsStr>>()[2]
             .to_str()
             .unwrap()
             .starts_with("--datadir="));
         assert_eq!(
-            &command.get_args().into_iter().collect::<Vec<&OsStr>>()[3]
+            &command.get_args().collect::<Vec<&OsStr>>()[3]
                 .to_str()
                 .unwrap(),
             &"-debug=1"
         );
+        log::info!("{:?}", &command.get_current_dir());
+        log::info!("{:?}", &command.get_args());
+        log::info!("{:?}", &command.get_envs());
+        log::info!("{:?}", &command.get_program());
 
-        let child = command.spawn()
-        .expect("failed to start zcashd. It's possible the zcashd binary is not in the /zingolib/regtest/bin/ directory, see /regtest/README.md");
+        let child = command.spawn().unwrap();
         log::debug!("zcashd is starting in regtest mode, please standby...");
 
         (
@@ -340,73 +419,13 @@ impl RegtestManager {
         } else {
             log::debug!("Keeping old regtest data")
         }
-        log::debug!("lightwalletd is about to start. This should only take a moment.");
-
-        File::create(&self.lightwalletd_log).expect("file::create Result error");
-        let mut lightwalletd_stdout_logfile =
-            File::create(&self.lightwalletd_stdout_log).expect("file::create Result error");
-        let mut lightwalletd_stderr_logfile =
-            File::create(&self.lightwalletd_stderr_log).expect("file::create Result error");
-
-        let lightwalletd_bin = &mut self.bin_dir.to_owned();
-        lightwalletd_bin.push("lightwalletd");
-
-        let mut lightwalletd_child = std::process::Command::new(lightwalletd_bin)
-        .args([
-            "--no-tls-very-insecure",
-            "--zcash-conf-path",
-            &self.zcashd_config
-                .to_str()
-                .expect("zcashd_config PathBuf to str fail!"),
-            "--config",
-            &self.lightwalletd_config
-                .to_str()
-                .expect("lightwalletd_config PathBuf to str fail!"),
-            "--data-dir",
-            &self.lightwalletd_data_dir
-                .to_str()
-                .expect("lightwalletd_datadir PathBuf to str fail!"),
-            "--log-file",
-            &self.lightwalletd_log
-                .to_str()
-                .expect("lightwalletd_stdout_log PathBuf to str fail!"),
-        ])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .expect("failed to start lightwalletd. It's possible the lightwalletd binary is not in the /zingolib/regtest/bin/ directory, see /regtest/README.md");
-
-        if let Some(mut lwd_stdout_data) = lightwalletd_child.stdout.take() {
-            std::thread::spawn(move || {
-                std::io::copy(&mut lwd_stdout_data, &mut lightwalletd_stdout_logfile)
-                    .expect("io::copy error writing lwd_stdout.log");
-            });
-        }
-
-        if let Some(mut lwd_stderr_data) = lightwalletd_child.stderr.take() {
-            std::thread::spawn(move || {
-                std::io::copy(&mut lwd_stderr_data, &mut lightwalletd_stderr_logfile)
-                    .expect("io::copy error writing lwd_stderr.log");
-            });
-        }
-
-        log::debug!("lightwalletd is now started in regtest mode, please standby...");
-
-        let mut lwd_log_opened = File::open(&self.lightwalletd_log).expect("can't open lwd log");
-        let mut lwd_logfile_state = String::new();
-
-        //now enter loop to find string that indicates daemon is ready for next step
-        loop {
-            std::io::Read::read_to_string(&mut lwd_log_opened, &mut lwd_logfile_state)
-                .expect("problem reading lwd_logfile into rust string");
-            if lwd_logfile_state.contains("Starting insecure no-TLS (plaintext) server") {
-                log::debug!("lwd start section completed, lightwalletd should be running!");
-                log::debug!("Standby, Zingo-cli should be running in regtest mode momentarily...");
-                break;
-            }
-            // we need to sleep because even after the last message is detected, lwd needs a moment to become ready for regtest mode
-            std::thread::sleep(check_interval);
-        }
+        let lightwalletd_child = launch_lightwalletd(
+            self.lightwalletd_logs_dir.clone(),
+            self.confs_dir.clone(),
+            self.data_dir.clone(),
+            self.bin_dir.clone(),
+            check_interval,
+        );
         Ok(ChildProcessHandler {
             zcashd: zcashd_handle,
             lightwalletd: lightwalletd_child,

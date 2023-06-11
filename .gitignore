@@ -15,3 +15,4 @@ zingolib/test-data/*
 zingocli/tests/data/externalwallet_coinbaseaddress.conf
 zingocli/tests/data/lightwalletd.yml
 zingocli/tests/data/basic_zcashd.conf
+cobertura.xml

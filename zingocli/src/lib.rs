@@ -1,13 +1,13 @@
 #![forbid(unsafe_code)]
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use log::{error, info};
 
 use clap::{self, Arg};
 use regtest::ChildProcessHandler;
-use zingoconfig::{ChainType, ZingoConfig};
+use zingoconfig::ChainType;
 use zingolib::wallet::WalletBase;
 use zingolib::{commands, lightclient::LightClient, load_clientconfig};
 
@@ -28,6 +28,10 @@ pub fn build_clap_app() -> clap::App<'static> {
             .arg(Arg::new("password")
                 .long("password")
                 .help("When recovering seed, specify a password for the encrypted wallet")
+                .takes_value(true))
+            .arg(Arg::new("chain")
+                .long("chain").short('c')
+                .help(r#"What chain to expect, if it's not inferrable from the server URI. One of "mainnet", "testnet", or "regtest""#)
                 .takes_value(true))
             .arg(Arg::new("seed")
                 .short('s')
@@ -133,7 +137,7 @@ fn start_interactive(
                 let e = format!("Error executing command {}: {}", cmd, e);
                 eprintln!("{}", e);
                 error!("{}", e);
-                return "".to_string();
+                "".to_string()
             }
         }
     };
@@ -211,39 +215,23 @@ pub fn command_loop(
     let (command_transmitter, command_receiver) = channel::<(String, Vec<String>)>();
     let (resp_transmitter, resp_receiver) = channel::<String>();
 
-    let lc = lightclient.clone();
     std::thread::spawn(move || {
-        LightClient::start_mempool_monitor(lc.clone());
+        LightClient::start_mempool_monitor(lightclient.clone());
 
-        loop {
-            if let Ok((cmd, args)) = command_receiver.recv() {
-                let args = args.iter().map(|s| s.as_ref()).collect();
+        while let Ok((cmd, args)) = command_receiver.recv() {
+            let args: Vec<_> = args.iter().map(|s| s.as_ref()).collect();
 
-                let cmd_response = commands::do_user_command(&cmd, &args, lc.as_ref());
-                resp_transmitter.send(cmd_response).unwrap();
+            let cmd_response = commands::do_user_command(&cmd, &args[..], lightclient.as_ref());
+            resp_transmitter.send(cmd_response).unwrap();
 
-                if cmd == "quit" {
-                    info!("Quit");
-                    break;
-                }
-            } else {
+            if cmd == "quit" {
+                info!("Quit");
                 break;
             }
         }
     });
 
     (command_transmitter, resp_receiver)
-}
-
-pub fn attempt_recover_seed(_password: Option<String>) {
-    // Create a Light Client Config in an attempt to recover the file.
-    ZingoConfig {
-        lightwalletd_uri: Arc::new(RwLock::new("0.0.0.0:0".parse().unwrap())),
-        chain: zingoconfig::ChainType::Mainnet,
-        monitor_mempool: false,
-        reorg_buffer_offset: 0,
-        zingo_wallet_dir: None,
-    };
 }
 
 pub struct ConfigTemplate {
@@ -274,6 +262,8 @@ enum TemplateFillError {
     InvalidBirthday(String),
     MalformedServerURL(String),
     ChildLaunchError(regtest::LaunchChildProcessError),
+    InvalidChain(String),
+    RegtestAndChainSpecified(String),
 }
 
 impl From<regtest::LaunchChildProcessError> for TemplateFillError {
@@ -298,8 +288,7 @@ impl ConfigTemplate {
         let params: Vec<String> = matches
             .values_of("PARAMS")
             .map(|v| v.collect())
-            .or(Some(vec![]))
-            .unwrap()
+            .unwrap_or(vec![])
             .iter()
             .map(|s| s.to_string())
             .collect();
@@ -324,6 +313,11 @@ impl ConfigTemplate {
 If you don't remember the block height, you can pass '--birthday 0'\
 to scan from the start of the blockchain."
                     .to_string(),
+            ));
+        }
+        if matches.contains_id("chain") && matches.contains_id("regtest") {
+            return Err(TemplateFillError::RegtestAndChainSpecified(
+                "regtest mode incompatible with custom chain selection".to_string(),
             ));
         }
         let birthday = match maybe_birthday.unwrap_or("0").parse::<u64>() {
@@ -360,11 +354,17 @@ to scan from the start of the blockchain."
             None
         };
         let server = zingoconfig::construct_lightwalletd_uri(maybe_server);
-        let chaintype = match server.to_string() {
-            x if x.contains("main") => ChainType::Mainnet,
-            x if x.contains("test") => ChainType::Testnet,
-            x if x.contains("127.0.0.1") => ChainType::Regtest,
-            _ => panic!("error"),
+        let chaintype = if let Some(chain) = matches.get_one::<String>("chain") {
+            match chain.as_str() {
+                "mainnet" => ChainType::Mainnet,
+                "testnet" => ChainType::Testnet,
+                "regtest" => ChainType::Regtest,
+                _ => return Err(TemplateFillError::InvalidChain(chain.clone())),
+            }
+        } else if matches.is_present("regtest") {
+            ChainType::Regtest
+        } else {
+            ChainType::Mainnet
         };
 
         // Test to make sure the server has all of scheme, host and port
@@ -390,12 +390,19 @@ to scan from the start of the blockchain."
         })
     }
 }
+
+/// A (command, args) request
+pub type CommandRequest = (String, Vec<String>);
+
+/// Command responses are strings
+pub type CommandResponse = String;
+
 /// Used by the zingocli crate, and the zingo-mobile application:
 /// <https://github.com/zingolabs/zingolib/tree/dev/cli>
 /// <https://github.com/zingolabs/zingo-mobile>
 pub fn startup(
     filled_template: &ConfigTemplate,
-) -> std::io::Result<(Sender<(String, Vec<String>)>, Receiver<String>)> {
+) -> std::io::Result<(Sender<CommandRequest>, Receiver<CommandResponse>)> {
     // Try to get the configuration
     let config = load_clientconfig(
         filled_template.server.clone(),
@@ -437,7 +444,10 @@ pub fn startup(
                 let server_uri = config.get_lightwalletd_uri();
                 let block_height = zingolib::get_latest_block_height(server_uri);
                 // Create a wallet with height - 100, to protect against reorgs
-                Arc::new(LightClient::new(&config, block_height.saturating_sub(100))?)
+                Arc::new(LightClient::new(
+                    &config,
+                    block_height?.saturating_sub(100),
+                )?)
             }
         }
     };
@@ -456,12 +466,12 @@ pub fn startup(
 
     // At startup, run a sync.
     if filled_template.sync {
-        let update = commands::do_user_command("sync", &vec![], lightclient.as_ref());
+        let update = commands::do_user_command("sync", &[], lightclient.as_ref());
         println!("{}", update);
     }
 
     // Start the command loop
-    let (command_transmitter, resp_receiver) = command_loop(lightclient.clone());
+    let (command_transmitter, resp_receiver) = command_loop(lightclient);
 
     Ok((command_transmitter, resp_receiver))
 }
@@ -476,11 +486,8 @@ fn start_cli_service(
             error!("{}", emsg);
             #[cfg(target_os = "linux")]
             // TODO: Test report_permission_error() for macos and change to target_family = "unix"
-            {
-                match e.raw_os_error() {
-                    Some(13) => report_permission_error(),
-                    _ => {}
-                }
+            if let Some(13) = e.raw_os_error() {
+                report_permission_error()
             }
             panic!();
         }
@@ -493,7 +500,7 @@ fn dispatch_command_or_start_interactive(cli_config: &ConfigTemplate) {
     } else {
         command_transmitter
             .send((
-                cli_config.command.clone().unwrap().to_string(),
+                cli_config.command.clone().unwrap(),
                 cli_config
                     .params
                     .iter()

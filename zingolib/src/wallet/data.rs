@@ -1,22 +1,27 @@
 use crate::blaze::fixed_size_buffer::FixedSizeBuffer;
 use crate::compact_formats::CompactBlock;
+use crate::wallet::traits::ReceivedNoteAndMetadata;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use orchard::note_encryption::OrchardDomain;
 use orchard::tree::MerkleHashOrchard;
 use prost::Message;
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
 use std::usize;
 use zcash_encoding::{Optional, Vector};
+use zcash_note_encryption::Domain;
 use zcash_primitives::consensus::BlockHeight;
+use zcash_primitives::sapling::note_encryption::SaplingDomain;
 use zcash_primitives::{
     memo::Memo,
     merkle_tree::{CommitmentTree, IncrementalWitness},
     transaction::{components::OutPoint, TxId},
 };
 use zcash_primitives::{memo::MemoBytes, merkle_tree::Hashable};
+use zingoconfig::ChainType;
 
 use super::keys::unified::WalletCapability;
-use super::traits::ReadableWriteable;
+use super::traits::{self, DomainWalletExt, ReadableWriteable};
 
 /// This type is motivated by the IPC architecture where (currently) channels traffic in
 /// `(TxId, WalletNullifier, BlockHeight, Option<u32>)`.  This enum permits a single channel
@@ -51,16 +56,20 @@ pub struct BlockData {
 
 impl BlockData {
     pub fn serialized_version() -> u64 {
-        return 20;
+        20
     }
 
     pub(crate) fn new_with(height: u64, hash: &str) -> Self {
-        let mut cb = CompactBlock::default();
-        cb.hash = hex::decode(hash)
+        let hash = hex::decode(hash)
             .unwrap()
             .into_iter()
             .rev()
             .collect::<Vec<_>>();
+
+        let cb = CompactBlock {
+            hash,
+            ..Default::default()
+        };
 
         let mut ecb = vec![];
         cb.encode(&mut ecb).unwrap();
@@ -148,6 +157,15 @@ pub struct WitnessCache<Node: Hashable> {
     pub top_height: u64,
 }
 
+impl<Node: Hashable> std::fmt::Debug for WitnessCache<Node> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WitnessCache")
+            .field("witnesses", &self.witnesses.len())
+            .field("top_height", &self.top_height)
+            .finish_non_exhaustive()
+    }
+}
+
 impl<Node: Hashable> WitnessCache<Node> {
     pub fn new(witnesses: Vec<IncrementalWitness<Node>>, top_height: u64) -> Self {
         Self {
@@ -228,14 +246,11 @@ pub struct ReceivedSaplingNoteAndMetadata {
     pub have_spending_key: bool,
 }
 
+#[derive(Debug)]
 pub struct ReceivedOrchardNoteAndMetadata {
     pub diversifier: orchard::keys::Diversifier,
     pub note: orchard::note::Note,
 
-    // Witnesses for the last 100 blocks. witnesses.last() is the latest witness
-    #[cfg(not(feature = "integration_test"))]
-    pub(crate) witnesses: WitnessCache<MerkleHashOrchard>,
-    #[cfg(feature = "integration_test")]
     pub witnesses: WitnessCache<MerkleHashOrchard>,
     pub(super) nullifier: orchard::note::Nullifier,
     pub spent: Option<(TxId, u32)>, // If this note was confirmed spent
@@ -307,7 +322,7 @@ pub(crate) fn write_sapling_rseed<W: Write>(
 }
 
 #[derive(Clone, Debug)]
-pub struct Utxo {
+pub struct ReceivedTransparentOutput {
     pub address: String,
     pub txid: TxId,
     pub output_index: u64,
@@ -323,9 +338,9 @@ pub struct Utxo {
     pub unconfirmed_spent: Option<(TxId, u32)>,
 }
 
-impl Utxo {
+impl ReceivedTransparentOutput {
     pub fn serialized_version() -> u64 {
-        return 3;
+        3
     }
 
     pub fn to_outpoint(&self) -> OutPoint {
@@ -379,7 +394,7 @@ impl Utxo {
             })?
         };
 
-        Ok(Utxo {
+        Ok(ReceivedTransparentOutput {
             address,
             txid: transaction_id,
             output_index,
@@ -427,6 +442,7 @@ impl Utxo {
     }
 }
 
+#[derive(Debug)]
 pub struct OutgoingTxData {
     pub to_address: String,
     pub value: u64,
@@ -487,7 +503,147 @@ impl OutgoingTxData {
     }
 }
 
+pub mod finsight {
+    pub struct ValuesSentToAddress(pub std::collections::HashMap<String, Vec<u64>>);
+    pub struct TotalValueToAddress(pub std::collections::HashMap<String, u64>);
+    pub struct TotalSendsToAddress(pub std::collections::HashMap<String, u64>);
+    #[derive(Debug)]
+    pub struct TotalMemoBytesToAddress(pub std::collections::HashMap<String, usize>);
+    impl From<TotalMemoBytesToAddress> for json::JsonValue {
+        fn from(value: TotalMemoBytesToAddress) -> Self {
+            let mut jsonified = json::object!();
+            let hm = value.0;
+            for (key, val) in hm.iter() {
+                jsonified[key] = json::JsonValue::from(*val);
+            }
+            jsonified
+        }
+    }
+    impl From<TotalValueToAddress> for json::JsonValue {
+        fn from(value: TotalValueToAddress) -> Self {
+            let mut jsonified = json::object!();
+            let hm = value.0;
+            for (key, val) in hm.iter() {
+                jsonified[key] = json::JsonValue::from(*val);
+            }
+            jsonified
+        }
+    }
+    impl From<TotalSendsToAddress> for json::JsonValue {
+        fn from(value: TotalSendsToAddress) -> Self {
+            let mut jsonified = json::object!();
+            let hm = value.0;
+            for (key, val) in hm.iter() {
+                jsonified[key] = json::JsonValue::from(*val);
+            }
+            jsonified
+        }
+    }
+}
+pub mod summaries {
+    use std::collections::HashMap;
+
+    use json::{object, JsonValue};
+    use zcash_primitives::transaction::TxId;
+
+    use crate::wallet::Pool;
+
+    /// The MobileTx is the zingolib representation of
+    /// transactions in the format most useful for
+    /// consumption in mobile and mobile-like UI
+    pub struct ValueTransfer {
+        pub block_height: zcash_primitives::consensus::BlockHeight,
+        pub datetime: u64,
+        pub kind: ValueTransferKind,
+        pub memos: Vec<zcash_primitives::memo::TextMemo>,
+        pub price: Option<f64>,
+        pub txid: TxId,
+    }
+    impl ValueTransfer {
+        pub fn balance_delta(&self) -> i64 {
+            use ValueTransferKind::*;
+            match self.kind {
+                Sent { amount, .. } => -(amount as i64),
+                Fee { amount, .. } => -(amount as i64),
+                Received { amount, .. } => amount as i64,
+                SendToSelf => 0,
+            }
+        }
+    }
+    #[derive(Clone)]
+    pub enum ValueTransferKind {
+        Sent {
+            amount: u64,
+            to_address: zcash_address::ZcashAddress,
+        },
+        Received {
+            pool: Pool,
+            amount: u64,
+        },
+        SendToSelf,
+        Fee {
+            amount: u64,
+        },
+    }
+    impl From<&ValueTransferKind> for JsonValue {
+        fn from(value: &ValueTransferKind) -> Self {
+            match value {
+                ValueTransferKind::Sent { .. } => JsonValue::String(String::from("Sent")),
+                ValueTransferKind::Received { .. } => JsonValue::String(String::from("Received")),
+                ValueTransferKind::SendToSelf => JsonValue::String(String::from("SendToSelf")),
+                ValueTransferKind::Fee { .. } => JsonValue::String(String::from("Fee")),
+            }
+        }
+    }
+    impl From<ValueTransfer> for JsonValue {
+        fn from(value: ValueTransfer) -> Self {
+            let mut temp_object = object! {
+                    "amount": "",
+                    "block_height": u32::from(value.block_height),
+                    "datetime": value.datetime,
+                    "kind": "",
+                    "memos": value.memos.iter().cloned().map(String::from).collect::<Vec<String>>(),
+                    "pool": "",
+                    "price": value.price,
+                    "txid": value.txid.to_string(),
+            };
+            match value.kind {
+                ValueTransferKind::Sent {
+                    ref to_address,
+                    amount,
+                } => {
+                    temp_object["amount"] = JsonValue::from(amount);
+                    temp_object["kind"] = JsonValue::from(&value.kind);
+                    temp_object["to_address"] = JsonValue::from(to_address.encode());
+                    temp_object
+                }
+                ValueTransferKind::Fee { amount } => {
+                    temp_object["amount"] = JsonValue::from(amount);
+                    temp_object["kind"] = JsonValue::from(&value.kind);
+                    temp_object
+                }
+                ValueTransferKind::Received { pool, amount } => {
+                    temp_object["amount"] = JsonValue::from(amount);
+                    temp_object["kind"] = JsonValue::from(&value.kind);
+                    temp_object["pool"] = JsonValue::from(pool);
+                    temp_object
+                }
+                ValueTransferKind::SendToSelf => {
+                    temp_object["amount"] = JsonValue::from(0);
+                    temp_object["kind"] = JsonValue::from(&value.kind);
+                    temp_object["pool"] = JsonValue::from("None".to_string());
+                    temp_object["price"] = JsonValue::from("None".to_string());
+                    temp_object["to_address"] = JsonValue::from("None".to_string());
+                    temp_object
+                }
+            }
+        }
+    }
+
+    pub struct TransactionIndex(HashMap<zcash_primitives::transaction::TxId, ValueTransfer>);
+}
 ///  Everything (SOMETHING) about a transaction
+#[derive(Debug)]
 pub struct TransactionMetadata {
     // Block in which this tx was included
     pub block_height: BlockHeight,
@@ -515,7 +671,7 @@ pub struct TransactionMetadata {
     pub orchard_notes: Vec<ReceivedOrchardNoteAndMetadata>,
 
     // List of all Utxos received in this Tx. Some of these might be change notes
-    pub utxos: Vec<Utxo>,
+    pub received_utxos: Vec<ReceivedTransparentOutput>,
 
     // Total value of all the sapling nullifiers that were spent in this Tx
     pub total_sapling_value_spent: u64,
@@ -533,32 +689,21 @@ pub struct TransactionMetadata {
     pub full_tx_scanned: bool,
 
     // Price of Zec when this Tx was created
-    pub zec_price: Option<f64>,
+    pub price: Option<f64>,
 }
 
 impl TransactionMetadata {
-    pub fn serialized_version() -> u64 {
-        return 23;
-    }
-
-    pub fn new_txid(txid: &Vec<u8>) -> TxId {
-        let mut txid_bytes = [0u8; 32];
-        txid_bytes.copy_from_slice(txid);
-        TxId::from_bytes(txid_bytes)
-    }
-
-    pub fn total_value_spent(&self) -> u64 {
-        self.value_spent_by_pool().iter().sum()
-    }
-    pub fn is_outgoing_transaction(&self) -> bool {
-        self.total_value_spent() > 0
-    }
-    pub fn value_spent_by_pool(&self) -> [u64; 3] {
-        [
-            self.total_transparent_value_spent,
-            self.total_sapling_value_spent,
-            self.total_orchard_value_spent,
-        ]
+    pub(super) fn add_spent_nullifier(&mut self, nullifier: PoolNullifier, value: u64) {
+        match nullifier {
+            PoolNullifier::Sapling(nf) => {
+                self.spent_sapling_nullifiers.push(nf);
+                self.total_sapling_value_spent += value;
+            }
+            PoolNullifier::Orchard(nf) => {
+                self.spent_orchard_nullifiers.push(nf);
+                self.total_orchard_value_spent += value;
+            }
+        }
     }
 
     pub fn get_price(datetime: u64, price: &WalletZecPriceInfo) -> Option<f64> {
@@ -577,6 +722,24 @@ impl TransactionMetadata {
         }
     }
 
+    pub fn get_transaction_fee(&self) -> u64 {
+        self.total_value_spent() - (self.value_outgoing() + self.total_change_returned())
+    }
+
+    // TODO: This is incorrect in the edge case where where we have a send-to-self with
+    // no text memo and 0-value fee
+    pub fn is_outgoing_transaction(&self) -> bool {
+        (!self.outgoing_tx_data.is_empty()) || self.total_value_spent() != 0
+    }
+    pub fn is_incoming_transaction(&self) -> bool {
+        self.sapling_notes.iter().any(|note| !note.is_change())
+            || self.orchard_notes.iter().any(|note| !note.is_change())
+            || !self.received_utxos.is_empty()
+    }
+    pub fn net_spent(&self) -> u64 {
+        assert!(self.is_outgoing_transaction());
+        self.total_value_spent() - self.total_change_returned()
+    }
     pub fn new(
         height: BlockHeight,
         datetime: u64,
@@ -587,19 +750,42 @@ impl TransactionMetadata {
             block_height: height,
             unconfirmed,
             datetime,
-            txid: transaction_id.clone(),
+            txid: *transaction_id,
             spent_sapling_nullifiers: vec![],
             spent_orchard_nullifiers: vec![],
             sapling_notes: vec![],
             orchard_notes: vec![],
-            utxos: vec![],
+            received_utxos: vec![],
             total_transparent_value_spent: 0,
             total_sapling_value_spent: 0,
             total_orchard_value_spent: 0,
             outgoing_tx_data: vec![],
             full_tx_scanned: false,
-            zec_price: None,
+            price: None,
         }
+    }
+    pub fn new_txid(txid: &[u8]) -> TxId {
+        let mut txid_bytes = [0u8; 32];
+        txid_bytes.copy_from_slice(txid);
+        TxId::from_bytes(txid_bytes)
+    }
+    fn pool_change_returned<D: DomainWalletExt>(&self) -> u64
+    where
+        <D as Domain>::Note: PartialEq + Clone,
+        <D as Domain>::Recipient: traits::Recipient,
+    {
+        D::sum_pool_change(self)
+    }
+
+    pub fn pool_value_received<D: DomainWalletExt>(&self) -> u64
+    where
+        <D as Domain>::Note: PartialEq + Clone,
+        <D as Domain>::Recipient: traits::Recipient,
+    {
+        D::to_notes_vec(self)
+            .iter()
+            .map(|note_and_metadata| note_and_metadata.value())
+            .sum()
     }
 
     pub fn read<R: Read>(mut reader: R, wallet_capability: &WalletCapability) -> io::Result<Self> {
@@ -635,7 +821,7 @@ impl TransactionMetadata {
         } else {
             vec![]
         };
-        let utxos = Vector::read(&mut reader, |r| Utxo::read(r))?;
+        let utxos = Vector::read(&mut reader, |r| ReceivedTransparentOutput::read(r))?;
 
         let total_sapling_value_spent = reader.read_u64::<LittleEndian>()?;
         let total_transparent_value_spent = reader.read_u64::<LittleEndian>()?;
@@ -683,7 +869,7 @@ impl TransactionMetadata {
             txid: transaction_id,
             sapling_notes,
             orchard_notes,
-            utxos,
+            received_utxos: utxos,
             spent_sapling_nullifiers,
             spent_orchard_nullifiers,
             total_sapling_value_spent,
@@ -691,10 +877,44 @@ impl TransactionMetadata {
             total_orchard_value_spent,
             outgoing_tx_data: outgoing_metadata,
             full_tx_scanned,
-            zec_price,
+            price: zec_price,
         })
     }
 
+    pub fn serialized_version() -> u64 {
+        23
+    }
+
+    pub fn total_change_returned(&self) -> u64 {
+        self.pool_change_returned::<SaplingDomain<ChainType>>()
+            + self.pool_change_returned::<OrchardDomain>()
+    }
+    pub fn total_value_received(&self) -> u64 {
+        self.pool_value_received::<OrchardDomain>()
+            + self.pool_value_received::<SaplingDomain<ChainType>>()
+            + self
+                .received_utxos
+                .iter()
+                .map(|utxo| utxo.value)
+                .sum::<u64>()
+    }
+    pub fn total_value_spent(&self) -> u64 {
+        self.value_spent_by_pool().iter().sum()
+    }
+
+    pub fn value_outgoing(&self) -> u64 {
+        self.outgoing_tx_data
+            .iter()
+            .fold(0, |running_total, tx_data| tx_data.value + running_total)
+    }
+
+    pub fn value_spent_by_pool(&self) -> [u64; 3] {
+        [
+            self.total_transparent_value_spent,
+            self.total_sapling_value_spent,
+            self.total_orchard_value_spent,
+        ]
+    }
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
@@ -709,7 +929,7 @@ impl TransactionMetadata {
 
         Vector::write(&mut writer, &self.sapling_notes, |w, nd| nd.write(w))?;
         Vector::write(&mut writer, &self.orchard_notes, |w, nd| nd.write(w))?;
-        Vector::write(&mut writer, &self.utxos, |w, u| u.write(w))?;
+        Vector::write(&mut writer, &self.received_utxos, |w, u| u.write(w))?;
 
         for pool in self.value_spent_by_pool() {
             writer.write_u64::<LittleEndian>(pool)?;
@@ -720,7 +940,7 @@ impl TransactionMetadata {
 
         writer.write_u8(if self.full_tx_scanned { 1 } else { 0 })?;
 
-        Optional::write(&mut writer, self.zec_price, |w, p| {
+        Optional::write(&mut writer, self.price, |w, p| {
             w.write_f64::<LittleEndian>(p)
         })?;
 
@@ -732,19 +952,6 @@ impl TransactionMetadata {
         })?;
 
         Ok(())
-    }
-
-    pub(super) fn add_spent_nullifier(&mut self, nullifier: PoolNullifier, value: u64) {
-        match nullifier {
-            PoolNullifier::Sapling(nf) => {
-                self.spent_sapling_nullifiers.push(nf);
-                self.total_sapling_value_spent += value;
-            }
-            PoolNullifier::Orchard(nf) => {
-                self.spent_orchard_nullifiers.push(nf);
-                self.total_orchard_value_spent += value;
-            }
-        }
     }
 }
 
@@ -782,8 +989,8 @@ pub struct WalletZecPriceInfo {
     pub historical_prices_retry_count: u64,
 }
 
-impl WalletZecPriceInfo {
-    pub fn new() -> Self {
+impl Default for WalletZecPriceInfo {
+    fn default() -> Self {
         Self {
             zec_price: None,
             currency: "USD".to_string(), // Only USD is supported right now.
@@ -791,9 +998,11 @@ impl WalletZecPriceInfo {
             historical_prices_retry_count: 0,
         }
     }
+}
 
+impl WalletZecPriceInfo {
     pub fn serialized_version() -> u64 {
-        return 20;
+        20
     }
 
     pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {

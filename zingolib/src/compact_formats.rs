@@ -1,8 +1,4 @@
-use ff::PrimeField;
-use group::GroupEncoding;
 use orchard::{note::ExtractedNoteCommitment, note_encryption::OrchardDomain};
-use std::convert::TryInto;
-
 use zcash_note_encryption::{EphemeralKeyBytes, ShieldedOutput, COMPACT_NOTE_SIZE};
 use zcash_primitives::{
     block::{BlockHash, BlockHeader},
@@ -70,53 +66,26 @@ impl CompactBlock {
     }
 }
 
-impl CompactSaplingOutput {
-    /// Returns the note commitment for this output.
-    ///
-    /// A convenience method that parses [`CompactSaplingOutput.cmu`].
-    ///
-    /// [`CompactSaplingOutput.cmu`]: #structfield.cmu
-    pub fn cmu(&self) -> Result<bls12_381::Scalar, ()> {
-        let mut repr = [0; 32];
-        repr.as_mut().copy_from_slice(&self.cmu[..]);
-        Option::from(bls12_381::Scalar::from_repr(repr)).ok_or(())
-    }
-
-    /// Returns the ephemeral public key for this output.
-    ///
-    /// A convenience method that parses [`CompactSaplingOutput.epk`].
-    ///
-    /// [`CompactSaplingOutput.epk`]: #structfield.epk
-    pub fn epk(&self) -> Result<jubjub::ExtendedPoint, ()> {
-        let p = jubjub::ExtendedPoint::from_bytes(&self.epk[..].try_into().map_err(|_| ())?);
-        if p.is_some().into() {
-            Ok(p.unwrap())
-        } else {
-            Err(())
-        }
-    }
-}
-
 impl<P: Parameters> ShieldedOutput<SaplingDomain<P>, COMPACT_NOTE_SIZE> for CompactSaplingOutput {
     fn ephemeral_key(&self) -> EphemeralKeyBytes {
-        EphemeralKeyBytes(*vec_to_array(&self.epk))
+        EphemeralKeyBytes(*slice_to_array(&self.epk))
     }
     fn cmstar_bytes(&self) -> [u8; 32] {
-        *vec_to_array(&self.cmu)
+        *slice_to_array(&self.cmu)
     }
     fn enc_ciphertext(&self) -> &[u8; COMPACT_NOTE_SIZE] {
-        vec_to_array(&self.ciphertext)
+        slice_to_array(&self.ciphertext)
     }
 }
 impl ShieldedOutput<OrchardDomain, COMPACT_NOTE_SIZE> for CompactOrchardAction {
     fn ephemeral_key(&self) -> EphemeralKeyBytes {
-        EphemeralKeyBytes(*vec_to_array(&self.ephemeral_key))
+        EphemeralKeyBytes(*slice_to_array(&self.ephemeral_key))
     }
     fn cmstar_bytes(&self) -> [u8; 32] {
-        *vec_to_array(&self.cmx)
+        *slice_to_array(&self.cmx)
     }
     fn enc_ciphertext(&self) -> &[u8; COMPACT_NOTE_SIZE] {
-        vec_to_array(&self.ciphertext)
+        slice_to_array(&self.ciphertext)
     }
 }
 
@@ -139,7 +108,7 @@ impl TryFrom<&CompactOrchardAction> for orchard::note_encryption::CompactAction 
     }
 }
 
-pub(crate) fn vec_to_array<'a, const N: usize>(vec: &'a Vec<u8>) -> &'a [u8; N] {
-    <&[u8; N]>::try_from(&vec[..]).unwrap_or_else(|_| &[0; N])
+pub(crate) fn slice_to_array<const N: usize>(slice: &[u8]) -> &[u8; N] {
+    <&[u8; N]>::try_from(slice).unwrap_or(&[0; N])
     //todo: This default feels dangerous. Find better solution
 }

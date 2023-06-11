@@ -39,6 +39,21 @@ macro_rules! get_base_address {
 macro_rules! check_client_balances {
     ($client:ident, o: $orchard:tt s: $sapling:tt t: $transparent:tt) => {
         let balance = $client.do_balance().await;
+        let tx_summary_balance = $client
+            .do_list_txsummaries()
+            .await
+            .iter()
+            .map(|transfer| transfer.balance_delta())
+            .sum::<i64>();
+        assert_eq!(
+            balance["orchard_balance"].as_i64().unwrap_or(0)
+                + balance["sapling_balance"].as_i64().unwrap_or(0)
+                + balance["transparent_balance"].as_i64().unwrap_or(0),
+            tx_summary_balance,
+            "tx_summaries follow: {}\ndo_list_transactions follow: {}",
+            ::json::JsonValue::from($client.do_list_txsummaries().await).pretty(4),
+            $client.do_list_transactions().await.pretty(4)
+        );
         assert_eq!(
             balance["orchard_balance"], $orchard,
             "\no_balance: {} expectation: {} ",

@@ -8,9 +8,10 @@ use super::{
     },
     keys::unified::WalletCapability,
     transactions::TransactionMetadataSet,
+    Pool,
 };
 use crate::compact_formats::{
-    vec_to_array, CompactOrchardAction, CompactSaplingOutput, CompactTx, TreeState,
+    slice_to_array, CompactOrchardAction, CompactSaplingOutput, CompactTx, TreeState,
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use nonempty::NonEmpty;
@@ -139,7 +140,7 @@ impl FromBytes<32> for zcash_primitives::sapling::Nullifier {
 impl FromBytes<32> for orchard::note::Nullifier {
     fn from_bytes(bytes: [u8; 32]) -> Self {
         Option::from(orchard::note::Nullifier::from_bytes(&bytes))
-            .expect(&format!("Invalid nullifier {:?}", bytes))
+            .unwrap_or_else(|| panic!("Invalid nullifier {:?}", bytes))
     }
 }
 
@@ -224,7 +225,7 @@ impl Recipient for orchard::Address {
     type Diversifier = orchard::keys::Diversifier;
 
     fn diversifier(&self) -> Self::Diversifier {
-        orchard::Address::diversifier(&self)
+        orchard::Address::diversifier(self)
     }
 
     fn b32encode_for_network(&self, chain: &ChainType) -> String {
@@ -242,7 +243,7 @@ impl Recipient for zcash_primitives::sapling::PaymentAddress {
     type Diversifier = zcash_primitives::sapling::Diversifier;
 
     fn diversifier(&self) -> Self::Diversifier {
-        *zcash_primitives::sapling::PaymentAddress::diversifier(&self)
+        *zcash_primitives::sapling::PaymentAddress::diversifier(self)
     }
 
     fn b32encode_for_network(&self, chain: &ChainType) -> String {
@@ -267,7 +268,7 @@ impl CompactOutput<SaplingDomain<ChainType>> for CompactSaplingOutput {
     }
 
     fn cmstar(&self) -> &[u8; 32] {
-        vec_to_array(&self.cmu)
+        slice_to_array(&self.cmu)
     }
 
     fn domain(&self, parameters: ChainType, height: BlockHeight) -> SaplingDomain<ChainType> {
@@ -280,12 +281,12 @@ impl CompactOutput<OrchardDomain> for CompactOrchardAction {
         &compact_transaction.actions
     }
     fn cmstar(&self) -> &[u8; 32] {
-        vec_to_array(&self.cmx)
+        slice_to_array(&self.cmx)
     }
 
     fn domain(&self, _parameters: ChainType, _heightt: BlockHeight) -> OrchardDomain {
         OrchardDomain::for_nullifier(
-            orchard::note::Nullifier::from_bytes(vec_to_array(&self.nullifier)).unwrap(),
+            orchard::note::Nullifier::from_bytes(slice_to_array(&self.nullifier)).unwrap(),
         )
     }
 }
@@ -405,18 +406,19 @@ pub trait ReceivedNoteAndMetadata: Sized {
     type Node: Hashable + FromCommitment + Send;
     type Nullifier: Nullifier;
 
-    const GET_NOTE_WITNESSES: fn(
-        &TransactionMetadataSet,
-        &TxId,
-        &Self::Nullifier,
+    fn get_note_witnesses(
+        tms: &TransactionMetadataSet,
+        txid: &TxId,
+        nullifier: &Self::Nullifier,
     ) -> Option<(WitnessCache<Self::Node>, BlockHeight)>;
-    const SET_NOTE_WITNESSES: fn(
-        &mut TransactionMetadataSet,
-        &TxId,
-        &Self::Nullifier,
-        WitnessCache<Self::Node>,
+    fn set_note_witnesses(
+        tms: &mut TransactionMetadataSet,
+        txid: &TxId,
+        nullifier: &Self::Nullifier,
+        cache: WitnessCache<Self::Node>,
     );
     fn diversifier(&self) -> &Self::Diversifier;
+    #[allow(clippy::too_many_arguments)]
     fn from_parts(
         diversifier: Self::Diversifier,
         note: Self::Note,
@@ -431,6 +433,7 @@ pub trait ReceivedNoteAndMetadata: Sized {
     fn get_deprecated_serialized_view_key_buffer() -> Vec<u8>;
     fn have_spending_key(&self) -> bool;
     fn is_change(&self) -> bool;
+    fn is_change_mut(&mut self) -> &mut bool;
     fn is_spent(&self) -> bool {
         Self::spent(self).is_some()
     }
@@ -438,6 +441,7 @@ pub trait ReceivedNoteAndMetadata: Sized {
     fn memo_mut(&mut self) -> &mut Option<Memo>;
     fn note(&self) -> &Self::Note;
     fn nullifier(&self) -> Self::Nullifier;
+    fn pool() -> Pool;
     fn spent(&self) -> &Option<(TxId, u32)>;
     fn spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
     fn transaction_metadata_notes(wallet_transaction: &TransactionMetadata) -> &Vec<Self>;
@@ -461,20 +465,21 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
     type Node = zcash_primitives::sapling::Node;
     type Nullifier = zcash_primitives::sapling::Nullifier;
 
-    /// This (and SET_NOTE_WITNESSES) could be associated functions instead of fn
-    /// constants, but that would require an additional repetition of the fn arguments.
-    const GET_NOTE_WITNESSES: fn(
-        &TransactionMetadataSet,
-        &TxId,
-        &Self::Nullifier,
-    ) -> Option<(WitnessCache<Self::Node>, BlockHeight)> =
-        TransactionMetadataSet::get_sapling_note_witnesses;
-    const SET_NOTE_WITNESSES: fn(
-        &mut TransactionMetadataSet,
-        &TxId,
-        &Self::Nullifier,
-        WitnessCache<Self::Node>,
-    ) = TransactionMetadataSet::set_sapling_note_witnesses;
+    fn get_note_witnesses(
+        tms: &TransactionMetadataSet,
+        txid: &TxId,
+        nullifier: &Self::Nullifier,
+    ) -> Option<(WitnessCache<Self::Node>, BlockHeight)> {
+        TransactionMetadataSet::get_sapling_note_witnesses(tms, txid, nullifier)
+    }
+    fn set_note_witnesses(
+        tms: &mut TransactionMetadataSet,
+        txid: &TxId,
+        nullifier: &Self::Nullifier,
+        cache: WitnessCache<Self::Node>,
+    ) {
+        TransactionMetadataSet::set_sapling_note_witnesses(tms, txid, nullifier, cache)
+    }
 
     fn diversifier(&self) -> &Self::Diversifier {
         &self.diversifier
@@ -516,6 +521,10 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         self.is_change
     }
 
+    fn is_change_mut(&mut self) -> &mut bool {
+        &mut self.is_change
+    }
+
     fn memo(&self) -> &Option<Memo> {
         &self.memo
     }
@@ -530,6 +539,10 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
 
     fn nullifier(&self) -> Self::Nullifier {
         self.nullifier
+    }
+
+    fn pool() -> Pool {
+        Pool::Sapling
     }
 
     fn spent(&self) -> &Option<(TxId, u32)> {
@@ -577,19 +590,22 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
     type Node = MerkleHashOrchard;
     type Nullifier = orchard::note::Nullifier;
 
-    const GET_NOTE_WITNESSES: fn(
-        &TransactionMetadataSet,
-        &TxId,
-        &Self::Nullifier,
-    ) -> Option<(WitnessCache<Self::Node>, BlockHeight)> =
-        TransactionMetadataSet::get_orchard_note_witnesses;
+    fn get_note_witnesses(
+        tms: &TransactionMetadataSet,
+        txid: &TxId,
+        nullifier: &Self::Nullifier,
+    ) -> Option<(WitnessCache<Self::Node>, BlockHeight)> {
+        TransactionMetadataSet::get_orchard_note_witnesses(tms, txid, nullifier)
+    }
 
-    const SET_NOTE_WITNESSES: fn(
-        &mut TransactionMetadataSet,
-        &TxId,
-        &Self::Nullifier,
-        WitnessCache<Self::Node>,
-    ) = TransactionMetadataSet::set_orchard_note_witnesses;
+    fn set_note_witnesses(
+        tms: &mut TransactionMetadataSet,
+        txid: &TxId,
+        nullifier: &Self::Nullifier,
+        cache: WitnessCache<Self::Node>,
+    ) {
+        TransactionMetadataSet::set_orchard_note_witnesses(tms, txid, nullifier, cache)
+    }
 
     fn diversifier(&self) -> &Self::Diversifier {
         &self.diversifier
@@ -630,6 +646,10 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         self.is_change
     }
 
+    fn is_change_mut(&mut self) -> &mut bool {
+        &mut self.is_change
+    }
+
     fn memo(&self) -> &Option<Memo> {
         &self.memo
     }
@@ -644,6 +664,10 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
 
     fn nullifier(&self) -> Self::Nullifier {
         self.nullifier
+    }
+
+    fn pool() -> Pool {
+        Pool::Orchard
     }
 
     fn spent(&self) -> &Option<(TxId, u32)> {
@@ -706,12 +730,20 @@ where
 
     type Bundle: Bundle<Self>;
 
+    fn sum_pool_change(transaction_md: &TransactionMetadata) -> u64 {
+        Self::to_notes_vec(transaction_md)
+            .iter()
+            .filter(|nd| nd.is_change())
+            .map(|nd| nd.value())
+            .sum()
+    }
     fn get_nullifier_from_note_fvk_and_witness_position(
         note: &Self::Note,
         fvk: &Self::Fvk,
         position: u64,
     ) -> <Self::WalletNote as ReceivedNoteAndMetadata>::Nullifier;
     fn get_tree(tree_state: &TreeState) -> &String;
+    fn to_notes_vec(_: &TransactionMetadata) -> &Vec<Self::WalletNote>;
     fn to_notes_vec_mut(_: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote>;
     fn ua_from_contained_receiver<'a>(
         unified_spend_auth: &'a WalletCapability,
@@ -745,9 +777,12 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
     ) -> <<Self as DomainWalletExt>::WalletNote as ReceivedNoteAndMetadata>::Nullifier {
         note.nf(&fvk.fvk().vk.nk, position)
     }
-
     fn get_tree(tree_state: &TreeState) -> &String {
         &tree_state.sapling_tree
+    }
+
+    fn to_notes_vec(transaction_md: &TransactionMetadata) -> &Vec<Self::WalletNote> {
+        &transaction_md.sapling_notes
     }
 
     fn to_notes_vec_mut(transaction: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote> {
@@ -799,9 +834,12 @@ impl DomainWalletExt for OrchardDomain {
     ) -> <<Self as DomainWalletExt>::WalletNote as ReceivedNoteAndMetadata>::Nullifier {
         note.nullifier(fvk)
     }
-
     fn get_tree(tree_state: &TreeState) -> &String {
         &tree_state.orchard_tree
+    }
+
+    fn to_notes_vec(transaction_md: &TransactionMetadata) -> &Vec<Self::WalletNote> {
+        &transaction_md.orchard_notes
     }
 
     fn to_notes_vec_mut(transaction: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote> {
@@ -1127,7 +1165,7 @@ impl ReadableWriteable<(zcash_primitives::sapling::Diversifier, &WalletCapabilit
     fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         writer.write_u8(Self::VERSION)?;
         writer.write_u64::<LittleEndian>(self.value().inner())?;
-        super::data::write_sapling_rseed(&mut writer, &self.rseed())?;
+        super::data::write_sapling_rseed(&mut writer, self.rseed())?;
         Ok(())
     }
 }

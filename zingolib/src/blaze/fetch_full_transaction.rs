@@ -1,6 +1,6 @@
 use crate::wallet::{
     data::OutgoingTxData,
-    keys::{address_from_pubkeyhash, unified::WalletCapability, ToBase58Check},
+    keys::{address_from_pubkeyhash, unified::WalletCapability},
     traits::{
         self as zingo_traits, Bundle as _, DomainWalletExt, Nullifier as _,
         ReceivedNoteAndMetadata as _, Recipient as _, ShieldedOutputExt as _, Spend as _,
@@ -33,7 +33,6 @@ use zcash_note_encryption::try_output_recovery_with_ovk;
 
 use zcash_primitives::{
     consensus::BlockHeight,
-    legacy::TransparentAddress,
     memo::{Memo, MemoBytes},
     sapling::note_encryption::SaplingDomain,
     transaction::{Transaction, TxId},
@@ -46,9 +45,6 @@ use zingoconfig::{ChainType, ZingoConfig};
 pub struct TransactionContext {
     pub(crate) config: ZingoConfig,
     pub(crate) key: Arc<RwLock<WalletCapability>>,
-    #[cfg(not(feature = "integration_test"))]
-    pub(crate) transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
-    #[cfg(feature = "integration_test")]
     pub transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
 }
 
@@ -65,6 +61,7 @@ impl TransactionContext {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn execute_bundlescans_internal(
         &self,
         transaction: &Transaction,
@@ -78,17 +75,17 @@ impl TransactionContext {
     ) {
         //todo: investigate scanning all bundles simultaneously
         self.scan_transparent_bundle(
-            &transaction,
+            transaction,
             height,
             unconfirmed,
             block_time,
             is_outgoing_transaction,
-            &taddrs_set,
+            taddrs_set,
         )
         .await;
 
         self.scan_sapling_bundle(
-            &transaction,
+            transaction,
             height,
             unconfirmed,
             block_time,
@@ -98,7 +95,7 @@ impl TransactionContext {
         )
         .await;
         self.scan_orchard_bundle(
-            &transaction,
+            transaction,
             height,
             unconfirmed,
             block_time,
@@ -123,7 +120,7 @@ impl TransactionContext {
         // Collect our t-addresses for easy checking
         let taddrs_set = self.key.read().await.get_all_taddrs(&self.config);
         // Process t-address outputs
-        // If this transaction in outgoing, i.e., we recieved sent some money in this transaction, then we need to grab all transparent outputs
+        // If this transaction in outgoing, i.e., we received sent some money in this transaction, then we need to grab all transparent outputs
         // that don't belong to us as the outgoing metadata
         if self
             .transaction_metadata_set
@@ -151,12 +148,13 @@ impl TransactionContext {
         if is_outgoing_transaction {
             if let Some(t_bundle) = transaction.transparent_bundle() {
                 for vout in &t_bundle.vout {
-                    if let Some(taddr) =
-                        address_from_pubkeyhash(&self.config, vout.recipient_address())
+                    if let Some(taddr) = vout
+                        .recipient_address()
+                        .map(|raw_taddr| address_from_pubkeyhash(&self.config, raw_taddr))
                     {
                         outgoing_metadatas.push(OutgoingTxData {
                             to_address: taddr,
-                            value: vout.value.into(),
+                            value: u64::from(vout.value),
                             memo: Memo::Empty,
                             recipient_ua: None,
                         });
@@ -208,7 +206,7 @@ impl TransactionContext {
                             .current
                             .get_mut(&txid)
                         {
-                            if transaction.outgoing_tx_data.len() != 0 {
+                            if !transaction.outgoing_tx_data.is_empty() {
                                 let outgoing_potential_receivers = [
                                     ua.orchard().map(|oaddr| {
                                         oaddr.b32encode_for_network(&self.config.chain)
@@ -216,10 +214,8 @@ impl TransactionContext {
                                     ua.sapling().map(|zaddr| {
                                         zaddr.b32encode_for_network(&self.config.chain)
                                     }),
-                                    address_from_pubkeyhash(
-                                        &self.config,
-                                        ua.transparent().cloned(),
-                                    ),
+                                    ua.transparent()
+                                        .map(|taddr| address_from_pubkeyhash(&self.config, *taddr)),
                                     Some(ua.encode(&self.config.chain)),
                                 ];
                                 if let Some(out_metadata) =
@@ -262,34 +258,30 @@ impl TransactionContext {
         is_outgoing_transaction: &mut bool,
         taddrs_set: &HashSet<String>,
     ) {
-        // Scan all transparent outputs to see if we recieved any money
+        // Scan all transparent outputs to see if we received any money
         if let Some(t_bundle) = transaction.transparent_bundle() {
             for (n, vout) in t_bundle.vout.iter().enumerate() {
-                match vout.recipient_address() {
-                    Some(TransparentAddress::PublicKey(hash)) => {
-                        let output_taddr =
-                            hash.to_base58check(&self.config.base58_pubkey_address(), &[]);
-                        if taddrs_set.contains(&output_taddr) {
-                            // This is our address. Add this as an output to the txid
-                            self.transaction_metadata_set
-                                .write()
-                                .await
-                                .add_new_taddr_output(
-                                    transaction.txid(),
-                                    output_taddr.clone(),
-                                    height.into(),
-                                    unconfirmed,
-                                    block_time as u64,
-                                    &vout,
-                                    n as u32,
-                                );
+                if let Some(taddr) = vout.recipient_address() {
+                    let output_taddr = address_from_pubkeyhash(&self.config, taddr);
+                    if taddrs_set.contains(&output_taddr) {
+                        // This is our address. Add this as an output to the txid
+                        self.transaction_metadata_set
+                            .write()
+                            .await
+                            .add_new_taddr_output(
+                                transaction.txid(),
+                                output_taddr.clone(),
+                                height.into(),
+                                unconfirmed,
+                                block_time as u64,
+                                vout,
+                                n as u32,
+                            );
 
-                            // Ensure that we add any new HD addresses
-                            // TODO: I don't think we need to do this anymore
-                            // self.keys.write().await.ensure_hd_taddresses(&output_taddr);
-                        }
+                        // Ensure that we add any new HD addresses
+                        // TODO: I don't think we need to do this anymore
+                        // self.keys.write().await.ensure_hd_taddresses(&output_taddr);
                     }
-                    _ => {}
                 }
             }
         }
@@ -311,7 +303,7 @@ impl TransactionContext {
                     if let Some(wtx) = current.get(&prev_transaction_id) {
                         // One of the tx outputs is a match
                         if let Some(spent_utxo) = wtx
-                            .utxos
+                            .received_utxos
                             .iter()
                             .find(|u| u.txid == prev_transaction_id && u.output_index == prev_n)
                         {
@@ -357,6 +349,7 @@ impl TransactionContext {
             );
         }
     }
+    #[allow(clippy::too_many_arguments)]
     async fn scan_sapling_bundle(
         &self,
         transaction: &Transaction,
@@ -378,6 +371,7 @@ impl TransactionContext {
         )
         .await
     }
+    #[allow(clippy::too_many_arguments)]
     async fn scan_orchard_bundle(
         &self,
         transaction: &Transaction,
@@ -405,6 +399,7 @@ impl TransactionContext {
     /// In Sapling the components are "Spends" and "Outputs"
     /// In Orchard the components are "Actions", each of which
     /// _IS_ 1 Spend and 1 Output.
+    #[allow(clippy::too_many_arguments)]
     async fn scan_bundle<D>(
         &self,
         transaction: &Transaction,
@@ -471,17 +466,17 @@ impl TransactionContext {
                 .collect::<Vec<_>>();
 
         let (Ok(ivk), Ok(ovk)) = (
-            D::wc_to_ivk(&*unified_spend_capability),
-            D::wc_to_ovk(&*unified_spend_capability),
+            D::wc_to_ivk(&unified_spend_capability),
+            D::wc_to_ovk(&unified_spend_capability),
         ) else {
             // skip scanning if wallet has not viewing capability
             return;
         };
 
-        let mut decrypt_attempts =
+        let decrypt_attempts =
             zcash_note_encryption::batch::try_note_decryption(&[ivk], &domain_tagged_outputs)
                 .into_iter();
-        while let Some(decrypt_attempt) = decrypt_attempts.next() {
+        for decrypt_attempt in decrypt_attempts {
             let ((note, to, memo_bytes), _ivk_num) = match decrypt_attempt {
                 Some(plaintext) => plaintext,
                 _ => continue,
@@ -573,7 +568,7 @@ impl TransactionContext {
                                             ),
                                         ]
                                         .into_iter()
-                                        .filter_map(std::convert::identity)
+                                        .flatten()
                                         .map(|addr| addr.encode(&self.config.chain))
                                         .any(|addr| addr == address)
                                     },
@@ -641,7 +636,7 @@ pub async fn start(
             let last_progress = last_progress.clone();
 
             workers.push(tokio::spawn(async move {
-                // It is possible that we recieve the same txid multiple times, so we keep track of all the txids that were fetched
+                // It is possible that we receive the same txid multiple times, so we keep track of all the txids that were fetched
                 let transaction = {
                     // Fetch the TxId from LightwalletD and process all the parts of it.
                     let (transmitter, receiver) = oneshot::channel();
@@ -714,9 +709,8 @@ pub async fn start(
         join_all(vec![h1, h2])
             .await
             .into_iter()
-            .map(|r| r.map_err(|e| format!("{}", e))?)
-            .collect::<Result<(), String>>()
+            .try_for_each(|r| r.map_err(|e| format!("{}", e))?)
     });
 
-    return (h, transaction_id_transmitter, transaction_transmitter);
+    (h, transaction_id_transmitter, transaction_transmitter)
 }

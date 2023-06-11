@@ -9,9 +9,20 @@ clap = "3.2.20"
 log = "0.4.17"
 shellwords = "1.1.0"
 json = "0.12.4"
-http = "0.2.8"
+http = "0.2.4"
+futures = "0.3.15"
+rustls-pemfile = "1.0.0"
+http-body = "0.4.4"
+hyper = { version = "0.14", features = ["full"] }
+hyper-rustls = { version = "0.23", features = ["http2"] }
+prost = "0.10.0"
 tokio =  { version = "1.24.2", features = ["full"] }
-
+tokio-stream = "0.1.6"
+tokio-rustls = "0.23.3"
+tonic = {version = "0.7.0", features = ["tls", "tls-roots", "tls-webpki-roots"]}
+tower = { version = "0.4" }
+tower-http = { version = "0.2", features = ["add-extension"] }
+webpki-roots = "0.21.0"
 zingolib = { path = "../zingolib/" }
 zingoconfig = { path = "../zingoconfig/" }
 
@@ -36,4 +47,8 @@ zcash_primitives = { workspace = true }
 
 [features]
 default = ["local_env"]
-local_env =[]
+local_env = []
+darksidewalletd_tests = []
+
+[build-dependencies]
+tonic-build = { workspace = true }
