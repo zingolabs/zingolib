@@ -370,7 +370,7 @@ async fn sent_transaction_reorged_into_mempool() {
     );
     let txid = light_client
         .do_send(vec![(
-            &get_base_address!(recipient, "transparent"),
+            &get_base_address!(recipient, "unified"),
             10_000,
             None,
         )])
@@ -384,9 +384,17 @@ async fn sent_transaction_reorged_into_mempool() {
     let streamed_raw_txns = connector.get_incoming_transactions().await;
     let raw_tx = streamed_raw_txns.unwrap().message().await.unwrap().unwrap();
     connector
-        .stage_transactions_stream(vec![(hex::decode(raw_tx.data).unwrap(), 5)])
+        .stage_transactions_stream(vec![(raw_tx.data.clone(), 4)])
         .await
         .unwrap();
+    connector.stage_blocks_create(4, 1, 0).await.unwrap();
+    update_tree_states_for_transaction(&server_id, raw_tx, 4).await;
+    connector.apply_staged(4).await.unwrap();
+    sleep(std::time::Duration::from_secs(1)).await;
+
     recipient.do_sync(false).await.unwrap();
+    light_client.do_sync(false).await.unwrap();
     println!("{}", recipient.do_list_transactions().await.pretty(2));
+    println!("{}", recipient.do_balance().await.pretty(2));
+    println!("{}", light_client.do_balance().await.pretty(2));
 }
