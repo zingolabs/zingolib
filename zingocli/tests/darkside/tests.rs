@@ -440,8 +440,8 @@ async fn sent_transaction_reorged_into_mempool() {
         "Sender post-load: {}",
         loaded_client.do_list_transactions().await.pretty(2)
     );
-    println!(
-        "Sender post-load: {}",
-        loaded_client.do_balance().await.pretty(2)
+    assert_eq!(
+        loaded_client.do_balance().await["orchard_balance"],
+        99980000
     );
 }
