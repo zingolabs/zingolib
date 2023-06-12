@@ -10,6 +10,7 @@ use crate::{
 use darkside_streamer_client::DarksideStreamerClient;
 use json::JsonValue;
 use tokio::time::sleep;
+use zingolib::get_base_address;
 
 use std::sync::Arc;
 
@@ -291,4 +292,73 @@ async fn reorg_away_receipt() {
         )
         .unwrap()
     );
+}
+
+#[tokio::test]
+async fn sent_transaction_reorged_into_mempool() {
+    let darkside_handler = DarksideHandler::new();
+
+    let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
+        "http://127.0.0.1:{}",
+        darkside_handler.grpc_port
+    )));
+    prepare_darksidewalletd(server_id.clone(), true)
+        .await
+        .unwrap();
+
+    let mut client_manager = ClientManager::new(
+        server_id.clone(),
+        darkside_handler.darkside_dir.clone(),
+        DARKSIDE_SEED,
+    );
+    let light_client = client_manager.build_new_faucet(1, true).await;
+    let recipient = client_manager
+        .build_newseed_client(
+            crate::data::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+            1,
+            true,
+        )
+        .await;
+
+    light_client.do_sync(true).await.unwrap();
+    assert_eq!(
+        light_client.do_balance().await,
+        json::parse(
+            r#"
+            {
+                "sapling_balance": 0,
+                "verified_sapling_balance": 0,
+                "spendable_sapling_balance": 0,
+                "unverified_sapling_balance": 0,
+                "orchard_balance": 100000000,
+                "verified_orchard_balance": 100000000,
+                "spendable_orchard_balance": 100000000,
+                "unverified_orchard_balance": 0,
+                "transparent_balance": 0
+            }
+        "#
+        )
+        .unwrap()
+    );
+    let txid = light_client
+        .do_send(vec![(
+            &get_base_address!(recipient, "transparent"),
+            10_000,
+            None,
+        )])
+        .await
+        .unwrap();
+    println!("{}", txid);
+    recipient.do_sync(false).await.unwrap();
+    println!("{}", recipient.do_list_transactions().await.pretty(2));
+
+    let connector = DarksideConnector(server_id.clone());
+    let streamed_raw_txns = connector.get_incoming_transactions().await;
+    let raw_tx = streamed_raw_txns.unwrap().message().await.unwrap().unwrap();
+    connector
+        .stage_transactions_stream(vec![(hex::decode(raw_tx.data).unwrap(), 5)])
+        .await
+        .unwrap();
+    recipient.do_sync(false).await.unwrap();
+    println!("{}", recipient.do_list_transactions().await.pretty(2));
 }
