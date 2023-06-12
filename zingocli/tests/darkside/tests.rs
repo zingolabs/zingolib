@@ -25,20 +25,18 @@ type UnderlyingService = BoxCloneService<
 >;
 
 macro_rules! define_darkside_connector_methods(
-    ($($name:ident (&$self:ident, $($param:ident: $param_type:ty),*$(,)?) {$param_packing:expr}),*) => {$(
+    ($($name:ident (&$self:ident $(,$param:ident: $param_type:ty)*$(,)?) -> $return:ty {$param_packing:expr}),*) => {$(
         #[allow(unused)]
-        pub(crate) async fn $name(&$self, $($param: $param_type),*) -> ::std::result::Result<(), String> {
+        pub(crate) async fn $name(&$self, $($param: $param_type),*) -> ::std::result::Result<$return, String> {
             let request = ::tonic::Request::new($param_packing);
 
             let mut client = $self.get_client().await.map_err(|e| format!("{e}"))?;
 
-        let _response = client
+        client
             .$name(request)
             .await
-            .map_err(|e| format!("{}", e))?
-            .into_inner();
-
-        Ok(())
+            .map_err(|e| format!("{}", e))
+            .map(|resp| resp.into_inner())
     })*}
 );
 
@@ -84,27 +82,27 @@ impl DarksideConnector {
     }
 
     define_darkside_connector_methods!(
-        apply_staged(&self, height: i32) { DarksideHeight { height } },
-        add_tree_state(&self, tree_state: TreeState) { tree_state },
+        apply_staged(&self, height: i32) -> Empty { DarksideHeight { height } },
+        add_tree_state(&self, tree_state: TreeState) -> Empty { tree_state },
         reset(
             &self,
             sapling_activation: i32,
             branch_id: String,
             chain_name: String,
-        ) {
+        ) -> Empty {
             DarksideMetaState {
                 sapling_activation,
                 branch_id,
                 chain_name,
             }
         },
-        stage_blocks(&self, url: String) { DarksideBlocksUrl { url } },
+        stage_blocks(&self, url: String) -> Empty { DarksideBlocksUrl { url } },
         stage_blocks_create(
             &self,
             height: i32,
             count: i32,
             nonce: i32
-        ) {
+        ) -> Empty {
             DarksideEmptyBlocks {
                 height,
                 count,
@@ -112,12 +110,12 @@ impl DarksideConnector {
             }
         },
 
-        stage_blocks_stream(&self, blocks: Vec<String>) {
+        stage_blocks_stream(&self, blocks: Vec<String>) -> Empty {
             ::futures_util::stream::iter(
                 blocks.into_iter().map(|block| DarksideBlock { block })
             )
         },
-        stage_transactions_stream(&self, transactions: Vec<(Vec<u8>, u64)>) {
+        stage_transactions_stream(&self, transactions: Vec<(Vec<u8>, u64)>) -> Empty {
             ::futures_util::stream::iter(
                 transactions.into_iter().map(|transaction| {
                     RawTransaction {
@@ -126,6 +124,9 @@ impl DarksideConnector {
                     }
                 })
             )
+        },
+        get_incoming_transactions(&self) -> ::tonic::Streaming<RawTransaction> {
+            Empty {}
         }
     );
 }
