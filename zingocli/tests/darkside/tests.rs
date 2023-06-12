@@ -12,7 +12,7 @@ use crate::{
 use json::JsonValue;
 
 use tokio::time::sleep;
-use zingolib::get_base_address;
+use zingolib::{get_base_address, lightclient::LightClient};
 
 use std::sync::Arc;
 
@@ -388,13 +388,60 @@ async fn sent_transaction_reorged_into_mempool() {
         .await
         .unwrap();
     connector.stage_blocks_create(4, 1, 0).await.unwrap();
-    update_tree_states_for_transaction(&server_id, raw_tx, 4).await;
+    update_tree_states_for_transaction(&server_id, raw_tx.clone(), 4).await;
+    connector.apply_staged(4).await.unwrap();
+    sleep(std::time::Duration::from_secs(1)).await;
+
+    recipient.do_sync(false).await.unwrap();
+    //  light_client.do_sync(false).await.unwrap();
+    println!(
+        "Recipient pre-reorg: {}",
+        recipient.do_list_transactions().await.pretty(2)
+    );
+    println!(
+        "Recipient pre-reorg: {}",
+        recipient.do_balance().await.pretty(2)
+    );
+    println!(
+        "Sender pre-reorg (unsynced): {}",
+        light_client.do_balance().await.pretty(2)
+    );
+
+    prepare_darksidewalletd(server_id.clone(), true)
+        .await
+        .unwrap();
+    let connector = DarksideConnector(server_id.clone());
+    connector.stage_blocks_create(4, 1, 0).await.unwrap();
     connector.apply_staged(4).await.unwrap();
     sleep(std::time::Duration::from_secs(1)).await;
 
     recipient.do_sync(false).await.unwrap();
     light_client.do_sync(false).await.unwrap();
-    println!("{}", recipient.do_list_transactions().await.pretty(2));
-    println!("{}", recipient.do_balance().await.pretty(2));
-    println!("{}", light_client.do_balance().await.pretty(2));
+    println!(
+        "Recipient post-reorg: {}",
+        recipient.do_balance().await.pretty(2)
+    );
+    println!(
+        "Sender post-reorg: {}",
+        light_client.do_balance().await.pretty(2)
+    );
+    println!(
+        "Sender post-reorg: {}",
+        light_client.do_list_transactions().await.pretty(2)
+    );
+    let loaded_client = LightClient::read_wallet_from_buffer_async(
+        &client_manager.make_unique_data_dir_and_load_config(),
+        light_client.do_save_to_buffer().await.unwrap().as_slice(),
+    )
+    .await
+    .unwrap();
+    loaded_client.do_sync(false).await.unwrap();
+    println!(
+        "Sender post-load: {}",
+        loaded_client.do_list_transactions().await.pretty(2)
+    );
+    println!(
+        "Sender post-load: {}",
+        loaded_client.do_balance().await.pretty(2)
+    );
 }
