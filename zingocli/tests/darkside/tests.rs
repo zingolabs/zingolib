@@ -1,14 +1,16 @@
-tonic::include_proto!("cash.z.wallet.sdk.rpc");
-
+use super::darkside_types::{
+    darkside_streamer_client::DarksideStreamerClient, DarksideBlock, DarksideBlocksUrl,
+    DarksideEmptyBlocks, DarksideHeight, DarksideMetaState, Empty, RawTransaction, TreeState,
+};
 use crate::{
     darkside::{
-        constants::{self, DARKSIDE_SEED},
-        utils::DarksideHandler,
+        constants::{self, BRANCH_ID, DARKSIDE_SEED},
+        utils::{update_tree_states_for_transaction, DarksideHandler},
     },
     utils::scenarios::setup::ClientManager,
 };
-use darkside_streamer_client::DarksideStreamerClient;
 use json::JsonValue;
+
 use tokio::time::sleep;
 use zingolib::get_base_address;
 
@@ -137,7 +139,7 @@ async fn prepare_darksidewalletd(
     include_startup_funds: bool,
 ) -> Result<(), String> {
     dbg!(&uri);
-    let connector = DarksideConnector(uri);
+    let connector = DarksideConnector(uri.clone());
 
     let mut client = connector.get_client().await.unwrap();
     // Setup prodedures.  Up to this point there's no communication between the client and the dswd
@@ -145,7 +147,7 @@ async fn prepare_darksidewalletd(
 
     // reset with parameters
     connector
-        .reset(1, String::from("2bb40e60"), String::from("regtest"))
+        .reset(1, String::from(BRANCH_ID), String::from("regtest"))
         .await
         .unwrap();
 
@@ -169,6 +171,32 @@ async fn prepare_darksidewalletd(
             )])
             .await
             .unwrap();
+        let tree_height_2 = update_tree_states_for_transaction(
+            &uri,
+            RawTransaction {
+                data: hex::decode(constants::TRANSACTION_INCOMING_100TAZ).unwrap(),
+                height: 2,
+            },
+            2,
+        )
+        .await;
+        connector
+            .add_tree_state(TreeState {
+                height: 3,
+                ..tree_height_2
+            })
+            .await
+            .unwrap();
+    } else {
+        for height in [2, 3] {
+            connector
+                .add_tree_state(TreeState {
+                    height,
+                    ..constants::first_tree_state()
+                })
+                .await
+                .unwrap();
+        }
     }
 
     sleep(std::time::Duration::new(2, 0)).await;

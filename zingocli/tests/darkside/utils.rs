@@ -4,7 +4,20 @@ use std::{
     time::Duration,
 };
 
+use http::Uri;
+use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
+use zcash_primitives::{
+    merkle_tree::CommitmentTree,
+    sapling::{note_encryption::SaplingDomain, Node},
+};
 use zingo_cli::regtest::{get_regtest_dir, launch_lightwalletd};
+use zingolib::wallet::traits::DomainWalletExt;
+
+use super::{
+    constants,
+    darkside_types::{RawTransaction, TreeState},
+    tests::DarksideConnector,
+};
 
 pub fn generate_darksidewalletd() -> (String, PathBuf) {
     let darkside_grpc_port = portpicker::pick_unused_port()
@@ -56,4 +69,64 @@ impl Drop for DarksideHandler {
             let _ = self.lightwalletd_handle.kill();
         }
     }
+}
+
+pub(crate) async fn update_tree_states_for_transaction(
+    server_id: &Uri,
+    raw_tx: RawTransaction,
+    height: u64,
+) -> TreeState {
+    let trees = zingolib::grpc_connector::GrpcConnector::get_trees(server_id.clone(), height - 1)
+        .await
+        .unwrap();
+    let mut sapling_tree = CommitmentTree::<zcash_primitives::sapling::Node>::read(
+        hex::decode(SaplingDomain::get_tree(&trees))
+            .unwrap()
+            .as_slice(),
+    )
+    .unwrap();
+    let mut orchard_tree = CommitmentTree::<MerkleHashOrchard>::read(
+        hex::decode(OrchardDomain::get_tree(&trees))
+            .unwrap()
+            .as_slice(),
+    )
+    .unwrap();
+    let transaction = zcash_primitives::transaction::Transaction::read(
+        raw_tx.data.as_slice(),
+        zcash_primitives::consensus::BranchId::Nu5,
+    )
+    .unwrap();
+    for output in transaction
+        .sapling_bundle()
+        .iter()
+        .flat_map(|bundle| bundle.shielded_outputs())
+    {
+        sapling_tree.append(Node::from_cmu(output.cmu())).unwrap()
+    }
+    for action in transaction
+        .orchard_bundle()
+        .iter()
+        .flat_map(|bundle| bundle.actions())
+    {
+        orchard_tree
+            .append(MerkleHashOrchard::from_cmx(action.cmx()))
+            .unwrap()
+    }
+    let mut sapling_tree_bytes = vec![];
+    sapling_tree.write(&mut sapling_tree_bytes).unwrap();
+    let mut orchard_tree_bytes = vec![];
+    orchard_tree.write(&mut orchard_tree_bytes).unwrap();
+    let new_tree_state = TreeState {
+        height,
+        sapling_tree: hex::encode(sapling_tree_bytes),
+        orchard_tree: hex::encode(orchard_tree_bytes),
+        network: constants::first_tree_state().network,
+        hash: "".to_string(),
+        time: 0,
+    };
+    DarksideConnector::new(server_id.clone())
+        .add_tree_state(new_tree_state.clone())
+        .await
+        .unwrap();
+    new_tree_state
 }
