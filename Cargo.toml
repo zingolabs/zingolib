@@ -23,3 +23,6 @@ debug = false
 zcash_note_encryption = { git = "https://github.com/zingolabs/librustzcash", rev = "acfdabc3629c93517e3c4742848996c595de6d3c" }
 zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", rev = "acfdabc3629c93517e3c4742848996c595de6d3c" }
 
+[profile.test]
+opt-level = 3
+debug = false

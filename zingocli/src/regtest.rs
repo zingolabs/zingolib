@@ -10,7 +10,8 @@ pub fn get_cargo_manifest_dir_parent() -> PathBuf {
         .unwrap()
         .to_path_buf()
 }
-pub(crate) fn get_regtest_dir() -> PathBuf {
+
+pub fn get_regtest_dir() -> PathBuf {
     get_cargo_manifest_dir_parent().join("regtest")
 }
 
@@ -50,7 +51,14 @@ impl Drop for ChildProcessHandler {
         match self.zcash_cli_command.arg("stop").output() {
             Ok(_) => {
                 if let Err(e) = self.zcashd.wait() {
-                    log::warn!("zcashd process didn't start properly: {e}")
+                    log::warn!("zcashd cannot be awaited: {e}")
+                } else {
+                    log::debug!("zcashd successfully shut down")
+                };
+                if let Err(e) = self.lightwalletd.wait() {
+                    log::warn!("lightwalletd cannot be awaited: {e}")
+                } else {
+                    log::debug!("lightwalletd successfully shut down")
                 };
             }
             Err(e) => {
@@ -77,12 +85,13 @@ pub enum LaunchChildProcessError {
         stderr: String,
     },
 }
-fn launch_lightwalletd(
+pub fn launch_lightwalletd(
     logsdir: PathBuf,
     confsdir: PathBuf,
     datadir: PathBuf,
     bindir: PathBuf,
     check_interval: std::time::Duration,
+    darkside: Option<String>,
 ) -> Child {
     let bin = bindir.join("lightwalletd");
     let lightwalletd_config = confsdir.join("lightwalletd.yml");
@@ -105,24 +114,30 @@ fn launch_lightwalletd(
     let mut lightwalletd_stderr_logfile =
         File::create(&lightwalletd_stderr_log).expect("file::create Result error");
 
+    let mut args = vec![
+        "--no-tls-very-insecure".to_string(),
+        "--data-dir".to_string(),
+        lightwalletd_data_dir.to_string_lossy().to_string(),
+        "--log-file".to_string(),
+        lightwalletd_log.to_string_lossy().to_string(),
+    ];
+    args.extend_from_slice(&if let Some(grpc_bind_addr) = darkside {
+        vec![
+            "--darkside-very-insecure".to_string(),
+            "--grpc-bind-addr".to_string(),
+            grpc_bind_addr,
+        ]
+    } else {
+        vec![
+            "--zcash-conf-path".to_string(),
+            zcashd_config.to_string(),
+            "--config".to_string(),
+            lightwalletd_config.to_string_lossy().to_string(),
+        ]
+    });
+    let prepped_args = args.iter().map(|x| x.to_string()).collect::<Vec<_>>();
     let mut lightwalletd_child = std::process::Command::new(bin)
-        .args([
-            "--no-tls-very-insecure",
-            "--zcash-conf-path",
-            zcashd_config,
-            "--config",
-            lightwalletd_config
-                .to_str()
-                .expect("lightwalletd_config PathBuf to str fail!"),
-            "--data-dir",
-            lightwalletd_data_dir
-                .to_str()
-                .expect("lightwalletd_datadir PathBuf to str fail!"),
-            "--log-file",
-            lightwalletd_log
-                .to_str()
-                .expect("lightwalletd_stdout_log PathBuf to str fail!"),
-        ])
+        .args(prepped_args)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
@@ -425,6 +440,7 @@ impl RegtestManager {
             self.data_dir.clone(),
             self.bin_dir.clone(),
             check_interval,
+            None,
         );
         Ok(ChildProcessHandler {
             zcashd: zcashd_handle,
