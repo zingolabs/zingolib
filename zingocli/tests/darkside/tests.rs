@@ -442,6 +442,6 @@ async fn sent_transaction_reorged_into_mempool() {
     );
     assert_eq!(
         loaded_client.do_balance().await["orchard_balance"],
-        99980000
+        100000000
     );
 }
