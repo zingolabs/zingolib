@@ -1219,7 +1219,7 @@ impl<T> ReadableWriteable<&WalletCapability> for T
 where
     T: ReceivedNoteAndMetadata,
 {
-    const VERSION: u8 = 2;
+    const VERSION: u8 = 3;
 
     fn read<R: Read>(mut reader: R, wallet_capability: &WalletCapability) -> io::Result<Self> {
         let external_version = Self::get_version(&mut reader)?;
@@ -1255,15 +1255,17 @@ where
             Ok((TxId::from_bytes(transaction_id_bytes), height))
         })?;
 
-        let unconfirmed_spent = {
-            Optional::read(&mut reader, |r| {
-                let mut transaction_bytes = [0u8; 32];
-                r.read_exact(&mut transaction_bytes)?;
+        if external_version < 3 {
+            let _unconfirmed_spent = {
+                Optional::read(&mut reader, |r| {
+                    let mut transaction_bytes = [0u8; 32];
+                    r.read_exact(&mut transaction_bytes)?;
 
-                let height = r.read_u32::<LittleEndian>()?;
-                Ok((TxId::from_bytes(transaction_bytes), height))
-            })?
-        };
+                    let height = r.read_u32::<LittleEndian>()?;
+                    Ok((TxId::from_bytes(transaction_bytes), height))
+                })?
+            };
+        }
 
         let memo = Optional::read(&mut reader, |r| {
             let mut memo_bytes = [0u8; 512];
@@ -1292,7 +1294,7 @@ where
             witnesses,
             nullifier,
             spent,
-            unconfirmed_spent,
+            None,
             memo,
             is_change,
             have_spending_key,
@@ -1316,15 +1318,6 @@ where
         Optional::write(
             &mut writer,
             self.spent().as_ref(),
-            |w, (transaction_id, height)| {
-                w.write_all(transaction_id.as_ref())?;
-                w.write_u32::<LittleEndian>(*height)
-            },
-        )?;
-
-        Optional::write(
-            &mut writer,
-            self.unconfirmed_spent().as_ref(),
             |w, (transaction_id, height)| {
                 w.write_all(transaction_id.as_ref())?;
                 w.write_u32::<LittleEndian>(*height)
