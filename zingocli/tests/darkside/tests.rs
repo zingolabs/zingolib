@@ -1,15 +1,18 @@
-tonic::include_proto!("cash.z.wallet.sdk.rpc");
-
+use super::darkside_types::{
+    darkside_streamer_client::DarksideStreamerClient, DarksideBlock, DarksideBlocksUrl,
+    DarksideEmptyBlocks, DarksideHeight, DarksideMetaState, Empty, RawTransaction, TreeState,
+};
 use crate::{
     darkside::{
-        constants::{self, DARKSIDE_SEED},
-        utils::DarksideHandler,
+        constants::{self, BRANCH_ID, DARKSIDE_SEED},
+        utils::{update_tree_states_for_transaction, DarksideHandler},
     },
     utils::scenarios::setup::ClientManager,
 };
-use darkside_streamer_client::DarksideStreamerClient;
 use json::JsonValue;
+
 use tokio::time::sleep;
+use zingolib::{get_base_address, lightclient::LightClient};
 
 use std::sync::Arc;
 
@@ -136,7 +139,7 @@ async fn prepare_darksidewalletd(
     include_startup_funds: bool,
 ) -> Result<(), String> {
     dbg!(&uri);
-    let connector = DarksideConnector(uri);
+    let connector = DarksideConnector(uri.clone());
 
     let mut client = connector.get_client().await.unwrap();
     // Setup prodedures.  Up to this point there's no communication between the client and the dswd
@@ -144,7 +147,7 @@ async fn prepare_darksidewalletd(
 
     // reset with parameters
     connector
-        .reset(1, String::from("2bb40e60"), String::from("regtest"))
+        .reset(1, String::from(BRANCH_ID), String::from("regtest"))
         .await
         .unwrap();
 
@@ -168,6 +171,32 @@ async fn prepare_darksidewalletd(
             )])
             .await
             .unwrap();
+        let tree_height_2 = update_tree_states_for_transaction(
+            &uri,
+            RawTransaction {
+                data: hex::decode(constants::TRANSACTION_INCOMING_100TAZ).unwrap(),
+                height: 2,
+            },
+            2,
+        )
+        .await;
+        connector
+            .add_tree_state(TreeState {
+                height: 3,
+                ..tree_height_2
+            })
+            .await
+            .unwrap();
+    } else {
+        for height in [2, 3] {
+            connector
+                .add_tree_state(TreeState {
+                    height,
+                    ..constants::first_tree_state()
+                })
+                .await
+                .unwrap();
+        }
     }
 
     sleep(std::time::Duration::new(2, 0)).await;
@@ -290,5 +319,129 @@ async fn reorg_away_receipt() {
         "#
         )
         .unwrap()
+    );
+}
+
+#[tokio::test]
+async fn sent_transaction_reorged_into_mempool() {
+    let darkside_handler = DarksideHandler::new();
+
+    let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
+        "http://127.0.0.1:{}",
+        darkside_handler.grpc_port
+    )));
+    prepare_darksidewalletd(server_id.clone(), true)
+        .await
+        .unwrap();
+
+    let mut client_manager = ClientManager::new(
+        server_id.clone(),
+        darkside_handler.darkside_dir.clone(),
+        DARKSIDE_SEED,
+    );
+    let light_client = client_manager.build_new_faucet(1, true).await;
+    let recipient = client_manager
+        .build_newseed_client(
+            crate::data::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+            1,
+            true,
+        )
+        .await;
+
+    light_client.do_sync(true).await.unwrap();
+    assert_eq!(
+        light_client.do_balance().await,
+        json::parse(
+            r#"
+            {
+                "sapling_balance": 0,
+                "verified_sapling_balance": 0,
+                "spendable_sapling_balance": 0,
+                "unverified_sapling_balance": 0,
+                "orchard_balance": 100000000,
+                "verified_orchard_balance": 100000000,
+                "spendable_orchard_balance": 100000000,
+                "unverified_orchard_balance": 0,
+                "transparent_balance": 0
+            }
+        "#
+        )
+        .unwrap()
+    );
+    let txid = light_client
+        .do_send(vec![(
+            &get_base_address!(recipient, "unified"),
+            10_000,
+            None,
+        )])
+        .await
+        .unwrap();
+    println!("{}", txid);
+    recipient.do_sync(false).await.unwrap();
+    println!("{}", recipient.do_list_transactions().await.pretty(2));
+
+    let connector = DarksideConnector(server_id.clone());
+    let streamed_raw_txns = connector.get_incoming_transactions().await;
+    let raw_tx = streamed_raw_txns.unwrap().message().await.unwrap().unwrap();
+    connector
+        .stage_transactions_stream(vec![(raw_tx.data.clone(), 4)])
+        .await
+        .unwrap();
+    connector.stage_blocks_create(4, 1, 0).await.unwrap();
+    update_tree_states_for_transaction(&server_id, raw_tx.clone(), 4).await;
+    connector.apply_staged(4).await.unwrap();
+    sleep(std::time::Duration::from_secs(1)).await;
+
+    recipient.do_sync(false).await.unwrap();
+    //  light_client.do_sync(false).await.unwrap();
+    println!(
+        "Recipient pre-reorg: {}",
+        recipient.do_list_transactions().await.pretty(2)
+    );
+    println!(
+        "Recipient pre-reorg: {}",
+        recipient.do_balance().await.pretty(2)
+    );
+    println!(
+        "Sender pre-reorg (unsynced): {}",
+        light_client.do_balance().await.pretty(2)
+    );
+
+    prepare_darksidewalletd(server_id.clone(), true)
+        .await
+        .unwrap();
+    let connector = DarksideConnector(server_id.clone());
+    connector.stage_blocks_create(4, 1, 0).await.unwrap();
+    connector.apply_staged(4).await.unwrap();
+    sleep(std::time::Duration::from_secs(1)).await;
+
+    recipient.do_sync(false).await.unwrap();
+    light_client.do_sync(false).await.unwrap();
+    println!(
+        "Recipient post-reorg: {}",
+        recipient.do_balance().await.pretty(2)
+    );
+    println!(
+        "Sender post-reorg: {}",
+        light_client.do_balance().await.pretty(2)
+    );
+    println!(
+        "Sender post-reorg: {}",
+        light_client.do_list_transactions().await.pretty(2)
+    );
+    let loaded_client = LightClient::read_wallet_from_buffer_async(
+        &client_manager.make_unique_data_dir_and_load_config(),
+        light_client.do_save_to_buffer().await.unwrap().as_slice(),
+    )
+    .await
+    .unwrap();
+    loaded_client.do_sync(false).await.unwrap();
+    println!(
+        "Sender post-load: {}",
+        loaded_client.do_list_transactions().await.pretty(2)
+    );
+    assert_eq!(
+        loaded_client.do_balance().await["orchard_balance"],
+        100000000
     );
 }

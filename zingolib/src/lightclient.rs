@@ -1307,30 +1307,34 @@ impl LightClient {
     /// This constructor depends on a wallet that's read from a buffer.
     /// It is used internally by read_from_disk, and directly called by
     /// zingo-mobile.
-    pub fn read_wallet_from_buffer<R: Read>(
+    pub fn read_wallet_from_buffer<R: Read>(config: &ZingoConfig, reader: R) -> io::Result<Self> {
+        Runtime::new()
+            .unwrap()
+            .block_on(async move { Self::read_wallet_from_buffer_async(config, reader).await })
+    }
+
+    pub async fn read_wallet_from_buffer_async<R: Read>(
         config: &ZingoConfig,
         mut reader: R,
     ) -> io::Result<Self> {
-        Runtime::new().unwrap().block_on(async move {
-            let wallet = LightWallet::read_internal(&mut reader, config).await?;
+        let wallet = LightWallet::read_internal(&mut reader, config).await?;
 
-            let lc = LightClient {
-                wallet,
-                config: config.clone(),
-                mempool_monitor: std::sync::RwLock::new(None),
-                sync_lock: Mutex::new(()),
-                bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
-                interrupt_sync: Arc::new(RwLock::new(false)),
-            };
+        let lc = LightClient {
+            wallet,
+            config: config.clone(),
+            mempool_monitor: std::sync::RwLock::new(None),
+            sync_lock: Mutex::new(()),
+            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
+            interrupt_sync: Arc::new(RwLock::new(false)),
+        };
 
-            debug!(
-                "Read wallet with birthday {}",
-                lc.wallet.get_birthday().await
-            );
-            debug!("Created LightClient to {}", &config.get_lightwalletd_uri());
+        debug!(
+            "Read wallet with birthday {}",
+            lc.wallet.get_birthday().await
+        );
+        debug!("Created LightClient to {}", &config.get_lightwalletd_uri());
 
-            Ok(lc)
-        })
+        Ok(lc)
     }
 
     pub fn read_wallet_from_disk(config: &ZingoConfig) -> io::Result<Self> {

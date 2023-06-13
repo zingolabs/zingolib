@@ -63,7 +63,7 @@ use zingoconfig::ZingoConfig;
 pub mod data;
 pub mod keys;
 pub(crate) mod message;
-pub(crate) mod traits;
+pub mod traits;
 pub(crate) mod transactions;
 pub(crate) mod utils;
 
