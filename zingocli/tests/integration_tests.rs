@@ -155,6 +155,7 @@ async fn dont_write_unconfirmed() {
             .unwrap(),
         &(0 as u64)
     );
+    check_client_balances!(loaded_client, o: 100_000 s: 0 t: 0 );
     drop(loaded_client);
     drop(child_process_handler);
 }
