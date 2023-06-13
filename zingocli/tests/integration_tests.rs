@@ -99,7 +99,7 @@ async fn dont_write_unconfirmed() {
         .do_send(vec![(
             &get_base_address!(recipient, "unified"),
             100_000,
-            Some("an unconfirmed transaction, that shall not be synced".to_string()),
+            Some("funding to be received by the recipient".to_string()),
         )])
         .await
         .unwrap();
@@ -107,7 +107,55 @@ async fn dont_write_unconfirmed() {
     utils::increase_height_and_sync_client(&regtest_manager, &recipient, 2)
         .await
         .unwrap();
-    check_client_balances!(recipient, o: 100_000 s: 0 t: 0 );
+    let recipient_balance = recipient.do_balance().await;
+    assert_eq!(
+        recipient_balance,
+        json::object! {
+            "sapling_balance": 0,
+            "verified_sapling_balance": 0,
+            "spendable_sapling_balance": 0,
+            "unverified_sapling_balance": 0,
+            "orchard_balance": 100000,
+            "verified_orchard_balance": 100000,
+            "spendable_orchard_balance": 100000,
+            "unverified_orchard_balance": 0,
+            "transparent_balance": 0
+        }
+    );
+    recipient
+        .do_send(vec![(
+            &get_base_address!(faucet, "unified"),
+            25_000,
+            Some("an unconfirmed transaction, that shall not be synced".to_string()),
+        )])
+        .await
+        .unwrap();
+    let recipient_balance = recipient.do_balance().await;
+
+    dbg!(&recipient_balance["unverified_orchard_balance"]);
+    assert_eq!(
+        &recipient_balance["unverified_orchard_balance"]
+            .as_u64()
+            .unwrap(),
+        &(65_000 as u64)
+    );
+    let wallet_loc = &regtest_manager
+        .zingo_datadir
+        .parent()
+        .unwrap()
+        .join("zingo_client_2");
+    recipient.do_save().await.unwrap();
+
+    let (wallet, config) = load_wallet(wallet_loc.to_path_buf(), ChainType::Regtest).await;
+    let loaded_client = LightClient::create_with_wallet(wallet, config);
+    let loaded_balance = loaded_client.do_balance().await;
+    assert_eq!(
+        &loaded_balance["unverified_orchard_balance"]
+            .as_u64()
+            .unwrap(),
+        &(0 as u64)
+    );
+    drop(loaded_client);
     drop(child_process_handler);
 }
 
