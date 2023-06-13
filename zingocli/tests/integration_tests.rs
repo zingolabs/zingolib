@@ -2913,18 +2913,16 @@ async fn time_to_sync_baseline() {
     let (regtest_manager, child_process_handler, lightclient) =
         scenarios::basic_no_spendable().await;
 
-    let block_height = SECONDS_PER_DAY / BLOCK_SPAWNRATE_SECONDS;
-    increase_server_height(&regtest_manager, block_height).await;
+    const TARGET_BLOCKS_PER_DAY = data::SECONDS_PER_DAY / data::BLOCK_SPAWNRATE_SECONDS;
+    increase_server_height(&regtest_manager, TARGET_BLOCKS_PER_DAY).await;
 
     let timer_start = Instant::now();
     lightclient.do_sync(true).await.unwrap();
     let timer_stop = Instant::now();
     let sync_duration = timer_stop.duration_since(timer_start);
-    dbg!(sync_duration.as_secs());
+    dbg!(sync_duration.as_millis());
     assert_eq!(1, 2);
     drop(child_process_handler);
 }
 
 pub const TEST_SEED: &str = "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise";
-pub const BLOCK_SPAWNRATE_SECONDS: u32 = 75;
-pub const SECONDS_PER_DAY: u32 = 60 * 60 * 24;

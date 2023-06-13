@@ -82,3 +82,5 @@ zcash-conf-path: ../conf/zcash.conf
         }
     }
 }
+pub const BLOCK_SPAWNRATE_SECONDS: u32 = 75;
+pub const SECONDS_PER_DAY: u32 = 60 * 60 * 24;
