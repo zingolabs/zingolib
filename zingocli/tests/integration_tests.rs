@@ -2913,7 +2913,8 @@ async fn time_to_sync_baseline() {
     let (regtest_manager, child_process_handler, lightclient) =
         scenarios::basic_no_spendable().await;
 
-    increase_server_height(&regtest_manager, SECONDS_PER_DAY / BLOCK_SPAWNRATE_SECONDS).await;
+    let block_height = SECONDS_PER_DAY / BLOCK_SPAWNRATE_SECONDS;
+    increase_server_height(&regtest_manager, block_height).await;
 
     let timer_start = Instant::now();
     lightclient.do_sync(true).await.unwrap();
