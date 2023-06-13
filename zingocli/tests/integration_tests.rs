@@ -7,12 +7,12 @@ use std::{
     fs::File,
     io::Read,
     path::{Path, PathBuf},
-    time::Instant,
 };
 
 use bip0039::Mnemonic;
 use data::seeds::HOSPITAL_MUSEUM_SEED;
 use json::JsonValue::{self, Null};
+use tokio::time::Instant;
 use utils::{
     increase_server_height,
     scenarios::{self, setup::TestEnvironmentGenerator},
@@ -2910,16 +2910,23 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
 
 #[tokio::test]
 async fn time_to_sync_baseline() {
-    let (regtest_manager, child_process_handler, lightclient) =
-        scenarios::basic_no_spendable().await;
+    let (regtest_manager, child_process_handler, faucet, recipient) =
+        scenarios::faucet_recipient().await;
 
     increase_server_height(&regtest_manager, data::TARGET_BLOCKS_PER_DAY).await;
 
-    let timer_start = Instant::now();
-    lightclient.do_sync(true).await.unwrap();
-    let timer_stop = Instant::now();
-    let sync_duration = timer_stop.duration_since(timer_start);
-    dbg!(sync_duration.as_millis());
+    let mut timer_start = Instant::now();
+    faucet.do_sync(true).await.unwrap();
+    let mut timer_stop = Instant::now();
+    let sync_duration_faucet = timer_stop.duration_since(timer_start);
+    dbg!(sync_duration_faucet.as_millis());
+
+    timer_start = Instant::now();
+    recipient.do_sync(true).await.unwrap();
+    timer_stop = Instant::now();
+    let sync_duration_recipient = timer_stop.duration_since(timer_start);
+    dbg!(sync_duration_recipient.as_millis());
+
     assert_eq!(1, 2);
     drop(child_process_handler);
 }
