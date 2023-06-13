@@ -92,6 +92,26 @@ async fn load_wallet(
 }
 
 #[tokio::test]
+async fn dont_write_unconfirmed() {
+    let (regtest_manager, child_process_handler, faucet, recipient) =
+        scenarios::faucet_recipient().await;
+    faucet
+        .do_send(vec![(
+            &get_base_address!(recipient, "unified"),
+            100_000,
+            Some("an unconfirmed transaction, that shall not be synced".to_string()),
+        )])
+        .await
+        .unwrap();
+
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 2)
+        .await
+        .unwrap();
+    check_client_balances!(recipient, o: 100_000 s: 0 t: 0 );
+    drop(child_process_handler);
+}
+
+#[tokio::test]
 async fn load_and_parse_different_wallet_versions() {
     let (_sap_wallet, _sap_path, sap_dir) = get_wallet_nym("sap_only").unwrap();
     let (_loaded_wallet, _) = load_wallet(sap_dir, ChainType::Regtest).await;
