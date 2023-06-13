@@ -252,6 +252,51 @@ async fn factor_do_shield_to_call_do_send() {
         .unwrap();
 }
 
+#[tokio::test]
+async fn sapling_dust_fee_collection() {
+    let (regtest_manager, _child_process_handler, faucet, recipient) =
+        scenarios::faucet_recipient().await;
+    let recipient_sapling = get_base_address!(recipient, "sapling");
+    let recipient_unified = get_base_address!(recipient, "unified");
+    check_client_balances!(recipient, o: 0 s: 0 t: 0);
+    let fee = u64::from(DEFAULT_FEE);
+    let for_orchard = dbg!(fee * 10);
+    let for_sapling = dbg!(fee / 10);
+    faucet
+        .do_send(vec![
+            (
+                &recipient_unified,
+                for_orchard,
+                Some("Plenty for orchard.".to_string()),
+            ),
+            (
+                &recipient_sapling,
+                for_sapling,
+                Some("Dust for sapling.".to_string()),
+            ),
+        ])
+        .await
+        .unwrap();
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1)
+        .await
+        .unwrap();
+    check_client_balances!(recipient, o: for_orchard s: for_sapling t: 0 );
+
+    recipient
+        .do_send(vec![(
+            &get_base_address!(faucet, "unified"),
+            fee * 5,
+            Some("Five times fee.".to_string()),
+        )])
+        .await
+        .unwrap();
+    utils::increase_height_and_sync_client(&regtest_manager, &recipient, 1)
+        .await
+        .unwrap();
+    let remaining_orchard = for_orchard - (6 * fee);
+    check_client_balances!(recipient, o: remaining_orchard s: for_sapling t: 0);
+}
+
 use zcash_address::unified::Fvk;
 
 use crate::utils::check_transaction_equality;
