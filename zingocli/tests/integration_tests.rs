@@ -1869,14 +1869,34 @@ async fn mempool_clearing() {
         sent_transaction_id
     );
 
+    // Sync recipient
+    recipient.do_sync(false).await.unwrap();
+
     // 4b write down state before clearing the mempool
     let notes_before = recipient.do_list_notes(true).await;
     let transactions_before = recipient.do_list_transactions().await;
+    println!("Transactions before {}", transactions_before.pretty(2));
+
+    // Sync recipient again. We assert this should be a no-op, as we just synced
+    recipient.do_sync(false).await.unwrap();
+    let post_sync_notes_before = recipient.do_list_notes(true).await;
+    let post_sync_transactions_before = recipient.do_list_transactions().await;
+    println!(
+        "Transactions before, post_sync {}",
+        post_sync_transactions_before.pretty(2)
+    );
+    assert_eq!(post_sync_notes_before, notes_before);
+    assert_eq!(post_sync_transactions_before, transactions_before);
+
     drop(child_process_handler); // Turn off zcashd and lightwalletd
 
     // 5. check that the sent transaction is correctly marked in the client
-    let mut transactions = recipient.do_list_transactions().await;
-    let mempool_only_tx = transactions.pop();
+    let transactions = recipient.do_list_transactions().await;
+    let mempool_only_tx = transactions
+        .members()
+        .find(|tx| tx["txid"] == sent_transaction_id)
+        .unwrap()
+        .clone();
     log::debug!("the transactions are: {}", &mempool_only_tx);
     assert_eq!(
         mempool_only_tx["outgoing_metadata"][0]["memo"],
