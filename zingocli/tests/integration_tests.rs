@@ -2908,27 +2908,42 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
     drop(child_process_handler)
 }
 
-#[tokio::test]
-async fn time_to_sync_baseline() {
-    let (regtest_manager, child_process_handler, faucet, recipient) =
-        scenarios::faucet_recipient().await;
+mod benchmarks {
+    use super::*;
+    use ::function_name::named;
+    macro_rules! record_annotated_duration {
+        ($client:ident) => {};
+    }
+    #[named]
+    #[tokio::test]
+    async fn time_to_sync_baseline() {
+        let (regtest_manager, child_process_handler, faucet, recipient) =
+            scenarios::faucet_recipient().await;
 
-    increase_server_height(&regtest_manager, data::TARGET_BLOCKS_PER_DAY).await;
+        let mut timer_start = Instant::now();
+        increase_server_height(&regtest_manager, data::TARGET_BLOCKS_PER_DAY).await;
+        let mut timer_stop = Instant::now();
+        let generation_duration = timer_stop.duration_since(timer_start);
+        dbg!(&generation_duration);
 
-    let mut timer_start = Instant::now();
-    faucet.do_sync(true).await.unwrap();
-    let mut timer_stop = Instant::now();
-    let sync_duration_faucet = timer_stop.duration_since(timer_start);
-    dbg!(sync_duration_faucet.as_millis());
+        let mut timer_start = Instant::now();
+        faucet.do_sync(true).await.unwrap();
+        let mut timer_stop = Instant::now();
+        let sync_duration_faucet = timer_stop.duration_since(timer_start);
+        dbg!(sync_duration_faucet.as_millis());
 
-    timer_start = Instant::now();
-    recipient.do_sync(true).await.unwrap();
-    timer_stop = Instant::now();
-    let sync_duration_recipient = timer_stop.duration_since(timer_start);
-    dbg!(sync_duration_recipient.as_millis());
+        timer_start = Instant::now();
+        recipient.do_sync(true).await.unwrap();
+        timer_stop = Instant::now();
+        let sync_duration_recipient = timer_stop.duration_since(timer_start);
+        dbg!(sync_duration_recipient.as_millis());
 
-    assert_eq!(1, 2);
-    drop(child_process_handler);
+        assert_eq!(1, 2);
+        drop(child_process_handler);
+    }
+    #[tokio::test]
+    async fn launch_from_pregenerated_chain() {
+        let (_rtm, _cph, _f, _r) = scenarios::chainload::faucet_recipient().await;
+    }
 }
-
 pub const TEST_SEED: &str = "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise";

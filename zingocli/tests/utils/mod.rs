@@ -123,6 +123,8 @@ pub mod scenarios {
 
     use super::increase_height_and_sync_client;
     pub mod setup {
+        use crate::data::REGSAP_ADDR_FROM_ABANDONART;
+
         use super::{data, ChildProcessHandler, RegtestManager};
         use std::path::PathBuf;
         use zingolib::{lightclient::LightClient, wallet::WalletBase};
@@ -180,6 +182,7 @@ pub mod scenarios {
                         }),
                 );
             }
+            /// Writes the specified zcashd.conf and launches with it
             pub fn build_and_launch(
                 funded: Option<String>,
                 zingo_wallet_dir: Option<PathBuf>,
@@ -196,6 +199,14 @@ pub mod scenarios {
                 };
                 sb.test_env.create_lightwalletd_conf();
                 sb.launch(true);
+                sb
+            }
+            pub fn launch_funded_recorded_chain() -> Self {
+                let mut sb = ScenarioBuilder::new(None);
+                sb.test_env
+                    .create_funded_zcash_conf(REGSAP_ADDR_FROM_ABANDONART);
+                sb.test_env.create_lightwalletd_conf();
+                sb.launch(false);
                 sb
             }
         }
