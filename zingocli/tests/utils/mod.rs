@@ -134,7 +134,7 @@ pub mod scenarios {
             pub child_process_handler: Option<ChildProcessHandler>,
         }
         impl ScenarioBuilder {
-            pub fn new(custom_client_config: Option<PathBuf>) -> Self {
+            fn build_scenario(custom_client_config: Option<PathBuf>) -> Self {
                 //! TestEnvironmentGenerator sets particular parameters, specific filenames,
                 //! port numbers, etc.  in general no test_config should be used for
                 //! more than one test, and usually is only invoked via this
@@ -161,22 +161,7 @@ pub mod scenarios {
                     child_process_handler,
                 }
             }
-            pub fn new_load_1153_saplingcb_regtest_chain() -> Self {
-                let test_env = TestEnvironmentGenerator::new();
-                let regtest_manager = test_env.regtest_manager;
-                let source = get_regtest_dir().join("data/chain_cache/blocks_1153/zcashd");
-                let destination = regtest_manager.zcashd_data_dir;
-                dbg!(&source);
-                dbg!(&destination);
-                std::process::Command::new("cp")
-                    .arg("-r")
-                    .arg(source)
-                    .arg(destination)
-                    .output()
-                    .expect("copy operation into fresh dir from known dir to succeed");
-                ScenarioBuilder::new(None)
-            }
-            pub fn launch(&mut self, clean: bool) {
+            fn launch_scenario(&mut self, clean: bool) {
                 self.child_process_handler = Some(
                     self.regtest_manager
                         .launch(clean)
@@ -191,15 +176,30 @@ pub mod scenarios {
                         }),
                 );
             }
+            pub fn new_load_1153_saplingcb_regtest_chain() -> Self {
+                let sb = ScenarioBuilder::build_scenario(None);
+                let source = get_regtest_dir().join("data/chain_cache/blocks_1153/zcashd");
+                let destination = &sb.regtest_manager.zcashd_data_dir;
+                dbg!(&source);
+                dbg!(&destination);
+                std::process::Command::new("cp")
+                    .arg("-r")
+                    .arg(source)
+                    .arg(destination)
+                    .output()
+                    .expect("copy operation into fresh dir from known dir to succeed");
+                sb
+            }
+
             /// Writes the specified zcashd.conf and launches with it
             pub fn build_and_launch(
                 funded: Option<String>,
                 zingo_wallet_dir: Option<PathBuf>,
             ) -> Self {
                 let mut sb = if let Some(conf) = zingo_wallet_dir {
-                    ScenarioBuilder::new(Some(conf))
+                    ScenarioBuilder::build_scenario(Some(conf))
                 } else {
-                    ScenarioBuilder::new(None)
+                    ScenarioBuilder::build_scenario(None)
                 };
                 if let Some(funding_seed) = funded {
                     sb.test_env.create_funded_zcash_conf(&funding_seed);
@@ -207,7 +207,7 @@ pub mod scenarios {
                     sb.test_env.create_unfunded_zcash_conf();
                 };
                 sb.test_env.create_lightwalletd_conf();
-                sb.launch(true);
+                sb.launch_scenario(true);
                 sb
             }
         }
