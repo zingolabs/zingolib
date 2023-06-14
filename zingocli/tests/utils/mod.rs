@@ -123,10 +123,9 @@ pub mod scenarios {
 
     use super::increase_height_and_sync_client;
     pub mod setup {
-        use crate::data::REGSAP_ADDR_FROM_ABANDONART;
-
         use super::{data, ChildProcessHandler, RegtestManager};
         use std::path::PathBuf;
+        use zingo_cli::regtest::get_regtest_dir;
         use zingolib::{lightclient::LightClient, wallet::WalletBase};
         pub struct ScenarioBuilder {
             pub test_env: TestEnvironmentGenerator,
@@ -165,6 +164,16 @@ pub mod scenarios {
             pub fn new_load_1153_saplingcb_regtest_chain() -> Self {
                 let test_env = TestEnvironmentGenerator::new();
                 let regtest_manager = test_env.regtest_manager;
+                let source = get_regtest_dir().join("data/chain_cache/blocks_1153/zcashd");
+                let destination = regtest_manager.zcashd_data_dir;
+                dbg!(&source);
+                dbg!(&destination);
+                std::process::Command::new("cp")
+                    .arg("-r")
+                    .arg(source)
+                    .arg(destination)
+                    .output()
+                    .expect("copy operation into fresh dir from known dir to succeed");
                 ScenarioBuilder::new(None)
             }
             pub fn launch(&mut self, clean: bool) {
@@ -199,14 +208,6 @@ pub mod scenarios {
                 };
                 sb.test_env.create_lightwalletd_conf();
                 sb.launch(true);
-                sb
-            }
-            pub fn launch_funded_recorded_chain() -> Self {
-                let mut sb = ScenarioBuilder::new(None);
-                sb.test_env
-                    .create_funded_zcash_conf(REGSAP_ADDR_FROM_ABANDONART);
-                sb.test_env.create_lightwalletd_conf();
-                sb.launch(false);
                 sb
             }
         }
@@ -450,6 +451,17 @@ pub mod scenarios {
         )
     }
 
+    pub async fn basic_no_spendable() -> (RegtestManager, ChildProcessHandler, LightClient) {
+        let mut scenario_builder = setup::ScenarioBuilder::build_and_launch(None, None);
+        (
+            scenario_builder.regtest_manager,
+            scenario_builder.child_process_handler.unwrap(),
+            scenario_builder
+                .client_builder
+                .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
+                .await,
+        )
+    }
     pub mod chainload {
         use super::*;
         pub async fn iterate_on_chainload() {
@@ -477,16 +489,5 @@ pub mod scenarios {
                 recipient,
             )
         }
-    }
-    pub async fn basic_no_spendable() -> (RegtestManager, ChildProcessHandler, LightClient) {
-        let mut scenario_builder = setup::ScenarioBuilder::build_and_launch(None, None);
-        (
-            scenario_builder.regtest_manager,
-            scenario_builder.child_process_handler.unwrap(),
-            scenario_builder
-                .client_builder
-                .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
-                .await,
-        )
     }
 }
