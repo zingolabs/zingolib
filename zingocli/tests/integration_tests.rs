@@ -2943,7 +2943,7 @@ mod benchmarks {
     }
     #[tokio::test]
     async fn launch_from_pregenerated_chain() {
-        let (_rtm, _cph, _f, _r) = scenarios::chainload::faucet_recipient().await;
+        scenarios::chainload::iterate_on_chainload().await;
     }
 }
 pub const TEST_SEED: &str = "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise";
