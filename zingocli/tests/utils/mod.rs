@@ -177,7 +177,7 @@ pub mod scenarios {
                 );
             }
             pub fn new_load_1153_saplingcb_regtest_chain() -> Self {
-                let sb = ScenarioBuilder::build_scenario(None);
+                let mut sb = ScenarioBuilder::build_scenario(None);
                 let source = get_regtest_dir().join("data/chain_cache/blocks_1153/zcashd");
                 let destination = &sb.regtest_manager.zcashd_data_dir;
                 dbg!(&source);
@@ -188,6 +188,7 @@ pub mod scenarios {
                     .arg(destination)
                     .output()
                     .expect("copy operation into fresh dir from known dir to succeed");
+                sb.launch_scenario(false);
                 sb
             }
 
