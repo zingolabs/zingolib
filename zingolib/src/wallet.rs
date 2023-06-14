@@ -1247,6 +1247,7 @@ impl LightWallet {
 
         println!("{}: Transaction created", now() - start_time);
         println!("Transaction ID: {}", transaction.txid());
+        println!("transaction id bytes: {:?}", transaction.txid().as_ref());
 
         {
             self.send_progress.write().await.is_send_in_progress = false;

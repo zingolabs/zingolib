@@ -376,7 +376,8 @@ async fn sent_transaction_reorged_into_mempool() {
         )])
         .await
         .unwrap();
-    println!("{}", txid);
+    println!("created txid: {}", txid);
+    println!("created txid bytes: {:?}", hex::decode(txid));
     recipient.do_sync(false).await.unwrap();
     println!("{}", recipient.do_list_transactions().await.pretty(2));
 

@@ -1614,19 +1614,23 @@ impl LightClient {
                 .await
                 .map_err(|e| e.to_string())?
                 .into_inner();
-            let mempool_txns = dbg!(mempool_tx_stream
+            let mempool_txns = mempool_tx_stream
                 .try_collect::<Vec<_>>()
                 .await
-                .map_err(|e| e.to_string())?);
+                .map_err(|e| e.to_string())?;
             for (txid, _unconfirmed_transaction) in transactions
                 .current
                 .iter()
                 .filter(|(_txid, tx)| tx.unconfirmed)
             {
-                if !mempool_txns
-                    .iter()
-                    .any(|mempool_tx| dbg!(&mempool_tx.hash) == dbg!(txid.as_ref()))
-                {
+                if !mempool_txns.iter().any(|mempool_tx| {
+                    println!(
+                        "mempool_txid {}",
+                        TxId::from_bytes(mempool_tx.hash.clone().try_into().unwrap())
+                    );
+                    println!("unconfirmed local txid {txid}",);
+                    mempool_tx.hash == txid.as_ref()
+                }) {
                     unconfirmed_txids_to_remove.push(*txid)
                 }
             }

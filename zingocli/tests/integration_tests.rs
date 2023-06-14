@@ -2909,10 +2909,12 @@ async fn still_have_unconfirmed_after_sync() {
     let (_regtest_manager, child_process_handler, faucet, recipient, _txid) =
         scenarios::faucet_prefunded_orchard_recipient(100_000).await;
 
-    recipient
+    let txid = recipient
         .do_send(vec![(&get_base_address!(faucet, "unified"), 50_000, None)])
         .await
         .unwrap();
+    println!("created txid: {}", txid);
+    println!("created txid bytes: {:?}", hex::decode(txid));
 
     let pre_sync_transactions = recipient.do_list_transactions().await;
     recipient.do_sync(false).await.unwrap();
