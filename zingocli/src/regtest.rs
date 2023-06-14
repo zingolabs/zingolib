@@ -442,10 +442,12 @@ impl RegtestManager {
             check_interval,
             None,
         );
+        let zcash_cli_command = dbg!(self.get_cli_handle());
+        //assert_eq!(5, 6);
         Ok(ChildProcessHandler {
             zcashd: zcashd_handle,
             lightwalletd: lightwalletd_child,
-            zcash_cli_command: self.get_cli_handle(),
+            zcash_cli_command,
         })
     }
     pub fn get_zingo_data_dir(&self) -> PathBuf {

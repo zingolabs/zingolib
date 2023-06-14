@@ -123,6 +123,8 @@ pub mod scenarios {
 
     use super::increase_height_and_sync_client;
     pub mod setup {
+        use crate::data::REGSAP_ADDR_FROM_ABANDONART;
+
         use super::{data, ChildProcessHandler, RegtestManager};
         use std::path::PathBuf;
         use zingo_cli::regtest::get_regtest_dir;
@@ -161,6 +163,14 @@ pub mod scenarios {
                     child_process_handler,
                 }
             }
+            fn configure_scenario(&mut self, funded: Option<String>) {
+                if let Some(funding_seed) = funded {
+                    self.test_env.create_funded_zcash_conf(&funding_seed);
+                } else {
+                    self.test_env.create_unfunded_zcash_conf();
+                };
+                self.test_env.create_lightwalletd_conf();
+            }
             fn launch_scenario(&mut self, clean: bool) {
                 self.child_process_handler = Some(
                     self.regtest_manager
@@ -188,12 +198,14 @@ pub mod scenarios {
                     .arg(destination)
                     .output()
                     .expect("copy operation into fresh dir from known dir to succeed");
+                sb.configure_scenario(Some(REGSAP_ADDR_FROM_ABANDONART.to_string()));
                 sb.launch_scenario(false);
+                assert_eq!(1, 2);
                 sb
             }
 
             /// Writes the specified zcashd.conf and launches with it
-            pub fn build_and_launch(
+            pub fn build_configure_launch(
                 funded: Option<String>,
                 zingo_wallet_dir: Option<PathBuf>,
             ) -> Self {
@@ -202,12 +214,7 @@ pub mod scenarios {
                 } else {
                     ScenarioBuilder::build_scenario(None)
                 };
-                if let Some(funding_seed) = funded {
-                    sb.test_env.create_funded_zcash_conf(&funding_seed);
-                } else {
-                    sb.test_env.create_unfunded_zcash_conf();
-                };
-                sb.test_env.create_lightwalletd_conf();
+                sb.configure_scenario(funded);
                 sb.launch_scenario(true);
                 sb
             }
@@ -360,7 +367,7 @@ pub mod scenarios {
         }
     }
     pub fn custom_clients() -> (RegtestManager, ChildProcessHandler, ClientManager) {
-        let sb = setup::ScenarioBuilder::build_and_launch(
+        let sb = setup::ScenarioBuilder::build_configure_launch(
             Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
             None,
         );
@@ -381,7 +388,7 @@ pub mod scenarios {
     /// of scenarios.  As scenarios with even less requirements
     /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
     pub async fn faucet() -> (RegtestManager, ChildProcessHandler, LightClient) {
-        let mut sb = setup::ScenarioBuilder::build_and_launch(
+        let mut sb = setup::ScenarioBuilder::build_configure_launch(
             Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
             None,
         );
@@ -434,7 +441,7 @@ pub mod scenarios {
         LightClient,
         LightClient,
     ) {
-        let mut sb = setup::ScenarioBuilder::build_and_launch(
+        let mut sb = setup::ScenarioBuilder::build_configure_launch(
             Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
             None,
         );
@@ -453,7 +460,7 @@ pub mod scenarios {
     }
 
     pub async fn basic_no_spendable() -> (RegtestManager, ChildProcessHandler, LightClient) {
-        let mut scenario_builder = setup::ScenarioBuilder::build_and_launch(None, None);
+        let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(None, None);
         (
             scenario_builder.regtest_manager,
             scenario_builder.child_process_handler.unwrap(),
