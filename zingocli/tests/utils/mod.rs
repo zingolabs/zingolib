@@ -160,6 +160,11 @@ pub mod scenarios {
                     child_process_handler,
                 }
             }
+            pub fn new_load_1153_saplingcb_regtest_chain() -> Self {
+                let test_env = TestEnvironmentGenerator::new();
+                let regtest_manager = test_env.regtest_manager;
+                ScenarioBuilder::new(None)
+            }
             pub fn launch(&mut self, clean: bool) {
                 self.child_process_handler = Some(
                     self.regtest_manager
@@ -434,6 +439,34 @@ pub mod scenarios {
         )
     }
 
+    pub mod chainload {
+        use super::*;
+        pub async fn iterate_on_chainload() {
+            let mut sb = setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain();
+        }
+
+        pub async fn faucet_recipient() -> (
+            RegtestManager,
+            ChildProcessHandler,
+            LightClient,
+            LightClient,
+        ) {
+            let mut sb = setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain();
+            //(Some(REGSAP_ADDR_FROM_ABANDONART.to_string()), None);
+            let faucet = sb.client_builder.build_new_faucet(0, false).await;
+            faucet.do_sync(false).await.unwrap();
+            let recipient = sb
+                .client_builder
+                .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
+                .await;
+            (
+                sb.regtest_manager,
+                sb.child_process_handler.unwrap(),
+                faucet,
+                recipient,
+            )
+        }
+    }
     pub async fn basic_no_spendable() -> (RegtestManager, ChildProcessHandler, LightClient) {
         let mut scenario_builder = setup::ScenarioBuilder::build_and_launch(None, None);
         (
