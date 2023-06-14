@@ -604,7 +604,12 @@ impl LightWallet {
             }
         };
 
-        wc.new_address(wc.can_view()).unwrap();
+        if let Err(e) = wc.new_address(wc.can_view()) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("could not create initial address: {e}"),
+            ));
+        };
         let transaction_metadata_set = Arc::new(RwLock::new(TransactionMetadataSet::default()));
         let transaction_context =
             TransactionContext::new(&config, Arc::new(RwLock::new(wc)), transaction_metadata_set);
