@@ -2944,6 +2944,7 @@ mod benchmarks {
     #[tokio::test]
     async fn launch_from_pregenerated_chain() {
         scenarios::chainload::iterate_on_chainload().await;
+        assert_eq!(1, 2);
     }
 }
 pub const TEST_SEED: &str = "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise";

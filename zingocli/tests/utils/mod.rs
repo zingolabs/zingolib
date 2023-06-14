@@ -185,11 +185,13 @@ pub mod scenarios {
                             }
                         }),
                 );
+                assert_eq!(45, 47);
             }
             pub fn new_load_1153_saplingcb_regtest_chain() -> Self {
                 let mut sb = ScenarioBuilder::build_scenario(None);
                 let source = get_regtest_dir().join("data/chain_cache/blocks_1153/zcashd");
                 let destination = &sb.regtest_manager.zcashd_data_dir;
+
                 dbg!(&source);
                 dbg!(&destination);
                 std::process::Command::new("cp")
@@ -474,6 +476,7 @@ pub mod scenarios {
         use super::*;
         pub async fn iterate_on_chainload() {
             let mut sb = setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain();
+            let faucet = sb.client_builder.build_new_faucet(0, false).await;
         }
 
         pub async fn faucet_recipient() -> (
