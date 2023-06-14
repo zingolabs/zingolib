@@ -1531,8 +1531,10 @@ impl LightClient {
         // The top of the wallet
         let last_synced_height = self.wallet.last_synced_height().await;
 
-        let latest_blockid =
+        let mut latest_blockid =
             GrpcConnector::get_latest_block(self.config.get_lightwalletd_uri()).await?;
+        // Block hashes are reversed when stored in BlockDatas, so we reverse here to match
+        latest_blockid.hash.reverse();
         if latest_blockid.height < last_synced_height {
             let w = format!(
                 "Server's latest block({}) is behind ours({})",
