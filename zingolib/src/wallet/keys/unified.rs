@@ -169,7 +169,7 @@ impl WalletCapability {
         }
 
         let orchard_receiver = if desired_receivers.orchard {
-            let fvk: orchard::keys::FullViewingKey = (&*self).try_into().unwrap();
+            let fvk: orchard::keys::FullViewingKey = (&*self).try_into()?;
             Some(fvk.address_at(self.addresses.len(), Scope::External))
         } else {
             None
