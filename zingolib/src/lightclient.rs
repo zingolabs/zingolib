@@ -5,7 +5,7 @@ use crate::{
         fetch_taddr_transactions::FetchTaddrTransactions, sync_status::BatchSyncStatus,
         syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions, update_notes::UpdateNotes,
     },
-    compact_formats::RawTransaction,
+    compact_formats::{self, RawTransaction},
     grpc_connector::GrpcConnector,
     wallet::{
         data::{
@@ -22,7 +22,7 @@ use crate::{
         LightWallet, Pool, WalletBase,
     },
 };
-use futures::future::join_all;
+use futures::{future::join_all, TryStreamExt};
 use json::{array, object, JsonValue};
 use log::{debug, error, warn};
 use orchard::note_encryption::OrchardDomain;
@@ -1591,6 +1591,53 @@ impl LightClient {
                 log::debug!("LightClient interrupt_sync is true");
                 break;
             }
+        }
+
+        let mut unconfirmed_txids_to_remove = vec![];
+        let transactions = self
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await;
+        if dbg!(transactions
+            .current
+            .iter()
+            .any(|(_txid, transaction)| transaction.unconfirmed))
+        {
+            let mut client = GrpcConnector::new(self.get_server_uri())
+                .get_client()
+                .await
+                .map_err(|e| e.to_string())?;
+            let mempool_tx_stream = client
+                .get_mempool_tx(compact_formats::Exclude { txid: vec![] })
+                .await
+                .map_err(|e| e.to_string())?
+                .into_inner();
+            let mempool_txns = dbg!(mempool_tx_stream
+                .try_collect::<Vec<_>>()
+                .await
+                .map_err(|e| e.to_string())?);
+            for (txid, _unconfirmed_transaction) in transactions
+                .current
+                .iter()
+                .filter(|(_txid, tx)| tx.unconfirmed)
+            {
+                if !mempool_txns
+                    .iter()
+                    .any(|mempool_tx| dbg!(&mempool_tx.hash) == dbg!(txid.as_ref()))
+                {
+                    unconfirmed_txids_to_remove.push(*txid)
+                }
+            }
+        }
+        drop(transactions);
+        if !unconfirmed_txids_to_remove.is_empty() {
+            self.wallet
+                .transactions()
+                .write()
+                .await
+                .remove_txids(unconfirmed_txids_to_remove)
         }
 
         drop(lightclient_exclusion_lock);

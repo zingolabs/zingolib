@@ -2904,4 +2904,25 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
     drop(child_process_handler)
 }
 
+#[tokio::test]
+async fn still_have_unconfirmed_after_sync() {
+    let (_regtest_manager, child_process_handler, faucet, recipient, _txid) =
+        scenarios::faucet_prefunded_orchard_recipient(100_000).await;
+
+    recipient
+        .do_send(vec![(&get_base_address!(faucet, "unified"), 50_000, None)])
+        .await
+        .unwrap();
+
+    let pre_sync_transactions = recipient.do_list_transactions().await;
+    recipient.do_sync(false).await.unwrap();
+    let post_sync_transactions = recipient.do_list_transactions().await;
+    assert_eq!(
+        pre_sync_transactions.pretty(2),
+        post_sync_transactions.pretty(2)
+    );
+
+    drop(child_process_handler)
+}
+
 pub const TEST_SEED: &str = "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise";
