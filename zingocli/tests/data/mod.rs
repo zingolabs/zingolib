@@ -58,9 +58,10 @@ listen=0
         pub fn funded(mineraddress: &str, rpcport: &str) -> String {
             basic(rpcport,
                 &format!(
-                    "### Zcashd Help provides documentation of the following:
-                    mineraddress={mineraddress}
-                    minetolocalwallet=0 # This is set to false so that we can mine to a wallet, other than the zcashd wallet."
+                    "\
+### Zcashd Help provides documentation of the following:
+mineraddress={mineraddress}
+minetolocalwallet=0 # This is set to false so that we can mine to a wallet, other than the zcashd wallet."
                 )
             )
         }

@@ -442,9 +442,7 @@ impl RegtestManager {
             check_interval,
             None,
         );
-        let zcash_cli_command = dbg!(self.get_cli_handle());
-        dbg!(&zcashd_handle);
-        dbg!(&lightwalletd_child);
+        let zcash_cli_command = self.get_cli_handle();
         assert_eq!(9, 8);
         let somecph = Ok(ChildProcessHandler {
             zcashd: zcashd_handle,
