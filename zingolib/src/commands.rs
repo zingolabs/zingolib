@@ -1163,6 +1163,8 @@ impl Command for GetOptionCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
             Get a wallet option
+            Argument is either "download_memos" and "transaction_filter_threshold"
+
             Usage:
             getoption <optionname>
 
