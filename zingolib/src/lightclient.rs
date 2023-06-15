@@ -50,7 +50,6 @@ use zcash_client_backend::{
     encoding::{decode_payment_address, encode_payment_address},
 };
 use zcash_primitives::{
-    block::BlockHash,
     consensus::{BlockHeight, BranchId, Parameters},
     memo::{Memo, MemoBytes},
     sapling::note_encryption::SaplingDomain,
@@ -1531,10 +1530,11 @@ impl LightClient {
         // The top of the wallet
         let last_synced_height = self.wallet.last_synced_height().await;
 
-        let mut latest_blockid =
+        let latest_blockid =
             GrpcConnector::get_latest_block(self.config.get_lightwalletd_uri()).await?;
         // Block hashes are reversed when stored in BlockDatas, so we reverse here to match
-        latest_blockid.hash.reverse();
+        let latest_blockid =
+            crate::wallet::data::BlockData::new_with(latest_blockid.height, &latest_blockid.hash);
         if latest_blockid.height < last_synced_height {
             let w = format!(
                 "Server's latest block({}) is behind ours({})",
@@ -1545,9 +1545,8 @@ impl LightClient {
         }
 
         if latest_blockid.height == last_synced_height
-            && !latest_blockid.hash.is_empty()
-            && BlockHash::from_slice(&latest_blockid.hash).to_string()
-                != self.wallet.last_synced_hash().await
+            && !latest_blockid.hash().is_empty()
+            && latest_blockid.hash() != self.wallet.last_synced_hash().await
         {
             log::warn!("One block reorg at height {}", last_synced_height);
             // This is a one-block reorg, so pop the last block. Even if there are more blocks to reorg, this is enough
