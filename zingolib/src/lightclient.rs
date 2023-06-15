@@ -1624,12 +1624,19 @@ impl LightClient {
                 .filter(|(_txid, tx)| tx.unconfirmed)
             {
                 if !mempool_txns.iter().any(|mempool_tx| {
-                    println!(
-                        "mempool_txid {}",
-                        TxId::from_bytes(mempool_tx.hash.clone().try_into().unwrap())
+                    let mempool_txid = TxId::from_bytes(
+                        mempool_tx
+                            .hash
+                            .iter()
+                            .copied()
+                            .rev()
+                            .collect::<Vec<_>>()
+                            .try_into()
+                            .unwrap(),
                     );
-                    println!("unconfirmed local txid {txid}",);
-                    mempool_tx.hash == txid.as_ref()
+                    println!("mempool_txid: {mempool_txid}");
+                    println!("unconfirmed local txid {txid}");
+                    mempool_txid == *txid
                 }) {
                     unconfirmed_txids_to_remove.push(*txid)
                 }
