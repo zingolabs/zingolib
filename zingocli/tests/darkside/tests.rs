@@ -381,8 +381,10 @@ async fn sent_transaction_reorged_into_mempool() {
     println!("{}", recipient.do_list_transactions().await.pretty(2));
 
     let connector = DarksideConnector(server_id.clone());
-    let streamed_raw_txns = connector.get_incoming_transactions().await;
-    let raw_tx = streamed_raw_txns.unwrap().message().await.unwrap().unwrap();
+    let mut streamed_raw_txns = connector.get_incoming_transactions().await.unwrap();
+    let raw_tx = streamed_raw_txns.message().await.unwrap().unwrap();
+    // There should only be one transaction incoming
+    assert!(streamed_raw_txns.message().await.unwrap().is_none());
     connector
         .stage_transactions_stream(vec![(raw_tx.data.clone(), 4)])
         .await

@@ -1345,7 +1345,7 @@ impl LightWallet {
             return false;
         }
 
-        blocks.push(BlockData::new_with(height, hash));
+        blocks.push(BlockData::new_with(height, &hex::decode(hash).unwrap()));
 
         true
     }

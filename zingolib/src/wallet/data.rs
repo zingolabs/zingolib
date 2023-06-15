@@ -59,12 +59,8 @@ impl BlockData {
         20
     }
 
-    pub(crate) fn new_with(height: u64, hash: &str) -> Self {
-        let hash = hex::decode(hash)
-            .unwrap()
-            .into_iter()
-            .rev()
-            .collect::<Vec<_>>();
+    pub(crate) fn new_with(height: u64, hash: &[u8]) -> Self {
+        let hash = hash.into_iter().copied().rev().collect::<Vec<_>>();
 
         let cb = CompactBlock {
             hash,
@@ -109,7 +105,6 @@ impl BlockData {
         let mut hash_bytes = [0; 32];
         reader.read_exact(&mut hash_bytes)?;
         hash_bytes.reverse();
-        let hash = hex::encode(hash_bytes);
 
         // We don't need this, but because of a quirk, the version is stored later, so we can't actually
         // detect the version here. So we write an empty tree and read it back here
@@ -125,7 +120,7 @@ impl BlockData {
         };
 
         if ecb.is_empty() {
-            Ok(BlockData::new_with(height, hash.as_str()))
+            Ok(BlockData::new_with(height, &hash_bytes))
         } else {
             Ok(BlockData { ecb, height })
         }
