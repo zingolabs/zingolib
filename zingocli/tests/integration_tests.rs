@@ -2908,8 +2908,9 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
 mod benchmarks {
     use super::*;
     #[tokio::test]
-    async fn time_to_sync_baseline_1153() {
-        let mut annotation = utils::timer_annotation("time_to_sync_baseline_1153".to_string());
+    async fn sync_1153_baseline_recipient_synctime() {
+        let mut annotation =
+            utils::timer_annotation("sync_1153_baseline_recipient_synctime".to_string());
         let (_regtest_manager, child_process_handler, _faucet, recipient) =
             scenarios::chainload::faucet_recipient_1153().await;
 
