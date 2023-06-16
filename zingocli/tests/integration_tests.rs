@@ -2919,7 +2919,7 @@ mod benchmarks {
         let sync_duration_recipient = timer_stop.duration_since(timer_start);
         let duration = sync_duration_recipient.as_secs();
         annotation.push(json::object! {"duration": duration});
-        utils::record_time(annotation);
+        utils::record_time(&mut annotation);
 
         assert!(sync_duration_recipient.as_millis() < 1000);
 

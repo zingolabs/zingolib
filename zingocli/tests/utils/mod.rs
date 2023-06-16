@@ -1,3 +1,4 @@
+use std::fs::OpenOptions;
 use std::path::PathBuf;
 use std::string::String;
 use std::time::Duration;
@@ -29,8 +30,7 @@ fn timestamp() -> u64 {
 pub fn timer_annotation(test_name: String) -> JsonValue {
     json::object! { "test_name": test_name, "timestamp": timestamp(), "git_description": git_description() }
 }
-fn path_to_times(annotation: &JsonValue) -> PathBuf {
-    let basename = format!("{}.json", annotation["test_name"].to_string());
+fn path_to_times(basename: String) -> PathBuf {
     let file_name = PathBuf::from(basename);
     let timing_dir = PathBuf::from(
         std::env::var("CARGO_MANIFEST_DIR").expect("To be inside a manifested space."),
@@ -38,8 +38,15 @@ fn path_to_times(annotation: &JsonValue) -> PathBuf {
     .join("tests/times");
     timing_dir.join(file_name)
 }
-pub fn record_time(annotation: JsonValue) {
-    let data_store = path_to_times(&annotation);
+pub fn record_time(annotation: &mut JsonValue) {
+    let basename = format!("{}.json", annotation.remove("test_name").to_string());
+    let data_store = path_to_times(basename);
+    let mut time_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(data_store)
+        .expect("to access a data_store file");
+    std::io::Write::write_all(&mut time_file, annotation.to_string().as_bytes());
 }
 async fn get_synced_wallet_height(client: &LightClient) -> Result<u32, String> {
     client.do_sync(true).await?;
