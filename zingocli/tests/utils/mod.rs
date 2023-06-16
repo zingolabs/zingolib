@@ -25,6 +25,9 @@ fn timestamp() -> u64 {
         .unwrap()
         .as_secs()
 }
+pub fn timer_annotation(test_name: String) -> JsonValue {
+    json::object! { "test_name": test_name, "timestamp": timestamp(), "git_description": git_description() }
+}
 async fn get_synced_wallet_height(client: &LightClient) -> Result<u32, String> {
     client.do_sync(true).await?;
     Ok(client

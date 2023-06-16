@@ -2909,6 +2909,7 @@ mod benchmarks {
     use super::*;
     #[tokio::test]
     async fn time_to_sync_baseline_1153() {
+        let mut annotation = utils::timer_annotation("time_to_sync_baseline_1153".to_string());
         let (_regtest_manager, child_process_handler, _faucet, recipient) =
             scenarios::chainload::faucet_recipient_1153().await;
 
@@ -2916,6 +2917,9 @@ mod benchmarks {
         recipient.do_sync(true).await.unwrap();
         let timer_stop = Instant::now();
         let sync_duration_recipient = timer_stop.duration_since(timer_start);
+        let duration = sync_duration_recipient.as_secs();
+        annotation.push(json::object! {"duration": duration});
+
         assert!(sync_duration_recipient.as_millis() < 1000);
 
         drop(child_process_handler);
