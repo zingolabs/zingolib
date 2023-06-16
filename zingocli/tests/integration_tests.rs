@@ -13,10 +13,7 @@ use bip0039::Mnemonic;
 use data::seeds::HOSPITAL_MUSEUM_SEED;
 use json::JsonValue::{self, Null};
 use tokio::time::Instant;
-use utils::{
-    increase_server_height,
-    scenarios::{self, setup::TestEnvironmentGenerator},
-};
+use utils::scenarios::{self, setup::TestEnvironmentGenerator};
 
 use tracing_test::traced_test;
 use zcash_address::unified::Ufvk;
@@ -2910,41 +2907,18 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
 
 mod benchmarks {
     use super::*;
-    use ::function_name::named;
-    macro_rules! record_annotated_duration {
-        ($client:ident) => {};
-    }
-    #[named]
     #[tokio::test]
-    async fn time_to_sync_baseline() {
-        let (regtest_manager, child_process_handler, faucet, recipient) =
-            scenarios::faucet_recipient().await;
+    async fn time_to_sync_baseline_1153() {
+        let (_regtest_manager, child_process_handler, _faucet, recipient) =
+            scenarios::chainload::faucet_recipient_1153().await;
 
-        let mut timer_start = Instant::now();
-        increase_server_height(&regtest_manager, data::TARGET_BLOCKS_PER_DAY).await;
-        let mut timer_stop = Instant::now();
-        let generation_duration = timer_stop.duration_since(timer_start);
-        dbg!(&generation_duration);
-
-        let mut timer_start = Instant::now();
-        faucet.do_sync(true).await.unwrap();
-        let mut timer_stop = Instant::now();
-        let sync_duration_faucet = timer_stop.duration_since(timer_start);
-        dbg!(sync_duration_faucet.as_millis());
-
-        timer_start = Instant::now();
+        let timer_start = Instant::now();
         recipient.do_sync(true).await.unwrap();
-        timer_stop = Instant::now();
+        let timer_stop = Instant::now();
         let sync_duration_recipient = timer_stop.duration_since(timer_start);
-        dbg!(sync_duration_recipient.as_millis());
+        assert!(sync_duration_recipient.as_millis() < 1000);
 
-        assert_eq!(1, 2);
         drop(child_process_handler);
-    }
-    #[tokio::test]
-    async fn launch_from_pregenerated_chain() {
-        scenarios::chainload::iterate_on_chainload().await;
-        assert_eq!(1, 2);
     }
 }
 pub const TEST_SEED: &str = "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise";

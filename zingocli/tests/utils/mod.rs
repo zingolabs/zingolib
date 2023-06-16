@@ -471,12 +471,8 @@ pub mod scenarios {
     }
     pub mod chainload {
         use super::*;
-        pub async fn iterate_on_chainload() {
-            let mut sb = setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain();
-            let faucet = sb.client_builder.build_new_faucet(0, false).await;
-        }
 
-        pub async fn faucet_recipient() -> (
+        pub async fn faucet_recipient_1153() -> (
             RegtestManager,
             ChildProcessHandler,
             LightClient,
