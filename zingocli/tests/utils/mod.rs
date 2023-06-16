@@ -20,6 +20,8 @@ fn git_description() -> String {
     )
     .unwrap()
     .to_string()
+    .trim_end_matches("\n")
+    .to_string()
 }
 fn timestamp() -> u64 {
     std::time::SystemTime::now()
