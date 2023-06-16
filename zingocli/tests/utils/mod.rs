@@ -43,12 +43,23 @@ fn path_to_times(basename: String) -> PathBuf {
 pub fn record_time(annotation: &mut JsonValue) {
     let basename = format!("{}.json", annotation.remove("test_name").to_string());
     let data_store = path_to_times(basename);
+
+    let mut data_set = if let Ok(data) = std::fs::read_to_string(data_store.clone()) {
+        json::parse(&data).expect("to receive data to be parsed to Json Array")
+    } else {
+        json::JsonValue::new_array()
+    };
+    data_set
+        .push(annotation.clone())
+        .expect("To extend earlier data with new annotation.");
+
     let mut time_file = OpenOptions::new()
         .create(true)
-        .append(true)
+        .write(true)
         .open(data_store)
         .expect("to access a data_store file");
-    std::io::Write::write_all(&mut time_file, annotation.to_string().as_bytes());
+    std::io::Write::write_all(&mut time_file, data_set.to_string().as_bytes())
+        .expect("To write out a new data vector");
 }
 async fn get_synced_wallet_height(client: &LightClient) -> Result<u32, String> {
     client.do_sync(true).await?;
