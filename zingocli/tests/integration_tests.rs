@@ -12,6 +12,7 @@ use std::{
 use bip0039::Mnemonic;
 use data::seeds::HOSPITAL_MUSEUM_SEED;
 use json::JsonValue::{self, Null};
+use tokio::time::Instant;
 use utils::scenarios::{self, setup::TestEnvironmentGenerator};
 
 use tracing_test::traced_test;
@@ -2067,7 +2068,7 @@ pub mod framework_validation {
             regtest_manager,
             child_process_handler,
             ..
-        } = setup::ScenarioBuilder::build_and_launch(None, None);
+        } = setup::ScenarioBuilder::build_configure_launch(None, None);
         log::debug!("regtest_manager: {:#?}", &regtest_manager);
         // Turn zcashd off and on again, to write down the blocks
         log_field_from_zcashd!(
@@ -2904,4 +2905,20 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
     drop(child_process_handler)
 }
 
+mod benchmarks {
+    use super::*;
+    #[tokio::test]
+    async fn time_to_sync_baseline_1153() {
+        let (_regtest_manager, child_process_handler, _faucet, recipient) =
+            scenarios::chainload::faucet_recipient_1153().await;
+
+        let timer_start = Instant::now();
+        recipient.do_sync(true).await.unwrap();
+        let timer_stop = Instant::now();
+        let sync_duration_recipient = timer_stop.duration_since(timer_start);
+        assert!(sync_duration_recipient.as_millis() < 1000);
+
+        drop(child_process_handler);
+    }
+}
 pub const TEST_SEED: &str = "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise";
