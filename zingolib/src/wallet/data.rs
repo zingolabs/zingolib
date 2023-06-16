@@ -60,7 +60,7 @@ impl BlockData {
     }
 
     pub(crate) fn new_with(height: u64, hash: &[u8]) -> Self {
-        let hash = hash.into_iter().copied().rev().collect::<Vec<_>>();
+        let hash = hash.iter().copied().rev().collect::<Vec<_>>();
 
         let cb = CompactBlock {
             hash,
