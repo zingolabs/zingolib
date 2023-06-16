@@ -185,7 +185,6 @@ pub mod scenarios {
                             }
                         }),
                 );
-                assert_eq!(45, 47);
             }
             pub fn new_load_1153_saplingcb_regtest_chain() -> Self {
                 let mut sb = ScenarioBuilder::build_scenario(None);
@@ -200,9 +199,9 @@ pub mod scenarios {
                     .arg(destination)
                     .output()
                     .expect("copy operation into fresh dir from known dir to succeed");
+                dbg!(&sb.test_env.regtest_manager.zcashd_config);
                 sb.configure_scenario(Some(REGSAP_ADDR_FROM_ABANDONART.to_string()));
                 sb.launch_scenario(false);
-                assert_eq!(1, 2);
                 sb
             }
 

@@ -443,13 +443,11 @@ impl RegtestManager {
             None,
         );
         let zcash_cli_command = self.get_cli_handle();
-        assert_eq!(9, 8);
         let somecph = Ok(ChildProcessHandler {
             zcashd: zcashd_handle,
             lightwalletd: lightwalletd_child,
             zcash_cli_command,
         });
-        assert_eq!(5, 6);
         somecph
     }
     pub fn get_zingo_data_dir(&self) -> PathBuf {
