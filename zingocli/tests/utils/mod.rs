@@ -1,3 +1,4 @@
+use std::string::String;
 use std::time::Duration;
 
 use json::JsonValue;
@@ -6,6 +7,24 @@ use tokio::time::sleep;
 use zingo_cli::regtest::RegtestManager;
 use zingolib::lightclient::LightClient;
 
+fn git_description() -> String {
+    std::str::from_utf8(
+        &std::process::Command::new("git")
+            .arg("describe")
+            .arg("--dirty")
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap()
+    .to_string()
+}
+fn timestamp() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
 async fn get_synced_wallet_height(client: &LightClient) -> Result<u32, String> {
     client.do_sync(true).await?;
     Ok(client
