@@ -45,7 +45,6 @@ orchard = { workspace = true }
 zcash_address = { workspace = true }
 zcash_client_backend = { workspace = true }
 zcash_primitives = { workspace = true }
-function_name = "0.3.0"
 
 [features]
 default = ["local_env"]
