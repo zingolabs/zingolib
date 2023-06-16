@@ -189,7 +189,7 @@ pub mod scenarios {
             }
             pub fn new_load_1153_saplingcb_regtest_chain() -> Self {
                 let mut sb = ScenarioBuilder::build_scenario(None);
-                let source = get_regtest_dir().join("data/chain_cache/blocks_1153/zcashd");
+                let source = get_regtest_dir().join("data/chain_cache/blocks_1153/zcashd/regtest");
                 let destination = &sb.regtest_manager.zcashd_data_dir;
 
                 dbg!(&source);
