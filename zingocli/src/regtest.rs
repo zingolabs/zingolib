@@ -412,6 +412,7 @@ impl RegtestManager {
 
         log::debug!("zcashd start section completed, zcashd reports it is done loading.");
 
+        log::debug!("{}", zcashd_logfile_state);
         if clean_regtest_data {
             log::debug!("generating initial block[s]");
             //std::thread::sleep(std::time::Duration::new(15, 0));
