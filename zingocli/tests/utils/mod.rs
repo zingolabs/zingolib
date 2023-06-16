@@ -191,8 +191,6 @@ pub mod scenarios {
                 let source = get_regtest_dir().join("data/chain_cache/blocks_1153/zcashd/regtest");
                 let destination = &sb.regtest_manager.zcashd_data_dir;
 
-                dbg!(&source);
-                dbg!(&destination);
                 std::process::Command::new("cp")
                     .arg("-r")
                     .arg(source)
