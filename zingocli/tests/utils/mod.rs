@@ -548,5 +548,25 @@ pub mod scenarios {
                 recipient,
             )
         }
+        pub async fn unsynced_faucet_recipient_1153() -> (
+            RegtestManager,
+            ChildProcessHandler,
+            LightClient,
+            LightClient,
+        ) {
+            let mut sb = setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain();
+            //(Some(REGSAP_ADDR_FROM_ABANDONART.to_string()), None);
+            let faucet = sb.client_builder.build_new_faucet(0, false).await;
+            let recipient = sb
+                .client_builder
+                .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
+                .await;
+            (
+                sb.regtest_manager,
+                sb.child_process_handler.unwrap(),
+                faucet,
+                recipient,
+            )
+        }
     }
 }

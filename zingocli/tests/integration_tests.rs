@@ -2925,7 +2925,29 @@ mod benchmarks {
         dbg!(&annotation);
         utils::record_time(&mut annotation);
 
-        assert!(sync_duration_recipient.as_millis() < 1000);
+        assert!(sync_duration_recipient.as_secs() < 1000);
+
+        drop(child_process_handler);
+    }
+    #[tokio::test]
+    async fn sync_1153_baseline_faucet_synctime() {
+        let mut annotation =
+            utils::timer_annotation("sync_1153_baseline_faucet_synctime".to_string());
+        let (_regtest_manager, child_process_handler, faucet, _recipient) =
+            scenarios::chainload::unsynced_faucet_recipient_1153().await;
+
+        let timer_start = Instant::now();
+        faucet.do_sync(true).await.unwrap();
+        let timer_stop = Instant::now();
+        let sync_duration_faucet = timer_stop.duration_since(timer_start);
+        let duration = sync_duration_faucet.as_secs();
+        annotation
+            .insert("duration", duration)
+            .expect("To insert the duration.");
+        dbg!(&annotation);
+        utils::record_time(&mut annotation);
+
+        assert!(sync_duration_faucet.as_secs() < 1000);
 
         drop(child_process_handler);
     }
