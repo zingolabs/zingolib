@@ -1,3 +1,22 @@
+#[macro_export]
+macro_rules! createcommand {
+    ($command: tt, $help_message: literal, $short_help: literal, $exec_expression: tt) => {
+        struct $command {}
+        impl Command for $command {
+            fn help(&self) -> &'static str {
+                indoc! {$help_message}
+            }
+
+            fn short_help(&self) -> &'static str {
+                $short_help
+            }
+
+            fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+                $exec_expression.to_string()
+            }
+        }
+    };
+}
 /// We use this macro to remove repetitive test set-up and teardown in the zingolib unit tests.
 #[macro_export]
 macro_rules! apply_scenario {
