@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 #[macro_use]
 extern crate rust_embed;
-mod test_framework;
+mod macros;
 
 pub mod blaze;
 pub mod commands;
