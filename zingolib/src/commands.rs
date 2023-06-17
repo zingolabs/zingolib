@@ -29,7 +29,12 @@ pub trait Command {
 pub trait ShortCircuitedCommand {
     fn exec_without_lc(args: Vec<String>) -> String;
 }
-createcommand!(NewCommand, "This is a new command", "short help", "exec");
+createcommand!(
+    NewCommand
+    "This is a new command"
+    "short help"
+    "exec"
+);
 struct ChangeServerCommand {}
 impl Command for ChangeServerCommand {
     fn help(&self) -> &'static str {

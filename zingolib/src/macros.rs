@@ -1,7 +1,12 @@
 /// Commands are highly repetitive we use this to avoid copy paste boilerplate
 #[macro_export]
 macro_rules! createcommand {
-    ($command: tt, $help_message: literal, $short_help: literal, $exec_expression: tt) => {
+    (
+        $command: tt
+        $help_message: literal
+        $short_help: literal
+        $exec_expression: tt
+    ) => {
         struct $command {}
         impl Command for $command {
             fn help(&self) -> &'static str {
