@@ -28,29 +28,24 @@ pub trait ShortCircuitedCommand {
     fn exec_without_lc(args: Vec<String>) -> String;
 }
 macro_rules! createcommand {
-    ($command: tt, $help_message: literal, $short_help ) => {
-        concat_idents::concat_idents!(
-            struct_name = $command, Command {
-                struct struct_name {}
-                impl Command for struct_name {
-                    fn help(&self) -> &'static str {
-                        indoc! {$help_message}
-                    }
-
-                    fn short_help(&self) -> &'static str {
-                        $short_help
-                    }
-
-                    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-                        match args.len() {
-
-                        }
-                    }
-                }
+    ($command: tt, $help_message: literal, $short_help: literal, $exec_expression: tt) => {
+        struct $command {}
+        impl Command for $command {
+            fn help(&self) -> &'static str {
+                indoc! {$help_message}
             }
-        )
+
+            fn short_help(&self) -> &'static str {
+                $short_help
+            }
+
+            fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+                $exec_expression.to_string()
+            }
+        }
     };
 }
+createcommand!(NewCommand, "This is a new command", "short help", "exec");
 struct ChangeServerCommand {}
 impl Command for ChangeServerCommand {
     fn help(&self) -> &'static str {
