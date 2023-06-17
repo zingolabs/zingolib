@@ -1993,9 +1993,6 @@ impl LightClient {
 }
 
 #[cfg(test)]
-pub(crate) mod testmocks;
-
-#[cfg(test)]
 mod tests {
     use tokio::runtime::Runtime;
     use zingoconfig::{ChainType, ZingoConfig};

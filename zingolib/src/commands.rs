@@ -12,6 +12,8 @@ use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_client_backend::address::RecipientAddress;
 use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
 
+#[macro_use]
+use crate::createcommand;
 lazy_static! {
     static ref RT: Runtime = tokio::runtime::Runtime::new().unwrap();
 }
@@ -27,7 +29,7 @@ pub trait Command {
 pub trait ShortCircuitedCommand {
     fn exec_without_lc(args: Vec<String>) -> String;
 }
-//createcommand!(NewCommand, "This is a new command", "short help", "exec");
+createcommand!(NewCommand, "This is a new command", "short help", "exec");
 struct ChangeServerCommand {}
 impl Command for ChangeServerCommand {
     fn help(&self) -> &'static str {
