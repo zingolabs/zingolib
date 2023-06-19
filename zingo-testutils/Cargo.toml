@@ -9,6 +9,7 @@ edition = "2021"
 zingoconfig = { path = "../zingoconfig" }
 zingolib = { path = "../zingolib" }
 zingo-cli = { path = "../zingocli" }
+zcash_primitives = { workspace = true }
 portpicker = "0.1.1"
 tempdir = "0.3.7"
 json = "0.12.4"

@@ -42,7 +42,6 @@ futures-util = "0.3.28"
 orchard = { workspace = true }
 zcash_address = { workspace = true }
 zcash_client_backend = { workspace = true }
-zcash_primitives = { workspace = true }
 
 [features]
 default = ["local_env"]
