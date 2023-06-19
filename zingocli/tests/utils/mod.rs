@@ -1,3 +1,6 @@
+use std::fs::OpenOptions;
+use std::path::PathBuf;
+use std::string::String;
 use std::time::Duration;
 
 use json::JsonValue;
@@ -6,6 +9,58 @@ use tokio::time::sleep;
 use zingo_cli::regtest::RegtestManager;
 use zingolib::lightclient::LightClient;
 
+fn git_description() -> String {
+    std::str::from_utf8(
+        &std::process::Command::new("git")
+            .arg("describe")
+            .arg("--dirty")
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap()
+    .to_string()
+    .trim_end_matches("\n")
+    .to_string()
+}
+fn timestamp() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+pub fn timer_annotation(test_name: String) -> JsonValue {
+    json::object! { "test_name": test_name, "timestamp": timestamp(), "git_description": git_description() }
+}
+fn path_to_times(basename: String) -> PathBuf {
+    let file_name = PathBuf::from(basename);
+    let timing_dir = PathBuf::from(
+        std::env::var("CARGO_MANIFEST_DIR").expect("To be inside a manifested space."),
+    )
+    .join("tests/times");
+    timing_dir.join(file_name)
+}
+pub fn record_time(annotation: &mut JsonValue) {
+    let basename = format!("{}.json", annotation.remove("test_name").to_string());
+    let data_store = path_to_times(basename);
+
+    let mut data_set = if let Ok(data) = std::fs::read_to_string(data_store.clone()) {
+        json::parse(&data).expect("to receive data to be parsed to Json Array")
+    } else {
+        json::JsonValue::new_array()
+    };
+    data_set
+        .push(annotation.clone())
+        .expect("To extend earlier data with new annotation.");
+
+    let mut time_file = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .open(data_store)
+        .expect("to access a data_store file");
+    std::io::Write::write_all(&mut time_file, data_set.to_string().as_bytes())
+        .expect("To write out a new data vector");
+}
 async fn get_synced_wallet_height(client: &LightClient) -> Result<u32, String> {
     client.do_sync(true).await?;
     Ok(client
@@ -482,6 +537,26 @@ pub mod scenarios {
             //(Some(REGSAP_ADDR_FROM_ABANDONART.to_string()), None);
             let faucet = sb.client_builder.build_new_faucet(0, false).await;
             faucet.do_sync(false).await.unwrap();
+            let recipient = sb
+                .client_builder
+                .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
+                .await;
+            (
+                sb.regtest_manager,
+                sb.child_process_handler.unwrap(),
+                faucet,
+                recipient,
+            )
+        }
+        pub async fn unsynced_faucet_recipient_1153() -> (
+            RegtestManager,
+            ChildProcessHandler,
+            LightClient,
+            LightClient,
+        ) {
+            let mut sb = setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain();
+            //(Some(REGSAP_ADDR_FROM_ABANDONART.to_string()), None);
+            let faucet = sb.client_builder.build_new_faucet(0, false).await;
             let recipient = sb
                 .client_builder
                 .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
