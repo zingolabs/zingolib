@@ -12,4 +12,6 @@ zingo-cli = { path = "../zingocli" }
 portpicker = "0.1.1"
 tempdir = "0.3.7"
 json = "0.12.4"
-
+log = "0.4.19"
+tokio = "1.28.2"
+http = "0.2.4"

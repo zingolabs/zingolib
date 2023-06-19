@@ -1,3 +1,4 @@
+mod data;
 use std::fs::OpenOptions;
 use std::path::PathBuf;
 use std::string::String;

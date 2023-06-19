@@ -4079,9 +4079,12 @@ dependencies = [
 name = "zingo-testutils"
 version = "0.1.0"
 dependencies = [
+ "http",
  "json",
+ "log",
  "portpicker",
  "tempdir",
+ "tokio",
  "zingo-cli",
  "zingoconfig",
  "zingolib",
