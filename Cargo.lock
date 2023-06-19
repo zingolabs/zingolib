@@ -4058,6 +4058,8 @@ dependencies = [
  "webpki-roots 0.21.1",
  "zcash_address",
  "zcash_client_backend",
+ "zcash_primitives",
+ "zingo-testutils",
  "zingoconfig",
  "zingolib",
 ]
@@ -4083,8 +4085,8 @@ dependencies = [
  "portpicker",
  "tempdir",
  "tokio",
+ "tracing",
  "zcash_primitives",
- "zingo-cli",
  "zingoconfig",
  "zingolib",
 ]

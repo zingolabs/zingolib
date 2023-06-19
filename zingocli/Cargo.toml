@@ -24,9 +24,12 @@ tower-http = { version = "0.2", features = ["add-extension"] }
 webpki-roots = "0.21.0"
 zingolib = { path = "../zingolib/" }
 zingoconfig = { path = "../zingoconfig/" }
+zingo-testutils = { path = "../zingo-testutils" }
+
 json = "0.12.4"
 
 [dev-dependencies]
+zcash_primitives = { workspace = true }
 env_logger = "0.10.0"
 zingolib = { path = "../zingolib/", features = ["integration_test"] }
 bech32 = "0.9.0"

@@ -6,12 +6,11 @@ use std::sync::Arc;
 use log::{error, info};
 
 use clap::{self, Arg};
-use regtest::ChildProcessHandler;
+use zingo_testutils::regtest; //::ChildProcessHandler;
 use zingoconfig::ChainType;
 use zingolib::wallet::WalletBase;
 use zingolib::{commands, lightclient::LightClient, load_clientconfig};
 
-pub mod regtest;
 pub mod version;
 
 pub fn build_clap_app() -> clap::App<'static> {
@@ -245,7 +244,7 @@ pub struct ConfigTemplate {
     command: Option<String>,
     regtest_manager: Option<regtest::RegtestManager>,
     #[allow(dead_code)] // This field is defined so that it can be used in Drop::drop
-    child_process_handler: Option<ChildProcessHandler>,
+    child_process_handler: Option<regtest::ChildProcessHandler>,
     chaintype: ChainType,
 }
 use commands::ShortCircuitedCommand;

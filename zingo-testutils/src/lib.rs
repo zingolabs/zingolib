@@ -1,13 +1,15 @@
-mod data;
+pub mod data;
+pub mod regtest;
 use std::fs::OpenOptions;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::string::String;
 use std::time::Duration;
 
 use json::JsonValue;
 use log::debug;
+use regtest::RegtestManager;
 use tokio::time::sleep;
-use zingo_cli::regtest::RegtestManager;
+use zingoconfig::{ChainType, ZingoConfig};
 use zingolib::lightclient::LightClient;
 
 fn git_description() -> String {
@@ -157,7 +159,45 @@ pub async fn increase_height_and_sync_client(
 async fn check_wallet_chainheight_value(client: &LightClient, target: u32) -> Result<bool, String> {
     Ok(get_synced_wallet_height(client).await? != target)
 }
-#[cfg(test)]
+
+fn get_wallet_nym(nym: &str) -> Result<(String, PathBuf, PathBuf), String> {
+    match nym {
+        "sap_only" | "orch_only" | "orch_and_sapl" | "tadd_only" => {
+            let one_sapling_wallet = format!(
+                "{}/zingocli/tests/data/wallets/v26/202302_release/regtest/{nym}/zingo-wallet.dat",
+                regtest::get_cargo_manifest_dir_parent().to_string_lossy()
+            );
+            let wallet_path = Path::new(&one_sapling_wallet);
+            let wallet_dir = wallet_path.parent().unwrap();
+            Ok((
+                one_sapling_wallet.clone(),
+                wallet_path.to_path_buf(),
+                wallet_dir.to_path_buf(),
+            ))
+        }
+        _ => Err(format!("nym {nym} not a valid wallet directory")),
+    }
+}
+async fn load_wallet(
+    dir: PathBuf,
+    chaintype: ChainType,
+) -> (zingolib::wallet::LightWallet, ZingoConfig) {
+    let wallet = dir.join("zingo-wallet.dat");
+    tracing::info!("The wallet is: {}", &wallet.to_str().unwrap());
+    let lightwalletd_uri = TestEnvironmentGenerator::new().get_lightwalletd_uri();
+    let zingo_config = zingolib::load_clientconfig(lightwalletd_uri, Some(dir), chaintype).unwrap();
+    let from = std::fs::File::open(wallet).unwrap();
+
+    let read_lengths = vec![];
+    let mut recording_reader = RecordingReader { from, read_lengths };
+
+    (
+        zingolib::wallet::LightWallet::read_internal(&mut recording_reader, &zingo_config)
+            .await
+            .unwrap(),
+        zingo_config,
+    )
+}
 pub mod scenarios {
     //! In practice there are several common scenarios for which helpers are provided.
     //! These scenarios vary in the configuration of clients in use.  Most scenarios
@@ -172,7 +212,7 @@ pub mod scenarios {
     //! custom_clients
     use crate::data::{self, seeds::HOSPITAL_MUSEUM_SEED, REGSAP_ADDR_FROM_ABANDONART};
 
-    use zingo_cli::regtest::{ChildProcessHandler, RegtestManager};
+    use super::regtest::{ChildProcessHandler, RegtestManager};
     use zingolib::{get_base_address, lightclient::LightClient};
 
     use self::setup::ClientManager;
@@ -181,9 +221,9 @@ pub mod scenarios {
     pub mod setup {
         use crate::data::REGSAP_ADDR_FROM_ABANDONART;
 
+        use super::super::regtest::get_regtest_dir;
         use super::{data, ChildProcessHandler, RegtestManager};
         use std::path::PathBuf;
-        use zingo_cli::regtest::get_regtest_dir;
         use zingolib::{lightclient::LightClient, wallet::WalletBase};
         pub struct ScenarioBuilder {
             pub test_env: TestEnvironmentGenerator,
@@ -232,7 +272,7 @@ pub mod scenarios {
                     self.regtest_manager
                         .launch(clean)
                         .unwrap_or_else(|e| match e {
-                            zingo_cli::regtest::LaunchChildProcessError::ZcashdState {
+                            super::super::regtest::LaunchChildProcessError::ZcashdState {
                                 errorcode,
                                 stdout,
                                 stderr,
