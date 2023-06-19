@@ -1,6 +1,7 @@
 pub mod data;
 pub mod regtest;
 use std::fs::OpenOptions;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::string::String;
 use std::time::Duration;
@@ -11,6 +12,8 @@ use regtest::RegtestManager;
 use tokio::time::sleep;
 use zingoconfig::{ChainType, ZingoConfig};
 use zingolib::lightclient::LightClient;
+
+use crate::scenarios::setup::TestEnvironmentGenerator;
 
 fn git_description() -> String {
     std::str::from_utf8(
@@ -160,7 +163,7 @@ async fn check_wallet_chainheight_value(client: &LightClient, target: u32) -> Re
     Ok(get_synced_wallet_height(client).await? != target)
 }
 
-fn get_wallet_nym(nym: &str) -> Result<(String, PathBuf, PathBuf), String> {
+pub fn get_wallet_nym(nym: &str) -> Result<(String, PathBuf, PathBuf), String> {
     match nym {
         "sap_only" | "orch_only" | "orch_and_sapl" | "tadd_only" => {
             let one_sapling_wallet = format!(
@@ -178,7 +181,23 @@ fn get_wallet_nym(nym: &str) -> Result<(String, PathBuf, PathBuf), String> {
         _ => Err(format!("nym {nym} not a valid wallet directory")),
     }
 }
-async fn load_wallet(
+
+pub struct RecordingReader<Reader> {
+    from: Reader,
+    read_lengths: Vec<usize>,
+}
+impl<T> Read for RecordingReader<T>
+where
+    T: Read,
+{
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let for_info = self.from.read(buf)?;
+        log::info!("{:?}", for_info);
+        self.read_lengths.push(for_info);
+        Ok(for_info)
+    }
+}
+pub async fn load_wallet(
     dir: PathBuf,
     chaintype: ChainType,
 ) -> (zingolib::wallet::LightWallet, ZingoConfig) {
