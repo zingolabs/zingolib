@@ -4078,6 +4078,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "zingo-testutils"
+version = "0.1.0"
+
+[[package]]
 name = "zingoconfig"
 version = "0.1.0"
 dependencies = [
