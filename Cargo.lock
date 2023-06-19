@@ -4040,13 +4040,11 @@ dependencies = [
  "json",
  "log",
  "orchard",
- "portpicker",
  "prost 0.10.4",
  "rand 0.8.5",
  "rustls-pemfile",
  "rustyline",
  "shellwords",
- "tempdir",
  "tokio",
  "tokio-rustls",
  "tokio-stream",
@@ -4080,6 +4078,14 @@ dependencies = [
 [[package]]
 name = "zingo-testutils"
 version = "0.1.0"
+dependencies = [
+ "json",
+ "portpicker",
+ "tempdir",
+ "zingo-cli",
+ "zingoconfig",
+ "zingolib",
+]
 
 [[package]]
 name = "zingoconfig"
