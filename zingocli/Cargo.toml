@@ -8,7 +8,6 @@ rustyline = "11.0.0"
 clap = "3.2.20"
 log = "0.4.17"
 shellwords = "1.1.0"
-json = "0.12.4"
 http = "0.2.4"
 futures = "0.3.15"
 rustls-pemfile = "1.0.0"
@@ -25,15 +24,17 @@ tower-http = { version = "0.2", features = ["add-extension"] }
 webpki-roots = "0.21.0"
 zingolib = { path = "../zingolib/" }
 zingoconfig = { path = "../zingoconfig/" }
+zingo-testutils = { path = "../zingo-testutils" }
+
+json = "0.12.4"
 
 [dev-dependencies]
+zcash_primitives = { workspace = true }
 env_logger = "0.10.0"
 zingolib = { path = "../zingolib/", features = ["integration_test"] }
 bech32 = "0.9.0"
-portpicker = "0.1.1"
 rand = "0.8.5"
 hex = "0.3"
-tempdir = "0.3.7"
 tracing-subscriber = "0.3.15"
 itertools = "0.10.5"
 bip0039 = "0.10.1"
@@ -44,7 +45,6 @@ futures-util = "0.3.28"
 orchard = { workspace = true }
 zcash_address = { workspace = true }
 zcash_client_backend = { workspace = true }
-zcash_primitives = { workspace = true }
 
 [features]
 default = ["local_env"]
