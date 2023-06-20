@@ -26,7 +26,7 @@ fn git_description() -> String {
     )
     .unwrap()
     .to_string()
-    .trim_end_matches("\n")
+    .trim_end_matches('\n')
     .to_string()
 }
 fn timestamp() -> u64 {
@@ -47,7 +47,7 @@ fn path_to_times(basename: String) -> PathBuf {
     timing_dir.join(file_name)
 }
 pub fn record_time(annotation: &mut JsonValue) {
-    let basename = format!("{}.json", annotation.remove("test_name").to_string());
+    let basename = format!("{}.json", annotation.remove("test_name"));
     let data_store = path_to_times(basename);
 
     let mut data_set = if let Ok(data) = std::fs::read_to_string(data_store.clone()) {
@@ -104,10 +104,9 @@ pub fn check_transaction_equality(first: &JsonValue, second: &JsonValue) -> bool
             if key1 == "txid" || key1 == "datetime" {
                 continue;
             }
-            if t2
+            if !t2
                 .entries()
-                .find(|(key2, val2)| &key1 == key2 && &val1 == val2)
-                .is_none()
+                .any(|(key2, val2)| key1 == key2 && val1 == val2)
             {
                 return false;
             }
