@@ -6,7 +6,7 @@ use std::sync::Arc;
 use log::{error, info};
 
 use clap::{self, Arg};
-use zingo_testutils::regtest; //::ChildProcessHandler;
+use zingo_testutils::regtest;
 use zingoconfig::ChainType;
 use zingolib::wallet::WalletBase;
 use zingolib::{commands, lightclient::LightClient, load_clientconfig};
