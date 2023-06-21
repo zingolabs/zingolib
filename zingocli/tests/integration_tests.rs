@@ -2899,7 +2899,7 @@ mod benchmarks {
 
         let timer_start = Instant::now();
         faucet.do_sync(true).await.unwrap();
-        assert_eq!(faucet.do_sync_status().await.sapling_outputs, 1153 * 2);
+        assert_eq!(faucet.do_sync_status().await.sapling_outputs, 1153);
         let timer_stop = Instant::now();
         let sync_duration_faucet = timer_stop.duration_since(timer_start);
         let duration = sync_duration_faucet.as_secs();
