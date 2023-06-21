@@ -1102,7 +1102,6 @@ impl LightClient {
 
         // Mark the sync data as finished, which should clear everything
         self.bsync_data.read().await.finish().await;
-
         sync_result
     }
 

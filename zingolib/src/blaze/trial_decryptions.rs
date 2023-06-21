@@ -163,6 +163,7 @@ impl TrialDecryptions {
         )>,
     ) -> Result<(), String> {
         let mut orchard_batch_outputs = 0u32;
+        let mut sapling_batch_outputs = 0u32;
         let mut workers = FuturesUnordered::new();
 
         let download_memos = bsync_data.read().await.wallet_options.download_memos;
@@ -180,7 +181,7 @@ impl TrialDecryptions {
                 }
                 let mut transaction_metadata = false;
 
-                if let Some(ref sapling_ivk) = sapling_ivk {
+                sapling_batch_outputs += if let Some(ref sapling_ivk) = sapling_ivk {
                     Self::trial_decrypt_domain_specific_outputs::<
                         SaplingDomain<zingoconfig::ChainType>,
                     >(
@@ -198,8 +199,10 @@ impl TrialDecryptions {
                         &transaction_metadata_set,
                         &detected_transaction_id_sender,
                         &workers,
-                    );
-                }
+                    )
+                } else {
+                    0
+                };
 
                 orchard_batch_outputs += if let Some(ref orchard_ivk) = orchard_ivk {
                     Self::trial_decrypt_domain_specific_outputs::<OrchardDomain>(
