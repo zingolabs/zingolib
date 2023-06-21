@@ -48,7 +48,7 @@ pub struct BlockAndWitnessData {
     pub unverified_treestates: Arc<RwLock<Vec<TreeState>>>,
 
     // How many blocks to process at a time.
-    batch_size: u64,
+    batch_size: u32,
 
     // Highest verified trees
     // The incorrect type name "TreeState" is encoded in protobuf
@@ -63,7 +63,7 @@ pub struct BlockAndWitnessData {
     orchard_activation_height: u64,
 }
 
-pub const BATCHSIZE: u64 = 25;
+pub const BATCHSIZE: u32 = 25;
 impl BlockAndWitnessData {
     pub fn new(config: &ZingoConfig, sync_status: Arc<RwLock<BatchSyncStatus>>) -> Self {
         Self {
@@ -83,7 +83,7 @@ impl BlockAndWitnessData {
     }
 
     #[cfg(test)]
-    pub fn new_with_batchsize(config: &ZingoConfig, batch_size: u64) -> Self {
+    pub fn new_with_batchsize(config: &ZingoConfig, batch_size: u32) -> Self {
         let mut s = Self::new(config, Arc::new(RwLock::new(BatchSyncStatus::default())));
         s.batch_size = batch_size;
 
@@ -376,7 +376,7 @@ impl BlockAndWitnessData {
             let mut last_block_expecting = end_block;
 
             while let Some(compact_block) = receiver.recv().await {
-                if compact_block.height % batch_size == 0 && !blks.is_empty() {
+                if compact_block.height % batch_size as u64 == 0 && !blks.is_empty() {
                     // Add these blocks to the list
                     sync_status.write().await.blocks_done += blks.len() as u64;
                     blocks.write().await.append(&mut blks);
