@@ -673,6 +673,7 @@ async fn send_mined_sapling_to_orchard() {
         balance["verified_orchard_balance"],
         625_000_000 - u64::from(MINIMUM_FEE)
     );
+    assert_eq!(faucet.do_sync_status().await.orchard_outputs, 2);
     drop(child_process_handler);
 }
 
