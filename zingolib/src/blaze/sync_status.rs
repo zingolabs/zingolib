@@ -22,6 +22,7 @@ pub struct BatchSyncStatus {
 
     pub batch_num: usize,
     pub batch_total: usize,
+    pub orchard_outputs: u32,
 }
 
 impl BatchSyncStatus {
