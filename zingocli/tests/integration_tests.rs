@@ -2855,7 +2855,7 @@ async fn basic_faucet_count_sap_outputs() {
     assert_eq!(faucet.do_sync_status().await.sapling_outputs, 1);
     use zingolib::BATCHSIZE;
     let mut count = 1;
-    for _ in 0..(BATCHSIZE + 1) {
+    for _ in 0..1153 {
         zingo_testutils::increase_height_and_sync_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
@@ -2899,6 +2899,7 @@ mod benchmarks {
 
         let timer_start = Instant::now();
         faucet.do_sync(true).await.unwrap();
+        assert_eq!(faucet.wallet.get_anchor_height().await, 1153);
         assert_eq!(faucet.do_sync_status().await.sapling_outputs, 1153);
         let timer_stop = Instant::now();
         let sync_duration_faucet = timer_stop.duration_since(timer_start);
