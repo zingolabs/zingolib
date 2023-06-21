@@ -2861,7 +2861,7 @@ async fn basic_faucet_count_sap_outputs() {
             .unwrap();
         count += 1;
         assert_eq!(faucet.wallet.get_anchor_height().await, count);
-        //assert_eq!(faucet.do_sync_status().await.sapling_outputs, count);
+        assert_eq!(faucet.do_sync_status().await.sapling_outputs, count);
         dbg!(faucet.do_sync_status().await.sapling_outputs);
     }
     drop(child_process_handler);
