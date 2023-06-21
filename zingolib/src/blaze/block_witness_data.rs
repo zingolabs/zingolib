@@ -66,13 +66,14 @@ pub struct BlockAndWitnessData {
     orchard_activation_height: u64,
 }
 
+pub const BATCHSIZE: u64 = 25;
 impl BlockAndWitnessData {
     pub fn new(config: &ZingoConfig, sync_status: Arc<RwLock<BatchSyncStatus>>) -> Self {
         Self {
             blocks_in_current_batch: Arc::new(RwLock::new(vec![])),
             existing_blocks: Arc::new(RwLock::new(vec![])),
             unverified_treestates: Arc::new(RwLock::new(vec![])),
-            batch_size: 25,
+            batch_size: BATCHSIZE,
             highest_verified_trees: None,
             sync_status,
             sapling_activation_height: config.sapling_activation_height(),
