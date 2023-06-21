@@ -2841,6 +2841,13 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
     drop(child_process_handler)
 }
 
+#[tokio::test]
+async fn basic_faucet_count_sap_outputs() {
+    let (_regtest_manager, child_process_handler, faucet) = scenarios::faucet().await;
+    assert_eq!(faucet.wallet.get_anchor_height().await, 1);
+    assert_eq!(faucet.do_sync_status().await.sapling_outputs, 1);
+    drop(child_process_handler);
+}
 mod benchmarks {
     use super::*;
     #[tokio::test]
