@@ -1063,6 +1063,7 @@ impl LightClient {
             .read()
             .await
             .sync_id;
+        dbg!();
 
         // Start the sync
         let r_fut = self.start_sync();
