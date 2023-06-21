@@ -280,7 +280,8 @@ impl TrialDecryptions {
             Option<u32>,
         )>,
         workers: &FuturesUnordered<JoinHandle<Result<(), String>>>,
-    ) where
+    ) -> u32
+    where
         D: DomainWalletExt,
         <D as Domain>::Recipient: crate::wallet::traits::Recipient + Send + 'static,
         <D as Domain>::Note: PartialEq + Send + 'static + Clone,
@@ -358,5 +359,6 @@ impl TrialDecryptions {
                 }));
             }
         }
+        outputs.len() as u32
     }
 }
