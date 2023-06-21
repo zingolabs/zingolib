@@ -1692,7 +1692,7 @@ impl LightClient {
                 .start(bsync_data.clone(), fetch_full_transaction_transmitter)
                 .await;
 
-        // Do Trial decryptions of all the sapling outputs, and pass on the successful ones to the update_notes processor
+        // Do Trial decryptions of all the outputs, and pass on the successful ones to the update_notes processor
         let trial_decryptions_processor = TrialDecryptions::new(
             Arc::new(self.config.clone()),
             self.wallet.wallet_capability(),
