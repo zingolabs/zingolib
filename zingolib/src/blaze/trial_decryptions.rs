@@ -255,6 +255,13 @@ impl TrialDecryptions {
                 .write()
                 .await
                 .orchard_outputs += orchard_batch_outputs;
+            bsync_data
+                .read()
+                .await
+                .sync_status
+                .write()
+                .await
+                .sapling_outputs += sapling_batch_outputs;
         }
 
         while let Some(r) = workers.next().await {
