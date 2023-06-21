@@ -50,7 +50,6 @@ impl BatchSyncStatus {
         );
         self.in_progress = true;
         self.last_error = None;
-
         self.start_block = start_block;
         self.end_block = end_block;
         self.blocks_done = 0;
