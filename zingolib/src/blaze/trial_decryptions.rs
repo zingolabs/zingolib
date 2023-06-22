@@ -162,13 +162,13 @@ impl TrialDecryptions {
             oneshot::Sender<Result<Transaction, String>>,
         )>,
     ) -> Result<(), String> {
-        let mut orchard_batch_outputs = 0u32;
-        let mut sapling_batch_outputs = 0u32;
         let mut workers = FuturesUnordered::new();
 
         let download_memos = bsync_data.read().await.wallet_options.download_memos;
 
         for compact_block in compact_blocks {
+            let mut orchard_outputs_in_block = 0u32;
+            let mut sapling_outputs_in_block = 0u32;
             let height = BlockHeight::from_u32(compact_block.height as u32);
 
             for (transaction_num, compact_transaction) in compact_block.vtx.iter().enumerate() {
@@ -181,8 +181,8 @@ impl TrialDecryptions {
                 }
                 let mut transaction_metadata = false;
 
-                sapling_batch_outputs = if let Some(ref sapling_ivk) = sapling_ivk {
-                    Self::trial_decrypt_domain_specific_outputs::<
+                if let Some(ref sapling_ivk) = sapling_ivk {
+                    sapling_outputs_in_block += Self::trial_decrypt_domain_specific_outputs::<
                         SaplingDomain<zingoconfig::ChainType>,
                     >(
                         &mut transaction_metadata,
@@ -200,27 +200,24 @@ impl TrialDecryptions {
                         &detected_transaction_id_sender,
                         &workers,
                     )
-                } else {
-                    sapling_batch_outputs // TODO show ocrrectness in 0 spaling blocks
                 };
 
-                orchard_batch_outputs = if let Some(ref orchard_ivk) = orchard_ivk {
-                    Self::trial_decrypt_domain_specific_outputs::<OrchardDomain>(
-                        &mut transaction_metadata,
-                        compact_transaction,
-                        transaction_num,
-                        &compact_block,
-                        orchard::keys::PreparedIncomingViewingKey::new(orchard_ivk),
-                        height,
-                        &config,
-                        &wc,
-                        &bsync_data,
-                        &transaction_metadata_set,
-                        &detected_transaction_id_sender,
-                        &workers,
-                    )
-                } else {
-                    orchard_batch_outputs
+                if let Some(ref orchard_ivk) = orchard_ivk {
+                    orchard_outputs_in_block +=
+                        Self::trial_decrypt_domain_specific_outputs::<OrchardDomain>(
+                            &mut transaction_metadata,
+                            compact_transaction,
+                            transaction_num,
+                            &compact_block,
+                            orchard::keys::PreparedIncomingViewingKey::new(orchard_ivk),
+                            height,
+                            &config,
+                            &wc,
+                            &bsync_data,
+                            &transaction_metadata_set,
+                            &detected_transaction_id_sender,
+                            &workers,
+                        )
                 };
 
                 // Check option to see if we are fetching all transactions.
@@ -254,14 +251,14 @@ impl TrialDecryptions {
                 .sync_status
                 .write()
                 .await
-                .orchard_outputs += orchard_batch_outputs;
+                .orchard_outputs += orchard_outputs_in_block;
             bsync_data
                 .read()
                 .await
                 .sync_status
                 .write()
                 .await
-                .sapling_outputs += sapling_batch_outputs;
+                .sapling_outputs += sapling_outputs_in_block;
         }
 
         while let Some(r) = workers.next().await {
