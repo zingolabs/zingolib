@@ -2907,5 +2907,20 @@ mod benchmarks {
 
         drop(child_process_handler);
     }
+    #[tokio::test]
+    async fn count_loaded_outputs() {
+        let annotation =
+            zingo_testutils::timer_annotation("sync_1153_baseline_recipient_synctime".to_string());
+        let (_regtest_manager, child_process_handler, _faucet, recipient) =
+            scenarios::chainload::faucet_recipient_1153().await;
+
+        dbg!(recipient.do_sync_status().await);
+        assert_eq!(recipient.do_sync_status().await.orchard_outputs, 0);
+        assert_eq!(recipient.do_sync_status().await.sapling_outputs, 0);
+        recipient.do_sync(true).await.unwrap();
+        assert_eq!(recipient.do_sync_status().await.orchard_outputs, 0);
+        assert_eq!(recipient.do_sync_status().await.sapling_outputs, 1153);
+        drop(child_process_handler);
+    }
 }
 pub const TEST_SEED: &str = "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise";
