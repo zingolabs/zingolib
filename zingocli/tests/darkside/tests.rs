@@ -10,6 +10,7 @@ use crate::zingo_testutils::scenarios::setup::ClientManager;
 use json::JsonValue;
 
 use tokio::time::sleep;
+use zingo_testutils::scenarios::setup::ClientManager;
 use zingolib::{get_base_address, lightclient::LightClient};
 
 use std::sync::Arc;

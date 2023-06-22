@@ -9,8 +9,8 @@ edition = "2021"
 zingoconfig = { path = "../zingoconfig" }
 zingolib = { path = "../zingolib" }
 zcash_primitives = { workspace = true }
-portpicker = "0.1.1"
-tempdir = "0.3.7"
+portpicker = { workspace = true}
+tempdir = { workspace = true }
 json = "0.12.4"
 log = "0.4.19"
 tokio = "1.28.2"
