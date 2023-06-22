@@ -2869,7 +2869,6 @@ async fn count_loaded_outputs() {
     let (_regtest_manager, child_process_handler, _faucet, recipient) =
         scenarios::chainload::faucet_recipient_1153().await;
 
-    dbg!(recipient.do_sync_status().await);
     assert_eq!(recipient.do_sync_status().await.orchard_outputs, 0);
     assert_eq!(recipient.do_sync_status().await.sapling_outputs, 0);
     recipient.do_sync(true).await.unwrap();
@@ -2879,7 +2878,6 @@ async fn count_loaded_outputs() {
 }
 mod benchmarks {
     use super::*;
-    #[ignore]
     #[tokio::test]
     async fn sync_1153_baseline_recipient_synctime() {
         let mut annotation =
@@ -2895,14 +2893,12 @@ mod benchmarks {
         annotation
             .insert("duration", duration)
             .expect("To insert the duration.");
-        dbg!(&annotation);
         zingo_testutils::record_time(&mut annotation);
 
         assert!(sync_duration_recipient.as_secs() < 1000);
 
         drop(child_process_handler);
     }
-    #[ignore]
     #[tokio::test]
     async fn sync_1153_baseline_faucet_synctime() {
         let mut annotation =
@@ -2920,7 +2916,6 @@ mod benchmarks {
         annotation
             .insert("duration", duration)
             .expect("To insert the duration.");
-        dbg!(&annotation);
         zingo_testutils::record_time(&mut annotation);
 
         assert!(sync_duration_faucet.as_secs() < 1000);
