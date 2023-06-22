@@ -181,7 +181,7 @@ impl TrialDecryptions {
                 }
                 let mut transaction_metadata = false;
 
-                sapling_batch_outputs += if let Some(ref sapling_ivk) = sapling_ivk {
+                sapling_batch_outputs = if let Some(ref sapling_ivk) = sapling_ivk {
                     Self::trial_decrypt_domain_specific_outputs::<
                         SaplingDomain<zingoconfig::ChainType>,
                     >(
@@ -201,10 +201,10 @@ impl TrialDecryptions {
                         &workers,
                     )
                 } else {
-                    0
+                    sapling_batch_outputs // TODO show ocrrectness in 0 spaling blocks
                 };
 
-                orchard_batch_outputs += if let Some(ref orchard_ivk) = orchard_ivk {
+                orchard_batch_outputs = if let Some(ref orchard_ivk) = orchard_ivk {
                     Self::trial_decrypt_domain_specific_outputs::<OrchardDomain>(
                         &mut transaction_metadata,
                         compact_transaction,
@@ -220,7 +220,7 @@ impl TrialDecryptions {
                         &workers,
                     )
                 } else {
-                    0
+                    orchard_batch_outputs
                 };
 
                 // Check option to see if we are fetching all transactions.

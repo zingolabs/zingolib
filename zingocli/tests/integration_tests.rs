@@ -2857,6 +2857,19 @@ async fn basic_faucet_count_sap_outputs() {
     }
     drop(child_process_handler);
 }
+#[tokio::test]
+async fn count_loaded_outputs() {
+    let (_regtest_manager, child_process_handler, _faucet, recipient) =
+        scenarios::chainload::faucet_recipient_1153().await;
+
+    dbg!(recipient.do_sync_status().await);
+    assert_eq!(recipient.do_sync_status().await.orchard_outputs, 0);
+    assert_eq!(recipient.do_sync_status().await.sapling_outputs, 0);
+    recipient.do_sync(true).await.unwrap();
+    assert_eq!(recipient.do_sync_status().await.orchard_outputs, 0);
+    assert_eq!(recipient.do_sync_status().await.sapling_outputs, 1153);
+    drop(child_process_handler);
+}
 mod benchmarks {
     use super::*;
     #[ignore]
@@ -2905,21 +2918,6 @@ mod benchmarks {
 
         assert!(sync_duration_faucet.as_secs() < 1000);
 
-        drop(child_process_handler);
-    }
-    #[tokio::test]
-    async fn count_loaded_outputs() {
-        let annotation =
-            zingo_testutils::timer_annotation("sync_1153_baseline_recipient_synctime".to_string());
-        let (_regtest_manager, child_process_handler, _faucet, recipient) =
-            scenarios::chainload::faucet_recipient_1153().await;
-
-        dbg!(recipient.do_sync_status().await);
-        assert_eq!(recipient.do_sync_status().await.orchard_outputs, 0);
-        assert_eq!(recipient.do_sync_status().await.sapling_outputs, 0);
-        recipient.do_sync(true).await.unwrap();
-        assert_eq!(recipient.do_sync_status().await.orchard_outputs, 0);
-        assert_eq!(recipient.do_sync_status().await.sapling_outputs, 1153);
         drop(child_process_handler);
     }
 }
