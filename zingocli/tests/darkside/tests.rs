@@ -2,16 +2,14 @@ use super::darkside_types::{
     darkside_streamer_client::DarksideStreamerClient, DarksideBlock, DarksideBlocksUrl,
     DarksideEmptyBlocks, DarksideHeight, DarksideMetaState, Empty, RawTransaction, TreeState,
 };
-use crate::{
-    darkside::{
-        constants::{self, BRANCH_ID, DARKSIDE_SEED},
-        utils::{update_tree_states_for_transaction, DarksideHandler},
-    },
-    utils::scenarios::setup::ClientManager,
+use crate::darkside::{
+    constants::{self, BRANCH_ID, DARKSIDE_SEED},
+    utils::{update_tree_states_for_transaction, DarksideHandler},
 };
 use json::JsonValue;
 
 use tokio::time::sleep;
+use zingo_testutils::scenarios::setup::ClientManager;
 use zingolib::{get_base_address, lightclient::LightClient};
 
 use std::sync::Arc;

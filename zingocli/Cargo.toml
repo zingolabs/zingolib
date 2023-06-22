@@ -25,10 +25,11 @@ webpki-roots = "0.21.0"
 zingolib = { path = "../zingolib/" }
 zingoconfig = { path = "../zingoconfig/" }
 zingo-testutils = { path = "../zingo-testutils" }
-
+portpicker = { workspace = true}
 json = "0.12.4"
 
 [dev-dependencies]
+tempdir = { workspace = true }
 zcash_primitives = { workspace = true }
 env_logger = "0.10.0"
 zingolib = { path = "../zingolib/", features = ["integration_test"] }
