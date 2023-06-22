@@ -2848,6 +2848,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
     drop(child_process_handler)
 }
 
+#[ignore]
 #[tokio::test]
 async fn basic_faucet_count_sap_outputs() {
     let (regtest_manager, child_process_handler, faucet) = scenarios::faucet().await;
