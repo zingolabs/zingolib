@@ -346,6 +346,9 @@ impl Command for SyncStatusCommand {
                     "sync_id" => status.sync_id,
                     "in_progress" => status.in_progress,
                     "last_error" => status.last_error,
+                    "orchard_outputs" => status.orchard_outputs,
+                    "sapling_outputs" => status.sapling_outputs,
+
                 }
             };
             o.pretty(2)
