@@ -2846,7 +2846,6 @@ async fn basic_faucet_count_sap_outputs() {
     let (regtest_manager, child_process_handler, faucet) = scenarios::faucet().await;
     assert_eq!(faucet.wallet.get_anchor_height().await, 1);
     assert_eq!(faucet.do_sync_status().await.sapling_outputs, 1);
-    use zingolib::BATCHSIZE;
     let mut count = 1;
     for _ in 0..1152 {
         zingo_testutils::increase_height_and_sync_client(&regtest_manager, &faucet, 1)
@@ -2860,6 +2859,7 @@ async fn basic_faucet_count_sap_outputs() {
 }
 mod benchmarks {
     use super::*;
+    #[ignore]
     #[tokio::test]
     async fn sync_1153_baseline_recipient_synctime() {
         let mut annotation =
@@ -2882,6 +2882,7 @@ mod benchmarks {
 
         drop(child_process_handler);
     }
+    #[ignore]
     #[tokio::test]
     async fn sync_1153_baseline_faucet_synctime() {
         let mut annotation =
