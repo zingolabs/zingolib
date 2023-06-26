@@ -103,7 +103,7 @@ impl Command for WalletKindCommand {
                 let capability_arc = lightclient.wallet.wallet_capability();
                 let capability = capability_arc.read().await;
                 object! {
-                    "kind" => "Loaded from key",
+                    "kind" => "Loaded from viewing key",
                     "transparent" => capability.transparent.kind_str(),
                     "sapling" => capability.sapling.kind_str(),
                     "orchard" => capability.orchard.kind_str(),
