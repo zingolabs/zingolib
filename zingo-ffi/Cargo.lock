@@ -2313,6 +2313,7 @@ dependencies = [
  "android_logger",
  "env_logger",
  "jni",
+ "json",
  "log",
  "rustlib",
  "tokio",
