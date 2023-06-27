@@ -2872,49 +2872,54 @@ async fn count_loaded_outputs() {
 }
 mod benchmarks {
     use super::*;
-    #[tokio::test]
-    async fn sync_1153_baseline_recipient_synctime() {
-        let mut annotation =
-            zingo_testutils::timer_annotation("sync_1153_baseline_recipient_synctime".to_string());
-        let (_regtest_manager, child_process_handler, _faucet, recipient) =
-            scenarios::chainload::faucet_recipient_1153().await;
+    mod sync_1153_baseline_synctimes {
+        const PREFIX: &'static str = "sync_1153_baseline_synctimes";
 
-        let timer_start = Instant::now();
-        recipient.do_sync(true).await.unwrap();
-        let timer_stop = Instant::now();
-        let sync_duration_recipient = timer_stop.duration_since(timer_start);
-        let duration = sync_duration_recipient.as_secs();
-        annotation
-            .insert("duration", duration)
-            .expect("To insert the duration.");
-        zingo_testutils::record_time(&mut annotation);
+        use super::*;
+        #[tokio::test]
+        async fn keyless_client() {
+            let mut annotation =
+                zingo_testutils::timer_annotation(format!("{PREFIX}_keyless_client"));
+            let (_regtest_manager, child_process_handler, _faucet, recipient) =
+                scenarios::chainload::faucet_recipient_1153().await;
 
-        assert!(sync_duration_recipient.as_secs() < 1000);
+            let timer_start = Instant::now();
+            recipient.do_sync(true).await.unwrap();
+            let timer_stop = Instant::now();
+            let sync_duration_recipient = timer_stop.duration_since(timer_start);
+            let duration = sync_duration_recipient.as_secs();
+            annotation
+                .insert("duration", duration)
+                .expect("To insert the duration.");
+            zingo_testutils::record_time(&mut annotation);
 
-        drop(child_process_handler);
-    }
-    #[tokio::test]
-    async fn sync_1153_baseline_faucet_synctime() {
-        let mut annotation =
-            zingo_testutils::timer_annotation("sync_1153_baseline_faucet_synctime".to_string());
-        let (_regtest_manager, child_process_handler, faucet, _recipient) =
-            scenarios::chainload::unsynced_faucet_recipient_1153().await;
+            assert!(sync_duration_recipient.as_secs() < 1000);
 
-        let timer_start = Instant::now();
-        faucet.do_sync(true).await.unwrap();
-        assert_eq!(faucet.wallet.get_anchor_height().await, 1153);
-        assert_eq!(faucet.do_sync_status().await.sapling_outputs, 1153);
-        let timer_stop = Instant::now();
-        let sync_duration_faucet = timer_stop.duration_since(timer_start);
-        let duration = sync_duration_faucet.as_secs();
-        annotation
-            .insert("duration", duration)
-            .expect("To insert the duration.");
-        zingo_testutils::record_time(&mut annotation);
+            drop(child_process_handler);
+        }
+        #[tokio::test]
+        async fn keyowning_client() {
+            let mut annotation =
+                zingo_testutils::timer_annotation(format!("{PREFIX}_keyowning_client"));
+            let (_regtest_manager, child_process_handler, faucet, _recipient) =
+                scenarios::chainload::unsynced_faucet_recipient_1153().await;
 
-        assert!(sync_duration_faucet.as_secs() < 1000);
+            let timer_start = Instant::now();
+            faucet.do_sync(true).await.unwrap();
+            assert_eq!(faucet.wallet.get_anchor_height().await, 1153);
+            assert_eq!(faucet.do_sync_status().await.sapling_outputs, 1153);
+            let timer_stop = Instant::now();
+            let sync_duration_faucet = timer_stop.duration_since(timer_start);
+            let duration = sync_duration_faucet.as_secs();
+            annotation
+                .insert("duration", duration)
+                .expect("To insert the duration.");
+            zingo_testutils::record_time(&mut annotation);
 
-        drop(child_process_handler);
+            assert!(sync_duration_faucet.as_secs() < 1000);
+
+            drop(child_process_handler);
+        }
     }
 }
 pub const TEST_SEED: &str = "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise";
