@@ -2876,49 +2876,47 @@ mod benchmarks {
         const PREFIX: &'static str = "sync_1153_baseline_synctimes";
 
         use super::*;
-        #[tokio::test]
-        async fn keyless_client() {
-            let mut annotation =
-                zingo_testutils::timer_annotation(format!("{PREFIX}_keyless_client"));
-            let (_regtest_manager, child_process_handler, _faucet, recipient) =
+        async fn timing_run(client: &str, print_updates: bool) {
+            let mut annotation = zingo_testutils::timer_annotation(format!(
+                "{PREFIX}_{client}_client_pu_{print_updates}"
+            ));
+            let (_, child_process_handler, keyowning, keyless) =
                 scenarios::chainload::faucet_recipient_1153().await;
-
-            let timer_start = Instant::now();
-            recipient.do_sync(true).await.unwrap();
-            let timer_stop = Instant::now();
-            let sync_duration_recipient = timer_stop.duration_since(timer_start);
-            let duration = sync_duration_recipient.as_secs();
+            let sync_duration;
+            match client {
+                "keyowning" => {
+                    let timer_start = Instant::now();
+                    keyowning.do_sync(print_updates).await.unwrap();
+                    let timer_stop = Instant::now();
+                    sync_duration = timer_stop.duration_since(timer_start);
+                }
+                "keyless" => {
+                    let timer_start = Instant::now();
+                    keyless.do_sync(print_updates).await.unwrap();
+                    let timer_stop = Instant::now();
+                    sync_duration = timer_stop.duration_since(timer_start);
+                }
+                _ => panic!(),
+            }
+            let duration = sync_duration.as_secs();
             annotation
                 .insert("duration", duration)
                 .expect("To insert the duration.");
             zingo_testutils::record_time(&mut annotation);
 
-            assert!(sync_duration_recipient.as_secs() < 1000);
+            assert!(sync_duration.as_secs() < 1000);
 
             drop(child_process_handler);
         }
         #[tokio::test]
+        async fn keyless_client() {
+            timing_run("keyless", true).await;
+            timing_run("keyless", false).await;
+        }
+        #[tokio::test]
         async fn keyowning_client() {
-            let mut annotation =
-                zingo_testutils::timer_annotation(format!("{PREFIX}_keyowning_client"));
-            let (_regtest_manager, child_process_handler, faucet, _recipient) =
-                scenarios::chainload::unsynced_faucet_recipient_1153().await;
-
-            let timer_start = Instant::now();
-            faucet.do_sync(true).await.unwrap();
-            assert_eq!(faucet.wallet.get_anchor_height().await, 1153);
-            assert_eq!(faucet.do_sync_status().await.sapling_outputs, 1153);
-            let timer_stop = Instant::now();
-            let sync_duration_faucet = timer_stop.duration_since(timer_start);
-            let duration = sync_duration_faucet.as_secs();
-            annotation
-                .insert("duration", duration)
-                .expect("To insert the duration.");
-            zingo_testutils::record_time(&mut annotation);
-
-            assert!(sync_duration_faucet.as_secs() < 1000);
-
-            drop(child_process_handler);
+            timing_run("keyowning", true).await;
+            timing_run("keyowning", false).await;
         }
     }
 }
