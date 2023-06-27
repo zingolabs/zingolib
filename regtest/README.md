@@ -1,25 +1,27 @@
+`G=$(git rev-parse --show-toplevel)`
+
 ## Regtest Mode
 WARNING Experimental!
 The CLI can work in regtest mode, by locally running a `zcashd` and `lightwalletd`.
 This is now working with a simple `zingo-cli` invocation flag, with a little user setup.
 
-There are pre-made directories in this repo to support ready use of regtest mode. These are found in the `/regtest/` subdirectory.
+There are pre-made directories in this repo to support ready use of regtest mode. These are found in the `$G/regtest/` subdirectory.
 
-There are default config files for these binaries already in place in `/zingolib/regtest/conf/` which can also be edited.
+There are default config files for these binaries already in place in `$G/regtest/conf/` which can also be edited.
 
 Because regtest mode has no ability to cope with an initial `zcashd` state without any blocks,
 we have included files to produce an initial block height of one, with no variation between runs.
-These files are copied from a 'passive' directory (`zingolib/regtest/data/regtestvectors/`)
+These files are copied from a 'passive' directory (`$G/regtest/data/regtestvectors/`)
 into a newly cleared 'active' data directory at the beginning of each time regtest mode is run.
 This means, by default, any blocks added while zcashd is running are not retained for subsequent runs.
 
 The default config includes all network upgrades set to block height 1, therefore all network upgrades are active by default in regtest mode.
 
 # Usage example:
-You must copy your compiled `zcashd`, `zcash-cli` and `lightwalletd` binaries to `zingolib/regtest/bin/` or set up symlinks, etc. `zcash-cli` is also needed if you wish
+You must copy your compiled `zcashd`, `zcash-cli` and `lightwalletd` binaries to `$G/regtest/bin/` or set up symlinks, etc. `zcash-cli` is also needed if you wish
 to interact with your `zcashd` instance while it is running.
 
-From your `zingolib/` directory, you can run:
+From your `$G/` directory, you can run:
 `cargo run --release -- --regtest`
 
 Note: Regtest mode only works when invoked with `cargo run`. Running `cargo build` followed by an invocation of the compiled binary will fail.
@@ -46,7 +48,7 @@ at which point the interactive cli application should work with your regtest net
 
 Once regtest mode is running, you can manipulate the simulated chain with `zcash-cli`.
 
-For example, in still another terminal instance in the `zingolib/regtest/bin/` directory, you can run
+For example, in still another terminal instance in the `$G/regtest/bin/` directory, you can run
 `./zcash-cli -regtest -rpcuser=xxxxxx -rpcpassword=xxxxxx generate 11` to generate 11 blocks.
 Please note that by adding more than 100 blocks it is difficult or impossible to rewind the chain. The config means that after the first block all network upgrades should be in place.
 Other `zcash-cli` commands should work similarly.
@@ -57,7 +59,7 @@ Invocation currently only works when being launched within a `zingolib` repo's w
 Have fun!
 
 # Tree Diagrams
-In `/zingolib/`, running `tree ./regtest`
+In `$G/`, running `tree ./regtest`
 after moving binaries and running:
 ./regtest/
 ├── bin
