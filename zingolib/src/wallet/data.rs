@@ -8,7 +8,8 @@ use incrementalmerkletree::Hashable;
 use orchard::note_encryption::OrchardDomain;
 use orchard::tree::MerkleHashOrchard;
 use prost::Message;
-use std::convert::TryFrom;
+use shardtree::ShardStore;
+use std::convert::{Infallible, TryFrom};
 use std::io::{self, Read, Write};
 use std::usize;
 use zcash_encoding::{Optional, Vector};
@@ -1045,6 +1046,102 @@ impl WalletZecPriceInfo {
         writer.write_u64::<LittleEndian>(self.historical_prices_retry_count)?;
 
         Ok(())
+    }
+}
+
+pub(super) struct ZingoShardStore<Node: Hashable> {
+    // Temporary, to allow generic param to compile
+    node: std::marker::PhantomData<Node>,
+}
+
+impl<Node: Hashable> ShardStore for ZingoShardStore<Node> {
+    type H = Node;
+
+    type CheckpointId = BlockHeight;
+
+    // Probably not in the final impl
+    type Error = Infallible;
+
+    fn get_shard(
+        &self,
+        shard_root: incrementalmerkletree::Address,
+    ) -> Result<Option<shardtree::LocatedPrunableTree<Self::H>>, Self::Error> {
+        todo!()
+    }
+
+    fn last_shard(&self) -> Result<Option<shardtree::LocatedPrunableTree<Self::H>>, Self::Error> {
+        todo!()
+    }
+
+    fn put_shard(
+        &mut self,
+        subtree: shardtree::LocatedPrunableTree<Self::H>,
+    ) -> Result<(), Self::Error> {
+        todo!()
+    }
+
+    fn get_shard_roots(&self) -> Result<Vec<incrementalmerkletree::Address>, Self::Error> {
+        todo!()
+    }
+
+    fn truncate(&mut self, from: incrementalmerkletree::Address) -> Result<(), Self::Error> {
+        todo!()
+    }
+
+    fn min_checkpoint_id(&self) -> Result<Option<Self::CheckpointId>, Self::Error> {
+        todo!()
+    }
+
+    fn max_checkpoint_id(&self) -> Result<Option<Self::CheckpointId>, Self::Error> {
+        todo!()
+    }
+
+    fn add_checkpoint(
+        &mut self,
+        checkpoint_id: Self::CheckpointId,
+        checkpoint: shardtree::Checkpoint,
+    ) -> Result<(), Self::Error> {
+        todo!()
+    }
+
+    fn checkpoint_count(&self) -> Result<usize, Self::Error> {
+        todo!()
+    }
+
+    fn get_checkpoint_at_depth(
+        &self,
+        checkpoint_depth: usize,
+    ) -> Result<Option<(Self::CheckpointId, shardtree::Checkpoint)>, Self::Error> {
+        todo!()
+    }
+
+    fn with_checkpoints<F>(&mut self, limit: usize, callback: F) -> Result<(), Self::Error>
+    where
+        F: FnMut(&Self::CheckpointId, &shardtree::Checkpoint) -> Result<(), Self::Error>,
+    {
+        todo!()
+    }
+
+    fn update_checkpoint_with<F>(
+        &mut self,
+        checkpoint_id: &Self::CheckpointId,
+        update: F,
+    ) -> Result<bool, Self::Error>
+    where
+        F: Fn(&mut shardtree::Checkpoint) -> Result<(), Self::Error>,
+    {
+        todo!()
+    }
+
+    fn remove_checkpoint(&mut self, checkpoint_id: &Self::CheckpointId) -> Result<(), Self::Error> {
+        todo!()
+    }
+
+    fn truncate_checkpoints(
+        &mut self,
+        checkpoint_id: &Self::CheckpointId,
+    ) -> Result<(), Self::Error> {
+        todo!()
     }
 }
 

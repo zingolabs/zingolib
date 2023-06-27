@@ -23,6 +23,9 @@ incrementalmerkletree = { version = "0.4", features = ["test-dependencies"] }
 [profile.release]
 debug = false
 
+[patch.crates-io]
+incrementalmerkletree = { git = "https://github.com/zcash/incrementalmerkletree", rev = "6d6f3fd4e3bf64ad12775ddf345fd9b503c95e69"  }
+
 [profile.test]
 opt-level = 3
 debug = false

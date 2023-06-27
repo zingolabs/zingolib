@@ -16,6 +16,7 @@ use orchard::tree::MerkleHashOrchard;
 use orchard::Anchor;
 use rand::rngs::OsRng;
 use rand::Rng;
+use shardtree::ShardTree;
 use std::convert::Infallible;
 use std::{
     cmp,
@@ -31,7 +32,7 @@ use zcash_note_encryption::Domain;
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::merkle_tree::read_commitment_tree;
 use zcash_primitives::sapling::note_encryption::SaplingDomain;
-use zcash_primitives::sapling::SaplingIvk;
+use zcash_primitives::sapling::{Node, SaplingIvk};
 use zcash_primitives::transaction;
 use zcash_primitives::transaction::builder::Progress;
 use zcash_primitives::transaction::fees::fixed::FeeRule as FixedFeeRule;
@@ -213,6 +214,9 @@ pub struct LightWallet {
 
     // Wallet options
     pub(crate) wallet_options: Arc<RwLock<WalletOptions>>,
+
+    witness_tree_sapling: ShardTree<data::ZingoShardStore<Node>, 32, 32>,
+    witness_tree_orchard: ShardTree<data::ZingoShardStore<MerkleHashOrchard>, 32, 32>,
 
     // Heighest verified block
     pub(crate) verified_tree: Arc<RwLock<Option<TreeState>>>,

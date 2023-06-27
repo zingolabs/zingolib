@@ -1312,6 +1312,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "incrementalmerkletree"
+version = "0.4.0"
+source = "git+https://github.com/zcash/incrementalmerkletree?rev=6d6f3fd4e3bf64ad12775ddf345fd9b503c95e69#6d6f3fd4e3bf64ad12775ddf345fd9b503c95e69"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "indexmap"
 version = "1.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1807,7 +1815,7 @@ dependencies = [
  "halo2_gadgets",
  "halo2_proofs",
  "hex 0.4.3",
- "incrementalmerkletree",
+ "incrementalmerkletree 0.3.1",
  "lazy_static",
  "memuse",
  "nonempty",
@@ -2770,6 +2778,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "900fba806f70c630b0a382d0d825e17a0f19fcd059a2ade1ff237bcddf446b31"
 dependencies = [
  "lazy_static",
+]
+
+[[package]]
+name = "shardtree"
+version = "0.0.0"
+source = "git+https://github.com/zcash/incrementalmerkletree?rev=6d6f3fd4e3bf64ad12775ddf345fd9b503c95e69#6d6f3fd4e3bf64ad12775ddf345fd9b503c95e69"
+dependencies = [
+ "bitflags",
+ "either",
+ "incrementalmerkletree 0.4.0",
 ]
 
 [[package]]
@@ -3902,7 +3920,7 @@ dependencies = [
  "group 0.13.0",
  "hdwallet",
  "hex 0.4.3",
- "incrementalmerkletree",
+ "incrementalmerkletree 0.3.1",
  "jubjub",
  "lazy_static",
  "memuse",
@@ -4069,7 +4087,7 @@ dependencies = [
  "http-body",
  "hyper",
  "hyper-rustls",
- "incrementalmerkletree",
+ "incrementalmerkletree 0.4.0",
  "indoc",
  "json",
  "jubjub",
@@ -4090,6 +4108,7 @@ dependencies = [
  "secp256k1",
  "serde_json",
  "sha2 0.9.9",
+ "shardtree",
  "sodiumoxide",
  "subtle",
  "tempfile",
