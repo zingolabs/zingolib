@@ -319,7 +319,11 @@ impl ChainType {
         }
     }
     pub fn to_zcash_address_network(&self) -> zcash_address::Network {
-        self.address_network().unwrap()
+        match self {
+            Mainnet | FakeMainnet => zcash_address::Network::Main,
+            Testnet => zcash_address::Network::Test,
+            Regtest => zcash_address::Network::Regtest,
+        }
     }
 }
 
@@ -355,14 +359,6 @@ impl Parameters for ChainType {
             Testnet => constants::testnet::COIN_TYPE,
             Regtest => constants::regtest::COIN_TYPE,
         }
-    }
-
-    fn address_network(&self) -> Option<zcash_address::Network> {
-        Some(match self {
-            Mainnet | FakeMainnet => zcash_address::Network::Main,
-            Testnet => zcash_address::Network::Test,
-            Regtest => zcash_address::Network::Regtest,
-        })
     }
 
     fn hrp_sapling_extended_spending_key(&self) -> &str {
