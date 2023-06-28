@@ -7,6 +7,7 @@ use crate::{
         transactions::TransactionMetadataSet,
     },
 };
+use incrementalmerkletree::{frontier, frontier::CommitmentTree, witness::IncrementalWitness};
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
 use zcash_note_encryption::Domain;
 use zingoconfig::{ChainType, ZingoConfig, MAX_REORG};
@@ -24,7 +25,6 @@ use tokio::{
 };
 use zcash_primitives::{
     consensus::{BlockHeight, NetworkUpgrade, Parameters},
-    merkle_tree::{CommitmentTree, Hashable, IncrementalWitness},
     sapling::note_encryption::SaplingDomain,
     transaction::TxId,
 };
@@ -267,7 +267,9 @@ impl BlockAndWitnessData {
             if closest_lower_verified_tree.height == unverified_tree.height {
                 return true;
             }
-            let mut sapling_tree = CommitmentTree::<zcash_primitives::sapling::Node>::read(
+            let mut sapling_tree = incrementalmerkletree::frontier::CommitmentTree::<
+                zcash_primitives::sapling::Node,
+            >::read(
                 &hex::decode(closest_lower_verified_tree.sapling_tree).unwrap()[..],
             )
             .unwrap();
@@ -815,8 +817,8 @@ fn is_orchard_tree_verified(determined_orchard_tree: String, unverified_tree: Tr
 pub struct CommitmentTreesForBlock {
     pub block_height: u64,
     pub block_hash: String,
-    pub sapling_tree: CommitmentTree<zcash_primitives::sapling::Node>,
-    pub orchard_tree: CommitmentTree<MerkleHashOrchard>,
+    pub sapling_tree: frontier::CommitmentTree<zcash_primitives::sapling::Node>,
+    pub orchard_tree: frontier::CommitmentTree<MerkleHashOrchard>,
 }
 
 // The following four allow(unused) functions are currently only called in test code

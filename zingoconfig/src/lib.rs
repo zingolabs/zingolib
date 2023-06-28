@@ -400,4 +400,8 @@ impl Parameters for ChainType {
             Regtest => constants::regtest::B58_SCRIPT_ADDRESS_PREFIX,
         }
     }
+
+    fn address_network(&self) -> Option<zcash_address::Network> {
+        Some(self.to_zcash_address_network())
+    }
 }
