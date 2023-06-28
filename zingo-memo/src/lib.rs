@@ -147,11 +147,7 @@ mod tests {
     #[test]
     fn round_trip_ser_deser() {
         for test_vector in UA_TEST_VECTORS {
-            let ua =
-                unified::Address::decode(test_vector.unified_addr).unwrap()
-            else {
-                panic!("Couldn't decode test_vector UA")
-            };
+            let (_, ua) = unified::Address::decode(test_vector.unified_addr).unwrap();
             let mut serialized_ua = Vec::new();
             write_unified_address_to_raw_encoding(&ua, &mut serialized_ua).unwrap();
             assert_eq!(
