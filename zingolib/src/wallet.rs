@@ -24,6 +24,7 @@ use std::{
     time::SystemTime,
 };
 use tokio::sync::RwLock;
+use zcash_address::unified::Encoding;
 use zcash_client_backend::address;
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
@@ -637,7 +638,7 @@ impl LightWallet {
             .diversified_address(*note.diversifier())
             .and_then(|address| {
                 D::ua_from_contained_receiver(wallet_capability, &address)
-                    .map(|ua| ua.encode(network))
+                    .map(|ua| ua.encode(&network.to_zcash_address_network()))
             })
             .unwrap_or("Diversifier not in wallet. Perhaps you restored from seed and didn't restore addresses".to_string())
     }
@@ -1135,11 +1136,11 @@ impl LightWallet {
                     total_z_recipients += 1;
                     builder
                         .add_sapling_output(Some(sapling_ovk), to, value, validated_memo)
-                        .map_err(transaction::builder::Error::<Infallible>::SaplingBuild)
+                        .map_err(transaction::builder::Error::SaplingBuild)
                 }
                 address::RecipientAddress::Transparent(to) => builder
                     .add_transparent_output(&to, value)
-                    .map_err(transaction::builder::Error::<Infallible>::TransparentBuild),
+                    .map_err(transaction::builder::Error::TransparentBuild),
                 address::RecipientAddress::Unified(ua) => {
                     if let Some(orchard_addr) = ua.orchard() {
                         builder.add_orchard_output::<FixedFeeRule>(
@@ -1157,7 +1158,7 @@ impl LightWallet {
                                 value,
                                 validated_memo,
                             )
-                            .map_err(transaction::builder::Error::<Infallible>::SaplingBuild)
+                            .map_err(transaction::builder::Error::SaplingBuild)
                     } else {
                         return Err("Received UA with no Orchard or Sapling receiver".to_string());
                     }
@@ -1168,7 +1169,7 @@ impl LightWallet {
                 return Err(e);
             }
         }
-        let uas_bytes = match create_wallet_internal_memo_version_0(&destination_uas) {
+        let uas_bytes = match create_wallet_internal_memo_version_0(destination_uas.as_slice()) {
             Ok(bytes) => bytes,
             Err(e) => {
                 log::error!(

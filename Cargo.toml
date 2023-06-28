@@ -11,7 +11,7 @@ members = [
 zcash_address = { git = "https://github.com/zingolabs/librustzcash", rev = "fa67d9a645da55265ebea8cedbb77ff42317c726" }
 zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash", rev = "fa67d9a645da55265ebea8cedbb77ff42317c726"  }
 zcash_encoding = { git = "https://github.com/zingolabs/librustzcash", rev = "fa67d9a645da55265ebea8cedbb77ff42317c726"  }
-zcash_note_encryption = { git = "https://github.com/zingolabs/librustzcash", features = ["pre-zip-212"], rev = "fa67d9a645da55265ebea8cedbb77ff42317c726"  }
+zcash_note_encryption = "0.4.0"
 zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", features = ["transparent-inputs", "test-dependencies"], rev = "fa67d9a645da55265ebea8cedbb77ff42317c726"  }
 zcash_proofs = { git = "https://github.com/zingolabs/librustzcash", features = ["multicore"], rev = "fa67d9a645da55265ebea8cedbb77ff42317c726"  }
 orchard = "0.5.0"

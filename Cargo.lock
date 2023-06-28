@@ -1106,7 +1106,7 @@ dependencies = [
  "lazy_static",
  "rand_core 0.6.4",
  "ring",
- "secp256k1 0.26.0",
+ "secp256k1",
  "thiserror",
 ]
 
@@ -1816,7 +1816,7 @@ dependencies = [
  "serde",
  "subtle",
  "tracing",
- "zcash_note_encryption 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zcash_note_encryption",
 ]
 
 [[package]]
@@ -2611,29 +2611,11 @@ dependencies = [
 
 [[package]]
 name = "secp256k1"
-version = "0.21.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c42e6f1735c5f00f51e43e28d6634141f2bcad10931b2609ddd74a86d751260"
-dependencies = [
- "secp256k1-sys 0.4.2",
-]
-
-[[package]]
-name = "secp256k1"
 version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4124a35fe33ae14259c490fd70fa199a32b9ce9502f2ee6bc4f81ec06fa65894"
 dependencies = [
- "secp256k1-sys 0.8.1",
-]
-
-[[package]]
-name = "secp256k1-sys"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "957da2573cde917463ece3570eab4a0b3f19de6f1646cde62e6fd3868f566036"
-dependencies = [
- "cc",
+ "secp256k1-sys",
 ]
 
 [[package]]
@@ -3861,7 +3843,7 @@ dependencies = [
  "which",
  "zcash_address",
  "zcash_encoding",
- "zcash_note_encryption 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zcash_note_encryption",
  "zcash_primitives",
 ]
 
@@ -3879,18 +3861,6 @@ name = "zcash_note_encryption"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5b4580cd6cee12e44421dac43169be8d23791650816bdb34e6ddfa70ac89c1c5"
-dependencies = [
- "chacha20",
- "chacha20poly1305",
- "cipher",
- "rand_core 0.6.4",
- "subtle",
-]
-
-[[package]]
-name = "zcash_note_encryption"
-version = "0.4.0"
-source = "git+https://github.com/zingolabs/librustzcash?rev=fa67d9a645da55265ebea8cedbb77ff42317c726#fa67d9a645da55265ebea8cedbb77ff42317c726"
 dependencies = [
  "chacha20",
  "chacha20poly1305",
@@ -3927,12 +3897,12 @@ dependencies = [
  "rand 0.8.5",
  "rand_core 0.6.4",
  "ripemd",
- "secp256k1 0.26.0",
+ "secp256k1",
  "sha2 0.10.7",
  "subtle",
  "zcash_address",
  "zcash_encoding",
- "zcash_note_encryption 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zcash_note_encryption",
 ]
 
 [[package]]
@@ -4025,7 +3995,7 @@ dependencies = [
  "zcash_address",
  "zcash_client_backend",
  "zcash_encoding",
- "zcash_note_encryption 0.4.0 (git+https://github.com/zingolabs/librustzcash?rev=fa67d9a645da55265ebea8cedbb77ff42317c726)",
+ "zcash_note_encryption",
  "zcash_primitives",
 ]
 
@@ -4095,7 +4065,7 @@ dependencies = [
  "ripemd160",
  "rust-embed",
  "rustls-pemfile",
- "secp256k1 0.21.3",
+ "secp256k1",
  "serde_json",
  "sha2 0.9.9",
  "sodiumoxide",
@@ -4114,7 +4084,7 @@ dependencies = [
  "zcash_address",
  "zcash_client_backend",
  "zcash_encoding",
- "zcash_note_encryption 0.4.0 (git+https://github.com/zingolabs/librustzcash?rev=fa67d9a645da55265ebea8cedbb77ff42317c726)",
+ "zcash_note_encryption",
  "zcash_primitives",
  "zcash_proofs",
  "zingo-memo",

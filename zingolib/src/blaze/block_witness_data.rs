@@ -271,11 +271,12 @@ impl BlockAndWitnessData {
             }
             let mut sapling_tree = incrementalmerkletree::frontier::CommitmentTree::<
                 zcash_primitives::sapling::Node,
+                32,
             >::read(
                 &hex::decode(closest_lower_verified_tree.sapling_tree).unwrap()[..],
             )
             .unwrap();
-            let mut orchard_tree = CommitmentTree::<MerkleHashOrchard>::read(
+            let mut orchard_tree = CommitmentTree::<MerkleHashOrchard, 32>::read(
                 &hex::decode(closest_lower_verified_tree.orchard_tree).unwrap()[..],
             )
             .expect("Invalid orchard tree!");
