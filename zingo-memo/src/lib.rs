@@ -1,7 +1,6 @@
 use std::io::{self, Read, Write};
 
-use zcash_address::unified::{Address, Container, Encoding, Receiver};
-use zcash_client_backend::address::UnifiedAddress;
+use zcash_address::unified::{self, Encoding, Receiver};
 use zcash_encoding::{CompactSize, Vector};
 
 /// A parsed memo. Currently there is only one version of this protocol,
@@ -11,14 +10,14 @@ use zcash_encoding::{CompactSize, Vector};
 #[non_exhaustive]
 #[derive(Debug)]
 pub enum ParsedMemo {
-    Version0 { uas: Vec<UnifiedAddress> },
+    Version0 { uas: Vec<unified::Address> },
 }
 
 /// Packs a list of UAs into a memo. The UA only memo is version 0 of the protocol
 /// Note that a UA's raw representation is 1 byte for length, +21 for a T-receiver,
 /// +44 for a Sapling receiver, and +44 for an Orchard receiver. This totals a maximum
 /// of 110 bytes per UA, and attempting to write more than 510 bytes will cause an error.
-pub fn create_wallet_internal_memo_version_0(uas: &[UnifiedAddress]) -> io::Result<[u8; 511]> {
+pub fn create_wallet_internal_memo_version_0(uas: &[unified::Address]) -> io::Result<[u8; 511]> {
     let mut uas_bytes_vec = Vec::new();
     CompactSize::write(&mut uas_bytes_vec, 0usize)?;
     Vector::write(&mut uas_bytes_vec, uas, |w, ua| {
@@ -55,12 +54,12 @@ pub fn parse_zingo_memo(memo: [u8; 511]) -> io::Result<ParsedMemo> {
 /// of receivers, followed by the UA's raw encoding as specified in
 /// <https://zips.z.cash/zip-0316#encoding-of-unified-addresses>
 pub fn write_unified_address_to_raw_encoding<W: Write>(
-    ua: &UnifiedAddress,
+    ua: &unified::Address,
     writer: W,
 ) -> io::Result<()> {
-    let mainnet_encoded_ua = ua.encode(&zcash_primitives::consensus::MAIN_NETWORK);
-    let (_mainnet, address) = Address::decode(&mainnet_encoded_ua).unwrap();
-    let receivers = address.items();
+    let mainnet_encoded_ua = ua.encode(&zcash_address::Network::Main);
+    let (_mainnet, address) = unified::Address::decode(&mainnet_encoded_ua).unwrap();
+    let receivers = unified::Container::items(&address);
     Vector::write(writer, &receivers, |mut w, receiver| {
         let (typecode, data): (u32, &[u8]) = match receiver {
             Receiver::Orchard(ref data) => (3, data),
@@ -78,7 +77,7 @@ pub fn write_unified_address_to_raw_encoding<W: Write>(
 /// A helper function to decode a UA from a CompactSize specifying the number of
 /// receivers, followed by the UA's raw encoding as specified in
 /// <https://zips.z.cash/zip-0316#encoding-of-unified-addresses>
-pub fn read_unified_address_from_raw_encoding<R: Read>(reader: R) -> io::Result<UnifiedAddress> {
+pub fn read_unified_address_from_raw_encoding<R: Read>(reader: R) -> io::Result<unified::Address> {
     let receivers = Vector::read(reader, |mut r| {
         let typecode: usize = CompactSize::read_t(&mut r)?;
         let addr_len: usize = CompactSize::read_t(&mut r)?;
@@ -86,9 +85,9 @@ pub fn read_unified_address_from_raw_encoding<R: Read>(reader: R) -> io::Result<
         r.read_exact(&mut receiver_bytes)?;
         decode_receiver(typecode, receiver_bytes)
     })?;
-    let address = Address::try_from_items(receivers)
+    let address = unified::Address::try_from_items(receivers)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-    UnifiedAddress::try_from(address).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+    unified::Address::try_from(address).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
 fn decode_receiver(typecode: usize, data: Vec<u8>) -> io::Result<Receiver> {
@@ -141,6 +140,8 @@ mod test_vectors;
 
 #[cfg(test)]
 mod tests {
+    use std::sync::mpsc::Receiver;
+
     use super::*;
     use crate::test_vectors::UA_TEST_VECTORS;
     use zcash_client_backend::address::RecipientAddress;
@@ -149,7 +150,7 @@ mod tests {
     #[test]
     fn round_trip_ser_deser() {
         for test_vector in UA_TEST_VECTORS {
-            let RecipientAddress::Unified(ua) =
+            let Receiver::Unified(ua) =
                 RecipientAddress::decode(&MAIN_NETWORK, test_vector.unified_addr).unwrap()
             else {
                 panic!("Couldn't decode test_vector UA")
