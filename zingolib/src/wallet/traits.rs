@@ -23,7 +23,7 @@ use orchard::{
 };
 use subtle::CtOption;
 use zcash_address::unified::{self, Receiver};
-use zcash_client_backend::{address::UnifiedAddress, encoding::encode_payment_address};
+use zcash_client_backend::encoding::encode_payment_address;
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::{
     BatchDomain, Domain, ShieldedOutput, COMPACT_NOTE_SIZE, ENC_CIPHERTEXT_SIZE,
@@ -748,7 +748,7 @@ where
     fn ua_from_contained_receiver<'a>(
         unified_spend_auth: &'a WalletCapability,
         receiver: &Self::Recipient,
-    ) -> Option<&'a UnifiedAddress>;
+    ) -> Option<&'a unified::Address>;
     fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, String>;
     fn wc_to_ivk(wc: &WalletCapability) -> Result<Self::IncomingViewingKey, String>;
     fn wc_to_ovk(wc: &WalletCapability) -> Result<Self::OutgoingViewingKey, String>;
@@ -792,7 +792,7 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
     fn ua_from_contained_receiver<'a>(
         unified_spend_auth: &'a WalletCapability,
         receiver: &Self::Recipient,
-    ) -> Option<&'a UnifiedAddress> {
+    ) -> Option<&'a unified::Address> {
         unified_spend_auth
             .addresses()
             .iter()
@@ -849,7 +849,7 @@ impl DomainWalletExt for OrchardDomain {
     fn ua_from_contained_receiver<'a>(
         unified_spend_capability: &'a WalletCapability,
         receiver: &Self::Recipient,
-    ) -> Option<&'a UnifiedAddress> {
+    ) -> Option<&'a unified::Address> {
         unified_spend_capability
             .addresses()
             .iter()
