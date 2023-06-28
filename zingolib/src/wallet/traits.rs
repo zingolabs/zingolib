@@ -14,6 +14,7 @@ use crate::compact_formats::{
     slice_to_array, CompactOrchardAction, CompactSaplingOutput, CompactTx, TreeState,
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use incrementalmerkletree::Hashable;
 use nonempty::NonEmpty;
 use orchard::{
     note_encryption::OrchardDomain,
@@ -31,7 +32,6 @@ use zcash_note_encryption::{
 use zcash_primitives::{
     consensus::{BlockHeight, NetworkUpgrade, Parameters},
     memo::{Memo, MemoBytes},
-    merkle_tree::{Hashable, IncrementalWitness},
     sapling::note_encryption::SaplingDomain,
     transaction::{
         components::{self, sapling::GrothProofBytes, Amount, OutputDescription, SpendDescription},

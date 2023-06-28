@@ -2,6 +2,9 @@ use crate::blaze::fixed_size_buffer::FixedSizeBuffer;
 use crate::compact_formats::CompactBlock;
 use crate::wallet::traits::ReceivedNoteAndMetadata;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use incrementalmerkletree::frontier::CommitmentTree;
+use incrementalmerkletree::witness::IncrementalWitness;
+use incrementalmerkletree::Hashable;
 use orchard::note_encryption::OrchardDomain;
 use orchard::tree::MerkleHashOrchard;
 use prost::Message;
@@ -11,13 +14,12 @@ use std::usize;
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
 use zcash_primitives::consensus::BlockHeight;
+use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::sapling::note_encryption::SaplingDomain;
 use zcash_primitives::{
     memo::Memo,
-    merkle_tree::{CommitmentTree, IncrementalWitness},
     transaction::{components::OutPoint, TxId},
 };
-use zcash_primitives::{memo::MemoBytes, merkle_tree::Hashable};
 use zingoconfig::ChainType;
 
 use super::keys::unified::WalletCapability;
@@ -108,7 +110,7 @@ impl BlockData {
 
         // We don't need this, but because of a quirk, the version is stored later, so we can't actually
         // detect the version here. So we write an empty tree and read it back here
-        let tree = CommitmentTree::<zcash_primitives::sapling::Node>::read(&mut reader)?;
+        let tree = zcash_primitives::sapling::CommitmentTree::read(&mut reader)?;
         let _tree = if tree.size() == 0 { None } else { Some(tree) };
 
         let version = reader.read_u64::<LittleEndian>()?;
@@ -148,7 +150,7 @@ impl BlockData {
 
 #[derive(Clone)]
 pub struct WitnessCache<Node: Hashable> {
-    pub(crate) witnesses: Vec<IncrementalWitness<Node>>,
+    pub(crate) witnesses: Vec<IncrementalWitness<Node, 32>>,
     pub top_height: u64,
 }
 
@@ -162,7 +164,7 @@ impl<Node: Hashable> std::fmt::Debug for WitnessCache<Node> {
 }
 
 impl<Node: Hashable> WitnessCache<Node> {
-    pub fn new(witnesses: Vec<IncrementalWitness<Node>>, top_height: u64) -> Self {
+    pub fn new(witnesses: Vec<IncrementalWitness<Node, 32>>, top_height: u64) -> Self {
         Self {
             witnesses,
             top_height,
@@ -188,20 +190,20 @@ impl<Node: Hashable> WitnessCache<Node> {
         self.witnesses.clear();
     }
 
-    pub fn get(&self, i: usize) -> Option<&IncrementalWitness<Node>> {
+    pub fn get(&self, i: usize) -> Option<&IncrementalWitness<Node, 32>> {
         self.witnesses.get(i)
     }
 
     #[cfg(test)]
-    pub fn get_from_last(&self, i: usize) -> Option<&IncrementalWitness<Node>> {
+    pub fn get_from_last(&self, i: usize) -> Option<&IncrementalWitness<Node, 32>> {
         self.witnesses.get(self.len() - i - 1)
     }
 
-    pub fn last(&self) -> Option<&IncrementalWitness<Node>> {
+    pub fn last(&self) -> Option<&IncrementalWitness<Node, 32>> {
         self.witnesses.last()
     }
 
-    pub(crate) fn into_fsb(self, fsb: &mut FixedSizeBuffer<IncrementalWitness<Node>>) {
+    pub(crate) fn into_fsb(self, fsb: &mut FixedSizeBuffer<IncrementalWitness<Node, 32>>) {
         self.witnesses.into_iter().for_each(|w| fsb.push(w));
     }
 
@@ -955,7 +957,7 @@ pub struct SpendableSaplingNote {
     pub nullifier: zcash_primitives::sapling::Nullifier,
     pub diversifier: zcash_primitives::sapling::Diversifier,
     pub note: zcash_primitives::sapling::Note,
-    pub witness: IncrementalWitness<zcash_primitives::sapling::Node>,
+    pub witness: IncrementalWitness<zcash_primitives::sapling::Node, 32>,
     pub extsk: Option<zcash_primitives::zip32::sapling::ExtendedSpendingKey>,
 }
 
@@ -964,7 +966,7 @@ pub struct SpendableOrchardNote {
     pub nullifier: orchard::note::Nullifier,
     pub diversifier: orchard::keys::Diversifier,
     pub note: orchard::note::Note,
-    pub witness: IncrementalWitness<MerkleHashOrchard>,
+    pub witness: IncrementalWitness<MerkleHashOrchard, 32>,
     pub spend_key: Option<orchard::keys::SpendingKey>,
 }
 

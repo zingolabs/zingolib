@@ -12,7 +12,6 @@ use zcash_note_encryption::Domain;
 use zcash_primitives::{
     consensus::BlockHeight,
     memo::Memo,
-    merkle_tree::IncrementalWitness,
     sapling::{note_encryption::SaplingDomain, PaymentAddress},
     transaction::{components::TxOut, TxId},
 };

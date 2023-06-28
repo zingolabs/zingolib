@@ -10,7 +10,7 @@ use std::str::FromStr;
 use tokio::runtime::Runtime;
 use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_client_backend::address::RecipientAddress;
-use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
+use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
 lazy_static! {
     static ref RT: Runtime = tokio::runtime::Runtime::new().unwrap();
@@ -811,7 +811,7 @@ impl Command for SendCommand {
                     return format!("Couldn't parse argument as array\n{}", self.help());
                 }
 
-                let fee = u64::from(DEFAULT_FEE);
+                let fee = u64::from(MINIMUM_FEE);
                 let maybe_send_args = json_args
                     .members()
                     .map(|j| {
@@ -1262,7 +1262,7 @@ impl Command for DefaultFeeCommand {
         }
 
         RT.block_on(async move {
-            let j = object! { "defaultfee" => u64::from(DEFAULT_FEE)};
+            let j = object! { "defaultfee" => u64::from(MINIMUM_FEE)};
             j.pretty(2)
         })
     }

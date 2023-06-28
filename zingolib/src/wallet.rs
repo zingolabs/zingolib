@@ -7,11 +7,11 @@ use crate::wallet::data::{SpendableSaplingNote, TransactionMetadata};
 use bip0039::Mnemonic;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::Future;
+use incrementalmerkletree::frontier::CommitmentTree;
 use json::JsonValue;
 use log::{error, info, warn};
 use orchard::keys::SpendingKey as OrchardSpendingKey;
 use orchard::note_encryption::OrchardDomain;
-use orchard::tree::MerkleHashOrchard;
 use orchard::Anchor;
 use rand::rngs::OsRng;
 use rand::Rng;
@@ -28,7 +28,6 @@ use zcash_client_backend::address;
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
 use zcash_primitives::memo::MemoBytes;
-use zcash_primitives::merkle_tree::CommitmentTree;
 use zcash_primitives::sapling::note_encryption::SaplingDomain;
 use zcash_primitives::sapling::SaplingIvk;
 use zcash_primitives::transaction;
@@ -41,7 +40,8 @@ use zcash_primitives::{
     sapling::prover::TxProver,
     transaction::{
         builder::Builder,
-        components::{amount::DEFAULT_FEE, Amount, OutPoint, TxOut},
+        components::{Amount, OutPoint, TxOut},
+        fees::zip317::MINIMUM_FEE,
     },
 };
 use zingo_memo::create_wallet_internal_memo_version_0;
@@ -456,10 +456,9 @@ impl LightWallet {
                     - self.transaction_context.config.reorg_buffer_offset as u64,
             )
             .await?;
-            let orchard_tree = CommitmentTree::<MerkleHashOrchard>::read(
-                hex::decode(trees.orchard_tree).unwrap().as_slice(),
-            )
-            .unwrap_or(CommitmentTree::empty());
+            let orchard_tree =
+                CommitmentTree::read(hex::decode(trees.orchard_tree).unwrap().as_slice())
+                    .unwrap_or(CommitmentTree::empty());
             Ok(Anchor::from(orchard_tree.root()))
         }
     }
@@ -999,7 +998,7 @@ impl LightWallet {
         // Select notes to cover the target value
         println!("{}: Selecting notes", now() - start_time);
 
-        let target_amount = (Amount::from_u64(total_value).unwrap() + DEFAULT_FEE).unwrap();
+        let target_amount = (Amount::from_u64(total_value).unwrap() + MINIMUM_FEE).unwrap();
         let latest_wallet_height = match self.get_latest_wallet_height().await {
             Some(h) => BlockHeight::from_u32(h),
             None => return Err("No blocks in wallet to target, please sync first".to_string()),
@@ -1030,10 +1029,10 @@ impl LightWallet {
         let orchard_anchor = self
             .get_orchard_anchor(&orchard_notes, latest_wallet_height)
             .await?;
-        let mut builder = Builder::with_orchard_anchor(
+        let mut builder = Builder::new(
             self.transaction_context.config.chain,
             submission_height,
-            orchard_anchor,
+            Some(orchard_anchor),
         );
         println!(
             "{}: Adding {} sapling notes, {} orchard notes, and {} utxos",
@@ -1094,10 +1093,7 @@ impl LightWallet {
             if let Err(e) = builder.add_orchard_spend::<transaction::fees::fixed::FeeRule>(
                 selected.spend_key.unwrap(),
                 selected.note,
-                orchard::tree::MerklePath::from((
-                    incrementalmerkletree::Position::from(path.position as usize),
-                    path.auth_path.iter().map(|(node, _)| *node).collect(),
-                )),
+                orchard::tree::MerklePath::from(path),
             ) {
                 let e = format!("Error adding note: {:?}", e);
                 error!("{}", e);
@@ -1645,8 +1641,8 @@ fn decode_orchard_spending_key(
 
 #[cfg(test)]
 mod test {
+    use incrementalmerkletree::frontier::CommitmentTree;
     use orchard::tree::MerkleHashOrchard;
-    use zcash_primitives::merkle_tree::CommitmentTree;
 
     #[test]
     fn anchor_from_tree_works() {

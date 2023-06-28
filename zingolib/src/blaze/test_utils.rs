@@ -1,11 +1,11 @@
 use crate::compact_formats::{CompactBlock, CompactSaplingOutput, CompactTx};
+use incrementalmerkletree::{frontier::CommitmentTree, witness::IncrementalWitness, Hashable};
 use orchard::tree::MerkleHashOrchard;
 use prost::Message;
 use rand::{rngs::OsRng, RngCore};
 
 use zcash_primitives::{
     block::BlockHash,
-    merkle_tree::{CommitmentTree, Hashable, IncrementalWitness},
     sapling::{self, value::NoteValue, Note, Rseed},
     transaction::components::Amount,
     zip32::ExtendedSpendingKey,
@@ -16,8 +16,8 @@ use zcash_primitives::{
 pub fn trees_from_cblocks(
     compactblock_list: &Vec<crate::blaze::test_utils::FakeCompactBlock>,
 ) -> (
-    Vec<CommitmentTree<sapling::Node>>,
-    Vec<CommitmentTree<MerkleHashOrchard>>,
+    Vec<sapling::CommitmentTree>,
+    Vec<CommitmentTree<MerkleHashOrchard, 32>>,
 ) {
     let mut sapling_trees = Vec::new();
     let mut orchard_trees = Vec::new();
@@ -49,7 +49,7 @@ pub fn random_u8_32() -> [u8; 32] {
     b
 }
 
-pub fn incw_to_string<Node: Hashable>(inc_witness: &IncrementalWitness<Node>) -> String {
+pub fn incw_to_string<Node: Hashable>(inc_witness: &IncrementalWitness<Node, 32>) -> String {
     let mut b1 = vec![];
     inc_witness.write(&mut b1).unwrap();
     hex::encode(b1)

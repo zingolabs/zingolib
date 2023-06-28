@@ -7,7 +7,9 @@ use crate::{
         transactions::TransactionMetadataSet,
     },
 };
-use incrementalmerkletree::{frontier, frontier::CommitmentTree, witness::IncrementalWitness};
+use incrementalmerkletree::{
+    frontier, frontier::CommitmentTree, witness::IncrementalWitness, Hashable,
+};
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
 use zcash_note_encryption::Domain;
 use zingoconfig::{ChainType, ZingoConfig, MAX_REORG};
@@ -542,7 +544,7 @@ impl BlockAndWitnessData {
         transaction_num: usize,
         output_num: usize,
         activation_height: u64,
-    ) -> Result<IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node>, String>
+    ) -> Result<IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node, 32>, String>
     where
         D: DomainWalletExt,
         D::Note: PartialEq + Clone,
@@ -615,7 +617,7 @@ impl BlockAndWitnessData {
         height: BlockHeight,
         transaction_num: usize,
         output_num: usize,
-    ) -> Result<IncrementalWitness<zcash_primitives::sapling::Node>, String> {
+    ) -> Result<IncrementalWitness<zcash_primitives::sapling::Node, 32>, String> {
         self.get_note_witness::<SaplingDomain<zingoconfig::ChainType>>(
             uri,
             height,
@@ -633,7 +635,7 @@ impl BlockAndWitnessData {
         height: BlockHeight,
         transaction_num: usize,
         action_num: usize,
-    ) -> Result<IncrementalWitness<MerkleHashOrchard>, String> {
+    ) -> Result<IncrementalWitness<MerkleHashOrchard, 32>, String> {
         self.get_note_witness::<OrchardDomain>(
             uri,
             height,
@@ -817,8 +819,9 @@ fn is_orchard_tree_verified(determined_orchard_tree: String, unverified_tree: Tr
 pub struct CommitmentTreesForBlock {
     pub block_height: u64,
     pub block_hash: String,
-    pub sapling_tree: frontier::CommitmentTree<zcash_primitives::sapling::Node>,
-    pub orchard_tree: frontier::CommitmentTree<MerkleHashOrchard>,
+    // Type alias, sapling equivilant to the type manually written out for orchard
+    pub sapling_tree: zcash_primitives::sapling::CommitmentTree,
+    pub orchard_tree: frontier::CommitmentTree<MerkleHashOrchard, 32>,
 }
 
 // The following four allow(unused) functions are currently only called in test code
@@ -859,15 +862,15 @@ impl CommitmentTreesForBlock {
 }
 
 #[allow(unused)]
-pub fn tree_to_string<Node: Hashable>(tree: &CommitmentTree<Node>) -> String {
+pub fn tree_to_string<Node: Hashable>(tree: &CommitmentTree<Node, 32>) -> String {
     let mut b1 = vec![];
     tree.write(&mut b1).unwrap();
     hex::encode(b1)
 }
 
 pub fn update_trees_with_compact_transaction(
-    sapling_tree: &mut CommitmentTree<zcash_primitives::sapling::Node>,
-    orchard_tree: &mut CommitmentTree<MerkleHashOrchard>,
+    sapling_tree: &mut CommitmentTree<zcash_primitives::sapling::Node, 32>,
+    orchard_tree: &mut CommitmentTree<MerkleHashOrchard, 32>,
     compact_transaction: &CompactTx,
 ) {
     update_tree_with_compact_transaction::<SaplingDomain<ChainType>>(
@@ -878,7 +881,7 @@ pub fn update_trees_with_compact_transaction(
 }
 
 pub fn update_tree_with_compact_transaction<D: DomainWalletExt>(
-    tree: &mut CommitmentTree<Node<D>>,
+    tree: &mut CommitmentTree<Node<D>, 32>,
     compact_transaction: &CompactTx,
 ) where
     <D as Domain>::Recipient: crate::wallet::traits::Recipient,
@@ -897,7 +900,6 @@ mod test {
     use crate::{blaze::test_utils::FakeCompactBlock, wallet::data::BlockData};
     use orchard::tree::MerkleHashOrchard;
     use zcash_primitives::block::BlockHash;
-    use zcash_primitives::merkle_tree::CommitmentTree;
     use zcash_primitives::sapling;
     use zingoconfig::{ChainType, ZingoConfig};
 
