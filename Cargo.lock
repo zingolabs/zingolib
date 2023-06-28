@@ -1311,6 +1311,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2eb91780c91bfc79769006a55c49127b83e1c1a6cf2b3b149ce3f247cbe342f0"
 dependencies = [
  "either",
+ "proptest",
 ]
 
 [[package]]
