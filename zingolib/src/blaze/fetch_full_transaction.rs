@@ -28,7 +28,8 @@ use tokio::{
     },
     task::JoinHandle,
 };
-use zcash_client_backend::address::{RecipientAddress, UnifiedAddress};
+use zcash_address::unified;
+use zcash_client_backend::address::RecipientAddress;
 use zcash_note_encryption::try_output_recovery_with_ovk;
 
 use zcash_primitives::{
@@ -557,7 +558,7 @@ impl TransactionContext {
                                             unified_address.orchard().cloned().map(
                                                 |orchard_receiver| {
                                                     RecipientAddress::from(
-                                                        UnifiedAddress::from_receivers(
+                                                        unified::Address::from_receivers(
                                                             Some(orchard_receiver),
                                                             None,
                                                             None,
