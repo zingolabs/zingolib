@@ -32,7 +32,7 @@ use zcash_note_encryption::Domain;
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::merkle_tree::read_commitment_tree;
 use zcash_primitives::sapling::note_encryption::SaplingDomain;
-use zcash_primitives::sapling::{Node, SaplingIvk};
+use zcash_primitives::sapling::{Node, SaplingIvk, SAPLING_COMMITMENT_TREE_DEPTH};
 use zcash_primitives::transaction;
 use zcash_primitives::transaction::builder::Progress;
 use zcash_primitives::transaction::fees::fixed::FeeRule as FixedFeeRule;
@@ -49,7 +49,7 @@ use zcash_primitives::{
 };
 use zingo_memo::create_wallet_internal_memo_version_0;
 
-use self::data::SpendableOrchardNote;
+use self::data::{SpendableOrchardNote, ZingoShardStore};
 use self::keys::unified::{Capability, ReceiverSelection, WalletCapability};
 use self::traits::Recipient;
 use self::traits::{DomainWalletExt, ReceivedNoteAndMetadata, SpendableNote};
@@ -627,6 +627,15 @@ impl LightWallet {
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(WalletZecPriceInfo::default())),
             transaction_context,
+            witness_tree_orchard: ShardTree::empty(
+                ZingoShardStore::new(),
+                SAPLING_COMMITMENT_TREE_DEPTH,
+            ),
+            witness_tree_orchard: ShardTree::empty(
+                ZingoShardStore::new(),
+                // For some reason, the constant orchard::constants::MERKLE_TREE_DEPTH is pub(crate)
+                32,
+            ),
         })
     }
 
