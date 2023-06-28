@@ -140,18 +140,15 @@ mod test_vectors;
 
 #[cfg(test)]
 mod tests {
-    use std::sync::mpsc::Receiver;
-
     use super::*;
     use crate::test_vectors::UA_TEST_VECTORS;
-    use zcash_client_backend::address::RecipientAddress;
     use zcash_primitives::consensus::MAIN_NETWORK;
 
     #[test]
     fn round_trip_ser_deser() {
         for test_vector in UA_TEST_VECTORS {
-            let Receiver::Unified(ua) =
-                RecipientAddress::decode(&MAIN_NETWORK, test_vector.unified_addr).unwrap()
+            let ua =
+                unified::Address::decode(test_vector.unified_addr).unwrap()
             else {
                 panic!("Couldn't decode test_vector UA")
             };
