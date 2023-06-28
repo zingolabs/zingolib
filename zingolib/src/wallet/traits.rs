@@ -14,7 +14,7 @@ use crate::compact_formats::{
     slice_to_array, CompactOrchardAction, CompactSaplingOutput, CompactTx, TreeState,
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use incrementalmerkletree::Hashable;
+use incrementalmerkletree::{witness::IncrementalWitness, Hashable, Level};
 use nonempty::NonEmpty;
 use orchard::{
     note_encryption::OrchardDomain,
@@ -24,7 +24,7 @@ use orchard::{
 };
 use subtle::CtOption;
 use zcash_address::unified::{self, Receiver};
-use zcash_client_backend::encoding::encode_payment_address;
+use zcash_client_backend::{address::UnifiedAddress, encoding::encode_payment_address};
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::{
     BatchDomain, Domain, ShieldedOutput, COMPACT_NOTE_SIZE, ENC_CIPHERTEXT_SIZE,
@@ -32,6 +32,7 @@ use zcash_note_encryption::{
 use zcash_primitives::{
     consensus::{BlockHeight, NetworkUpgrade, Parameters},
     memo::{Memo, MemoBytes},
+    merkle_tree::HashSer,
     sapling::note_encryption::SaplingDomain,
     transaction::{
         components::{self, sapling::GrothProofBytes, Amount, OutputDescription, SpendDescription},
@@ -165,10 +166,13 @@ where
 
 impl FromCommitment for zcash_primitives::sapling::Node {
     fn from_commitment(from: &[u8; 32]) -> CtOption<Self> {
-        let maybe_node = Self::read(from.as_slice());
+        let maybe_node =
+            <zcash_primitives::sapling::Node as zcash_primitives::merkle_tree::HashSer>::read(
+                from.as_slice(),
+            );
         match maybe_node {
             Ok(node) => CtOption::new(node, subtle::Choice::from(1)),
-            Err(_) => CtOption::new(Self::empty_root(0), subtle::Choice::from(0)),
+            Err(_) => CtOption::new(Self::empty_root(Level::from(0)), subtle::Choice::from(0)),
         }
     }
 }
@@ -403,7 +407,7 @@ pub trait ReceivedNoteAndMetadata: Sized {
     type Note: PartialEq
         + for<'a> ReadableWriteable<(Self::Diversifier, &'a WalletCapability)>
         + Clone;
-    type Node: Hashable + FromCommitment + Send;
+    type Node: Hashable + HashSer + FromCommitment + Send + Clone;
     type Nullifier: Nullifier;
 
     fn get_note_witnesses(
@@ -748,7 +752,7 @@ where
     fn ua_from_contained_receiver<'a>(
         unified_spend_auth: &'a WalletCapability,
         receiver: &Self::Recipient,
-    ) -> Option<&'a unified::Address>;
+    ) -> Option<&'a UnifiedAddress>;
     fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, String>;
     fn wc_to_ivk(wc: &WalletCapability) -> Result<Self::IncomingViewingKey, String>;
     fn wc_to_ovk(wc: &WalletCapability) -> Result<Self::OutgoingViewingKey, String>;
@@ -792,7 +796,7 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
     fn ua_from_contained_receiver<'a>(
         unified_spend_auth: &'a WalletCapability,
         receiver: &Self::Recipient,
-    ) -> Option<&'a unified::Address> {
+    ) -> Option<&'a UnifiedAddress> {
         unified_spend_auth
             .addresses()
             .iter()
@@ -849,7 +853,7 @@ impl DomainWalletExt for OrchardDomain {
     fn ua_from_contained_receiver<'a>(
         unified_spend_capability: &'a WalletCapability,
         receiver: &Self::Recipient,
-    ) -> Option<&'a unified::Address> {
+    ) -> Option<&'a UnifiedAddress> {
         unified_spend_capability
             .addresses()
             .iter()
@@ -947,14 +951,14 @@ where
         nullifier: <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier,
         diversifier: <D::WalletNote as ReceivedNoteAndMetadata>::Diversifier,
         note: D::Note,
-        witness: IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node>,
+        witness: IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node, 32>,
         sk: Option<&D::SpendingKey>,
     ) -> Self;
     fn transaction_id(&self) -> TxId;
     fn nullifier(&self) -> <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier;
     fn diversifier(&self) -> <D::WalletNote as ReceivedNoteAndMetadata>::Diversifier;
     fn note(&self) -> &D::Note;
-    fn witness(&self) -> &IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node>;
+    fn witness(&self) -> &IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node, 32>;
     fn spend_key(&self) -> Option<&D::SpendingKey>;
 }
 
@@ -964,7 +968,7 @@ impl SpendableNote<SaplingDomain<ChainType>> for SpendableSaplingNote {
         nullifier: zcash_primitives::sapling::Nullifier,
         diversifier: zcash_primitives::sapling::Diversifier,
         note: zcash_primitives::sapling::Note,
-        witness: IncrementalWitness<zcash_primitives::sapling::Node>,
+        witness: IncrementalWitness<zcash_primitives::sapling::Node, 32>,
         extsk: Option<&zip32::sapling::ExtendedSpendingKey>,
     ) -> Self {
         SpendableSaplingNote {
@@ -993,7 +997,7 @@ impl SpendableNote<SaplingDomain<ChainType>> for SpendableSaplingNote {
         &self.note
     }
 
-    fn witness(&self) -> &IncrementalWitness<zcash_primitives::sapling::Node> {
+    fn witness(&self) -> &IncrementalWitness<zcash_primitives::sapling::Node, 32> {
         &self.witness
     }
 
@@ -1008,7 +1012,7 @@ impl SpendableNote<OrchardDomain> for SpendableOrchardNote {
         nullifier: orchard::note::Nullifier,
         diversifier: orchard::keys::Diversifier,
         note: orchard::note::Note,
-        witness: IncrementalWitness<MerkleHashOrchard>,
+        witness: IncrementalWitness<MerkleHashOrchard, 32>,
         sk: Option<&orchard::keys::SpendingKey>,
     ) -> Self {
         SpendableOrchardNote {
@@ -1036,7 +1040,7 @@ impl SpendableNote<OrchardDomain> for SpendableOrchardNote {
         &self.note
     }
 
-    fn witness(&self) -> &IncrementalWitness<MerkleHashOrchard> {
+    fn witness(&self) -> &IncrementalWitness<MerkleHashOrchard, 32> {
         &self.witness
     }
 
@@ -1237,7 +1241,8 @@ where
         let note =
             <T::Note as ReadableWriteable<_>>::read(&mut reader, (diversifier, wallet_capability))?;
 
-        let witnesses_vec = Vector::read(&mut reader, |r| IncrementalWitness::<T::Node>::read(r))?;
+        let witnesses_vec =
+            Vector::read(&mut reader, |r| IncrementalWitness::<T::Node, 32>::read(r))?;
         let top_height = reader.read_u64::<LittleEndian>()?;
         let witnesses = WitnessCache::new(witnesses_vec, top_height);
 

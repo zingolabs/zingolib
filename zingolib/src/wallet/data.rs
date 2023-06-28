@@ -15,6 +15,7 @@ use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::memo::MemoBytes;
+use zcash_primitives::merkle_tree::{read_commitment_tree, write_commitment_tree};
 use zcash_primitives::sapling::note_encryption::SaplingDomain;
 use zcash_primitives::{
     memo::Memo,
@@ -110,7 +111,7 @@ impl BlockData {
 
         // We don't need this, but because of a quirk, the version is stored later, so we can't actually
         // detect the version here. So we write an empty tree and read it back here
-        let tree = zcash_primitives::sapling::CommitmentTree::read(&mut reader)?;
+        let tree: zcash_primitives::sapling::CommitmentTree = read_commitment_tree(&mut reader)?;
         let _tree = if tree.size() == 0 { None } else { Some(tree) };
 
         let version = reader.read_u64::<LittleEndian>()?;
@@ -138,7 +139,10 @@ impl BlockData {
             .collect();
         writer.write_all(&hash_bytes[..])?;
 
-        CommitmentTree::<zcash_primitives::sapling::Node>::empty().write(&mut writer)?;
+        write_commitment_tree(
+            &CommitmentTree::<zcash_primitives::sapling::Node, 32>::empty(),
+            &mut writer,
+        )?;
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
         // Write the ecb as well
@@ -1048,11 +1052,13 @@ impl WalletZecPriceInfo {
 fn read_write_empty_sapling_tree() {
     let mut buffer = Vec::new();
 
-    CommitmentTree::<zcash_primitives::sapling::Node>::empty()
-        .write(&mut buffer)
-        .unwrap();
+    write_commitment_tree(
+        &CommitmentTree::<zcash_primitives::sapling::Node, 32>::empty(),
+        &mut buffer,
+    )
+    .unwrap();
     assert_eq!(
-        CommitmentTree::<zcash_primitives::sapling::Node>::empty(),
-        CommitmentTree::<zcash_primitives::sapling::Node>::read(&mut buffer.as_slice()).unwrap()
+        CommitmentTree::<zcash_primitives::sapling::Node, 32>::empty(),
+        read_commitment_tree(&mut buffer.as_slice()).unwrap()
     )
 }

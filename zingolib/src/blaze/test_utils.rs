@@ -6,6 +6,7 @@ use rand::{rngs::OsRng, RngCore};
 
 use zcash_primitives::{
     block::BlockHash,
+    merkle_tree::{write_incremental_witness, HashSer},
     sapling::{self, value::NoteValue, Note, Rseed},
     transaction::components::Amount,
     zip32::ExtendedSpendingKey,
@@ -49,13 +50,15 @@ pub fn random_u8_32() -> [u8; 32] {
     b
 }
 
-pub fn incw_to_string<Node: Hashable>(inc_witness: &IncrementalWitness<Node, 32>) -> String {
+pub fn incw_to_string<Node: Hashable + HashSer>(
+    inc_witness: &IncrementalWitness<Node, 32>,
+) -> String {
     let mut b1 = vec![];
-    inc_witness.write(&mut b1).unwrap();
+    write_incremental_witness(inc_witness, &mut b1).unwrap();
     hex::encode(b1)
 }
 
-pub fn node_to_string<Node: Hashable>(n: &Node) -> String {
+pub fn node_to_string<Node: Hashable + HashSer>(n: &Node) -> String {
     let mut b1 = vec![];
     n.write(&mut b1).unwrap();
     hex::encode(b1)

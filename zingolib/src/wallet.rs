@@ -12,6 +12,7 @@ use json::JsonValue;
 use log::{error, info, warn};
 use orchard::keys::SpendingKey as OrchardSpendingKey;
 use orchard::note_encryption::OrchardDomain;
+use orchard::tree::MerkleHashOrchard;
 use orchard::Anchor;
 use rand::rngs::OsRng;
 use rand::Rng;
@@ -24,11 +25,11 @@ use std::{
     time::SystemTime,
 };
 use tokio::sync::RwLock;
-use zcash_address::unified::Encoding;
 use zcash_client_backend::address;
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
 use zcash_primitives::memo::MemoBytes;
+use zcash_primitives::merkle_tree::read_commitment_tree;
 use zcash_primitives::sapling::note_encryption::SaplingDomain;
 use zcash_primitives::sapling::SaplingIvk;
 use zcash_primitives::transaction;
@@ -457,8 +458,8 @@ impl LightWallet {
                     - self.transaction_context.config.reorg_buffer_offset as u64,
             )
             .await?;
-            let orchard_tree =
-                CommitmentTree::read(hex::decode(trees.orchard_tree).unwrap().as_slice())
+            let orchard_tree: CommitmentTree<MerkleHashOrchard, 32> =
+                read_commitment_tree(hex::decode(trees.orchard_tree).unwrap().as_slice())
                     .unwrap_or(CommitmentTree::empty());
             Ok(Anchor::from(orchard_tree.root()))
         }
@@ -638,7 +639,7 @@ impl LightWallet {
             .diversified_address(*note.diversifier())
             .and_then(|address| {
                 D::ua_from_contained_receiver(wallet_capability, &address)
-                    .map(|ua| ua.encode(&network.to_zcash_address_network()))
+                    .map(|ua| ua.encode(network))
             })
             .unwrap_or("Diversifier not in wallet. Perhaps you restored from seed and didn't restore addresses".to_string())
     }
@@ -1228,16 +1229,18 @@ impl LightWallet {
         println!("{}: Building transaction", now() - start_time);
 
         builder.with_progress_notifier(transmitter);
-        let (transaction, _) =
-            match builder.build(&prover, &transaction::fees::fixed::FeeRule::standard()) {
-                Ok(res) => res,
-                Err(e) => {
-                    let e = format!("Error creating transaction: {:?}", e);
-                    error!("{}", e);
-                    self.send_progress.write().await.is_send_in_progress = false;
-                    return Err(e);
-                }
-            };
+        let (transaction, _) = match builder.build(
+            &prover,
+            &transaction::fees::fixed::FeeRule::non_standard(MINIMUM_FEE),
+        ) {
+            Ok(res) => res,
+            Err(e) => {
+                let e = format!("Error creating transaction: {:?}", e);
+                error!("{}", e);
+                self.send_progress.write().await.is_send_in_progress = false;
+                return Err(e);
+            }
+        };
 
         // Wait for all the progress to be updated
         progress_handle.await.unwrap();
