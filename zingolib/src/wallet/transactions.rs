@@ -828,7 +828,7 @@ impl TransactionMetadataSet {
         let spend_nullifier = D::get_nullifier_from_note_fvk_and_witness_position(
             &note,
             fvk,
-            witness.position() as u64,
+            u64::from(witness.position()),
         );
         let witnesses = if have_spending_key {
             WitnessCache::new(vec![witness], u64::from(height))
