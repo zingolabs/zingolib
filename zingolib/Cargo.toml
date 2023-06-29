@@ -53,7 +53,7 @@ group = "0.13"
 rust-embed = { version = "6.3.0", features = ["debug-embed"] }
 orchard = { workspace = true }
 subtle = "2.4.1"
-incrementalmerkletree = { version = "0.4", features = ["test-dependencies"] }
+incrementalmerkletree = { workspace = true }
 zcash_address = { workspace = true }
 zcash_client_backend = { workspace = true }
 zcash_encoding = { workspace = true }

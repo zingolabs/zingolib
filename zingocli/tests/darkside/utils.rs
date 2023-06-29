@@ -11,7 +11,7 @@ use zcash_primitives::{
     merkle_tree::CommitmentTree,
     sapling::{note_encryption::SaplingDomain, Node},
 };
-use zingo_cli::regtest::{get_regtest_dir, launch_lightwalletd};
+use zingo_testutils::regtest::{get_regtest_dir, launch_lightwalletd};
 use zingolib::wallet::traits::DomainWalletExt;
 
 use super::{

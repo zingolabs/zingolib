@@ -18,6 +18,7 @@ orchard = "0.5.0"
 tonic-build = "0.7.0"
 tempdir = "0.3"
 portpicker = "0.1"
+incrementalmerkletree = { version = "0.4", features = ["test-dependencies"] }
 
 [profile.release]
 debug = false
