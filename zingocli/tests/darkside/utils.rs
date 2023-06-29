@@ -6,6 +6,7 @@ use std::{
 
 use http::Uri;
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
+use tempdir;
 use zcash_primitives::{
     merkle_tree::CommitmentTree,
     sapling::{note_encryption::SaplingDomain, Node},

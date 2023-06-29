@@ -16,6 +16,8 @@ zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", features
 zcash_proofs = { git = "https://github.com/zingolabs/librustzcash", features = ["multicore"], rev = "fa67d9a645da55265ebea8cedbb77ff42317c726"  }
 orchard = "0.5.0"
 tonic-build = "0.7.0"
+tempdir = "0.3"
+portpicker = "0.1"
 
 [profile.release]
 debug = false
