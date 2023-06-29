@@ -29,7 +29,6 @@ portpicker = { workspace = true}
 json = "0.12.4"
 
 [dev-dependencies]
-tempdir = { workspace = true }
 zcash_primitives = { workspace = true }
 tempdir = { workspace = true }
 portpicker = { workspace = true }
