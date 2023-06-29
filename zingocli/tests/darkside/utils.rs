@@ -7,11 +7,13 @@ use std::{
 use http::Uri;
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
 use tempdir;
-use zcash_primitives::{
-    merkle_tree::CommitmentTree,
-    sapling::{note_encryption::SaplingDomain, Node},
+use zcash_primitives::merkle_tree::read_commitment_tree;
+use zcash_primitives::sapling::{note_encryption::SaplingDomain, Node};
+use zingo_testutils::{
+    self,
+    incrementalmerkletree::frontier::CommitmentTree,
+    regtest::{get_regtest_dir, launch_lightwalletd},
 };
-use zingo_testutils::regtest::{get_regtest_dir, launch_lightwalletd};
 use zingolib::wallet::traits::DomainWalletExt;
 
 use super::{
@@ -80,13 +82,13 @@ pub(crate) async fn update_tree_states_for_transaction(
     let trees = zingolib::grpc_connector::GrpcConnector::get_trees(server_id.clone(), height - 1)
         .await
         .unwrap();
-    let mut sapling_tree = CommitmentTree::<zcash_primitives::sapling::Node>::read(
+    let mut sapling_tree: zcash_primitives::sapling::CommitmentTree = read_commitment_tree(
         hex::decode(SaplingDomain::get_tree(&trees))
             .unwrap()
             .as_slice(),
     )
     .unwrap();
-    let mut orchard_tree = CommitmentTree::<MerkleHashOrchard>::read(
+    let mut orchard_tree: CommitmentTree<MerkleHashOrchard, 32> = read_commitment_tree(
         hex::decode(OrchardDomain::get_tree(&trees))
             .unwrap()
             .as_slice(),
@@ -114,9 +116,11 @@ pub(crate) async fn update_tree_states_for_transaction(
             .unwrap()
     }
     let mut sapling_tree_bytes = vec![];
-    sapling_tree.write(&mut sapling_tree_bytes).unwrap();
+    zcash_primitives::merkle_tree::write_commitment_tree(&sapling_tree, &mut sapling_tree_bytes)
+        .unwrap();
     let mut orchard_tree_bytes = vec![];
-    orchard_tree.write(&mut orchard_tree_bytes).unwrap();
+    zcash_primitives::merkle_tree::write_commitment_tree(&orchard_tree, &mut orchard_tree_bytes)
+        .unwrap();
     let new_tree_state = TreeState {
         height,
         sapling_tree: hex::encode(sapling_tree_bytes),

@@ -4006,6 +4006,7 @@ name = "zingo-testutils"
 version = "0.1.0"
 dependencies = [
  "http",
+ "incrementalmerkletree",
  "json",
  "log",
  "portpicker",

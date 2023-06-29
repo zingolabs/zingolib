@@ -1,4 +1,5 @@
 pub mod data;
+pub use incrementalmerkletree;
 pub mod regtest;
 use std::fs::OpenOptions;
 use std::io::Read;
