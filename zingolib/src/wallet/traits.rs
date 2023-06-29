@@ -32,7 +32,7 @@ use zcash_note_encryption::{
 use zcash_primitives::{
     consensus::{BlockHeight, NetworkUpgrade, Parameters},
     memo::{Memo, MemoBytes},
-    merkle_tree::HashSer,
+    merkle_tree::{read_incremental_witness, write_incremental_witness, HashSer},
     sapling::note_encryption::SaplingDomain,
     transaction::{
         components::{self, sapling::GrothProofBytes, Amount, OutputDescription, SpendDescription},
@@ -1241,8 +1241,7 @@ where
         let note =
             <T::Note as ReadableWriteable<_>>::read(&mut reader, (diversifier, wallet_capability))?;
 
-        let witnesses_vec =
-            Vector::read(&mut reader, |r| IncrementalWitness::<T::Node, 32>::read(r))?;
+        let witnesses_vec = Vector::read(&mut reader, |r| read_incremental_witness(r))?;
         let top_height = reader.read_u64::<LittleEndian>()?;
         let witnesses = WitnessCache::new(witnesses_vec, top_height);
 
@@ -1314,7 +1313,7 @@ where
 
         self.note().write(&mut writer)?;
         Vector::write(&mut writer, &self.witnesses().witnesses, |wr, wi| {
-            wi.write(wr)
+            write_incremental_witness(wi, wr)
         })?;
         writer.write_u64::<LittleEndian>(self.witnesses().top_height)?;
 

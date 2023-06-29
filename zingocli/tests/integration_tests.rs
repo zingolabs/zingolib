@@ -15,6 +15,7 @@ use zcash_address::unified::Ufvk;
 use zcash_client_backend::encoding::encode_payment_address;
 use zcash_primitives::{
     consensus::Parameters,
+    merkle_tree::write_incremental_witness,
     transaction::{components::amount::DEFAULT_FEE, TxId},
 };
 use zingo_testutils::regtest::get_cargo_manifest_dir_parent;
@@ -2345,18 +2346,10 @@ async fn aborted_resync() {
     assert_eq!(witness_before.len(), witness_after.len());
     for i in 0..witness_before.len() {
         let mut before_bytes = vec![];
-        witness_before
-            .get(i)
-            .unwrap()
-            .write(&mut before_bytes)
-            .unwrap();
+        write_incremental_witness(witness_before.get(i).unwrap(), &mut before_bytes).unwrap();
 
         let mut after_bytes = vec![];
-        witness_after
-            .get(i)
-            .unwrap()
-            .write(&mut after_bytes)
-            .unwrap();
+        write_incremental_witness(witness_after.get(i).unwrap(), &mut after_bytes).unwrap();
 
         assert_eq!(hex::encode(before_bytes), hex::encode(after_bytes));
     }

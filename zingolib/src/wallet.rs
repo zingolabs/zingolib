@@ -1681,7 +1681,7 @@ mod test {
                 0x3f, 0x53, 0xa1, 0x21,
             ],
         ];
-        let mut orchard_tree = CommitmentTree::empty();
+        let mut orchard_tree: CommitmentTree<MerkleHashOrchard, 32> = CommitmentTree::empty();
         for commitment in commitments {
             orchard_tree
                 .append(MerkleHashOrchard::from_bytes(&commitment).unwrap())
