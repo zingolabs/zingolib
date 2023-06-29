@@ -1054,13 +1054,20 @@ pub(super) struct ZingoShardStore<Node: Hashable> {
     node: std::marker::PhantomData<Node>,
 }
 
+impl<Node: Hashable> ZingoShardStore<Node> {
+    pub fn new() -> Self {
+        Self {
+            node: std::marker::PhantomData,
+        }
+    }
+}
+
 impl<Node: Hashable> ShardStore for ZingoShardStore<Node> {
     type H = Node;
 
     type CheckpointId = BlockHeight;
 
-    // Probably not in the final impl
-    type Error = Infallible;
+    type Error = ZingoShardStoreError;
 
     fn get_shard(
         &self,
@@ -1143,6 +1150,12 @@ impl<Node: Hashable> ShardStore for ZingoShardStore<Node> {
     ) -> Result<(), Self::Error> {
         todo!()
     }
+}
+
+#[derive(derive_more::From)]
+pub(super) enum ZingoShardStoreError {
+    InsertionError(shardtree::InsertionError),
+    QueryError(shardtree::QueryError),
 }
 
 #[test]
