@@ -19,7 +19,7 @@ use crate::{
         message::Message,
         now,
         traits::{DomainWalletExt, ReceivedNoteAndMetadata, Recipient},
-        LightWallet, Pool, WalletBase,
+        LightWallet, Pool, WalletBase, WalletKind,
     },
 };
 use futures::future::join_all;
@@ -1162,12 +1162,9 @@ impl LightClient {
         *self.interrupt_sync.read().await
     }
 
-    pub async fn get_wallet_kind(&self) -> Result<JsonValue, &str> {
+    pub async fn get_wallet_kind(&self) -> Result<WalletKind, &str> {
         match self.wallet.mnemonic() {
-            Some(m) => Ok(object! {
-                "seed"     => m.to_string(),
-                "birthday" => self.wallet.get_birthday().await
-            }),
+            Some(_m) => Ok(WalletKind::SpendingKey),
             None => Err("This wallet is watch-only."),
         }
     }

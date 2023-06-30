@@ -197,6 +197,11 @@ pub enum WalletBase {
     Ufvk(String),
 }
 
+pub enum WalletKind {
+    SpendingKey,
+    ViewingKey,
+}
+
 pub struct LightWallet {
     // The block at which this wallet was born. Rescans
     // will start from here.
