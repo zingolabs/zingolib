@@ -77,6 +77,16 @@ impl WalletStatus {
     }
 }
 
+pub struct SyncHistory {
+    pub total_orchard_outputs_synced: u32,
+    pub total_sapling_outputs_synced: u32,
+}
+impl SyncHistory {
+    fn update_totals(&mut self, new_orchard_outputs: u32, new_sapling_outputs: u32) {
+        self.total_orchard_outputs_synced += new_orchard_outputs;
+        self.total_sapling_outputs_synced += new_sapling_outputs;
+    }
+}
 pub struct LightClient {
     pub(crate) config: ZingoConfig,
     pub wallet: LightWallet,
@@ -87,6 +97,7 @@ pub struct LightClient {
 
     bsync_data: Arc<RwLock<BlazeSyncData>>,
     interrupt_sync: Arc<RwLock<bool>>,
+    sync_history: Arc<RwLock<SyncHistory>>,
 }
 
 use serde_json::Value;
@@ -220,6 +231,10 @@ impl LightClient {
             sync_lock: Mutex::new(()),
             bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
             interrupt_sync: Arc::new(RwLock::new(false)),
+            sync_history: Arc::new(RwLock::new(SyncHistory {
+                total_orchard_outputs_synced: 0,
+                total_sapling_outputs_synced: 0,
+            })),
         }
     }
     pub fn extract_unified_capability(&self) -> Arc<RwLock<WalletCapability>> {
@@ -354,6 +369,10 @@ impl LightClient {
             bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
             sync_lock: Mutex::new(()),
             interrupt_sync: Arc::new(RwLock::new(false)),
+            sync_history: Arc::new(RwLock::new(SyncHistory {
+                total_orchard_outputs_synced: 0,
+                total_sapling_outputs_synced: 0,
+            })),
         })
     }
 
@@ -1225,6 +1244,10 @@ impl LightClient {
             sync_lock: Mutex::new(()),
             bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
             interrupt_sync: Arc::new(RwLock::new(false)),
+            sync_history: Arc::new(RwLock::new(SyncHistory {
+                total_orchard_outputs_synced: 0,
+                total_sapling_outputs_synced: 0,
+            })),
         };
 
         lightclient.set_wallet_initial_state(birthday).await;
@@ -1324,6 +1347,10 @@ impl LightClient {
             sync_lock: Mutex::new(()),
             bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
             interrupt_sync: Arc::new(RwLock::new(false)),
+            sync_history: Arc::new(RwLock::new(SyncHistory {
+                total_orchard_outputs_synced: 0,
+                total_sapling_outputs_synced: 0,
+            })),
         };
 
         debug!(
@@ -1591,6 +1618,26 @@ impl LightClient {
     }
 
     async fn update_sync_history(&self, num_blocks_in_latest_batch: usize) {
+        let synced_orchard_outputs = self
+            .bsync_data
+            .read()
+            .await
+            .sync_status
+            .read()
+            .await
+            .orchard_outputs;
+        let synced_sapling_outputs = self
+            .bsync_data
+            .read()
+            .await
+            .sync_status
+            .read()
+            .await
+            .sapling_outputs;
+        self.sync_history
+            .write()
+            .await
+            .update_totals(synced_orchard_outputs, synced_sapling_outputs);
         self.bsync_data
             .write()
             .await
@@ -1598,6 +1645,21 @@ impl LightClient {
             .write()
             .await
             .start_new(num_blocks_in_latest_batch);
+    }
+    pub async fn report_observed_outputs(&self) -> SyncHistory {
+        // TODO:  Decide whether to feature gate this whole business as "instrumentation".
+        SyncHistory {
+            total_orchard_outputs_synced: self
+                .sync_history
+                .read()
+                .await
+                .total_orchard_outputs_synced,
+            total_sapling_outputs_synced: self
+                .sync_history
+                .read()
+                .await
+                .total_sapling_outputs_synced,
+        }
     }
     /// start_sync will start synchronizing the blockchain from the wallet's last height. This function will
     /// return immediately after starting the sync.  Use the `do_sync_status` LightClient method to

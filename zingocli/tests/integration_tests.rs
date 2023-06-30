@@ -2879,7 +2879,21 @@ async fn count_outputs_across_do_syncs() {
     assert_eq!(faucet.do_sync_status().await.sapling_outputs, 1);
     faucet.do_sync(true).await.unwrap();
     assert_eq!(faucet.do_sync_status().await.orchard_outputs, 0);
-    assert_eq!(faucet.do_sync_status().await.sapling_outputs, 1);
+    assert_eq!(faucet.do_sync_status().await.sapling_outputs, 0);
+    assert_eq!(
+        faucet
+            .report_observed_outputs()
+            .await
+            .total_orchard_outputs_synced,
+        0
+    );
+    assert_eq!(
+        faucet
+            .report_observed_outputs()
+            .await
+            .total_sapling_outputs_synced,
+        1
+    );
     drop(child_process_handler);
 }
 
