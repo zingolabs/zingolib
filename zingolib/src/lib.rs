@@ -10,6 +10,8 @@ pub mod grpc_connector;
 pub mod lightclient;
 pub mod wallet;
 
+pub use blaze::block_witness_data::BATCHSIZE;
+
 #[cfg(feature = "embed_params")]
 #[derive(RustEmbed)]
 #[folder = "zcash-params/"]

@@ -673,6 +673,7 @@ async fn send_mined_sapling_to_orchard() {
         balance["verified_orchard_balance"],
         625_000_000 - u64::from(MINIMUM_FEE)
     );
+    assert_eq!(faucet.do_sync_status().await.orchard_outputs, 2);
     drop(child_process_handler);
 }
 
@@ -2840,51 +2841,83 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
     drop(child_process_handler)
 }
 
+#[ignore]
+#[tokio::test]
+async fn basic_faucet_count_sap_outputs() {
+    let (regtest_manager, child_process_handler, faucet) = scenarios::faucet().await;
+    assert_eq!(faucet.wallet.get_anchor_height().await, 1);
+    assert_eq!(faucet.do_sync_status().await.sapling_outputs, 1);
+    let mut count = 1;
+    for _ in 0..1152 {
+        zingo_testutils::increase_height_and_sync_client(&regtest_manager, &faucet, 1)
+            .await
+            .unwrap();
+        count += 1;
+        assert_eq!(faucet.wallet.get_anchor_height().await, count);
+        assert_eq!(faucet.do_sync_status().await.sapling_outputs, count);
+    }
+    drop(child_process_handler);
+}
+#[tokio::test]
+async fn count_loaded_outputs() {
+    let (_regtest_manager, child_process_handler, _faucet, recipient) =
+        scenarios::chainload::faucet_recipient_1153().await;
+
+    assert_eq!(recipient.do_sync_status().await.orchard_outputs, 0);
+    assert_eq!(recipient.do_sync_status().await.sapling_outputs, 0);
+    recipient.do_sync(true).await.unwrap();
+    assert_eq!(recipient.do_sync_status().await.orchard_outputs, 0);
+    assert_eq!(recipient.do_sync_status().await.sapling_outputs, 1153);
+    drop(child_process_handler);
+}
 mod benchmarks {
     use super::*;
-    #[tokio::test]
-    async fn sync_1153_baseline_recipient_synctime() {
-        let mut annotation =
-            zingo_testutils::timer_annotation("sync_1153_baseline_recipient_synctime".to_string());
-        let (_regtest_manager, child_process_handler, _faucet, recipient) =
-            scenarios::chainload::faucet_recipient_1153().await;
+    mod sync_1153_baseline_synctimes {
+        const PREFIX: &'static str = "sync_1153_baseline_synctimes";
 
-        let timer_start = Instant::now();
-        recipient.do_sync(true).await.unwrap();
-        let timer_stop = Instant::now();
-        let sync_duration_recipient = timer_stop.duration_since(timer_start);
-        let duration = sync_duration_recipient.as_secs();
-        annotation
-            .insert("duration", duration)
-            .expect("To insert the duration.");
-        dbg!(&annotation);
-        zingo_testutils::record_time(&mut annotation);
+        use super::*;
+        async fn timing_run(client: &str, print_updates: bool) {
+            let mut annotation = zingo_testutils::timer_annotation(format!(
+                "{PREFIX}_{client}_client_pu_{print_updates}"
+            ));
+            let (_, child_process_handler, keyowning, keyless) =
+                scenarios::chainload::faucet_recipient_1153().await;
+            let sync_duration;
+            match client {
+                "keyowning" => {
+                    let timer_start = Instant::now();
+                    keyowning.do_sync(print_updates).await.unwrap();
+                    let timer_stop = Instant::now();
+                    sync_duration = timer_stop.duration_since(timer_start);
+                }
+                "keyless" => {
+                    let timer_start = Instant::now();
+                    keyless.do_sync(print_updates).await.unwrap();
+                    let timer_stop = Instant::now();
+                    sync_duration = timer_stop.duration_since(timer_start);
+                }
+                _ => panic!(),
+            }
+            let duration = sync_duration.as_secs();
+            annotation
+                .insert("duration", duration)
+                .expect("To insert the duration.");
+            zingo_testutils::record_time(&mut annotation);
 
-        assert!(sync_duration_recipient.as_secs() < 1000);
+            assert!(sync_duration.as_secs() < 1000);
 
-        drop(child_process_handler);
-    }
-    #[tokio::test]
-    async fn sync_1153_baseline_faucet_synctime() {
-        let mut annotation =
-            zingo_testutils::timer_annotation("sync_1153_baseline_faucet_synctime".to_string());
-        let (_regtest_manager, child_process_handler, faucet, _recipient) =
-            scenarios::chainload::unsynced_faucet_recipient_1153().await;
-
-        let timer_start = Instant::now();
-        faucet.do_sync(true).await.unwrap();
-        let timer_stop = Instant::now();
-        let sync_duration_faucet = timer_stop.duration_since(timer_start);
-        let duration = sync_duration_faucet.as_secs();
-        annotation
-            .insert("duration", duration)
-            .expect("To insert the duration.");
-        dbg!(&annotation);
-        zingo_testutils::record_time(&mut annotation);
-
-        assert!(sync_duration_faucet.as_secs() < 1000);
-
-        drop(child_process_handler);
+            drop(child_process_handler);
+        }
+        #[tokio::test]
+        async fn keyless_client() {
+            timing_run("keyless", true).await;
+            timing_run("keyless", false).await;
+        }
+        #[tokio::test]
+        async fn keyowning_client() {
+            timing_run("keyowning", true).await;
+            timing_run("keyowning", false).await;
+        }
     }
 }
 pub const TEST_SEED: &str = "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise";

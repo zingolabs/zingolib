@@ -1069,11 +1069,11 @@ impl LightClient {
 
         // If printing updates, start a new task to print updates every 2 seconds.
         let sync_result = if print_updates {
-            let sync_status = self.bsync_data.read().await.sync_status.clone();
+            let sync_status_clone = self.bsync_data.read().await.sync_status.clone();
             let (transmitter, mut receiver) = oneshot::channel::<i32>();
 
             tokio::spawn(async move {
-                while sync_status.read().await.sync_id == prev_sync_id {
+                while sync_status_clone.read().await.sync_id == prev_sync_id {
                     yield_now().await;
                     sleep(Duration::from_secs(3)).await;
                 }
@@ -1083,7 +1083,7 @@ impl LightClient {
                         break;
                     }
 
-                    let progress = format!("{}", sync_status.read().await);
+                    let progress = format!("{}", sync_status_clone.read().await);
                     if print_updates {
                         println!("{}", progress);
                     }
@@ -1102,7 +1102,6 @@ impl LightClient {
 
         // Mark the sync data as finished, which should clear everything
         self.bsync_data.read().await.finish().await;
-
         sync_result
     }
 
@@ -1692,7 +1691,7 @@ impl LightClient {
                 .start(bsync_data.clone(), fetch_full_transaction_transmitter)
                 .await;
 
-        // Do Trial decryptions of all the sapling outputs, and pass on the successful ones to the update_notes processor
+        // Do Trial decryptions of all the outputs, and pass on the successful ones to the update_notes processor
         let trial_decryptions_processor = TrialDecryptions::new(
             Arc::new(self.config.clone()),
             self.wallet.wallet_capability(),
