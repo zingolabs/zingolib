@@ -1590,14 +1590,14 @@ impl LightClient {
         res
     }
 
-    async fn update_sync_history(&mut self, num_blocks_in_latest_batch: usize) {
+    async fn update_sync_history(&self, num_blocks_in_latest_batch: usize) {
         self.bsync_data
             .write()
             .await
             .sync_status
             .write()
             .await
-            .start_new(latest_block_batches.len());
+            .start_new(num_blocks_in_latest_batch);
     }
     /// start_sync will start synchronizing the blockchain from the wallet's last height. This function will
     /// return immediately after starting the sync.  Use the `do_sync_status` LightClient method to
