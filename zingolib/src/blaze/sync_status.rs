@@ -21,7 +21,7 @@ pub struct BatchSyncStatus {
     pub blocks_total: u64,
 
     pub batch_num: usize,
-    pub batch_total: usize,
+    pub batch_total: usize, // TODO: name this properly, it's the total number of batches in the sync (I think).
     pub orchard_outputs: u32,
     pub sapling_outputs: u32,
 }

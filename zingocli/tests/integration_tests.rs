@@ -2870,6 +2870,19 @@ async fn count_loaded_outputs() {
     assert_eq!(recipient.do_sync_status().await.sapling_outputs, 1153);
     drop(child_process_handler);
 }
+
+#[tokio::test]
+async fn count_outputs_across_do_syncs() {
+    let (regtest_manager, child_process_handler, faucet) =
+        zingo_testutils::scenarios::faucet().await;
+    assert_eq!(faucet.do_sync_status().await.orchard_outputs, 0);
+    assert_eq!(faucet.do_sync_status().await.sapling_outputs, 1);
+    faucet.do_sync(true).await.unwrap();
+    assert_eq!(faucet.do_sync_status().await.orchard_outputs, 0);
+    assert_eq!(faucet.do_sync_status().await.sapling_outputs, 1);
+    drop(child_process_handler);
+}
+
 mod benchmarks {
     use super::*;
     mod sync_1153_baseline_synctimes {

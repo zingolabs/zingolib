@@ -1574,13 +1574,7 @@ impl LightClient {
         }
 
         // Increment the sync ID so the caller can determine when it is over
-        self.bsync_data
-            .write()
-            .await
-            .sync_status
-            .write()
-            .await
-            .start_new(latest_block_batches.len());
+        self.update_sync_history(latest_block_batches.len()).await;
 
         let mut res = Err("No batches were run!".to_string());
         for (batch_num, batch_latest_block) in latest_block_batches.into_iter().enumerate() {
@@ -1596,6 +1590,15 @@ impl LightClient {
         res
     }
 
+    async fn update_sync_history(&mut self, num_blocks_in_latest_batch: usize) {
+        self.bsync_data
+            .write()
+            .await
+            .sync_status
+            .write()
+            .await
+            .start_new(latest_block_batches.len());
+    }
     /// start_sync will start synchronizing the blockchain from the wallet's last height. This function will
     /// return immediately after starting the sync.  Use the `do_sync_status` LightClient method to
     /// get the status of the sync
