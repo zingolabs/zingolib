@@ -28,6 +28,7 @@ use super::keys::unified::WalletCapability;
 use super::traits::{self, DomainWalletExt, ReadableWriteable};
 
 pub(crate) const COMMITMENT_TREE_DEPTH: u8 = 32;
+pub(crate) const MAX_SHARD_DEPTH: u8 = 16;
 
 /// This type is motivated by the IPC architecture where (currently) channels traffic in
 /// `(TxId, WalletNullifier, BlockHeight, Option<u32>)`.  This enum permits a single channel

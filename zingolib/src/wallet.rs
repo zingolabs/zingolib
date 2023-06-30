@@ -49,7 +49,7 @@ use zcash_primitives::{
 };
 use zingo_memo::create_wallet_internal_memo_version_0;
 
-use self::data::{SpendableOrchardNote, ZingoShardStore, COMMITMENT_TREE_DEPTH};
+use self::data::{SpendableOrchardNote, ZingoShardStore, COMMITMENT_TREE_DEPTH, MAX_SHARD_DEPTH};
 use self::keys::unified::{Capability, ReceiverSelection, WalletCapability};
 use self::traits::Recipient;
 use self::traits::{DomainWalletExt, ReceivedNoteAndMetadata, SpendableNote};
@@ -215,8 +215,9 @@ pub struct LightWallet {
     // Wallet options
     pub(crate) wallet_options: Arc<RwLock<WalletOptions>>,
 
-    witness_tree_sapling: ShardTree<ZingoShardStore<Node>, COMMITMENT_TREE_DEPTH, 32>,
-    witness_tree_orchard: ShardTree<ZingoShardStore<MerkleHashOrchard>, COMMITMENT_TREE_DEPTH, 32>,
+    witness_tree_sapling: ShardTree<ZingoShardStore<Node>, COMMITMENT_TREE_DEPTH, MAX_SHARD_DEPTH>,
+    witness_tree_orchard:
+        ShardTree<ZingoShardStore<MerkleHashOrchard>, COMMITMENT_TREE_DEPTH, MAX_SHARD_DEPTH>,
 
     // Heighest verified block
     pub(crate) verified_tree: Arc<RwLock<Option<TreeState>>>,
