@@ -7,6 +7,9 @@ use crate::{
         transactions::TransactionMetadataSet,
     },
 };
+use incrementalmerkletree::{
+    frontier, frontier::CommitmentTree, witness::IncrementalWitness, Hashable,
+};
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
 use zcash_note_encryption::Domain;
 use zingoconfig::{ChainType, ZingoConfig, MAX_REORG};
@@ -24,7 +27,7 @@ use tokio::{
 };
 use zcash_primitives::{
     consensus::{BlockHeight, NetworkUpgrade, Parameters},
-    merkle_tree::{CommitmentTree, Hashable, IncrementalWitness},
+    merkle_tree::{read_commitment_tree, write_commitment_tree, HashSer},
     sapling::note_encryption::SaplingDomain,
     transaction::TxId,
 };
@@ -267,11 +270,11 @@ impl BlockAndWitnessData {
             if closest_lower_verified_tree.height == unverified_tree.height {
                 return true;
             }
-            let mut sapling_tree = CommitmentTree::<zcash_primitives::sapling::Node>::read(
+            let mut sapling_tree = read_commitment_tree(
                 &hex::decode(closest_lower_verified_tree.sapling_tree).unwrap()[..],
             )
             .unwrap();
-            let mut orchard_tree = CommitmentTree::<MerkleHashOrchard>::read(
+            let mut orchard_tree = read_commitment_tree(
                 &hex::decode(closest_lower_verified_tree.orchard_tree).unwrap()[..],
             )
             .expect("Invalid orchard tree!");
@@ -300,9 +303,9 @@ impl BlockAndWitnessData {
             }
             // Verify that the verification_tree can be calculated from the start tree
             let mut sapling_buf = vec![];
-            sapling_tree.write(&mut sapling_buf).unwrap();
+            write_commitment_tree(&sapling_tree, &mut sapling_buf).unwrap();
             let mut orchard_buf = vec![];
-            orchard_tree.write(&mut orchard_buf).unwrap();
+            write_commitment_tree(&orchard_tree, &mut orchard_buf).unwrap();
             let determined_orchard_tree = hex::encode(orchard_buf);
 
             // Return if verified
@@ -540,7 +543,7 @@ impl BlockAndWitnessData {
         transaction_num: usize,
         output_num: usize,
         activation_height: u64,
-    ) -> Result<IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node>, String>
+    ) -> Result<IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node, 32>, String>
     where
         D: DomainWalletExt,
         D::Note: PartialEq + Clone,
@@ -554,12 +557,12 @@ impl BlockAndWitnessData {
         let (cb, mut tree) = {
             // In the edge case of a transition to a new network epoch, there is no previous tree.
             let tree = if prev_height < activation_height {
-                CommitmentTree::empty()
+                CommitmentTree::<<D::WalletNote as ReceivedNoteAndMetadata>::Node, 32>::empty()
             } else {
                 let tree_state = GrpcConnector::get_trees(uri, prev_height).await?;
                 let tree = hex::decode(D::get_tree(&tree_state)).unwrap();
                 self.unverified_treestates.write().await.push(tree_state);
-                CommitmentTree::read(&tree[..]).map_err(|e| format!("{}", e))?
+                read_commitment_tree(&tree[..]).map_err(|e| format!("{}", e))?
             };
 
             // Get the compact block for the supplied height
@@ -598,7 +601,7 @@ impl BlockAndWitnessData {
                 {
                     tree.append(node).unwrap();
                     if t_num == transaction_num && o_num == output_num {
-                        return Ok(IncrementalWitness::from_tree(&tree));
+                        return Ok(IncrementalWitness::from_tree(tree));
                     }
                 }
             }
@@ -613,7 +616,7 @@ impl BlockAndWitnessData {
         height: BlockHeight,
         transaction_num: usize,
         output_num: usize,
-    ) -> Result<IncrementalWitness<zcash_primitives::sapling::Node>, String> {
+    ) -> Result<IncrementalWitness<zcash_primitives::sapling::Node, 32>, String> {
         self.get_note_witness::<SaplingDomain<zingoconfig::ChainType>>(
             uri,
             height,
@@ -631,7 +634,7 @@ impl BlockAndWitnessData {
         height: BlockHeight,
         transaction_num: usize,
         action_num: usize,
-    ) -> Result<IncrementalWitness<MerkleHashOrchard>, String> {
+    ) -> Result<IncrementalWitness<MerkleHashOrchard, 32>, String> {
         self.get_note_witness::<OrchardDomain>(
             uri,
             height,
@@ -815,8 +818,9 @@ fn is_orchard_tree_verified(determined_orchard_tree: String, unverified_tree: Tr
 pub struct CommitmentTreesForBlock {
     pub block_height: u64,
     pub block_hash: String,
-    pub sapling_tree: CommitmentTree<zcash_primitives::sapling::Node>,
-    pub orchard_tree: CommitmentTree<MerkleHashOrchard>,
+    // Type alias, sapling equivilant to the type manually written out for orchard
+    pub sapling_tree: zcash_primitives::sapling::CommitmentTree,
+    pub orchard_tree: frontier::CommitmentTree<MerkleHashOrchard, 32>,
 }
 
 // The following four allow(unused) functions are currently only called in test code
@@ -850,22 +854,22 @@ impl CommitmentTreesForBlock {
         Self {
             block_height,
             block_hash,
-            sapling_tree: CommitmentTree::read(&*hex::decode(sapling_tree).unwrap()).unwrap(),
+            sapling_tree: read_commitment_tree(&*hex::decode(sapling_tree).unwrap()).unwrap(),
             orchard_tree: CommitmentTree::empty(),
         }
     }
 }
 
 #[allow(unused)]
-pub fn tree_to_string<Node: Hashable>(tree: &CommitmentTree<Node>) -> String {
+pub fn tree_to_string<Node: Hashable + HashSer>(tree: &CommitmentTree<Node, 32>) -> String {
     let mut b1 = vec![];
-    tree.write(&mut b1).unwrap();
+    write_commitment_tree(tree, &mut b1).unwrap();
     hex::encode(b1)
 }
 
 pub fn update_trees_with_compact_transaction(
-    sapling_tree: &mut CommitmentTree<zcash_primitives::sapling::Node>,
-    orchard_tree: &mut CommitmentTree<MerkleHashOrchard>,
+    sapling_tree: &mut CommitmentTree<zcash_primitives::sapling::Node, 32>,
+    orchard_tree: &mut CommitmentTree<MerkleHashOrchard, 32>,
     compact_transaction: &CompactTx,
 ) {
     update_tree_with_compact_transaction::<SaplingDomain<ChainType>>(
@@ -876,7 +880,7 @@ pub fn update_trees_with_compact_transaction(
 }
 
 pub fn update_tree_with_compact_transaction<D: DomainWalletExt>(
-    tree: &mut CommitmentTree<Node<D>>,
+    tree: &mut CommitmentTree<Node<D>, 32>,
     compact_transaction: &CompactTx,
 ) where
     <D as Domain>::Recipient: crate::wallet::traits::Recipient,
@@ -895,8 +899,6 @@ mod test {
     use crate::{blaze::test_utils::FakeCompactBlock, wallet::data::BlockData};
     use orchard::tree::MerkleHashOrchard;
     use zcash_primitives::block::BlockHash;
-    use zcash_primitives::merkle_tree::CommitmentTree;
-    use zcash_primitives::sapling;
     use zingoconfig::{ChainType, ZingoConfig};
 
     use super::*;
@@ -1234,16 +1236,13 @@ mod test {
 
     #[test]
     fn orchard_starts_empty() {
-        let empty_tree =
-            CommitmentTree::<MerkleHashOrchard>::read(&*hex::decode(ORCHARD_START).unwrap())
-                .unwrap();
-        assert_eq!(empty_tree, CommitmentTree::<MerkleHashOrchard>::empty());
+        let empty_tree = read_commitment_tree(&*hex::decode(ORCHARD_START).unwrap()).unwrap();
+        assert_eq!(empty_tree, CommitmentTree::<MerkleHashOrchard, 32>::empty());
     }
 
     #[test]
     fn get_sapling_end_from_start_plus_block() {
-        let mut start_tree =
-            CommitmentTree::<sapling::Node>::read(&*hex::decode(SAPLING_START).unwrap()).unwrap();
+        let mut start_tree = read_commitment_tree(&*hex::decode(SAPLING_START).unwrap()).unwrap();
         let cb = decode_block();
 
         for compact_transaction in &cb.vtx {
@@ -1252,17 +1251,14 @@ mod test {
                 compact_transaction,
             )
         }
-        let end_tree =
-            CommitmentTree::<sapling::Node>::read(&*hex::decode(SAPLING_END).unwrap()).unwrap();
+        let end_tree = read_commitment_tree(&*hex::decode(SAPLING_END).unwrap()).unwrap();
         assert_eq!(start_tree, end_tree);
     }
 
     #[test]
     #[ignore]
     fn get_orchard_end_from_start_plus_block() {
-        let mut start_tree =
-            CommitmentTree::<MerkleHashOrchard>::read(&*hex::decode(ORCHARD_START).unwrap())
-                .unwrap();
+        let mut start_tree = read_commitment_tree(&*hex::decode(ORCHARD_START).unwrap()).unwrap();
         let cb = decode_block();
 
         for compact_transaction in &cb.vtx {
@@ -1271,8 +1267,7 @@ mod test {
                 compact_transaction,
             )
         }
-        let end_tree =
-            CommitmentTree::<MerkleHashOrchard>::read(&*hex::decode(ORCHARD_END).unwrap()).unwrap();
+        let end_tree = read_commitment_tree(&*hex::decode(ORCHARD_END).unwrap()).unwrap();
         assert_eq!(start_tree, end_tree);
     }
 }

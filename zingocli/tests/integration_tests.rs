@@ -15,7 +15,8 @@ use zcash_address::unified::Ufvk;
 use zcash_client_backend::encoding::encode_payment_address;
 use zcash_primitives::{
     consensus::Parameters,
-    transaction::{components::amount::DEFAULT_FEE, TxId},
+    merkle_tree::write_incremental_witness,
+    transaction::{fees::zip317::MINIMUM_FEE, TxId},
 };
 use zingo_testutils::regtest::get_cargo_manifest_dir_parent;
 use zingoconfig::{ChainType, ZingoConfig};
@@ -202,7 +203,7 @@ async fn sapling_dust_fee_collection() {
     let recipient_sapling = get_base_address!(recipient, "sapling");
     let recipient_unified = get_base_address!(recipient, "unified");
     check_client_balances!(recipient, o: 0 s: 0 t: 0);
-    let fee = u64::from(DEFAULT_FEE);
+    let fee = u64::from(MINIMUM_FEE);
     let for_orchard = dbg!(fee * 10);
     let for_sapling = dbg!(fee / 10);
     faucet
@@ -670,7 +671,7 @@ async fn send_mined_sapling_to_orchard() {
     assert_eq!(balance["unverified_orchard_balance"], 0);
     assert_eq!(
         balance["verified_orchard_balance"],
-        625_000_000 - u64::from(DEFAULT_FEE)
+        625_000_000 - u64::from(MINIMUM_FEE)
     );
     drop(child_process_handler);
 }
@@ -750,7 +751,7 @@ async fn note_selection_order() {
         .filter(|note| note["is_change"].as_bool().unwrap())
         .collect::<Vec<_>>()[0];
     // Because 2000 is the size of the second largest note.
-    assert_eq!(change_note["value"], 20000 - u64::from(DEFAULT_FEE));
+    assert_eq!(change_note["value"], 20000 - u64::from(MINIMUM_FEE));
     let non_change_note_values = client_2_notes["unspent_sapling_notes"]
         .members()
         .filter(|note| !note["is_change"].as_bool().unwrap())
@@ -935,7 +936,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         .into_iter();
     assert_eq!(
         total_value_to_addrs_iter.next(),
-        Some((String::from("fee"), u64::from((DEFAULT_FEE * 13).unwrap())))
+        Some((String::from("fee"), u64::from((MINIMUM_FEE * 13).unwrap())))
     );
     assert!(total_value_to_addrs_iter.next().is_none());
 
@@ -964,8 +965,8 @@ async fn send_orchard_back_and_forth() {
         )])
         .await
         .unwrap();
-    let orch_change = block_reward - (faucet_to_recipient_amount + u64::from(DEFAULT_FEE));
-    let reward_and_fee = block_reward + u64::from(DEFAULT_FEE);
+    let orch_change = block_reward - (faucet_to_recipient_amount + u64::from(MINIMUM_FEE));
+    let reward_and_fee = block_reward + u64::from(MINIMUM_FEE);
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 1)
         .await
         .unwrap();
@@ -995,9 +996,9 @@ async fn send_orchard_back_and_forth() {
     recipient.do_sync(true).await.unwrap();
 
     let recipient_final_orch =
-        faucet_to_recipient_amount - (u64::from(DEFAULT_FEE) + recipient_to_faucet_amount);
+        faucet_to_recipient_amount - (u64::from(MINIMUM_FEE) + recipient_to_faucet_amount);
     let faucet_final_orch = orch_change + recipient_to_faucet_amount;
-    let faucet_final_block = 2 * block_reward + u64::from(DEFAULT_FEE) * 2;
+    let faucet_final_block = 2 * block_reward + u64::from(MINIMUM_FEE) * 2;
     check_client_balances!(
         faucet,
         o: faucet_final_orch s: faucet_final_block t: 0
@@ -1077,7 +1078,7 @@ async fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
                     let balance = faucet.do_balance().await;
                     balance["spendable_sapling_balance"].as_u64().unwrap()
                         + balance["spendable_orchard_balance"].as_u64().unwrap()
-                } - u64::from(DEFAULT_FEE),
+                } - u64::from(MINIMUM_FEE),
                 memo.map(ToString::to_string),
             )])
             .await
@@ -1479,7 +1480,7 @@ async fn sapling_to_sapling_scan_together() {
     assert_eq!(list[1]["txid"], spent_txid.to_string());
     assert_eq!(
         list[1]["amount"].as_i64().unwrap(),
-        -((spent_value + u64::from(DEFAULT_FEE)) as i64)
+        -((spent_value + u64::from(MINIMUM_FEE)) as i64)
     );
     assert_eq!(list[1]["outgoing_metadata"][0]["address"], exit_zaddr);
     assert_eq!(
@@ -1598,7 +1599,7 @@ async fn mempool_and_balance() {
     let bal = recipient.do_balance().await;
 
     // Even though the transaction is not mined (in the mempool) the balances should be updated to reflect the spent funds
-    let new_bal = value - (sent_value + u64::from(DEFAULT_FEE));
+    let new_bal = value - (sent_value + u64::from(MINIMUM_FEE));
     assert_eq!(bal["orchard_balance"].as_u64().unwrap(), new_bal);
     assert_eq!(bal["verified_orchard_balance"].as_u64().unwrap(), 0);
     assert_eq!(bal["unverified_orchard_balance"].as_u64().unwrap(), new_bal);
@@ -1948,7 +1949,7 @@ async fn mempool_clearing() {
     assert_eq!(note["created_in_txid"], sent_transaction_id);
     assert_eq!(
         note["value"].as_u64().unwrap(),
-        value - sent_value - u64::from(DEFAULT_FEE)
+        value - sent_value - u64::from(MINIMUM_FEE)
     );
     assert!(note["unconfirmed"].as_bool().unwrap());
     assert_eq!(transactions.len(), 2);
@@ -2170,7 +2171,7 @@ async fn sapling_incoming_sapling_outgoing() {
     assert_eq!(send_transaction["txid"], sent_transaction_id);
     assert_eq!(
         send_transaction["amount"].as_i64().unwrap(),
-        -(sent_value as i64 + i64::from(DEFAULT_FEE))
+        -(sent_value as i64 + i64::from(MINIMUM_FEE))
     );
     assert!(send_transaction["unconfirmed"].as_bool().unwrap());
     assert_eq!(send_transaction["block_height"].as_u64().unwrap(), 3);
@@ -2215,7 +2216,7 @@ async fn sapling_incoming_sapling_outgoing() {
     );
     assert_eq!(
         notes["unspent_orchard_notes"][0]["value"].as_u64().unwrap(),
-        value - sent_value - u64::from(DEFAULT_FEE)
+        value - sent_value - u64::from(MINIMUM_FEE)
     );
     assert!(notes["unspent_orchard_notes"][0]["is_change"]
         .as_bool()
@@ -2345,18 +2346,10 @@ async fn aborted_resync() {
     assert_eq!(witness_before.len(), witness_after.len());
     for i in 0..witness_before.len() {
         let mut before_bytes = vec![];
-        witness_before
-            .get(i)
-            .unwrap()
-            .write(&mut before_bytes)
-            .unwrap();
+        write_incremental_witness(witness_before.get(i).unwrap(), &mut before_bytes).unwrap();
 
         let mut after_bytes = vec![];
-        witness_after
-            .get(i)
-            .unwrap()
-            .write(&mut after_bytes)
-            .unwrap();
+        write_incremental_witness(witness_after.get(i).unwrap(), &mut after_bytes).unwrap();
 
         assert_eq!(hex::encode(before_bytes), hex::encode(after_bytes));
     }
@@ -2371,7 +2364,7 @@ async fn zero_value_change() {
     let (regtest_manager, child_process_handler, faucet, recipient, _txid) =
         scenarios::faucet_prefunded_orchard_recipient(value).await;
 
-    let sent_value = value - u64::from(DEFAULT_FEE);
+    let sent_value = value - u64::from(MINIMUM_FEE);
     let sent_transaction_id = recipient
         .do_send(vec![(
             &get_base_address!(faucet, "unified"),
@@ -2657,7 +2650,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
     let expected_funds = recipient_initial_funds
         - first_send_to_sapling
         - first_send_to_transparent
-        - (2 * u64::from(DEFAULT_FEE));
+        - (2 * u64::from(MINIMUM_FEE));
     assert_eq!(
         recipient.wallet.maybe_verified_orchard_balance(None).await,
         expected_funds
@@ -2726,7 +2719,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         - second_send_to_sapling
         - second_send_to_transparent
         - third_send_to_transparent
-        - (3 * u64::from(DEFAULT_FEE));
+        - (3 * u64::from(MINIMUM_FEE));
     assert_eq!(
         recipient.wallet.maybe_verified_orchard_balance(None).await,
         second_wave_expected_funds,

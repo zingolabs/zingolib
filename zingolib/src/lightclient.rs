@@ -53,7 +53,7 @@ use zcash_primitives::{
     consensus::{BlockHeight, BranchId, Parameters},
     memo::{Memo, MemoBytes},
     sapling::note_encryption::SaplingDomain,
-    transaction::{components::amount::DEFAULT_FEE, Transaction, TxId},
+    transaction::{fees::zip317::MINIMUM_FEE, Transaction, TxId},
 };
 use zcash_proofs::prover::LocalTxProver;
 use zingoconfig::{ChainType, ZingoConfig, MAX_REORG};
@@ -996,7 +996,7 @@ impl LightClient {
         address: Option<String>,
     ) -> Result<String, String> {
         let transaction_submission_height = self.get_submission_height().await?;
-        let fee = u64::from(DEFAULT_FEE);
+        let fee = u64::from(MINIMUM_FEE);
         let tbal = self
             .wallet
             .tbalance(None)

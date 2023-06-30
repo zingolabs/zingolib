@@ -4,6 +4,7 @@ use std::{
 };
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use incrementalmerkletree::witness::IncrementalWitness;
 use log::error;
 use orchard;
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
@@ -12,7 +13,6 @@ use zcash_note_encryption::Domain;
 use zcash_primitives::{
     consensus::BlockHeight,
     memo::Memo,
-    merkle_tree::IncrementalWitness,
     sapling::{note_encryption::SaplingDomain, PaymentAddress},
     transaction::{components::TxOut, TxId},
 };
@@ -763,7 +763,7 @@ impl TransactionMetadataSet {
         note: zcash_primitives::sapling::Note,
         to: PaymentAddress,
         have_spending_key: bool,
-        witness: IncrementalWitness<zcash_primitives::sapling::Node>,
+        witness: IncrementalWitness<zcash_primitives::sapling::Node, 32>,
     ) {
         self.add_new_note::<SaplingDomain<zingoconfig::ChainType>>(
             fvk,
@@ -788,7 +788,7 @@ impl TransactionMetadataSet {
         note: orchard::note::Note,
         to: orchard::Address,
         have_spending_key: bool,
-        witness: IncrementalWitness<MerkleHashOrchard>,
+        witness: IncrementalWitness<MerkleHashOrchard, 32>,
     ) {
         self.add_new_note::<OrchardDomain>(
             fvk,
@@ -814,7 +814,7 @@ impl TransactionMetadataSet {
         note: <D::WalletNote as ReceivedNoteAndMetadata>::Note,
         to: D::Recipient,
         have_spending_key: bool,
-        witness: IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node>,
+        witness: IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node, 32>,
     ) -> <<<D as DomainWalletExt>::Bundle as Bundle<D>>::Spend as Spend>::Nullifier
     where
         D::Note: PartialEq + Clone,
@@ -828,7 +828,7 @@ impl TransactionMetadataSet {
         let spend_nullifier = D::get_nullifier_from_note_fvk_and_witness_position(
             &note,
             fvk,
-            witness.position() as u64,
+            u64::from(witness.position()),
         );
         let witnesses = if have_spending_key {
             WitnessCache::new(vec![witness], u64::from(height))

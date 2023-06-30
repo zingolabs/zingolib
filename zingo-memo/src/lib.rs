@@ -141,10 +141,11 @@ mod test_vectors;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::test_vectors::UA_TEST_VECTORS;
     use zcash_client_backend::address::RecipientAddress;
     use zcash_primitives::consensus::MAIN_NETWORK;
+
+    use super::*;
+    use crate::test_vectors::UA_TEST_VECTORS;
 
     #[test]
     fn round_trip_ser_deser() {

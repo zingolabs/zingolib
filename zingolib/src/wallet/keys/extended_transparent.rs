@@ -137,10 +137,11 @@ impl ExtendedPrivKey {
         };
         let sig_bytes = signature.as_ref();
         let (key, chain_code) = sig_bytes.split_at(sig_bytes.len() / 2);
-        let mut private_key = SecretKey::from_slice(key)?;
-        private_key.add_assign(&self.private_key[..])?;
+        let private_key = SecretKey::from_slice(key)?;
+        let tweak = secp256k1::Scalar::from(self.private_key);
+        let tweaked_private_key = private_key.add_tweak(&tweak)?;
         Ok(ExtendedPrivKey {
-            private_key,
+            private_key: tweaked_private_key,
             chain_code: chain_code.to_vec(),
         })
     }
@@ -156,7 +157,7 @@ impl ReadableWriteable<()> for SecretKey {
     }
 
     fn write<W: std::io::Write>(&self, mut writer: W) -> std::io::Result<()> {
-        writer.write(&self.serialize_secret()).map(|_| ())
+        writer.write(&self.secret_bytes()).map(|_| ())
     }
 }
 

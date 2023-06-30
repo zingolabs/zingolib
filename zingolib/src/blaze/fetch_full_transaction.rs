@@ -10,6 +10,7 @@ use crate::wallet::{
 };
 use zingo_memo::{parse_zingo_memo, ParsedMemo};
 
+use super::syncdata::BlazeSyncData;
 use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
 use log::info;
 use orchard::note_encryption::OrchardDomain;
@@ -30,15 +31,12 @@ use tokio::{
 };
 use zcash_client_backend::address::{RecipientAddress, UnifiedAddress};
 use zcash_note_encryption::try_output_recovery_with_ovk;
-
 use zcash_primitives::{
     consensus::BlockHeight,
     memo::{Memo, MemoBytes},
     sapling::note_encryption::SaplingDomain,
     transaction::{Transaction, TxId},
 };
-
-use super::syncdata::BlazeSyncData;
 use zingoconfig::{ChainType, ZingoConfig};
 
 #[derive(Clone)]
