@@ -2,7 +2,7 @@ use crate::wallet::keys::is_shielded_address;
 use crate::wallet::{MemoDownloadOption, Pool};
 use crate::{lightclient::LightClient, wallet::utils};
 use indoc::indoc;
-use json::object;
+use json::object::{self, Object};
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 use std::convert::TryInto;
@@ -97,12 +97,10 @@ impl Command for WalletKindCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
         RT.block_on(async move {
-            if lightclient.get_wallet_kind().await.is_ok() {
-                object! {"kind" => "Seeded"}.pretty(4)
-            } else {
-                let capability_arc = lightclient.wallet.wallet_capability();
-                let capability = capability_arc.read().await;
-                object! {
+            let k = lightclient.get_wallet_kind().await;
+            match k {
+                SpendingKey => {"kind" => "Seeded"}.pretty(4)
+                ViewingKey => {
                     "kind" => "Loaded from viewing key",
                     "transparent" => capability.transparent.kind_str(),
                     "sapling" => capability.sapling.kind_str(),

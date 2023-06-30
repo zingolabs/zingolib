@@ -1063,7 +1063,6 @@ impl LightClient {
             .read()
             .await
             .sync_id;
-        dbg!();
 
         // Start the sync
         let r_fut = self.start_sync();
@@ -1162,10 +1161,10 @@ impl LightClient {
         *self.interrupt_sync.read().await
     }
 
-    pub async fn get_wallet_kind(&self) -> Result<WalletKind, &str> {
+    pub async fn get_wallet_kind(&self) -> WalletKind {
         match self.wallet.mnemonic() {
-            Some(_m) => Ok(WalletKind::SpendingKey),
-            None => Err("This wallet is watch-only."),
+            Some(_m) => WalletKind::SpendingKey,
+            None => WalletKind::ViewingKey,
         }
     }
 
