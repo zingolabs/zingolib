@@ -61,7 +61,7 @@ use self::{
     message::Message,
     transactions::TransactionMetadataSet,
 };
-use zingoconfig::ZingoConfig;
+use zingoconfig::{ZingoConfig, MAX_REORG};
 
 pub mod data;
 pub mod keys;
@@ -628,8 +628,8 @@ impl LightWallet {
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(WalletZecPriceInfo::default())),
             transaction_context,
-            witness_tree_sapling: ShardTree::empty(ZingoShardStore::new(), 32),
-            witness_tree_orchard: ShardTree::empty(ZingoShardStore::new(), 32),
+            witness_tree_sapling: ShardTree::empty(ZingoShardStore::new(), MAX_REORG),
+            witness_tree_orchard: ShardTree::empty(ZingoShardStore::new(), MAX_REORG),
         })
     }
 
