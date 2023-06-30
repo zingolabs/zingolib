@@ -1161,6 +1161,16 @@ impl LightClient {
         *self.interrupt_sync.read().await
     }
 
+    pub async fn get_wallet_kind(&self) -> Result<JsonValue, &str> {
+        match self.wallet.mnemonic() {
+            Some(m) => Ok(object! {
+                "seed"     => m.to_string(),
+                "birthday" => self.wallet.get_birthday().await
+            }),
+            None => Err("This wallet is watch-only."),
+        }
+    }
+
     pub fn init_logging() -> io::Result<()> {
         // Configure logging first.
         LOG_INIT.call_once(tracing_subscriber::fmt::init);

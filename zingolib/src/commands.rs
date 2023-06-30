@@ -97,7 +97,7 @@ impl Command for WalletKindCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
         RT.block_on(async move {
-            if lightclient.do_seed_phrase().await.is_ok() {
+            if lightclient.get_wallet_kind().await.is_ok() {
                 object! {"kind" => "Seeded"}.pretty(4)
             } else {
                 let capability_arc = lightclient.wallet.wallet_capability();
