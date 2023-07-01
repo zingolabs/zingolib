@@ -2908,7 +2908,7 @@ mod benchmarks {
                 "{PREFIX}_{client}_client_pu_{print_updates}"
             ));
             let (_, child_process_handler, keyowning, keyless) =
-                scenarios::chainload::faucet_recipient_1153().await;
+                scenarios::chainload::unsynced_faucet_recipient_1153().await;
             let sync_duration;
             match client {
                 "keyowning" => {
