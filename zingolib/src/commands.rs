@@ -1,5 +1,5 @@
 use crate::wallet::keys::is_shielded_address;
-use crate::wallet::{MemoDownloadOption, Pool};
+use crate::wallet::{MemoDownloadOption, Pool, WalletKind};
 use crate::{lightclient::LightClient, wallet::utils};
 use indoc::indoc;
 use json::object;
@@ -97,19 +97,23 @@ impl Command for WalletKindCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
         RT.block_on(async move {
-            if lightclient.get_wallet_kind().await.is_ok() {
-                object! {"kind" => "Seeded"}.pretty(4)
-            } else {
-                let capability_arc = lightclient.wallet.wallet_capability();
-                let capability = capability_arc.read().await;
-                object! {
-                    "kind" => "Loaded from key",
-                    "transparent" => capability.transparent.kind_str(),
-                    "sapling" => capability.sapling.kind_str(),
-                    "orchard" => capability.orchard.kind_str(),
-                }
-                .pretty(4)
+            match lightclient.get_wallet_kind().await {
+                WalletKind::SpendingKey => object! {"kind" => "Seeded"}.pretty(4),
+                WalletKind::ViewingKey => object! {"kind" => "ViewingKey"}.pretty(4),
             }
+            // if lightclient.get_wallet_kind().await.is_ok() {
+            //     object! {"kind" => "Seeded"}.pretty(4)
+            // } else {
+            //     let capability_arc = lightclient.wallet.wallet_capability();
+            //     let capability = capability_arc.read().await;
+            //     object! {
+            //         "kind" => "Loaded from key",
+            //         "transparent" => capability.transparent.kind_str(),
+            //         "sapling" => capability.sapling.kind_str(),
+            //         "orchard" => capability.orchard.kind_str(),
+            //     }
+            //     .pretty(4)
+            // }
         })
     }
 }
