@@ -1163,7 +1163,7 @@ impl LightClient {
 
     pub async fn get_wallet_kind(&self) -> crate::wallet::WalletKind {
         match self.wallet.mnemonic() {
-            Some(_m) => WalletKind::SpendingKey,
+            Some(_) => WalletKind::SpendingKey,
             None => WalletKind::ViewingKey,
         }
     }
