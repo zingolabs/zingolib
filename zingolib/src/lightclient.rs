@@ -91,7 +91,7 @@ impl std::fmt::Display for SyncHistory {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Sapling Outputs: {}\n Orchard Outputs: {}\n",
+            "Sapling Outputs: {}\nOrchard Outputs: {}\n",
             self.total_sapling_outputs_synced, self.total_orchard_outputs_synced
         )
     }
