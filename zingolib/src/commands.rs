@@ -58,7 +58,24 @@ impl Command for ChangeServerCommand {
         }
     }
 }
+struct ReportClientOutputHistoryCommand {}
+impl Command for ReportClientOutputHistoryCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Get the count of sapling and orchard outputs observed by this client instance.
+            Usage:
+            get_output_history
+        "#}
+    }
 
+    fn short_help(&self) -> &'static str {
+        "Get output history."
+    }
+
+    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
+        RT.block_on(async move { lightclient.report_observed_outputs().await.to_string() })
+    }
+}
 struct GetBirthdayCommand {}
 impl Command for GetBirthdayCommand {
     fn help(&self) -> &'static str {
@@ -1404,8 +1421,12 @@ impl Command for QuitCommand {
 }
 
 pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
-    let entries: [(&'static str, Box<dyn Command>); 35] = [
+    let entries: [(&'static str, Box<dyn Command>); 36] = [
         ("sync", Box::new(SyncCommand {})),
+        (
+            "get_output_history",
+            Box::new(ReportClientOutputHistoryCommand {}),
+        ),
         ("syncstatus", Box::new(SyncStatusCommand {})),
         ("encryptmessage", Box::new(EncryptMessageCommand {})),
         ("decryptmessage", Box::new(DecryptMessageCommand {})),

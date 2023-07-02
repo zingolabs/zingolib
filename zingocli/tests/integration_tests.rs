@@ -2875,11 +2875,40 @@ async fn count_loaded_outputs() {
 async fn count_outputs_across_do_syncs() {
     let (regtest_manager, child_process_handler, faucet) =
         zingo_testutils::scenarios::faucet().await;
+    assert_eq!(
+        faucet
+            .report_observed_outputs()
+            .await
+            .total_orchard_outputs_synced,
+        0
+    );
+    assert_eq!(
+        faucet
+            .report_observed_outputs()
+            .await
+            .total_sapling_outputs_synced,
+        0
+    );
     assert_eq!(faucet.do_sync_status().await.orchard_outputs, 0);
     assert_eq!(faucet.do_sync_status().await.sapling_outputs, 1);
-    faucet.do_sync(true).await.unwrap();
+    faucet.do_sync(false).await.unwrap();
     assert_eq!(faucet.do_sync_status().await.orchard_outputs, 0);
     assert_eq!(faucet.do_sync_status().await.sapling_outputs, 0);
+    assert_eq!(
+        faucet
+            .report_observed_outputs()
+            .await
+            .total_orchard_outputs_synced,
+        0
+    );
+    assert_eq!(
+        faucet
+            .report_observed_outputs()
+            .await
+            .total_sapling_outputs_synced,
+        1
+    );
+    faucet.do_sync(false).await.unwrap();
     assert_eq!(
         faucet
             .report_observed_outputs()

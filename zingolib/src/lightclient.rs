@@ -87,6 +87,15 @@ impl SyncHistory {
         self.total_sapling_outputs_synced += new_sapling_outputs;
     }
 }
+impl std::fmt::Display for SyncHistory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Sapling Outputs: {}\n Orchard Outputs: {}\n",
+            self.total_sapling_outputs_synced, self.total_orchard_outputs_synced
+        )
+    }
+}
 pub struct LightClient {
     pub(crate) config: ZingoConfig,
     pub wallet: LightWallet,
