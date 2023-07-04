@@ -9,6 +9,7 @@ use orchard::note_encryption::OrchardDomain;
 use orchard::tree::MerkleHashOrchard;
 use prost::Message;
 use shardtree::ShardStore;
+use std::collections::HashMap;
 use std::convert::{Infallible, TryFrom};
 use std::io::{self, Read, Write};
 use std::usize;
@@ -29,6 +30,8 @@ use super::traits::{self, DomainWalletExt, ReadableWriteable};
 
 pub(crate) const COMMITMENT_TREE_DEPTH: u8 = 32;
 pub(crate) const MAX_SHARD_DEPTH: u8 = 16;
+
+mod merkle;
 
 /// This type is motivated by the IPC architecture where (currently) channels traffic in
 /// `(TxId, WalletNullifier, BlockHeight, Option<u32>)`.  This enum permits a single channel
@@ -1053,14 +1056,14 @@ impl WalletZecPriceInfo {
 }
 
 pub(super) struct ZingoShardStore<Node: Hashable> {
-    // Temporary, to allow generic param to compile
-    node: std::marker::PhantomData<Node>,
+    // Temporary, there's probably a better data type
+    nodes: HashMap<incrementalmerkletree::Address, Node>,
 }
 
 impl<Node: Hashable> ZingoShardStore<Node> {
     pub fn new() -> Self {
         Self {
-            node: std::marker::PhantomData,
+            nodes: HashMap::new(),
         }
     }
 }
