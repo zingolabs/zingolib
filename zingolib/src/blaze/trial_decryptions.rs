@@ -167,7 +167,6 @@ impl TrialDecryptions {
 
         let download_memos = bsync_data.read().await.wallet_options.download_memos;
 
-        let batch_segment_chunk: Vec<PerBlockTrialDecryptLog> = vec![];
         for compact_block in compact_blocks {
             let mut orchard_outputs_in_block = 0u32;
             let mut sapling_outputs_in_block = 0u32;
