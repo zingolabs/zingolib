@@ -15,7 +15,7 @@ pub struct BlazeSyncData {
     pub(crate) block_data: BlockAndWitnessData,
     uri: Arc<std::sync::RwLock<Uri>>,
     pub(crate) wallet_options: WalletOptions,
-    pub(crate) per_block_trials: Arc<RwLock<Vec<PerBlockTrialDecryptLog>>>,
+    pub(crate) per_block_trials: Vec<PerBlockTrialDecryptLog>,
 }
 
 impl BlazeSyncData {
@@ -27,12 +27,12 @@ impl BlazeSyncData {
             uri: config.lightwalletd_uri.clone(),
             block_data: BlockAndWitnessData::new(config, sync_status),
             wallet_options: WalletOptions::default(),
-            per_block_trials: Arc::new(RwLock::new(vec![])),
+            per_block_trials: vec![],
         }
     }
 
-    pub async fn drain_per_block_log(&mut self) -> Vec<PerBlockTrialDecryptLog> {
-        self.per_block_trials.write().await.drain(..).collect()
+    pub(crate) async fn drain_per_block_log(&mut self) -> Vec<PerBlockTrialDecryptLog> {
+        self.per_block_trials.drain(..).collect()
     }
     pub fn uri(&self) -> Uri {
         self.uri.read().unwrap().clone()

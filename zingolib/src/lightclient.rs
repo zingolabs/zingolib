@@ -77,7 +77,7 @@ impl WalletStatus {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PerBlockTrialDecryptLog {
     pub orchard_outputs_in_block: u32,
     pub sapling_outputs_in_block: u32,

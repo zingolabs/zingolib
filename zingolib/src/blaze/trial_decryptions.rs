@@ -250,13 +250,11 @@ impl TrialDecryptions {
                 .write()
                 .await
                 .per_block_trials
-                .write()
-                .await
-                .push(PerBlockTrialDecryptLog {
+                .push(dbg!(PerBlockTrialDecryptLog {
                     orchard_outputs_in_block,
                     sapling_outputs_in_block,
                     block_height,
-                });
+                }));
         }
 
         while let Some(r) = workers.next().await {
