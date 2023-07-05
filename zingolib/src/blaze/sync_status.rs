@@ -22,8 +22,6 @@ pub struct BatchSyncStatus {
 
     pub batch_num: usize,
     pub batch_total: usize,
-    pub orchard_outputs: u32,
-    pub sapling_outputs: u32,
 }
 
 impl BatchSyncStatus {
@@ -39,8 +37,6 @@ impl BatchSyncStatus {
         self.witnesses_updated = HashMap::new();
         self.batch_num = 0;
         self.batch_total = batch_total;
-        self.orchard_outputs = 0;
-        self.sapling_outputs = 0;
     }
 
     /// Setup a new sync status in prep for an upcoming sync
