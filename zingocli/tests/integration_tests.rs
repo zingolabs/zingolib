@@ -2870,6 +2870,18 @@ async fn count_loaded_outputs() {
     assert_eq!(recipient.do_sync_status().await.sapling_outputs, 1153);
     drop(child_process_handler);
 }
+#[tokio::test]
+async fn load_cached_chain() {
+    let (_regtest_manager, child_process_handler, faucet, _recipient) =
+        scenarios::chainload::unsynced_faucet_recipient_1153().await;
+
+    let timer_start = Instant::now();
+    faucet.do_sync(false).await.unwrap();
+    let timer_stop = Instant::now();
+    dbg!(timer_stop.duration_since(timer_start));
+    drop(child_process_handler);
+    panic!();
+}
 mod benchmarks {
     use super::*;
     #[tokio::test]
