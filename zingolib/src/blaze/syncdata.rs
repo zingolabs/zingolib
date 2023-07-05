@@ -31,10 +31,6 @@ impl BlazeSyncData {
         }
     }
 
-    /*
-    pub(crate) fn drain_per_block_log(&mut self) -> Vec<PerBlockTrialDecryptLog> {
-        self.per_block_trials.drain(..).collect()
-    }*/
     pub fn uri(&self) -> Uri {
         self.uri.read().unwrap().clone()
     }
