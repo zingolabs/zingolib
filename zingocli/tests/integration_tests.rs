@@ -2879,14 +2879,14 @@ async fn count_outputs_across_do_syncs() {
         faucet
             .report_observed_outputs()
             .await
-            .total_orchard_outputs_synced,
+            .orchard_outputs_in_block,
         0
     );
     assert_eq!(
         faucet
             .report_observed_outputs()
             .await
-            .total_sapling_outputs_synced,
+            .sapling_outputs_in_block,
         0
     );
     assert_eq!(faucet.do_sync_status().await.orchard_outputs, 0);
@@ -2898,14 +2898,14 @@ async fn count_outputs_across_do_syncs() {
         faucet
             .report_observed_outputs()
             .await
-            .total_orchard_outputs_synced,
+            .orchard_outputs_in_block,
         0
     );
     assert_eq!(
         faucet
             .report_observed_outputs()
             .await
-            .total_sapling_outputs_synced,
+            .sapling_outputs_in_block,
         1
     );
     faucet.do_sync(false).await.unwrap();
@@ -2913,14 +2913,14 @@ async fn count_outputs_across_do_syncs() {
         faucet
             .report_observed_outputs()
             .await
-            .total_orchard_outputs_synced,
+            .orchard_outputs_in_block,
         0
     );
     assert_eq!(
         faucet
             .report_observed_outputs()
             .await
-            .total_sapling_outputs_synced,
+            .sapling_outputs_in_block,
         1
     );
     drop(child_process_handler);

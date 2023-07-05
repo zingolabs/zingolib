@@ -5,6 +5,7 @@ use tokio::sync::RwLock;
 
 use super::{block_witness_data::BlockAndWitnessData, sync_status::BatchSyncStatus};
 use crate::compact_formats::TreeState;
+use crate::lightclient::PerBlockTrialDecryptLog;
 use crate::wallet::data::BlockData;
 use crate::wallet::WalletOptions;
 use zingoconfig::ZingoConfig;
@@ -14,6 +15,7 @@ pub struct BlazeSyncData {
     pub(crate) block_data: BlockAndWitnessData,
     uri: Arc<std::sync::RwLock<Uri>>,
     pub(crate) wallet_options: WalletOptions,
+    pub(crate) per_block_trial_log: Arc<RwLock<Vec<PerBlockTrialDecryptLog>>>,
 }
 
 impl BlazeSyncData {
@@ -25,9 +27,13 @@ impl BlazeSyncData {
             uri: config.lightwalletd_uri.clone(),
             block_data: BlockAndWitnessData::new(config, sync_status),
             wallet_options: WalletOptions::default(),
+            per_block_trial_log: Arc::new(RwLock::new(vec![])),
         }
     }
 
+    pub async fn drain_per_block_log(&mut self) -> Vec<PerBlockTrialDecryptLog> {
+        self.per_block_trial_log.write().await.drain(..).collect()
+    }
     pub fn uri(&self) -> Uri {
         self.uri.read().unwrap().clone()
     }

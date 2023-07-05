@@ -77,22 +77,18 @@ impl WalletStatus {
     }
 }
 
-pub struct SyncHistory {
-    pub total_orchard_outputs_synced: u32,
-    pub total_sapling_outputs_synced: u32,
+#[derive(Clone)]
+pub struct PerBlockTrialDecryptLog {
+    pub orchard_outputs_in_block: u32,
+    pub sapling_outputs_in_block: u32,
+    pub block_height: BlockHeight,
 }
-impl SyncHistory {
-    fn update_totals(&mut self, new_orchard_outputs: u32, new_sapling_outputs: u32) {
-        self.total_orchard_outputs_synced += new_orchard_outputs;
-        self.total_sapling_outputs_synced += new_sapling_outputs;
-    }
-}
-impl std::fmt::Display for SyncHistory {
+impl std::fmt::Display for PerBlockTrialDecryptLog {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "Sapling Outputs: {}\nOrchard Outputs: {}\n",
-            self.total_sapling_outputs_synced, self.total_orchard_outputs_synced
+            self.sapling_outputs_in_block, self.orchard_outputs_in_block
         )
     }
 }
@@ -106,7 +102,7 @@ pub struct LightClient {
 
     bsync_data: Arc<RwLock<BlazeSyncData>>,
     interrupt_sync: Arc<RwLock<bool>>,
-    sync_history: Arc<RwLock<SyncHistory>>,
+    sync_history: Arc<RwLock<Vec<PerBlockTrialDecryptLog>>>,
 }
 
 use serde_json::Value;
@@ -240,10 +236,7 @@ impl LightClient {
             sync_lock: Mutex::new(()),
             bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
             interrupt_sync: Arc::new(RwLock::new(false)),
-            sync_history: Arc::new(RwLock::new(SyncHistory {
-                total_orchard_outputs_synced: 0,
-                total_sapling_outputs_synced: 0,
-            })),
+            sync_history: Arc::new(RwLock::new(vec![])),
         }
     }
     pub fn extract_unified_capability(&self) -> Arc<RwLock<WalletCapability>> {
@@ -378,10 +371,7 @@ impl LightClient {
             bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
             sync_lock: Mutex::new(()),
             interrupt_sync: Arc::new(RwLock::new(false)),
-            sync_history: Arc::new(RwLock::new(SyncHistory {
-                total_orchard_outputs_synced: 0,
-                total_sapling_outputs_synced: 0,
-            })),
+            sync_history: Arc::new(RwLock::new(vec![])),
         })
     }
 
@@ -1253,10 +1243,7 @@ impl LightClient {
             sync_lock: Mutex::new(()),
             bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
             interrupt_sync: Arc::new(RwLock::new(false)),
-            sync_history: Arc::new(RwLock::new(SyncHistory {
-                total_orchard_outputs_synced: 0,
-                total_sapling_outputs_synced: 0,
-            })),
+            sync_history: Arc::new(RwLock::new(vec![])),
         };
 
         lightclient.set_wallet_initial_state(birthday).await;
@@ -1356,10 +1343,7 @@ impl LightClient {
             sync_lock: Mutex::new(()),
             bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
             interrupt_sync: Arc::new(RwLock::new(false)),
-            sync_history: Arc::new(RwLock::new(SyncHistory {
-                total_orchard_outputs_synced: 0,
-                total_sapling_outputs_synced: 0,
-            })),
+            sync_history: Arc::new(RwLock::new(vec![])),
         };
 
         debug!(
@@ -1609,8 +1593,18 @@ impl LightClient {
             latest_block_batches.push(batch);
         }
 
-        // Increment the sync ID so the caller can determine when it is over
-        self.update_sync_history(latest_block_batches.len()).await;
+        // Increment the sync ID so the caller vn determine when it is over
+        self.sync_history
+            .write()
+            .await
+            .append(&mut self.bsync_data.write().await.drain_per_block_log().await);
+        self.bsync_data
+            .write()
+            .await
+            .sync_status
+            .write()
+            .await
+            .start_new(latest_block_batches.len());
 
         let mut res = Err("No batches were run!".to_string());
         for (batch_num, batch_latest_block) in latest_block_batches.into_iter().enumerate() {
@@ -1626,49 +1620,14 @@ impl LightClient {
         res
     }
 
-    async fn update_sync_history(&self, num_blocks_in_latest_batch: usize) {
-        let synced_orchard_outputs = self
-            .bsync_data
-            .read()
-            .await
-            .sync_status
-            .read()
-            .await
-            .orchard_outputs;
-        let synced_sapling_outputs = self
-            .bsync_data
-            .read()
-            .await
-            .sync_status
-            .read()
-            .await
-            .sapling_outputs;
-        self.sync_history
-            .write()
-            .await
-            .update_totals(synced_orchard_outputs, synced_sapling_outputs);
-        self.bsync_data
-            .write()
-            .await
-            .sync_status
-            .write()
-            .await
-            .start_new(num_blocks_in_latest_batch);
-    }
-    pub async fn report_observed_outputs(&self) -> SyncHistory {
+    pub async fn report_observed_outputs(&self) -> PerBlockTrialDecryptLog {
         // TODO:  Decide whether to feature gate this whole business as "instrumentation".
-        SyncHistory {
-            total_orchard_outputs_synced: self
-                .sync_history
-                .read()
-                .await
-                .total_orchard_outputs_synced,
-            total_sapling_outputs_synced: self
-                .sync_history
-                .read()
-                .await
-                .total_sapling_outputs_synced,
-        }
+        todo!()
+        /*
+        PerBlockTrialDecryptLogkTrialDecryptLog {
+            orchard_outputs_in_block: self.sync_history.read().await.total_orchard_outputs_synced,
+            sapling_outputs_in_block: self.sync_history.read().await.total_sapling_outputs_synced,
+        }*/
     }
     /// start_sync will start synchronizing the blockchain from the wallet's last height. This function will
     /// return immediately after starting the sync.  Use the `do_sync_status` LightClient method to

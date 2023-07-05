@@ -5,6 +5,7 @@
 
 use crate::{
     compact_formats::{CompactBlock, CompactTx},
+    lightclient::PerBlockTrialDecryptLog,
     wallet::{
         data::{PoolNullifier, TransactionMetadata},
         keys::unified::WalletCapability,
@@ -166,10 +167,11 @@ impl TrialDecryptions {
 
         let download_memos = bsync_data.read().await.wallet_options.download_memos;
 
+        let batch_segment_chunk: Vec<PerBlockTrialDecryptLog> = vec![];
         for compact_block in compact_blocks {
             let mut orchard_outputs_in_block = 0u32;
             let mut sapling_outputs_in_block = 0u32;
-            let height = BlockHeight::from_u32(compact_block.height as u32);
+            let block_height = BlockHeight::from_u32(compact_block.height as u32);
 
             for (transaction_num, compact_transaction) in compact_block.vtx.iter().enumerate() {
                 if let Some(filter) = transaction_size_filter {
@@ -192,7 +194,7 @@ impl TrialDecryptions {
                         zcash_primitives::sapling::note_encryption::PreparedIncomingViewingKey::new(
                             sapling_ivk,
                         ),
-                        height,
+                        block_height,
                         &config,
                         &wc,
                         &bsync_data,
@@ -210,7 +212,7 @@ impl TrialDecryptions {
                             transaction_num,
                             &compact_block,
                             orchard::keys::PreparedIncomingViewingKey::new(orchard_ivk),
-                            height,
+                            block_height,
                             &config,
                             &wc,
                             &bsync_data,
@@ -246,19 +248,16 @@ impl TrialDecryptions {
                 .await
                 .trial_dec_done += 1;
             bsync_data
-                .read()
-                .await
-                .sync_status
                 .write()
                 .await
-                .orchard_outputs += orchard_outputs_in_block;
-            bsync_data
-                .read()
-                .await
-                .sync_status
+                .per_block_trial_log
                 .write()
                 .await
-                .sapling_outputs += sapling_outputs_in_block;
+                .push(PerBlockTrialDecryptLog {
+                    orchard_outputs_in_block,
+                    sapling_outputs_in_block,
+                    block_height,
+                });
         }
 
         while let Some(r) = workers.next().await {
