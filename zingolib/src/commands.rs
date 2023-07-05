@@ -62,9 +62,27 @@ struct GetOrchardOutputCount {}
 impl Command for GetOrchardOutputCount {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Get the count of sapling and orchard outputs observed by this client instance.
+            Get the count of orchard outputs observed by this client instance.
             Usage:
             get_orchard_output_count
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Get orchard output history."
+    }
+
+    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
+        RT.block_on(async move { lightclient.get_trialed_orchard_count().await.to_string() })
+    }
+}
+struct GetSaplingOutputCount {}
+impl Command for GetSaplingOutputCount {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Get the count of sapling outputs observed by this client instance.
+            Usage:
+            get_sapling_output_count
         "#}
     }
 
@@ -1419,11 +1437,15 @@ impl Command for QuitCommand {
 }
 
 pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
-    let entries: [(&'static str, Box<dyn Command>); 36] = [
+    let entries: [(&'static str, Box<dyn Command>); 37] = [
         ("sync", Box::new(SyncCommand {})),
         (
             "get_orchard_output_count",
             Box::new(GetOrchardOutputCount {}),
+        ),
+        (
+            "get_sapling_output_count",
+            Box::new(GetSaplingOutputCount {}),
         ),
         ("syncstatus", Box::new(SyncStatusCommand {})),
         ("encryptmessage", Box::new(EncryptMessageCommand {})),

@@ -2863,11 +2863,11 @@ async fn count_loaded_outputs() {
     let (_regtest_manager, child_process_handler, _faucet, recipient) =
         scenarios::chainload::faucet_recipient_1153().await;
 
-    //assert_eq!(recipient.do_sync_status().await.orchard_outputs, 0);
-    //assert_eq!(recipient.do_sync_status().await.sapling_outputs, 0);
+    assert_eq!(recipient.get_trialed_orchard_count().await, 0);
+    assert_eq!(recipient.get_trialed_sapling_count().await, 0);
     recipient.do_sync(true).await.unwrap();
-    //assert_eq!(recipient.do_sync_status().await.orchard_outputs, 0);
-    //assert_eq!(recipient.do_sync_status().await.sapling_outputs, 1153);
+    assert_eq!(recipient.get_trialed_orchard_count().await, 0);
+    assert_eq!(recipient.get_trialed_sapling_count().await, 1153);
     drop(child_process_handler);
 }
 
@@ -2875,54 +2875,11 @@ async fn count_loaded_outputs() {
 async fn count_outputs_across_do_syncs() {
     let (_regtest_manager, child_process_handler, faucet) =
         zingo_testutils::scenarios::faucet().await;
-    assert_eq!(
-        faucet
-            .get_perblock_trial_log()
-            .await
-            .orchard_outputs_in_block,
-        0
-    );
-    assert_eq!(
-        faucet
-            .get_perblock_trial_log()
-            .await
-            .sapling_outputs_in_block,
-        0
-    );
-    //assert_eq!(faucet.do_sync_status().await.orchard_outputs, 0);
-    //assert_eq!(faucet.do_sync_status().await.sapling_outputs, 1);
+    assert_eq!(faucet.get_trialed_orchard_count().await, 0);
+    assert_eq!(faucet.get_trialed_sapling_count().await, 0);
     faucet.do_sync(false).await.unwrap();
-    //assert_eq!(faucet.do_sync_status().await.orchard_outputs, 0);
-    //assert_eq!(faucet.do_sync_status().await.sapling_outputs, 0);
-    assert_eq!(
-        faucet
-            .get_perblock_trial_log()
-            .await
-            .orchard_outputs_in_block,
-        0
-    );
-    assert_eq!(
-        faucet
-            .get_perblock_trial_log()
-            .await
-            .sapling_outputs_in_block,
-        1
-    );
-    faucet.do_sync(false).await.unwrap();
-    assert_eq!(
-        faucet
-            .get_perblock_trial_log()
-            .await
-            .orchard_outputs_in_block,
-        0
-    );
-    assert_eq!(
-        faucet
-            .get_perblock_trial_log()
-            .await
-            .sapling_outputs_in_block,
-        1
-    );
+    assert_eq!(faucet.get_trialed_orchard_count().await, 0);
+    assert_eq!(faucet.get_trialed_sapling_count().await, 1);
     drop(child_process_handler);
 }
 
