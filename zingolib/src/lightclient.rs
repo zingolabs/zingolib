@@ -1619,15 +1619,25 @@ impl LightClient {
         drop(lightclient_exclusion_lock);
         res
     }
-
-    pub async fn report_observed_outputs(&self) -> PerBlockTrialDecryptLog {
-        // TODO:  Decide whether to feature gate this whole business as "instrumentation".
-        todo!()
-        /*
-        PerBlockTrialDecryptLogkTrialDecryptLog {
-            orchard_outputs_in_block: self.sync_history.read().await.total_orchard_outputs_synced,
-            sapling_outputs_in_block: self.sync_history.read().await.total_sapling_outputs_synced,
-        }*/
+    pub async fn get_trialed_orchard_count(&self) -> u32 {
+        self.sync_history.read().await.iter().fold(
+            0,
+            |acc,
+             PerBlockTrialDecryptLog {
+                 orchard_outputs_in_block,
+                 ..
+             }| acc + orchard_outputs_in_block,
+        )
+    }
+    pub async fn get_trialed_sapling_count(&self) -> u32 {
+        self.sync_history.read().await.iter().fold(
+            0,
+            |acc,
+             PerBlockTrialDecryptLog {
+                 sapling_outputs_in_block,
+                 ..
+             }| acc + sapling_outputs_in_block,
+        )
     }
     /// start_sync will start synchronizing the blockchain from the wallet's last height. This function will
     /// return immediately after starting the sync.  Use the `do_sync_status` LightClient method to

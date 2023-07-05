@@ -58,22 +58,22 @@ impl Command for ChangeServerCommand {
         }
     }
 }
-struct ReportClientOutputHistoryCommand {}
-impl Command for ReportClientOutputHistoryCommand {
+struct GetOrchardOutputCount {}
+impl Command for GetOrchardOutputCount {
     fn help(&self) -> &'static str {
         indoc! {r#"
             Get the count of sapling and orchard outputs observed by this client instance.
             Usage:
-            get_output_history
+            get_orchard_output_count
         "#}
     }
 
     fn short_help(&self) -> &'static str {
-        "Get output history."
+        "Get orchard output history."
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        RT.block_on(async move { lightclient.report_observed_outputs().await.to_string() })
+        RT.block_on(async move { lightclient.get_trialed_orchard_count().await.to_string() })
     }
 }
 struct GetBirthdayCommand {}
@@ -1422,8 +1422,8 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
     let entries: [(&'static str, Box<dyn Command>); 36] = [
         ("sync", Box::new(SyncCommand {})),
         (
-            "get_output_history",
-            Box::new(ReportClientOutputHistoryCommand {}),
+            "get_orchard_output_count",
+            Box::new(GetOrchardOutputCount {}),
         ),
         ("syncstatus", Box::new(SyncStatusCommand {})),
         ("encryptmessage", Box::new(EncryptMessageCommand {})),
