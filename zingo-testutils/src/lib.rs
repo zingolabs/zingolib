@@ -587,6 +587,11 @@ pub mod scenarios {
     pub mod chainload {
         use super::*;
 
+        pub async fn unsynced_basic() -> ChildProcessHandler {
+            setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain()
+                .child_process_handler
+                .unwrap()
+        }
         pub async fn faucet_recipient_1153() -> (
             RegtestManager,
             ChildProcessHandler,
