@@ -52,7 +52,7 @@ group = "0.13"
 rust-embed = { version = "6.3.0", features = ["debug-embed"] }
 orchard = { workspace = true }
 subtle = "2.4.1"
-incrementalmerkletree = { workspace = true }
+incrementalmerkletree = { workspace = true, features = ["test-dependencies"] }
 zcash_address = { workspace = true }
 zcash_client_backend = { workspace = true }
 zcash_encoding = { workspace = true }
@@ -65,7 +65,7 @@ nonempty = "0.7.0"
 tracing-subscriber = "0.3.15"
 tracing = "0.1.36"
 indoc = "2.0.1"
-shardtree = { git = "https://github.com/zcash/incrementalmerkletree", rev = "6d6f3fd4e3bf64ad12775ddf345fd9b503c95e69"  }
+shardtree = { git = "https://github.com/zcash/incrementalmerkletree", rev = "109f805fdfc6acca8630c42c967d73fa13d4b7d8"  }
 derive_more = "0.99.17"
 [dev-dependencies]
 portpicker = "0.1.0"

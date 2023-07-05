@@ -18,14 +18,14 @@ orchard = "0.5.0"
 tonic-build = "0.7.0"
 tempdir = "0.3"
 portpicker = "0.1"
-incrementalmerkletree = { version = "0.4", features = ["test-dependencies", "legacy-api"] }
+incrementalmerkletree = { git = "https://github.com/zcash/incrementalmerkletree", rev = "109f805fdfc6acca8630c42c967d73fa13d4b7d8" }
 
 [profile.release]
 debug = false
 
 [patch.crates-io]
-incrementalmerkletree = { git = "https://github.com/zcash/incrementalmerkletree", rev = "109f805fdfc6acca8630c42c967d73fa13d4b7d8"  }
-shardtree = { git = "https://github.com/zcash/incrementalmerkletree", rev = "109f805fdfc6acca8630c42c967d73fa13d4b7d8"  }
+incrementalmerkletree = { git = "https://github.com/zcash/incrementalmerkletree", rev = "109f805fdfc6acca8630c42c967d73fa13d4b7d8" }
+shardtree = { git = "https://github.com/zcash/incrementalmerkletree", rev = "109f805fdfc6acca8630c42c967d73fa13d4b7d8" }
 
 [profile.test]
 opt-level = 3

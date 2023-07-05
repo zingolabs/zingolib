@@ -1318,14 +1318,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "incrementalmerkletree"
-version = "0.4.0"
-source = "git+https://github.com/zcash/incrementalmerkletree?rev=6d6f3fd4e3bf64ad12775ddf345fd9b503c95e69#6d6f3fd4e3bf64ad12775ddf345fd9b503c95e69"
-dependencies = [
- "either",
-]
-
-[[package]]
 name = "indexmap"
 version = "1.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1824,7 +1816,7 @@ dependencies = [
  "halo2_gadgets",
  "halo2_proofs",
  "hex 0.4.3",
- "incrementalmerkletree 0.4.0 (git+https://github.com/zcash/incrementalmerkletree?rev=109f805fdfc6acca8630c42c967d73fa13d4b7d8)",
+ "incrementalmerkletree",
  "lazy_static",
  "memuse",
  "nonempty",
@@ -2823,17 +2815,7 @@ source = "git+https://github.com/zcash/incrementalmerkletree?rev=109f805fdfc6acc
 dependencies = [
  "bitflags 1.3.2",
  "either",
- "incrementalmerkletree 0.4.0 (git+https://github.com/zcash/incrementalmerkletree?rev=109f805fdfc6acca8630c42c967d73fa13d4b7d8)",
-]
-
-[[package]]
-name = "shardtree"
-version = "0.0.0"
-source = "git+https://github.com/zcash/incrementalmerkletree?rev=6d6f3fd4e3bf64ad12775ddf345fd9b503c95e69#6d6f3fd4e3bf64ad12775ddf345fd9b503c95e69"
-dependencies = [
- "bitflags 1.3.2",
- "either",
- "incrementalmerkletree 0.4.0 (git+https://github.com/zcash/incrementalmerkletree?rev=6d6f3fd4e3bf64ad12775ddf345fd9b503c95e69)",
+ "incrementalmerkletree",
 ]
 
 [[package]]
@@ -3859,7 +3841,7 @@ dependencies = [
  "bs58",
  "crossbeam-channel",
  "group 0.13.0",
- "incrementalmerkletree 0.4.0 (git+https://github.com/zcash/incrementalmerkletree?rev=109f805fdfc6acca8630c42c967d73fa13d4b7d8)",
+ "incrementalmerkletree",
  "memuse",
  "nom",
  "orchard",
@@ -3867,7 +3849,7 @@ dependencies = [
  "prost 0.11.9",
  "rayon",
  "secrecy",
- "shardtree 0.0.0 (git+https://github.com/zcash/incrementalmerkletree?rev=109f805fdfc6acca8630c42c967d73fa13d4b7d8)",
+ "shardtree",
  "subtle",
  "time 0.3.22",
  "tonic-build 0.9.2",
@@ -3919,7 +3901,7 @@ dependencies = [
  "group 0.13.0",
  "hdwallet",
  "hex 0.4.3",
- "incrementalmerkletree 0.4.0 (git+https://github.com/zcash/incrementalmerkletree?rev=109f805fdfc6acca8630c42c967d73fa13d4b7d8)",
+ "incrementalmerkletree",
  "jubjub",
  "lazy_static",
  "memuse",
@@ -3947,7 +3929,7 @@ dependencies = [
  "bls12_381",
  "group 0.13.0",
  "home",
- "incrementalmerkletree 0.4.0 (git+https://github.com/zcash/incrementalmerkletree?rev=109f805fdfc6acca8630c42c967d73fa13d4b7d8)",
+ "incrementalmerkletree",
  "jubjub",
  "known-folders",
  "lazy_static",
@@ -4040,7 +4022,7 @@ name = "zingo-testutils"
 version = "0.1.0"
 dependencies = [
  "http",
- "incrementalmerkletree 0.4.0 (git+https://github.com/zcash/incrementalmerkletree?rev=109f805fdfc6acca8630c42c967d73fa13d4b7d8)",
+ "incrementalmerkletree",
  "json",
  "log",
  "orchard",
@@ -4089,7 +4071,7 @@ dependencies = [
  "http-body",
  "hyper",
  "hyper-rustls",
- "incrementalmerkletree 0.4.0 (git+https://github.com/zcash/incrementalmerkletree?rev=109f805fdfc6acca8630c42c967d73fa13d4b7d8)",
+ "incrementalmerkletree",
  "indoc",
  "json",
  "jubjub",
@@ -4110,7 +4092,7 @@ dependencies = [
  "secp256k1",
  "serde_json",
  "sha2 0.9.9",
- "shardtree 0.0.0 (git+https://github.com/zcash/incrementalmerkletree?rev=6d6f3fd4e3bf64ad12775ddf345fd9b503c95e69)",
+ "shardtree",
  "sodiumoxide",
  "subtle",
  "tempfile",

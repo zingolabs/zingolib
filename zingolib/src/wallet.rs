@@ -628,8 +628,8 @@ impl LightWallet {
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(WalletZecPriceInfo::default())),
             transaction_context,
-            witness_tree_sapling: ShardTree::empty(ZingoShardStore::new(), MAX_REORG),
-            witness_tree_orchard: ShardTree::empty(ZingoShardStore::new(), MAX_REORG),
+            witness_tree_sapling: ShardTree::new(ZingoShardStore::new(), MAX_REORG),
+            witness_tree_orchard: ShardTree::new(ZingoShardStore::new(), MAX_REORG),
         })
     }
 

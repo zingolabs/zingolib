@@ -1156,6 +1156,21 @@ impl<Node: Hashable> ShardStore for ZingoShardStore<Node> {
     ) -> Result<(), Self::Error> {
         todo!()
     }
+
+    fn get_cap(&self) -> Result<shardtree::PrunableTree<Self::H>, Self::Error> {
+        todo!()
+    }
+
+    fn put_cap(&mut self, cap: shardtree::PrunableTree<Self::H>) -> Result<(), Self::Error> {
+        todo!()
+    }
+
+    fn get_checkpoint(
+        &self,
+        checkpoint_id: &Self::CheckpointId,
+    ) -> Result<Option<shardtree::Checkpoint>, Self::Error> {
+        todo!()
+    }
 }
 
 #[derive(derive_more::From)]
