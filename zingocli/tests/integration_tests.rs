@@ -2886,7 +2886,7 @@ mod benchmarks {
                 "{PREFIX}_{client}_client_pu_{print_updates}"
             ));
             let (_, child_process_handler, keyowning, keyless) =
-                scenarios::chainload::faucet_recipient_1153().await;
+                scenarios::chainload::unsynced_faucet_recipient_1153().await;
             let sync_duration;
             match client {
                 "keyowning" => {
@@ -2914,13 +2914,19 @@ mod benchmarks {
             drop(child_process_handler);
         }
         #[tokio::test]
-        async fn keyless_client() {
+        async fn keyless_client_pu_true() {
             timing_run("keyless", true).await;
+        }
+        #[tokio::test]
+        async fn keyless_client_pu_false() {
             timing_run("keyless", false).await;
         }
         #[tokio::test]
-        async fn keyowning_client() {
+        async fn keyowning_client_true() {
             timing_run("keyowning", true).await;
+        }
+        #[tokio::test]
+        async fn keyowning_client_false() {
             timing_run("keyowning", false).await;
         }
     }
