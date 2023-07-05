@@ -2872,6 +2872,11 @@ async fn count_loaded_outputs() {
 }
 mod benchmarks {
     use super::*;
+    #[tokio::test]
+    pub async fn time_scenario_setup_teardown() {
+        let cph = zingo_testutils::scenarios::chainload::unsynced_basic().await;
+        drop(cph);
+    }
     mod sync_1153_baseline_synctimes {
         const PREFIX: &'static str = "sync_1153_baseline_synctimes";
 
