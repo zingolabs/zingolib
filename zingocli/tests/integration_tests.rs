@@ -2863,11 +2863,11 @@ async fn count_loaded_outputs() {
     let (_regtest_manager, child_process_handler, _faucet, recipient) =
         scenarios::chainload::faucet_recipient_1153().await;
 
-    assert_eq!(recipient.get_trialed_orchard_count().await, 0);
-    assert_eq!(recipient.get_trialed_sapling_count().await, 0);
+    assert_eq!(recipient.get_trialed_orchard_count(), 0);
+    assert_eq!(recipient.get_trialed_sapling_count(), 0);
     recipient.do_sync(true).await.unwrap();
-    assert_eq!(recipient.get_trialed_orchard_count().await, 0);
-    assert_eq!(recipient.get_trialed_sapling_count().await, 1153);
+    assert_eq!(recipient.get_trialed_orchard_count(), 0);
+    assert_eq!(recipient.get_trialed_sapling_count(), 1153);
     drop(child_process_handler);
 }
 
@@ -2875,11 +2875,11 @@ async fn count_loaded_outputs() {
 async fn count_outputs_across_do_syncs() {
     let (_regtest_manager, child_process_handler, faucet) =
         zingo_testutils::scenarios::faucet().await;
-    assert_eq!(faucet.get_trialed_orchard_count().await, 0);
-    assert_eq!(faucet.get_trialed_sapling_count().await, 0);
+    assert_eq!(faucet.get_trialed_orchard_count(), 0);
+    assert_eq!(faucet.get_trialed_sapling_count(), 0);
     faucet.do_sync(false).await.unwrap();
-    assert_eq!(faucet.get_trialed_orchard_count().await, 0);
-    assert_eq!(faucet.get_trialed_sapling_count().await, 1);
+    assert_eq!(faucet.get_trialed_orchard_count(), 0);
+    assert_eq!(faucet.get_trialed_sapling_count(), 1);
     drop(child_process_handler);
 }
 

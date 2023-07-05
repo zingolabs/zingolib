@@ -102,7 +102,7 @@ pub struct LightClient {
 
     bsync_data: Arc<RwLock<BlazeSyncData>>,
     interrupt_sync: Arc<RwLock<bool>>,
-    per_block_trials: Arc<RwLock<Vec<PerBlockTrialDecryptLog>>>,
+    per_block_trials: Vec<PerBlockTrialDecryptLog>,
 }
 
 use serde_json::Value;
@@ -236,7 +236,7 @@ impl LightClient {
             sync_lock: Mutex::new(()),
             bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
             interrupt_sync: Arc::new(RwLock::new(false)),
-            per_block_trials: Arc::new(RwLock::new(vec![])),
+            per_block_trials: vec![],
         }
     }
     pub fn extract_unified_capability(&self) -> Arc<RwLock<WalletCapability>> {
@@ -371,7 +371,7 @@ impl LightClient {
             bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
             sync_lock: Mutex::new(()),
             interrupt_sync: Arc::new(RwLock::new(false)),
-            per_block_trials: Arc::new(RwLock::new(vec![])),
+            per_block_trials: vec![],
         })
     }
 
@@ -1243,7 +1243,7 @@ impl LightClient {
             sync_lock: Mutex::new(()),
             bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
             interrupt_sync: Arc::new(RwLock::new(false)),
-            per_block_trials: Arc::new(RwLock::new(vec![])),
+            per_block_trials: vec![],
         };
 
         lightclient.set_wallet_initial_state(birthday).await;
@@ -1343,7 +1343,7 @@ impl LightClient {
             sync_lock: Mutex::new(()),
             bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
             interrupt_sync: Arc::new(RwLock::new(false)),
-            per_block_trials: Arc::new(RwLock::new(vec![])),
+            per_block_trials: vec![],
         };
 
         debug!(
@@ -1594,10 +1594,11 @@ impl LightClient {
         }
 
         // Increment the sync ID so the caller vn determine when it is over
-        self.per_block_trials
+        /*self.per_block_trials
             .write()
             .await
             .append(&mut self.bsync_data.write().await.drain_per_block_log());
+        */
         self.bsync_data
             .write()
             .await
@@ -1619,8 +1620,8 @@ impl LightClient {
         drop(lightclient_exclusion_lock);
         res
     }
-    pub async fn get_trialed_orchard_count(&self) -> u32 {
-        self.per_block_trials.read().await.iter().fold(
+    pub fn get_trialed_orchard_count(&self) -> u32 {
+        self.per_block_trials.iter().fold(
             0,
             |acc,
              PerBlockTrialDecryptLog {
@@ -1629,8 +1630,8 @@ impl LightClient {
              }| acc + orchard_outputs_in_block,
         )
     }
-    pub async fn get_trialed_sapling_count(&self) -> u32 {
-        self.per_block_trials.read().await.iter().fold(
+    pub fn get_trialed_sapling_count(&self) -> u32 {
+        self.per_block_trials.iter().fold(
             0,
             |acc,
              PerBlockTrialDecryptLog {

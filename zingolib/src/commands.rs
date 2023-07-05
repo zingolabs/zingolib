@@ -73,7 +73,7 @@ impl Command for GetOrchardOutputCount {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        RT.block_on(async move { lightclient.get_trialed_orchard_count().await.to_string() })
+        RT.block_on(async move { lightclient.get_trialed_orchard_count().to_string() })
     }
 }
 struct GetSaplingOutputCount {}
@@ -91,7 +91,7 @@ impl Command for GetSaplingOutputCount {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        RT.block_on(async move { lightclient.get_trialed_orchard_count().await.to_string() })
+        RT.block_on(async move { lightclient.get_trialed_orchard_count().to_string() })
     }
 }
 struct GetBirthdayCommand {}
