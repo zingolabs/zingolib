@@ -8,23 +8,24 @@ members = [
 ]
 
 [workspace.dependencies]
-zcash_address = { git = "https://github.com/zingolabs/librustzcash", rev = "fa67d9a645da55265ebea8cedbb77ff42317c726" }
-zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash", rev = "fa67d9a645da55265ebea8cedbb77ff42317c726"  }
-zcash_encoding = { git = "https://github.com/zingolabs/librustzcash", rev = "fa67d9a645da55265ebea8cedbb77ff42317c726"  }
+zcash_address = { git = "https://github.com/zingolabs/librustzcash", rev = "d8148f90e7ec42dfd0733597b02cb26a900817e4" }
+zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash", rev = "d8148f90e7ec42dfd0733597b02cb26a900817e4"  }
+zcash_encoding = { git = "https://github.com/zingolabs/librustzcash", rev = "d8148f90e7ec42dfd0733597b02cb26a900817e4"  }
 zcash_note_encryption = "0.4.0"
-zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", features = ["transparent-inputs", "test-dependencies"], rev = "fa67d9a645da55265ebea8cedbb77ff42317c726"  }
-zcash_proofs = { git = "https://github.com/zingolabs/librustzcash", features = ["multicore"], rev = "fa67d9a645da55265ebea8cedbb77ff42317c726"  }
+zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", features = ["transparent-inputs", "test-dependencies"], rev = "d8148f90e7ec42dfd0733597b02cb26a900817e4"  }
+zcash_proofs = { git = "https://github.com/zingolabs/librustzcash", features = ["multicore"], rev = "d8148f90e7ec42dfd0733597b02cb26a900817e4"  }
 orchard = "0.5.0"
 tonic-build = "0.7.0"
 tempdir = "0.3"
 portpicker = "0.1"
-incrementalmerkletree = { version = "0.4", features = ["test-dependencies"] }
+incrementalmerkletree = { version = "0.4", features = ["test-dependencies", "legacy-api"] }
 
 [profile.release]
 debug = false
 
 [patch.crates-io]
-incrementalmerkletree = { git = "https://github.com/zcash/incrementalmerkletree", rev = "6d6f3fd4e3bf64ad12775ddf345fd9b503c95e69"  }
+incrementalmerkletree = { git = "https://github.com/zcash/incrementalmerkletree", rev = "109f805fdfc6acca8630c42c967d73fa13d4b7d8"  }
+shardtree = { git = "https://github.com/zcash/incrementalmerkletree", rev = "109f805fdfc6acca8630c42c967d73fa13d4b7d8"  }
 
 [profile.test]
 opt-level = 3
