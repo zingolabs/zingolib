@@ -249,7 +249,7 @@ impl TrialDecryptions {
             bsync_data
                 .write()
                 .await
-                .per_block_trial_log
+                .per_block_trials
                 .write()
                 .await
                 .push(PerBlockTrialDecryptLog {
