@@ -17,4 +17,4 @@ zingocli/tests/data/lightwalletd.yml
 zingocli/tests/data/basic_zcashd.conf
 cobertura.xml
 zingocli/tests/times/*
-*/zingo-wallet.dat
+wallets/*
