@@ -1597,7 +1597,7 @@ impl LightClient {
         self.per_block_trials
             .write()
             .await
-            .append(&mut self.bsync_data.write().await.drain_per_block_log().await);
+            .append(&mut self.bsync_data.write().await.drain_per_block_log());
         self.bsync_data
             .write()
             .await
