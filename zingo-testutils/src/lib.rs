@@ -66,8 +66,7 @@ fn timestamp() -> u64 {
         .unwrap()
         .as_secs()
 }
-fn path_to_times(basename: String) -> PathBuf {
-    let file_name = PathBuf::from(basename);
+fn path_to_times(file_name: PathBuf) -> PathBuf {
     let timing_dir = PathBuf::from(
         std::env::var("CARGO_MANIFEST_DIR").expect("To be inside a manifested space."),
     )
@@ -82,18 +81,19 @@ pub fn read_duration_annotation_file(target: PathBuf) -> Vec<DurationAnnotation>
     };
     data_set
 }
+pub fn get_duration_annotations(storage_file: PathBuf) -> Vec<DurationAnnotation> {
+    read_duration_annotation_file(path_to_times(storage_file))
+}
 pub fn record_time(annotation: &DurationAnnotation) {
-    let basename = format!("{}.json", annotation.test_name);
-    let data_store = path_to_times(basename);
-
-    let mut data_set = read_duration_annotation_file(data_store.clone());
+    let basename = PathBuf::from(format!("{}.json", annotation.test_name));
+    let mut data_set = get_duration_annotations(basename.clone());
     data_set.push(annotation.clone());
 
     //let json_dataset = array!(data_set);
     let mut time_file = OpenOptions::new()
         .create(true)
         .write(true)
-        .open(data_store)
+        .open(basename)
         .expect("to access a data_store file");
     std::io::Write::write_all(
         &mut time_file,
