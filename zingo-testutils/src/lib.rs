@@ -90,7 +90,7 @@ pub fn read_duration_annotation_file(target: PathBuf) -> Vec<DurationAnnotation>
     let data_set: Vec<DurationAnnotation> = if let Ok(data) = std::fs::read_to_string(target) {
         array!(data)[0]
             .members()
-            .map(|j| DurationAnnotation::from((j.clone()))
+            .map(|j| DurationAnnotation::from(j.clone()))
             .collect()
     } else {
         vec![]
