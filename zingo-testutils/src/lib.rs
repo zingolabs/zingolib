@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::string::String;
 use std::time::Duration;
 
-use json::JsonValue;
+use json::{array, JsonValue};
 use log::debug;
 use regtest::RegtestManager;
 use tokio::time::sleep;
@@ -52,17 +52,10 @@ impl From<JsonValue> for DurationAnnotation {
         }
     }
 }
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn deserialize_json_into_duration_annotation() {
-        let test_name = String::from("test_test_name");
-        let ta = DurationAnnotation::new(test_name, Duration::from_millis(1_000));
-        let ta2 = ta.clone();
-        let ta_json = json::from(ta);
-        let ta: DurationAnnotation = ta_json.into();
-        assert_eq!(ta, ta2);
+
+impl From<DurationAnnotation> for String {
+    fn from(value: DurationAnnotation) -> Self {
+        json::stringify_pretty(value, 2)
     }
 }
 fn git_description() -> String {
@@ -93,25 +86,32 @@ fn path_to_times(basename: String) -> PathBuf {
     .join("tests/times");
     timing_dir.join(file_name)
 }
+fn read_duration_annotation_file(target: PathBuf) -> Vec<DurationAnnotation> {
+    let data_set: Vec<DurationAnnotation> = if let Ok(data) = std::fs::read_to_string(target) {
+        json::parse(&data)
+            .expect("to receive data to be parsed to Json Array")
+            .members()
+            .map(|j| DurationAnnotation::from(j.clone()))
+            .collect()
+    } else {
+        panic!("expected a duration annotation file");
+    };
+    data_set
+}
 pub fn record_time(annotation: &DurationAnnotation) {
     let basename = format!("{}.json", annotation.test_name);
     let data_store = path_to_times(basename);
 
-    let mut data_set = if let Ok(data) = std::fs::read_to_string(data_store.clone()) {
-        json::parse(&data).expect("to receive data to be parsed to Json Array")
-    } else {
-        json::JsonValue::new_array()
-    };
-    data_set
-        .push(annotation.clone())
-        .expect("To extend earlier data with new annotation.");
+    let mut data_set = read_duration_annotation_file(data_store.clone());
+    data_set.push(annotation.clone());
 
+    let json_dataset = array!(data_set);
     let mut time_file = OpenOptions::new()
         .create(true)
         .write(true)
         .open(data_store)
         .expect("to access a data_store file");
-    std::io::Write::write_all(&mut time_file, data_set.to_string().as_bytes())
+    std::io::Write::write_all(&mut time_file, json_dataset.to_string().as_bytes())
         .expect("To write out a new data vector");
 }
 async fn get_synced_wallet_height(client: &LightClient) -> Result<u32, String> {
@@ -679,5 +679,18 @@ pub mod scenarios {
                 recipient,
             )
         }
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn deserialize_json_into_duration_annotation() {
+        let test_name = String::from("test_test_name");
+        let ta = DurationAnnotation::new(test_name, Duration::from_millis(1_000));
+        let ta2 = ta.clone();
+        let ta_json = json::from(ta);
+        let ta: DurationAnnotation = ta_json.into();
+        assert_eq!(ta, ta2);
     }
 }
