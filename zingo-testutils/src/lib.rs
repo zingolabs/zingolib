@@ -82,18 +82,18 @@ pub fn read_duration_annotation_file(target: PathBuf) -> Vec<DurationAnnotation>
     data_set
 }
 pub fn get_duration_annotations(storage_file: PathBuf) -> Vec<DurationAnnotation> {
-    read_duration_annotation_file(path_to_times(storage_file))
+    read_duration_annotation_file(storage_file)
 }
 pub fn record_time(annotation: &DurationAnnotation) {
-    let basename = PathBuf::from(format!("{}.json", annotation.test_name));
-    let mut data_set = get_duration_annotations(basename.clone());
+    let storage_location = path_to_times(PathBuf::from(format!("{}.json", annotation.test_name)));
+    let mut data_set = get_duration_annotations(storage_location.clone());
     data_set.push(annotation.clone());
 
     //let json_dataset = array!(data_set);
     let mut time_file = OpenOptions::new()
         .create(true)
         .write(true)
-        .open(basename)
+        .open(storage_location)
         .expect("to access a data_store file");
     std::io::Write::write_all(
         &mut time_file,

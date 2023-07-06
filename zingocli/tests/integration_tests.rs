@@ -2863,11 +2863,11 @@ mod benchmarks {
             timing_run("keyless", false).await;
         }
         #[tokio::test]
-        async fn keyowning_client_true() {
+        async fn keyowning_client_pu_true() {
             timing_run("keyowning", true).await;
         }
         #[tokio::test]
-        async fn keyowning_client_false() {
+        async fn keyowning_client_pu_false() {
             timing_run("keyowning", false).await;
         }
     }
