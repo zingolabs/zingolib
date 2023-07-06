@@ -2828,11 +2828,10 @@ mod benchmarks {
     mod sync_1153_baseline_synctimes {
         const PREFIX: &'static str = "sync_1153_baseline_synctimes";
 
+        use zingo_testutils::DurationAnnotation;
+
         use super::*;
         async fn timing_run(client: &str, print_updates: bool) {
-            let mut annotation = zingo_testutils::timer_annotation(format!(
-                "{PREFIX}_{client}_client_pu_{print_updates}"
-            ));
             let (_, child_process_handler, keyowning, keyless) =
                 scenarios::chainload::unsynced_faucet_recipient_1153().await;
             let sync_duration;
@@ -2851,11 +2850,11 @@ mod benchmarks {
                 }
                 _ => panic!(),
             }
-            let duration = sync_duration.as_secs();
-            annotation
-                .insert("duration", duration)
-                .expect("To insert the duration.");
-            zingo_testutils::record_time(&mut annotation);
+            let annotation = DurationAnnotation::new(
+                format!("{PREFIX}_{client}_client_pu_{print_updates}"),
+                sync_duration,
+            );
+            zingo_testutils::record_time(&annotation);
 
             assert!(sync_duration.as_secs() < 1000);
 

@@ -85,9 +85,6 @@ fn timestamp() -> u64 {
         .unwrap()
         .as_secs()
 }
-pub fn timer_annotation(test_name: String) -> JsonValue {
-    json::object! { "test_name": test_name, "timestamp": timestamp(), "git_description": git_description() }
-}
 fn path_to_times(basename: String) -> PathBuf {
     let file_name = PathBuf::from(basename);
     let timing_dir = PathBuf::from(
@@ -96,8 +93,8 @@ fn path_to_times(basename: String) -> PathBuf {
     .join("tests/times");
     timing_dir.join(file_name)
 }
-pub fn record_time(annotation: &mut JsonValue) {
-    let basename = format!("{}.json", annotation.remove("test_name"));
+pub fn record_time(annotation: &DurationAnnotation) {
+    let basename = format!("{}.json", annotation.test_name);
     let data_store = path_to_times(basename);
 
     let mut data_set = if let Ok(data) = std::fs::read_to_string(data_store.clone()) {
