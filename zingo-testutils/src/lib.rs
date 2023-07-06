@@ -86,15 +86,14 @@ fn path_to_times(basename: String) -> PathBuf {
     .join("tests/times");
     timing_dir.join(file_name)
 }
-fn read_duration_annotation_file(target: PathBuf) -> Vec<DurationAnnotation> {
+pub fn read_duration_annotation_file(target: PathBuf) -> Vec<DurationAnnotation> {
     let data_set: Vec<DurationAnnotation> = if let Ok(data) = std::fs::read_to_string(target) {
-        json::parse(&data)
-            .expect("to receive data to be parsed to Json Array")
+        array!(data)[0]
             .members()
-            .map(|j| DurationAnnotation::from(j.clone()))
+            .map(|j| DurationAnnotation::from((j.clone()))
             .collect()
     } else {
-        panic!("expected a duration annotation file");
+        vec![]
     };
     data_set
 }
@@ -105,7 +104,7 @@ pub fn record_time(annotation: &DurationAnnotation) {
     let mut data_set = read_duration_annotation_file(data_store.clone());
     data_set.push(annotation.clone());
 
-    let json_dataset = array!(data_set);
+    let json_dataset = dbg!(array!(data_set));
     let mut time_file = OpenOptions::new()
         .create(true)
         .write(true)
