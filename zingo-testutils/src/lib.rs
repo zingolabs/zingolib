@@ -19,10 +19,10 @@ use crate::scenarios::setup::TestEnvironmentGenerator;
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct DurationAnnotation {
-    timestamp: u64,
-    git_description: String,
-    test_name: String,
-    duration: Duration,
+    pub timestamp: u64,
+    pub git_description: String,
+    pub test_name: String,
+    pub duration: Duration,
 }
 impl DurationAnnotation {
     pub fn new(test_name: String, duration: Duration) -> Self {
