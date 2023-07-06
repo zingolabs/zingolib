@@ -46,31 +46,6 @@ impl std::fmt::Display for DurationAnnotation {
         )
     }
 }
-impl From<DurationAnnotation> for JsonValue {
-    fn from(value: DurationAnnotation) -> Self {
-        json::object! { "test_name": value.test_name, "timestamp": value.timestamp, "git_description": value.git_description, "duration": value.duration.as_millis() as u64 }
-    }
-}
-impl From<JsonValue> for DurationAnnotation {
-    fn from(value: JsonValue) -> Self {
-        let test_name = value["test_name"].to_string();
-        let timestamp = value["timestamp"].as_u64().expect("time as u64");
-        let git_description = value["git_description"].to_string();
-        let duration = Duration::from_millis(value["duration"].as_u64().expect("to parse a u64"));
-        DurationAnnotation {
-            timestamp,
-            git_description,
-            test_name,
-            duration,
-        }
-    }
-}
-
-impl From<DurationAnnotation> for String {
-    fn from(value: DurationAnnotation) -> Self {
-        json::stringify_pretty(value, 2)
-    }
-}
 fn git_description() -> String {
     std::str::from_utf8(
         &std::process::Command::new("git")
@@ -703,8 +678,8 @@ mod tests {
         let test_name = String::from("test_test_name");
         let ta = DurationAnnotation::new(test_name, Duration::from_millis(1_000));
         let ta2 = ta.clone();
-        let ta_json = json::from(ta);
-        let ta: DurationAnnotation = ta_json.into();
+        let ta_serde_json = serde_json::to_value(ta).unwrap();
+        let ta: DurationAnnotation = serde_json::from_value(ta_serde_json).unwrap();
         assert_eq!(ta, ta2);
     }
 }
