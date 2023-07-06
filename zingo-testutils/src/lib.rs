@@ -10,12 +10,42 @@ use std::time::Duration;
 use json::JsonValue;
 use log::debug;
 use regtest::RegtestManager;
+use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 use zingoconfig::{ChainType, ZingoConfig};
 use zingolib::lightclient::LightClient;
 
 use crate::scenarios::setup::TestEnvironmentGenerator;
 
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct DurationAnnotation {
+    timestamp: u64,
+    git_description: String,
+    test_name: String,
+    duration: Duration,
+}
+impl DurationAnnotation {
+    pub fn new(test_name: String, duration: Duration) -> Self {
+        DurationAnnotation {
+            timestamp: timestamp(),
+            git_description: git_description(),
+            test_name,
+            duration,
+        }
+    }
+}
+impl std::fmt::Display for DurationAnnotation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            r#""test_name": {}, "timestamp": {}, "git_description": {}, "duration": {}"#,
+            self.test_name,
+            self.timestamp,
+            self.git_description,
+            self.duration.as_millis() as u64
+        )
+    }
+}
 fn git_description() -> String {
     std::str::from_utf8(
         &std::process::Command::new("git")
@@ -36,9 +66,6 @@ fn timestamp() -> u64 {
         .unwrap()
         .as_secs()
 }
-pub fn timer_annotation(test_name: String) -> JsonValue {
-    json::object! { "test_name": test_name, "timestamp": timestamp(), "git_description": git_description() }
-}
 fn path_to_times(basename: String) -> PathBuf {
     let file_name = PathBuf::from(basename);
     let timing_dir = PathBuf::from(
@@ -47,26 +74,34 @@ fn path_to_times(basename: String) -> PathBuf {
     .join("tests/times");
     timing_dir.join(file_name)
 }
-pub fn record_time(annotation: &mut JsonValue) {
-    let basename = format!("{}.json", annotation.remove("test_name"));
-    let data_store = path_to_times(basename);
-
-    let mut data_set = if let Ok(data) = std::fs::read_to_string(data_store.clone()) {
-        json::parse(&data).expect("to receive data to be parsed to Json Array")
+pub fn read_duration_annotation_file(target: PathBuf) -> Vec<DurationAnnotation> {
+    let data_set: Vec<DurationAnnotation> = if let Ok(data) = std::fs::read_to_string(target) {
+        serde_json::from_str(&data[..]).expect("To deserialize a string")
     } else {
-        json::JsonValue::new_array()
+        vec![]
     };
     data_set
-        .push(annotation.clone())
-        .expect("To extend earlier data with new annotation.");
+}
+pub fn record_time(annotation: &DurationAnnotation) {
+    let basename = format!("{}.json", annotation.test_name);
+    let data_store = path_to_times(basename);
 
+    let mut data_set = read_duration_annotation_file(data_store.clone());
+    data_set.push(annotation.clone());
+
+    //let json_dataset = array!(data_set);
     let mut time_file = OpenOptions::new()
         .create(true)
         .write(true)
         .open(data_store)
         .expect("to access a data_store file");
-    std::io::Write::write_all(&mut time_file, data_set.to_string().as_bytes())
-        .expect("To write out a new data vector");
+    std::io::Write::write_all(
+        &mut time_file,
+        serde_json::to_string(&data_set)
+            .expect("to serialiaze")
+            .as_bytes(),
+    )
+    .expect("To write out a new data vector");
 }
 async fn get_synced_wallet_height(client: &LightClient) -> Result<u32, String> {
     client.do_sync(true).await?;
@@ -633,5 +668,18 @@ pub mod scenarios {
                 recipient,
             )
         }
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn deserialize_json_into_duration_annotation() {
+        let test_name = String::from("test_test_name");
+        let ta = DurationAnnotation::new(test_name, Duration::from_millis(1_000));
+        let ta2 = ta.clone();
+        let ta_serde_json = serde_json::to_value(ta).unwrap();
+        let ta: DurationAnnotation = serde_json::from_value(ta_serde_json).unwrap();
+        assert_eq!(ta, ta2);
     }
 }

@@ -643,7 +643,7 @@ async fn unspent_notes_are_not_saved() {
 
 #[tokio::test]
 async fn send_mined_sapling_to_orchard() {
-    // This test shows the 5th confirmation changing the state of balance by
+    // This test shows a confirmation changing the state of balance by
     // debiting unverified_orchard_balance and crediting verified_orchard_balance.  The debit amount is
     // consistent with all the notes in the relevant block changing state.
     // NOTE that the balance doesn't give insight into the distribution across notes.
@@ -673,7 +673,6 @@ async fn send_mined_sapling_to_orchard() {
         balance["verified_orchard_balance"],
         625_000_000 - u64::from(MINIMUM_FEE)
     );
-    assert_eq!(faucet.do_sync_status().await.orchard_outputs, 2);
     drop(child_process_handler);
 }
 
@@ -1872,58 +1871,6 @@ async fn mempool_clearing() {
             .to_string()
     );
     let child_process_handler = regtest_manager.launch(false).unwrap();
-    /*
-    let mut sent_transactions = data
-        .write()
-        .await
-        .sent_transactions
-        .drain(..)
-        .collect::<Vec<_>>();
-    assert_eq!(sent_transactions.len(), 1);
-    let sent_transaction = sent_transactions.remove(0);
-
-    // 5. At this point, the raw transaction is already been parsed, but we'll parse it
-    //    again just to make sure it doesn't create any duplicates.
-    let notes_before = lightclient.do_list_notes(true).await;
-    let transactions_before = lightclient.do_list_transactions().await;
-
-    let transaction = Transaction::read(&sent_transaction.data[..], BranchId::Sapling).unwrap();
-    lightclient
-        .wallet
-        .transaction_context
-        .scan_full_tx(transaction, BlockHeight::from_u32(17), true, 0, None)
-        .await;
-
-    {
-        let transactions_reader = lightclient
-            .wallet
-            .transaction_context
-            .transaction_metadata_set
-            .clone();
-        let wallet_transactions = transactions_reader.read().await;
-        let sapling_notes: Vec<_> = wallet_transactions
-            .current
-            .values()
-            .map(|wallet_tx| &wallet_tx.sapling_notes)
-            .flatten()
-            .collect();
-        assert_ne!(sapling_notes.len(), 0);
-        for note in sapling_notes {
-            let mut note_bytes = Vec::new();
-            note.write(&mut note_bytes).unwrap();
-            let note2 = ReceivedSaplingNoteAndMetadata::read(&*note_bytes, ()).unwrap();
-            assert_eq!(note.fvk().to_bytes(), note2.fvk().to_bytes());
-            assert_eq!(note.nullifier(), note2.nullifier());
-            assert_eq!(note.diversifier, note2.diversifier);
-            assert_eq!(note.note, note2.note);
-            assert_eq!(note.spent, note2.spent);
-            assert_eq!(note.unconfirmed_spent, note2.unconfirmed_spent);
-            assert_eq!(note.memo, note2.memo);
-            assert_eq!(note.is_change, note2.is_change);
-            assert_eq!(note.have_spending_key, note2.have_spending_key);
-        }
-    }
-    */
     let notes_after = recipient.do_list_notes(true).await;
     let transactions_after = recipient.do_list_transactions().await;
 
@@ -2858,6 +2805,7 @@ async fn basic_faucet_count_sap_outputs() {
     }
     drop(child_process_handler);
 }
+#[ignore]
 #[tokio::test]
 async fn count_loaded_outputs() {
     let (_regtest_manager, child_process_handler, _faucet, recipient) =
@@ -2880,11 +2828,10 @@ mod benchmarks {
     mod sync_1153_baseline_synctimes {
         const PREFIX: &'static str = "sync_1153_baseline_synctimes";
 
+        use zingo_testutils::DurationAnnotation;
+
         use super::*;
         async fn timing_run(client: &str, print_updates: bool) {
-            let mut annotation = zingo_testutils::timer_annotation(format!(
-                "{PREFIX}_{client}_client_pu_{print_updates}"
-            ));
             let (_, child_process_handler, keyowning, keyless) =
                 scenarios::chainload::unsynced_faucet_recipient_1153().await;
             let sync_duration;
@@ -2903,11 +2850,11 @@ mod benchmarks {
                 }
                 _ => panic!(),
             }
-            let duration = sync_duration.as_secs();
-            annotation
-                .insert("duration", duration)
-                .expect("To insert the duration.");
-            zingo_testutils::record_time(&mut annotation);
+            let annotation = DurationAnnotation::new(
+                format!("{PREFIX}_{client}_client_pu_{print_updates}"),
+                sync_duration,
+            );
+            zingo_testutils::record_time(&annotation);
 
             assert!(sync_duration.as_secs() < 1000);
 

@@ -332,12 +332,10 @@ to scan from the start of the blockchain."
         let clean_regtest_data = !matches.is_present("no-clean");
         let data_dir = if let Some(dir) = matches.get_one::<String>("data-dir") {
             PathBuf::from(dir.clone())
+        } else if matches.is_present("regtest") {
+            regtest::get_regtest_dir()
         } else {
-            if matches.is_present("regtest") {
-                regtest::get_regtest_dir()
-            } else {
-                PathBuf::from("wallets")
-            }
+            PathBuf::from("wallets")
         };
         log::info!("data_dir: {}", &data_dir.to_str().unwrap());
         let mut maybe_server = matches.value_of("server").map(|s| s.to_string());
