@@ -17,15 +17,15 @@ use zingolib::lightclient::LightClient;
 use crate::scenarios::setup::TestEnvironmentGenerator;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct TestAnnotation {
+pub struct DurationAnnotation {
     timestamp: u64,
     git_description: String,
     test_name: String,
     duration: Duration,
 }
-impl TestAnnotation {
+impl DurationAnnotation {
     pub fn new(test_name: String, duration: Duration) -> Self {
-        TestAnnotation {
+        DurationAnnotation {
             timestamp: timestamp(),
             git_description: git_description(),
             test_name,
@@ -33,18 +33,18 @@ impl TestAnnotation {
         }
     }
 }
-impl From<TestAnnotation> for JsonValue {
-    fn from(value: TestAnnotation) -> Self {
+impl From<DurationAnnotation> for JsonValue {
+    fn from(value: DurationAnnotation) -> Self {
         json::object! { "test_name": value.test_name, "timestamp": value.timestamp, "git_description": value.git_description, "duration": value.duration.as_millis() as u64 }
     }
 }
-impl From<JsonValue> for TestAnnotation {
+impl From<JsonValue> for DurationAnnotation {
     fn from(value: JsonValue) -> Self {
         let test_name = value["test_name"].to_string();
         let timestamp = value["timestamp"].as_u64().expect("time as u64");
         let git_description = value["git_description"].to_string();
         let duration = Duration::from_millis(value["duration"].as_u64().expect("to parse a u64"));
-        TestAnnotation {
+        DurationAnnotation {
             timestamp,
             git_description,
             test_name,
@@ -58,10 +58,10 @@ mod tests {
     #[test]
     fn deserialize_json_into_duration_annotation() {
         let test_name = String::from("test_test_name");
-        let ta = TestAnnotation::new(test_name, Duration::from_millis(1_000));
+        let ta = DurationAnnotation::new(test_name, Duration::from_millis(1_000));
         let ta2 = ta.clone();
         let ta_json = json::from(ta);
-        let ta: TestAnnotation = ta_json.into();
+        let ta: DurationAnnotation = ta_json.into();
         assert_eq!(ta, ta2);
     }
 }
