@@ -7,16 +7,17 @@ use std::path::{Path, PathBuf};
 use std::string::String;
 use std::time::Duration;
 
-use json::{array, JsonValue};
+use json::JsonValue;
 use log::debug;
 use regtest::RegtestManager;
+use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 use zingoconfig::{ChainType, ZingoConfig};
 use zingolib::lightclient::LightClient;
 
 use crate::scenarios::setup::TestEnvironmentGenerator;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct DurationAnnotation {
     timestamp: u64,
     git_description: String,
@@ -31,6 +32,18 @@ impl DurationAnnotation {
             test_name,
             duration,
         }
+    }
+}
+impl std::fmt::Display for DurationAnnotation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            r#""test_name": {}, "timestamp": {}, "git_description": {}, "duration": {}"#,
+            self.test_name,
+            self.timestamp,
+            self.git_description,
+            self.duration.as_millis() as u64
+        )
     }
 }
 impl From<DurationAnnotation> for JsonValue {
@@ -88,10 +101,7 @@ fn path_to_times(basename: String) -> PathBuf {
 }
 pub fn read_duration_annotation_file(target: PathBuf) -> Vec<DurationAnnotation> {
     let data_set: Vec<DurationAnnotation> = if let Ok(data) = std::fs::read_to_string(target) {
-        array!(data)[0]
-            .members()
-            .map(|j| DurationAnnotation::from(j.clone()))
-            .collect()
+        serde_json::from_str(&data[..]).expect("To deserialize a string")
     } else {
         vec![]
     };
@@ -104,14 +114,19 @@ pub fn record_time(annotation: &DurationAnnotation) {
     let mut data_set = read_duration_annotation_file(data_store.clone());
     data_set.push(annotation.clone());
 
-    let json_dataset = dbg!(array!(data_set));
+    //let json_dataset = array!(data_set);
     let mut time_file = OpenOptions::new()
         .create(true)
         .write(true)
         .open(data_store)
         .expect("to access a data_store file");
-    std::io::Write::write_all(&mut time_file, json_dataset.to_string().as_bytes())
-        .expect("To write out a new data vector");
+    std::io::Write::write_all(
+        &mut time_file,
+        serde_json::to_string(&data_set)
+            .expect("to serialiaze")
+            .as_bytes(),
+    )
+    .expect("To write out a new data vector");
 }
 async fn get_synced_wallet_height(client: &LightClient) -> Result<u32, String> {
     client.do_sync(true).await?;
