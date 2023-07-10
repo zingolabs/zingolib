@@ -651,6 +651,37 @@ pub mod scenarios {
                 .child_process_handler
                 .unwrap()
         }
+        pub async fn unsynced_viewonlyclient_1153(
+        ) -> (RegtestManager, ChildProcessHandler, LightClient) {
+            let mut sb = setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain();
+            let zingo_config = zingolib::load_clientconfig(
+                sb.client_builder.server_id.clone(),
+                Some(sb.client_builder.zingo_datadir.clone()),
+                zingoconfig::ChainType::Regtest,
+            )
+            .unwrap();
+            // Create a lightclient to extract a capability from.
+            let original_recipient = sb
+                .client_builder
+                .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
+                .await;
+            // Extract viewing keys
+            let wc = original_recipient
+                .extract_unified_capability()
+                .read()
+                .await
+                .clone();
+            // Delete the client after getting the capability.
+            drop(original_recipient);
+            // Extract the orchard fvk
+            let o_fvk = zcash_address::unified::Fvk::Orchard(
+                orchard::keys::FullViewingKey::try_from(&wc)
+                    .unwrap()
+                    .to_bytes(),
+            );
+            let (viewing_client, watch_wc) = build)
+            todo!()
+        }
         pub async fn faucet_recipient_1153() -> (
             RegtestManager,
             ChildProcessHandler,
