@@ -49,7 +49,8 @@ use zcash_primitives::{
 };
 use zingo_memo::create_wallet_internal_memo_version_0;
 
-use self::data::{SpendableOrchardNote, ZingoShardStore, COMMITMENT_TREE_DEPTH, MAX_SHARD_DEPTH};
+use self::data::merkle::SqliteShardStore;
+use self::data::{SpendableOrchardNote, COMMITMENT_TREE_DEPTH, MAX_SHARD_DEPTH};
 use self::keys::unified::{Capability, ReceiverSelection, WalletCapability};
 use self::traits::Recipient;
 use self::traits::{DomainWalletExt, ReceivedNoteAndMetadata, SpendableNote};
@@ -215,9 +216,20 @@ pub struct LightWallet {
     // Wallet options
     pub(crate) wallet_options: Arc<RwLock<WalletOptions>>,
 
-    witness_tree_sapling: ShardTree<ZingoShardStore<Node>, COMMITMENT_TREE_DEPTH, MAX_SHARD_DEPTH>,
-    witness_tree_orchard:
-        ShardTree<ZingoShardStore<MerkleHashOrchard>, COMMITMENT_TREE_DEPTH, MAX_SHARD_DEPTH>,
+    witness_tree_sapling: Arc<
+        ShardTree<
+            SqliteShardStore<rusqlite::Connection, Node, MAX_SHARD_DEPTH>,
+            COMMITMENT_TREE_DEPTH,
+            MAX_SHARD_DEPTH,
+        >,
+    >,
+    witness_tree_orchard: Arc<
+        ShardTree<
+            SqliteShardStore<rusqlite::Connection, MerkleHashOrchard, MAX_SHARD_DEPTH>,
+            COMMITMENT_TREE_DEPTH,
+            MAX_SHARD_DEPTH,
+        >,
+    >,
 
     // Heighest verified block
     pub(crate) verified_tree: Arc<RwLock<Option<TreeState>>>,
@@ -628,8 +640,15 @@ impl LightWallet {
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(WalletZecPriceInfo::default())),
             transaction_context,
-            witness_tree_sapling: ShardTree::new(ZingoShardStore::new(), MAX_REORG),
-            witness_tree_orchard: ShardTree::new(ZingoShardStore::new(), MAX_REORG),
+            witness_tree_sapling: Arc::new(ShardTree::new(
+                crate::wallet::data::merkle::SqliteShardStore::from_connection(todo!(), todo!())
+                    .unwrap(),
+                MAX_REORG,
+            )),
+            witness_tree_orchard: Arc::new(ShardTree::new(
+                SqliteShardStore::from_connection(todo!(), todo!()).unwrap(),
+                MAX_REORG,
+            )),
         })
     }
 

@@ -8,12 +8,13 @@ members = [
 ]
 
 [workspace.dependencies]
-zcash_address = { git = "https://github.com/zingolabs/librustzcash", rev = "d8148f90e7ec42dfd0733597b02cb26a900817e4" }
-zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash", rev = "d8148f90e7ec42dfd0733597b02cb26a900817e4"  }
-zcash_encoding = { git = "https://github.com/zingolabs/librustzcash", rev = "d8148f90e7ec42dfd0733597b02cb26a900817e4"  }
+zcash_address = { git = "https://github.com/zingolabs/librustzcash", rev = "4d5dc28ab18a020f46a87c1b76d0bf7883ae55c7" }
+zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash", rev = "4d5dc28ab18a020f46a87c1b76d0bf7883ae55c7"  }
+zcash_encoding = { git = "https://github.com/zingolabs/librustzcash", rev = "4d5dc28ab18a020f46a87c1b76d0bf7883ae55c7"  }
+zcash_client_sqlite = { git = "https://github.com/zingolabs/librustzcash", rev = "4d5dc28ab18a020f46a87c1b76d0bf7883ae55c7"  }
 zcash_note_encryption = "0.4.0"
-zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", features = ["transparent-inputs", "test-dependencies"], rev = "d8148f90e7ec42dfd0733597b02cb26a900817e4"  }
-zcash_proofs = { git = "https://github.com/zingolabs/librustzcash", features = ["multicore"], rev = "d8148f90e7ec42dfd0733597b02cb26a900817e4"  }
+zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", features = ["transparent-inputs", "test-dependencies"], rev = "4d5dc28ab18a020f46a87c1b76d0bf7883ae55c7"  }
+zcash_proofs = { git = "https://github.com/zingolabs/librustzcash", features = ["multicore"], rev = "4d5dc28ab18a020f46a87c1b76d0bf7883ae55c7"  }
 orchard = "0.5.0"
 tonic-build = "0.7.0"
 tempdir = "0.3"
