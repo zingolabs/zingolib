@@ -20,7 +20,7 @@ use zingolib::lightclient::LightClient;
 
 use crate::scenarios::setup::TestEnvironmentGenerator;
 
-pub async fn build_fvk_client_capability(
+pub async fn build_fvk_client_and_capability(
     fvks: &[&Fvk],
     zingoconfig: &ZingoConfig,
 ) -> (LightClient, WalletCapability) {
@@ -644,6 +644,8 @@ pub mod scenarios {
         )
     }
     pub mod chainload {
+        use crate::build_fvk_client_and_capability;
+
         use super::*;
 
         pub async fn unsynced_basic() -> ChildProcessHandler {
@@ -679,8 +681,13 @@ pub mod scenarios {
                     .unwrap()
                     .to_bytes(),
             );
-            let (viewing_client, watch_wc) = build)
-            todo!()
+            let (viewing_client, _) =
+                build_fvk_client_and_capability(&[&o_fvk], &zingo_config).await;
+            (
+                sb.regtest_manager,
+                sb.child_process_handler.unwrap(),
+                viewing_client,
+            )
         }
         pub async fn faucet_recipient_1153() -> (
             RegtestManager,

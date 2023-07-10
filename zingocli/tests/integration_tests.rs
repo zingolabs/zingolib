@@ -2,7 +2,7 @@
 #![cfg(feature = "local_env")]
 pub mod darkside;
 use std::{fs::File, path::Path};
-use zingo_testutils::{self, build_fvk_client_capability, data};
+use zingo_testutils::{self, build_fvk_client_and_capability, data};
 
 use bip0039::Mnemonic;
 use data::seeds::HOSPITAL_MUSEUM_SEED;
@@ -418,7 +418,7 @@ async fn test_scanning_in_watch_only_mode() {
         log::info!("    sapling fvk: {}", fvks.contains(&&s_fvk));
         log::info!("    transparent fvk: {}", fvks.contains(&&t_fvk));
 
-        let (watch_client, watch_wc) = build_fvk_client_capability(fvks, &zingo_config).await;
+        let (watch_client, watch_wc) = build_fvk_client_and_capability(fvks, &zingo_config).await;
         // assert empty wallet before rescan
         let balance = watch_client.do_balance().await;
         check_expected_balance_with_fvks(fvks, balance, 0, 0, 0);
