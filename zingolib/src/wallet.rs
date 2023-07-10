@@ -6,6 +6,7 @@ use crate::wallet::data::{SpendableSaplingNote, TransactionMetadata};
 
 use bip0039::Mnemonic;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use futures::lock::Mutex;
 use futures::Future;
 use incrementalmerkletree::frontier::CommitmentTree;
 use json::JsonValue;
@@ -217,17 +218,21 @@ pub struct LightWallet {
     pub(crate) wallet_options: Arc<RwLock<WalletOptions>>,
 
     witness_tree_sapling: Arc<
-        ShardTree<
-            SqliteShardStore<rusqlite::Connection, Node, MAX_SHARD_DEPTH>,
-            COMMITMENT_TREE_DEPTH,
-            MAX_SHARD_DEPTH,
+        Mutex<
+            ShardTree<
+                SqliteShardStore<rusqlite::Connection, Node, MAX_SHARD_DEPTH>,
+                COMMITMENT_TREE_DEPTH,
+                MAX_SHARD_DEPTH,
+            >,
         >,
     >,
     witness_tree_orchard: Arc<
-        ShardTree<
-            SqliteShardStore<rusqlite::Connection, MerkleHashOrchard, MAX_SHARD_DEPTH>,
-            COMMITMENT_TREE_DEPTH,
-            MAX_SHARD_DEPTH,
+        Mutex<
+            ShardTree<
+                SqliteShardStore<rusqlite::Connection, MerkleHashOrchard, MAX_SHARD_DEPTH>,
+                COMMITMENT_TREE_DEPTH,
+                MAX_SHARD_DEPTH,
+            >,
         >,
     >,
 
@@ -640,15 +645,15 @@ impl LightWallet {
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(WalletZecPriceInfo::default())),
             transaction_context,
-            witness_tree_sapling: Arc::new(ShardTree::new(
+            witness_tree_sapling: Arc::new(Mutex::new(ShardTree::new(
                 crate::wallet::data::merkle::SqliteShardStore::from_connection(todo!(), todo!())
                     .unwrap(),
                 MAX_REORG,
-            )),
-            witness_tree_orchard: Arc::new(ShardTree::new(
+            ))),
+            witness_tree_orchard: Arc::new(Mutex::new(ShardTree::new(
                 SqliteShardStore::from_connection(todo!(), todo!()).unwrap(),
                 MAX_REORG,
-            )),
+            ))),
         })
     }
 
