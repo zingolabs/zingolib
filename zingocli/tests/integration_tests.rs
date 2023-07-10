@@ -2,7 +2,7 @@
 #![cfg(feature = "local_env")]
 pub mod darkside;
 use std::{fs::File, path::Path};
-use zingo_testutils::{self, data};
+use zingo_testutils::{self, build_fvk_client_capability, data};
 
 use bip0039::Mnemonic;
 use data::seeds::HOSPITAL_MUSEUM_SEED;
@@ -11,7 +11,6 @@ use tokio::time::Instant;
 use zingo_testutils::scenarios;
 
 use tracing_test::traced_test;
-use zcash_address::unified::Ufvk;
 use zcash_client_backend::encoding::encode_payment_address;
 use zcash_primitives::{
     consensus::Parameters,
@@ -29,7 +28,7 @@ use zingolib::{
             extended_transparent::ExtendedPrivKey,
             unified::{Capability, WalletCapability},
         },
-        LightWallet, Pool, WalletBase,
+        LightWallet, Pool,
     },
 };
 

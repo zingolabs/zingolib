@@ -1,5 +1,8 @@
 pub mod data;
 pub use incrementalmerkletree;
+use zcash_address::unified::{Fvk, Ufvk};
+use zingolib::wallet::keys::unified::WalletCapability;
+use zingolib::wallet::WalletBase;
 pub mod regtest;
 use std::fs::OpenOptions;
 use std::io::Read;
@@ -17,7 +20,7 @@ use zingolib::lightclient::LightClient;
 
 use crate::scenarios::setup::TestEnvironmentGenerator;
 
-async fn build_fvk_client_capability(
+pub async fn build_fvk_client_capability(
     fvks: &[&Fvk],
     zingoconfig: &ZingoConfig,
 ) -> (LightClient, WalletCapability) {
