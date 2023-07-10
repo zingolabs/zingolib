@@ -17,6 +17,27 @@ use zingolib::lightclient::LightClient;
 
 use crate::scenarios::setup::TestEnvironmentGenerator;
 
+async fn build_fvk_client_capability(
+    fvks: &[&Fvk],
+    zingoconfig: &ZingoConfig,
+) -> (LightClient, WalletCapability) {
+    let ufvk = zcash_address::unified::Encoding::encode(
+        &<Ufvk as zcash_address::unified::Encoding>::try_from_items(
+            fvks.iter().copied().cloned().collect(),
+        )
+        .unwrap(),
+        &zcash_address::Network::Regtest,
+    );
+    let viewkey_client =
+        LightClient::create_unconnected(zingoconfig, WalletBase::Ufvk(ufvk), 0).unwrap();
+    let watch_wc = viewkey_client
+        .extract_unified_capability()
+        .read()
+        .await
+        .clone();
+    (viewkey_client, watch_wc)
+}
+
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct DurationAnnotation {
     pub timestamp: u64,

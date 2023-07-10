@@ -270,26 +270,6 @@ fn check_expected_balance_with_fvks(
         }
     }
 }
-async fn build_fvk_client_capability(
-    fvks: &[&Fvk],
-    zingoconfig: &ZingoConfig,
-) -> (LightClient, WalletCapability) {
-    let ufvk = zcash_address::unified::Encoding::encode(
-        &<Ufvk as zcash_address::unified::Encoding>::try_from_items(
-            fvks.iter().copied().cloned().collect(),
-        )
-        .unwrap(),
-        &zcash_address::Network::Regtest,
-    );
-    let viewkey_client =
-        LightClient::create_unconnected(zingoconfig, WalletBase::Ufvk(ufvk), 0).unwrap();
-    let watch_wc = viewkey_client
-        .extract_unified_capability()
-        .read()
-        .await
-        .clone();
-    (viewkey_client, watch_wc)
-}
 
 #[allow(clippy::too_many_arguments)]
 fn check_view_capability_bounds(
