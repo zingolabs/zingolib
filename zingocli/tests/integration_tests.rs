@@ -2804,34 +2804,36 @@ mod benchmarks {
         use zingo_testutils::DurationAnnotation;
 
         use super::*;
-        async fn timing_run(client: &str, print_updates: bool) {
-            let (_, child_process_handler, keyowning, keyless) =
-                scenarios::chainload::unsynced_faucet_recipient_1153().await;
+        async fn timing_run(keyownership: &str, print_updates: bool) {
             let sync_duration;
-            match client {
+            match keyownership {
                 "keyowning" => {
+                    let (_, child_process_handler, keyowning, keyless) =
+                        scenarios::chainload::unsynced_faucet_recipient_1153().await;
                     let timer_start = Instant::now();
                     keyowning.do_sync(print_updates).await.unwrap();
                     let timer_stop = Instant::now();
                     sync_duration = timer_stop.duration_since(timer_start);
+                    drop(child_process_handler);
                 }
                 "keyless" => {
+                    let (_, child_process_handler, keyowning, keyless) =
+                        scenarios::chainload::unsynced_faucet_recipient_1153().await;
                     let timer_start = Instant::now();
                     keyless.do_sync(print_updates).await.unwrap();
                     let timer_stop = Instant::now();
                     sync_duration = timer_stop.duration_since(timer_start);
+                    drop(child_process_handler);
                 }
                 _ => panic!(),
             }
             let annotation = DurationAnnotation::new(
-                format!("{PREFIX}_{client}_client_pu_{print_updates}"),
+                format!("{PREFIX}_{keyownership}_client_pu_{print_updates}"),
                 sync_duration,
             );
             zingo_testutils::record_time(&annotation);
 
             assert!(sync_duration.as_secs() < 1000);
-
-            drop(child_process_handler);
         }
         #[tokio::test]
         async fn keyless_client_pu_true() {
