@@ -130,6 +130,7 @@ impl UpdateNotes {
         &self,
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         fetch_full_sender: UnboundedSender<(TxId, BlockHeight)>,
+        use_witnesses: bool,
     ) -> (
         JoinHandle<Result<(), String>>,
         oneshot::Sender<u64>,
@@ -232,16 +233,19 @@ impl UpdateNotes {
                         }
                     } else {
                         //info!("Note was NOT spent, update its witnesses for TxId {}", txid);
+                        // not for viewkey
 
-                        // If this note's nullifier was not spent, then we need to update the witnesses for this.
-                        Self::update_witnesses(
-                            bsync_data.clone(),
-                            wallet_transactions.clone(),
-                            transaction_id,
-                            nf,
-                            output_num,
-                        )
-                        .await;
+                        if use_witnesses {
+                            // If this note's nullifier was not spent, then we need to update the witnesses for this.
+                            Self::update_witnesses(
+                                bsync_data.clone(),
+                                wallet_transactions.clone(),
+                                transaction_id,
+                                nf,
+                                output_num,
+                            )
+                            .await;
+                        }
                     }
 
                     // Send it off to get the full transaction if this is a new transaction, that is, it has an output_num
