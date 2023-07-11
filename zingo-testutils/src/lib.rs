@@ -663,10 +663,7 @@ pub mod scenarios {
             )
             .unwrap();
             // Create a lightclient to extract a capability from.
-            let original_recipient = sb
-                .client_builder
-                .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
-                .await;
+            let original_recipient = sb.client_builder.build_new_faucet(0, false).await;
             // Extract viewing keys
             let wc = original_recipient
                 .extract_unified_capability()
