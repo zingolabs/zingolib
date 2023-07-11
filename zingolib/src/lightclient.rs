@@ -208,10 +208,6 @@ impl LightClient {
             "last_txid" => self.wallet.transactions().read().await.get_some_txid_from_highest_wallet_block().map(|t| t.to_string())
         }
     }
-}
-
-#[cfg(feature = "integration_test")]
-impl LightClient {
     pub fn create_with_wallet(wallet: LightWallet, config: ZingoConfig) -> Self {
         LightClient {
             wallet,
@@ -223,6 +219,7 @@ impl LightClient {
         }
     }
 }
+
 impl LightClient {
     fn add_nonchange_notes<'a, 'b, 'c>(
         &'a self,
