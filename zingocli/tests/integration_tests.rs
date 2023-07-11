@@ -2817,7 +2817,7 @@ mod benchmarks {
                     sync_duration = timer_stop.duration_since(timer_start);
                     drop(child_process_handler);
                 }
-                "viewonly" => {
+                "fullviewonly" => {
                     let (_, child_process_handler, view_only_client) =
                         scenarios::chainload::unsynced_viewonlyclient_1153().await;
                     let timer_start = Instant::now();
@@ -2853,12 +2853,12 @@ mod benchmarks {
             timing_run("keyowning", false).await;
         }
         #[tokio::test]
-        async fn viewonly_client_pu_true() {
-            timing_run("viewonly", true).await;
+        async fn fullviewonly_client_pu_true() {
+            timing_run("fullviewonly", true).await;
         }
         #[tokio::test]
-        async fn viewonly_client_pu_false() {
-            timing_run("viewonly", false).await;
+        async fn fullviewonly_client_pu_false() {
+            timing_run("fullviewonly", false).await;
         }
     }
 }
