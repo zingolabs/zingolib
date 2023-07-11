@@ -109,7 +109,7 @@ pub fn get_duration_annotations(storage_file: PathBuf) -> Vec<DurationAnnotation
     read_duration_annotation_file(storage_file)
 }
 pub fn record_time(annotation: &DurationAnnotation) {
-    let storage_location = path_to_times(PathBuf::from(format!("{}.json", annotation.test_name)));
+    let storage_location = path_to_times(PathBuf::from(format!("sync_duration_annotation.json")));
     let mut data_set = get_duration_annotations(storage_location.clone());
     data_set.push(annotation.clone());
 
