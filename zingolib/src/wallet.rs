@@ -17,6 +17,7 @@ use orchard::tree::MerkleHashOrchard;
 use orchard::Anchor;
 use rand::rngs::OsRng;
 use rand::Rng;
+use rusqlite::Connection;
 use shardtree::ShardTree;
 use std::convert::Infallible;
 use std::{
@@ -646,12 +647,17 @@ impl LightWallet {
             price: Arc::new(RwLock::new(WalletZecPriceInfo::default())),
             transaction_context,
             witness_tree_sapling: Arc::new(Mutex::new(ShardTree::new(
-                crate::wallet::data::merkle::SqliteShardStore::from_connection(todo!(), todo!())
-                    .unwrap(),
+                crate::wallet::data::merkle::SqliteShardStore::from_connection(
+                    Connection::open_in_memory().expect("TODO: Handle this error"),
+                    "orchard",
+                ),
                 MAX_REORG,
             ))),
             witness_tree_orchard: Arc::new(Mutex::new(ShardTree::new(
-                SqliteShardStore::from_connection(todo!(), todo!()).unwrap(),
+                SqliteShardStore::from_connection(
+                    Connection::open_in_memory().expect("TODO: Hanlde this error"),
+                    "orchard",
+                ),
                 MAX_REORG,
             ))),
         })
