@@ -89,35 +89,6 @@ pub struct LightClient {
     interrupt_sync: Arc<RwLock<bool>>,
 }
 impl LightClient {
-    pub fn create_unconnected(
-        config: &ZingoConfig,
-        wallet_base: WalletBase,
-        height: u64,
-    ) -> io::Result<Self> {
-        Ok(LightClient {
-            wallet: LightWallet::new(config.clone(), wallet_base, height)?,
-            config: config.clone(),
-            mempool_monitor: std::sync::RwLock::new(None),
-            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
-            sync_lock: Mutex::new(()),
-            interrupt_sync: Arc::new(RwLock::new(false)),
-        })
-    }
-    /// Create a brand new wallet with a new seed phrase. Will fail if a wallet file
-    /// already exists on disk
-    pub fn new(config: &ZingoConfig, latest_block: u64) -> io::Result<Self> {
-        #[cfg(not(any(target_os = "ios", target_os = "android")))]
-        {
-            if config.wallet_exists() {
-                return Err(Error::new(
-                    ErrorKind::AlreadyExists,
-                    "Cannot create a new wallet from seed, because a wallet already exists",
-                ));
-            }
-        }
-
-        Self::create_with_new_wallet(config, latest_block)
-    }
     pub fn create_from_extant_wallet(wallet: LightWallet, config: ZingoConfig) -> Self {
         LightClient {
             wallet,
@@ -141,7 +112,6 @@ impl LightClient {
                 .await
         })
     }
-
     /// The wallet this fn associates with the lightclient is specifically derived from
     /// a spend authority.
     pub async fn create_from_wallet_base_async(
@@ -181,6 +151,20 @@ impl LightClient {
 
         Ok(lightclient)
     }
+    pub fn create_unconnected(
+        config: &ZingoConfig,
+        wallet_base: WalletBase,
+        height: u64,
+    ) -> io::Result<Self> {
+        Ok(LightClient {
+            wallet: LightWallet::new(config.clone(), wallet_base, height)?,
+            config: config.clone(),
+            mempool_monitor: std::sync::RwLock::new(None),
+            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
+            sync_lock: Mutex::new(()),
+            interrupt_sync: Arc::new(RwLock::new(false)),
+        })
+    }
 
     fn create_with_new_wallet(config: &ZingoConfig, height: u64) -> io::Result<Self> {
         Runtime::new().unwrap().block_on(async move {
@@ -197,6 +181,22 @@ impl LightClient {
 
             Ok(l)
         })
+    }
+
+    /// Create a brand new wallet with a new seed phrase. Will fail if a wallet file
+    /// already exists on disk
+    pub fn new(config: &ZingoConfig, latest_block: u64) -> io::Result<Self> {
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        {
+            if config.wallet_exists() {
+                return Err(Error::new(
+                    ErrorKind::AlreadyExists,
+                    "Cannot create a new wallet from seed, because a wallet already exists",
+                ));
+            }
+        }
+
+        Self::create_with_new_wallet(config, latest_block)
     }
     /// This constructor depends on a wallet that's read from a buffer.
     /// It is used internally by read_from_disk, and directly called by
