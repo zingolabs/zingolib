@@ -1691,12 +1691,17 @@ async fn witness_clearing() {
 
 #[tokio::test]
 async fn mempool_clearing() {
+    async fn do_maybe_recent_txid(lc: &LightClient) -> JsonValue {
+        json::object! {
+            "last_txid" => lc.wallet.transactions().read().await.get_some_txid_from_highest_wallet_block().map(|t| t.to_string())
+        }
+    }
     let value = 100_000;
     let (regtest_manager, child_process_handler, faucet, recipient, orig_transaction_id) =
         scenarios::faucet_prefunded_orchard_recipient(value).await;
 
     assert_eq!(
-        recipient.do_maybe_recent_txid().await["last_txid"],
+        do_maybe_recent_txid(&recipient).await["last_txid"],
         orig_transaction_id
     );
     // Put some transactions unrelated to the recipient (faucet->faucet) on-chain, to get some clutter
@@ -1775,7 +1780,7 @@ async fn mempool_clearing() {
 
     // 4. The transaction is not yet sent, it is just sitting in the test GRPC server, so remove it from there to make sure it doesn't get mined.
     assert_eq!(
-        recipient.do_maybe_recent_txid().await["last_txid"],
+        do_maybe_recent_txid(&recipient).await["last_txid"],
         sent_transaction_id
     );
 

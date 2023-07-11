@@ -188,26 +188,6 @@ async fn get_recent_median_price_from_gemini() -> Result<f64, PriceFetchError> {
 
 #[cfg(any(test, feature = "integration_test"))]
 impl LightClient {
-    /// Method to create a test-only version of the LightClient
-    pub async fn test_new(
-        config: &ZingoConfig,
-        wallet_base: WalletBase,
-        height: u64,
-    ) -> io::Result<Self> {
-        let l = LightClient::create_unconnected(config, wallet_base, height)
-            .expect("Unconnected client creation failed!");
-        l.set_wallet_initial_state(height).await;
-
-        debug!("Created new wallet!");
-        debug!("Created LightClient to {}", &config.get_lightwalletd_uri());
-        Ok(l)
-    }
-
-    pub async fn do_maybe_recent_txid(&self) -> JsonValue {
-        object! {
-            "last_txid" => self.wallet.transactions().read().await.get_some_txid_from_highest_wallet_block().map(|t| t.to_string())
-        }
-    }
     pub fn create_with_wallet(wallet: LightWallet, config: ZingoConfig) -> Self {
         LightClient {
             wallet,
