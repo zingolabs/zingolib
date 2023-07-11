@@ -420,13 +420,13 @@ pub fn startup(
                 "Cannot initiate a wallet with a seed and a viewing key simultaneously",
             ));
         }
-        (Some(phrase), None) => Arc::new(LightClient::new_from_wallet_base(
+        (Some(phrase), None) => Arc::new(LightClient::create_from_wallet_base(
             WalletBase::MnemonicPhrase(phrase),
             &config,
             filled_template.birthday,
             false,
         )?),
-        (None, Some(ufvk)) => Arc::new(LightClient::new_from_wallet_base(
+        (None, Some(ufvk)) => Arc::new(LightClient::create_from_wallet_base(
             WalletBase::Ufvk(ufvk),
             &config,
             filled_template.birthday,

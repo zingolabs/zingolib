@@ -89,7 +89,7 @@ async fn dont_write_unconfirmed() {
 
     let (wallet, config) =
         zingo_testutils::load_wallet(wallet_loc.to_path_buf(), ChainType::Regtest).await;
-    let loaded_client = LightClient::create_with_wallet(wallet, config);
+    let loaded_client = LightClient::create_from_extant_wallet(wallet, config);
     let loaded_balance = loaded_client.do_balance().await;
     assert_eq!(
         &loaded_balance["unverified_orchard_balance"]
@@ -118,7 +118,7 @@ async fn list_transactions_include_foreign() {
     let wallet_dir = wallet_path.parent().unwrap();
     let (wallet, config) =
         zingo_testutils::load_wallet(wallet_dir.to_path_buf(), ChainType::Mainnet).await;
-    let client = LightClient::create_with_wallet(wallet, config);
+    let client = LightClient::create_from_extant_wallet(wallet, config);
     let transactions = client.do_list_transactions().await[0].clone();
     //env_logger::init();
     let expected_consumer_ui_note = r#"{
@@ -585,7 +585,7 @@ async fn unspent_notes_are_not_saved() {
         .unwrap();
 
     // Create client based on config and wallet of faucet
-    let faucet_copy = LightClient::create_with_wallet(faucet_wallet, zingo_config.clone());
+    let faucet_copy = LightClient::create_from_extant_wallet(faucet_wallet, zingo_config.clone());
     assert_eq!(
         &faucet_copy.do_seed_phrase().await.unwrap(),
         &faucet.do_seed_phrase().await.unwrap()

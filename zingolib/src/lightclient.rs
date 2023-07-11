@@ -186,20 +186,6 @@ async fn get_recent_median_price_from_gemini() -> Result<f64, PriceFetchError> {
     Ok(trades[5])
 }
 
-#[cfg(any(test, feature = "integration_test"))]
-impl LightClient {
-    pub fn create_with_wallet(wallet: LightWallet, config: ZingoConfig) -> Self {
-        LightClient {
-            wallet,
-            config: config.clone(),
-            mempool_monitor: std::sync::RwLock::new(None),
-            sync_lock: Mutex::new(()),
-            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
-            interrupt_sync: Arc::new(RwLock::new(false)),
-        }
-    }
-}
-
 impl LightClient {
     fn add_nonchange_notes<'a, 'b, 'c>(
         &'a self,
@@ -1157,24 +1143,35 @@ impl LightClient {
             }
         }
 
-        Self::new_wallet(config, latest_block)
+        Self::create_with_new_wallet(config, latest_block)
+    }
+    pub fn create_from_extant_wallet(wallet: LightWallet, config: ZingoConfig) -> Self {
+        LightClient {
+            wallet,
+            config: config.clone(),
+            mempool_monitor: std::sync::RwLock::new(None),
+            sync_lock: Mutex::new(()),
+            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
+            interrupt_sync: Arc::new(RwLock::new(false)),
+        }
     }
     /// The wallet this fn associates with the lightclient is specifically derived from
     /// a spend authority.
-    pub fn new_from_wallet_base(
+    pub fn create_from_wallet_base(
         wallet_base: WalletBase,
         config: &ZingoConfig,
         birthday: u64,
         overwrite: bool,
     ) -> io::Result<Self> {
         Runtime::new().unwrap().block_on(async move {
-            LightClient::new_from_wallet_base_async(wallet_base, config, birthday, overwrite).await
+            LightClient::create_from_wallet_base_async(wallet_base, config, birthday, overwrite)
+                .await
         })
     }
 
     /// The wallet this fn associates with the lightclient is specifically derived from
     /// a spend authority.
-    pub async fn new_from_wallet_base_async(
+    pub async fn create_from_wallet_base_async(
         wallet_base: WalletBase,
         config: &ZingoConfig,
         birthday: u64,
@@ -1212,7 +1209,7 @@ impl LightClient {
         Ok(lightclient)
     }
 
-    fn new_wallet(config: &ZingoConfig, height: u64) -> io::Result<Self> {
+    fn create_with_new_wallet(config: &ZingoConfig, height: u64) -> io::Result<Self> {
         Runtime::new().unwrap().block_on(async move {
             let l = LightClient::create_unconnected(config, WalletBase::FreshEntropy, height)?;
             l.set_wallet_initial_state(height).await;
@@ -1982,7 +1979,7 @@ mod tests {
 
         let wallet_name = data_dir.join("zingo-wallet.dat");
         let config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, Some(data_dir));
-        let lc = LightClient::new_from_wallet_base(
+        let lc = LightClient::create_from_wallet_base(
             WalletBase::MnemonicPhrase(TEST_SEED.to_string()),
             &config,
             0,
@@ -1992,7 +1989,7 @@ mod tests {
         assert_eq!(
         format!(
             "{:?}",
-            LightClient::new_from_wallet_base(
+            LightClient::create_from_wallet_base(
                 WalletBase::MnemonicPhrase(TEST_SEED.to_string()),
                 &config,
                 0,
