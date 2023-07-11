@@ -314,7 +314,7 @@ pub mod scenarios {
     use super::regtest::{ChildProcessHandler, RegtestManager};
     use zingolib::{get_base_address, lightclient::LightClient};
 
-    use self::setup::ClientManager;
+    use self::setup::ClientBuilder;
 
     use super::increase_height_and_sync_client;
     pub mod setup {
@@ -327,7 +327,7 @@ pub mod scenarios {
         pub struct ScenarioBuilder {
             pub test_env: TestEnvironmentGenerator,
             pub regtest_manager: RegtestManager,
-            pub client_builder: ClientManager,
+            pub client_builder: ClientBuilder,
             pub child_process_handler: Option<ChildProcessHandler>,
         }
         impl ScenarioBuilder {
@@ -345,7 +345,7 @@ pub mod scenarios {
                 } else {
                     regtest_manager.zingo_datadir.clone()
                 };
-                let client_builder = ClientManager::new(
+                let client_builder = ClientBuilder::new(
                     test_env.get_lightwalletd_uri(),
                     data_dir,
                     data::seeds::ABANDON_ART_SEED,
@@ -416,17 +416,17 @@ pub mod scenarios {
 
         /// Internally (and perhaps in wider scopes) we say "Sprout" to mean
         /// take a seed, and generate a client from the seed (planted in the chain).
-        pub struct ClientManager {
+        pub struct ClientBuilder {
             pub server_id: http::Uri,
             pub zingo_datadir: PathBuf,
             seed: String,
             client_number: u8,
         }
-        impl ClientManager {
+        impl ClientBuilder {
             pub fn new(server_id: http::Uri, zingo_datadir: PathBuf, seed: &str) -> Self {
                 let seed = seed.to_string();
                 let client_number = 0;
-                ClientManager {
+                ClientBuilder {
                     server_id,
                     zingo_datadir,
                     seed,
@@ -560,7 +560,7 @@ pub mod scenarios {
             }
         }
     }
-    pub fn custom_clients() -> (RegtestManager, ChildProcessHandler, ClientManager) {
+    pub fn custom_clients() -> (RegtestManager, ChildProcessHandler, ClientBuilder) {
         let sb = setup::ScenarioBuilder::build_configure_launch(
             Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
             None,
