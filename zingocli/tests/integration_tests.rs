@@ -384,7 +384,8 @@ async fn test_scanning_in_watch_only_mode() {
 
     // Extract viewing keys
     let wallet_capability = original_recipient
-        .extract_unified_capability()
+        .wallet
+        .wallet_capability()
         .read()
         .await
         .clone();

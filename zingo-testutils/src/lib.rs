@@ -53,7 +53,8 @@ pub async fn build_fvk_client_and_capability(
     let viewkey_client =
         LightClient::create_unconnected(zingoconfig, WalletBase::Ufvk(ufvk), 0).unwrap();
     let watch_wc = viewkey_client
-        .extract_unified_capability()
+        .wallet
+        .wallet_capability()
         .read()
         .await
         .clone();
@@ -685,7 +686,8 @@ pub mod scenarios {
             let original_recipient = sb.client_builder.build_new_faucet(0, false).await;
             // Extract viewing keys
             let wc = original_recipient
-                .extract_unified_capability()
+                .wallet
+                .wallet_capability()
                 .read()
                 .await
                 .clone();
