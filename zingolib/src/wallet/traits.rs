@@ -14,7 +14,7 @@ use crate::compact_formats::{
     slice_to_array, CompactOrchardAction, CompactSaplingOutput, CompactTx, TreeState,
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use incrementalmerkletree::{witness::IncrementalWitness, Hashable, Level};
+use incrementalmerkletree::{witness::IncrementalWitness, Hashable, Level, Position};
 use nonempty::NonEmpty;
 use orchard::{
     note_encryption::OrchardDomain,
@@ -426,7 +426,7 @@ pub trait ReceivedNoteAndMetadata: Sized {
     fn from_parts(
         diversifier: Self::Diversifier,
         note: Self::Note,
-        witnesses: WitnessCache<Self::Node>,
+        witness_position: Position,
         nullifier: Self::Nullifier,
         spent: Option<(TxId, u32)>,
         unconfirmed_spent: Option<(TxId, u32)>,
@@ -459,8 +459,7 @@ pub trait ReceivedNoteAndMetadata: Sized {
         Self::value_from_note(self.note())
     }
     fn value_from_note(note: &Self::Note) -> u64;
-    fn witnesses(&self) -> &WitnessCache<Self::Node>;
-    fn witnesses_mut(&mut self) -> &mut WitnessCache<Self::Node>;
+    fn witnessed_position(&self) -> &Position;
 }
 
 impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
@@ -492,7 +491,7 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
     fn from_parts(
         diversifier: zcash_primitives::sapling::Diversifier,
         note: zcash_primitives::sapling::Note,
-        witnesses: WitnessCache<zcash_primitives::sapling::Node>,
+        witnessed_position: Position,
         nullifier: zcash_primitives::sapling::Nullifier,
         spent: Option<(TxId, u32)>,
         unconfirmed_spent: Option<(TxId, u32)>,
@@ -503,7 +502,7 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         Self {
             diversifier,
             note,
-            witnesses,
+            witnessed_position,
             nullifier,
             spent,
             unconfirmed_spent,
@@ -579,12 +578,8 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         note.value().inner()
     }
 
-    fn witnesses(&self) -> &WitnessCache<Self::Node> {
-        &self.witnesses
-    }
-
-    fn witnesses_mut(&mut self) -> &mut WitnessCache<Self::Node> {
-        &mut self.witnesses
+    fn witnessed_position(&self) -> &Position {
+        &self.witnessed_position
     }
 }
 
@@ -618,7 +613,7 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
     fn from_parts(
         diversifier: Self::Diversifier,
         note: Self::Note,
-        witnesses: WitnessCache<Self::Node>,
+        witnessed_position: Position,
         nullifier: Self::Nullifier,
         spent: Option<(TxId, u32)>,
         unconfirmed_spent: Option<(TxId, u32)>,
@@ -629,7 +624,7 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         Self {
             diversifier,
             note,
-            witnesses,
+            witnessed_position,
             nullifier,
             spent,
             unconfirmed_spent,
@@ -704,12 +699,8 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         note.value().inner()
     }
 
-    fn witnesses(&self) -> &WitnessCache<Self::Node> {
-        &self.witnesses
-    }
-
-    fn witnesses_mut(&mut self) -> &mut WitnessCache<Self::Node> {
-        &mut self.witnesses
+    fn witnessed_position(&self) -> &Position {
+        &self.witnessed_position
     }
 }
 
@@ -924,11 +915,12 @@ where
         if note_and_metadata.spent().is_none()
             && note_and_metadata.unconfirmed_spent().is_none()
             && spend_key.is_some()
-            && note_and_metadata.witnesses().len() >= (anchor_offset + 1)
+        //TODO: Account for lack of this line
+        // && note_and_metadata.witnessed_position().len() >= (anchor_offset + 1)
         {
             let witness = note_and_metadata
-                .witnesses()
-                .get(note_and_metadata.witnesses().len() - anchor_offset - 1);
+                .witnessed_position()
+                .get(note_and_metadata.witnessed_position().len() - anchor_offset - 1);
 
             witness.map(|w| {
                 Self::from_parts_unchecked(
@@ -1243,7 +1235,7 @@ where
 
         let witnesses_vec = Vector::read(&mut reader, |r| read_incremental_witness(r))?;
         let top_height = reader.read_u64::<LittleEndian>()?;
-        let witnesses = WitnessCache::new(witnesses_vec, top_height);
+        let witnesses = WitnessCache::<T::Node>::new(witnesses_vec, top_height);
 
         let mut nullifier = [0u8; 32];
         reader.read_exact(&mut nullifier)?;
@@ -1295,7 +1287,7 @@ where
         Ok(T::from_parts(
             diversifier,
             note,
-            witnesses,
+            witnesses.last().unwrap().witnessed_position(),
             nullifier,
             spent,
             None,
@@ -1312,10 +1304,7 @@ where
         writer.write_all(&self.diversifier().to_bytes())?;
 
         self.note().write(&mut writer)?;
-        Vector::write(&mut writer, &self.witnesses().witnesses, |wr, wi| {
-            write_incremental_witness(wi, wr)
-        })?;
-        writer.write_u64::<LittleEndian>(self.witnesses().top_height)?;
+        writer.write_u64::<LittleEndian>(u64::from(*self.witnessed_position()));
 
         writer.write_all(&self.nullifier().to_bytes())?;
 

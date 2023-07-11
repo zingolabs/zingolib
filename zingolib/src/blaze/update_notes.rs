@@ -235,17 +235,8 @@ impl UpdateNotes {
                         //info!("Note was NOT spent, update its witnesses for TxId {}", txid);
                         // not for viewkey
 
-                        if use_witnesses {
-                            // If this note's nullifier was not spent, then we need to update the witnesses for this.
-                            Self::update_witnesses(
-                                bsync_data.clone(),
-                                wallet_transactions.clone(),
-                                transaction_id,
-                                nf,
-                                output_num,
-                            )
-                            .await;
-                        }
+                        // If this note's nullifier was not spent, then we need to update the witnesses for this.
+                        //TODO: We no longer update witnesses individually
                     }
 
                     // Send it off to get the full transaction if this is a new transaction, that is, it has an output_num

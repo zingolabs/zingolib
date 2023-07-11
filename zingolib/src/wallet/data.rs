@@ -4,24 +4,31 @@ use crate::wallet::traits::ReceivedNoteAndMetadata;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::frontier::CommitmentTree;
 use incrementalmerkletree::witness::IncrementalWitness;
-use incrementalmerkletree::Hashable;
+use incrementalmerkletree::{Hashable, Position};
 use orchard::note_encryption::OrchardDomain;
 use orchard::tree::MerkleHashOrchard;
 use prost::Message;
+use rusqlite::Connection;
+use shardtree::ShardTree;
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
+use std::sync::Arc;
 use std::usize;
+use tokio::sync::Mutex;
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::merkle_tree::{read_commitment_tree, write_commitment_tree};
 use zcash_primitives::sapling::note_encryption::SaplingDomain;
+use zcash_primitives::sapling::Node;
 use zcash_primitives::{
     memo::Memo,
     transaction::{components::OutPoint, TxId},
 };
-use zingoconfig::ChainType;
+use zingoconfig::{ChainType, MAX_REORG};
+
+use self::merkle::SqliteShardStore;
 
 use super::keys::unified::WalletCapability;
 use super::traits::{self, DomainWalletExt, ReadableWriteable};
@@ -39,6 +46,48 @@ pub(crate) mod merkle;
 pub enum PoolNullifier {
     Sapling(zcash_primitives::sapling::Nullifier),
     Orchard(orchard::note::Nullifier),
+}
+
+pub(crate) struct WitnessTrees {
+    pub(crate) witness_tree_sapling: Arc<
+        Mutex<
+            ShardTree<
+                merkle::SqliteShardStore<rusqlite::Connection, Node, MAX_SHARD_DEPTH>,
+                COMMITMENT_TREE_DEPTH,
+                MAX_SHARD_DEPTH,
+            >,
+        >,
+    >,
+    pub(crate) witness_tree_orchard: Arc<
+        Mutex<
+            ShardTree<
+                merkle::SqliteShardStore<rusqlite::Connection, MerkleHashOrchard, MAX_SHARD_DEPTH>,
+                COMMITMENT_TREE_DEPTH,
+                MAX_SHARD_DEPTH,
+            >,
+        >,
+    >,
+}
+
+impl Default for WitnessTrees {
+    fn default() -> WitnessTrees {
+        Self {
+            witness_tree_sapling: Arc::new(Mutex::new(ShardTree::new(
+                crate::wallet::data::merkle::SqliteShardStore::from_connection(
+                    Connection::open_in_memory().expect("TODO: Handle this error"),
+                    "orchard",
+                ),
+                MAX_REORG,
+            ))),
+            witness_tree_orchard: Arc::new(Mutex::new(ShardTree::new(
+                SqliteShardStore::from_connection(
+                    Connection::open_in_memory().expect("TODO: Hanlde this error"),
+                    "orchard",
+                ),
+                MAX_REORG,
+            ))),
+        }
+    }
 }
 
 impl std::hash::Hash for PoolNullifier {
@@ -237,8 +286,8 @@ pub struct ReceivedSaplingNoteAndMetadata {
     pub diversifier: zcash_primitives::sapling::Diversifier,
     pub note: zcash_primitives::sapling::Note,
 
-    // Witnesses for the last 100 blocks. witnesses.last() is the latest witness
-    pub(crate) witnesses: WitnessCache<zcash_primitives::sapling::Node>,
+    // The postion of this note's commitment
+    pub(crate) witnessed_position: Position,
     pub(super) nullifier: zcash_primitives::sapling::Nullifier,
     pub spent: Option<(TxId, u32)>, // If this note was confirmed spent
 
@@ -257,7 +306,7 @@ pub struct ReceivedOrchardNoteAndMetadata {
     pub diversifier: orchard::keys::Diversifier,
     pub note: orchard::note::Note,
 
-    pub witnesses: WitnessCache<MerkleHashOrchard>,
+    pub witnessed_position: Position,
     pub(super) nullifier: orchard::note::Nullifier,
     pub spent: Option<(TxId, u32)>, // If this note was confirmed spent
 

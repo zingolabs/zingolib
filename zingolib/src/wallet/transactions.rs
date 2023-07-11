@@ -23,7 +23,7 @@ use super::{
     data::{
         OutgoingTxData, PoolNullifier, ReceivedOrchardNoteAndMetadata,
         ReceivedSaplingNoteAndMetadata, ReceivedTransparentOutput, TransactionMetadata,
-        WitnessCache,
+        WitnessCache, WitnessTrees,
     },
     keys::unified::WalletCapability,
     traits::{
@@ -38,11 +38,12 @@ use super::{
 pub struct TransactionMetadataSet {
     pub current: HashMap<TxId, TransactionMetadata>,
     pub(crate) some_txid_from_highest_wallet_block: Option<TxId>,
+    witness_trees: WitnessTrees,
 }
 
 impl TransactionMetadataSet {
     pub fn serialized_version() -> u64 {
-        21
+        22
     }
 
     pub fn get_fee_by_txid(&self, txid: &TxId) -> u64 {
@@ -72,6 +73,7 @@ impl TransactionMetadataSet {
         Ok(Self {
             current: txs,
             some_txid_from_highest_wallet_block: None,
+            witness_trees: WitnessTrees::default(),
         })
     }
 
@@ -122,9 +124,16 @@ impl TransactionMetadataSet {
             vec![]
         };
 
+        let witness_trees = if version < 22 {
+            todo!("generate trees from old incremental witnesses")
+        } else {
+            todo!("read trees somehow")
+        };
+
         Ok(Self {
             current,
             some_txid_from_highest_wallet_block,
+            witness_trees,
         })
     }
 
@@ -404,31 +413,7 @@ impl TransactionMetadataSet {
     }
 
     pub(crate) fn clear_old_witnesses(&mut self, latest_height: u64) {
-        self.clear_old_domain_specific_witnesses::<OrchardDomain>(latest_height);
-        self.clear_old_domain_specific_witnesses::<SaplingDomain<zingoconfig::ChainType>>(
-            latest_height,
-        );
-    }
-
-    fn clear_old_domain_specific_witnesses<D: DomainWalletExt>(&mut self, latest_height: u64)
-    where
-        <D as Domain>::Note: Clone + PartialEq,
-        <D as Domain>::Recipient: Recipient,
-    {
-        let cutoff = (latest_height.saturating_sub(MAX_REORG as u64)) as u32;
-
-        self.current
-            .iter_mut()
-            .for_each(|(_, transaction_metadata)| {
-                D::to_notes_vec_mut(transaction_metadata)
-                    .iter_mut()
-                    .filter(|note_data| {
-                        !note_data.witnesses().is_empty()
-                            && note_data.is_spent()
-                            && note_data.spent().unwrap().1 < cutoff
-                    })
-                    .for_each(|note_data| note_data.witnesses_mut().clear());
-            });
+        todo!("Remove old positions from the trees")
     }
 
     pub(crate) fn clear_expired_mempool(&mut self, latest_height: u64) {

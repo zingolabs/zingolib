@@ -218,25 +218,6 @@ pub struct LightWallet {
     // Wallet options
     pub(crate) wallet_options: Arc<RwLock<WalletOptions>>,
 
-    witness_tree_sapling: Arc<
-        Mutex<
-            ShardTree<
-                SqliteShardStore<rusqlite::Connection, Node, MAX_SHARD_DEPTH>,
-                COMMITMENT_TREE_DEPTH,
-                MAX_SHARD_DEPTH,
-            >,
-        >,
-    >,
-    witness_tree_orchard: Arc<
-        Mutex<
-            ShardTree<
-                SqliteShardStore<rusqlite::Connection, MerkleHashOrchard, MAX_SHARD_DEPTH>,
-                COMMITMENT_TREE_DEPTH,
-                MAX_SHARD_DEPTH,
-            >,
-        >,
-    >,
-
     // Heighest verified block
     pub(crate) verified_tree: Arc<RwLock<Option<TreeState>>>,
 
@@ -646,20 +627,6 @@ impl LightWallet {
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(WalletZecPriceInfo::default())),
             transaction_context,
-            witness_tree_sapling: Arc::new(Mutex::new(ShardTree::new(
-                crate::wallet::data::merkle::SqliteShardStore::from_connection(
-                    Connection::open_in_memory().expect("TODO: Handle this error"),
-                    "orchard",
-                ),
-                MAX_REORG,
-            ))),
-            witness_tree_orchard: Arc::new(Mutex::new(ShardTree::new(
-                SqliteShardStore::from_connection(
-                    Connection::open_in_memory().expect("TODO: Hanlde this error"),
-                    "orchard",
-                ),
-                MAX_REORG,
-            ))),
         })
     }
 
@@ -831,13 +798,7 @@ impl LightWallet {
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
             price: Arc::new(RwLock::new(price)),
             transaction_context,
-            witness_tree_sapling: todo!(),
-            witness_tree_orchard: todo!(),
         };
-
-        if external_version <= 14 {
-            lw.set_witness_block_heights().await;
-        }
 
         Ok(lw)
     }
@@ -1415,22 +1376,6 @@ impl LightWallet {
         p.last_transaction_id = Some(transaction_id);
     }
 
-    // Before version 20, witnesses didn't store their height, so we need to update them.
-    pub async fn set_witness_block_heights(&mut self) {
-        let top_height = self.last_synced_height().await;
-        self.transaction_context
-            .transaction_metadata_set
-            .write()
-            .await
-            .current
-            .iter_mut()
-            .for_each(|(_, wtx)| {
-                wtx.sapling_notes.iter_mut().for_each(|nd| {
-                    nd.witnesses.top_height = top_height;
-                });
-            });
-    }
-
     #[allow(clippy::type_complexity)]
     async fn shielded_balance<D>(
         &self,
@@ -1492,12 +1437,9 @@ impl LightWallet {
         #[allow(clippy::type_complexity)]
         let filters: &[Box<
             dyn Fn(&&ReceivedOrchardNoteAndMetadata, &TransactionMetadata) -> bool,
-        >] = &[
-            Box::new(|_, transaction| {
-                transaction.block_height <= BlockHeight::from_u32(anchor_height)
-            }),
-            Box::new(|nnmd, _| !nnmd.witnesses.is_empty()),
-        ];
+        >] = &[Box::new(|_, transaction| {
+            transaction.block_height <= BlockHeight::from_u32(anchor_height)
+        })];
         self.shielded_balance::<OrchardDomain>(target_addr, filters)
             .await
             .map_or(json::JsonValue::Null, json::JsonValue::from)
@@ -1508,12 +1450,9 @@ impl LightWallet {
         #[allow(clippy::type_complexity)]
         let filters: &[Box<
             dyn Fn(&&ReceivedSaplingNoteAndMetadata, &TransactionMetadata) -> bool,
-        >] = &[
-            Box::new(|_, transaction| {
-                transaction.block_height <= BlockHeight::from_u32(anchor_height)
-            }),
-            Box::new(|nnmd, _| !nnmd.witnesses.is_empty()),
-        ];
+        >] = &[Box::new(|_, transaction| {
+            transaction.block_height <= BlockHeight::from_u32(anchor_height)
+        })];
         self.shielded_balance::<SaplingDomain<zingoconfig::ChainType>>(target_addr, filters)
             .await
             .map_or(json::JsonValue::Null, json::JsonValue::from)
