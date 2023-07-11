@@ -735,81 +735,6 @@ impl LightClient {
         JsonValue::Array(consumer_ui_notes)
     }
 
-    async fn value_transfer_by_to_address(&self) -> finsight::ValuesSentToAddress {
-        let summaries = self.do_list_txsummaries().await;
-        let mut amount_by_address = HashMap::new();
-        for summary in summaries {
-            use ValueTransferKind::*;
-            match summary.kind {
-                Sent { amount, to_address } => {
-                    let address = to_address.encode();
-                    if let std::collections::hash_map::Entry::Vacant(e) =
-                        amount_by_address.entry(address.clone())
-                    {
-                        e.insert(vec![amount]);
-                    } else {
-                        amount_by_address
-                            .get_mut(&address)
-                            .expect("a vec of u64")
-                            .push(amount);
-                    };
-                }
-                Fee { amount } => {
-                    let fee_key = "fee".to_string();
-                    if let std::collections::hash_map::Entry::Vacant(e) =
-                        amount_by_address.entry(fee_key.clone())
-                    {
-                        e.insert(vec![amount]);
-                    } else {
-                        amount_by_address
-                            .get_mut(&fee_key)
-                            .expect("a vec of u64.")
-                            .push(amount);
-                    };
-                }
-                SendToSelf { .. } | Received { .. } => (),
-            }
-        }
-        finsight::ValuesSentToAddress(amount_by_address)
-    }
-
-    pub async fn do_total_memobytes_to_address(&self) -> finsight::TotalMemoBytesToAddress {
-        let summaries = self.do_list_txsummaries().await;
-        let mut memobytes_by_address = HashMap::new();
-        for summary in summaries {
-            use ValueTransferKind::*;
-            match summary.kind {
-                Sent { to_address, .. } => {
-                    let address = to_address.encode();
-                    let bytes = summary.memos.iter().fold(0, |sum, m| sum + m.len());
-                    memobytes_by_address
-                        .entry(address)
-                        .and_modify(|e| *e += bytes)
-                        .or_insert(bytes);
-                }
-                SendToSelf { .. } | Received { .. } | Fee { .. } => (),
-            }
-        }
-        finsight::TotalMemoBytesToAddress(memobytes_by_address)
-    }
-    pub async fn do_total_value_to_address(&self) -> finsight::TotalValueToAddress {
-        let values_sent_to_addresses = self.value_transfer_by_to_address().await;
-        let mut by_address_total = HashMap::new();
-        for key in values_sent_to_addresses.0.keys() {
-            let sum = values_sent_to_addresses.0[key].iter().sum();
-            by_address_total.insert(key.clone(), sum);
-        }
-        finsight::TotalValueToAddress(by_address_total)
-    }
-    pub async fn do_total_spends_to_address(&self) -> finsight::TotalSendsToAddress {
-        let values_sent_to_addresses = self.value_transfer_by_to_address().await;
-        let mut by_address_number_sends = HashMap::new();
-        for key in values_sent_to_addresses.0.keys() {
-            let number_sends = values_sent_to_addresses.0[key].len() as u64;
-            by_address_number_sends.insert(key.clone(), number_sends);
-        }
-        finsight::TotalSendsToAddress(by_address_number_sends)
-    }
     pub async fn do_list_txsummaries(&self) -> Vec<ValueTransfer> {
         let mut summaries: Vec<ValueTransfer> = Vec::new();
 
@@ -864,7 +789,6 @@ impl LightClient {
 
         Ok(array![new_address.encode(&self.config.chain)])
     }
-
     pub async fn do_rescan(&self) -> Result<JsonValue, String> {
         debug!("Rescan starting");
 
@@ -881,7 +805,6 @@ impl LightClient {
 
         response
     }
-
     pub async fn do_save(&self) -> Result<(), String> {
         #[cfg(any(target_os = "ios", target_os = "android"))]
         // on mobile platforms, disable the save, because the saves will be handled by the native layer, and not in rust
@@ -950,7 +873,6 @@ impl LightClient {
             .unwrap()
             .block_on(async move { self.do_seed_phrase().await })
     }
-
     //TODO: Add migrate_sapling_to_orchard argument
     pub async fn do_send(
         &self,
@@ -1121,6 +1043,46 @@ impl LightClient {
             .clone()
     }
 
+    pub async fn do_total_memobytes_to_address(&self) -> finsight::TotalMemoBytesToAddress {
+        let summaries = self.do_list_txsummaries().await;
+        let mut memobytes_by_address = HashMap::new();
+        for summary in summaries {
+            use ValueTransferKind::*;
+            match summary.kind {
+                Sent { to_address, .. } => {
+                    let address = to_address.encode();
+                    let bytes = summary.memos.iter().fold(0, |sum, m| sum + m.len());
+                    memobytes_by_address
+                        .entry(address)
+                        .and_modify(|e| *e += bytes)
+                        .or_insert(bytes);
+                }
+                SendToSelf { .. } | Received { .. } | Fee { .. } => (),
+            }
+        }
+        finsight::TotalMemoBytesToAddress(memobytes_by_address)
+    }
+
+    pub async fn do_total_spends_to_address(&self) -> finsight::TotalSendsToAddress {
+        let values_sent_to_addresses = self.value_transfer_by_to_address().await;
+        let mut by_address_number_sends = HashMap::new();
+        for key in values_sent_to_addresses.0.keys() {
+            let number_sends = values_sent_to_addresses.0[key].len() as u64;
+            by_address_number_sends.insert(key.clone(), number_sends);
+        }
+        finsight::TotalSendsToAddress(by_address_number_sends)
+    }
+
+    pub async fn do_total_value_to_address(&self) -> finsight::TotalValueToAddress {
+        let values_sent_to_addresses = self.value_transfer_by_to_address().await;
+        let mut by_address_total = HashMap::new();
+        for key in values_sent_to_addresses.0.keys() {
+            let sum = values_sent_to_addresses.0[key].iter().sum();
+            by_address_total.insert(key.clone(), sum);
+        }
+        finsight::TotalValueToAddress(by_address_total)
+    }
+
     pub async fn do_wallet_last_scanned_height(&self) -> JsonValue {
         json::JsonValue::from(self.wallet.last_synced_height().await)
     }
@@ -1173,6 +1135,7 @@ impl LightClient {
 
         Ok(())
     }
+
     pub async fn interrupt_sync_after_batch(&self, set_interrupt: bool) {
         *self.interrupt_sync.write().await = set_interrupt;
     }
@@ -1198,7 +1161,6 @@ impl LightClient {
 
         Ok((sapling_output, sapling_spend))
     }
-
     #[cfg(not(feature = "embed_params"))]
     fn read_sapling_params(&self) -> Result<(Vec<u8>, Vec<u8>), String> {
         let path = self
@@ -1838,6 +1800,7 @@ impl LightClient {
             }
         };
     }
+
     pub(crate) async fn update_current_price(&self) -> String {
         // Get the zec price from the server
         match get_recent_median_price_from_gemini().await {
@@ -1850,6 +1813,43 @@ impl LightClient {
                 s.to_string()
             }
         }
+    }
+    async fn value_transfer_by_to_address(&self) -> finsight::ValuesSentToAddress {
+        let summaries = self.do_list_txsummaries().await;
+        let mut amount_by_address = HashMap::new();
+        for summary in summaries {
+            use ValueTransferKind::*;
+            match summary.kind {
+                Sent { amount, to_address } => {
+                    let address = to_address.encode();
+                    if let std::collections::hash_map::Entry::Vacant(e) =
+                        amount_by_address.entry(address.clone())
+                    {
+                        e.insert(vec![amount]);
+                    } else {
+                        amount_by_address
+                            .get_mut(&address)
+                            .expect("a vec of u64")
+                            .push(amount);
+                    };
+                }
+                Fee { amount } => {
+                    let fee_key = "fee".to_string();
+                    if let std::collections::hash_map::Entry::Vacant(e) =
+                        amount_by_address.entry(fee_key.clone())
+                    {
+                        e.insert(vec![amount]);
+                    } else {
+                        amount_by_address
+                            .get_mut(&fee_key)
+                            .expect("a vec of u64.")
+                            .push(amount);
+                    };
+                }
+                SendToSelf { .. } | Received { .. } => (),
+            }
+        }
+        finsight::ValuesSentToAddress(amount_by_address)
     }
 
     fn write_file_if_not_exists(dir: &Path, name: &str, bytes: &[u8]) -> io::Result<()> {
