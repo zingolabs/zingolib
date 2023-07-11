@@ -2808,7 +2808,7 @@ mod benchmarks {
             let sync_duration;
             match keyownership {
                 "keyowning" => {
-                    let (_, child_process_handler, keyowning, keyless) =
+                    let (_, child_process_handler, keyowning, _keyless) =
                         scenarios::chainload::unsynced_faucet_recipient_1153().await;
                     let timer_start = Instant::now();
                     keyowning.do_sync(print_updates).await.unwrap();
@@ -2817,10 +2817,19 @@ mod benchmarks {
                     drop(child_process_handler);
                 }
                 "keyless" => {
-                    let (_, child_process_handler, keyowning, keyless) =
+                    let (_, child_process_handler, _keyowning, keyless) =
                         scenarios::chainload::unsynced_faucet_recipient_1153().await;
                     let timer_start = Instant::now();
                     keyless.do_sync(print_updates).await.unwrap();
+                    let timer_stop = Instant::now();
+                    sync_duration = timer_stop.duration_since(timer_start);
+                    drop(child_process_handler);
+                }
+                "viewonly" => {
+                    let (_, child_process_handler, view_only_client) =
+                        scenarios::chainload::unsynced_viewonlyclient_1153().await;
+                    let timer_start = Instant::now();
+                    view_only_client.do_sync(print_updates).await.unwrap();
                     let timer_stop = Instant::now();
                     sync_duration = timer_stop.duration_since(timer_start);
                     drop(child_process_handler);
@@ -2850,6 +2859,14 @@ mod benchmarks {
         #[tokio::test]
         async fn keyowning_client_pu_false() {
             timing_run("keyowning", false).await;
+        }
+        #[tokio::test]
+        async fn viewonly_client_pu_true() {
+            timing_run("viewonly", true).await;
+        }
+        #[tokio::test]
+        async fn viewonly_client_pu_false() {
+            timing_run("viewonly", false).await;
         }
     }
 }
