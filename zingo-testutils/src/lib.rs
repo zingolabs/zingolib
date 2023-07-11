@@ -20,6 +20,25 @@ use zingolib::lightclient::LightClient;
 
 use crate::scenarios::setup::TestEnvironmentGenerator;
 
+pub fn build_fvks_from_wallet_capability(wallet_capability: &WalletCapability) -> [Fvk; 3] {
+    let o_fvk = Fvk::Orchard(
+        orchard::keys::FullViewingKey::try_from(wallet_capability)
+            .unwrap()
+            .to_bytes(),
+    );
+    let s_fvk = Fvk::Sapling(
+        zcash_primitives::zip32::sapling::DiversifiableFullViewingKey::try_from(wallet_capability)
+            .unwrap()
+            .to_bytes(),
+    );
+    let mut t_fvk_bytes = [0u8; 65];
+    let t_ext_pk: zingolib::wallet::keys::extended_transparent::ExtendedPubKey =
+        (wallet_capability).try_into().unwrap();
+    t_fvk_bytes[0..32].copy_from_slice(&t_ext_pk.chain_code[..]);
+    t_fvk_bytes[32..65].copy_from_slice(&t_ext_pk.public_key.serialize()[..]);
+    let t_fvk = Fvk::P2pkh(t_fvk_bytes);
+    [o_fvk, s_fvk, t_fvk]
+}
 pub async fn build_fvk_client_and_capability(
     fvks: &[&Fvk],
     zingoconfig: &ZingoConfig,

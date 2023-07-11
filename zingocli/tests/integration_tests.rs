@@ -383,27 +383,13 @@ async fn test_scanning_in_watch_only_mode() {
     check_client_balances!(original_recipient, o: sent_o_value s: sent_s_value t: sent_t_value);
 
     // Extract viewing keys
-    let wc = original_recipient
+    let wallet_capability = original_recipient
         .extract_unified_capability()
         .read()
         .await
         .clone();
-    use zingolib::wallet::keys::extended_transparent::ExtendedPubKey;
-    let o_fvk = Fvk::Orchard(
-        orchard::keys::FullViewingKey::try_from(&wc)
-            .unwrap()
-            .to_bytes(),
-    );
-    let s_fvk = Fvk::Sapling(
-        zcash_primitives::zip32::sapling::DiversifiableFullViewingKey::try_from(&wc)
-            .unwrap()
-            .to_bytes(),
-    );
-    let mut t_fvk_bytes = [0u8; 65];
-    let t_ext_pk: ExtendedPubKey = (&wc).try_into().unwrap();
-    t_fvk_bytes[0..32].copy_from_slice(&t_ext_pk.chain_code[..]);
-    t_fvk_bytes[32..65].copy_from_slice(&t_ext_pk.public_key.serialize()[..]);
-    let t_fvk = Fvk::P2pkh(t_fvk_bytes);
+    let [o_fvk, s_fvk, t_fvk] =
+        zingo_testutils::build_fvks_from_wallet_capability(&wallet_capability);
     let fvks_sets = vec![
         vec![&o_fvk],
         vec![&s_fvk],
