@@ -9,7 +9,7 @@ use crate::darkside::{
 use json::JsonValue;
 
 use tokio::time::sleep;
-use zingo_testutils::scenarios::setup::ClientManager;
+use zingo_testutils::scenarios::setup::ClientBuilder;
 use zingolib::{get_base_address, lightclient::LightClient};
 
 use std::sync::Arc;
@@ -216,7 +216,7 @@ async fn simple_sync() {
         .await
         .unwrap();
 
-    let light_client = ClientManager::new(
+    let light_client = ClientBuilder::new(
         server_id,
         darkside_handler.darkside_dir.clone(),
         DARKSIDE_SEED,
@@ -267,7 +267,7 @@ async fn reorg_away_receipt() {
         .await
         .unwrap();
 
-    let light_client = ClientManager::new(
+    let light_client = ClientBuilder::new(
         server_id.clone(),
         darkside_handler.darkside_dir.clone(),
         DARKSIDE_SEED,
@@ -332,7 +332,7 @@ async fn sent_transaction_reorged_into_mempool() {
         .await
         .unwrap();
 
-    let mut client_manager = ClientManager::new(
+    let mut client_manager = ClientBuilder::new(
         server_id.clone(),
         darkside_handler.darkside_dir.clone(),
         DARKSIDE_SEED,
