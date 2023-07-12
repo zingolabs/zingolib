@@ -502,8 +502,8 @@ pub mod scenarios {
                 let zcashd_rpcservice_port = portpicker::pick_unused_port()
                     .expect("Port unpickable!")
                     .to_string();
-                if let Some(port) = set_lightwalletd_port {
-                    if !portpicker::is_free(set_lightwalletd_port.unwrap()) {
+                if let Some(lightwalletd_port) = set_lightwalletd_port {
+                    if !portpicker::is_free(lightwalletd_port) {
                         panic!("Lightwalletd RPC service port is not free!");
                     }
                 }
@@ -679,7 +679,7 @@ pub mod scenarios {
     }
 
     pub async fn mobile_regtest_poc() -> (RegtestManager, ChildProcessHandler) {
-        let mut scenario_builder =
+        let scenario_builder =
             setup::ScenarioBuilder::build_configure_launch(None, None, Some(20000));
         (
             scenario_builder.regtest_manager,
