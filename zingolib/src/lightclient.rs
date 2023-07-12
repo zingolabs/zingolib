@@ -1523,7 +1523,16 @@ impl LightClient {
         let update_notes_processor = UpdateNotes::new(self.wallet.transactions());
         let (update_notes_handle, blocks_done_transmitter, detected_transactions_transmitter) =
             update_notes_processor
-                .start(bsync_data.clone(), fetch_full_transaction_transmitter)
+                .start(
+                    bsync_data.clone(),
+                    fetch_full_transaction_transmitter,
+                    self.wallet
+                        .wallet_capability()
+                        .read()
+                        .await
+                        .orchard
+                        .can_spend(),
+                )
                 .await;
 
         // Do Trial decryptions of all the outputs, and pass on the successful ones to the update_notes processor
