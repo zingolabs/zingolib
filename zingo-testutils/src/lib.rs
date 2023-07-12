@@ -1,5 +1,8 @@
 pub mod data;
 pub use incrementalmerkletree;
+use zcash_address::unified::{Fvk, Ufvk};
+use zingolib::wallet::keys::unified::WalletCapability;
+use zingolib::wallet::WalletBase;
 pub mod regtest;
 use std::fs::OpenOptions;
 use std::io::Read;
@@ -17,12 +20,53 @@ use zingolib::lightclient::LightClient;
 
 use crate::scenarios::setup::TestEnvironmentGenerator;
 
+pub fn build_fvks_from_wallet_capability(wallet_capability: &WalletCapability) -> [Fvk; 3] {
+    let o_fvk = Fvk::Orchard(
+        orchard::keys::FullViewingKey::try_from(wallet_capability)
+            .unwrap()
+            .to_bytes(),
+    );
+    let s_fvk = Fvk::Sapling(
+        zcash_primitives::zip32::sapling::DiversifiableFullViewingKey::try_from(wallet_capability)
+            .unwrap()
+            .to_bytes(),
+    );
+    let mut t_fvk_bytes = [0u8; 65];
+    let t_ext_pk: zingolib::wallet::keys::extended_transparent::ExtendedPubKey =
+        (wallet_capability).try_into().unwrap();
+    t_fvk_bytes[0..32].copy_from_slice(&t_ext_pk.chain_code[..]);
+    t_fvk_bytes[32..65].copy_from_slice(&t_ext_pk.public_key.serialize()[..]);
+    let t_fvk = Fvk::P2pkh(t_fvk_bytes);
+    [o_fvk, s_fvk, t_fvk]
+}
+pub async fn build_fvk_client_and_capability(
+    fvks: &[&Fvk],
+    zingoconfig: &ZingoConfig,
+) -> (LightClient, WalletCapability) {
+    let ufvk = zcash_address::unified::Encoding::encode(
+        &<Ufvk as zcash_address::unified::Encoding>::try_from_items(
+            fvks.iter().copied().cloned().collect(),
+        )
+        .unwrap(),
+        &zcash_address::Network::Regtest,
+    );
+    let viewkey_client =
+        LightClient::create_unconnected(zingoconfig, WalletBase::Ufvk(ufvk), 0).unwrap();
+    let watch_wc = viewkey_client
+        .wallet
+        .wallet_capability()
+        .read()
+        .await
+        .clone();
+    (viewkey_client, watch_wc)
+}
+
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct DurationAnnotation {
-    timestamp: u64,
-    git_description: String,
-    test_name: String,
-    duration: Duration,
+    pub timestamp: u64,
+    pub git_description: String,
+    pub test_name: String,
+    pub duration: Duration,
 }
 impl DurationAnnotation {
     pub fn new(test_name: String, duration: Duration) -> Self {
@@ -66,8 +110,7 @@ fn timestamp() -> u64 {
         .unwrap()
         .as_secs()
 }
-fn path_to_times(basename: String) -> PathBuf {
-    let file_name = PathBuf::from(basename);
+fn path_to_times(file_name: PathBuf) -> PathBuf {
     let timing_dir = PathBuf::from(
         std::env::var("CARGO_MANIFEST_DIR").expect("To be inside a manifested space."),
     )
@@ -82,18 +125,20 @@ pub fn read_duration_annotation_file(target: PathBuf) -> Vec<DurationAnnotation>
     };
     data_set
 }
+pub fn get_duration_annotations(storage_file: PathBuf) -> Vec<DurationAnnotation> {
+    read_duration_annotation_file(storage_file)
+}
 pub fn record_time(annotation: &DurationAnnotation) {
-    let basename = format!("{}.json", annotation.test_name);
-    let data_store = path_to_times(basename);
-
-    let mut data_set = read_duration_annotation_file(data_store.clone());
+    let storage_location =
+        path_to_times(PathBuf::from("sync_duration_annotation.json".to_string()));
+    let mut data_set = get_duration_annotations(storage_location.clone());
     data_set.push(annotation.clone());
 
     //let json_dataset = array!(data_set);
     let mut time_file = OpenOptions::new()
         .create(true)
         .write(true)
-        .open(data_store)
+        .open(storage_location)
         .expect("to access a data_store file");
     std::io::Write::write_all(
         &mut time_file,
@@ -269,7 +314,7 @@ pub mod scenarios {
     use super::regtest::{ChildProcessHandler, RegtestManager};
     use zingolib::{get_base_address, lightclient::LightClient};
 
-    use self::setup::ClientManager;
+    use self::setup::ClientBuilder;
 
     use super::increase_height_and_sync_client;
     pub mod setup {
@@ -282,7 +327,7 @@ pub mod scenarios {
         pub struct ScenarioBuilder {
             pub test_env: TestEnvironmentGenerator,
             pub regtest_manager: RegtestManager,
-            pub client_builder: ClientManager,
+            pub client_builder: ClientBuilder,
             pub child_process_handler: Option<ChildProcessHandler>,
         }
         impl ScenarioBuilder {
@@ -300,7 +345,7 @@ pub mod scenarios {
                 } else {
                     regtest_manager.zingo_datadir.clone()
                 };
-                let client_builder = ClientManager::new(
+                let client_builder = ClientBuilder::new(
                     test_env.get_lightwalletd_uri(),
                     data_dir,
                     data::seeds::ABANDON_ART_SEED,
@@ -371,17 +416,17 @@ pub mod scenarios {
 
         /// Internally (and perhaps in wider scopes) we say "Sprout" to mean
         /// take a seed, and generate a client from the seed (planted in the chain).
-        pub struct ClientManager {
+        pub struct ClientBuilder {
             pub server_id: http::Uri,
             pub zingo_datadir: PathBuf,
             seed: String,
             client_number: u8,
         }
-        impl ClientManager {
+        impl ClientBuilder {
             pub fn new(server_id: http::Uri, zingo_datadir: PathBuf, seed: &str) -> Self {
                 let seed = seed.to_string();
                 let client_number = 0;
-                ClientManager {
+                ClientBuilder {
                     server_id,
                     zingo_datadir,
                     seed,
@@ -416,7 +461,7 @@ pub mod scenarios {
             ) -> LightClient {
                 //! A "faucet" is a lightclient that receives mining rewards
                 let zingo_config = self.make_unique_data_dir_and_load_config();
-                LightClient::new_from_wallet_base_async(
+                LightClient::create_from_wallet_base_async(
                     WalletBase::MnemonicPhrase(self.seed.clone()),
                     &zingo_config,
                     birthday,
@@ -432,7 +477,7 @@ pub mod scenarios {
                 overwrite: bool,
             ) -> LightClient {
                 let zingo_config = self.make_unique_data_dir_and_load_config();
-                LightClient::new_from_wallet_base_async(
+                LightClient::create_from_wallet_base_async(
                     WalletBase::MnemonicPhrase(mnemonic_phrase),
                     &zingo_config,
                     birthday,
@@ -515,7 +560,7 @@ pub mod scenarios {
             }
         }
     }
-    pub fn custom_clients() -> (RegtestManager, ChildProcessHandler, ClientManager) {
+    pub fn custom_clients() -> (RegtestManager, ChildProcessHandler, ClientBuilder) {
         let sb = setup::ScenarioBuilder::build_configure_launch(
             Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
             None,
@@ -620,12 +665,44 @@ pub mod scenarios {
         )
     }
     pub mod chainload {
+        use crate::{build_fvk_client_and_capability, build_fvks_from_wallet_capability};
+
         use super::*;
 
         pub async fn unsynced_basic() -> ChildProcessHandler {
             setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain()
                 .child_process_handler
                 .unwrap()
+        }
+        pub async fn unsynced_viewonlyclient_1153(
+        ) -> (RegtestManager, ChildProcessHandler, LightClient) {
+            let mut sb = setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain();
+            let zingo_config = zingolib::load_clientconfig(
+                sb.client_builder.server_id.clone(),
+                Some(sb.client_builder.zingo_datadir.clone()),
+                zingoconfig::ChainType::Regtest,
+            )
+            .unwrap();
+            // Create a lightclient to extract a capability from.
+            let original_recipient = sb.client_builder.build_new_faucet(0, false).await;
+            // Extract viewing keys
+            let wallet_capability = original_recipient
+                .wallet
+                .wallet_capability()
+                .read()
+                .await
+                .clone();
+            // Delete the client after getting the capability.
+            drop(original_recipient);
+            // Extract the orchard fvk
+            let [o_fvk, s_fvk, t_fvk] = build_fvks_from_wallet_capability(&wallet_capability);
+            let (viewing_client, _) =
+                build_fvk_client_and_capability(&[&o_fvk, &s_fvk, &t_fvk], &zingo_config).await;
+            (
+                sb.regtest_manager,
+                sb.child_process_handler.unwrap(),
+                viewing_client,
+            )
         }
         pub async fn faucet_recipient_1153() -> (
             RegtestManager,

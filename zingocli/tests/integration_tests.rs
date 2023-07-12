@@ -2,7 +2,7 @@
 #![cfg(feature = "local_env")]
 pub mod darkside;
 use std::{fs::File, path::Path};
-use zingo_testutils::{self, data};
+use zingo_testutils::{self, build_fvk_client_and_capability, data};
 
 use bip0039::Mnemonic;
 use data::seeds::HOSPITAL_MUSEUM_SEED;
@@ -11,7 +11,6 @@ use tokio::time::Instant;
 use zingo_testutils::scenarios;
 
 use tracing_test::traced_test;
-use zcash_address::unified::Ufvk;
 use zcash_client_backend::encoding::encode_payment_address;
 use zcash_primitives::{
     consensus::Parameters,
@@ -29,7 +28,7 @@ use zingolib::{
             extended_transparent::ExtendedPrivKey,
             unified::{Capability, WalletCapability},
         },
-        LightWallet, Pool, WalletBase,
+        LightWallet, Pool,
     },
 };
 
@@ -90,7 +89,7 @@ async fn dont_write_unconfirmed() {
 
     let (wallet, config) =
         zingo_testutils::load_wallet(wallet_loc.to_path_buf(), ChainType::Regtest).await;
-    let loaded_client = LightClient::create_with_wallet(wallet, config);
+    let loaded_client = LightClient::create_from_extant_wallet(wallet, config);
     let loaded_balance = loaded_client.do_balance().await;
     assert_eq!(
         &loaded_balance["unverified_orchard_balance"]
@@ -119,7 +118,7 @@ async fn list_transactions_include_foreign() {
     let wallet_dir = wallet_path.parent().unwrap();
     let (wallet, config) =
         zingo_testutils::load_wallet(wallet_dir.to_path_buf(), ChainType::Mainnet).await;
-    let client = LightClient::create_with_wallet(wallet, config);
+    let client = LightClient::create_from_extant_wallet(wallet, config);
     let transactions = client.do_list_transactions().await[0].clone();
     //env_logger::init();
     let expected_consumer_ui_note = r#"{
@@ -270,26 +269,6 @@ fn check_expected_balance_with_fvks(
         }
     }
 }
-async fn build_fvk_client_capability(
-    fvks: &[&Fvk],
-    zingoconfig: &ZingoConfig,
-) -> (LightClient, WalletCapability) {
-    let ufvk = zcash_address::unified::Encoding::encode(
-        &<Ufvk as zcash_address::unified::Encoding>::try_from_items(
-            fvks.iter().copied().cloned().collect(),
-        )
-        .unwrap(),
-        &zcash_address::Network::Regtest,
-    );
-    let viewkey_client =
-        LightClient::create_unconnected(zingoconfig, WalletBase::Ufvk(ufvk), 0).unwrap();
-    let watch_wc = viewkey_client
-        .extract_unified_capability()
-        .read()
-        .await
-        .clone();
-    (viewkey_client, watch_wc)
-}
 
 #[allow(clippy::too_many_arguments)]
 fn check_view_capability_bounds(
@@ -404,27 +383,14 @@ async fn test_scanning_in_watch_only_mode() {
     check_client_balances!(original_recipient, o: sent_o_value s: sent_s_value t: sent_t_value);
 
     // Extract viewing keys
-    let wc = original_recipient
-        .extract_unified_capability()
+    let wallet_capability = original_recipient
+        .wallet
+        .wallet_capability()
         .read()
         .await
         .clone();
-    use zingolib::wallet::keys::extended_transparent::ExtendedPubKey;
-    let o_fvk = Fvk::Orchard(
-        orchard::keys::FullViewingKey::try_from(&wc)
-            .unwrap()
-            .to_bytes(),
-    );
-    let s_fvk = Fvk::Sapling(
-        zcash_primitives::zip32::sapling::DiversifiableFullViewingKey::try_from(&wc)
-            .unwrap()
-            .to_bytes(),
-    );
-    let mut t_fvk_bytes = [0u8; 65];
-    let t_ext_pk: ExtendedPubKey = (&wc).try_into().unwrap();
-    t_fvk_bytes[0..32].copy_from_slice(&t_ext_pk.chain_code[..]);
-    t_fvk_bytes[32..65].copy_from_slice(&t_ext_pk.public_key.serialize()[..]);
-    let t_fvk = Fvk::P2pkh(t_fvk_bytes);
+    let [o_fvk, s_fvk, t_fvk] =
+        zingo_testutils::build_fvks_from_wallet_capability(&wallet_capability);
     let fvks_sets = vec![
         vec![&o_fvk],
         vec![&s_fvk],
@@ -439,7 +405,7 @@ async fn test_scanning_in_watch_only_mode() {
         log::info!("    sapling fvk: {}", fvks.contains(&&s_fvk));
         log::info!("    transparent fvk: {}", fvks.contains(&&t_fvk));
 
-        let (watch_client, watch_wc) = build_fvk_client_capability(fvks, &zingo_config).await;
+        let (watch_client, watch_wc) = build_fvk_client_and_capability(fvks, &zingo_config).await;
         // assert empty wallet before rescan
         let balance = watch_client.do_balance().await;
         check_expected_balance_with_fvks(fvks, balance, 0, 0, 0);
@@ -619,7 +585,7 @@ async fn unspent_notes_are_not_saved() {
         .unwrap();
 
     // Create client based on config and wallet of faucet
-    let faucet_copy = LightClient::create_with_wallet(faucet_wallet, zingo_config.clone());
+    let faucet_copy = LightClient::create_from_extant_wallet(faucet_wallet, zingo_config.clone());
     assert_eq!(
         &faucet_copy.do_seed_phrase().await.unwrap(),
         &faucet.do_seed_phrase().await.unwrap()
@@ -1725,12 +1691,17 @@ async fn witness_clearing() {
 
 #[tokio::test]
 async fn mempool_clearing() {
+    async fn do_maybe_recent_txid(lc: &LightClient) -> JsonValue {
+        json::object! {
+            "last_txid" => lc.wallet.transactions().read().await.get_some_txid_from_highest_wallet_block().map(|t| t.to_string())
+        }
+    }
     let value = 100_000;
     let (regtest_manager, child_process_handler, faucet, recipient, orig_transaction_id) =
         scenarios::faucet_prefunded_orchard_recipient(value).await;
 
     assert_eq!(
-        recipient.do_maybe_recent_txid().await["last_txid"],
+        do_maybe_recent_txid(&recipient).await["last_txid"],
         orig_transaction_id
     );
     // Put some transactions unrelated to the recipient (faucet->faucet) on-chain, to get some clutter
@@ -1809,7 +1780,7 @@ async fn mempool_clearing() {
 
     // 4. The transaction is not yet sent, it is just sitting in the test GRPC server, so remove it from there to make sure it doesn't get mined.
     assert_eq!(
-        recipient.do_maybe_recent_txid().await["last_txid"],
+        do_maybe_recent_txid(&recipient).await["last_txid"],
         sent_transaction_id
     );
 
@@ -2825,34 +2796,45 @@ mod benchmarks {
         use zingo_testutils::DurationAnnotation;
 
         use super::*;
-        async fn timing_run(client: &str, print_updates: bool) {
-            let (_, child_process_handler, keyowning, keyless) =
-                scenarios::chainload::unsynced_faucet_recipient_1153().await;
+        async fn timing_run(keyownership: &str, print_updates: bool) {
             let sync_duration;
-            match client {
+            match keyownership {
                 "keyowning" => {
+                    let (_, child_process_handler, keyowning, _keyless) =
+                        scenarios::chainload::unsynced_faucet_recipient_1153().await;
                     let timer_start = Instant::now();
                     keyowning.do_sync(print_updates).await.unwrap();
                     let timer_stop = Instant::now();
                     sync_duration = timer_stop.duration_since(timer_start);
+                    drop(child_process_handler);
                 }
                 "keyless" => {
+                    let (_, child_process_handler, _keyowning, keyless) =
+                        scenarios::chainload::unsynced_faucet_recipient_1153().await;
                     let timer_start = Instant::now();
                     keyless.do_sync(print_updates).await.unwrap();
                     let timer_stop = Instant::now();
                     sync_duration = timer_stop.duration_since(timer_start);
+                    drop(child_process_handler);
+                }
+                "fullviewonly" => {
+                    let (_, child_process_handler, view_only_client) =
+                        scenarios::chainload::unsynced_viewonlyclient_1153().await;
+                    let timer_start = Instant::now();
+                    view_only_client.do_sync(print_updates).await.unwrap();
+                    let timer_stop = Instant::now();
+                    sync_duration = timer_stop.duration_since(timer_start);
+                    drop(child_process_handler);
                 }
                 _ => panic!(),
             }
             let annotation = DurationAnnotation::new(
-                format!("{PREFIX}_{client}_client_pu_{print_updates}"),
+                format!("{PREFIX}_{keyownership}_client_pu_{print_updates}"),
                 sync_duration,
             );
             zingo_testutils::record_time(&annotation);
 
             assert!(sync_duration.as_secs() < 1000);
-
-            drop(child_process_handler);
         }
         #[tokio::test]
         async fn keyless_client_pu_true() {
@@ -2863,12 +2845,20 @@ mod benchmarks {
             timing_run("keyless", false).await;
         }
         #[tokio::test]
-        async fn keyowning_client_true() {
+        async fn keyowning_client_pu_true() {
             timing_run("keyowning", true).await;
         }
         #[tokio::test]
-        async fn keyowning_client_false() {
+        async fn keyowning_client_pu_false() {
             timing_run("keyowning", false).await;
+        }
+        #[tokio::test]
+        async fn fullviewonly_client_pu_true() {
+            timing_run("fullviewonly", true).await;
+        }
+        #[tokio::test]
+        async fn fullviewonly_client_pu_false() {
+            timing_run("fullviewonly", false).await;
         }
     }
 }

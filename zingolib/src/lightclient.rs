@@ -88,131 +88,8 @@ pub struct LightClient {
     bsync_data: Arc<RwLock<BlazeSyncData>>,
     interrupt_sync: Arc<RwLock<bool>>,
 }
-
-use serde_json::Value;
-
-enum PriceFetchError {
-    ReqwestError(String),
-    NotJson,
-    NoElements,
-    PriceReprError(PriceReprError),
-    NanValue,
-}
-
-impl std::fmt::Display for PriceFetchError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use PriceFetchError::*;
-        f.write_str(&match self {
-            ReqwestError(e) => format!("ReqwestError: {}", e),
-            NotJson => "NotJson".to_string(),
-            NoElements => "NoElements".to_string(),
-            PriceReprError(e) => format!("PriceReprError: {}", e),
-            NanValue => "NanValue".to_string(),
-        })
-    }
-}
-
-enum PriceReprError {
-    NoValue,
-    NoAsStrValue,
-    NotParseable,
-}
-
-impl std::fmt::Display for PriceReprError {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use PriceReprError::*;
-        fmt.write_str(match self {
-            NoValue => "NoValue",
-            NoAsStrValue => "NoAsStrValue",
-            NotParseable => "NotParseable",
-        })
-    }
-}
-fn repr_price_as_f64(from_gemini: &Value) -> Result<f64, PriceReprError> {
-    if let Some(value) = from_gemini.get("price") {
-        if let Some(stringable) = value.as_str() {
-            if let Ok(parsed) = stringable.parse::<f64>() {
-                Ok(parsed)
-            } else {
-                Err(PriceReprError::NotParseable)
-            }
-        } else {
-            Err(PriceReprError::NoAsStrValue)
-        }
-    } else {
-        Err(PriceReprError::NoValue)
-    }
-}
-
-async fn get_recent_median_price_from_gemini() -> Result<f64, PriceFetchError> {
-    let httpget =
-        match reqwest::get("https://api.gemini.com/v1/trades/zecusd?limit_trades=11").await {
-            Ok(httpresponse) => httpresponse,
-            Err(e) => {
-                return Err(PriceFetchError::ReqwestError(e.to_string()));
-            }
-        };
-    let serialized = match httpget.json::<Value>().await {
-        Ok(asjson) => asjson,
-        Err(_) => {
-            return Err(PriceFetchError::NotJson);
-        }
-    };
-    let elements = match serialized.as_array() {
-        Some(elements) => elements,
-        None => {
-            return Err(PriceFetchError::NoElements);
-        }
-    };
-    let mut trades: Vec<f64> = match elements.iter().map(repr_price_as_f64).collect() {
-        Ok(trades) => trades,
-        Err(e) => {
-            return Err(PriceFetchError::PriceReprError(e));
-        }
-    };
-    if trades.iter().any(|x| x.is_nan()) {
-        return Err(PriceFetchError::NanValue);
-    }
-    // NOTE:  This code will panic if a value is received that:
-    // 1. was parsed from a string to an f64
-    // 2. is not a NaN
-    // 3. cannot be compared to an f64
-    // TODO:  Show that this is impossible, or write code to handle
-    // that case.
-    trades.sort_by(|a, b| {
-        a.partial_cmp(b)
-            .expect("a and b are non-nan f64, I think that makes them comparable")
-    });
-    Ok(trades[5])
-}
-
-#[cfg(any(test, feature = "integration_test"))]
 impl LightClient {
-    /// Method to create a test-only version of the LightClient
-    pub async fn test_new(
-        config: &ZingoConfig,
-        wallet_base: WalletBase,
-        height: u64,
-    ) -> io::Result<Self> {
-        let l = LightClient::create_unconnected(config, wallet_base, height)
-            .expect("Unconnected client creation failed!");
-        l.set_wallet_initial_state(height).await;
-
-        debug!("Created new wallet!");
-        debug!("Created LightClient to {}", &config.get_lightwalletd_uri());
-        Ok(l)
-    }
-
-    pub async fn do_maybe_recent_txid(&self) -> JsonValue {
-        object! {
-            "last_txid" => self.wallet.transactions().read().await.get_some_txid_from_highest_wallet_block().map(|t| t.to_string())
-        }
-    }
-}
-
-#[cfg(feature = "integration_test")]
-impl LightClient {
-    pub fn create_with_wallet(wallet: LightWallet, config: ZingoConfig) -> Self {
+    pub fn create_from_extant_wallet(wallet: LightWallet, config: ZingoConfig) -> Self {
         LightClient {
             wallet,
             config: config.clone(),
@@ -222,10 +99,154 @@ impl LightClient {
             interrupt_sync: Arc::new(RwLock::new(false)),
         }
     }
-    pub fn extract_unified_capability(&self) -> Arc<RwLock<WalletCapability>> {
-        self.wallet.wallet_capability()
+    /// The wallet this fn associates with the lightclient is specifically derived from
+    /// a spend authority.
+    pub fn create_from_wallet_base(
+        wallet_base: WalletBase,
+        config: &ZingoConfig,
+        birthday: u64,
+        overwrite: bool,
+    ) -> io::Result<Self> {
+        Runtime::new().unwrap().block_on(async move {
+            LightClient::create_from_wallet_base_async(wallet_base, config, birthday, overwrite)
+                .await
+        })
+    }
+    /// The wallet this fn associates with the lightclient is specifically derived from
+    /// a spend authority.
+    pub async fn create_from_wallet_base_async(
+        wallet_base: WalletBase,
+        config: &ZingoConfig,
+        birthday: u64,
+        overwrite: bool,
+    ) -> io::Result<Self> {
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        {
+            if !overwrite && config.wallet_exists() {
+                return Err(Error::new(
+                    ErrorKind::AlreadyExists,
+                    format!(
+                        "Cannot create a new wallet from seed, because a wallet already exists at:\n{:?}",
+                        config.get_wallet_path().as_os_str()
+                    ),
+                ));
+            }
+        }
+        let lightclient = LightClient {
+            wallet: LightWallet::new(config.clone(), wallet_base, birthday)?,
+            config: config.clone(),
+            mempool_monitor: std::sync::RwLock::new(None),
+            sync_lock: Mutex::new(()),
+            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
+            interrupt_sync: Arc::new(RwLock::new(false)),
+        };
+
+        lightclient.set_wallet_initial_state(birthday).await;
+        lightclient
+            .do_save()
+            .await
+            .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
+
+        debug!("Created new wallet!");
+
+        Ok(lightclient)
+    }
+    pub fn create_unconnected(
+        config: &ZingoConfig,
+        wallet_base: WalletBase,
+        height: u64,
+    ) -> io::Result<Self> {
+        Ok(LightClient {
+            wallet: LightWallet::new(config.clone(), wallet_base, height)?,
+            config: config.clone(),
+            mempool_monitor: std::sync::RwLock::new(None),
+            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
+            sync_lock: Mutex::new(()),
+            interrupt_sync: Arc::new(RwLock::new(false)),
+        })
+    }
+
+    fn create_with_new_wallet(config: &ZingoConfig, height: u64) -> io::Result<Self> {
+        Runtime::new().unwrap().block_on(async move {
+            let l = LightClient::create_unconnected(config, WalletBase::FreshEntropy, height)?;
+            l.set_wallet_initial_state(height).await;
+
+            debug!("Created new wallet with a new seed!");
+            debug!("Created LightClient to {}", &config.get_lightwalletd_uri());
+
+            // Save
+            l.do_save()
+                .await
+                .map_err(|s| io::Error::new(ErrorKind::PermissionDenied, s))?;
+
+            Ok(l)
+        })
+    }
+
+    /// Create a brand new wallet with a new seed phrase. Will fail if a wallet file
+    /// already exists on disk
+    pub fn new(config: &ZingoConfig, latest_block: u64) -> io::Result<Self> {
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        {
+            if config.wallet_exists() {
+                return Err(Error::new(
+                    ErrorKind::AlreadyExists,
+                    "Cannot create a new wallet from seed, because a wallet already exists",
+                ));
+            }
+        }
+
+        Self::create_with_new_wallet(config, latest_block)
+    }
+    /// This constructor depends on a wallet that's read from a buffer.
+    /// It is used internally by read_from_disk, and directly called by
+    /// zingo-mobile.
+    pub fn read_wallet_from_buffer<R: Read>(config: &ZingoConfig, reader: R) -> io::Result<Self> {
+        Runtime::new()
+            .unwrap()
+            .block_on(async move { Self::read_wallet_from_buffer_async(config, reader).await })
+    }
+
+    pub async fn read_wallet_from_buffer_async<R: Read>(
+        config: &ZingoConfig,
+        mut reader: R,
+    ) -> io::Result<Self> {
+        let wallet = LightWallet::read_internal(&mut reader, config).await?;
+
+        let lc = LightClient {
+            wallet,
+            config: config.clone(),
+            mempool_monitor: std::sync::RwLock::new(None),
+            sync_lock: Mutex::new(()),
+            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
+            interrupt_sync: Arc::new(RwLock::new(false)),
+        };
+
+        debug!(
+            "Read wallet with birthday {}",
+            lc.wallet.get_birthday().await
+        );
+        debug!("Created LightClient to {}", &config.get_lightwalletd_uri());
+
+        Ok(lc)
+    }
+
+    pub fn read_wallet_from_disk(config: &ZingoConfig) -> io::Result<Self> {
+        let wallet_path = if config.wallet_exists() {
+            config.get_wallet_path()
+        } else {
+            return Err(Error::new(
+                ErrorKind::AlreadyExists,
+                format!(
+                    "Cannot read wallet. No file at {}",
+                    config.get_wallet_path().display()
+                ),
+            ));
+        };
+        LightClient::read_wallet_from_buffer(config, BufReader::new(File::open(wallet_path)?))
     }
 }
+
 impl LightClient {
     fn add_nonchange_notes<'a, 'b, 'c>(
         &'a self,
@@ -340,21 +361,6 @@ impl LightClient {
     }
     pub fn config(&self) -> &ZingoConfig {
         &self.config
-    }
-
-    pub fn create_unconnected(
-        config: &ZingoConfig,
-        wallet_base: WalletBase,
-        height: u64,
-    ) -> io::Result<Self> {
-        Ok(LightClient {
-            wallet: LightWallet::new(config.clone(), wallet_base, height)?,
-            config: config.clone(),
-            mempool_monitor: std::sync::RwLock::new(None),
-            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
-            sync_lock: Mutex::new(()),
-            interrupt_sync: Arc::new(RwLock::new(false)),
-        })
     }
 
     pub async fn do_addresses(&self) -> JsonValue {
@@ -729,81 +735,6 @@ impl LightClient {
         JsonValue::Array(consumer_ui_notes)
     }
 
-    async fn value_transfer_by_to_address(&self) -> finsight::ValuesSentToAddress {
-        let summaries = self.do_list_txsummaries().await;
-        let mut amount_by_address = HashMap::new();
-        for summary in summaries {
-            use ValueTransferKind::*;
-            match summary.kind {
-                Sent { amount, to_address } => {
-                    let address = to_address.encode();
-                    if let std::collections::hash_map::Entry::Vacant(e) =
-                        amount_by_address.entry(address.clone())
-                    {
-                        e.insert(vec![amount]);
-                    } else {
-                        amount_by_address
-                            .get_mut(&address)
-                            .expect("a vec of u64")
-                            .push(amount);
-                    };
-                }
-                Fee { amount } => {
-                    let fee_key = "fee".to_string();
-                    if let std::collections::hash_map::Entry::Vacant(e) =
-                        amount_by_address.entry(fee_key.clone())
-                    {
-                        e.insert(vec![amount]);
-                    } else {
-                        amount_by_address
-                            .get_mut(&fee_key)
-                            .expect("a vec of u64.")
-                            .push(amount);
-                    };
-                }
-                SendToSelf { .. } | Received { .. } => (),
-            }
-        }
-        finsight::ValuesSentToAddress(amount_by_address)
-    }
-
-    pub async fn do_total_memobytes_to_address(&self) -> finsight::TotalMemoBytesToAddress {
-        let summaries = self.do_list_txsummaries().await;
-        let mut memobytes_by_address = HashMap::new();
-        for summary in summaries {
-            use ValueTransferKind::*;
-            match summary.kind {
-                Sent { to_address, .. } => {
-                    let address = to_address.encode();
-                    let bytes = summary.memos.iter().fold(0, |sum, m| sum + m.len());
-                    memobytes_by_address
-                        .entry(address)
-                        .and_modify(|e| *e += bytes)
-                        .or_insert(bytes);
-                }
-                SendToSelf { .. } | Received { .. } | Fee { .. } => (),
-            }
-        }
-        finsight::TotalMemoBytesToAddress(memobytes_by_address)
-    }
-    pub async fn do_total_value_to_address(&self) -> finsight::TotalValueToAddress {
-        let values_sent_to_addresses = self.value_transfer_by_to_address().await;
-        let mut by_address_total = HashMap::new();
-        for key in values_sent_to_addresses.0.keys() {
-            let sum = values_sent_to_addresses.0[key].iter().sum();
-            by_address_total.insert(key.clone(), sum);
-        }
-        finsight::TotalValueToAddress(by_address_total)
-    }
-    pub async fn do_total_spends_to_address(&self) -> finsight::TotalSendsToAddress {
-        let values_sent_to_addresses = self.value_transfer_by_to_address().await;
-        let mut by_address_number_sends = HashMap::new();
-        for key in values_sent_to_addresses.0.keys() {
-            let number_sends = values_sent_to_addresses.0[key].len() as u64;
-            by_address_number_sends.insert(key.clone(), number_sends);
-        }
-        finsight::TotalSendsToAddress(by_address_number_sends)
-    }
     pub async fn do_list_txsummaries(&self) -> Vec<ValueTransfer> {
         let mut summaries: Vec<ValueTransfer> = Vec::new();
 
@@ -858,7 +789,6 @@ impl LightClient {
 
         Ok(array![new_address.encode(&self.config.chain)])
     }
-
     pub async fn do_rescan(&self) -> Result<JsonValue, String> {
         debug!("Rescan starting");
 
@@ -875,7 +805,6 @@ impl LightClient {
 
         response
     }
-
     pub async fn do_save(&self) -> Result<(), String> {
         #[cfg(any(target_os = "ios", target_os = "android"))]
         // on mobile platforms, disable the save, because the saves will be handled by the native layer, and not in rust
@@ -944,7 +873,6 @@ impl LightClient {
             .unwrap()
             .block_on(async move { self.do_seed_phrase().await })
     }
-
     //TODO: Add migrate_sapling_to_orchard argument
     pub async fn do_send(
         &self,
@@ -1115,6 +1043,46 @@ impl LightClient {
             .clone()
     }
 
+    pub async fn do_total_memobytes_to_address(&self) -> finsight::TotalMemoBytesToAddress {
+        let summaries = self.do_list_txsummaries().await;
+        let mut memobytes_by_address = HashMap::new();
+        for summary in summaries {
+            use ValueTransferKind::*;
+            match summary.kind {
+                Sent { to_address, .. } => {
+                    let address = to_address.encode();
+                    let bytes = summary.memos.iter().fold(0, |sum, m| sum + m.len());
+                    memobytes_by_address
+                        .entry(address)
+                        .and_modify(|e| *e += bytes)
+                        .or_insert(bytes);
+                }
+                SendToSelf { .. } | Received { .. } | Fee { .. } => (),
+            }
+        }
+        finsight::TotalMemoBytesToAddress(memobytes_by_address)
+    }
+
+    pub async fn do_total_spends_to_address(&self) -> finsight::TotalSendsToAddress {
+        let values_sent_to_addresses = self.value_transfer_by_to_address().await;
+        let mut by_address_number_sends = HashMap::new();
+        for key in values_sent_to_addresses.0.keys() {
+            let number_sends = values_sent_to_addresses.0[key].len() as u64;
+            by_address_number_sends.insert(key.clone(), number_sends);
+        }
+        finsight::TotalSendsToAddress(by_address_number_sends)
+    }
+
+    pub async fn do_total_value_to_address(&self) -> finsight::TotalValueToAddress {
+        let values_sent_to_addresses = self.value_transfer_by_to_address().await;
+        let mut by_address_total = HashMap::new();
+        for key in values_sent_to_addresses.0.keys() {
+            let sum = values_sent_to_addresses.0[key].iter().sum();
+            by_address_total.insert(key.clone(), sum);
+        }
+        finsight::TotalValueToAddress(by_address_total)
+    }
+
     pub async fn do_wallet_last_scanned_height(&self) -> JsonValue {
         json::JsonValue::from(self.wallet.last_synced_height().await)
     }
@@ -1167,94 +1135,10 @@ impl LightClient {
 
         Ok(())
     }
+
     pub async fn interrupt_sync_after_batch(&self, set_interrupt: bool) {
         *self.interrupt_sync.write().await = set_interrupt;
     }
-    /// Create a brand new wallet with a new seed phrase. Will fail if a wallet file
-    /// already exists on disk
-    pub fn new(config: &ZingoConfig, latest_block: u64) -> io::Result<Self> {
-        #[cfg(not(any(target_os = "ios", target_os = "android")))]
-        {
-            if config.wallet_exists() {
-                return Err(Error::new(
-                    ErrorKind::AlreadyExists,
-                    "Cannot create a new wallet from seed, because a wallet already exists",
-                ));
-            }
-        }
-
-        Self::new_wallet(config, latest_block)
-    }
-    /// The wallet this fn associates with the lightclient is specifically derived from
-    /// a spend authority.
-    pub fn new_from_wallet_base(
-        wallet_base: WalletBase,
-        config: &ZingoConfig,
-        birthday: u64,
-        overwrite: bool,
-    ) -> io::Result<Self> {
-        Runtime::new().unwrap().block_on(async move {
-            LightClient::new_from_wallet_base_async(wallet_base, config, birthday, overwrite).await
-        })
-    }
-
-    /// The wallet this fn associates with the lightclient is specifically derived from
-    /// a spend authority.
-    pub async fn new_from_wallet_base_async(
-        wallet_base: WalletBase,
-        config: &ZingoConfig,
-        birthday: u64,
-        overwrite: bool,
-    ) -> io::Result<Self> {
-        #[cfg(not(any(target_os = "ios", target_os = "android")))]
-        {
-            if !overwrite && config.wallet_exists() {
-                return Err(Error::new(
-                    ErrorKind::AlreadyExists,
-                    format!(
-                        "Cannot create a new wallet from seed, because a wallet already exists at:\n{:?}",
-                        config.get_wallet_path().as_os_str()
-                    ),
-                ));
-            }
-        }
-        let lightclient = LightClient {
-            wallet: LightWallet::new(config.clone(), wallet_base, birthday)?,
-            config: config.clone(),
-            mempool_monitor: std::sync::RwLock::new(None),
-            sync_lock: Mutex::new(()),
-            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
-            interrupt_sync: Arc::new(RwLock::new(false)),
-        };
-
-        lightclient.set_wallet_initial_state(birthday).await;
-        lightclient
-            .do_save()
-            .await
-            .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
-
-        debug!("Created new wallet!");
-
-        Ok(lightclient)
-    }
-
-    fn new_wallet(config: &ZingoConfig, height: u64) -> io::Result<Self> {
-        Runtime::new().unwrap().block_on(async move {
-            let l = LightClient::create_unconnected(config, WalletBase::FreshEntropy, height)?;
-            l.set_wallet_initial_state(height).await;
-
-            debug!("Created new wallet with a new seed!");
-            debug!("Created LightClient to {}", &config.get_lightwalletd_uri());
-
-            // Save
-            l.do_save()
-                .await
-                .map_err(|s| io::Error::new(ErrorKind::PermissionDenied, s))?;
-
-            Ok(l)
-        })
-    }
-
     #[cfg(feature = "embed_params")]
     fn read_sapling_params(&self) -> Result<(Vec<u8>, Vec<u8>), String> {
         // Read Sapling Params
@@ -1277,7 +1161,6 @@ impl LightClient {
 
         Ok((sapling_output, sapling_spend))
     }
-
     #[cfg(not(feature = "embed_params"))]
     fn read_sapling_params(&self) -> Result<(Vec<u8>, Vec<u8>), String> {
         let path = self
@@ -1300,54 +1183,6 @@ impl LightClient {
             .map_err(|e| e.to_string())?;
 
         Ok((sapling_output, sapling_spend))
-    }
-
-    /// This constructor depends on a wallet that's read from a buffer.
-    /// It is used internally by read_from_disk, and directly called by
-    /// zingo-mobile.
-    pub fn read_wallet_from_buffer<R: Read>(config: &ZingoConfig, reader: R) -> io::Result<Self> {
-        Runtime::new()
-            .unwrap()
-            .block_on(async move { Self::read_wallet_from_buffer_async(config, reader).await })
-    }
-
-    pub async fn read_wallet_from_buffer_async<R: Read>(
-        config: &ZingoConfig,
-        mut reader: R,
-    ) -> io::Result<Self> {
-        let wallet = LightWallet::read_internal(&mut reader, config).await?;
-
-        let lc = LightClient {
-            wallet,
-            config: config.clone(),
-            mempool_monitor: std::sync::RwLock::new(None),
-            sync_lock: Mutex::new(()),
-            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
-            interrupt_sync: Arc::new(RwLock::new(false)),
-        };
-
-        debug!(
-            "Read wallet with birthday {}",
-            lc.wallet.get_birthday().await
-        );
-        debug!("Created LightClient to {}", &config.get_lightwalletd_uri());
-
-        Ok(lc)
-    }
-
-    pub fn read_wallet_from_disk(config: &ZingoConfig) -> io::Result<Self> {
-        let wallet_path = if config.wallet_exists() {
-            config.get_wallet_path()
-        } else {
-            return Err(Error::new(
-                ErrorKind::AlreadyExists,
-                format!(
-                    "Cannot read wallet. No file at {}",
-                    config.get_wallet_path().display()
-                ),
-            ));
-        };
-        LightClient::read_wallet_from_buffer(config, BufReader::new(File::open(wallet_path)?))
     }
 
     pub fn set_sapling_params(
@@ -1965,6 +1800,7 @@ impl LightClient {
             }
         };
     }
+
     pub(crate) async fn update_current_price(&self) -> String {
         // Get the zec price from the server
         match get_recent_median_price_from_gemini().await {
@@ -1978,6 +1814,43 @@ impl LightClient {
             }
         }
     }
+    async fn value_transfer_by_to_address(&self) -> finsight::ValuesSentToAddress {
+        let summaries = self.do_list_txsummaries().await;
+        let mut amount_by_address = HashMap::new();
+        for summary in summaries {
+            use ValueTransferKind::*;
+            match summary.kind {
+                Sent { amount, to_address } => {
+                    let address = to_address.encode();
+                    if let std::collections::hash_map::Entry::Vacant(e) =
+                        amount_by_address.entry(address.clone())
+                    {
+                        e.insert(vec![amount]);
+                    } else {
+                        amount_by_address
+                            .get_mut(&address)
+                            .expect("a vec of u64")
+                            .push(amount);
+                    };
+                }
+                Fee { amount } => {
+                    let fee_key = "fee".to_string();
+                    if let std::collections::hash_map::Entry::Vacant(e) =
+                        amount_by_address.entry(fee_key.clone())
+                    {
+                        e.insert(vec![amount]);
+                    } else {
+                        amount_by_address
+                            .get_mut(&fee_key)
+                            .expect("a vec of u64.")
+                            .push(amount);
+                    };
+                }
+                SendToSelf { .. } | Received { .. } => (),
+            }
+        }
+        finsight::ValuesSentToAddress(amount_by_address)
+    }
 
     fn write_file_if_not_exists(dir: &Path, name: &str, bytes: &[u8]) -> io::Result<()> {
         let mut file_path = dir.to_path_buf();
@@ -1989,6 +1862,102 @@ impl LightClient {
 
         Ok(())
     }
+}
+use serde_json::Value;
+
+enum PriceFetchError {
+    ReqwestError(String),
+    NotJson,
+    NoElements,
+    PriceReprError(PriceReprError),
+    NanValue,
+}
+
+impl std::fmt::Display for PriceFetchError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use PriceFetchError::*;
+        f.write_str(&match self {
+            ReqwestError(e) => format!("ReqwestError: {}", e),
+            NotJson => "NotJson".to_string(),
+            NoElements => "NoElements".to_string(),
+            PriceReprError(e) => format!("PriceReprError: {}", e),
+            NanValue => "NanValue".to_string(),
+        })
+    }
+}
+
+enum PriceReprError {
+    NoValue,
+    NoAsStrValue,
+    NotParseable,
+}
+
+impl std::fmt::Display for PriceReprError {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use PriceReprError::*;
+        fmt.write_str(match self {
+            NoValue => "NoValue",
+            NoAsStrValue => "NoAsStrValue",
+            NotParseable => "NotParseable",
+        })
+    }
+}
+fn repr_price_as_f64(from_gemini: &Value) -> Result<f64, PriceReprError> {
+    if let Some(value) = from_gemini.get("price") {
+        if let Some(stringable) = value.as_str() {
+            if let Ok(parsed) = stringable.parse::<f64>() {
+                Ok(parsed)
+            } else {
+                Err(PriceReprError::NotParseable)
+            }
+        } else {
+            Err(PriceReprError::NoAsStrValue)
+        }
+    } else {
+        Err(PriceReprError::NoValue)
+    }
+}
+
+async fn get_recent_median_price_from_gemini() -> Result<f64, PriceFetchError> {
+    let httpget =
+        match reqwest::get("https://api.gemini.com/v1/trades/zecusd?limit_trades=11").await {
+            Ok(httpresponse) => httpresponse,
+            Err(e) => {
+                return Err(PriceFetchError::ReqwestError(e.to_string()));
+            }
+        };
+    let serialized = match httpget.json::<Value>().await {
+        Ok(asjson) => asjson,
+        Err(_) => {
+            return Err(PriceFetchError::NotJson);
+        }
+    };
+    let elements = match serialized.as_array() {
+        Some(elements) => elements,
+        None => {
+            return Err(PriceFetchError::NoElements);
+        }
+    };
+    let mut trades: Vec<f64> = match elements.iter().map(repr_price_as_f64).collect() {
+        Ok(trades) => trades,
+        Err(e) => {
+            return Err(PriceFetchError::PriceReprError(e));
+        }
+    };
+    if trades.iter().any(|x| x.is_nan()) {
+        return Err(PriceFetchError::NanValue);
+    }
+    // NOTE:  This code will panic if a value is received that:
+    // 1. was parsed from a string to an f64
+    // 2. is not a NaN
+    // 3. cannot be compared to an f64
+    // TODO:  Show that this is impossible, or write code to handle
+    // that case.
+    trades.sort_by(|a, b| {
+        a.partial_cmp(b)
+            .expect("a and b are non-nan f64, I think that makes them comparable")
+    });
+    Ok(trades[5])
 }
 
 #[cfg(test)]
@@ -2008,7 +1977,7 @@ mod tests {
 
         let wallet_name = data_dir.join("zingo-wallet.dat");
         let config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, Some(data_dir));
-        let lc = LightClient::new_from_wallet_base(
+        let lc = LightClient::create_from_wallet_base(
             WalletBase::MnemonicPhrase(TEST_SEED.to_string()),
             &config,
             0,
@@ -2018,7 +1987,7 @@ mod tests {
         assert_eq!(
         format!(
             "{:?}",
-            LightClient::new_from_wallet_base(
+            LightClient::create_from_wallet_base(
                 WalletBase::MnemonicPhrase(TEST_SEED.to_string()),
                 &config,
                 0,
