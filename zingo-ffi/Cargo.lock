@@ -2235,18 +2235,18 @@ dependencies = [
  "aho-corasick",
  "memchr",
  "regex-automata",
- "regex-syntax 0.7.3",
+ "regex-syntax 0.7.4",
 ]
 
 [[package]]
 name = "regex-automata"
-version = "0.3.2"
+version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83d3daa6976cffb758ec878f108ba0e062a45b2d6ca3a2cca965338855476caf"
+checksum = "39354c10dd07468c2e73926b23bb9c2caca74c5501e38a35da70406f1d923310"
 dependencies = [
  "aho-corasick",
  "memchr",
- "regex-syntax 0.7.3",
+ "regex-syntax 0.7.4",
 ]
 
 [[package]]
@@ -2257,9 +2257,9 @@ checksum = "f162c6dd7b008981e4d40210aca20b4bd0f9b60ca9271061b07f78537722f2e1"
 
 [[package]]
 name = "regex-syntax"
-version = "0.7.3"
+version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ab07dc67230e4a4718e70fd5c20055a4334b121f1f9db8fe63ef39ce9b8c846"
+checksum = "e5ea92a5b6195c6ef2a0295ea818b312502c6fc94dde986c5553242e18fd4ce2"
 
 [[package]]
 name = "remove_dir_all"
@@ -2596,9 +2596,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.100"
+version = "1.0.102"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f1e14e89be7aa4c4b78bdbdc9eb5bf8517829a600ae8eaa39a6e1d960b5185c"
+checksum = "b5062a995d481b2308b6064e9af76011f2921c35f97b0468811ed9f6cd91dfed"
 dependencies = [
  "itoa",
  "ryu",
@@ -2798,6 +2798,10 @@ checksum = "be55cf8942feac5c765c2c993422806843c9a9a45d4d5c407ad6dd2ea95eb9b6"
 dependencies = [
  "winapi-util",
 ]
+
+[[package]]
+name = "test-utils"
+version = "0.1.0"
 
 [[package]]
 name = "thiserror"
@@ -3722,7 +3726,7 @@ dependencies = [
 [[package]]
 name = "zingo-memo"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=mobile_regtest#991104e267561800c15bcb523f8a6cb462cede07"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=mobile_regtest#2de391b320917f7b25ba89c68c39b8523e5f275e"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -3734,18 +3738,20 @@ dependencies = [
 [[package]]
 name = "zingo-testutils"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=mobile_regtest#991104e267561800c15bcb523f8a6cb462cede07"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=mobile_regtest#2de391b320917f7b25ba89c68c39b8523e5f275e"
 dependencies = [
  "http",
  "incrementalmerkletree",
  "json",
  "log",
+ "orchard",
  "portpicker",
  "serde",
  "serde_json",
  "tempdir",
  "tokio",
  "tracing",
+ "zcash_address",
  "zcash_primitives",
  "zingoconfig",
  "zingolib",
@@ -3754,7 +3760,7 @@ dependencies = [
 [[package]]
 name = "zingoconfig"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=mobile_regtest#991104e267561800c15bcb523f8a6cb462cede07"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=mobile_regtest#2de391b320917f7b25ba89c68c39b8523e5f275e"
 dependencies = [
  "dirs",
  "http",
@@ -3767,7 +3773,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.2.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=mobile_regtest#991104e267561800c15bcb523f8a6cb462cede07"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=mobile_regtest#2de391b320917f7b25ba89c68c39b8523e5f275e"
 dependencies = [
  "base58",
  "base64 0.13.1",
