@@ -2784,13 +2784,6 @@ async fn count_loaded_outputs() {
     drop(child_process_handler);
 }
 
-#[tokio::test]
-async fn mobile_regtest_temp() {
-    let (_regtest_manager, child_process_handler) = scenarios::mobile_regtest_poc().await;
-
-    drop(child_process_handler);
-}
-
 mod benchmarks {
     use super::*;
     #[tokio::test]
