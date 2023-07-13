@@ -1,10 +1,14 @@
 //! Provides unifying interfaces for transaction management across Sapling and Orchard
-use std::io::{self, Read, Write};
+use std::{
+    io::{self, Read, Write},
+    sync::Arc,
+};
 
 use super::{
     data::{
-        PoolNullifier, ReceivedOrchardNoteAndMetadata, ReceivedSaplingNoteAndMetadata,
-        SpendableOrchardNote, SpendableSaplingNote, TransactionMetadata, WitnessCache,
+        merkle::SqliteShardStore, PoolNullifier, ReceivedOrchardNoteAndMetadata,
+        ReceivedSaplingNoteAndMetadata, SpendableOrchardNote, SpendableSaplingNote,
+        TransactionMetadata, WitnessCache, COMMITMENT_TREE_DEPTH, MAX_SHARD_DEPTH,
     },
     keys::unified::WalletCapability,
     transactions::TransactionMetadataSet,
@@ -22,7 +26,9 @@ use orchard::{
     tree::MerkleHashOrchard,
     Action,
 };
+use shardtree::ShardTree;
 use subtle::CtOption;
+use tokio::sync::Mutex;
 use zcash_address::unified::{self, Receiver};
 use zcash_client_backend::{address::UnifiedAddress, encoding::encode_payment_address};
 use zcash_encoding::{Optional, Vector};
@@ -732,6 +738,21 @@ where
             .map(|nd| nd.value())
             .sum()
     }
+    fn get_shardtree(
+        tmds: &TransactionMetadataSet,
+    ) -> Arc<
+        Mutex<
+            ShardTree<
+                SqliteShardStore<
+                    rusqlite::Connection,
+                    <Self::WalletNote as ReceivedNoteAndMetadata>::Node,
+                    MAX_SHARD_DEPTH,
+                >,
+                COMMITMENT_TREE_DEPTH,
+                MAX_SHARD_DEPTH,
+            >,
+        >,
+    >;
     fn get_nullifier_from_note_fvk_and_witness_position(
         note: &Self::Note,
         fvk: &Self::Fvk,
@@ -765,6 +786,23 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
 
     type Bundle = components::sapling::Bundle<components::sapling::Authorized>;
 
+    fn get_shardtree(
+        tmds: &TransactionMetadataSet,
+    ) -> Arc<
+        Mutex<
+            ShardTree<
+                SqliteShardStore<
+                    rusqlite::Connection,
+                    <Self::WalletNote as ReceivedNoteAndMetadata>::Node,
+                    MAX_SHARD_DEPTH,
+                >,
+                COMMITMENT_TREE_DEPTH,
+                MAX_SHARD_DEPTH,
+            >,
+        >,
+    > {
+        tmds.witness_trees.witness_tree_sapling.clone()
+    }
     fn get_nullifier_from_note_fvk_and_witness_position(
         note: &Self::Note,
         fvk: &Self::Fvk,
@@ -772,6 +810,7 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
     ) -> <<Self as DomainWalletExt>::WalletNote as ReceivedNoteAndMetadata>::Nullifier {
         note.nf(&fvk.fvk().vk.nk, position)
     }
+
     fn get_tree(tree_state: &TreeState) -> &String {
         &tree_state.sapling_tree
     }
@@ -783,7 +822,6 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
     fn to_notes_vec_mut(transaction: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote> {
         &mut transaction.sapling_notes
     }
-
     fn ua_from_contained_receiver<'a>(
         unified_spend_auth: &'a WalletCapability,
         receiver: &Self::Recipient,
@@ -802,6 +840,7 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
     fn wc_to_ovk(wc: &WalletCapability) -> Result<Self::OutgoingViewingKey, String> {
         Self::OutgoingViewingKey::try_from(wc)
     }
+
     fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String> {
         Self::SpendingKey::try_from(wc)
     }
@@ -822,6 +861,23 @@ impl DomainWalletExt for OrchardDomain {
 
     type Bundle = orchard::bundle::Bundle<orchard::bundle::Authorized, Amount>;
 
+    fn get_shardtree(
+        tmds: &TransactionMetadataSet,
+    ) -> Arc<
+        Mutex<
+            ShardTree<
+                SqliteShardStore<
+                    rusqlite::Connection,
+                    <Self::WalletNote as ReceivedNoteAndMetadata>::Node,
+                    MAX_SHARD_DEPTH,
+                >,
+                COMMITMENT_TREE_DEPTH,
+                MAX_SHARD_DEPTH,
+            >,
+        >,
+    > {
+        tmds.witness_trees.witness_tree_orchard.clone()
+    }
     fn get_nullifier_from_note_fvk_and_witness_position(
         note: &Self::Note,
         fvk: &Self::Fvk,
@@ -829,6 +885,7 @@ impl DomainWalletExt for OrchardDomain {
     ) -> <<Self as DomainWalletExt>::WalletNote as ReceivedNoteAndMetadata>::Nullifier {
         note.nullifier(fvk)
     }
+
     fn get_tree(tree_state: &TreeState) -> &String {
         &tree_state.orchard_tree
     }
@@ -840,7 +897,6 @@ impl DomainWalletExt for OrchardDomain {
     fn to_notes_vec_mut(transaction: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote> {
         &mut transaction.orchard_notes
     }
-
     fn ua_from_contained_receiver<'a>(
         unified_spend_capability: &'a WalletCapability,
         receiver: &Self::Recipient,
@@ -859,6 +915,7 @@ impl DomainWalletExt for OrchardDomain {
     fn wc_to_ovk(wc: &WalletCapability) -> Result<Self::OutgoingViewingKey, String> {
         Self::OutgoingViewingKey::try_from(wc)
     }
+
     fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String> {
         Self::SpendingKey::try_from(wc)
     }

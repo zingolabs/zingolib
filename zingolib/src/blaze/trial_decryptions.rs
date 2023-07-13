@@ -8,12 +8,13 @@ use crate::{
     wallet::{
         data::{PoolNullifier, TransactionMetadata},
         keys::unified::WalletCapability,
-        traits::{CompactOutput as _, DomainWalletExt},
+        traits::{CompactOutput as _, DomainWalletExt, FromCommitment, ReceivedNoteAndMetadata},
         transactions::TransactionMetadataSet,
         MemoDownloadOption,
     },
 };
 use futures::{stream::FuturesUnordered, StreamExt};
+use incrementalmerkletree::Retention;
 use log::debug;
 use orchard::{keys::IncomingViewingKey as OrchardIvk, note_encryption::OrchardDomain};
 use std::sync::Arc;
@@ -56,7 +57,7 @@ impl TrialDecryptions {
     /// Pass keys and data store to dedicated trial_decrpytion *management* thread,
     /// the *management* thread in turns spawns per-1000-cb trial decryption threads.
     pub async fn start(
-        &self,
+        self: Arc<Self>,
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         detected_transaction_id_sender: UnboundedSender<(
             TxId,
@@ -100,7 +101,7 @@ impl TrialDecryptions {
                     let detected_transaction_id_sender = detected_transaction_id_sender.clone();
                     let config = config.clone();
 
-                    workers.push(tokio::spawn(Self::trial_decrypt_batch(
+                    workers.push(tokio::spawn(self.clone().trial_decrypt_batch(
                         config,
                         cbs.split_off(0), // This allocates all received cbs to the spawn.
                         wc,
@@ -115,7 +116,7 @@ impl TrialDecryptions {
                 }
             }
             // Finish off the remaining < 1000 cbs
-            workers.push(tokio::spawn(Self::trial_decrypt_batch(
+            workers.push(tokio::spawn(self.trial_decrypt_batch(
                 config,
                 cbs,
                 wc,
@@ -143,6 +144,7 @@ impl TrialDecryptions {
     /// thread is spawned.
     #[allow(clippy::too_many_arguments)]
     async fn trial_decrypt_batch(
+        self: Arc<Self>,
         config: Arc<ZingoConfig>,
         compact_blocks: Vec<CompactBlock>,
         wc: Arc<RwLock<WalletCapability>>,
@@ -180,7 +182,7 @@ impl TrialDecryptions {
                 let mut transaction_metadata = false;
 
                 if let Some(ref sapling_ivk) = sapling_ivk {
-                    Self::trial_decrypt_domain_specific_outputs::<
+                    sapling_outputs_in_block += self.trial_decrypt_domain_specific_outputs::<
                         SaplingDomain<zingoconfig::ChainType>,
                     >(
                         &mut transaction_metadata,
@@ -197,24 +199,26 @@ impl TrialDecryptions {
                         &transaction_metadata_set,
                         &detected_transaction_id_sender,
                         &workers,
-                    )
+                    ).await
                 };
 
                 if let Some(ref orchard_ivk) = orchard_ivk {
-                    Self::trial_decrypt_domain_specific_outputs::<OrchardDomain>(
-                        &mut transaction_metadata,
-                        compact_transaction,
-                        transaction_num,
-                        &compact_block,
-                        orchard::keys::PreparedIncomingViewingKey::new(orchard_ivk),
-                        height,
-                        &config,
-                        &wc,
-                        &bsync_data,
-                        &transaction_metadata_set,
-                        &detected_transaction_id_sender,
-                        &workers,
-                    )
+                    orchard_outputs_in_block += self
+                        .trial_decrypt_domain_specific_outputs::<OrchardDomain>(
+                            &mut transaction_metadata,
+                            compact_transaction,
+                            transaction_num,
+                            &compact_block,
+                            orchard::keys::PreparedIncomingViewingKey::new(orchard_ivk),
+                            height,
+                            &config,
+                            &wc,
+                            &bsync_data,
+                            &transaction_metadata_set,
+                            &detected_transaction_id_sender,
+                            &workers,
+                        )
+                        .await
                 };
 
                 // Check option to see if we are fetching all transactions.
@@ -252,7 +256,8 @@ impl TrialDecryptions {
         Ok::<(), String>(())
     }
     #[allow(clippy::too_many_arguments)]
-    fn trial_decrypt_domain_specific_outputs<D>(
+    async fn trial_decrypt_domain_specific_outputs<D>(
+        &self,
         transaction_metadata: &mut bool,
         compact_transaction: &CompactTx,
         transaction_num: usize,
@@ -274,7 +279,8 @@ impl TrialDecryptions {
         D: DomainWalletExt,
         <D as Domain>::Recipient: crate::wallet::traits::Recipient + Send + 'static,
         <D as Domain>::Note: PartialEq + Send + 'static + Clone,
-        [u8; 32]: From<<D as Domain>::ExtractedCommitmentBytes>,
+        <D as Domain>::ExtractedCommitmentBytes: Into<[u8; 32]>,
+        <<D as DomainWalletExt>::WalletNote as ReceivedNoteAndMetadata>::Node: PartialEq,
     {
         let outputs = D::CompactOutput::from_compact_transaction(compact_transaction)
             .iter()
@@ -283,7 +289,9 @@ impl TrialDecryptions {
         let maybe_decrypted_outputs =
             zcash_note_encryption::batch::try_compact_note_decryption(&[ivk], &outputs);
         for maybe_decrypted_output in maybe_decrypted_outputs.into_iter().enumerate() {
-            if let (i, Some(((note, to), _ivk_num))) = maybe_decrypted_output {
+            let (output_num, witnessed) = if let (i, Some(((note, to), _ivk_num))) =
+                maybe_decrypted_output
+            {
                 *transaction_metadata = true; // i.e. we got metadata
 
                 let wc = wc.clone();
@@ -301,7 +309,7 @@ impl TrialDecryptions {
                         return Ok::<_, String>(());
                     };
 
-                    // We don't have fvk import, all our keys are spending
+                    //TODO: Wrong. We don't have fvk import, all our keys are spending
                     let have_spending_key = true;
                     let uri = bsync_data.read().await.uri().clone();
 
@@ -346,7 +354,23 @@ impl TrialDecryptions {
 
                     Ok::<_, String>(())
                 }));
-            }
+                (i, true)
+            } else {
+                (maybe_decrypted_output.0, false)
+            };
+            let mut domain_witness_tree =
+                D::get_shardtree(&*self.transaction_metadata_set.read().await)
+                    .lock_owned()
+                    .await;
+            domain_witness_tree.append(
+                <<D::WalletNote as ReceivedNoteAndMetadata>::Node as FromCommitment>::from_commitment(
+                    outputs[output_num].1.cmstar(),
+                ).unwrap(),
+match witnessed {
+    true => Retention::Marked,
+    false => Retention::Ephemeral,
+}
+            );
         }
     }
 }

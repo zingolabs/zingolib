@@ -38,7 +38,7 @@ use super::{
 pub struct TransactionMetadataSet {
     pub current: HashMap<TxId, TransactionMetadata>,
     pub(crate) some_txid_from_highest_wallet_block: Option<TxId>,
-    witness_trees: WitnessTrees,
+    pub(crate) witness_trees: WitnessTrees,
 }
 
 impl TransactionMetadataSet {
