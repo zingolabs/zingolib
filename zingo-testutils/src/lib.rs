@@ -678,7 +678,7 @@ pub mod scenarios {
         )
     }
 
-    pub async fn mobile_regtest_poc() -> (RegtestManager, ChildProcessHandler) {
+    pub async fn mobile_basic() -> (RegtestManager, ChildProcessHandler) {
         let scenario_builder =
             setup::ScenarioBuilder::build_configure_launch(None, None, Some(20000));
         (
