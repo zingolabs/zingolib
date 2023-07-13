@@ -362,14 +362,15 @@ impl TrialDecryptions {
                 D::get_shardtree(&*self.transaction_metadata_set.read().await)
                     .lock_owned()
                     .await;
+            let new_position = domain_witness_tree.max_leaf_position(0).unwrap().unwrap() + 1;
             domain_witness_tree.append(
                 <<D::WalletNote as ReceivedNoteAndMetadata>::Node as FromCommitment>::from_commitment(
                     outputs[output_num].1.cmstar(),
                 ).unwrap(),
-match witnessed {
-    true => Retention::Marked,
-    false => Retention::Ephemeral,
-}
+                match witnessed {
+                    true => Retention::Marked,
+                    false => Retention::Ephemeral,
+                }
             );
         }
     }
