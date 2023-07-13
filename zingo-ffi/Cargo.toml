@@ -3,7 +3,7 @@ members = [
     "lib",
     "android",
     "ios",
-    "test-utils"
+    "test_utils"
 ]
 
 [workspace.dependencies]
