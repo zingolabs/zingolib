@@ -1930,7 +1930,7 @@ pub mod framework_validation {
             regtest_manager,
             child_process_handler,
             ..
-        } = setup::ScenarioBuilder::build_configure_launch(None, None);
+        } = setup::ScenarioBuilder::build_configure_launch(None, None, None);
         log::debug!("regtest_manager: {:#?}", &regtest_manager);
         // Turn zcashd off and on again, to write down the blocks
         log_field_from_zcashd!(
@@ -2783,6 +2783,7 @@ async fn count_loaded_outputs() {
     recipient.do_sync(true).await.unwrap();
     drop(child_process_handler);
 }
+
 mod benchmarks {
     use super::*;
     #[tokio::test]

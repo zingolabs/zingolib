@@ -283,7 +283,7 @@ pub async fn load_wallet(
 ) -> (zingolib::wallet::LightWallet, ZingoConfig) {
     let wallet = dir.join("zingo-wallet.dat");
     tracing::info!("The wallet is: {}", &wallet.to_str().unwrap());
-    let lightwalletd_uri = TestEnvironmentGenerator::new().get_lightwalletd_uri();
+    let lightwalletd_uri = TestEnvironmentGenerator::new(None).get_lightwalletd_uri();
     let zingo_config = zingolib::load_clientconfig(lightwalletd_uri, Some(dir), chaintype).unwrap();
     let from = std::fs::File::open(wallet).unwrap();
 
@@ -331,14 +331,17 @@ pub mod scenarios {
             pub child_process_handler: Option<ChildProcessHandler>,
         }
         impl ScenarioBuilder {
-            fn build_scenario(custom_client_config: Option<PathBuf>) -> Self {
+            fn build_scenario(
+                custom_client_config: Option<PathBuf>,
+                set_lightwalletd_port: Option<portpicker::Port>,
+            ) -> Self {
                 //! TestEnvironmentGenerator sets particular parameters, specific filenames,
                 //! port numbers, etc.  in general no test_config should be used for
                 //! more than one test, and usually is only invoked via this
                 //! ScenarioBuilder::new constructor.  If you need to set some value
                 //! once, per test, consider adding environment config (e.g. ports, OS) to
                 //! TestEnvironmentGenerator and for scenario specific add to this constructor
-                let test_env = TestEnvironmentGenerator::new();
+                let test_env = TestEnvironmentGenerator::new(set_lightwalletd_port);
                 let regtest_manager = test_env.regtest_manager.clone();
                 let data_dir = if let Some(data_dir) = custom_client_config {
                     data_dir
@@ -382,7 +385,7 @@ pub mod scenarios {
                 );
             }
             pub fn new_load_1153_saplingcb_regtest_chain() -> Self {
-                let mut sb = ScenarioBuilder::build_scenario(None);
+                let mut sb = ScenarioBuilder::build_scenario(None, None);
                 let source = get_regtest_dir().join("data/chain_cache/blocks_1153/zcashd/regtest");
                 let destination = &sb.regtest_manager.zcashd_data_dir;
 
@@ -402,11 +405,12 @@ pub mod scenarios {
             pub fn build_configure_launch(
                 funded: Option<String>,
                 zingo_wallet_dir: Option<PathBuf>,
+                set_lightwalletd_port: Option<portpicker::Port>,
             ) -> Self {
                 let mut sb = if let Some(conf) = zingo_wallet_dir {
-                    ScenarioBuilder::build_scenario(Some(conf))
+                    ScenarioBuilder::build_scenario(Some(conf), set_lightwalletd_port)
                 } else {
-                    ScenarioBuilder::build_scenario(None)
+                    ScenarioBuilder::build_scenario(None, set_lightwalletd_port)
                 };
                 sb.configure_scenario(funded);
                 sb.launch_scenario(true);
@@ -494,11 +498,17 @@ pub mod scenarios {
             lightwalletd_uri: http::Uri,
         }
         impl TestEnvironmentGenerator {
-            pub(crate) fn new() -> Self {
+            pub(crate) fn new(set_lightwalletd_port: Option<portpicker::Port>) -> Self {
                 let zcashd_rpcservice_port = portpicker::pick_unused_port()
                     .expect("Port unpickable!")
                     .to_string();
-                let lightwalletd_rpcservice_port = portpicker::pick_unused_port()
+                if let Some(lightwalletd_port) = set_lightwalletd_port {
+                    if !portpicker::is_free(lightwalletd_port) {
+                        panic!("Lightwalletd RPC service port is not free!");
+                    }
+                }
+                let lightwalletd_rpcservice_port = set_lightwalletd_port
+                    .or(portpicker::pick_unused_port())
                     .expect("Port unpickable!")
                     .to_string();
                 let regtest_manager = RegtestManager::new(
@@ -564,6 +574,7 @@ pub mod scenarios {
         let sb = setup::ScenarioBuilder::build_configure_launch(
             Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
             None,
+            None,
         );
         (
             sb.regtest_manager,
@@ -584,6 +595,7 @@ pub mod scenarios {
     pub async fn faucet() -> (RegtestManager, ChildProcessHandler, LightClient) {
         let mut sb = setup::ScenarioBuilder::build_configure_launch(
             Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
+            None,
             None,
         );
         let faucet = sb.client_builder.build_new_faucet(0, false).await;
@@ -638,6 +650,7 @@ pub mod scenarios {
         let mut sb = setup::ScenarioBuilder::build_configure_launch(
             Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
             None,
+            None,
         );
         let faucet = sb.client_builder.build_new_faucet(0, false).await;
         faucet.do_sync(false).await.unwrap();
@@ -654,7 +667,7 @@ pub mod scenarios {
     }
 
     pub async fn basic_no_spendable() -> (RegtestManager, ChildProcessHandler, LightClient) {
-        let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(None, None);
+        let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(None, None, None);
         (
             scenario_builder.regtest_manager,
             scenario_builder.child_process_handler.unwrap(),
@@ -664,6 +677,16 @@ pub mod scenarios {
                 .await,
         )
     }
+
+    pub async fn mobile_basic() -> (RegtestManager, ChildProcessHandler) {
+        let scenario_builder =
+            setup::ScenarioBuilder::build_configure_launch(None, None, Some(20000));
+        (
+            scenario_builder.regtest_manager,
+            scenario_builder.child_process_handler.unwrap(),
+        )
+    }
+
     pub mod chainload {
         use crate::{build_fvk_client_and_capability, build_fvks_from_wallet_capability};
 
