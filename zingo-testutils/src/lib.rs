@@ -502,15 +502,17 @@ pub mod scenarios {
                 let zcashd_rpcservice_port = portpicker::pick_unused_port()
                     .expect("Port unpickable!")
                     .to_string();
-                if let Some(lightwalletd_port) = set_lightwalletd_port {
-                    if !portpicker::is_free(lightwalletd_port) {
-                        panic!("Lightwalletd RPC service port is not free!");
-                    }
-                }
-                let lightwalletd_rpcservice_port = set_lightwalletd_port
-                    .or(portpicker::pick_unused_port())
-                    .expect("Port unpickable!")
-                    .to_string();
+                let lightwalletd_rpcservice_port =
+                    if let Some(lightwalletd_port) = set_lightwalletd_port {
+                        if !portpicker::is_free(lightwalletd_port) {
+                            panic!("Lightwalletd RPC service port is not free!");
+                        };
+                        lightwalletd_port.to_string()
+                    } else {
+                        portpicker::pick_unused_port()
+                            .expect("Port unpickable!")
+                            .to_string()
+                    };
                 let regtest_manager = RegtestManager::new(
                     tempdir::TempDir::new("zingo_integration_test")
                         .unwrap()
