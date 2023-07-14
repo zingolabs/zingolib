@@ -90,6 +90,15 @@ impl Default for WitnessTrees {
     }
 }
 
+impl WitnessTrees {
+    pub(crate) async fn add_checkpoint(&self, height: BlockHeight) {
+        let mut saplock = self.witness_tree_sapling.lock().await;
+        saplock.checkpoint(height).unwrap();
+        let mut orchlock = self.witness_tree_orchard.lock().await;
+        orchlock.checkpoint(height).unwrap();
+    }
+}
+
 impl std::hash::Hash for PoolNullifier {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match self {
@@ -1015,7 +1024,7 @@ pub struct SpendableSaplingNote {
     pub nullifier: zcash_primitives::sapling::Nullifier,
     pub diversifier: zcash_primitives::sapling::Diversifier,
     pub note: zcash_primitives::sapling::Note,
-    pub witness: IncrementalWitness<zcash_primitives::sapling::Node, 32>,
+    pub witnessed_position: Position,
     pub extsk: Option<zcash_primitives::zip32::sapling::ExtendedSpendingKey>,
 }
 
@@ -1024,7 +1033,7 @@ pub struct SpendableOrchardNote {
     pub nullifier: orchard::note::Nullifier,
     pub diversifier: orchard::keys::Diversifier,
     pub note: orchard::note::Note,
-    pub witness: IncrementalWitness<MerkleHashOrchard, 32>,
+    pub witnessed_position: Position,
     pub spend_key: Option<orchard::keys::SpendingKey>,
 }
 

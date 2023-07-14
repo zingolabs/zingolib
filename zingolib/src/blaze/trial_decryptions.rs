@@ -10,14 +10,14 @@ use crate::{
         keys::unified::WalletCapability,
         traits::{CompactOutput as _, DomainWalletExt, FromCommitment, ReceivedNoteAndMetadata},
         transactions::TransactionMetadataSet,
-        MemoDownloadOption,
+        MemoDownloadOption, NodePosition,
     },
 };
 use futures::{stream::FuturesUnordered, StreamExt};
-use incrementalmerkletree::Retention;
+use incrementalmerkletree::{Position, Retention};
 use log::debug;
 use orchard::{keys::IncomingViewingKey as OrchardIvk, note_encryption::OrchardDomain};
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use tokio::{
     sync::{
         mpsc::{unbounded_channel, UnboundedSender},
@@ -238,14 +238,11 @@ impl TrialDecryptions {
                     }));
                 }
             }
-            // Update sync status
-            bsync_data
-                .read()
-                .await
-                .sync_status
-                .write()
-                .await
-                .trial_dec_done += 1;
+            let txmds_lock = self.transaction_metadata_set.read().await;
+            txmds_lock
+                .witness_trees
+                .add_checkpoint(compact_block.height())
+                .await;
         }
 
         while let Some(r) = workers.next().await {
@@ -282,6 +279,8 @@ impl TrialDecryptions {
         <D as Domain>::ExtractedCommitmentBytes: Into<[u8; 32]>,
         <<D as DomainWalletExt>::WalletNote as ReceivedNoteAndMetadata>::Node: PartialEq,
     {
+        let mut witness_positions_and_notes = Vec::new();
+        let transaction_id = TransactionMetadata::new_txid(&compact_transaction.hash);
         let outputs = D::CompactOutput::from_compact_transaction(compact_transaction)
             .iter()
             .map(|output| (output.domain(config.chain, height), output.clone()))
@@ -327,8 +326,6 @@ impl TrialDecryptions {
                         )
                         .await?;
 
-                    let transaction_id = TransactionMetadata::new_txid(&compact_transaction.hash);
-
                     let spend_nullifier = transaction_metadata_set.write().await.add_new_note::<D>(
                         &fvk,
                         transaction_id,
@@ -338,7 +335,6 @@ impl TrialDecryptions {
                         note,
                         to,
                         have_spending_key,
-                        witness,
                     );
 
                     debug!("Trial decrypt Detected txid {}", &transaction_id);
@@ -372,6 +368,13 @@ impl TrialDecryptions {
                     false => Retention::Ephemeral,
                 }
             );
+            witness_positions_and_notes.push((output_num, new_position));
+        }
+        let mut txmds_writelock = self.transaction_metadata_set.write().await;
+        for (output_num, position) in witness_positions_and_notes {
+            txmds_writelock
+                .mark_note_position::<D>(transaction_id, output_num, position)
+                .await;
         }
     }
 }

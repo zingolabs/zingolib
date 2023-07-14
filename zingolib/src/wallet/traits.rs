@@ -416,17 +416,6 @@ pub trait ReceivedNoteAndMetadata: Sized {
     type Node: Hashable + HashSer + FromCommitment + Send + Clone;
     type Nullifier: Nullifier;
 
-    fn get_note_witnesses(
-        tms: &TransactionMetadataSet,
-        txid: &TxId,
-        nullifier: &Self::Nullifier,
-    ) -> Option<(WitnessCache<Self::Node>, BlockHeight)>;
-    fn set_note_witnesses(
-        tms: &mut TransactionMetadataSet,
-        txid: &TxId,
-        nullifier: &Self::Nullifier,
-        cache: WitnessCache<Self::Node>,
-    );
     fn diversifier(&self) -> &Self::Diversifier;
     #[allow(clippy::too_many_arguments)]
     fn from_parts(
@@ -466,6 +455,7 @@ pub trait ReceivedNoteAndMetadata: Sized {
     }
     fn value_from_note(note: &Self::Note) -> u64;
     fn witnessed_position(&self) -> &Position;
+    fn witnessed_position_mut(&mut self) -> &mut Position;
 }
 
 impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
@@ -473,22 +463,6 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
     type Note = zcash_primitives::sapling::Note;
     type Node = zcash_primitives::sapling::Node;
     type Nullifier = zcash_primitives::sapling::Nullifier;
-
-    fn get_note_witnesses(
-        tms: &TransactionMetadataSet,
-        txid: &TxId,
-        nullifier: &Self::Nullifier,
-    ) -> Option<(WitnessCache<Self::Node>, BlockHeight)> {
-        TransactionMetadataSet::get_sapling_note_witnesses(tms, txid, nullifier)
-    }
-    fn set_note_witnesses(
-        tms: &mut TransactionMetadataSet,
-        txid: &TxId,
-        nullifier: &Self::Nullifier,
-        cache: WitnessCache<Self::Node>,
-    ) {
-        TransactionMetadataSet::set_sapling_note_witnesses(tms, txid, nullifier, cache)
-    }
 
     fn diversifier(&self) -> &Self::Diversifier {
         &self.diversifier
@@ -587,6 +561,10 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
     fn witnessed_position(&self) -> &Position {
         &self.witnessed_position
     }
+
+    fn witnessed_position_mut(&mut self) -> &mut Position {
+        &mut self.witnessed_position
+    }
 }
 
 impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
@@ -594,23 +572,6 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
     type Note = orchard::note::Note;
     type Node = MerkleHashOrchard;
     type Nullifier = orchard::note::Nullifier;
-
-    fn get_note_witnesses(
-        tms: &TransactionMetadataSet,
-        txid: &TxId,
-        nullifier: &Self::Nullifier,
-    ) -> Option<(WitnessCache<Self::Node>, BlockHeight)> {
-        TransactionMetadataSet::get_orchard_note_witnesses(tms, txid, nullifier)
-    }
-
-    fn set_note_witnesses(
-        tms: &mut TransactionMetadataSet,
-        txid: &TxId,
-        nullifier: &Self::Nullifier,
-        cache: WitnessCache<Self::Node>,
-    ) {
-        TransactionMetadataSet::set_orchard_note_witnesses(tms, txid, nullifier, cache)
-    }
 
     fn diversifier(&self) -> &Self::Diversifier {
         &self.diversifier
@@ -707,6 +668,9 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
 
     fn witnessed_position(&self) -> &Position {
         &self.witnessed_position
+    }
+    fn witnessed_position_mut(&mut self) -> &mut Position {
+        &mut self.witnessed_position
     }
 }
 
@@ -1000,7 +964,7 @@ where
         nullifier: <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier,
         diversifier: <D::WalletNote as ReceivedNoteAndMetadata>::Diversifier,
         note: D::Note,
-        witness: IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node, 32>,
+        witnessed_position: Position,
         sk: Option<&D::SpendingKey>,
     ) -> Self;
     fn transaction_id(&self) -> TxId;
@@ -1017,7 +981,7 @@ impl SpendableNote<SaplingDomain<ChainType>> for SpendableSaplingNote {
         nullifier: zcash_primitives::sapling::Nullifier,
         diversifier: zcash_primitives::sapling::Diversifier,
         note: zcash_primitives::sapling::Note,
-        witness: IncrementalWitness<zcash_primitives::sapling::Node, 32>,
+        witnessed_position: Position,
         extsk: Option<&zip32::sapling::ExtendedSpendingKey>,
     ) -> Self {
         SpendableSaplingNote {
@@ -1025,7 +989,7 @@ impl SpendableNote<SaplingDomain<ChainType>> for SpendableSaplingNote {
             nullifier,
             diversifier,
             note,
-            witness,
+            witnessed_position,
             extsk: extsk.cloned(),
         }
     }

@@ -64,7 +64,7 @@ use self::{
     message::Message,
     transactions::TransactionMetadataSet,
 };
-use zingoconfig::{ZingoConfig, MAX_REORG};
+use zingoconfig::{ZingoConfig, MAX_REORG, REORG_BUFFER_OFFSET};
 
 pub mod data;
 pub mod keys;
@@ -453,7 +453,21 @@ impl LightWallet {
         target_height: BlockHeight,
     ) -> Result<Anchor, String> {
         if let Some(note) = orchard_notes.get(0) {
-            Ok(orchard::Anchor::from(note.witness.root()))
+            let txmds_readlock = self
+                .transaction_context
+                .transaction_metadata_set
+                .read()
+                .await;
+            let tree_lock = txmds_readlock
+                .witness_trees
+                .witness_tree_orchard
+                .lock()
+                .await;
+            Ok(orchard::Anchor::from(
+                tree_lock
+                    .root_at_checkpoint(REORG_BUFFER_OFFSET as usize)
+                    .map_err(|e| e.to_string())?,
+            ))
         } else {
             let uri = self.transaction_context.config.get_lightwalletd_uri();
             let trees = crate::grpc_connector::GrpcConnector::get_trees(

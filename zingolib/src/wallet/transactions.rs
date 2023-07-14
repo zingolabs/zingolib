@@ -4,7 +4,7 @@ use std::{
 };
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use incrementalmerkletree::witness::IncrementalWitness;
+use incrementalmerkletree::{witness::IncrementalWitness, Position};
 use log::error;
 use orchard;
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
@@ -218,7 +218,7 @@ impl TransactionMetadataSet {
     }
 
     // During reorgs, we need to remove all txns at a given height, and all spends that refer to any removed txns.
-    pub fn remove_txns_at_height(&mut self, reorg_height: u64) {
+    pub async fn remove_txns_at_height(&mut self, reorg_height: u64) {
         let reorg_height = BlockHeight::from_u32(reorg_height as u32);
 
         // First, collect txids that need to be removed
@@ -235,22 +235,16 @@ impl TransactionMetadataSet {
             .collect::<Vec<_>>();
         self.remove_txids(txids_to_remove);
 
-        // Of the notes that still remain, unroll the witness.
-        // Trim all witnesses for the invalidated blocks
-        for tx in self.current.values_mut() {
-            // We only want to trim the witness for "existing" notes, i.e., notes that were created before the block that is being removed
-            if tx.block_height < reorg_height {
-                for nd in tx.sapling_notes.iter_mut() {
-                    // The latest witness is at the last() position, so just pop() it.
-                    // We should be checking if there is a witness at all, but if there is none, it is an
-                    // empty vector, for which pop() is a no-op.
-                    nd.witnesses.pop(u64::from(reorg_height));
-                }
-                for nd in tx.orchard_notes.iter_mut() {
-                    nd.witnesses.pop(u64::from(reorg_height));
-                }
-            }
-        }
+        self.witness_trees
+            .witness_tree_sapling
+            .lock()
+            .await
+            .truncate_removing_checkpoint(&reorg_height);
+        self.witness_trees
+            .witness_tree_orchard
+            .lock()
+            .await
+            .truncate_removing_checkpoint(&reorg_height);
     }
 
     /// This returns an _arbitrary_ txid from the latest block the wallet is aware of.
@@ -272,7 +266,6 @@ impl TransactionMetadataSet {
                     .filter_map(move |sapling_note_description| {
                         if transaction_metadata.block_height <= before_block
                             && sapling_note_description.have_spending_key
-                            && !sapling_note_description.witnesses.is_empty()
                             && sapling_note_description.spent.is_none()
                         {
                             Some((
@@ -287,7 +280,6 @@ impl TransactionMetadataSet {
                         move |orchard_note_description| {
                             if transaction_metadata.block_height <= before_block
                                 && orchard_note_description.have_spending_key
-                                && !orchard_note_description.witnesses.is_empty()
                                 && orchard_note_description.spent.is_none()
                             {
                                 Some((
@@ -350,66 +342,6 @@ impl TransactionMetadataSet {
                     })
             })
             .collect()
-    }
-
-    pub(crate) fn get_sapling_note_witnesses(
-        &self,
-        txid: &TxId,
-        nullifier: &zcash_primitives::sapling::Nullifier,
-    ) -> Option<(WitnessCache<zcash_primitives::sapling::Node>, BlockHeight)> {
-        self.current.get(txid).map(|transaction_metadata| {
-            transaction_metadata
-                .sapling_notes
-                .iter()
-                .find(|nd| nd.nullifier == *nullifier)
-                .map(|nd| (nd.witnesses.clone(), transaction_metadata.block_height))
-        })?
-    }
-
-    pub(crate) fn get_orchard_note_witnesses(
-        &self,
-        txid: &TxId,
-        nullifier: &orchard::note::Nullifier,
-    ) -> Option<(WitnessCache<MerkleHashOrchard>, BlockHeight)> {
-        self.current.get(txid).map(|transaction_metadata| {
-            transaction_metadata
-                .orchard_notes
-                .iter()
-                .find(|nd| nd.nullifier == *nullifier)
-                .map(|nd| (nd.witnesses.clone(), transaction_metadata.block_height))
-        })?
-    }
-
-    pub(crate) fn set_sapling_note_witnesses(
-        &mut self,
-        txid: &TxId,
-        nullifier: &zcash_primitives::sapling::Nullifier,
-        witnesses: WitnessCache<zcash_primitives::sapling::Node>,
-    ) {
-        self.current
-            .get_mut(txid)
-            .unwrap()
-            .sapling_notes
-            .iter_mut()
-            .find(|nd| nd.nullifier == *nullifier)
-            .unwrap()
-            .witnesses = witnesses;
-    }
-
-    pub(crate) fn set_orchard_note_witnesses(
-        &mut self,
-        txid: &TxId,
-        nullifier: &orchard::note::Nullifier,
-        witnesses: WitnessCache<MerkleHashOrchard>,
-    ) {
-        self.current
-            .get_mut(txid)
-            .unwrap()
-            .orchard_notes
-            .iter_mut()
-            .find(|nd| nd.nullifier == *nullifier)
-            .unwrap()
-            .witnesses = witnesses;
     }
 
     pub(crate) fn clear_old_witnesses(&mut self, latest_height: u64) {
@@ -721,7 +653,7 @@ impl TransactionMetadataSet {
                 let nd = D::WalletNote::from_parts(
                     to.diversifier(),
                     note,
-                    WitnessCache::empty(),
+                    Position::from(0),
                     <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier::from_bytes([0u8; 32]),
                     None,
                     None,
@@ -738,57 +670,6 @@ impl TransactionMetadataSet {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn add_new_sapling_note(
-        &mut self,
-        fvk: &<SaplingDomain<zingoconfig::ChainType> as DomainWalletExt>::Fvk,
-        txid: TxId,
-        height: BlockHeight,
-        unconfirmed: bool,
-        timestamp: u64,
-        note: zcash_primitives::sapling::Note,
-        to: PaymentAddress,
-        have_spending_key: bool,
-        witness: IncrementalWitness<zcash_primitives::sapling::Node, 32>,
-    ) {
-        self.add_new_note::<SaplingDomain<zingoconfig::ChainType>>(
-            fvk,
-            txid,
-            height,
-            unconfirmed,
-            timestamp,
-            note,
-            to,
-            have_spending_key,
-            witness,
-        );
-    }
-    #[allow(clippy::too_many_arguments)]
-    pub fn add_new_orchard_note(
-        &mut self,
-        fvk: &<OrchardDomain as DomainWalletExt>::Fvk,
-        txid: TxId,
-        height: BlockHeight,
-        unconfirmed: bool,
-        timestamp: u64,
-        note: orchard::note::Note,
-        to: orchard::Address,
-        have_spending_key: bool,
-        witness: IncrementalWitness<MerkleHashOrchard, 32>,
-    ) {
-        self.add_new_note::<OrchardDomain>(
-            fvk,
-            txid,
-            height,
-            unconfirmed,
-            timestamp,
-            note,
-            to,
-            have_spending_key,
-            witness,
-        );
-    }
-
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn add_new_note<D: DomainWalletExt>(
         &mut self,
         fvk: &D::Fvk,
@@ -799,7 +680,6 @@ impl TransactionMetadataSet {
         note: <D::WalletNote as ReceivedNoteAndMetadata>::Note,
         to: D::Recipient,
         have_spending_key: bool,
-        witness: IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node, 32>,
     ) -> <<<D as DomainWalletExt>::Bundle as Bundle<D>>::Spend as Spend>::Nullifier
     where
         D::Note: PartialEq + Clone,
@@ -855,6 +735,20 @@ impl TransactionMetadataSet {
             }
         }
         spend_nullifier
+    }
+
+    pub(crate) async fn mark_note_position<D: DomainWalletExt>(
+        &mut self,
+        txid: TxId,
+        output_num: usize,
+        position: Position,
+    ) where
+        <D as Domain>::Note: PartialEq + Clone,
+        <D as Domain>::Recipient: Recipient,
+    {
+        if let Some(tmd) = self.current.get_mut(&txid) {
+            *D::to_notes_vec_mut(tmd)[output_num].witnessed_position_mut() = position;
+        }
     }
 
     // Update the memo for a note if it already exists. If the note doesn't exist, then nothing happens.
