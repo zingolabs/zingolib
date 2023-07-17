@@ -373,7 +373,12 @@ impl TrialDecryptions {
         let mut txmds_writelock = self.transaction_metadata_set.write().await;
         for (output_num, position) in witness_positions_and_notes {
             txmds_writelock
-                .mark_note_position::<D>(transaction_id, output_num, position)
+                .mark_note_position::<D>(
+                    transaction_id,
+                    output_num,
+                    position,
+                    &D::wc_to_fvk(&*wc.read().await).unwrap(),
+                )
                 .await;
         }
     }

@@ -422,7 +422,7 @@ pub trait ReceivedNoteAndMetadata: Sized {
         diversifier: Self::Diversifier,
         note: Self::Note,
         witness_position: Position,
-        nullifier: Self::Nullifier,
+        nullifier: Option<Self::Nullifier>,
         spent: Option<(TxId, u32)>,
         unconfirmed_spent: Option<(TxId, u32)>,
         memo: Option<Memo>,
@@ -440,6 +440,7 @@ pub trait ReceivedNoteAndMetadata: Sized {
     fn memo_mut(&mut self) -> &mut Option<Memo>;
     fn note(&self) -> &Self::Note;
     fn nullifier(&self) -> Self::Nullifier;
+    fn nullifier_mut(&mut self) -> &mut Self::Nullifier;
     fn pool() -> Pool;
     fn spent(&self) -> &Option<(TxId, u32)>;
     fn spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
@@ -468,11 +469,15 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         &self.diversifier
     }
 
+    fn nullifier_mut(&mut self) -> &mut Self::Nullifier {
+        &mut self.nullifier
+    }
+
     fn from_parts(
         diversifier: zcash_primitives::sapling::Diversifier,
         note: zcash_primitives::sapling::Note,
         witnessed_position: Position,
-        nullifier: zcash_primitives::sapling::Nullifier,
+        nullifier: Option<zcash_primitives::sapling::Nullifier>,
         spent: Option<(TxId, u32)>,
         unconfirmed_spent: Option<(TxId, u32)>,
         memo: Option<Memo>,
@@ -483,7 +488,8 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
             diversifier,
             note,
             witnessed_position,
-            nullifier,
+            nullifier: nullifier
+                .unwrap_or(zcash_primitives::sapling::Nullifier::from_bytes([0; 32])),
             spent,
             unconfirmed_spent,
             memo,
@@ -577,11 +583,15 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         &self.diversifier
     }
 
+    fn nullifier_mut(&mut self) -> &mut Self::Nullifier {
+        &mut self.nullifier
+    }
+
     fn from_parts(
         diversifier: Self::Diversifier,
         note: Self::Note,
         witnessed_position: Position,
-        nullifier: Self::Nullifier,
+        nullifier: Option<Self::Nullifier>,
         spent: Option<(TxId, u32)>,
         unconfirmed_spent: Option<(TxId, u32)>,
         memo: Option<Memo>,
@@ -592,7 +602,7 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
             diversifier,
             note,
             witnessed_position,
-            nullifier,
+            nullifier: nullifier.unwrap_or(<Self::Nullifier as FromBytes<32>>::from_bytes([0; 32])),
             spent,
             unconfirmed_spent,
             memo,
@@ -939,20 +949,14 @@ where
         //TODO: Account for lack of this line
         // && note_and_metadata.witnessed_position().len() >= (anchor_offset + 1)
         {
-            let witness = note_and_metadata
-                .witnessed_position()
-                .get(note_and_metadata.witnessed_position().len() - anchor_offset - 1);
-
-            witness.map(|w| {
-                Self::from_parts_unchecked(
-                    transaction_id,
-                    note_and_metadata.nullifier(),
-                    *note_and_metadata.diversifier(),
-                    note_and_metadata.note().clone(),
-                    w.clone(),
-                    spend_key,
-                )
-            })
+            Some(Self::from_parts_unchecked(
+                transaction_id,
+                note_and_metadata.nullifier(),
+                *note_and_metadata.diversifier(),
+                note_and_metadata.note().clone(),
+                *note_and_metadata.witnessed_position(),
+                spend_key,
+            ))
         } else {
             None
         }
@@ -971,7 +975,7 @@ where
     fn nullifier(&self) -> <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier;
     fn diversifier(&self) -> <D::WalletNote as ReceivedNoteAndMetadata>::Diversifier;
     fn note(&self) -> &D::Note;
-    fn witness(&self) -> &IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node, 32>;
+    fn witnessed_position(&self) -> &Position;
     fn spend_key(&self) -> Option<&D::SpendingKey>;
 }
 
@@ -1010,8 +1014,8 @@ impl SpendableNote<SaplingDomain<ChainType>> for SpendableSaplingNote {
         &self.note
     }
 
-    fn witness(&self) -> &IncrementalWitness<zcash_primitives::sapling::Node, 32> {
-        &self.witness
+    fn witnessed_position(&self) -> &Position {
+        &self.witnessed_position
     }
 
     fn spend_key(&self) -> Option<&zip32::sapling::ExtendedSpendingKey> {
@@ -1025,7 +1029,7 @@ impl SpendableNote<OrchardDomain> for SpendableOrchardNote {
         nullifier: orchard::note::Nullifier,
         diversifier: orchard::keys::Diversifier,
         note: orchard::note::Note,
-        witness: IncrementalWitness<MerkleHashOrchard, 32>,
+        witnessed_position: Position,
         sk: Option<&orchard::keys::SpendingKey>,
     ) -> Self {
         SpendableOrchardNote {
@@ -1033,7 +1037,7 @@ impl SpendableNote<OrchardDomain> for SpendableOrchardNote {
             nullifier,
             diversifier,
             note,
-            witness,
+            witnessed_position,
             spend_key: sk.cloned(),
         }
     }
@@ -1053,8 +1057,8 @@ impl SpendableNote<OrchardDomain> for SpendableOrchardNote {
         &self.note
     }
 
-    fn witness(&self) -> &IncrementalWitness<MerkleHashOrchard, 32> {
-        &self.witness
+    fn witnessed_position(&self) -> &Position {
+        &self.witnessed_position
     }
 
     fn spend_key(&self) -> Option<&orchard::keys::SpendingKey> {
@@ -1309,7 +1313,7 @@ where
             diversifier,
             note,
             witnesses.last().unwrap().witnessed_position(),
-            nullifier,
+            Some(nullifier),
             spent,
             None,
             memo,

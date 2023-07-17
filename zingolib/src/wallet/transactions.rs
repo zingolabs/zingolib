@@ -654,7 +654,7 @@ impl TransactionMetadataSet {
                     to.diversifier(),
                     note,
                     Position::from(0),
-                    <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier::from_bytes([0u8; 32]),
+                    None,
                     None,
                     None,
                     None,
@@ -680,8 +680,7 @@ impl TransactionMetadataSet {
         note: <D::WalletNote as ReceivedNoteAndMetadata>::Note,
         to: D::Recipient,
         have_spending_key: bool,
-    ) -> <<<D as DomainWalletExt>::Bundle as Bundle<D>>::Spend as Spend>::Nullifier
-    where
+    ) where
         D::Note: PartialEq + Clone,
         D::Recipient: Recipient,
     {
@@ -690,27 +689,16 @@ impl TransactionMetadataSet {
         // Update the block height, in case this was a mempool or unconfirmed tx.
         transaction_metadata.block_height = height;
 
-        let spend_nullifier = D::get_nullifier_from_note_fvk_and_witness_position(
-            &note,
-            fvk,
-            u64::from(witness.witnessed_position()),
-        );
-        let witnesses = if have_spending_key {
-            WitnessCache::new(vec![witness], u64::from(height))
-        } else {
-            WitnessCache::empty()
-        };
-
         match D::WalletNote::transaction_metadata_notes_mut(transaction_metadata)
             .iter_mut()
-            .find(|n| n.nullifier() == spend_nullifier)
+            .find(|n| n.note() == &note)
         {
             None => {
                 let nd = D::WalletNote::from_parts(
                     D::Recipient::diversifier(&to),
                     note,
-                    witnesses,
-                    spend_nullifier,
+                    Position::from(0),
+                    None,
                     None,
                     None,
                     None,
@@ -726,15 +714,8 @@ impl TransactionMetadataSet {
                 D::WalletNote::transaction_metadata_notes_mut(transaction_metadata)
                     .retain(|n| n.nullifier().to_bytes() != [0u8; 32]);
             }
-            Some(n) => {
-                // If this note already exists, then just reset the witnesses, because we'll start scanning the witnesses
-                // again after this.
-                // This is likely to happen if the previous wallet wasn't synced properly or was aborted in the middle of a sync,
-                // and has some dangling witnesses
-                *n.witnesses_mut() = witnesses;
-            }
+            Some(n) => (),
         }
-        spend_nullifier
     }
 
     pub(crate) async fn mark_note_position<D: DomainWalletExt>(
@@ -742,12 +723,19 @@ impl TransactionMetadataSet {
         txid: TxId,
         output_num: usize,
         position: Position,
+        fvk: &D::Fvk,
     ) where
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: Recipient,
     {
         if let Some(tmd) = self.current.get_mut(&txid) {
-            *D::to_notes_vec_mut(tmd)[output_num].witnessed_position_mut() = position;
+            let nnmd = &mut D::to_notes_vec_mut(tmd)[output_num];
+            *nnmd.witnessed_position_mut() = position;
+            *nnmd.nullifier_mut() = D::get_nullifier_from_note_fvk_and_witness_position(
+                &nnmd.note().clone(),
+                fvk,
+                u64::from(position),
+            );
         }
     }
 
