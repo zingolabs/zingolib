@@ -101,7 +101,7 @@ pub fn init_from_seed(
         Ok((c, h)) => (config, _lightwalletd_uri) = (c, h),
         Err(s) => return s,
     }
-    let lightclient = match LightClient::new_from_wallet_base(
+    let lightclient = match LightClient::create_from_wallet_base(
         WalletBase::MnemonicPhrase(seed),
         &config,
         birthday,
@@ -127,13 +127,17 @@ pub fn init_from_ufvk(
         Ok((c, h)) => (config, _lightwalletd_uri) = (c, h),
         Err(s) => return s,
     }
-    let lightclient =
-        match LightClient::new_from_wallet_base(WalletBase::Ufvk(ufvk), &config, birthday, false) {
-            Ok(l) => l,
-            Err(e) => {
-                return format!("Error: {}", e);
-            }
-        };
+    let lightclient = match LightClient::create_from_wallet_base(
+        WalletBase::Ufvk(ufvk),
+        &config,
+        birthday,
+        false,
+    ) {
+        Ok(l) => l,
+        Err(e) => {
+            return format!("Error: {}", e);
+        }
+    };
     lock_client_return_seed(lightclient)
 }
 
