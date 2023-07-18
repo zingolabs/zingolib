@@ -45,7 +45,7 @@ pub fn load_clientconfig(
     let config = ZingoConfig {
         lightwalletd_uri: Arc::new(RwLock::new(lightwallet_uri)),
         chain,
-        monitor_mempool: true,
+        monitor_mempool: false,
         reorg_buffer_offset: zingoconfig::REORG_BUFFER_OFFSET,
         zingo_wallet_dir: data_dir,
     };
