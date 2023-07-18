@@ -10,7 +10,7 @@ use crate::{
     wallet::{
         data::{
             finsight, summaries::ValueTransfer, summaries::ValueTransferKind, OutgoingTxData,
-            TransactionMetadata,
+            TransactionMetadata, COMMITMENT_TREE_DEPTH,
         },
         keys::{
             address_from_pubkeyhash,
@@ -23,9 +23,10 @@ use crate::{
     },
 };
 use futures::future::join_all;
+use incrementalmerkletree::frontier::CommitmentTree;
 use json::{array, object, JsonValue};
 use log::{debug, error, warn};
-use orchard::note_encryption::OrchardDomain;
+use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
 use std::{
     cmp::{self, Ordering},
     collections::HashMap,
@@ -52,6 +53,7 @@ use zcash_client_backend::{
 use zcash_primitives::{
     consensus::{BlockHeight, BranchId, Parameters},
     memo::{Memo, MemoBytes},
+    merkle_tree::read_commitment_tree,
     sapling::note_encryption::SaplingDomain,
     transaction::{fees::zip317::MINIMUM_FEE, Transaction, TxId},
 };
@@ -1362,8 +1364,19 @@ impl LightClient {
         let lightclient_exclusion_lock = self.sync_lock.lock().await;
 
         // The top of the wallet
-        let last_synced_height = self.wallet.last_synced_height().await;
+        let last_synced_height = dbg!(self.wallet.last_synced_height().await);
 
+        // This is a fresh wallet. We need to get the initial trees
+        if last_synced_height
+            == self
+                .wallet
+                .transaction_context
+                .config
+                .sapling_activation_height()
+                - 1
+        {
+            self.initiate_witness_trees().await;
+        }
         let latest_blockid =
             GrpcConnector::get_latest_block(self.config.get_lightwalletd_uri()).await?;
         // Block hashes are reversed when stored in BlockDatas, so we reverse here to match
@@ -1646,14 +1659,6 @@ impl LightClient {
         // 3. Mark the sync finished, which will clear the nullifier cache etc...
         blaze_sync_data.finish().await;
 
-        // 4. Remove the witnesses for spent notes more than 100 blocks old, since now there
-        // is no risk of reorg
-        self.wallet
-            .transactions()
-            .write()
-            .await
-            .clear_old_witnesses(start_block);
-
         // 5. Remove expired mempool transactions, if any
         self.wallet
             .transactions()
@@ -1676,6 +1681,49 @@ impl LightClient {
             "latest_block" => start_block,
             "total_blocks_synced" => start_block - end_block + 1,
         })
+    }
+
+    async fn initiate_witness_trees(&self) {
+        let trees =
+            GrpcConnector::get_trees(self.get_server_uri(), self.wallet.get_birthday().await)
+                .await
+                .unwrap();
+        let sapling_tree: CommitmentTree<zcash_primitives::sapling::Node, COMMITMENT_TREE_DEPTH> =
+            read_commitment_tree(&hex::decode(trees.sapling_tree).unwrap()[..]).unwrap();
+        let orchard_tree: CommitmentTree<MerkleHashOrchard, COMMITMENT_TREE_DEPTH> =
+            read_commitment_tree(&hex::decode(trees.orchard_tree).unwrap()[..]).unwrap();
+        if let Some(sap_nonempty_front) = sapling_tree.to_frontier().take() {
+            self.wallet
+                .transaction_context
+                .transaction_metadata_set
+                .read()
+                .await
+                .witness_trees
+                .witness_tree_sapling
+                .lock()
+                .await
+                .insert_frontier_nodes(
+                    sap_nonempty_front,
+                    incrementalmerkletree::Retention::Ephemeral,
+                )
+                .unwrap();
+        }
+        if let Some(orc_nonempty_front) = orchard_tree.to_frontier().take() {
+            self.wallet
+                .transaction_context
+                .transaction_metadata_set
+                .read()
+                .await
+                .witness_trees
+                .witness_tree_orchard
+                .lock()
+                .await
+                .insert_frontier_nodes(
+                    orc_nonempty_front,
+                    incrementalmerkletree::Retention::Ephemeral,
+                )
+                .unwrap();
+        }
     }
 
     fn tx_summary_matcher(

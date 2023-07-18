@@ -27,7 +27,8 @@ use super::{
     },
     keys::unified::WalletCapability,
     traits::{
-        Bundle, DomainWalletExt, FromBytes, Nullifier, ReceivedNoteAndMetadata, Recipient, Spend,
+        self, Bundle, DomainWalletExt, FromBytes, Nullifier, ReceivedNoteAndMetadata, Recipient,
+        Spend,
     },
 };
 
@@ -38,7 +39,7 @@ use super::{
 pub struct TransactionMetadataSet {
     pub current: HashMap<TxId, TransactionMetadata>,
     pub(crate) some_txid_from_highest_wallet_block: Option<TxId>,
-    pub(crate) witness_trees: WitnessTrees,
+    pub witness_trees: WitnessTrees,
 }
 
 impl TransactionMetadataSet {
@@ -344,10 +345,6 @@ impl TransactionMetadataSet {
             .collect()
     }
 
-    pub(crate) fn clear_old_witnesses(&mut self, latest_height: u64) {
-        todo!("Remove old positions from the trees")
-    }
-
     pub(crate) fn clear_expired_mempool(&mut self, latest_height: u64) {
         let cutoff = BlockHeight::from_u32((latest_height.saturating_sub(MAX_REORG as u64)) as u32);
 
@@ -459,7 +456,7 @@ impl TransactionMetadataSet {
 
     // Records a TxId as having spent some nullifiers from the wallet.
     #[allow(clippy::too_many_arguments)]
-    pub fn add_new_spent(
+    pub async fn add_new_spent(
         &mut self,
         txid: TxId,
         height: BlockHeight,
@@ -470,8 +467,8 @@ impl TransactionMetadataSet {
         source_txid: TxId,
     ) {
         match nullifier {
-            PoolNullifier::Orchard(nullifier) => self
-                .add_new_spent_internal::<ReceivedOrchardNoteAndMetadata>(
+            PoolNullifier::Orchard(nullifier) => {
+                self.add_new_spent_internal::<OrchardDomain>(
                     txid,
                     height,
                     unconfirmed,
@@ -479,9 +476,11 @@ impl TransactionMetadataSet {
                     nullifier,
                     value,
                     source_txid,
-                ),
-            PoolNullifier::Sapling(nullifier) => self
-                .add_new_spent_internal::<ReceivedSaplingNoteAndMetadata>(
+                )
+                .await
+            }
+            PoolNullifier::Sapling(nullifier) => {
+                self.add_new_spent_internal::<SaplingDomain<ChainType>>(
                     txid,
                     height,
                     unconfirmed,
@@ -489,28 +488,33 @@ impl TransactionMetadataSet {
                     nullifier,
                     value,
                     source_txid,
-                ),
+                )
+                .await
+            }
         }
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn add_new_spent_internal<NnMd: ReceivedNoteAndMetadata>(
+    async fn add_new_spent_internal<D: DomainWalletExt>(
         &mut self,
         txid: TxId,
         height: BlockHeight,
         unconfirmed: bool,
         timestamp: u32,
-        nullifier: NnMd::Nullifier,
+        nullifier: <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier,
         value: u64,
         source_txid: TxId,
-    ) {
+    ) where
+        <D as Domain>::Note: PartialEq + Clone,
+        <D as Domain>::Recipient: traits::Recipient,
+    {
         // Record this Tx as having spent some funds
         let transaction_metadata =
             self.get_or_create_transaction_metadata(&txid, height, unconfirmed, timestamp as u64);
 
         // Mark the height correctly, in case this was previously a mempool or unconfirmed tx.
         transaction_metadata.block_height = height;
-        if !NnMd::Nullifier::get_nullifiers_spent_in_transaction(transaction_metadata)
+        if !<D::WalletNote as ReceivedNoteAndMetadata>::Nullifier::get_nullifiers_spent_in_transaction(transaction_metadata)
             .iter()
             .any(|nf| *nf == nullifier)
         {
@@ -522,16 +526,25 @@ impl TransactionMetadataSet {
 
         // Mark the source note as spent
         if !unconfirmed {
+            let witness_tree = D::get_shardtree(&self);
             let transaction_metadata = self
                 .current
                 .get_mut(&source_txid)
                 .expect("Txid should be present");
 
-            if let Some(nd) = NnMd::transaction_metadata_notes_mut(transaction_metadata)
+            if let Some(nd) =
+                <D::WalletNote as ReceivedNoteAndMetadata>::transaction_metadata_notes_mut(
+                    transaction_metadata,
+                )
                 .iter_mut()
                 .find(|n| n.nullifier() == nullifier)
             {
                 *nd.spent_mut() = Some((txid, height.into()));
+                witness_tree
+                    .lock()
+                    .await
+                    .remove_mark(*nd.witnessed_position(), Some(&height))
+                    .unwrap();
             }
         }
     }

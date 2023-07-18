@@ -1572,7 +1572,7 @@ async fn witness_clearing() {
     }
 
     // transaction is not yet mined, so witnesses should still be there
-    let witnesses = recipient
+    let position = recipient
         .wallet
         .transactions()
         .read()
@@ -1583,9 +1583,20 @@ async fn witness_clearing() {
         .orchard_notes
         .get(0)
         .unwrap()
-        .witnesses
-        .clone();
-    assert_eq!(witnesses.len(), 1);
+        .witnessed_position;
+    assert!(recipient
+        .wallet
+        .transaction_context
+        .transaction_metadata_set
+        .read()
+        .await
+        .witness_trees
+        .witness_tree_orchard
+        .lock()
+        .await
+        .marked_positions()
+        .unwrap()
+        .contains(&position));
 
     // 4. Mine the sent transaction
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 1)
@@ -1593,7 +1604,7 @@ async fn witness_clearing() {
         .unwrap();
 
     // transaction is now mined, but witnesses should still be there because not 100 blocks yet (i.e., could get reorged)
-    let witnesses = recipient
+    let position = recipient
         .wallet
         .transactions()
         .read()
@@ -1604,15 +1615,26 @@ async fn witness_clearing() {
         .orchard_notes
         .get(0)
         .unwrap()
-        .witnesses
-        .clone();
-    assert_eq!(witnesses.len(), 1);
+        .witnessed_position;
+    assert!(recipient
+        .wallet
+        .transaction_context
+        .transaction_metadata_set
+        .read()
+        .await
+        .witness_trees
+        .witness_tree_orchard
+        .lock()
+        .await
+        .marked_positions()
+        .unwrap()
+        .contains(&position));
 
     // 5. Mine 50 blocks, witness should still be there
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 50)
         .await
         .unwrap();
-    let witnesses = recipient
+    let position = recipient
         .wallet
         .transactions()
         .read()
@@ -1623,15 +1645,26 @@ async fn witness_clearing() {
         .orchard_notes
         .get(0)
         .unwrap()
-        .witnesses
-        .clone();
-    assert_eq!(witnesses.len(), 1);
+        .witnessed_position;
+    assert!(recipient
+        .wallet
+        .transaction_context
+        .transaction_metadata_set
+        .read()
+        .await
+        .witness_trees
+        .witness_tree_orchard
+        .lock()
+        .await
+        .marked_positions()
+        .unwrap()
+        .contains(&position));
 
     // 5. Mine 100 blocks, witness should now disappear
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 100)
         .await
         .unwrap();
-    let witnesses = recipient
+    let position = recipient
         .wallet
         .transactions()
         .read()
@@ -1642,9 +1675,21 @@ async fn witness_clearing() {
         .orchard_notes
         .get(0)
         .unwrap()
-        .witnesses
-        .clone();
-    assert_eq!(witnesses.len(), 0);
+        .witnessed_position;
+    //Note: This is a negative assertion. Notice the "!"
+    assert!(!recipient
+        .wallet
+        .transaction_context
+        .transaction_metadata_set
+        .read()
+        .await
+        .witness_trees
+        .witness_tree_orchard
+        .lock()
+        .await
+        .marked_positions()
+        .unwrap()
+        .contains(&position));
 }
 
 #[tokio::test]
@@ -2162,21 +2207,33 @@ async fn aborted_resync() {
         .transaction_metadata_set
         .read()
         .await
-        .current
-        .get(&zingolib::wallet::data::TransactionMetadata::new_txid(
-            hex::decode(sent_transaction_id.clone())
+        .witness_trees
+        .witness_tree_orchard
+        .lock()
+        .await
+        .witness(
+            recipient
+                .wallet
+                .transaction_context
+                .transaction_metadata_set
+                .read()
+                .await
+                .current
+                .get(&zingolib::wallet::data::TransactionMetadata::new_txid(
+                    hex::decode(sent_transaction_id.clone())
+                        .unwrap()
+                        .into_iter()
+                        .rev()
+                        .collect::<Vec<_>>()
+                        .as_slice(),
+                ))
                 .unwrap()
-                .into_iter()
-                .rev()
-                .collect::<Vec<_>>()
-                .as_slice(),
-        ))
-        .unwrap()
-        .orchard_notes
-        .get(0)
-        .unwrap()
-        .witnesses
-        .clone();
+                .orchard_notes
+                .get(0)
+                .unwrap()
+                .witnessed_position,
+            0,
+        );
 
     // 5. Now, we'll manually remove some of the blocks in the wallet, pretending that the sync was aborted in the middle.
     // We'll remove the top 20 blocks, so now the wallet only has the first 3 blocks
@@ -2196,35 +2253,37 @@ async fn aborted_resync() {
         .transaction_metadata_set
         .read()
         .await
-        .current
-        .get(&TransactionMetadata::new_txid(
-            hex::decode(sent_transaction_id)
+        .witness_trees
+        .witness_tree_orchard
+        .lock()
+        .await
+        .witness(
+            recipient
+                .wallet
+                .transaction_context
+                .transaction_metadata_set
+                .read()
+                .await
+                .current
+                .get(&zingolib::wallet::data::TransactionMetadata::new_txid(
+                    hex::decode(sent_transaction_id.clone())
+                        .unwrap()
+                        .into_iter()
+                        .rev()
+                        .collect::<Vec<_>>()
+                        .as_slice(),
+                ))
                 .unwrap()
-                .into_iter()
-                .rev()
-                .collect::<Vec<_>>()
-                .as_slice(),
-        ))
-        .unwrap()
-        .orchard_notes
-        .get(0)
-        .unwrap()
-        .witnesses
-        .clone();
+                .orchard_notes
+                .get(0)
+                .unwrap()
+                .witnessed_position,
+            0,
+        );
 
     assert_eq!(notes_before, notes_after);
     assert_eq!(list_before, list_after);
-    assert_eq!(witness_before.top_height, witness_after.top_height);
-    assert_eq!(witness_before.len(), witness_after.len());
-    for i in 0..witness_before.len() {
-        let mut before_bytes = vec![];
-        write_incremental_witness(witness_before.get(i).unwrap(), &mut before_bytes).unwrap();
-
-        let mut after_bytes = vec![];
-        write_incremental_witness(witness_after.get(i).unwrap(), &mut after_bytes).unwrap();
-
-        assert_eq!(hex::encode(before_bytes), hex::encode(after_bytes));
-    }
+    assert_eq!(witness_before.unwrap(), witness_after.unwrap());
 }
 
 #[tokio::test]

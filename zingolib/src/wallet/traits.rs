@@ -413,7 +413,7 @@ pub trait ReceivedNoteAndMetadata: Sized {
     type Note: PartialEq
         + for<'a> ReadableWriteable<(Self::Diversifier, &'a WalletCapability)>
         + Clone;
-    type Node: Hashable + HashSer + FromCommitment + Send + Clone;
+    type Node: Hashable + HashSer + FromCommitment + Send + Clone + PartialEq + Eq;
     type Nullifier: Nullifier;
 
     fn diversifier(&self) -> &Self::Diversifier;
