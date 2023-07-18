@@ -428,6 +428,7 @@ pub trait ReceivedNoteAndMetadata: Sized {
         memo: Option<Memo>,
         is_change: bool,
         have_spending_key: bool,
+        output_index: usize,
     ) -> Self;
     fn get_deprecated_serialized_view_key_buffer() -> Vec<u8>;
     fn have_spending_key(&self) -> bool;
@@ -436,6 +437,8 @@ pub trait ReceivedNoteAndMetadata: Sized {
     fn is_spent(&self) -> bool {
         Self::spent(self).is_some()
     }
+    fn output_index(&self) -> &usize;
+    fn output_index_mut(&mut self) -> &mut usize;
     fn memo(&self) -> &Option<Memo>;
     fn memo_mut(&mut self) -> &mut Option<Memo>;
     fn note(&self) -> &Self::Note;
@@ -483,6 +486,7 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         memo: Option<Memo>,
         is_change: bool,
         have_spending_key: bool,
+        output_index: usize,
     ) -> Self {
         Self {
             diversifier,
@@ -495,6 +499,7 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
             memo,
             is_change,
             have_spending_key,
+            output_index,
         }
     }
 
@@ -571,6 +576,14 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
     fn witnessed_position_mut(&mut self) -> &mut Position {
         &mut self.witnessed_position
     }
+
+    fn output_index(&self) -> &usize {
+        &self.output_index
+    }
+
+    fn output_index_mut(&mut self) -> &mut usize {
+        &mut self.output_index
+    }
 }
 
 impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
@@ -597,6 +610,7 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         memo: Option<Memo>,
         is_change: bool,
         have_spending_key: bool,
+        output_index: usize,
     ) -> Self {
         Self {
             diversifier,
@@ -608,6 +622,7 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
             memo,
             is_change,
             have_spending_key,
+            output_index,
         }
     }
 
@@ -681,6 +696,13 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
     }
     fn witnessed_position_mut(&mut self) -> &mut Position {
         &mut self.witnessed_position
+    }
+    fn output_index(&self) -> &usize {
+        &self.output_index
+    }
+
+    fn output_index_mut(&mut self) -> &mut usize {
+        &mut self.output_index
     }
 }
 
@@ -1240,7 +1262,7 @@ impl<T> ReadableWriteable<&WalletCapability> for T
 where
     T: ReceivedNoteAndMetadata,
 {
-    const VERSION: u8 = 3;
+    const VERSION: u8 = 4;
 
     fn read<R: Read>(mut reader: R, wallet_capability: &WalletCapability) -> io::Result<Self> {
         let external_version = Self::get_version(&mut reader)?;
@@ -1309,6 +1331,13 @@ where
 
         let have_spending_key = reader.read_u8()? > 0;
 
+        let output_index = if external_version >= 4 {
+            reader.read_u32::<LittleEndian>()?
+        } else {
+            // TODO: This value is obviously incorrect, we can fix it if it becomes a problem
+            u32::MAX
+        };
+
         Ok(T::from_parts(
             diversifier,
             note,
@@ -1319,6 +1348,7 @@ where
             memo,
             is_change,
             have_spending_key,
+            output_index as usize,
         ))
     }
 

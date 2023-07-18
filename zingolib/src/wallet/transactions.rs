@@ -674,6 +674,8 @@ impl TransactionMetadataSet {
                     // if this is change, we'll mark it later in check_notes_mark_change
                     false,
                     false,
+                    // Obviously incorrect, so we can special-case it
+                    u32::MAX as usize,
                 );
 
                 D::WalletNote::transaction_metadata_notes_mut(transaction_metadata).push(nd);
@@ -693,6 +695,7 @@ impl TransactionMetadataSet {
         note: <D::WalletNote as ReceivedNoteAndMetadata>::Note,
         to: D::Recipient,
         have_spending_key: bool,
+        output_index: usize,
     ) where
         D::Note: PartialEq + Clone,
         D::Recipient: Recipient,
@@ -724,6 +727,7 @@ impl TransactionMetadataSet {
                         // if this is change, we'll mark it later in check_notes_mark_change
                         false,
                         have_spending_key,
+                        output_index,
                     );
 
                 D::WalletNote::transaction_metadata_notes_mut(transaction_metadata).push(nd);
@@ -742,7 +746,7 @@ impl TransactionMetadataSet {
     pub(crate) async fn mark_note_position<D: DomainWalletExt>(
         &mut self,
         txid: TxId,
-        output_num: usize,
+        output_index: usize,
         position: Position,
         fvk: &D::Fvk,
     ) where
@@ -750,13 +754,17 @@ impl TransactionMetadataSet {
         <D as Domain>::Recipient: Recipient,
     {
         if let Some(tmd) = self.current.get_mut(&txid) {
-            let nnmd = &mut D::to_notes_vec_mut(tmd)[output_num];
-            *nnmd.witnessed_position_mut() = position;
-            *nnmd.nullifier_mut() = D::get_nullifier_from_note_fvk_and_witness_position(
-                &nnmd.note().clone(),
-                fvk,
-                u64::from(position),
-            );
+            if let Some(nnmd) = &mut D::to_notes_vec_mut(tmd)
+                .iter_mut()
+                .find(|nnmd| *nnmd.output_index() == output_index)
+            {
+                *nnmd.witnessed_position_mut() = position;
+                *nnmd.nullifier_mut() = D::get_nullifier_from_note_fvk_and_witness_position(
+                    &nnmd.note().clone(),
+                    fvk,
+                    u64::from(position),
+                );
+            }
         }
     }
 

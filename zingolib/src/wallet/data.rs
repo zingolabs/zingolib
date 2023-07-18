@@ -350,6 +350,10 @@ pub struct ReceivedSaplingNoteAndMetadata {
 
     // The postion of this note's commitment
     pub(crate) witnessed_position: Position,
+
+    // The note's index in its containing transaction
+    pub(crate) output_index: usize,
+
     pub(super) nullifier: zcash_primitives::sapling::Nullifier,
     pub spent: Option<(TxId, u32)>, // If this note was confirmed spent
 
@@ -368,7 +372,12 @@ pub struct ReceivedOrchardNoteAndMetadata {
     pub diversifier: orchard::keys::Diversifier,
     pub note: orchard::note::Note,
 
+    // The postion of this note's commitment
     pub witnessed_position: Position,
+
+    // The note's index in its containing transaction
+    pub(crate) output_index: usize,
+
     pub(super) nullifier: orchard::note::Nullifier,
     pub spent: Option<(TxId, u32)>, // If this note was confirmed spent
 
