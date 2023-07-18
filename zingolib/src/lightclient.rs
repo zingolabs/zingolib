@@ -18,7 +18,7 @@ use crate::{
         },
         message::Message,
         now,
-        traits::{DomainWalletExt, ReceivedNoteAndMetadata, Recipient},
+        traits::{DomainWalletExt, ReceivedNoteAndMetadata, Recipient, ToBytes},
         LightWallet, Pool, WalletBase,
     },
 };
@@ -1684,8 +1684,11 @@ impl LightClient {
     }
 
     async fn initiate_witness_trees(&self) {
+        if self.wallet.get_birthday().await == 1 {
+            return;
+        }
         let trees =
-            GrpcConnector::get_trees(self.get_server_uri(), self.wallet.get_birthday().await)
+            GrpcConnector::get_trees(self.get_server_uri(), self.wallet.get_birthday().await - 1)
                 .await
                 .unwrap();
         let sapling_tree: CommitmentTree<zcash_primitives::sapling::Node, COMMITMENT_TREE_DEPTH> =

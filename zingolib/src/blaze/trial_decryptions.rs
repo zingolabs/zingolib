@@ -31,7 +31,7 @@ use zcash_primitives::{
     sapling::{note_encryption::SaplingDomain, SaplingIvk},
     transaction::{Transaction, TxId},
 };
-use zingoconfig::ZingoConfig;
+use zingoconfig::{ChainType, ZingoConfig};
 
 use super::syncdata::BlazeSyncData;
 
@@ -167,8 +167,12 @@ impl TrialDecryptions {
         let mut workers = FuturesUnordered::new();
 
         let download_memos = bsync_data.read().await.wallet_options.download_memos;
+        let mut sapling_notes_to_mark_position = Vec::new();
+        let mut orchard_notes_to_mark_position = Vec::new();
 
         for compact_block in compact_blocks {
+            let mut sapling_notes_to_mark_position_in_block = Vec::new();
+            let mut orchard_notes_to_mark_position_in_block = Vec::new();
             let height = BlockHeight::from_u32(compact_block.height as u32);
 
             for (transaction_num, compact_transaction) in compact_block.vtx.iter().enumerate() {
@@ -181,8 +185,9 @@ impl TrialDecryptions {
                 }
                 let mut transaction_metadata = false;
 
-                if let Some(ref sapling_ivk) = sapling_ivk {
-                    sapling_outputs_in_block += self.trial_decrypt_domain_specific_outputs::<
+                if let Some((sapling_outputs_in_tx, sapling_notes_to_mark_position_in_tx)) =
+                    if let Some(ref sapling_ivk) = sapling_ivk {
+                        Some( self.trial_decrypt_domain_specific_outputs::<
                         SaplingDomain<zingoconfig::ChainType>,
                     >(
                         &mut transaction_metadata,
@@ -199,26 +204,42 @@ impl TrialDecryptions {
                         &transaction_metadata_set,
                         &detected_transaction_id_sender,
                         &workers,
-                    ).await
+                    ).await)
+                    } else {
+                        None
+                    }
+                {
+                    sapling_outputs_in_block += sapling_outputs_in_tx;
+                    sapling_notes_to_mark_position_in_block
+                        .extend_from_slice(&sapling_notes_to_mark_position_in_tx)
                 };
 
-                if let Some(ref orchard_ivk) = orchard_ivk {
-                    orchard_outputs_in_block += self
-                        .trial_decrypt_domain_specific_outputs::<OrchardDomain>(
-                            &mut transaction_metadata,
-                            compact_transaction,
-                            transaction_num,
-                            &compact_block,
-                            orchard::keys::PreparedIncomingViewingKey::new(orchard_ivk),
-                            height,
-                            &config,
-                            &wc,
-                            &bsync_data,
-                            &transaction_metadata_set,
-                            &detected_transaction_id_sender,
-                            &workers,
+                if let Some((orchard_outputs_in_tx, orchard_notes_to_mark_position_in_tx)) =
+                    if let Some(ref orchard_ivk) = orchard_ivk {
+                        Some(
+                            self.trial_decrypt_domain_specific_outputs::<OrchardDomain>(
+                                &mut transaction_metadata,
+                                compact_transaction,
+                                transaction_num,
+                                &compact_block,
+                                orchard::keys::PreparedIncomingViewingKey::new(orchard_ivk),
+                                height,
+                                &config,
+                                &wc,
+                                &bsync_data,
+                                &transaction_metadata_set,
+                                &detected_transaction_id_sender,
+                                &workers,
+                            )
+                            .await,
                         )
-                        .await
+                    } else {
+                        None
+                    }
+                {
+                    orchard_outputs_in_block += orchard_outputs_in_tx;
+                    orchard_notes_to_mark_position_in_block
+                        .extend_from_slice(&orchard_notes_to_mark_position_in_tx)
                 };
 
                 // Check option to see if we are fetching all transactions.
@@ -243,10 +264,35 @@ impl TrialDecryptions {
                 .witness_trees
                 .add_checkpoint(compact_block.height())
                 .await;
+            sapling_notes_to_mark_position
+                .extend_from_slice(&sapling_notes_to_mark_position_in_block[..]);
+            orchard_notes_to_mark_position
+                .extend_from_slice(&orchard_notes_to_mark_position_in_block[..]);
         }
 
         while let Some(r) = workers.next().await {
             r.map_err(|e| e.to_string())??;
+        }
+        let mut txmds_writelock = self.transaction_metadata_set.write().await;
+        for (output_num, position, transaction_id) in sapling_notes_to_mark_position {
+            txmds_writelock
+                .mark_note_position::<SaplingDomain<ChainType>>(
+                    transaction_id,
+                    output_num,
+                    position,
+                    &<SaplingDomain<ChainType>>::wc_to_fvk(&*wc.read().await).unwrap(),
+                )
+                .await;
+        }
+        for (output_num, position, transaction_id) in orchard_notes_to_mark_position {
+            txmds_writelock
+                .mark_note_position::<OrchardDomain>(
+                    transaction_id,
+                    output_num,
+                    position,
+                    &<OrchardDomain>::wc_to_fvk(&*wc.read().await).unwrap(),
+                )
+                .await;
         }
 
         // Return a nothing-value
@@ -272,7 +318,8 @@ impl TrialDecryptions {
             Option<u32>,
         )>,
         workers: &FuturesUnordered<JoinHandle<Result<(), String>>>,
-    ) where
+    ) -> Vec<(usize, Position, TxId)>
+    where
         D: DomainWalletExt,
         <D as Domain>::Recipient: crate::wallet::traits::Recipient + Send + 'static,
         <D as Domain>::Note: PartialEq + Send + 'static + Clone,
@@ -363,7 +410,11 @@ impl TrialDecryptions {
                 D::get_shardtree(&*self.transaction_metadata_set.read().await)
                     .lock_owned()
                     .await;
-            let new_position = domain_witness_tree.max_leaf_position(0).unwrap().unwrap() + 1;
+            let new_position = domain_witness_tree
+                .max_leaf_position(0)
+                .unwrap()
+                .map(|pos| pos + 1)
+                .unwrap_or(Position::from(0));
             domain_witness_tree.append(
                 <<D::WalletNote as ReceivedNoteAndMetadata>::Node as FromCommitment>::from_commitment(
                     outputs[output_num].1.cmstar(),
@@ -372,8 +423,8 @@ impl TrialDecryptions {
                     true => Retention::Marked,
                     false => Retention::Ephemeral,
                 }
-            );
-            witness_positions_and_notes.push((output_num, new_position));
+            ).unwrap();
+            witness_positions_and_notes.push((output_num, new_position, transaction_id));
         }
         let mut txmds_writelock = self.transaction_metadata_set.write().await;
         for (output_num, position) in witness_positions_and_notes {
@@ -386,5 +437,6 @@ impl TrialDecryptions {
                 )
                 .await;
         }
+        witness_positions_and_notes
     }
 }

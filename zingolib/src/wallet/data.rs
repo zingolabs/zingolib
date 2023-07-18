@@ -1072,6 +1072,7 @@ impl TransactionMetadata {
     }
 }
 
+#[derive(Debug)]
 pub struct SpendableSaplingNote {
     pub transaction_id: TxId,
     pub nullifier: zcash_primitives::sapling::Nullifier,
@@ -1081,6 +1082,7 @@ pub struct SpendableSaplingNote {
     pub extsk: Option<zcash_primitives::zip32::sapling::ExtendedSpendingKey>,
 }
 
+#[derive(Debug)]
 pub struct SpendableOrchardNote {
     pub transaction_id: TxId,
     pub nullifier: orchard::note::Nullifier,

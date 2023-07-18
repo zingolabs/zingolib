@@ -700,7 +700,7 @@ where
         Note = <Self as Domain>::Note,
         Diversifier = <<Self as Domain>::Recipient as Recipient>::Diversifier,
         Nullifier = <<<Self as DomainWalletExt>::Bundle as Bundle<Self>>::Spend as Spend>::Nullifier,
-    >;
+    > + std::fmt::Debug;
     type SpendableNoteAT: SpendableNote<Self>;
 
     type Bundle: Bundle<Self>;

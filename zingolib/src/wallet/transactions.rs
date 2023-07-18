@@ -697,6 +697,7 @@ impl TransactionMetadataSet {
         D::Note: PartialEq + Clone,
         D::Recipient: Recipient,
     {
+        println!("Adding new note at height {height}");
         let transaction_metadata =
             self.get_or_create_transaction_metadata(&txid, height, unconfirmed, timestamp);
         // Update the block height, in case this was a mempool or unconfirmed tx.
@@ -707,18 +708,23 @@ impl TransactionMetadataSet {
             .find(|n| n.note() == &note)
         {
             None => {
-                let nd = D::WalletNote::from_parts(
-                    D::Recipient::diversifier(&to),
-                    note,
-                    Position::from(0),
-                    None,
-                    None,
-                    None,
-                    None,
-                    // if this is change, we'll mark it later in check_notes_mark_change
-                    false,
-                    have_spending_key,
-                );
+                let nd =
+                    D::WalletNote::from_parts(
+                        D::Recipient::diversifier(&to),
+                        note,
+                        Position::from(0),
+                        Some(
+                            <<D::WalletNote as ReceivedNoteAndMetadata>::Nullifier as FromBytes<
+                                32,
+                            >>::from_bytes([1; 32]),
+                        ),
+                        None,
+                        None,
+                        None,
+                        // if this is change, we'll mark it later in check_notes_mark_change
+                        false,
+                        have_spending_key,
+                    );
 
                 D::WalletNote::transaction_metadata_notes_mut(transaction_metadata).push(nd);
 
@@ -727,7 +733,9 @@ impl TransactionMetadataSet {
                 D::WalletNote::transaction_metadata_notes_mut(transaction_metadata)
                     .retain(|n| n.nullifier().to_bytes() != [0u8; 32]);
             }
-            Some(n) => (),
+            Some(n) => {
+                dbg!(n);
+            }
         }
     }
 
