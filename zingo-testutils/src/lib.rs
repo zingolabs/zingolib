@@ -284,7 +284,8 @@ pub async fn load_wallet(
     let wallet = dir.join("zingo-wallet.dat");
     tracing::info!("The wallet is: {}", &wallet.to_str().unwrap());
     let lightwalletd_uri = TestEnvironmentGenerator::new(None).get_lightwalletd_uri();
-    let zingo_config = zingolib::load_clientconfig(lightwalletd_uri, Some(dir), chaintype).unwrap();
+    let zingo_config =
+        zingolib::load_clientconfig(lightwalletd_uri, Some(dir), chaintype, true).unwrap();
     let from = std::fs::File::open(wallet).unwrap();
 
     let read_lengths = vec![];
@@ -454,6 +455,7 @@ pub mod scenarios {
                     self.server_id.clone(),
                     Some(conf_path),
                     zingoconfig::ChainType::Regtest,
+                    true,
                 )
                 .unwrap()
             }
@@ -706,6 +708,7 @@ pub mod scenarios {
                 sb.client_builder.server_id.clone(),
                 Some(sb.client_builder.zingo_datadir.clone()),
                 zingoconfig::ChainType::Regtest,
+                true,
             )
             .unwrap();
             // Create a lightclient to extract a capability from.

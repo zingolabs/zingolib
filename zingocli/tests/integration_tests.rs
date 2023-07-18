@@ -348,6 +348,7 @@ async fn test_scanning_in_watch_only_mode() {
         client_builder.server_id,
         Some(client_builder.zingo_datadir),
         ChainType::Regtest,
+        true,
     )
     .unwrap();
 
