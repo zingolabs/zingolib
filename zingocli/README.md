@@ -21,5 +21,5 @@ lightwalletd supported for these tests need to have the TreeState API. This mean
 
 ## running the tests
 
-`cargo test --package zingo-cli --test integration_tests --features darksidewalletd_tests -- darksidewalletd::darksidewalletd::test_simple_sync --exact --nocapture `
+`cargo nextest run --package zingo-cli --test integration_tests --features darksidewalletd_tests -- darksidewalletd::darksidewalletd::test_simple_sync --exact --nocapture `
 

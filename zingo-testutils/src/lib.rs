@@ -247,7 +247,7 @@ pub fn get_wallet_nym(nym: &str) -> Result<(String, PathBuf, PathBuf), String> {
     match nym {
         "sap_only" | "orch_only" | "orch_and_sapl" | "tadd_only" => {
             let one_sapling_wallet = format!(
-                "{}/zingocli/tests/data/wallets/v26/202302_release/regtest/{nym}/zingo-wallet.dat",
+                "{}/tests/data/wallets/v26/202302_release/regtest/{nym}/zingo-wallet.dat",
                 regtest::get_cargo_manifest_dir().to_string_lossy()
             );
             let wallet_path = Path::new(&one_sapling_wallet);

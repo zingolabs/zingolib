@@ -110,7 +110,7 @@ async fn load_and_parse_different_wallet_versions() {
 #[tokio::test]
 async fn list_transactions_include_foreign() {
     let wallet_nym = format!(
-        "{}/zingocli/tests/data/wallets/missing_data_test/zingo-wallet.dat",
+        "{}/tests/data/wallets/missing_data_test/zingo-wallet.dat",
         get_cargo_manifest_dir().to_string_lossy()
     );
     let wallet_path = Path::new(&wallet_nym);
