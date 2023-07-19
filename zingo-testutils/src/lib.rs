@@ -388,6 +388,9 @@ pub mod scenarios {
             pub fn new_load_1153_saplingcb_regtest_chain() -> Self {
                 let mut sb = ScenarioBuilder::build_scenario(None, None);
                 let source = get_regtest_dir().join("data/chain_cache/blocks_1153/zcashd/regtest");
+                if !source.exists() {
+                    panic!("Data cache is missing!");
+                }
                 let destination = &sb.regtest_manager.zcashd_data_dir;
 
                 std::process::Command::new("cp")
