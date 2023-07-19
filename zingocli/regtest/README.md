@@ -150,4 +150,4 @@ after moving binaries and running:
 └── README.md
 
 # Working Commits
-Tested with `zcash` commit `d6d209`, `lightwalletd` commit `f53511c`, and `zingolib` commit `c414fc` or better.
+Tested with `zcash` commit `d6d209`, `lightwalletd` commit `f53511c`, and `zingolib` commit `89fbe118f8305051d5f1d1d95903ba3ccaec586b` or better.
