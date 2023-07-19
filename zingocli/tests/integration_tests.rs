@@ -664,9 +664,19 @@ async fn note_selection_order() {
         .await
         .unwrap();
 
+    println!("\n=====\nSyncing recipient\n=====\n");
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 5)
         .await
         .unwrap();
+    faucet.do_sync(false).await.unwrap();
+    println!(
+        "faucet height: {}",
+        faucet.do_wallet_last_scanned_height().await.pretty(2)
+    );
+    println!(
+        "recipient height: {}",
+        recipient.do_wallet_last_scanned_height().await.pretty(2)
+    );
     println!(
         "recipient transactions: {}",
         recipient.do_list_transactions().await.pretty(4)

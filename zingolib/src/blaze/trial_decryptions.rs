@@ -262,10 +262,8 @@ impl TrialDecryptions {
                 .witness_trees
                 .add_checkpoint(compact_block.height())
                 .await;
-            sapling_notes_to_mark_position
-                .extend_from_slice(&sapling_notes_to_mark_position_in_block[..]);
-            orchard_notes_to_mark_position
-                .extend_from_slice(&orchard_notes_to_mark_position_in_block[..]);
+            sapling_notes_to_mark_position.push(sapling_notes_to_mark_position_in_block);
+            orchard_notes_to_mark_position.push(orchard_notes_to_mark_position_in_block);
         }
 
         while let Some(r) = workers.next().await {
@@ -280,8 +278,11 @@ impl TrialDecryptions {
             .map(|pos| pos + 1)
             .unwrap_or(Position::from(0));
         let mut sapling_nodes_retention = Vec::new();
-        for (i, (output_num, transaction_id, (node, retention))) in
-            sapling_notes_to_mark_position.into_iter().enumerate()
+        for (i, (output_num, transaction_id, (node, retention))) in sapling_notes_to_mark_position
+            .into_iter()
+            .rev()
+            .flatten()
+            .enumerate()
         {
             txmds_writelock
                 .mark_note_position::<SaplingDomain<ChainType>>(
@@ -293,9 +294,10 @@ impl TrialDecryptions {
                 .await;
             sapling_nodes_retention.push((node, retention));
         }
-        sapling_witness_tree_lock
+        let sapling_tree_insert_result = sapling_witness_tree_lock
             .batch_insert(sapling_position, sapling_nodes_retention.into_iter())
-            .unwrap();
+            .expect("failed to insert into sapling tree: ");
+        dbg!(sapling_tree_insert_result);
         let orchard_witness_tree = OrchardDomain::get_shardtree(&*txmds_writelock);
         let mut orchard_witness_tree_lock = orchard_witness_tree.lock().await;
         let orchard_position = orchard_witness_tree_lock
@@ -304,8 +306,11 @@ impl TrialDecryptions {
             .map(|pos| pos + 1)
             .unwrap_or(Position::from(0));
         let mut orchard_nodes_retention = Vec::new();
-        for (i, (output_num, transaction_id, (node, retention))) in
-            orchard_notes_to_mark_position.into_iter().enumerate()
+        for (i, (output_num, transaction_id, (node, retention))) in orchard_notes_to_mark_position
+            .into_iter()
+            .rev()
+            .flatten()
+            .enumerate()
         {
             txmds_writelock
                 .mark_note_position::<OrchardDomain>(
@@ -319,7 +324,7 @@ impl TrialDecryptions {
         }
         orchard_witness_tree_lock
             .batch_insert(orchard_position, orchard_nodes_retention.into_iter())
-            .unwrap();
+            .expect("failed to insert into orchard tree: ");
 
         // Return a nothing-value
         Ok::<(), String>(())
