@@ -695,6 +695,7 @@ impl TransactionMetadataSet {
         note: <D::WalletNote as ReceivedNoteAndMetadata>::Note,
         to: D::Recipient,
         have_spending_key: bool,
+        nullifier: Option<<D::WalletNote as ReceivedNoteAndMetadata>::Nullifier>,
         output_index: usize,
     ) where
         D::Note: PartialEq + Clone,
@@ -711,24 +712,23 @@ impl TransactionMetadataSet {
             .find(|n| n.note() == &note)
         {
             None => {
-                let nd =
-                    D::WalletNote::from_parts(
-                        D::Recipient::diversifier(&to),
-                        note,
-                        Position::from(0),
-                        Some(
-                            <<D::WalletNote as ReceivedNoteAndMetadata>::Nullifier as FromBytes<
+                let nd = D::WalletNote::from_parts(
+                    D::Recipient::diversifier(&to),
+                    note,
+                    Position::from(0),
+                    Some(nullifier.unwrap_or_else(|| {
+                        <<D::WalletNote as ReceivedNoteAndMetadata>::Nullifier as FromBytes<
                                 32,
-                            >>::from_bytes([1; 32]),
-                        ),
-                        None,
-                        None,
-                        None,
-                        // if this is change, we'll mark it later in check_notes_mark_change
-                        false,
-                        have_spending_key,
-                        output_index,
-                    );
+                            >>::from_bytes([1; 32])
+                    })),
+                    None,
+                    None,
+                    None,
+                    // if this is change, we'll mark it later in check_notes_mark_change
+                    false,
+                    have_spending_key,
+                    output_index,
+                );
 
                 D::WalletNote::transaction_metadata_notes_mut(transaction_metadata).push(nd);
 
