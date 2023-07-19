@@ -25,14 +25,16 @@ impl FetchCompactBlocks {
         const STEP: u64 = 10_000;
 
         // We need the `rev()` here because rust ranges can only go up
-        for b in (end_block..(start_block + 1)).rev().step_by(STEP as usize) {
+        //TODO: Currently experimenting with increasing order instead of decreasing
+        // The names and comments do not reflect this
+        for b in (end_block..(start_block + 1)).step_by(STEP as usize) {
             let start = b;
             let end = max((b as i64) - (STEP as i64) + 1, end_block as i64) as u64;
             if start < end {
                 return Err("Wrong block order".to_string());
             }
 
-            debug!("Fetching blocks {}-{}", start, end);
+            dbg!("Fetching blocks {}-{}", start, end);
 
             grpc_client.get_block_range(start, end, senders).await?;
         }

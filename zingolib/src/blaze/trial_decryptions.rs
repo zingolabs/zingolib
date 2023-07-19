@@ -173,7 +173,7 @@ impl TrialDecryptions {
         for compact_block in compact_blocks {
             let mut sapling_notes_to_mark_position_in_block = Vec::new();
             let mut orchard_notes_to_mark_position_in_block = Vec::new();
-            let height = BlockHeight::from_u32(compact_block.height as u32);
+            let height = dbg!(BlockHeight::from_u32(compact_block.height as u32));
 
             for (transaction_num, compact_transaction) in compact_block.vtx.iter().enumerate() {
                 if let Some(filter) = transaction_size_filter {
@@ -272,26 +272,54 @@ impl TrialDecryptions {
             r.map_err(|e| e.to_string())??;
         }
         let mut txmds_writelock = self.transaction_metadata_set.write().await;
-        for (output_num, position, transaction_id) in sapling_notes_to_mark_position {
+        let sapling_witness_tree = SaplingDomain::<ChainType>::get_shardtree(&*txmds_writelock);
+        let mut sapling_witness_tree_lock = sapling_witness_tree.lock().await;
+        let sapling_position = sapling_witness_tree_lock
+            .max_leaf_position(0)
+            .unwrap()
+            .map(|pos| pos + 1)
+            .unwrap_or(Position::from(0));
+        let mut sapling_nodes_retention = Vec::new();
+        for (i, (output_num, transaction_id, (node, retention))) in
+            sapling_notes_to_mark_position.into_iter().enumerate()
+        {
             txmds_writelock
                 .mark_note_position::<SaplingDomain<ChainType>>(
                     transaction_id,
                     output_num,
-                    position,
+                    sapling_position + i as u64,
                     &<SaplingDomain<ChainType>>::wc_to_fvk(&*wc.read().await).unwrap(),
                 )
                 .await;
+            sapling_nodes_retention.push((node, retention));
         }
-        for (output_num, position, transaction_id) in orchard_notes_to_mark_position {
+        sapling_witness_tree_lock
+            .batch_insert(sapling_position, sapling_nodes_retention.into_iter())
+            .unwrap();
+        let orchard_witness_tree = OrchardDomain::get_shardtree(&*txmds_writelock);
+        let mut orchard_witness_tree_lock = orchard_witness_tree.lock().await;
+        let orchard_position = orchard_witness_tree_lock
+            .max_leaf_position(0)
+            .unwrap()
+            .map(|pos| pos + 1)
+            .unwrap_or(Position::from(0));
+        let mut orchard_nodes_retention = Vec::new();
+        for (i, (output_num, transaction_id, (node, retention))) in
+            orchard_notes_to_mark_position.into_iter().enumerate()
+        {
             txmds_writelock
                 .mark_note_position::<OrchardDomain>(
                     transaction_id,
                     output_num,
-                    position,
+                    orchard_position + i as u64,
                     &<OrchardDomain>::wc_to_fvk(&*wc.read().await).unwrap(),
                 )
                 .await;
+            orchard_nodes_retention.push((node, retention));
         }
+        orchard_witness_tree_lock
+            .batch_insert(orchard_position, orchard_nodes_retention.into_iter())
+            .unwrap();
 
         // Return a nothing-value
         Ok::<(), String>(())
@@ -316,7 +344,14 @@ impl TrialDecryptions {
             Option<u32>,
         )>,
         workers: &FuturesUnordered<JoinHandle<Result<(), String>>>,
-    ) -> Vec<(usize, Position, TxId)>
+    ) -> Vec<(
+        usize,
+        TxId,
+        (
+            <D::WalletNote as ReceivedNoteAndMetadata>::Node,
+            Retention<BlockHeight>,
+        ),
+    )>
     where
         D: DomainWalletExt,
         <D as Domain>::Recipient: crate::wallet::traits::Recipient + Send + 'static,
@@ -324,7 +359,7 @@ impl TrialDecryptions {
         <D as Domain>::ExtractedCommitmentBytes: Into<[u8; 32]>,
         <<D as DomainWalletExt>::WalletNote as ReceivedNoteAndMetadata>::Node: PartialEq,
     {
-        let mut witness_positions_and_notes = Vec::new();
+        let mut witness_txindexes_notes_commitments = Vec::new();
         let transaction_id = TransactionMetadata::new_txid(&compact_transaction.hash);
         let outputs = D::CompactOutput::from_compact_transaction(compact_transaction)
             .iter()
@@ -405,16 +440,8 @@ impl TrialDecryptions {
                 } else {
                     (maybe_decrypted_output.0, false)
                 };
-            let mut domain_witness_tree =
-                D::get_shardtree(&*self.transaction_metadata_set.read().await)
-                    .lock_owned()
-                    .await;
-            let new_position = domain_witness_tree
-                .max_leaf_position(0)
-                .unwrap()
-                .map(|pos| pos + 1)
-                .unwrap_or(Position::from(0));
-            domain_witness_tree.append(
+            witness_txindexes_notes_commitments.push((output_num, transaction_id, (
+
                 <<D::WalletNote as ReceivedNoteAndMetadata>::Node as FromCommitment>::from_commitment(
                     outputs[output_num].1.cmstar(),
                 ).unwrap(),
@@ -422,9 +449,9 @@ impl TrialDecryptions {
                     true => Retention::Marked,
                     false => Retention::Ephemeral,
                 }
-            ).unwrap();
-            witness_positions_and_notes.push((output_num, new_position, transaction_id));
+                    )
+                ));
         }
-        witness_positions_and_notes
+        witness_txindexes_notes_commitments
     }
 }

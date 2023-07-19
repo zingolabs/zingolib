@@ -667,6 +667,14 @@ async fn note_selection_order() {
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 5)
         .await
         .unwrap();
+    println!(
+        "recipient transactions: {}",
+        recipient.do_list_transactions().await.pretty(4)
+    );
+    println!(
+        "faucet transactions: {}",
+        faucet.do_list_transactions().await.pretty(4)
+    );
     // We know that the largest single note that 2 received from 1 was 3000, for 2 to send
     // 3000 back to 1 it will have to collect funds from two notes to pay the full 3000
     // plus the transaction fee.

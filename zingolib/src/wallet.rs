@@ -357,7 +357,9 @@ impl LightWallet {
         let wc = wc_lth.read().await;
         let tranmds_lth = self.transactions();
         let transaction_metadata_set = tranmds_lth.read().await;
-        let mut candidate_notes = dbg!(transaction_metadata_set.current.iter())
+        let mut candidate_notes = transaction_metadata_set
+            .current
+            .iter()
             .flat_map(|(transaction_id, transaction)| {
                 D::WalletNote::transaction_metadata_notes(transaction)
                     .iter()
@@ -366,7 +368,8 @@ impl LightWallet {
             .filter(|(_, note)| note.value() > 0)
             .filter_map(|(transaction_id, note)| {
                 // Filter out notes that are already spent
-                if dbg!(note.spent().is_some() || note.unconfirmed_spent().is_some()) {
+                if note.spent().is_some() || note.unconfirmed_spent().is_some() {
+                    println!("Spent note TxId: {transaction_id}");
                     None
                 } else {
                     // Get the spending key for the selected fvk, if we have it
@@ -838,12 +841,12 @@ impl LightWallet {
         for pool in policy {
             match pool {
                 Pool::Sapling => {
-                    let sapling_candidates = dbg!(self
+                    let sapling_candidates = self
                         .get_all_domain_specific_notes::<SaplingDomain<zingoconfig::ChainType>>()
-                        .await)
-                    .into_iter()
-                    .filter(|x| x.spend_key().is_some())
-                    .collect();
+                        .await
+                        .into_iter()
+                        .filter(|x| x.spend_key().is_some())
+                        .collect();
                     (sapling_notes, sapling_value_selected) =
                         Self::add_notes_to_total::<SaplingDomain<zingoconfig::ChainType>>(
                             sapling_candidates,
