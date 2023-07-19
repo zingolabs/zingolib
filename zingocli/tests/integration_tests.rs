@@ -16,7 +16,7 @@ use zcash_primitives::{
     merkle_tree::write_incremental_witness,
     transaction::{fees::zip317::MINIMUM_FEE, TxId},
 };
-use zingo_testutils::regtest::get_cargo_manifest_dir_parent;
+use zingo_testutils::regtest::get_cargo_manifest_dir;
 use zingoconfig::{ChainType, ZingoConfig};
 use zingolib::{
     check_client_balances, get_base_address,
@@ -111,7 +111,7 @@ async fn load_and_parse_different_wallet_versions() {
 async fn list_transactions_include_foreign() {
     let wallet_nym = format!(
         "{}/zingocli/tests/data/wallets/missing_data_test/zingo-wallet.dat",
-        get_cargo_manifest_dir_parent().to_string_lossy()
+        get_cargo_manifest_dir().to_string_lossy()
     );
     let wallet_path = Path::new(&wallet_nym);
     let wallet_dir = wallet_path.parent().unwrap();

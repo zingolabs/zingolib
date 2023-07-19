@@ -4,15 +4,12 @@ use std::io::Read;
 ///  Simple helper to succinctly reference the project root dir.
 use std::path::PathBuf;
 use std::process::Child;
-pub fn get_cargo_manifest_dir_parent() -> PathBuf {
+pub fn get_cargo_manifest_dir() -> PathBuf {
     PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("To be inside a manifested space."))
-        .parent()
-        .unwrap()
-        .to_path_buf()
 }
 
 pub fn get_regtest_dir() -> PathBuf {
-    get_cargo_manifest_dir_parent().join("regtest")
+    get_cargo_manifest_dir().join("regtest")
 }
 
 ///  To manage the state associated a "regtest" run this type:
