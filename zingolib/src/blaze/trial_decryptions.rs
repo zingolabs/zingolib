@@ -185,7 +185,7 @@ impl TrialDecryptions {
                 }
                 let mut transaction_metadata = false;
 
-                if let Some((sapling_outputs_in_tx, sapling_notes_to_mark_position_in_tx)) =
+                if let Some(sapling_notes_to_mark_position_in_tx) =
                     if let Some(ref sapling_ivk) = sapling_ivk {
                         Some( self.trial_decrypt_domain_specific_outputs::<
                         SaplingDomain<zingoconfig::ChainType>,
@@ -209,12 +209,11 @@ impl TrialDecryptions {
                         None
                     }
                 {
-                    sapling_outputs_in_block += sapling_outputs_in_tx;
                     sapling_notes_to_mark_position_in_block
                         .extend_from_slice(&sapling_notes_to_mark_position_in_tx)
                 };
 
-                if let Some((orchard_outputs_in_tx, orchard_notes_to_mark_position_in_tx)) =
+                if let Some(orchard_notes_to_mark_position_in_tx) =
                     if let Some(ref orchard_ivk) = orchard_ivk {
                         Some(
                             self.trial_decrypt_domain_specific_outputs::<OrchardDomain>(
@@ -237,7 +236,6 @@ impl TrialDecryptions {
                         None
                     }
                 {
-                    orchard_outputs_in_block += orchard_outputs_in_tx;
                     orchard_notes_to_mark_position_in_block
                         .extend_from_slice(&orchard_notes_to_mark_position_in_tx)
                 };
@@ -426,17 +424,6 @@ impl TrialDecryptions {
                 }
             ).unwrap();
             witness_positions_and_notes.push((output_num, new_position, transaction_id));
-        }
-        let mut txmds_writelock = self.transaction_metadata_set.write().await;
-        for (output_num, position) in witness_positions_and_notes {
-            txmds_writelock
-                .mark_note_position::<D>(
-                    transaction_id,
-                    output_num,
-                    position,
-                    &D::wc_to_fvk(&*wc.read().await).unwrap(),
-                )
-                .await;
         }
         witness_positions_and_notes
     }
