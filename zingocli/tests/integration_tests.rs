@@ -13,7 +13,6 @@ use tracing_test::traced_test;
 use zcash_client_backend::encoding::encode_payment_address;
 use zcash_primitives::{
     consensus::Parameters,
-    merkle_tree::write_incremental_witness,
     transaction::{fees::zip317::MINIMUM_FEE, TxId},
 };
 use zingo_testutils::regtest::get_cargo_manifest_dir;
@@ -22,7 +21,6 @@ use zingolib::{
     check_client_balances, get_base_address,
     lightclient::LightClient,
     wallet::{
-        data::TransactionMetadata,
         keys::{
             extended_transparent::ExtendedPrivKey,
             unified::{Capability, WalletCapability},
