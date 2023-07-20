@@ -18,7 +18,7 @@ use crate::compact_formats::{
     slice_to_array, CompactOrchardAction, CompactSaplingOutput, CompactTx, TreeState,
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use incrementalmerkletree::{witness::IncrementalWitness, Hashable, Level, Position};
+use incrementalmerkletree::{Hashable, Level, Position};
 use nonempty::NonEmpty;
 use orchard::{
     note_encryption::OrchardDomain,
@@ -38,7 +38,7 @@ use zcash_note_encryption::{
 use zcash_primitives::{
     consensus::{BlockHeight, NetworkUpgrade, Parameters},
     memo::{Memo, MemoBytes},
-    merkle_tree::{read_incremental_witness, write_incremental_witness, HashSer},
+    merkle_tree::{read_incremental_witness, HashSer},
     sapling::note_encryption::SaplingDomain,
     transaction::{
         components::{self, sapling::GrothProofBytes, Amount, OutputDescription, SpendDescription},
@@ -961,7 +961,6 @@ where
     fn from(
         transaction_id: TxId,
         note_and_metadata: &D::WalletNote,
-        anchor_offset: usize,
         spend_key: Option<&D::SpendingKey>,
     ) -> Option<Self> {
         // Include only notes that haven't been spent, or haven't been included in an unconfirmed spend yet.
@@ -1359,7 +1358,7 @@ where
         writer.write_all(&self.diversifier().to_bytes())?;
 
         self.note().write(&mut writer)?;
-        writer.write_u64::<LittleEndian>(u64::from(*self.witnessed_position()));
+        writer.write_u64::<LittleEndian>(u64::from(*self.witnessed_position()))?;
 
         writer.write_all(&self.nullifier().to_bytes())?;
 

@@ -1,4 +1,3 @@
-use crate::wallet::traits::{DomainWalletExt, ReceivedNoteAndMetadata};
 use crate::wallet::MemoDownloadOption;
 use crate::wallet::{
     data::{PoolNullifier, TransactionMetadata},
@@ -8,14 +7,12 @@ use std::sync::Arc;
 
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
-use orchard::note_encryption::OrchardDomain;
 use tokio::join;
 use tokio::sync::oneshot;
 use tokio::sync::{mpsc::unbounded_channel, RwLock};
 use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle};
 
 use zcash_primitives::consensus::BlockHeight;
-use zcash_primitives::sapling::note_encryption::SaplingDomain;
 use zcash_primitives::transaction::TxId;
 
 use super::syncdata::BlazeSyncData;
@@ -44,7 +41,8 @@ impl UpdateNotes {
         &self,
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         fetch_full_sender: UnboundedSender<(TxId, BlockHeight)>,
-        use_witnesses: bool,
+        //TODO: Either use this, or remove it
+        _use_witnesses: bool,
     ) -> (
         JoinHandle<Result<(), String>>,
         oneshot::Sender<u64>,

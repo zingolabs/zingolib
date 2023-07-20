@@ -10,14 +10,14 @@ use crate::{
         keys::unified::WalletCapability,
         traits::{CompactOutput as _, DomainWalletExt, FromCommitment, ReceivedNoteAndMetadata},
         transactions::TransactionMetadataSet,
-        MemoDownloadOption, NodePosition,
+        MemoDownloadOption,
     },
 };
 use futures::{stream::FuturesUnordered, StreamExt};
 use incrementalmerkletree::{Position, Retention};
 use log::debug;
 use orchard::{keys::IncomingViewingKey as OrchardIvk, note_encryption::OrchardDomain};
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 use tokio::{
     sync::{
         mpsc::{unbounded_channel, UnboundedSender},
@@ -388,7 +388,6 @@ impl TrialDecryptions {
                     let transaction_metadata_set = transaction_metadata_set.clone();
                     let detected_transaction_id_sender = detected_transaction_id_sender.clone();
                     let timestamp = compact_block.time as u64;
-                    let compact_transaction = compact_transaction.clone();
                     let config = config.clone();
 
                     workers.push(tokio::spawn(async move {
@@ -423,7 +422,6 @@ impl TrialDecryptions {
                         );
 
                         transaction_metadata_set.write().await.add_new_note::<D>(
-                            &fvk,
                             transaction_id,
                             height,
                             false,

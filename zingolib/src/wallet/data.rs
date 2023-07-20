@@ -1,4 +1,3 @@
-use crate::blaze::fixed_size_buffer::FixedSizeBuffer;
 use crate::compact_formats::CompactBlock;
 use crate::wallet::traits::ReceivedNoteAndMetadata;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -321,10 +320,6 @@ impl<Node: Hashable> WitnessCache<Node> {
 
     pub fn last(&self) -> Option<&IncrementalWitness<Node, 32>> {
         self.witnesses.last()
-    }
-
-    pub(crate) fn into_fsb(self, fsb: &mut FixedSizeBuffer<IncrementalWitness<Node, 32>>) {
-        self.witnesses.into_iter().for_each(|w| fsb.push(w));
     }
 
     pub fn pop(&mut self, at_height: u64) {

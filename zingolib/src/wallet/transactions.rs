@@ -4,16 +4,16 @@ use std::{
 };
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use incrementalmerkletree::{witness::IncrementalWitness, Position};
+use incrementalmerkletree::Position;
 use log::error;
 use orchard;
-use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
+use orchard::note_encryption::OrchardDomain;
 use zcash_encoding::Vector;
 use zcash_note_encryption::Domain;
 use zcash_primitives::{
     consensus::BlockHeight,
     memo::Memo,
-    sapling::{note_encryption::SaplingDomain, PaymentAddress},
+    sapling::note_encryption::SaplingDomain,
     transaction::{components::TxOut, TxId},
 };
 
@@ -21,15 +21,10 @@ use zingoconfig::{ChainType, MAX_REORG};
 
 use super::{
     data::{
-        OutgoingTxData, PoolNullifier, ReceivedOrchardNoteAndMetadata,
-        ReceivedSaplingNoteAndMetadata, ReceivedTransparentOutput, TransactionMetadata,
-        WitnessCache, WitnessTrees,
+        OutgoingTxData, PoolNullifier, ReceivedTransparentOutput, TransactionMetadata, WitnessTrees,
     },
     keys::unified::WalletCapability,
-    traits::{
-        self, Bundle, DomainWalletExt, FromBytes, Nullifier, ReceivedNoteAndMetadata, Recipient,
-        Spend,
-    },
+    traits::{self, DomainWalletExt, FromBytes, Nullifier, ReceivedNoteAndMetadata, Recipient},
 };
 
 /// HashMap of all transactions in a wallet, keyed by txid.
@@ -687,7 +682,6 @@ impl TransactionMetadataSet {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn add_new_note<D: DomainWalletExt>(
         &mut self,
-        fvk: &D::Fvk,
         txid: TxId,
         height: BlockHeight,
         unconfirmed: bool,

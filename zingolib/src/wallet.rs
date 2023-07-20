@@ -6,9 +6,7 @@ use crate::wallet::data::{SpendableSaplingNote, TransactionMetadata};
 
 use bip0039::Mnemonic;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use futures::lock::{Mutex, MutexGuard};
 use futures::Future;
-use incrementalmerkletree::frontier::CommitmentTree;
 use json::JsonValue;
 use log::{error, info, warn};
 use orchard::keys::SpendingKey as OrchardSpendingKey;
@@ -17,7 +15,6 @@ use orchard::tree::MerkleHashOrchard;
 use orchard::Anchor;
 use rand::rngs::OsRng;
 use rand::Rng;
-use rusqlite::Connection;
 use shardtree::ShardTree;
 use std::convert::Infallible;
 use std::{
@@ -32,9 +29,8 @@ use zcash_client_backend::address;
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
 use zcash_primitives::memo::MemoBytes;
-use zcash_primitives::merkle_tree::read_commitment_tree;
 use zcash_primitives::sapling::note_encryption::SaplingDomain;
-use zcash_primitives::sapling::{Node, SaplingIvk};
+use zcash_primitives::sapling::SaplingIvk;
 use zcash_primitives::transaction;
 use zcash_primitives::transaction::builder::Progress;
 use zcash_primitives::transaction::fees::fixed::FeeRule as FixedFeeRule;
@@ -64,7 +60,7 @@ use self::{
     message::Message,
     transactions::TransactionMetadataSet,
 };
-use zingoconfig::{ZingoConfig, MAX_REORG, REORG_BUFFER_OFFSET};
+use zingoconfig::{ZingoConfig, REORG_BUFFER_OFFSET};
 
 pub mod data;
 pub mod keys;
@@ -374,12 +370,7 @@ impl LightWallet {
                 } else {
                     // Get the spending key for the selected fvk, if we have it
                     let extsk = D::wc_to_sk(&wc);
-                    SpendableNote::from(
-                        transaction_id,
-                        note,
-                        self.transaction_context.config.reorg_buffer_offset as usize,
-                        extsk.ok().as_ref(),
-                    )
+                    SpendableNote::from(transaction_id, note, extsk.ok().as_ref())
                 }
             })
             .collect::<Vec<D::SpendableNoteAT>>();
@@ -440,43 +431,19 @@ impl LightWallet {
             ))
     }
 
-    async fn get_latest_wallet_height(&self) -> Option<u32> {
-        self.blocks
-            .read()
-            .await
-            .first()
-            .map(|block| block.height as u32)
-    }
-
     async fn get_orchard_anchor(
         &self,
-        orchard_notes: &[SpendableOrchardNote],
-        target_height: BlockHeight,
         tree_lock: &ShardTree<
             SqliteShardStore<rusqlite::Connection, MerkleHashOrchard, MAX_SHARD_DEPTH>,
             COMMITMENT_TREE_DEPTH,
             MAX_SHARD_DEPTH,
         >,
     ) -> Result<Anchor, String> {
-        if let Some(note) = orchard_notes.get(0) {
-            Ok(orchard::Anchor::from(
-                tree_lock
-                    .root_at_checkpoint(REORG_BUFFER_OFFSET as usize)
-                    .map_err(|e| e.to_string())?,
-            ))
-        } else {
-            let uri = self.transaction_context.config.get_lightwalletd_uri();
-            let trees = crate::grpc_connector::GrpcConnector::get_trees(
-                uri,
-                u64::from(target_height)
-                    - self.transaction_context.config.reorg_buffer_offset as u64,
-            )
-            .await?;
-            let orchard_tree: CommitmentTree<MerkleHashOrchard, 32> =
-                read_commitment_tree(hex::decode(trees.orchard_tree).unwrap().as_slice())
-                    .unwrap_or(CommitmentTree::empty());
-            Ok(Anchor::from(orchard_tree.root()))
-        }
+        Ok(orchard::Anchor::from(
+            tree_lock
+                .root_at_checkpoint(REORG_BUFFER_OFFSET as usize)
+                .map_err(|e| e.to_string())?,
+        ))
     }
 
     // Get the current sending status.
@@ -799,7 +766,7 @@ impl LightWallet {
             None
         };
 
-        let mut lw = Self {
+        let lw = Self {
             blocks: Arc::new(RwLock::new(blocks)),
             mnemonic,
             wallet_options: Arc::new(RwLock::new(wallet_options)),
@@ -1011,10 +978,6 @@ impl LightWallet {
         println!("{}: Selecting notes", now() - start_time);
 
         let target_amount = (Amount::from_u64(total_value).unwrap() + MINIMUM_FEE).unwrap();
-        let latest_wallet_height = match self.get_latest_wallet_height().await {
-            Some(h) => BlockHeight::from_u32(h),
-            None => return Err("No blocks in wallet to target, please sync first".to_string()),
-        };
 
         // Create a map from address -> sk for all taddrs, so we can spend from the
         // right address
@@ -1053,9 +1016,7 @@ impl LightWallet {
             .lock()
             .await;
 
-        let orchard_anchor = self
-            .get_orchard_anchor(&orchard_notes, latest_wallet_height, &orchard_tree_lock)
-            .await?;
+        let orchard_anchor = self.get_orchard_anchor(&orchard_tree_lock).await?;
         let mut builder = Builder::new(
             self.transaction_context.config.chain,
             submission_height,

@@ -2,7 +2,6 @@ use std::{
     collections::BTreeSet,
     io::{self, Cursor},
     marker::PhantomData,
-    rc::Rc,
     sync::Arc,
 };
 

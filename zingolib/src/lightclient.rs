@@ -18,7 +18,7 @@ use crate::{
         },
         message::Message,
         now,
-        traits::{DomainWalletExt, ReceivedNoteAndMetadata, Recipient, ToBytes},
+        traits::{DomainWalletExt, ReceivedNoteAndMetadata, Recipient},
         LightWallet, Pool, WalletBase,
     },
 };
