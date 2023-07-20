@@ -296,7 +296,10 @@ impl TrialDecryptions {
         }
         let sapling_tree_insert_result = sapling_witness_tree_lock
             .batch_insert(sapling_position, sapling_nodes_retention.into_iter())
-            .expect("failed to insert into sapling tree: ");
+            .expect(&format!(
+                "failed to insert into sapling tree, starting position {}",
+                u64::from(sapling_position)
+            ));
         dbg!(sapling_tree_insert_result);
         let orchard_witness_tree = OrchardDomain::get_shardtree(&*txmds_writelock);
         let mut orchard_witness_tree_lock = orchard_witness_tree.lock().await;
@@ -324,7 +327,10 @@ impl TrialDecryptions {
         }
         orchard_witness_tree_lock
             .batch_insert(orchard_position, orchard_nodes_retention.into_iter())
-            .expect("failed to insert into orchard tree: ");
+            .expect(&format!(
+                "failed to insert into orchard tree, starting position {}",
+                u64::from(orchard_position)
+            ));
 
         // Return a nothing-value
         Ok::<(), String>(())

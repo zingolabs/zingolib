@@ -3,6 +3,7 @@ use std::{
     io::{self, Cursor},
     marker::PhantomData,
     rc::Rc,
+    sync::Arc,
 };
 
 use either::Either;
@@ -277,7 +278,7 @@ pub(crate) fn get_shard<H: HashSer>(
         let located_tree = LocatedPrunableTree::from_parts(shard_root_addr, shard_tree);
         if let Some(root_hash_data) = root_hash {
             let root_hash = H::read(Cursor::new(root_hash_data)).map_err(Either::Left)?;
-            Ok(located_tree.reannotate_root(Some(Rc::new(root_hash))))
+            Ok(located_tree.reannotate_root(Some(Arc::new(root_hash))))
         } else {
             Ok(located_tree)
         }

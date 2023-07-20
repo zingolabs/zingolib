@@ -2,7 +2,7 @@ use crate::{
     compact_formats::{CompactBlock, CompactTx, TreeState},
     grpc_connector::GrpcConnector,
     wallet::{
-        data::{BlockData, PoolNullifier, TransactionMetadata, WitnessCache},
+        data::{BlockData, PoolNullifier},
         traits::{DomainWalletExt, FromCommitment, ReceivedNoteAndMetadata},
         transactions::TransactionMetadataSet,
     },
@@ -12,7 +12,7 @@ use incrementalmerkletree::{
 };
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
 use zcash_note_encryption::Domain;
-use zingoconfig::{ChainType, ZingoConfig, MAX_REORG};
+use zingoconfig::{ChainType, ZingoConfig};
 
 use futures::future::join_all;
 use http::Uri;
@@ -29,10 +29,9 @@ use zcash_primitives::{
     consensus::{BlockHeight, NetworkUpgrade, Parameters},
     merkle_tree::{read_commitment_tree, write_commitment_tree, HashSer},
     sapling::note_encryption::SaplingDomain,
-    transaction::TxId,
 };
 
-use super::{fixed_size_buffer::FixedSizeBuffer, sync_status::BatchSyncStatus};
+use super::sync_status::BatchSyncStatus;
 
 type Node<D> = <<D as DomainWalletExt>::WalletNote as ReceivedNoteAndMetadata>::Node;
 
@@ -645,157 +644,6 @@ impl BlockAndWitnessData {
             self.orchard_activation_height,
         )
         .await
-    }
-
-    // Stream all the outputs start at the block till the highest block available.
-    pub(crate) async fn update_witness_after_block<D: DomainWalletExt>(
-        &self,
-        witnesses: WitnessCache<Node<D>>,
-        nullifier: <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier,
-    ) -> WitnessCache<Node<D>>
-    where
-        <D as Domain>::Recipient: crate::wallet::traits::Recipient,
-        <D as Domain>::Note: PartialEq + Clone,
-    {
-        let height = witnesses.top_height + 1;
-
-        // Check if we've already synced all the requested blocks
-        if height > self.wait_for_first_block().await {
-            return witnesses;
-        }
-        self.wait_for_block(height).await;
-
-        let mut fsb = FixedSizeBuffer::new(MAX_REORG);
-
-        let top_block = {
-            let mut blocks = self.blocks_in_current_batch.read().await;
-            let top_block = blocks.first().unwrap().height;
-            let bottom_block = blocks.last().unwrap().height;
-            let pos = top_block - height;
-
-            // Get the last witness, and then use that.
-            let mut w = witnesses.last().unwrap().clone();
-            witnesses.into_fsb(&mut fsb);
-
-            for i in (0..pos + 1).rev() {
-                let cb = &blocks.get(i as usize).unwrap().cb();
-                for compact_transaction in &cb.vtx {
-                    use crate::wallet::traits::CompactOutput as _;
-                    for co in D::CompactOutput::from_compact_transaction(compact_transaction) {
-                        if let Some(node) = Node::<D>::from_commitment(co.cmstar()).into() {
-                            w.append(node).unwrap();
-                        }
-                    }
-                }
-
-                // At the end of every block, update the witness in the array
-                fsb.push(w.clone());
-
-                if i % 250 == 0 {
-                    // Every 250 blocks, give up the lock, let other threads proceed and then re-acquire it
-                    drop(blocks);
-                    yield_now().await;
-                    blocks = self.blocks_in_current_batch.read().await;
-                }
-                self.sync_status
-                    .write()
-                    .await
-                    .witnesses_updated
-                    .insert(nullifier.into(), top_block - bottom_block - i);
-            }
-
-            top_block
-        };
-
-        WitnessCache::new(fsb.into_vec(), top_block)
-    }
-
-    async fn update_witness_after_reciept_to_block_end<D: DomainWalletExt>(
-        &self,
-        height: &BlockHeight,
-        transaction_id: &TxId,
-        output_num: u32,
-        witnesses: WitnessCache<<D::WalletNote as ReceivedNoteAndMetadata>::Node>,
-    ) -> WitnessCache<<D::WalletNote as ReceivedNoteAndMetadata>::Node>
-    where
-        D::Recipient: crate::wallet::traits::Recipient,
-        D::Note: PartialEq + Clone,
-        <D::WalletNote as ReceivedNoteAndMetadata>::Node: FromCommitment,
-    {
-        let height = u64::from(*height);
-        self.wait_for_block(height).await;
-
-        // We'll update the rest of the block's witnesses here. Notice we pop the last witness, and we'll
-        // add the updated one back into the array at the end of this function.
-        let mut w = witnesses.last().unwrap().clone();
-
-        {
-            let blocks = self.blocks_in_current_batch.read().await;
-            let pos = blocks.first().unwrap().height - height;
-
-            let mut transaction_id_found = false;
-            let mut output_found = false;
-
-            let cb = &blocks.get(pos as usize).unwrap().cb();
-            for compact_transaction in &cb.vtx {
-                if !transaction_id_found
-                    && TransactionMetadata::new_txid(&compact_transaction.hash) == *transaction_id
-                {
-                    transaction_id_found = true;
-                }
-                use crate::wallet::traits::CompactOutput as _;
-                let outputs = D::CompactOutput::from_compact_transaction(compact_transaction);
-                for j in 0..outputs.len() as u32 {
-                    // If we've already passed the transaction id and output_num, stream the results
-                    if transaction_id_found && output_found {
-                        let compact_output = outputs.get(j as usize).unwrap();
-                        let node =
-                            <D::WalletNote as ReceivedNoteAndMetadata>::Node::from_commitment(
-                                compact_output.cmstar(),
-                            )
-                            .unwrap();
-                        w.append(node).unwrap();
-                    }
-
-                    // Mark as found if we reach the transaction id and output_num. Starting with the next output,
-                    // we'll stream all the data to the requester
-                    if !output_found && transaction_id_found && j == output_num {
-                        output_found = true;
-                    }
-                }
-            }
-
-            if !transaction_id_found || !output_found {
-                panic!("Txid or output not found");
-            }
-        }
-
-        // Replace the last witness in the vector with the newly computed one.
-        WitnessCache::new(vec![w], height)
-    }
-    pub(crate) async fn update_witness_after_receipt<D: DomainWalletExt>(
-        &self,
-        height: &BlockHeight,
-        transaction_id: &TxId,
-        output_num: u32,
-        witnesses: WitnessCache<<D::WalletNote as ReceivedNoteAndMetadata>::Node>,
-        nullifier: <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier,
-    ) -> WitnessCache<<D::WalletNote as ReceivedNoteAndMetadata>::Node>
-    where
-        D::Recipient: crate::wallet::traits::Recipient,
-        D::Note: PartialEq + Clone,
-        <D::WalletNote as ReceivedNoteAndMetadata>::Node: FromCommitment,
-    {
-        let witnesses = self
-            .update_witness_after_reciept_to_block_end::<D>(
-                height,
-                transaction_id,
-                output_num,
-                witnesses,
-            )
-            .await;
-        self.update_witness_after_block::<D>(witnesses, nullifier)
-            .await
     }
 }
 

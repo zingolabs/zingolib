@@ -775,7 +775,7 @@ dependencies = [
 [[package]]
 name = "equihash"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash?rev=4d5dc28ab18a020f46a87c1b76d0bf7883ae55c7#4d5dc28ab18a020f46a87c1b76d0bf7883ae55c7"
+source = "git+https://github.com/zingolabs/librustzcash?rev=8e582109cad9af14b461f76429f9f0437e860115#8e582109cad9af14b461f76429f9f0437e860115"
 dependencies = [
  "blake2b_simd",
  "byteorder",
@@ -815,7 +815,7 @@ dependencies = [
 [[package]]
 name = "f4jumble"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/librustzcash?rev=4d5dc28ab18a020f46a87c1b76d0bf7883ae55c7#4d5dc28ab18a020f46a87c1b76d0bf7883ae55c7"
+source = "git+https://github.com/zingolabs/librustzcash?rev=8e582109cad9af14b461f76429f9f0437e860115#8e582109cad9af14b461f76429f9f0437e860115"
 dependencies = [
  "blake2b_simd",
 ]
@@ -1368,7 +1368,7 @@ dependencies = [
 [[package]]
 name = "incrementalmerkletree"
 version = "0.4.0"
-source = "git+https://github.com/zcash/incrementalmerkletree?rev=109f805fdfc6acca8630c42c967d73fa13d4b7d8#109f805fdfc6acca8630c42c967d73fa13d4b7d8"
+source = "git+https://github.com/zcash/incrementalmerkletree?rev=bae25ad89c0c192bee625252d2d419bd56638e48#bae25ad89c0c192bee625252d2d419bd56638e48"
 dependencies = [
  "either",
  "proptest",
@@ -2917,11 +2917,12 @@ dependencies = [
 [[package]]
 name = "shardtree"
 version = "0.0.0"
-source = "git+https://github.com/zcash/incrementalmerkletree?rev=109f805fdfc6acca8630c42c967d73fa13d4b7d8#109f805fdfc6acca8630c42c967d73fa13d4b7d8"
+source = "git+https://github.com/zcash/incrementalmerkletree?rev=bae25ad89c0c192bee625252d2d419bd56638e48#bae25ad89c0c192bee625252d2d419bd56638e48"
 dependencies = [
  "bitflags 1.3.2",
  "either",
  "incrementalmerkletree",
+ "tracing",
 ]
 
 [[package]]
@@ -3945,7 +3946,7 @@ dependencies = [
 [[package]]
 name = "zcash_address"
 version = "0.3.0"
-source = "git+https://github.com/zingolabs/librustzcash?rev=4d5dc28ab18a020f46a87c1b76d0bf7883ae55c7#4d5dc28ab18a020f46a87c1b76d0bf7883ae55c7"
+source = "git+https://github.com/zingolabs/librustzcash?rev=8e582109cad9af14b461f76429f9f0437e860115#8e582109cad9af14b461f76429f9f0437e860115"
 dependencies = [
  "bech32",
  "bs58",
@@ -3956,7 +3957,7 @@ dependencies = [
 [[package]]
 name = "zcash_client_backend"
 version = "0.9.0"
-source = "git+https://github.com/zingolabs/librustzcash?rev=4d5dc28ab18a020f46a87c1b76d0bf7883ae55c7#4d5dc28ab18a020f46a87c1b76d0bf7883ae55c7"
+source = "git+https://github.com/zingolabs/librustzcash?rev=8e582109cad9af14b461f76429f9f0437e860115#8e582109cad9af14b461f76429f9f0437e860115"
 dependencies = [
  "base64 0.21.2",
  "bech32",
@@ -3987,7 +3988,7 @@ dependencies = [
 [[package]]
 name = "zcash_client_sqlite"
 version = "0.7.1"
-source = "git+https://github.com/zingolabs/librustzcash?rev=4d5dc28ab18a020f46a87c1b76d0bf7883ae55c7#4d5dc28ab18a020f46a87c1b76d0bf7883ae55c7"
+source = "git+https://github.com/zingolabs/librustzcash?rev=8e582109cad9af14b461f76429f9f0437e860115#8e582109cad9af14b461f76429f9f0437e860115"
 dependencies = [
  "bs58",
  "byteorder",
@@ -4012,7 +4013,7 @@ dependencies = [
 [[package]]
 name = "zcash_encoding"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash?rev=4d5dc28ab18a020f46a87c1b76d0bf7883ae55c7#4d5dc28ab18a020f46a87c1b76d0bf7883ae55c7"
+source = "git+https://github.com/zingolabs/librustzcash?rev=8e582109cad9af14b461f76429f9f0437e860115#8e582109cad9af14b461f76429f9f0437e860115"
 dependencies = [
  "byteorder",
  "nonempty",
@@ -4034,7 +4035,7 @@ dependencies = [
 [[package]]
 name = "zcash_primitives"
 version = "0.12.0"
-source = "git+https://github.com/zingolabs/librustzcash?rev=4d5dc28ab18a020f46a87c1b76d0bf7883ae55c7#4d5dc28ab18a020f46a87c1b76d0bf7883ae55c7"
+source = "git+https://github.com/zingolabs/librustzcash?rev=8e582109cad9af14b461f76429f9f0437e860115#8e582109cad9af14b461f76429f9f0437e860115"
 dependencies = [
  "aes",
  "bip0039",
@@ -4070,7 +4071,7 @@ dependencies = [
 [[package]]
 name = "zcash_proofs"
 version = "0.12.1"
-source = "git+https://github.com/zingolabs/librustzcash?rev=4d5dc28ab18a020f46a87c1b76d0bf7883ae55c7#4d5dc28ab18a020f46a87c1b76d0bf7883ae55c7"
+source = "git+https://github.com/zingolabs/librustzcash?rev=8e582109cad9af14b461f76429f9f0437e860115#8e582109cad9af14b461f76429f9f0437e860115"
 dependencies = [
  "bellman",
  "blake2b_simd",

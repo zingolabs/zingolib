@@ -8,25 +8,25 @@ members = [
 ]
 
 [workspace.dependencies]
-zcash_address = { git = "https://github.com/zingolabs/librustzcash", rev = "4d5dc28ab18a020f46a87c1b76d0bf7883ae55c7" }
-zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash", rev = "4d5dc28ab18a020f46a87c1b76d0bf7883ae55c7"  }
-zcash_encoding = { git = "https://github.com/zingolabs/librustzcash", rev = "4d5dc28ab18a020f46a87c1b76d0bf7883ae55c7"  }
-zcash_client_sqlite = { git = "https://github.com/zingolabs/librustzcash", rev = "4d5dc28ab18a020f46a87c1b76d0bf7883ae55c7"  }
+zcash_address = { git = "https://github.com/zingolabs/librustzcash", rev = "8e582109cad9af14b461f76429f9f0437e860115" }
+zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash", rev = "8e582109cad9af14b461f76429f9f0437e860115"  }
+zcash_encoding = { git = "https://github.com/zingolabs/librustzcash", rev = "8e582109cad9af14b461f76429f9f0437e860115"  }
+zcash_client_sqlite = { git = "https://github.com/zingolabs/librustzcash", rev = "8e582109cad9af14b461f76429f9f0437e860115"  }
 zcash_note_encryption = "0.4.0"
-zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", features = ["transparent-inputs", "test-dependencies"], rev = "4d5dc28ab18a020f46a87c1b76d0bf7883ae55c7"  }
-zcash_proofs = { git = "https://github.com/zingolabs/librustzcash", features = ["multicore"], rev = "4d5dc28ab18a020f46a87c1b76d0bf7883ae55c7"  }
+zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", features = ["transparent-inputs", "test-dependencies"], rev = "8e582109cad9af14b461f76429f9f0437e860115"  }
+zcash_proofs = { git = "https://github.com/zingolabs/librustzcash", features = ["multicore"], rev = "8e582109cad9af14b461f76429f9f0437e860115"  }
 orchard = "0.5.0"
 tonic-build = "0.7.0"
 tempdir = "0.3"
 portpicker = "0.1"
-incrementalmerkletree = { git = "https://github.com/zcash/incrementalmerkletree", rev = "109f805fdfc6acca8630c42c967d73fa13d4b7d8" }
+incrementalmerkletree = { git = "https://github.com/zcash/incrementalmerkletree", rev = "bae25ad89c0c192bee625252d2d419bd56638e48" }
 
 [profile.release]
 debug = false
 
 [patch.crates-io]
-incrementalmerkletree = { git = "https://github.com/zcash/incrementalmerkletree", rev = "109f805fdfc6acca8630c42c967d73fa13d4b7d8" }
-shardtree = { git = "https://github.com/zcash/incrementalmerkletree", rev = "109f805fdfc6acca8630c42c967d73fa13d4b7d8" }
+incrementalmerkletree = { git = "https://github.com/zcash/incrementalmerkletree", rev = "bae25ad89c0c192bee625252d2d419bd56638e48" }
+shardtree = { git = "https://github.com/zcash/incrementalmerkletree", rev = "bae25ad89c0c192bee625252d2d419bd56638e48" }
 
 [profile.test]
 opt-level = 3
