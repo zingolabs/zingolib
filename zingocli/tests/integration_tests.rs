@@ -7,7 +7,6 @@ use zingo_testutils::{self, build_fvk_client_and_capability, data};
 use bip0039::Mnemonic;
 use data::seeds::HOSPITAL_MUSEUM_SEED;
 use json::JsonValue::{self, Null};
-use tokio::time::Instant;
 use zingo_testutils::scenarios;
 
 use tracing_test::traced_test;
@@ -2760,108 +2759,4 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
     drop(child_process_handler)
 }
 
-#[ignore]
-#[tokio::test]
-async fn basic_faucet_count_sap_outputs() {
-    let (regtest_manager, child_process_handler, faucet) = scenarios::faucet().await;
-    assert_eq!(faucet.wallet.get_anchor_height().await, 1);
-    let mut count = 1;
-    for _ in 0..1152 {
-        zingo_testutils::increase_height_and_sync_client(&regtest_manager, &faucet, 1)
-            .await
-            .unwrap();
-        count += 1;
-        assert_eq!(faucet.wallet.get_anchor_height().await, count);
-    }
-    drop(child_process_handler);
-}
-#[ignore]
-#[tokio::test]
-async fn count_loaded_outputs() {
-    let (_regtest_manager, child_process_handler, _faucet, recipient) =
-        scenarios::chainload::faucet_recipient_1153().await;
-
-    recipient.do_sync(true).await.unwrap();
-    drop(child_process_handler);
-}
-
-mod benchmarks {
-    use super::*;
-    #[tokio::test]
-    pub async fn time_scenario_setup_teardown() {
-        let cph = zingo_testutils::scenarios::chainload::unsynced_basic().await;
-        drop(cph);
-    }
-    mod sync_1153_baseline_synctimes {
-        const PREFIX: &'static str = "sync_1153_baseline_synctimes";
-
-        use zingo_testutils::DurationAnnotation;
-
-        use super::*;
-        async fn timing_run(keyownership: &str, print_updates: bool) {
-            let sync_duration;
-            match keyownership {
-                "keyowning" => {
-                    let (_, child_process_handler, keyowning, _keyless) =
-                        scenarios::chainload::unsynced_faucet_recipient_1153().await;
-                    let timer_start = Instant::now();
-                    keyowning.do_sync(print_updates).await.unwrap();
-                    let timer_stop = Instant::now();
-                    sync_duration = timer_stop.duration_since(timer_start);
-                    drop(child_process_handler);
-                }
-                "keyless" => {
-                    let (_, child_process_handler, _keyowning, keyless) =
-                        scenarios::chainload::unsynced_faucet_recipient_1153().await;
-                    let timer_start = Instant::now();
-                    keyless.do_sync(print_updates).await.unwrap();
-                    let timer_stop = Instant::now();
-                    sync_duration = timer_stop.duration_since(timer_start);
-                    drop(child_process_handler);
-                }
-                "fullviewonly" => {
-                    let (_, child_process_handler, view_only_client) =
-                        scenarios::chainload::unsynced_viewonlyclient_1153().await;
-                    let timer_start = Instant::now();
-                    view_only_client.do_sync(print_updates).await.unwrap();
-                    let timer_stop = Instant::now();
-                    sync_duration = timer_stop.duration_since(timer_start);
-                    drop(child_process_handler);
-                }
-                _ => panic!(),
-            }
-            let annotation = DurationAnnotation::new(
-                format!("{PREFIX}_{keyownership}_client_pu_{print_updates}"),
-                sync_duration,
-            );
-            zingo_testutils::record_time(&annotation);
-
-            assert!(sync_duration.as_secs() < 1000);
-        }
-        #[tokio::test]
-        async fn keyless_client_pu_true() {
-            timing_run("keyless", true).await;
-        }
-        #[tokio::test]
-        async fn keyless_client_pu_false() {
-            timing_run("keyless", false).await;
-        }
-        #[tokio::test]
-        async fn keyowning_client_pu_true() {
-            timing_run("keyowning", true).await;
-        }
-        #[tokio::test]
-        async fn keyowning_client_pu_false() {
-            timing_run("keyowning", false).await;
-        }
-        #[tokio::test]
-        async fn fullviewonly_client_pu_true() {
-            timing_run("fullviewonly", true).await;
-        }
-        #[tokio::test]
-        async fn fullviewonly_client_pu_false() {
-            timing_run("fullviewonly", false).await;
-        }
-    }
-}
 pub const TEST_SEED: &str = "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise";

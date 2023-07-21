@@ -1267,7 +1267,7 @@ impl LightWallet {
                 .write()
                 .await;
             for selected in sapling_notes {
-                let mut spent_note = transactions
+                let spent_note = transactions
                     .current
                     .get_mut(&selected.transaction_id)
                     .unwrap()
@@ -1280,7 +1280,7 @@ impl LightWallet {
             }
             // Mark orchard notes as unconfirmed spent
             for selected in orchard_notes {
-                let mut spent_note = transactions
+                let spent_note = transactions
                     .current
                     .get_mut(&selected.transaction_id)
                     .unwrap()
@@ -1294,7 +1294,7 @@ impl LightWallet {
 
             // Mark this utxo as unconfirmed spent
             for utxo in utxos {
-                let mut spent_utxo = transactions
+                let spent_utxo = transactions
                     .current
                     .get_mut(&utxo.txid)
                     .unwrap()
