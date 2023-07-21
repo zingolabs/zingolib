@@ -2423,7 +2423,11 @@ async fn by_address_finsight() {
     faucet
         .do_send(vec![(&base_uaddress, 1_000u64, Some("1".to_string()))])
         .await
-        .unwrap();
+        .expect(
+            "We only have sapling notes, plus a pending orchard note from the \
+            previous send. If we're allowed to select pending notes, we'll attempt \
+            to select that one, and this will fail",
+        );
     assert_eq!(
         JsonValue::from(faucet.do_total_memobytes_to_address().await)[&base_uaddress].pretty(4),
         "2".to_string()
