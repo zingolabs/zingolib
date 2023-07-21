@@ -460,7 +460,7 @@ impl TransactionMetadataSet {
     ) -> u64 {
         match nullifier {
             PoolNullifier::Sapling(nf) => {
-                let mut note_data = self
+                let note_data = self
                     .current
                     .get_mut(&txid)
                     .unwrap()
@@ -473,7 +473,7 @@ impl TransactionMetadataSet {
                 note_data.note.value().inner()
             }
             PoolNullifier::Orchard(nf) => {
-                let mut note_data = self
+                let note_data = self
                     .current
                     .get_mut(&txid)
                     .unwrap()

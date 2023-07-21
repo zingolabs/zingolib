@@ -7,7 +7,6 @@ use zingo_testutils::{self, build_fvk_client_and_capability, data};
 use bip0039::Mnemonic;
 use data::seeds::HOSPITAL_MUSEUM_SEED;
 use json::JsonValue::{self, Null};
-use tokio::time::Instant;
 use zingo_testutils::scenarios;
 
 use tracing_test::traced_test;
