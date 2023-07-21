@@ -50,8 +50,8 @@ use zingo_memo::create_wallet_internal_memo_version_0;
 use self::data::merkle::SqliteShardStore;
 use self::data::{SpendableOrchardNote, COMMITMENT_TREE_DEPTH, MAX_SHARD_DEPTH};
 use self::keys::unified::{Capability, ReceiverSelection, WalletCapability};
-use self::traits::Recipient;
 use self::traits::{DomainWalletExt, ReceivedNoteAndMetadata, SpendableNote};
+use self::traits::{FromBytes, Recipient};
 use self::{
     data::{
         BlockData, ReceivedOrchardNoteAndMetadata, ReceivedSaplingNoteAndMetadata,
@@ -364,8 +364,9 @@ impl LightWallet {
             .filter(|(_, note)| note.value() > 0)
             .filter_map(|(transaction_id, note)| {
                 // Filter out notes that are already spent
-                if note.spent().is_some() || note.unconfirmed_spent().is_some() {
-                    println!("Spent note TxId: {transaction_id}");
+                if note.spent().is_some() || note.unconfirmed_spent().is_some() || note.is_pending()
+                {
+                    println!("Spent/pending note TxId: {transaction_id}");
                     None
                 } else {
                     // Get the spending key for the selected fvk, if we have it
@@ -1429,29 +1430,20 @@ impl LightWallet {
     }
 
     pub async fn spendable_orchard_balance(&self, target_addr: Option<String>) -> JsonValue {
-        let anchor_height = self.get_anchor_height().await;
-        #[allow(clippy::type_complexity)]
-        let filters: &[Box<
-            dyn Fn(&&ReceivedOrchardNoteAndMetadata, &TransactionMetadata) -> bool,
-        >] = &[Box::new(|_, transaction| {
-            transaction.block_height <= BlockHeight::from_u32(anchor_height)
-        })];
-        self.shielded_balance::<OrchardDomain>(target_addr, filters)
-            .await
-            .map_or(json::JsonValue::Null, json::JsonValue::from)
+        if let Capability::Spend(_) = self.wallet_capability().read().await.orchard {
+            self.verified_balance::<OrchardDomain>(target_addr).await
+        } else {
+            JsonValue::Null
+        }
     }
 
     pub async fn spendable_sapling_balance(&self, target_addr: Option<String>) -> JsonValue {
-        let anchor_height = self.get_anchor_height().await;
-        #[allow(clippy::type_complexity)]
-        let filters: &[Box<
-            dyn Fn(&&ReceivedSaplingNoteAndMetadata, &TransactionMetadata) -> bool,
-        >] = &[Box::new(|_, transaction| {
-            transaction.block_height <= BlockHeight::from_u32(anchor_height)
-        })];
-        self.shielded_balance::<SaplingDomain<zingoconfig::ChainType>>(target_addr, filters)
-            .await
-            .map_or(json::JsonValue::Null, json::JsonValue::from)
+        if let Capability::Spend(_) = self.wallet_capability().read().await.sapling {
+            self.verified_balance::<SaplingDomain<zingoconfig::ChainType>>(target_addr)
+                .await
+        } else {
+            JsonValue::Null
+        }
     }
 
     pub async fn tbalance(&self, addr: Option<String>) -> JsonValue {
@@ -1477,31 +1469,28 @@ impl LightWallet {
     }
 
     pub async fn unverified_orchard_balance(&self, target_addr: Option<String>) -> JsonValue {
-        let anchor_height = self.get_anchor_height().await;
-
-        #[allow(clippy::type_complexity)]
-        let filters: &[Box<
-            dyn Fn(&&ReceivedOrchardNoteAndMetadata, &TransactionMetadata) -> bool,
-        >] = &[Box::new(|_, transaction: &TransactionMetadata| {
-            transaction.block_height > BlockHeight::from_u32(anchor_height)
-        })];
-        self.shielded_balance::<OrchardDomain>(target_addr, filters)
-            .await
-            .map_or(json::JsonValue::Null, json::JsonValue::from)
+        self.unverified_balance::<OrchardDomain>(target_addr).await
     }
 
     /// The following functions use a filter/map functional approach to
     /// expressively unpack different kinds of transaction data.
     pub async fn unverified_sapling_balance(&self, target_addr: Option<String>) -> JsonValue {
-        let anchor_height = self.get_anchor_height().await;
+        self.unverified_balance::<SaplingDomain<zingoconfig::ChainType>>(target_addr)
+            .await
+    }
 
+    async fn unverified_balance<D: DomainWalletExt>(&self, target_addr: Option<String>) -> JsonValue
+    where
+        <D as Domain>::Recipient: Recipient,
+        <D as Domain>::Note: PartialEq + Clone,
+    {
+        let anchor_height = self.get_anchor_height().await;
         #[allow(clippy::type_complexity)]
-        let filters: &[Box<
-            dyn Fn(&&ReceivedSaplingNoteAndMetadata, &TransactionMetadata) -> bool,
-        >] = &[Box::new(|_, transaction: &TransactionMetadata| {
-            transaction.block_height > BlockHeight::from_u32(anchor_height)
-        })];
-        self.shielded_balance::<SaplingDomain<zingoconfig::ChainType>>(target_addr, filters)
+        let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionMetadata) -> bool>] =
+            &[Box::new(|nnmd, transaction| {
+                transaction.block_height > BlockHeight::from_u32(anchor_height) || nnmd.is_pending()
+            })];
+        self.shielded_balance::<D>(target_addr, filters)
             .await
             .map_or(json::JsonValue::Null, json::JsonValue::from)
     }
@@ -1513,10 +1502,12 @@ impl LightWallet {
     {
         let anchor_height = self.get_anchor_height().await;
         #[allow(clippy::type_complexity)]
-        let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionMetadata) -> bool>] =
-            &[Box::new(|_, transaction| {
+        let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionMetadata) -> bool>] = &[
+            Box::new(|_, transaction| {
                 transaction.block_height <= BlockHeight::from_u32(anchor_height)
-            })];
+            }),
+            Box::new(|nnmd, _| !nnmd.is_pending()),
+        ];
         self.shielded_balance::<D>(target_addr, filters)
             .await
             .map_or(json::JsonValue::Null, json::JsonValue::from)

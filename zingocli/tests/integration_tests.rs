@@ -1555,6 +1555,7 @@ async fn mempool_and_balance() {
         .unwrap();
 
     let bal = recipient.do_balance().await;
+    println!("{}", bal.pretty(4));
 
     assert_eq!(bal["orchard_balance"].as_u64().unwrap(), new_bal);
     assert_eq!(bal["verified_orchard_balance"].as_u64().unwrap(), new_bal);

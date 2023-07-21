@@ -701,29 +701,29 @@ impl TransactionMetadataSet {
         // Update the block height, in case this was a mempool or unconfirmed tx.
         transaction_metadata.block_height = height;
 
+        let nd =
+            D::WalletNote::from_parts(
+                D::Recipient::diversifier(&to),
+                note.clone(),
+                Position::from(0),
+                Some(nullifier.unwrap_or_else(|| {
+                    <<D::WalletNote as ReceivedNoteAndMetadata>::Nullifier as FromBytes<
+                                32,
+                            >>::from_bytes([1; 32])
+                })),
+                None,
+                None,
+                None,
+                // if this is change, we'll mark it later in check_notes_mark_change
+                false,
+                have_spending_key,
+                output_index,
+            );
         match D::WalletNote::transaction_metadata_notes_mut(transaction_metadata)
             .iter_mut()
             .find(|n| n.note() == &note)
         {
             None => {
-                let nd = D::WalletNote::from_parts(
-                    D::Recipient::diversifier(&to),
-                    note,
-                    Position::from(0),
-                    Some(nullifier.unwrap_or_else(|| {
-                        <<D::WalletNote as ReceivedNoteAndMetadata>::Nullifier as FromBytes<
-                                32,
-                            >>::from_bytes([1; 32])
-                    })),
-                    None,
-                    None,
-                    None,
-                    // if this is change, we'll mark it later in check_notes_mark_change
-                    false,
-                    have_spending_key,
-                    output_index,
-                );
-
                 D::WalletNote::transaction_metadata_notes_mut(transaction_metadata).push(nd);
 
                 // Also remove any pending notes.
@@ -732,7 +732,8 @@ impl TransactionMetadataSet {
                     .retain(|n| n.nullifier().to_bytes() != [0u8; 32]);
             }
             Some(n) => {
-                dbg!(n);
+                // An overwrite should be safe here: TODO: test that confirms this
+                *n = nd;
             }
         }
     }

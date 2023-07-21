@@ -416,6 +416,9 @@ pub trait ReceivedNoteAndMetadata: Sized {
     type Node: Hashable + HashSer + FromCommitment + Send + Clone + PartialEq + Eq;
     type Nullifier: Nullifier;
 
+    fn is_pending(&self) -> bool {
+        self.nullifier() == Self::Nullifier::from_bytes([0; 32])
+    }
     fn diversifier(&self) -> &Self::Diversifier;
     #[allow(clippy::too_many_arguments)]
     fn from_parts(
