@@ -17,7 +17,7 @@ use futures::{stream::FuturesUnordered, StreamExt};
 use incrementalmerkletree::{Position, Retention};
 use log::debug;
 use orchard::{keys::IncomingViewingKey as OrchardIvk, note_encryption::OrchardDomain};
-use std::sync::Arc;
+use std::{any::type_name, sync::Arc};
 use tokio::{
     sync::{
         mpsc::{unbounded_channel, UnboundedSender},
@@ -187,7 +187,7 @@ impl TrialDecryptions {
 
                 if let Some(sapling_notes_to_mark_position_in_tx) =
                     if let Some(ref sapling_ivk) = sapling_ivk {
-                        Some( self.trial_decrypt_domain_specific_outputs::<
+                        Some(self.trial_decrypt_domain_specific_outputs::<
                         SaplingDomain<zingoconfig::ChainType>,
                     >(
                         &mut transaction_metadata,
@@ -325,12 +325,13 @@ impl TrialDecryptions {
                 .await;
             orchard_nodes_retention.push((node, retention));
         }
-        orchard_witness_tree_lock
+        let orchard_tree_insert_result = orchard_witness_tree_lock
             .batch_insert(orchard_position, orchard_nodes_retention.into_iter())
             .expect(&format!(
                 "failed to insert into orchard tree, starting position {}",
                 u64::from(orchard_position)
             ));
+        dbg!(orchard_tree_insert_result);
 
         // Return a nothing-value
         Ok::<(), String>(())
@@ -379,6 +380,11 @@ impl TrialDecryptions {
         let maybe_decrypted_outputs =
             zcash_note_encryption::batch::try_compact_note_decryption(&[ivk], &outputs);
         for maybe_decrypted_output in maybe_decrypted_outputs.into_iter().enumerate() {
+            println!(
+                "\n***\ndecrypting {} output, height {}\n***\n",
+                type_name::<D>(),
+                u64::from(height)
+            );
             let (output_num, witnessed) =
                 if let (i, Some(((note, to), _ivk_num))) = maybe_decrypted_output {
                     *transaction_metadata = true; // i.e. we got metadata

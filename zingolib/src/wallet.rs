@@ -442,7 +442,7 @@ impl LightWallet {
         Ok(orchard::Anchor::from(
             tree_lock
                 .root_at_checkpoint(REORG_BUFFER_OFFSET as usize)
-                .map_err(|e| e.to_string())?,
+                .map_err(|e| format!("failed to get orchard anchor: {e}"))?,
         ))
     }
 
@@ -1069,7 +1069,7 @@ impl LightWallet {
                 selected.note.clone(),
                 sapling_tree_lock
                     .witness(selected.witnessed_position, REORG_BUFFER_OFFSET as usize)
-                    .map_err(|e| e.to_string())?,
+                    .map_err(|e| format!("failed to compute sapling witness: {e}"))?,
             ) {
                 let e = format!("Error adding note: {:?}", e);
                 error!("{}", e);
@@ -1085,7 +1085,7 @@ impl LightWallet {
                 orchard::tree::MerklePath::from(
                     orchard_tree_lock
                         .witness(selected.witnessed_position, REORG_BUFFER_OFFSET as usize)
-                        .map_err(|e| e.to_string())?,
+                        .map_err(|e| format!("failed to compute orchard witness: {e}"))?,
                 ),
             ) {
                 let e = format!("Error adding note: {:?}", e);

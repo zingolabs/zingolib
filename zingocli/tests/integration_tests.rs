@@ -2412,6 +2412,10 @@ async fn by_address_finsight() {
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &faucet, 2)
         .await
         .unwrap();
+    println!(
+        "faucet notes: {}",
+        faucet.do_list_notes(true).await.pretty(4)
+    );
     faucet
         .do_send(vec![(&base_uaddress, 1_000u64, Some("1".to_string()))])
         .await
