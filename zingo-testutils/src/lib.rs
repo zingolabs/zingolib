@@ -684,7 +684,19 @@ pub mod scenarios {
 
     pub async fn mobile_basic() -> (RegtestManager, ChildProcessHandler) {
         let scenario_builder =
-            setup::ScenarioBuilder::build_configure_launch(None, None, Some(20000));
+            setup::ScenarioBuilder::build_configure_launch(None, None, Some(20_000));
+        (
+            scenario_builder.regtest_manager,
+            scenario_builder.child_process_handler.unwrap(),
+        )
+    }
+
+    pub async fn mobile_funded() -> (RegtestManager, ChildProcessHandler) {
+        let scenario_builder = setup::ScenarioBuilder::build_configure_launch(
+            Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
+            None,
+            Some(20_000),
+        );
         (
             scenario_builder.regtest_manager,
             scenario_builder.child_process_handler.unwrap(),
