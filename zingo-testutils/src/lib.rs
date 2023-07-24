@@ -722,6 +722,10 @@ pub mod scenarios {
             )])
             .await
             .unwrap();
+        scenario_builder
+            .regtest_manager
+            .generate_n_blocks(1)
+            .expect("Failed to generate blocks.");
         (
             scenario_builder.regtest_manager,
             scenario_builder.child_process_handler.unwrap(),
