@@ -8,6 +8,7 @@ use orchard::note_encryption::OrchardDomain;
 use orchard::tree::MerkleHashOrchard;
 use prost::Message;
 use rusqlite::Connection;
+use shardtree::memory::MemoryShardStore;
 use shardtree::ShardTree;
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
@@ -50,17 +51,13 @@ pub enum PoolNullifier {
 pub struct WitnessTrees {
     pub witness_tree_sapling: Arc<
         Mutex<
-            ShardTree<
-                merkle::SqliteShardStore<rusqlite::Connection, Node, MAX_SHARD_DEPTH>,
-                COMMITMENT_TREE_DEPTH,
-                MAX_SHARD_DEPTH,
-            >,
+            ShardTree<MemoryShardStore<Node, BlockHeight>, COMMITMENT_TREE_DEPTH, MAX_SHARD_DEPTH>,
         >,
     >,
     pub witness_tree_orchard: Arc<
         Mutex<
             ShardTree<
-                merkle::SqliteShardStore<rusqlite::Connection, MerkleHashOrchard, MAX_SHARD_DEPTH>,
+                MemoryShardStore<MerkleHashOrchard, BlockHeight>,
                 COMMITMENT_TREE_DEPTH,
                 MAX_SHARD_DEPTH,
             >,
@@ -131,11 +128,11 @@ impl Default for WitnessTrees {
 
         Self {
             witness_tree_sapling: Arc::new(Mutex::new(ShardTree::new(
-                crate::wallet::data::merkle::SqliteShardStore::from_connection(sap_conn, "sapling"),
+                MemoryShardStore::empty(),
                 MAX_REORG,
             ))),
             witness_tree_orchard: Arc::new(Mutex::new(ShardTree::new(
-                SqliteShardStore::from_connection(orch_conn, "orchard"),
+                MemoryShardStore::empty(),
                 MAX_REORG,
             ))),
         }

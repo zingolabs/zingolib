@@ -15,6 +15,7 @@ use orchard::tree::MerkleHashOrchard;
 use orchard::Anchor;
 use rand::rngs::OsRng;
 use rand::Rng;
+use shardtree::memory::MemoryShardStore;
 use shardtree::ShardTree;
 use std::convert::Infallible;
 use std::{
@@ -435,7 +436,7 @@ impl LightWallet {
     async fn get_orchard_anchor(
         &self,
         tree_lock: &ShardTree<
-            SqliteShardStore<rusqlite::Connection, MerkleHashOrchard, MAX_SHARD_DEPTH>,
+            MemoryShardStore<MerkleHashOrchard, BlockHeight>,
             COMMITMENT_TREE_DEPTH,
             MAX_SHARD_DEPTH,
         >,
@@ -1264,7 +1265,7 @@ impl LightWallet {
                 .write()
                 .await;
             for selected in sapling_notes {
-                let spent_note = transactions
+                let spent_note = txmds_writelock
                     .current
                     .get_mut(&selected.transaction_id)
                     .unwrap()
@@ -1277,7 +1278,7 @@ impl LightWallet {
             }
             // Mark orchard notes as unconfirmed spent
             for selected in orchard_notes {
-                let spent_note = transactions
+                let spent_note = txmds_writelock
                     .current
                     .get_mut(&selected.transaction_id)
                     .unwrap()
@@ -1291,7 +1292,7 @@ impl LightWallet {
 
             // Mark this utxo as unconfirmed spent
             for utxo in utxos {
-                let spent_utxo = transactions
+                let spent_utxo = txmds_writelock
                     .current
                     .get_mut(&utxo.txid)
                     .unwrap()

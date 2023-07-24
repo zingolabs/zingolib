@@ -26,7 +26,7 @@ use orchard::{
     tree::MerkleHashOrchard,
     Action,
 };
-use shardtree::ShardTree;
+use shardtree::{memory::MemoryShardStore, ShardTree};
 use subtle::CtOption;
 use tokio::sync::Mutex;
 use zcash_address::unified::{self, Receiver};
@@ -742,11 +742,7 @@ where
     ) -> Arc<
         Mutex<
             ShardTree<
-                SqliteShardStore<
-                    rusqlite::Connection,
-                    <Self::WalletNote as ReceivedNoteAndMetadata>::Node,
-                    MAX_SHARD_DEPTH,
-                >,
+                MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
                 COMMITMENT_TREE_DEPTH,
                 MAX_SHARD_DEPTH,
             >,
@@ -790,11 +786,7 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
     ) -> Arc<
         Mutex<
             ShardTree<
-                SqliteShardStore<
-                    rusqlite::Connection,
-                    <Self::WalletNote as ReceivedNoteAndMetadata>::Node,
-                    MAX_SHARD_DEPTH,
-                >,
+                MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
                 COMMITMENT_TREE_DEPTH,
                 MAX_SHARD_DEPTH,
             >,
@@ -865,11 +857,7 @@ impl DomainWalletExt for OrchardDomain {
     ) -> Arc<
         Mutex<
             ShardTree<
-                SqliteShardStore<
-                    rusqlite::Connection,
-                    <Self::WalletNote as ReceivedNoteAndMetadata>::Node,
-                    MAX_SHARD_DEPTH,
-                >,
+                MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
                 COMMITMENT_TREE_DEPTH,
                 MAX_SHARD_DEPTH,
             >,
