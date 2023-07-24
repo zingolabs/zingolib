@@ -68,7 +68,6 @@ tracing = "0.1.36"
 indoc = "2.0.1"
 shardtree = { git = "https://github.com/zcash/incrementalmerkletree", rev = "bae25ad89c0c192bee625252d2d419bd56638e48"  }
 derive_more = "0.99.17"
-rusqlite = { version = "0.29.0", features = ["bundled"] }
 either = "1.8.1"
 [dev-dependencies]
 portpicker = "0.1.0"

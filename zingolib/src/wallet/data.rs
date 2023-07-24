@@ -7,7 +7,6 @@ use incrementalmerkletree::{Hashable, Position};
 use orchard::note_encryption::OrchardDomain;
 use orchard::tree::MerkleHashOrchard;
 use prost::Message;
-use rusqlite::Connection;
 use shardtree::memory::MemoryShardStore;
 use shardtree::ShardTree;
 use std::convert::TryFrom;
@@ -28,15 +27,11 @@ use zcash_primitives::{
 };
 use zingoconfig::{ChainType, MAX_REORG};
 
-use self::merkle::SqliteShardStore;
-
 use super::keys::unified::WalletCapability;
 use super::traits::{self, DomainWalletExt, ReadableWriteable};
 
 pub(crate) const COMMITMENT_TREE_DEPTH: u8 = 32;
 pub(crate) const MAX_SHARD_DEPTH: u8 = 16;
-
-pub(crate) mod merkle;
 
 /// This type is motivated by the IPC architecture where (currently) channels traffic in
 /// `(TxId, WalletNullifier, BlockHeight, Option<u32>)`.  This enum permits a single channel
@@ -67,65 +62,6 @@ pub struct WitnessTrees {
 
 impl Default for WitnessTrees {
     fn default() -> WitnessTrees {
-        let sap_conn = Connection::open_in_memory().unwrap();
-        sap_conn
-            .execute_batch(
-                "CREATE TABLE sapling_tree_cap (
-                -- cap_id exists only to be able to take advantage of `ON CONFLICT`
-                -- upsert functionality; the table will only ever contain one row
-                cap_id INTEGER PRIMARY KEY,
-                cap_data BLOB NOT NULL
-            );
-            CREATE TABLE sapling_tree_checkpoint_marks_removed (
-                checkpoint_id INTEGER NOT NULL,
-                mark_removed_position INTEGER NOT NULL,
-                FOREIGN KEY (checkpoint_id) REFERENCES sapling_tree_checkpoints(checkpoint_id)
-                ON DELETE CASCADE
-            );
-            CREATE TABLE sapling_tree_checkpoints (
-                checkpoint_id INTEGER PRIMARY KEY,
-                position INTEGER
-            );
-            CREATE TABLE sapling_tree_shards (
-                shard_index INTEGER PRIMARY KEY,
-                subtree_end_height INTEGER,
-                root_hash BLOB,
-                shard_data BLOB,
-                contains_marked INTEGER,
-                CONSTRAINT root_unique UNIQUE (root_hash)
-            );",
-            )
-            .unwrap();
-        let orch_conn = Connection::open_in_memory().unwrap();
-        orch_conn
-            .execute_batch(
-                "CREATE TABLE orchard_tree_cap (
-                -- cap_id exists only to be able to take advantage of `ON CONFLICT`
-                -- upsert functionality; the table will only ever contain one row
-                cap_id INTEGER PRIMARY KEY,
-                cap_data BLOB NOT NULL
-            );
-            CREATE TABLE orchard_tree_checkpoint_marks_removed (
-                checkpoint_id INTEGER NOT NULL,
-                mark_removed_position INTEGER NOT NULL,
-                FOREIGN KEY (checkpoint_id) REFERENCES orchard_tree_checkpoints(checkpoint_id)
-                ON DELETE CASCADE
-            );
-            CREATE TABLE orchard_tree_checkpoints (
-                checkpoint_id INTEGER PRIMARY KEY,
-                position INTEGER
-            );
-            CREATE TABLE orchard_tree_shards (
-                shard_index INTEGER PRIMARY KEY,
-                subtree_end_height INTEGER,
-                root_hash BLOB,
-                shard_data BLOB,
-                contains_marked INTEGER,
-                CONSTRAINT root_unique UNIQUE (root_hash)
-            );",
-            )
-            .unwrap();
-
         Self {
             witness_tree_sapling: Arc::new(Mutex::new(ShardTree::new(
                 MemoryShardStore::empty(),

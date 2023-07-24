@@ -48,16 +48,12 @@ use zcash_primitives::{
 };
 use zingo_memo::create_wallet_internal_memo_version_0;
 
-use self::data::merkle::SqliteShardStore;
 use self::data::{SpendableOrchardNote, COMMITMENT_TREE_DEPTH, MAX_SHARD_DEPTH};
 use self::keys::unified::{Capability, ReceiverSelection, WalletCapability};
+use self::traits::Recipient;
 use self::traits::{DomainWalletExt, ReceivedNoteAndMetadata, SpendableNote};
-use self::traits::{FromBytes, Recipient};
 use self::{
-    data::{
-        BlockData, ReceivedOrchardNoteAndMetadata, ReceivedSaplingNoteAndMetadata,
-        ReceivedTransparentOutput, WalletZecPriceInfo,
-    },
+    data::{BlockData, ReceivedTransparentOutput, WalletZecPriceInfo},
     message::Message,
     transactions::TransactionMetadataSet,
 };

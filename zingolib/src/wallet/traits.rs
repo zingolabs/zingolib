@@ -6,9 +6,9 @@ use std::{
 
 use super::{
     data::{
-        merkle::SqliteShardStore, PoolNullifier, ReceivedOrchardNoteAndMetadata,
-        ReceivedSaplingNoteAndMetadata, SpendableOrchardNote, SpendableSaplingNote,
-        TransactionMetadata, WitnessCache, COMMITMENT_TREE_DEPTH, MAX_SHARD_DEPTH,
+        PoolNullifier, ReceivedOrchardNoteAndMetadata, ReceivedSaplingNoteAndMetadata,
+        SpendableOrchardNote, SpendableSaplingNote, TransactionMetadata, WitnessCache,
+        COMMITMENT_TREE_DEPTH, MAX_SHARD_DEPTH,
     },
     keys::unified::WalletCapability,
     transactions::TransactionMetadataSet,
