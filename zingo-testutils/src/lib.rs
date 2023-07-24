@@ -691,12 +691,37 @@ pub mod scenarios {
         )
     }
 
-    pub async fn mobile_funded() -> (RegtestManager, ChildProcessHandler) {
+    pub async fn mobile_funded_sapling() -> (RegtestManager, ChildProcessHandler) {
         let scenario_builder = setup::ScenarioBuilder::build_configure_launch(
             Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
             None,
             Some(20_000),
         );
+        (
+            scenario_builder.regtest_manager,
+            scenario_builder.child_process_handler.unwrap(),
+        )
+    }
+
+    pub async fn mobile_funded_orchard() -> (RegtestManager, ChildProcessHandler) {
+        let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
+            Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
+            None,
+            Some(20_000),
+        );
+        let faucet = scenario_builder
+            .client_builder
+            .build_new_faucet(0, false)
+            .await;
+        faucet.do_sync(false).await.unwrap();
+        faucet
+            .do_send(vec![(
+                &get_base_address!(faucet, "unified"),
+                624990000,
+                None,
+            )])
+            .await
+            .unwrap();
         (
             scenario_builder.regtest_manager,
             scenario_builder.child_process_handler.unwrap(),
