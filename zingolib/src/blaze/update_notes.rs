@@ -124,7 +124,7 @@ impl UpdateNotes {
                             &nf,
                             &spent_transaction_id,
                             spent_at_height,
-                        );
+                        ).expect(&format!("Cound not mark note {output_num:?} of tx {transaction_id} as spent at height {spent_at_height}"));
 
                         // Record the future transaction, the one that has spent the nullifiers received in this transaction in the wallet
                         wallet_transactions

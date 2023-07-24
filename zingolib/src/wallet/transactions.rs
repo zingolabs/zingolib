@@ -366,33 +366,39 @@ impl TransactionMetadataSet {
         nullifier: &PoolNullifier,
         spent_txid: &TxId,
         spent_at_height: BlockHeight,
-    ) -> u64 {
+    ) -> Option<u64> {
         match nullifier {
             PoolNullifier::Sapling(nf) => {
-                let note_data = self
+                if let Some(sapling_note_data) = self
                     .current
                     .get_mut(&txid)
                     .unwrap()
                     .sapling_notes
                     .iter_mut()
                     .find(|n| n.nullifier == *nf)
-                    .unwrap();
-                note_data.spent = Some((*spent_txid, spent_at_height.into()));
-                note_data.unconfirmed_spent = None;
-                note_data.note.value().inner()
+                {
+                    sapling_note_data.spent = Some((*spent_txid, spent_at_height.into()));
+                    sapling_note_data.unconfirmed_spent = None;
+                    Some(sapling_note_data.note.value().inner())
+                } else {
+                    None
+                }
             }
             PoolNullifier::Orchard(nf) => {
-                let note_data = self
+                if let Some(orchard_note_data) = self
                     .current
                     .get_mut(&txid)
                     .unwrap()
                     .orchard_notes
                     .iter_mut()
                     .find(|n| n.nullifier == *nf)
-                    .unwrap();
-                note_data.spent = Some((*spent_txid, spent_at_height.into()));
-                note_data.unconfirmed_spent = None;
-                note_data.note.value().inner()
+                {
+                    orchard_note_data.spent = Some((*spent_txid, spent_at_height.into()));
+                    orchard_note_data.unconfirmed_spent = None;
+                    Some(orchard_note_data.note.value().inner())
+                } else {
+                    None
+                }
             }
         }
     }

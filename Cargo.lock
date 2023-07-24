@@ -4237,7 +4237,6 @@ dependencies = [
  "reqwest",
  "ring",
  "ripemd160",
- "rusqlite",
  "rust-embed",
  "rustls-pemfile",
  "secp256k1",
