@@ -682,7 +682,7 @@ pub mod scenarios {
         )
     }
 
-    pub async fn mobile_basic() -> (RegtestManager, ChildProcessHandler) {
+    pub async fn unfunded_mobileclient() -> (RegtestManager, ChildProcessHandler) {
         let scenario_builder =
             setup::ScenarioBuilder::build_configure_launch(None, None, Some(20_000));
         (
@@ -691,12 +691,33 @@ pub mod scenarios {
         )
     }
 
-    pub async fn mobile_funded() -> (RegtestManager, ChildProcessHandler) {
-        let scenario_builder = setup::ScenarioBuilder::build_configure_launch(
+    pub async fn funded_orchard_mobileclient(value: u64) -> (RegtestManager, ChildProcessHandler) {
+        let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
             Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
             None,
             Some(20_000),
         );
+        let faucet = scenario_builder
+            .client_builder
+            .build_new_faucet(0, false)
+            .await;
+        let recipient = scenario_builder
+            .client_builder
+            .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
+            .await;
+        faucet.do_sync(false).await.unwrap();
+        faucet
+            .do_send(vec![(
+                &get_base_address!(recipient, "unified"),
+                value,
+                None,
+            )])
+            .await
+            .unwrap();
+        scenario_builder
+            .regtest_manager
+            .generate_n_blocks(1)
+            .expect("Failed to generate blocks.");
         (
             scenario_builder.regtest_manager,
             scenario_builder.child_process_handler.unwrap(),
