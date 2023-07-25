@@ -14,6 +14,10 @@ zingoconfig = { git="https://github.com/zingolabs/zingolib", default-features=tr
 [profile.release]
 debug = false
 
+[profile.test]
+opt-level = 3
+debug = false
+
 [patch.crates-io]
 zcash_note_encryption = { git = "https://github.com/zingolabs/librustzcash", rev = "acfdabc3629c93517e3c4742848996c595de6d3c" }
 zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", rev = "acfdabc3629c93517e3c4742848996c595de6d3c" }
