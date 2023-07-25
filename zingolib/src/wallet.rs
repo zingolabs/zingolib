@@ -1540,7 +1540,8 @@ impl LightWallet {
             .transaction_metadata_set
             .read()
             .await
-            .write(&mut writer)?;
+            .write(&mut writer)
+            .await?;
 
         utils::write_string(
             &mut writer,

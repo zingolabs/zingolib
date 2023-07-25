@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     io::{self, Read, Write},
+    sync::Arc,
 };
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -8,6 +9,8 @@ use incrementalmerkletree::Position;
 use log::error;
 use orchard;
 use orchard::note_encryption::OrchardDomain;
+use shardtree::{memory::MemoryShardStore, ShardTree};
+use tokio::sync::Mutex;
 use zcash_encoding::Vector;
 use zcash_note_encryption::Domain;
 use zcash_primitives::{
@@ -21,7 +24,8 @@ use zingoconfig::{ChainType, MAX_REORG};
 
 use super::{
     data::{
-        OutgoingTxData, PoolNullifier, ReceivedTransparentOutput, TransactionMetadata, WitnessTrees,
+        write_memory_shard_store, OutgoingTxData, PoolNullifier, ReceivedTransparentOutput,
+        TransactionMetadata, WitnessTrees,
     },
     keys::unified::WalletCapability,
     traits::{self, DomainWalletExt, FromBytes, Nullifier, ReceivedNoteAndMetadata, Recipient},
@@ -133,7 +137,7 @@ impl TransactionMetadataSet {
         })
     }
 
-    pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+    pub async fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         // Write the version
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
@@ -154,6 +158,16 @@ impl TransactionMetadataSet {
                 v.write(w)
             })?;
         }
+
+        let mut sap_tree_lock = self.witness_trees.witness_tree_sapling.lock().await;
+        let sap_tree = std::mem::replace(
+            &mut *sap_tree_lock,
+            ShardTree::new(MemoryShardStore::empty(), 0),
+        );
+        let sap_store = sap_tree.into_store();
+        write_memory_shard_store(&sap_store, &mut writer)?;
+        let sap_tree = ShardTree::new(sap_store, MAX_REORG);
+        *sap_tree_lock = sap_tree;
 
         Ok(())
     }

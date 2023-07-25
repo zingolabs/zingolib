@@ -60,6 +60,13 @@ pub struct WitnessTrees {
     >,
 }
 
+pub fn write_memory_shard_store<H: Hashable, C: Ord, W: Write>(
+    store: &MemoryShardStore<H, C>,
+    writer: &mut W,
+) -> io::Result<()> {
+    todo!()
+}
+
 impl Default for WitnessTrees {
     fn default() -> WitnessTrees {
         Self {

@@ -1270,9 +1270,15 @@ where
         let note =
             <T::Note as ReadableWriteable<_>>::read(&mut reader, (diversifier, wallet_capability))?;
 
-        let witnesses_vec = Vector::read(&mut reader, |r| read_incremental_witness(r))?;
-        let top_height = reader.read_u64::<LittleEndian>()?;
-        let witnesses = WitnessCache::<T::Node>::new(witnesses_vec, top_height);
+        let witnessed_position = if external_version >= 4 {
+            Position::from(reader.read_u64::<LittleEndian>()?)
+        } else {
+            let witnesses_vec = Vector::read(&mut reader, |r| read_incremental_witness(r))?;
+            let top_height = reader.read_u64::<LittleEndian>()?;
+            let witnesses = WitnessCache::<T::Node>::new(witnesses_vec, top_height);
+
+            witnesses.last().unwrap().witnessed_position()
+        };
 
         let mut nullifier = [0u8; 32];
         reader.read_exact(&mut nullifier)?;
@@ -1331,7 +1337,7 @@ where
         Ok(T::from_parts(
             diversifier,
             note,
-            witnesses.last().unwrap().witnessed_position(),
+            witnessed_position,
             Some(nullifier),
             spent,
             None,
