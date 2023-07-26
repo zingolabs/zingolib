@@ -26,7 +26,7 @@ jobs:
       - name: Set cache-found
         id: set-cache-found
         if: ${{ ! cancelled() }}
-        run: echo "cache-found=${{ steps.check-build-cache.outcome }}" >> $GITHUB_OUTPUT
+        run: echo "cache-found=${{ steps.check-regtest-bin-cache.outcome }}" >> $GITHUB_OUTPUT
 
   cache-regtest-bin:
     name: Cache regtest bin
