@@ -8,7 +8,7 @@ use orchard::note_encryption::OrchardDomain;
 use orchard::tree::MerkleHashOrchard;
 use prost::Message;
 use shardtree::memory::MemoryShardStore;
-use shardtree::ShardTree;
+use shardtree::{RetentionFlags, ShardStore, ShardTree};
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
 use std::sync::Arc;
@@ -18,7 +18,7 @@ use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::memo::MemoBytes;
-use zcash_primitives::merkle_tree::{read_commitment_tree, write_commitment_tree};
+use zcash_primitives::merkle_tree::{read_commitment_tree, write_commitment_tree, HashSer};
 use zcash_primitives::sapling::note_encryption::SaplingDomain;
 use zcash_primitives::sapling::Node;
 use zcash_primitives::{
@@ -28,7 +28,7 @@ use zcash_primitives::{
 use zingoconfig::{ChainType, MAX_REORG};
 
 use super::keys::unified::WalletCapability;
-use super::traits::{self, DomainWalletExt, ReadableWriteable};
+use super::traits::{self, DomainWalletExt, ReadableWriteable, ToBytes};
 
 pub(crate) const COMMITMENT_TREE_DEPTH: u8 = 32;
 pub(crate) const MAX_SHARD_DEPTH: u8 = 16;
@@ -60,11 +60,68 @@ pub struct WitnessTrees {
     >,
 }
 
-pub fn write_memory_shard_store<H: Hashable, C: Ord, W: Write>(
-    store: &MemoryShardStore<H, C>,
+impl WitnessTrees {
+    const VERSION: u8 = 0;
+    fn read<R: Read>(reader: R) -> io::Result<Self> {
+        todo!()
+    }
+
+    pub async fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+        write_memory_shard_store_backed_tree(&self.witness_tree_sapling, &mut writer).await?;
+        write_memory_shard_store_backed_tree(&self.witness_tree_orchard, &mut writer).await
+    }
+}
+async fn write_memory_shard_store_backed_tree<
+    H: Hashable + Clone + Eq + HashSer,
+    C: Ord + Clone + std::fmt::Debug,
+    W: Write,
+>(
+    tree: &Arc<Mutex<ShardTree<MemoryShardStore<H, C>, COMMITMENT_TREE_DEPTH, MAX_SHARD_DEPTH>>>,
     writer: &mut W,
 ) -> io::Result<()> {
-    todo!()
+    let mut tree_lock = tree.lock().await;
+    let tree = std::mem::replace(
+        &mut *tree_lock,
+        ShardTree::new(MemoryShardStore::empty(), 0),
+    );
+    let store = tree.into_store();
+    let roots = store.get_shard_roots().expect("Infallible");
+    Vector::write(writer, &roots, |w, root| {
+        let shard = store
+            .get_shard(*root)
+            .expect("Infallible")
+            .expect("cannot find root that shard store claims to have");
+        let root_addr = shard.root_addr();
+        w.write_u8(root_addr.level().into())?;
+        w.write_u64::<LittleEndian>(root_addr.index())?;
+        write_shard(shard.root(), w)
+    })?;
+    let tree = ShardTree::new(store, MAX_REORG);
+    *tree_lock = tree;
+    Ok(())
+}
+
+fn write_shard<H: Hashable + Clone + HashSer, W: Write>(
+    shard: &shardtree::Tree<Option<Arc<H>>, (H, RetentionFlags)>,
+    mut writer: W,
+) -> io::Result<()> {
+    let node: &shardtree::Node<_, _, _> = std::ops::Deref::deref(shard);
+    match node {
+        shardtree::Node::Parent { ann, left, right } => {
+            writer.write_u8(2)?;
+            Optional::write(&mut writer, ann.clone(), |w, annotation| {
+                annotation.write(w)
+            })?;
+            write_shard(left, &mut writer)?;
+            write_shard(right, &mut writer)
+        }
+        shardtree::Node::Leaf { value } => {
+            writer.write_u8(1)?;
+            value.0.write(&mut writer)?;
+            writer.write_u8(value.1.bits())
+        }
+        shardtree::Node::Nil => writer.write_u8(0),
+    }
 }
 
 impl Default for WitnessTrees {

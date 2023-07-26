@@ -24,8 +24,7 @@ use zingoconfig::{ChainType, MAX_REORG};
 
 use super::{
     data::{
-        write_memory_shard_store, OutgoingTxData, PoolNullifier, ReceivedTransparentOutput,
-        TransactionMetadata, WitnessTrees,
+        OutgoingTxData, PoolNullifier, ReceivedTransparentOutput, TransactionMetadata, WitnessTrees,
     },
     keys::unified::WalletCapability,
     traits::{self, DomainWalletExt, FromBytes, Nullifier, ReceivedNoteAndMetadata, Recipient},
@@ -159,15 +158,7 @@ impl TransactionMetadataSet {
             })?;
         }
 
-        let mut sap_tree_lock = self.witness_trees.witness_tree_sapling.lock().await;
-        let sap_tree = std::mem::replace(
-            &mut *sap_tree_lock,
-            ShardTree::new(MemoryShardStore::empty(), 0),
-        );
-        let sap_store = sap_tree.into_store();
-        write_memory_shard_store(&sap_store, &mut writer)?;
-        let sap_tree = ShardTree::new(sap_store, MAX_REORG);
-        *sap_tree_lock = sap_tree;
+        self.witness_trees.write(&mut writer).await?;
 
         Ok(())
     }
