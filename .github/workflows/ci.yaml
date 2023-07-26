@@ -70,7 +70,7 @@ jobs:
 
       - name: Download zcash params
         uses: actions/download-artifact@v3
-        with: 
+        with:
           name: zcash-params
           path: /root/.zcash-params
 

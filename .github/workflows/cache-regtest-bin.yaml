@@ -10,9 +10,6 @@ jobs:
     outputs:
       cache-found: ${{ steps.set-cache-found.outputs.cache-found }}
     continue-on-error: true
-    container:
-      image: zingodevops/ci-build:stable
-      options: --security-opt seccomp=unconfined
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -25,7 +22,7 @@ jobs:
           key: regtest-bin
           lookup-only: true
           fail-on-cache-miss: true
-  
+
       - name: Set cache-found
         id: set-cache-found
         if: ${{ ! cancelled() }}
@@ -51,7 +48,7 @@ jobs:
         with:
           path: regtest/bin
           key: regtest-bin
-      
+
       - name: Upload zcash params
         uses: actions/upload-artifact@v3
         with:
