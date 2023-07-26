@@ -1,0 +1,59 @@
+name: Cache regtest bin
+
+on:
+  workflow_call:
+
+jobs:
+  check-regtest-bin-cache:
+    name: Check regtest bin cache
+    runs-on: ubuntu-22.04
+    outputs:
+      cache-found: ${{ steps.set-cache-found.outputs.cache-found }}
+    continue-on-error: true
+    container:
+      image: zingodevops/ci-build:stable
+      options: --security-opt seccomp=unconfined
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Check if regtest bin cache exists
+        id: check-regtest-bin-cache
+        uses: actions/cache@v3
+        with:
+          path: regtest/bin
+          key: regtest-bin
+          lookup-only: true
+          fail-on-cache-miss: true
+  
+      - name: Set cache-found
+        id: set-cache-found
+        if: ${{ ! cancelled() }}
+        run: echo "cache-found=${{ steps.check-build-cache.outcome }}" >> $GITHUB_OUTPUT
+
+  cache-regtest-bin:
+    name: Cache regtest bin
+    needs: check-regtest-bin-cache
+    if: ${{ needs.check-regtest-bin-cache.outputs.cache-found == 'failure' }}
+    runs-on: ubuntu-22.04
+    container:
+      image: zingodevops/ci-build:stable
+      options: --security-opt seccomp=unconfined
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Copy lightwalletd and zcash binaries
+        run: cp /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./regtest/bin/
+
+      - name: Cache regtest bin
+        uses: actions/cache@v3
+        with:
+          path: regtest/bin
+          key: regtest-bin
+      
+      - name: Upload zcash params
+        uses: actions/upload-artifact@v3
+        with:
+          name: zcash-params
+          path: /root/.zcash-params

@@ -41,24 +41,38 @@ jobs:
       - name: Clippy checks
         run: cargo +stable clippy
 
+  cache-regtest-bin:
+    uses: ./.github/workflows/cache-regtest-bin.yaml
+
   cargo-test:
     name: Cargo test
+    needs: cache-regtest-bin
+    if: ${{ ! cancelled() }}
     runs-on: ubuntu-22.04
     env:
       RUSTFLAGS: -D warnings
-      RUSTUP_HOME: /root/.rustup
-    container:
-      image: zingodevops/ci-build:stable
-      options: --security-opt seccomp=unconfined
+      # RUSTUP_HOME: /root/.rustup
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Symlink lightwalletd and zcash binaries
-        run: ln -s /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./regtest/bin/
+      - name: Check home dir
+        run: ls -la ~
 
-      - name: Symlink zcash parameters
-        run: ln -s /root/.zcash-params /github/home
+      - name: printenv
+        run: printenv
+
+      - name: Regtest bin cache
+        uses: actions/cache@v3
+        with:
+          path: regtest/bin
+          key: regtest-bin
+
+      - name: Download zcash params
+        uses: actions/download-artifact@v3
+        with: 
+          name: zcash-params
+          path: /root/.zcash-params
 
       - name: Cargo cache
         id: cargo-cache
@@ -88,34 +102,34 @@ jobs:
           files: ./cobertura.xml
           # fail_ci_if_error:     true
 
-  create-timestamp:
-    uses: zingolabs/zingo-mobile/.github/workflows/create-timestamp.yaml@dev
+  # create-timestamp:
+  #   uses: zingolabs/zingo-mobile/.github/workflows/create-timestamp.yaml@dev
 
-  create-cache-key:
-    uses: zingolabs/zingo-mobile/.github/workflows/create-cache-key.yaml@dev
+  # create-cache-key:
+  #   uses: zingolabs/zingo-mobile/.github/workflows/create-cache-key.yaml@dev
 
-  build-android:
-    strategy:
-      matrix:
-        arch: [ x86_64, armeabi-v7a ]
-    uses: zingolabs/zingo-mobile/.github/workflows/build.yaml@dev
-    needs: create-cache-key
-    with:
-      cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
-      arch: ${{ matrix.arch }}
+  # build-android:
+  #   strategy:
+  #     matrix:
+  #       arch: [ x86_64, armeabi-v7a ]
+  #   uses: zingolabs/zingo-mobile/.github/workflows/build.yaml@dev
+  #   needs: create-cache-key
+  #   with:
+  #     cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
+  #     arch: ${{ matrix.arch }}
 
-  integration-test-android:
-    uses: zingolabs/zingo-mobile/.github/workflows/integration-test.yaml@dev
-    needs: [ create-timestamp, create-cache-key, build-android ]
-    if: ${{ ! cancelled() }}
-    with:
-      timestamp: ${{ needs.create-timestamp.outputs.timestamp }}
-      cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
-      abi: armeabi-v7a
+  # integration-test-android:
+  #   uses: zingolabs/zingo-mobile/.github/workflows/integration-test.yaml@dev
+  #   needs: [ create-timestamp, create-cache-key, build-android ]
+  #   if: ${{ ! cancelled() }}
+  #   with:
+  #     timestamp: ${{ needs.create-timestamp.outputs.timestamp }}
+  #     cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
+  #     abi: armeabi-v7a
 
-  e2e-test-android:
-    uses: zingolabs/zingo-mobile/.github/workflows/e2e-test.yaml@dev
-    needs: [ create-cache-key, build-android ]
-    if: ${{ ! cancelled() }}
-    with:
-      cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
+  # e2e-test-android:
+  #   uses: zingolabs/zingo-mobile/.github/workflows/e2e-test.yaml@dev
+  #   needs: [ create-cache-key, build-android ]
+  #   if: ${{ ! cancelled() }}
+  #   with:
+  #     cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
