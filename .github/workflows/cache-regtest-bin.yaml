@@ -18,11 +18,13 @@ jobs:
         id: check-regtest-bin-cache
         uses: actions/cache@v3
         with:
-          path: regtest/bin
+          path: |
+            regtest/bin
+            /home/runner
           key: regtest-bin
-          lookup-only: true
-          fail-on-cache-miss: true
           enableCrossOsArchive: true
+          fail-on-cache-miss: true
+          lookup-only: true
 
       - name: Set cache-found
         id: set-cache-found
@@ -44,14 +46,20 @@ jobs:
       - name: Copy lightwalletd and zcash binaries
         run: cp /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./regtest/bin/
 
+      - name: Copy zcash parameters
+        run: cp /root/.zcash-params /home/runner
+
       - name: Cache regtest bin
         uses: actions/cache@v3
         with:
-          path: regtest/bin
+          path: |
+            regtest/bin
+            /home/runner
           key: regtest-bin
+          enableCrossOsArchive: true
 
-      - name: Upload zcash params
-        uses: actions/upload-artifact@v3
-        with:
-          name: zcash-params
-          path: /root/.zcash-params
+      # - name: Upload zcash params
+      #   uses: actions/upload-artifact@v3
+      #   with:
+      #     name: zcash-params
+      #     path: /root/.zcash-params
