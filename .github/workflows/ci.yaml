@@ -41,12 +41,12 @@ jobs:
   #     - name: Clippy checks
   #       run: cargo +stable clippy
 
-  cache-regtest-bin:
-    uses: ./.github/workflows/cache-regtest-bin.yaml
+  cache-regtest:
+    uses: ./.github/workflows/cache-regtest.yaml
 
   cargo-test:
     name: Cargo test
-    needs: cache-regtest-bin
+    needs: cache-regtest
     if: ${{ ! cancelled() }}
     runs-on: ubuntu-22.04
     env:
@@ -56,21 +56,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Regtest bin cache
+      - name: Regtest cache
         uses: actions/cache@v3
         with:
           path: |
             regtest/bin
-            /home/runner
-          key: regtest-bin
-          enableCrossOsArchive: true
+            /home/runner/.zcash-params
+          key: regtest
           fail-on-cache-miss: true
-
-      - name: Download zcash params
-        uses: actions/download-artifact@v3
-        with:
-          name: zcash-params
-          path: /home/runner
 
       - name: Cargo cache
         id: cargo-cache

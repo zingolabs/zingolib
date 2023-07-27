@@ -1,0 +1,58 @@
+name: Cache regtest
+
+on:
+  workflow_call:
+
+jobs:
+  check-regtest-cache:
+    name: Check regtest cache
+    runs-on: ubuntu-22.04
+    outputs:
+      cache-found: ${{ steps.set-cache-found.outputs.cache-found }}
+    continue-on-error: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Check if regtest cache exists
+        id: check-regtest-cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            regtest/bin
+            /home/runner/.zcash-params
+          key: regtest
+          fail-on-cache-miss: true
+          lookup-only: true
+
+      - name: Set cache-found
+        id: set-cache-found
+        if: ${{ ! cancelled() }}
+        run: echo "cache-found=${{ steps.check-regtest-cache.outcome }}" >> $GITHUB_OUTPUT
+
+  cache-regtest:
+    name: Cache regtest
+    needs: check-regtest-cache
+    if: ${{ needs.check-regtest-cache.outputs.cache-found == 'failure' }}
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Copy regtest binaries and zcash params from docker container
+        run: |
+          docker pull zingodevops/ci-build:stable
+          id=$(docker create zingodevops/ci-build:stable)
+          docker cp $id:/usr/bin/lightwalletd ./regtest/bin
+          docker cp $id:/usr/bin/zcashd ./regtest/bin
+          docker cp $id:/usr/bin/zcash-cli ./regtest/bin
+          docker cp $id:/root/.zcash-params /home/runner
+
+      - name: Cache regtest
+        uses: actions/cache@v3
+        with:
+          path: |
+            regtest/bin
+            /home/runner/.zcash-params
+          key: regtest
+
