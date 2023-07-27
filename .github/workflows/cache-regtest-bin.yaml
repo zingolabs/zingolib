@@ -47,7 +47,7 @@ jobs:
         run: cp /usr/bin/lightwalletd /usr/bin/zcashd /usr/bin/zcash-cli ./regtest/bin/
 
       - name: Copy zcash parameters
-        run: cp /root/.zcash-params /home/runner
+        run: cp -r /root/.zcash-params /home/runner
 
       - name: Cache regtest bin
         uses: actions/cache@v3
