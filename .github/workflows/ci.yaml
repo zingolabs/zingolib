@@ -7,49 +7,49 @@ on:
   workflow_dispatch:
 
 jobs:
-  # static_checks:
-  #   name: Format check and clippy
-  #   runs-on: ubuntu-22.04
-  #   env:
-  #     RUSTFLAGS: -D warnings
-  #     RUSTUP_HOME: /home/runner/.rustup
-  #     CARGO_HOME: /home/runner/.cargo
-  #   steps:
-  #     - name: Checkout repository
-  #       uses: actions/checkout@v3
+  static_checks:
+    name: Format check and clippy
+    runs-on: ubuntu-22.04
+    env:
+      RUSTFLAGS: -D warnings
+      RUSTUP_HOME: /home/runner/.rustup
+      CARGO_HOME: /home/runner/.cargo
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-  #     - name: Reject trailing whitespace
-  #       run: ./utils/trailing-whitespace.sh reject
+      - name: Reject trailing whitespace
+        run: ./utils/trailing-whitespace.sh reject
 
-  #     - name: Setup rustup toolchain
-  #       uses: actions-rs/toolchain@v1
-  #       with:
-  #         profile: minimal
-  #         toolchain: stable
-  #         components: rustfmt, clippy
+      - name: Setup rustup toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          components: rustfmt, clippy
 
-  #     - name: What's my env
-  #       run:  env
+      - name: What's my env
+        run:  env
 
-  #     - name: Whoami
-  #       run:  whoami
+      - name: Whoami
+        run:  whoami
 
-  #     - name: Which rustup
-  #       run:  which rustup
+      - name: Which rustup
+        run:  which rustup
 
-  #     - name: Rustup show
-  #       run:  rustup show
+      - name: Rustup show
+        run:  rustup show
 
-  #     - name: Check formatting of code
-  #       uses: actions-rs/cargo@v1
-  #       with:
-  #         command: fmt
-  #         args: --check
+      - name: Check formatting of code
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --check
 
-  #     - name: Clippy checks
-  #       uses: actions-rs/cargo@v1
-  #       with:
-  #         command: clippy
+      - name: Clippy checks
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
 
   cache-regtest:
     uses: ./.github/workflows/cache-regtest.yaml
@@ -70,8 +70,9 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install libc6-dev
-
+          sudo apt install build-essential pkg-config libc6-dev m4 g++-multilib \
+            autoconf libtool ncurses-dev unzip git python3 python3-zmq \
+            zlib1g-dev curl bsdmainutils automake libtinfo5
       - name: Setup rustup toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -124,34 +125,34 @@ jobs:
           files: ./cobertura.xml
           # fail_ci_if_error:     true
 
-  # create-timestamp:
-  #   uses: zingolabs/zingo-mobile/.github/workflows/create-timestamp.yaml@dev
+  create-timestamp:
+    uses: zingolabs/zingo-mobile/.github/workflows/create-timestamp.yaml@dev
 
-  # create-cache-key:
-  #   uses: zingolabs/zingo-mobile/.github/workflows/create-cache-key.yaml@dev
+  create-cache-key:
+    uses: zingolabs/zingo-mobile/.github/workflows/create-cache-key.yaml@dev
 
-  # build-android:
-  #   strategy:
-  #     matrix:
-  #       arch: [ x86_64, armeabi-v7a ]
-  #   uses: zingolabs/zingo-mobile/.github/workflows/build.yaml@dev
-  #   needs: create-cache-key
-  #   with:
-  #     cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
-  #     arch: ${{ matrix.arch }}
+  build-android:
+    strategy:
+      matrix:
+        arch: [ x86_64, armeabi-v7a ]
+    uses: zingolabs/zingo-mobile/.github/workflows/build.yaml@dev
+    needs: create-cache-key
+    with:
+      cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
+      arch: ${{ matrix.arch }}
 
-  # integration-test-android:
-  #   uses: zingolabs/zingo-mobile/.github/workflows/integration-test.yaml@dev
-  #   needs: [ create-timestamp, create-cache-key, build-android ]
-  #   if: ${{ ! cancelled() }}
-  #   with:
-  #     timestamp: ${{ needs.create-timestamp.outputs.timestamp }}
-  #     cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
-  #     abi: armeabi-v7a
+  integration-test-android:
+    uses: zingolabs/zingo-mobile/.github/workflows/integration-test.yaml@dev
+    needs: [ create-timestamp, create-cache-key, build-android ]
+    if: ${{ ! cancelled() }}
+    with:
+      timestamp: ${{ needs.create-timestamp.outputs.timestamp }}
+      cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
+      abi: armeabi-v7a
 
-  # e2e-test-android:
-  #   uses: zingolabs/zingo-mobile/.github/workflows/e2e-test.yaml@dev
-  #   needs: [ create-cache-key, build-android ]
-  #   if: ${{ ! cancelled() }}
-  #   with:
-  #     cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
+  e2e-test-android:
+    uses: zingolabs/zingo-mobile/.github/workflows/e2e-test.yaml@dev
+    needs: [ create-cache-key, build-android ]
+    if: ${{ ! cancelled() }}
+    with:
+      cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
