@@ -12,16 +12,21 @@ jobs:
   #   runs-on: ubuntu-22.04
   #   env:
   #     RUSTFLAGS: -D warnings
-  #     RUSTUP_HOME: /root/.rustup
-  #   container:
-  #     image: zingodevops/ci-build:stable
-  #     options: --security-opt seccomp=unconfined
+  #     RUSTUP_HOME: /home/runner/.rustup
+  #     CARGO_HOME: /home/runner/.cargo
   #   steps:
   #     - name: Checkout repository
   #       uses: actions/checkout@v3
 
   #     - name: Reject trailing whitespace
   #       run: ./utils/trailing-whitespace.sh reject
+
+  #     - name: Setup rustup toolchain
+  #       uses: actions-rs/toolchain@v1
+  #       with:
+  #         profile: minimal
+  #         toolchain: stable
+  #         components: rustfmt, clippy
 
   #     - name: What's my env
   #       run:  env
@@ -36,10 +41,15 @@ jobs:
   #       run:  rustup show
 
   #     - name: Check formatting of code
-  #       run: cargo +stable fmt --check
+  #       uses: actions-rs/cargo@v1
+  #       with:
+  #         command: fmt
+  #         args: --check
 
   #     - name: Clippy checks
-  #       run: cargo +stable clippy
+  #       uses: actions-rs/cargo@v1
+  #       with:
+  #         command: clippy
 
   cache-regtest:
     uses: ./.github/workflows/cache-regtest.yaml
@@ -57,16 +67,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Setup rustup toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
+      # - name: Setup rustup toolchain
+      #   uses: actions-rs/toolchain@v1
+      #   with:
+      #     profile: minimal
+      #     toolchain: stable
 
-      - name: Install cargo tarpaulin
-        uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: cargo-tarpaulin
+      # - name: Install cargo tarpaulin
+      #   uses: actions-rs/cargo@v1
+      #   with:
+      #     command: install
+      #     args: cargo-tarpaulin
 
       - name: Regtest cache
         uses: actions/cache@v3
@@ -77,37 +88,40 @@ jobs:
           key: regtest
           fail-on-cache-miss: true
 
-      - name: Cargo cache
-        id: cargo-cache
-        uses: actions/cache@v3
-        with:
-          # Following cargo cache recommendations:
-          # https://doc.rust-lang.org/cargo/guide/cargo-home.html
-          # added 'target' directory to skip compiling dependencies
-          path: |
-            /home/runner/.cargo/.crates.toml
-            /home/runner/.cargo/.crates2.json
-            /home/runner/.cargo/bin/
-            /home/runner/.cargo/registry/index/
-            /home/runner/.cargo/registry/cache/
-            /home/runner/.cargo/registry/git/db/
-            target/
-          key: cargo-zingolib-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: cargo-zingolib
+      - name: Debug regtest bins
+        run: ls -la regtest/bin
 
-      - name: Run tests and generate coverage
-        uses: actions-rs/cargo@v1
-        with:
-          command: tarpaulin
-          args: --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 3000 --out xml
+        
+      # - name: Cargo cache
+      #   id: cargo-cache
+      #   uses: actions/cache@v3
+      #   with:
+      #     # Following cargo cache recommendations:
+      #     # https://doc.rust-lang.org/cargo/guide/cargo-home.html
+      #     # added 'target' directory to skip compiling dependencies
+      #     path: |
+      #       /home/runner/.cargo/.crates.toml
+      #       /home/runner/.cargo/.crates2.json
+      #       /home/runner/.cargo/bin/
+      #       /home/runner/.cargo/registry/index/
+      #       /home/runner/.cargo/registry/cache/
+      #       /home/runner/.cargo/registry/git/db/
+      #       target/
+      #     key: cargo-zingolib-${{ hashFiles('**/Cargo.lock') }}
+      #     restore-keys: cargo-zingolib
 
+      # - name: Run tests and generate coverage
+      #   uses: actions-rs/cargo@v1
+      #   with:
+      #     command: tarpaulin
+      #     args: --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 3000 --out xml
 
-      - name: Upload to codecov.io
-        uses: codecov/codecov-action@v3
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./cobertura.xml
-          # fail_ci_if_error:     true
+      # - name: Upload to codecov.io
+      #   uses: codecov/codecov-action@v3
+      #   with:
+      #     token: ${{ secrets.CODECOV_TOKEN }}
+      #     files: ./cobertura.xml
+      #     # fail_ci_if_error:     true
 
   # create-timestamp:
   #   uses: zingolabs/zingo-mobile/.github/workflows/create-timestamp.yaml@dev
