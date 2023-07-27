@@ -51,7 +51,8 @@ jobs:
     runs-on: ubuntu-22.04
     env:
       RUSTFLAGS: -D warnings
-      # RUSTUP_HOME: /root/.rustup
+      RUSTUP_HOME: /home/runner/.rustup
+      CARGO_HOME: /home/runner/.cargo
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -76,26 +77,23 @@ jobs:
           key: regtest
           fail-on-cache-miss: true
 
-      # - name: Cargo cache
-      #   id: cargo-cache
-      #   uses: actions/cache@v3
-      #   with:
-      #     # Following cargo cache recommendations:
-      #     # https://doc.rust-lang.org/cargo/guide/cargo-home.html
-      #     # added 'target' directory to skip compiling dependencies
-      #     path: |
-      #       /root/.cargo/.crates.toml
-      #       /root/.cargo/.crates2.json
-      #       /root/.cargo/bin/
-      #       /root/.cargo/registry/index/
-      #       /root/.cargo/registry/cache/
-      #       /root/.cargo/registry/git/db/
-      #       target/
-      #     key: cargo-zingolib-${{ hashFiles('**/Cargo.lock') }}
-      #     restore-keys: cargo-zingolib
-
-      - name: Run tests and generate coverage
-        run: cargo tarpaulin --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 3000 --out xml
+      - name: Cargo cache
+        id: cargo-cache
+        uses: actions/cache@v3
+        with:
+          # Following cargo cache recommendations:
+          # https://doc.rust-lang.org/cargo/guide/cargo-home.html
+          # added 'target' directory to skip compiling dependencies
+          path: |
+            /home/runner/.cargo/.crates.toml
+            /home/runner/.cargo/.crates2.json
+            /home/runner/.cargo/bin/
+            /home/runner/.cargo/registry/index/
+            /home/runner/.cargo/registry/cache/
+            /home/runner/.cargo/registry/git/db/
+            target/
+          key: cargo-zingolib-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-zingolib
 
       - name: Run tests and generate coverage
         uses: actions-rs/cargo@v1
