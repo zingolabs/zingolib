@@ -67,6 +67,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install libc6-dev
+
       - name: Setup rustup toolchain
         uses: actions-rs/toolchain@v1
         with:
