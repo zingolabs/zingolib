@@ -56,21 +56,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Check home dir
-        run: |
-          cd ~
-          pwd
-          ls -la
-
-      - name: Check home dir absolute
-        run: ls -la /home/runner
-
-      - name: Check home dir alt
-        run: ls -la /github/home
-
-      - name: printenv
-        run: printenv
-
       - name: Regtest bin cache
         uses: actions/cache@v3
         with:
@@ -81,7 +66,7 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           name: zcash-params
-          path: /github/home
+          path: /home/runner
 
       - name: Cargo cache
         id: cargo-cache
