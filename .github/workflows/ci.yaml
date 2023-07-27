@@ -56,6 +56,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      - name: Setup rustup toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Install cargo tarpaulin
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: cargo-tarpaulin
+
       - name: Regtest cache
         uses: actions/cache@v3
         with:
@@ -65,26 +76,33 @@ jobs:
           key: regtest
           fail-on-cache-miss: true
 
-      - name: Cargo cache
-        id: cargo-cache
-        uses: actions/cache@v3
-        with:
-          # Following cargo cache recommendations:
-          # https://doc.rust-lang.org/cargo/guide/cargo-home.html
-          # added 'target' directory to skip compiling dependencies
-          path: |
-            /root/.cargo/.crates.toml
-            /root/.cargo/.crates2.json
-            /root/.cargo/bin/
-            /root/.cargo/registry/index/
-            /root/.cargo/registry/cache/
-            /root/.cargo/registry/git/db/
-            target/
-          key: cargo-zingolib-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: cargo-zingolib
+      # - name: Cargo cache
+      #   id: cargo-cache
+      #   uses: actions/cache@v3
+      #   with:
+      #     # Following cargo cache recommendations:
+      #     # https://doc.rust-lang.org/cargo/guide/cargo-home.html
+      #     # added 'target' directory to skip compiling dependencies
+      #     path: |
+      #       /root/.cargo/.crates.toml
+      #       /root/.cargo/.crates2.json
+      #       /root/.cargo/bin/
+      #       /root/.cargo/registry/index/
+      #       /root/.cargo/registry/cache/
+      #       /root/.cargo/registry/git/db/
+      #       target/
+      #     key: cargo-zingolib-${{ hashFiles('**/Cargo.lock') }}
+      #     restore-keys: cargo-zingolib
 
       - name: Run tests and generate coverage
         run: cargo tarpaulin --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 3000 --out xml
+
+      - name: Run tests and generate coverage
+        uses: actions-rs/cargo@v1
+        with:
+          command: tarpaulin
+          args: --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 3000 --out xml
+
 
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v3
