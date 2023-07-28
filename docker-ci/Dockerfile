@@ -1,10 +1,10 @@
-FROM ubuntu:22.04
+FROM ubuntu:22.04 as builder
 
-WORKDIR /usr/src
+WORKDIR /usr/src/
 
-# Install dependencies
-RUN apt update \
-    && apt install -y --no-install-recommends --no-install-suggests \
+# Install dependencies and update certificates
+RUN apt update
+RUN apt install -y --no-install-recommends --no-install-suggests \
     build-essential \
     pkg-config \
     libc6-dev \
@@ -29,8 +29,8 @@ RUN apt update \
     apt-transport-https \
     gnupg2 \
     procps \
-    golang \
-    && update-ca-certificates
+    golang
+RUN update-ca-certificates
 
 # Build lightwalletd
 RUN git clone https://github.com/zcash/lightwalletd \
@@ -46,8 +46,15 @@ RUN git clone https://github.com/zcash/zcash.git \
     && ./zcutil/clean.sh \
     && ./zcutil/build.sh -j$(nproc)
 
-# Move binaries to usr bin
-RUN mv -f lightwalletd/lightwalletd zcash/src/zcashd zcash/src/zcash-cli /usr/bin
+FROM ubuntu:22.04
+
+WORKDIR /usr/bin/
+
+# Copy regtest binaries and zcash params from builder
+COPY --from=builder /usr/src/lightwalletd/lightwalletd ./
+COPY --from=builder /usr/src/zcash/src/zcashd ./
+COPY --from=builder /usr/src/zcash/src/zcash-cli ./
+COPY --from=builder /root/.zcash-params /root/
 
 # Apt clean up
 RUN apt autoremove -y \
