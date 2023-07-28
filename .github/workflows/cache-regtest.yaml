@@ -41,11 +41,11 @@ jobs:
 
       - name: Copy regtest binaries and zcash params from docker container
         run: |
-          docker pull zingodevops/ci-build:stable
-          id=$(docker create zingodevops/ci-build:stable)
+          docker pull zingodevops/ci-build:001
+          id=$(docker create zingodevops/ci-build:001)
           docker cp $id:/usr/bin/lightwalletd ./regtest/bin
-          docker cp $id:/zcash/src/zcashd ./regtest/bin
-          docker cp $id:/zcash/src/zcash-cli ./regtest/bin
+          docker cp $id:/usr/bin/zcashd ./regtest/bin
+          docker cp $id:/usr/bin/zcash-cli ./regtest/bin
           docker cp $id:/root/.zcash-params /home/runner
 
       - name: Cache regtest

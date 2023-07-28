@@ -93,7 +93,7 @@ jobs:
             /home/runner/.zcash-params
           key: regtest
           fail-on-cache-miss: true
-       
+
       - name: Cargo cache
         id: cargo-cache
         uses: actions/cache@v3
