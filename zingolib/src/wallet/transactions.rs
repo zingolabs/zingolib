@@ -1,7 +1,6 @@
 use std::{
     collections::HashMap,
     io::{self, Read, Write},
-    sync::Arc,
 };
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -9,8 +8,6 @@ use incrementalmerkletree::Position;
 use log::error;
 use orchard;
 use orchard::note_encryption::OrchardDomain;
-use shardtree::{memory::MemoryShardStore, ShardTree};
-use tokio::sync::Mutex;
 use zcash_encoding::Vector;
 use zcash_note_encryption::Domain;
 use zcash_primitives::{
@@ -238,10 +235,12 @@ impl TransactionMetadataSet {
 
         self.witness_trees
             .witness_tree_sapling
-            .truncate_removing_checkpoint(&reorg_height);
+            .truncate_removing_checkpoint(&reorg_height)
+            .expect("Infallible");
         self.witness_trees
             .witness_tree_orchard
-            .truncate_removing_checkpoint(&reorg_height);
+            .truncate_removing_checkpoint(&reorg_height)
+            .expect("Infallible");
     }
 
     /// This returns an _arbitrary_ txid from the latest block the wallet is aware of.

@@ -8,12 +8,10 @@ use orchard::note_encryption::OrchardDomain;
 use orchard::tree::MerkleHashOrchard;
 use prost::Message;
 use shardtree::memory::MemoryShardStore;
-use shardtree::{LocatedPrunableTree, RetentionFlags, ShardStore, ShardTree};
+use shardtree::{Checkpoint, LocatedPrunableTree, ShardStore, ShardTree, TreeState};
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
-use std::sync::Arc;
 use std::usize;
-use tokio::sync::Mutex;
 use zcash_client_sqlite::serialization::{read_shard, write_shard};
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
@@ -56,16 +54,20 @@ pub struct WitnessTrees {
 
 async fn write_memory_shard_store_backed_tree<
     H: Hashable + Clone + Eq + HashSer,
-    C: Ord + Clone + std::fmt::Debug,
+    C: Ord + Clone + std::fmt::Debug + Copy,
     W: Write,
 >(
     tree: &mut ShardTree<MemoryShardStore<H, C>, COMMITMENT_TREE_DEPTH, MAX_SHARD_DEPTH>,
-    writer: W,
-) -> io::Result<()> {
+
+    mut writer: W,
+) -> io::Result<()>
+where
+    u32: From<C>,
+{
     let temp_tree = std::mem::replace(tree, ShardTree::new(MemoryShardStore::empty(), 0));
-    let store = temp_tree.into_store();
+    let mut store = temp_tree.into_store();
     let roots = store.get_shard_roots().expect("Infallible");
-    Vector::write(writer, &roots, |w, root| {
+    Vector::write(&mut writer, &roots, |w, root| {
         let shard = store
             .get_shard(*root)
             .expect("Infallible")
@@ -76,6 +78,34 @@ async fn write_memory_shard_store_backed_tree<
         write_shard(w, shard.root())?;
         Ok(())
     })?;
+
+    let mut checkpoints = Vec::new();
+    store
+        .with_checkpoints(MAX_REORG, |checkpoint_id, checkpoint| {
+            checkpoints.push((*checkpoint_id, checkpoint.clone()));
+            Ok(())
+        })
+        .expect("Infallible");
+    Vector::write(
+        &mut writer,
+        &checkpoints,
+        |mut w, (checkpoint_id, checkpoint)| {
+            w.write_u32::<LittleEndian>(u32::from(*checkpoint_id))?;
+            match checkpoint.tree_state() {
+                shardtree::TreeState::Empty => w.write_u8(0),
+                shardtree::TreeState::AtPosition(pos) => {
+                    w.write_u8(1)?;
+                    w.write_u64::<LittleEndian>(<u64 as From<Position>>::from(pos))
+                }
+            }?;
+            Vector::write(
+                &mut w,
+                &checkpoint.marks_removed().into_iter().collect::<Vec<_>>(),
+                |w, mark| w.write_u64::<LittleEndian>(<u64 as From<Position>>::from(**mark)),
+            )
+        },
+    )?;
+    write_shard(&mut writer, &store.get_cap().expect("Infallible"))?;
     *tree = ShardTree::new(store, MAX_REORG);
     Ok(())
 }
@@ -114,12 +144,12 @@ impl WitnessTrees {
 
 fn read_memory_shard_store_backed_tree<
     H: Hashable + Clone + HashSer + Eq,
-    C: Ord + Clone + std::fmt::Debug,
+    C: Ord + Clone + std::fmt::Debug + Copy + From<u32>,
     R: Read,
 >(
-    reader: R,
+    mut reader: R,
 ) -> io::Result<ShardTree<MemoryShardStore<H, C>, COMMITMENT_TREE_DEPTH, MAX_SHARD_DEPTH>> {
-    let shards = Vector::read(reader, |r| {
+    let shards = Vector::read(&mut reader, |r| {
         let level = Level::from(r.read_u8()?);
         let index = r.read_u64::<LittleEndian>()?;
         let root_addr = Address::from_parts(level, index);
@@ -130,6 +160,30 @@ fn read_memory_shard_store_backed_tree<
     for shard in shards {
         store.put_shard(shard).expect("Infallible");
     }
+    let checkpoints = Vector::read(&mut reader, |r| {
+        let checkpoint_id = C::from(r.read_u32::<LittleEndian>()?);
+        let tree_state = match r.read_u8()? {
+            0 => TreeState::Empty,
+            1 => TreeState::AtPosition(Position::from(r.read_u64::<LittleEndian>()?)),
+            otherwise => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("error reading TreeState: expected boolean value, found {otherwise}"),
+                ))
+            }
+        };
+        let marks_removed = Vector::read(r, |r| r.read_u64::<LittleEndian>().map(Position::from))?;
+        Ok((
+            checkpoint_id,
+            Checkpoint::from_parts(tree_state, marks_removed.into_iter().collect()),
+        ))
+    })?;
+    for (checkpoint_id, checkpoint) in checkpoints {
+        store
+            .add_checkpoint(checkpoint_id, checkpoint)
+            .expect("Infallible");
+    }
+    store.put_cap(read_shard(reader)?).expect("Infallible");
     Ok(ShardTree::new(store, MAX_REORG))
 }
 

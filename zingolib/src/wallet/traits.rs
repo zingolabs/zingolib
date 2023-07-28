@@ -1,8 +1,5 @@
 //! Provides unifying interfaces for transaction management across Sapling and Orchard
-use std::{
-    io::{self, Read, Write},
-    sync::Arc,
-};
+use std::io::{self, Read, Write};
 
 use super::{
     data::{
@@ -28,7 +25,6 @@ use orchard::{
 };
 use shardtree::{memory::MemoryShardStore, ShardTree};
 use subtle::CtOption;
-use tokio::sync::Mutex;
 use zcash_address::unified::{self, Receiver};
 use zcash_client_backend::{address::UnifiedAddress, encoding::encode_payment_address};
 use zcash_encoding::{Optional, Vector};
@@ -1414,6 +1410,8 @@ where
         writer.write_u8(if self.is_change() { 1 } else { 0 })?;
 
         writer.write_u8(if self.have_spending_key() { 1 } else { 0 })?;
+
+        writer.write_u32::<LittleEndian>(*self.output_index() as u32)?;
 
         //TODO: Investigate this comment. It may be the solution to the potential bug
         //we are looking at, and it seems to no lopnger be true.
