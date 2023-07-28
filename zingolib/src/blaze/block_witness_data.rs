@@ -336,8 +336,7 @@ impl BlockAndWitnessData {
         transaction_metadata_set
             .write()
             .await
-            .remove_txns_at_height(reorg_height)
-            .await;
+            .remove_txns_at_height(reorg_height);
     }
 
     /// Start a new sync where we ingest all the blocks

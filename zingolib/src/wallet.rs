@@ -431,15 +431,14 @@ impl LightWallet {
 
     async fn get_orchard_anchor(
         &self,
-        tree_lock: &ShardTree<
+        tree: &ShardTree<
             MemoryShardStore<MerkleHashOrchard, BlockHeight>,
             COMMITMENT_TREE_DEPTH,
             MAX_SHARD_DEPTH,
         >,
     ) -> Result<Anchor, String> {
         Ok(orchard::Anchor::from(
-            tree_lock
-                .root_at_checkpoint(REORG_BUFFER_OFFSET as usize)
+            tree.root_at_checkpoint(REORG_BUFFER_OFFSET as usize)
                 .map_err(|e| format!("failed to get orchard anchor: {e}"))?,
         ))
     }
@@ -1003,18 +1002,10 @@ impl LightWallet {
             .transaction_metadata_set
             .read()
             .await;
-        let orchard_tree_lock = txmds_readlock
-            .witness_trees
-            .witness_tree_orchard
-            .lock()
-            .await;
-        let sapling_tree_lock = txmds_readlock
-            .witness_trees
-            .witness_tree_sapling
-            .lock()
-            .await;
 
-        let orchard_anchor = self.get_orchard_anchor(&orchard_tree_lock).await?;
+        let orchard_anchor = self
+            .get_orchard_anchor(&txmds_readlock.witness_trees.witness_tree_orchard)
+            .await?;
         let mut builder = Builder::new(
             self.transaction_context.config.chain,
             submission_height,
@@ -1065,7 +1056,9 @@ impl LightWallet {
                 selected.extsk.clone().unwrap(),
                 selected.diversifier,
                 selected.note.clone(),
-                sapling_tree_lock
+                txmds_readlock
+                    .witness_trees
+                    .witness_tree_sapling
                     .witness(selected.witnessed_position, REORG_BUFFER_OFFSET as usize)
                     .map_err(|e| format!("failed to compute sapling witness: {e}"))?,
             ) {
@@ -1081,7 +1074,9 @@ impl LightWallet {
                 selected.spend_key.unwrap(),
                 selected.note,
                 orchard::tree::MerklePath::from(
-                    orchard_tree_lock
+                    txmds_readlock
+                        .witness_trees
+                        .witness_tree_orchard
                         .witness(selected.witnessed_position, REORG_BUFFER_OFFSET as usize)
                         .map_err(|e| format!("failed to compute orchard witness: {e}"))?,
                 ),
@@ -1249,8 +1244,6 @@ impl LightWallet {
 
         // Now that we've gotten this far, we need to write
         // This necessitates first dropping the witness tree locks
-        drop(sapling_tree_lock);
-        drop(orchard_tree_lock);
         drop(txmds_readlock);
         // Mark notes as spent.
         {
@@ -1538,7 +1531,7 @@ impl LightWallet {
 
         self.transaction_context
             .transaction_metadata_set
-            .read()
+            .write()
             .await
             .write(&mut writer)
             .await?;

@@ -463,6 +463,13 @@ pub trait ReceivedNoteAndMetadata: Sized {
     fn value_from_note(note: &Self::Note) -> u64;
     fn witnessed_position(&self) -> &Position;
     fn witnessed_position_mut(&mut self) -> &mut Position;
+    fn remove_witness_mark(
+        txmds: &mut TransactionMetadataSet,
+        height: BlockHeight,
+        txid: TxId,
+        source_txid: TxId,
+        nullifier: Self::Nullifier,
+    );
 }
 
 impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
@@ -587,6 +594,16 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
     fn output_index_mut(&mut self) -> &mut usize {
         &mut self.output_index
     }
+
+    fn remove_witness_mark(
+        txmds: &mut TransactionMetadataSet,
+        height: BlockHeight,
+        txid: TxId,
+        source_txid: TxId,
+        nullifier: Self::Nullifier,
+    ) {
+        TransactionMetadataSet::remove_mark_sapling(txmds, height, txid, source_txid, nullifier)
+    }
 }
 
 impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
@@ -707,6 +724,15 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
     fn output_index_mut(&mut self) -> &mut usize {
         &mut self.output_index
     }
+    fn remove_witness_mark(
+        txmds: &mut TransactionMetadataSet,
+        height: BlockHeight,
+        txid: TxId,
+        source_txid: TxId,
+        nullifier: Self::Nullifier,
+    ) {
+        TransactionMetadataSet::remove_mark_orchard(txmds, height, txid, source_txid, nullifier)
+    }
 }
 
 pub trait DomainWalletExt: Domain + BatchDomain
@@ -739,14 +765,17 @@ where
     }
     fn get_shardtree(
         tmds: &TransactionMetadataSet,
-    ) -> Arc<
-        Mutex<
-            ShardTree<
-                MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
-                COMMITMENT_TREE_DEPTH,
-                MAX_SHARD_DEPTH,
-            >,
-        >,
+    ) -> &ShardTree<
+        MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
+        COMMITMENT_TREE_DEPTH,
+        MAX_SHARD_DEPTH,
+    >;
+    fn get_shardtree_mut(
+        tmds: &mut TransactionMetadataSet,
+    ) -> &mut ShardTree<
+        MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
+        COMMITMENT_TREE_DEPTH,
+        MAX_SHARD_DEPTH,
     >;
     fn get_nullifier_from_note_fvk_and_witness_position(
         note: &Self::Note,
@@ -783,16 +812,21 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
 
     fn get_shardtree(
         tmds: &TransactionMetadataSet,
-    ) -> Arc<
-        Mutex<
-            ShardTree<
-                MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
-                COMMITMENT_TREE_DEPTH,
-                MAX_SHARD_DEPTH,
-            >,
-        >,
+    ) -> &ShardTree<
+        MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
+        COMMITMENT_TREE_DEPTH,
+        MAX_SHARD_DEPTH,
     > {
-        tmds.witness_trees.witness_tree_sapling.clone()
+        &tmds.witness_trees.witness_tree_sapling
+    }
+    fn get_shardtree_mut(
+        tmds: &mut TransactionMetadataSet,
+    ) -> &mut ShardTree<
+        MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
+        COMMITMENT_TREE_DEPTH,
+        MAX_SHARD_DEPTH,
+    > {
+        &mut tmds.witness_trees.witness_tree_sapling
     }
     fn get_nullifier_from_note_fvk_and_witness_position(
         note: &Self::Note,
@@ -854,16 +888,21 @@ impl DomainWalletExt for OrchardDomain {
 
     fn get_shardtree(
         tmds: &TransactionMetadataSet,
-    ) -> Arc<
-        Mutex<
-            ShardTree<
-                MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
-                COMMITMENT_TREE_DEPTH,
-                MAX_SHARD_DEPTH,
-            >,
-        >,
+    ) -> &ShardTree<
+        MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
+        COMMITMENT_TREE_DEPTH,
+        MAX_SHARD_DEPTH,
     > {
-        tmds.witness_trees.witness_tree_orchard.clone()
+        &tmds.witness_trees.witness_tree_orchard
+    }
+    fn get_shardtree_mut(
+        tmds: &mut TransactionMetadataSet,
+    ) -> &mut ShardTree<
+        MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
+        COMMITMENT_TREE_DEPTH,
+        MAX_SHARD_DEPTH,
+    > {
+        &mut tmds.witness_trees.witness_tree_orchard
     }
     fn get_nullifier_from_note_fvk_and_witness_position(
         note: &Self::Note,

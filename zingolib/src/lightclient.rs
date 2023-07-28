@@ -1699,12 +1699,10 @@ impl LightClient {
             self.wallet
                 .transaction_context
                 .transaction_metadata_set
-                .read()
+                .write()
                 .await
                 .witness_trees
                 .witness_tree_sapling
-                .lock()
-                .await
                 .insert_frontier_nodes(
                     sap_nonempty_front,
                     incrementalmerkletree::Retention::Ephemeral,
@@ -1715,12 +1713,10 @@ impl LightClient {
             self.wallet
                 .transaction_context
                 .transaction_metadata_set
-                .read()
+                .write()
                 .await
                 .witness_trees
                 .witness_tree_orchard
-                .lock()
-                .await
                 .insert_frontier_nodes(
                     orc_nonempty_front,
                     incrementalmerkletree::Retention::Ephemeral,

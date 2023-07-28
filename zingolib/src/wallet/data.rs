@@ -3,17 +3,18 @@ use crate::wallet::traits::ReceivedNoteAndMetadata;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::frontier::CommitmentTree;
 use incrementalmerkletree::witness::IncrementalWitness;
-use incrementalmerkletree::{Hashable, Position};
+use incrementalmerkletree::{Address, Hashable, Level, Position};
 use orchard::note_encryption::OrchardDomain;
 use orchard::tree::MerkleHashOrchard;
 use prost::Message;
 use shardtree::memory::MemoryShardStore;
-use shardtree::{RetentionFlags, ShardStore, ShardTree};
+use shardtree::{LocatedPrunableTree, RetentionFlags, ShardStore, ShardTree};
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
 use std::sync::Arc;
 use std::usize;
 use tokio::sync::Mutex;
+use zcash_client_sqlite::serialization::{read_shard, write_shard};
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
 use zcash_primitives::consensus::BlockHeight;
@@ -44,47 +45,25 @@ pub enum PoolNullifier {
 }
 
 pub struct WitnessTrees {
-    pub witness_tree_sapling: Arc<
-        Mutex<
-            ShardTree<MemoryShardStore<Node, BlockHeight>, COMMITMENT_TREE_DEPTH, MAX_SHARD_DEPTH>,
-        >,
-    >,
-    pub witness_tree_orchard: Arc<
-        Mutex<
-            ShardTree<
-                MemoryShardStore<MerkleHashOrchard, BlockHeight>,
-                COMMITMENT_TREE_DEPTH,
-                MAX_SHARD_DEPTH,
-            >,
-        >,
+    pub witness_tree_sapling:
+        ShardTree<MemoryShardStore<Node, BlockHeight>, COMMITMENT_TREE_DEPTH, MAX_SHARD_DEPTH>,
+    pub witness_tree_orchard: ShardTree<
+        MemoryShardStore<MerkleHashOrchard, BlockHeight>,
+        COMMITMENT_TREE_DEPTH,
+        MAX_SHARD_DEPTH,
     >,
 }
 
-impl WitnessTrees {
-    const VERSION: u8 = 0;
-    fn read<R: Read>(reader: R) -> io::Result<Self> {
-        todo!()
-    }
-
-    pub async fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
-        write_memory_shard_store_backed_tree(&self.witness_tree_sapling, &mut writer).await?;
-        write_memory_shard_store_backed_tree(&self.witness_tree_orchard, &mut writer).await
-    }
-}
 async fn write_memory_shard_store_backed_tree<
     H: Hashable + Clone + Eq + HashSer,
     C: Ord + Clone + std::fmt::Debug,
     W: Write,
 >(
-    tree: &Arc<Mutex<ShardTree<MemoryShardStore<H, C>, COMMITMENT_TREE_DEPTH, MAX_SHARD_DEPTH>>>,
-    writer: &mut W,
+    tree: &mut ShardTree<MemoryShardStore<H, C>, COMMITMENT_TREE_DEPTH, MAX_SHARD_DEPTH>,
+    writer: W,
 ) -> io::Result<()> {
-    let mut tree_lock = tree.lock().await;
-    let tree = std::mem::replace(
-        &mut *tree_lock,
-        ShardTree::new(MemoryShardStore::empty(), 0),
-    );
-    let store = tree.into_store();
+    let temp_tree = std::mem::replace(tree, ShardTree::new(MemoryShardStore::empty(), 0));
+    let store = temp_tree.into_store();
     let roots = store.get_shard_roots().expect("Infallible");
     Vector::write(writer, &roots, |w, root| {
         let shard = store
@@ -94,58 +73,64 @@ async fn write_memory_shard_store_backed_tree<
         let root_addr = shard.root_addr();
         w.write_u8(root_addr.level().into())?;
         w.write_u64::<LittleEndian>(root_addr.index())?;
-        write_shard(shard.root(), w)
+        write_shard(w, shard.root())?;
+        Ok(())
     })?;
-    let tree = ShardTree::new(store, MAX_REORG);
-    *tree_lock = tree;
+    *tree = ShardTree::new(store, MAX_REORG);
     Ok(())
-}
-
-fn write_shard<H: Hashable + Clone + HashSer, W: Write>(
-    shard: &shardtree::Tree<Option<Arc<H>>, (H, RetentionFlags)>,
-    mut writer: W,
-) -> io::Result<()> {
-    let node: &shardtree::Node<_, _, _> = std::ops::Deref::deref(shard);
-    match node {
-        shardtree::Node::Parent { ann, left, right } => {
-            writer.write_u8(2)?;
-            Optional::write(&mut writer, ann.clone(), |w, annotation| {
-                annotation.write(w)
-            })?;
-            write_shard(left, &mut writer)?;
-            write_shard(right, &mut writer)
-        }
-        shardtree::Node::Leaf { value } => {
-            writer.write_u8(1)?;
-            value.0.write(&mut writer)?;
-            writer.write_u8(value.1.bits())
-        }
-        shardtree::Node::Nil => writer.write_u8(0),
-    }
 }
 
 impl Default for WitnessTrees {
     fn default() -> WitnessTrees {
         Self {
-            witness_tree_sapling: Arc::new(Mutex::new(ShardTree::new(
-                MemoryShardStore::empty(),
-                MAX_REORG,
-            ))),
-            witness_tree_orchard: Arc::new(Mutex::new(ShardTree::new(
-                MemoryShardStore::empty(),
-                MAX_REORG,
-            ))),
+            witness_tree_sapling: ShardTree::new(MemoryShardStore::empty(), MAX_REORG),
+            witness_tree_orchard: ShardTree::new(MemoryShardStore::empty(), MAX_REORG),
         }
     }
 }
 
 impl WitnessTrees {
-    pub(crate) async fn add_checkpoint(&self, height: BlockHeight) {
-        let mut saplock = self.witness_tree_sapling.lock().await;
-        saplock.checkpoint(height).unwrap();
-        let mut orchlock = self.witness_tree_orchard.lock().await;
-        orchlock.checkpoint(height).unwrap();
+    pub(crate) async fn add_checkpoint(&mut self, height: BlockHeight) {
+        self.witness_tree_sapling.checkpoint(height).unwrap();
+        self.witness_tree_orchard.checkpoint(height).unwrap();
     }
+    const VERSION: u8 = 0;
+    pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
+        let _serialized_version = reader.read_u8()?;
+        let witness_tree_sapling = read_memory_shard_store_backed_tree(&mut reader)?;
+        let witness_tree_orchard = read_memory_shard_store_backed_tree(reader)?;
+        Ok(Self {
+            witness_tree_sapling,
+            witness_tree_orchard,
+        })
+    }
+
+    pub async fn write<W: Write>(&mut self, mut writer: W) -> io::Result<()> {
+        writer.write_u8(Self::VERSION)?;
+        write_memory_shard_store_backed_tree(&mut self.witness_tree_sapling, &mut writer).await?;
+        write_memory_shard_store_backed_tree(&mut self.witness_tree_orchard, &mut writer).await
+    }
+}
+
+fn read_memory_shard_store_backed_tree<
+    H: Hashable + Clone + HashSer + Eq,
+    C: Ord + Clone + std::fmt::Debug,
+    R: Read,
+>(
+    reader: R,
+) -> io::Result<ShardTree<MemoryShardStore<H, C>, COMMITMENT_TREE_DEPTH, MAX_SHARD_DEPTH>> {
+    let shards = Vector::read(reader, |r| {
+        let level = Level::from(r.read_u8()?);
+        let index = r.read_u64::<LittleEndian>()?;
+        let root_addr = Address::from_parts(level, index);
+        let shard = read_shard(r)?;
+        Ok(LocatedPrunableTree::from_parts(root_addr, shard))
+    })?;
+    let mut store = MemoryShardStore::empty();
+    for shard in shards {
+        store.put_shard(shard).expect("Infallible");
+    }
+    Ok(ShardTree::new(store, MAX_REORG))
 }
 
 impl std::hash::Hash for PoolNullifier {

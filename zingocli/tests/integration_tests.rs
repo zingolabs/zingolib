@@ -1610,8 +1610,6 @@ async fn witness_clearing() {
         .await
         .witness_trees
         .witness_tree_orchard
-        .lock()
-        .await
         .marked_positions()
         .unwrap()
         .contains(&position));
@@ -1642,8 +1640,6 @@ async fn witness_clearing() {
         .await
         .witness_trees
         .witness_tree_orchard
-        .lock()
-        .await
         .marked_positions()
         .unwrap()
         .contains(&position));
@@ -1672,8 +1668,6 @@ async fn witness_clearing() {
         .await
         .witness_trees
         .witness_tree_orchard
-        .lock()
-        .await
         .marked_positions()
         .unwrap()
         .contains(&position));
@@ -1703,8 +1697,6 @@ async fn witness_clearing() {
         .await
         .witness_trees
         .witness_tree_orchard
-        .lock()
-        .await
         .marked_positions()
         .unwrap()
         .contains(&position));
@@ -2235,8 +2227,6 @@ async fn aborted_resync() {
         .await
         .witness_trees
         .witness_tree_orchard
-        .lock()
-        .await
         .witness(
             recipient
                 .wallet
@@ -2274,8 +2264,6 @@ async fn aborted_resync() {
         .await
         .witness_trees
         .witness_tree_orchard
-        .lock()
-        .await
         .witness(
             recipient
                 .wallet

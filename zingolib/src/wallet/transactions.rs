@@ -126,7 +126,7 @@ impl TransactionMetadataSet {
         let witness_trees = if version < 22 {
             todo!("generate trees from old incremental witnesses")
         } else {
-            todo!("read trees somehow")
+            WitnessTrees::read(reader)?
         };
 
         Ok(Self {
@@ -136,7 +136,7 @@ impl TransactionMetadataSet {
         })
     }
 
-    pub async fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+    pub async fn write<W: Write>(&mut self, mut writer: W) -> io::Result<()> {
         // Write the version
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
@@ -219,7 +219,7 @@ impl TransactionMetadataSet {
     }
 
     // During reorgs, we need to remove all txns at a given height, and all spends that refer to any removed txns.
-    pub async fn remove_txns_at_height(&mut self, reorg_height: u64) {
+    pub fn remove_txns_at_height(&mut self, reorg_height: u64) {
         let reorg_height = BlockHeight::from_u32(reorg_height as u32);
 
         // First, collect txids that need to be removed
@@ -238,13 +238,9 @@ impl TransactionMetadataSet {
 
         self.witness_trees
             .witness_tree_sapling
-            .lock()
-            .await
             .truncate_removing_checkpoint(&reorg_height);
         self.witness_trees
             .witness_tree_orchard
-            .lock()
-            .await
             .truncate_removing_checkpoint(&reorg_height);
     }
 
@@ -532,26 +528,7 @@ impl TransactionMetadataSet {
 
         // Mark the source note as spent
         if !unconfirmed {
-            let witness_tree = D::get_shardtree(&self);
-            let transaction_metadata = self
-                .current
-                .get_mut(&source_txid)
-                .expect("Txid should be present");
-
-            if let Some(nd) =
-                <D::WalletNote as ReceivedNoteAndMetadata>::transaction_metadata_notes_mut(
-                    transaction_metadata,
-                )
-                .iter_mut()
-                .find(|n| n.nullifier() == nullifier)
-            {
-                *nd.spent_mut() = Some((txid, height.into()));
-                witness_tree
-                    .lock()
-                    .await
-                    .remove_mark(*nd.witnessed_position(), Some(&height))
-                    .unwrap();
-            }
+            D::WalletNote::remove_witness_mark(self, height, txid, source_txid, nullifier)
         }
     }
 
@@ -568,6 +545,54 @@ impl TransactionMetadataSet {
         transaction_metadata.total_transparent_value_spent = total_transparent_value_spent;
 
         self.check_notes_mark_change(&txid);
+    }
+    pub fn remove_mark_sapling(
+        &mut self,
+        height: BlockHeight,
+        txid: TxId,
+        source_txid: TxId,
+        nullifier: zcash_primitives::sapling::Nullifier,
+    ) {
+        let transaction_metadata = self
+            .current
+            .get_mut(&source_txid)
+            .expect("Txid should be present");
+
+        if let Some(nd) = transaction_metadata
+            .sapling_notes
+            .iter_mut()
+            .find(|n| n.nullifier() == nullifier)
+        {
+            *nd.spent_mut() = Some((txid, height.into()));
+            self.witness_trees
+                .witness_tree_sapling
+                .remove_mark(*nd.witnessed_position(), Some(&height))
+                .unwrap();
+        }
+    }
+    pub fn remove_mark_orchard(
+        &mut self,
+        height: BlockHeight,
+        txid: TxId,
+        source_txid: TxId,
+        nullifier: orchard::note::Nullifier,
+    ) {
+        let transaction_metadata = self
+            .current
+            .get_mut(&source_txid)
+            .expect("Txid should be present");
+
+        if let Some(nd) = transaction_metadata
+            .orchard_notes
+            .iter_mut()
+            .find(|n| n.nullifier() == nullifier)
+        {
+            *nd.spent_mut() = Some((txid, height.into()));
+            self.witness_trees
+                .witness_tree_orchard
+                .remove_mark(*nd.witnessed_position(), Some(&height))
+                .unwrap();
+        }
     }
 
     pub fn mark_txid_utxo_spent(

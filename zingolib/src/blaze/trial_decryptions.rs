@@ -257,7 +257,7 @@ impl TrialDecryptions {
                     }));
                 }
             }
-            let txmds_lock = self.transaction_metadata_set.read().await;
+            let mut txmds_lock = self.transaction_metadata_set.write().await;
             txmds_lock
                 .witness_trees
                 .add_checkpoint(compact_block.height())
@@ -271,8 +271,7 @@ impl TrialDecryptions {
         }
         let mut txmds_writelock = self.transaction_metadata_set.write().await;
         let sapling_witness_tree = SaplingDomain::<ChainType>::get_shardtree(&*txmds_writelock);
-        let mut sapling_witness_tree_lock = sapling_witness_tree.lock().await;
-        let sapling_position = sapling_witness_tree_lock
+        let sapling_position = sapling_witness_tree
             .max_leaf_position(0)
             .unwrap()
             .map(|pos| pos + 1)
@@ -294,7 +293,9 @@ impl TrialDecryptions {
                 .await;
             sapling_nodes_retention.push((node, retention));
         }
-        let sapling_tree_insert_result = sapling_witness_tree_lock
+        let sapling_witness_tree_mut =
+            SaplingDomain::<ChainType>::get_shardtree_mut(&mut *txmds_writelock);
+        let sapling_tree_insert_result = sapling_witness_tree_mut
             .batch_insert(sapling_position, sapling_nodes_retention.into_iter())
             .expect(&format!(
                 "failed to insert into sapling tree, starting position {}",
@@ -302,8 +303,7 @@ impl TrialDecryptions {
             ));
         dbg!(sapling_tree_insert_result);
         let orchard_witness_tree = OrchardDomain::get_shardtree(&*txmds_writelock);
-        let mut orchard_witness_tree_lock = orchard_witness_tree.lock().await;
-        let orchard_position = orchard_witness_tree_lock
+        let orchard_position = orchard_witness_tree
             .max_leaf_position(0)
             .unwrap()
             .map(|pos| pos + 1)
@@ -325,7 +325,8 @@ impl TrialDecryptions {
                 .await;
             orchard_nodes_retention.push((node, retention));
         }
-        let orchard_tree_insert_result = orchard_witness_tree_lock
+        let orchard_witness_tree_mut = OrchardDomain::get_shardtree_mut(&mut *txmds_writelock);
+        let orchard_tree_insert_result = orchard_witness_tree_mut
             .batch_insert(orchard_position, orchard_nodes_retention.into_iter())
             .expect(&format!(
                 "failed to insert into orchard tree, starting position {}",
