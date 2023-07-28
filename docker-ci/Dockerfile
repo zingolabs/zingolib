@@ -54,7 +54,7 @@ WORKDIR /usr/bin/
 COPY --from=builder /usr/src/lightwalletd/lightwalletd ./
 COPY --from=builder /usr/src/zcash/src/zcashd ./
 COPY --from=builder /usr/src/zcash/src/zcash-cli ./
-COPY --from=builder /root/.zcash-params /root/
+COPY --from=builder /root/.zcash-params/ /root/.zcash-params/
 
 # Apt clean up
 RUN apt autoremove -y \
