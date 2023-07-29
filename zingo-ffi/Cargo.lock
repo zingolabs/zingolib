@@ -2222,9 +2222,9 @@ dependencies = [
 
 [[package]]
 name = "regex-automata"
-version = "0.3.3"
+version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39354c10dd07468c2e73926b23bb9c2caca74c5501e38a35da70406f1d923310"
+checksum = "b7b6d6190b7594385f61bd3911cd1be99dfddcfc365a4160cc2ab5bff4aed294"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -2548,9 +2548,9 @@ dependencies = [
 
 [[package]]
 name = "serde"
-version = "1.0.177"
+version = "1.0.178"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63ba2516aa6bf82e0b19ca8b50019d52df58455d3cf9bdaf6315225fdd0c560a"
+checksum = "60363bdd39a7be0266a520dab25fdc9241d2f987b08a01e01f0ec6d06a981348"
 dependencies = [
  "serde_derive",
 ]
@@ -2567,9 +2567,9 @@ dependencies = [
 
 [[package]]
 name = "serde_derive"
-version = "1.0.177"
+version = "1.0.178"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "401797fe7833d72109fedec6bfcbe67c0eed9b99772f26eb8afd261f0abc6fd3"
+checksum = "f28482318d6641454cb273da158647922d1be6b5a2fcc6165cd89ebdd7ed576b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3619,7 +3619,8 @@ dependencies = [
 [[package]]
 name = "zcash_note_encryption"
 version = "0.4.0"
-source = "git+https://github.com/zingolabs/librustzcash?rev=fa67d9a645da55265ebea8cedbb77ff42317c726#fa67d9a645da55265ebea8cedbb77ff42317c726"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b4580cd6cee12e44421dac43169be8d23791650816bdb34e6ddfa70ac89c1c5"
 dependencies = [
  "chacha20",
  "chacha20poly1305",
@@ -3706,7 +3707,7 @@ dependencies = [
 [[package]]
 name = "zingo-memo"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#e87a822511d0b60e7a677b7dcbcab492851cf2c6"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#660938b684f89aef91a091f4e0594d26e4328a48"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -3718,7 +3719,7 @@ dependencies = [
 [[package]]
 name = "zingo-testutils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#e87a822511d0b60e7a677b7dcbcab492851cf2c6"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#660938b684f89aef91a091f4e0594d26e4328a48"
 dependencies = [
  "http",
  "incrementalmerkletree",
@@ -3740,7 +3741,7 @@ dependencies = [
 [[package]]
 name = "zingoconfig"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#e87a822511d0b60e7a677b7dcbcab492851cf2c6"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#660938b684f89aef91a091f4e0594d26e4328a48"
 dependencies = [
  "dirs",
  "http",
@@ -3753,7 +3754,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#e87a822511d0b60e7a677b7dcbcab492851cf2c6"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#660938b684f89aef91a091f4e0594d26e4328a48"
 dependencies = [
  "base58",
  "base64 0.13.1",
