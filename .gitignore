@@ -2,6 +2,7 @@ zingocli/regtest/data/zcashd/regtest/
 zingocli/regtest/data/lightwalletd/
 zingocli/regtest/data/zingo/
 zingocli/regtest/zingo-wallet.dat
+zingocli/regtest/bin
 target
 zingolib/target
 zingocli/target
