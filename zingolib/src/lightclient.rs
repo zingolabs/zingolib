@@ -247,6 +247,36 @@ impl LightClient {
         };
         LightClient::read_wallet_from_buffer(config, BufReader::new(File::open(wallet_path)?))
     }
+
+    async fn ensure_witness_tree_not_above_blocks(&self) {
+        let last_synced_height = self.wallet.last_synced_height().await;
+        let mut txmds_writelock = self
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .write()
+            .await;
+        println!(
+            "Saptree truncated: {}",
+            txmds_writelock
+                .witness_trees
+                .witness_tree_sapling
+                .truncate_removing_checkpoint(&BlockHeight::from(last_synced_height as u32))
+                .expect("Infallible")
+        );
+        println!(
+            "Orctree truncated: {}",
+            txmds_writelock
+                .witness_trees
+                .witness_tree_orchard
+                .truncate_removing_checkpoint(&BlockHeight::from(last_synced_height as u32))
+                .expect("Infallible")
+        );
+        txmds_writelock
+            .witness_trees
+            .add_checkpoint(BlockHeight::from(last_synced_height as u32))
+            .await;
+    }
 }
 
 impl LightClient {
@@ -1032,6 +1062,7 @@ impl LightClient {
 
         // Mark the sync data as finished, which should clear everything
         self.bsync_data.read().await.finish().await;
+        println!("Done sync");
         sync_result
     }
 
@@ -1356,6 +1387,7 @@ impl LightClient {
 
     /// Start syncing in batches with the max size, to manage memory consumption.
     async fn start_sync(&self) -> Result<JsonValue, String> {
+        println!("\n\nStarting sync!\n\n");
         // We can only do one sync at a time because we sync blocks in serial order
         // If we allow multiple syncs, they'll all get jumbled up.
         // TODO:  We run on resource constrained systems, where a single thread of
@@ -1366,6 +1398,7 @@ impl LightClient {
         // The top of the wallet
         let last_synced_height = dbg!(self.wallet.last_synced_height().await);
 
+        self.ensure_witness_tree_not_above_blocks().await;
         // This is a fresh wallet. We need to get the initial trees
         if last_synced_height
             == self
@@ -1455,13 +1488,14 @@ impl LightClient {
         // The top of the wallet
         let last_synced_height = self.wallet.last_synced_height().await;
 
-        debug!(
+        dbg!(
             "Latest block is {}, wallet block is {}",
-            start_block, last_synced_height
+            start_block,
+            last_synced_height
         );
 
         if last_synced_height == start_block {
-            debug!("Already at latest block, not syncing");
+            dbg!("Already at latest block, not syncing");
             return Ok(object! { "result" => "success" });
         }
 

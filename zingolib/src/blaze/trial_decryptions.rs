@@ -8,7 +8,9 @@ use crate::{
     wallet::{
         data::{PoolNullifier, TransactionMetadata},
         keys::unified::WalletCapability,
-        traits::{CompactOutput as _, DomainWalletExt, FromCommitment, ReceivedNoteAndMetadata},
+        traits::{
+            CompactOutput as _, DomainWalletExt, FromCommitment, ReceivedNoteAndMetadata, Recipient,
+        },
         transactions::TransactionMetadataSet,
         MemoDownloadOption,
     },
@@ -257,82 +259,26 @@ impl TrialDecryptions {
                     }));
                 }
             }
-            let mut txmds_lock = self.transaction_metadata_set.write().await;
-            txmds_lock
-                .witness_trees
-                .add_checkpoint(compact_block.height())
-                .await;
-            sapling_notes_to_mark_position.push(sapling_notes_to_mark_position_in_block);
-            orchard_notes_to_mark_position.push(orchard_notes_to_mark_position_in_block);
+            sapling_notes_to_mark_position.push((sapling_notes_to_mark_position_in_block, height));
+            orchard_notes_to_mark_position.push((orchard_notes_to_mark_position_in_block, height));
         }
 
         while let Some(r) = workers.next().await {
             r.map_err(|e| e.to_string())??;
         }
         let mut txmds_writelock = self.transaction_metadata_set.write().await;
-        let sapling_witness_tree = SaplingDomain::<ChainType>::get_shardtree(&*txmds_writelock);
-        let sapling_position = sapling_witness_tree
-            .max_leaf_position(0)
-            .unwrap()
-            .map(|pos| pos + 1)
-            .unwrap_or(Position::from(0));
-        let mut sapling_nodes_retention = Vec::new();
-        for (i, (output_num, transaction_id, (node, retention))) in sapling_notes_to_mark_position
-            .into_iter()
-            .rev()
-            .flatten()
-            .enumerate()
-        {
-            txmds_writelock
-                .mark_note_position::<SaplingDomain<ChainType>>(
-                    transaction_id,
-                    output_num,
-                    sapling_position + i as u64,
-                    &<SaplingDomain<ChainType>>::wc_to_fvk(&*wc.read().await).unwrap(),
-                )
-                .await;
-            sapling_nodes_retention.push((node, retention));
-        }
-        let sapling_witness_tree_mut =
-            SaplingDomain::<ChainType>::get_shardtree_mut(&mut *txmds_writelock);
-        let sapling_tree_insert_result = sapling_witness_tree_mut
-            .batch_insert(sapling_position, sapling_nodes_retention.into_iter())
-            .expect(&format!(
-                "failed to insert into sapling tree, starting position {}",
-                u64::from(sapling_position)
-            ));
-        dbg!(sapling_tree_insert_result);
-        let orchard_witness_tree = OrchardDomain::get_shardtree(&*txmds_writelock);
-        let orchard_position = orchard_witness_tree
-            .max_leaf_position(0)
-            .unwrap()
-            .map(|pos| pos + 1)
-            .unwrap_or(Position::from(0));
-        let mut orchard_nodes_retention = Vec::new();
-        for (i, (output_num, transaction_id, (node, retention))) in orchard_notes_to_mark_position
-            .into_iter()
-            .rev()
-            .flatten()
-            .enumerate()
-        {
-            txmds_writelock
-                .mark_note_position::<OrchardDomain>(
-                    transaction_id,
-                    output_num,
-                    orchard_position + i as u64,
-                    &<OrchardDomain>::wc_to_fvk(&*wc.read().await).unwrap(),
-                )
-                .await;
-            orchard_nodes_retention.push((node, retention));
-        }
-        let orchard_witness_tree_mut = OrchardDomain::get_shardtree_mut(&mut *txmds_writelock);
-        let orchard_tree_insert_result = orchard_witness_tree_mut
-            .batch_insert(orchard_position, orchard_nodes_retention.into_iter())
-            .expect(&format!(
-                "failed to insert into orchard tree, starting position {}",
-                u64::from(orchard_position)
-            ));
-        dbg!(orchard_tree_insert_result);
+        update_witnesses::<SaplingDomain<ChainType>>(
+            sapling_notes_to_mark_position,
+            &mut *txmds_writelock,
+            &wc,
+        )
+        .await;
+        update_witnesses::<OrchardDomain>(
+            orchard_notes_to_mark_position,
+            &mut *txmds_writelock,
+            &wc,
+        )
+        .await;
 
         // Return a nothing-value
         Ok::<(), String>(())
@@ -470,5 +416,61 @@ impl TrialDecryptions {
                 ));
         }
         witness_txindexes_notes_commitments
+    }
+}
+
+async fn update_witnesses<D>(
+    notes_to_mark_position: Vec<(
+        Vec<(
+            usize,
+            TxId,
+            (
+                <D::WalletNote as ReceivedNoteAndMetadata>::Node,
+                Retention<BlockHeight>,
+            ),
+        )>,
+        BlockHeight,
+    )>,
+    txmds_writelock: &mut TransactionMetadataSet,
+    wc: &Arc<RwLock<WalletCapability>>,
+) where
+    D: DomainWalletExt,
+    <D as Domain>::Note: PartialEq + Clone,
+    <D as Domain>::Recipient: Recipient,
+{
+    for block in notes_to_mark_position.into_iter().rev() {
+        println!("Updating witness trees for height {}", block.1);
+        let witness_tree = D::get_shardtree(&*txmds_writelock);
+        let position = witness_tree
+            .max_leaf_position(0)
+            .unwrap()
+            .map(|pos| pos + 1)
+            .unwrap_or(Position::from(0));
+        let mut nodes_retention = Vec::new();
+        println!(
+            "Inserting {} nodes starting at position {position:?}",
+            block.0.len()
+        );
+        for (i, (output_num, transaction_id, (node, retention))) in block.0.into_iter().enumerate()
+        {
+            txmds_writelock
+                .mark_note_position::<D>(
+                    transaction_id,
+                    output_num,
+                    position + i as u64,
+                    &D::wc_to_fvk(&*wc.read().await).unwrap(),
+                )
+                .await;
+            nodes_retention.push((node, retention));
+        }
+        let witness_tree_mut = D::get_shardtree_mut(&mut *txmds_writelock);
+        let tree_insert_result = witness_tree_mut
+            .batch_insert(position, nodes_retention.into_iter())
+            .expect(&format!(
+                "failed to insert into sapling tree, starting position {}",
+                u64::from(position)
+            ));
+        witness_tree_mut.checkpoint(block.1).expect("Infallible");
+        dbg!(tree_insert_result);
     }
 }
