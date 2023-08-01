@@ -1,0 +1,18 @@
+cargo install cargo-nextest
+
+-
+
+panicked at 'called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }'
+
+answer: link to zcashd in zingocli/regtest/bin does not exist
+
+-
+
+thread 'send_orchard_back_and_forth' panicked at '', zingo-testutils/src/regtest.rs:431:21
+
+answer: zcash version installed by paru was too old (5.3.0)
+
+solution: compile from source
+
+-
+
