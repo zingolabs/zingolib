@@ -19,7 +19,7 @@ use futures::{stream::FuturesUnordered, StreamExt};
 use incrementalmerkletree::{Position, Retention};
 use log::debug;
 use orchard::{keys::IncomingViewingKey as OrchardIvk, note_encryption::OrchardDomain};
-use std::{any::type_name, sync::Arc};
+use std::sync::Arc;
 use tokio::{
     sync::{
         mpsc::{unbounded_channel, UnboundedSender},
@@ -327,11 +327,6 @@ impl TrialDecryptions {
         let maybe_decrypted_outputs =
             zcash_note_encryption::batch::try_compact_note_decryption(&[ivk], &outputs);
         for maybe_decrypted_output in maybe_decrypted_outputs.into_iter().enumerate() {
-            println!(
-                "\n***\ndecrypting {} output, height {}\n***\n",
-                type_name::<D>(),
-                u64::from(height)
-            );
             let (output_num, witnessed) =
                 if let (i, Some(((note, to), _ivk_num))) = maybe_decrypted_output {
                     *transaction_metadata = true; // i.e. we got metadata
@@ -439,7 +434,6 @@ async fn update_witnesses<D>(
     <D as Domain>::Recipient: Recipient,
 {
     for block in notes_to_mark_position.into_iter().rev() {
-        println!("Updating witness trees for height {}", block.1);
         let witness_tree = D::get_shardtree(&*txmds_writelock);
         let position = witness_tree
             .max_leaf_position(0)
@@ -447,30 +441,27 @@ async fn update_witnesses<D>(
             .map(|pos| pos + 1)
             .unwrap_or(Position::from(0));
         let mut nodes_retention = Vec::new();
-        println!(
-            "Inserting {} nodes starting at position {position:?}",
-            block.0.len()
-        );
         for (i, (output_num, transaction_id, (node, retention))) in block.0.into_iter().enumerate()
         {
-            txmds_writelock
-                .mark_note_position::<D>(
-                    transaction_id,
-                    output_num,
-                    position + i as u64,
-                    &D::wc_to_fvk(&*wc.read().await).unwrap(),
-                )
-                .await;
+            if retention != Retention::Ephemeral {
+                txmds_writelock
+                    .mark_note_position::<D>(
+                        transaction_id,
+                        output_num,
+                        position + i as u64,
+                        &D::wc_to_fvk(&*wc.read().await).unwrap(),
+                    )
+                    .await;
+            }
             nodes_retention.push((node, retention));
         }
         let witness_tree_mut = D::get_shardtree_mut(&mut *txmds_writelock);
-        let tree_insert_result = witness_tree_mut
+        let _tree_insert_result = witness_tree_mut
             .batch_insert(position, nodes_retention.into_iter())
             .expect(&format!(
                 "failed to insert into sapling tree, starting position {}",
                 u64::from(position)
             ));
         witness_tree_mut.checkpoint(block.1).expect("Infallible");
-        dbg!(tree_insert_result);
     }
 }

@@ -527,6 +527,7 @@ impl TransactionMetadataSet {
 
         // Mark the source note as spent
         if !unconfirmed {
+            println!("Removing mark for height {height:?}");
             D::WalletNote::remove_witness_mark(self, height, txid, source_txid, nullifier)
         }
     }
@@ -563,10 +564,18 @@ impl TransactionMetadataSet {
             .find(|n| n.nullifier() == nullifier)
         {
             *nd.spent_mut() = Some((txid, height.into()));
-            self.witness_trees
+            let success = self
+                .witness_trees
                 .witness_tree_sapling
                 .remove_mark(*nd.witnessed_position(), Some(&height))
                 .unwrap();
+            println!(
+                "sapling mark for position {:?} at checkpoint {:?} removed: {success}",
+                nd.witnessed_position(),
+                height
+            );
+        } else {
+            eprintln!("Could not remove marked node!")
         }
     }
     pub fn remove_mark_orchard(
@@ -587,10 +596,26 @@ impl TransactionMetadataSet {
             .find(|n| n.nullifier() == nullifier)
         {
             *nd.spent_mut() = Some((txid, height.into()));
-            self.witness_trees
+            let success = self
+                .witness_trees
                 .witness_tree_orchard
                 .remove_mark(*nd.witnessed_position(), Some(&height))
                 .unwrap();
+            println!(
+                "orchard mark for position {:?} at checkpoint {:?} removed: {}",
+                nd.witnessed_position(),
+                height,
+                success
+            );
+            if !success {
+                println!(
+                    "Marked node set follows: {:?}",
+                    self.witness_trees.witness_tree_orchard.marked_positions()
+                );
+                dbg!(&self.witness_trees.witness_tree_orchard);
+            }
+        } else {
+            eprintln!("Could not remove marked node!")
         }
     }
 
@@ -696,7 +721,7 @@ impl TransactionMetadataSet {
                 let nd = D::WalletNote::from_parts(
                     to.diversifier(),
                     note,
-                    Position::from(0),
+                    Position::from(u64::MAX),
                     None,
                     None,
                     None,
@@ -730,7 +755,6 @@ impl TransactionMetadataSet {
         D::Note: PartialEq + Clone,
         D::Recipient: Recipient,
     {
-        println!("Adding new note at height {height}");
         let transaction_metadata =
             self.get_or_create_transaction_metadata(&txid, height, unconfirmed, timestamp);
         // Update the block height, in case this was a mempool or unconfirmed tx.
@@ -740,7 +764,7 @@ impl TransactionMetadataSet {
             D::WalletNote::from_parts(
                 D::Recipient::diversifier(&to),
                 note.clone(),
-                Position::from(0),
+                Position::from(u64::MAX),
                 Some(nullifier.unwrap_or_else(|| {
                     <<D::WalletNote as ReceivedNoteAndMetadata>::Nullifier as FromBytes<
                                 32,
@@ -794,7 +818,11 @@ impl TransactionMetadataSet {
                     fvk,
                     u64::from(position),
                 );
+            } else {
+                println!("Could not update witness position");
             }
+        } else {
+            println!("Could not update witness position");
         }
     }
 

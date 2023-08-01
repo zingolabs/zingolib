@@ -1672,6 +1672,16 @@ async fn witness_clearing() {
         .unwrap()
         .contains(&position));
 
+    dbg!(
+        &recipient
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .witness_trees
+            .witness_tree_orchard
+    );
     // 5. Mine 100 blocks, witness should now disappear
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 100)
         .await
@@ -1689,6 +1699,16 @@ async fn witness_clearing() {
         .unwrap()
         .witnessed_position;
     //Note: This is a negative assertion. Notice the "!"
+    dbg!(
+        &recipient
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .witness_trees
+            .witness_tree_orchard
+    );
     assert!(!recipient
         .wallet
         .transaction_context
