@@ -567,7 +567,10 @@ impl TransactionMetadataSet {
             let success = self
                 .witness_trees
                 .witness_tree_sapling
-                .remove_mark(*nd.witnessed_position(), Some(&height))
+                .remove_mark(
+                    *nd.witnessed_position(),
+                    Some(&(height - BlockHeight::from(1))),
+                )
                 .unwrap();
             println!(
                 "sapling mark for position {:?} at checkpoint {:?} removed: {success}",
@@ -599,7 +602,10 @@ impl TransactionMetadataSet {
             let success = self
                 .witness_trees
                 .witness_tree_orchard
-                .remove_mark(*nd.witnessed_position(), Some(&height))
+                .remove_mark(
+                    *nd.witnessed_position(),
+                    Some(&(height - BlockHeight::from(1))),
+                )
                 .unwrap();
             println!(
                 "orchard mark for position {:?} at checkpoint {:?} removed: {}",
