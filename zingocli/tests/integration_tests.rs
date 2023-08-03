@@ -1683,7 +1683,7 @@ async fn witness_clearing() {
             .witness_tree_orchard
     );
     // 5. Mine 100 blocks, witness should now disappear
-    zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 100)
+    zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 50)
         .await
         .unwrap();
     let position = recipient
