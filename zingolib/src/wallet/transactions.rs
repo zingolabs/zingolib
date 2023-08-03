@@ -564,19 +564,13 @@ impl TransactionMetadataSet {
             .find(|n| n.nullifier() == nullifier)
         {
             *nd.spent_mut() = Some((txid, height.into()));
-            let success = self
-                .witness_trees
+            self.witness_trees
                 .witness_tree_sapling
                 .remove_mark(
                     *nd.witnessed_position(),
                     Some(&(height - BlockHeight::from(1))),
                 )
                 .unwrap();
-            println!(
-                "sapling mark for position {:?} at checkpoint {:?} removed: {success}",
-                nd.witnessed_position(),
-                height
-            );
         } else {
             eprintln!("Could not remove marked node!")
         }
@@ -599,27 +593,13 @@ impl TransactionMetadataSet {
             .find(|n| n.nullifier() == nullifier)
         {
             *nd.spent_mut() = Some((txid, height.into()));
-            let success = self
-                .witness_trees
+            self.witness_trees
                 .witness_tree_orchard
                 .remove_mark(
                     *nd.witnessed_position(),
                     Some(&(height - BlockHeight::from(1))),
                 )
                 .unwrap();
-            println!(
-                "orchard mark for position {:?} at checkpoint {:?} removed: {}",
-                nd.witnessed_position(),
-                height,
-                success
-            );
-            if !success {
-                println!(
-                    "Marked node set follows: {:?}",
-                    self.witness_trees.witness_tree_orchard.marked_positions()
-                );
-                dbg!(&self.witness_trees.witness_tree_orchard);
-            }
         } else {
             eprintln!("Could not remove marked node!")
         }

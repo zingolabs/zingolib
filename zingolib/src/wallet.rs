@@ -363,7 +363,6 @@ impl LightWallet {
                 // Filter out notes that are already spent
                 if note.spent().is_some() || note.unconfirmed_spent().is_some() || note.is_pending()
                 {
-                    println!("Spent/pending note TxId: {transaction_id}");
                     None
                 } else {
                     // Get the spending key for the selected fvk, if we have it
@@ -987,7 +986,7 @@ impl LightWallet {
 
         let (orchard_notes, sapling_notes, utxos, selected_value) =
             self.select_notes_and_utxos(target_amount, policy).await;
-        if dbg!(selected_value) < target_amount {
+        if selected_value < target_amount {
             let e = format!(
                 "Insufficient verified shielded funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes",
                 u64::from(selected_value), u64::from(target_amount), self.transaction_context.config
@@ -1243,7 +1242,7 @@ impl LightWallet {
         let transaction_id = broadcast_fn(raw_transaction.clone().into_boxed_slice()).await?;
 
         // Now that we've gotten this far, we need to write
-        // This necessitates first dropping the witness tree locks
+        // so we drop the readlock
         drop(txmds_readlock);
         // Mark notes as spent.
         {
