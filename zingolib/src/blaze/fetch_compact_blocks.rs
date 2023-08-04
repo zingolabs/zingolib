@@ -1,7 +1,6 @@
 use std::{cmp::max, sync::Arc};
 
 use crate::{compact_formats::CompactBlock, grpc_connector::GrpcConnector};
-
 use log::debug;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use zingoconfig::ZingoConfig;

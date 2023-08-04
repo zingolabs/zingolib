@@ -662,27 +662,10 @@ async fn note_selection_order() {
         .await
         .unwrap();
 
-    println!("\n=====\nSyncing recipient\n=====\n");
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 5)
         .await
         .unwrap();
     faucet.do_sync(false).await.unwrap();
-    println!(
-        "faucet height: {}",
-        faucet.do_wallet_last_scanned_height().await.pretty(2)
-    );
-    println!(
-        "recipient height: {}",
-        recipient.do_wallet_last_scanned_height().await.pretty(2)
-    );
-    println!(
-        "recipient transactions: {}",
-        recipient.do_list_transactions().await.pretty(4)
-    );
-    println!(
-        "faucet transactions: {}",
-        faucet.do_list_transactions().await.pretty(4)
-    );
     // We know that the largest single note that 2 received from 1 was 3000, for 2 to send
     // 3000 back to 1 it will have to collect funds from two notes to pay the full 3000
     // plus the transaction fee.
@@ -1555,7 +1538,6 @@ async fn mempool_and_balance() {
         .unwrap();
 
     let bal = recipient.do_balance().await;
-    println!("{}", bal.pretty(4));
 
     assert_eq!(bal["orchard_balance"].as_u64().unwrap(), new_bal);
     assert_eq!(bal["verified_orchard_balance"].as_u64().unwrap(), new_bal);
@@ -1672,16 +1654,6 @@ async fn witness_clearing() {
         .unwrap()
         .contains(&position));
 
-    dbg!(
-        &recipient
-            .wallet
-            .transaction_context
-            .transaction_metadata_set
-            .read()
-            .await
-            .witness_trees
-            .witness_tree_orchard
-    );
     // 5. Mine 100 blocks, witness should now disappear
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 50)
         .await

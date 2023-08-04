@@ -173,9 +173,9 @@ impl TrialDecryptions {
         let mut orchard_notes_to_mark_position = Vec::new();
 
         for compact_block in compact_blocks {
+            let height = BlockHeight::from_u32(compact_block.height as u32);
             let mut sapling_notes_to_mark_position_in_block = Vec::new();
             let mut orchard_notes_to_mark_position_in_block = Vec::new();
-            let height = dbg!(BlockHeight::from_u32(compact_block.height as u32));
 
             for (transaction_num, compact_transaction) in compact_block.vtx.iter().enumerate() {
                 if let Some(filter) = transaction_size_filter {

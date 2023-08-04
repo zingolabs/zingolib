@@ -256,22 +256,16 @@ impl LightClient {
             .transaction_metadata_set
             .write()
             .await;
-        println!(
-            "Saptree truncated: {}",
-            txmds_writelock
-                .witness_trees
-                .witness_tree_sapling
-                .truncate_removing_checkpoint(&BlockHeight::from(last_synced_height as u32))
-                .expect("Infallible")
-        );
-        println!(
-            "Orctree truncated: {}",
-            txmds_writelock
-                .witness_trees
-                .witness_tree_orchard
-                .truncate_removing_checkpoint(&BlockHeight::from(last_synced_height as u32))
-                .expect("Infallible")
-        );
+        txmds_writelock
+            .witness_trees
+            .witness_tree_sapling
+            .truncate_removing_checkpoint(&BlockHeight::from(last_synced_height as u32))
+            .expect("Infallible");
+        txmds_writelock
+            .witness_trees
+            .witness_tree_orchard
+            .truncate_removing_checkpoint(&BlockHeight::from(last_synced_height as u32))
+            .expect("Infallible");
         txmds_writelock
             .witness_trees
             .add_checkpoint(BlockHeight::from(last_synced_height as u32))
@@ -1394,7 +1388,7 @@ impl LightClient {
         let lightclient_exclusion_lock = self.sync_lock.lock().await;
 
         // The top of the wallet
-        let last_synced_height = dbg!(self.wallet.last_synced_height().await);
+        let last_synced_height = self.wallet.last_synced_height().await;
 
         self.ensure_witness_tree_not_above_blocks().await;
         // This is a fresh wallet. We need to get the initial trees
@@ -1492,7 +1486,7 @@ impl LightClient {
         );
 
         if last_synced_height == start_block {
-            dbg!("Already at latest block, not syncing");
+            debug!("Already at latest block, not syncing");
             return Ok(object! { "result" => "success" });
         }
 
