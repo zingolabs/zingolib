@@ -119,12 +119,16 @@ impl UpdateNotes {
                         let spent_at_height = BlockHeight::from_u32(spent_height as u32);
 
                         // Mark this note as being spent
-                        let value = wallet_transactions.write().await.mark_txid_nf_spent(
-                            transaction_id,
-                            &nf,
-                            &spent_transaction_id,
-                            spent_at_height,
-                        ).expect(&format!("Cound not mark note {output_num:?} of tx {transaction_id} as spent at height {spent_at_height}"));
+                        let value = wallet_transactions
+                            .write()
+                            .await
+                            .mark_txid_nf_spent(
+                                transaction_id,
+                                &nf,
+                                &spent_transaction_id,
+                                spent_at_height,
+                            )
+                            .expect("Cound not mark note as spent");
 
                         // Record the future transaction, the one that has spent the nullifiers received in this transaction in the wallet
                         wallet_transactions

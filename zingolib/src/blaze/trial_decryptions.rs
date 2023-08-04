@@ -269,13 +269,13 @@ impl TrialDecryptions {
         let mut txmds_writelock = self.transaction_metadata_set.write().await;
         update_witnesses::<SaplingDomain<ChainType>>(
             sapling_notes_to_mark_position,
-            &mut *txmds_writelock,
+            &mut txmds_writelock,
             &wc,
         )
         .await;
         update_witnesses::<OrchardDomain>(
             orchard_notes_to_mark_position,
-            &mut *txmds_writelock,
+            &mut txmds_writelock,
             &wc,
         )
         .await;
@@ -458,10 +458,7 @@ async fn update_witnesses<D>(
         let witness_tree_mut = D::get_shardtree_mut(&mut *txmds_writelock);
         let _tree_insert_result = witness_tree_mut
             .batch_insert(position, nodes_retention.into_iter())
-            .expect(&format!(
-                "failed to insert into sapling tree, starting position {}",
-                u64::from(position)
-            ));
+            .expect("failed to update witness tree");
         witness_tree_mut.checkpoint(block.1).expect("Infallible");
     }
 }

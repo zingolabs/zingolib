@@ -100,7 +100,7 @@ where
             }?;
             Vector::write(
                 &mut w,
-                &checkpoint.marks_removed().into_iter().collect::<Vec<_>>(),
+                &checkpoint.marks_removed().iter().collect::<Vec<_>>(),
                 |w, mark| w.write_u64::<LittleEndian>(<u64 as From<Position>>::from(**mark)),
             )
         },
