@@ -12,7 +12,6 @@ use shardtree::{Checkpoint, LocatedPrunableTree, ShardStore, ShardTree, TreeStat
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
 use std::usize;
-use zcash_client_backend::data_api::WalletCommitmentTrees;
 use zcash_client_sqlite::serialization::{read_shard, write_shard};
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
@@ -972,14 +971,14 @@ impl TransactionMetadata {
         let transaction_id = TxId::from_bytes(transaction_id_bytes);
 
         tracing::info!("About to attempt to read a note and metadata");
-        let sapling_notes = Vector::read(&mut reader, |r| {
+        let sapling_notes = Vector::read_collected_mut(&mut reader, |r| {
             ReceivedSaplingNoteAndMetadata::read(
                 r,
                 (wallet_capability, &mut trees.witness_tree_sapling),
             )
         })?;
         let orchard_notes = if version > 22 {
-            Vector::read(&mut reader, |r| {
+            Vector::read_collected_mut(&mut reader, |r| {
                 ReceivedOrchardNoteAndMetadata::read(
                     r,
                     (wallet_capability, &mut trees.witness_tree_orchard),

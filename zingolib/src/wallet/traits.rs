@@ -1331,12 +1331,16 @@ where
             let top_height = reader.read_u64::<LittleEndian>()?;
             let witnesses = WitnessCache::<T::Node>::new(witnesses_vec, top_height);
 
-            for (i, witness) in witnesses_vec.into_iter().rev().enumerate().rev() {
+            let pos = witnesses
+                .last()
+                .map(|w| w.witnessed_position())
+                .unwrap_or_else(|| Position::from(0));
+            for (i, witness) in witnesses.witnesses.into_iter().rev().enumerate().rev() {
                 let height = BlockHeight::from(top_height as u32 - i as u32);
                 tree.insert_witness_nodes(witness, height)
                     .expect("Infallible");
             }
-            witnesses.last().unwrap().witnessed_position()
+            pos
         };
 
         let mut nullifier = [0u8; 32];

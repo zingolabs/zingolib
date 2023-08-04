@@ -53,7 +53,7 @@ impl TransactionMetadataSet {
         wallet_capability: &WalletCapability,
     ) -> io::Result<Self> {
         let mut witness_trees = WitnessTrees::default();
-        let txs_tuples = Vector::read(&mut reader, |r| {
+        let txs = Vector::read_collected_mut(&mut reader, |r| {
             let mut txid_bytes = [0u8; 32];
             r.read_exact(&mut txid_bytes)?;
 
@@ -62,10 +62,6 @@ impl TransactionMetadataSet {
                 TransactionMetadata::read(r, (wallet_capability, &mut witness_trees)).unwrap(),
             ))
         })?;
-
-        let txs = txs_tuples
-            .into_iter()
-            .collect::<HashMap<TxId, TransactionMetadata>>();
 
         Ok(Self {
             current: txs,
@@ -84,7 +80,7 @@ impl TransactionMetadataSet {
         }
 
         let mut witness_trees = WitnessTrees::default();
-        let txs_tuples = Vector::read(&mut reader, |r| {
+        let current: HashMap<_, _> = Vector::read_collected_mut(&mut reader, |r| {
             let mut txid_bytes = [0u8; 32];
             r.read_exact(&mut txid_bytes)?;
 
@@ -94,9 +90,6 @@ impl TransactionMetadataSet {
             ))
         })?;
 
-        let current = txs_tuples
-            .into_iter()
-            .collect::<HashMap<TxId, TransactionMetadata>>();
         let some_txid_from_highest_wallet_block = current
             .values()
             .fold(None, |c: Option<(TxId, BlockHeight)>, w| {
@@ -108,8 +101,8 @@ impl TransactionMetadataSet {
             })
             .map(|v| v.0);
 
-        let _mempool = if version <= 20 {
-            Vector::read(&mut reader, |r| {
+        let _mempool: Vec<(TxId, TransactionMetadata)> = if version <= 20 {
+            Vector::read_collected_mut(&mut reader, |r| {
                 let mut txid_bytes = [0u8; 32];
                 r.read_exact(&mut txid_bytes)?;
                 let transaction_metadata =
@@ -117,8 +110,6 @@ impl TransactionMetadataSet {
 
                 Ok((TxId::from_bytes(txid_bytes), transaction_metadata))
             })?
-            .into_iter()
-            .collect()
         } else {
             vec![]
         };
