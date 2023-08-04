@@ -52,13 +52,14 @@ impl TransactionMetadataSet {
         mut reader: R,
         wallet_capability: &WalletCapability,
     ) -> io::Result<Self> {
+        let mut witness_trees = WitnessTrees::default();
         let txs_tuples = Vector::read(&mut reader, |r| {
             let mut txid_bytes = [0u8; 32];
             r.read_exact(&mut txid_bytes)?;
 
             Ok((
                 TxId::from_bytes(txid_bytes),
-                TransactionMetadata::read(r, wallet_capability).unwrap(),
+                TransactionMetadata::read(r, (wallet_capability, &mut witness_trees)).unwrap(),
             ))
         })?;
 
@@ -69,7 +70,7 @@ impl TransactionMetadataSet {
         Ok(Self {
             current: txs,
             some_txid_from_highest_wallet_block: None,
-            witness_trees: WitnessTrees::default(),
+            witness_trees,
         })
     }
 
@@ -82,13 +83,14 @@ impl TransactionMetadataSet {
             ));
         }
 
+        let mut witness_trees = WitnessTrees::default();
         let txs_tuples = Vector::read(&mut reader, |r| {
             let mut txid_bytes = [0u8; 32];
             r.read_exact(&mut txid_bytes)?;
 
             Ok((
                 TxId::from_bytes(txid_bytes),
-                TransactionMetadata::read(r, wallet_capability)?,
+                TransactionMetadata::read(r, (wallet_capability, &mut witness_trees))?,
             ))
         })?;
 
@@ -110,7 +112,8 @@ impl TransactionMetadataSet {
             Vector::read(&mut reader, |r| {
                 let mut txid_bytes = [0u8; 32];
                 r.read_exact(&mut txid_bytes)?;
-                let transaction_metadata = TransactionMetadata::read(r, wallet_capability)?;
+                let transaction_metadata =
+                    TransactionMetadata::read(r, (wallet_capability, &mut witness_trees))?;
 
                 Ok((TxId::from_bytes(txid_bytes), transaction_metadata))
             })?
@@ -120,10 +123,8 @@ impl TransactionMetadataSet {
             vec![]
         };
 
-        let witness_trees = if version < 22 {
-            todo!("generate trees from old incremental witnesses")
-        } else {
-            WitnessTrees::read(reader)?
+        if version >= 22 {
+            witness_trees = WitnessTrees::read(reader)?;
         };
 
         Ok(Self {

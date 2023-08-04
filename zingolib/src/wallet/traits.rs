@@ -1283,13 +1283,31 @@ impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability)> for orch
     }
 }
 
-impl<T> ReadableWriteable<&WalletCapability> for T
+impl<T>
+    ReadableWriteable<(
+        &WalletCapability,
+        &mut ShardTree<
+            MemoryShardStore<T::Node, BlockHeight>,
+            COMMITMENT_TREE_DEPTH,
+            MAX_SHARD_DEPTH,
+        >,
+    )> for T
 where
     T: ReceivedNoteAndMetadata,
 {
     const VERSION: u8 = 4;
 
-    fn read<R: Read>(mut reader: R, wallet_capability: &WalletCapability) -> io::Result<Self> {
+    fn read<R: Read>(
+        mut reader: R,
+        (wallet_capability, tree): (
+            &WalletCapability,
+            &mut ShardTree<
+                MemoryShardStore<T::Node, BlockHeight>,
+                COMMITMENT_TREE_DEPTH,
+                MAX_SHARD_DEPTH,
+            >,
+        ),
+    ) -> io::Result<Self> {
         let external_version = Self::get_version(&mut reader)?;
         tracing::info!("NoteAndMetadata version is: {external_version}");
 
@@ -1309,9 +1327,15 @@ where
             Position::from(reader.read_u64::<LittleEndian>()?)
         } else {
             let witnesses_vec = Vector::read(&mut reader, |r| read_incremental_witness(r))?;
+
             let top_height = reader.read_u64::<LittleEndian>()?;
             let witnesses = WitnessCache::<T::Node>::new(witnesses_vec, top_height);
 
+            for (i, witness) in witnesses_vec.into_iter().rev().enumerate().rev() {
+                let height = BlockHeight::from(top_height as u32 - i as u32);
+                tree.insert_witness_nodes(witness, height)
+                    .expect("Infallible");
+            }
             witnesses.last().unwrap().witnessed_position()
         };
 
