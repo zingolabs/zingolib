@@ -248,7 +248,7 @@ impl LightClient {
         LightClient::read_wallet_from_buffer(config, BufReader::new(File::open(wallet_path)?))
     }
 
-    async fn ensure_witness_tree_not_above_blocks(&self) {
+    async fn ensure_witness_tree_not_above_wallet_blocks(&self) {
         let last_synced_height = self.wallet.last_synced_height().await;
         let mut txmds_writelock = self
             .wallet
@@ -1390,7 +1390,7 @@ impl LightClient {
         // The top of the wallet
         let last_synced_height = self.wallet.last_synced_height().await;
 
-        self.ensure_witness_tree_not_above_blocks().await;
+        self.ensure_witness_tree_not_above_wallet_blocks().await;
         // This is a fresh wallet. We need to get the initial trees
         if last_synced_height
             == self
