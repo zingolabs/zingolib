@@ -1453,17 +1453,6 @@ impl LightWallet {
         self.transaction_context.transaction_metadata_set.clone()
     }
 
-    pub async fn unverified_orchard_balance(&self, target_addr: Option<String>) -> JsonValue {
-        self.unverified_balance::<OrchardDomain>(target_addr).await
-    }
-
-    /// The following functions use a filter/map functional approach to
-    /// expressively unpack different kinds of transaction data.
-    pub async fn unverified_sapling_balance(&self, target_addr: Option<String>) -> JsonValue {
-        self.unverified_balance::<SaplingDomain<zingoconfig::ChainType>>(target_addr)
-            .await
-    }
-
     async fn unverified_balance<D: DomainWalletExt>(&self, target_addr: Option<String>) -> JsonValue
     where
         <D as Domain>::Recipient: Recipient,
@@ -1479,6 +1468,17 @@ impl LightWallet {
         self.shielded_balance::<D>(target_addr, filters)
             .await
             .map_or(json::JsonValue::Null, json::JsonValue::from)
+    }
+
+    pub async fn unverified_orchard_balance(&self, target_addr: Option<String>) -> JsonValue {
+        self.unverified_balance::<OrchardDomain>(target_addr).await
+    }
+
+    /// The following functions use a filter/map functional approach to
+    /// expressively unpack different kinds of transaction data.
+    pub async fn unverified_sapling_balance(&self, target_addr: Option<String>) -> JsonValue {
+        self.unverified_balance::<SaplingDomain<zingoconfig::ChainType>>(target_addr)
+            .await
     }
 
     async fn verified_balance<D: DomainWalletExt>(&self, target_addr: Option<String>) -> JsonValue
