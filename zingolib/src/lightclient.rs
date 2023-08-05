@@ -25,7 +25,7 @@ use crate::{
 use futures::future::join_all;
 use json::{array, object, JsonValue};
 use log::{debug, error, warn};
-use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
+use orchard::note_encryption::OrchardDomain;
 use std::{
     cmp::{self, Ordering},
     collections::HashMap,
@@ -52,7 +52,6 @@ use zcash_client_backend::{
 use zcash_primitives::{
     consensus::{BlockHeight, BranchId, Parameters},
     memo::{Memo, MemoBytes},
-    merkle_tree::read_commitment_tree,
     sapling::note_encryption::SaplingDomain,
     transaction::{fees::zip317::MINIMUM_FEE, Transaction, TxId},
 };
@@ -1398,8 +1397,15 @@ impl LightClient {
                 .config
                 .sapling_activation_height()
                 - 1
+            && !self.wallet.get_birthday().await == 1
         {
-            self.wallet.initiate_witness_trees().await;
+            let trees = crate::grpc_connector::GrpcConnector::get_trees(
+                self.get_server_uri(),
+                self.wallet.get_birthday().await - 1,
+            )
+            .await
+            .unwrap();
+            self.wallet.initiate_witness_trees(trees).await;
         }
         let latest_blockid =
             GrpcConnector::get_latest_block(self.config.get_lightwalletd_uri()).await?;

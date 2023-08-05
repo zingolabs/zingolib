@@ -7,7 +7,6 @@ use crate::wallet::data::{SpendableSaplingNote, TransactionMetadata};
 use bip0039::Mnemonic;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::Future;
-use incrementalmerkletree::frontier::CommitmentTree;
 use json::JsonValue;
 use log::{error, info, warn};
 use orchard::keys::SpendingKey as OrchardSpendingKey;
@@ -228,46 +227,42 @@ pub struct LightWallet {
 
 use crate::wallet::traits::{Diversifiable as _, ReadableWriteable};
 impl LightWallet {
-    async fn initiate_witness_trees(&self) {
-        if self.wallet.get_birthday().await == 1 {
-            return;
-        }
-        let trees =
-            GrpcConnector::get_trees(self.get_server_uri(), self.wallet.get_birthday().await - 1)
-                .await
-                .unwrap();
-        let sapling_tree: CommitmentTree<zcash_primitives::sapling::Node, COMMITMENT_TREE_DEPTH> =
-            read_commitment_tree(&hex::decode(trees.sapling_tree).unwrap()[..]).unwrap();
-        let orchard_tree: CommitmentTree<MerkleHashOrchard, COMMITMENT_TREE_DEPTH> =
-            read_commitment_tree(&hex::decode(trees.orchard_tree).unwrap()[..]).unwrap();
-        if let Some(sap_nonempty_front) = sapling_tree.to_frontier().take() {
-            self.wallet
-                .transaction_context
-                .transaction_metadata_set
-                .write()
-                .await
-                .witness_trees
-                .witness_tree_sapling
-                .insert_frontier_nodes(
-                    sap_nonempty_front,
-                    incrementalmerkletree::Retention::Ephemeral,
-                )
-                .unwrap();
-        }
-        if let Some(orc_nonempty_front) = orchard_tree.to_frontier().take() {
-            self.wallet
-                .transaction_context
-                .transaction_metadata_set
-                .write()
-                .await
-                .witness_trees
-                .witness_tree_orchard
-                .insert_frontier_nodes(
-                    orc_nonempty_front,
-                    incrementalmerkletree::Retention::Ephemeral,
-                )
-                .unwrap();
-        }
+    fn get_legacy_frontiers(
+        trees: crate::compact_formats::TreeState,
+    ) -> (
+        incrementalmerkletree::frontier::NonEmptyFrontier<zcash_primitives::sapling::Node>,
+        incrementalmerkletree::frontier::NonEmptyFrontier<MerkleHashOrchard>,
+    ) {
+        (
+            zcash_primitives::merkle_tree::read_commitment_tree::<
+                zcash_primitives::sapling::Node,
+                &[u8],
+                COMMITMENT_TREE_DEPTH,
+            >(&hex::decode(trees.sapling_tree).unwrap()[..])
+            .unwrap()
+            .to_frontier()
+            .take()
+            .expect("A nonempty frontier"),
+            zcash_primitives::merkle_tree::read_commitment_tree::<
+                MerkleHashOrchard,
+                &[u8],
+                COMMITMENT_TREE_DEPTH,
+            >(&hex::decode(trees.orchard_tree).unwrap()[..])
+            .unwrap()
+            .to_frontier()
+            .take()
+            .expect("A nonempty frontier"),
+        )
+    }
+    pub(crate) async fn initiate_witness_trees(&self, trees: crate::compact_formats::TreeState) {
+        let (legacy_sapling_frontier, legacy_orchard_frontier) =
+            LightWallet::get_legacy_frontiers(trees);
+        self.transaction_context
+            .transaction_metadata_set
+            .write()
+            .await
+            .witness_trees
+            .insert_all_frontier_nodes(legacy_sapling_frontier, legacy_orchard_frontier);
     }
     fn add_notes_to_total<D: DomainWalletExt>(
         candidates: Vec<D::SpendableNoteAT>,
