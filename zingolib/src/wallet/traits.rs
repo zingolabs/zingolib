@@ -458,7 +458,7 @@ pub trait ReceivedNoteAndMetadata: Sized {
     fn transaction_metadata_notes_mut(
         wallet_transaction: &mut TransactionMetadata,
     ) -> &mut Vec<Self>;
-    fn unconfirmed_spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
+    fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
     ///Convenience function
     fn value(&self) -> u64 {
         Self::value_from_note(self.note())
@@ -567,7 +567,7 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         &self.unconfirmed_spent
     }
 
-    fn unconfirmed_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
+    fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
         &mut self.unconfirmed_spent
     }
 
@@ -699,7 +699,7 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         &self.unconfirmed_spent
     }
 
-    fn unconfirmed_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
+    fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
         &mut self.unconfirmed_spent
     }
 
@@ -993,6 +993,7 @@ where
         if note_and_metadata.spent().is_none()
             && note_and_metadata.pending_spent().is_none()
             && spend_key.is_some()
+            && !note_and_metadata.pending_receipt()
         //TODO: Account for lack of this line
         // && note_and_metadata.witnessed_position().len() >= (anchor_offset + 1)
         {

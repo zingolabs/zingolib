@@ -362,17 +362,10 @@ impl LightWallet {
             .filter_map(
                 |(transaction_id, note): (transaction::TxId, &D::WalletNote)| -> Option <D::SpendableNoteAT> {
                     // Filter out notes that are already spent
-                    if note.spent().is_some()
-                        || note.pending_spent().is_some()
-                        || note.pending_receipt()
-                    {
-                        None
-                    } else {
                         // Get the spending key for the selected fvk, if we have it
                         let extsk = D::wc_to_sk(&wc);
                         SpendableNote::from(transaction_id, note, extsk.ok().as_ref())
-                    }
-                },
+                }
             )
             .collect::<Vec<D::SpendableNoteAT>>();
         candidate_notes.sort_unstable_by(|spendable_note_1, spendable_note_2| {
@@ -1409,8 +1402,7 @@ impl LightWallet {
                     }
                     filtered_notes
                         .map(|notedata| {
-                            if notedata.spent().is_none() && notedata.unconfirmed_spent().is_none()
-                            {
+                            if notedata.spent().is_none() && notedata.pending_spent().is_none() {
                                 <D::WalletNote as traits::ReceivedNoteAndMetadata>::value(notedata)
                             } else {
                                 0

@@ -198,10 +198,10 @@ impl TransactionMetadataSet {
                     }
 
                     // Remove unconfirmed spends too
-                    if nd.unconfirmed_spent().is_some()
-                        && txids_to_remove.contains(&nd.unconfirmed_spent().unwrap().0)
+                    if nd.pending_spent().is_some()
+                        && txids_to_remove.contains(&nd.pending_spent().unwrap().0)
                     {
-                        *nd.unconfirmed_spent_mut() = None;
+                        *nd.pending_spent_mut() = None;
                     }
                 });
         });
