@@ -8,7 +8,7 @@ use orchard::note_encryption::OrchardDomain;
 use orchard::tree::MerkleHashOrchard;
 use prost::Message;
 use shardtree::memory::MemoryShardStore;
-use shardtree::{Checkpoint, LocatedPrunableTree, ShardStore, ShardTree, TreeState};
+use shardtree::{Checkpoint, LocatedPrunableTree, ShardStore, ShardTree};
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
 use std::usize;
@@ -163,8 +163,8 @@ fn read_memory_shard_store_backed_tree<
     let checkpoints = Vector::read(&mut reader, |r| {
         let checkpoint_id = C::from(r.read_u32::<LittleEndian>()?);
         let tree_state = match r.read_u8()? {
-            0 => TreeState::Empty,
-            1 => TreeState::AtPosition(Position::from(r.read_u64::<LittleEndian>()?)),
+            0 => shardtree::TreeState::Empty,
+            1 => shardtree::TreeState::AtPosition(Position::from(r.read_u64::<LittleEndian>()?)),
             otherwise => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
