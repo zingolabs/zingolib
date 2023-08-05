@@ -412,9 +412,6 @@ pub trait ReceivedNoteAndMetadata: Sized {
     type Node: Hashable + HashSer + FromCommitment + Send + Clone + PartialEq + Eq;
     type Nullifier: Nullifier;
 
-    fn is_pending(&self) -> bool {
-        self.nullifier() == Self::Nullifier::from_bytes([0; 32])
-    }
     fn diversifier(&self) -> &Self::Diversifier;
     #[allow(clippy::too_many_arguments)]
     fn from_parts(
@@ -436,21 +433,31 @@ pub trait ReceivedNoteAndMetadata: Sized {
     fn is_spent(&self) -> bool {
         Self::spent(self).is_some()
     }
-    fn output_index(&self) -> &usize;
-    fn output_index_mut(&mut self) -> &mut usize;
     fn memo(&self) -> &Option<Memo>;
     fn memo_mut(&mut self) -> &mut Option<Memo>;
     fn note(&self) -> &Self::Note;
     fn nullifier(&self) -> Self::Nullifier;
     fn nullifier_mut(&mut self) -> &mut Self::Nullifier;
+    fn output_index(&self) -> &usize;
+    fn output_index_mut(&mut self) -> &mut usize;
+    fn pending_receipt(&self) -> bool {
+        self.nullifier() == Self::Nullifier::from_bytes([0; 32])
+    }
+    fn pending_spent(&self) -> &Option<(TxId, u32)>;
     fn pool() -> Pool;
+    fn remove_witness_mark(
+        txmds: &mut TransactionMetadataSet,
+        height: BlockHeight,
+        txid: TxId,
+        source_txid: TxId,
+        nullifier: Self::Nullifier,
+    );
     fn spent(&self) -> &Option<(TxId, u32)>;
     fn spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
     fn transaction_metadata_notes(wallet_transaction: &TransactionMetadata) -> &Vec<Self>;
     fn transaction_metadata_notes_mut(
         wallet_transaction: &mut TransactionMetadata,
     ) -> &mut Vec<Self>;
-    fn unconfirmed_spent(&self) -> &Option<(TxId, u32)>;
     fn unconfirmed_spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
     ///Convenience function
     fn value(&self) -> u64 {
@@ -459,13 +466,6 @@ pub trait ReceivedNoteAndMetadata: Sized {
     fn value_from_note(note: &Self::Note) -> u64;
     fn witnessed_position(&self) -> &Position;
     fn witnessed_position_mut(&mut self) -> &mut Position;
-    fn remove_witness_mark(
-        txmds: &mut TransactionMetadataSet,
-        height: BlockHeight,
-        txid: TxId,
-        source_txid: TxId,
-        nullifier: Self::Nullifier,
-    );
 }
 
 impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
@@ -563,7 +563,7 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         &mut wallet_transaction.sapling_notes
     }
 
-    fn unconfirmed_spent(&self) -> &Option<(TxId, u32)> {
+    fn pending_spent(&self) -> &Option<(TxId, u32)> {
         &self.unconfirmed_spent
     }
 
@@ -695,7 +695,7 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         &mut wallet_transaction.orchard_notes
     }
 
-    fn unconfirmed_spent(&self) -> &Option<(TxId, u32)> {
+    fn pending_spent(&self) -> &Option<(TxId, u32)> {
         &self.unconfirmed_spent
     }
 
@@ -991,7 +991,7 @@ where
     ) -> Option<Self> {
         // Include only notes that haven't been spent, or haven't been included in an unconfirmed spend yet.
         if note_and_metadata.spent().is_none()
-            && note_and_metadata.unconfirmed_spent().is_none()
+            && note_and_metadata.pending_spent().is_none()
             && spend_key.is_some()
         //TODO: Account for lack of this line
         // && note_and_metadata.witnessed_position().len() >= (anchor_offset + 1)
