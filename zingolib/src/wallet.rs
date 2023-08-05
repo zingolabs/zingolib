@@ -7,6 +7,7 @@ use crate::wallet::data::{SpendableSaplingNote, TransactionMetadata};
 use bip0039::Mnemonic;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::Future;
+use incrementalmerkletree::frontier::CommitmentTree;
 use json::JsonValue;
 use log::{error, info, warn};
 use orchard::keys::SpendingKey as OrchardSpendingKey;

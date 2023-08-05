@@ -10,7 +10,7 @@ use crate::{
     wallet::{
         data::{
             finsight, summaries::ValueTransfer, summaries::ValueTransferKind, OutgoingTxData,
-            TransactionMetadata, COMMITMENT_TREE_DEPTH,
+            TransactionMetadata,
         },
         keys::{
             address_from_pubkeyhash,
@@ -23,7 +23,6 @@ use crate::{
     },
 };
 use futures::future::join_all;
-use incrementalmerkletree::frontier::CommitmentTree;
 use json::{array, object, JsonValue};
 use log::{debug, error, warn};
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
