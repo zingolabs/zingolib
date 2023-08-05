@@ -1400,7 +1400,7 @@ impl LightClient {
                 .sapling_activation_height()
                 - 1
         {
-            self.initiate_witness_trees().await;
+            self.wallet.initiate_witness_trees().await;
         }
         let latest_blockid =
             GrpcConnector::get_latest_block(self.config.get_lightwalletd_uri()).await?;
@@ -1706,48 +1706,6 @@ impl LightClient {
             "latest_block" => start_block,
             "total_blocks_synced" => start_block - end_block + 1,
         })
-    }
-
-    async fn initiate_witness_trees(&self) {
-        if self.wallet.get_birthday().await == 1 {
-            return;
-        }
-        let trees =
-            GrpcConnector::get_trees(self.get_server_uri(), self.wallet.get_birthday().await - 1)
-                .await
-                .unwrap();
-        let sapling_tree: CommitmentTree<zcash_primitives::sapling::Node, COMMITMENT_TREE_DEPTH> =
-            read_commitment_tree(&hex::decode(trees.sapling_tree).unwrap()[..]).unwrap();
-        let orchard_tree: CommitmentTree<MerkleHashOrchard, COMMITMENT_TREE_DEPTH> =
-            read_commitment_tree(&hex::decode(trees.orchard_tree).unwrap()[..]).unwrap();
-        if let Some(sap_nonempty_front) = sapling_tree.to_frontier().take() {
-            self.wallet
-                .transaction_context
-                .transaction_metadata_set
-                .write()
-                .await
-                .witness_trees
-                .witness_tree_sapling
-                .insert_frontier_nodes(
-                    sap_nonempty_front,
-                    incrementalmerkletree::Retention::Ephemeral,
-                )
-                .unwrap();
-        }
-        if let Some(orc_nonempty_front) = orchard_tree.to_frontier().take() {
-            self.wallet
-                .transaction_context
-                .transaction_metadata_set
-                .write()
-                .await
-                .witness_trees
-                .witness_tree_orchard
-                .insert_frontier_nodes(
-                    orc_nonempty_front,
-                    incrementalmerkletree::Retention::Ephemeral,
-                )
-                .unwrap();
-        }
     }
 
     fn tx_summary_matcher(

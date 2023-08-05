@@ -227,6 +227,47 @@ pub struct LightWallet {
 
 use crate::wallet::traits::{Diversifiable as _, ReadableWriteable};
 impl LightWallet {
+    async fn initiate_witness_trees(&self) {
+        if self.wallet.get_birthday().await == 1 {
+            return;
+        }
+        let trees =
+            GrpcConnector::get_trees(self.get_server_uri(), self.wallet.get_birthday().await - 1)
+                .await
+                .unwrap();
+        let sapling_tree: CommitmentTree<zcash_primitives::sapling::Node, COMMITMENT_TREE_DEPTH> =
+            read_commitment_tree(&hex::decode(trees.sapling_tree).unwrap()[..]).unwrap();
+        let orchard_tree: CommitmentTree<MerkleHashOrchard, COMMITMENT_TREE_DEPTH> =
+            read_commitment_tree(&hex::decode(trees.orchard_tree).unwrap()[..]).unwrap();
+        if let Some(sap_nonempty_front) = sapling_tree.to_frontier().take() {
+            self.wallet
+                .transaction_context
+                .transaction_metadata_set
+                .write()
+                .await
+                .witness_trees
+                .witness_tree_sapling
+                .insert_frontier_nodes(
+                    sap_nonempty_front,
+                    incrementalmerkletree::Retention::Ephemeral,
+                )
+                .unwrap();
+        }
+        if let Some(orc_nonempty_front) = orchard_tree.to_frontier().take() {
+            self.wallet
+                .transaction_context
+                .transaction_metadata_set
+                .write()
+                .await
+                .witness_trees
+                .witness_tree_orchard
+                .insert_frontier_nodes(
+                    orc_nonempty_front,
+                    incrementalmerkletree::Retention::Ephemeral,
+                )
+                .unwrap();
+        }
+    }
     fn add_notes_to_total<D: DomainWalletExt>(
         candidates: Vec<D::SpendableNoteAT>,
         target_amount: Amount,
