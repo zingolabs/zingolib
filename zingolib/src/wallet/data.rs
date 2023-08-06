@@ -57,11 +57,10 @@ pub struct WitnessTrees {
 
 async fn write_memory_shard_store_backed_tree<
     H: Hashable + Clone + Eq + HashSer,
-    C: Ord + Clone + std::fmt::Debug + Copy,
+    C: Ord + std::fmt::Debug + Copy,
     W: Write,
 >(
     tree: &mut shardtree::ShardTree<MemoryShardStore<H, C>, COMMITMENT_TREE_DEPTH, MAX_SHARD_DEPTH>,
-
     mut writer: W,
 ) -> io::Result<()>
 where
