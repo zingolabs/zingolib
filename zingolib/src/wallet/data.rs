@@ -63,14 +63,13 @@ where
 {
     let roots = store.get_shard_roots().expect("Infallible");
     Vector::write(&mut writer, &roots, |w, root| {
+        w.write_u8(root.level().into())?;
+        w.write_u64::<LittleEndian>(root.index())?;
         let shard = store
             .get_shard(*root)
             .expect("Infallible")
             .expect("cannot find root that shard store claims to have");
-        let root_addr = shard.root_addr();
-        w.write_u8(root_addr.level().into())?;
-        w.write_u64::<LittleEndian>(root_addr.index())?;
-        write_shard(w, shard.root())?;
+        write_shard(w, shard.root())?; // s.root returns &Tree
         Ok(())
     })?;
     Ok(())
