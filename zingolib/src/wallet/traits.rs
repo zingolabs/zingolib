@@ -761,17 +761,21 @@ where
     }
     fn get_shardtree(
         tmds: &TransactionMetadataSet,
-    ) -> &ShardTree<
-        MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
-        COMMITMENT_TREE_DEPTH,
-        MAX_SHARD_DEPTH,
+    ) -> Option<
+        &ShardTree<
+            MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
+            COMMITMENT_TREE_DEPTH,
+            MAX_SHARD_DEPTH,
+        >,
     >;
     fn get_shardtree_mut(
         tmds: &mut TransactionMetadataSet,
-    ) -> &mut ShardTree<
-        MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
-        COMMITMENT_TREE_DEPTH,
-        MAX_SHARD_DEPTH,
+    ) -> Option<
+        &mut ShardTree<
+            MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
+            COMMITMENT_TREE_DEPTH,
+            MAX_SHARD_DEPTH,
+        >,
     >;
     fn get_nullifier_from_note_fvk_and_witness_position(
         note: &Self::Note,
@@ -808,21 +812,29 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
 
     fn get_shardtree(
         tmds: &TransactionMetadataSet,
-    ) -> &ShardTree<
-        MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
-        COMMITMENT_TREE_DEPTH,
-        MAX_SHARD_DEPTH,
+    ) -> Option<
+        &ShardTree<
+            MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
+            COMMITMENT_TREE_DEPTH,
+            MAX_SHARD_DEPTH,
+        >,
     > {
-        &tmds.witness_trees.witness_tree_sapling
+        tmds.witness_trees
+            .as_ref()
+            .map(|tree| &tree.witness_tree_sapling)
     }
     fn get_shardtree_mut(
         tmds: &mut TransactionMetadataSet,
-    ) -> &mut ShardTree<
-        MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
-        COMMITMENT_TREE_DEPTH,
-        MAX_SHARD_DEPTH,
+    ) -> Option<
+        &mut ShardTree<
+            MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
+            COMMITMENT_TREE_DEPTH,
+            MAX_SHARD_DEPTH,
+        >,
     > {
-        &mut tmds.witness_trees.witness_tree_sapling
+        tmds.witness_trees
+            .as_mut()
+            .map(|tree| &mut tree.witness_tree_sapling)
     }
     fn get_nullifier_from_note_fvk_and_witness_position(
         note: &Self::Note,
@@ -884,21 +896,17 @@ impl DomainWalletExt for OrchardDomain {
 
     fn get_shardtree(
         tmds: &TransactionMetadataSet,
-    ) -> &ShardTree<
-        MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
-        COMMITMENT_TREE_DEPTH,
-        MAX_SHARD_DEPTH,
-    > {
-        &tmds.witness_trees.witness_tree_orchard
+    ) -> Option<&ShardTree<MemoryShardStore<MerkleHashOrchard, BlockHeight>, 32, 16>> {
+        tmds.witness_trees
+            .as_ref()
+            .map(|tree| &tree.witness_tree_orchard)
     }
     fn get_shardtree_mut(
         tmds: &mut TransactionMetadataSet,
-    ) -> &mut ShardTree<
-        MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
-        COMMITMENT_TREE_DEPTH,
-        MAX_SHARD_DEPTH,
-    > {
-        &mut tmds.witness_trees.witness_tree_orchard
+    ) -> Option<&mut ShardTree<MemoryShardStore<MerkleHashOrchard, BlockHeight>, 32, 16>> {
+        tmds.witness_trees
+            .as_mut()
+            .map(|tree| &mut tree.witness_tree_orchard)
     }
     fn get_nullifier_from_note_fvk_and_witness_position(
         note: &Self::Note,
@@ -1287,10 +1295,12 @@ impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability)> for orch
 impl<T>
     ReadableWriteable<(
         &WalletCapability,
-        &mut ShardTree<
-            MemoryShardStore<T::Node, BlockHeight>,
-            COMMITMENT_TREE_DEPTH,
-            MAX_SHARD_DEPTH,
+        Option<
+            &mut ShardTree<
+                MemoryShardStore<T::Node, BlockHeight>,
+                COMMITMENT_TREE_DEPTH,
+                MAX_SHARD_DEPTH,
+            >,
         >,
     )> for T
 where
@@ -1302,10 +1312,12 @@ where
         mut reader: R,
         (wallet_capability, tree): (
             &WalletCapability,
-            &mut ShardTree<
-                MemoryShardStore<T::Node, BlockHeight>,
-                COMMITMENT_TREE_DEPTH,
-                MAX_SHARD_DEPTH,
+            Option<
+                &mut ShardTree<
+                    MemoryShardStore<T::Node, BlockHeight>,
+                    COMMITMENT_TREE_DEPTH,
+                    MAX_SHARD_DEPTH,
+                >,
             >,
         ),
     ) -> io::Result<Self> {
@@ -1338,8 +1350,9 @@ where
                 .unwrap_or_else(|| Position::from(0));
             for (i, witness) in witnesses.witnesses.into_iter().rev().enumerate().rev() {
                 let height = BlockHeight::from(top_height as u32 - i as u32);
-                tree.insert_witness_nodes(witness, height)
-                    .expect("Infallible");
+                if let Some(&mut ref mut t) = tree {
+                    t.insert_witness_nodes(witness, height).expect("Infallible");
+                }
             }
             pos
         };

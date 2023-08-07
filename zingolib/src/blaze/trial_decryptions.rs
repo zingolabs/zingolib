@@ -434,31 +434,34 @@ async fn update_witnesses<D>(
     <D as Domain>::Recipient: Recipient,
 {
     for block in notes_to_mark_position.into_iter().rev() {
-        let witness_tree = D::get_shardtree(&*txmds_writelock);
-        let position = witness_tree
-            .max_leaf_position(0)
-            .unwrap()
-            .map(|pos| pos + 1)
-            .unwrap_or(Position::from(0));
-        let mut nodes_retention = Vec::new();
-        for (i, (output_num, transaction_id, (node, retention))) in block.0.into_iter().enumerate()
-        {
-            if retention != Retention::Ephemeral {
-                txmds_writelock
-                    .mark_note_position::<D>(
-                        transaction_id,
-                        output_num,
-                        position + i as u64,
-                        &D::wc_to_fvk(&*wc.read().await).unwrap(),
-                    )
-                    .await;
+        if let Some(witness_tree) = D::get_shardtree(&*txmds_writelock) {
+            let position = witness_tree
+                .max_leaf_position(0)
+                .unwrap()
+                .map(|pos| pos + 1)
+                .unwrap_or(Position::from(0));
+            let mut nodes_retention = Vec::new();
+            for (i, (output_num, transaction_id, (node, retention))) in
+                block.0.into_iter().enumerate()
+            {
+                if retention != Retention::Ephemeral {
+                    txmds_writelock
+                        .mark_note_position::<D>(
+                            transaction_id,
+                            output_num,
+                            position + i as u64,
+                            &D::wc_to_fvk(&*wc.read().await).unwrap(),
+                        )
+                        .await;
+                }
+                nodes_retention.push((node, retention));
             }
-            nodes_retention.push((node, retention));
+            if let Some(witness_tree_mut) = D::get_shardtree_mut(&mut *txmds_writelock) {
+                let _tree_insert_result = witness_tree_mut
+                    .batch_insert(position, nodes_retention.into_iter())
+                    .expect("failed to update witness tree");
+                witness_tree_mut.checkpoint(block.1).expect("Infallible");
+            }
         }
-        let witness_tree_mut = D::get_shardtree_mut(&mut *txmds_writelock);
-        let _tree_insert_result = witness_tree_mut
-            .batch_insert(position, nodes_retention.into_iter())
-            .expect("failed to update witness tree");
-        witness_tree_mut.checkpoint(block.1).expect("Infallible");
     }
 }

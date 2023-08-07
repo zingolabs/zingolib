@@ -8,7 +8,7 @@ use incrementalmerkletree::Position;
 use log::error;
 use orchard;
 use orchard::note_encryption::OrchardDomain;
-use zcash_encoding::Vector;
+use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
 use zcash_primitives::{
     consensus::BlockHeight,
@@ -23,18 +23,17 @@ use super::{
     data::{
         OutgoingTxData, PoolNullifier, ReceivedTransparentOutput, TransactionMetadata, WitnessTrees,
     },
-    keys::unified::WalletCapability,
+    keys::unified::{ReceiverSelection, WalletCapability},
     traits::{self, DomainWalletExt, FromBytes, Nullifier, ReceivedNoteAndMetadata, Recipient},
 };
 
 /// HashMap of all transactions in a wallet, keyed by txid.
 /// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
 /// this struct are threadsafe/locked properly.
-#[derive(Default)]
 pub struct TransactionMetadataSet {
     pub current: HashMap<TxId, TransactionMetadata>,
     pub(crate) some_txid_from_highest_wallet_block: Option<TxId>,
-    pub witness_trees: WitnessTrees,
+    pub witness_trees: Option<WitnessTrees>,
 }
 
 impl TransactionMetadataSet {
@@ -52,14 +51,21 @@ impl TransactionMetadataSet {
         mut reader: R,
         wallet_capability: &WalletCapability,
     ) -> io::Result<Self> {
-        let mut witness_trees = WitnessTrees::default();
+        let mut witness_trees = match wallet_capability.can_spend() {
+            ReceiverSelection {
+                orchard: true,
+                sapling: true,
+                transparent: true,
+            } => Some(WitnessTrees::default()),
+            _ => None,
+        };
         let txs = Vector::read_collected_mut(&mut reader, |r| {
             let mut txid_bytes = [0u8; 32];
             r.read_exact(&mut txid_bytes)?;
 
             Ok((
                 TxId::from_bytes(txid_bytes),
-                TransactionMetadata::read(r, (wallet_capability, &mut witness_trees)).unwrap(),
+                TransactionMetadata::read(r, (wallet_capability, witness_trees.as_mut())).unwrap(),
             ))
         })?;
 
@@ -79,14 +85,21 @@ impl TransactionMetadataSet {
             ));
         }
 
-        let mut witness_trees = WitnessTrees::default();
+        let mut witness_trees = match wallet_capability.can_spend() {
+            ReceiverSelection {
+                orchard: true,
+                sapling: true,
+                transparent: true,
+            } => Some(WitnessTrees::default()),
+            _ => None,
+        };
         let current: HashMap<_, _> = Vector::read_collected_mut(&mut reader, |r| {
             let mut txid_bytes = [0u8; 32];
             r.read_exact(&mut txid_bytes)?;
 
             Ok((
                 TxId::from_bytes(txid_bytes),
-                TransactionMetadata::read(r, (wallet_capability, &mut witness_trees))?,
+                TransactionMetadata::read(r, (wallet_capability, witness_trees.as_mut()))?,
             ))
         })?;
 
@@ -106,7 +119,7 @@ impl TransactionMetadataSet {
                 let mut txid_bytes = [0u8; 32];
                 r.read_exact(&mut txid_bytes)?;
                 let transaction_metadata =
-                    TransactionMetadata::read(r, (wallet_capability, &mut witness_trees))?;
+                    TransactionMetadata::read(r, (wallet_capability, witness_trees.as_mut()))?;
 
                 Ok((TxId::from_bytes(txid_bytes), transaction_metadata))
             })?
@@ -115,7 +128,7 @@ impl TransactionMetadataSet {
         };
 
         if version >= 22 {
-            witness_trees = WitnessTrees::read(reader)?;
+            witness_trees = Optional::read(reader, |r| WitnessTrees::read(r))?;
         };
 
         Ok(Self {
@@ -147,9 +160,7 @@ impl TransactionMetadataSet {
             })?;
         }
 
-        self.witness_trees.write(&mut writer).await?;
-
-        Ok(())
+        Optional::write(writer, self.witness_trees.as_mut(), |w, t| t.write(w))
     }
 
     pub fn clear(&mut self) {
@@ -224,15 +235,14 @@ impl TransactionMetadataSet {
             })
             .collect::<Vec<_>>();
         self.remove_txids(txids_to_remove);
-
-        self.witness_trees
-            .witness_tree_sapling
-            .truncate_removing_checkpoint(&reorg_height)
-            .expect("Infallible");
-        self.witness_trees
-            .witness_tree_orchard
-            .truncate_removing_checkpoint(&reorg_height)
-            .expect("Infallible");
+        if let Some(ref mut t) = self.witness_trees {
+            t.witness_tree_sapling
+                .truncate_removing_checkpoint(&reorg_height)
+                .expect("Infallible");
+            t.witness_tree_orchard
+                .truncate_removing_checkpoint(&reorg_height)
+                .expect("Infallible");
+        }
     }
 
     /// This returns an _arbitrary_ txid from the latest block the wallet is aware of.
@@ -556,13 +566,14 @@ impl TransactionMetadataSet {
             .find(|n| n.nullifier() == nullifier)
         {
             *nd.spent_mut() = Some((txid, height.into()));
-            self.witness_trees
-                .witness_tree_sapling
-                .remove_mark(
-                    *nd.witnessed_position(),
-                    Some(&(height - BlockHeight::from(1))),
-                )
-                .unwrap();
+            if let Some(ref mut t) = self.witness_trees {
+                t.witness_tree_sapling
+                    .remove_mark(
+                        *nd.witnessed_position(),
+                        Some(&(height - BlockHeight::from(1))),
+                    )
+                    .unwrap();
+            }
         } else {
             eprintln!("Could not remove marked node!")
         }
@@ -585,13 +596,14 @@ impl TransactionMetadataSet {
             .find(|n| n.nullifier() == nullifier)
         {
             *nd.spent_mut() = Some((txid, height.into()));
-            self.witness_trees
-                .witness_tree_orchard
-                .remove_mark(
-                    *nd.witnessed_position(),
-                    Some(&(height - BlockHeight::from(1))),
-                )
-                .unwrap();
+            if let Some(ref mut t) = self.witness_trees {
+                t.witness_tree_orchard
+                    .remove_mark(
+                        *nd.witnessed_position(),
+                        Some(&(height - BlockHeight::from(1))),
+                    )
+                    .unwrap();
+            }
         } else {
             eprintln!("Could not remove marked node!")
         }
@@ -840,6 +852,21 @@ impl TransactionMetadataSet {
                 "TxId {} should be present while adding metadata, but wasn't",
                 txid
             );
+        }
+    }
+
+    pub(crate) fn new_with_witness_trees() -> TransactionMetadataSet {
+        Self {
+            current: HashMap::default(),
+            some_txid_from_highest_wallet_block: None,
+            witness_trees: Some(WitnessTrees::default()),
+        }
+    }
+    pub(crate) fn new_treeless() -> TransactionMetadataSet {
+        Self {
+            current: HashMap::default(),
+            some_txid_from_highest_wallet_block: None,
+            witness_trees: None,
         }
     }
 }

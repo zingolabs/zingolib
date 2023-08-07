@@ -844,7 +844,7 @@ mod test {
             .start(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(TransactionMetadataSet::default())),
+                Arc::new(RwLock::new(TransactionMetadataSet::new_with_witness_trees())),
                 reorg_transmitter,
             )
             .await;
@@ -895,7 +895,7 @@ mod test {
             .start(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(TransactionMetadataSet::default())),
+                Arc::new(RwLock::new(TransactionMetadataSet::new_with_witness_trees())),
                 reorg_transmitter,
             )
             .await;
@@ -993,7 +993,7 @@ mod test {
             .start(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(TransactionMetadataSet::default())),
+                Arc::new(RwLock::new(TransactionMetadataSet::new_with_witness_trees())),
                 reorg_transmitter,
             )
             .await;

@@ -254,20 +254,19 @@ impl LightClient {
             .transaction_metadata_set
             .write()
             .await;
-        txmds_writelock
-            .witness_trees
-            .witness_tree_sapling
-            .truncate_removing_checkpoint(&BlockHeight::from(last_synced_height as u32))
-            .expect("Infallible");
-        txmds_writelock
-            .witness_trees
-            .witness_tree_orchard
-            .truncate_removing_checkpoint(&BlockHeight::from(last_synced_height as u32))
-            .expect("Infallible");
-        txmds_writelock
-            .witness_trees
-            .add_checkpoint(BlockHeight::from(last_synced_height as u32))
-            .await;
+        if let Some(ref mut trees) = txmds_writelock.witness_trees {
+            trees
+                .witness_tree_sapling
+                .truncate_removing_checkpoint(&BlockHeight::from(last_synced_height as u32))
+                .expect("Infallible");
+            trees
+                .witness_tree_orchard
+                .truncate_removing_checkpoint(&BlockHeight::from(last_synced_height as u32))
+                .expect("Infallible");
+            trees
+                .add_checkpoint(BlockHeight::from(last_synced_height as u32))
+                .await;
+        }
     }
 }
 

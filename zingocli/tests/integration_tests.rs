@@ -1589,6 +1589,8 @@ async fn witness_clearing() {
         .read()
         .await
         .witness_trees
+        .as_ref()
+        .unwrap()
         .witness_tree_orchard
         .marked_positions()
         .unwrap()
@@ -1619,6 +1621,8 @@ async fn witness_clearing() {
         .read()
         .await
         .witness_trees
+        .as_ref()
+        .unwrap()
         .witness_tree_orchard
         .marked_positions()
         .unwrap()
@@ -1647,6 +1651,8 @@ async fn witness_clearing() {
         .read()
         .await
         .witness_trees
+        .as_ref()
+        .unwrap()
         .witness_tree_orchard
         .marked_positions()
         .unwrap()
@@ -1677,6 +1683,8 @@ async fn witness_clearing() {
             .read()
             .await
             .witness_trees
+            .as_ref()
+            .unwrap()
             .witness_tree_orchard
     );
     assert!(!recipient
@@ -1686,6 +1694,8 @@ async fn witness_clearing() {
         .read()
         .await
         .witness_trees
+        .as_ref()
+        .unwrap()
         .witness_tree_orchard
         .marked_positions()
         .unwrap()
@@ -2216,6 +2226,8 @@ async fn aborted_resync() {
         .read()
         .await
         .witness_trees
+        .as_ref()
+        .unwrap()
         .witness_tree_orchard
         .witness(
             recipient
@@ -2253,6 +2265,8 @@ async fn aborted_resync() {
         .read()
         .await
         .witness_trees
+        .as_ref()
+        .unwrap()
         .witness_tree_orchard
         .witness(
             recipient

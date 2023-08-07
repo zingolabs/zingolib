@@ -255,12 +255,15 @@ impl LightWallet {
     pub(crate) async fn initiate_witness_trees(&self, trees: crate::compact_formats::TreeState) {
         let (legacy_sapling_frontier, legacy_orchard_frontier) =
             LightWallet::get_legacy_frontiers(trees);
-        self.transaction_context
+        if let Some(ref mut trees) = self
+            .transaction_context
             .transaction_metadata_set
             .write()
             .await
             .witness_trees
-            .insert_all_frontier_nodes(legacy_sapling_frontier, legacy_orchard_frontier);
+        {
+            trees.insert_all_frontier_nodes(legacy_sapling_frontier, legacy_orchard_frontier)
+        };
     }
     fn add_notes_to_total<D: DomainWalletExt>(
         candidates: Vec<D::SpendableNoteAT>,
@@ -620,7 +623,16 @@ impl LightWallet {
                 format!("could not create initial address: {e}"),
             ));
         };
-        let transaction_metadata_set = Arc::new(RwLock::new(TransactionMetadataSet::default()));
+        let transaction_metadata_set = if wc.can_spend()
+            == (ReceiverSelection {
+                orchard: true,
+                sapling: true,
+                transparent: true,
+            }) {
+            Arc::new(RwLock::new(TransactionMetadataSet::new_with_witness_trees()))
+        } else {
+            Arc::new(RwLock::new(TransactionMetadataSet::new_treeless()))
+        };
         let transaction_context =
             TransactionContext::new(&config, Arc::new(RwLock::new(wc)), transaction_metadata_set);
         Ok(Self {
@@ -1034,8 +1046,12 @@ impl LightWallet {
             .read()
             .await;
 
+        let witness_trees = txmds_readlock
+            .witness_trees
+            .as_ref()
+            .expect("If we have spend capability we have trees");
         let orchard_anchor = self
-            .get_orchard_anchor(&txmds_readlock.witness_trees.witness_tree_orchard)
+            .get_orchard_anchor(&witness_trees.witness_tree_orchard)
             .await?;
         let mut builder = Builder::new(
             self.transaction_context.config.chain,
@@ -1087,8 +1103,7 @@ impl LightWallet {
                 selected.extsk.clone().unwrap(),
                 selected.diversifier,
                 selected.note.clone(),
-                txmds_readlock
-                    .witness_trees
+                witness_trees
                     .witness_tree_sapling
                     .witness(selected.witnessed_position, REORG_BUFFER_OFFSET as usize)
                     .map_err(|e| format!("failed to compute sapling witness: {e}"))?,
@@ -1105,8 +1120,7 @@ impl LightWallet {
                 selected.spend_key.unwrap(),
                 selected.note,
                 orchard::tree::MerklePath::from(
-                    txmds_readlock
-                        .witness_trees
+                    witness_trees
                         .witness_tree_orchard
                         .witness(selected.witnessed_position, REORG_BUFFER_OFFSET as usize)
                         .map_err(|e| format!("failed to compute orchard witness: {e}"))?,

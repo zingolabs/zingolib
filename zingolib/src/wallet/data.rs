@@ -102,11 +102,7 @@ where
     Ok(())
 }
 /// Write memory-backed shardstore, represented tree.
-async fn write_shardtree<
-    H: Hashable + Clone + Eq + HashSer,
-    C: Ord + std::fmt::Debug + Copy,
-    W: Write,
->(
+fn write_shardtree<H: Hashable + Clone + Eq + HashSer, C: Ord + std::fmt::Debug + Copy, W: Write>(
     tree: &mut shardtree::ShardTree<MemoryShardStore<H, C>, COMMITMENT_TREE_DEPTH, MAX_SHARD_DEPTH>,
     mut writer: W,
 ) -> io::Result<()>
@@ -170,10 +166,10 @@ impl WitnessTrees {
         })
     }
 
-    pub async fn write<W: Write>(&mut self, mut writer: W) -> io::Result<()> {
+    pub fn write<W: Write>(&mut self, mut writer: W) -> io::Result<()> {
         writer.write_u8(Self::VERSION)?;
-        write_shardtree(&mut self.witness_tree_sapling, &mut writer).await?;
-        write_shardtree(&mut self.witness_tree_orchard, &mut writer).await
+        write_shardtree(&mut self.witness_tree_sapling, &mut writer)?;
+        write_shardtree(&mut self.witness_tree_orchard, &mut writer)
     }
     pub(crate) fn insert_all_frontier_nodes(
         &mut self,
@@ -1000,7 +996,7 @@ impl TransactionMetadata {
 
     pub fn read<R: Read>(
         mut reader: R,
-        (wallet_capability, trees): (&WalletCapability, &mut WitnessTrees),
+        (wallet_capability, mut trees): (&WalletCapability, Option<&mut WitnessTrees>),
     ) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
 
@@ -1027,14 +1023,20 @@ impl TransactionMetadata {
         let sapling_notes = Vector::read_collected_mut(&mut reader, |r| {
             ReceivedSaplingNoteAndMetadata::read(
                 r,
-                (wallet_capability, &mut trees.witness_tree_sapling),
+                (
+                    wallet_capability,
+                    trees.as_mut().map(|t| &mut t.witness_tree_sapling),
+                ),
             )
         })?;
         let orchard_notes = if version > 22 {
             Vector::read_collected_mut(&mut reader, |r| {
                 ReceivedOrchardNoteAndMetadata::read(
                     r,
-                    (wallet_capability, &mut trees.witness_tree_orchard),
+                    (
+                        wallet_capability,
+                        trees.as_mut().map(|t| &mut t.witness_tree_orchard),
+                    ),
                 )
             })?
         } else {
