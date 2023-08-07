@@ -66,11 +66,11 @@ async fn write_memory_shard_store_backed_tree<
 where
     u32: From<C>,
 {
-    let temp_tree = std::mem::replace(
+    let original_tree = std::mem::replace(
         tree,
         shardtree::ShardTree::new(MemoryShardStore::empty(), 0),
     );
-    let mut store = temp_tree.into_store();
+    let mut store = original_tree.into_store();
     let roots = store.get_shard_roots().expect("Infallible");
     Vector::write(&mut writer, &roots, |w, root| {
         let shard = store
