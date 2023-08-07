@@ -101,7 +101,8 @@ where
     )?;
     Ok(())
 }
-async fn write_memory_shard_store_backed_tree<
+/// Write memory-backed shardstore, represented tree.
+async fn write_shardtree<
     H: Hashable + Clone + Eq + HashSer,
     C: Ord + std::fmt::Debug + Copy,
     W: Write,
@@ -152,8 +153,8 @@ impl WitnessTrees {
     const VERSION: u8 = 0;
     pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
         let _serialized_version = reader.read_u8()?;
-        let witness_tree_sapling = read_memory_shard_store_backed_tree(&mut reader)?;
-        let witness_tree_orchard = read_memory_shard_store_backed_tree(reader)?;
+        let witness_tree_sapling = read_shardtree(&mut reader)?;
+        let witness_tree_orchard = read_shardtree(reader)?;
         Ok(Self {
             witness_tree_sapling,
             witness_tree_orchard,
@@ -162,8 +163,8 @@ impl WitnessTrees {
 
     pub async fn write<W: Write>(&mut self, mut writer: W) -> io::Result<()> {
         writer.write_u8(Self::VERSION)?;
-        write_memory_shard_store_backed_tree(&mut self.witness_tree_sapling, &mut writer).await?;
-        write_memory_shard_store_backed_tree(&mut self.witness_tree_orchard, &mut writer).await
+        write_shardtree(&mut self.witness_tree_sapling, &mut writer).await?;
+        write_shardtree(&mut self.witness_tree_orchard, &mut writer).await
     }
     pub(crate) fn insert_all_frontier_nodes(
         &mut self,
@@ -180,7 +181,7 @@ impl WitnessTrees {
     }
 }
 
-fn read_memory_shard_store_backed_tree<
+fn read_shardtree<
     H: Hashable + Clone + HashSer + Eq,
     C: Ord + Clone + std::fmt::Debug + Copy + From<u32>,
     R: Read,
