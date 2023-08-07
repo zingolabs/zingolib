@@ -119,7 +119,7 @@ where
         shardtree::ShardTree::new(MemoryShardStore::empty(), 0),
     )
     .into_store();
-    write_shards(&mut writer, &store).expect("To write shards");
+    let shard_write_res = write_shards(&mut writer, &store);
 
     let mut checkpoints = Vec::new();
     store
@@ -128,11 +128,15 @@ where
             Ok(())
         })
         .expect("Infallible");
-    write_checkpoints(&mut writer, &checkpoints).expect("To write checkpoints.");
-    write_shard(&mut writer, &store.get_cap().expect("Infallible"))?;
-    // Mutate store back into tree.   If anything went wrong above, then we've destroyed our tree!
+    let checkpoint_write_res = write_checkpoints(&mut writer, &checkpoints);
+    let cap_write_res = write_shard(&mut writer, &store.get_cap().expect("Infallible"));
+    // Mutate store back into tree.   If anything went wrong above, then we've destroyed our tree,
+    // So we don't open the write results until after we put the store back
     // If the following operation fails, then we've lost our tree
     *tree = shardtree::ShardTree::new(store, MAX_REORG);
+    shard_write_res?;
+    checkpoint_write_res?;
+    cap_write_res?;
     Ok(())
 }
 
@@ -168,16 +172,20 @@ impl WitnessTrees {
     }
     pub(crate) fn insert_all_frontier_nodes(
         &mut self,
-        non_empty_sapling_frontier: NonEmptyFrontier<sapling::Node>,
-        non_empty_orchard_frontier: NonEmptyFrontier<MerkleHashOrchard>,
+        non_empty_sapling_frontier: Option<NonEmptyFrontier<sapling::Node>>,
+        non_empty_orchard_frontier: Option<NonEmptyFrontier<MerkleHashOrchard>>,
     ) {
         use incrementalmerkletree::Retention;
-        self.witness_tree_sapling
-            .insert_frontier_nodes(non_empty_sapling_frontier, Retention::Ephemeral)
-            .expect("to insert non-empty sapling frontier");
-        self.witness_tree_orchard
-            .insert_frontier_nodes(non_empty_orchard_frontier, Retention::Ephemeral)
-            .expect("to insert non-empty orchard frontier");
+        non_empty_sapling_frontier.map(|front| {
+            self.witness_tree_sapling
+                .insert_frontier_nodes(front, Retention::Ephemeral)
+                .expect("to insert non-empty sapling frontier")
+        });
+        non_empty_orchard_frontier.map(|front| {
+            self.witness_tree_orchard
+                .insert_frontier_nodes(front, Retention::Ephemeral)
+                .expect("to insert non-empty orchard frontier")
+        });
     }
 }
 

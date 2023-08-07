@@ -230,8 +230,8 @@ impl LightWallet {
     fn get_legacy_frontiers(
         trees: crate::compact_formats::TreeState,
     ) -> (
-        incrementalmerkletree::frontier::NonEmptyFrontier<zcash_primitives::sapling::Node>,
-        incrementalmerkletree::frontier::NonEmptyFrontier<MerkleHashOrchard>,
+        Option<incrementalmerkletree::frontier::NonEmptyFrontier<zcash_primitives::sapling::Node>>,
+        Option<incrementalmerkletree::frontier::NonEmptyFrontier<MerkleHashOrchard>>,
     ) {
         (
             zcash_primitives::merkle_tree::read_commitment_tree::<
@@ -241,8 +241,7 @@ impl LightWallet {
             >(&hex::decode(trees.sapling_tree).unwrap()[..])
             .unwrap()
             .to_frontier()
-            .take()
-            .expect("A nonempty frontier"),
+            .take(),
             zcash_primitives::merkle_tree::read_commitment_tree::<
                 MerkleHashOrchard,
                 &[u8],
@@ -250,8 +249,7 @@ impl LightWallet {
             >(&hex::decode(trees.orchard_tree).unwrap()[..])
             .unwrap()
             .to_frontier()
-            .take()
-            .expect("A nonempty frontier"),
+            .take(),
         )
     }
     pub(crate) async fn initiate_witness_trees(&self, trees: crate::compact_formats::TreeState) {
