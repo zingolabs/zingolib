@@ -66,6 +66,7 @@ async fn write_memory_shard_store_backed_tree<
 where
     u32: From<C>,
 {
+    // Efficiently uplicate 'tree' even if it doesn't implement Clone.
     let original_tree = std::mem::replace(
         tree,
         shardtree::ShardTree::new(MemoryShardStore::empty(), 0),
