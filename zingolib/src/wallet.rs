@@ -199,6 +199,17 @@ pub enum WalletBase {
     Ufvk(String),
 }
 
+pub fn wallet_base_from_string(base: String) -> WalletBase {
+    dbg!(base.clone());
+    if (&base.clone()[0..5]) == "uview" {
+        dbg!("itsa viewkey");
+        WalletBase::Ufvk(base)
+    } else {
+        dbg!("its nota viewkey");
+        WalletBase::MnemonicPhrase(base)
+    }
+}
+
 pub struct LightWallet {
     // The block at which this wallet was born. Rescans
     // will start from here.
