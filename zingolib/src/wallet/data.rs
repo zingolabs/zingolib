@@ -183,7 +183,7 @@ impl WitnessTrees {
 
 fn read_shardtree<
     H: Hashable + Clone + HashSer + Eq,
-    C: Ord + Clone + std::fmt::Debug + Copy + From<u32>,
+    C: Ord + std::fmt::Debug + Copy + From<u32>,
     R: Read,
 >(
     mut reader: R,
