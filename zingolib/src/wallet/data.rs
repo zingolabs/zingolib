@@ -119,8 +119,16 @@ where
         shardtree::ShardTree::new(MemoryShardStore::empty(), 0),
     )
     .into_store();
-    let shard_write_res = write_shards(&mut writer, &store);
-
+    macro_rules! write_with_error_handling {
+        ($writer: ident, $from: ident) => {
+            if let Err(e) = $writer(&mut writer, &$from) {
+                *tree = shardtree::ShardTree::new(store, MAX_REORG);
+                return Err(e);
+            }
+        };
+    }
+    // Write pruneable location trees
+    write_with_error_handling!(write_shards, store);
     let mut checkpoints = Vec::new();
     store
         .with_checkpoints(MAX_REORG, |checkpoint_id, checkpoint| {
@@ -128,15 +136,12 @@ where
             Ok(())
         })
         .expect("Infallible");
-    let checkpoint_write_res = write_checkpoints(&mut writer, &checkpoints);
-    let cap_write_res = write_shard(&mut writer, &store.get_cap().expect("Infallible"));
-    // Mutate store back into tree.   If anything went wrong above, then we've destroyed our tree,
-    // So we don't open the write results until after we put the store back
-    // If the following operation fails, then we've lost our tree
+    // Write checkpoints
+    write_with_error_handling!(write_checkpoints, checkpoints);
+    let cap = store.get_cap().expect("Infallible");
+    // Write cap
+    write_with_error_handling!(write_shard, cap);
     *tree = shardtree::ShardTree::new(store, MAX_REORG);
-    shard_write_res?;
-    checkpoint_write_res?;
-    cap_write_res?;
     Ok(())
 }
 
