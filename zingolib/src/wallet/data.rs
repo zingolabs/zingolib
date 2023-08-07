@@ -113,12 +113,12 @@ async fn write_memory_shard_store_backed_tree<
 where
     u32: From<C>,
 {
-    // Efficiently uplicate 'tree' even if it doesn't implement Clone.
-    let original_tree = std::mem::replace(
+    // Replace original tree with empty tree, and mutate new version into store.
+    let mut store = std::mem::replace(
         tree,
         shardtree::ShardTree::new(MemoryShardStore::empty(), 0),
-    );
-    let mut store = original_tree.into_store();
+    )
+    .into_store();
     write_shards(&mut writer, &store).expect("To write shards");
 
     let mut checkpoints = Vec::new();
@@ -130,6 +130,8 @@ where
         .expect("Infallible");
     write_checkpoints(&mut writer, &checkpoints).expect("To write checkpoints.");
     write_shard(&mut writer, &store.get_cap().expect("Infallible"))?;
+    // Mutate store back into tree.   If anything went wrong above, then we've destroyed our tree!
+    // If the following operation fails, then we've lost our tree
     *tree = shardtree::ShardTree::new(store, MAX_REORG);
     Ok(())
 }
