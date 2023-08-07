@@ -127,7 +127,7 @@ where
             }
         };
     }
-    // Write pruneable location trees
+    // Write located prunable trees
     write_with_error_handling!(write_shards, store);
     let mut checkpoints = Vec::new();
     store
