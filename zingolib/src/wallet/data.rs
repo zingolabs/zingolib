@@ -74,6 +74,34 @@ where
     })?;
     Ok(())
 }
+fn write_checkpoints<W, Cid>(mut writer: W, checkpoints: &Vec<(Cid, Checkpoint)>) -> io::Result<()>
+where
+    W: Write,
+    Cid: Ord + std::fmt::Debug + Copy,
+    u32: From<Cid>,
+{
+    // u64?!  Should we be encoding with u32?
+    Vector::write(
+        &mut writer,
+        &checkpoints,
+        |mut w, (checkpoint_id, checkpoint)| {
+            w.write_u32::<LittleEndian>(u32::from(*checkpoint_id))?;
+            match checkpoint.tree_state() {
+                shardtree::TreeState::Empty => w.write_u8(0),
+                shardtree::TreeState::AtPosition(pos) => {
+                    w.write_u8(1)?;
+                    w.write_u64::<LittleEndian>(<u64 as From<Position>>::from(pos))
+                }
+            }?;
+            Vector::write(
+                &mut w,
+                &checkpoint.marks_removed().iter().collect::<Vec<_>>(),
+                |w, mark| w.write_u64::<LittleEndian>(<u64 as From<Position>>::from(**mark)),
+            )
+        },
+    )?;
+    Ok(())
+}
 async fn write_memory_shard_store_backed_tree<
     H: Hashable + Clone + Eq + HashSer,
     C: Ord + std::fmt::Debug + Copy,
@@ -100,25 +128,7 @@ where
             Ok(())
         })
         .expect("Infallible");
-    Vector::write(
-        &mut writer,
-        &checkpoints,
-        |mut w, (checkpoint_id, checkpoint)| {
-            w.write_u32::<LittleEndian>(u32::from(*checkpoint_id))?;
-            match checkpoint.tree_state() {
-                shardtree::TreeState::Empty => w.write_u8(0),
-                shardtree::TreeState::AtPosition(pos) => {
-                    w.write_u8(1)?;
-                    w.write_u64::<LittleEndian>(<u64 as From<Position>>::from(pos))
-                }
-            }?;
-            Vector::write(
-                &mut w,
-                &checkpoint.marks_removed().iter().collect::<Vec<_>>(),
-                |w, mark| w.write_u64::<LittleEndian>(<u64 as From<Position>>::from(**mark)),
-            )
-        },
-    )?;
+    write_checkpoints(&mut writer, &checkpoints).expect("To write checkpoints.");
     write_shard(&mut writer, &store.get_cap().expect("Infallible"))?;
     *tree = shardtree::ShardTree::new(store, MAX_REORG);
     Ok(())
