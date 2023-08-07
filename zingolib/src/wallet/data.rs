@@ -80,7 +80,6 @@ where
     Cid: Ord + std::fmt::Debug + Copy,
     u32: From<Cid>,
 {
-    // u64?!  Should we be encoding with u32?
     Vector::write(
         &mut writer,
         &checkpoints,
