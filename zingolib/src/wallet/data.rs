@@ -55,6 +55,26 @@ pub struct WitnessTrees {
     >,
 }
 
+fn write_shards<W, H, C>(mut writer: W, store: &MemoryShardStore<H, C>) -> io::Result<()>
+where
+    H: Hashable + Clone + Eq + HashSer,
+    C: Ord + std::fmt::Debug + Copy,
+    W: Write,
+{
+    let roots = store.get_shard_roots().expect("Infallible");
+    Vector::write(&mut writer, &roots, |w, root| {
+        let shard = store
+            .get_shard(*root)
+            .expect("Infallible")
+            .expect("cannot find root that shard store claims to have");
+        let root_addr = shard.root_addr();
+        w.write_u8(root_addr.level().into())?;
+        w.write_u64::<LittleEndian>(root_addr.index())?;
+        write_shard(w, shard.root())?;
+        Ok(())
+    })?;
+    Ok(())
+}
 async fn write_memory_shard_store_backed_tree<
     H: Hashable + Clone + Eq + HashSer,
     C: Ord + std::fmt::Debug + Copy,
@@ -72,18 +92,7 @@ where
         shardtree::ShardTree::new(MemoryShardStore::empty(), 0),
     );
     let mut store = original_tree.into_store();
-    let roots = store.get_shard_roots().expect("Infallible");
-    Vector::write(&mut writer, &roots, |w, root| {
-        let shard = store
-            .get_shard(*root)
-            .expect("Infallible")
-            .expect("cannot find root that shard store claims to have");
-        let root_addr = shard.root_addr();
-        w.write_u8(root_addr.level().into())?;
-        w.write_u64::<LittleEndian>(root_addr.index())?;
-        write_shard(w, shard.root())?;
-        Ok(())
-    })?;
+    write_shards(&mut writer, &store).expect("To write shards");
 
     let mut checkpoints = Vec::new();
     store
