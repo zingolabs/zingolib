@@ -1,6 +1,8 @@
 #![forbid(unsafe_code)]
 #![cfg(feature = "local_env")]
 pub mod darkside;
+use orchard::tree::MerkleHashOrchard;
+use shardtree::{memory::MemoryShardStore, ShardTree};
 use std::{fs::File, path::Path};
 use zingo_testutils::{self, build_fvk_client_and_capability, data};
 
@@ -12,15 +14,16 @@ use zingo_testutils::scenarios;
 use tracing_test::traced_test;
 use zcash_client_backend::encoding::encode_payment_address;
 use zcash_primitives::{
-    consensus::Parameters,
+    consensus::{BlockHeight, Parameters},
     transaction::{fees::zip317::MINIMUM_FEE, TxId},
 };
 use zingo_testutils::regtest::get_cargo_manifest_dir;
-use zingoconfig::{ChainType, ZingoConfig};
+use zingoconfig::{ChainType, ZingoConfig, MAX_REORG};
 use zingolib::{
     check_client_balances, get_base_address,
     lightclient::LightClient,
     wallet::{
+        data::{COMMITMENT_TREE_DEPTH, MAX_SHARD_DEPTH},
         keys::{
             extended_transparent::ExtendedPrivKey,
             unified::{Capability, WalletCapability},
@@ -1703,7 +1706,7 @@ async fn witness_clearing() {
 }
 
 #[tokio::test]
-async fn mempool_clearing() {
+async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
     async fn do_maybe_recent_txid(lc: &LightClient) -> JsonValue {
         json::object! {
             "last_txid" => lc.wallet.transactions().read().await.get_some_txid_from_highest_wallet_block().map(|t| t.to_string())
@@ -1729,6 +1732,18 @@ async fn mempool_clearing() {
         .await
         .unwrap();
     }
+
+    let sent_to_self = 10;
+    // Send recipient->recipient, to make tree equality check at the end simpler
+    zingo_testutils::send_value_between_clients_and_sync(
+        &regtest_manager,
+        &recipient,
+        &recipient,
+        sent_to_self,
+        "unified",
+    )
+    .await
+    .unwrap();
 
     // 3a. stash zcashd state
     log::debug!(
@@ -1799,6 +1814,18 @@ async fn mempool_clearing() {
 
     // Sync recipient
     recipient.do_sync(false).await.unwrap();
+    dbg!(
+        &recipient
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .witness_trees
+            .as_ref()
+            .unwrap()
+            .witness_tree_orchard
+    );
 
     // 4b write down state before clearing the mempool
     let notes_before = recipient.do_list_notes(true).await;
@@ -1865,47 +1892,92 @@ async fn mempool_clearing() {
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 10)
         .await
         .unwrap();
-    assert_eq!(recipient.wallet.last_synced_height().await, 18);
+    assert_eq!(recipient.wallet.last_synced_height().await, 19);
 
     let notes = recipient.do_list_notes(true).await;
 
     let transactions = recipient.do_list_transactions().await;
 
-    // There is 1 unspent note, which is the unconfirmed transaction
+    // There are 2 unspent notes, the unconfirmed transaction, and the final receipt
     println!("{}", json::stringify_pretty(notes.clone(), 4));
     println!("{}", json::stringify_pretty(transactions.clone(), 4));
-    // One unspent note, change, unconfirmed
-    assert_eq!(notes["unspent_orchard_notes"].len(), 1);
+    // Two unspent notes: one change, unconfirmed, one from faucet, confirmed
+    assert_eq!(notes["unspent_orchard_notes"].len(), 2);
     assert_eq!(notes["unspent_sapling_notes"].len(), 0);
-    let note = notes["unspent_orchard_notes"][0].clone();
+    let note = notes["unspent_orchard_notes"][1].clone();
     assert_eq!(note["created_in_txid"], sent_transaction_id);
     assert_eq!(
         note["value"].as_u64().unwrap(),
-        value - sent_value - u64::from(MINIMUM_FEE)
+        value - sent_value - (2 * u64::from(MINIMUM_FEE)) - sent_to_self
     );
     assert!(note["unconfirmed"].as_bool().unwrap());
-    assert_eq!(transactions.len(), 2);
+    assert_eq!(transactions.len(), 3);
 
     // 7. Mine 100 blocks, so the mempool expires
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 100)
         .await
         .unwrap();
-    assert_eq!(recipient.wallet.last_synced_height().await, 118);
+    assert_eq!(recipient.wallet.last_synced_height().await, 119);
 
     let notes = recipient.do_list_notes(true).await;
     let transactions = recipient.do_list_transactions().await;
 
-    // There is now again 1 unspent note, but it is the original (confirmed) note.
-    assert_eq!(notes["unspent_orchard_notes"].len(), 1);
+    // There are now three notes, the original (confirmed and spent) note, the send to self note, and its change.
+    assert_eq!(notes["unspent_orchard_notes"].len(), 2);
     assert_eq!(
-        notes["unspent_orchard_notes"][0]["created_in_txid"],
+        notes["spent_orchard_notes"][0]["created_in_txid"],
         orig_transaction_id
     );
     assert!(!notes["unspent_orchard_notes"][0]["unconfirmed"]
         .as_bool()
         .unwrap());
     assert_eq!(notes["pending_orchard_notes"].len(), 0);
-    assert_eq!(transactions.len(), 1);
+    assert_eq!(transactions.len(), 2);
+    let read_lock = recipient
+        .wallet
+        .transaction_context
+        .transaction_metadata_set
+        .read()
+        .await;
+    let wallet_trees = read_lock.witness_trees.as_ref().unwrap();
+    let last_leaf = wallet_trees
+        .witness_tree_orchard
+        .max_leaf_position(0)
+        .unwrap();
+    let server_trees = zingolib::grpc_connector::GrpcConnector::get_trees(
+        recipient.get_server_uri(),
+        recipient.wallet.last_synced_height().await,
+    )
+    .await
+    .unwrap();
+    let server_orchard_front = zcash_primitives::merkle_tree::read_commitment_tree::<
+        MerkleHashOrchard,
+        &[u8],
+        { zingolib::wallet::data::COMMITMENT_TREE_DEPTH },
+    >(&hex::decode(server_trees.orchard_tree).unwrap()[..])
+    .unwrap()
+    .to_frontier()
+    .take();
+    let mut server_orchard_shardtree: ShardTree<_, COMMITMENT_TREE_DEPTH, MAX_SHARD_DEPTH> =
+        ShardTree::new(
+            MemoryShardStore::<MerkleHashOrchard, BlockHeight>::empty(),
+            MAX_REORG,
+        );
+    server_orchard_shardtree
+        .insert_frontier_nodes(
+            server_orchard_front.unwrap(),
+            zingo_testutils::incrementalmerkletree::Retention::Marked,
+        )
+        .unwrap();
+    assert_eq!(
+        wallet_trees
+            .witness_tree_orchard
+            .witness(last_leaf.unwrap(), 0)
+            .expect(&format!("{:#?}", wallet_trees.witness_tree_orchard)),
+        server_orchard_shardtree
+            .witness(last_leaf.unwrap(), 0)
+            .unwrap()
+    )
 }
 
 pub mod framework_validation {

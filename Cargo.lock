@@ -4133,6 +4133,7 @@ dependencies = [
  "rand 0.8.5",
  "rustls-pemfile",
  "rustyline",
+ "shardtree",
  "shellwords",
  "tempdir",
  "tokio",

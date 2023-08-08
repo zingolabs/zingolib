@@ -20,6 +20,7 @@ tonic-build = "0.7.0"
 tempdir = "0.3"
 portpicker = "0.1"
 incrementalmerkletree = { git = "https://github.com/zcash/incrementalmerkletree", rev = "bae25ad89c0c192bee625252d2d419bd56638e48" }
+shardtree = { git = "https://github.com/zcash/incrementalmerkletree", rev = "bae25ad89c0c192bee625252d2d419bd56638e48"  }
 
 [profile.release]
 debug = false
