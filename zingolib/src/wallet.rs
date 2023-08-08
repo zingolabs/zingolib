@@ -200,12 +200,9 @@ pub enum WalletBase {
 }
 
 pub fn wallet_base_from_string(base: String) -> WalletBase {
-    dbg!(base.clone());
     if (&base.clone()[0..5]) == "uview" {
-        dbg!("itsa viewkey");
         WalletBase::Ufvk(base)
     } else {
-        dbg!("its nota viewkey");
         WalletBase::MnemonicPhrase(base)
     }
 }
