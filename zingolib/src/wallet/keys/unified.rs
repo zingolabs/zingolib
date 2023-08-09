@@ -12,15 +12,16 @@ use zcash_address::unified::{Container, Encoding, Fvk, Ufvk};
 use zcash_client_backend::address::UnifiedAddress;
 use zcash_encoding::Vector;
 use zcash_primitives::{
-    legacy::TransparentAddress, sapling::note_encryption::PreparedIncomingViewingKey,
-    zip32::DiversifierIndex,
+    legacy::TransparentAddress,
+    sapling::note_encryption::PreparedIncomingViewingKey,
+    zip32::{DiversifierIndex, ExtendedSpendingKey},
 };
 use zingoconfig::ZingoConfig;
 
 use crate::wallet::traits::ReadableWriteable;
 
 use super::{
-    extended_transparent::{ExtendedPubKey, KeyIndex},
+    extended_transparent::{ExtendedPrivKey, ExtendedPubKey, KeyIndex},
     get_zaddr_from_bip39seed, ToBase58Check,
 };
 
@@ -71,6 +72,18 @@ pub struct WalletCapability {
     // Not all diversifier indexes produce valid sapling addresses.
     // Because of this, the index isn't necessarily equal to addresses.len()
     next_sapling_diversifier_index: DiversifierIndex,
+}
+impl Default for WalletCapability {
+    fn default() -> Self {
+        Self {
+            orchard: Capability::None,
+            sapling: Capability::None,
+            transparent: Capability::None,
+            transparent_child_keys: AppendOnlyVec::new(),
+            addresses: AppendOnlyVec::new(),
+            next_sapling_diversifier_index: DiversifierIndex::new(),
+        }
+    }
 }
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[non_exhaustive]
@@ -125,6 +138,18 @@ fn read_write_receiver_selections() {
 }
 
 impl WalletCapability {
+    pub fn new_spend_capability(
+        orchard_key: orchard::keys::SpendingKey,
+        sapling_key: ExtendedSpendingKey,
+        transparent_parent_key: ExtendedPrivKey,
+    ) -> Self {
+        Self {
+            orchard: Capability::Spend(orchard_key),
+            sapling: Capability::Spend(sapling_key),
+            transparent: Capability::Spend(transparent_parent_key),
+            ..Default::default()
+        }
+    }
     pub fn addresses(&self) -> &AppendOnlyVec<UnifiedAddress> {
         &self.addresses
     }
@@ -282,14 +307,7 @@ impl WalletCapability {
         let orchard_key =
             orchard::keys::SpendingKey::from_zip32_seed(seed, config.get_coin_type(), position)
                 .unwrap();
-        Self {
-            orchard: Capability::Spend(orchard_key),
-            sapling: Capability::Spend(sapling_key),
-            transparent: Capability::Spend(transparent_parent_key),
-            transparent_child_keys: AppendOnlyVec::new(),
-            addresses: AppendOnlyVec::new(),
-            next_sapling_diversifier_index: DiversifierIndex::new(),
-        }
+        WalletCapability::new_spend_capability(orchard_key, sapling_key, transparent_parent_key)
     }
 
     pub fn new_from_phrase(
