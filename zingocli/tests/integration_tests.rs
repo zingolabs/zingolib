@@ -2501,6 +2501,38 @@ async fn by_address_finsight() {
 }
 
 #[tokio::test]
+async fn load_old_wallet_at_reorged_height() {
+    let (ref regtest_manager, cph, ref faucet) = scenarios::faucet().await;
+    drop(cph);
+
+    let zcd_datadir = &regtest_manager.zcashd_data_dir;
+    let cached_data_dir = get_cargo_manifest_dir()
+        .parent()
+        .unwrap()
+        .join("zingo-testutils")
+        .join("data")
+        .join("old_wallet_reorg_test_wallet");
+    let source = cached_data_dir.join("zcash").to_string_lossy().to_string();
+    let dest = zcd_datadir.to_string_lossy().to_string();
+    std::process::Command::new("cp")
+        .arg("-rf")
+        .arg(source)
+        .arg(dest)
+        .output()
+        .expect("directory copy failed");
+    let _cph = regtest_manager.launch(false).unwrap();
+    zingo_testutils::increase_height_and_sync_client(regtest_manager, faucet, 10)
+        .await
+        .unwrap();
+    let (wallet, conf) = zingo_testutils::load_wallet(cached_data_dir, ChainType::Regtest).await;
+    *conf.lightwalletd_uri.write().unwrap() = faucet.get_server_uri();
+    let recipient = LightClient::create_from_extant_wallet(wallet, conf);
+    println!("{}", recipient.do_list_transactions().await.pretty(2));
+    recipient.do_sync(false).await.unwrap();
+    println!("{}", recipient.do_list_transactions().await.pretty(2));
+}
+
+#[tokio::test]
 async fn shield_sapling() {
     let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient().await;
 
