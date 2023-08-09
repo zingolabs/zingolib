@@ -139,18 +139,6 @@ fn read_write_receiver_selections() {
 }
 
 impl WalletCapability {
-    pub fn new_spend_capability(
-        orchard_key: orchard::keys::SpendingKey,
-        sapling_key: ExtendedSpendingKey,
-        transparent_parent_key: ExtendedPrivKey,
-    ) -> Self {
-        Self {
-            orchard: Capability::Spend(orchard_key),
-            sapling: Capability::Spend(sapling_key),
-            transparent: Capability::Spend(transparent_parent_key),
-            ..Default::default()
-        }
-    }
     pub fn addresses(&self) -> &AppendOnlyVec<UnifiedAddress> {
         &self.addresses
     }
@@ -308,7 +296,12 @@ impl WalletCapability {
         let orchard_key =
             orchard::keys::SpendingKey::from_zip32_seed(seed, config.get_coin_type(), position)
                 .unwrap();
-        WalletCapability::new_spend_capability(orchard_key, sapling_key, transparent_parent_key)
+        Self {
+            orchard: Capability::Spend(orchard_key),
+            sapling: Capability::Spend(sapling_key),
+            transparent: Capability::Spend(transparent_parent_key),
+            ..Default::default()
+        }
     }
 
     pub fn new_from_phrase(
@@ -479,9 +472,7 @@ impl ReadableWriteable<()> for WalletCapability {
                     orchard: Capability::Spend(orchard),
                     sapling: Capability::Spend(sapling),
                     transparent: Capability::Spend(transparent),
-                    transparent_child_keys: AppendOnlyVec::new(),
-                    addresses: AppendOnlyVec::new(),
-                    next_sapling_diversifier_index: DiversifierIndex::new(),
+                    ..Default::default()
                 }
             }
             2 => Self {
