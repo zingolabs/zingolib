@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     io::{self, Read, Write},
+    sync::atomic::AtomicBool,
 };
 
 use append_only_vec::AppendOnlyVec;
@@ -71,7 +72,7 @@ pub struct WalletCapability {
     addresses: append_only_vec::AppendOnlyVec<UnifiedAddress>,
     // Not all diversifier indexes produce valid sapling addresses.
     // Because of this, the index isn't necessarily equal to addresses.len()
-    next_sapling_diversifier_index: DiversifierIndex,
+    addresses_write_lock: AtomicBool,
 }
 impl Default for WalletCapability {
     fn default() -> Self {
@@ -81,7 +82,7 @@ impl Default for WalletCapability {
             transparent: Capability::None,
             transparent_child_keys: AppendOnlyVec::new(),
             addresses: AppendOnlyVec::new(),
-            next_sapling_diversifier_index: DiversifierIndex::new(),
+            addresses_write_lock: AtomicBool::new(false),
         }
     }
 }
@@ -333,14 +334,7 @@ impl WalletCapability {
         }
 
         // Initialize an instance with no capabilities.
-        let mut wc = Self {
-            orchard: Capability::None,
-            sapling: Capability::None,
-            transparent: Capability::None,
-            transparent_child_keys: AppendOnlyVec::new(),
-            addresses: AppendOnlyVec::new(),
-            next_sapling_diversifier_index: DiversifierIndex::new(),
-        };
+        let mut wc = WalletCapability::default();
         for fvk in ufvk.items() {
             match fvk {
                 Fvk::Orchard(key_bytes) => {
