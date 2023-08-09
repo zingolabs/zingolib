@@ -365,7 +365,7 @@ impl LightClient {
 
     pub async fn do_addresses(&self) -> JsonValue {
         let mut objectified_addresses = Vec::new();
-        for address in self.wallet.wallet_capability().read().await.addresses() {
+        for address in self.wallet.wallet_capability().addresses().iter() {
             let encoded_ua = address.encode(&self.config.chain);
             let transparent = address
                 .transparent()
@@ -462,8 +462,6 @@ impl LightClient {
         let mut pending_sapling_notes: Vec<JsonValue> = vec![];
 
         let anchor_height = BlockHeight::from_u32(self.wallet.get_anchor_height().await);
-        let unified_spend_capability_arc = self.wallet.wallet_capability();
-        let unified_spend_capability = &unified_spend_capability_arc.read().await;
 
         {
             // Collect Sapling notes
@@ -473,7 +471,7 @@ impl LightClient {
                         if !all_notes && note_metadata.spent.is_some() {
                             None
                         } else {
-                            let address = LightWallet::note_address::<SaplingDomain<ChainType>>(&self.config.chain, note_metadata, unified_spend_capability);
+                            let address = LightWallet::note_address::<SaplingDomain<ChainType>>(&self.config.chain, note_metadata, &self.wallet.wallet_capability());
                             let spendable = transaction_metadata.block_height <= anchor_height && note_metadata.spent.is_none() && note_metadata.unconfirmed_spent.is_none();
 
                             let created_block:u32 = transaction_metadata.block_height.into();
@@ -508,8 +506,6 @@ impl LightClient {
         let mut spent_orchard_notes: Vec<JsonValue> = vec![];
         let mut pending_orchard_notes: Vec<JsonValue> = vec![];
 
-        let unified_spend_auth_arc = self.wallet.wallet_capability();
-        let unified_spend_auth = &unified_spend_auth_arc.read().await;
         {
             self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
                 .flat_map( |(transaction_id, transaction_metadata)| {
@@ -517,7 +513,7 @@ impl LightClient {
                         if !all_notes && orch_note_metadata.is_spent() {
                             None
                         } else {
-                            let address = LightWallet::note_address::<OrchardDomain>(&self.config.chain, orch_note_metadata, unified_spend_auth);
+                            let address = LightWallet::note_address::<OrchardDomain>(&self.config.chain, orch_note_metadata, &self.wallet.wallet_capability());
                             let spendable = transaction_metadata.block_height <= anchor_height && orch_note_metadata.spent.is_none() && orch_note_metadata.unconfirmed_spent.is_none();
 
                             let created_block:u32 = transaction_metadata.block_height.into();
@@ -573,7 +569,7 @@ impl LightClient {
                                 "value"              => utxo.value,
                                 "scriptkey"          => hex::encode(utxo.script.clone()),
                                 "is_change"          => false, // TODO: Identify notes as change if we send change to our own taddrs
-                                "address"            => unified_spend_auth.get_ua_from_contained_transparent_receiver(&taddr).map(|ua| ua.encode(&self.config.chain)),
+                                "address"            => self.wallet.wallet_capability().get_ua_from_contained_transparent_receiver(&taddr).map(|ua| ua.encode(&self.config.chain)),
                                 "spent_at_height"    => utxo.spent_at_height,
                                 "spent"              => utxo.spent.map(|spent_transaction_id| format!("{}", spent_transaction_id)),
                                 "unconfirmed_spent"  => utxo.unconfirmed_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
@@ -624,8 +620,6 @@ impl LightClient {
         // Create a list of TransactionItems from wallet transactions
         // TODO:  determine why an interface called "list_transactions" is
         // processing a bunch of transaction contents
-        let unified_spend_capability_arc = self.wallet.wallet_capability();
-        let unified_spend_capability = &unified_spend_capability_arc.read().await;
         let mut consumer_ui_notes = self
             .wallet
             .transaction_context.transaction_metadata_set
@@ -646,7 +640,7 @@ impl LightClient {
                 }
 
                 // For each note that is not a change, add a consumer_ui_note.
-                consumer_notes_by_tx.extend(self.add_nonchange_notes(wallet_transaction, unified_spend_capability));
+                consumer_notes_by_tx.extend(self.add_nonchange_notes(wallet_transaction, &self.wallet.wallet_capability()));
 
                 // TODO:  determine if all notes are either Change-or-NotChange, if that's the case
                 // add a sanity check that asserts all notes are processed by this point
@@ -781,8 +775,6 @@ impl LightClient {
         let new_address = self
             .wallet
             .wallet_capability()
-            .write()
-            .await
             .new_address(desired_receivers)?;
 
         self.do_save().await?;
@@ -955,9 +947,8 @@ impl LightClient {
             ));
         }
 
-        let addr = address.unwrap_or(
-            self.wallet.wallet_capability().read().await.addresses()[0].encode(&self.config.chain),
-        );
+        let addr = address
+            .unwrap_or(self.wallet.wallet_capability().addresses()[0].encode(&self.config.chain));
 
         let result = {
             let _lock = self.sync_lock.lock().await;
@@ -1162,7 +1153,7 @@ impl LightClient {
         Ok((sapling_output, sapling_spend))
     }
     #[cfg(not(feature = "embed_params"))]
-    fn read_sapling_params(&self) -> Result<(Vec<u8>, Vec<u8>), String> {
+    fn read_sapling_params(&self) -> result<(vec<u8>, vec<u8>), string> {
         let path = self
             .config
             .get_zcash_params_path()
@@ -1170,19 +1161,19 @@ impl LightClient {
 
         let mut path_buf = path.to_path_buf();
         path_buf.push("sapling-output.params");
-        let mut file = File::open(path_buf).map_err(|e| e.to_string())?;
+        let mut file = file::open(path_buf).map_err(|e| e.to_string())?;
         let mut sapling_output = vec![];
         file.read_to_end(&mut sapling_output)
             .map_err(|e| e.to_string())?;
 
         let mut path_buf = path.to_path_buf();
         path_buf.push("sapling-spend.params");
-        let mut file = File::open(path_buf).map_err(|e| e.to_string())?;
+        let mut file = file::open(path_buf).map_err(|e| e.to_string())?;
         let mut sapling_spend = vec![];
         file.read_to_end(&mut sapling_spend)
             .map_err(|e| e.to_string())?;
 
-        Ok((sapling_output, sapling_spend))
+        ok((sapling_output, sapling_spend))
     }
 
     pub fn set_sapling_params(
@@ -1526,12 +1517,7 @@ impl LightClient {
                 .start(
                     bsync_data.clone(),
                     fetch_full_transaction_transmitter,
-                    self.wallet
-                        .wallet_capability()
-                        .read()
-                        .await
-                        .orchard
-                        .can_spend(),
+                    self.wallet.wallet_capability().orchard.can_spend(),
                 )
                 .await;
 

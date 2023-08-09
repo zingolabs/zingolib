@@ -621,7 +621,7 @@ impl LightWallet {
         };
         let transaction_metadata_set = Arc::new(RwLock::new(TransactionMetadataSet::default()));
         let transaction_context =
-            TransactionContext::new(&config, Arc::new(RwLock::new(wc)), transaction_metadata_set);
+            TransactionContext::new(&config, Arc::new(wc), transaction_metadata_set);
         Ok(Self {
             blocks: Arc::new(RwLock::new(vec![])),
             mnemonic,
@@ -764,7 +764,7 @@ impl LightWallet {
 
         let transaction_context = TransactionContext::new(
             config,
-            Arc::new(RwLock::new(wallet_capability)),
+            Arc::new(wallet_capability),
             Arc::new(RwLock::new(transactions)),
         );
 
@@ -1568,11 +1568,7 @@ impl LightWallet {
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
         // Write all the keys
-        self.transaction_context
-            .key
-            .read()
-            .await
-            .write(&mut writer)?;
+        self.transaction_context.key.write(&mut writer)?;
 
         Vector::write(&mut writer, &self.blocks.read().await, |w, b| b.write(w))?;
 

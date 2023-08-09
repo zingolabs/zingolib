@@ -72,7 +72,6 @@ pub struct WalletCapability {
     // Because of this, the index isn't necessarily equal to addresses.len()
     next_sapling_diversifier_index: DiversifierIndex,
 }
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[non_exhaustive]
 pub struct ReceiverSelection {
@@ -161,7 +160,7 @@ impl WalletCapability {
     }
 
     pub fn new_address(
-        &mut self,
+        &self,
         desired_receivers: ReceiverSelection,
     ) -> Result<UnifiedAddress, String> {
         if (desired_receivers.transparent & !self.transparent.can_view())
