@@ -198,7 +198,7 @@ impl WalletCapability {
 
         let transparent_receiver = if desired_receivers.transparent {
             let child_index = KeyIndex::from_index(self.addresses.len() as u32).unwrap();
-            match &mut self.transparent {
+            match &self.transparent {
                 Capability::Spend(ext_sk) => {
                     let child_sk = ext_sk
                         .derive_private_key(child_index)
@@ -456,7 +456,7 @@ impl ReadableWriteable<()> for WalletCapability {
 
     fn read<R: Read>(mut reader: R, _input: ()) -> io::Result<Self> {
         let version = Self::get_version(&mut reader)?;
-        let mut wc = match version {
+        let wc = match version {
             // in version 1, only spending keys are stored
             1 => {
                 let orchard = orchard::keys::SpendingKey::read(&mut reader, ())?;

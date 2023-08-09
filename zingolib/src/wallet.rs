@@ -568,7 +568,7 @@ impl LightWallet {
     }
 
     pub fn new(config: ZingoConfig, base: WalletBase, height: u64) -> io::Result<Self> {
-        let (mut wc, mnemonic) = match base {
+        let (wc, mnemonic) = match base {
             WalletBase::FreshEntropy => {
                 let mut seed_bytes = [0u8; 32];
                 // Create a random seed.
