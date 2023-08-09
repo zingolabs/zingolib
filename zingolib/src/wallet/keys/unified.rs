@@ -126,7 +126,7 @@ fn read_write_receiver_selections() {
 }
 
 impl WalletCapability {
-    pub fn addresses(&self) -> &AppendOnlyVec<UnifiedAddress> {
+    pub fn addresses(&self) -> &appendOnlyVec<UnifiedAddress> {
         &self.addresses
     }
 
@@ -468,8 +468,8 @@ impl ReadableWriteable<()> for WalletCapability {
                     orchard: Capability::Spend(orchard),
                     sapling: Capability::Spend(sapling),
                     transparent: Capability::Spend(transparent),
-                    addresses: vec![],
-                    transparent_child_keys: vec![],
+                    transparent_child_keys: AppendOnlyVec::new(),
+                    addresses: AppendOnlyVec::new(),
                     next_sapling_diversifier_index: DiversifierIndex::new(),
                 }
             }
@@ -477,8 +477,8 @@ impl ReadableWriteable<()> for WalletCapability {
                 orchard: Capability::read(&mut reader, ())?,
                 sapling: Capability::read(&mut reader, ())?,
                 transparent: Capability::read(&mut reader, ())?,
-                addresses: vec![],
-                transparent_child_keys: vec![],
+                transparent_child_keys: AppendOnlyVec::new(),
+                addresses: AppendOnlyVec::new(),
                 next_sapling_diversifier_index: DiversifierIndex::new(),
             },
             _ => {
