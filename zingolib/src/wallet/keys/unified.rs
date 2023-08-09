@@ -647,8 +647,7 @@ pub async fn get_transparent_secretkey_pubkey_taddr(
 ) {
     use super::address_from_pubkeyhash;
 
-    let wc_readlock = lightclient.wallet.wallet_capability();
-    let wc = wc_readlock.read().await;
+    let wc = lightclient.wallet.wallet_capability();
     // 2. Get an incoming transaction to a t address
     let (sk, pk) = match &wc.transparent {
         Capability::None => (None, None),
