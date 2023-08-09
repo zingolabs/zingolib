@@ -3,6 +3,7 @@ use std::{
     io::{self, Read, Write},
 };
 
+use append_only_vec::AppendOnlyVec;
 use bip0039::Mnemonic;
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use orchard::keys::Scope;
@@ -53,7 +54,7 @@ impl<V, S> Capability<V, S> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct WalletCapability {
     pub transparent: Capability<
         super::extended_transparent::ExtendedPubKey,
@@ -65,8 +66,8 @@ pub struct WalletCapability {
     >,
     pub orchard: Capability<orchard::keys::FullViewingKey, orchard::keys::SpendingKey>,
 
-    transparent_child_keys: Vec<(usize, secp256k1::SecretKey)>,
-    addresses: Vec<UnifiedAddress>,
+    transparent_child_keys: append_only_vec::AppendOnlyVec<(usize, secp256k1::SecretKey)>,
+    addresses: append_only_vec::AppendOnlyVec<UnifiedAddress>,
     // Not all diversifier indexes produce valid sapling addresses.
     // Because of this, the index isn't necessarily equal to addresses.len()
     next_sapling_diversifier_index: DiversifierIndex,
@@ -125,11 +126,13 @@ fn read_write_receiver_selections() {
 }
 
 impl WalletCapability {
-    pub fn addresses(&self) -> &[UnifiedAddress] {
+    pub fn addresses(&self) -> &AppendOnlyVec<UnifiedAddress> {
         &self.addresses
     }
 
-    pub fn transparent_child_keys(&self) -> Result<&Vec<(usize, secp256k1::SecretKey)>, String> {
+    pub fn transparent_child_keys(
+        &self,
+    ) -> Result<&AppendOnlyVec<(usize, secp256k1::SecretKey)>, String> {
         if self.transparent.can_spend() {
             Ok(&self.transparent_child_keys)
         } else {
@@ -284,8 +287,8 @@ impl WalletCapability {
             orchard: Capability::Spend(orchard_key),
             sapling: Capability::Spend(sapling_key),
             transparent: Capability::Spend(transparent_parent_key),
-            transparent_child_keys: vec![],
-            addresses: vec![],
+            transparent_child_keys: AppendOnlyVec::new(),
+            addresses: AppendOnlyVec::new(),
             next_sapling_diversifier_index: DiversifierIndex::new(),
         }
     }
@@ -317,8 +320,8 @@ impl WalletCapability {
             orchard: Capability::None,
             sapling: Capability::None,
             transparent: Capability::None,
-            transparent_child_keys: vec![],
-            addresses: vec![],
+            transparent_child_keys: AppendOnlyVec::new(),
+            addresses: AppendOnlyVec::new(),
             next_sapling_diversifier_index: DiversifierIndex::new(),
         };
         for fvk in ufvk.items() {
