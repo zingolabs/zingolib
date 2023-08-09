@@ -1566,7 +1566,7 @@ impl LightWallet {
             .await
     }
 
-    pub fn wallet_capability(&self) -> Arc<RwLock<WalletCapability>> {
+    pub fn wallet_capability(&self) -> Arc<WalletCapability> {
         self.transaction_context.key.clone()
     }
 
