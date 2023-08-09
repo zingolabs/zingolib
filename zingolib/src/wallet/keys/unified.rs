@@ -126,7 +126,7 @@ fn read_write_receiver_selections() {
 }
 
 impl WalletCapability {
-    pub fn addresses(&self) -> &appendOnlyVec<UnifiedAddress> {
+    pub fn addresses(&self) -> &AppendOnlyVec<UnifiedAddress> {
         &self.addresses
     }
 
