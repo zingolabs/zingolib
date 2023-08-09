@@ -501,14 +501,18 @@ impl ReadableWriteable<()> for WalletCapability {
         self.orchard.write(&mut writer)?;
         self.sapling.write(&mut writer)?;
         self.transparent.write(&mut writer)?;
-        Vector::write(&mut writer, &self.addresses, |w, address| {
-            ReceiverSelection {
-                orchard: address.orchard().is_some(),
-                sapling: address.sapling().is_some(),
-                transparent: address.transparent().is_some(),
-            }
-            .write(w)
-        })
+        Vector::write(
+            &mut writer,
+            &self.addresses.iter().collect::<Vec<_>>(),
+            |w, address| {
+                ReceiverSelection {
+                    orchard: address.orchard().is_some(),
+                    sapling: address.sapling().is_some(),
+                    transparent: address.transparent().is_some(),
+                }
+                .write(w)
+            },
+        )
     }
 }
 
