@@ -65,6 +65,7 @@ nonempty = "0.7.0"
 tracing-subscriber = "0.3.15"
 tracing = "0.1.36"
 indoc = "2.0.1"
+append-only-vec = "0.1.2"
 
 [dev-dependencies]
 portpicker = "0.1.0"
