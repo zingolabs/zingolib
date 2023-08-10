@@ -1191,21 +1191,22 @@ async fn diversification_deterministic_and_coherent() {
     let recipient1 = client_builder
         .build_newseed_client(seed_phrase, 0, false)
         .await;
-    // Verify that the provided seed generates the expected uregtest1qtqr46..  unified address (UA)
-    let base_unified_address = "\
-        uregtest1qtqr46fwkhmdn336uuyvvxyrv0l7trgc0z9clpryx6vtladnpyt4wvq99p59f4rcyuvpmmd0hm4k5vv6j\
-        8edj6n8ltk45sdkptlk7rtzlm4uup4laq8ka8vtxzqemj3yhk6hqhuypupzryhv66w65lah9ms03xa8nref7gux2zz\
-        hjnfanxnnrnwscmz6szv2ghrurhu3jsqdx25y2yh";
-    let base_sapling_receiver = "zregtestsapling1lhjvuj4s3ghhccnjaefdzuwp3h3mfluz6tm8h0dsq2ym3f77zsv0wrrszpmaqlezm3kt6ajdvlw";
     let base_transparent_receiver = "tmS9nbexug7uT8x1cMTLP1ABEyKXpMjR5F1";
     assert_eq!(
         &get_base_address!(recipient1, "transparent"),
         &base_transparent_receiver
     );
+    let base_sapling_receiver = "\
+        zregtestsapling1lhjvuj4s3ghhccnjaefdzuwp3h3mfluz6tm8h0dsq2ym3f77zsv0wrrszpmaqlezm3kt6ajdvlw";
     assert_eq!(
         &get_base_address!(recipient1, "sapling"),
         &base_sapling_receiver
     );
+    // Verify that the provided seed generates the expected uregtest1qtqr46..  unified address (UA)
+    let base_unified_address = "\
+        uregtest1qtqr46fwkhmdn336uuyvvxyrv0l7trgc0z9clpryx6vtladnpyt4wvq99p59f4rcyuvpmmd0hm4k5vv6j8\
+        edj6n8ltk45sdkptlk7rtzlm4uup4laq8ka8vtxzqemj3yhk6hqhuypupzryhv66w65lah9ms03xa8nref7gux2zzhj\
+        nfanxnnrnwscmz6szv2ghrurhu3jsqdx25y2yh";
     assert_eq!(
         &get_base_address!(recipient1, "unified"),
         &base_unified_address
@@ -1213,8 +1214,8 @@ async fn diversification_deterministic_and_coherent() {
 
     //Verify that 1 increment of diversification with a tz receiver set produces uregtest1m8un60u... UA
     let expected_index_1_diversified_tz = "\
-        uregtest1m8un60udl5ac0928aghy4jx6wp59ty7ct4t8ks9udwn8y6fkdmhe6pq0x5huv8v0pprdlq07tclqgl5fz\
-        fvvzjf4fatk8cpyktaudmhvjcqufdsfmktgawvne3ksrhs97pf0u8s8f8h";
+        uregtest1m8un60udl5ac0928aghy4jx6wp59ty7ct4t8ks9udwn8y6fkdmhe6pq0x5huv8v0pprdlq07tclqgl5fzf\
+        vvzjf4fatk8cpyktaudmhvjcqufdsfmktgawvne3ksrhs97pf0u8s8f8h";
     let new_address = recipient1.do_new_address("tz").await.unwrap();
     let new_address_as_str = new_address[0].as_str().unwrap();
     assert_eq!(&expected_index_1_diversified_tz, &new_address_as_str);
