@@ -104,7 +104,7 @@ fn report_permission_error() {
     }
 }
 
-/// If the regtest flag was passed but a non regtest nework is selected
+/// If the regtest flag was passed but a non regtest network is selected
 /// exit immediately and vice versa.
 fn regtest_config_check(regtest_manager: &Option<regtest::RegtestManager>, chain: &ChainType) {
     if regtest_manager.is_some() && chain == &ChainType::Regtest {
