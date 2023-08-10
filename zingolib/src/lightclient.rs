@@ -3,7 +3,8 @@ use crate::{
         block_witness_data::BlockAndWitnessData, fetch_compact_blocks::FetchCompactBlocks,
         fetch_full_transaction::TransactionContext,
         fetch_taddr_transactions::FetchTaddrTransactions, sync_status::BatchSyncStatus,
-        syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions, update_notes::UpdateNotes,
+        syncdata::BlazeSyncData, syncronizer::BlazeSyncronizer,
+        trial_decryptions::TrialDecryptions, update_notes::UpdateNotes,
     },
     compact_formats::RawTransaction,
     grpc_connector::GrpcConnector,
@@ -81,22 +82,14 @@ pub struct LightClient {
     pub(crate) config: ZingoConfig,
     pub wallet: LightWallet,
 
-    mempool_monitor: std::sync::RwLock<Option<std::thread::JoinHandle<()>>>,
-
-    sync_lock: Mutex<()>,
-
-    bsync_data: Arc<RwLock<BlazeSyncData>>,
-    interrupt_sync: Arc<RwLock<bool>>,
+    syncronizer: BlazeSyncronizer,
 }
 impl LightClient {
     pub fn create_from_extant_wallet(wallet: LightWallet, config: ZingoConfig) -> Self {
         LightClient {
             wallet,
             config: config.clone(),
-            mempool_monitor: std::sync::RwLock::new(None),
-            sync_lock: Mutex::new(()),
-            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
-            interrupt_sync: Arc::new(RwLock::new(false)),
+            syncronizer: BlazeSyncronizer::new(&config),
         }
     }
     /// The wallet this fn associates with the lightclient is specifically derived from
@@ -135,10 +128,7 @@ impl LightClient {
         let lightclient = LightClient {
             wallet: LightWallet::new(config.clone(), wallet_base, birthday)?,
             config: config.clone(),
-            mempool_monitor: std::sync::RwLock::new(None),
-            sync_lock: Mutex::new(()),
-            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
-            interrupt_sync: Arc::new(RwLock::new(false)),
+            syncronizer: BlazeSyncronizer::new(&config),
         };
 
         lightclient.set_wallet_initial_state(birthday).await;
@@ -159,10 +149,7 @@ impl LightClient {
         Ok(LightClient {
             wallet: LightWallet::new(config.clone(), wallet_base, height)?,
             config: config.clone(),
-            mempool_monitor: std::sync::RwLock::new(None),
-            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
-            sync_lock: Mutex::new(()),
-            interrupt_sync: Arc::new(RwLock::new(false)),
+            syncronizer: BlazeSyncronizer::new(&config),
         })
     }
 
@@ -216,10 +203,7 @@ impl LightClient {
         let lc = LightClient {
             wallet,
             config: config.clone(),
-            mempool_monitor: std::sync::RwLock::new(None),
-            sync_lock: Mutex::new(()),
-            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
-            interrupt_sync: Arc::new(RwLock::new(false)),
+            syncronizer: BlazeSyncronizer::new(&config),
         };
 
         debug!(
@@ -843,7 +827,7 @@ impl LightClient {
             log::debug!("do_save entered");
             log::debug!("target_os is not ios or android");
             // Prevent any overlapping syncs during save, and don't save in the middle of a sync
-            //let _lock = self.sync_lock.lock().await;
+            //let _lock = self.syncronizer.lock.lock().await;
 
             let mut wallet_bytes = vec![];
             match self.wallet.write(&mut wallet_bytes).await {
@@ -906,7 +890,7 @@ impl LightClient {
         debug!("Creating transaction");
 
         let result = {
-            let _lock = self.sync_lock.lock().await;
+            let _lock = self.syncronizer.lock.lock().await;
             let (sapling_output, sapling_spend) = self.read_sapling_params()?;
 
             let prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
@@ -937,7 +921,7 @@ impl LightClient {
             "total" => progress.total,
             "txid" => progress.last_transaction_id,
             "error" => progress.last_error,
-            "sync_interrupt" => *self.interrupt_sync.read().await
+            "sync_interrupt" => *self.syncronizer.interrupt.read().await
         })
     }
 
@@ -983,7 +967,7 @@ impl LightClient {
         );
 
         let result = {
-            let _lock = self.sync_lock.lock().await;
+            let _lock = self.syncronizer.lock.lock().await;
             let (sapling_output, sapling_spend) = self.read_sapling_params()?;
 
             let prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
@@ -1007,7 +991,8 @@ impl LightClient {
     pub async fn do_sync(&self, print_updates: bool) -> Result<JsonValue, String> {
         // Remember the previous sync id first
         let prev_sync_id = self
-            .bsync_data
+            .syncronizer
+            .data
             .read()
             .await
             .sync_status
@@ -1020,7 +1005,7 @@ impl LightClient {
 
         // If printing updates, start a new task to print updates every 2 seconds.
         let sync_result = if print_updates {
-            let sync_status_clone = self.bsync_data.read().await.sync_status.clone();
+            let sync_status_clone = self.syncronizer.data.read().await.sync_status.clone();
             let (transmitter, mut receiver) = oneshot::channel::<i32>();
 
             tokio::spawn(async move {
@@ -1052,12 +1037,13 @@ impl LightClient {
         };
 
         // Mark the sync data as finished, which should clear everything
-        self.bsync_data.read().await.finish().await;
+        self.syncronizer.data.read().await.finish().await;
         sync_result
     }
 
     pub async fn do_sync_status(&self) -> BatchSyncStatus {
-        self.bsync_data
+        self.syncronizer
+            .data
             .read()
             .await
             .sync_status
@@ -1149,7 +1135,7 @@ impl LightClient {
     }
 
     pub(crate) async fn get_sync_interrupt(&self) -> bool {
-        *self.interrupt_sync.read().await
+        *self.syncronizer.interrupt.read().await
     }
 
     pub fn init_logging() -> io::Result<()> {
@@ -1160,7 +1146,7 @@ impl LightClient {
     }
 
     pub async fn interrupt_sync_after_batch(&self, set_interrupt: bool) {
-        *self.interrupt_sync.write().await = set_interrupt;
+        *self.syncronizer.interrupt.write().await = set_interrupt;
     }
     #[cfg(feature = "embed_params")]
     fn read_sapling_params(&self) -> Result<(Vec<u8>, Vec<u8>), String> {
@@ -1295,7 +1281,7 @@ impl LightClient {
             return;
         }
 
-        if lc.mempool_monitor.read().unwrap().is_some() {
+        if lc.syncronizer.mempool_monitor.read().unwrap().is_some() {
             return;
         }
 
@@ -1372,7 +1358,7 @@ impl LightClient {
             });
         });
 
-        *lc.mempool_monitor.write().unwrap() = Some(h);
+        *lc.syncronizer.mempool_monitor.write().unwrap() = Some(h);
     }
 
     /// Start syncing in batches with the max size, to manage memory consumption.
@@ -1382,7 +1368,7 @@ impl LightClient {
         // TODO:  We run on resource constrained systems, where a single thread of
         // execution often consumes most of the memory available, on other systems
         // we might parallelize sync.
-        let lightclient_exclusion_lock = self.sync_lock.lock().await;
+        let lightclient_exclusion_lock = self.syncronizer.lock.lock().await;
 
         // The top of the wallet
         let last_synced_height = self.wallet.last_synced_height().await;
@@ -1451,7 +1437,8 @@ impl LightClient {
         }
 
         // Increment the sync ID so the caller can determine when it is over
-        self.bsync_data
+        self.syncronizer
+            .data
             .write()
             .await
             .sync_status
@@ -1463,8 +1450,8 @@ impl LightClient {
         for (batch_num, batch_latest_block) in latest_block_batches.into_iter().enumerate() {
             res = self.sync_nth_batch(batch_latest_block, batch_num).await;
             res.as_ref()?;
-            if *self.interrupt_sync.read().await {
-                log::debug!("LightClient interrupt_sync is true");
+            if *self.syncronizer.interrupt.read().await {
+                log::debug!("LightClient interrupt is true");
                 break;
             }
         }
@@ -1494,7 +1481,7 @@ impl LightClient {
             return Ok(object! { "result" => "success" });
         }
 
-        let bsync_data = self.bsync_data.clone();
+        let bsync_data = self.syncronizer.data.clone();
 
         let end_block = last_synced_height + 1;
 
