@@ -282,6 +282,7 @@ impl WalletCapability {
             }
         };
         self.addresses.push(ua.clone());
+        assert_eq!(self.addresses.len(), index_for_diversification + 1);
         self.addresses_write_lock
             .swap(false, atomic::Ordering::Release);
         Ok(ua)
