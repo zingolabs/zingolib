@@ -244,10 +244,14 @@ impl WalletCapability {
                     Some(child_pk)
                 }
                 Capability::View(ext_pk) => {
-                    let child_pk = ext_pk
-                        .derive_public_key(child_index)
-                        .map_err(|e| format!("Transparent public key derivation failed: {e}"))?
-                        .public_key;
+                    let child_pk = match ext_pk.derive_public_key(child_index) {
+                        Err(e) => {
+                            self.addresses_write_lock
+                                .swap(false, atomic::Ordering::Release);
+                            return Err(format!("Transparent public key derivation failed: {e}"));
+                        }
+                        Ok(res) => res.public_key,
+                    };
                     Some(child_pk)
                 }
                 Capability::None => None,
