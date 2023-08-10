@@ -198,12 +198,13 @@ pub enum WalletBase {
     Mnemonic(Mnemonic),
     Ufvk(String),
 }
-
-pub fn wallet_base_from_string(base: String) -> WalletBase {
-    if (&base.clone()[0..5]) == "uview" {
-        WalletBase::Ufvk(base)
-    } else {
-        WalletBase::MnemonicPhrase(base)
+impl WalletBase {
+    pub fn from_string(base: String) -> WalletBase {
+        if (&base.clone()[0..5]) == "uview" {
+            WalletBase::Ufvk(base)
+        } else {
+            WalletBase::MnemonicPhrase(base)
+        }
     }
 }
 

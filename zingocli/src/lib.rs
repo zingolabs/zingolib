@@ -8,7 +8,6 @@ use log::{error, info};
 use clap::{self, Arg};
 use zingo_testutils::regtest;
 use zingoconfig::ChainType;
-use zingolib::wallet::wallet_base_from_string;
 use zingolib::wallet::WalletBase;
 use zingolib::{commands, lightclient::LightClient, load_clientconfig};
 
@@ -409,7 +408,7 @@ pub fn startup(
 
     let lightclient = match filled_template.from.clone() {
         Some(phrase) => Arc::new(LightClient::create_from_wallet_base(
-            wallet_base_from_string(phrase),
+            WalletBase::from_string(phrase),
             &config,
             filled_template.birthday,
             false,
