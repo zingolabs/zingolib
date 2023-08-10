@@ -1213,12 +1213,26 @@ async fn diversification_deterministic_and_coherent() {
     );
 
     //Verify that 1 increment of diversification with a tz receiver set produces uregtest1m8un60u... UA
-    let expected_index_1_diversified_tz = "\
-        uregtest1m8un60udl5ac0928aghy4jx6wp59ty7ct4t8ks9udwn8y6fkdmhe6pq0x5huv8v0pprdlq07tclqgl5fzf\
-        vvzjf4fatk8cpyktaudmhvjcqufdsfmktgawvne3ksrhs97pf0u8s8f8h";
-    let new_address = recipient1.do_new_address("tz").await.unwrap();
+    let expected_index_1_diversified_tzo = "\
+        uregtest1yhu9ke9hung002w5vcez7y6fe7sgqe4rnc3l2tqyz3yqctmtays6peukkhj2lx45urq666h4dpduz0rjzl\
+        mky7cuayj285d003futaljg355tz94l6xnklk5kgthe2x942s3qkxedypsadla56fjx4e5nca9672jmxekjpp94ahz0\
+        ax963r2v9wwxfzadnzt3fgwa8pytdhcy4l6z0h";
+    let new_address = recipient1.do_new_address("tzo").await.unwrap();
     let new_address_as_str = new_address[0].as_str().unwrap();
-    assert_eq!(&expected_index_1_diversified_tz, &new_address_as_str);
+    assert_eq!(&expected_index_1_diversified_tzo, &new_address_as_str);
+    let ua_index_1 = recipient1.do_addresses().await[1].clone();
+    let ua_address_index_1 = ua_index_1["address"].clone().to_string();
+    let sapling_index_1 = ua_index_1["receivers"]["sapling"].clone().to_string();
+    let transparent_index_1 = ua_index_1["receivers"]["transparent"].clone().to_string();
+    let ua_address_index_1_match = ua_address_index_1
+        == "\
+            uregtest1yhu9ke9hung002w5vcez7y6fe7sgqe4rnc3l2tqyz3yqctmtays6peukkhj2lx45urq666h4dpduz0\
+            rjzlmky7cuayj285d003futaljg355tz94l6xnklk5kgthe2x942s3qkxedypsadla56fjx4e5nca9672jmxekj\
+            pp94ahz0ax963r2v9wwxfzadnzt3fgwa8pytdhcy4l6z0h";
+    let sapling_index_1_match = sapling_index_1
+        == "zregtestsapling14wl6gy5h2tg528znyrqayfh2sekntk3lvmwsw68wjz2g205t62sv5xeyzvfk4hlxdwd9gh4ws9n";
+    let transparent_index_1_match = transparent_index_1 == "tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr";
+    assert!(ua_address_index_1_match && sapling_index_1_match && transparent_index_1_match);
 }
 
 #[tokio::test]
