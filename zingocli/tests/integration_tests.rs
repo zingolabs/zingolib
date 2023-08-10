@@ -1192,13 +1192,20 @@ async fn diversification_deterministic_and_coherent() {
         .build_newseed_client(seed_phrase, 0, false)
         .await;
     // Verify that the provided seed generates the expected uregtest1qtqr46..  unified address (UA)
-    let original_recipient_address = "\
+    let original_recipient_unified_address = "\
         uregtest1qtqr46fwkhmdn336uuyvvxyrv0l7trgc0z9clpryx6vtladnpyt4wvq99p59f4rcyuvpmmd0hm4k5vv6j\
         8edj6n8ltk45sdkptlk7rtzlm4uup4laq8ka8vtxzqemj3yhk6hqhuypupzryhv66w65lah9ms03xa8nref7gux2zz\
         hjnfanxnnrnwscmz6szv2ghrurhu3jsqdx25y2yh";
+    let sapling_receiver = "zregtestsapling1lhjvuj4s3ghhccnjaefdzuwp3h3mfluz6tm8h0dsq2ym3f77zsv0wrrszpmaqlezm3kt6ajdvlw";
+    let transparent_receiver = "tmS9nbexug7uT8x1cMTLP1ABEyKXpMjR5F1";
     assert_eq!(
         &get_base_address!(recipient1, "unified"),
-        &original_recipient_address
+        &original_recipient_unified_address
+    );
+    assert_eq!(&get_base_address!(recipient1, "sapling"), &sapling_receiver);
+    assert_eq!(
+        &get_base_address!(recipient1, "transparent"),
+        &transparent_receiver
     );
 
     //Verify that 1 increment of diversification with a tz receiver set produces uregtest1m8un60u... UA
