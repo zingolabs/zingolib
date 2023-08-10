@@ -229,10 +229,14 @@ impl WalletCapability {
             let child_index = KeyIndex::from_index(self.addresses.len() as u32).unwrap();
             match &self.transparent {
                 Capability::Spend(ext_sk) => {
-                    let child_sk = ext_sk
-                        .derive_private_key(child_index)
-                        .map_err(|e| format!("Transparent private key derivation failed: {e}"))?
-                        .private_key;
+                    let child_sk = match ext_sk.derive_private_key(child_index) {
+                        Err(e) => {
+                            self.addresses_write_lock
+                                .swap(false, atomic::Ordering::Release);
+                            return Err(format!("Transparent private key derivation failed: {e}"));
+                        }
+                        Ok(res) => res.private_key,
+                    };
                     let secp = secp256k1::Secp256k1::new();
                     let child_pk = secp256k1::PublicKey::from_secret_key(&secp, &child_sk);
                     self.transparent_child_keys
