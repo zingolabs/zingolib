@@ -14,9 +14,8 @@ use zcash_address::unified::{Container, Encoding, Fvk, Ufvk};
 use zcash_client_backend::address::UnifiedAddress;
 use zcash_encoding::Vector;
 use zcash_primitives::{
-    legacy::TransparentAddress,
-    sapling::note_encryption::PreparedIncomingViewingKey,
-    zip32::{DiversifierIndex, ExtendedSpendingKey},
+    legacy::TransparentAddress, sapling::note_encryption::PreparedIncomingViewingKey,
+    zip32::DiversifierIndex,
 };
 use zingoconfig::ZingoConfig;
 
@@ -504,9 +503,7 @@ impl ReadableWriteable<()> for WalletCapability {
                 orchard: Capability::read(&mut reader, ())?,
                 sapling: Capability::read(&mut reader, ())?,
                 transparent: Capability::read(&mut reader, ())?,
-                transparent_child_keys: AppendOnlyVec::new(),
-                addresses: AppendOnlyVec::new(),
-                next_sapling_diversifier_index: DiversifierIndex::new(),
+                ..Default::default()
             },
             _ => {
                 return Err(io::Error::new(

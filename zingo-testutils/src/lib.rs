@@ -50,13 +50,10 @@ pub async fn build_fvk_client_and_capability(
     );
     let viewkey_client =
         LightClient::create_unconnected(zingoconfig, WalletBase::Ufvk(ufvk), 0).unwrap();
-    let watch_wc = viewkey_client
-        .wallet
-        .wallet_capability()
-        .read()
-        .await
-        .clone();
-    (viewkey_client, watch_wc)
+    (
+        viewkey_client,
+        *viewkey_client.wallet.wallet_capability().as_ref().clone(),
+    )
 }
 
 async fn get_synced_wallet_height(client: &LightClient) -> Result<u32, String> {
