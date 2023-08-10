@@ -1,3 +1,4 @@
+use std::sync::atomic;
 use std::{
     collections::{HashMap, HashSet},
     io::{self, Read, Write},
@@ -183,23 +184,37 @@ impl WalletCapability {
         {
             return Err("The wallet is not capable of producing desired receivers.".to_string());
         }
-
+        if self
+            .addresses_write_lock
+            .swap(true, atomic::Ordering::Acquire)
+        {
+            return Err("addresses_write_lock collision!".to_string());
+        }
         let orchard_receiver = if desired_receivers.orchard {
-            let fvk: orchard::keys::FullViewingKey = (&*self).try_into()?;
+            let fvk: orchard::keys::FullViewingKey = match (&*self).try_into() {
+                Ok(viewkey) => viewkey,
+                Err(e) => {
+                    self.addresses_write_lock
+                        .swap(false, atomic::Ordering::Release);
+                    return Err(e);
+                }
+            };
             Some(fvk.address_at(self.addresses.len(), Scope::External))
         } else {
             None
         };
 
         // produce a Sapling address to increment Sapling diversifier index
+        let mut sapling_diversifier_index = DiversifierIndex::new();
+        for _ in 0..self.addresses.len() {
+            sapling_diversifier_index.increment();
+        }
         let sapling_address = if self.sapling.can_view() {
             let fvk: zcash_primitives::zip32::sapling::DiversifiableFullViewingKey =
-                (&*self).try_into().unwrap();
-            let (mut new_index, address) = fvk
-                .find_address(self.next_sapling_diversifier_index)
+                (&*self).try_into().expect("to create an fvk");
+            let (_new_index, address) = fvk
+                .find_address(sapling_diversifier_index)
                 .expect("Diversifier index overflow");
-            new_index.increment().expect("Diversifier index overflow");
-            self.next_sapling_diversifier_index = new_index;
             Some(address)
         } else {
             None
