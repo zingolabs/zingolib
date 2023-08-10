@@ -1202,7 +1202,9 @@ async fn diversification_deterministic_and_coherent() {
     );
 
     //Verify that 1 increment of diversification with a tz receiver set produces uregtest1m8un60u... UA
-    let expected_index_1_diversified_tz = "uregtest1m8un60udl5ac0928aghy4jx6wp59ty7ct4t8ks9udwn8y6fkdmhe6pq0x5huv8v0pprdlq07tclqgl5fzfvvzjf4fatk8cpyktaudmhvjcqufdsfmktgawvne3ksrhs97pf0u8s8f8h";
+    let expected_index_1_diversified_tz = "\
+        uregtest1m8un60udl5ac0928aghy4jx6wp59ty7ct4t8ks9udwn8y6fkdmhe6pq0x5huv8v0pprdlq07tclqgl5fz\
+        fvvzjf4fatk8cpyktaudmhvjcqufdsfmktgawvne3ksrhs97pf0u8s8f8h";
     let new_address = recipient1.do_new_address("tz").await.unwrap();
     let new_address_as_str = new_address[0].as_str().unwrap();
     assert_eq!(&expected_index_1_diversified_tz, &new_address_as_str);
