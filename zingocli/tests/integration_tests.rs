@@ -1065,10 +1065,9 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
         .build_newseed_client(seed_phrase_of_recipient1, 0, false)
         .await;
     let mut expected_unspent_sapling_notes = json::object! {
-
             "created_in_block" =>  2,
-            "datetime" =>  1666631643,
-            "created_in_txid" => "4eeaca8d292f07f9cbe26a276f7658e75f0ef956fb21646e3907e912c5af1ec5",
+            "datetime" =>  0,
+            "created_in_txid" => "",
             "value" =>  14_000,
             "unconfirmed" =>  false,
             "is_change" =>  false,
@@ -1077,7 +1076,6 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
             "spent" =>  JsonValue::Null,
             "spent_at_height" =>  JsonValue::Null,
             "unconfirmed_spent" =>  JsonValue::Null,
-
     };
     let original_recipient_address = "\
         uregtest1qtqr46fwkhmdn336uuyvvxyrv0l7trgc0z9clpryx6vtladnpyt4wvq99p59f4rcyuvpmmd0hm4k5vv6j\
