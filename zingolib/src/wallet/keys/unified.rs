@@ -189,12 +189,7 @@ impl WalletCapability {
         {
             return Err("addresses_write_lock collision!".to_string());
         }
-        let index_for_diversification = self.addresses.len();
-        // produce a Sapling address to increment Sapling diversifier index
-        let mut sapling_diversifier_index = DiversifierIndex::new();
-        for _ in 0..index_for_diversification {
-            let _ = sapling_diversifier_index.increment();
-        }
+        let previous_num_addresses = self.addresses.len();
         let orchard_receiver = if desired_receivers.orchard {
             let fvk: orchard::keys::FullViewingKey = match self.try_into() {
                 Ok(viewkey) => viewkey,
@@ -204,11 +199,16 @@ impl WalletCapability {
                     return Err(e);
                 }
             };
-            Some(fvk.address_at(index_for_diversification, Scope::External))
+            Some(fvk.address_at(self.addresses.len(), Scope::External))
         } else {
             None
         };
 
+        // produce a Sapling address to increment Sapling diversifier index
+        let mut sapling_diversifier_index = DiversifierIndex::new();
+        for _ in 0..self.addresses.len() {
+            let _ = sapling_diversifier_index.increment();
+        }
         let sapling_address = if self.sapling.can_view() {
             let fvk: zcash_primitives::zip32::sapling::DiversifiableFullViewingKey =
                 self.try_into().expect("to create an fvk");
@@ -226,7 +226,7 @@ impl WalletCapability {
         };
 
         let transparent_receiver = if desired_receivers.transparent {
-            let child_index = KeyIndex::from_index(index_for_diversification as u32).unwrap();
+            let child_index = KeyIndex::from_index(self.addresses.len() as u32).unwrap();
             match &self.transparent {
                 Capability::Spend(ext_sk) => {
                     let child_sk = match ext_sk.derive_private_key(child_index) {
@@ -240,7 +240,7 @@ impl WalletCapability {
                     let secp = secp256k1::Secp256k1::new();
                     let child_pk = secp256k1::PublicKey::from_secret_key(&secp, &child_sk);
                     self.transparent_child_keys
-                        .push((index_for_diversification, child_sk));
+                        .push((self.addresses.len(), child_sk));
                     Some(child_pk)
                 }
                 Capability::View(ext_pk) => {
@@ -282,7 +282,7 @@ impl WalletCapability {
             }
         };
         self.addresses.push(ua.clone());
-        assert_eq!(self.addresses.len(), index_for_diversification + 1);
+        assert_eq!(self.addresses.len(), previous_num_addresses + 1);
         self.addresses_write_lock
             .swap(false, atomic::Ordering::Release);
         Ok(ua)
