@@ -1183,6 +1183,32 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
 }
 
 #[tokio::test]
+async fn diversification_deterministic_and_coherent() {
+    let (_regtest_manager, _cph, mut client_builder) = scenarios::custom_clients();
+    let seed_phrase = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
+        .unwrap()
+        .to_string();
+    let recipient1 = client_builder
+        .build_newseed_client(seed_phrase, 0, false)
+        .await;
+    // Verify that the provided seed generates the expected uregtest1qtqr46..  unified address (UA)
+    let original_recipient_address = "\
+        uregtest1qtqr46fwkhmdn336uuyvvxyrv0l7trgc0z9clpryx6vtladnpyt4wvq99p59f4rcyuvpmmd0hm4k5vv6j\
+        8edj6n8ltk45sdkptlk7rtzlm4uup4laq8ka8vtxzqemj3yhk6hqhuypupzryhv66w65lah9ms03xa8nref7gux2zz\
+        hjnfanxnnrnwscmz6szv2ghrurhu3jsqdx25y2yh";
+    assert_eq!(
+        &get_base_address!(recipient1, "unified"),
+        &original_recipient_address
+    );
+
+    //Verify that 1 increment of diversification with a tz receiver set produces uregtest1m8un60u... UA
+    let expected_index_1_diversified_tz = "uregtest1m8un60udl5ac0928aghy4jx6wp59ty7ct4t8ks9udwn8y6fkdmhe6pq0x5huv8v0pprdlq07tclqgl5fzfvvzjf4fatk8cpyktaudmhvjcqufdsfmktgawvne3ksrhs97pf0u8s8f8h";
+    let new_address = recipient1.do_new_address("tz").await.unwrap();
+    let new_address_as_str = new_address[0].as_str().unwrap();
+    assert_eq!(&expected_index_1_diversified_tz, &new_address_as_str);
+}
+
+#[tokio::test]
 async fn ensure_taddrs_from_old_seeds_work() {
     let (_regtest_manager, _cph, mut client_builder) = scenarios::custom_clients();
     // The first taddr generated on commit 9e71a14eb424631372fd08503b1bd83ea763c7fb
