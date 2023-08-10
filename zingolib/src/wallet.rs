@@ -198,6 +198,15 @@ pub enum WalletBase {
     Mnemonic(Mnemonic),
     Ufvk(String),
 }
+impl WalletBase {
+    pub fn from_string(base: String) -> WalletBase {
+        if (&base.clone()[0..5]) == "uview" {
+            WalletBase::Ufvk(base)
+        } else {
+            WalletBase::MnemonicPhrase(base)
+        }
+    }
+}
 
 pub struct LightWallet {
     // The block at which this wallet was born. Rescans
