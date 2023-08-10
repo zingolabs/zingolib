@@ -274,6 +274,8 @@ impl WalletCapability {
             "Invalid receivers requested! At least one of sapling or orchard required".to_string(),
         )?;
         self.addresses.push(ua.clone());
+        self.addresses_write_lock
+            .swap(false, atomic::Ordering::Release);
         Ok(ua)
     }
 
