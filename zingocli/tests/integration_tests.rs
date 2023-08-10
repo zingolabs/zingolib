@@ -2,7 +2,7 @@
 #![cfg(feature = "local_env")]
 pub mod darkside;
 use std::{fs::File, path::Path};
-use zingo_testutils::{self, build_fvk_client_and_capability, data};
+use zingo_testutils::{self, build_fvk_client, data};
 
 use bip0039::Mnemonic;
 use data::seeds::HOSPITAL_MUSEUM_SEED;
@@ -377,12 +377,7 @@ async fn test_scanning_in_watch_only_mode() {
     check_client_balances!(original_recipient, o: sent_o_value s: sent_s_value t: sent_t_value);
 
     // Extract viewing keys
-    let wallet_capability = original_recipient
-        .wallet
-        .wallet_capability()
-        .read()
-        .await
-        .clone();
+    let wallet_capability = original_recipient.wallet.wallet_capability().clone();
     let [o_fvk, s_fvk, t_fvk] =
         zingo_testutils::build_fvks_from_wallet_capability(&wallet_capability);
     let fvks_sets = vec![
@@ -399,7 +394,8 @@ async fn test_scanning_in_watch_only_mode() {
         log::info!("    sapling fvk: {}", fvks.contains(&&s_fvk));
         log::info!("    transparent fvk: {}", fvks.contains(&&t_fvk));
 
-        let (watch_client, watch_wc) = build_fvk_client_and_capability(fvks, &zingo_config).await;
+        let watch_client = build_fvk_client(fvks, &zingo_config).await;
+        let watch_wc = watch_client.wallet.wallet_capability();
         // assert empty wallet before rescan
         let balance = watch_client.do_balance().await;
         check_expected_balance_with_fvks(fvks, balance, 0, 0, 0);
@@ -1521,7 +1517,7 @@ async fn load_wallet_from_v26_dat_file() {
     assert_eq!(wallet.mnemonic(), Some(&expected_mnemonic));
 
     let expected_wc = WalletCapability::new_from_phrase(&config, &expected_mnemonic, 0).unwrap();
-    let wc = wallet.wallet_capability().read().await.clone();
+    let wc = wallet.wallet_capability();
 
     // We don't want the WalletCapability to impl. `Eq` (because it stores secret keys)
     // so we have to compare each component instead
@@ -1556,7 +1552,7 @@ async fn load_wallet_from_v26_dat_file() {
     );
 
     assert_eq!(wc.addresses().len(), 3);
-    for addr in wc.addresses() {
+    for addr in wc.addresses().iter() {
         assert!(addr.orchard().is_some());
         assert!(addr.sapling().is_some());
         assert!(addr.transparent().is_some());
@@ -2031,12 +2027,7 @@ async fn sapling_incoming_sapling_outgoing() {
         addresses[0]["receivers"]["sapling"],
         encode_payment_address(
             recipient.config().chain.hrp_sapling_payment_address(),
-            recipient
-                .wallet
-                .wallet_capability()
-                .read()
-                .await
-                .addresses()[0]
+            recipient.wallet.wallet_capability().addresses()[0]
                 .sapling()
                 .unwrap()
         ),
@@ -2054,13 +2045,7 @@ async fn sapling_incoming_sapling_outgoing() {
         assert_eq!(faucet_sent_transaction["amount"].as_u64().unwrap(), value);
         assert_eq!(
             faucet_sent_transaction["address"],
-            recipient
-                .wallet
-                .wallet_capability()
-                .read()
-                .await
-                .addresses()[0]
-                .encode(&recipient.config().chain)
+            recipient.wallet.wallet_capability().addresses()[0].encode(&recipient.config().chain)
         );
         assert_eq!(faucet_sent_transaction["block_height"].as_u64().unwrap(), 2);
     } else {
