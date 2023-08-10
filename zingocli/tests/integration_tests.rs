@@ -1232,7 +1232,13 @@ async fn diversification_deterministic_and_coherent() {
     let sapling_index_1_match = sapling_index_1
         == "zregtestsapling14wl6gy5h2tg528znyrqayfh2sekntk3lvmwsw68wjz2g205t62sv5xeyzvfk4hlxdwd9gh4ws9n";
     let transparent_index_1_match = transparent_index_1 == "tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr";
-    assert!(ua_address_index_1_match && sapling_index_1_match && transparent_index_1_match);
+    assert!(
+        ua_address_index_1_match && sapling_index_1_match && transparent_index_1_match,
+        "ua_1 = {}\nsapling_1 = {}\ntransparent_1 = {}",
+        ua_address_index_1,
+        sapling_index_1,
+        transparent_index_1
+    );
 }
 
 #[tokio::test]
