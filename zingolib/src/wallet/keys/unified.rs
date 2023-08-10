@@ -268,10 +268,18 @@ impl WalletCapability {
                 // This is deprecated. Not sure what the alternative is,
                 // other than implementing it ourselves.
                 .map(zcash_primitives::legacy::keys::pubkey_to_address),
-        )
-        .ok_or(
-            "Invalid receivers requested! At least one of sapling or orchard required".to_string(),
-        )?;
+        );
+        let ua = match ua {
+            Some(address) => address,
+            None => {
+                self.addresses_write_lock
+                    .swap(false, atomic::Ordering::Release);
+                return Err(
+                    "Invalid receivers requested! At least one of sapling or orchard required"
+                        .to_string(),
+                );
+            }
+        };
         self.addresses.push(ua.clone());
         self.addresses_write_lock
             .swap(false, atomic::Ordering::Release);
