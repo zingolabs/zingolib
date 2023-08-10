@@ -22,7 +22,7 @@ use zingoconfig::ZingoConfig;
 use crate::wallet::traits::ReadableWriteable;
 
 use super::{
-    extended_transparent::{ExtendedPrivKey, ExtendedPubKey, KeyIndex},
+    extended_transparent::{ExtendedPubKey, KeyIndex},
     get_zaddr_from_bip39seed, ToBase58Check,
 };
 
@@ -206,7 +206,7 @@ impl WalletCapability {
         // produce a Sapling address to increment Sapling diversifier index
         let mut sapling_diversifier_index = DiversifierIndex::new();
         for _ in 0..self.addresses.len() {
-            sapling_diversifier_index.increment();
+            let _ = sapling_diversifier_index.increment();
         }
         let sapling_address = if self.sapling.can_view() {
             let fvk: zcash_primitives::zip32::sapling::DiversifiableFullViewingKey =
