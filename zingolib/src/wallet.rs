@@ -1405,7 +1405,7 @@ impl LightWallet {
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: traits::Recipient,
     {
-        let fvk = D::wc_to_fvk(&*self.wallet_capability()).ok()?;
+        let fvk = D::wc_to_fvk(&self.wallet_capability()).ok()?;
         let filter_notes_by_target_addr = |notedata: &&D::WalletNote| match target_addr.as_ref() {
             Some(addr) => {
                 use self::traits::Recipient as _;

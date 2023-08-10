@@ -190,7 +190,7 @@ impl WalletCapability {
             return Err("addresses_write_lock collision!".to_string());
         }
         let orchard_receiver = if desired_receivers.orchard {
-            let fvk: orchard::keys::FullViewingKey = match (&*self).try_into() {
+            let fvk: orchard::keys::FullViewingKey = match self.try_into() {
                 Ok(viewkey) => viewkey,
                 Err(e) => {
                     self.addresses_write_lock
@@ -210,7 +210,7 @@ impl WalletCapability {
         }
         let sapling_address = if self.sapling.can_view() {
             let fvk: zcash_primitives::zip32::sapling::DiversifiableFullViewingKey =
-                (&*self).try_into().expect("to create an fvk");
+                self.try_into().expect("to create an fvk");
             let (_new_index, address) = fvk
                 .find_address(sapling_diversifier_index)
                 .expect("Diversifier index overflow");
