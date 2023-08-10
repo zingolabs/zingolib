@@ -1088,10 +1088,10 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
             &get_base_address!(recipient1, "unified"),
             &original_recipient_address
         );
-        let recipient_addr = recipient1.do_new_address("tz").await.unwrap();
+        let recipient1_diversified_addr = recipient1.do_new_address("tz").await.unwrap();
         faucet
             .do_send(vec![(
-                recipient_addr[0].as_str().unwrap(),
+                recipient1_diversified_addr[0].as_str().unwrap(),
                 14_000,
                 Some("foo".to_string()),
             )])
