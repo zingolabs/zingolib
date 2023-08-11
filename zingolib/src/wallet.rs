@@ -200,7 +200,7 @@ pub enum WalletBase {
 }
 impl WalletBase {
     pub fn from_string(base: String) -> WalletBase {
-        if (&base.clone()[0..5]) == "uview" {
+        if (&base[0..5]) == "uview" {
             WalletBase::Ufvk(base)
         } else {
             WalletBase::MnemonicPhrase(base)
