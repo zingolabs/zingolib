@@ -1183,6 +1183,80 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
 }
 
 #[tokio::test]
+async fn diversification_deterministic_and_coherent() {
+    let (_regtest_manager, _cph, mut client_builder) = scenarios::custom_clients();
+    let seed_phrase = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
+        .unwrap()
+        .to_string();
+    let recipient1 = client_builder
+        .build_newseed_client(seed_phrase, 0, false)
+        .await;
+    let base_transparent_receiver = "tmS9nbexug7uT8x1cMTLP1ABEyKXpMjR5F1";
+    assert_eq!(
+        &get_base_address!(recipient1, "transparent"),
+        &base_transparent_receiver
+    );
+    let base_sapling_receiver = "\
+        zregtestsapling1lhjvuj4s3ghhccnjaefdzuwp3h3mfluz6tm8h0dsq2ym3f77zsv0wrrszpmaqlezm3kt6ajdvlw";
+    assert_eq!(
+        &get_base_address!(recipient1, "sapling"),
+        &base_sapling_receiver
+    );
+    // Verify that the provided seed generates the expected uregtest1qtqr46..  unified address (UA)
+    let base_unified_address = "\
+        uregtest1qtqr46fwkhmdn336uuyvvxyrv0l7trgc0z9clpryx6vtladnpyt4wvq99p59f4rcyuvpmmd0hm4k5vv6j8\
+        edj6n8ltk45sdkptlk7rtzlm4uup4laq8ka8vtxzqemj3yhk6hqhuypupzryhv66w65lah9ms03xa8nref7gux2zzhj\
+        nfanxnnrnwscmz6szv2ghrurhu3jsqdx25y2yh";
+    assert_eq!(
+        &get_base_address!(recipient1, "unified"),
+        &base_unified_address
+    );
+
+    //Verify that 1 increment of diversification with a tz receiver set produces uregtest1m8un60u... UA
+    let new_address = recipient1.do_new_address("tzo").await.unwrap();
+    let ua_index_1 = recipient1.do_addresses().await[1].clone();
+    let ua_address_index_1 = ua_index_1["address"].clone().to_string();
+    assert_eq!(&new_address[0].to_string(), &ua_address_index_1);
+    let sapling_index_1 = ua_index_1["receivers"]["sapling"].clone().to_string();
+    let transparent_index_1 = ua_index_1["receivers"]["transparent"].clone().to_string();
+    let ua_address_index_1_match = ua_address_index_1
+        == "\
+            uregtest1yhu9ke9hung002w5vcez7y6fe7sgqe4rnc3l2tqyz3yqctmtays6peukkhj2lx45urq666h4dpduz0\
+            rjzlmky7cuayj285d003futaljg355tz94l6xnklk5kgthe2x942s3qkxedypsadla56fjx4e5nca9672jmxekj\
+            pp94ahz0ax963r2v9wwxfzadnzt3fgwa8pytdhcy4l6z0h";
+    let sapling_index_1_match = sapling_index_1
+        == "zregtestsapling14wl6gy5h2tg528znyrqayfh2sekntk3lvmwsw68wjz2g205t62sv5xeyzvfk4hlxdwd9gh4ws9n";
+    let transparent_index_1_match = transparent_index_1 == "tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr";
+
+    //  Show orchard diversification is working (regardless of other diversifiers, both previous and other-pool).
+    let new_orchard_only_address = recipient1.do_new_address("o").await.unwrap();
+    let ua_address_index_2 = new_orchard_only_address[0].to_string();
+    let ua_2_orchard_match = ua_address_index_2 ==  "\
+        uregtest1yyw480060mdzvnfpfayfhackhgh0jjsuq5lfjf9u68hulmn9efdalmz583xlq6pt8lmyylky6p2usx57lfv7tqu9j0tqqs8asq25p49n";
+    assert!(
+        ua_address_index_1_match && sapling_index_1_match && transparent_index_1_match,
+        "\n\
+            ua_1, match: {} Observed:\n\
+            {}\n\n\
+            sapling_1, match: {} Observed:\n\
+            {}\n\n\
+            transparent_1, match: {} Observed:\n\
+            {}\n\n\
+            ua_address_index_2, match: {} Observed:\n\
+            {}\n
+        ",
+        ua_address_index_1_match,
+        ua_address_index_1,
+        sapling_index_1_match,
+        sapling_index_1,
+        transparent_index_1_match,
+        transparent_index_1,
+        ua_2_orchard_match,
+        ua_address_index_2
+    );
+}
+
+#[tokio::test]
 async fn ensure_taddrs_from_old_seeds_work() {
     let (_regtest_manager, _cph, mut client_builder) = scenarios::custom_clients();
     // The first taddr generated on commit 9e71a14eb424631372fd08503b1bd83ea763c7fb
