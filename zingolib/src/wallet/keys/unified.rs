@@ -212,14 +212,12 @@ impl WalletCapability {
             let fvk: zcash_primitives::zip32::sapling::DiversifiableFullViewingKey =
                 self.try_into().expect("to create an fvk");
             loop {
-                let (temp_sdi, temp_address) = fvk
+                (sapling_diversifier_index, address) = fvk
                     .find_address(sapling_diversifier_index)
                     .expect("Diversifier index overflow");
-                sapling_diversifier_index = temp_sdi;
                 sapling_diversifier_index
                     .increment()
                     .expect("diversifier index overflow");
-                address = temp_address;
                 dbg!(count);
                 if count == self.addresses.len() {
                     break;
