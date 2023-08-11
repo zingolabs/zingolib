@@ -205,16 +205,27 @@ impl WalletCapability {
         };
 
         // produce a Sapling address to increment Sapling diversifier index
-        let mut sapling_diversifier_index = DiversifierIndex::new();
-        for _ in 0..self.addresses.len() {
-            let _ = sapling_diversifier_index.increment();
-        }
         let sapling_address = if self.sapling.can_view() {
-            let fvk: zcash_primitives::zip32::sapling::DiversifiableFullViewingKey =
-                self.try_into().expect("to create an fvk");
-            let (_new_index, address) = fvk
-                .find_address(sapling_diversifier_index)
-                .expect("Diversifier index overflow");
+            let mut sapling_diversifier_index = DiversifierIndex::new();
+            let mut address;
+            let mut count = 0;
+            loop {
+                let fvk: zcash_primitives::zip32::sapling::DiversifiableFullViewingKey =
+                    self.try_into().expect("to create an fvk");
+                let (temp_sdi, temp_address) = fvk
+                    .find_address(sapling_diversifier_index)
+                    .expect("Diversifier index overflow");
+                sapling_diversifier_index = temp_sdi;
+                sapling_diversifier_index
+                    .increment()
+                    .expect("diversifier index overflow");
+                address = temp_address;
+                dbg!(count);
+                if count == self.addresses.len() {
+                    break;
+                }
+                count += 1;
+            }
             Some(address)
         } else {
             None
