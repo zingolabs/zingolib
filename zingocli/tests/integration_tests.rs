@@ -1234,6 +1234,13 @@ async fn diversification_deterministic_and_coherent() {
         sapling_index_1,
         transparent_index_1
     );
+    //  Show orchard diversification is working (regardless of other diversifiers, both previous and other-pool).
+    let new_orchard_only_address = recipient1.do_new_address("o").await.unwrap();
+    let ua_address_index_2 = new_orchard_only_address[0].to_string();
+    assert_eq!(
+        ua_address_index_2,
+        "uregtest1yyw480060mdzvnfpfayfhackhgh0jjsuq5lfjf9u68hulmn9efdalmz583xlq6pt8lmyylky6p2usx57lfv7tqu9j0tqqs8asq25p49n"
+    );
 }
 
 #[tokio::test]
