@@ -1227,28 +1227,32 @@ async fn diversification_deterministic_and_coherent() {
     let sapling_index_1_match = sapling_index_1
         == "zregtestsapling14wl6gy5h2tg528znyrqayfh2sekntk3lvmwsw68wjz2g205t62sv5xeyzvfk4hlxdwd9gh4ws9n";
     let transparent_index_1_match = transparent_index_1 == "tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr";
+
+    //  Show orchard diversification is working (regardless of other diversifiers, both previous and other-pool).
+    let new_orchard_only_address = recipient1.do_new_address("o").await.unwrap();
+    let ua_address_index_2 = new_orchard_only_address[0].to_string();
+    let ua_2_orchard_match = ua_address_index_2 ==  "\
+        uregtest1yyw480060mdzvnfpfayfhackhgh0jjsuq5lfjf9u68hulmn9efdalmz583xlq6pt8lmyylky6p2usx57lfv7tqu9j0tqqs8asq25p49n";
     assert!(
         ua_address_index_1_match && sapling_index_1_match && transparent_index_1_match,
         "\n\
             ua_1, match: {} Observed:\n\
-            {}\n\
+            {}\n\n\
             sapling_1, match: {} Observed:\n\
-            {}\n\
+            {}\n\n\
             transparent_1, match: {} Observed:\n\
-            {}\n",
+            {}\n\n\
+            ua_address_index_2, match: {} Observed:\n\
+            {}\n
+        ",
         ua_address_index_1_match,
         ua_address_index_1,
         sapling_index_1_match,
         sapling_index_1,
         transparent_index_1_match,
-        transparent_index_1
-    );
-    //  Show orchard diversification is working (regardless of other diversifiers, both previous and other-pool).
-    let new_orchard_only_address = recipient1.do_new_address("o").await.unwrap();
-    let ua_address_index_2 = new_orchard_only_address[0].to_string();
-    assert_eq!(
-        ua_address_index_2,
-        "uregtest1yyw480060mdzvnfpfayfhackhgh0jjsuq5lfjf9u68hulmn9efdalmz583xlq6pt8lmyylky6p2usx57lfv7tqu9j0tqqs8asq25p49n"
+        transparent_index_1,
+        ua_2_orchard_match,
+        ua_address_index_2
     );
 }
 
