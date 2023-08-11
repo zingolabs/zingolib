@@ -1213,14 +1213,10 @@ async fn diversification_deterministic_and_coherent() {
     );
 
     //Verify that 1 increment of diversification with a tz receiver set produces uregtest1m8un60u... UA
-    let expected_index_1_diversified_tzo = "\
-        uregtest1yhu9ke9hung002w5vcez7y6fe7sgqe4rnc3l2tqyz3yqctmtays6peukkhj2lx45urq666h4dpduz0rjzl\
-        mky7cuayj285d003futaljg355tz94l6xnklk5kgthe2x942s3qkxedypsadla56fjx4e5nca9672jmxekjpp94ahz0\
-        ax963r2v9wwxfzadnzt3fgwa8pytdhcy4l6z0h";
     let new_address = recipient1.do_new_address("tzo").await.unwrap();
-    let new_address_as_str = new_address[0].as_str().unwrap();
     let ua_index_1 = recipient1.do_addresses().await[1].clone();
     let ua_address_index_1 = ua_index_1["address"].clone().to_string();
+    assert_eq!(&new_address[0].to_string(), &ua_address_index_1);
     let sapling_index_1 = ua_index_1["receivers"]["sapling"].clone().to_string();
     let transparent_index_1 = ua_index_1["receivers"]["transparent"].clone().to_string();
     let ua_address_index_1_match = ua_address_index_1
