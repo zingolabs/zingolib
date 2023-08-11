@@ -205,7 +205,7 @@ impl WalletCapability {
         };
 
         // produce a Sapling address to increment Sapling diversifier index
-        let sapling_address = if self.sapling.can_view() {
+        let sapling_receiver = if desired_receivers.sapling && self.sapling.can_view() {
             let mut sapling_diversifier_index = DiversifierIndex::new();
             let mut address;
             let mut count = 0;
@@ -218,18 +218,12 @@ impl WalletCapability {
                 sapling_diversifier_index
                     .increment()
                     .expect("diversifier index overflow");
-                dbg!(count);
                 if count == self.addresses.len() {
                     break;
                 }
                 count += 1;
             }
             Some(address)
-        } else {
-            None
-        };
-        let sapling_receiver = if desired_receivers.sapling {
-            sapling_address
         } else {
             None
         };
