@@ -72,7 +72,10 @@ impl DurationAnnotation {
     pub fn new(test_name: String, duration: Duration) -> Self {
         DurationAnnotation {
             timestamp: timestamp(),
-            git_description: zingolib::git_description().to_string(),
+            git_description: zingolib::git_description()
+                .to_string()
+                .trim_end()
+                .to_string(),
             test_name,
             duration,
         }
