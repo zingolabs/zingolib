@@ -72,7 +72,7 @@ impl DurationAnnotation {
     pub fn new(test_name: String, duration: Duration) -> Self {
         DurationAnnotation {
             timestamp: timestamp(),
-            git_description: git_description(),
+            git_description: zingolib::git_description().to_string(),
             test_name,
             duration,
         }
@@ -89,20 +89,6 @@ impl std::fmt::Display for DurationAnnotation {
             self.duration.as_millis() as u64
         )
     }
-}
-fn git_description() -> String {
-    std::str::from_utf8(
-        &std::process::Command::new("git")
-            .arg("describe")
-            .arg("--dirty")
-            .output()
-            .unwrap()
-            .stdout,
-    )
-    .unwrap()
-    .to_string()
-    .trim_end_matches('\n')
-    .to_string()
 }
 fn timestamp() -> u64 {
     std::time::SystemTime::now()
