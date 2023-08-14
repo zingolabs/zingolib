@@ -118,8 +118,12 @@ pub fn get_duration_annotations(storage_file: PathBuf) -> Vec<DurationAnnotation
     read_duration_annotation_file(storage_file)
 }
 pub fn record_time(annotation: &DurationAnnotation) {
-    let storage_location =
-        path_to_times(PathBuf::from("sync_duration_annotation.json".to_string()));
+    let version_info = zingolib::git_description()
+        .to_string()
+        .trim_end()
+        .to_string();
+    let storage_path = format!("{}_sync_duration_annotation.json", version_info).to_string();
+    let storage_location = path_to_times(PathBuf::from(storage_path));
     let mut data_set = get_duration_annotations(storage_location.clone());
     data_set.push(annotation.clone());
 
