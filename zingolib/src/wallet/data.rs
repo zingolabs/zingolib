@@ -8,7 +8,7 @@ use orchard::note_encryption::OrchardDomain;
 use orchard::tree::MerkleHashOrchard;
 use prost::Message;
 use shardtree::memory::MemoryShardStore;
-use shardtree::{Checkpoint, LocatedPrunableTree, ShardStore};
+use shardtree::{Checkpoint, LocatedPrunableTree, ShardStore, ShardTree};
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
 use std::usize;
@@ -42,17 +42,11 @@ pub enum PoolNullifier {
     Orchard(orchard::note::Nullifier),
 }
 
+type SapStore = MemoryShardStore<Node, BlockHeight>;
+type OrchStore = MemoryShardStore<MerkleHashOrchard, BlockHeight>;
 pub struct WitnessTrees {
-    pub witness_tree_sapling: shardtree::ShardTree<
-        MemoryShardStore<Node, BlockHeight>,
-        COMMITMENT_TREE_LEVELS,
-        MAX_SHARD_LEVEL,
-    >,
-    pub witness_tree_orchard: shardtree::ShardTree<
-        MemoryShardStore<MerkleHashOrchard, BlockHeight>,
-        COMMITMENT_TREE_LEVELS,
-        MAX_SHARD_LEVEL,
-    >,
+    pub witness_tree_sapling: ShardTree<SapStore, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL>,
+    pub witness_tree_orchard: ShardTree<OrchStore, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL>,
 }
 
 fn write_shards<W, H, C>(mut writer: W, store: &MemoryShardStore<H, C>) -> io::Result<()>
