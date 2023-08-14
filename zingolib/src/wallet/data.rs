@@ -29,8 +29,8 @@ use zingoconfig::{ChainType, MAX_REORG};
 use super::keys::unified::WalletCapability;
 use super::traits::{self, DomainWalletExt, ReadableWriteable, ToBytes};
 
-pub const COMMITMENT_TREE_DEPTH: u8 = 32;
-pub const MAX_SHARD_DEPTH: u8 = 16;
+pub const COMMITMENT_TREE_LEVELS: u8 = 32;
+pub const MAX_SHARD_LEVEL: u8 = 16;
 
 /// This type is motivated by the IPC architecture where (currently) channels traffic in
 /// `(TxId, WalletNullifier, BlockHeight, Option<u32>)`.  This enum permits a single channel
@@ -45,13 +45,13 @@ pub enum PoolNullifier {
 pub struct WitnessTrees {
     pub witness_tree_sapling: shardtree::ShardTree<
         MemoryShardStore<Node, BlockHeight>,
-        COMMITMENT_TREE_DEPTH,
-        MAX_SHARD_DEPTH,
+        COMMITMENT_TREE_LEVELS,
+        MAX_SHARD_LEVEL,
     >,
     pub witness_tree_orchard: shardtree::ShardTree<
         MemoryShardStore<MerkleHashOrchard, BlockHeight>,
-        COMMITMENT_TREE_DEPTH,
-        MAX_SHARD_DEPTH,
+        COMMITMENT_TREE_LEVELS,
+        MAX_SHARD_LEVEL,
     >,
 }
 
@@ -103,7 +103,11 @@ where
 }
 /// Write memory-backed shardstore, represented tree.
 fn write_shardtree<H: Hashable + Clone + Eq + HashSer, C: Ord + std::fmt::Debug + Copy, W: Write>(
-    tree: &mut shardtree::ShardTree<MemoryShardStore<H, C>, COMMITMENT_TREE_DEPTH, MAX_SHARD_DEPTH>,
+    tree: &mut shardtree::ShardTree<
+        MemoryShardStore<H, C>,
+        COMMITMENT_TREE_LEVELS,
+        MAX_SHARD_LEVEL,
+    >,
     mut writer: W,
 ) -> io::Result<()>
 where
@@ -196,7 +200,7 @@ fn read_shardtree<
     R: Read,
 >(
     mut reader: R,
-) -> io::Result<shardtree::ShardTree<MemoryShardStore<H, C>, COMMITMENT_TREE_DEPTH, MAX_SHARD_DEPTH>>
+) -> io::Result<shardtree::ShardTree<MemoryShardStore<H, C>, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL>>
 {
     let shards = Vector::read(&mut reader, |r| {
         let level = Level::from(r.read_u8()?);

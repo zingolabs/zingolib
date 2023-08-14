@@ -48,7 +48,7 @@ use zcash_primitives::{
 };
 use zingo_memo::create_wallet_internal_memo_version_0;
 
-use self::data::{SpendableOrchardNote, COMMITMENT_TREE_DEPTH, MAX_SHARD_DEPTH};
+use self::data::{SpendableOrchardNote, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
 use self::keys::unified::{Capability, ReceiverSelection, WalletCapability};
 use self::traits::Recipient;
 use self::traits::{DomainWalletExt, ReceivedNoteAndMetadata, SpendableNote};
@@ -237,7 +237,7 @@ impl LightWallet {
             zcash_primitives::merkle_tree::read_commitment_tree::<
                 zcash_primitives::sapling::Node,
                 &[u8],
-                COMMITMENT_TREE_DEPTH,
+                COMMITMENT_TREE_LEVELS,
             >(&hex::decode(trees.sapling_tree).unwrap()[..])
             .unwrap()
             .to_frontier()
@@ -245,7 +245,7 @@ impl LightWallet {
             zcash_primitives::merkle_tree::read_commitment_tree::<
                 MerkleHashOrchard,
                 &[u8],
-                COMMITMENT_TREE_DEPTH,
+                COMMITMENT_TREE_LEVELS,
             >(&hex::decode(trees.orchard_tree).unwrap()[..])
             .unwrap()
             .to_frontier()
@@ -467,8 +467,8 @@ impl LightWallet {
         &self,
         tree: &ShardTree<
             MemoryShardStore<MerkleHashOrchard, BlockHeight>,
-            COMMITMENT_TREE_DEPTH,
-            MAX_SHARD_DEPTH,
+            COMMITMENT_TREE_LEVELS,
+            MAX_SHARD_LEVEL,
         >,
     ) -> Result<Anchor, String> {
         Ok(orchard::Anchor::from(
