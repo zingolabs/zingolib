@@ -23,7 +23,7 @@ use zingolib::{
     check_client_balances, get_base_address,
     lightclient::LightClient,
     wallet::{
-        data::{COMMITMENT_TREE_DEPTH, MAX_SHARD_DEPTH},
+        data::{COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL},
         keys::{
             extended_transparent::ExtendedPrivKey,
             unified::{Capability, WalletCapability},
@@ -1952,12 +1952,12 @@ async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
     let server_orchard_front = zcash_primitives::merkle_tree::read_commitment_tree::<
         MerkleHashOrchard,
         &[u8],
-        { zingolib::wallet::data::COMMITMENT_TREE_DEPTH },
+        { zingolib::wallet::data::COMMITMENT_TREE_LEVELS },
     >(&hex::decode(server_trees.orchard_tree).unwrap()[..])
     .unwrap()
     .to_frontier()
     .take();
-    let mut server_orchard_shardtree: ShardTree<_, COMMITMENT_TREE_DEPTH, MAX_SHARD_DEPTH> =
+    let mut server_orchard_shardtree: ShardTree<_, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL> =
         ShardTree::new(
             MemoryShardStore::<MerkleHashOrchard, BlockHeight>::empty(),
             MAX_REORG,

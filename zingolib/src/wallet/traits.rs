@@ -5,7 +5,7 @@ use super::{
     data::{
         PoolNullifier, ReceivedOrchardNoteAndMetadata, ReceivedSaplingNoteAndMetadata,
         SpendableOrchardNote, SpendableSaplingNote, TransactionMetadata, WitnessCache,
-        COMMITMENT_TREE_DEPTH, MAX_SHARD_DEPTH,
+        COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL,
     },
     keys::unified::WalletCapability,
     transactions::TransactionMetadataSet,
@@ -764,8 +764,8 @@ where
     ) -> Option<
         &ShardTree<
             MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
-            COMMITMENT_TREE_DEPTH,
-            MAX_SHARD_DEPTH,
+            COMMITMENT_TREE_LEVELS,
+            MAX_SHARD_LEVEL,
         >,
     >;
     fn get_shardtree_mut(
@@ -773,8 +773,8 @@ where
     ) -> Option<
         &mut ShardTree<
             MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
-            COMMITMENT_TREE_DEPTH,
-            MAX_SHARD_DEPTH,
+            COMMITMENT_TREE_LEVELS,
+            MAX_SHARD_LEVEL,
         >,
     >;
     fn get_nullifier_from_note_fvk_and_witness_position(
@@ -815,8 +815,8 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
     ) -> Option<
         &ShardTree<
             MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
-            COMMITMENT_TREE_DEPTH,
-            MAX_SHARD_DEPTH,
+            COMMITMENT_TREE_LEVELS,
+            MAX_SHARD_LEVEL,
         >,
     > {
         tmds.witness_trees
@@ -828,8 +828,8 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
     ) -> Option<
         &mut ShardTree<
             MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
-            COMMITMENT_TREE_DEPTH,
-            MAX_SHARD_DEPTH,
+            COMMITMENT_TREE_LEVELS,
+            MAX_SHARD_LEVEL,
         >,
     > {
         tmds.witness_trees
@@ -1298,8 +1298,8 @@ impl<T>
         Option<
             &mut ShardTree<
                 MemoryShardStore<T::Node, BlockHeight>,
-                COMMITMENT_TREE_DEPTH,
-                MAX_SHARD_DEPTH,
+                COMMITMENT_TREE_LEVELS,
+                MAX_SHARD_LEVEL,
             >,
         >,
     )> for T
@@ -1315,8 +1315,8 @@ where
             Option<
                 &mut ShardTree<
                     MemoryShardStore<T::Node, BlockHeight>,
-                    COMMITMENT_TREE_DEPTH,
-                    MAX_SHARD_DEPTH,
+                    COMMITMENT_TREE_LEVELS,
+                    MAX_SHARD_LEVEL,
                 >,
             >,
         ),
