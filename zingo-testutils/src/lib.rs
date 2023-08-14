@@ -67,15 +67,17 @@ pub struct DurationAnnotation {
     pub git_description: String,
     pub test_name: String,
     pub duration: Duration,
+    pub scenario: String,
 }
 impl DurationAnnotation {
-    pub fn new(test_name: String, duration: Duration) -> Self {
+    pub fn new(scenario: String, test_name: String, duration: Duration) -> Self {
         DurationAnnotation {
             timestamp: timestamp(),
             git_description: zingolib::git_description()
                 .to_string()
                 .trim_end()
                 .to_string(),
+            scenario,
             test_name,
             duration,
         }
@@ -814,7 +816,11 @@ mod tests {
     #[test]
     fn deserialize_json_into_duration_annotation() {
         let test_name = String::from("test_test_name");
-        let ta = DurationAnnotation::new(test_name, Duration::from_millis(1_000));
+        let ta = DurationAnnotation::new(
+            "scenario".to_string(),
+            test_name,
+            Duration::from_millis(1_000),
+        );
         let ta2 = ta.clone();
         let ta_serde_json = serde_json::to_value(ta).unwrap();
         let ta: DurationAnnotation = serde_json::from_value(ta_serde_json).unwrap();
