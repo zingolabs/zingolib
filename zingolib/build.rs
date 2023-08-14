@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut f = File::create(&dest_path).unwrap();
     writeln!(
         f,
-        "pub fn git_description() -> &'static str {{\n    \"{}\"\n}}",
+        "pub fn git_description() -> &'static str {{\"{}\"}}",
         git_description
     )
     .unwrap();
