@@ -755,16 +755,15 @@ pub mod scenarios {
                 .read()
                 .await
                 .clone();
-            // Delete the client after getting the capability.
             // Extract the orchard fvk
             let [o_fvk, s_fvk, t_fvk] = build_fvks_from_wallet_capability(&wallet_capability);
-            let (viewing_client, _) =
+            let (keyowning, _) =
                 build_fvk_client_and_capability(&[&o_fvk, &s_fvk, &t_fvk], &zingo_config).await;
             (
                 sb.regtest_manager,
                 sb.child_process_handler.unwrap(),
-                viewing_client,
                 original_recipient,
+                keyowning,
             )
         }
         pub async fn faucet_recipient_1153() -> (
