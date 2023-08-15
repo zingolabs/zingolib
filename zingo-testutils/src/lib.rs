@@ -764,7 +764,7 @@ pub mod scenarios {
                 sb.regtest_manager,
                 sb.child_process_handler.unwrap(),
                 original_recipient,
-                keyowning,
+                viewing_client,
             )
         }
         pub async fn faucet_recipient_1153() -> (
