@@ -13,7 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-changed=proto/service.proto");
     // Run `git describe --dirty` to get the description
     let output = Command::new("git")
-        .args(&["describe", "--dirty"])
+        .args(["describe", "--dirty"])
         .output()
         .expect("Failed to execute git command");
 
@@ -22,7 +22,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Write the git description to a file which will be included in the crate
     let out_dir = env::var("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("git_description.rs");
-    let mut f = File::create(&dest_path).unwrap();
+    let mut f = File::create(dest_path).unwrap();
     writeln!(
         f,
         "pub fn git_description() -> &'static str {{\"{}\"}}",
