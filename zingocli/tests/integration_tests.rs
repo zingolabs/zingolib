@@ -2513,7 +2513,11 @@ async fn load_old_wallet_at_reorged_height() {
         .join("zingo-testutils")
         .join("data")
         .join("old_wallet_reorg_test_wallet");
-    let zcd_source = dbg!(cached_data_dir.join("zcash").to_string_lossy().to_string());
+    let zcd_source = dbg!(cached_data_dir
+        .join("zcashd")
+        .join(".")
+        .to_string_lossy()
+        .to_string());
     let zcd_dest = dbg!(zcd_datadir.to_string_lossy().to_string());
     std::process::Command::new("rm")
         .arg("-r")
