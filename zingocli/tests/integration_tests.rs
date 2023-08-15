@@ -2515,8 +2515,16 @@ async fn load_old_wallet_at_reorged_height() {
         .join("old_wallet_reorg_test_wallet");
     let zcd_source = dbg!(cached_data_dir.join("zcash").to_string_lossy().to_string());
     let zcd_dest = dbg!(zcd_datadir.to_string_lossy().to_string());
+    std::process::Command::new("rm")
+        .arg("-r")
+        .arg(&zcd_dest)
+        .output()
+        .expect("directory rm failed");
+    std::fs::DirBuilder::new()
+        .create(&zcd_dest)
+        .expect("Dir recreate failed");
     std::process::Command::new("cp")
-        .arg("-rf")
+        .arg("-r")
         .arg(zcd_source)
         .arg(zcd_dest)
         .output()
