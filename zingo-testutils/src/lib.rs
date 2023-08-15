@@ -67,12 +67,17 @@ pub struct DurationAnnotation {
     pub git_description: String,
     pub test_name: String,
     pub duration: Duration,
+    pub scenario: String,
 }
 impl DurationAnnotation {
-    pub fn new(test_name: String, duration: Duration) -> Self {
+    pub fn new(scenario: String, test_name: String, duration: Duration) -> Self {
         DurationAnnotation {
             timestamp: timestamp(),
-            git_description: git_description(),
+            git_description: zingolib::git_description()
+                .to_string()
+                .trim_end()
+                .to_string(),
+            scenario,
             test_name,
             duration,
         }
@@ -89,20 +94,6 @@ impl std::fmt::Display for DurationAnnotation {
             self.duration.as_millis() as u64
         )
     }
-}
-fn git_description() -> String {
-    std::str::from_utf8(
-        &std::process::Command::new("git")
-            .arg("describe")
-            .arg("--dirty")
-            .output()
-            .unwrap()
-            .stdout,
-    )
-    .unwrap()
-    .to_string()
-    .trim_end_matches('\n')
-    .to_string()
 }
 fn timestamp() -> u64 {
     std::time::SystemTime::now()
@@ -129,8 +120,12 @@ pub fn get_duration_annotations(storage_file: PathBuf) -> Vec<DurationAnnotation
     read_duration_annotation_file(storage_file)
 }
 pub fn record_time(annotation: &DurationAnnotation) {
-    let storage_location =
-        path_to_times(PathBuf::from("sync_duration_annotation.json".to_string()));
+    let version_info = zingolib::git_description()
+        .to_string()
+        .trim_end()
+        .to_string();
+    let storage_path = format!("{}_sync_duration_annotation.json", version_info).to_string();
+    let storage_location = path_to_times(PathBuf::from(storage_path));
     let mut data_set = get_duration_annotations(storage_location.clone());
     data_set.push(annotation.clone());
 
@@ -767,8 +762,8 @@ pub mod scenarios {
             (
                 sb.regtest_manager,
                 sb.child_process_handler.unwrap(),
-                keyowning,
                 original_recipient,
+                keyowning,
             )
         }
         pub async fn faucet_recipient_1153() -> (
@@ -820,7 +815,11 @@ mod tests {
     #[test]
     fn deserialize_json_into_duration_annotation() {
         let test_name = String::from("test_test_name");
-        let ta = DurationAnnotation::new(test_name, Duration::from_millis(1_000));
+        let ta = DurationAnnotation::new(
+            "scenario".to_string(),
+            test_name,
+            Duration::from_millis(1_000),
+        );
         let ta2 = ta.clone();
         let ta_serde_json = serde_json::to_value(ta).unwrap();
         let ta: DurationAnnotation = serde_json::from_value(ta_serde_json).unwrap();

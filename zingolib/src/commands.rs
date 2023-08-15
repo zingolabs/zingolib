@@ -27,6 +27,22 @@ pub trait Command {
 pub trait ShortCircuitedCommand {
     fn exec_without_lc(args: Vec<String>) -> String;
 }
+struct GetVersionCommand {}
+impl Command for GetVersionCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Return the git describe --dirty of the repo at build time.
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Get verion of build code"
+    }
+
+    fn exec(&self, _args: &[&str], _lightclient: &LightClient) -> String {
+        crate::git_description().to_string()
+    }
+}
 struct ChangeServerCommand {}
 impl Command for ChangeServerCommand {
     fn help(&self) -> &'static str {
@@ -1402,7 +1418,8 @@ impl Command for QuitCommand {
 }
 
 pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
-    let entries: [(&'static str, Box<dyn Command>); 35] = [
+    let entries: [(&'static str, Box<dyn Command>); 36] = [
+        (("version"), Box::new(GetVersionCommand {})),
         ("sync", Box::new(SyncCommand {})),
         ("syncstatus", Box::new(SyncStatusCommand {})),
         ("encryptmessage", Box::new(EncryptMessageCommand {})),
