@@ -244,9 +244,9 @@ pub async fn increase_height_and_sync_client(
         .as_u32()
         .unwrap();
     let target = start_height + n;
-    manager
+    dbg!(manager
         .generate_n_blocks(n)
-        .expect("Called for side effect, failed!");
+        .expect("Called for side effect, failed!"));
     assert_eq!(
         json::parse(
             std::str::from_utf8(
