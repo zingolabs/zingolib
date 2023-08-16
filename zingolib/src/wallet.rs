@@ -49,7 +49,7 @@ use zcash_primitives::{
 use zingo_memo::create_wallet_internal_memo_version_0;
 
 use self::data::{SpendableOrchardNote, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
-use self::keys::unified::{Capability, ReceiverSelection, WalletCapability};
+use self::keys::unified::{Capability, WalletCapability};
 use self::traits::Recipient;
 use self::traits::{DomainWalletExt, ReceivedNoteAndMetadata, SpendableNote};
 use self::{
@@ -623,12 +623,7 @@ impl LightWallet {
                 format!("could not create initial address: {e}"),
             ));
         };
-        let transaction_metadata_set = if wc.can_spend()
-            == (ReceiverSelection {
-                orchard: true,
-                sapling: true,
-                transparent: true,
-            }) {
+        let transaction_metadata_set = if wc.can_spend_from_all_pools() {
             Arc::new(RwLock::new(TransactionMetadataSet::new_with_witness_trees()))
         } else {
             Arc::new(RwLock::new(TransactionMetadataSet::new_treeless()))
@@ -960,12 +955,11 @@ impl LightWallet {
             return Err("Need at least one destination address".to_string());
         }
 
-        if self.wallet_capability().read().await.can_spend()
-            != (ReceiverSelection {
-                orchard: true,
-                sapling: true,
-                transparent: true,
-            })
+        if !self
+            .wallet_capability()
+            .read()
+            .await
+            .can_spend_from_all_pools()
         {
             // Creating transactions in context of all possible combinations
             // of wallet capabilities requires a rigorous case study

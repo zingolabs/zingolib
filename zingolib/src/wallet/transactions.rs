@@ -23,7 +23,7 @@ use super::{
     data::{
         OutgoingTxData, PoolNullifier, ReceivedTransparentOutput, TransactionMetadata, WitnessTrees,
     },
-    keys::unified::{ReceiverSelection, WalletCapability},
+    keys::unified::WalletCapability,
     traits::{self, DomainWalletExt, FromBytes, Nullifier, ReceivedNoteAndMetadata, Recipient},
 };
 
@@ -51,14 +51,7 @@ impl TransactionMetadataSet {
         mut reader: R,
         wallet_capability: &WalletCapability,
     ) -> io::Result<Self> {
-        let mut witness_trees = match wallet_capability.can_spend() {
-            ReceiverSelection {
-                orchard: true,
-                sapling: true,
-                transparent: true,
-            } => Some(WitnessTrees::default()),
-            _ => None,
-        };
+        let mut witness_trees = wallet_capability.get_trees_witness_trees();
         let txs = Vector::read_collected_mut(&mut reader, |r| {
             let mut txid_bytes = [0u8; 32];
             r.read_exact(&mut txid_bytes)?;
@@ -85,14 +78,7 @@ impl TransactionMetadataSet {
             ));
         }
 
-        let mut witness_trees = match wallet_capability.can_spend() {
-            ReceiverSelection {
-                orchard: true,
-                sapling: true,
-                transparent: true,
-            } => Some(WitnessTrees::default()),
-            _ => None,
-        };
+        let mut witness_trees = wallet_capability.get_trees_witness_trees();
         let current: HashMap<_, _> = Vector::read_collected_mut(&mut reader, |r| {
             let mut txid_bytes = [0u8; 32];
             r.read_exact(&mut txid_bytes)?;
