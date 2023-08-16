@@ -2557,6 +2557,15 @@ async fn load_old_wallet_at_reorged_height() {
         recipient.do_list_transactions().await.pretty(2)
     );
     recipient.do_sync(false).await.unwrap();
+    dbg!(
+        &recipient
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .witness_trees
+    );
     println!(
         "post-sync transactions: {}",
         recipient.do_list_transactions().await.pretty(2)

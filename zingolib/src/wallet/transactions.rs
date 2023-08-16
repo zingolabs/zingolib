@@ -158,9 +158,6 @@ impl TransactionMetadataSet {
                 old_orch_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
                 let ref mut orch_tree = witness_trees.as_mut().unwrap().witness_tree_orchard;
                 for (orch_wit, height) in old_orch_wits {
-                    let tip_pos = orch_wit.tip_position();
-                    let witness = orch_wit.path();
-                    let wit_pos = orch_wit.witnessed_position();
                     orch_tree
                         .insert_witness_nodes(orch_wit, height - 1)
                         .expect("infallible");
