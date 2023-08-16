@@ -2503,6 +2503,7 @@ async fn by_address_finsight() {
 #[tokio::test]
 async fn load_old_wallet_at_reorged_height() {
     let (ref regtest_manager, cph, ref faucet) = scenarios::faucet().await;
+    println!("Shutting down initial zcd/lwd unneeded processes");
     drop(cph);
 
     let zcd_datadir = &regtest_manager.zcashd_data_dir;
@@ -2513,12 +2514,12 @@ async fn load_old_wallet_at_reorged_height() {
         .join("zingo-testutils")
         .join("data")
         .join("old_wallet_reorg_test_wallet");
-    let zcd_source = dbg!(cached_data_dir
+    let zcd_source = cached_data_dir
         .join("zcashd")
         .join(".")
         .to_string_lossy()
-        .to_string());
-    let zcd_dest = dbg!(zcd_datadir.to_string_lossy().to_string());
+        .to_string();
+    let zcd_dest = zcd_datadir.to_string_lossy().to_string();
     std::process::Command::new("rm")
         .arg("-r")
         .arg(&zcd_dest)
@@ -2545,17 +2546,25 @@ async fn load_old_wallet_at_reorged_height() {
         .output()
         .expect("wallet copy failed");
     let _cph = regtest_manager.launch(false).unwrap();
-    println!("{}", faucet.do_info().await);
+    println!("syncing faucet");
     zingo_testutils::increase_height_and_sync_client(regtest_manager, faucet, 10)
         .await
         .unwrap();
+    println!("loading wallet");
     let (wallet, conf) = zingo_testutils::load_wallet(zingo_dest.into(), ChainType::Regtest).await;
+    println!("setting uri");
     *conf.lightwalletd_uri.write().unwrap() = faucet.get_server_uri();
+    println!("creating lightclient");
     let recipient = LightClient::create_from_extant_wallet(wallet, conf);
-    println!("{}", recipient.do_list_transactions().await.pretty(2));
+    println!(
+        "pre-sync transactions: {}",
+        recipient.do_list_transactions().await.pretty(2)
+    );
     recipient.do_sync(false).await.unwrap();
-    println!("{}", recipient.do_list_transactions().await.pretty(2));
-    println!("{}", recipient.do_info().await);
+    println!(
+        "post-sync transactions: {}",
+        recipient.do_list_transactions().await.pretty(2)
+    );
 }
 
 #[tokio::test]

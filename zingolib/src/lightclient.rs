@@ -1025,6 +1025,8 @@ impl LightClient {
 
             tokio::spawn(async move {
                 while sync_status_clone.read().await.sync_id == prev_sync_id {
+                    let progress = format!("{}", sync_status_clone.read().await);
+                    dbg!(progress);
                     yield_now().await;
                     sleep(Duration::from_secs(3)).await;
                 }
@@ -1035,9 +1037,7 @@ impl LightClient {
                     }
 
                     let progress = format!("{}", sync_status_clone.read().await);
-                    if print_updates {
-                        println!("{}", progress);
-                    }
+                    dbg!(progress);
 
                     yield_now().await;
                     sleep(Duration::from_secs(3)).await;

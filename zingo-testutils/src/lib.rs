@@ -229,11 +229,41 @@ pub async fn increase_height_and_sync_client(
     client: &LightClient,
     n: u32,
 ) -> Result<(), String> {
-    let start_height = get_synced_wallet_height(client).await?;
+    let start_height = json::parse(
+        std::str::from_utf8(
+            &manager
+                .get_cli_handle()
+                .arg("getblockchaininfo")
+                .output()
+                .unwrap()
+                .stdout,
+        )
+        .unwrap(),
+    )
+    .unwrap()["blocks"]
+        .as_u32()
+        .unwrap();
     let target = start_height + n;
     manager
         .generate_n_blocks(n)
         .expect("Called for side effect, failed!");
+    assert_eq!(
+        json::parse(
+            std::str::from_utf8(
+                &manager
+                    .get_cli_handle()
+                    .arg("getblockchaininfo")
+                    .output()
+                    .unwrap()
+                    .stdout,
+            )
+            .unwrap(),
+        )
+        .unwrap()["blocks"]
+            .as_u32()
+            .unwrap(),
+        target
+    );
     while check_wallet_chainheight_value(client, target).await? {
         sleep(Duration::from_millis(50)).await;
     }
@@ -282,7 +312,7 @@ pub async fn load_wallet(
     chaintype: ChainType,
 ) -> (zingolib::wallet::LightWallet, ZingoConfig) {
     let wallet = dir.join("zingo-wallet.dat");
-    tracing::info!("The wallet is: {}", &wallet.to_str().unwrap());
+    println!("The wallet is: {}", &wallet.to_str().unwrap());
     let lightwalletd_uri = TestEnvironmentGenerator::new(None).get_lightwalletd_uri();
     let zingo_config =
         zingolib::load_clientconfig(lightwalletd_uri, Some(dir), chaintype, true).unwrap();
