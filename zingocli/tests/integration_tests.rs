@@ -2565,6 +2565,11 @@ async fn load_old_wallet_at_reorged_height() {
         "post-sync transactions: {}",
         recipient.do_list_transactions().await.pretty(2)
     );
+    println!("{}", recipient.do_balance().await.pretty(2));
+    recipient
+        .do_send(vec![(&get_base_address!(faucet, "unified"), 14000, None)])
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
