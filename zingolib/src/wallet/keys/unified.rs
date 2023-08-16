@@ -393,14 +393,17 @@ impl WalletCapability {
     }
 
     /// Returns a selection of pools where the wallet can spend funds.
-    pub fn can_spend(&self) -> ReceiverSelection {
-        ReceiverSelection {
-            orchard: self.orchard.can_spend(),
-            sapling: self.sapling.can_spend(),
-            transparent: self.transparent.can_spend(),
-        }
+    pub fn can_spend_from_all_pools(&self) -> bool {
+        self.orchard.can_spend() && self.sapling.can_spend() && self.transparent.can_spend()
     }
 
+    pub fn get_trees_witness_trees(&self) -> Option<crate::wallet::data::WitnessTrees> {
+        if self.can_spend_from_all_pools() {
+            Some(crate::wallet::data::WitnessTrees::default())
+        } else {
+            None
+        }
+    }
     /// Returns a selection of pools where the wallet can view funds.
     pub fn can_view(&self) -> ReceiverSelection {
         ReceiverSelection {
