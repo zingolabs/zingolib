@@ -15,7 +15,7 @@ use crate::compact_formats::{
     slice_to_array, CompactOrchardAction, CompactSaplingOutput, CompactTx, TreeState,
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use incrementalmerkletree::{Hashable, Level, Position};
+use incrementalmerkletree::{witness::IncrementalWitness, Hashable, Level, Position};
 use nonempty::NonEmpty;
 use orchard::{
     note_encryption::OrchardDomain,
@@ -1296,11 +1296,10 @@ impl<T>
     ReadableWriteable<(
         &WalletCapability,
         Option<
-            &mut ShardTree<
-                MemoryShardStore<T::Node, BlockHeight>,
-                COMMITMENT_TREE_LEVELS,
-                MAX_SHARD_LEVEL,
-            >,
+            &mut Vec<(
+                IncrementalWitness<T::Node, COMMITMENT_TREE_LEVELS>,
+                BlockHeight,
+            )>,
         >,
     )> for T
 where
@@ -1310,14 +1309,13 @@ where
 
     fn read<R: Read>(
         mut reader: R,
-        (wallet_capability, tree): (
+        (wallet_capability, inc_wit_vec): (
             &WalletCapability,
             Option<
-                &mut ShardTree<
-                    MemoryShardStore<T::Node, BlockHeight>,
-                    COMMITMENT_TREE_LEVELS,
-                    MAX_SHARD_LEVEL,
-                >,
+                &mut Vec<(
+                    IncrementalWitness<T::Node, COMMITMENT_TREE_LEVELS>,
+                    BlockHeight,
+                )>,
             >,
         ),
     ) -> io::Result<Self> {
@@ -1350,8 +1348,8 @@ where
                 .unwrap_or_else(|| Position::from(0));
             for (i, witness) in witnesses.witnesses.into_iter().rev().enumerate().rev() {
                 let height = BlockHeight::from(top_height as u32 - i as u32);
-                if let Some(&mut ref mut t) = tree {
-                    t.insert_witness_nodes(witness, height).expect("Infallible");
+                if let Some(&mut ref mut wits) = inc_wit_vec {
+                    wits.push((witness, height));
                 }
             }
             pos

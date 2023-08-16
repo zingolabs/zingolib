@@ -52,15 +52,40 @@ impl TransactionMetadataSet {
         wallet_capability: &WalletCapability,
     ) -> io::Result<Self> {
         let mut witness_trees = wallet_capability.get_trees_witness_trees();
+        let mut old_inc_witnesses = if witness_trees.is_some() {
+            Some((Vec::new(), Vec::new()))
+        } else {
+            None
+        };
         let txs = Vector::read_collected_mut(&mut reader, |r| {
             let mut txid_bytes = [0u8; 32];
             r.read_exact(&mut txid_bytes)?;
 
             Ok((
                 TxId::from_bytes(txid_bytes),
-                TransactionMetadata::read(r, (wallet_capability, witness_trees.as_mut())).unwrap(),
+                TransactionMetadata::read(r, (wallet_capability, old_inc_witnesses.as_mut()))
+                    .unwrap(),
             ))
         })?;
+
+        if let Some((mut old_sap_wits, mut old_orch_wits)) = old_inc_witnesses {
+            old_sap_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
+            let ref mut sap_tree = witness_trees.as_mut().unwrap().witness_tree_sapling;
+            for (sap_wit, height) in old_sap_wits {
+                sap_tree
+                    .insert_witness_nodes(sap_wit, height - 1)
+                    .expect("infallible");
+                sap_tree.checkpoint(height).expect("infallible");
+            }
+            old_orch_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
+            let ref mut orch_tree = witness_trees.as_mut().unwrap().witness_tree_orchard;
+            for (orch_wit, height) in old_orch_wits {
+                orch_tree
+                    .insert_witness_nodes(orch_wit, height - 1)
+                    .expect("infallible");
+                orch_tree.checkpoint(height).expect("infallible");
+            }
+        }
 
         Ok(Self {
             current: txs,
@@ -79,13 +104,18 @@ impl TransactionMetadataSet {
         }
 
         let mut witness_trees = wallet_capability.get_trees_witness_trees();
+        let mut old_inc_witnesses = if witness_trees.is_some() {
+            Some((Vec::new(), Vec::new()))
+        } else {
+            None
+        };
         let current: HashMap<_, _> = Vector::read_collected_mut(&mut reader, |r| {
             let mut txid_bytes = [0u8; 32];
             r.read_exact(&mut txid_bytes)?;
 
             Ok((
                 TxId::from_bytes(txid_bytes),
-                TransactionMetadata::read(r, (wallet_capability, witness_trees.as_mut()))?,
+                TransactionMetadata::read(r, (wallet_capability, old_inc_witnesses.as_mut()))?,
             ))
         })?;
 
@@ -105,7 +135,7 @@ impl TransactionMetadataSet {
                 let mut txid_bytes = [0u8; 32];
                 r.read_exact(&mut txid_bytes)?;
                 let transaction_metadata =
-                    TransactionMetadata::read(r, (wallet_capability, witness_trees.as_mut()))?;
+                    TransactionMetadata::read(r, (wallet_capability, old_inc_witnesses.as_mut()))?;
 
                 Ok((TxId::from_bytes(txid_bytes), transaction_metadata))
             })?
@@ -115,8 +145,31 @@ impl TransactionMetadataSet {
 
         if version >= 22 {
             witness_trees = Optional::read(reader, |r| WitnessTrees::read(r))?;
+        } else {
+            if let Some((mut old_sap_wits, mut old_orch_wits)) = old_inc_witnesses {
+                old_sap_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
+                let ref mut sap_tree = witness_trees.as_mut().unwrap().witness_tree_sapling;
+                for (sap_wit, height) in old_sap_wits {
+                    sap_tree
+                        .insert_witness_nodes(sap_wit, height - 1)
+                        .expect("infallible");
+                    sap_tree.checkpoint(height).expect("infallible");
+                }
+                old_orch_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
+                let ref mut orch_tree = witness_trees.as_mut().unwrap().witness_tree_orchard;
+                for (orch_wit, height) in old_orch_wits {
+                    let tip_pos = orch_wit.tip_position();
+                    let witness = orch_wit.path();
+                    let wit_pos = orch_wit.witnessed_position();
+                    orch_tree
+                        .insert_witness_nodes(orch_wit, height - 1)
+                        .expect("infallible");
+                    orch_tree.checkpoint(height).expect("infallible");
+                }
+            }
         };
 
+        dbg!(&witness_trees);
         Ok(Self {
             current,
             some_txid_from_highest_wallet_block,
@@ -206,7 +259,7 @@ impl TransactionMetadataSet {
 
     // During reorgs, we need to remove all txns at a given height, and all spends that refer to any removed txns.
     pub fn remove_txns_at_height(&mut self, reorg_height: u64) {
-        let reorg_height = BlockHeight::from_u32(reorg_height as u32);
+        let reorg_height = dbg!(BlockHeight::from_u32(reorg_height as u32));
 
         // First, collect txids that need to be removed
         let txids_to_remove = self

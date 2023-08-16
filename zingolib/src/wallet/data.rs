@@ -44,6 +44,7 @@ pub enum PoolNullifier {
 
 type SapStore = MemoryShardStore<Node, BlockHeight>;
 type OrchStore = MemoryShardStore<MerkleHashOrchard, BlockHeight>;
+#[derive(Debug)]
 pub struct WitnessTrees {
     pub witness_tree_sapling: ShardTree<SapStore, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL>,
     pub witness_tree_orchard: ShardTree<OrchStore, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL>,
@@ -994,7 +995,19 @@ impl TransactionMetadata {
 
     pub fn read<R: Read>(
         mut reader: R,
-        (wallet_capability, mut trees): (&WalletCapability, Option<&mut WitnessTrees>),
+        (wallet_capability, mut trees): (
+            &WalletCapability,
+            Option<&mut (
+                Vec<(
+                    IncrementalWitness<sapling::Node, COMMITMENT_TREE_LEVELS>,
+                    BlockHeight,
+                )>,
+                Vec<(
+                    IncrementalWitness<MerkleHashOrchard, COMMITMENT_TREE_LEVELS>,
+                    BlockHeight,
+                )>,
+            )>,
+        ),
     ) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
 
@@ -1021,20 +1034,14 @@ impl TransactionMetadata {
         let sapling_notes = Vector::read_collected_mut(&mut reader, |r| {
             ReceivedSaplingNoteAndMetadata::read(
                 r,
-                (
-                    wallet_capability,
-                    trees.as_mut().map(|t| &mut t.witness_tree_sapling),
-                ),
+                (wallet_capability, trees.as_mut().map(|t| &mut t.0)),
             )
         })?;
         let orchard_notes = if version > 22 {
             Vector::read_collected_mut(&mut reader, |r| {
                 ReceivedOrchardNoteAndMetadata::read(
                     r,
-                    (
-                        wallet_capability,
-                        trees.as_mut().map(|t| &mut t.witness_tree_orchard),
-                    ),
+                    (wallet_capability, trees.as_mut().map(|t| &mut t.1)),
                 )
             })?
         } else {

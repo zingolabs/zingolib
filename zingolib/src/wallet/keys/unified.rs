@@ -397,6 +397,7 @@ impl WalletCapability {
         self.orchard.can_spend() && self.sapling.can_spend() && self.transparent.can_spend()
     }
 
+    //TODO: NAME?????!!
     pub fn get_trees_witness_trees(&self) -> Option<crate::wallet::data::WitnessTrees> {
         if self.can_spend_from_all_pools() {
             Some(crate::wallet::data::WitnessTrees::default())

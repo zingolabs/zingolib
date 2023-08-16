@@ -2546,10 +2546,6 @@ async fn load_old_wallet_at_reorged_height() {
         .output()
         .expect("wallet copy failed");
     let _cph = regtest_manager.launch(false).unwrap();
-    println!("syncing faucet");
-    zingo_testutils::increase_height_and_sync_client(regtest_manager, faucet, 10)
-        .await
-        .unwrap();
     println!("loading wallet");
     let (wallet, conf) = zingo_testutils::load_wallet(zingo_dest.into(), ChainType::Regtest).await;
     println!("setting uri");
