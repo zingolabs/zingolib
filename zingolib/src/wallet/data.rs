@@ -150,9 +150,9 @@ impl Default for WitnessTrees {
 }
 
 impl WitnessTrees {
-    pub(crate) async fn add_checkpoint(&mut self, height: BlockHeight) {
-        assert!(self.witness_tree_sapling.checkpoint(height).unwrap());
-        assert!(self.witness_tree_orchard.checkpoint(height).unwrap());
+    pub(crate) fn add_checkpoint(&mut self, height: BlockHeight) {
+        self.witness_tree_sapling.checkpoint(height).unwrap();
+        self.witness_tree_orchard.checkpoint(height).unwrap();
     }
     const VERSION: u8 = 0;
     pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {

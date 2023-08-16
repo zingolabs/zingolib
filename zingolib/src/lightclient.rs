@@ -263,9 +263,7 @@ impl LightClient {
                 .witness_tree_orchard
                 .truncate_removing_checkpoint(&BlockHeight::from(last_synced_height as u32))
                 .expect("Infallible");
-            trees
-                .add_checkpoint(BlockHeight::from(last_synced_height as u32))
-                .await;
+            trees.add_checkpoint(BlockHeight::from(last_synced_height as u32));
         }
     }
 }

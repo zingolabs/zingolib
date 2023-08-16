@@ -273,11 +273,12 @@ impl TransactionMetadataSet {
         self.remove_txids(txids_to_remove);
         if let Some(ref mut t) = self.witness_trees {
             t.witness_tree_sapling
-                .truncate_removing_checkpoint(&reorg_height)
+                .truncate_removing_checkpoint(&(reorg_height - 1))
                 .expect("Infallible");
             t.witness_tree_orchard
-                .truncate_removing_checkpoint(&reorg_height)
+                .truncate_removing_checkpoint(&(reorg_height - 1))
                 .expect("Infallible");
+            t.add_checkpoint(reorg_height - 1);
         }
     }
 
