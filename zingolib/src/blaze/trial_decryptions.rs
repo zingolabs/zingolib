@@ -449,7 +449,7 @@ async fn update_witnesses<D>(
                             transaction_id,
                             output_num,
                             position + i as u64,
-                            &D::wc_to_fvk(&*wc).unwrap(),
+                            &D::wc_to_fvk(wc).unwrap(),
                         )
                         .await;
                 }
