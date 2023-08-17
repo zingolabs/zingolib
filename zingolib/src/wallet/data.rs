@@ -69,7 +69,7 @@ where
     })?;
     Ok(())
 }
-fn write_checkpoints<W, Cid>(mut writer: W, checkpoints: &Vec<(Cid, Checkpoint)>) -> io::Result<()>
+fn write_checkpoints<W, Cid>(mut writer: W, checkpoints: &[(Cid, Checkpoint)]) -> io::Result<()>
 where
     W: Write,
     Cid: Ord + std::fmt::Debug + Copy,
@@ -176,12 +176,16 @@ impl WitnessTrees {
         non_empty_orchard_frontier: Option<NonEmptyFrontier<MerkleHashOrchard>>,
     ) {
         use incrementalmerkletree::Retention;
-        if let Some(front) = non_empty_sapling_frontier { self.witness_tree_sapling
+        if let Some(front) = non_empty_sapling_frontier {
+            self.witness_tree_sapling
                 .insert_frontier_nodes(front, Retention::Ephemeral)
-                .expect("to insert non-empty sapling frontier") }
-        if let Some(front) = non_empty_orchard_frontier { self.witness_tree_orchard
+                .expect("to insert non-empty sapling frontier")
+        }
+        if let Some(front) = non_empty_orchard_frontier {
+            self.witness_tree_orchard
                 .insert_frontier_nodes(front, Retention::Ephemeral)
-                .expect("to insert non-empty orchard frontier") }
+                .expect("to insert non-empty orchard frontier")
+        }
     }
 }
 
@@ -989,6 +993,7 @@ impl TransactionMetadata {
             .sum()
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn read<R: Read>(
         mut reader: R,
         (wallet_capability, mut trees): (
