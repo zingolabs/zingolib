@@ -77,7 +77,7 @@ async fn dont_write_unconfirmed() {
         &recipient_balance["unverified_orchard_balance"]
             .as_u64()
             .unwrap(),
-        &(65_000 as u64)
+        &65_000_u64
     );
     let wallet_loc = &regtest_manager
         .zingo_datadir
@@ -94,7 +94,7 @@ async fn dont_write_unconfirmed() {
         &loaded_balance["unverified_orchard_balance"]
             .as_u64()
             .unwrap(),
-        &(0 as u64)
+        &0_u64
     );
     check_client_balances!(loaded_client, o: 100_000 s: 0 t: 0 );
 }
@@ -2040,7 +2040,7 @@ async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
         wallet_trees
             .witness_tree_orchard
             .witness(last_leaf.unwrap(), 0)
-            .expect(&format!("{:#?}", wallet_trees.witness_tree_orchard)),
+            .unwrap_or_else(|_| panic!("{:#?}", wallet_trees.witness_tree_orchard)),
         server_orchard_shardtree
             .witness(last_leaf.unwrap(), 0)
             .unwrap()

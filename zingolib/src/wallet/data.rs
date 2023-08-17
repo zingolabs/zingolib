@@ -77,7 +77,7 @@ where
 {
     Vector::write(
         &mut writer,
-        &checkpoints,
+        checkpoints,
         |mut w, (checkpoint_id, checkpoint)| {
             w.write_u32::<LittleEndian>(u32::from(*checkpoint_id))?;
             match checkpoint.tree_state() {
@@ -176,16 +176,12 @@ impl WitnessTrees {
         non_empty_orchard_frontier: Option<NonEmptyFrontier<MerkleHashOrchard>>,
     ) {
         use incrementalmerkletree::Retention;
-        non_empty_sapling_frontier.map(|front| {
-            self.witness_tree_sapling
+        if let Some(front) = non_empty_sapling_frontier { self.witness_tree_sapling
                 .insert_frontier_nodes(front, Retention::Ephemeral)
-                .expect("to insert non-empty sapling frontier")
-        });
-        non_empty_orchard_frontier.map(|front| {
-            self.witness_tree_orchard
+                .expect("to insert non-empty sapling frontier") }
+        if let Some(front) = non_empty_orchard_frontier { self.witness_tree_orchard
                 .insert_frontier_nodes(front, Retention::Ephemeral)
-                .expect("to insert non-empty orchard frontier")
-        });
+                .expect("to insert non-empty orchard frontier") }
     }
 }
 
