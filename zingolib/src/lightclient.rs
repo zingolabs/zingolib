@@ -1153,7 +1153,7 @@ impl LightClient {
         Ok((sapling_output, sapling_spend))
     }
     #[cfg(not(feature = "embed_params"))]
-    fn read_sapling_params(&self) -> result<(vec<u8>, vec<u8>), string> {
+    fn read_sapling_params(&self) -> Result<(vec<u8>, vec<u8>), String> {
         let path = self
             .config
             .get_zcash_params_path()
@@ -1161,14 +1161,14 @@ impl LightClient {
 
         let mut path_buf = path.to_path_buf();
         path_buf.push("sapling-output.params");
-        let mut file = file::open(path_buf).map_err(|e| e.to_string())?;
+        let mut file = File::open(path_buf).map_err(|e| e.to_string())?;
         let mut sapling_output = vec![];
         file.read_to_end(&mut sapling_output)
             .map_err(|e| e.to_string())?;
 
         let mut path_buf = path.to_path_buf();
         path_buf.push("sapling-spend.params");
-        let mut file = file::open(path_buf).map_err(|e| e.to_string())?;
+        let mut file = File::open(path_buf).map_err(|e| e.to_string())?;
         let mut sapling_spend = vec![];
         file.read_to_end(&mut sapling_spend)
             .map_err(|e| e.to_string())?;
