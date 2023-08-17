@@ -413,6 +413,7 @@ impl TrialDecryptions {
     }
 }
 
+#[allow(clippy::type_complexity)]
 async fn update_witnesses<D>(
     notes_to_mark_position: Vec<(
         Vec<(

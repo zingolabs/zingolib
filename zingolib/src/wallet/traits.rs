@@ -731,6 +731,8 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
     }
 }
 
+type MemoryStoreShardTree<T> =
+    ShardTree<MemoryShardStore<T, BlockHeight>, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL>;
 pub trait DomainWalletExt: Domain + BatchDomain
 where
     Self: Sized,
@@ -761,22 +763,10 @@ where
     }
     fn get_shardtree(
         tmds: &TransactionMetadataSet,
-    ) -> Option<
-        &ShardTree<
-            MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
-            COMMITMENT_TREE_LEVELS,
-            MAX_SHARD_LEVEL,
-        >,
-    >;
+    ) -> Option<&MemoryStoreShardTree<<Self::WalletNote as ReceivedNoteAndMetadata>::Node>>;
     fn get_shardtree_mut(
         tmds: &mut TransactionMetadataSet,
-    ) -> Option<
-        &mut ShardTree<
-            MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
-            COMMITMENT_TREE_LEVELS,
-            MAX_SHARD_LEVEL,
-        >,
-    >;
+    ) -> Option<&mut MemoryStoreShardTree<<Self::WalletNote as ReceivedNoteAndMetadata>::Node>>;
     fn get_nullifier_from_note_fvk_and_witness_position(
         note: &Self::Note,
         fvk: &Self::Fvk,
