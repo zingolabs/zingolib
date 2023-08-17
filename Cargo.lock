@@ -69,6 +69,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9c7d0618f0e0b7e8ff11427422b64564d5fb0be1940354bfe2e0529b18a9d9b8"
 
 [[package]]
+name = "append-only-vec"
+version = "0.1.2"
+source = "git+https://github.com/zancas/append-only-vec.git?branch=add_debug_impl#ec919c9c8f5429edbac69f0c2203dd01c861ce15"
+
+[[package]]
 name = "arc-swap"
 version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4053,6 +4058,7 @@ dependencies = [
 name = "zingolib"
 version = "0.2.0"
 dependencies = [
+ "append-only-vec",
  "base58",
  "base64 0.13.1",
  "bech32",

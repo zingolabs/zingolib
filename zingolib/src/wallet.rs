@@ -289,7 +289,7 @@ impl LightWallet {
 
     ///TODO: Make this work for orchard too
     pub async fn decrypt_message(&self, enc: Vec<u8>) -> Result<Message, String> {
-        let sapling_ivk = SaplingIvk::try_from(&*self.wallet_capability().read().await)?;
+        let sapling_ivk = SaplingIvk::try_from(&*self.wallet_capability())?;
 
         if let Ok(msg) = Message::decrypt(&enc, &sapling_ivk) {
             // If decryption succeeded for this IVK, return the decrypted memo and the matched address
@@ -358,8 +358,7 @@ impl LightWallet {
         <D as Domain>::Recipient: traits::Recipient,
         <D as Domain>::Note: PartialEq + Clone,
     {
-        let wc_lth = self.wallet_capability();
-        let wc = wc_lth.read().await;
+        let wc = self.wallet_capability();
         let tranmds_lth = self.transactions();
         let transaction_metadata_set = tranmds_lth.read().await;
         let mut candidate_notes = transaction_metadata_set
@@ -569,7 +568,7 @@ impl LightWallet {
     }
 
     pub fn new(config: ZingoConfig, base: WalletBase, height: u64) -> io::Result<Self> {
-        let (mut wc, mnemonic) = match base {
+        let (wc, mnemonic) = match base {
             WalletBase::FreshEntropy => {
                 let mut seed_bytes = [0u8; 32];
                 // Create a random seed.
@@ -622,7 +621,7 @@ impl LightWallet {
         };
         let transaction_metadata_set = Arc::new(RwLock::new(TransactionMetadataSet::default()));
         let transaction_context =
-            TransactionContext::new(&config, Arc::new(RwLock::new(wc)), transaction_metadata_set);
+            TransactionContext::new(&config, Arc::new(wc), transaction_metadata_set);
         Ok(Self {
             blocks: Arc::new(RwLock::new(vec![])),
             mnemonic,
@@ -765,7 +764,7 @@ impl LightWallet {
 
         let transaction_context = TransactionContext::new(
             config,
-            Arc::new(RwLock::new(wallet_capability)),
+            Arc::new(wallet_capability),
             Arc::new(RwLock::new(transactions)),
         );
 
@@ -952,7 +951,7 @@ impl LightWallet {
             return Err("Need at least one destination address".to_string());
         }
 
-        if self.wallet_capability().read().await.can_spend()
+        if self.wallet_capability().can_spend()
             != (ReceiverSelection {
                 orchard: true,
                 sapling: true,
@@ -1019,8 +1018,6 @@ impl LightWallet {
         // right address
         let address_to_sk = self
             .wallet_capability()
-            .read()
-            .await
             .get_taddr_to_secretkey_map(&self.transaction_context.config)
             .unwrap();
 
@@ -1113,13 +1110,11 @@ impl LightWallet {
         }
 
         // We'll use the first ovk to encrypt outgoing transactions
-        let sapling_ovk = zcash_primitives::keys::OutgoingViewingKey::try_from(
-            &*self.wallet_capability().read().await,
-        )
-        .unwrap();
-        let orchard_ovk =
-            orchard::keys::OutgoingViewingKey::try_from(&*self.wallet_capability().read().await)
+        let sapling_ovk =
+            zcash_primitives::keys::OutgoingViewingKey::try_from(&*self.wallet_capability())
                 .unwrap();
+        let orchard_ovk =
+            orchard::keys::OutgoingViewingKey::try_from(&*self.wallet_capability()).unwrap();
 
         let mut total_z_recipients = 0u32;
         for (recipient_address, value, memo) in recipients {
@@ -1194,9 +1189,7 @@ impl LightWallet {
         dbg!(selected_value, target_amount);
         if let Err(e) = builder.add_orchard_output::<FixedFeeRule>(
             Some(orchard_ovk.clone()),
-            *self.wallet_capability().read().await.addresses()[0]
-                .orchard()
-                .unwrap(),
+            *self.wallet_capability().addresses()[0].orchard().unwrap(),
             dbg!(u64::from(selected_value) - u64::from(target_amount)),
             // Here we store the uas we sent to in the memo field.
             // These are used to recover the full UA we sent to.
@@ -1412,7 +1405,7 @@ impl LightWallet {
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: traits::Recipient,
     {
-        let fvk = D::wc_to_fvk(&*self.wallet_capability().read().await).ok()?;
+        let fvk = D::wc_to_fvk(&self.wallet_capability()).ok()?;
         let filter_notes_by_target_addr = |notedata: &&D::WalletNote| match target_addr.as_ref() {
             Some(addr) => {
                 use self::traits::Recipient as _;
@@ -1490,7 +1483,7 @@ impl LightWallet {
     }
 
     pub async fn tbalance(&self, addr: Option<String>) -> JsonValue {
-        if self.wallet_capability().read().await.transparent.can_view() {
+        if self.wallet_capability().transparent.can_view() {
             JsonValue::from(
                 self.get_utxos()
                     .await
@@ -1566,7 +1559,7 @@ impl LightWallet {
             .await
     }
 
-    pub fn wallet_capability(&self) -> Arc<RwLock<WalletCapability>> {
+    pub fn wallet_capability(&self) -> Arc<WalletCapability> {
         self.transaction_context.key.clone()
     }
 
@@ -1575,11 +1568,7 @@ impl LightWallet {
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
         // Write all the keys
-        self.transaction_context
-            .key
-            .read()
-            .await
-            .write(&mut writer)?;
+        self.transaction_context.key.write(&mut writer)?;
 
         Vector::write(&mut writer, &self.blocks.read().await, |w, b| b.write(w))?;
 

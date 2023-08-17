@@ -1,8 +1,11 @@
+use std::sync::atomic;
 use std::{
     collections::{HashMap, HashSet},
     io::{self, Read, Write},
+    sync::atomic::AtomicBool,
 };
 
+use append_only_vec::AppendOnlyVec;
 use bip0039::Mnemonic;
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use orchard::keys::Scope;
@@ -53,7 +56,7 @@ impl<V, S> Capability<V, S> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct WalletCapability {
     pub transparent: Capability<
         super::extended_transparent::ExtendedPubKey,
@@ -65,13 +68,24 @@ pub struct WalletCapability {
     >,
     pub orchard: Capability<orchard::keys::FullViewingKey, orchard::keys::SpendingKey>,
 
-    transparent_child_keys: Vec<(usize, secp256k1::SecretKey)>,
-    addresses: Vec<UnifiedAddress>,
+    transparent_child_keys: append_only_vec::AppendOnlyVec<(usize, secp256k1::SecretKey)>,
+    addresses: append_only_vec::AppendOnlyVec<UnifiedAddress>,
     // Not all diversifier indexes produce valid sapling addresses.
     // Because of this, the index isn't necessarily equal to addresses.len()
-    next_sapling_diversifier_index: DiversifierIndex,
+    addresses_write_lock: AtomicBool,
 }
-
+impl Default for WalletCapability {
+    fn default() -> Self {
+        Self {
+            orchard: Capability::None,
+            sapling: Capability::None,
+            transparent: Capability::None,
+            transparent_child_keys: AppendOnlyVec::new(),
+            addresses: AppendOnlyVec::new(),
+            addresses_write_lock: AtomicBool::new(false),
+        }
+    }
+}
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[non_exhaustive]
 pub struct ReceiverSelection {
@@ -125,11 +139,13 @@ fn read_write_receiver_selections() {
 }
 
 impl WalletCapability {
-    pub fn addresses(&self) -> &[UnifiedAddress] {
+    pub fn addresses(&self) -> &AppendOnlyVec<UnifiedAddress> {
         &self.addresses
     }
 
-    pub fn transparent_child_keys(&self) -> Result<&Vec<(usize, secp256k1::SecretKey)>, String> {
+    pub fn transparent_child_keys(
+        &self,
+    ) -> Result<&AppendOnlyVec<(usize, secp256k1::SecretKey)>, String> {
         if self.transparent.can_spend() {
             Ok(&self.transparent_child_keys)
         } else {
@@ -158,7 +174,7 @@ impl WalletCapability {
     }
 
     pub fn new_address(
-        &mut self,
+        &self,
         desired_receivers: ReceiverSelection,
     ) -> Result<UnifiedAddress, String> {
         if (desired_receivers.transparent & !self.transparent.can_view())
@@ -167,41 +183,63 @@ impl WalletCapability {
         {
             return Err("The wallet is not capable of producing desired receivers.".to_string());
         }
-
+        if self
+            .addresses_write_lock
+            .swap(true, atomic::Ordering::Acquire)
+        {
+            return Err("addresses_write_lock collision!".to_string());
+        }
+        let previous_num_addresses = self.addresses.len();
         let orchard_receiver = if desired_receivers.orchard {
-            let fvk: orchard::keys::FullViewingKey = (&*self).try_into()?;
+            let fvk: orchard::keys::FullViewingKey = match self.try_into() {
+                Ok(viewkey) => viewkey,
+                Err(e) => {
+                    self.addresses_write_lock
+                        .swap(false, atomic::Ordering::Release);
+                    return Err(e);
+                }
+            };
             Some(fvk.address_at(self.addresses.len(), Scope::External))
         } else {
             None
         };
 
         // produce a Sapling address to increment Sapling diversifier index
-        let sapling_address = if self.sapling.can_view() {
+        let sapling_receiver = if desired_receivers.sapling && self.sapling.can_view() {
+            let mut sapling_diversifier_index = DiversifierIndex::new();
+            let mut address;
+            let mut count = 0;
             let fvk: zcash_primitives::zip32::sapling::DiversifiableFullViewingKey =
-                (&*self).try_into().unwrap();
-            let (mut new_index, address) = fvk
-                .find_address(self.next_sapling_diversifier_index)
-                .expect("Diversifier index overflow");
-            new_index.increment().expect("Diversifier index overflow");
-            self.next_sapling_diversifier_index = new_index;
+                self.try_into().expect("to create an fvk");
+            loop {
+                (sapling_diversifier_index, address) = fvk
+                    .find_address(sapling_diversifier_index)
+                    .expect("Diversifier index overflow");
+                sapling_diversifier_index
+                    .increment()
+                    .expect("diversifier index overflow");
+                if count == self.addresses.len() {
+                    break;
+                }
+                count += 1;
+            }
             Some(address)
-        } else {
-            None
-        };
-        let sapling_receiver = if desired_receivers.sapling {
-            sapling_address
         } else {
             None
         };
 
         let transparent_receiver = if desired_receivers.transparent {
             let child_index = KeyIndex::from_index(self.addresses.len() as u32).unwrap();
-            match &mut self.transparent {
+            match &self.transparent {
                 Capability::Spend(ext_sk) => {
-                    let child_sk = ext_sk
-                        .derive_private_key(child_index)
-                        .map_err(|e| format!("Transparent private key derivation failed: {e}"))?
-                        .private_key;
+                    let child_sk = match ext_sk.derive_private_key(child_index) {
+                        Err(e) => {
+                            self.addresses_write_lock
+                                .swap(false, atomic::Ordering::Release);
+                            return Err(format!("Transparent private key derivation failed: {e}"));
+                        }
+                        Ok(res) => res.private_key,
+                    };
                     let secp = secp256k1::Secp256k1::new();
                     let child_pk = secp256k1::PublicKey::from_secret_key(&secp, &child_sk);
                     self.transparent_child_keys
@@ -209,10 +247,14 @@ impl WalletCapability {
                     Some(child_pk)
                 }
                 Capability::View(ext_pk) => {
-                    let child_pk = ext_pk
-                        .derive_public_key(child_index)
-                        .map_err(|e| format!("Transparent public key derivation failed: {e}"))?
-                        .public_key;
+                    let child_pk = match ext_pk.derive_public_key(child_index) {
+                        Err(e) => {
+                            self.addresses_write_lock
+                                .swap(false, atomic::Ordering::Release);
+                            return Err(format!("Transparent public key derivation failed: {e}"));
+                        }
+                        Ok(res) => res.public_key,
+                    };
                     Some(child_pk)
                 }
                 Capability::None => None,
@@ -230,11 +272,22 @@ impl WalletCapability {
                 // This is deprecated. Not sure what the alternative is,
                 // other than implementing it ourselves.
                 .map(zcash_primitives::legacy::keys::pubkey_to_address),
-        )
-        .ok_or(
-            "Invalid receivers requested! At least one of sapling or orchard required".to_string(),
-        )?;
+        );
+        let ua = match ua {
+            Some(address) => address,
+            None => {
+                self.addresses_write_lock
+                    .swap(false, atomic::Ordering::Release);
+                return Err(
+                    "Invalid receivers requested! At least one of sapling or orchard required"
+                        .to_string(),
+                );
+            }
+        };
         self.addresses.push(ua.clone());
+        assert_eq!(self.addresses.len(), previous_num_addresses + 1);
+        self.addresses_write_lock
+            .swap(false, atomic::Ordering::Release);
         Ok(ua)
     }
 
@@ -284,9 +337,7 @@ impl WalletCapability {
             orchard: Capability::Spend(orchard_key),
             sapling: Capability::Spend(sapling_key),
             transparent: Capability::Spend(transparent_parent_key),
-            transparent_child_keys: vec![],
-            addresses: vec![],
-            next_sapling_diversifier_index: DiversifierIndex::new(),
+            ..Default::default()
         }
     }
 
@@ -313,14 +364,7 @@ impl WalletCapability {
         }
 
         // Initialize an instance with no capabilities.
-        let mut wc = Self {
-            orchard: Capability::None,
-            sapling: Capability::None,
-            transparent: Capability::None,
-            transparent_child_keys: vec![],
-            addresses: vec![],
-            next_sapling_diversifier_index: DiversifierIndex::new(),
-        };
+        let mut wc = WalletCapability::default();
         for fvk in ufvk.items() {
             match fvk {
                 Fvk::Orchard(key_bytes) => {
@@ -454,7 +498,7 @@ impl ReadableWriteable<()> for WalletCapability {
 
     fn read<R: Read>(mut reader: R, _input: ()) -> io::Result<Self> {
         let version = Self::get_version(&mut reader)?;
-        let mut wc = match version {
+        let wc = match version {
             // in version 1, only spending keys are stored
             1 => {
                 let orchard = orchard::keys::SpendingKey::read(&mut reader, ())?;
@@ -465,18 +509,14 @@ impl ReadableWriteable<()> for WalletCapability {
                     orchard: Capability::Spend(orchard),
                     sapling: Capability::Spend(sapling),
                     transparent: Capability::Spend(transparent),
-                    addresses: vec![],
-                    transparent_child_keys: vec![],
-                    next_sapling_diversifier_index: DiversifierIndex::new(),
+                    ..Default::default()
                 }
             }
             2 => Self {
                 orchard: Capability::read(&mut reader, ())?,
                 sapling: Capability::read(&mut reader, ())?,
                 transparent: Capability::read(&mut reader, ())?,
-                addresses: vec![],
-                transparent_child_keys: vec![],
-                next_sapling_diversifier_index: DiversifierIndex::new(),
+                ..Default::default()
             },
             _ => {
                 return Err(io::Error::new(
@@ -498,14 +538,18 @@ impl ReadableWriteable<()> for WalletCapability {
         self.orchard.write(&mut writer)?;
         self.sapling.write(&mut writer)?;
         self.transparent.write(&mut writer)?;
-        Vector::write(&mut writer, &self.addresses, |w, address| {
-            ReceiverSelection {
-                orchard: address.orchard().is_some(),
-                sapling: address.sapling().is_some(),
-                transparent: address.transparent().is_some(),
-            }
-            .write(w)
-        })
+        Vector::write(
+            &mut writer,
+            &self.addresses.iter().collect::<Vec<_>>(),
+            |w, address| {
+                ReceiverSelection {
+                    orchard: address.orchard().is_some(),
+                    sapling: address.sapling().is_some(),
+                    transparent: address.transparent().is_some(),
+                }
+                .write(w)
+            },
+        )
     }
 }
 
@@ -640,8 +684,7 @@ pub async fn get_transparent_secretkey_pubkey_taddr(
 ) {
     use super::address_from_pubkeyhash;
 
-    let wc_readlock = lightclient.wallet.wallet_capability();
-    let wc = wc_readlock.read().await;
+    let wc = lightclient.wallet.wallet_capability();
     // 2. Get an incoming transaction to a t address
     let (sk, pk) = match &wc.transparent {
         Capability::None => (None, None),

@@ -35,7 +35,7 @@ use zingoconfig::ZingoConfig;
 use super::syncdata::BlazeSyncData;
 
 pub struct TrialDecryptions {
-    wc: Arc<RwLock<WalletCapability>>,
+    wc: Arc<WalletCapability>,
     transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
     config: Arc<ZingoConfig>,
 }
@@ -43,7 +43,7 @@ pub struct TrialDecryptions {
 impl TrialDecryptions {
     pub fn new(
         config: Arc<ZingoConfig>,
-        wc: Arc<RwLock<WalletCapability>>,
+        wc: Arc<WalletCapability>,
         transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
     ) -> Self {
         Self {
@@ -83,8 +83,8 @@ impl TrialDecryptions {
             let mut workers = FuturesUnordered::new();
             let mut cbs = vec![];
 
-            let sapling_ivk = SaplingIvk::try_from(&*wc.read().await).ok();
-            let orchard_ivk = orchard::keys::IncomingViewingKey::try_from(&*wc.read().await).ok();
+            let sapling_ivk = SaplingIvk::try_from(&*wc).ok();
+            let orchard_ivk = orchard::keys::IncomingViewingKey::try_from(&*wc).ok();
 
             while let Some(cb) = receiver.recv().await {
                 cbs.push(cb);
@@ -145,7 +145,7 @@ impl TrialDecryptions {
     async fn trial_decrypt_batch(
         config: Arc<ZingoConfig>,
         compact_blocks: Vec<CompactBlock>,
-        wc: Arc<RwLock<WalletCapability>>,
+        wc: Arc<WalletCapability>,
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         sapling_ivk: Option<SaplingIvk>,
         orchard_ivk: Option<OrchardIvk>,
@@ -260,7 +260,7 @@ impl TrialDecryptions {
         ivk: D::IncomingViewingKey,
         height: BlockHeight,
         config: &zingoconfig::ZingoConfig,
-        wc: &Arc<RwLock<WalletCapability>>,
+        wc: &Arc<WalletCapability>,
         bsync_data: &Arc<RwLock<BlazeSyncData>>,
         transaction_metadata_set: &Arc<RwLock<TransactionMetadataSet>>,
         detected_transaction_id_sender: &UnboundedSender<(
@@ -295,7 +295,6 @@ impl TrialDecryptions {
                 let config = config.clone();
 
                 workers.push(tokio::spawn(async move {
-                    let wc = wc.read().await;
                     let Ok(fvk) = D::wc_to_fvk(&wc) else {
                         // skip any scanning if the wallet doesn't have viewing capability
                         return Ok::<_, String>(());
