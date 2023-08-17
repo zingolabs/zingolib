@@ -52,13 +52,14 @@ group = "0.13"
 rust-embed = { version = "6.3.0", features = ["debug-embed"] }
 orchard = { workspace = true }
 subtle = "2.4.1"
-incrementalmerkletree = { workspace = true }
+incrementalmerkletree = { workspace = true, features = ["test-dependencies"] }
 zcash_address = { workspace = true }
 zcash_client_backend = { workspace = true }
 zcash_encoding = { workspace = true }
 zcash_note_encryption = { workspace = true }
 zcash_primitives = { workspace = true }
 zcash_proofs = { workspace = true }
+zcash_client_sqlite = {workspace = true }
 zingoconfig = { path = "../zingoconfig" }
 zingo-memo = { path = "../zingo-memo" }
 nonempty = "0.7.0"
@@ -66,7 +67,9 @@ tracing-subscriber = "0.3.15"
 tracing = "0.1.36"
 indoc = "2.0.1"
 append-only-vec = { git = "https://github.com/zancas/append-only-vec.git", branch = "add_debug_impl" }
-
+shardtree = { workspace = true }
+derive_more = "0.99.17"
+either = "1.8.1"
 [dev-dependencies]
 portpicker = "0.1.0"
 tempfile = "3.3.0"

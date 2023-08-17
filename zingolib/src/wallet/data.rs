@@ -1,30 +1,36 @@
-use crate::blaze::fixed_size_buffer::FixedSizeBuffer;
 use crate::compact_formats::CompactBlock;
 use crate::wallet::traits::ReceivedNoteAndMetadata;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use incrementalmerkletree::frontier::CommitmentTree;
+use incrementalmerkletree::frontier::{CommitmentTree, NonEmptyFrontier};
 use incrementalmerkletree::witness::IncrementalWitness;
-use incrementalmerkletree::Hashable;
+use incrementalmerkletree::{Address, Hashable, Level, Position};
 use orchard::note_encryption::OrchardDomain;
 use orchard::tree::MerkleHashOrchard;
 use prost::Message;
+use shardtree::memory::MemoryShardStore;
+use shardtree::{Checkpoint, LocatedPrunableTree, ShardStore, ShardTree};
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
 use std::usize;
+use zcash_client_sqlite::serialization::{read_shard, write_shard};
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::memo::MemoBytes;
-use zcash_primitives::merkle_tree::{read_commitment_tree, write_commitment_tree};
+use zcash_primitives::merkle_tree::{read_commitment_tree, write_commitment_tree, HashSer};
 use zcash_primitives::sapling::note_encryption::SaplingDomain;
+use zcash_primitives::sapling::{self, Node};
 use zcash_primitives::{
     memo::Memo,
     transaction::{components::OutPoint, TxId},
 };
-use zingoconfig::ChainType;
+use zingoconfig::{ChainType, MAX_REORG};
 
 use super::keys::unified::WalletCapability;
-use super::traits::{self, DomainWalletExt, ReadableWriteable};
+use super::traits::{self, DomainWalletExt, ReadableWriteable, ToBytes};
+
+pub const COMMITMENT_TREE_LEVELS: u8 = 32;
+pub const MAX_SHARD_LEVEL: u8 = 16;
 
 /// This type is motivated by the IPC architecture where (currently) channels traffic in
 /// `(TxId, WalletNullifier, BlockHeight, Option<u32>)`.  This enum permits a single channel
@@ -34,6 +40,199 @@ use super::traits::{self, DomainWalletExt, ReadableWriteable};
 pub enum PoolNullifier {
     Sapling(zcash_primitives::sapling::Nullifier),
     Orchard(orchard::note::Nullifier),
+}
+
+type SapStore = MemoryShardStore<Node, BlockHeight>;
+type OrchStore = MemoryShardStore<MerkleHashOrchard, BlockHeight>;
+#[derive(Debug)]
+pub struct WitnessTrees {
+    pub witness_tree_sapling: ShardTree<SapStore, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL>,
+    pub witness_tree_orchard: ShardTree<OrchStore, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL>,
+}
+
+fn write_shards<W, H, C>(mut writer: W, store: &MemoryShardStore<H, C>) -> io::Result<()>
+where
+    H: Hashable + Clone + Eq + HashSer,
+    C: Ord + std::fmt::Debug + Copy,
+    W: Write,
+{
+    let roots = store.get_shard_roots().expect("Infallible");
+    Vector::write(&mut writer, &roots, |w, root| {
+        w.write_u8(root.level().into())?;
+        w.write_u64::<LittleEndian>(root.index())?;
+        let shard = store
+            .get_shard(*root)
+            .expect("Infallible")
+            .expect("cannot find root that shard store claims to have");
+        write_shard(w, shard.root())?; // s.root returns &Tree
+        Ok(())
+    })?;
+    Ok(())
+}
+fn write_checkpoints<W, Cid>(mut writer: W, checkpoints: &Vec<(Cid, Checkpoint)>) -> io::Result<()>
+where
+    W: Write,
+    Cid: Ord + std::fmt::Debug + Copy,
+    u32: From<Cid>,
+{
+    Vector::write(
+        &mut writer,
+        &checkpoints,
+        |mut w, (checkpoint_id, checkpoint)| {
+            w.write_u32::<LittleEndian>(u32::from(*checkpoint_id))?;
+            match checkpoint.tree_state() {
+                shardtree::TreeState::Empty => w.write_u8(0),
+                shardtree::TreeState::AtPosition(pos) => {
+                    w.write_u8(1)?;
+                    w.write_u64::<LittleEndian>(<u64 as From<Position>>::from(pos))
+                }
+            }?;
+            Vector::write(
+                &mut w,
+                &checkpoint.marks_removed().iter().collect::<Vec<_>>(),
+                |w, mark| w.write_u64::<LittleEndian>(<u64 as From<Position>>::from(**mark)),
+            )
+        },
+    )?;
+    Ok(())
+}
+/// Write memory-backed shardstore, represented tree.
+fn write_shardtree<H: Hashable + Clone + Eq + HashSer, C: Ord + std::fmt::Debug + Copy, W: Write>(
+    tree: &mut shardtree::ShardTree<
+        MemoryShardStore<H, C>,
+        COMMITMENT_TREE_LEVELS,
+        MAX_SHARD_LEVEL,
+    >,
+    mut writer: W,
+) -> io::Result<()>
+where
+    u32: From<C>,
+{
+    // Replace original tree with empty tree, and mutate new version into store.
+    let mut store = std::mem::replace(
+        tree,
+        shardtree::ShardTree::new(MemoryShardStore::empty(), 0),
+    )
+    .into_store();
+    macro_rules! write_with_error_handling {
+        ($writer: ident, $from: ident) => {
+            if let Err(e) = $writer(&mut writer, &$from) {
+                *tree = shardtree::ShardTree::new(store, MAX_REORG);
+                return Err(e);
+            }
+        };
+    }
+    // Write located prunable trees
+    write_with_error_handling!(write_shards, store);
+    let mut checkpoints = Vec::new();
+    store
+        .with_checkpoints(MAX_REORG, |checkpoint_id, checkpoint| {
+            checkpoints.push((*checkpoint_id, checkpoint.clone()));
+            Ok(())
+        })
+        .expect("Infallible");
+    // Write checkpoints
+    write_with_error_handling!(write_checkpoints, checkpoints);
+    let cap = store.get_cap().expect("Infallible");
+    // Write cap
+    write_with_error_handling!(write_shard, cap);
+    *tree = shardtree::ShardTree::new(store, MAX_REORG);
+    Ok(())
+}
+
+impl Default for WitnessTrees {
+    fn default() -> WitnessTrees {
+        Self {
+            witness_tree_sapling: shardtree::ShardTree::new(MemoryShardStore::empty(), MAX_REORG),
+            witness_tree_orchard: shardtree::ShardTree::new(MemoryShardStore::empty(), MAX_REORG),
+        }
+    }
+}
+
+impl WitnessTrees {
+    pub(crate) fn add_checkpoint(&mut self, height: BlockHeight) {
+        self.witness_tree_sapling.checkpoint(height).unwrap();
+        self.witness_tree_orchard.checkpoint(height).unwrap();
+    }
+    const VERSION: u8 = 0;
+    pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
+        let _serialized_version = reader.read_u8()?;
+        let witness_tree_sapling = read_shardtree(&mut reader)?;
+        let witness_tree_orchard = read_shardtree(reader)?;
+        Ok(Self {
+            witness_tree_sapling,
+            witness_tree_orchard,
+        })
+    }
+
+    pub fn write<W: Write>(&mut self, mut writer: W) -> io::Result<()> {
+        writer.write_u8(Self::VERSION)?;
+        write_shardtree(&mut self.witness_tree_sapling, &mut writer)?;
+        write_shardtree(&mut self.witness_tree_orchard, &mut writer)
+    }
+    pub(crate) fn insert_all_frontier_nodes(
+        &mut self,
+        non_empty_sapling_frontier: Option<NonEmptyFrontier<sapling::Node>>,
+        non_empty_orchard_frontier: Option<NonEmptyFrontier<MerkleHashOrchard>>,
+    ) {
+        use incrementalmerkletree::Retention;
+        non_empty_sapling_frontier.map(|front| {
+            self.witness_tree_sapling
+                .insert_frontier_nodes(front, Retention::Ephemeral)
+                .expect("to insert non-empty sapling frontier")
+        });
+        non_empty_orchard_frontier.map(|front| {
+            self.witness_tree_orchard
+                .insert_frontier_nodes(front, Retention::Ephemeral)
+                .expect("to insert non-empty orchard frontier")
+        });
+    }
+}
+
+fn read_shardtree<
+    H: Hashable + Clone + HashSer + Eq,
+    C: Ord + std::fmt::Debug + Copy + From<u32>,
+    R: Read,
+>(
+    mut reader: R,
+) -> io::Result<shardtree::ShardTree<MemoryShardStore<H, C>, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL>>
+{
+    let shards = Vector::read(&mut reader, |r| {
+        let level = Level::from(r.read_u8()?);
+        let index = r.read_u64::<LittleEndian>()?;
+        let root_addr = Address::from_parts(level, index);
+        let shard = read_shard(r)?;
+        Ok(LocatedPrunableTree::from_parts(root_addr, shard))
+    })?;
+    let mut store = MemoryShardStore::empty();
+    for shard in shards {
+        store.put_shard(shard).expect("Infallible");
+    }
+    let checkpoints = Vector::read(&mut reader, |r| {
+        let checkpoint_id = C::from(r.read_u32::<LittleEndian>()?);
+        let tree_state = match r.read_u8()? {
+            0 => shardtree::TreeState::Empty,
+            1 => shardtree::TreeState::AtPosition(Position::from(r.read_u64::<LittleEndian>()?)),
+            otherwise => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("error reading TreeState: expected boolean value, found {otherwise}"),
+                ))
+            }
+        };
+        let marks_removed = Vector::read(r, |r| r.read_u64::<LittleEndian>().map(Position::from))?;
+        Ok((
+            checkpoint_id,
+            Checkpoint::from_parts(tree_state, marks_removed.into_iter().collect()),
+        ))
+    })?;
+    for (checkpoint_id, checkpoint) in checkpoints {
+        store
+            .add_checkpoint(checkpoint_id, checkpoint)
+            .expect("Infallible");
+    }
+    store.put_cap(read_shard(reader)?).expect("Infallible");
+    Ok(shardtree::ShardTree::new(store, MAX_REORG))
 }
 
 impl std::hash::Hash for PoolNullifier {
@@ -207,10 +406,6 @@ impl<Node: Hashable> WitnessCache<Node> {
         self.witnesses.last()
     }
 
-    pub(crate) fn into_fsb(self, fsb: &mut FixedSizeBuffer<IncrementalWitness<Node, 32>>) {
-        self.witnesses.into_iter().for_each(|w| fsb.push(w));
-    }
-
     pub fn pop(&mut self, at_height: u64) {
         while !self.witnesses.is_empty() && self.top_height >= at_height {
             self.witnesses.pop();
@@ -232,8 +427,12 @@ pub struct ReceivedSaplingNoteAndMetadata {
     pub diversifier: zcash_primitives::sapling::Diversifier,
     pub note: zcash_primitives::sapling::Note,
 
-    // Witnesses for the last 100 blocks. witnesses.last() is the latest witness
-    pub(crate) witnesses: WitnessCache<zcash_primitives::sapling::Node>,
+    // The postion of this note's commitment
+    pub(crate) witnessed_position: Position,
+
+    // The note's index in its containing transaction
+    pub(crate) output_index: usize,
+
     pub(super) nullifier: zcash_primitives::sapling::Nullifier,
     pub spent: Option<(TxId, u32)>, // If this note was confirmed spent
 
@@ -252,7 +451,12 @@ pub struct ReceivedOrchardNoteAndMetadata {
     pub diversifier: orchard::keys::Diversifier,
     pub note: orchard::note::Note,
 
-    pub witnesses: WitnessCache<MerkleHashOrchard>,
+    // The postion of this note's commitment
+    pub witnessed_position: Position,
+
+    // The note's index in its containing transaction
+    pub(crate) output_index: usize,
+
     pub(super) nullifier: orchard::note::Nullifier,
     pub spent: Option<(TxId, u32)>, // If this note was confirmed spent
 
@@ -789,7 +993,22 @@ impl TransactionMetadata {
             .sum()
     }
 
-    pub fn read<R: Read>(mut reader: R, wallet_capability: &WalletCapability) -> io::Result<Self> {
+    pub fn read<R: Read>(
+        mut reader: R,
+        (wallet_capability, mut trees): (
+            &WalletCapability,
+            Option<&mut (
+                Vec<(
+                    IncrementalWitness<sapling::Node, COMMITMENT_TREE_LEVELS>,
+                    BlockHeight,
+                )>,
+                Vec<(
+                    IncrementalWitness<MerkleHashOrchard, COMMITMENT_TREE_LEVELS>,
+                    BlockHeight,
+                )>,
+            )>,
+        ),
+    ) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
 
         let block = BlockHeight::from_u32(reader.read_i32::<LittleEndian>()? as u32);
@@ -812,12 +1031,18 @@ impl TransactionMetadata {
         let transaction_id = TxId::from_bytes(transaction_id_bytes);
 
         tracing::info!("About to attempt to read a note and metadata");
-        let sapling_notes = Vector::read(&mut reader, |r| {
-            ReceivedSaplingNoteAndMetadata::read(r, wallet_capability)
+        let sapling_notes = Vector::read_collected_mut(&mut reader, |r| {
+            ReceivedSaplingNoteAndMetadata::read(
+                r,
+                (wallet_capability, trees.as_mut().map(|t| &mut t.0)),
+            )
         })?;
         let orchard_notes = if version > 22 {
-            Vector::read(&mut reader, |r| {
-                ReceivedOrchardNoteAndMetadata::read(r, wallet_capability)
+            Vector::read_collected_mut(&mut reader, |r| {
+                ReceivedOrchardNoteAndMetadata::read(
+                    r,
+                    (wallet_capability, trees.as_mut().map(|t| &mut t.1)),
+                )
             })?
         } else {
             vec![]
@@ -956,21 +1181,23 @@ impl TransactionMetadata {
     }
 }
 
+#[derive(Debug)]
 pub struct SpendableSaplingNote {
     pub transaction_id: TxId,
     pub nullifier: zcash_primitives::sapling::Nullifier,
     pub diversifier: zcash_primitives::sapling::Diversifier,
     pub note: zcash_primitives::sapling::Note,
-    pub witness: IncrementalWitness<zcash_primitives::sapling::Node, 32>,
+    pub witnessed_position: Position,
     pub extsk: Option<zcash_primitives::zip32::sapling::ExtendedSpendingKey>,
 }
 
+#[derive(Debug)]
 pub struct SpendableOrchardNote {
     pub transaction_id: TxId,
     pub nullifier: orchard::note::Nullifier,
     pub diversifier: orchard::keys::Diversifier,
     pub note: orchard::note::Note,
-    pub witness: IncrementalWitness<MerkleHashOrchard, 32>,
+    pub witnessed_position: Position,
     pub spend_key: Option<orchard::keys::SpendingKey>,
 }
 

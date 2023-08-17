@@ -7,7 +7,6 @@ use crate::wallet::data::{SpendableSaplingNote, TransactionMetadata};
 use bip0039::Mnemonic;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::Future;
-use incrementalmerkletree::frontier::CommitmentTree;
 use json::JsonValue;
 use log::{error, info, warn};
 use orchard::keys::SpendingKey as OrchardSpendingKey;
@@ -16,6 +15,8 @@ use orchard::tree::MerkleHashOrchard;
 use orchard::Anchor;
 use rand::rngs::OsRng;
 use rand::Rng;
+use shardtree::memory::MemoryShardStore;
+use shardtree::ShardTree;
 use std::convert::Infallible;
 use std::{
     cmp,
@@ -29,7 +30,6 @@ use zcash_client_backend::address;
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
 use zcash_primitives::memo::MemoBytes;
-use zcash_primitives::merkle_tree::read_commitment_tree;
 use zcash_primitives::sapling::note_encryption::SaplingDomain;
 use zcash_primitives::sapling::SaplingIvk;
 use zcash_primitives::transaction;
@@ -48,19 +48,16 @@ use zcash_primitives::{
 };
 use zingo_memo::create_wallet_internal_memo_version_0;
 
-use self::data::SpendableOrchardNote;
-use self::keys::unified::{Capability, ReceiverSelection, WalletCapability};
+use self::data::{SpendableOrchardNote, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
+use self::keys::unified::{Capability, WalletCapability};
 use self::traits::Recipient;
 use self::traits::{DomainWalletExt, ReceivedNoteAndMetadata, SpendableNote};
 use self::{
-    data::{
-        BlockData, ReceivedOrchardNoteAndMetadata, ReceivedSaplingNoteAndMetadata,
-        ReceivedTransparentOutput, WalletZecPriceInfo,
-    },
+    data::{BlockData, ReceivedTransparentOutput, WalletZecPriceInfo},
     message::Message,
     transactions::TransactionMetadataSet,
 };
-use zingoconfig::ZingoConfig;
+use zingoconfig::{ZingoConfig, REORG_BUFFER_OFFSET};
 
 pub mod data;
 pub mod keys;
@@ -239,6 +236,44 @@ pub struct LightWallet {
 
 use crate::wallet::traits::{Diversifiable as _, ReadableWriteable};
 impl LightWallet {
+    fn get_legacy_frontiers(
+        trees: crate::compact_formats::TreeState,
+    ) -> (
+        Option<incrementalmerkletree::frontier::NonEmptyFrontier<zcash_primitives::sapling::Node>>,
+        Option<incrementalmerkletree::frontier::NonEmptyFrontier<MerkleHashOrchard>>,
+    ) {
+        (
+            zcash_primitives::merkle_tree::read_commitment_tree::<
+                zcash_primitives::sapling::Node,
+                &[u8],
+                COMMITMENT_TREE_LEVELS,
+            >(&hex::decode(trees.sapling_tree).unwrap()[..])
+            .unwrap()
+            .to_frontier()
+            .take(),
+            zcash_primitives::merkle_tree::read_commitment_tree::<
+                MerkleHashOrchard,
+                &[u8],
+                COMMITMENT_TREE_LEVELS,
+            >(&hex::decode(trees.orchard_tree).unwrap()[..])
+            .unwrap()
+            .to_frontier()
+            .take(),
+        )
+    }
+    pub(crate) async fn initiate_witness_trees(&self, trees: crate::compact_formats::TreeState) {
+        let (legacy_sapling_frontier, legacy_orchard_frontier) =
+            LightWallet::get_legacy_frontiers(trees);
+        if let Some(ref mut trees) = self
+            .transaction_context
+            .transaction_metadata_set
+            .write()
+            .await
+            .witness_trees
+        {
+            trees.insert_all_frontier_nodes(legacy_sapling_frontier, legacy_orchard_frontier)
+        };
+    }
     fn add_notes_to_total<D: DomainWalletExt>(
         candidates: Vec<D::SpendableNoteAT>,
         target_amount: Amount,
@@ -370,21 +405,14 @@ impl LightWallet {
                     .map(move |note| (*transaction_id, note))
             })
             .filter(|(_, note)| note.value() > 0)
-            .filter_map(|(transaction_id, note)| {
-                // Filter out notes that are already spent
-                if note.spent().is_some() || note.unconfirmed_spent().is_some() {
-                    None
-                } else {
-                    // Get the spending key for the selected fvk, if we have it
-                    let extsk = D::wc_to_sk(&wc);
-                    SpendableNote::from(
-                        transaction_id,
-                        note,
-                        self.transaction_context.config.reorg_buffer_offset as usize,
-                        extsk.ok().as_ref(),
-                    )
+            .filter_map(
+                |(transaction_id, note): (transaction::TxId, &D::WalletNote)| -> Option <D::SpendableNoteAT> {
+                    // Filter out notes that are already spent
+                        // Get the spending key for the selected fvk, if we have it
+                        let extsk = D::wc_to_sk(&wc);
+                        SpendableNote::from(transaction_id, note, extsk.ok().as_ref())
                 }
-            })
+            )
             .collect::<Vec<D::SpendableNoteAT>>();
         candidate_notes.sort_unstable_by(|spendable_note_1, spendable_note_2| {
             D::WalletNote::value_from_note(spendable_note_2.note())
@@ -443,34 +471,18 @@ impl LightWallet {
             ))
     }
 
-    async fn get_latest_wallet_height(&self) -> Option<u32> {
-        self.blocks
-            .read()
-            .await
-            .first()
-            .map(|block| block.height as u32)
-    }
-
     async fn get_orchard_anchor(
         &self,
-        orchard_notes: &[SpendableOrchardNote],
-        target_height: BlockHeight,
+        tree: &ShardTree<
+            MemoryShardStore<MerkleHashOrchard, BlockHeight>,
+            COMMITMENT_TREE_LEVELS,
+            MAX_SHARD_LEVEL,
+        >,
     ) -> Result<Anchor, String> {
-        if let Some(note) = orchard_notes.get(0) {
-            Ok(orchard::Anchor::from(note.witness.root()))
-        } else {
-            let uri = self.transaction_context.config.get_lightwalletd_uri();
-            let trees = crate::grpc_connector::GrpcConnector::get_trees(
-                uri,
-                u64::from(target_height)
-                    - self.transaction_context.config.reorg_buffer_offset as u64,
-            )
-            .await?;
-            let orchard_tree: CommitmentTree<MerkleHashOrchard, 32> =
-                read_commitment_tree(hex::decode(trees.orchard_tree).unwrap().as_slice())
-                    .unwrap_or(CommitmentTree::empty());
-            Ok(Anchor::from(orchard_tree.root()))
-        }
+        Ok(orchard::Anchor::from(
+            tree.root_at_checkpoint(REORG_BUFFER_OFFSET as usize)
+                .map_err(|e| format!("failed to get orchard anchor: {e}"))?,
+        ))
     }
 
     // Get the current sending status.
@@ -619,7 +631,11 @@ impl LightWallet {
                 format!("could not create initial address: {e}"),
             ));
         };
-        let transaction_metadata_set = Arc::new(RwLock::new(TransactionMetadataSet::default()));
+        let transaction_metadata_set = if wc.can_spend_from_all_pools() {
+            Arc::new(RwLock::new(TransactionMetadataSet::new_with_witness_trees()))
+        } else {
+            Arc::new(RwLock::new(TransactionMetadataSet::new_treeless()))
+        };
         let transaction_context =
             TransactionContext::new(&config, Arc::new(wc), transaction_metadata_set);
         Ok(Self {
@@ -793,7 +809,7 @@ impl LightWallet {
             None
         };
 
-        let mut lw = Self {
+        let lw = Self {
             blocks: Arc::new(RwLock::new(blocks)),
             mnemonic,
             wallet_options: Arc::new(RwLock::new(wallet_options)),
@@ -803,10 +819,6 @@ impl LightWallet {
             price: Arc::new(RwLock::new(price)),
             transaction_context,
         };
-
-        if external_version <= 14 {
-            lw.set_witness_block_heights().await;
-        }
 
         Ok(lw)
     }
@@ -951,13 +963,7 @@ impl LightWallet {
             return Err("Need at least one destination address".to_string());
         }
 
-        if self.wallet_capability().can_spend()
-            != (ReceiverSelection {
-                orchard: true,
-                sapling: true,
-                transparent: true,
-            })
-        {
+        if !self.wallet_capability().can_spend_from_all_pools() {
             // Creating transactions in context of all possible combinations
             // of wallet capabilities requires a rigorous case study
             // and can have undesired effects if not implemented properly.
@@ -1009,10 +1015,6 @@ impl LightWallet {
         println!("{}: Selecting notes", now() - start_time);
 
         let target_amount = (Amount::from_u64(total_value).unwrap() + MINIMUM_FEE).unwrap();
-        let latest_wallet_height = match self.get_latest_wallet_height().await {
-            Some(h) => BlockHeight::from_u32(h),
-            None => return Err("No blocks in wallet to target, please sync first".to_string()),
-        };
 
         // Create a map from address -> sk for all taddrs, so we can spend from the
         // right address
@@ -1033,9 +1035,18 @@ impl LightWallet {
             return Err(e);
         }
         println!("Selected notes worth {}", u64::from(selected_value));
+        let txmds_readlock = self
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await;
 
+        let witness_trees = txmds_readlock
+            .witness_trees
+            .as_ref()
+            .expect("If we have spend capability we have trees");
         let orchard_anchor = self
-            .get_orchard_anchor(&orchard_notes, latest_wallet_height)
+            .get_orchard_anchor(&witness_trees.witness_tree_orchard)
             .await?;
         let mut builder = Builder::new(
             self.transaction_context.config.chain,
@@ -1087,7 +1098,10 @@ impl LightWallet {
                 selected.extsk.clone().unwrap(),
                 selected.diversifier,
                 selected.note.clone(),
-                selected.witness.path().unwrap(),
+                witness_trees
+                    .witness_tree_sapling
+                    .witness(selected.witnessed_position, REORG_BUFFER_OFFSET as usize)
+                    .map_err(|e| format!("failed to compute sapling witness: {e}"))?,
             ) {
                 let e = format!("Error adding note: {:?}", e);
                 error!("{}", e);
@@ -1097,11 +1111,15 @@ impl LightWallet {
 
         for selected in orchard_notes.iter() {
             println!("Adding orchard spend");
-            let path = selected.witness.path().unwrap();
             if let Err(e) = builder.add_orchard_spend::<transaction::fees::fixed::FeeRule>(
                 selected.spend_key.unwrap(),
                 selected.note,
-                orchard::tree::MerklePath::from(path),
+                orchard::tree::MerklePath::from(
+                    witness_trees
+                        .witness_tree_orchard
+                        .witness(selected.witnessed_position, REORG_BUFFER_OFFSET as usize)
+                        .map_err(|e| format!("failed to compute orchard witness: {e}"))?,
+                ),
             ) {
                 let e = format!("Error adding note: {:?}", e);
                 error!("{}", e);
@@ -1260,16 +1278,19 @@ impl LightWallet {
 
         let transaction_id = broadcast_fn(raw_transaction.clone().into_boxed_slice()).await?;
 
+        // Now that we've gotten this far, we need to write
+        // so we drop the readlock
+        drop(txmds_readlock);
         // Mark notes as spent.
         {
             // Mark sapling notes as unconfirmed spent
-            let mut transactions = self
+            let mut txmds_writelock = self
                 .transaction_context
                 .transaction_metadata_set
                 .write()
                 .await;
             for selected in sapling_notes {
-                let spent_note = transactions
+                let spent_note = txmds_writelock
                     .current
                     .get_mut(&selected.transaction_id)
                     .unwrap()
@@ -1282,7 +1303,7 @@ impl LightWallet {
             }
             // Mark orchard notes as unconfirmed spent
             for selected in orchard_notes {
-                let spent_note = transactions
+                let spent_note = txmds_writelock
                     .current
                     .get_mut(&selected.transaction_id)
                     .unwrap()
@@ -1296,7 +1317,7 @@ impl LightWallet {
 
             // Mark this utxo as unconfirmed spent
             for utxo in utxos {
-                let spent_utxo = transactions
+                let spent_utxo = txmds_writelock
                     .current
                     .get_mut(&utxo.txid)
                     .unwrap()
@@ -1378,22 +1399,6 @@ impl LightWallet {
         p.last_transaction_id = Some(transaction_id);
     }
 
-    // Before version 20, witnesses didn't store their height, so we need to update them.
-    pub async fn set_witness_block_heights(&mut self) {
-        let top_height = self.last_synced_height().await;
-        self.transaction_context
-            .transaction_metadata_set
-            .write()
-            .await
-            .current
-            .iter_mut()
-            .for_each(|(_, wtx)| {
-                wtx.sapling_notes.iter_mut().for_each(|nd| {
-                    nd.witnesses.top_height = top_height;
-                });
-            });
-    }
-
     #[allow(clippy::type_complexity)]
     async fn shielded_balance<D>(
         &self,
@@ -1437,8 +1442,7 @@ impl LightWallet {
                     }
                     filtered_notes
                         .map(|notedata| {
-                            if notedata.spent().is_none() && notedata.unconfirmed_spent().is_none()
-                            {
+                            if notedata.spent().is_none() && notedata.pending_spent().is_none() {
                                 <D::WalletNote as traits::ReceivedNoteAndMetadata>::value(notedata)
                             } else {
                                 0
@@ -1451,35 +1455,20 @@ impl LightWallet {
     }
 
     pub async fn spendable_orchard_balance(&self, target_addr: Option<String>) -> JsonValue {
-        let anchor_height = self.get_anchor_height().await;
-        #[allow(clippy::type_complexity)]
-        let filters: &[Box<
-            dyn Fn(&&ReceivedOrchardNoteAndMetadata, &TransactionMetadata) -> bool,
-        >] = &[
-            Box::new(|_, transaction| {
-                transaction.block_height <= BlockHeight::from_u32(anchor_height)
-            }),
-            Box::new(|nnmd, _| !nnmd.witnesses.is_empty()),
-        ];
-        self.shielded_balance::<OrchardDomain>(target_addr, filters)
-            .await
-            .map_or(json::JsonValue::Null, json::JsonValue::from)
+        if let Capability::Spend(_) = self.wallet_capability().read().await.orchard {
+            self.verified_balance::<OrchardDomain>(target_addr).await
+        } else {
+            JsonValue::Null
+        }
     }
 
     pub async fn spendable_sapling_balance(&self, target_addr: Option<String>) -> JsonValue {
-        let anchor_height = self.get_anchor_height().await;
-        #[allow(clippy::type_complexity)]
-        let filters: &[Box<
-            dyn Fn(&&ReceivedSaplingNoteAndMetadata, &TransactionMetadata) -> bool,
-        >] = &[
-            Box::new(|_, transaction| {
-                transaction.block_height <= BlockHeight::from_u32(anchor_height)
-            }),
-            Box::new(|nnmd, _| !nnmd.witnesses.is_empty()),
-        ];
-        self.shielded_balance::<SaplingDomain<zingoconfig::ChainType>>(target_addr, filters)
-            .await
-            .map_or(json::JsonValue::Null, json::JsonValue::from)
+        if let Capability::Spend(_) = self.wallet_capability().read().await.sapling {
+            self.verified_balance::<SaplingDomain<zingoconfig::ChainType>>(target_addr)
+                .await
+        } else {
+            JsonValue::Null
+        }
     }
 
     pub async fn tbalance(&self, addr: Option<String>) -> JsonValue {
@@ -1504,34 +1493,32 @@ impl LightWallet {
         self.transaction_context.transaction_metadata_set.clone()
     }
 
-    pub async fn unverified_orchard_balance(&self, target_addr: Option<String>) -> JsonValue {
+    async fn unverified_balance<D: DomainWalletExt>(&self, target_addr: Option<String>) -> JsonValue
+    where
+        <D as Domain>::Recipient: Recipient,
+        <D as Domain>::Note: PartialEq + Clone,
+    {
         let anchor_height = self.get_anchor_height().await;
-
         #[allow(clippy::type_complexity)]
-        let filters: &[Box<
-            dyn Fn(&&ReceivedOrchardNoteAndMetadata, &TransactionMetadata) -> bool,
-        >] = &[Box::new(|_, transaction: &TransactionMetadata| {
-            transaction.block_height > BlockHeight::from_u32(anchor_height)
-        })];
-        self.shielded_balance::<OrchardDomain>(target_addr, filters)
+        let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionMetadata) -> bool>] =
+            &[Box::new(|nnmd, transaction| {
+                transaction.block_height > BlockHeight::from_u32(anchor_height)
+                    || nnmd.pending_receipt()
+            })];
+        self.shielded_balance::<D>(target_addr, filters)
             .await
             .map_or(json::JsonValue::Null, json::JsonValue::from)
+    }
+
+    pub async fn unverified_orchard_balance(&self, target_addr: Option<String>) -> JsonValue {
+        self.unverified_balance::<OrchardDomain>(target_addr).await
     }
 
     /// The following functions use a filter/map functional approach to
     /// expressively unpack different kinds of transaction data.
     pub async fn unverified_sapling_balance(&self, target_addr: Option<String>) -> JsonValue {
-        let anchor_height = self.get_anchor_height().await;
-
-        #[allow(clippy::type_complexity)]
-        let filters: &[Box<
-            dyn Fn(&&ReceivedSaplingNoteAndMetadata, &TransactionMetadata) -> bool,
-        >] = &[Box::new(|_, transaction: &TransactionMetadata| {
-            transaction.block_height > BlockHeight::from_u32(anchor_height)
-        })];
-        self.shielded_balance::<SaplingDomain<zingoconfig::ChainType>>(target_addr, filters)
+        self.unverified_balance::<SaplingDomain<zingoconfig::ChainType>>(target_addr)
             .await
-            .map_or(json::JsonValue::Null, json::JsonValue::from)
     }
 
     async fn verified_balance<D: DomainWalletExt>(&self, target_addr: Option<String>) -> JsonValue
@@ -1541,10 +1528,12 @@ impl LightWallet {
     {
         let anchor_height = self.get_anchor_height().await;
         #[allow(clippy::type_complexity)]
-        let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionMetadata) -> bool>] =
-            &[Box::new(|_, transaction| {
+        let filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionMetadata) -> bool>] = &[
+            Box::new(|_, transaction| {
                 transaction.block_height <= BlockHeight::from_u32(anchor_height)
-            })];
+            }),
+            Box::new(|nnmd, _| !nnmd.pending_receipt()),
+        ];
         self.shielded_balance::<D>(target_addr, filters)
             .await
             .map_or(json::JsonValue::Null, json::JsonValue::from)
@@ -1574,9 +1563,10 @@ impl LightWallet {
 
         self.transaction_context
             .transaction_metadata_set
-            .read()
+            .write()
             .await
-            .write(&mut writer)?;
+            .write(&mut writer)
+            .await?;
 
         utils::write_string(
             &mut writer,
