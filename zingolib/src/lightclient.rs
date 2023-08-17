@@ -1173,7 +1173,7 @@ impl LightClient {
         file.read_to_end(&mut sapling_spend)
             .map_err(|e| e.to_string())?;
 
-        ok((sapling_output, sapling_spend))
+        Ok((sapling_output, sapling_spend))
     }
 
     pub fn set_sapling_params(
