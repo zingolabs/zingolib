@@ -1455,7 +1455,7 @@ impl LightWallet {
     }
 
     pub async fn spendable_orchard_balance(&self, target_addr: Option<String>) -> JsonValue {
-        if let Capability::Spend(_) = self.wallet_capability().read().await.orchard {
+        if let Capability::Spend(_) = self.wallet_capability().orchard {
             self.verified_balance::<OrchardDomain>(target_addr).await
         } else {
             JsonValue::Null
@@ -1463,7 +1463,7 @@ impl LightWallet {
     }
 
     pub async fn spendable_sapling_balance(&self, target_addr: Option<String>) -> JsonValue {
-        if let Capability::Spend(_) = self.wallet_capability().read().await.sapling {
+        if let Capability::Spend(_) = self.wallet_capability().sapling {
             self.verified_balance::<SaplingDomain<zingoconfig::ChainType>>(target_addr)
                 .await
         } else {
