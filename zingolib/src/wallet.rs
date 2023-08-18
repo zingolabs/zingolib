@@ -404,10 +404,8 @@ impl LightWallet {
                     .iter()
                     .map(move |note| (*transaction_id, note))
             })
-            .filter(|(_, note)| note.value() > 0)
             .filter_map(
                 |(transaction_id, note): (transaction::TxId, &D::WalletNote)| -> Option <D::SpendableNoteAT> {
-                    // Filter out notes that are already spent
                         // Get the spending key for the selected fvk, if we have it
                         let extsk = D::wc_to_sk(&wc);
                         SpendableNote::from(transaction_id, note, extsk.ok().as_ref())
@@ -420,11 +418,6 @@ impl LightWallet {
         });
         candidate_notes
     }
-
-    /*    pub fn keys(&self) -> Arc<RwLock<keys::Keys>> {
-        todo!("Remove this")
-        // compile_error!("Haven't gotten around to removing this yet")
-    }*/
 
     /// Get the height of the anchor block
     pub async fn get_anchor_height(&self) -> u32 {

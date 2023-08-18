@@ -987,13 +987,12 @@ where
         note_and_metadata: &D::WalletNote,
         spend_key: Option<&D::SpendingKey>,
     ) -> Option<Self> {
-        // Include only notes that haven't been spent, or haven't been included in an unconfirmed spend yet.
+        // Include only non-0 value notes that haven't been spent, or haven't been included in an unconfirmed spend yet.
         if note_and_metadata.spent().is_none()
             && note_and_metadata.pending_spent().is_none()
             && spend_key.is_some()
             && !note_and_metadata.pending_receipt()
-        //TODO: Account for lack of this line
-        // && note_and_metadata.witnessed_position().len() >= (anchor_offset + 1)
+            && note_and_metadata.value() != 0
         {
             Some(Self::from_parts_unchecked(
                 transaction_id,
