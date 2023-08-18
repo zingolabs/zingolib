@@ -823,7 +823,7 @@ impl TransactionMetadataSet {
         }
     }
 
-    pub(crate) async fn mark_note_position<D: DomainWalletExt>(
+    pub(crate) fn mark_note_position<D: DomainWalletExt>(
         &mut self,
         txid: TxId,
         output_index: usize,

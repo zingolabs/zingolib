@@ -269,14 +269,12 @@ impl TrialDecryptions {
             sapling_notes_to_mark_position,
             &mut txmds_writelock,
             &wc,
-        )
-        .await;
+        );
         update_witnesses::<OrchardDomain>(
             orchard_notes_to_mark_position,
             &mut txmds_writelock,
             &wc,
-        )
-        .await;
+        );
 
         // Return a nothing-value
         Ok::<(), String>(())
@@ -411,7 +409,7 @@ impl TrialDecryptions {
 }
 
 #[allow(clippy::type_complexity)]
-async fn update_witnesses<D>(
+fn update_witnesses<D>(
     notes_to_mark_position: Vec<(
         Vec<(
             usize,
@@ -442,14 +440,12 @@ async fn update_witnesses<D>(
                 block.0.into_iter().enumerate()
             {
                 if retention != Retention::Ephemeral {
-                    txmds_writelock
-                        .mark_note_position::<D>(
-                            transaction_id,
-                            output_num,
-                            position + i as u64,
-                            &D::wc_to_fvk(wc).unwrap(),
-                        )
-                        .await;
+                    txmds_writelock.mark_note_position::<D>(
+                        transaction_id,
+                        output_num,
+                        position + i as u64,
+                        &D::wc_to_fvk(wc).unwrap(),
+                    );
                 }
                 nodes_retention.push((node, retention));
             }
