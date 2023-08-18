@@ -59,7 +59,7 @@ impl TrialDecryptions {
     /// Pass keys and data store to dedicated trial_decrpytion *management* thread,
     /// the *management* thread in turns spawns per-1000-cb trial decryption threads.
     pub async fn start(
-        self: Arc<Self>,
+        &self,
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         detected_transaction_id_sender: UnboundedSender<(
             TxId,

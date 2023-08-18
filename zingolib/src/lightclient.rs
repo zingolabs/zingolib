@@ -1562,11 +1562,11 @@ impl LightClient {
                 .await;
 
         // Do Trial decryptions of all the outputs, and pass on the successful ones to the update_notes processor
-        let trial_decryptions_processor = Arc::new(TrialDecryptions::new(
+        let trial_decryptions_processor = TrialDecryptions::new(
             Arc::new(self.config.clone()),
             self.wallet.wallet_capability(),
             self.wallet.transactions(),
-        ));
+        );
         let (trial_decrypts_handle, trial_decrypts_transmitter) = trial_decryptions_processor
             .start(
                 bsync_data.clone(),
