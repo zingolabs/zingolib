@@ -187,8 +187,8 @@ impl TrialDecryptions {
                 let mut transaction_metadata = false;
 
                 if let Some(sapling_notes_to_mark_position_in_tx) =
-                    if let Some(ref sapling_ivk) = sapling_ivk {
-                        Some(Self::trial_decrypt_domain_specific_outputs::<
+                    sapling_ivk.as_ref().map(|sapling_ivk| {
+                        Self::trial_decrypt_domain_specific_outputs::<
                         SaplingDomain<zingoconfig::ChainType>,
                     >(
                         &mut transaction_metadata,
@@ -205,36 +205,30 @@ impl TrialDecryptions {
                         &transaction_metadata_set,
                         &detected_transaction_id_sender,
                         &workers,
-                    ))
-                    } else {
-                        None
-                    }
+                    )
+                    })
                 {
                     sapling_notes_to_mark_position_in_block
                         .extend_from_slice(&sapling_notes_to_mark_position_in_tx)
                 };
 
                 if let Some(orchard_notes_to_mark_position_in_tx) =
-                    if let Some(ref orchard_ivk) = orchard_ivk {
-                        Some(
-                            Self::trial_decrypt_domain_specific_outputs::<OrchardDomain>(
-                                &mut transaction_metadata,
-                                compact_transaction,
-                                transaction_num,
-                                &compact_block,
-                                orchard::keys::PreparedIncomingViewingKey::new(orchard_ivk),
-                                height,
-                                &config,
-                                &wc,
-                                &bsync_data,
-                                &transaction_metadata_set,
-                                &detected_transaction_id_sender,
-                                &workers,
-                            ),
+                    orchard_ivk.as_ref().map(|orchard_ivk| {
+                        Self::trial_decrypt_domain_specific_outputs::<OrchardDomain>(
+                            &mut transaction_metadata,
+                            compact_transaction,
+                            transaction_num,
+                            &compact_block,
+                            orchard::keys::PreparedIncomingViewingKey::new(orchard_ivk),
+                            height,
+                            &config,
+                            &wc,
+                            &bsync_data,
+                            &transaction_metadata_set,
+                            &detected_transaction_id_sender,
+                            &workers,
                         )
-                    } else {
-                        None
-                    }
+                    })
                 {
                     orchard_notes_to_mark_position_in_block
                         .extend_from_slice(&orchard_notes_to_mark_position_in_tx)
@@ -279,7 +273,7 @@ impl TrialDecryptions {
         // Return a nothing-value
         Ok::<(), String>(())
     }
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
     fn trial_decrypt_domain_specific_outputs<D>(
         transaction_metadata: &mut bool,
         compact_transaction: &CompactTx,
