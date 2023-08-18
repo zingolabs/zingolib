@@ -70,4 +70,4 @@ There is an experimental feature flag available with `zingo-cli`, in which the c
 
 For a relatively recent user experience please see: https://free2z.cash/zingo-cli-in-regtest-mode
 
-Please see `zingo-testutils/regtest/README.md` for a detailed explanation.
+Please see `docs/TEST_REGTEST.md` for a detailed explanation.

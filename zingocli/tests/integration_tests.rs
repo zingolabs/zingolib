@@ -4,7 +4,7 @@ pub mod darkside;
 use orchard::tree::MerkleHashOrchard;
 use shardtree::{memory::MemoryShardStore, ShardTree};
 use std::{fs::File, path::Path};
-use zingo_testutils::{self, build_fvk_client_and_capability, data};
+use zingo_testutils::{self, build_fvk_client, data};
 
 use bip0039::Mnemonic;
 use data::seeds::HOSPITAL_MUSEUM_SEED;
@@ -377,12 +377,7 @@ async fn test_scanning_in_watch_only_mode() {
     check_client_balances!(original_recipient, o: sent_o_value s: sent_s_value t: sent_t_value);
 
     // Extract viewing keys
-    let wallet_capability = original_recipient
-        .wallet
-        .wallet_capability()
-        .read()
-        .await
-        .clone();
+    let wallet_capability = original_recipient.wallet.wallet_capability().clone();
     let [o_fvk, s_fvk, t_fvk] =
         zingo_testutils::build_fvks_from_wallet_capability(&wallet_capability);
     let fvks_sets = vec![
@@ -399,7 +394,8 @@ async fn test_scanning_in_watch_only_mode() {
         log::info!("    sapling fvk: {}", fvks.contains(&&s_fvk));
         log::info!("    transparent fvk: {}", fvks.contains(&&t_fvk));
 
-        let (watch_client, watch_wc) = build_fvk_client_and_capability(fvks, &zingo_config).await;
+        let watch_client = build_fvk_client(fvks, &zingo_config).await;
+        let watch_wc = watch_client.wallet.wallet_capability();
         // assert empty wallet before rescan
         let balance = watch_client.do_balance().await;
         check_expected_balance_with_fvks(fvks, balance, 0, 0, 0);
@@ -1069,10 +1065,9 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
         .build_newseed_client(seed_phrase_of_recipient1, 0, false)
         .await;
     let mut expected_unspent_sapling_notes = json::object! {
-
             "created_in_block" =>  2,
-            "datetime" =>  1666631643,
-            "created_in_txid" => "4eeaca8d292f07f9cbe26a276f7658e75f0ef956fb21646e3907e912c5af1ec5",
+            "datetime" =>  0,
+            "created_in_txid" => "",
             "value" =>  14_000,
             "unconfirmed" =>  false,
             "is_change" =>  false,
@@ -1081,7 +1076,6 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
             "spent" =>  JsonValue::Null,
             "spent_at_height" =>  JsonValue::Null,
             "unconfirmed_spent" =>  JsonValue::Null,
-
     };
     let original_recipient_address = "\
         uregtest1qtqr46fwkhmdn336uuyvvxyrv0l7trgc0z9clpryx6vtladnpyt4wvq99p59f4rcyuvpmmd0hm4k5vv6j\
@@ -1092,10 +1086,10 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
             &get_base_address!(recipient1, "unified"),
             &original_recipient_address
         );
-        let recipient_addr = recipient1.do_new_address("tz").await.unwrap();
+        let recipient1_diversified_addr = recipient1.do_new_address("tz").await.unwrap();
         faucet
             .do_send(vec![(
-                recipient_addr[0].as_str().unwrap(),
+                recipient1_diversified_addr[0].as_str().unwrap(),
                 14_000,
                 Some("foo".to_string()),
             )])
@@ -1180,6 +1174,80 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
         recipient_restored.do_seed_phrase().await.unwrap()
     };
     assert_eq!(seed_of_recipient, seed_of_recipient_restored);
+}
+
+#[tokio::test]
+async fn diversification_deterministic_and_coherent() {
+    let (_regtest_manager, _cph, mut client_builder) = scenarios::custom_clients();
+    let seed_phrase = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
+        .unwrap()
+        .to_string();
+    let recipient1 = client_builder
+        .build_newseed_client(seed_phrase, 0, false)
+        .await;
+    let base_transparent_receiver = "tmS9nbexug7uT8x1cMTLP1ABEyKXpMjR5F1";
+    assert_eq!(
+        &get_base_address!(recipient1, "transparent"),
+        &base_transparent_receiver
+    );
+    let base_sapling_receiver = "\
+        zregtestsapling1lhjvuj4s3ghhccnjaefdzuwp3h3mfluz6tm8h0dsq2ym3f77zsv0wrrszpmaqlezm3kt6ajdvlw";
+    assert_eq!(
+        &get_base_address!(recipient1, "sapling"),
+        &base_sapling_receiver
+    );
+    // Verify that the provided seed generates the expected uregtest1qtqr46..  unified address (UA)
+    let base_unified_address = "\
+        uregtest1qtqr46fwkhmdn336uuyvvxyrv0l7trgc0z9clpryx6vtladnpyt4wvq99p59f4rcyuvpmmd0hm4k5vv6j8\
+        edj6n8ltk45sdkptlk7rtzlm4uup4laq8ka8vtxzqemj3yhk6hqhuypupzryhv66w65lah9ms03xa8nref7gux2zzhj\
+        nfanxnnrnwscmz6szv2ghrurhu3jsqdx25y2yh";
+    assert_eq!(
+        &get_base_address!(recipient1, "unified"),
+        &base_unified_address
+    );
+
+    //Verify that 1 increment of diversification with a tz receiver set produces uregtest1m8un60u... UA
+    let new_address = recipient1.do_new_address("tzo").await.unwrap();
+    let ua_index_1 = recipient1.do_addresses().await[1].clone();
+    let ua_address_index_1 = ua_index_1["address"].clone().to_string();
+    assert_eq!(&new_address[0].to_string(), &ua_address_index_1);
+    let sapling_index_1 = ua_index_1["receivers"]["sapling"].clone().to_string();
+    let transparent_index_1 = ua_index_1["receivers"]["transparent"].clone().to_string();
+    let ua_address_index_1_match = ua_address_index_1
+        == "\
+            uregtest1yhu9ke9hung002w5vcez7y6fe7sgqe4rnc3l2tqyz3yqctmtays6peukkhj2lx45urq666h4dpduz0\
+            rjzlmky7cuayj285d003futaljg355tz94l6xnklk5kgthe2x942s3qkxedypsadla56fjx4e5nca9672jmxekj\
+            pp94ahz0ax963r2v9wwxfzadnzt3fgwa8pytdhcy4l6z0h";
+    let sapling_index_1_match = sapling_index_1
+        == "zregtestsapling14wl6gy5h2tg528znyrqayfh2sekntk3lvmwsw68wjz2g205t62sv5xeyzvfk4hlxdwd9gh4ws9n";
+    let transparent_index_1_match = transparent_index_1 == "tmQuMoTTjU3GFfTjrhPiBYihbTVfYmPk5Gr";
+
+    //  Show orchard diversification is working (regardless of other diversifiers, both previous and other-pool).
+    let new_orchard_only_address = recipient1.do_new_address("o").await.unwrap();
+    let ua_address_index_2 = new_orchard_only_address[0].to_string();
+    let ua_2_orchard_match = ua_address_index_2 ==  "\
+        uregtest1yyw480060mdzvnfpfayfhackhgh0jjsuq5lfjf9u68hulmn9efdalmz583xlq6pt8lmyylky6p2usx57lfv7tqu9j0tqqs8asq25p49n";
+    assert!(
+        ua_address_index_1_match && sapling_index_1_match && transparent_index_1_match,
+        "\n\
+            ua_1, match: {} Observed:\n\
+            {}\n\n\
+            sapling_1, match: {} Observed:\n\
+            {}\n\n\
+            transparent_1, match: {} Observed:\n\
+            {}\n\n\
+            ua_address_index_2, match: {} Observed:\n\
+            {}\n
+        ",
+        ua_address_index_1_match,
+        ua_address_index_1,
+        sapling_index_1_match,
+        sapling_index_1,
+        transparent_index_1_match,
+        transparent_index_1,
+        ua_2_orchard_match,
+        ua_address_index_2
+    );
 }
 
 #[tokio::test]
@@ -1447,7 +1515,7 @@ async fn load_wallet_from_v26_dat_file() {
     assert_eq!(wallet.mnemonic(), Some(&expected_mnemonic));
 
     let expected_wc = WalletCapability::new_from_phrase(&config, &expected_mnemonic, 0).unwrap();
-    let wc = wallet.wallet_capability().read().await.clone();
+    let wc = wallet.wallet_capability();
 
     // We don't want the WalletCapability to impl. `Eq` (because it stores secret keys)
     // so we have to compare each component instead
@@ -1482,7 +1550,7 @@ async fn load_wallet_from_v26_dat_file() {
     );
 
     assert_eq!(wc.addresses().len(), 3);
-    for addr in wc.addresses() {
+    for addr in wc.addresses().iter() {
         assert!(addr.orchard().is_some());
         assert!(addr.sapling().is_some());
         assert!(addr.transparent().is_some());
@@ -2083,12 +2151,7 @@ async fn sapling_incoming_sapling_outgoing() {
         addresses[0]["receivers"]["sapling"],
         encode_payment_address(
             recipient.config().chain.hrp_sapling_payment_address(),
-            recipient
-                .wallet
-                .wallet_capability()
-                .read()
-                .await
-                .addresses()[0]
+            recipient.wallet.wallet_capability().addresses()[0]
                 .sapling()
                 .unwrap()
         ),
@@ -2106,13 +2169,7 @@ async fn sapling_incoming_sapling_outgoing() {
         assert_eq!(faucet_sent_transaction["amount"].as_u64().unwrap(), value);
         assert_eq!(
             faucet_sent_transaction["address"],
-            recipient
-                .wallet
-                .wallet_capability()
-                .read()
-                .await
-                .addresses()[0]
-                .encode(&recipient.config().chain)
+            recipient.wallet.wallet_capability().addresses()[0].encode(&recipient.config().chain)
         );
         assert_eq!(faucet_sent_transaction["block_height"].as_u64().unwrap(), 2);
     } else {

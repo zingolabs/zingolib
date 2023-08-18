@@ -7,10 +7,7 @@ use tokio::join;
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::oneshot;
-use tokio::{
-    sync::{mpsc::UnboundedSender, RwLock},
-    task::JoinHandle,
-};
+use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle};
 
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::consensus::BranchId;
@@ -19,7 +16,7 @@ use zcash_primitives::transaction::Transaction;
 use zingoconfig::ZingoConfig;
 
 pub struct FetchTaddrTransactions {
-    wc: Arc<RwLock<WalletCapability>>,
+    wc: Arc<WalletCapability>,
     config: Arc<ZingoConfig>,
 }
 
@@ -30,7 +27,7 @@ pub type FetchTaddrRequest = (Vec<String>, u64, u64);
 pub type FetchTaddrResponse = Result<RawTransaction, String>;
 
 impl FetchTaddrTransactions {
-    pub fn new(wc: Arc<RwLock<WalletCapability>>, config: Arc<ZingoConfig>) -> Self {
+    pub fn new(wc: Arc<WalletCapability>, config: Arc<ZingoConfig>) -> Self {
         Self { wc, config }
     }
 
@@ -49,8 +46,6 @@ impl FetchTaddrTransactions {
         let config = self.config.clone();
         tokio::spawn(async move {
             let taddrs = wc
-                .read()
-                .await
                 .addresses()
                 .iter()
                 .filter_map(|ua| ua.transparent())

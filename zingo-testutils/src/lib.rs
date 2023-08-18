@@ -4,7 +4,6 @@ use zcash_address::unified::{Fvk, Ufvk};
 use zingolib::wallet::keys::unified::WalletCapability;
 use zingolib::wallet::WalletBase;
 pub mod regtest;
-use std::fs::OpenOptions;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::string::String;
@@ -13,7 +12,6 @@ use std::time::Duration;
 use json::JsonValue;
 use log::debug;
 use regtest::RegtestManager;
-use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 use zingoconfig::{ChainType, ZingoConfig};
 use zingolib::lightclient::LightClient;
@@ -39,10 +37,7 @@ pub fn build_fvks_from_wallet_capability(wallet_capability: &WalletCapability) -
     let t_fvk = Fvk::P2pkh(t_fvk_bytes);
     [o_fvk, s_fvk, t_fvk]
 }
-pub async fn build_fvk_client_and_capability(
-    fvks: &[&Fvk],
-    zingoconfig: &ZingoConfig,
-) -> (LightClient, WalletCapability) {
+pub async fn build_fvk_client(fvks: &[&Fvk], zingoconfig: &ZingoConfig) -> LightClient {
     let ufvk = zcash_address::unified::Encoding::encode(
         &<Ufvk as zcash_address::unified::Encoding>::try_from_items(
             fvks.iter().copied().cloned().collect(),
@@ -50,104 +45,9 @@ pub async fn build_fvk_client_and_capability(
         .unwrap(),
         &zcash_address::Network::Regtest,
     );
-    let viewkey_client =
-        LightClient::create_unconnected(zingoconfig, WalletBase::Ufvk(ufvk), 0).unwrap();
-    let watch_wc = viewkey_client
-        .wallet
-        .wallet_capability()
-        .read()
-        .await
-        .clone();
-    (viewkey_client, watch_wc)
+    LightClient::create_unconnected(zingoconfig, WalletBase::Ufvk(ufvk), 0).unwrap()
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub struct DurationAnnotation {
-    pub timestamp: u64,
-    pub git_description: String,
-    pub test_name: String,
-    pub duration: Duration,
-}
-impl DurationAnnotation {
-    pub fn new(test_name: String, duration: Duration) -> Self {
-        DurationAnnotation {
-            timestamp: timestamp(),
-            git_description: git_description(),
-            test_name,
-            duration,
-        }
-    }
-}
-impl std::fmt::Display for DurationAnnotation {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            r#""test_name": {}, "timestamp": {}, "git_description": {}, "duration": {}"#,
-            self.test_name,
-            self.timestamp,
-            self.git_description,
-            self.duration.as_millis() as u64
-        )
-    }
-}
-fn git_description() -> String {
-    std::str::from_utf8(
-        &std::process::Command::new("git")
-            .arg("describe")
-            .arg("--dirty")
-            .output()
-            .unwrap()
-            .stdout,
-    )
-    .unwrap()
-    .to_string()
-    .trim_end_matches('\n')
-    .to_string()
-}
-fn timestamp() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
-}
-fn path_to_times(file_name: PathBuf) -> PathBuf {
-    let timing_dir = PathBuf::from(
-        std::env::var("CARGO_MANIFEST_DIR").expect("To be inside a manifested space."),
-    )
-    .join("tests/times");
-    timing_dir.join(file_name)
-}
-pub fn read_duration_annotation_file(target: PathBuf) -> Vec<DurationAnnotation> {
-    let data_set: Vec<DurationAnnotation> = if let Ok(data) = std::fs::read_to_string(target) {
-        serde_json::from_str(&data[..]).expect("To deserialize a string")
-    } else {
-        vec![]
-    };
-    data_set
-}
-pub fn get_duration_annotations(storage_file: PathBuf) -> Vec<DurationAnnotation> {
-    read_duration_annotation_file(storage_file)
-}
-pub fn record_time(annotation: &DurationAnnotation) {
-    let storage_location =
-        path_to_times(PathBuf::from("sync_duration_annotation.json".to_string()));
-    let mut data_set = get_duration_annotations(storage_location.clone());
-    data_set.push(annotation.clone());
-
-    //let json_dataset = array!(data_set);
-    let mut time_file = OpenOptions::new()
-        .create(true)
-        .write(true)
-        .open(storage_location)
-        .expect("to access a data_store file");
-    std::io::Write::write_all(
-        &mut time_file,
-        serde_json::to_string(&data_set)
-            .expect("to serialiaze")
-            .as_bytes(),
-    )
-    .expect("To write out a new data vector");
-}
 async fn get_synced_wallet_height(client: &LightClient) -> Result<u32, String> {
     client.do_sync(true).await?;
     Ok(client
@@ -758,45 +658,12 @@ pub mod scenarios {
     }
 
     pub mod chainload {
-        use crate::{build_fvk_client_and_capability, build_fvks_from_wallet_capability};
-
         use super::*;
 
         pub async fn unsynced_basic() -> ChildProcessHandler {
             setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain()
                 .child_process_handler
                 .unwrap()
-        }
-        pub async fn unsynced_viewonlyclient_1153(
-        ) -> (RegtestManager, ChildProcessHandler, LightClient) {
-            let mut sb = setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain();
-            let zingo_config = zingolib::load_clientconfig(
-                sb.client_builder.server_id.clone(),
-                Some(sb.client_builder.zingo_datadir.clone()),
-                zingoconfig::ChainType::Regtest,
-                true,
-            )
-            .unwrap();
-            // Create a lightclient to extract a capability from.
-            let original_recipient = sb.client_builder.build_new_faucet(0, false).await;
-            // Extract viewing keys
-            let wallet_capability = original_recipient
-                .wallet
-                .wallet_capability()
-                .read()
-                .await
-                .clone();
-            // Delete the client after getting the capability.
-            drop(original_recipient);
-            // Extract the orchard fvk
-            let [o_fvk, s_fvk, t_fvk] = build_fvks_from_wallet_capability(&wallet_capability);
-            let (viewing_client, _) =
-                build_fvk_client_and_capability(&[&o_fvk, &s_fvk, &t_fvk], &zingo_config).await;
-            (
-                sb.regtest_manager,
-                sb.child_process_handler.unwrap(),
-                viewing_client,
-            )
         }
         pub async fn faucet_recipient_1153() -> (
             RegtestManager,
@@ -839,18 +706,5 @@ pub mod scenarios {
                 recipient,
             )
         }
-    }
-}
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn deserialize_json_into_duration_annotation() {
-        let test_name = String::from("test_test_name");
-        let ta = DurationAnnotation::new(test_name, Duration::from_millis(1_000));
-        let ta2 = ta.clone();
-        let ta_serde_json = serde_json::to_value(ta).unwrap();
-        let ta: DurationAnnotation = serde_json::from_value(ta_serde_json).unwrap();
-        assert_eq!(ta, ta2);
     }
 }

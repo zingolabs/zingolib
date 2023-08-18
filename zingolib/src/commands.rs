@@ -27,6 +27,22 @@ pub trait Command {
 pub trait ShortCircuitedCommand {
     fn exec_without_lc(args: Vec<String>) -> String;
 }
+struct GetVersionCommand {}
+impl Command for GetVersionCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Return the git describe --dirty of the repo at build time.
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Get verion of build code"
+    }
+
+    fn exec(&self, _args: &[&str], _lightclient: &LightClient) -> String {
+        crate::git_description().to_string()
+    }
+}
 struct ChangeServerCommand {}
 impl Command for ChangeServerCommand {
     fn help(&self) -> &'static str {
@@ -100,8 +116,7 @@ impl Command for WalletKindCommand {
             if lightclient.do_seed_phrase().await.is_ok() {
                 object! {"kind" => "Seeded"}.pretty(4)
             } else {
-                let capability_arc = lightclient.wallet.wallet_capability();
-                let capability = capability_arc.read().await;
+                let capability = lightclient.wallet.wallet_capability();
                 object! {
                     "kind" => "Loaded from key",
                     "transparent" => capability.transparent.kind_str(),
@@ -596,8 +611,7 @@ impl Command for ExportUfvkCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        let key = RT.block_on(lightclient.wallet.transaction_context.key.read());
-        let ufvk_res = key.ufvk();
+        let ufvk_res = lightclient.wallet.transaction_context.key.ufvk();
         match ufvk_res {
             Ok(ufvk) => {
                 use zcash_address::unified::Encoding as _;
@@ -1402,7 +1416,8 @@ impl Command for QuitCommand {
 }
 
 pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
-    let entries: [(&'static str, Box<dyn Command>); 35] = [
+    let entries: [(&'static str, Box<dyn Command>); 36] = [
+        (("version"), Box::new(GetVersionCommand {})),
         ("sync", Box::new(SyncCommand {})),
         ("syncstatus", Box::new(SyncStatusCommand {})),
         ("encryptmessage", Box::new(EncryptMessageCommand {})),

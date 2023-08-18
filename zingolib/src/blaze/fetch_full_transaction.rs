@@ -42,14 +42,14 @@ use zingoconfig::{ChainType, ZingoConfig};
 #[derive(Clone)]
 pub struct TransactionContext {
     pub(crate) config: ZingoConfig,
-    pub(crate) key: Arc<RwLock<WalletCapability>>,
+    pub(crate) key: Arc<WalletCapability>,
     pub transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
 }
 
 impl TransactionContext {
     pub fn new(
         config: &ZingoConfig,
-        key: Arc<RwLock<WalletCapability>>,
+        key: Arc<WalletCapability>,
         transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
     ) -> Self {
         Self {
@@ -116,7 +116,7 @@ impl TransactionContext {
         // Remember if this is an outgoing Tx. Useful for when we want to grab the outgoing metadata.
         let mut is_outgoing_transaction = false;
         // Collect our t-addresses for easy checking
-        let taddrs_set = self.key.read().await.get_all_taddrs(&self.config);
+        let taddrs_set = self.key.get_all_taddrs(&self.config);
         // Process t-address outputs
         // If this transaction in outgoing, i.e., we received sent some money in this transaction, then we need to grab all transparent outputs
         // that don't belong to us as the outgoing metadata
@@ -454,7 +454,6 @@ impl TransactionContext {
         //     1. There's more than one way to be "spent".
         //     2. It's possible for a "nullifier" to be in the wallet's spent list, but never in the global ledger.
         //     <https://github.com/zingolabs/zingolib/issues/65>
-        let unified_spend_capability = self.key.read().await;
         let domain_tagged_outputs =
             <FnGenBundle<D> as zingo_traits::Bundle<D>>::from_transaction(transaction)
                 .into_iter()
@@ -468,8 +467,8 @@ impl TransactionContext {
                 .collect::<Vec<_>>();
 
         let (Ok(ivk), Ok(ovk)) = (
-            D::wc_to_ivk(&unified_spend_capability),
-            D::wc_to_ovk(&unified_spend_capability),
+            D::wc_to_ivk(&self.key),
+            D::wc_to_ovk(&self.key),
         ) else {
             // skip scanning if wallet has not viewing capability
             return;
@@ -545,36 +544,34 @@ impl TransactionContext {
                         match Memo::from_bytes(&memo_bytes.to_bytes()) {
                             Err(_) => None,
                             Ok(memo) => {
-                                if unified_spend_capability.addresses().iter().any(
-                                    |unified_address| {
-                                        [
-                                            unified_address
-                                                .transparent()
-                                                .cloned()
-                                                .map(RecipientAddress::from),
-                                            unified_address
-                                                .sapling()
-                                                .cloned()
-                                                .map(RecipientAddress::from),
-                                            unified_address.orchard().cloned().map(
-                                                |orchard_receiver| {
-                                                    RecipientAddress::from(
-                                                        UnifiedAddress::from_receivers(
-                                                            Some(orchard_receiver),
-                                                            None,
-                                                            None,
-                                                        )
-                                                        .unwrap(),
+                                if self.key.addresses().iter().any(|unified_address| {
+                                    [
+                                        unified_address
+                                            .transparent()
+                                            .cloned()
+                                            .map(RecipientAddress::from),
+                                        unified_address
+                                            .sapling()
+                                            .cloned()
+                                            .map(RecipientAddress::from),
+                                        unified_address.orchard().cloned().map(
+                                            |orchard_receiver| {
+                                                RecipientAddress::from(
+                                                    UnifiedAddress::from_receivers(
+                                                        Some(orchard_receiver),
+                                                        None,
+                                                        None,
                                                     )
-                                                },
-                                            ),
-                                        ]
-                                        .into_iter()
-                                        .flatten()
-                                        .map(|addr| addr.encode(&self.config.chain))
-                                        .any(|addr| addr == address)
-                                    },
-                                ) {
+                                                    .unwrap(),
+                                                )
+                                            },
+                                        ),
+                                    ]
+                                    .into_iter()
+                                    .flatten()
+                                    .map(|addr| addr.encode(&self.config.chain))
+                                    .any(|addr| addr == address)
+                                }) {
                                     if let Memo::Text(_) = memo {
                                         Some(OutgoingTxData {
                                             to_address: address,

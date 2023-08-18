@@ -69,6 +69,9 @@ indoc = "2.0.1"
 shardtree = { workspace = true }
 derive_more = "0.99.17"
 either = "1.8.1"
+
+append-only-vec = { git = "https://github.com/zancas/append-only-vec.git", branch = "add_debug_impl" }
+
 [dev-dependencies]
 portpicker = "0.1.0"
 tempfile = "3.3.0"
