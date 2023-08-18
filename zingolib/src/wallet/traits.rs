@@ -403,6 +403,9 @@ impl Nullifier for orchard::note::Nullifier {
     }
 }
 
+/// "Received" because this data is eventually chain-retrievable
+/// "Note" because this contains the Note itself
+/// "AndMetaData" everything that the client will eventually know about the note
 pub trait ReceivedNoteAndMetadata: Sized {
     type Diversifier: Copy + FromBytes<11> + ToBytes<11>;
 

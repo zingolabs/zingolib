@@ -583,6 +583,8 @@ impl TransactionMetadataSet {
 
         self.check_notes_mark_change(&txid);
     }
+    /// A mark designates a leaf as non-ephemeral, mark removal causes
+    /// the leaf to eventually transition to the ephemeral state
     pub fn remove_mark_sapling(
         &mut self,
         height: BlockHeight,
