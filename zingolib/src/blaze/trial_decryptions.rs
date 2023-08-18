@@ -205,7 +205,7 @@ impl TrialDecryptions {
                         &transaction_metadata_set,
                         &detected_transaction_id_sender,
                         &workers,
-                    ).await)
+                    ))
                     } else {
                         None
                     }
@@ -230,8 +230,7 @@ impl TrialDecryptions {
                                 &transaction_metadata_set,
                                 &detected_transaction_id_sender,
                                 &workers,
-                            )
-                            .await,
+                            ),
                         )
                     } else {
                         None
@@ -283,7 +282,7 @@ impl TrialDecryptions {
         Ok::<(), String>(())
     }
     #[allow(clippy::too_many_arguments)]
-    async fn trial_decrypt_domain_specific_outputs<D>(
+    fn trial_decrypt_domain_specific_outputs<D>(
         transaction_metadata: &mut bool,
         compact_transaction: &CompactTx,
         transaction_num: usize,
