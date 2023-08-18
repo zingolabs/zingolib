@@ -144,9 +144,9 @@ pub async fn increase_height_and_sync_client(
         .as_u32()
         .unwrap();
     let target = start_height + n;
-    dbg!(manager
+    manager
         .generate_n_blocks(n)
-        .expect("Called for side effect, failed!"));
+        .expect("Called for side effect, failed!");
     assert_eq!(
         json::parse(
             std::str::from_utf8(
@@ -212,7 +212,6 @@ pub async fn load_wallet(
     chaintype: ChainType,
 ) -> (zingolib::wallet::LightWallet, ZingoConfig) {
     let wallet = dir.join("zingo-wallet.dat");
-    println!("The wallet is: {}", &wallet.to_str().unwrap());
     let lightwalletd_uri = TestEnvironmentGenerator::new(None).get_lightwalletd_uri();
     let zingo_config =
         zingolib::load_clientconfig(lightwalletd_uri, Some(dir), chaintype, true).unwrap();

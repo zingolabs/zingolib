@@ -254,7 +254,7 @@ impl TransactionMetadataSet {
 
     // During reorgs, we need to remove all txns at a given height, and all spends that refer to any removed txns.
     pub fn remove_txns_at_height(&mut self, reorg_height: u64) {
-        let reorg_height = dbg!(BlockHeight::from_u32(reorg_height as u32));
+        let reorg_height = BlockHeight::from_u32(reorg_height as u32);
 
         // First, collect txids that need to be removed
         let txids_to_remove = self
@@ -564,7 +564,6 @@ impl TransactionMetadataSet {
 
         // Mark the source note as spent
         if !unconfirmed {
-            println!("Removing mark for height {height:?}");
             D::WalletNote::remove_witness_mark(self, height, txid, source_txid, nullifier)
         }
     }
