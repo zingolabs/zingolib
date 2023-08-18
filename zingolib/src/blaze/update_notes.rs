@@ -41,8 +41,6 @@ impl UpdateNotes {
         &self,
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         fetch_full_sender: UnboundedSender<(TxId, BlockHeight)>,
-        //TODO: Either use this, or remove it
-        _use_witnesses: bool,
     ) -> (
         JoinHandle<Result<(), String>>,
         oneshot::Sender<u64>,
