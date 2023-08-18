@@ -12,7 +12,7 @@ use incrementalmerkletree::{
 };
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
 use zcash_note_encryption::Domain;
-use zingoconfig::{ChainType, ZingoConfig};
+use zingoconfig::ChainType;
 
 use futures::future::join_all;
 use http::Uri;
@@ -26,7 +26,7 @@ use tokio::{
     time::sleep,
 };
 use zcash_primitives::{
-    consensus::{BlockHeight, NetworkUpgrade, Parameters},
+    consensus::BlockHeight,
     merkle_tree::{read_commitment_tree, write_commitment_tree, HashSer},
     sapling::note_encryption::SaplingDomain,
 };
@@ -60,14 +60,11 @@ pub struct BlockAndWitnessData {
 
     // Link to the syncstatus where we can update progress
     sync_status: Arc<RwLock<BatchSyncStatus>>,
-
-    sapling_activation_height: u64,
-    orchard_activation_height: u64,
 }
 
 pub const BATCHSIZE: u32 = 25;
 impl BlockAndWitnessData {
-    pub fn new(config: &ZingoConfig, sync_status: Arc<RwLock<BatchSyncStatus>>) -> Self {
+    pub fn new(sync_status: Arc<RwLock<BatchSyncStatus>>) -> Self {
         Self {
             blocks_in_current_batch: Arc::new(RwLock::new(vec![])),
             existing_blocks: Arc::new(RwLock::new(vec![])),
@@ -75,18 +72,12 @@ impl BlockAndWitnessData {
             batch_size: BATCHSIZE,
             highest_verified_trees: None,
             sync_status,
-            sapling_activation_height: config.sapling_activation_height(),
-            orchard_activation_height: config
-                .chain
-                .activation_height(NetworkUpgrade::Nu5)
-                .unwrap()
-                .into(),
         }
     }
 
     #[cfg(test)]
-    pub fn new_with_batchsize(config: &ZingoConfig, batch_size: u32) -> Self {
-        let mut s = Self::new(config, Arc::new(RwLock::new(BatchSyncStatus::default())));
+    pub fn new_with_batchsize(batch_size: u32) -> Self {
+        let mut s = Self::new(Arc::new(RwLock::new(BatchSyncStatus::default())));
         s.batch_size = batch_size;
 
         s
@@ -609,41 +600,6 @@ impl BlockAndWitnessData {
 
         Err("Not found!".to_string())
     }
-    #[allow(dead_code)]
-    pub async fn get_sapling_note_witness(
-        &self,
-        uri: Uri,
-        height: BlockHeight,
-        transaction_num: usize,
-        output_num: usize,
-    ) -> Result<IncrementalWitness<zcash_primitives::sapling::Node, 32>, String> {
-        self.get_note_witness::<SaplingDomain<zingoconfig::ChainType>>(
-            uri,
-            height,
-            transaction_num,
-            output_num,
-            self.sapling_activation_height,
-        )
-        .await
-    }
-
-    #[allow(dead_code)]
-    pub async fn get_orchard_note_witness(
-        &self,
-        uri: Uri,
-        height: BlockHeight,
-        transaction_num: usize,
-        action_num: usize,
-    ) -> Result<IncrementalWitness<MerkleHashOrchard, 32>, String> {
-        self.get_note_witness::<OrchardDomain>(
-            uri,
-            height,
-            transaction_num,
-            action_num,
-            self.orchard_activation_height,
-        )
-        .await
-    }
 }
 
 fn is_orchard_tree_verified(determined_orchard_tree: String, unverified_tree: TreeState) -> bool {
@@ -748,7 +704,7 @@ mod test {
     use crate::{blaze::test_utils::FakeCompactBlock, wallet::data::BlockData};
     use orchard::tree::MerkleHashOrchard;
     use zcash_primitives::block::BlockHash;
-    use zingoconfig::{ChainType, ZingoConfig};
+    use zingoconfig::ChainType;
 
     use super::*;
 
@@ -770,10 +726,7 @@ mod test {
 
     #[tokio::test]
     async fn verify_block_and_witness_data_blocks_order() {
-        let mut scenario_bawd = BlockAndWitnessData::new_with_batchsize(
-            &ZingoConfig::create_unconnected(ChainType::FakeMainnet, None),
-            25_000,
-        );
+        let mut scenario_bawd = BlockAndWitnessData::new_with_batchsize(25_000);
 
         for numblocks in [0, 1, 2, 10] {
             let existing_blocks = make_fake_block_list(numblocks);
@@ -803,10 +756,7 @@ mod test {
 
     #[tokio::test]
     async fn setup_finish_large() {
-        let mut nw = BlockAndWitnessData::new_with_batchsize(
-            &ZingoConfig::create_unconnected(ChainType::FakeMainnet, None),
-            25_000,
-        );
+        let mut nw = BlockAndWitnessData::new_with_batchsize(25_000);
 
         let existing_blocks = make_fake_block_list(200);
         nw.setup_sync(existing_blocks.clone(), None).await;
@@ -824,8 +774,6 @@ mod test {
 
     #[tokio::test]
     async fn from_sapling_genesis() {
-        let config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, None);
-
         let blocks = make_fake_block_list(200);
 
         // Blocks are in reverse order
@@ -835,7 +783,7 @@ mod test {
         let end_block = blocks.last().unwrap().height;
 
         let sync_status = Arc::new(RwLock::new(BatchSyncStatus::default()));
-        let mut nw = BlockAndWitnessData::new(&config, sync_status);
+        let mut nw = BlockAndWitnessData::new(sync_status);
         nw.setup_sync(vec![], None).await;
 
         let (reorg_transmitter, mut reorg_receiver) = mpsc::unbounded_channel();
@@ -873,8 +821,6 @@ mod test {
 
     #[tokio::test]
     async fn with_existing_batched() {
-        let config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, None);
-
         let mut blocks = make_fake_block_list(200);
 
         // Blocks are in reverse order
@@ -886,7 +832,7 @@ mod test {
         let start_block = blocks.first().unwrap().height;
         let end_block = blocks.last().unwrap().height;
 
-        let mut nw = BlockAndWitnessData::new_with_batchsize(&config, 25);
+        let mut nw = BlockAndWitnessData::new_with_batchsize(25);
         nw.setup_sync(existing_blocks, None).await;
 
         let (reorg_transmitter, mut reorg_receiver) = mpsc::unbounded_channel();
@@ -931,8 +877,6 @@ mod test {
 
     #[tokio::test]
     async fn with_reorg() {
-        let config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, None);
-
         let mut blocks = make_fake_block_list(100);
 
         // Blocks are in reverse order
@@ -984,7 +928,7 @@ mod test {
         let end_block = blocks.last().unwrap().height;
 
         let sync_status = Arc::new(RwLock::new(BatchSyncStatus::default()));
-        let mut nw = BlockAndWitnessData::new(&config, sync_status);
+        let mut nw = BlockAndWitnessData::new(sync_status);
         nw.setup_sync(existing_blocks, None).await;
 
         let (reorg_transmitter, mut reorg_receiver) = mpsc::unbounded_channel();
@@ -1058,10 +1002,7 @@ mod test {
 
     #[tokio::test]
     async fn setup_finish_simple() {
-        let mut nw = BlockAndWitnessData::new_with_batchsize(
-            &ZingoConfig::create_unconnected(ChainType::FakeMainnet, None),
-            25_000,
-        );
+        let mut nw = BlockAndWitnessData::new_with_batchsize(25_000);
 
         let cb = FakeCompactBlock::new(1, BlockHash([0u8; 32])).into_cb();
         let blks = vec![BlockData::new(cb)];

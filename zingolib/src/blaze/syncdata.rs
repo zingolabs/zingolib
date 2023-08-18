@@ -23,7 +23,7 @@ impl BlazeSyncData {
         Self {
             sync_status: sync_status.clone(),
             uri: config.lightwalletd_uri.clone(),
-            block_data: BlockAndWitnessData::new(config, sync_status),
+            block_data: BlockAndWitnessData::new(sync_status),
             wallet_options: WalletOptions::default(),
         }
     }
