@@ -103,7 +103,7 @@ impl TrialDecryptions {
                     let detected_transaction_id_sender = detected_transaction_id_sender.clone();
                     let config = config.clone();
 
-                    workers.push(tokio::spawn(self.clone().trial_decrypt_batch(
+                    workers.push(tokio::spawn(Self::trial_decrypt_batch(
                         config,
                         cbs.split_off(0), // This allocates all received cbs to the spawn.
                         wc,
@@ -118,7 +118,7 @@ impl TrialDecryptions {
                 }
             }
             // Finish off the remaining < 1000 cbs
-            workers.push(tokio::spawn(self.trial_decrypt_batch(
+            workers.push(tokio::spawn(Self::trial_decrypt_batch(
                 config,
                 cbs,
                 wc,
@@ -146,7 +146,6 @@ impl TrialDecryptions {
     /// thread is spawned.
     #[allow(clippy::too_many_arguments)]
     async fn trial_decrypt_batch(
-        self: Arc<Self>,
         config: Arc<ZingoConfig>,
         compact_blocks: Vec<CompactBlock>,
         wc: Arc<WalletCapability>,
@@ -189,7 +188,7 @@ impl TrialDecryptions {
 
                 if let Some(sapling_notes_to_mark_position_in_tx) =
                     if let Some(ref sapling_ivk) = sapling_ivk {
-                        Some(self.trial_decrypt_domain_specific_outputs::<
+                        Some(Self::trial_decrypt_domain_specific_outputs::<
                         SaplingDomain<zingoconfig::ChainType>,
                     >(
                         &mut transaction_metadata,
@@ -218,7 +217,7 @@ impl TrialDecryptions {
                 if let Some(orchard_notes_to_mark_position_in_tx) =
                     if let Some(ref orchard_ivk) = orchard_ivk {
                         Some(
-                            self.trial_decrypt_domain_specific_outputs::<OrchardDomain>(
+                            Self::trial_decrypt_domain_specific_outputs::<OrchardDomain>(
                                 &mut transaction_metadata,
                                 compact_transaction,
                                 transaction_num,
@@ -266,7 +265,7 @@ impl TrialDecryptions {
         while let Some(r) = workers.next().await {
             r.map_err(|e| e.to_string())??;
         }
-        let mut txmds_writelock = self.transaction_metadata_set.write().await;
+        let mut txmds_writelock = transaction_metadata_set.write().await;
         update_witnesses::<SaplingDomain<ChainType>>(
             sapling_notes_to_mark_position,
             &mut txmds_writelock,
@@ -285,7 +284,6 @@ impl TrialDecryptions {
     }
     #[allow(clippy::too_many_arguments)]
     async fn trial_decrypt_domain_specific_outputs<D>(
-        &self,
         transaction_metadata: &mut bool,
         compact_transaction: &CompactTx,
         transaction_num: usize,
