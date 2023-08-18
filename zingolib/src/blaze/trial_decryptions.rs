@@ -426,7 +426,7 @@ async fn update_witnesses<D>(
         BlockHeight,
     )>,
     txmds_writelock: &mut TransactionMetadataSet,
-    wc: &Arc<RwLock<WalletCapability>>,
+    wc: &Arc<WalletCapability>,
 ) where
     D: DomainWalletExt,
     <D as Domain>::Note: PartialEq + Clone,
@@ -449,7 +449,7 @@ async fn update_witnesses<D>(
                             transaction_id,
                             output_num,
                             position + i as u64,
-                            &D::wc_to_fvk(&*wc.read().await).unwrap(),
+                            &D::wc_to_fvk(&*wc).unwrap(),
                         )
                         .await;
                 }
