@@ -1442,12 +1442,6 @@ where
 
         writer.write_u32::<LittleEndian>(*self.output_index() as u32)?;
 
-        //TODO: Investigate this comment. It may be the solution to the potential bug
-        //we are looking at, and it seems to no lopnger be true.
-
-        // Note that we don't write the unconfirmed_spent field, because if the wallet is restarted,
-        // we don't want to be beholden to any expired transactions
-
         Ok(())
     }
 }

@@ -149,14 +149,7 @@ impl UpdateNotes {
                                 .send((spent_transaction_id, spent_at_height))
                                 .unwrap();
                         }
-                    } else {
-                        //info!("Note was NOT spent, update its witnesses for TxId {}", txid);
-                        // not for viewkey
-
-                        // If this note's nullifier was not spent, then we need to update the witnesses for this.
-                        //TODO: We no longer update witnesses individually
                     }
-
                     // Send it off to get the full transaction if this is a new transaction, that is, it has an output_num
                     if output_num.is_some() && download_memos != MemoDownloadOption::NoMemos {
                         fetch_full_sender.send((transaction_id, at_height)).unwrap();

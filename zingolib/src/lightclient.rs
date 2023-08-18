@@ -639,8 +639,6 @@ impl LightClient {
 
     pub async fn do_list_transactions(&self) -> JsonValue {
         // Create a list of TransactionItems from wallet transactions
-        // TODO:  determine why an interface called "list_transactions" is
-        // processing a bunch of transaction contents
         let mut consumer_ui_notes = self
             .wallet
             .transaction_context.transaction_metadata_set
@@ -655,8 +653,6 @@ impl LightClient {
                 if wallet_transaction.is_outgoing_transaction() {
                     // If money was spent, create a consumer_ui_note. For this, we'll subtract
                     // all the change notes + Utxos
-                    // TODO:  Figure out why we have an insane comment saying that we "create a transaction"
-                    // in the middle of the "list transactions" fn/
                     consumer_notes_by_tx.push(Self::append_change_notes(wallet_transaction, total_transparent_received));
                 }
 
