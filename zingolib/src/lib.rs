@@ -24,7 +24,7 @@ use std::{
     path::PathBuf,
     sync::{Arc, RwLock},
 };
-use zingoconfig::{ChainType, ZingoConfig};
+use zingoconfig::{ChainType, ZingoConfig, DEFAULT_LOGFILE_NAME, DEFAULT_WALLET_NAME};
 
 pub fn load_clientconfig(
     lightwallet_uri: http::Uri,
@@ -51,7 +51,9 @@ pub fn load_clientconfig(
         chain,
         monitor_mempool,
         reorg_buffer_offset: zingoconfig::REORG_BUFFER_OFFSET,
-        zingo_wallet_dir: data_dir,
+        wallet_dir: data_dir,
+        wallet_name: DEFAULT_WALLET_NAME.into(),
+        logfile_name: DEFAULT_LOGFILE_NAME.into(),
     };
 
     Ok(config)
