@@ -40,6 +40,10 @@ cargo build --release
 
 This will launch the interactive prompt. Type `help` to get a list of commands.
 
+## Library:
+We currently depend on `ring` 0.17.0 for win-arm64 support, via cargo's patching mechanism.
+Because patching only applies at the top level of a project, in order to use this library as a dependency, copy the `[patch.crates-io]` section of `Cargo.toml` into your own workspace `Cargo.toml`
+
 ## Notes:
 * If you want to run your own server, please see [zingo lightwalletd](https://github.com/zingolabs/lightwalletd), and then run `./zingo-cli --server http://127.0.0.1:9067`
 * The default log file is in `~/.zcash/zingo-wallet.debug.log`. A default wallet is stored in `~/.zcash/zingo-wallet.dat`
