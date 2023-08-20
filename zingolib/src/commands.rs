@@ -597,7 +597,7 @@ impl Command for ExportUfvkCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
             Export Unified full viewing key for the wallet.
-            Note: If you want to backup spend capability, use the 'seed' command insted
+            Note: If you want to backup spend capability, use the 'seed' command instead.
             Usage:
             exportufvk
 
@@ -607,7 +607,7 @@ impl Command for ExportUfvkCommand {
     }
 
     fn short_help(&self) -> &'static str {
-        "Export private key for wallet addresses"
+        "Export full viewing key for wallet addresses"
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
