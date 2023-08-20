@@ -826,7 +826,6 @@ impl Command for SendCommand {
                     return format!("Couldn't parse argument as array\n{}", self.help());
                 }
 
-                let fee = u64::from(MINIMUM_FEE);
                 let maybe_send_args = json_args
                     .members()
                     .map(|j| {
@@ -841,10 +840,7 @@ impl Command for SendCommand {
                                     amt,
                                     j["memo"].as_str().map(|s| s.to_string()),
                                 )),
-                                None => Err(format!(
-                                    "Not enough in wallet to pay transaction fee of {}",
-                                    fee
-                                )),
+                                None => Err("No amount supplied.".to_string()),
                             }
                         }
                     })
