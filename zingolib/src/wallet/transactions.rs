@@ -4,16 +4,16 @@ use std::{
 };
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use incrementalmerkletree::witness::IncrementalWitness;
+use incrementalmerkletree::Position;
 use log::error;
 use orchard;
-use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
-use zcash_encoding::Vector;
+use orchard::note_encryption::OrchardDomain;
+use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
 use zcash_primitives::{
     consensus::BlockHeight,
     memo::Memo,
-    sapling::{note_encryption::SaplingDomain, PaymentAddress},
+    sapling::note_encryption::SaplingDomain,
     transaction::{components::TxOut, TxId},
 };
 
@@ -21,28 +21,24 @@ use zingoconfig::{ChainType, MAX_REORG};
 
 use super::{
     data::{
-        OutgoingTxData, PoolNullifier, ReceivedOrchardNoteAndMetadata,
-        ReceivedSaplingNoteAndMetadata, ReceivedTransparentOutput, TransactionMetadata,
-        WitnessCache,
+        OutgoingTxData, PoolNullifier, ReceivedTransparentOutput, TransactionMetadata, WitnessTrees,
     },
     keys::unified::WalletCapability,
-    traits::{
-        Bundle, DomainWalletExt, FromBytes, Nullifier, ReceivedNoteAndMetadata, Recipient, Spend,
-    },
+    traits::{self, DomainWalletExt, FromBytes, Nullifier, ReceivedNoteAndMetadata, Recipient},
 };
 
 /// HashMap of all transactions in a wallet, keyed by txid.
 /// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
 /// this struct are threadsafe/locked properly.
-#[derive(Default)]
 pub struct TransactionMetadataSet {
     pub current: HashMap<TxId, TransactionMetadata>,
     pub(crate) some_txid_from_highest_wallet_block: Option<TxId>,
+    pub witness_trees: Option<WitnessTrees>,
 }
 
 impl TransactionMetadataSet {
     pub fn serialized_version() -> u64 {
-        21
+        22
     }
 
     pub fn get_fee_by_txid(&self, txid: &TxId) -> u64 {
@@ -55,23 +51,46 @@ impl TransactionMetadataSet {
         mut reader: R,
         wallet_capability: &WalletCapability,
     ) -> io::Result<Self> {
-        let txs_tuples = Vector::read(&mut reader, |r| {
+        let mut witness_trees = wallet_capability.get_trees_witness_trees();
+        let mut old_inc_witnesses = if witness_trees.is_some() {
+            Some((Vec::new(), Vec::new()))
+        } else {
+            None
+        };
+        let txs = Vector::read_collected_mut(&mut reader, |r| {
             let mut txid_bytes = [0u8; 32];
             r.read_exact(&mut txid_bytes)?;
 
             Ok((
                 TxId::from_bytes(txid_bytes),
-                TransactionMetadata::read(r, wallet_capability).unwrap(),
+                TransactionMetadata::read(r, (wallet_capability, old_inc_witnesses.as_mut()))
+                    .unwrap(),
             ))
         })?;
 
-        let txs = txs_tuples
-            .into_iter()
-            .collect::<HashMap<TxId, TransactionMetadata>>();
+        if let Some((mut old_sap_wits, mut old_orch_wits)) = old_inc_witnesses {
+            old_sap_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
+            let sap_tree = &mut witness_trees.as_mut().unwrap().witness_tree_sapling;
+            for (sap_wit, height) in old_sap_wits {
+                sap_tree
+                    .insert_witness_nodes(sap_wit, height - 1)
+                    .expect("infallible");
+                sap_tree.checkpoint(height).expect("infallible");
+            }
+            old_orch_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
+            let orch_tree = &mut witness_trees.as_mut().unwrap().witness_tree_orchard;
+            for (orch_wit, height) in old_orch_wits {
+                orch_tree
+                    .insert_witness_nodes(orch_wit, height - 1)
+                    .expect("infallible");
+                orch_tree.checkpoint(height).expect("infallible");
+            }
+        }
 
         Ok(Self {
             current: txs,
             some_txid_from_highest_wallet_block: None,
+            witness_trees,
         })
     }
 
@@ -84,19 +103,22 @@ impl TransactionMetadataSet {
             ));
         }
 
-        let txs_tuples = Vector::read(&mut reader, |r| {
+        let mut witness_trees = wallet_capability.get_trees_witness_trees();
+        let mut old_inc_witnesses = if witness_trees.is_some() {
+            Some((Vec::new(), Vec::new()))
+        } else {
+            None
+        };
+        let current: HashMap<_, _> = Vector::read_collected_mut(&mut reader, |r| {
             let mut txid_bytes = [0u8; 32];
             r.read_exact(&mut txid_bytes)?;
 
             Ok((
                 TxId::from_bytes(txid_bytes),
-                TransactionMetadata::read(r, wallet_capability)?,
+                TransactionMetadata::read(r, (wallet_capability, old_inc_witnesses.as_mut()))?,
             ))
         })?;
 
-        let current = txs_tuples
-            .into_iter()
-            .collect::<HashMap<TxId, TransactionMetadata>>();
         let some_txid_from_highest_wallet_block = current
             .values()
             .fold(None, |c: Option<(TxId, BlockHeight)>, w| {
@@ -108,27 +130,49 @@ impl TransactionMetadataSet {
             })
             .map(|v| v.0);
 
-        let _mempool = if version <= 20 {
-            Vector::read(&mut reader, |r| {
+        let _mempool: Vec<(TxId, TransactionMetadata)> = if version <= 20 {
+            Vector::read_collected_mut(&mut reader, |r| {
                 let mut txid_bytes = [0u8; 32];
                 r.read_exact(&mut txid_bytes)?;
-                let transaction_metadata = TransactionMetadata::read(r, wallet_capability)?;
+                let transaction_metadata =
+                    TransactionMetadata::read(r, (wallet_capability, old_inc_witnesses.as_mut()))?;
 
                 Ok((TxId::from_bytes(txid_bytes), transaction_metadata))
             })?
-            .into_iter()
-            .collect()
         } else {
             vec![]
         };
 
+        if version >= 22 {
+            witness_trees = Optional::read(reader, |r| WitnessTrees::read(r))?;
+        } else if let Some((mut old_sap_wits, mut old_orch_wits)) = old_inc_witnesses {
+            old_sap_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
+            let sap_tree = &mut witness_trees.as_mut().unwrap().witness_tree_sapling;
+            for (sap_wit, height) in old_sap_wits {
+                sap_tree
+                    .insert_witness_nodes(sap_wit, height - 1)
+                    .expect("infallible");
+                sap_tree.checkpoint(height).expect("infallible");
+            }
+            old_orch_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
+            let orch_tree = &mut witness_trees.as_mut().unwrap().witness_tree_orchard;
+            for (orch_wit, height) in old_orch_wits {
+                orch_tree
+                    .insert_witness_nodes(orch_wit, height - 1)
+                    .expect("infallible");
+                orch_tree.checkpoint(height).expect("infallible");
+            }
+        };
+
+        dbg!(&witness_trees);
         Ok(Self {
             current,
             some_txid_from_highest_wallet_block,
+            witness_trees,
         })
     }
 
-    pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+    pub async fn write<W: Write>(&mut self, mut writer: W) -> io::Result<()> {
         // Write the version
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
@@ -150,7 +194,7 @@ impl TransactionMetadataSet {
             })?;
         }
 
-        Ok(())
+        Optional::write(writer, self.witness_trees.as_mut(), |w, t| t.write(w))
     }
 
     pub fn clear(&mut self) {
@@ -199,10 +243,10 @@ impl TransactionMetadataSet {
                     }
 
                     // Remove unconfirmed spends too
-                    if nd.unconfirmed_spent().is_some()
-                        && txids_to_remove.contains(&nd.unconfirmed_spent().unwrap().0)
+                    if nd.pending_spent().is_some()
+                        && txids_to_remove.contains(&nd.pending_spent().unwrap().0)
                     {
-                        *nd.unconfirmed_spent_mut() = None;
+                        *nd.pending_spent_mut() = None;
                     }
                 });
         });
@@ -225,22 +269,14 @@ impl TransactionMetadataSet {
             })
             .collect::<Vec<_>>();
         self.remove_txids(txids_to_remove);
-
-        // Of the notes that still remain, unroll the witness.
-        // Trim all witnesses for the invalidated blocks
-        for tx in self.current.values_mut() {
-            // We only want to trim the witness for "existing" notes, i.e., notes that were created before the block that is being removed
-            if tx.block_height < reorg_height {
-                for nd in tx.sapling_notes.iter_mut() {
-                    // The latest witness is at the last() position, so just pop() it.
-                    // We should be checking if there is a witness at all, but if there is none, it is an
-                    // empty vector, for which pop() is a no-op.
-                    nd.witnesses.pop(u64::from(reorg_height));
-                }
-                for nd in tx.orchard_notes.iter_mut() {
-                    nd.witnesses.pop(u64::from(reorg_height));
-                }
-            }
+        if let Some(ref mut t) = self.witness_trees {
+            t.witness_tree_sapling
+                .truncate_removing_checkpoint(&(reorg_height - 1))
+                .expect("Infallible");
+            t.witness_tree_orchard
+                .truncate_removing_checkpoint(&(reorg_height - 1))
+                .expect("Infallible");
+            t.add_checkpoint(reorg_height - 1);
         }
     }
 
@@ -263,7 +299,6 @@ impl TransactionMetadataSet {
                     .filter_map(move |sapling_note_description| {
                         if transaction_metadata.block_height <= before_block
                             && sapling_note_description.have_spending_key
-                            && !sapling_note_description.witnesses.is_empty()
                             && sapling_note_description.spent.is_none()
                         {
                             Some((
@@ -278,7 +313,6 @@ impl TransactionMetadataSet {
                         move |orchard_note_description| {
                             if transaction_metadata.block_height <= before_block
                                 && orchard_note_description.have_spending_key
-                                && !orchard_note_description.witnesses.is_empty()
                                 && orchard_note_description.spent.is_none()
                             {
                                 Some((
@@ -343,94 +377,6 @@ impl TransactionMetadataSet {
             .collect()
     }
 
-    pub(crate) fn get_sapling_note_witnesses(
-        &self,
-        txid: &TxId,
-        nullifier: &zcash_primitives::sapling::Nullifier,
-    ) -> Option<(WitnessCache<zcash_primitives::sapling::Node>, BlockHeight)> {
-        self.current.get(txid).map(|transaction_metadata| {
-            transaction_metadata
-                .sapling_notes
-                .iter()
-                .find(|nd| nd.nullifier == *nullifier)
-                .map(|nd| (nd.witnesses.clone(), transaction_metadata.block_height))
-        })?
-    }
-
-    pub(crate) fn get_orchard_note_witnesses(
-        &self,
-        txid: &TxId,
-        nullifier: &orchard::note::Nullifier,
-    ) -> Option<(WitnessCache<MerkleHashOrchard>, BlockHeight)> {
-        self.current.get(txid).map(|transaction_metadata| {
-            transaction_metadata
-                .orchard_notes
-                .iter()
-                .find(|nd| nd.nullifier == *nullifier)
-                .map(|nd| (nd.witnesses.clone(), transaction_metadata.block_height))
-        })?
-    }
-
-    pub(crate) fn set_sapling_note_witnesses(
-        &mut self,
-        txid: &TxId,
-        nullifier: &zcash_primitives::sapling::Nullifier,
-        witnesses: WitnessCache<zcash_primitives::sapling::Node>,
-    ) {
-        self.current
-            .get_mut(txid)
-            .unwrap()
-            .sapling_notes
-            .iter_mut()
-            .find(|nd| nd.nullifier == *nullifier)
-            .unwrap()
-            .witnesses = witnesses;
-    }
-
-    pub(crate) fn set_orchard_note_witnesses(
-        &mut self,
-        txid: &TxId,
-        nullifier: &orchard::note::Nullifier,
-        witnesses: WitnessCache<MerkleHashOrchard>,
-    ) {
-        self.current
-            .get_mut(txid)
-            .unwrap()
-            .orchard_notes
-            .iter_mut()
-            .find(|nd| nd.nullifier == *nullifier)
-            .unwrap()
-            .witnesses = witnesses;
-    }
-
-    pub(crate) fn clear_old_witnesses(&mut self, latest_height: u64) {
-        self.clear_old_domain_specific_witnesses::<OrchardDomain>(latest_height);
-        self.clear_old_domain_specific_witnesses::<SaplingDomain<zingoconfig::ChainType>>(
-            latest_height,
-        );
-    }
-
-    fn clear_old_domain_specific_witnesses<D: DomainWalletExt>(&mut self, latest_height: u64)
-    where
-        <D as Domain>::Note: Clone + PartialEq,
-        <D as Domain>::Recipient: Recipient,
-    {
-        let cutoff = (latest_height.saturating_sub(MAX_REORG as u64)) as u32;
-
-        self.current
-            .iter_mut()
-            .for_each(|(_, transaction_metadata)| {
-                D::to_notes_vec_mut(transaction_metadata)
-                    .iter_mut()
-                    .filter(|note_data| {
-                        !note_data.witnesses().is_empty()
-                            && note_data.is_spent()
-                            && note_data.spent().unwrap().1 < cutoff
-                    })
-                    .for_each(|note_data| note_data.witnesses_mut().clear());
-            });
-    }
-
     pub(crate) fn clear_expired_mempool(&mut self, latest_height: u64) {
         let cutoff = BlockHeight::from_u32((latest_height.saturating_sub(MAX_REORG as u64)) as u32);
 
@@ -457,33 +403,39 @@ impl TransactionMetadataSet {
         nullifier: &PoolNullifier,
         spent_txid: &TxId,
         spent_at_height: BlockHeight,
-    ) -> u64 {
+    ) -> Option<u64> {
         match nullifier {
             PoolNullifier::Sapling(nf) => {
-                let note_data = self
+                if let Some(sapling_note_data) = self
                     .current
                     .get_mut(&txid)
                     .unwrap()
                     .sapling_notes
                     .iter_mut()
                     .find(|n| n.nullifier == *nf)
-                    .unwrap();
-                note_data.spent = Some((*spent_txid, spent_at_height.into()));
-                note_data.unconfirmed_spent = None;
-                note_data.note.value().inner()
+                {
+                    sapling_note_data.spent = Some((*spent_txid, spent_at_height.into()));
+                    sapling_note_data.unconfirmed_spent = None;
+                    Some(sapling_note_data.note.value().inner())
+                } else {
+                    None
+                }
             }
             PoolNullifier::Orchard(nf) => {
-                let note_data = self
+                if let Some(orchard_note_data) = self
                     .current
                     .get_mut(&txid)
                     .unwrap()
                     .orchard_notes
                     .iter_mut()
                     .find(|n| n.nullifier == *nf)
-                    .unwrap();
-                note_data.spent = Some((*spent_txid, spent_at_height.into()));
-                note_data.unconfirmed_spent = None;
-                note_data.note.value().inner()
+                {
+                    orchard_note_data.spent = Some((*spent_txid, spent_at_height.into()));
+                    orchard_note_data.unconfirmed_spent = None;
+                    Some(orchard_note_data.note.value().inner())
+                } else {
+                    None
+                }
             }
         }
     }
@@ -542,7 +494,7 @@ impl TransactionMetadataSet {
 
     // Records a TxId as having spent some nullifiers from the wallet.
     #[allow(clippy::too_many_arguments)]
-    pub fn add_new_spent(
+    pub async fn add_new_spent(
         &mut self,
         txid: TxId,
         height: BlockHeight,
@@ -553,8 +505,8 @@ impl TransactionMetadataSet {
         source_txid: TxId,
     ) {
         match nullifier {
-            PoolNullifier::Orchard(nullifier) => self
-                .add_new_spent_internal::<ReceivedOrchardNoteAndMetadata>(
+            PoolNullifier::Orchard(nullifier) => {
+                self.add_new_spent_internal::<OrchardDomain>(
                     txid,
                     height,
                     unconfirmed,
@@ -562,9 +514,11 @@ impl TransactionMetadataSet {
                     nullifier,
                     value,
                     source_txid,
-                ),
-            PoolNullifier::Sapling(nullifier) => self
-                .add_new_spent_internal::<ReceivedSaplingNoteAndMetadata>(
+                )
+                .await
+            }
+            PoolNullifier::Sapling(nullifier) => {
+                self.add_new_spent_internal::<SaplingDomain<ChainType>>(
                     txid,
                     height,
                     unconfirmed,
@@ -572,28 +526,33 @@ impl TransactionMetadataSet {
                     nullifier,
                     value,
                     source_txid,
-                ),
+                )
+                .await
+            }
         }
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn add_new_spent_internal<NnMd: ReceivedNoteAndMetadata>(
+    async fn add_new_spent_internal<D: DomainWalletExt>(
         &mut self,
         txid: TxId,
         height: BlockHeight,
         unconfirmed: bool,
         timestamp: u32,
-        nullifier: NnMd::Nullifier,
+        nullifier: <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier,
         value: u64,
         source_txid: TxId,
-    ) {
+    ) where
+        <D as Domain>::Note: PartialEq + Clone,
+        <D as Domain>::Recipient: traits::Recipient,
+    {
         // Record this Tx as having spent some funds
         let transaction_metadata =
             self.get_or_create_transaction_metadata(&txid, height, unconfirmed, timestamp as u64);
 
         // Mark the height correctly, in case this was previously a mempool or unconfirmed tx.
         transaction_metadata.block_height = height;
-        if !NnMd::Nullifier::get_nullifiers_spent_in_transaction(transaction_metadata)
+        if !<D::WalletNote as ReceivedNoteAndMetadata>::Nullifier::get_nullifiers_spent_in_transaction(transaction_metadata)
             .iter()
             .any(|nf| *nf == nullifier)
         {
@@ -605,17 +564,7 @@ impl TransactionMetadataSet {
 
         // Mark the source note as spent
         if !unconfirmed {
-            let transaction_metadata = self
-                .current
-                .get_mut(&source_txid)
-                .expect("Txid should be present");
-
-            if let Some(nd) = NnMd::transaction_metadata_notes_mut(transaction_metadata)
-                .iter_mut()
-                .find(|n| n.nullifier() == nullifier)
-            {
-                *nd.spent_mut() = Some((txid, height.into()));
-            }
+            D::WalletNote::remove_witness_mark(self, height, txid, source_txid, nullifier)
         }
     }
 
@@ -632,6 +581,68 @@ impl TransactionMetadataSet {
         transaction_metadata.total_transparent_value_spent = total_transparent_value_spent;
 
         self.check_notes_mark_change(&txid);
+    }
+    /// A mark designates a leaf as non-ephemeral, mark removal causes
+    /// the leaf to eventually transition to the ephemeral state
+    pub fn remove_mark_sapling(
+        &mut self,
+        height: BlockHeight,
+        txid: TxId,
+        source_txid: TxId,
+        nullifier: zcash_primitives::sapling::Nullifier,
+    ) {
+        let transaction_metadata = self
+            .current
+            .get_mut(&source_txid)
+            .expect("Txid should be present");
+
+        if let Some(nd) = transaction_metadata
+            .sapling_notes
+            .iter_mut()
+            .find(|n| n.nullifier() == nullifier)
+        {
+            *nd.spent_mut() = Some((txid, height.into()));
+            if let Some(ref mut t) = self.witness_trees {
+                t.witness_tree_sapling
+                    .remove_mark(
+                        *nd.witnessed_position(),
+                        Some(&(height - BlockHeight::from(1))),
+                    )
+                    .unwrap();
+            }
+        } else {
+            eprintln!("Could not remove marked node!")
+        }
+    }
+    pub fn remove_mark_orchard(
+        &mut self,
+        height: BlockHeight,
+        txid: TxId,
+        source_txid: TxId,
+        nullifier: orchard::note::Nullifier,
+    ) {
+        let transaction_metadata = self
+            .current
+            .get_mut(&source_txid)
+            .expect("Txid should be present");
+
+        if let Some(nd) = transaction_metadata
+            .orchard_notes
+            .iter_mut()
+            .find(|n| n.nullifier() == nullifier)
+        {
+            *nd.spent_mut() = Some((txid, height.into()));
+            if let Some(ref mut t) = self.witness_trees {
+                t.witness_tree_orchard
+                    .remove_mark(
+                        *nd.witnessed_position(),
+                        Some(&(height - BlockHeight::from(1))),
+                    )
+                    .unwrap();
+            }
+        } else {
+            eprintln!("Could not remove marked node!")
+        }
     }
 
     pub fn mark_txid_utxo_spent(
@@ -736,14 +747,16 @@ impl TransactionMetadataSet {
                 let nd = D::WalletNote::from_parts(
                     to.diversifier(),
                     note,
-                    WitnessCache::empty(),
-                    <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier::from_bytes([0u8; 32]),
+                    Position::from(u64::MAX),
+                    None,
                     None,
                     None,
                     None,
                     // if this is change, we'll mark it later in check_notes_mark_change
                     false,
                     false,
+                    // Obviously incorrect, so we can special-case it
+                    u32::MAX as usize,
                 );
 
                 D::WalletNote::transaction_metadata_notes_mut(transaction_metadata).push(nd);
@@ -753,60 +766,8 @@ impl TransactionMetadataSet {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn add_new_sapling_note(
-        &mut self,
-        fvk: &<SaplingDomain<zingoconfig::ChainType> as DomainWalletExt>::Fvk,
-        txid: TxId,
-        height: BlockHeight,
-        unconfirmed: bool,
-        timestamp: u64,
-        note: zcash_primitives::sapling::Note,
-        to: PaymentAddress,
-        have_spending_key: bool,
-        witness: IncrementalWitness<zcash_primitives::sapling::Node, 32>,
-    ) {
-        self.add_new_note::<SaplingDomain<zingoconfig::ChainType>>(
-            fvk,
-            txid,
-            height,
-            unconfirmed,
-            timestamp,
-            note,
-            to,
-            have_spending_key,
-            witness,
-        );
-    }
-    #[allow(clippy::too_many_arguments)]
-    pub fn add_new_orchard_note(
-        &mut self,
-        fvk: &<OrchardDomain as DomainWalletExt>::Fvk,
-        txid: TxId,
-        height: BlockHeight,
-        unconfirmed: bool,
-        timestamp: u64,
-        note: orchard::note::Note,
-        to: orchard::Address,
-        have_spending_key: bool,
-        witness: IncrementalWitness<MerkleHashOrchard, 32>,
-    ) {
-        self.add_new_note::<OrchardDomain>(
-            fvk,
-            txid,
-            height,
-            unconfirmed,
-            timestamp,
-            note,
-            to,
-            have_spending_key,
-            witness,
-        );
-    }
-
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn add_new_note<D: DomainWalletExt>(
         &mut self,
-        fvk: &D::Fvk,
         txid: TxId,
         height: BlockHeight,
         unconfirmed: bool,
@@ -814,9 +775,9 @@ impl TransactionMetadataSet {
         note: <D::WalletNote as ReceivedNoteAndMetadata>::Note,
         to: D::Recipient,
         have_spending_key: bool,
-        witness: IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node, 32>,
-    ) -> <<<D as DomainWalletExt>::Bundle as Bundle<D>>::Spend as Spend>::Nullifier
-    where
+        nullifier: Option<<D::WalletNote as ReceivedNoteAndMetadata>::Nullifier>,
+        output_index: usize,
+    ) where
         D::Note: PartialEq + Clone,
         D::Recipient: Recipient,
     {
@@ -825,35 +786,29 @@ impl TransactionMetadataSet {
         // Update the block height, in case this was a mempool or unconfirmed tx.
         transaction_metadata.block_height = height;
 
-        let spend_nullifier = D::get_nullifier_from_note_fvk_and_witness_position(
-            &note,
-            fvk,
-            u64::from(witness.position()),
-        );
-        let witnesses = if have_spending_key {
-            WitnessCache::new(vec![witness], u64::from(height))
-        } else {
-            WitnessCache::empty()
-        };
-
+        let nd =
+            D::WalletNote::from_parts(
+                D::Recipient::diversifier(&to),
+                note.clone(),
+                Position::from(u64::MAX),
+                Some(nullifier.unwrap_or_else(|| {
+                    <<D::WalletNote as ReceivedNoteAndMetadata>::Nullifier as FromBytes<
+                                32,
+                            >>::from_bytes([1; 32])
+                })),
+                None,
+                None,
+                None,
+                // if this is change, we'll mark it later in check_notes_mark_change
+                false,
+                have_spending_key,
+                output_index,
+            );
         match D::WalletNote::transaction_metadata_notes_mut(transaction_metadata)
             .iter_mut()
-            .find(|n| n.nullifier() == spend_nullifier)
+            .find(|n| n.note() == &note)
         {
             None => {
-                let nd = D::WalletNote::from_parts(
-                    D::Recipient::diversifier(&to),
-                    note,
-                    witnesses,
-                    spend_nullifier,
-                    None,
-                    None,
-                    None,
-                    // if this is change, we'll mark it later in check_notes_mark_change
-                    false,
-                    have_spending_key,
-                );
-
                 D::WalletNote::transaction_metadata_notes_mut(transaction_metadata).push(nd);
 
                 // Also remove any pending notes.
@@ -862,14 +817,39 @@ impl TransactionMetadataSet {
                     .retain(|n| n.nullifier().to_bytes() != [0u8; 32]);
             }
             Some(n) => {
-                // If this note already exists, then just reset the witnesses, because we'll start scanning the witnesses
-                // again after this.
-                // This is likely to happen if the previous wallet wasn't synced properly or was aborted in the middle of a sync,
-                // and has some dangling witnesses
-                *n.witnesses_mut() = witnesses;
+                // An overwrite should be safe here: TODO: test that confirms this
+                *n = nd;
             }
         }
-        spend_nullifier
+    }
+
+    pub(crate) fn mark_note_position<D: DomainWalletExt>(
+        &mut self,
+        txid: TxId,
+        output_index: usize,
+        position: Position,
+        fvk: &D::Fvk,
+    ) where
+        <D as Domain>::Note: PartialEq + Clone,
+        <D as Domain>::Recipient: Recipient,
+    {
+        if let Some(tmd) = self.current.get_mut(&txid) {
+            if let Some(nnmd) = &mut D::to_notes_vec_mut(tmd)
+                .iter_mut()
+                .find(|nnmd| *nnmd.output_index() == output_index)
+            {
+                *nnmd.witnessed_position_mut() = position;
+                *nnmd.nullifier_mut() = D::get_nullifier_from_note_fvk_and_witness_position(
+                    &nnmd.note().clone(),
+                    fvk,
+                    u64::from(position),
+                );
+            } else {
+                println!("Could not update witness position");
+            }
+        } else {
+            println!("Could not update witness position");
+        }
     }
 
     // Update the memo for a note if it already exists. If the note doesn't exist, then nothing happens.
@@ -908,6 +888,21 @@ impl TransactionMetadataSet {
                 "TxId {} should be present while adding metadata, but wasn't",
                 txid
             );
+        }
+    }
+
+    pub(crate) fn new_with_witness_trees() -> TransactionMetadataSet {
+        Self {
+            current: HashMap::default(),
+            some_txid_from_highest_wallet_block: None,
+            witness_trees: Some(WitnessTrees::default()),
+        }
+    }
+    pub(crate) fn new_treeless() -> TransactionMetadataSet {
+        Self {
+            current: HashMap::default(),
+            some_txid_from_highest_wallet_block: None,
+            witness_trees: None,
         }
     }
 }

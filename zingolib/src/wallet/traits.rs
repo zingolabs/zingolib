@@ -5,6 +5,7 @@ use super::{
     data::{
         PoolNullifier, ReceivedOrchardNoteAndMetadata, ReceivedSaplingNoteAndMetadata,
         SpendableOrchardNote, SpendableSaplingNote, TransactionMetadata, WitnessCache,
+        COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL,
     },
     keys::unified::WalletCapability,
     transactions::TransactionMetadataSet,
@@ -14,7 +15,7 @@ use crate::compact_formats::{
     slice_to_array, CompactOrchardAction, CompactSaplingOutput, CompactTx, TreeState,
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use incrementalmerkletree::{witness::IncrementalWitness, Hashable, Level};
+use incrementalmerkletree::{witness::IncrementalWitness, Hashable, Level, Position};
 use nonempty::NonEmpty;
 use orchard::{
     note_encryption::OrchardDomain,
@@ -22,6 +23,7 @@ use orchard::{
     tree::MerkleHashOrchard,
     Action,
 };
+use shardtree::{memory::MemoryShardStore, ShardTree};
 use subtle::CtOption;
 use zcash_address::unified::{self, Receiver};
 use zcash_client_backend::{address::UnifiedAddress, encoding::encode_payment_address};
@@ -32,7 +34,7 @@ use zcash_note_encryption::{
 use zcash_primitives::{
     consensus::{BlockHeight, NetworkUpgrade, Parameters},
     memo::{Memo, MemoBytes},
-    merkle_tree::{read_incremental_witness, write_incremental_witness, HashSer},
+    merkle_tree::{read_incremental_witness, HashSer},
     sapling::note_encryption::SaplingDomain,
     transaction::{
         components::{self, sapling::GrothProofBytes, Amount, OutputDescription, SpendDescription},
@@ -401,38 +403,31 @@ impl Nullifier for orchard::note::Nullifier {
     }
 }
 
+/// "Received" because this data is eventually chain-retrievable
+/// "Note" because this contains the Note itself
+/// "AndMetaData" everything that the client will eventually know about the note
 pub trait ReceivedNoteAndMetadata: Sized {
     type Diversifier: Copy + FromBytes<11> + ToBytes<11>;
 
     type Note: PartialEq
         + for<'a> ReadableWriteable<(Self::Diversifier, &'a WalletCapability)>
         + Clone;
-    type Node: Hashable + HashSer + FromCommitment + Send + Clone;
+    type Node: Hashable + HashSer + FromCommitment + Send + Clone + PartialEq + Eq;
     type Nullifier: Nullifier;
 
-    fn get_note_witnesses(
-        tms: &TransactionMetadataSet,
-        txid: &TxId,
-        nullifier: &Self::Nullifier,
-    ) -> Option<(WitnessCache<Self::Node>, BlockHeight)>;
-    fn set_note_witnesses(
-        tms: &mut TransactionMetadataSet,
-        txid: &TxId,
-        nullifier: &Self::Nullifier,
-        cache: WitnessCache<Self::Node>,
-    );
     fn diversifier(&self) -> &Self::Diversifier;
     #[allow(clippy::too_many_arguments)]
     fn from_parts(
         diversifier: Self::Diversifier,
         note: Self::Note,
-        witnesses: WitnessCache<Self::Node>,
-        nullifier: Self::Nullifier,
+        witness_position: Position,
+        nullifier: Option<Self::Nullifier>,
         spent: Option<(TxId, u32)>,
         unconfirmed_spent: Option<(TxId, u32)>,
         memo: Option<Memo>,
         is_change: bool,
         have_spending_key: bool,
+        output_index: usize,
     ) -> Self;
     fn get_deprecated_serialized_view_key_buffer() -> Vec<u8>;
     fn have_spending_key(&self) -> bool;
@@ -445,22 +440,35 @@ pub trait ReceivedNoteAndMetadata: Sized {
     fn memo_mut(&mut self) -> &mut Option<Memo>;
     fn note(&self) -> &Self::Note;
     fn nullifier(&self) -> Self::Nullifier;
+    fn nullifier_mut(&mut self) -> &mut Self::Nullifier;
+    fn output_index(&self) -> &usize;
+    fn output_index_mut(&mut self) -> &mut usize;
+    fn pending_receipt(&self) -> bool {
+        self.nullifier() == Self::Nullifier::from_bytes([0; 32])
+    }
+    fn pending_spent(&self) -> &Option<(TxId, u32)>;
     fn pool() -> Pool;
+    fn remove_witness_mark(
+        txmds: &mut TransactionMetadataSet,
+        height: BlockHeight,
+        txid: TxId,
+        source_txid: TxId,
+        nullifier: Self::Nullifier,
+    );
     fn spent(&self) -> &Option<(TxId, u32)>;
     fn spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
     fn transaction_metadata_notes(wallet_transaction: &TransactionMetadata) -> &Vec<Self>;
     fn transaction_metadata_notes_mut(
         wallet_transaction: &mut TransactionMetadata,
     ) -> &mut Vec<Self>;
-    fn unconfirmed_spent(&self) -> &Option<(TxId, u32)>;
-    fn unconfirmed_spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
+    fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
     ///Convenience function
     fn value(&self) -> u64 {
         Self::value_from_note(self.note())
     }
     fn value_from_note(note: &Self::Note) -> u64;
-    fn witnesses(&self) -> &WitnessCache<Self::Node>;
-    fn witnesses_mut(&mut self) -> &mut WitnessCache<Self::Node>;
+    fn witnessed_position(&self) -> &Position;
+    fn witnessed_position_mut(&mut self) -> &mut Position;
 }
 
 impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
@@ -469,47 +477,38 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
     type Node = zcash_primitives::sapling::Node;
     type Nullifier = zcash_primitives::sapling::Nullifier;
 
-    fn get_note_witnesses(
-        tms: &TransactionMetadataSet,
-        txid: &TxId,
-        nullifier: &Self::Nullifier,
-    ) -> Option<(WitnessCache<Self::Node>, BlockHeight)> {
-        TransactionMetadataSet::get_sapling_note_witnesses(tms, txid, nullifier)
-    }
-    fn set_note_witnesses(
-        tms: &mut TransactionMetadataSet,
-        txid: &TxId,
-        nullifier: &Self::Nullifier,
-        cache: WitnessCache<Self::Node>,
-    ) {
-        TransactionMetadataSet::set_sapling_note_witnesses(tms, txid, nullifier, cache)
-    }
-
     fn diversifier(&self) -> &Self::Diversifier {
         &self.diversifier
+    }
+
+    fn nullifier_mut(&mut self) -> &mut Self::Nullifier {
+        &mut self.nullifier
     }
 
     fn from_parts(
         diversifier: zcash_primitives::sapling::Diversifier,
         note: zcash_primitives::sapling::Note,
-        witnesses: WitnessCache<zcash_primitives::sapling::Node>,
-        nullifier: zcash_primitives::sapling::Nullifier,
+        witnessed_position: Position,
+        nullifier: Option<zcash_primitives::sapling::Nullifier>,
         spent: Option<(TxId, u32)>,
         unconfirmed_spent: Option<(TxId, u32)>,
         memo: Option<Memo>,
         is_change: bool,
         have_spending_key: bool,
+        output_index: usize,
     ) -> Self {
         Self {
             diversifier,
             note,
-            witnesses,
-            nullifier,
+            witnessed_position,
+            nullifier: nullifier
+                .unwrap_or(zcash_primitives::sapling::Nullifier::from_bytes([0; 32])),
             spent,
             unconfirmed_spent,
             memo,
             is_change,
             have_spending_key,
+            output_index,
         }
     }
 
@@ -567,11 +566,11 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         &mut wallet_transaction.sapling_notes
     }
 
-    fn unconfirmed_spent(&self) -> &Option<(TxId, u32)> {
+    fn pending_spent(&self) -> &Option<(TxId, u32)> {
         &self.unconfirmed_spent
     }
 
-    fn unconfirmed_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
+    fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
         &mut self.unconfirmed_spent
     }
 
@@ -579,12 +578,30 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         note.value().inner()
     }
 
-    fn witnesses(&self) -> &WitnessCache<Self::Node> {
-        &self.witnesses
+    fn witnessed_position(&self) -> &Position {
+        &self.witnessed_position
     }
 
-    fn witnesses_mut(&mut self) -> &mut WitnessCache<Self::Node> {
-        &mut self.witnesses
+    fn witnessed_position_mut(&mut self) -> &mut Position {
+        &mut self.witnessed_position
+    }
+
+    fn output_index(&self) -> &usize {
+        &self.output_index
+    }
+
+    fn output_index_mut(&mut self) -> &mut usize {
+        &mut self.output_index
+    }
+
+    fn remove_witness_mark(
+        txmds: &mut TransactionMetadataSet,
+        height: BlockHeight,
+        txid: TxId,
+        source_txid: TxId,
+        nullifier: Self::Nullifier,
+    ) {
+        TransactionMetadataSet::remove_mark_sapling(txmds, height, txid, source_txid, nullifier)
     }
 }
 
@@ -594,48 +611,37 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
     type Node = MerkleHashOrchard;
     type Nullifier = orchard::note::Nullifier;
 
-    fn get_note_witnesses(
-        tms: &TransactionMetadataSet,
-        txid: &TxId,
-        nullifier: &Self::Nullifier,
-    ) -> Option<(WitnessCache<Self::Node>, BlockHeight)> {
-        TransactionMetadataSet::get_orchard_note_witnesses(tms, txid, nullifier)
-    }
-
-    fn set_note_witnesses(
-        tms: &mut TransactionMetadataSet,
-        txid: &TxId,
-        nullifier: &Self::Nullifier,
-        cache: WitnessCache<Self::Node>,
-    ) {
-        TransactionMetadataSet::set_orchard_note_witnesses(tms, txid, nullifier, cache)
-    }
-
     fn diversifier(&self) -> &Self::Diversifier {
         &self.diversifier
+    }
+
+    fn nullifier_mut(&mut self) -> &mut Self::Nullifier {
+        &mut self.nullifier
     }
 
     fn from_parts(
         diversifier: Self::Diversifier,
         note: Self::Note,
-        witnesses: WitnessCache<Self::Node>,
-        nullifier: Self::Nullifier,
+        witnessed_position: Position,
+        nullifier: Option<Self::Nullifier>,
         spent: Option<(TxId, u32)>,
         unconfirmed_spent: Option<(TxId, u32)>,
         memo: Option<Memo>,
         is_change: bool,
         have_spending_key: bool,
+        output_index: usize,
     ) -> Self {
         Self {
             diversifier,
             note,
-            witnesses,
-            nullifier,
+            witnessed_position,
+            nullifier: nullifier.unwrap_or(<Self::Nullifier as FromBytes<32>>::from_bytes([0; 32])),
             spent,
             unconfirmed_spent,
             memo,
             is_change,
             have_spending_key,
+            output_index,
         }
     }
 
@@ -692,11 +698,11 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         &mut wallet_transaction.orchard_notes
     }
 
-    fn unconfirmed_spent(&self) -> &Option<(TxId, u32)> {
+    fn pending_spent(&self) -> &Option<(TxId, u32)> {
         &self.unconfirmed_spent
     }
 
-    fn unconfirmed_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
+    fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
         &mut self.unconfirmed_spent
     }
 
@@ -704,15 +710,32 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         note.value().inner()
     }
 
-    fn witnesses(&self) -> &WitnessCache<Self::Node> {
-        &self.witnesses
+    fn witnessed_position(&self) -> &Position {
+        &self.witnessed_position
+    }
+    fn witnessed_position_mut(&mut self) -> &mut Position {
+        &mut self.witnessed_position
+    }
+    fn output_index(&self) -> &usize {
+        &self.output_index
     }
 
-    fn witnesses_mut(&mut self) -> &mut WitnessCache<Self::Node> {
-        &mut self.witnesses
+    fn output_index_mut(&mut self) -> &mut usize {
+        &mut self.output_index
+    }
+    fn remove_witness_mark(
+        txmds: &mut TransactionMetadataSet,
+        height: BlockHeight,
+        txid: TxId,
+        source_txid: TxId,
+        nullifier: Self::Nullifier,
+    ) {
+        TransactionMetadataSet::remove_mark_orchard(txmds, height, txid, source_txid, nullifier)
     }
 }
 
+type MemoryStoreShardTree<T> =
+    ShardTree<MemoryShardStore<T, BlockHeight>, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL>;
 pub trait DomainWalletExt: Domain + BatchDomain
 where
     Self: Sized,
@@ -729,7 +752,7 @@ where
         Note = <Self as Domain>::Note,
         Diversifier = <<Self as Domain>::Recipient as Recipient>::Diversifier,
         Nullifier = <<<Self as DomainWalletExt>::Bundle as Bundle<Self>>::Spend as Spend>::Nullifier,
-    >;
+    > + std::fmt::Debug;
     type SpendableNoteAT: SpendableNote<Self>;
 
     type Bundle: Bundle<Self>;
@@ -741,6 +764,12 @@ where
             .map(|nd| nd.value())
             .sum()
     }
+    fn get_shardtree(
+        tmds: &TransactionMetadataSet,
+    ) -> Option<&MemoryStoreShardTree<<Self::WalletNote as ReceivedNoteAndMetadata>::Node>>;
+    fn get_shardtree_mut(
+        tmds: &mut TransactionMetadataSet,
+    ) -> Option<&mut MemoryStoreShardTree<<Self::WalletNote as ReceivedNoteAndMetadata>::Node>>;
     fn get_nullifier_from_note_fvk_and_witness_position(
         note: &Self::Note,
         fvk: &Self::Fvk,
@@ -774,6 +803,32 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
 
     type Bundle = components::sapling::Bundle<components::sapling::Authorized>;
 
+    fn get_shardtree(
+        tmds: &TransactionMetadataSet,
+    ) -> Option<
+        &ShardTree<
+            MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
+            COMMITMENT_TREE_LEVELS,
+            MAX_SHARD_LEVEL,
+        >,
+    > {
+        tmds.witness_trees
+            .as_ref()
+            .map(|tree| &tree.witness_tree_sapling)
+    }
+    fn get_shardtree_mut(
+        tmds: &mut TransactionMetadataSet,
+    ) -> Option<
+        &mut ShardTree<
+            MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
+            COMMITMENT_TREE_LEVELS,
+            MAX_SHARD_LEVEL,
+        >,
+    > {
+        tmds.witness_trees
+            .as_mut()
+            .map(|tree| &mut tree.witness_tree_sapling)
+    }
     fn get_nullifier_from_note_fvk_and_witness_position(
         note: &Self::Note,
         fvk: &Self::Fvk,
@@ -781,6 +836,7 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
     ) -> <<Self as DomainWalletExt>::WalletNote as ReceivedNoteAndMetadata>::Nullifier {
         note.nf(&fvk.fvk().vk.nk, position)
     }
+
     fn get_tree(tree_state: &TreeState) -> &String {
         &tree_state.sapling_tree
     }
@@ -792,7 +848,6 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
     fn to_notes_vec_mut(transaction: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote> {
         &mut transaction.sapling_notes
     }
-
     fn ua_from_contained_receiver<'a>(
         unified_spend_auth: &'a WalletCapability,
         receiver: &Self::Recipient,
@@ -811,6 +866,7 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
     fn wc_to_ovk(wc: &WalletCapability) -> Result<Self::OutgoingViewingKey, String> {
         Self::OutgoingViewingKey::try_from(wc)
     }
+
     fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String> {
         Self::SpendingKey::try_from(wc)
     }
@@ -831,6 +887,20 @@ impl DomainWalletExt for OrchardDomain {
 
     type Bundle = orchard::bundle::Bundle<orchard::bundle::Authorized, Amount>;
 
+    fn get_shardtree(
+        tmds: &TransactionMetadataSet,
+    ) -> Option<&ShardTree<MemoryShardStore<MerkleHashOrchard, BlockHeight>, 32, 16>> {
+        tmds.witness_trees
+            .as_ref()
+            .map(|tree| &tree.witness_tree_orchard)
+    }
+    fn get_shardtree_mut(
+        tmds: &mut TransactionMetadataSet,
+    ) -> Option<&mut ShardTree<MemoryShardStore<MerkleHashOrchard, BlockHeight>, 32, 16>> {
+        tmds.witness_trees
+            .as_mut()
+            .map(|tree| &mut tree.witness_tree_orchard)
+    }
     fn get_nullifier_from_note_fvk_and_witness_position(
         note: &Self::Note,
         fvk: &Self::Fvk,
@@ -838,6 +908,7 @@ impl DomainWalletExt for OrchardDomain {
     ) -> <<Self as DomainWalletExt>::WalletNote as ReceivedNoteAndMetadata>::Nullifier {
         note.nullifier(fvk)
     }
+
     fn get_tree(tree_state: &TreeState) -> &String {
         &tree_state.orchard_tree
     }
@@ -849,7 +920,6 @@ impl DomainWalletExt for OrchardDomain {
     fn to_notes_vec_mut(transaction: &mut TransactionMetadata) -> &mut Vec<Self::WalletNote> {
         &mut transaction.orchard_notes
     }
-
     fn ua_from_contained_receiver<'a>(
         unified_spend_capability: &'a WalletCapability,
         receiver: &Self::Recipient,
@@ -868,6 +938,7 @@ impl DomainWalletExt for OrchardDomain {
     fn wc_to_ovk(wc: &WalletCapability) -> Result<Self::OutgoingViewingKey, String> {
         Self::OutgoingViewingKey::try_from(wc)
     }
+
     fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String> {
         Self::SpendingKey::try_from(wc)
     }
@@ -917,29 +988,23 @@ where
     fn from(
         transaction_id: TxId,
         note_and_metadata: &D::WalletNote,
-        anchor_offset: usize,
         spend_key: Option<&D::SpendingKey>,
     ) -> Option<Self> {
-        // Include only notes that haven't been spent, or haven't been included in an unconfirmed spend yet.
+        // Include only non-0 value notes that haven't been spent, or haven't been included in an unconfirmed spend yet.
         if note_and_metadata.spent().is_none()
-            && note_and_metadata.unconfirmed_spent().is_none()
+            && note_and_metadata.pending_spent().is_none()
             && spend_key.is_some()
-            && note_and_metadata.witnesses().len() >= (anchor_offset + 1)
+            && !note_and_metadata.pending_receipt()
+            && note_and_metadata.value() != 0
         {
-            let witness = note_and_metadata
-                .witnesses()
-                .get(note_and_metadata.witnesses().len() - anchor_offset - 1);
-
-            witness.map(|w| {
-                Self::from_parts_unchecked(
-                    transaction_id,
-                    note_and_metadata.nullifier(),
-                    *note_and_metadata.diversifier(),
-                    note_and_metadata.note().clone(),
-                    w.clone(),
-                    spend_key,
-                )
-            })
+            Some(Self::from_parts_unchecked(
+                transaction_id,
+                note_and_metadata.nullifier(),
+                *note_and_metadata.diversifier(),
+                note_and_metadata.note().clone(),
+                *note_and_metadata.witnessed_position(),
+                spend_key,
+            ))
         } else {
             None
         }
@@ -951,14 +1016,14 @@ where
         nullifier: <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier,
         diversifier: <D::WalletNote as ReceivedNoteAndMetadata>::Diversifier,
         note: D::Note,
-        witness: IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node, 32>,
+        witnessed_position: Position,
         sk: Option<&D::SpendingKey>,
     ) -> Self;
     fn transaction_id(&self) -> TxId;
     fn nullifier(&self) -> <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier;
     fn diversifier(&self) -> <D::WalletNote as ReceivedNoteAndMetadata>::Diversifier;
     fn note(&self) -> &D::Note;
-    fn witness(&self) -> &IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node, 32>;
+    fn witnessed_position(&self) -> &Position;
     fn spend_key(&self) -> Option<&D::SpendingKey>;
 }
 
@@ -968,7 +1033,7 @@ impl SpendableNote<SaplingDomain<ChainType>> for SpendableSaplingNote {
         nullifier: zcash_primitives::sapling::Nullifier,
         diversifier: zcash_primitives::sapling::Diversifier,
         note: zcash_primitives::sapling::Note,
-        witness: IncrementalWitness<zcash_primitives::sapling::Node, 32>,
+        witnessed_position: Position,
         extsk: Option<&zip32::sapling::ExtendedSpendingKey>,
     ) -> Self {
         SpendableSaplingNote {
@@ -976,7 +1041,7 @@ impl SpendableNote<SaplingDomain<ChainType>> for SpendableSaplingNote {
             nullifier,
             diversifier,
             note,
-            witness,
+            witnessed_position,
             extsk: extsk.cloned(),
         }
     }
@@ -997,8 +1062,8 @@ impl SpendableNote<SaplingDomain<ChainType>> for SpendableSaplingNote {
         &self.note
     }
 
-    fn witness(&self) -> &IncrementalWitness<zcash_primitives::sapling::Node, 32> {
-        &self.witness
+    fn witnessed_position(&self) -> &Position {
+        &self.witnessed_position
     }
 
     fn spend_key(&self) -> Option<&zip32::sapling::ExtendedSpendingKey> {
@@ -1012,7 +1077,7 @@ impl SpendableNote<OrchardDomain> for SpendableOrchardNote {
         nullifier: orchard::note::Nullifier,
         diversifier: orchard::keys::Diversifier,
         note: orchard::note::Note,
-        witness: IncrementalWitness<MerkleHashOrchard, 32>,
+        witnessed_position: Position,
         sk: Option<&orchard::keys::SpendingKey>,
     ) -> Self {
         SpendableOrchardNote {
@@ -1020,7 +1085,7 @@ impl SpendableNote<OrchardDomain> for SpendableOrchardNote {
             nullifier,
             diversifier,
             note,
-            witness,
+            witnessed_position,
             spend_key: sk.cloned(),
         }
     }
@@ -1040,8 +1105,8 @@ impl SpendableNote<OrchardDomain> for SpendableOrchardNote {
         &self.note
     }
 
-    fn witness(&self) -> &IncrementalWitness<MerkleHashOrchard, 32> {
-        &self.witness
+    fn witnessed_position(&self) -> &Position {
+        &self.witnessed_position
     }
 
     fn spend_key(&self) -> Option<&orchard::keys::SpendingKey> {
@@ -1219,13 +1284,33 @@ impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability)> for orch
     }
 }
 
-impl<T> ReadableWriteable<&WalletCapability> for T
+impl<T>
+    ReadableWriteable<(
+        &WalletCapability,
+        Option<
+            &mut Vec<(
+                IncrementalWitness<T::Node, COMMITMENT_TREE_LEVELS>,
+                BlockHeight,
+            )>,
+        >,
+    )> for T
 where
     T: ReceivedNoteAndMetadata,
 {
-    const VERSION: u8 = 3;
+    const VERSION: u8 = 4;
 
-    fn read<R: Read>(mut reader: R, wallet_capability: &WalletCapability) -> io::Result<Self> {
+    fn read<R: Read>(
+        mut reader: R,
+        (wallet_capability, inc_wit_vec): (
+            &WalletCapability,
+            Option<
+                &mut Vec<(
+                    IncrementalWitness<T::Node, COMMITMENT_TREE_LEVELS>,
+                    BlockHeight,
+                )>,
+            >,
+        ),
+    ) -> io::Result<Self> {
         let external_version = Self::get_version(&mut reader)?;
         tracing::info!("NoteAndMetadata version is: {external_version}");
 
@@ -1241,9 +1326,26 @@ where
         let note =
             <T::Note as ReadableWriteable<_>>::read(&mut reader, (diversifier, wallet_capability))?;
 
-        let witnesses_vec = Vector::read(&mut reader, |r| read_incremental_witness(r))?;
-        let top_height = reader.read_u64::<LittleEndian>()?;
-        let witnesses = WitnessCache::new(witnesses_vec, top_height);
+        let witnessed_position = if external_version >= 4 {
+            Position::from(reader.read_u64::<LittleEndian>()?)
+        } else {
+            let witnesses_vec = Vector::read(&mut reader, |r| read_incremental_witness(r))?;
+
+            let top_height = reader.read_u64::<LittleEndian>()?;
+            let witnesses = WitnessCache::<T::Node>::new(witnesses_vec, top_height);
+
+            let pos = witnesses
+                .last()
+                .map(|w| w.witnessed_position())
+                .unwrap_or_else(|| Position::from(0));
+            for (i, witness) in witnesses.witnesses.into_iter().rev().enumerate().rev() {
+                let height = BlockHeight::from(top_height as u32 - i as u32);
+                if let Some(&mut ref mut wits) = inc_wit_vec {
+                    wits.push((witness, height));
+                }
+            }
+            pos
+        };
 
         let mut nullifier = [0u8; 32];
         reader.read_exact(&mut nullifier)?;
@@ -1292,16 +1394,24 @@ where
 
         let have_spending_key = reader.read_u8()? > 0;
 
+        let output_index = if external_version >= 4 {
+            reader.read_u32::<LittleEndian>()?
+        } else {
+            // TODO: This value is obviously incorrect, we can fix it if it becomes a problem
+            u32::MAX
+        };
+
         Ok(T::from_parts(
             diversifier,
             note,
-            witnesses,
-            nullifier,
+            witnessed_position,
+            Some(nullifier),
             spent,
             None,
             memo,
             is_change,
             have_spending_key,
+            output_index as usize,
         ))
     }
 
@@ -1312,10 +1422,7 @@ where
         writer.write_all(&self.diversifier().to_bytes())?;
 
         self.note().write(&mut writer)?;
-        Vector::write(&mut writer, &self.witnesses().witnesses, |wr, wi| {
-            write_incremental_witness(wi, wr)
-        })?;
-        writer.write_u64::<LittleEndian>(self.witnesses().top_height)?;
+        writer.write_u64::<LittleEndian>(u64::from(*self.witnessed_position()))?;
 
         writer.write_all(&self.nullifier().to_bytes())?;
 
@@ -1336,11 +1443,7 @@ where
 
         writer.write_u8(if self.have_spending_key() { 1 } else { 0 })?;
 
-        //TODO: Investigate this comment. It may be the solution to the potential bug
-        //we are looking at, and it seems to no lopnger be true.
-
-        // Note that we don't write the unconfirmed_spent field, because if the wallet is restarted,
-        // we don't want to be beholden to any expired transactions
+        writer.write_u32::<LittleEndian>(*self.output_index() as u32)?;
 
         Ok(())
     }

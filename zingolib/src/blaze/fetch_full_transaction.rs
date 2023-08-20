@@ -275,10 +275,6 @@ impl TransactionContext {
                                 vout,
                                 n as u32,
                             );
-
-                        // Ensure that we add any new HD addresses
-                        // TODO: I don't think we need to do this anymore
-                        // self.keys.write().await.ensure_hd_taddresses(&output_taddr);
                     }
                 }
             }
@@ -432,15 +428,19 @@ impl TransactionContext {
                     .iter()
                     .find(|(nf, _, _)| nf == output.nullifier())
                 {
-                    self.transaction_metadata_set.write().await.add_new_spent(
-                        transaction.txid(),
-                        transaction_block_height,
-                        true, // this was "unconfirmed" but this fn is invoked inside `if unconfirmed` TODO: add regression test to protect against movement
-                        block_time,
-                        (*nf).into(),
-                        *value,
-                        *transaction_id,
-                    );
+                    self.transaction_metadata_set
+                        .write()
+                        .await
+                        .add_new_spent(
+                            transaction.txid(),
+                            transaction_block_height,
+                            true, // this was "unconfirmed" but this fn is invoked inside `if unconfirmed` TODO: add regression test to protect against movement
+                            block_time,
+                            (*nf).into(),
+                            *value,
+                            *transaction_id,
+                        )
+                        .await;
                 }
             }
         }

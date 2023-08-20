@@ -245,6 +245,27 @@ impl LightClient {
         };
         LightClient::read_wallet_from_buffer(config, BufReader::new(File::open(wallet_path)?))
     }
+
+    async fn ensure_witness_tree_not_above_wallet_blocks(&self) {
+        let last_synced_height = self.wallet.last_synced_height().await;
+        let mut txmds_writelock = self
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .write()
+            .await;
+        if let Some(ref mut trees) = txmds_writelock.witness_trees {
+            trees
+                .witness_tree_sapling
+                .truncate_removing_checkpoint(&BlockHeight::from(last_synced_height as u32))
+                .expect("Infallible");
+            trees
+                .witness_tree_orchard
+                .truncate_removing_checkpoint(&BlockHeight::from(last_synced_height as u32))
+                .expect("Infallible");
+            trees.add_checkpoint(BlockHeight::from(last_synced_height as u32));
+        }
+    }
 }
 
 impl LightClient {
@@ -618,8 +639,6 @@ impl LightClient {
 
     pub async fn do_list_transactions(&self) -> JsonValue {
         // Create a list of TransactionItems from wallet transactions
-        // TODO:  determine why an interface called "list_transactions" is
-        // processing a bunch of transaction contents
         let mut consumer_ui_notes = self
             .wallet
             .transaction_context.transaction_metadata_set
@@ -634,8 +653,6 @@ impl LightClient {
                 if wallet_transaction.is_outgoing_transaction() {
                     // If money was spent, create a consumer_ui_note. For this, we'll subtract
                     // all the change notes + Utxos
-                    // TODO:  Figure out why we have an insane comment saying that we "create a transaction"
-                    // in the middle of the "list transactions" fn/
                     consumer_notes_by_tx.push(Self::append_change_notes(wallet_transaction, total_transparent_received));
                 }
 
@@ -1002,10 +1019,7 @@ impl LightClient {
                         break;
                     }
 
-                    let progress = format!("{}", sync_status_clone.read().await);
-                    if print_updates {
-                        println!("{}", progress);
-                    }
+                    println!("{}", sync_status_clone.read().await);
 
                     yield_now().await;
                     sleep(Duration::from_secs(3)).await;
@@ -1355,6 +1369,28 @@ impl LightClient {
         // The top of the wallet
         let last_synced_height = self.wallet.last_synced_height().await;
 
+        // If our internal state gets damaged somehow (for example,
+        // a resync that gets interrupted partway through) we need to make sure
+        // our witness trees are aligned with our blockchain data
+        self.ensure_witness_tree_not_above_wallet_blocks().await;
+        // This is a fresh wallet. We need to get the initial trees
+        if last_synced_height
+            == self
+                .wallet
+                .transaction_context
+                .config
+                .sapling_activation_height()
+                - 1
+            && !self.wallet.get_birthday().await == 1
+        {
+            let trees = crate::grpc_connector::GrpcConnector::get_trees(
+                self.get_server_uri(),
+                self.wallet.get_birthday().await - 1,
+            )
+            .await
+            .unwrap();
+            self.wallet.initiate_witness_trees(trees).await;
+        }
         let latest_blockid =
             GrpcConnector::get_latest_block(self.config.get_lightwalletd_uri()).await?;
         // Block hashes are reversed when stored in BlockDatas, so we reverse here to match
@@ -1514,11 +1550,7 @@ impl LightClient {
         let update_notes_processor = UpdateNotes::new(self.wallet.transactions());
         let (update_notes_handle, blocks_done_transmitter, detected_transactions_transmitter) =
             update_notes_processor
-                .start(
-                    bsync_data.clone(),
-                    fetch_full_transaction_transmitter,
-                    self.wallet.wallet_capability().orchard.can_spend(),
-                )
+                .start(bsync_data.clone(), fetch_full_transaction_transmitter)
                 .await;
 
         // Do Trial decryptions of all the outputs, and pass on the successful ones to the update_notes processor
@@ -1631,14 +1663,6 @@ impl LightClient {
 
         // 3. Mark the sync finished, which will clear the nullifier cache etc...
         blaze_sync_data.finish().await;
-
-        // 4. Remove the witnesses for spent notes more than 100 blocks old, since now there
-        // is no risk of reorg
-        self.wallet
-            .transactions()
-            .write()
-            .await
-            .clear_old_witnesses(start_block);
 
         // 5. Remove expired mempool transactions, if any
         self.wallet

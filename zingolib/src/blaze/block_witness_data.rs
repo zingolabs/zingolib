@@ -2,7 +2,7 @@ use crate::{
     compact_formats::{CompactBlock, CompactTx, TreeState},
     grpc_connector::GrpcConnector,
     wallet::{
-        data::{BlockData, PoolNullifier, TransactionMetadata, WitnessCache},
+        data::{BlockData, PoolNullifier},
         traits::{DomainWalletExt, FromCommitment, ReceivedNoteAndMetadata},
         transactions::TransactionMetadataSet,
     },
@@ -12,7 +12,7 @@ use incrementalmerkletree::{
 };
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
 use zcash_note_encryption::Domain;
-use zingoconfig::{ChainType, ZingoConfig, MAX_REORG};
+use zingoconfig::ChainType;
 
 use futures::future::join_all;
 use http::Uri;
@@ -26,13 +26,12 @@ use tokio::{
     time::sleep,
 };
 use zcash_primitives::{
-    consensus::{BlockHeight, NetworkUpgrade, Parameters},
+    consensus::BlockHeight,
     merkle_tree::{read_commitment_tree, write_commitment_tree, HashSer},
     sapling::note_encryption::SaplingDomain,
-    transaction::TxId,
 };
 
-use super::{fixed_size_buffer::FixedSizeBuffer, sync_status::BatchSyncStatus};
+use super::sync_status::BatchSyncStatus;
 
 type Node<D> = <<D as DomainWalletExt>::WalletNote as ReceivedNoteAndMetadata>::Node;
 
@@ -61,14 +60,11 @@ pub struct BlockAndWitnessData {
 
     // Link to the syncstatus where we can update progress
     sync_status: Arc<RwLock<BatchSyncStatus>>,
-
-    sapling_activation_height: u64,
-    orchard_activation_height: u64,
 }
 
 pub const BATCHSIZE: u32 = 25;
 impl BlockAndWitnessData {
-    pub fn new(config: &ZingoConfig, sync_status: Arc<RwLock<BatchSyncStatus>>) -> Self {
+    pub fn new(sync_status: Arc<RwLock<BatchSyncStatus>>) -> Self {
         Self {
             blocks_in_current_batch: Arc::new(RwLock::new(vec![])),
             existing_blocks: Arc::new(RwLock::new(vec![])),
@@ -76,18 +72,12 @@ impl BlockAndWitnessData {
             batch_size: BATCHSIZE,
             highest_verified_trees: None,
             sync_status,
-            sapling_activation_height: config.sapling_activation_height(),
-            orchard_activation_height: config
-                .chain
-                .activation_height(NetworkUpgrade::Nu5)
-                .unwrap()
-                .into(),
         }
     }
 
     #[cfg(test)]
-    pub fn new_with_batchsize(config: &ZingoConfig, batch_size: u32) -> Self {
-        let mut s = Self::new(config, Arc::new(RwLock::new(BatchSyncStatus::default())));
+    pub fn new_with_batchsize(batch_size: u32) -> Self {
+        let mut s = Self::new(Arc::new(RwLock::new(BatchSyncStatus::default())));
         s.batch_size = batch_size;
 
         s
@@ -610,192 +600,6 @@ impl BlockAndWitnessData {
 
         Err("Not found!".to_string())
     }
-    #[allow(dead_code)]
-    pub async fn get_sapling_note_witness(
-        &self,
-        uri: Uri,
-        height: BlockHeight,
-        transaction_num: usize,
-        output_num: usize,
-    ) -> Result<IncrementalWitness<zcash_primitives::sapling::Node, 32>, String> {
-        self.get_note_witness::<SaplingDomain<zingoconfig::ChainType>>(
-            uri,
-            height,
-            transaction_num,
-            output_num,
-            self.sapling_activation_height,
-        )
-        .await
-    }
-
-    #[allow(dead_code)]
-    pub async fn get_orchard_note_witness(
-        &self,
-        uri: Uri,
-        height: BlockHeight,
-        transaction_num: usize,
-        action_num: usize,
-    ) -> Result<IncrementalWitness<MerkleHashOrchard, 32>, String> {
-        self.get_note_witness::<OrchardDomain>(
-            uri,
-            height,
-            transaction_num,
-            action_num,
-            self.orchard_activation_height,
-        )
-        .await
-    }
-
-    // Stream all the outputs start at the block till the highest block available.
-    pub(crate) async fn update_witness_after_block<D: DomainWalletExt>(
-        &self,
-        witnesses: WitnessCache<Node<D>>,
-        nullifier: <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier,
-    ) -> WitnessCache<Node<D>>
-    where
-        <D as Domain>::Recipient: crate::wallet::traits::Recipient,
-        <D as Domain>::Note: PartialEq + Clone,
-    {
-        let height = witnesses.top_height + 1;
-
-        // Check if we've already synced all the requested blocks
-        if height > self.wait_for_first_block().await {
-            return witnesses;
-        }
-        self.wait_for_block(height).await;
-
-        let mut fsb = FixedSizeBuffer::new(MAX_REORG);
-
-        let top_block = {
-            let mut blocks = self.blocks_in_current_batch.read().await;
-            let top_block = blocks.first().unwrap().height;
-            let bottom_block = blocks.last().unwrap().height;
-            let pos = top_block - height;
-
-            // Get the last witness, and then use that.
-            let mut w = witnesses.last().unwrap().clone();
-            witnesses.into_fsb(&mut fsb);
-
-            for i in (0..pos + 1).rev() {
-                let cb = &blocks.get(i as usize).unwrap().cb();
-                for compact_transaction in &cb.vtx {
-                    use crate::wallet::traits::CompactOutput as _;
-                    for co in D::CompactOutput::from_compact_transaction(compact_transaction) {
-                        if let Some(node) = Node::<D>::from_commitment(co.cmstar()).into() {
-                            w.append(node).unwrap();
-                        }
-                    }
-                }
-
-                // At the end of every block, update the witness in the array
-                fsb.push(w.clone());
-
-                if i % 250 == 0 {
-                    // Every 250 blocks, give up the lock, let other threads proceed and then re-acquire it
-                    drop(blocks);
-                    yield_now().await;
-                    blocks = self.blocks_in_current_batch.read().await;
-                }
-                self.sync_status
-                    .write()
-                    .await
-                    .witnesses_updated
-                    .insert(nullifier.into(), top_block - bottom_block - i);
-            }
-
-            top_block
-        };
-
-        WitnessCache::new(fsb.into_vec(), top_block)
-    }
-
-    async fn update_witness_after_reciept_to_block_end<D: DomainWalletExt>(
-        &self,
-        height: &BlockHeight,
-        transaction_id: &TxId,
-        output_num: u32,
-        witnesses: WitnessCache<<D::WalletNote as ReceivedNoteAndMetadata>::Node>,
-    ) -> WitnessCache<<D::WalletNote as ReceivedNoteAndMetadata>::Node>
-    where
-        D::Recipient: crate::wallet::traits::Recipient,
-        D::Note: PartialEq + Clone,
-        <D::WalletNote as ReceivedNoteAndMetadata>::Node: FromCommitment,
-    {
-        let height = u64::from(*height);
-        self.wait_for_block(height).await;
-
-        // We'll update the rest of the block's witnesses here. Notice we pop the last witness, and we'll
-        // add the updated one back into the array at the end of this function.
-        let mut w = witnesses.last().unwrap().clone();
-
-        {
-            let blocks = self.blocks_in_current_batch.read().await;
-            let pos = blocks.first().unwrap().height - height;
-
-            let mut transaction_id_found = false;
-            let mut output_found = false;
-
-            let cb = &blocks.get(pos as usize).unwrap().cb();
-            for compact_transaction in &cb.vtx {
-                if !transaction_id_found
-                    && TransactionMetadata::new_txid(&compact_transaction.hash) == *transaction_id
-                {
-                    transaction_id_found = true;
-                }
-                use crate::wallet::traits::CompactOutput as _;
-                let outputs = D::CompactOutput::from_compact_transaction(compact_transaction);
-                for j in 0..outputs.len() as u32 {
-                    // If we've already passed the transaction id and output_num, stream the results
-                    if transaction_id_found && output_found {
-                        let compact_output = outputs.get(j as usize).unwrap();
-                        let node =
-                            <D::WalletNote as ReceivedNoteAndMetadata>::Node::from_commitment(
-                                compact_output.cmstar(),
-                            )
-                            .unwrap();
-                        w.append(node).unwrap();
-                    }
-
-                    // Mark as found if we reach the transaction id and output_num. Starting with the next output,
-                    // we'll stream all the data to the requester
-                    if !output_found && transaction_id_found && j == output_num {
-                        output_found = true;
-                    }
-                }
-            }
-
-            if !transaction_id_found || !output_found {
-                panic!("Txid or output not found");
-            }
-        }
-
-        // Replace the last witness in the vector with the newly computed one.
-        WitnessCache::new(vec![w], height)
-    }
-    pub(crate) async fn update_witness_after_receipt<D: DomainWalletExt>(
-        &self,
-        height: &BlockHeight,
-        transaction_id: &TxId,
-        output_num: u32,
-        witnesses: WitnessCache<<D::WalletNote as ReceivedNoteAndMetadata>::Node>,
-        nullifier: <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier,
-    ) -> WitnessCache<<D::WalletNote as ReceivedNoteAndMetadata>::Node>
-    where
-        D::Recipient: crate::wallet::traits::Recipient,
-        D::Note: PartialEq + Clone,
-        <D::WalletNote as ReceivedNoteAndMetadata>::Node: FromCommitment,
-    {
-        let witnesses = self
-            .update_witness_after_reciept_to_block_end::<D>(
-                height,
-                transaction_id,
-                output_num,
-                witnesses,
-            )
-            .await;
-        self.update_witness_after_block::<D>(witnesses, nullifier)
-            .await
-    }
 }
 
 fn is_orchard_tree_verified(determined_orchard_tree: String, unverified_tree: TreeState) -> bool {
@@ -900,7 +704,7 @@ mod test {
     use crate::{blaze::test_utils::FakeCompactBlock, wallet::data::BlockData};
     use orchard::tree::MerkleHashOrchard;
     use zcash_primitives::block::BlockHash;
-    use zingoconfig::{ChainType, ZingoConfig};
+    use zingoconfig::ChainType;
 
     use super::*;
 
@@ -922,10 +726,7 @@ mod test {
 
     #[tokio::test]
     async fn verify_block_and_witness_data_blocks_order() {
-        let mut scenario_bawd = BlockAndWitnessData::new_with_batchsize(
-            &ZingoConfig::create_unconnected(ChainType::FakeMainnet, None),
-            25_000,
-        );
+        let mut scenario_bawd = BlockAndWitnessData::new_with_batchsize(25_000);
 
         for numblocks in [0, 1, 2, 10] {
             let existing_blocks = make_fake_block_list(numblocks);
@@ -955,10 +756,7 @@ mod test {
 
     #[tokio::test]
     async fn setup_finish_large() {
-        let mut nw = BlockAndWitnessData::new_with_batchsize(
-            &ZingoConfig::create_unconnected(ChainType::FakeMainnet, None),
-            25_000,
-        );
+        let mut nw = BlockAndWitnessData::new_with_batchsize(25_000);
 
         let existing_blocks = make_fake_block_list(200);
         nw.setup_sync(existing_blocks.clone(), None).await;
@@ -976,8 +774,6 @@ mod test {
 
     #[tokio::test]
     async fn from_sapling_genesis() {
-        let config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, None);
-
         let blocks = make_fake_block_list(200);
 
         // Blocks are in reverse order
@@ -987,7 +783,7 @@ mod test {
         let end_block = blocks.last().unwrap().height;
 
         let sync_status = Arc::new(RwLock::new(BatchSyncStatus::default()));
-        let mut nw = BlockAndWitnessData::new(&config, sync_status);
+        let mut nw = BlockAndWitnessData::new(sync_status);
         nw.setup_sync(vec![], None).await;
 
         let (reorg_transmitter, mut reorg_receiver) = mpsc::unbounded_channel();
@@ -996,7 +792,7 @@ mod test {
             .start(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(TransactionMetadataSet::default())),
+                Arc::new(RwLock::new(TransactionMetadataSet::new_with_witness_trees())),
                 reorg_transmitter,
             )
             .await;
@@ -1025,8 +821,6 @@ mod test {
 
     #[tokio::test]
     async fn with_existing_batched() {
-        let config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, None);
-
         let mut blocks = make_fake_block_list(200);
 
         // Blocks are in reverse order
@@ -1038,7 +832,7 @@ mod test {
         let start_block = blocks.first().unwrap().height;
         let end_block = blocks.last().unwrap().height;
 
-        let mut nw = BlockAndWitnessData::new_with_batchsize(&config, 25);
+        let mut nw = BlockAndWitnessData::new_with_batchsize(25);
         nw.setup_sync(existing_blocks, None).await;
 
         let (reorg_transmitter, mut reorg_receiver) = mpsc::unbounded_channel();
@@ -1047,7 +841,7 @@ mod test {
             .start(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(TransactionMetadataSet::default())),
+                Arc::new(RwLock::new(TransactionMetadataSet::new_with_witness_trees())),
                 reorg_transmitter,
             )
             .await;
@@ -1083,8 +877,6 @@ mod test {
 
     #[tokio::test]
     async fn with_reorg() {
-        let config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, None);
-
         let mut blocks = make_fake_block_list(100);
 
         // Blocks are in reverse order
@@ -1136,7 +928,7 @@ mod test {
         let end_block = blocks.last().unwrap().height;
 
         let sync_status = Arc::new(RwLock::new(BatchSyncStatus::default()));
-        let mut nw = BlockAndWitnessData::new(&config, sync_status);
+        let mut nw = BlockAndWitnessData::new(sync_status);
         nw.setup_sync(existing_blocks, None).await;
 
         let (reorg_transmitter, mut reorg_receiver) = mpsc::unbounded_channel();
@@ -1145,7 +937,7 @@ mod test {
             .start(
                 start_block,
                 end_block,
-                Arc::new(RwLock::new(TransactionMetadataSet::default())),
+                Arc::new(RwLock::new(TransactionMetadataSet::new_with_witness_trees())),
                 reorg_transmitter,
             )
             .await;
@@ -1210,10 +1002,7 @@ mod test {
 
     #[tokio::test]
     async fn setup_finish_simple() {
-        let mut nw = BlockAndWitnessData::new_with_batchsize(
-            &ZingoConfig::create_unconnected(ChainType::FakeMainnet, None),
-            25_000,
-        );
+        let mut nw = BlockAndWitnessData::new_with_batchsize(25_000);
 
         let cb = FakeCompactBlock::new(1, BlockHash([0u8; 32])).into_cb();
         let blks = vec![BlockData::new(cb)];

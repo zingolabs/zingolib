@@ -1,6 +1,8 @@
 #![forbid(unsafe_code)]
 #![cfg(feature = "local_env")]
 pub mod darkside;
+use orchard::tree::MerkleHashOrchard;
+use shardtree::{memory::MemoryShardStore, ShardTree};
 use std::{fs::File, path::Path};
 use zingo_testutils::{self, build_fvk_client, data};
 
@@ -12,17 +14,16 @@ use zingo_testutils::scenarios;
 use tracing_test::traced_test;
 use zcash_client_backend::encoding::encode_payment_address;
 use zcash_primitives::{
-    consensus::Parameters,
-    merkle_tree::write_incremental_witness,
+    consensus::{BlockHeight, Parameters},
     transaction::{fees::zip317::MINIMUM_FEE, TxId},
 };
 use zingo_testutils::regtest::get_cargo_manifest_dir;
-use zingoconfig::{ChainType, ZingoConfig};
+use zingoconfig::{ChainType, ZingoConfig, MAX_REORG};
 use zingolib::{
     check_client_balances, get_base_address,
     lightclient::LightClient,
     wallet::{
-        data::TransactionMetadata,
+        data::{COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL},
         keys::{
             extended_transparent::ExtendedPrivKey,
             unified::{Capability, WalletCapability},
@@ -76,7 +77,7 @@ async fn dont_write_unconfirmed() {
         &recipient_balance["unverified_orchard_balance"]
             .as_u64()
             .unwrap(),
-        &(65_000 as u64)
+        &65_000_u64
     );
     let wallet_loc = &regtest_manager
         .zingo_datadir
@@ -93,7 +94,7 @@ async fn dont_write_unconfirmed() {
         &loaded_balance["unverified_orchard_balance"]
             .as_u64()
             .unwrap(),
-        &(0 as u64)
+        &0_u64
     );
     check_client_balances!(loaded_client, o: 100_000 s: 0 t: 0 );
 }
@@ -165,9 +166,8 @@ async fn send_to_self_with_no_user_specified_memo_does_not_cause_error() {
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 1)
         .await
         .unwrap();
-    // With a memo-less send to self, we hide the metadata from the UI, which
-    // tricks the error detector. This test, therefore, asserts the presence
-    // of a known bug
+    // With a memo-less send to self, we hide the metadata from the UI. This should not
+    // trick the error detector.
     assert!(!logs_contain(
         "Received memo indicating you sent to an address you don't have on record."
     ));
@@ -1640,7 +1640,7 @@ async fn witness_clearing() {
     }
 
     // transaction is not yet mined, so witnesses should still be there
-    let witnesses = recipient
+    let position = recipient
         .wallet
         .transactions()
         .read()
@@ -1651,9 +1651,20 @@ async fn witness_clearing() {
         .orchard_notes
         .get(0)
         .unwrap()
-        .witnesses
-        .clone();
-    assert_eq!(witnesses.len(), 1);
+        .witnessed_position;
+    assert!(recipient
+        .wallet
+        .transaction_context
+        .transaction_metadata_set
+        .read()
+        .await
+        .witness_trees
+        .as_ref()
+        .unwrap()
+        .witness_tree_orchard
+        .marked_positions()
+        .unwrap()
+        .contains(&position));
 
     // 4. Mine the sent transaction
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 1)
@@ -1661,7 +1672,7 @@ async fn witness_clearing() {
         .unwrap();
 
     // transaction is now mined, but witnesses should still be there because not 100 blocks yet (i.e., could get reorged)
-    let witnesses = recipient
+    let position = recipient
         .wallet
         .transactions()
         .read()
@@ -1672,15 +1683,26 @@ async fn witness_clearing() {
         .orchard_notes
         .get(0)
         .unwrap()
-        .witnesses
-        .clone();
-    assert_eq!(witnesses.len(), 1);
+        .witnessed_position;
+    assert!(recipient
+        .wallet
+        .transaction_context
+        .transaction_metadata_set
+        .read()
+        .await
+        .witness_trees
+        .as_ref()
+        .unwrap()
+        .witness_tree_orchard
+        .marked_positions()
+        .unwrap()
+        .contains(&position));
 
     // 5. Mine 50 blocks, witness should still be there
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 50)
         .await
         .unwrap();
-    let witnesses = recipient
+    let position = recipient
         .wallet
         .transactions()
         .read()
@@ -1691,15 +1713,26 @@ async fn witness_clearing() {
         .orchard_notes
         .get(0)
         .unwrap()
-        .witnesses
-        .clone();
-    assert_eq!(witnesses.len(), 1);
+        .witnessed_position;
+    assert!(recipient
+        .wallet
+        .transaction_context
+        .transaction_metadata_set
+        .read()
+        .await
+        .witness_trees
+        .as_ref()
+        .unwrap()
+        .witness_tree_orchard
+        .marked_positions()
+        .unwrap()
+        .contains(&position));
 
     // 5. Mine 100 blocks, witness should now disappear
-    zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 100)
+    zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 50)
         .await
         .unwrap();
-    let witnesses = recipient
+    let position = recipient
         .wallet
         .transactions()
         .read()
@@ -1710,13 +1743,37 @@ async fn witness_clearing() {
         .orchard_notes
         .get(0)
         .unwrap()
-        .witnesses
-        .clone();
-    assert_eq!(witnesses.len(), 0);
+        .witnessed_position;
+    //Note: This is a negative assertion. Notice the "!"
+    dbg!(
+        &recipient
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .witness_trees
+            .as_ref()
+            .unwrap()
+            .witness_tree_orchard
+    );
+    assert!(!recipient
+        .wallet
+        .transaction_context
+        .transaction_metadata_set
+        .read()
+        .await
+        .witness_trees
+        .as_ref()
+        .unwrap()
+        .witness_tree_orchard
+        .marked_positions()
+        .unwrap()
+        .contains(&position));
 }
 
 #[tokio::test]
-async fn mempool_clearing() {
+async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
     async fn do_maybe_recent_txid(lc: &LightClient) -> JsonValue {
         json::object! {
             "last_txid" => lc.wallet.transactions().read().await.get_some_txid_from_highest_wallet_block().map(|t| t.to_string())
@@ -1742,6 +1799,18 @@ async fn mempool_clearing() {
         .await
         .unwrap();
     }
+
+    let sent_to_self = 10;
+    // Send recipient->recipient, to make tree equality check at the end simpler
+    zingo_testutils::send_value_between_clients_and_sync(
+        &regtest_manager,
+        &recipient,
+        &recipient,
+        sent_to_self,
+        "unified",
+    )
+    .await
+    .unwrap();
 
     // 3a. stash zcashd state
     log::debug!(
@@ -1812,6 +1881,18 @@ async fn mempool_clearing() {
 
     // Sync recipient
     recipient.do_sync(false).await.unwrap();
+    dbg!(
+        &recipient
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .witness_trees
+            .as_ref()
+            .unwrap()
+            .witness_tree_orchard
+    );
 
     // 4b write down state before clearing the mempool
     let notes_before = recipient.do_list_notes(true).await;
@@ -1878,47 +1959,92 @@ async fn mempool_clearing() {
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 10)
         .await
         .unwrap();
-    assert_eq!(recipient.wallet.last_synced_height().await, 18);
+    assert_eq!(recipient.wallet.last_synced_height().await, 19);
 
     let notes = recipient.do_list_notes(true).await;
 
     let transactions = recipient.do_list_transactions().await;
 
-    // There is 1 unspent note, which is the unconfirmed transaction
+    // There are 2 unspent notes, the unconfirmed transaction, and the final receipt
     println!("{}", json::stringify_pretty(notes.clone(), 4));
     println!("{}", json::stringify_pretty(transactions.clone(), 4));
-    // One unspent note, change, unconfirmed
-    assert_eq!(notes["unspent_orchard_notes"].len(), 1);
+    // Two unspent notes: one change, unconfirmed, one from faucet, confirmed
+    assert_eq!(notes["unspent_orchard_notes"].len(), 2);
     assert_eq!(notes["unspent_sapling_notes"].len(), 0);
-    let note = notes["unspent_orchard_notes"][0].clone();
+    let note = notes["unspent_orchard_notes"][1].clone();
     assert_eq!(note["created_in_txid"], sent_transaction_id);
     assert_eq!(
         note["value"].as_u64().unwrap(),
-        value - sent_value - u64::from(MINIMUM_FEE)
+        value - sent_value - (2 * u64::from(MINIMUM_FEE)) - sent_to_self
     );
     assert!(note["unconfirmed"].as_bool().unwrap());
-    assert_eq!(transactions.len(), 2);
+    assert_eq!(transactions.len(), 3);
 
     // 7. Mine 100 blocks, so the mempool expires
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 100)
         .await
         .unwrap();
-    assert_eq!(recipient.wallet.last_synced_height().await, 118);
+    assert_eq!(recipient.wallet.last_synced_height().await, 119);
 
     let notes = recipient.do_list_notes(true).await;
     let transactions = recipient.do_list_transactions().await;
 
-    // There is now again 1 unspent note, but it is the original (confirmed) note.
-    assert_eq!(notes["unspent_orchard_notes"].len(), 1);
+    // There are now three notes, the original (confirmed and spent) note, the send to self note, and its change.
+    assert_eq!(notes["unspent_orchard_notes"].len(), 2);
     assert_eq!(
-        notes["unspent_orchard_notes"][0]["created_in_txid"],
+        notes["spent_orchard_notes"][0]["created_in_txid"],
         orig_transaction_id
     );
     assert!(!notes["unspent_orchard_notes"][0]["unconfirmed"]
         .as_bool()
         .unwrap());
     assert_eq!(notes["pending_orchard_notes"].len(), 0);
-    assert_eq!(transactions.len(), 1);
+    assert_eq!(transactions.len(), 2);
+    let read_lock = recipient
+        .wallet
+        .transaction_context
+        .transaction_metadata_set
+        .read()
+        .await;
+    let wallet_trees = read_lock.witness_trees.as_ref().unwrap();
+    let last_leaf = wallet_trees
+        .witness_tree_orchard
+        .max_leaf_position(0)
+        .unwrap();
+    let server_trees = zingolib::grpc_connector::GrpcConnector::get_trees(
+        recipient.get_server_uri(),
+        recipient.wallet.last_synced_height().await,
+    )
+    .await
+    .unwrap();
+    let server_orchard_front = zcash_primitives::merkle_tree::read_commitment_tree::<
+        MerkleHashOrchard,
+        &[u8],
+        { zingolib::wallet::data::COMMITMENT_TREE_LEVELS },
+    >(&hex::decode(server_trees.orchard_tree).unwrap()[..])
+    .unwrap()
+    .to_frontier()
+    .take();
+    let mut server_orchard_shardtree: ShardTree<_, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL> =
+        ShardTree::new(
+            MemoryShardStore::<MerkleHashOrchard, BlockHeight>::empty(),
+            MAX_REORG,
+        );
+    server_orchard_shardtree
+        .insert_frontier_nodes(
+            server_orchard_front.unwrap(),
+            zingo_testutils::incrementalmerkletree::Retention::Marked,
+        )
+        .unwrap();
+    assert_eq!(
+        wallet_trees
+            .witness_tree_orchard
+            .witness(last_leaf.unwrap(), 0)
+            .unwrap_or_else(|_| panic!("{:#?}", wallet_trees.witness_tree_orchard)),
+        server_orchard_shardtree
+            .witness(last_leaf.unwrap(), 0)
+            .unwrap()
+    )
 }
 
 pub mod framework_validation {
@@ -2213,27 +2339,40 @@ async fn aborted_resync() {
 
     let notes_before = recipient.do_list_notes(true).await;
     let list_before = recipient.do_list_transactions().await;
+    let requested_txid = &zingolib::wallet::data::TransactionMetadata::new_txid(
+        hex::decode(sent_transaction_id.clone())
+            .unwrap()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>()
+            .as_slice(),
+    );
     let witness_before = recipient
         .wallet
         .transaction_context
         .transaction_metadata_set
         .read()
         .await
-        .current
-        .get(&zingolib::wallet::data::TransactionMetadata::new_txid(
-            hex::decode(sent_transaction_id.clone())
+        .witness_trees
+        .as_ref()
+        .unwrap()
+        .witness_tree_orchard
+        .witness(
+            recipient
+                .wallet
+                .transaction_context
+                .transaction_metadata_set
+                .read()
+                .await
+                .current
+                .get(requested_txid)
                 .unwrap()
-                .into_iter()
-                .rev()
-                .collect::<Vec<_>>()
-                .as_slice(),
-        ))
-        .unwrap()
-        .orchard_notes
-        .get(0)
-        .unwrap()
-        .witnesses
-        .clone();
+                .orchard_notes
+                .get(0)
+                .unwrap()
+                .witnessed_position,
+            0,
+        );
 
     // 5. Now, we'll manually remove some of the blocks in the wallet, pretending that the sync was aborted in the middle.
     // We'll remove the top 20 blocks, so now the wallet only has the first 3 blocks
@@ -2253,35 +2392,30 @@ async fn aborted_resync() {
         .transaction_metadata_set
         .read()
         .await
-        .current
-        .get(&TransactionMetadata::new_txid(
-            hex::decode(sent_transaction_id)
+        .witness_trees
+        .as_ref()
+        .unwrap()
+        .witness_tree_orchard
+        .witness(
+            recipient
+                .wallet
+                .transaction_context
+                .transaction_metadata_set
+                .read()
+                .await
+                .current
+                .get(requested_txid)
                 .unwrap()
-                .into_iter()
-                .rev()
-                .collect::<Vec<_>>()
-                .as_slice(),
-        ))
-        .unwrap()
-        .orchard_notes
-        .get(0)
-        .unwrap()
-        .witnesses
-        .clone();
+                .orchard_notes
+                .get(0)
+                .unwrap()
+                .witnessed_position,
+            0,
+        );
 
     assert_eq!(notes_before, notes_after);
     assert_eq!(list_before, list_after);
-    assert_eq!(witness_before.top_height, witness_after.top_height);
-    assert_eq!(witness_before.len(), witness_after.len());
-    for i in 0..witness_before.len() {
-        let mut before_bytes = vec![];
-        write_incremental_witness(witness_before.get(i).unwrap(), &mut before_bytes).unwrap();
-
-        let mut after_bytes = vec![];
-        write_incremental_witness(witness_after.get(i).unwrap(), &mut after_bytes).unwrap();
-
-        assert_eq!(hex::encode(before_bytes), hex::encode(after_bytes));
-    }
+    assert_eq!(witness_before.unwrap(), witness_after.unwrap());
 }
 
 #[tokio::test]
@@ -2393,6 +2527,10 @@ async fn by_address_finsight() {
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &faucet, 2)
         .await
         .unwrap();
+    println!(
+        "faucet notes: {}",
+        faucet.do_list_notes(true).await.pretty(4)
+    );
     faucet
         .do_send(vec![(&base_uaddress, 1_000u64, Some("1".to_string()))])
         .await
@@ -2400,7 +2538,11 @@ async fn by_address_finsight() {
     faucet
         .do_send(vec![(&base_uaddress, 1_000u64, Some("1".to_string()))])
         .await
-        .unwrap();
+        .expect(
+            "We only have sapling notes, plus a pending orchard note from the \
+            previous send. If we're allowed to select pending notes, we'll attempt \
+            to select that one, and this will fail",
+        );
     assert_eq!(
         JsonValue::from(faucet.do_total_memobytes_to_address().await)[&base_uaddress].pretty(4),
         "2".to_string()
@@ -2413,6 +2555,83 @@ async fn by_address_finsight() {
         JsonValue::from(faucet.do_total_memobytes_to_address().await)[&base_uaddress].pretty(4),
         "6".to_string()
     );
+}
+
+#[tokio::test]
+async fn load_old_wallet_at_reorged_height() {
+    let (ref regtest_manager, cph, ref faucet) = scenarios::faucet().await;
+    println!("Shutting down initial zcd/lwd unneeded processes");
+    drop(cph);
+
+    let zcd_datadir = &regtest_manager.zcashd_data_dir;
+    let zingo_datadir = &regtest_manager.zingo_datadir;
+    let cached_data_dir = get_cargo_manifest_dir()
+        .parent()
+        .unwrap()
+        .join("zingo-testutils")
+        .join("data")
+        .join("old_wallet_reorg_test_wallet");
+    let zcd_source = cached_data_dir
+        .join("zcashd")
+        .join(".")
+        .to_string_lossy()
+        .to_string();
+    let zcd_dest = zcd_datadir.to_string_lossy().to_string();
+    std::process::Command::new("rm")
+        .arg("-r")
+        .arg(&zcd_dest)
+        .output()
+        .expect("directory rm failed");
+    std::fs::DirBuilder::new()
+        .create(&zcd_dest)
+        .expect("Dir recreate failed");
+    std::process::Command::new("cp")
+        .arg("-r")
+        .arg(zcd_source)
+        .arg(zcd_dest)
+        .output()
+        .expect("directory copy failed");
+    let zingo_source = cached_data_dir
+        .join("zingo-wallet.dat")
+        .to_string_lossy()
+        .to_string();
+    let zingo_dest = zingo_datadir.to_string_lossy().to_string();
+    std::process::Command::new("cp")
+        .arg("-f")
+        .arg(zingo_source)
+        .arg(&zingo_dest)
+        .output()
+        .expect("wallet copy failed");
+    let _cph = regtest_manager.launch(false).unwrap();
+    println!("loading wallet");
+    let (wallet, conf) = zingo_testutils::load_wallet(zingo_dest.into(), ChainType::Regtest).await;
+    println!("setting uri");
+    *conf.lightwalletd_uri.write().unwrap() = faucet.get_server_uri();
+    println!("creating lightclient");
+    let recipient = LightClient::create_from_extant_wallet(wallet, conf);
+    println!(
+        "pre-sync transactions: {}",
+        recipient.do_list_transactions().await.pretty(2)
+    );
+    recipient.do_sync(false).await.unwrap();
+    dbg!(
+        &recipient
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .witness_trees
+    );
+    println!(
+        "post-sync transactions: {}",
+        recipient.do_list_transactions().await.pretty(2)
+    );
+    println!("{}", recipient.do_balance().await.pretty(2));
+    recipient
+        .do_send(vec![(&get_base_address!(faucet, "unified"), 14000, None)])
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
