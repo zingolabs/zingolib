@@ -974,6 +974,7 @@ impl LightWallet {
         &self,
         pre_fee_amount: &u64,
         policy: &NoteSelectionPolicy,
+        recipients: &Vec<(address::RecipientAddress, Amount, Option<String>)>,
     ) -> Result<
         (
             Vec<SpendableOrchardNote>,
@@ -1099,7 +1100,7 @@ impl LightWallet {
 
         let pre_fee_amount = total_value;
         let (orchard_notes, sapling_notes, utxos, selected_value, zip317_fee) = match self
-            .select_notes_with_zip317_fee(&pre_fee_amount, &policy)
+            .select_notes_with_zip317_fee(&pre_fee_amount, &policy, &recipients)
             .await
         {
             Ok(a) => a,
