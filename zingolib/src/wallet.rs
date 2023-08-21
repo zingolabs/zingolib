@@ -966,6 +966,7 @@ impl LightWallet {
         orch_notes: &Vec<SpendableOrchardNote>,
         sapling_notes: &Vec<SpendableSaplingNote>,
         utxos: &Vec<ReceivedTransparentOutput>,
+        recipients: &Vec<(address::RecipientAddress, Amount, Option<String>)>,
     ) -> u64 {
         todo!()
     }
@@ -1001,6 +1002,7 @@ impl LightWallet {
                         &orchard_notes,
                         &sapling_notes,
                         &utxos,
+                        recipients,
                     );
                     if value_to_cover + zip_317_fee <= value_covered {
                         // The selected notes covered the send amount plus fee.
