@@ -969,14 +969,22 @@ impl LightWallet {
         Amount,
         Amount,
     ) {
-        let mut updating_value = selected_value();
+        let mut zip_317_fee;
+        let mut value_plus_fee = pre_fee_amount;
         let mut orchard_notes;
         let mut sapling_notes;
         let mut utxos;
         let mut selected_value;
         loop {
             (orchard_notes, sapling_notes, utxos, selected_value) =
-                self.select_notes_and_utxos(pre_fee_amount, policy).await;
+                self.select_notes_and_utxos(value_plus_fee, policy).await;
+            zip_317_fee = LightWallet::calculate_zip317_for_notes(
+                &orchard_notes,
+                &sapling_notes,
+                &utxos,
+                &selected_value,
+            );
+            value_plus_fee = value_plus_fee + zip_317_fee;
         }
         (orchard_notes, sapling_notes, utxos, selected_value)
     }
