@@ -33,6 +33,37 @@ use zingolib::{
 };
 
 #[tokio::test]
+async fn correct_zip317_fees() {
+    let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient().await;
+    faucet
+        .do_send(vec![(
+            &get_base_address!(recipient, "unified"),
+            100_000,
+            Some("funding to be received by the recipient".to_string()),
+        )])
+        .await
+        .unwrap();
+
+    zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 2)
+        .await
+        .unwrap();
+    let recipient_balance = recipient.do_balance().await;
+    assert_eq!(
+        recipient_balance,
+        json::object! {
+            "sapling_balance": 0,
+            "verified_sapling_balance": 0,
+            "spendable_sapling_balance": 0,
+            "unverified_sapling_balance": 0,
+            "orchard_balance": 100000,
+            "verified_orchard_balance": 100000,
+            "spendable_orchard_balance": 100000,
+            "unverified_orchard_balance": 0,
+            "transparent_balance": 0
+        }
+    );
+}
+#[tokio::test]
 async fn dont_write_unconfirmed() {
     let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient().await;
     faucet

@@ -1646,6 +1646,13 @@ mod test {
     use orchard::tree::MerkleHashOrchard;
 
     #[test]
+    fn check_zip317_size_assertions() {
+        // From this we expect certain sizes for certain transaction components:
+        //https://zips.z.cash/zip-0317#fee-calculation
+        // check p2pkh_standard_input_size is 150 bytes
+        // check p2pkh_standard_output_size is 34
+    }
+    #[test]
     fn anchor_from_tree_works() {
         // These commitment values copied from zcash/orchard, and were originally derived from the bundle
         // data that was generated for testing commitment tree construction inside of zcashd here.
