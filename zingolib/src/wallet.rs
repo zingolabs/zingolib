@@ -980,6 +980,7 @@ impl LightWallet {
             Vec<SpendableSaplingNote>,
             Vec<ReceivedTransparentOutput>,
             u64,
+            u64,
         ),
         u64,
     > {
@@ -988,6 +989,7 @@ impl LightWallet {
         let sapling_notes = vec![];
         let utxos = vec![];
         let mut value_to_cover = pre_fee_amount.clone();
+        let mut value_covered: u64;
 
         loop {
             match self.select_notes_and_utxos(value_to_cover, policy).await {
@@ -1010,7 +1012,13 @@ impl LightWallet {
                 }
             }
         }
-        Ok((orchard_notes, sapling_notes, utxos, zip_317_fee))
+        Ok((
+            orchard_notes,
+            sapling_notes,
+            utxos,
+            value_covered,
+            zip_317_fee,
+        ))
     }
     async fn send_to_address_inner<F, Fut, P: TxProver>(
         &self,
@@ -1088,19 +1096,22 @@ impl LightWallet {
             .unwrap();
 
         let pre_fee_amount = total_value;
-        let (orchard_notes, sapling_notes, utxos, selected_value, zip317_fee) = self
+        let (orchard_notes, sapling_notes, utxos, selected_value, zip317_fee) = match self
             .select_notes_with_zip317_fee(&pre_fee_amount, &policy)
-            .await;
-
-        if selected_value < pre_fee_amount {
-            let e = format!(
+            .await
+        {
+            Ok(a) => a,
+            Err(insufficient_funds) => {
+                let e = format!(
                 "Insufficient verified shielded funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes",
-                u64::from(selected_value), u64::from(pre_fee_amount), self.transaction_context.config
+                u64::from(insufficient_funds), u64::from(pre_fee_amount), self.transaction_context.config
                 .reorg_buffer_offset + 1
             );
-            error!("{}", e);
-            return Err(e);
-        }
+                error!("{}", e);
+                return Err(e);
+            }
+        };
+
         println!("Selected notes worth {}", u64::from(selected_value));
         let txmds_readlock = self
             .transaction_context
