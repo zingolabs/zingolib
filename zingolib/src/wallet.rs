@@ -947,9 +947,11 @@ impl LightWallet {
         }
     }
 
-    fn calculate_zip317_for_notes() -> Amount {
-        todo!()
-    }
+    fn calculate_zip317_for_notes(
+        orch_notes: Vec<SpendableOrchardNote>,
+        sapling_notes: Vec<SpendableSaplingNote>,
+        utxos: Vec<ReceivedTransparentOutput>,
+    ) -> Amount {        todo!() }
     async fn select_notes_with_zip317_fee(
         &self,
         pre_fee_amount: &Amount,
@@ -968,21 +970,19 @@ impl LightWallet {
         let mut value_covered;
 
         loop {
-            (orchard_notes, sapling_notes, utxos, value_covered) =
-                self.select_notes_and_utxos(value_to_cover, policy).await;
-            if orchard_notes.len() == 0 && sapling_notes.len() == 0 && utxos.len() == 0 {
-                // The wallet doesn't have funds to cover the transaction with ZIP317-fee
-                // This hack exposes the select_notes_and_utxos interface to the caller
-                (vec![], vec![], vec![], value_covered)
-            }
-            zip_317_fee =
-                LightWallet::calculate_zip317_for_notes(&orchard_notes, &sapling_notes, &utxos);
-            if value_to_cover + zip_317_fee <= value_covered {
-                // The selected notes covered the send amount plus fee.
-                break;
-            } else {
-                // The selected notes covered the send amount, but not the fee.
-                value_to_cover = pre_fee_amount.clone() + zip_317_fee;
+            match self.select_notes_and_utxos(value_to_cover, policy).await {
+                Ok((orchard_notes, sapling_notes, utxos, value_covered)) => {
+                zip_317_fee =
+                    LightWallet::calculate_zip317_for_notes(&orchard_notes, &sapling_notes, &utxos);
+                if value_to_cover + zip_317_fee <= value_covered {
+                    // The selected notes covered the send amount plus fee.
+                    break;
+                } else {
+                    // The selected notes covered the send amount, but not the fee.
+                    value_to_cover = pre_fee_amount.clone() + zip_317_fee;
+                };
+            },
+                Err(uncovered_amount) => return Err(uncovered_amount);
             }
         }
         (orchard_notes, sapling_notes, utxos, zip_317_fee)
