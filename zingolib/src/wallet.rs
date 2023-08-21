@@ -985,6 +985,9 @@ impl LightWallet {
                 &selected_value,
             );
             value_plus_fee = value_plus_fee + zip_317_fee;
+            if value_plus_fee >= total_value {
+                break;
+            }
         }
         (orchard_notes, sapling_notes, utxos, selected_value)
     }
