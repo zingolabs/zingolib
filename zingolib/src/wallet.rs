@@ -955,6 +955,9 @@ impl LightWallet {
         }
     }
 
+    fn calculate_zip317_for_notes() -> Amount {
+        todo!()
+    }
     async fn select_notes_with_zip317_fee(
         &self,
         pre_fee_amount: Amount,
@@ -968,6 +971,7 @@ impl LightWallet {
     ) {
         let (orchard_notes, sapling_notes, utxos, selected_value) =
             self.select_notes_and_utxos(pre_fee_amount, policy).await;
+
         todo!()
     }
     async fn send_to_address_inner<F, Fut, P: TxProver>(
@@ -1046,8 +1050,10 @@ impl LightWallet {
             .unwrap();
 
         let pre_fee_amount = Amount::from_u64(total_value).unwrap();
-        let (orchard_notes, sapling_notes, utxos, selected_value) =
-            self.select_notes_and_utxos(pre_fee_amount, policy).await;
+        let (orchard_notes, sapling_notes, utxos, selected_value, zip317_fee) = self
+            .select_notes_with_zip317_fee(pre_fee_amount, policy)
+            .await;
+
         if selected_value < pre_fee_amount {
             let e = format!(
                 "Insufficient verified shielded funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes",
