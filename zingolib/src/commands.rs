@@ -856,11 +856,14 @@ impl Command for SendCommand {
                 let address = args[0].to_string();
 
                 // Make sure we can parse the amount
-                let value = match args[1].parse::<u64>() {
+                let amount = match args[1].parse::<u64>() {
                     Ok(amt) => amt,
                     Err(e) => return format!("Couldn't parse amount: {}", e),
                 };
 
+                if amount > zcash_primitives::transaction::components::amount::MAX_MONEY as u64 {
+                   return format!("ERROR: Provided amount {} is not within the theoretical range of 0-{}, allowed in the zcash protocol.", amount, MAX_MONEY);
+                };
                 let memo = if args.len() == 3 {
                     Some(args[2].to_string())
                 } else {
@@ -872,7 +875,7 @@ impl Command for SendCommand {
                     return format!("Can't send a memo to the non-shielded address {}", address);
                 }
 
-                vec![(args[0].to_string(), value, memo)]
+                vec![(args[0].to_string(), amount, memo)]
             } else {
                 return self.help().to_string();
             };
