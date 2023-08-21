@@ -883,7 +883,7 @@ impl Command for SendCommand {
             // Convert to the right format. String -> &str.
             let tos = send_args
                 .iter()
-                .map(|(a, v, m)| (a.as_str(), *v, m.clone()))
+                .map(|(addr, val, memo)| (addr.as_str(), *val, memo.clone()))
                 .collect::<Vec<_>>();
             match lightclient.do_send(tos).await {
                 Ok(transaction_id) => {
