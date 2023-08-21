@@ -901,17 +901,11 @@ impl LightWallet {
             // Check how much we've selected
             // TODO:  Instead of the early return patten, lets unify with a single
             // if {} else {} that provide the fn reuslt.
-            if (transparent_value_selected + sapling_value_selected + orchard_value_selected)
-                .unwrap()
-                >= target_amount
-            {
-                return (
-                    orchard_notes,
-                    sapling_notes,
-                    utxos,
-                    (transparent_value_selected + sapling_value_selected + orchard_value_selected)
-                        .unwrap(),
-                );
+            let selected_value =
+                (transparent_value_selected + sapling_value_selected + orchard_value_selected)
+                    .unwrap();
+            if selected_value >= target_amount {
+                return (orchard_notes, sapling_notes, utxos, selected_value);
             }
         }
 
@@ -960,36 +954,31 @@ impl LightWallet {
     }
     async fn select_notes_with_zip317_fee(
         &self,
-        pre_fee_amount: Amount,
+        pre_fee_amount: &Amount,
         policy: NoteSelectionPolicy,
     ) -> (
         Vec<SpendableOrchardNote>,
         Vec<SpendableSaplingNote>,
         Vec<ReceivedTransparentOutput>,
         Amount,
-        Amount,
     ) {
         let mut zip_317_fee;
-        let mut value_plus_fee = pre_fee_amount;
         let mut orchard_notes;
         let mut sapling_notes;
         let mut utxos;
-        let mut selected_value;
+        let mut value_to_cover = pre_fee_amount;
+        let mut value_covered;
         loop {
-            (orchard_notes, sapling_notes, utxos, selected_value) =
-                self.select_notes_and_utxos(value_plus_fee, policy).await;
-            zip_317_fee = LightWallet::calculate_zip317_for_notes(
-                &orchard_notes,
-                &sapling_notes,
-                &utxos,
-                &selected_value,
-            );
-            value_plus_fee = value_plus_fee + zip_317_fee;
-            if value_plus_fee >= total_value {
+            (orchard_notes, sapling_notes, utxos, value_covered) =
+                self.select_notes_and_utxos(value_to_cover, policy).await;
+            zip_317_fee =
+                LightWallet::calculate_zip317_for_notes(&orchard_notes, &sapling_notes, &utxos);
+            value_plus_fee = value_to_cover + zip_317_fee;
+            if value_plus_fee <= value_covered {
                 break;
             }
         }
-        (orchard_notes, sapling_notes, utxos, selected_value)
+        (orchard_notes, sapling_notes, utxos, zip_317_fee)
     }
     async fn send_to_address_inner<F, Fut, P: TxProver>(
         &self,
