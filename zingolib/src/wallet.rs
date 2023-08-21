@@ -870,10 +870,12 @@ impl LightWallet {
                     (sapling_notes, sapling_value_selected) =
                         Self::add_notes_to_total::<SaplingDomain<zingoconfig::ChainType>>(
                             sapling_candidates,
-                            (target_amount
-                                - u64::from(orchard_value_selected)
-                                - u64::from(transparent_value_selected))
-                            .unwrap(),
+                            Amount::from_u64(
+                                target_amount
+                                    - u64::from(orchard_value_selected)
+                                    - u64::from(transparent_value_selected),
+                            )
+                            .expect("to contruct an Amount from a u64"),
                         );
                 }
                 Pool::Orchard => {
@@ -971,9 +973,9 @@ impl LightWallet {
         u64,
     > {
         let mut zip_317_fee;
-        let mut orchard_notes;
-        let mut sapling_notes;
-        let mut utxos;
+        let mut orchard_notes = vec![];
+        let mut sapling_notes = vec![];
+        let mut utxos = vec![];
         let mut value_to_cover = pre_fee_amount.clone();
         let mut value_covered: u64;
 
