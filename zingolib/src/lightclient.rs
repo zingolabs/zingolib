@@ -999,7 +999,8 @@ impl LightClient {
         address: Option<String>,
     ) -> Result<String, String> {
         let transaction_submission_height = self.get_submission_height().await?;
-        let fee = u64::from(MINIMUM_FEE);
+        let fee = u64::from(MINIMUM_FEE); // TODO: This can no longer be hard coded, and must be calced
+                                          // as a fn of the transactions structure.
         let tbal = self
             .wallet
             .tbalance(None)
