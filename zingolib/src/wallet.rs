@@ -984,11 +984,10 @@ impl LightWallet {
         u64,
     > {
         let mut zip_317_fee;
-        let mut orchard_notes = vec![];
-        let mut sapling_notes = vec![];
-        let mut utxos = vec![];
+        let orchard_notes = vec![];
+        let sapling_notes = vec![];
+        let utxos = vec![];
         let mut value_to_cover = pre_fee_amount.clone();
-        let mut value_covered: u64;
 
         loop {
             match self.select_notes_and_utxos(value_to_cover, policy).await {
