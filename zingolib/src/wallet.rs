@@ -915,13 +915,20 @@ impl LightWallet {
             let selected_value =
                 (transparent_value_selected + sapling_value_selected + orchard_value_selected)
                     .unwrap();
-            if selected_value >= target_amount {
-                return Ok((orchard_notes, sapling_notes, utxos, selected_value));
+            if u64::from(selected_value) >= target_amount {
+                return Ok((
+                    orchard_notes,
+                    sapling_notes,
+                    utxos,
+                    u64::from(selected_value),
+                ));
             }
         }
 
         // If we can't select enough, then we need to return empty handed
-        Err((transparent_value_selected + sapling_value_selected + orchard_value_selected).unwrap())
+        Err(u64::from(transparent_value_selected)
+            + u64::from(sapling_value_selected)
+            + u64::from(orchard_value_selected))
     }
 
     pub async fn send_to_address<F, Fut, P: TxProver>(
