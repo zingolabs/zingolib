@@ -955,6 +955,21 @@ impl LightWallet {
         }
     }
 
+    async fn select_notes_with_zip317_fee(
+        &self,
+        pre_fee_amount: Amount,
+        policy: NoteSelectionPolicy,
+    ) -> (
+        Vec<SpendableOrchardNote>,
+        Vec<SpendableSaplingNote>,
+        Vec<ReceivedTransparentOutput>,
+        Amount,
+        Amount,
+    ) {
+        let (orchard_notes, sapling_notes, utxos, selected_value) =
+            self.select_notes_and_utxos(pre_fee_amount, policy).await;
+        todo!()
+    }
     async fn send_to_address_inner<F, Fut, P: TxProver>(
         &self,
         prover: P,
@@ -1023,8 +1038,6 @@ impl LightWallet {
         // Select notes to cover the target value
         println!("{}: Selecting notes", now() - start_time);
 
-        let target_amount = (Amount::from_u64(total_value).unwrap() + MINIMUM_FEE).unwrap();
-
         // Create a map from address -> sk for all taddrs, so we can spend from the
         // right address
         let address_to_sk = self
@@ -1032,12 +1045,13 @@ impl LightWallet {
             .get_taddr_to_secretkey_map(&self.transaction_context.config)
             .unwrap();
 
+        let pre_fee_amount = Amount::from_u64(total_value).unwrap();
         let (orchard_notes, sapling_notes, utxos, selected_value) =
-            self.select_notes_and_utxos(target_amount, policy).await;
-        if selected_value < target_amount {
+            self.select_notes_and_utxos(pre_fee_amount, policy).await;
+        if selected_value < pre_fee_amount {
             let e = format!(
                 "Insufficient verified shielded funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes",
-                u64::from(selected_value), u64::from(target_amount), self.transaction_context.config
+                u64::from(selected_value), u64::from(pre_fee_amount), self.transaction_context.config
                 .reorg_buffer_offset + 1
             );
             error!("{}", e);
@@ -1213,11 +1227,11 @@ impl LightWallet {
             }
         };
 
-        dbg!(selected_value, target_amount);
+        dbg!(selected_value, pre_fee_amount);
         if let Err(e) = builder.add_orchard_output::<FixedFeeRule>(
             Some(orchard_ovk.clone()),
             *self.wallet_capability().addresses()[0].orchard().unwrap(),
-            dbg!(u64::from(selected_value) - u64::from(target_amount)),
+            dbg!(u64::from(selected_value) - u64::from(pre_fee_amount)),
             // Here we store the uas we sent to in the memo field.
             // These are used to recover the full UA we sent to.
             MemoBytes::from(Memo::Arbitrary(Box::new(uas_bytes))),
