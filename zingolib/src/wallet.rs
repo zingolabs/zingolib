@@ -843,12 +843,15 @@ impl LightWallet {
         &self,
         target_amount: Amount,
         policy: NoteSelectionPolicy,
-    ) -> (
-        Vec<SpendableOrchardNote>,
-        Vec<SpendableSaplingNote>,
-        Vec<ReceivedTransparentOutput>,
+    ) -> Result<
+        (
+            Vec<SpendableOrchardNote>,
+            Vec<SpendableSaplingNote>,
+            Vec<ReceivedTransparentOutput>,
+            Amount,
+        ),
         Amount,
-    ) {
+    > {
         let mut transparent_value_selected = Amount::zero();
         let mut utxos = Vec::new();
         let mut sapling_value_selected = Amount::zero();
@@ -905,17 +908,12 @@ impl LightWallet {
                 (transparent_value_selected + sapling_value_selected + orchard_value_selected)
                     .unwrap();
             if selected_value >= target_amount {
-                return (orchard_notes, sapling_notes, utxos, selected_value);
+                return Ok((orchard_notes, sapling_notes, utxos, selected_value));
             }
         }
 
         // If we can't select enough, then we need to return empty handed
-        (
-            vec![],
-            vec![],
-            vec![],
-            (transparent_value_selected + sapling_value_selected + orchard_value_selected).unwrap(),
-        )
+        Err((transparent_value_selected + sapling_value_selected + orchard_value_selected).unwrap())
     }
 
     pub async fn send_to_address<F, Fut, P: TxProver>(
@@ -966,16 +964,25 @@ impl LightWallet {
         let mut orchard_notes;
         let mut sapling_notes;
         let mut utxos;
-        let mut value_to_cover = pre_fee_amount;
+        let mut value_to_cover = pre_fee_amount.clone();
         let mut value_covered;
+
         loop {
             (orchard_notes, sapling_notes, utxos, value_covered) =
                 self.select_notes_and_utxos(value_to_cover, policy).await;
+            if orchard_notes.len() == 0 && sapling_notes.len() == 0 && utxos.len() == 0 {
+                // The wallet doesn't have funds to cover the transaction with ZIP317-fee
+                // This hack exposes the select_notes_and_utxos interface to the caller
+                (vec![], vec![], vec![], value_covered)
+            }
             zip_317_fee =
                 LightWallet::calculate_zip317_for_notes(&orchard_notes, &sapling_notes, &utxos);
-            value_plus_fee = value_to_cover + zip_317_fee;
-            if value_plus_fee <= value_covered {
+            if value_to_cover + zip_317_fee <= value_covered {
+                // The selected notes covered the send amount plus fee.
                 break;
+            } else {
+                // The selected notes covered the send amount, but not the fee.
+                value_to_cover = pre_fee_amount.clone() + zip_317_fee;
             }
         }
         (orchard_notes, sapling_notes, utxos, zip_317_fee)
