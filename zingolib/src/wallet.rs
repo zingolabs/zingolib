@@ -969,10 +969,16 @@ impl LightWallet {
         Amount,
         Amount,
     ) {
-        let (orchard_notes, sapling_notes, utxos, selected_value) =
-            self.select_notes_and_utxos(pre_fee_amount, policy).await;
-
-        todo!()
+        let mut updating_value = selected_value();
+        let mut orchard_notes;
+        let mut sapling_notes;
+        let mut utxos;
+        let mut selected_value;
+        loop {
+            (orchard_notes, sapling_notes, utxos, selected_value) =
+                self.select_notes_and_utxos(pre_fee_amount, policy).await;
+        }
+        (orchard_notes, sapling_notes, utxos, selected_value)
     }
     async fn send_to_address_inner<F, Fut, P: TxProver>(
         &self,
