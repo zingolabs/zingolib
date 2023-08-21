@@ -10,6 +10,7 @@ use std::str::FromStr;
 use tokio::runtime::Runtime;
 use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_client_backend::address::RecipientAddress;
+use zcash_primitives::transaction::components::amount::MAX_MONEY;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE;
 
 lazy_static! {
@@ -832,17 +833,16 @@ impl Command for SendCommand {
                         if !j.has_key("address") || !j.has_key("amount") {
                             Err("Need 'address' and 'amount'\n".to_string())
                         } else {
-                            let amount = Some(j["amount"].as_u64().unwrap());
-
-                            match amount {
-                                Some(amt) => Ok((
+                            let amount = j["amount"].as_u64().expect("Amount to be representable as u64, e.g. negative values are not allowed");
+                            if amount > zcash_primitives::transaction::components::amount::MAX_MONEY as u64 {
+                                Err(format!("ERROR: Provided amount {} is not within the theoretical range of 0-{}, allowed in the zcash protocol.", amount, MAX_MONEY))
+                            } else {
+                            Ok(    (
                                     j["address"].as_str().unwrap().to_string(),
-                                    amt,
+                                    amount,
                                     j["memo"].as_str().map(|s| s.to_string()),
-                                )),
-                                None => Err("No amount supplied.".to_string()),
-                            }
-                        }
+                                ))
+                            }}
                     })
                     .collect::<Result<Vec<(String, u64, Option<String>)>, String>>();
 
