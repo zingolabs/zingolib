@@ -985,15 +985,17 @@ impl LightWallet {
         u64,
     > {
         let mut zip_317_fee;
-        let orchard_notes = vec![];
-        let sapling_notes = vec![];
-        let utxos = vec![];
+        let mut orchard_notes;
+        let mut sapling_notes;
+        let mut utxos;
         let mut value_to_cover = pre_fee_amount.clone();
         let mut value_covered: u64;
 
         loop {
             match self.select_notes_and_utxos(value_to_cover, policy).await {
-                Ok((orchard_notes, sapling_notes, utxos, value_covered)) => {
+                Ok((orchs, saps, uts, val_cov)) => {
+                    (orchard_notes, sapling_notes, utxos, value_covered) =
+                        (orchs, saps, uts, val_cov);
                     zip_317_fee = LightWallet::calculate_zip317_for_notes(
                         &orchard_notes,
                         &sapling_notes,
