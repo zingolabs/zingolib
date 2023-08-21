@@ -99,7 +99,7 @@ impl From<Pool> for JsonValue {
         }
     }
 }
-pub(crate) type NoteSelectionPolicy = Vec<Pool>;
+pub(crate) type NoteSelectionPolicy = Vec<Pool>; // In the context of send, we'll use this to choose pools?
 
 impl SendProgress {
     fn new(id: u32) -> Self {
@@ -899,6 +899,8 @@ impl LightWallet {
                 }
             }
             // Check how much we've selected
+            // TODO:  Instead of the early return patten, lets unify with a single
+            // if {} else {} that provide the fn reuslt.
             if (transparent_value_selected + sapling_value_selected + orchard_value_selected)
                 .unwrap()
                 >= target_amount
