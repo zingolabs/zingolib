@@ -842,7 +842,7 @@ impl LightWallet {
     async fn select_notes_and_utxos(
         &self,
         target_amount: u64,
-        policy: NoteSelectionPolicy,
+        policy: &NoteSelectionPolicy,
     ) -> Result<
         (
             Vec<SpendableOrchardNote>,
@@ -870,8 +870,10 @@ impl LightWallet {
                     (sapling_notes, sapling_value_selected) =
                         Self::add_notes_to_total::<SaplingDomain<zingoconfig::ChainType>>(
                             sapling_candidates,
-                            (target_amount - orchard_value_selected - transparent_value_selected)
-                                .unwrap(),
+                            (target_amount
+                                - u64::from(orchard_value_selected)
+                                - u64::from(transparent_value_selected))
+                            .unwrap(),
                         );
                 }
                 Pool::Orchard => {
@@ -951,39 +953,49 @@ impl LightWallet {
         orch_notes: &Vec<SpendableOrchardNote>,
         sapling_notes: &Vec<SpendableSaplingNote>,
         utxos: &Vec<ReceivedTransparentOutput>,
-    ) -> u64 {        todo!() }
+    ) -> u64 {
+        todo!()
+    }
 
     async fn select_notes_with_zip317_fee(
         &self,
         pre_fee_amount: &u64,
-        policy: NoteSelectionPolicy,
-    ) -> Result<(
-        Vec<SpendableOrchardNote>,
-        Vec<SpendableSaplingNote>,
-        Vec<ReceivedTransparentOutput>,
-        u64
-    ), u64> {
+        policy: &NoteSelectionPolicy,
+    ) -> Result<
+        (
+            Vec<SpendableOrchardNote>,
+            Vec<SpendableSaplingNote>,
+            Vec<ReceivedTransparentOutput>,
+            u64,
+        ),
+        u64,
+    > {
         let mut zip_317_fee;
         let mut orchard_notes;
         let mut sapling_notes;
         let mut utxos;
         let mut value_to_cover = pre_fee_amount.clone();
-        let mut value_covered;
+        let mut value_covered: u64;
 
         loop {
             match self.select_notes_and_utxos(value_to_cover, policy).await {
                 Ok((orchard_notes, sapling_notes, utxos, value_covered)) => {
-                zip_317_fee =
-                    LightWallet::calculate_zip317_for_notes(&orchard_notes, &sapling_notes, &utxos);
-                if value_to_cover + zip_317_fee <= value_covered {
-                    // The selected notes covered the send amount plus fee.
-                    break;
-                } else {
-                    // The selected notes covered the send amount, but not the fee.
-                    value_to_cover = pre_fee_amount.clone() + zip_317_fee;
-                };
-            },
-                Err(uncovered_amount) => {return Err(uncovered_amount)};
+                    zip_317_fee = LightWallet::calculate_zip317_for_notes(
+                        &orchard_notes,
+                        &sapling_notes,
+                        &utxos,
+                    );
+                    if value_to_cover + zip_317_fee <= value_covered {
+                        // The selected notes covered the send amount plus fee.
+                        break;
+                    } else {
+                        // The selected notes covered the send amount, but not the fee.
+                        value_to_cover = pre_fee_amount.clone() + zip_317_fee;
+                    };
+                }
+                Err(uncovered_amount) => {
+                    return Err(uncovered_amount);
+                }
             }
         }
         Ok((orchard_notes, sapling_notes, utxos, zip_317_fee))
@@ -1065,7 +1077,7 @@ impl LightWallet {
 
         let pre_fee_amount = total_value;
         let (orchard_notes, sapling_notes, utxos, selected_value, zip317_fee) = self
-            .select_notes_with_zip317_fee(&pre_fee_amount, policy)
+            .select_notes_with_zip317_fee(&pre_fee_amount, &policy)
             .await;
 
         if selected_value < pre_fee_amount {
