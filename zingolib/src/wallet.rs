@@ -888,8 +888,12 @@ impl LightWallet {
                     (orchard_notes, orchard_value_selected) =
                         Self::add_notes_to_total::<OrchardDomain>(
                             orchard_candidates,
-                            (target_amount - transparent_value_selected - sapling_value_selected)
-                                .unwrap(),
+                            Amount::from_u64(
+                                target_amount
+                                    - u64::from(transparent_value_selected)
+                                    - u64::from(sapling_value_selected),
+                            )
+                            .expect("Amountable u64"),
                         );
                 }
                 Pool::Transparent => {
