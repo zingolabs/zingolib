@@ -848,9 +848,9 @@ impl LightWallet {
             Vec<SpendableOrchardNote>,
             Vec<SpendableSaplingNote>,
             Vec<ReceivedTransparentOutput>,
-            Amount,
+            u64,
         ),
-        Amount,
+        u64,
     > {
         let mut transparent_value_selected = Amount::zero();
         let mut utxos = Vec::new();
@@ -957,12 +957,12 @@ impl LightWallet {
         &self,
         pre_fee_amount: &u64,
         policy: NoteSelectionPolicy,
-    ) -> (
+    ) -> Result<(
         Vec<SpendableOrchardNote>,
         Vec<SpendableSaplingNote>,
         Vec<ReceivedTransparentOutput>,
         u64
-    ) {
+    ), u64> {
         let mut zip_317_fee;
         let mut orchard_notes;
         let mut sapling_notes;
@@ -983,10 +983,10 @@ impl LightWallet {
                     value_to_cover = pre_fee_amount.clone() + zip_317_fee;
                 };
             },
-                Err(uncovered_amount) => return Err(uncovered_amount);
+                Err(uncovered_amount) => {return Err(uncovered_amount)};
             }
         }
-        (orchard_notes, sapling_notes, utxos, zip_317_fee)
+        Ok((orchard_notes, sapling_notes, utxos, zip_317_fee))
     }
     async fn send_to_address_inner<F, Fut, P: TxProver>(
         &self,
@@ -1065,7 +1065,7 @@ impl LightWallet {
 
         let pre_fee_amount = total_value;
         let (orchard_notes, sapling_notes, utxos, selected_value, zip317_fee) = self
-            .select_notes_with_zip317_fee(pre_fee_amount, policy)
+            .select_notes_with_zip317_fee(&pre_fee_amount, policy)
             .await;
 
         if selected_value < pre_fee_amount {
