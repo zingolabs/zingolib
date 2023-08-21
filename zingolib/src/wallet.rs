@@ -841,7 +841,7 @@ impl LightWallet {
 
     async fn select_notes_and_utxos(
         &self,
-        target_amount: Amount,
+        target_amount: u64,
         policy: NoteSelectionPolicy,
     ) -> Result<
         (
@@ -948,19 +948,20 @@ impl LightWallet {
     }
 
     fn calculate_zip317_for_notes(
-        orch_notes: Vec<SpendableOrchardNote>,
-        sapling_notes: Vec<SpendableSaplingNote>,
-        utxos: Vec<ReceivedTransparentOutput>,
-    ) -> Amount {        todo!() }
+        orch_notes: &Vec<SpendableOrchardNote>,
+        sapling_notes: &Vec<SpendableSaplingNote>,
+        utxos: &Vec<ReceivedTransparentOutput>,
+    ) -> u64 {        todo!() }
+
     async fn select_notes_with_zip317_fee(
         &self,
-        pre_fee_amount: &Amount,
+        pre_fee_amount: &u64,
         policy: NoteSelectionPolicy,
     ) -> (
         Vec<SpendableOrchardNote>,
         Vec<SpendableSaplingNote>,
         Vec<ReceivedTransparentOutput>,
-        Amount,
+        u64
     ) {
         let mut zip_317_fee;
         let mut orchard_notes;
@@ -1062,7 +1063,7 @@ impl LightWallet {
             .get_taddr_to_secretkey_map(&self.transaction_context.config)
             .unwrap();
 
-        let pre_fee_amount = Amount::from_u64(total_value).unwrap();
+        let pre_fee_amount = total_value;
         let (orchard_notes, sapling_notes, utxos, selected_value, zip317_fee) = self
             .select_notes_with_zip317_fee(pre_fee_amount, policy)
             .await;
