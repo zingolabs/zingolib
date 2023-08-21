@@ -25,8 +25,8 @@ use zcash_primitives::{
 
 pub const DEFAULT_LIGHTWALLETD_SERVER: &str = "https://mainnet.lightwalletd.com:9067";
 pub const MAX_REORG: usize = 100;
-pub const WALLET_NAME: &str = "zingo-wallet.dat";
-pub const LOGFILE_NAME: &str = "zingo-wallet.debug.log";
+pub const DEFAULT_WALLET_NAME: &str = "zingo-wallet.dat";
+pub const DEFAULT_LOGFILE_NAME: &str = "zingo-wallet.debug.log";
 pub const REORG_BUFFER_OFFSET: u32 = 0;
 
 #[cfg(any(target_os = "ios", target_os = "android"))]
@@ -62,7 +62,12 @@ pub struct ZingoConfig {
     pub chain: ChainType,
     pub reorg_buffer_offset: u32,
     pub monitor_mempool: bool,
-    pub zingo_wallet_dir: Option<PathBuf>,
+    /// The directory where the wallet and logfiles will be created. By default, this will be in ~/.zcash on Linux and %APPDATA%\Zcash on Windows.
+    pub wallet_dir: Option<PathBuf>,
+    /// The filename of the wallet. This will be created in the `wallet_dir`.
+    pub wallet_name: PathBuf,
+    /// The filename of the logfile. This will be created in the `wallet_dir`.
+    pub logfile_name: PathBuf,
 }
 
 impl ZingoConfig {
@@ -73,7 +78,9 @@ impl ZingoConfig {
             chain,
             monitor_mempool: false,
             reorg_buffer_offset: REORG_BUFFER_OFFSET,
-            zingo_wallet_dir: dir,
+            wallet_dir: dir,
+            wallet_name: DEFAULT_WALLET_NAME.into(),
+            logfile_name: DEFAULT_LOGFILE_NAME.into(),
         }
     }
 
@@ -92,7 +99,7 @@ impl ZingoConfig {
             .into()
     }
     pub fn set_data_dir(&mut self, dir_str: String) {
-        self.zingo_wallet_dir = Some(PathBuf::from(dir_str));
+        self.wallet_dir = Some(PathBuf::from(dir_str));
     }
 
     /// Build the Logging config
@@ -130,15 +137,15 @@ impl ZingoConfig {
     pub fn get_zingo_wallet_dir(&self) -> Box<Path> {
         #[cfg(any(target_os = "ios", target_os = "android"))]
         {
-            PathBuf::from(&self.zingo_wallet_dir.as_ref().unwrap()).into_boxed_path()
+            PathBuf::from(&self.wallet_dir.as_ref().unwrap()).into_boxed_path()
         }
 
         #[cfg(not(any(target_os = "ios", target_os = "android")))]
         {
             let mut zcash_data_location;
             // If there's some --data-dir path provided, use it
-            if self.zingo_wallet_dir.is_some() {
-                zcash_data_location = PathBuf::from(&self.zingo_wallet_dir.as_ref().unwrap());
+            if self.wallet_dir.is_some() {
+                zcash_data_location = PathBuf::from(&self.wallet_dir.as_ref().unwrap());
             } else {
                 #[cfg(any(target_os = "macos", target_os = "windows"))]
                 {
@@ -181,7 +188,7 @@ impl ZingoConfig {
     pub fn get_zcash_params_path(&self) -> io::Result<Box<Path>> {
         #[cfg(any(target_os = "ios", target_os = "android"))]
         {
-            Ok(PathBuf::from(&self.zingo_wallet_dir.as_ref().unwrap()).into_boxed_path())
+            Ok(PathBuf::from(&self.wallet_dir.as_ref().unwrap()).into_boxed_path())
         }
 
         //TODO:  This fn is not correct for regtest mode
@@ -221,7 +228,7 @@ impl ZingoConfig {
     }
     pub fn get_wallet_path(&self) -> Box<Path> {
         let mut wallet_location = self.get_zingo_wallet_dir().into_path_buf();
-        wallet_location.push(WALLET_NAME);
+        wallet_location.push(&self.wallet_name);
 
         wallet_location.into_boxed_path()
     }
@@ -256,7 +263,7 @@ impl ZingoConfig {
 
     pub fn get_log_path(&self) -> Box<Path> {
         let mut log_path = self.get_zingo_wallet_dir().into_path_buf();
-        log_path.push(LOGFILE_NAME);
+        log_path.push(&self.logfile_name);
         //println!("LogFile:\n{}", log_path.to_str().unwrap());
 
         log_path.into_boxed_path()
