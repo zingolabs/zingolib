@@ -61,6 +61,25 @@ use zingoconfig::{ChainType, ZingoConfig, MAX_REORG};
 static LOG_INIT: std::sync::Once = std::sync::Once::new();
 
 #[derive(Clone, Debug, Default)]
+pub struct SyncResult {
+    pub success: bool,
+    pub latest_block: u64,
+    pub total_blocks_synced: u64,
+}
+
+impl std::fmt::Display for SyncResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(
+            format!(
+                "{{ success: {}, latest_block: {}, total_blocks_synced: {}}}",
+                self.success, self.latest_block, self.total_blocks_synced
+            )
+            .as_str(),
+        )
+    }
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct WalletStatus {
     pub is_syncing: bool,
     pub total_blocks: u64,
@@ -798,7 +817,7 @@ impl LightClient {
 
         Ok(array![new_address.encode(&self.config.chain)])
     }
-    pub async fn do_rescan(&self) -> Result<JsonValue, String> {
+    pub async fn do_rescan(&self) -> Result<SyncResult, String> {
         debug!("Rescan starting");
 
         self.clear_state().await;
@@ -989,7 +1008,7 @@ impl LightClient {
         result.map(|(transaction_id, _)| transaction_id)
     }
 
-    pub async fn do_sync(&self, print_updates: bool) -> Result<JsonValue, String> {
+    pub async fn do_sync(&self, print_updates: bool) -> Result<SyncResult, String> {
         // Remember the previous sync id first
         let prev_sync_id = self
             .bsync_data
@@ -1358,7 +1377,7 @@ impl LightClient {
     }
 
     /// Start syncing in batches with the max size, to manage memory consumption.
-    async fn start_sync(&self) -> Result<JsonValue, String> {
+    async fn start_sync(&self) -> Result<SyncResult, String> {
         // We can only do one sync at a time because we sync blocks in serial order
         // If we allow multiple syncs, they'll all get jumbled up.
         // TODO:  We run on resource constrained systems, where a single thread of
@@ -1465,7 +1484,7 @@ impl LightClient {
         &self,
         start_block: u64,
         batch_num: usize,
-    ) -> Result<JsonValue, String> {
+    ) -> Result<SyncResult, String> {
         // The top of the wallet
         let last_synced_height = self.wallet.last_synced_height().await;
 
@@ -1476,7 +1495,11 @@ impl LightClient {
 
         if last_synced_height == start_block {
             debug!("Already at latest block, not syncing");
-            return Ok(object! { "result" => "success" });
+            return Ok(SyncResult {
+                success: true,
+                latest_block: last_synced_height,
+                total_blocks_synced: 0,
+            });
         }
 
         let bsync_data = self.bsync_data.clone();
@@ -1681,10 +1704,10 @@ impl LightClient {
         #[cfg(not(any(target_os = "ios", target_os = "android")))]
         self.do_save().await.unwrap();
 
-        Ok(object! {
-            "result" => "success",
-            "latest_block" => start_block,
-            "total_blocks_synced" => start_block - end_block + 1,
+        Ok(SyncResult {
+            success: true,
+            latest_block: start_block,
+            total_blocks_synced: start_block - end_block + 1,
         })
     }
 
