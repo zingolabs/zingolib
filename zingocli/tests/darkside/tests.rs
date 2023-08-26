@@ -374,7 +374,8 @@ async fn sent_transaction_reorged_into_mempool() {
         )])
         .await
         .unwrap();
-    println!("{}", txid);
+    println!("created txid: {}", txid);
+    println!("created txid bytes: {:?}", hex::decode(txid));
     recipient.do_sync(false).await.unwrap();
     println!("{}", recipient.do_list_transactions().await.pretty(2));
 
@@ -389,6 +390,26 @@ async fn sent_transaction_reorged_into_mempool() {
         .unwrap();
     connector.stage_blocks_create(4, 1, 0).await.unwrap();
     update_tree_states_for_transaction(&server_id, raw_tx.clone(), 4).await;
+
+    println!(
+        "Sender post-send (unsynced): {}",
+        light_client.do_balance().await.pretty(2)
+    );
+    println!(
+        "Sender post-send (unsynced): {}",
+        light_client.do_list_transactions().await.pretty(2)
+    );
+    sleep(std::time::Duration::from_secs(1)).await;
+    light_client.do_sync(false).await.unwrap();
+    println!(
+        "Sender post-send (synced): {}",
+        light_client.do_balance().await.pretty(2)
+    );
+    println!(
+        "Sender post-send (synced): {}",
+        light_client.do_list_transactions().await.pretty(2)
+    );
+
     connector.apply_staged(4).await.unwrap();
     sleep(std::time::Duration::from_secs(1)).await;
 
@@ -401,10 +422,6 @@ async fn sent_transaction_reorged_into_mempool() {
     println!(
         "Recipient pre-reorg: {}",
         recipient.do_balance().await.pretty(2)
-    );
-    println!(
-        "Sender pre-reorg (unsynced): {}",
-        light_client.do_balance().await.pretty(2)
     );
 
     prepare_darksidewalletd(server_id.clone(), true)
