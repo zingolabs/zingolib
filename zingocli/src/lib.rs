@@ -63,6 +63,11 @@ pub fn build_clap_app() -> clap::App<'static> {
                 .value_name("regtest")
                 .help("Regtest mode")
                 .takes_value(false))
+            .arg(Arg::new("darkside-test")
+                .long("darkside-test")
+                .value_name("darkside-test")
+                .help("Uses darksidewalletd. Assumes that the lightwalletd server specified is launched in darkside mode.")
+                .takes_value(false))
             .arg(Arg::new("no-clean")
                 .long("no-clean")
                 .value_name("no-clean")
@@ -324,11 +329,17 @@ to scan from the start of the blockchain."
                 )));
             }
         };
+        let darkside_test = matches.is_present("darkside-test");
+
+        if darkside_test && !matches.is_present("server") {
+            return Err(TemplateFillError::MalformedServerURL(format!(
+                "--darkside-test specified. Please provide the --server parameter as [scheme]://[host]:[port]")));
+        }
 
         let clean_regtest_data = !matches.is_present("no-clean");
         let data_dir = if let Some(dir) = matches.get_one::<String>("data-dir") {
             PathBuf::from(dir.clone())
-        } else if matches.is_present("regtest") {
+        } else if matches.is_present("regtest") && !darkside_test {
             regtest::get_regtest_dir()
         } else {
             PathBuf::from("wallets")
@@ -339,7 +350,7 @@ to scan from the start of the blockchain."
         // Regtest specific launch:
         //   * spawn zcashd in regtest mode
         //   * spawn lighwalletd and connect it to zcashd
-        let regtest_manager = if matches.is_present("regtest") {
+        let regtest_manager = if matches.is_present("regtest") && !darkside_test {
             let regtest_manager = regtest::RegtestManager::new(data_dir.clone());
             child_process_handler = Some(regtest_manager.launch(clean_regtest_data)?);
             maybe_server = Some("http://127.0.0.1".to_string());
