@@ -236,7 +236,7 @@ impl LightClient {
             config.get_wallet_path()
         } else {
             return Err(Error::new(
-                ErrorKind::AlreadyExists,
+                ErrorKind::NotFound,
                 format!(
                     "Cannot read wallet. No file at {}",
                     config.get_wallet_path().display()
