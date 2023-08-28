@@ -844,7 +844,10 @@ impl LightClient {
                     }
                 }
             } else {
-                let err = format!("ERR: {}", "File does not exist, nothing to delete.".to_string());
+                let err = format!(
+                    "ERR: {}", 
+                    "File does not exist, nothing to delete.".to_string()
+                );
                 error!("{}", err);
                 log::debug!("File does not exist, nothing to delete.");
                 Err(err.to_string())
