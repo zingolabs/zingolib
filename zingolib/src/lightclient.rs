@@ -29,8 +29,7 @@ use orchard::note_encryption::OrchardDomain;
 use std::{
     cmp::{self, Ordering},
     collections::HashMap,
-    fs::File,
-    fs::remove_file,
+    fs::{File, remove_file},
     io::{self, BufReader, Error, ErrorKind, Read, Write},
     path::Path,
     sync::Arc,
