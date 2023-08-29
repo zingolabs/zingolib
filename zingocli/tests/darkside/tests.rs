@@ -6,7 +6,6 @@ use crate::darkside::{
     constants::{self, BRANCH_ID, DARKSIDE_SEED},
     utils::{update_tree_states_for_transaction, DarksideHandler},
 };
-use json::JsonValue;
 
 use tokio::time::sleep;
 use zingo_testutils::scenarios::setup::ClientBuilder;
@@ -227,13 +226,10 @@ async fn simple_sync() {
     let result = light_client.do_sync(true).await.unwrap();
 
     println!("{}", result);
-    assert!(result.has_key("result"));
-    let JsonValue::Object(res_value) = result
-        else { panic!("Expected object, got {result:?}") };
 
-    assert_eq!(res_value["result"], "success");
-    assert_eq!(res_value["latest_block"], 3);
-    assert_eq!(res_value["total_blocks_synced"], 3);
+    assert_eq!(result.success, true);
+    assert_eq!(result.latest_block, 3);
+    assert_eq!(result.total_blocks_synced, 3);
     assert_eq!(
         light_client.do_balance().await,
         json::parse(
