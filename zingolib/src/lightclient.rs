@@ -29,7 +29,7 @@ use orchard::note_encryption::OrchardDomain;
 use std::{
     cmp::{self, Ordering},
     collections::HashMap,
-    fs::File,
+    fs::{remove_file, File},
     io::{self, BufReader, Error, ErrorKind, Read, Write},
     path::Path,
     sync::Arc,
@@ -813,6 +813,42 @@ impl LightClient {
         debug!("Rescan finished");
 
         response
+    }
+    pub async fn do_delete(&self) -> Result<(), String> {
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        // on mobile platforms, disable the delete, as it will be handled by the native layer
+        {
+            log::debug!("do_delete entered");
+            // on iOS and Android, just return ok
+            Ok(())
+        }
+
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        {
+            log::debug!("do_delete entered");
+            log::debug!("target_os is not ios or android");
+
+            // Check if the file exists before attempting to delete
+            if self.config.wallet_exists() {
+                match remove_file(self.config.get_wallet_path()) {
+                    Ok(_) => {
+                        log::debug!("File deleted successfully!");
+                        Ok(())
+                    }
+                    Err(e) => {
+                        let err = format!("ERR: {}", e);
+                        error!("{}", err);
+                        log::debug!("DELETE FAIL ON FILE!");
+                        Err(e.to_string())
+                    }
+                }
+            } else {
+                let err = "Error: File does not exist, nothing to delete.".to_string();
+                error!("{}", err);
+                log::debug!("File does not exist, nothing to delete.");
+                Err(err)
+            }
+        }
     }
     pub async fn do_save(&self) -> Result<(), String> {
         #[cfg(any(target_os = "ios", target_os = "android"))]
