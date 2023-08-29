@@ -12,9 +12,8 @@ jobs:
     runs-on: ubuntu-22.04
     env:
       RUSTFLAGS: -D warnings
-      RUSTUP_HOME: /root/.rustup
     container:
-      image: zingodevops/ci-build:stable
+      image: zingodevops/ci-build:001
       options: --security-opt seccomp=unconfined
     steps:
       - name: Checkout repository
@@ -35,20 +34,24 @@ jobs:
       - name: Rustup show
         run:  rustup show
 
-      - name: Check formatting of code
-        run: cargo +stable fmt --check
+      - name: Format checks
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --check
 
       - name: Clippy checks
-        run: cargo +stable clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
 
   cargo-test:
     name: Cargo test
     runs-on: ubuntu-22.04
     env:
       RUSTFLAGS: -D warnings
-      RUSTUP_HOME: /root/.rustup
     container:
-      image: zingodevops/ci-build:stable
+      image: zingodevops/ci-build:001
       options: --security-opt seccomp=unconfined
     steps:
       - name: Checkout repository
@@ -79,7 +82,10 @@ jobs:
           restore-keys: cargo-zingolib
 
       - name: Run tests and generate coverage
-        run: cargo tarpaulin --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 3000 --out xml
+        uses: actions-rs/cargo@v1
+        with:
+          command: tarpaulin
+          args: --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 3000 --out xml
 
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v3
