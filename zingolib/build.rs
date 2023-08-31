@@ -1,8 +1,7 @@
 // build.rs
 use std::env;
-// use std::fs::File;
-use std::fs;
-// use std::io::Write;
+use std::fs::File;
+use std::io::Write;
 use std::path::Path;
 // use std::process::Command;
 
@@ -33,12 +32,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("git_description.rs");
-    fs::write(
-        &dest_path,
-        "pub fn git_description() -> &'static str {
-            \"mob-release-test\"
-        }
-        ",
+    let mut f = File::create(dest_path).unwrap();
+    writeln!(
+        f,
+        "pub fn git_description() -> &'static str {{\"mob-release-test\"}}"
     )
     .unwrap();
     println!("cargo:rerun-if-changed=proto/service.proto");
