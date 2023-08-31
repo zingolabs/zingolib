@@ -19,6 +19,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let git_description = String::from_utf8(output.stdout).unwrap();
 
+    // Write the git description to a file which will be included in the crate
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("git_description.rs");
     let mut f = File::create(dest_path).unwrap();
