@@ -740,8 +740,6 @@ async fn note_selection_order() {
 }
 
 #[tokio::test]
-// This test is very long-running, so we ignore to speed CI
-#[ignore]
 async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     // Test all possible promoting note source combinations
     let (regtest_manager, _cph, mut client_builder) = scenarios::custom_clients();
