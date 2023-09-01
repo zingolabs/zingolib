@@ -164,7 +164,6 @@ impl TransactionMetadataSet {
             }
         };
 
-        dbg!(&witness_trees);
         Ok(Self {
             current,
             some_txid_from_highest_wallet_block,

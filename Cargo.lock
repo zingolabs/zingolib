@@ -386,6 +386,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "build_utils"
+version = "0.1.0"
+
+[[package]]
 name = "bumpalo"
 version = "3.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4187,6 +4191,7 @@ dependencies = [
  "bech32",
  "bip0039",
  "bls12_381",
+ "build_utils",
  "byteorder",
  "bytes 0.4.12",
  "concat-idents",
