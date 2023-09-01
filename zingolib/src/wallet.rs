@@ -193,7 +193,10 @@ pub enum WalletBase {
     SeedBytes([u8; 32]),
     MnemonicPhrase(String),
     Mnemonic(Mnemonic),
+    /// Unified full viewing key
     Ufvk(String),
+    /// Unified spending key
+    Usk(Vec<u8>),
 }
 impl WalletBase {
     pub fn from_string(base: String) -> WalletBase {
@@ -614,6 +617,17 @@ impl LightWallet {
                 let wc = WalletCapability::new_from_ufvk(&config, ufvk_encoded).map_err(|e| {
                     Error::new(ErrorKind::InvalidData, format!("Error parsing UFVK: {}", e))
                 })?;
+                (wc, None)
+            }
+            WalletBase::Usk(unified_spending_key) => {
+                let wc = WalletCapability::new_from_usk(unified_spending_key.as_slice()).map_err(
+                    |e| {
+                        Error::new(
+                            ErrorKind::InvalidData,
+                            format!("Error parsing unified spending key: {}", e),
+                        )
+                    },
+                )?;
                 (wc, None)
             }
         };
