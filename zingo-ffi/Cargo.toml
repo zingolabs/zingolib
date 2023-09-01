@@ -5,6 +5,7 @@ members = [
     "ios",
     "test_utils"
 ]
+resolver = "2"
 
 [workspace.dependencies]
 log = "0.4.8"
