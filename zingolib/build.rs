@@ -1,4 +1,5 @@
 // build.rs
+use build_utils;
 use std::env;
 use std::fs::File;
 use std::io::Write;
