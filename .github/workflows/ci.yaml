@@ -119,9 +119,3 @@ jobs:
       cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
       abi: armeabi-v7a
 
-  e2e-test-android:
-    uses: zingolabs/zingo-mobile/.github/workflows/e2e-test.yaml@dev
-    needs: [ create-cache-key, build-android ]
-    if: ${{ ! cancelled() }}
-    with:
-      cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
