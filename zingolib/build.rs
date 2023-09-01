@@ -1,6 +1,4 @@
 // build.rs
-use build_utils;
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     tonic_build::configure().build_server(true).compile(
         &["proto/service.proto", "proto/compact_formats.proto"],
