@@ -462,10 +462,7 @@ impl TransactionContext {
                 })
                 .collect::<Vec<_>>();
 
-        let (Ok(ivk), Ok(ovk)) = (
-            D::wc_to_ivk(&self.key),
-            D::wc_to_ovk(&self.key),
-        ) else {
+        let (Ok(ivk), Ok(ovk)) = (D::wc_to_ivk(&self.key), D::wc_to_ovk(&self.key)) else {
             // skip scanning if wallet has not viewing capability
             return;
         };
