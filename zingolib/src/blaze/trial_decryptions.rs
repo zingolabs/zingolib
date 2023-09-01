@@ -329,9 +329,9 @@ impl TrialDecryptions {
 
                     workers.push(tokio::spawn(async move {
                         let Ok(fvk) = D::wc_to_fvk(&wc) else {
-                        // skip any scanning if the wallet doesn't have viewing capability
-                        return Ok::<_, String>(());
-                    };
+                            // skip any scanning if the wallet doesn't have viewing capability
+                            return Ok::<_, String>(());
+                        };
 
                         //TODO: Wrong. We don't have fvk import, all our keys are spending
                         let have_spending_key = true;
