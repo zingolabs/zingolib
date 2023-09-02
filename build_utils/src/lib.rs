@@ -7,7 +7,12 @@ pub fn git_description() {
         .output()
         .expect("Failed to execute git command");
 
-    let git_description = String::from_utf8(output.stdout).unwrap();
+    eprintln!("Git command output: {:?}", output);
+
+    let git_description = String::from_utf8(output.stdout)
+        .unwrap()
+        .trim_end()
+        .to_string();
 
     // Write the git description to a file which will be included in the crate
     let out_dir = env::var("OUT_DIR").unwrap();
