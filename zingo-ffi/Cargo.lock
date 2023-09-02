@@ -2543,6 +2543,7 @@ dependencies = [
  "base64 0.11.0",
  "http",
  "lazy_static",
+ "tokio",
  "zingoconfig",
  "zingolib",
 ]

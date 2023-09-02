@@ -235,3 +235,56 @@ pub fn get_latest_block(server_uri: String) -> String {
         Err(e) => e,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    async fn async_test_init_from_seed(
+        server_uri: String,
+        seed: String,
+        birthday: u64,
+        data_dir: String,
+        chain_hint: String,
+        monitor_mempool: bool,
+    ) -> LightClient {
+        let (config, _lightwalletd_uri);
+        match construct_uri_load_config(server_uri, data_dir, chain_hint, monitor_mempool) {
+            Ok((c, h)) => (config, _lightwalletd_uri) = (c, h),
+            Err(_) => panic!(),
+        }
+        let lightclient = match LightClient::create_from_wallet_base_async(
+            WalletBase::MnemonicPhrase(seed),
+            &config,
+            birthday,
+            false,
+        )
+        .await
+        {
+            Ok(l) => l,
+            Err(_) => {
+                panic!();
+            }
+        };
+        lightclient
+    }
+    #[tokio::test]
+    async fn report_zingolib_build_version() {
+        // Use test in RustFFITest.kt as template
+        let abandon_art_seed =  "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art".to_string();
+        let server = "http://10.0.2.2:20000".to_string();
+        let chainhint = "main".to_string();
+        let birthday = 1u64;
+        let datadir = "somedatadir".to_string();
+        let monitor_mempool = false;
+        let test_client = async_test_init_from_seed(
+            server,
+            abandon_art_seed,
+            birthday,
+            datadir,
+            chainhint,
+            monitor_mempool,
+        )
+        .await;
+        dbg!(test_client.do_info().await);
+    }
+}
