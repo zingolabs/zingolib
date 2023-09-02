@@ -401,7 +401,7 @@ dependencies = [
 [[package]]
 name = "build_utils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#587d485aee9d53c1369cd202aa3077c6ffd7e34b"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#ffdf069f34be3f93d893572c1b91cb2afe40b429"
 
 [[package]]
 name = "bumpalo"
@@ -3945,7 +3945,7 @@ dependencies = [
 [[package]]
 name = "zingo-memo"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#587d485aee9d53c1369cd202aa3077c6ffd7e34b"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#ffdf069f34be3f93d893572c1b91cb2afe40b429"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -3957,7 +3957,7 @@ dependencies = [
 [[package]]
 name = "zingo-testutils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#587d485aee9d53c1369cd202aa3077c6ffd7e34b"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#ffdf069f34be3f93d893572c1b91cb2afe40b429"
 dependencies = [
  "http",
  "incrementalmerkletree",
@@ -3979,7 +3979,7 @@ dependencies = [
 [[package]]
 name = "zingoconfig"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#587d485aee9d53c1369cd202aa3077c6ffd7e34b"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#ffdf069f34be3f93d893572c1b91cb2afe40b429"
 dependencies = [
  "dirs",
  "http",
@@ -3992,7 +3992,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#587d485aee9d53c1369cd202aa3077c6ffd7e34b"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#ffdf069f34be3f93d893572c1b91cb2afe40b429"
 dependencies = [
  "append-only-vec",
  "base58",
