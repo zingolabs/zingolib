@@ -239,52 +239,21 @@ pub fn get_latest_block(server_uri: String) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    async fn async_test_init_from_seed(
-        server_uri: String,
-        seed: String,
-        birthday: u64,
-        data_dir: String,
-        chain_hint: String,
-        monitor_mempool: bool,
-    ) -> LightClient {
-        let (config, _lightwalletd_uri);
-        match construct_uri_load_config(server_uri, data_dir, chain_hint, monitor_mempool) {
-            Ok((c, h)) => (config, _lightwalletd_uri) = (c, h),
-            Err(_) => panic!(),
-        }
-        let lightclient = match LightClient::create_from_wallet_base_async(
-            WalletBase::MnemonicPhrase(seed),
-            &config,
-            birthday,
-            false,
-        )
-        .await
-        {
-            Ok(l) => l,
-            Err(_) => {
-                panic!();
-            }
-        };
-        lightclient
-    }
     #[tokio::test]
     async fn report_zingolib_build_version() {
         // Use test in RustFFITest.kt as template
-        let abandon_art_seed =  "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art".to_string();
         let server = "http://10.0.2.2:20000".to_string();
-        let chainhint = "main".to_string();
-        let birthday = 1u64;
         let datadir = "somedatadir".to_string();
-        let monitor_mempool = false;
-        let test_client = async_test_init_from_seed(
-            server,
-            abandon_art_seed,
-            birthday,
-            datadir,
-            chainhint,
-            monitor_mempool,
-        )
-        .await;
+        let chain_hint = "main".to_string();
+        let abandon_art_seed =  "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art".to_string();
+        let wallet_base = WalletBase::from_string(abandon_art_seed);
+        let (config, _lightwalletd_uri);
+        match construct_uri_load_config(server, datadir, chain_hint, false) {
+            Ok((c, h)) => (config, _lightwalletd_uri) = (c, h),
+            Err(_) => panic!(),
+        }
+        let test_client = LightClient::create_unconnected(&config, wallet_base, 1)
+            .expect("To create a lightclient.");
         dbg!(test_client.do_info().await);
     }
 }
