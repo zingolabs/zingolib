@@ -243,7 +243,7 @@ mod tests {
     async fn report_zingolib_build_version() {
         // Use test in RustFFITest.kt as template
         let server = "http://10.0.2.2:20000".to_string();
-        let datadir = "somedatadir".to_string();
+        let datadir = "testdata".to_string();
         let chain_hint = "main".to_string();
         let abandon_art_seed =  "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art".to_string();
         let wallet_base = WalletBase::from_string(abandon_art_seed);
