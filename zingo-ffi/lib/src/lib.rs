@@ -8,7 +8,7 @@ use base64::{decode, encode};
 
 use zingoconfig::construct_lightwalletd_uri;
 use zingolib::wallet::WalletBase;
-use zingolib::{commands, git_description, lightclient::LightClient};
+use zingolib::{commands, lightclient::LightClient};
 
 // We'll use a MUTEX to store a global lightclient instance,
 // so we don't have to keep creating it. We need to store it here, in rust
@@ -239,8 +239,9 @@ pub fn get_latest_block(server_uri: String) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zingolib::git_description;
     #[tokio::test]
-    async fn report_zingolib_build_version() {
+    async fn unconnected_client_framework() {
         // Use test in RustFFITest.kt as template
         let server = "http://10.0.2.2:20000".to_string();
         let datadir = "testdata".to_string();
@@ -257,7 +258,7 @@ mod tests {
         dbg!(test_client.do_info().await);
     }
     #[test]
-    fn report_git_decription() {
+    fn report_git_description() {
         assert_eq!(git_description(), "foo");
     }
 }
