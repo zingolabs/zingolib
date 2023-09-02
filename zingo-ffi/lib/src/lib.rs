@@ -8,7 +8,7 @@ use base64::{decode, encode};
 
 use zingoconfig::construct_lightwalletd_uri;
 use zingolib::wallet::WalletBase;
-use zingolib::{commands, lightclient::LightClient};
+use zingolib::{commands, git_description, lightclient::LightClient};
 
 // We'll use a MUTEX to store a global lightclient instance,
 // so we don't have to keep creating it. We need to store it here, in rust
@@ -255,5 +255,9 @@ mod tests {
         let test_client = LightClient::create_unconnected(&config, wallet_base, 1)
             .expect("To create a lightclient.");
         dbg!(test_client.do_info().await);
+    }
+    #[test]
+    fn report_git_decription() {
+        assert_eq!(git_description(), "foo");
     }
 }
