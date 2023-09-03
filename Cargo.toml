@@ -6,6 +6,7 @@ members = [
     "zingo-memo",
     "zingo-testutils"
 ]
+resolver = "2"
 
 [workspace.dependencies]
 zcash_address = { git = "https://github.com/zingolabs/librustzcash", rev = "8e582109cad9af14b461f76429f9f0437e860115" }
@@ -21,6 +22,7 @@ tempdir = "0.3"
 portpicker = "0.1"
 incrementalmerkletree = { git = "https://github.com/zcash/incrementalmerkletree", rev = "bae25ad89c0c192bee625252d2d419bd56638e48" }
 shardtree = { git = "https://github.com/zcash/incrementalmerkletree", rev = "bae25ad89c0c192bee625252d2d419bd56638e48"  }
+build_utils = { path = "./build_utils" }
 
 [profile.release]
 debug = false

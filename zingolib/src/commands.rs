@@ -314,7 +314,10 @@ impl Command for SyncCommand {
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
         RT.block_on(async move {
             match lightclient.do_sync(true).await {
-                Ok(j) => j.pretty(2),
+                Ok(j) => format!(
+                    "Sync success: {}. Scanned {} blocks to reach block {}.",
+                    j.success, j.total_blocks_synced, j.latest_block
+                ),
                 Err(e) => e,
             }
         })
@@ -413,7 +416,10 @@ impl Command for RescanCommand {
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
         RT.block_on(async move {
             match lightclient.do_rescan().await {
-                Ok(j) => j.pretty(2),
+                Ok(j) => format!(
+                    "Sync success: {}. Scanned {} blocks to reach block {}.",
+                    j.success, j.total_blocks_synced, j.latest_block
+                ),
                 Err(e) => e,
             }
         })
@@ -917,6 +923,24 @@ fn wallet_saver(lightclient: &LightClient) -> String {
         }
     })
 }
+fn wallet_deleter(lightclient: &LightClient) -> String {
+    RT.block_on(async move {
+        match lightclient.do_delete().await {
+            Ok(_) => {
+                let r = object! { "result" => "success",
+                "wallet_path" => lightclient.config.get_wallet_path().to_str().unwrap() };
+                r.pretty(2)
+            }
+            Err(e) => {
+                let r = object! {
+                    "result" => "error",
+                    "error" => e
+                };
+                r.pretty(2)
+            }
+        }
+    })
+}
 struct SaveCommand {}
 impl Command for SaveCommand {
     fn help(&self) -> &'static str {
@@ -939,7 +963,27 @@ impl Command for SaveCommand {
         wallet_saver(lightclient)
     }
 }
+struct DeleteCommand {}
+impl Command for DeleteCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Delete the wallet from disk
+            Usage:
+            delete
 
+            The wallet is deleted from disk. If you want to use another wallet first you need to remove the existing wallet file
+
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Delete wallet file from disk"
+    }
+
+    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
+        wallet_deleter(lightclient)
+    }
+}
 struct SeedCommand {}
 impl Command for SeedCommand {
     fn help(&self) -> &'static str {
@@ -1416,7 +1460,7 @@ impl Command for QuitCommand {
 }
 
 pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
-    let entries: [(&'static str, Box<dyn Command>); 36] = [
+    let entries: [(&'static str, Box<dyn Command>); 37] = [
         (("version"), Box::new(GetVersionCommand {})),
         ("sync", Box::new(SyncCommand {})),
         ("syncstatus", Box::new(SyncStatusCommand {})),
@@ -1456,6 +1500,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("seed", Box::new(SeedCommand {})),
         ("get_birthday", Box::new(GetBirthdayCommand {})),
         ("wallet_kind", Box::new(WalletKindCommand {})),
+        ("delete", Box::new(DeleteCommand {})),
     ];
 
     HashMap::from(entries)

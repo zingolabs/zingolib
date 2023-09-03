@@ -29,7 +29,7 @@ use orchard::note_encryption::OrchardDomain;
 use std::{
     cmp::{self, Ordering},
     collections::HashMap,
-    fs::File,
+    fs::{remove_file, File},
     io::{self, BufReader, Error, ErrorKind, Read, Write},
     path::Path,
     sync::Arc,
@@ -59,6 +59,25 @@ use zcash_proofs::prover::LocalTxProver;
 use zingoconfig::{ChainType, ZingoConfig, MAX_REORG};
 
 static LOG_INIT: std::sync::Once = std::sync::Once::new();
+
+#[derive(Clone, Debug, Default)]
+pub struct SyncResult {
+    pub success: bool,
+    pub latest_block: u64,
+    pub total_blocks_synced: u64,
+}
+
+impl std::fmt::Display for SyncResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(
+            format!(
+                "{{ success: {}, latest_block: {}, total_blocks_synced: {}}}",
+                self.success, self.latest_block, self.total_blocks_synced
+            )
+            .as_str(),
+        )
+    }
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct WalletStatus {
@@ -236,7 +255,7 @@ impl LightClient {
             config.get_wallet_path()
         } else {
             return Err(Error::new(
-                ErrorKind::AlreadyExists,
+                ErrorKind::NotFound,
                 format!(
                     "Cannot read wallet. No file at {}",
                     config.get_wallet_path().display()
@@ -798,7 +817,7 @@ impl LightClient {
 
         Ok(array![new_address.encode(&self.config.chain)])
     }
-    pub async fn do_rescan(&self) -> Result<JsonValue, String> {
+    pub async fn do_rescan(&self) -> Result<SyncResult, String> {
         debug!("Rescan starting");
 
         self.clear_state().await;
@@ -813,6 +832,42 @@ impl LightClient {
         debug!("Rescan finished");
 
         response
+    }
+    pub async fn do_delete(&self) -> Result<(), String> {
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        // on mobile platforms, disable the delete, as it will be handled by the native layer
+        {
+            log::debug!("do_delete entered");
+            // on iOS and Android, just return ok
+            Ok(())
+        }
+
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        {
+            log::debug!("do_delete entered");
+            log::debug!("target_os is not ios or android");
+
+            // Check if the file exists before attempting to delete
+            if self.config.wallet_exists() {
+                match remove_file(self.config.get_wallet_path()) {
+                    Ok(_) => {
+                        log::debug!("File deleted successfully!");
+                        Ok(())
+                    }
+                    Err(e) => {
+                        let err = format!("ERR: {}", e);
+                        error!("{}", err);
+                        log::debug!("DELETE FAIL ON FILE!");
+                        Err(e.to_string())
+                    }
+                }
+            } else {
+                let err = "Error: File does not exist, nothing to delete.".to_string();
+                error!("{}", err);
+                log::debug!("File does not exist, nothing to delete.");
+                Err(err)
+            }
+        }
     }
     pub async fn do_save(&self) -> Result<(), String> {
         #[cfg(any(target_os = "ios", target_os = "android"))]
@@ -989,7 +1044,7 @@ impl LightClient {
         result.map(|(transaction_id, _)| transaction_id)
     }
 
-    pub async fn do_sync(&self, print_updates: bool) -> Result<JsonValue, String> {
+    pub async fn do_sync(&self, print_updates: bool) -> Result<SyncResult, String> {
         // Remember the previous sync id first
         let prev_sync_id = self
             .bsync_data
@@ -1358,7 +1413,7 @@ impl LightClient {
     }
 
     /// Start syncing in batches with the max size, to manage memory consumption.
-    async fn start_sync(&self) -> Result<JsonValue, String> {
+    async fn start_sync(&self) -> Result<SyncResult, String> {
         // We can only do one sync at a time because we sync blocks in serial order
         // If we allow multiple syncs, they'll all get jumbled up.
         // TODO:  We run on resource constrained systems, where a single thread of
@@ -1465,7 +1520,7 @@ impl LightClient {
         &self,
         start_block: u64,
         batch_num: usize,
-    ) -> Result<JsonValue, String> {
+    ) -> Result<SyncResult, String> {
         // The top of the wallet
         let last_synced_height = self.wallet.last_synced_height().await;
 
@@ -1476,7 +1531,11 @@ impl LightClient {
 
         if last_synced_height == start_block {
             debug!("Already at latest block, not syncing");
-            return Ok(object! { "result" => "success" });
+            return Ok(SyncResult {
+                success: true,
+                latest_block: last_synced_height,
+                total_blocks_synced: 0,
+            });
         }
 
         let bsync_data = self.bsync_data.clone();
@@ -1681,10 +1740,10 @@ impl LightClient {
         #[cfg(not(any(target_os = "ios", target_os = "android")))]
         self.do_save().await.unwrap();
 
-        Ok(object! {
-            "result" => "success",
-            "latest_block" => start_block,
-            "total_blocks_synced" => start_block - end_block + 1,
+        Ok(SyncResult {
+            success: true,
+            latest_block: start_block,
+            total_blocks_synced: start_block - end_block + 1,
         })
     }
 
