@@ -314,10 +314,7 @@ impl Command for SyncCommand {
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
         RT.block_on(async move {
             match lightclient.do_sync(true).await {
-                Ok(j) => format!(
-                    "Sync success: {}. Scanned {} blocks to reach block {}.",
-                    j.success, j.total_blocks_synced, j.latest_block
-                ),
+                Ok(j) => j.to_json().pretty(2),
                 Err(e) => e,
             }
         })
@@ -416,10 +413,7 @@ impl Command for RescanCommand {
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
         RT.block_on(async move {
             match lightclient.do_rescan().await {
-                Ok(j) => format!(
-                    "Sync success: {}. Scanned {} blocks to reach block {}.",
-                    j.success, j.total_blocks_synced, j.latest_block
-                ),
+                Ok(j) => j.to_json().pretty(2),
                 Err(e) => e,
             }
         })
