@@ -67,6 +67,17 @@ pub struct SyncResult {
     pub total_blocks_synced: u64,
 }
 
+impl SyncResult {
+    /// Converts this object to a JSON object that meets the contract expected by Zingo Mobile.
+    pub fn to_json(&self) -> JsonValue {
+        object! {
+            "result" => if self.success { "success" } else { "failure" },
+            "latest_block" => self.latest_block,
+            "total_blocks_synced" => self.total_blocks_synced,
+        }
+    }
+}
+
 impl std::fmt::Display for SyncResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(
