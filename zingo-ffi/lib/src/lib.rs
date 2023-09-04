@@ -235,3 +235,31 @@ pub fn get_latest_block(server_uri: String) -> String {
         Err(e) => e,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zingolib::git_description;
+    #[ignore]
+    #[tokio::test]
+    async fn unconnected_client_framework() {
+        // Use test in RustFFITest.kt as template
+        let server = "http://10.0.2.2:20000".to_string();
+        let datadir = "testdata".to_string();
+        let chain_hint = "main".to_string();
+        let abandon_art_seed =  "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art".to_string();
+        let wallet_base = WalletBase::from_string(abandon_art_seed);
+        let (config, _lightwalletd_uri);
+        match construct_uri_load_config(server, datadir, chain_hint, false) {
+            Ok((c, h)) => (config, _lightwalletd_uri) = (c, h),
+            Err(_) => panic!(),
+        }
+        let test_client = LightClient::create_unconnected(&config, wallet_base, 1)
+            .expect("To create a lightclient.");
+        dbg!(test_client.do_info().await);
+    }
+    #[test]
+    fn report_git_description() {
+        assert!(git_description().starts_with("mob-release-"));
+    }
+}
