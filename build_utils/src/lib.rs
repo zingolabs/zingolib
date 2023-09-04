@@ -2,6 +2,10 @@ use std::io::Write;
 use std::{env, fs::File, path::Path, process::Command};
 
 pub fn git_description() {
+    let _fetch = Command::new("git")
+        .args(["fetch", "--tags", "https://github.com/zingolabs/zingolib"])
+        .output()
+        .expect("Failed to execute git command");
     let output = Command::new("git")
         .args(["describe", "--dirty"])
         .output()
