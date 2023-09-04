@@ -10,8 +10,10 @@ use bip0039::Mnemonic;
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use orchard::keys::Scope;
 
+use secp256k1::SecretKey;
 use zcash_address::unified::{Container, Encoding, Fvk, Ufvk};
 use zcash_client_backend::address::UnifiedAddress;
+use zcash_client_backend::keys::{Era, UnifiedSpendingKey};
 use zcash_encoding::Vector;
 use zcash_primitives::{
     legacy::TransparentAddress, sapling::note_encryption::PreparedIncomingViewingKey,
@@ -22,7 +24,7 @@ use zingoconfig::ZingoConfig;
 use crate::wallet::traits::ReadableWriteable;
 
 use super::{
-    extended_transparent::{ExtendedPubKey, KeyIndex},
+    extended_transparent::{ExtendedPrivKey, ExtendedPubKey, KeyIndex},
     get_zaddr_from_bip39seed, ToBase58Check,
 };
 
@@ -352,6 +354,25 @@ impl WalletCapability {
         Ok(Self::new_from_seed(config, &bip39_seed, position))
     }
 
+    /// Creates a new `WalletCapability` from a unified spending key.
+    pub fn new_from_usk(usk: &[u8]) -> Result<Self, String> {
+        // Decode unified spending key
+        let usk = UnifiedSpendingKey::from_bytes(Era::Orchard, usk)
+            .map_err(|_| "Error decoding unified spending key.")?;
+
+        // Workaround https://github.com/zcash/librustzcash/issues/929 by serializing and deserializing the transparent key.
+        let transparent_bytes = usk.transparent().to_bytes();
+        let transparent_ext_key = transparent_key_from_bytes(transparent_bytes.as_slice())
+            .map_err(|e| format!("Error processing transparent key: {}", e))?;
+
+        Ok(Self {
+            orchard: Capability::Spend(usk.orchard().to_owned()),
+            sapling: Capability::Spend(usk.sapling().to_owned()),
+            transparent: Capability::Spend(transparent_ext_key),
+            ..Default::default()
+        })
+    }
+
     pub fn new_from_ufvk(config: &ZingoConfig, ufvk_encoded: String) -> Result<Self, String> {
         // Decode UFVK
         if ufvk_encoded.starts_with(config.hrp_sapling_viewing_key()) {
@@ -457,6 +478,20 @@ impl WalletCapability {
             transparent: self.transparent.can_view(),
         }
     }
+}
+
+/// Reads a transparent ExtendedPrivKey from a buffer that has a 32 byte private key and 32 byte chain code.
+fn transparent_key_from_bytes(bytes: &[u8]) -> Result<ExtendedPrivKey, std::io::Error> {
+    let mut reader = std::io::Cursor::new(bytes);
+
+    let private_key = SecretKey::read(&mut reader, ())?;
+    let mut chain_code = [0; 32];
+    reader.read_exact(&mut chain_code)?;
+
+    Ok(ExtendedPrivKey {
+        chain_code: chain_code.to_vec(),
+        private_key,
+    })
 }
 
 impl<V, S> ReadableWriteable<()> for Capability<V, S>
