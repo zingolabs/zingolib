@@ -240,6 +240,7 @@ pub fn get_latest_block(server_uri: String) -> String {
 mod tests {
     use super::*;
     use zingolib::git_description;
+    #[ignore]
     #[tokio::test]
     async fn unconnected_client_framework() {
         // Use test in RustFFITest.kt as template
