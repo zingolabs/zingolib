@@ -59,7 +59,7 @@ zcash_encoding = { workspace = true }
 zcash_note_encryption = { workspace = true }
 zcash_primitives = { workspace = true }
 zcash_proofs = { workspace = true }
-zcash_client_sqlite = {workspace = true }
+zcash_client_sqlite = { workspace = true }
 zingoconfig = { path = "../zingoconfig" }
 zingo-memo = { path = "../zingo-memo" }
 nonempty = "0.7.0"

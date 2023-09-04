@@ -2,12 +2,23 @@ use std::io::Write;
 use std::{env, fs::File, path::Path, process::Command};
 
 pub fn git_description() {
+    let _fetch = Command::new("git")
+        .args(["fetch", "--tags", "https://github.com/zingolabs/zingolib"])
+        .output()
+        .expect("Failed to execute git command");
     let output = Command::new("git")
         .args(["describe", "--dirty"])
         .output()
         .expect("Failed to execute git command");
 
-    let git_description = String::from_utf8(output.stdout).unwrap();
+    eprintln!("Git command output: {:?}", output);
+    println!("Git command output: {:?}", output);
+    println!("cargo:warning=Git command output: {:?}", output);
+
+    let git_description = String::from_utf8(output.stdout)
+        .unwrap()
+        .trim_end()
+        .to_string();
 
     // Write the git description to a file which will be included in the crate
     let out_dir = env::var("OUT_DIR").unwrap();
