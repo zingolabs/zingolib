@@ -260,6 +260,6 @@ mod tests {
     }
     #[test]
     fn report_git_description() {
-        assert_eq!(git_description(), "foo");
+        assert!(git_description().starts_with("mob-release-"));
     }
 }
