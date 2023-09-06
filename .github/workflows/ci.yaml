@@ -7,8 +7,32 @@ on:
   workflow_dispatch:
 
 jobs:
+  cache-checkmate:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: taiki-e/cache-cargo-install-action@v1
+        with:
+          tool: cargo-checkmate
+
+  cargo-checkmate:
+    strategy:
+      matrix:
+        phase: [build, check, clippy, doc, format, test]
+    needs: cache-checkmate
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: taiki-e/cache-cargo-install-action@v1
+        with:
+          tool: cargo-checkmate
+
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Run cargo checkmate
+        run: cargo-checkmate run ${{ matrix.phase }}
+
   static_checks:
-    name: Format check and clippy
+    name: Static checks
     runs-on: ubuntu-22.04
     env:
       RUSTFLAGS: -D warnings
@@ -33,17 +57,6 @@ jobs:
 
       - name: Rustup show
         run:  rustup show
-
-      - name: Format checks
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --check
-
-      - name: Clippy checks
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
 
   cargo-test:
     name: Cargo test
