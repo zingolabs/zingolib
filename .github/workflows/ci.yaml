@@ -7,43 +7,18 @@ on:
   workflow_dispatch:
 
 jobs:
-  static_checks:
-    name: Format check and clippy
+  cargo-checkmate:
+    uses: ./.github/workflows/cargo-checkmate.yaml
+
+  reject-trailing-whitespace:
+    name: Reject trailing whitespace
     runs-on: ubuntu-22.04
-    env:
-      RUSTFLAGS: -D warnings
-    container:
-      image: zingodevops/ci-build:001
-      options: --security-opt seccomp=unconfined
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
 
       - name: Reject trailing whitespace
         run: ./utils/trailing-whitespace.sh reject
-
-      - name: What's my env
-        run:  env
-
-      - name: Whoami
-        run:  whoami
-
-      - name: Which rustup
-        run:  which rustup
-
-      - name: Rustup show
-        run:  rustup show
-
-      - name: Format checks
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --check
-
-      - name: Clippy checks
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
 
   cargo-test:
     name: Cargo test
@@ -113,7 +88,6 @@ jobs:
   integration-test-android:
     uses: zingolabs/zingo-mobile/.github/workflows/integration-test.yaml@dev
     needs: [ create-timestamp, create-cache-key, build-android ]
-    if: ${{ ! cancelled() }}
     with:
       timestamp: ${{ needs.create-timestamp.outputs.timestamp }}
       cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
