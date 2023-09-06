@@ -7,56 +7,18 @@ on:
   workflow_dispatch:
 
 jobs:
-  cache-checkmate:
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: taiki-e/cache-cargo-install-action@v1
-        with:
-          tool: cargo-checkmate
-
   cargo-checkmate:
-    strategy:
-      matrix:
-        phase: [build, check, clippy, doc, format, test]
-    needs: cache-checkmate
+    uses: ./.github/workflows/cargo-checkmate.yaml
+
+  reject-trailing-whitespace:
+    name: Reject trailing whitespace
     runs-on: ubuntu-22.04
-    steps:
-      - uses: taiki-e/cache-cargo-install-action@v1
-        with:
-          tool: cargo-checkmate
-
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Run cargo checkmate
-        run: cargo-checkmate run ${{ matrix.phase }}
-
-  static_checks:
-    name: Static checks
-    runs-on: ubuntu-22.04
-    env:
-      RUSTFLAGS: -D warnings
-    container:
-      image: zingodevops/ci-build:001
-      options: --security-opt seccomp=unconfined
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
 
       - name: Reject trailing whitespace
         run: ./utils/trailing-whitespace.sh reject
-
-      - name: What's my env
-        run:  env
-
-      - name: Whoami
-        run:  whoami
-
-      - name: Which rustup
-        run:  which rustup
-
-      - name: Rustup show
-        run:  rustup show
 
   cargo-test:
     name: Cargo test
