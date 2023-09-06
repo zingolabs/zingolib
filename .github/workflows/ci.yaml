@@ -113,7 +113,6 @@ jobs:
   integration-test-android:
     uses: zingolabs/zingo-mobile/.github/workflows/integration-test.yaml@dev
     needs: [ create-timestamp, create-cache-key, build-android ]
-    if: ${{ ! cancelled() }}
     with:
       timestamp: ${{ needs.create-timestamp.outputs.timestamp }}
       cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
