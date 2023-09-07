@@ -46,28 +46,34 @@ macro_rules! check_client_balances {
             .map(|transfer| transfer.balance_delta())
             .sum::<i64>();
         assert_eq!(
-            balance["orchard_balance"].as_i64().unwrap_or(0)
-                + balance["sapling_balance"].as_i64().unwrap_or(0)
-                + balance["transparent_balance"].as_i64().unwrap_or(0),
+            (balance.orchard_balance.unwrap_or(0)
+                + balance.sapling_balance.unwrap_or(0)
+                + balance.transparent_balance.unwrap_or(0)) as i64,
             tx_summary_balance,
             "tx_summaries follow: {}\ndo_list_transactions follow: {}",
             ::json::JsonValue::from($client.do_list_txsummaries().await).pretty(4),
             $client.do_list_transactions().await.pretty(4)
         );
         assert_eq!(
-            balance["orchard_balance"], $orchard,
+            balance.orchard_balance.unwrap(),
+            $orchard,
             "\no_balance: {} expectation: {} ",
-            balance["orchard_balance"], $orchard
+            balance.orchard_balance.unwrap(),
+            $orchard
         );
         assert_eq!(
-            balance["sapling_balance"], $sapling,
+            balance.sapling_balance.unwrap(),
+            $sapling,
             "\ns_balance: {} expectation: {} ",
-            balance["sapling_balance"], $sapling
+            balance.sapling_balance.unwrap(),
+            $sapling
         );
         assert_eq!(
-            balance["transparent_balance"], $transparent,
+            balance.transparent_balance.unwrap(),
+            $transparent,
             "\nt_balance: {} expectation: {} ",
-            balance["transparent_balance"], $transparent
+            balance.transparent_balance.unwrap(),
+            $transparent
         );
     };
 }

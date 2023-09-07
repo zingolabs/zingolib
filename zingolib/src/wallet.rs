@@ -551,16 +551,13 @@ impl LightWallet {
             .unwrap_or(self.transaction_context.config.sapling_activation_height() - 1)
     }
 
-    pub async fn maybe_verified_orchard_balance(&self, addr: Option<String>) -> JsonValue {
-        self.shielded_balance::<OrchardDomain>(addr, &[])
-            .await
-            .map_or(json::JsonValue::Null, json::JsonValue::from)
+    pub async fn maybe_verified_orchard_balance(&self, addr: Option<String>) -> Option<u64> {
+        self.shielded_balance::<OrchardDomain>(addr, &[]).await
     }
 
-    pub async fn maybe_verified_sapling_balance(&self, addr: Option<String>) -> JsonValue {
+    pub async fn maybe_verified_sapling_balance(&self, addr: Option<String>) -> Option<u64> {
         self.shielded_balance::<SaplingDomain<zingoconfig::ChainType>>(addr, &[])
             .await
-            .map_or(json::JsonValue::Null, json::JsonValue::from)
     }
 
     pub fn memo_str(memo: Option<Memo>) -> Option<String> {
@@ -986,7 +983,7 @@ impl LightWallet {
             tos.len()
         );
 
-        // Convert address (str) to RecepientAddress and value to Amount
+        // Convert address (str) to RecipientAddress and value to Amount
         let recipients = tos
             .iter()
             .map(|to| {
@@ -1034,7 +1031,7 @@ impl LightWallet {
             self.select_notes_and_utxos(target_amount, policy).await;
         if selected_value < target_amount {
             let e = format!(
-                "Insufficient verified shielded funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes",
+                "Insufficient verified shielded funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes.",
                 u64::from(selected_value), u64::from(target_amount), self.transaction_context.config
                 .reorg_buffer_offset + 1
             );
@@ -1461,26 +1458,26 @@ impl LightWallet {
         )
     }
 
-    pub async fn spendable_orchard_balance(&self, target_addr: Option<String>) -> JsonValue {
+    pub async fn spendable_orchard_balance(&self, target_addr: Option<String>) -> Option<u64> {
         if let Capability::Spend(_) = self.wallet_capability().orchard {
             self.verified_balance::<OrchardDomain>(target_addr).await
         } else {
-            JsonValue::Null
+            None
         }
     }
 
-    pub async fn spendable_sapling_balance(&self, target_addr: Option<String>) -> JsonValue {
+    pub async fn spendable_sapling_balance(&self, target_addr: Option<String>) -> Option<u64> {
         if let Capability::Spend(_) = self.wallet_capability().sapling {
             self.verified_balance::<SaplingDomain<zingoconfig::ChainType>>(target_addr)
                 .await
         } else {
-            JsonValue::Null
+            None
         }
     }
 
-    pub async fn tbalance(&self, addr: Option<String>) -> JsonValue {
+    pub async fn tbalance(&self, addr: Option<String>) -> Option<u64> {
         if self.wallet_capability().transparent.can_view() {
-            JsonValue::from(
+            Some(
                 self.get_utxos()
                     .await
                     .iter()
@@ -1492,7 +1489,7 @@ impl LightWallet {
                     .sum::<u64>(),
             )
         } else {
-            JsonValue::Null
+            None
         }
     }
 
@@ -1500,7 +1497,10 @@ impl LightWallet {
         self.transaction_context.transaction_metadata_set.clone()
     }
 
-    async fn unverified_balance<D: DomainWalletExt>(&self, target_addr: Option<String>) -> JsonValue
+    async fn unverified_balance<D: DomainWalletExt>(
+        &self,
+        target_addr: Option<String>,
+    ) -> Option<u64>
     where
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
@@ -1512,23 +1512,21 @@ impl LightWallet {
                 transaction.block_height > BlockHeight::from_u32(anchor_height)
                     || nnmd.pending_receipt()
             })];
-        self.shielded_balance::<D>(target_addr, filters)
-            .await
-            .map_or(json::JsonValue::Null, json::JsonValue::from)
+        self.shielded_balance::<D>(target_addr, filters).await
     }
 
-    pub async fn unverified_orchard_balance(&self, target_addr: Option<String>) -> JsonValue {
+    pub async fn unverified_orchard_balance(&self, target_addr: Option<String>) -> Option<u64> {
         self.unverified_balance::<OrchardDomain>(target_addr).await
     }
 
     /// The following functions use a filter/map functional approach to
     /// expressively unpack different kinds of transaction data.
-    pub async fn unverified_sapling_balance(&self, target_addr: Option<String>) -> JsonValue {
+    pub async fn unverified_sapling_balance(&self, target_addr: Option<String>) -> Option<u64> {
         self.unverified_balance::<SaplingDomain<zingoconfig::ChainType>>(target_addr)
             .await
     }
 
-    async fn verified_balance<D: DomainWalletExt>(&self, target_addr: Option<String>) -> JsonValue
+    async fn verified_balance<D: DomainWalletExt>(&self, target_addr: Option<String>) -> Option<u64>
     where
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
@@ -1541,16 +1539,14 @@ impl LightWallet {
             }),
             Box::new(|nnmd, _| !nnmd.pending_receipt()),
         ];
-        self.shielded_balance::<D>(target_addr, filters)
-            .await
-            .map_or(json::JsonValue::Null, json::JsonValue::from)
+        self.shielded_balance::<D>(target_addr, filters).await
     }
 
-    pub async fn verified_orchard_balance(&self, target_addr: Option<String>) -> JsonValue {
+    pub async fn verified_orchard_balance(&self, target_addr: Option<String>) -> Option<u64> {
         self.verified_balance::<OrchardDomain>(target_addr).await
     }
 
-    pub async fn verified_sapling_balance(&self, target_addr: Option<String>) -> JsonValue {
+    pub async fn verified_sapling_balance(&self, target_addr: Option<String>) -> Option<u64> {
         self.verified_balance::<SaplingDomain<zingoconfig::ChainType>>(target_addr)
             .await
     }
