@@ -926,7 +926,7 @@ impl LightWallet {
         &self,
         prover: P,
         policy: NoteSelectionPolicy,
-        tos: Vec<(&str, u64, Option<String>)>,
+        tos: Vec<(&str, u64, Option<MemoBytes>)>,
         submission_height: BlockHeight,
         broadcast_fn: F,
     ) -> Result<(String, Vec<u8>), String>
@@ -957,7 +957,7 @@ impl LightWallet {
         &self,
         prover: P,
         policy: NoteSelectionPolicy,
-        tos: Vec<(&str, u64, Option<String>)>,
+        tos: Vec<(&str, u64, Option<MemoBytes>)>,
         submission_height: BlockHeight,
         broadcast_fn: F,
     ) -> Result<(String, Vec<u8>), String>
@@ -1006,7 +1006,7 @@ impl LightWallet {
 
                 Ok((ra, value, to.2.clone()))
             })
-            .collect::<Result<Vec<(address::RecipientAddress, Amount, Option<String>)>, String>>(
+            .collect::<Result<Vec<(address::RecipientAddress, Amount, Option<MemoBytes>)>, String>>(
             )?;
 
         let destination_uas = recipients
@@ -1146,17 +1146,7 @@ impl LightWallet {
             // Compute memo if it exists
             let validated_memo = match memo {
                 None => MemoBytes::from(Memo::Empty),
-                Some(s) => {
-                    // If the string starts with an "0x", and contains only hex chars ([a-f0-9]+) then
-                    // interpret it as a hex
-                    match utils::interpret_memo_string(s) {
-                        Ok(m) => m,
-                        Err(e) => {
-                            error!("{}", e);
-                            return Err(e);
-                        }
-                    }
-                }
+                Some(s) => s,
             };
 
             println!("{}: Adding output", now() - start_time);

@@ -951,7 +951,7 @@ impl LightClient {
     //TODO: Add migrate_sapling_to_orchard argument
     pub async fn do_send(
         &self,
-        address_amount_memo_tuples: Vec<(&str, u64, Option<String>)>,
+        address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
     ) -> Result<String, String> {
         let transaction_submission_height = self.get_submission_height().await?;
         // First, get the concensus branch ID
