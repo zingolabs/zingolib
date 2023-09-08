@@ -3,7 +3,7 @@
 pub mod darkside;
 use orchard::tree::MerkleHashOrchard;
 use shardtree::{memory::MemoryShardStore, ShardTree};
-use std::{fs::File, path::Path};
+use std::{fs::File, path::Path, str::FromStr};
 use zingo_testutils::{self, build_fvk_client, data};
 
 use bip0039::Mnemonic;
@@ -15,6 +15,8 @@ use tracing_test::traced_test;
 use zcash_client_backend::encoding::encode_payment_address;
 use zcash_primitives::{
     consensus::{BlockHeight, Parameters},
+    memo::Memo,
+    memo::MemoBytes,
     transaction::{fees::zip317::MINIMUM_FEE, TxId},
 };
 use zingo_testutils::regtest::get_cargo_manifest_dir;
@@ -39,7 +41,11 @@ async fn dont_write_unconfirmed() {
         .do_send(vec![(
             &get_base_address!(recipient, "unified"),
             100_000,
-            Some("funding to be received by the recipient".to_string()),
+            Some(
+                Memo::from_str("funding to be received by the recipient")
+                    .unwrap()
+                    .into(),
+            ),
         )])
         .await
         .unwrap();
@@ -66,7 +72,11 @@ async fn dont_write_unconfirmed() {
         .do_send(vec![(
             &get_base_address!(faucet, "unified"),
             25_000,
-            Some("an unconfirmed transaction, that shall not be synced".to_string()),
+            Some(
+                Memo::from_str("an unconfirmed transaction, that shall not be synced")
+                    .unwrap()
+                    .into(),
+            ),
         )])
         .await
         .unwrap();
@@ -137,7 +147,7 @@ async fn send_to_self_with_no_user_specified_memo_does_not_cause_error() {
         .do_send(vec![(
             &get_base_address!(recipient, "unified"),
             5_000,
-            Some(String::from("Here's a memo!")),
+            Some(Memo::from_str("Here's a memo!").unwrap().into()),
         )])
         .await
         .unwrap();
@@ -196,12 +206,12 @@ async fn sapling_dust_fee_collection() {
             (
                 &recipient_unified,
                 for_orchard,
-                Some("Plenty for orchard.".to_string()),
+                Some(Memo::from_str("Plenty for orchard.").unwrap().into()),
             ),
             (
                 &recipient_sapling,
                 for_sapling,
-                Some("Dust for sapling.".to_string()),
+                Some(Memo::from_str("Dust for sapling.").unwrap().into()),
             ),
         ])
         .await
@@ -215,7 +225,7 @@ async fn sapling_dust_fee_collection() {
         .do_send(vec![(
             &get_base_address!(faucet, "unified"),
             fee * 5,
-            Some("Five times fee.".to_string()),
+            Some(Memo::from_str("Five times fee.").unwrap().into()),
         )])
         .await
         .unwrap();
@@ -459,7 +469,7 @@ async fn verify_old_wallet_uses_server_height_in_send() {
         .do_send(vec![(
             &get_base_address!(recipient, "unified"),
             10_000,
-            Some("Interrupting sync!!".to_string()),
+            Some(Memo::from_str("Interrupting sync!!").unwrap().into()),
         )])
         .await
         .unwrap();
@@ -532,7 +542,11 @@ async fn unspent_notes_are_not_saved() {
         .do_send(vec![(
             get_base_address!(recipient, "unified").as_str(),
             5_000,
-            Some("this note never makes it to the wallet! or chain".to_string()),
+            Some(
+                Memo::from_str("this note never makes it to the wallet! or chain")
+                    .unwrap()
+                    .into(),
+            ),
         )])
         .await
         .unwrap();
@@ -598,7 +612,7 @@ async fn send_mined_sapling_to_orchard() {
         .do_send(vec![(
             get_base_address!(faucet, "unified").as_str(),
             amount_to_send,
-            Some("Scenario test: engage!".to_string()),
+            Some(Memo::from_str("Scenario test: engage!").unwrap().into()),
         )])
         .await
         .unwrap();
@@ -645,7 +659,7 @@ async fn note_selection_order() {
                     (
                         client_2_saplingaddress.as_str(),
                         n * 10000,
-                        Some(n.to_string()),
+                        Some(Memo::from_str(n.to_string().as_str()).unwrap().into()),
                     )
                 })
                 .collect(),
@@ -663,7 +677,11 @@ async fn note_selection_order() {
         .do_send(vec![(
             &get_base_address!(faucet, "unified"),
             30000,
-            Some("Sending back, should have 2 inputs".to_string()),
+            Some(
+                Memo::from_str("Sending back, should have 2 inputs")
+                    .unwrap()
+                    .into(),
+            ),
         )])
         .await
         .unwrap();
@@ -894,7 +912,7 @@ async fn send_orchard_back_and_forth() {
         .do_send(vec![(
             &get_base_address!(recipient, "unified"),
             faucet_to_recipient_amount,
-            Some("Orcharding".to_string()),
+            Some(Memo::from_str("Orcharding").unwrap().into()),
         )])
         .await
         .unwrap();
@@ -919,7 +937,7 @@ async fn send_orchard_back_and_forth() {
         .do_send(vec![(
             &get_base_address!(faucet, "unified"),
             recipient_to_faucet_amount,
-            Some("Sending back".to_string()),
+            Some(Memo::from_str("Sending back").unwrap().into()),
         )])
         .await
         .unwrap();
@@ -949,7 +967,7 @@ async fn diversified_addresses_receive_funds_in_best_pool() {
     let address_5000_nonememo_tuples = addresses
         .members()
         .map(|ua| (ua["address"].as_str().unwrap(), 5_000, None))
-        .collect::<Vec<(&str, u64, Option<String>)>>();
+        .collect::<Vec<(&str, u64, Option<MemoBytes>)>>();
     faucet.do_send(address_5000_nonememo_tuples).await.unwrap();
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 1)
         .await
@@ -980,7 +998,7 @@ async fn rescan_still_have_outgoing_metadata() {
         .do_send(vec![(
             get_base_address!(recipient, "sapling").as_str(),
             1_000,
-            Some("foo".to_string()),
+            Some(Memo::from_str("foo").unwrap().into()),
         )])
         .await
         .unwrap();
@@ -1006,7 +1024,10 @@ async fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
                     balance.spendable_sapling_balance.unwrap()
                         + balance.spendable_orchard_balance.unwrap()
                 } - u64::from(MINIMUM_FEE),
-                memo.map(ToString::to_string),
+                match memo {
+                    Some(memo) => Some(Memo::from_str(memo).unwrap().into()),
+                    None => None,
+                },
             )])
             .await
             .unwrap();
@@ -1082,7 +1103,7 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
             .do_send(vec![(
                 recipient1_diversified_addr[0].as_str().unwrap(),
                 14_000,
-                Some("foo".to_string()),
+                Some(Memo::from_str("foo").unwrap().into()),
             )])
             .await
             .unwrap();
@@ -1360,12 +1381,12 @@ async fn self_send_to_t_displays_as_one_transaction() {
             (
                 recipient_zaddr.as_str(),
                 sent_to_zaddr_value,
-                Some("foo".to_string()),
+                Some(Memo::from_str("foo").unwrap().into()),
             ),
             (
                 recipient_unified_address.as_str(),
                 sent_to_self_orchard_value,
-                Some("bar".to_string()),
+                Some(Memo::from_str("bar").unwrap().into()),
             ),
         ])
         .await
@@ -1377,12 +1398,12 @@ async fn self_send_to_t_displays_as_one_transaction() {
             (
                 recipient_zaddr.as_str(),
                 sent_to_zaddr_value,
-                Some("foo2".to_string()),
+                Some(Memo::from_str("foo2").unwrap().into()),
             ),
             (
                 recipient_unified_address.as_str(),
                 sent_to_self_orchard_value,
-                Some("bar2".to_string()),
+                Some(Memo::from_str("bar2").unwrap().into()),
             ),
         ])
         .await
@@ -1569,13 +1590,13 @@ async fn mempool_and_balance() {
 
     // 4. Spend the funds
     let sent_value = 2000;
-    let outgoing_memo = "Outgoing Memo".to_string();
+    let outgoing_memo = Memo::from_str("Outgoing Memo").unwrap().into();
 
     let _sent_transaction_id = recipient
         .do_send(vec![(
             &get_base_address!(faucet, "unified"),
             sent_value,
-            Some(outgoing_memo.clone()),
+            Some(outgoing_memo),
         )])
         .await
         .unwrap();
@@ -1614,12 +1635,12 @@ async fn witness_clearing() {
 
     // 3. Send z-to-z transaction to external z address with a memo
     let sent_value = 2000;
-    let outgoing_memo = "Outgoing Memo".to_string();
+    let outgoing_memo = Memo::from_str("Outgoing Memo").unwrap().into();
 
     let faucet_ua = get_base_address!(faucet, "unified");
 
     let _sent_transaction_id = recipient
-        .do_send(vec![(&faucet_ua, sent_value, Some(outgoing_memo.clone()))])
+        .do_send(vec![(&faucet_ua, sent_value, Some(outgoing_memo))])
         .await
         .unwrap();
 
@@ -1850,13 +1871,13 @@ async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
 
     // 3. Send z-to-z transaction to external z address with a memo
     let sent_value = 2000;
-    let outgoing_memo = "Outgoing Memo".to_string();
+    let outgoing_memo = Memo::from_str("Outgoing Memo").unwrap().into();
 
     let sent_transaction_id = recipient
         .do_send(vec![(
             &get_base_address!(faucet, "sapling"),
             sent_value,
-            Some(outgoing_memo.clone()),
+            Some(outgoing_memo),
         )])
         .await
         .unwrap();
@@ -2166,13 +2187,14 @@ async fn sapling_incoming_sapling_outgoing() {
 
     // 4. Send z-to-z transaction to external z address with a memo
     let sent_value = 2000;
-    let outgoing_memo = "Outgoing Memo".to_string();
+    let outgoing_memo_text = "Outgoing Memo";
+    let outgoing_memo = Memo::from_str(outgoing_memo_text).unwrap().into();
 
     let sent_transaction_id = recipient
         .do_send(vec![(
             &get_base_address!(faucet, "sapling"),
             sent_value,
-            Some(outgoing_memo.clone()),
+            Some(outgoing_memo),
         )])
         .await
         .unwrap();
@@ -2227,7 +2249,7 @@ async fn sapling_incoming_sapling_outgoing() {
     );
     assert_eq!(
         send_transaction["outgoing_metadata"][0]["memo"],
-        outgoing_memo
+        outgoing_memo_text
     );
     assert_eq!(
         send_transaction["outgoing_metadata"][0]["value"]
@@ -2311,12 +2333,12 @@ async fn aborted_resync() {
 
     // 4. Send a transaction to both external t-addr and external z addr and mine it
     let sent_zvalue = 80_000;
-    let sent_zmemo = "Ext z".to_string();
+    let sent_zmemo = Memo::from_str("Ext z").unwrap().into();
     let sent_transaction_id = recipient
         .do_send(vec![(
             &get_base_address!(faucet, "sapling"),
             sent_zvalue,
-            Some(sent_zmemo.clone()),
+            Some(sent_zmemo),
         )])
         .await
         .unwrap();
@@ -2520,11 +2542,19 @@ async fn by_address_finsight() {
         faucet.do_list_notes(true).await.pretty(4)
     );
     faucet
-        .do_send(vec![(&base_uaddress, 1_000u64, Some("1".to_string()))])
+        .do_send(vec![(
+            &base_uaddress,
+            1_000u64,
+            Some(Memo::from_str("1").unwrap().into()),
+        )])
         .await
         .unwrap();
     faucet
-        .do_send(vec![(&base_uaddress, 1_000u64, Some("1".to_string()))])
+        .do_send(vec![(
+            &base_uaddress,
+            1_000u64,
+            Some(Memo::from_str("1").unwrap().into()),
+        )])
         .await
         .expect(
             "We only have sapling notes, plus a pending orchard note from the \
@@ -2536,7 +2566,11 @@ async fn by_address_finsight() {
         "2".to_string()
     );
     faucet
-        .do_send(vec![(&base_uaddress, 1_000u64, Some("aaaa".to_string()))])
+        .do_send(vec![(
+            &base_uaddress,
+            1_000u64,
+            Some(Memo::from_str("aaaa").unwrap().into()),
+        )])
         .await
         .unwrap();
     assert_eq!(
@@ -2804,7 +2838,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         .do_send(vec![(
             &get_base_address!(recipient, "unified"),
             recipient_second_wave,
-            Some(String::from("Second wave incoming")),
+            Some(Memo::from_str("Second wave incoming").unwrap().into()),
         )])
         .await
         .unwrap();

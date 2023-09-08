@@ -881,11 +881,33 @@ impl Command for SendCommand {
                 return self.help().to_string();
             };
 
-            // Convert to the right format. String -> &str.
+            // Convert to the right format.
+            let mut error = None;
             let tos = send_args
                 .iter()
-                .map(|(a, v, m)| (a.as_str(), *v, m.clone()))
+                .map(|(a, v, m)| {
+                    (
+                        a.as_str(),
+                        *v,
+                        match m {
+                            // If the string starts with an "0x", and contains only hex chars ([a-f0-9]+) then
+                            // interpret it as a hex
+                            Some(s) => match utils::interpret_memo_string(s.clone()) {
+                                Ok(m) => Some(m),
+                                Err(e) => {
+                                    error = Some(format!("Couldn't interpret memo: {}", e));
+                                    None
+                                }
+                            },
+                            None => None,
+                        },
+                    )
+                })
                 .collect::<Vec<_>>();
+            if error.is_some() {
+                return error.unwrap();
+            }
+
             match lightclient.do_send(tos).await {
                 Ok(transaction_id) => {
                     object! { "txid" => transaction_id }
