@@ -962,9 +962,11 @@ impl LightWallet {
         }
     }
 
-    fn output_type_counts(
+    fn get_output_type_counts(
         recipients: &Vec<(address::RecipientAddress, Amount, Option<String>)>,
-    ) -> (u64, u64, u64) {
+    ) -> (usize, usize, usize) {
+        // I am assuming that each transparent output is the standard size as described here:
+        // https://zips.z.cash/zip-0317#transparent-contribution (i.e. 34 bytes)
         let mut txout_count = 0;
         let mut sapout_count = 0;
         let mut orchout_count = 0;
@@ -996,8 +998,19 @@ impl LightWallet {
         sapling_notes: &Vec<SpendableSaplingNote>,
         utxos: &Vec<ReceivedTransparentOutput>,
         recipients: &Vec<(address::RecipientAddress, Amount, Option<String>)>,
-    ) -> u64 {
-        todo!()
+    ) -> usize {
+        let (transparent_outputs, sapling_outputs, orchard_outputs) =
+            LightWallet::get_output_type_counts(recipients);
+        let orchard_inputs = orch_notes.len(); // I assume a 1:1 relation
+        let sapling_inputs = sapling_notes.len(); // I assume a 1:1 relation
+        let transparent_inputs = utxos.len(); // Again I assume all in notes are standard size
+                                              // as described here: https://zips.z.cash/zip-0317#transparent-contribution (i.e. 150 bytes)
+        let transparent_logical = transparent_inputs.max(transparent_outputs);
+        let sapling_logical = sapling_inputs.max(sapling_outputs);
+        assert_eq!(orchard_inputs, orchard_outputs);
+        let orchard_logical = orchard_outputs;
+        let total_logical_actions = transparent_logical + sapling_logical + orchard_logical;
+        total_logical_actions.max(2) // 2 is the grace window, needs to be reified as well-named constant
     }
 
     async fn select_notes_with_zip317_fee(
