@@ -962,7 +962,36 @@ impl LightWallet {
         }
     }
 
-    fn calculate_zip317_for_notes(
+    fn output_type_counts(
+        recipients: &Vec<(address::RecipientAddress, Amount, Option<String>)>,
+    ) -> (u64, u64, u64) {
+        let mut txout_count = 0;
+        let mut sapout_count = 0;
+        let mut orchout_count = 0;
+        for recipient in recipients.iter() {
+            match &recipient.0 {
+                address::RecipientAddress::Transparent(_) => {
+                    txout_count += 1;
+                }
+                address::RecipientAddress::Shielded(_) => {
+                    sapout_count += 1;
+                }
+                address::RecipientAddress::Unified(ua) => {
+                    if ua.orchard().is_some() {
+                        orchout_count += 1;
+                    } else if ua.sapling().is_some() {
+                        sapout_count += 1;
+                    } else if ua.transparent().is_some() {
+                        txout_count += 1;
+                    } else {
+                        panic!("Didn't expect an empty UA, as a recipient.");
+                    }
+                }
+            }
+        }
+        (txout_count, sapout_count, orchout_count)
+    }
+    fn calculate_zip317_logical_actions(
         orch_notes: &Vec<SpendableOrchardNote>,
         sapling_notes: &Vec<SpendableSaplingNote>,
         utxos: &Vec<ReceivedTransparentOutput>,
@@ -998,7 +1027,7 @@ impl LightWallet {
                 Ok((orchs, saps, uts, val_cov)) => {
                     (orchard_notes, sapling_notes, utxos, value_covered) =
                         (orchs, saps, uts, val_cov);
-                    zip_317_fee = LightWallet::calculate_zip317_for_notes(
+                    zip_317_fee = LightWallet::calculate_zip317_logical_actions(
                         &orchard_notes,
                         &sapling_notes,
                         &utxos,
