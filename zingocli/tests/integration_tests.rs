@@ -8,7 +8,7 @@ use zingo_testutils::{self, build_fvk_client, data};
 
 use bip0039::Mnemonic;
 use data::seeds::HOSPITAL_MUSEUM_SEED;
-use json::JsonValue::{self, Null};
+use json::JsonValue::{self};
 use zingo_testutils::scenarios;
 
 use tracing_test::traced_test;
@@ -21,7 +21,7 @@ use zingo_testutils::regtest::get_cargo_manifest_dir;
 use zingoconfig::{ChainType, ZingoConfig, MAX_REORG};
 use zingolib::{
     check_client_balances, get_base_address,
-    lightclient::LightClient,
+    lightclient::{LightClient, PoolBalances},
     wallet::{
         data::{COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL},
         keys::{
@@ -50,16 +50,16 @@ async fn dont_write_unconfirmed() {
     let recipient_balance = recipient.do_balance().await;
     assert_eq!(
         recipient_balance,
-        json::object! {
-            "sapling_balance": 0,
-            "verified_sapling_balance": 0,
-            "spendable_sapling_balance": 0,
-            "unverified_sapling_balance": 0,
-            "orchard_balance": 100000,
-            "verified_orchard_balance": 100000,
-            "spendable_orchard_balance": 100000,
-            "unverified_orchard_balance": 0,
-            "transparent_balance": 0
+        PoolBalances {
+            sapling_balance: Some(0),
+            verified_sapling_balance: Some(0),
+            spendable_sapling_balance: Some(0),
+            unverified_sapling_balance: Some(0),
+            orchard_balance: Some(100000),
+            verified_orchard_balance: Some(100000),
+            spendable_orchard_balance: Some(100000),
+            unverified_orchard_balance: Some(0),
+            transparent_balance: Some(0)
         }
     );
     recipient
@@ -72,12 +72,10 @@ async fn dont_write_unconfirmed() {
         .unwrap();
     let recipient_balance = recipient.do_balance().await;
 
-    dbg!(&recipient_balance["unverified_orchard_balance"]);
+    dbg!(&recipient_balance.unverified_orchard_balance);
     assert_eq!(
-        &recipient_balance["unverified_orchard_balance"]
-            .as_u64()
-            .unwrap(),
-        &65_000_u64
+        recipient_balance.unverified_orchard_balance.unwrap(),
+        65_000
     );
     let wallet_loc = &regtest_manager
         .zingo_datadir
@@ -90,12 +88,7 @@ async fn dont_write_unconfirmed() {
         zingo_testutils::load_wallet(wallet_loc.to_path_buf(), ChainType::Regtest).await;
     let loaded_client = LightClient::create_from_extant_wallet(wallet, config);
     let loaded_balance = loaded_client.do_balance().await;
-    assert_eq!(
-        &loaded_balance["unverified_orchard_balance"]
-            .as_u64()
-            .unwrap(),
-        &0_u64
-    );
+    assert_eq!(loaded_balance.unverified_orchard_balance, Some(0),);
     check_client_balances!(loaded_client, o: 100_000 s: 0 t: 0 );
 }
 
@@ -238,7 +231,7 @@ use zcash_address::unified::Fvk;
 use crate::zingo_testutils::check_transaction_equality;
 fn check_expected_balance_with_fvks(
     fvks: &Vec<&Fvk>,
-    balance: JsonValue,
+    balance: PoolBalances,
     o_expect: u64,
     s_expect: u64,
     t_expect: u64,
@@ -246,17 +239,17 @@ fn check_expected_balance_with_fvks(
     for fvk in fvks {
         match fvk {
             Fvk::Sapling(_) => {
-                assert_eq!(balance["sapling_balance"], s_expect);
-                assert_eq!(balance["verified_sapling_balance"], s_expect);
-                assert_eq!(balance["unverified_sapling_balance"], s_expect);
+                assert_eq!(balance.sapling_balance.unwrap(), s_expect);
+                assert_eq!(balance.verified_sapling_balance.unwrap(), s_expect);
+                assert_eq!(balance.unverified_sapling_balance.unwrap(), s_expect);
             }
             Fvk::Orchard(_) => {
-                assert_eq!(balance["orchard_balance"], o_expect);
-                assert_eq!(balance["verified_orchard_balance"], o_expect);
-                assert_eq!(balance["unverified_orchard_balance"], o_expect);
+                assert_eq!(balance.orchard_balance.unwrap(), o_expect);
+                assert_eq!(balance.verified_orchard_balance.unwrap(), o_expect);
+                assert_eq!(balance.unverified_orchard_balance.unwrap(), o_expect);
             }
             Fvk::P2pkh(_) => {
-                assert_eq!(balance["transparent_balance"], t_expect);
+                assert_eq!(balance.transparent_balance.unwrap(), t_expect);
             }
             _ => panic!(),
         }
@@ -265,29 +258,29 @@ fn check_expected_balance_with_fvks(
 
 #[allow(clippy::too_many_arguments)]
 fn check_view_capability_bounds(
-    balance: &JsonValue,
+    balance: &PoolBalances,
     watch_wc: &WalletCapability,
     fvks: &[&Fvk],
     ovk: &Fvk,
     svk: &Fvk,
     tvk: &Fvk,
-    sent_o_value: &JsonValue,
-    sent_s_value: &JsonValue,
-    sent_t_value: &JsonValue,
+    sent_o_value: Option<u64>,
+    sent_s_value: Option<u64>,
+    sent_t_value: Option<u64>,
     notes: &JsonValue,
 ) {
     //Orchard
     if !fvks.contains(&ovk) {
         assert!(!watch_wc.orchard.can_view());
-        assert_eq!(balance["orchard_balance"], Null);
-        assert_eq!(balance["verified_orchard_balance"], Null);
-        assert_eq!(balance["unverified_orchard_balance"], Null);
+        assert_eq!(balance.orchard_balance, None);
+        assert_eq!(balance.verified_orchard_balance, None);
+        assert_eq!(balance.unverified_orchard_balance, None);
         assert_eq!(notes["unspent_orchard_notes"].members().count(), 0);
     } else {
         assert!(watch_wc.orchard.can_view());
-        assert_eq!(balance["orchard_balance"], *sent_o_value);
-        assert_eq!(balance["verified_orchard_balance"], *sent_o_value);
-        assert_eq!(balance["unverified_orchard_balance"], 0);
+        assert_eq!(balance.orchard_balance, sent_o_value);
+        assert_eq!(balance.verified_orchard_balance, sent_o_value);
+        assert_eq!(balance.unverified_orchard_balance, Some(0));
         // assert 1 Orchard note, or 2 notes if a dummy output is included
         let orchard_notes_count = notes["unspent_orchard_notes"].members().count();
         assert!((1..=2).contains(&orchard_notes_count));
@@ -295,24 +288,24 @@ fn check_view_capability_bounds(
     //Sapling
     if !fvks.contains(&svk) {
         assert!(!watch_wc.sapling.can_view());
-        assert_eq!(balance["sapling_balance"], Null);
-        assert_eq!(balance["verified_sapling_balance"], Null);
-        assert_eq!(balance["unverified_sapling_balance"], Null);
+        assert_eq!(balance.sapling_balance, None);
+        assert_eq!(balance.verified_sapling_balance, None);
+        assert_eq!(balance.unverified_sapling_balance, None);
         assert_eq!(notes["unspent_sapling_notes"].members().count(), 0);
     } else {
         assert!(watch_wc.sapling.can_view());
-        assert_eq!(balance["sapling_balance"], *sent_s_value);
-        assert_eq!(balance["verified_sapling_balance"], *sent_s_value);
-        assert_eq!(balance["unverified_sapling_balance"], 0);
+        assert_eq!(balance.sapling_balance, sent_s_value);
+        assert_eq!(balance.verified_sapling_balance, sent_s_value);
+        assert_eq!(balance.unverified_sapling_balance, Some(0));
         assert_eq!(notes["unspent_sapling_notes"].members().count(), 1);
     }
     if !fvks.contains(&tvk) {
         assert!(!watch_wc.transparent.can_view());
-        assert_eq!(balance["transparent_balance"], Null);
+        assert_eq!(balance.transparent_balance, None);
         assert_eq!(notes["utxos"].members().count(), 0);
     } else {
         assert!(watch_wc.transparent.can_view());
-        assert_eq!(balance["transparent_balance"], *sent_t_value);
+        assert_eq!(balance.transparent_balance, sent_t_value);
         assert_eq!(notes["utxos"].members().count(), 1);
     }
 }
@@ -365,9 +358,9 @@ async fn test_scanning_in_watch_only_mode() {
         .await
         .unwrap();
     let original_recipient_balance = original_recipient.do_balance().await;
-    let sent_t_value = original_recipient_balance["transparent_balance"].clone();
-    let sent_s_value = original_recipient_balance["sapling_balance"].clone();
-    let sent_o_value = original_recipient_balance["orchard_balance"].clone();
+    let sent_t_value = original_recipient_balance.transparent_balance.unwrap();
+    let sent_s_value = original_recipient_balance.sapling_balance.unwrap();
+    let sent_o_value = original_recipient_balance.orchard_balance.unwrap();
     assert_eq!(sent_t_value, 1000u64);
     assert_eq!(sent_s_value, 2000u64);
     assert_eq!(sent_o_value, 3000u64);
@@ -410,9 +403,9 @@ async fn test_scanning_in_watch_only_mode() {
             &o_fvk,
             &s_fvk,
             &t_fvk,
-            &sent_o_value,
-            &sent_s_value,
-            &sent_t_value,
+            Some(sent_o_value),
+            Some(sent_s_value),
+            Some(sent_t_value),
             &notes,
         );
 
@@ -616,9 +609,9 @@ async fn send_mined_sapling_to_orchard() {
     let balance = faucet.do_balance().await;
     // We send change to orchard now, so we should have the full value of the note
     // we spent, minus the transaction fee
-    assert_eq!(balance["unverified_orchard_balance"], 0);
+    assert_eq!(balance.unverified_orchard_balance, Some(0));
     assert_eq!(
-        balance["verified_orchard_balance"],
+        balance.verified_orchard_balance.unwrap(),
         625_000_000 - u64::from(MINIMUM_FEE)
     );
 }
@@ -917,7 +910,7 @@ async fn send_orchard_back_and_forth() {
         "{}",
         JsonValue::from(faucet.do_list_txsummaries().await).pretty(4)
     );
-    println!("{}", faucet.do_balance().await.pretty(4));
+    println!("{}", faucet.do_balance().await.to_json().pretty(4));
 
     check_client_balances!(faucet, o: orch_change s: reward_and_fee t: 0);
 
@@ -964,16 +957,16 @@ async fn diversified_addresses_receive_funds_in_best_pool() {
     let balance_b = recipient.do_balance().await;
     assert_eq!(
         balance_b,
-        json::object! {
-            "sapling_balance": 5000,
-            "verified_sapling_balance": 5000,
-            "spendable_sapling_balance": 5000,
-            "unverified_sapling_balance": 0,
-            "orchard_balance": 15000,
-            "verified_orchard_balance": 15000,
-            "spendable_orchard_balance": 15000,
-            "unverified_orchard_balance": 0,
-            "transparent_balance": 0
+        PoolBalances {
+            sapling_balance: Some(5000),
+            verified_sapling_balance: Some(5000),
+            spendable_sapling_balance: Some(5000),
+            unverified_sapling_balance: Some(0),
+            orchard_balance: Some(15000),
+            verified_orchard_balance: Some(15000),
+            spendable_orchard_balance: Some(15000),
+            unverified_orchard_balance: Some(0),
+            transparent_balance: Some(0)
         }
     );
     // Unneeded, but more explicit than having _cph be an
@@ -1010,8 +1003,8 @@ async fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
                 sapling_addr.as_str(),
                 {
                     let balance = faucet.do_balance().await;
-                    balance["spendable_sapling_balance"].as_u64().unwrap()
-                        + balance["spendable_orchard_balance"].as_u64().unwrap()
+                    balance.spendable_sapling_balance.unwrap()
+                        + balance.spendable_orchard_balance.unwrap()
                 } - u64::from(MINIMUM_FEE),
                 memo.map(ToString::to_string),
             )])
@@ -1163,11 +1156,8 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
         //Ensure that recipient_restored was still able to spend the note, despite not having the
         //diversified address associated with it
         assert_eq!(
-            faucet.do_balance().await["spendable_orchard_balance"],
-            sender_balance["spendable_orchard_balance"]
-                .as_u64()
-                .unwrap()
-                + 4_000
+            faucet.do_balance().await.spendable_orchard_balance.unwrap(),
+            sender_balance.spendable_orchard_balance.unwrap() + 4_000
         );
         recipient_restored.do_seed_phrase().await.unwrap()
     };
@@ -1294,7 +1284,7 @@ async fn t_incoming_t_outgoing_disallowed() {
         .do_send(vec![(EXT_TADDR, sent_value, None)])
         .await
         .unwrap_err();
-    assert_eq!(sent_transaction_error, "Insufficient verified shielded funds. Have 0 zats, need 30000 zats. NOTE: funds need at least 1 confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes");
+    assert_eq!(sent_transaction_error, "Insufficient verified shielded funds. Have 0 zats, need 30000 zats. NOTE: funds need at least 1 confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes.");
 }
 
 #[tokio::test]
@@ -1563,19 +1553,19 @@ async fn mempool_and_balance() {
         scenarios::faucet_prefunded_orchard_recipient(value).await;
 
     let bal = recipient.do_balance().await;
-    println!("{}", json::stringify_pretty(bal.clone(), 4));
-    assert_eq!(bal["orchard_balance"].as_u64().unwrap(), value);
-    assert_eq!(bal["unverified_orchard_balance"].as_u64().unwrap(), 0);
-    assert_eq!(bal["verified_orchard_balance"].as_u64().unwrap(), value);
+    println!("{}", json::stringify_pretty(bal.to_json(), 4));
+    assert_eq!(bal.orchard_balance.unwrap(), value);
+    assert_eq!(bal.unverified_orchard_balance.unwrap(), 0);
+    assert_eq!(bal.verified_orchard_balance.unwrap(), value);
 
     // 3. Mine 10 blocks
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 10)
         .await
         .unwrap();
     let bal = recipient.do_balance().await;
-    assert_eq!(bal["orchard_balance"].as_u64().unwrap(), value);
-    assert_eq!(bal["verified_orchard_balance"].as_u64().unwrap(), value);
-    assert_eq!(bal["unverified_orchard_balance"].as_u64().unwrap(), 0);
+    assert_eq!(bal.orchard_balance.unwrap(), value);
+    assert_eq!(bal.verified_orchard_balance.unwrap(), value);
+    assert_eq!(bal.unverified_orchard_balance.unwrap(), 0);
 
     // 4. Spend the funds
     let sent_value = 2000;
@@ -1594,9 +1584,9 @@ async fn mempool_and_balance() {
 
     // Even though the transaction is not mined (in the mempool) the balances should be updated to reflect the spent funds
     let new_bal = value - (sent_value + u64::from(MINIMUM_FEE));
-    assert_eq!(bal["orchard_balance"].as_u64().unwrap(), new_bal);
-    assert_eq!(bal["verified_orchard_balance"].as_u64().unwrap(), 0);
-    assert_eq!(bal["unverified_orchard_balance"].as_u64().unwrap(), new_bal);
+    assert_eq!(bal.orchard_balance.unwrap(), new_bal);
+    assert_eq!(bal.verified_orchard_balance.unwrap(), 0);
+    assert_eq!(bal.unverified_orchard_balance.unwrap(), new_bal);
 
     // 5. Mine the pending block, making the funds verified and spendable.
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 10)
@@ -1605,9 +1595,9 @@ async fn mempool_and_balance() {
 
     let bal = recipient.do_balance().await;
 
-    assert_eq!(bal["orchard_balance"].as_u64().unwrap(), new_bal);
-    assert_eq!(bal["verified_orchard_balance"].as_u64().unwrap(), new_bal);
-    assert_eq!(bal["unverified_orchard_balance"].as_u64().unwrap(), 0);
+    assert_eq!(bal.orchard_balance.unwrap(), new_bal);
+    assert_eq!(bal.verified_orchard_balance.unwrap(), new_bal);
+    assert_eq!(bal.unverified_orchard_balance.unwrap(), 0);
 }
 
 #[tokio::test]
@@ -2142,9 +2132,9 @@ async fn sapling_incoming_sapling_outgoing() {
     // 3. Check the balance is correct, and we received the incoming transaction from ?outside?
     let b = recipient.do_balance().await;
     let addresses = recipient.do_addresses().await;
-    assert_eq!(b["sapling_balance"].as_u64().unwrap(), value);
-    assert_eq!(b["unverified_sapling_balance"].as_u64().unwrap(), 0);
-    assert_eq!(b["spendable_sapling_balance"].as_u64().unwrap(), value);
+    assert_eq!(b.sapling_balance.unwrap(), value);
+    assert_eq!(b.unverified_sapling_balance.unwrap(), 0);
+    assert_eq!(b.spendable_sapling_balance.unwrap(), value);
     assert_eq!(
         addresses[0]["receivers"]["sapling"],
         encode_payment_address(
@@ -2481,7 +2471,7 @@ async fn dust_sends_change_correctly() {
         .unwrap();
 
     println!("{}", recipient.do_list_transactions().await.pretty(4));
-    println!("{}", recipient.do_balance().await.pretty(4));
+    println!("{}", recipient.do_balance().await.to_json().pretty(4));
 }
 
 #[tokio::test]
@@ -2512,7 +2502,7 @@ async fn zero_value_receipts() {
         .unwrap();
 
     println!("{}", recipient.do_list_transactions().await.pretty(4));
-    println!("{}", recipient.do_balance().await.pretty(4));
+    println!("{}", recipient.do_balance().await.to_json().pretty(4));
     println!(
         "{}",
         JsonValue::from(recipient.do_list_txsummaries().await).pretty(4)
@@ -2625,7 +2615,7 @@ async fn load_old_wallet_at_reorged_height() {
         "post-sync transactions: {}",
         recipient.do_list_transactions().await.pretty(2)
     );
-    println!("{}", recipient.do_balance().await.pretty(2));
+    println!("{}", recipient.do_balance().await.to_json().pretty(2));
     recipient
         .do_send(vec![(&get_base_address!(faucet, "unified"), 14000, None)])
         .await
@@ -2649,7 +2639,7 @@ async fn shield_sapling() {
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 1)
         .await
         .unwrap();
-    println!("{}", recipient.do_balance().await.pretty(4));
+    println!("{}", recipient.do_balance().await.to_json().pretty(4));
 
     assert_eq!(
         recipient.do_shield(&[Pool::Sapling], None).await,
@@ -2699,7 +2689,7 @@ async fn shield_sapling() {
         .await
         .unwrap();
 
-    println!("{}", recipient.do_balance().await.pretty(4));
+    println!("{}", recipient.do_balance().await.to_json().pretty(4));
 }
 
 #[tokio::test]
@@ -2788,9 +2778,12 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         - (2 * u64::from(MINIMUM_FEE));
     assert_eq!(
         recipient.wallet.maybe_verified_orchard_balance(None).await,
-        expected_funds
+        Some(expected_funds)
     );
-    assert_eq!(recipient.wallet.verified_orchard_balance(None).await, 0);
+    assert_eq!(
+        recipient.wallet.verified_orchard_balance(None).await,
+        Some(0)
+    );
 
     let transactions = recipient.do_list_transactions().await;
     assert_eq!(
@@ -2857,7 +2850,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         - (3 * u64::from(MINIMUM_FEE));
     assert_eq!(
         recipient.wallet.maybe_verified_orchard_balance(None).await,
-        second_wave_expected_funds,
+        Some(second_wave_expected_funds),
     );
 
     let second_wave_expected_transactions = json::parse(r#"

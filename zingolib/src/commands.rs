@@ -386,7 +386,7 @@ impl Command for SendProgressCommand {
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
         RT.block_on(async move {
             match lightclient.do_send_progress().await {
-                Ok(j) => j.pretty(2),
+                Ok(p) => p.to_json().pretty(2),
                 Err(e) => e,
             }
         })
@@ -568,7 +568,7 @@ impl Command for BalanceCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        RT.block_on(async move { lightclient.do_balance().await.pretty(2) })
+        RT.block_on(async move { lightclient.do_balance().await.to_json().pretty(2) })
     }
 }
 
