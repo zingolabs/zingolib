@@ -1045,7 +1045,8 @@ impl LightWallet {
                         &sapling_notes,
                         &utxos,
                         recipients,
-                    );
+                    ) as u64
+                        * 5_000; // TODO: 5_000 is the marginal fee, and must be properly reified as a constant to pass review
                     if value_to_cover + zip_317_fee <= value_covered {
                         // The selected notes covered the send amount plus fee.
                         break;
