@@ -37,8 +37,9 @@ async fn correct_zip317_fees() {
     // Since the faucet receives block rewards it would be awkward to track it's balance for
     // purposes of asserting correct fee debits.  Instead we'll send from the recipient, back to
     // the faucet, and we'll just start with the recipient funded.
-    let (_regtest_manager, _cph, faucet, recipient, _txid) =
+    let (regtest_manager, _cph, faucet, recipient, _txid) =
         scenarios::faucet_prefunded_orchard_recipient(100_000).await;
+
     let recipient_balance = recipient.do_balance().await;
     assert_eq!(
         recipient_balance,
@@ -53,6 +54,23 @@ async fn correct_zip317_fees() {
             "unverified_orchard_balance": 0,
             "transparent_balance": 0
         }
+    );
+    dbg!(_txid);
+    recipient
+        .do_send(vec![(
+            &get_base_address!(faucet, "unified"),
+            1_000,
+            Some("tenth of marginal_fee send".to_string()),
+        )])
+        .await
+        .expect("to send back to the faucet");
+    zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 1)
+        .await
+        .unwrap();
+    let recipient_balance = recipient.do_balance().await;
+    assert_eq!(
+        &recipient_balance["orchard_balance"].as_u64().unwrap(),
+        &89_000u64
     );
 }
 #[tokio::test]
