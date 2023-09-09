@@ -1020,13 +1020,6 @@ impl LightWallet {
 
         let target_amount = (Amount::from_u64(total_value).unwrap() + MINIMUM_FEE).unwrap();
 
-        // Create a map from address -> sk for all taddrs, so we can spend from the
-        // right address
-        let address_to_sk = self
-            .wallet_capability()
-            .get_taddr_to_secretkey_map(&self.transaction_context.config)
-            .unwrap();
-
         let (orchard_notes, sapling_notes, utxos, selected_value) =
             self.select_notes_and_utxos(target_amount, policy).await;
         if selected_value < target_amount {
@@ -1066,6 +1059,13 @@ impl LightWallet {
         );
 
         // Add all tinputs
+        // Create a map from address -> sk for all taddrs, so we can spend from the
+        // right address
+        let address_to_sk = self
+            .wallet_capability()
+            .get_taddr_to_secretkey_map(&self.transaction_context.config)
+            .unwrap();
+
         utxos
             .iter()
             .map(|utxo| {
