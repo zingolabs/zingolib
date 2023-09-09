@@ -832,7 +832,7 @@ impl LightWallet {
 
     // Reset the send progress status to blank
     async fn reset_send_progress(&self) {
-        let mut g = self.send_progress.write().await;
+        let mut g = self.send_progress.write().await; // NOTE we block on previous send...   why?
         let next_id = g.id + 1;
 
         // Discard the old value, since we are replacing it
@@ -944,7 +944,7 @@ impl LightWallet {
         Fut: Future<Output = Result<String, String>>,
     {
         // Reset the progress to start. Any errors will get recorded here
-        self.reset_send_progress().await;
+        self.reset_send_progress().await; // Why? What does the errors recorded comment mean?
 
         // Call the internal function
         match self
@@ -1096,7 +1096,7 @@ impl LightWallet {
 
         let total_value = tos.iter().map(|to| to.1).sum::<u64>();
         println!(
-            "0: Creating transaction sending {} ztoshis to {} addresses",
+            "0: Creating transaction sending {} zatoshis to {} addresses",
             total_value,
             tos.len()
         );
