@@ -1070,7 +1070,7 @@ impl LightWallet {
     }
     async fn send_to_address_inner<F, Fut, P: TxProver>(
         &self,
-        prover: P,
+        sapling_prover: P,
         policy: NoteSelectionPolicy,
         tos: Vec<(&str, u64, Option<String>)>,
         submission_height: BlockHeight,
@@ -1094,10 +1094,10 @@ impl LightWallet {
             return Err("Wallet is in watch-only mode a thus it cannot spend".to_string());
         }
 
-        let total_value = tos.iter().map(|to| to.1).sum::<u64>();
+        let total_value_to_send = tos.iter().map(|to| to.1).sum::<u64>();
         println!(
             "0: Creating transaction sending {} zatoshis to {} addresses",
-            total_value,
+            total_value_to_send,
             tos.len()
         );
 
@@ -1143,7 +1143,7 @@ impl LightWallet {
             .get_taddr_to_secretkey_map(&self.transaction_context.config)
             .unwrap();
 
-        let pre_fee_amount = total_value;
+        let pre_fee_amount = total_value_to_send;
         let (orchard_notes, sapling_notes, utxos, selected_value, zip317_fee) = match self
             .select_notes_with_zip317_fee(&pre_fee_amount, &policy, &recipients)
             .await
@@ -1376,7 +1376,7 @@ impl LightWallet {
 
         builder.with_progress_notifier(transmitter);
         let (transaction, _) = match builder.build(
-            &prover,
+            &sapling_prover,
             &transaction::fees::fixed::FeeRule::non_standard(MINIMUM_FEE),
         ) {
             Ok(res) => res,
