@@ -1007,8 +1007,7 @@ impl LightWallet {
                                               // as described here: https://zips.z.cash/zip-0317#transparent-contribution (i.e. 150 bytes)
         let transparent_logical = transparent_inputs.max(transparent_outputs);
         let sapling_logical = sapling_inputs.max(sapling_outputs);
-        assert_eq!(orchard_inputs, orchard_outputs);
-        let orchard_logical = orchard_outputs;
+        let orchard_logical = orchard_outputs.max(orchard_inputs); // Orchard actions contain dummies for asymmetric sends.
         let total_logical_actions = transparent_logical + sapling_logical + orchard_logical;
         total_logical_actions.max(2) // 2 is the grace window, needs to be reified as well-named constant
     }

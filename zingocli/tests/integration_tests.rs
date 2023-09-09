@@ -34,19 +34,11 @@ use zingolib::{
 
 #[tokio::test]
 async fn correct_zip317_fees() {
-    let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient().await;
-    faucet
-        .do_send(vec![(
-            &get_base_address!(recipient, "unified"),
-            100_000,
-            Some("funding to be received by the recipient".to_string()),
-        )])
-        .await
-        .unwrap();
-
-    zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 2)
-        .await
-        .unwrap();
+    // Since the faucet receives block rewards it would be awkward to track it's balance for
+    // purposes of asserting correct fee debits.  Instead we'll send from the recipient, back to
+    // the faucet, and we'll just start with the recipient funded.
+    let (_regtest_manager, _cph, faucet, recipient, _txid) =
+        scenarios::faucet_prefunded_orchard_recipient(100_000).await;
     let recipient_balance = recipient.do_balance().await;
     assert_eq!(
         recipient_balance,
