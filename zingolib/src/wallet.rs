@@ -1094,10 +1094,10 @@ impl LightWallet {
             return Err("Wallet is in watch-only mode a thus it cannot spend".to_string());
         }
 
-        let total_value_to_send = tos.iter().map(|to| to.1).sum::<u64>();
+        let pre_fee_send_amount = tos.iter().map(|to| to.1).sum::<u64>();
         println!(
             "0: Creating transaction sending {} zatoshis to {} addresses",
-            total_value_to_send,
+            pre_fee_send_amount,
             tos.len()
         );
 
@@ -1136,16 +1136,15 @@ impl LightWallet {
         // Select notes to cover the target value
         println!("{}: Selecting notes", now() - start_time);
 
-        let pre_fee_amount = total_value_to_send;
         let (orchard_notes, sapling_notes, utxos, selected_value, zip317_fee) = match self
-            .select_notes_with_zip317_fee(&pre_fee_amount, &policy, &recipients)
+            .select_notes_with_zip317_fee(&pre_fee_send_amount, &policy, &recipients)
             .await
         {
             Ok(a) => a,
             Err(insufficient_funds) => {
                 let e = format!(
                 "Insufficient verified shielded funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes",
-                u64::from(insufficient_funds), u64::from(pre_fee_amount), self.transaction_context.config
+                u64::from(insufficient_funds), u64::from(pre_fee_send_amount), self.transaction_context.config
                 .reorg_buffer_offset + 1
             );
                 error!("{}", e);
@@ -1332,11 +1331,11 @@ impl LightWallet {
             }
         };
 
-        dbg!(selected_value, pre_fee_amount);
+        dbg!(selected_value, pre_fee_send_amount);
         if let Err(e) = builder.add_orchard_output::<FixedFeeRule>(
             Some(orchard_ovk.clone()),
             *self.wallet_capability().addresses()[0].orchard().unwrap(),
-            dbg!(u64::from(selected_value) - u64::from(pre_fee_amount)),
+            dbg!(u64::from(selected_value) - u64::from(pre_fee_send_amount)),
             // Here we store the uas we sent to in the memo field.
             // These are used to recover the full UA we sent to.
             MemoBytes::from(Memo::Arbitrary(Box::new(uas_bytes))),
