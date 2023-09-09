@@ -959,13 +959,16 @@ impl LightClient {
 
         let result = {
             let _lock = self.sync_lock.lock().await;
+            // I am not clear on how long this operation may take, but it's
+            // clearly unnecessary in a send that doesn't include sapling
+            // TODO: Remove from sends that don't include Sapling
             let (sapling_output, sapling_spend) = self.read_sapling_params()?;
 
-            let prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+            let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
 
             self.wallet
                 .send_to_address(
-                    prover,
+                    sapling_prover,
                     vec![crate::wallet::Pool::Orchard, crate::wallet::Pool::Sapling],
                     address_amount_memo_tuples,
                     transaction_submission_height,
