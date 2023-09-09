@@ -933,7 +933,7 @@ impl LightWallet {
 
     pub async fn send_to_address<F, Fut, P: TxProver>(
         &self,
-        prover: P,
+        sapling_prover: P,
         policy: NoteSelectionPolicy,
         tos: Vec<(&str, u64, Option<String>)>,
         submission_height: BlockHeight,
@@ -948,7 +948,7 @@ impl LightWallet {
 
         // Call the internal function
         match self
-            .send_to_address_inner(prover, policy, tos, submission_height, broadcast_fn)
+            .send_to_address_inner(sapling_prover, policy, tos, submission_height, broadcast_fn)
             .await
         {
             Ok((transaction_id, raw_transaction)) => {
