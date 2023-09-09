@@ -969,7 +969,8 @@ impl LightClient {
             self.wallet
                 .send_to_address(
                     sapling_prover,
-                    vec![crate::wallet::Pool::Orchard, crate::wallet::Pool::Sapling],
+                    vec![crate::wallet::Pool::Orchard, crate::wallet::Pool::Sapling], // This policy doesn't allow
+                    // spend from transparent.
                     address_amount_memo_tuples,
                     transaction_submission_height,
                     |transaction_bytes| {
