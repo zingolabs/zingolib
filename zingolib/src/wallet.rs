@@ -1331,11 +1331,14 @@ impl LightWallet {
             }
         };
 
+        // This section appends the change output to the transaction
+        let note_total_send_delta = u64::from(selected_value) - u64::from(pre_fee_send_amount);
+        let change_amount = note_total_send_delta - zip317_fee;
         dbg!(selected_value, pre_fee_send_amount);
         if let Err(e) = builder.add_orchard_output::<FixedFeeRule>(
             Some(orchard_ovk.clone()),
             *self.wallet_capability().addresses()[0].orchard().unwrap(),
-            dbg!(u64::from(selected_value) - u64::from(pre_fee_send_amount)),
+            dbg!(change_amount),
             // Here we store the uas we sent to in the memo field.
             // These are used to recover the full UA we sent to.
             MemoBytes::from(Memo::Arbitrary(Box::new(uas_bytes))),
