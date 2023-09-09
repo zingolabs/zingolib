@@ -1101,7 +1101,7 @@ impl LightWallet {
             tos.len()
         );
 
-        // Convert address (str) to RecepientAddress and value to Amount
+        // Convert address (str) to RecipientAddress and value to Amount
         let recipients = tos
             .iter()
             .map(|to| {
@@ -1136,13 +1136,6 @@ impl LightWallet {
         // Select notes to cover the target value
         println!("{}: Selecting notes", now() - start_time);
 
-        // Create a map from address -> sk for all taddrs, so we can spend from the
-        // right address
-        let address_to_sk = self
-            .wallet_capability()
-            .get_taddr_to_secretkey_map(&self.transaction_context.config)
-            .unwrap();
-
         let pre_fee_amount = total_value_to_send;
         let (orchard_notes, sapling_notes, utxos, selected_value, zip317_fee) = match self
             .select_notes_with_zip317_fee(&pre_fee_amount, &policy, &recipients)
@@ -1161,6 +1154,8 @@ impl LightWallet {
         };
 
         println!("Selected notes worth {}", u64::from(selected_value));
+
+        // Note Selection complete
         let txmds_readlock = self
             .transaction_context
             .transaction_metadata_set
@@ -1188,6 +1183,13 @@ impl LightWallet {
         );
 
         // Add all tinputs
+        // Create a map from address -> sk for all taddrs, so we can spend from the
+        // right key
+        let taddr_sk_map = self
+            .wallet_capability()
+            .get_taddr_to_secretkey_map(&self.transaction_context.config)
+            .unwrap();
+
         utxos
             .iter()
             .map(|utxo| {
@@ -1198,7 +1200,7 @@ impl LightWallet {
                     script_pubkey: Script(utxo.script.clone()),
                 };
 
-                match address_to_sk.get(&utxo.address) {
+                match taddr_sk_map.get(&utxo.address) {
                     Some(sk) => builder
                         .add_transparent_input(*sk, outpoint, coin)
                         .map_err(|e| {
