@@ -791,7 +791,7 @@ impl Command for SendCommand {
             OR
             send '[{'address': <address>, 'amount': <amount in zatoshis>, 'memo': <optional memo>}, ...]'
 
-            NOTE: The fee required to send this transaction (currently as defined in ZIP317: https://zips.z.cash/zip-0317)
+            NOTE: The fee required to send this transaction (as defined in ZIP317: https://zips.z.cash/zip-0317)
             is additionally deducted from your balance.
             Example:
             send zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p 200000 "Hello from the command line"
