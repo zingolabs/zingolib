@@ -990,7 +990,7 @@ impl LightClient {
                 "seed"     => m.to_string(),
                 "birthday" => self.wallet.get_birthday().await
             }),
-            None => Err("This wallet is watch-only."),
+            None => Err("This wallet is watch-only or was created without a mnemonic."),
         }
     }
 
@@ -2106,7 +2106,7 @@ mod tests {
         let wallet_name = data_dir.join("zingo-wallet.dat");
         let config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, Some(data_dir));
         let lc = LightClient::create_from_wallet_base(
-            WalletBase::MnemonicPhrase(TEST_SEED.to_string()),
+            WalletBase::MnemonicPhrase(TEST_SEED.to_string(), 0),
             &config,
             0,
             false,
@@ -2116,7 +2116,7 @@ mod tests {
         format!(
             "{:?}",
             LightClient::create_from_wallet_base(
-                WalletBase::MnemonicPhrase(TEST_SEED.to_string()),
+                WalletBase::MnemonicPhrase(TEST_SEED.to_string(), 0),
                 &config,
                 0,
                 false

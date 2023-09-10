@@ -190,9 +190,9 @@ impl WalletOptions {
 /// Data used to initialize new instance of LightWallet
 pub enum WalletBase {
     FreshEntropy,
-    SeedBytes([u8; 32]),
-    MnemonicPhrase(String),
-    Mnemonic(Mnemonic),
+    SeedBytes([u8; 32], u32),
+    MnemonicPhrase(String, u32),
+    Mnemonic(Mnemonic, u32),
     /// Unified full viewing key
     Ufvk(String),
     /// Unified spending key
@@ -203,7 +203,7 @@ impl WalletBase {
         if (&base[0..5]) == "uview" {
             WalletBase::Ufvk(base)
         } else {
-            WalletBase::MnemonicPhrase(base)
+            WalletBase::MnemonicPhrase(base, 0)
         }
     }
 }
@@ -214,7 +214,8 @@ pub struct LightWallet {
     birthday: AtomicU64,
 
     /// The seed for the wallet, stored as a bip0039 Mnemonic
-    /// Can be `None` in case of wallet without spending capability.
+    /// Can be `None` in case of wallet without spending capability
+    /// or created directly from spending keys.
     mnemonic: Option<Mnemonic>,
 
     // The last 100 blocks, used if something gets re-orged
@@ -579,18 +580,18 @@ impl LightWallet {
                 // Create a random seed.
                 let mut system_rng = OsRng;
                 system_rng.fill(&mut seed_bytes);
-                return Self::new(config, WalletBase::SeedBytes(seed_bytes), height);
+                return Self::new(config, WalletBase::SeedBytes(seed_bytes, 0), height);
             }
-            WalletBase::SeedBytes(seed_bytes) => {
+            WalletBase::SeedBytes(seed_bytes, position) => {
                 let mnemonic = Mnemonic::from_entropy(seed_bytes).map_err(|e| {
                     Error::new(
                         ErrorKind::InvalidData,
                         format!("Error parsing phrase: {}", e),
                     )
                 })?;
-                return Self::new(config, WalletBase::Mnemonic(mnemonic), height);
+                return Self::new(config, WalletBase::Mnemonic(mnemonic, position), height);
             }
-            WalletBase::MnemonicPhrase(phrase) => {
+            WalletBase::MnemonicPhrase(phrase, position) => {
                 let mnemonic = Mnemonic::from_phrase(phrase)
                     .and_then(|m| Mnemonic::from_entropy(m.entropy()))
                     .map_err(|e| {
@@ -603,10 +604,10 @@ impl LightWallet {
                 // should be a no-op, but seems to be needed on android for some reason
                 // TODO: Test the this cfg actually works
                 //#[cfg(target_os = "android")]
-                return Self::new(config, WalletBase::Mnemonic(mnemonic), height);
+                return Self::new(config, WalletBase::Mnemonic(mnemonic, position), height);
             }
-            WalletBase::Mnemonic(mnemonic) => {
-                let wc = WalletCapability::new_from_phrase(&config, &mnemonic, 0)
+            WalletBase::Mnemonic(mnemonic, position) => {
+                let wc = WalletCapability::new_from_phrase(&config, &mnemonic, position)
                     .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
                 (wc, Some(mnemonic))
             }
