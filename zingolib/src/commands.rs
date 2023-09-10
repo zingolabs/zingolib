@@ -1020,7 +1020,11 @@ impl Command for SeedCommand {
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
         RT.block_on(async move {
             match lightclient.do_seed_phrase().await {
-                Ok(j) => j,
+                Ok(m) => object! {
+                    "seed"     => m.seed_phrase,
+                    "birthday" => m.birthday,
+                    "account_index" => m.account_index,
+                },
                 Err(e) => object! { "error" => e },
             }
             .pretty(2)
