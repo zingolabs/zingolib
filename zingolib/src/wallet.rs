@@ -977,8 +977,8 @@ impl LightWallet {
         }
 
         let total_value = tos.iter().map(|to| to.1).sum::<u64>();
-        println!(
-            "0: Creating transaction sending {} ztoshis to {} addresses",
+        info!(
+            "0: Creating transaction sending {} zatoshis to {} addresses",
             total_value,
             tos.len()
         );
@@ -1016,7 +1016,7 @@ impl LightWallet {
             .collect::<Vec<_>>();
 
         // Select notes to cover the target value
-        println!("{}: Selecting notes", now() - start_time);
+        info!("{}: Selecting notes", now() - start_time);
 
         let target_amount = (Amount::from_u64(total_value).unwrap() + MINIMUM_FEE).unwrap();
 
@@ -1038,7 +1038,7 @@ impl LightWallet {
             error!("{}", e);
             return Err(e);
         }
-        println!("Selected notes worth {}", u64::from(selected_value));
+        info!("Selected notes worth {}", u64::from(selected_value));
         let txmds_readlock = self
             .transaction_context
             .transaction_metadata_set
@@ -1057,7 +1057,7 @@ impl LightWallet {
             submission_height,
             Some(orchard_anchor),
         );
-        println!(
+        info!(
             "{}: Adding {} sapling notes, {} orchard notes, and {} utxos",
             now() - start_time,
             sapling_notes.len(),
@@ -1097,7 +1097,7 @@ impl LightWallet {
             .map_err(|e| format!("{:?}", e))?;
 
         for selected in sapling_notes.iter() {
-            println!("Adding sapling spend");
+            info!("Adding sapling spend");
             if let Err(e) = builder.add_sapling_spend(
                 selected.extsk.clone().unwrap(),
                 selected.diversifier,
@@ -1114,7 +1114,7 @@ impl LightWallet {
         }
 
         for selected in orchard_notes.iter() {
-            println!("Adding orchard spend");
+            info!("Adding orchard spend");
             if let Err(e) = builder.add_orchard_spend::<transaction::fees::fixed::FeeRule>(
                 selected.spend_key.unwrap(),
                 selected.note,
@@ -1146,7 +1146,7 @@ impl LightWallet {
                 Some(s) => s,
             };
 
-            println!("{}: Adding output", now() - start_time);
+            info!("{}: Adding output", now() - start_time);
 
             if let Err(e) = match recipient_address {
                 address::RecipientAddress::Shielded(to) => {
@@ -1198,11 +1198,10 @@ impl LightWallet {
             }
         };
 
-        dbg!(selected_value, target_amount);
         if let Err(e) = builder.add_orchard_output::<FixedFeeRule>(
             Some(orchard_ovk.clone()),
             *self.wallet_capability().addresses()[0].orchard().unwrap(),
-            dbg!(u64::from(selected_value) - u64::from(target_amount)),
+            u64::from(selected_value) - u64::from(target_amount),
             // Here we store the uas we sent to in the memo field.
             // These are used to recover the full UA we sent to.
             MemoBytes::from(Memo::Arbitrary(Box::new(uas_bytes))),
@@ -1226,7 +1225,7 @@ impl LightWallet {
 
         let progress_handle = tokio::spawn(async move {
             while let Some(r) = receiver2.recv().await {
-                println!("{}: Progress: {r}", now() - start_time);
+                info!("{}: Progress: {r}", now() - start_time);
                 progress.write().await.progress = r;
             }
 
@@ -1240,7 +1239,7 @@ impl LightWallet {
             p.total = sapling_notes.len() as u32 + total_z_recipients;
         }
 
-        println!("{}: Building transaction", now() - start_time);
+        info!("{}: Building transaction", now() - start_time);
 
         builder.with_progress_notifier(transmitter);
         let (transaction, _) = match builder.build(
@@ -1259,8 +1258,8 @@ impl LightWallet {
         // Wait for all the progress to be updated
         progress_handle.await.unwrap();
 
-        println!("{}: Transaction created", now() - start_time);
-        println!("Transaction ID: {}", transaction.txid());
+        info!("{}: Transaction created", now() - start_time);
+        info!("Transaction ID: {}", transaction.txid());
 
         {
             self.send_progress.write().await.is_send_in_progress = false;
