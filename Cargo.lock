@@ -3948,7 +3948,7 @@ dependencies = [
  "bech32",
  "bs58",
  "f4jumble",
- "zcash_encoding",
+ "zcash_encoding 0.2.0 (git+https://github.com/zingolabs/librustzcash?rev=8e582109cad9af14b461f76429f9f0437e860115)",
 ]
 
 [[package]]
@@ -3979,7 +3979,7 @@ dependencies = [
  "tracing",
  "which",
  "zcash_address",
- "zcash_encoding",
+ "zcash_encoding 0.2.0 (git+https://github.com/zingolabs/librustzcash?rev=8e582109cad9af14b461f76429f9f0437e860115)",
  "zcash_note_encryption",
  "zcash_primitives",
 ]
@@ -4005,8 +4005,18 @@ dependencies = [
  "tracing",
  "uuid",
  "zcash_client_backend",
- "zcash_encoding",
+ "zcash_encoding 0.2.0 (git+https://github.com/zingolabs/librustzcash?rev=8e582109cad9af14b461f76429f9f0437e860115)",
  "zcash_primitives",
+]
+
+[[package]]
+name = "zcash_encoding"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f03391b81727875efa6ac0661a20883022b6fba92365dc121c48fa9b00c5aac0"
+dependencies = [
+ "byteorder",
+ "nonempty",
 ]
 
 [[package]]
@@ -4063,7 +4073,7 @@ dependencies = [
  "sha2 0.10.7",
  "subtle",
  "zcash_address",
- "zcash_encoding",
+ "zcash_encoding 0.2.0 (git+https://github.com/zingolabs/librustzcash?rev=8e582109cad9af14b461f76429f9f0437e860115)",
  "zcash_note_encryption",
 ]
 
@@ -4161,7 +4171,7 @@ version = "0.1.0"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
- "zcash_encoding",
+ "zcash_encoding 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "zcash_note_encryption",
  "zcash_primitives",
 ]
@@ -4261,7 +4271,7 @@ dependencies = [
  "zcash_address",
  "zcash_client_backend",
  "zcash_client_sqlite",
- "zcash_encoding",
+ "zcash_encoding 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "zcash_note_encryption",
  "zcash_primitives",
  "zcash_proofs",
