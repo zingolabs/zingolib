@@ -9,10 +9,12 @@ use crate::darkside::{
 
 use tokio::time::sleep;
 use zcash_primitives::consensus::{BlockHeight, BranchId};
-use zingo_testutils::scenarios::setup::ClientBuilder;:
+use zingo_testutils::scenarios::setup::ClientBuilder;
 use zingoconfig::ChainType;
 use zingolib::{
-    get_base_address, grpc_connector::GrpcConnector, lightclient::LightClient,
+    get_base_address,
+    grpc_connector::GrpcConnector,
+    lightclient::{LightClient, PoolBalances},
     wallet::keys::address_from_pubkeyhash,
 };
 
@@ -279,22 +281,17 @@ async fn sync_transparent() {
     assert_eq!(result.total_blocks_synced, 3);
     assert_eq!(
         faucet.do_balance().await,
-        json::parse(
-            r#"
-            {
-                "sapling_balance": 0,
-                "verified_sapling_balance": 0,
-                "spendable_sapling_balance": 0,
-                "unverified_sapling_balance": 0,
-                "orchard_balance": 100000000,
-                "verified_orchard_balance": 100000000,
-                "spendable_orchard_balance": 100000000,
-                "unverified_orchard_balance": 0,
-                "transparent_balance": 0
-            }
-        "#
-        )
-        .unwrap()
+        PoolBalances {
+            sapling_balance: Some(0),
+            verified_sapling_balance: Some(0),
+            spendable_sapling_balance: Some(0),
+            unverified_sapling_balance: Some(0),
+            orchard_balance: Some(100000000),
+            verified_orchard_balance: Some(100000000),
+            spendable_orchard_balance: Some(100000000),
+            unverified_orchard_balance: Some(0),
+            transparent_balance: Some(0)
+        }
     );
 
     let recipient = client_manager
@@ -325,9 +322,9 @@ async fn sync_transparent() {
 
     faucet.do_rescan().await.unwrap();
     println!("post rescan faucet balance and transactions",);
-    println!("{}", faucet.do_balance().await.pretty(2));
+    println!("{:#?}", faucet.do_balance().await);
     println!("{}", faucet.do_list_transactions().await.pretty(2));
-    assert_eq!(faucet.do_balance().await["orchard_balance"], 99980000);
+    assert_eq!(faucet.do_balance().await.orchard_balance.unwrap(), 99980000);
 
     let grcp_connector = GrpcConnector::new(server_id.clone());
     let request = tonic::Request::new(zingolib::compact_formats::TxFilter {
@@ -367,9 +364,12 @@ async fn sync_transparent() {
 
     recipient.do_rescan().await.unwrap();
     println!("post rescan recipient balance and transactions",);
-    println!("{}", recipient.do_balance().await.pretty(2));
+    println!("{:#?}", recipient.do_balance().await);
     println!("{}", recipient.do_list_transactions().await.pretty(2));
-    assert_eq!(recipient.do_balance().await["transparent_balance"], 10000);
+    assert_eq!(
+        recipient.do_balance().await.transparent_balance.unwrap(),
+        10000
+    );
 
     //this is our main bug. transparent transaction is not found.
 }

@@ -8,7 +8,7 @@ use http::Uri;
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
 use tempdir;
 use tokio::time::sleep;
-use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transaction};
+use zcash_primitives::merkle_tree::read_commitment_tree;
 use zcash_primitives::{
     sapling::{note_encryption::SaplingDomain, Node},
     transaction::TxId,

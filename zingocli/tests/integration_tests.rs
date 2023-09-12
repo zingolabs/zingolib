@@ -8,7 +8,7 @@ use zingo_testutils::{self, build_fvk_client, data};
 
 use bip0039::Mnemonic;
 use data::seeds::HOSPITAL_MUSEUM_SEED;
-use json::JsonValue::{self};
+use json::JsonValue;
 use zingo_testutils::scenarios;
 
 use tracing_test::traced_test;
@@ -194,10 +194,13 @@ async fn factor_do_shield_to_call_do_send() {
     zingo_testutils::increase_height_and_sync_client(regtest_manager, recipient, 1)
         .await
         .unwrap();
-    assert_eq!(recipient.do_balance().await["transparent_balance"], 100_000);
+    assert_eq!(
+        recipient.do_balance().await.transparent_balance.unwrap(),
+        100_000
+    );
     recipient.do_rescan().await.unwrap();
     assert_eq!(
-        dbg!(&recipient.do_balance().await["transparent_balance"]),
+        *dbg!(&recipient.do_balance().await.transparent_balance.unwrap()),
         100_000
     );
     recipient
@@ -208,11 +211,11 @@ async fn factor_do_shield_to_call_do_send() {
         .await
         .unwrap();
     assert_eq!(
-        dbg!(&recipient.do_balance().await["transparent_balance"]),
+        *dbg!(&recipient.do_balance().await.transparent_balance.unwrap()),
         0
     );
     assert_eq!(
-        recipient.do_balance().await["orchard_balance"],
+        recipient.do_balance().await.orchard_balance.unwrap(),
         100_000 - u64::from(MINIMUM_FEE)
     );
 }
