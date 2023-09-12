@@ -8,8 +8,13 @@ use crate::darkside::{
 };
 
 use tokio::time::sleep;
+use zcash_primitives::consensus::{BlockHeight, BranchId};
 use zingo_testutils::scenarios::setup::ClientBuilder;
-use zingolib::{get_base_address, lightclient::LightClient};
+use zingoconfig::ChainType;
+use zingolib::{
+    get_base_address, grpc_connector::GrpcConnector, lightclient::LightClient,
+    wallet::keys::address_from_pubkeyhash,
+};
 
 use std::sync::Arc;
 
@@ -304,13 +309,15 @@ async fn sync_zpc98() {
             true,
         )
         .await;
-    utils::send_and_include_on_chain(
+    let txid = utils::send_and_include_on_chain(
         &faucet,
-        get_base_address!(recipient, "transparent"),
+        dbg!(get_base_address!(recipient, "transparent")),
         &server_id,
     )
     .await;
-    faucet.do_sync(false).await.unwrap();
+    println!("on-chain txid: {txid}");
+    println!("{}", recipient.do_addresses().await.pretty(2));
+    /* faucet.do_sync(false).await.unwrap();
     println!("start listing___",);
     println!("{}", faucet.do_balance().await.pretty(2));
     println!("{}", faucet.do_list_transactions().await.pretty(2));
@@ -319,12 +326,56 @@ async fn sync_zpc98() {
     // darkside v5 bungles the txid. Zingo relies on identical txid to realize the confirmed transaction is the same as the one it tried to send.
     // see https://github.com/zcash/lightwalletd/blob/8003d7fb6e3c47fb0561121a0ee47d080c8c46b9/common/darkside.go#L99-L107
     // so this balance statement is technically wrong, but predictable. after the rescan it will be correct.
-    // assert_eq!(faucet.do_balance().await["orchard_balance"], 199960000);
+    assert_eq!(faucet.do_balance().await["orchard_balance"], 199960000);*/
 
-    // faucet.do_rescan().await.unwrap();
-    // println!("{}", faucet.do_balance().await["orchard_balance"]);
-    // println!("{}", faucet.do_list_transactions().await.pretty(2));
-    // assert_eq!(faucet.do_balance().await["orchard_balance"], 199980000);
+    faucet.do_rescan().await.unwrap();
+    println!("start listing___",);
+    println!("{}", faucet.do_balance().await.pretty(2));
+    println!("{}", faucet.do_list_transactions().await.pretty(2));
+    assert_eq!(faucet.do_balance().await["orchard_balance"], 99980000);
+
+    recipient.do_rescan().await.unwrap();
+
+    let grcp_connector = GrpcConnector::new(server_id.clone());
+    let request = tonic::Request::new(zingolib::compact_formats::TxFilter {
+        block: None,
+        index: 0,
+        hash: txid.as_ref().to_vec(),
+    });
+    let mut grpc_client = grcp_connector.get_client().await.unwrap();
+    let response = grpc_client
+        .get_transaction(request)
+        .await
+        .map_err(|e| format!("{}", e))
+        .unwrap()
+        .into_inner();
+
+    println!(
+        "Transaction on-chain sent to: {}",
+        address_from_pubkeyhash(
+            recipient.config(),
+            zcash_primitives::transaction::Transaction::read(
+                &response.data[..],
+                BranchId::for_height(
+                    &ChainType::Regtest,
+                    BlockHeight::from_u32(response.height as u32),
+                ),
+            )
+            .unwrap()
+            .transparent_bundle()
+            .unwrap()
+            .vout
+            .first()
+            .unwrap()
+            .recipient_address()
+            .unwrap()
+        )
+    );
+
+    println!("recipient___",);
+    println!("{}", recipient.do_balance().await.pretty(2));
+    println!("{}", recipient.do_list_transactions().await.pretty(2));
+    assert_eq!(recipient.do_balance().await["transparent_balance"], 10000);
 
     // recipient.do_sync(false).await.unwrap();
     // println!("{}", recipient.do_list_transactions().await.pretty(2));

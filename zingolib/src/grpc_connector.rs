@@ -38,7 +38,7 @@ impl GrpcConnector {
         Self { uri }
     }
 
-    pub(crate) fn get_client(
+    pub fn get_client(
         &self,
     ) -> impl std::future::Future<
         Output = Result<CompactTxStreamerClient<UnderlyingService>, Box<dyn std::error::Error>>,

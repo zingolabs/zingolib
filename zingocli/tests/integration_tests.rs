@@ -175,18 +175,43 @@ async fn send_to_self_with_no_user_specified_memo_does_not_cause_error() {
 
 #[tokio::test]
 async fn factor_do_shield_to_call_do_send() {
-    let (regtest_manager, __cph, faucet, recipient) = scenarios::faucet_recipient().await;
-    zingo_testutils::increase_height_and_sync_client(&regtest_manager, &faucet, 2)
+    let (ref regtest_manager, __cph, ref faucet, ref recipient) =
+        scenarios::faucet_recipient().await;
+    zingo_testutils::increase_height_and_sync_client(regtest_manager, faucet, 2)
         .await
         .unwrap();
     faucet
         .do_send(vec![(
             &get_base_address!(recipient, "transparent"),
-            1_000u64,
+            100_000u64,
             None,
         )])
         .await
         .unwrap();
+    zingo_testutils::increase_height_and_sync_client(regtest_manager, recipient, 1)
+        .await
+        .unwrap();
+    assert_eq!(recipient.do_balance().await["transparent_balance"], 100_000);
+    recipient.do_rescan().await.unwrap();
+    assert_eq!(
+        dbg!(&recipient.do_balance().await["transparent_balance"]),
+        100_000
+    );
+    recipient
+        .do_shield(&[Pool::Transparent], None)
+        .await
+        .unwrap();
+    zingo_testutils::increase_height_and_sync_client(regtest_manager, recipient, 1)
+        .await
+        .unwrap();
+    assert_eq!(
+        dbg!(&recipient.do_balance().await["transparent_balance"]),
+        0
+    );
+    assert_eq!(
+        recipient.do_balance().await["orchard_balance"],
+        100_000 - u64::from(MINIMUM_FEE)
+    );
 }
 
 #[tokio::test]

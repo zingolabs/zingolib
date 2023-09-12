@@ -8,8 +8,11 @@ use http::Uri;
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
 use tempdir;
 use tokio::time::sleep;
-use zcash_primitives::merkle_tree::read_commitment_tree;
-use zcash_primitives::sapling::{note_encryption::SaplingDomain, Node};
+use zcash_primitives::{merkle_tree::read_commitment_tree, transaction::Transaction};
+use zcash_primitives::{
+    sapling::{note_encryption::SaplingDomain, Node},
+    transaction::TxId,
+};
 use zingo_testutils::{
     self,
     incrementalmerkletree::frontier::CommitmentTree,
@@ -143,7 +146,7 @@ pub async fn send_and_include_on_chain(
     sender: &LightClient,
     recipient_addr: String,
     server_id: &Uri,
-) {
+) -> zcash_primitives::transaction::TxId {
     let height = GrpcConnector::get_latest_block(server_id.clone())
         .await
         .unwrap()
@@ -169,4 +172,21 @@ pub async fn send_and_include_on_chain(
     update_tree_states_for_transaction(&server_id, raw_tx.clone(), height + 1).await;
     connector.apply_staged(height as i32 + 1).await.unwrap();
     sleep(std::time::Duration::from_secs(4)).await;
+    let new_block = GrpcConnector::get_latest_block(server_id.clone())
+        .await
+        .unwrap();
+    let block = GrpcConnector::new(server_id.clone())
+        .get_client()
+        .await
+        .unwrap()
+        .get_block(zingolib::compact_formats::BlockId {
+            height: new_block.height,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    println!("New height: {}", new_block.height);
+    let mut txns = block.into_inner().vtx;
+    assert_eq!(txns.len(), 1);
+    TxId::read(&txns.pop().unwrap().hash[..]).unwrap()
 }
