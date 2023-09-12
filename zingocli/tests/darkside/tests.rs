@@ -9,7 +9,7 @@ use crate::darkside::{
 
 use tokio::time::sleep;
 use zcash_primitives::consensus::{BlockHeight, BranchId};
-use zingo_testutils::scenarios::setup::ClientBuilder;
+use zingo_testutils::scenarios::setup::ClientBuilder;:
 use zingoconfig::ChainType;
 use zingolib::{
     get_base_address, grpc_connector::GrpcConnector, lightclient::LightClient,
@@ -237,22 +237,17 @@ async fn simple_sync() {
     assert_eq!(result.total_blocks_synced, 3);
     assert_eq!(
         light_client.do_balance().await,
-        json::parse(
-            r#"
-            {
-                "sapling_balance": 0,
-                "verified_sapling_balance": 0,
-                "spendable_sapling_balance": 0,
-                "unverified_sapling_balance": 0,
-                "orchard_balance": 100000000,
-                "verified_orchard_balance": 100000000,
-                "spendable_orchard_balance": 100000000,
-                "unverified_orchard_balance": 0,
-                "transparent_balance": 0
-            }
-        "#
-        )
-        .unwrap()
+        PoolBalances {
+            sapling_balance: Some(0),
+            verified_sapling_balance: Some(0),
+            spendable_sapling_balance: Some(0),
+            unverified_sapling_balance: Some(0),
+            orchard_balance: Some(100000000),
+            verified_orchard_balance: Some(100000000),
+            spendable_orchard_balance: Some(100000000),
+            unverified_orchard_balance: Some(0),
+            transparent_balance: Some(0)
+        }
     );
 }
 
@@ -402,22 +397,17 @@ async fn reorg_away_receipt() {
     light_client.do_sync(true).await.unwrap();
     assert_eq!(
         light_client.do_balance().await,
-        json::parse(
-            r#"
-            {
-                "sapling_balance": 0,
-                "verified_sapling_balance": 0,
-                "spendable_sapling_balance": 0,
-                "unverified_sapling_balance": 0,
-                "orchard_balance": 100000000,
-                "verified_orchard_balance": 100000000,
-                "spendable_orchard_balance": 100000000,
-                "unverified_orchard_balance": 0,
-                "transparent_balance": 0
-            }
-        "#
-        )
-        .unwrap()
+        PoolBalances {
+            sapling_balance: Some(0),
+            verified_sapling_balance: Some(0),
+            spendable_sapling_balance: Some(0),
+            unverified_sapling_balance: Some(0),
+            orchard_balance: Some(100000000),
+            verified_orchard_balance: Some(100000000),
+            spendable_orchard_balance: Some(100000000),
+            unverified_orchard_balance: Some(0),
+            transparent_balance: Some(0)
+        }
     );
     prepare_darksidewalletd(server_id.clone(), false)
         .await
@@ -425,22 +415,17 @@ async fn reorg_away_receipt() {
     light_client.do_sync(true).await.unwrap();
     assert_eq!(
         light_client.do_balance().await,
-        json::parse(
-            r#"
-            {
-                "sapling_balance": 0,
-                "verified_sapling_balance": 0,
-                "spendable_sapling_balance": 0,
-                "unverified_sapling_balance": 0,
-                "orchard_balance": 0,
-                "verified_orchard_balance": 0,
-                "spendable_orchard_balance": 0,
-                "unverified_orchard_balance": 0,
-                "transparent_balance": 0
-            }
-        "#
-        )
-        .unwrap()
+        PoolBalances {
+            sapling_balance: Some(0),
+            verified_sapling_balance: Some(0),
+            spendable_sapling_balance: Some(0),
+            unverified_sapling_balance: Some(0),
+            orchard_balance: Some(0),
+            verified_orchard_balance: Some(0),
+            spendable_orchard_balance: Some(0),
+            unverified_orchard_balance: Some(0),
+            transparent_balance: Some(0)
+        }
     );
 }
 
@@ -473,22 +458,17 @@ async fn sent_transaction_reorged_into_mempool() {
     light_client.do_sync(true).await.unwrap();
     assert_eq!(
         light_client.do_balance().await,
-        json::parse(
-            r#"
-            {
-                "sapling_balance": 0,
-                "verified_sapling_balance": 0,
-                "spendable_sapling_balance": 0,
-                "unverified_sapling_balance": 0,
-                "orchard_balance": 100000000,
-                "verified_orchard_balance": 100000000,
-                "spendable_orchard_balance": 100000000,
-                "unverified_orchard_balance": 0,
-                "transparent_balance": 0
-            }
-        "#
-        )
-        .unwrap()
+        PoolBalances {
+            sapling_balance: Some(0),
+            verified_sapling_balance: Some(0),
+            spendable_sapling_balance: Some(0),
+            unverified_sapling_balance: Some(0),
+            orchard_balance: Some(100000000),
+            verified_orchard_balance: Some(100000000),
+            spendable_orchard_balance: Some(100000000),
+            unverified_orchard_balance: Some(0),
+            transparent_balance: Some(0)
+        }
     );
     let txid = light_client
         .do_send(vec![(
@@ -524,11 +504,11 @@ async fn sent_transaction_reorged_into_mempool() {
     );
     println!(
         "Recipient pre-reorg: {}",
-        recipient.do_balance().await.pretty(2)
+        recipient.do_balance().await.to_json().pretty(2)
     );
     println!(
         "Sender pre-reorg (unsynced): {}",
-        light_client.do_balance().await.pretty(2)
+        light_client.do_balance().await.to_json().pretty(2)
     );
 
     prepare_darksidewalletd(server_id.clone(), true)
@@ -543,11 +523,11 @@ async fn sent_transaction_reorged_into_mempool() {
     light_client.do_sync(false).await.unwrap();
     println!(
         "Recipient post-reorg: {}",
-        recipient.do_balance().await.pretty(2)
+        recipient.do_balance().await.to_json().pretty(2)
     );
     println!(
         "Sender post-reorg: {}",
-        light_client.do_balance().await.pretty(2)
+        light_client.do_balance().await.to_json().pretty(2)
     );
     println!(
         "Sender post-reorg: {}",
@@ -565,7 +545,7 @@ async fn sent_transaction_reorged_into_mempool() {
         loaded_client.do_list_transactions().await.pretty(2)
     );
     assert_eq!(
-        loaded_client.do_balance().await["orchard_balance"],
-        100000000
+        loaded_client.do_balance().await.orchard_balance,
+        Some(100000000)
     );
 }
