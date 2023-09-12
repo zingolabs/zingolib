@@ -23,5 +23,5 @@ lightwalletd supported for these tests need to have the TreeState API. This mean
 
 cargo test --package zingo-cli --test integration_tests --features darkside_tests -- darkside
 
-# or
+# or to run a specific test
 cargo test --package zingo-cli --test integration_tests --features darkside_tests -- TESTNAME --nocapture
