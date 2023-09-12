@@ -257,7 +257,7 @@ async fn simple_sync() {
 }
 
 #[tokio::test]
-async fn sync_zpc98() {
+async fn sync_transparent() {
     let darkside_handler = DarksideHandler::new();
 
     let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
@@ -329,12 +329,10 @@ async fn sync_zpc98() {
     assert_eq!(faucet.do_balance().await["orchard_balance"], 199960000);*/
 
     faucet.do_rescan().await.unwrap();
-    println!("start listing___",);
+    println!("post rescan faucet balance and transactions",);
     println!("{}", faucet.do_balance().await.pretty(2));
     println!("{}", faucet.do_list_transactions().await.pretty(2));
     assert_eq!(faucet.do_balance().await["orchard_balance"], 99980000);
-
-    recipient.do_rescan().await.unwrap();
 
     let grcp_connector = GrpcConnector::new(server_id.clone());
     let request = tonic::Request::new(zingolib::compact_formats::TxFilter {
@@ -372,20 +370,13 @@ async fn sync_zpc98() {
         )
     );
 
-    println!("recipient___",);
+    recipient.do_rescan().await.unwrap();
+    println!("post rescan recipient balance and transactions",);
     println!("{}", recipient.do_balance().await.pretty(2));
     println!("{}", recipient.do_list_transactions().await.pretty(2));
     assert_eq!(recipient.do_balance().await["transparent_balance"], 10000);
 
-    // recipient.do_sync(false).await.unwrap();
-    // println!("{}", recipient.do_list_transactions().await.pretty(2));
-    // println!("{}", recipient.do_balance().await["orchard_balance"]);
-    // println!("{}", recipient.do_balance().await["transparent_balance"]);
-    // println!(
-    //     "{}",
-    //     recipient.do_wallet_last_scanned_height().await.pretty(2)
-    // );
-    // assert_eq!(recipient.do_balance().await["transparent_balance"], 10000);
+    //this is our main bug. transparent transaction is not found.
 }
 
 #[tokio::test]
