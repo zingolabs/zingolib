@@ -19,7 +19,7 @@ lightwalletd supported for these tests need to have the TreeState API. This mean
 ./lightwalletd --log-file /dev/stdout --darkside-very-insecure  --darkside-timeout 1000 --gen-cert-very-insecure --data-dir . --no-tls-very-insecure
 ````
 
-## running the tests
+## running the tests (currently experimental)
 
 cargo test --package zingo-cli --test integration_tests --features darkside_tests -- darkside
 
