@@ -7,6 +7,7 @@ use std::{
 use http::Uri;
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
 use tempdir;
+use tokio::time::sleep;
 use zcash_primitives::merkle_tree::read_commitment_tree;
 use zcash_primitives::sapling::{note_encryption::SaplingDomain, Node};
 use zingo_testutils::{
@@ -14,7 +15,9 @@ use zingo_testutils::{
     incrementalmerkletree::frontier::CommitmentTree,
     regtest::{get_regtest_dir, launch_lightwalletd},
 };
-use zingolib::wallet::traits::DomainWalletExt;
+use zingolib::{
+    grpc_connector::GrpcConnector, lightclient::LightClient, wallet::traits::DomainWalletExt,
+};
 
 use super::{
     constants,
@@ -134,4 +137,36 @@ pub(crate) async fn update_tree_states_for_transaction(
         .await
         .unwrap();
     new_tree_state
+}
+
+pub async fn send_and_include_on_chain(
+    sender: &LightClient,
+    recipient_addr: String,
+    server_id: &Uri,
+) {
+    let height = GrpcConnector::get_latest_block(server_id.clone())
+        .await
+        .unwrap()
+        .height;
+    let txid = sender
+        .do_send(vec![(&recipient_addr, 10_000, None)])
+        .await
+        .unwrap();
+    println!("{}", txid);
+    let connector = DarksideConnector::new(server_id.clone());
+    let mut streamed_raw_txns = connector.get_incoming_transactions().await.unwrap();
+    let raw_tx = streamed_raw_txns.message().await.unwrap().unwrap();
+    // There should only be one transaction incoming
+    assert!(streamed_raw_txns.message().await.unwrap().is_none());
+    connector
+        .stage_transactions_stream(vec![(raw_tx.data.clone(), height + 1)])
+        .await
+        .unwrap();
+    connector
+        .stage_blocks_create(dbg!(height as i32) + 1, 1, 0)
+        .await
+        .unwrap();
+    update_tree_states_for_transaction(&server_id, raw_tx.clone(), height + 1).await;
+    connector.apply_staged(height as i32 + 1).await.unwrap();
+    sleep(std::time::Duration::from_secs(1)).await;
 }

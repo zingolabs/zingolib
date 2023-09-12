@@ -4,7 +4,7 @@ use super::darkside_types::{
 };
 use crate::darkside::{
     constants::{self, BRANCH_ID, DARKSIDE_SEED},
-    utils::{update_tree_states_for_transaction, DarksideHandler},
+    utils::{self, update_tree_states_for_transaction, DarksideHandler},
 };
 
 use tokio::time::sleep;
@@ -249,6 +249,79 @@ async fn simple_sync() {
         )
         .unwrap()
     );
+}
+
+#[tokio::test]
+async fn sync_zpc98() {
+    let darkside_handler = DarksideHandler::new();
+
+    let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
+        "http://127.0.0.1:{}",
+        darkside_handler.grpc_port
+    )));
+    prepare_darksidewalletd(server_id.clone(), true)
+        .await
+        .unwrap();
+
+    let mut client_manager = ClientBuilder::new(
+        server_id.clone(),
+        darkside_handler.darkside_dir.clone(),
+        DARKSIDE_SEED,
+    );
+    let faucet = client_manager.build_new_faucet(1, true).await;
+
+    let result = faucet.do_sync(true).await.unwrap();
+
+    println!("{}", result);
+
+    assert_eq!(result.success, true);
+    assert_eq!(result.latest_block, 3);
+    assert_eq!(result.total_blocks_synced, 3);
+    assert_eq!(
+        faucet.do_balance().await,
+        json::parse(
+            r#"
+            {
+                "sapling_balance": 0,
+                "verified_sapling_balance": 0,
+                "spendable_sapling_balance": 0,
+                "unverified_sapling_balance": 0,
+                "orchard_balance": 100000000,
+                "verified_orchard_balance": 100000000,
+                "spendable_orchard_balance": 100000000,
+                "unverified_orchard_balance": 0,
+                "transparent_balance": 0
+            }
+        "#
+        )
+        .unwrap()
+    );
+
+    let recipient = client_manager
+        .build_newseed_client(
+            crate::data::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+            1,
+            true,
+        )
+        .await;
+    utils::send_and_include_on_chain(
+        &faucet,
+        get_base_address!(recipient, "transparent"),
+        &server_id,
+    )
+    .await;
+    assert_eq!(faucet.do_balance().await["orchard_balance"], 99980000);
+    recipient.do_sync(false).await.unwrap();
+    assert_eq!(faucet.do_balance().await["orchard_balance"], 99980000);
+    faucet.do_sync(false).await.unwrap();
+
+    println!("{}", faucet.do_list_transactions().await.pretty(2));
+    println!("{}", recipient.do_list_transactions().await.pretty(2));
+    println!(
+        "{}",
+        recipient.do_wallet_last_scanned_height().await.pretty(2)
+    );
+    assert_eq!(recipient.do_balance().await["transparent_balance"], 10000);
 }
 
 #[tokio::test]
