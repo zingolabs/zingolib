@@ -312,18 +312,7 @@ async fn sync_zpc98() {
     .await;
     faucet.do_sync(false).await.unwrap();
     println!("start listing___",);
-    println!(
-        "transparent_balance: {}",
-        faucet.do_balance().await["transparent_balance"]
-    );
-    println!(
-        "sapling_balance: {}",
-        faucet.do_balance().await["sapling_balance"]
-    );
-    println!(
-        "orchard_balance: {}",
-        faucet.do_balance().await["orchard_balance"]
-    );
+    println!("{}", faucet.do_balance().await.pretty(2));
     println!("{}", faucet.do_list_transactions().await.pretty(2));
 
     // The faucet receives 100000000 zats each block
