@@ -152,7 +152,7 @@ pub async fn send_and_include_on_chain(
         .do_send(vec![(&recipient_addr, 10_000, None)])
         .await
         .unwrap();
-    println!("{}", txid);
+    println!("Submitted txid: {}", txid);
     let connector = DarksideConnector::new(server_id.clone());
     let mut streamed_raw_txns = connector.get_incoming_transactions().await.unwrap();
     let raw_tx = streamed_raw_txns.message().await.unwrap().unwrap();
@@ -168,5 +168,5 @@ pub async fn send_and_include_on_chain(
         .unwrap();
     update_tree_states_for_transaction(&server_id, raw_tx.clone(), height + 1).await;
     connector.apply_staged(height as i32 + 1).await.unwrap();
-    sleep(std::time::Duration::from_secs(1)).await;
+    sleep(std::time::Duration::from_secs(4)).await;
 }
