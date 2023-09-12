@@ -172,9 +172,9 @@ impl GrpcConnector {
                     transaction_receivers.push(transaction_receiver);
                     transaction_receivers_workers.push(tokio::spawn(Self::get_taddr_transactions(
                         uri.clone(),
-                        taddr,
-                        start_height,
-                        end_height,
+                        dbg!(taddr),
+                        dbg!(start_height),
+                        dbg!(end_height),
                         transaction_s,
                     )));
                 }

@@ -70,6 +70,7 @@ impl FetchTaddrTransactions {
                 let mut transaction_responses = res_receiver.await.unwrap();
                 for transaction_response in transaction_responses.iter_mut() {
                     if let Some(Ok(transaction)) = transaction_response.recv().await {
+                        println!("Detected transparent? transaction");
                         transactions_top.push(Some(transaction));
                     } else {
                         transactions_top.push(None);
@@ -138,6 +139,10 @@ impl FetchTaddrTransactions {
                         ),
                     )
                     .map_err(|e| format!("Error reading transaction: {}", e))?;
+                    println!(
+                        "Relevate transaction to transparent pool: {}",
+                        transaction.txid()
+                    );
                     full_transaction_scanner
                         .send((
                             transaction,
