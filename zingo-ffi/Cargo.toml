@@ -3,7 +3,7 @@ members = [
     "lib",
     "android",
     "ios",
-    "test_utils"
+    "zingomobile_utils"
 ]
 resolver = "2"
 
