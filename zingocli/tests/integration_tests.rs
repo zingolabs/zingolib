@@ -3000,4 +3000,57 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
     }
 }
 
+#[tokio::test]
+async fn sends_to_self_handle_balance_properly() {
+    let transparent_funding = 100_000;
+    let (ref regtest_manager, _cph, faucet, ref recipient) = scenarios::faucet_recipient().await;
+    faucet
+        .do_send(vec![(
+            &get_base_address!(recipient, "sapling"),
+            transparent_funding,
+            None,
+        )])
+        .await
+        .unwrap();
+    zingo_testutils::increase_height_and_sync_client(regtest_manager, recipient, 1)
+        .await
+        .unwrap();
+    recipient
+        .do_shield(&[Pool::Sapling, Pool::Transparent], None)
+        .await
+        .unwrap();
+    zingo_testutils::increase_height_and_sync_client(regtest_manager, recipient, 1)
+        .await
+        .unwrap();
+    println!("{}", recipient.do_balance().await.to_json().pretty(2));
+    println!("{}", recipient.do_list_transactions().await.pretty(2));
+    println!(
+        "{}",
+        JsonValue::from(
+            recipient
+                .do_list_txsummaries()
+                .await
+                .into_iter()
+                .map(JsonValue::from)
+                .collect::<Vec<_>>()
+        )
+        .pretty(2)
+    );
+    recipient.do_rescan().await.unwrap();
+    println!("{}", recipient.do_balance().await.to_json().pretty(2));
+    println!("{}", recipient.do_list_transactions().await.pretty(2));
+    println!(
+        "{}",
+        JsonValue::from(
+            recipient
+                .do_list_txsummaries()
+                .await
+                .into_iter()
+                .map(JsonValue::from)
+                .collect::<Vec<_>>()
+        )
+        .pretty(2)
+    );
+}
+
 pub const TEST_SEED: &str = "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise";

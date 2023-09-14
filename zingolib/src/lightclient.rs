@@ -805,7 +805,7 @@ impl LightClient {
                         b.insert(key, a_val.clone()).unwrap();
                     } else {
                         if a_val != &b_val {
-                            log::error!("{a_val} does not match {b_val}");
+                            log::error!("{key}: {a_val} does not match {key}: {b_val}");
                         }
                         b.insert(key, b_val).unwrap()
                     }
@@ -1479,14 +1479,21 @@ impl LightClient {
         // our witness trees are aligned with our blockchain data
         self.ensure_witness_tree_not_above_wallet_blocks().await;
         // This is a fresh wallet. We need to get the initial trees
-        if last_synced_height
-            == self
-                .wallet
-                .transaction_context
-                .config
-                .sapling_activation_height()
-                - 1
-            && !self.wallet.get_birthday().await == 1
+        if self
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .witness_trees
+            .as_ref()
+            .is_some_and(|trees| {
+                trees
+                    .witness_tree_orchard
+                    .max_leaf_position(0)
+                    .unwrap()
+                    .is_none()
+            })
         {
             let trees = crate::grpc_connector::GrpcConnector::get_trees(
                 self.get_server_uri(),
