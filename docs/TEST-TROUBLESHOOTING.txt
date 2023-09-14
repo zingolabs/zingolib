@@ -18,3 +18,13 @@ solution: compile from source
 
 -
 
+warning: Git command output: Output { status: ExitStatus(unix_wait_status(0)), stdout: "mob-release-1.2.5_126-245-ge4ef4e1b-dirty\n", stderr: "" }
+   Compiling zingo-cli v0.2.0 (/home/fv/ZINGO/tzingolib/zingocli)
+error: failed to run custom build command for `zingo-cli v0.2.0 (/home/fv/ZINGO/tzingolib/zingocli)`
+
+Caused by:
+  process didn't exit successfully: `/home/fv/ZINGO/tzingolib/target/debug/build/zingo-cli-1694da4b4328e1bb/build-script-build` (exit status: 1)
+  --- stderr
+  Error: Custom { kind: NotFound, error: "failed to invoke protoc (hint: https://docs.rs/prost-build/#sourcing-protoc): No such file or directory (os error 2)" }
+
+-
