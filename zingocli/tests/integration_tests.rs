@@ -904,8 +904,9 @@ async fn send_orchard_back_and_forth() {
     // check start state
     faucet.do_sync(true).await.unwrap();
     let wallet_height = faucet.do_wallet_last_scanned_height().await;
-    assert_eq!(wallet_height, 10);
-    check_client_balances!(faucet, o: 0 s: block_reward t: 0);
+    assert_eq!(wallet_height.as_fixed_point_u64(0).unwrap(), 3);
+    let three_blocks_reward = block_reward.checked_mul(3).unwrap();
+    check_client_balances!(faucet, o: 0 s: three_blocks_reward  t: 0);
 
     // post transfer to recipient, and verify
     faucet
@@ -917,7 +918,7 @@ async fn send_orchard_back_and_forth() {
         .await
         .unwrap();
     let orch_change = block_reward - (faucet_to_recipient_amount + u64::from(MINIMUM_FEE));
-    let reward_and_fee = block_reward + u64::from(MINIMUM_FEE);
+    let reward_and_fee = three_blocks_reward + u64::from(MINIMUM_FEE);
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 1)
         .await
         .unwrap();
@@ -949,7 +950,7 @@ async fn send_orchard_back_and_forth() {
     let recipient_final_orch =
         faucet_to_recipient_amount - (u64::from(MINIMUM_FEE) + recipient_to_faucet_amount);
     let faucet_final_orch = orch_change + recipient_to_faucet_amount;
-    let faucet_final_block = 2 * block_reward + u64::from(MINIMUM_FEE) * 2;
+    let faucet_final_block = 4 * block_reward + u64::from(MINIMUM_FEE) * 2;
     check_client_balances!(
         faucet,
         o: faucet_final_orch s: faucet_final_block t: 0
