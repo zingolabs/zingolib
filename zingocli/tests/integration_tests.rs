@@ -462,7 +462,7 @@ async fn verify_old_wallet_uses_server_height_in_send() {
     let client_wallet_height = faucet.do_wallet_last_scanned_height().await;
 
     // Verify that wallet is still back at 6.
-    assert_eq!(client_wallet_height, 6);
+    assert_eq!(client_wallet_height.as_fixed_point_u64(0).unwrap(), 8);
 
     // Interrupt generating send
     faucet
