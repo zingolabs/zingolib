@@ -8,7 +8,7 @@ use zingo_testutils::{self, build_fvk_client, data};
 
 use bip0039::Mnemonic;
 use data::seeds::HOSPITAL_MUSEUM_SEED;
-use json::JsonValue::{self};
+use json::JsonValue;
 use zingo_testutils::scenarios;
 
 use tracing_test::traced_test;
@@ -335,7 +335,7 @@ async fn test_scanning_in_watch_only_mode() {
     // - wallet will not detect funds on internal addresses
     //   see: https://github.com/zingolabs/zingolib/issues/246
 
-    let (regtest_manager, _cph, mut client_builder) = scenarios::custom_clients();
+    let (regtest_manager, _cph, mut client_builder) = scenarios::custom_clients().await;
     let faucet = client_builder.build_new_faucet(0, false).await;
     let original_recipient = client_builder
         .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
@@ -753,7 +753,7 @@ async fn note_selection_order() {
 #[tokio::test]
 async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     // Test all possible promoting note source combinations
-    let (regtest_manager, _cph, mut client_builder) = scenarios::custom_clients();
+    let (regtest_manager, _cph, mut client_builder) = scenarios::custom_clients().await;
     let sapling_faucet = client_builder.build_new_faucet(0, false).await;
     let pool_migration_client = client_builder
         .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
@@ -904,7 +904,7 @@ async fn send_orchard_back_and_forth() {
     // check start state
     faucet.do_sync(true).await.unwrap();
     let wallet_height = faucet.do_wallet_last_scanned_height().await;
-    assert_eq!(wallet_height, 1);
+    assert_eq!(wallet_height, 10);
     check_client_balances!(faucet, o: 0 s: block_reward t: 0);
 
     // post transfer to recipient, and verify
@@ -1067,7 +1067,7 @@ async fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
 /// is capable of recovering the diversified _receiver_.
 #[tokio::test]
 async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
-    let (regtest_manager, _cph, mut client_builder) = scenarios::custom_clients();
+    let (regtest_manager, _cph, mut client_builder) = scenarios::custom_clients().await;
     let faucet = client_builder.build_new_faucet(0, false).await;
     faucet.do_sync(false).await.unwrap();
     let seed_phrase_of_recipient1 = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
@@ -1187,7 +1187,7 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
 
 #[tokio::test]
 async fn diversification_deterministic_and_coherent() {
-    let (_regtest_manager, _cph, mut client_builder) = scenarios::custom_clients();
+    let (_regtest_manager, _cph, mut client_builder) = scenarios::custom_clients().await;
     let seed_phrase = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
         .unwrap()
         .to_string();
@@ -1261,7 +1261,7 @@ async fn diversification_deterministic_and_coherent() {
 
 #[tokio::test]
 async fn ensure_taddrs_from_old_seeds_work() {
-    let (_regtest_manager, _cph, mut client_builder) = scenarios::custom_clients();
+    let (_regtest_manager, _cph, mut client_builder) = scenarios::custom_clients().await;
     // The first taddr generated on commit 9e71a14eb424631372fd08503b1bd83ea763c7fb
     let transparent_address = "tmFLszfkjgim4zoUMAXpuohnFBAKy99rr2i";
 
@@ -2090,7 +2090,7 @@ pub mod framework_validation {
             regtest_manager,
             child_process_handler,
             ..
-        } = setup::ScenarioBuilder::build_configure_launch(None, None, None);
+        } = setup::ScenarioBuilder::build_configure_launch(None, None, None).await;
         log::debug!("regtest_manager: {:#?}", &regtest_manager);
         // Turn zcashd off and on again, to write down the blocks
         log_field_from_zcashd!(

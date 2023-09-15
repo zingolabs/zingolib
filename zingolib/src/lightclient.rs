@@ -1472,12 +1472,13 @@ impl LightClient {
         let lightclient_exclusion_lock = self.sync_lock.lock().await;
 
         // The top of the wallet
-        let last_synced_height = self.wallet.last_synced_height().await;
+        let last_synced_height = dbg!(self.wallet.last_synced_height().await);
 
         // If our internal state gets damaged somehow (for example,
         // a resync that gets interrupted partway through) we need to make sure
         // our witness trees are aligned with our blockchain data
         self.ensure_witness_tree_not_above_wallet_blocks().await;
+
         // This is a fresh wallet. We need to get the initial trees
         if self
             .wallet
@@ -1497,7 +1498,7 @@ impl LightClient {
         {
             let trees = crate::grpc_connector::GrpcConnector::get_trees(
                 self.get_server_uri(),
-                self.wallet.get_birthday().await - 1,
+                last_synced_height,
             )
             .await
             .unwrap();
