@@ -527,7 +527,7 @@ async fn mine_sapling_to_self() {
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &faucet, 1)
         .await
         .unwrap();
-    check_client_balances!(faucet, o: 0u64 s: 1_250_000_000u64 t: 0u64);
+    check_client_balances!(faucet, o: 0u64 s: 2_500_000_000u64 t: 0u64);
 }
 
 #[tokio::test]
