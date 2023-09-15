@@ -527,7 +527,7 @@ async fn mine_sapling_to_self() {
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &faucet, 1)
         .await
         .unwrap();
-    check_client_balances!(faucet, o: 0u64 s: 2_500_000_000u64 t: 0u64);
+    check_client_balances!(faucet, o: 0u64 s: 1_250_000_000u64 t: 0u64);
 }
 
 #[tokio::test]
@@ -2327,7 +2327,7 @@ async fn sapling_incoming_sapling_outgoing() {
 #[tokio::test]
 async fn debug_base_height() {
     let zvalue = 100_000;
-    let (regtest_manager, _cph, faucet, recipient, _txid) =
+    let (_regtest_manager, _cph, faucet, recipient, _txid) =
         scenarios::faucet_prefunded_orchard_recipient(zvalue).await;
 }
 #[tokio::test]
