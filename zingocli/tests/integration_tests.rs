@@ -1014,6 +1014,9 @@ async fn rescan_still_have_outgoing_metadata() {
 #[tokio::test]
 async fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
     let (regtest_manager, _cph, faucet) = scenarios::faucet().await;
+    zingo_testutils::increase_height_and_sync_client(&regtest_manager, &faucet, 1)
+        .await
+        .unwrap();
     let sapling_addr = get_base_address!(faucet, "sapling");
     for memo in [None, Some("foo")] {
         faucet
@@ -1479,11 +1482,11 @@ async fn sapling_to_sapling_scan_together() {
     // 5. Check the transaction list to make sure we got all transactions
     let list = recipient.do_list_transactions().await;
 
-    assert_eq!(list[0]["block_height"].as_u64().unwrap(), 3);
+    assert_eq!(list[0]["block_height"].as_u64().unwrap(), 5);
     assert_eq!(list[0]["txid"], txid.to_string());
     assert_eq!(list[0]["amount"].as_i64().unwrap(), (value as i64));
 
-    assert_eq!(list[1]["block_height"].as_u64().unwrap(), 4);
+    assert_eq!(list[1]["block_height"].as_u64().unwrap(), 6);
     assert_eq!(list[1]["txid"], spent_txid.to_string());
     assert_eq!(
         list[1]["amount"].as_i64().unwrap(),
@@ -1968,7 +1971,7 @@ async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 10)
         .await
         .unwrap();
-    assert_eq!(recipient.wallet.last_synced_height().await, 19);
+    assert_eq!(recipient.wallet.last_synced_height().await, 21);
 
     let notes = recipient.do_list_notes(true).await;
 
@@ -1993,7 +1996,7 @@ async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 100)
         .await
         .unwrap();
-    assert_eq!(recipient.wallet.last_synced_height().await, 119);
+    assert_eq!(recipient.wallet.last_synced_height().await, 121);
 
     let notes = recipient.do_list_notes(true).await;
     let transactions = recipient.do_list_transactions().await;

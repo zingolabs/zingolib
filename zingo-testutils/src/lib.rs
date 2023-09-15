@@ -548,7 +548,10 @@ pub mod scenarios {
             None,
         )
         .await;
-        let faucet = sb.client_builder.build_new_faucet(9, false).await;
+        let faucet = sb
+            .client_builder
+            .build_new_faucet(BASE_HEIGHT as u64, false)
+            .await;
         (
             sb.regtest_manager,
             sb.child_process_handler.unwrap(),
