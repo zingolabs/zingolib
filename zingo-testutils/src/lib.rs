@@ -18,6 +18,7 @@ use zingolib::lightclient::LightClient;
 
 use crate::scenarios::setup::TestEnvironmentGenerator;
 
+pub const BASE_HEIGHT: u32 = 2;
 pub fn build_fvks_from_wallet_capability(wallet_capability: &WalletCapability) -> [Fvk; 3] {
     let o_fvk = Fvk::Orchard(
         orchard::keys::FullViewingKey::try_from(wallet_capability)
@@ -50,6 +51,7 @@ pub async fn build_fvk_client(fvks: &[&Fvk], zingoconfig: &ZingoConfig) -> Light
 
 async fn get_synced_wallet_height(client: &LightClient) -> Result<u32, String> {
     client.do_sync(true).await?;
+    dbg!("client.do_sync finished");
     Ok(client
         .do_wallet_last_scanned_height()
         .await
@@ -143,6 +145,7 @@ pub async fn increase_height_and_sync_client(
     .unwrap()["blocks"]
         .as_u32()
         .unwrap();
+    dbg!(&start_height);
     let target = start_height + n;
     manager
         .generate_n_blocks(n)
@@ -170,6 +173,8 @@ pub async fn increase_height_and_sync_client(
     Ok(())
 }
 async fn check_wallet_chainheight_value(client: &LightClient, target: u32) -> Result<bool, String> {
+    dbg!("Check wallet chainheight value at:");
+    dbg!(&target);
     Ok(get_synced_wallet_height(client).await? != target)
 }
 
@@ -243,13 +248,14 @@ pub mod scenarios {
     use super::regtest::{ChildProcessHandler, RegtestManager};
     use crate::{
         data::{self, seeds::HOSPITAL_MUSEUM_SEED, REGSAP_ADDR_FROM_ABANDONART},
-        increase_height_and_sync_client,
+        increase_height_and_sync_client, BASE_HEIGHT,
     };
 
     use zingolib::{get_base_address, lightclient::LightClient};
 
     pub mod setup {
         use crate::data::REGSAP_ADDR_FROM_ABANDONART;
+        use crate::BASE_HEIGHT;
 
         use super::super::regtest::get_regtest_dir;
         use super::{data, ChildProcessHandler, RegtestManager};
@@ -315,8 +321,8 @@ pub mod scenarios {
                             }
                         }),
                 );
-                self.regtest_manager.generate_n_blocks(9).unwrap();
-                while crate::poll_server_height(&self.regtest_manager) != 10 {
+                self.regtest_manager.generate_n_blocks(BASE_HEIGHT).unwrap();
+                while crate::poll_server_height(&self.regtest_manager) != BASE_HEIGHT + 1 {
                     sleep(std::time::Duration::from_millis(50)).await;
                 }
             }
@@ -559,10 +565,13 @@ pub mod scenarios {
         LightClient,
         String,
     ) {
+        dbg!("0 About to create faucet_recipient.");
         let (regtest_manager, child_process_handler, faucet, recipient) = faucet_recipient().await;
+        dbg!("1 About to increase height and sync faucet.");
         increase_height_and_sync_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
+        dbg!("2 faucet synced.");
         let txid = faucet
             .do_send(vec![(
                 &get_base_address!(recipient, "unified"),
@@ -571,9 +580,12 @@ pub mod scenarios {
             )])
             .await
             .unwrap();
+        dbg!("3 faucet send complete");
         increase_height_and_sync_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
+        dbg!("4 recipient increased and synced.");
+        dbg!("5 about to sync faucet.");
         faucet.do_sync(false).await.unwrap();
         (
             regtest_manager,
@@ -600,7 +612,7 @@ pub mod scenarios {
         faucet.do_sync(false).await.unwrap();
         let recipient = sb
             .client_builder
-            .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
+            .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), BASE_HEIGHT as u64, false)
             .await;
         (
             sb.regtest_manager,
