@@ -973,7 +973,7 @@ impl LightWallet {
             // and can have undesired effects if not implemented properly.
             //
             // Thus we forbid spending for wallets without complete spending capability for now
-            return Err("Wallet is in watch-only mode a thus it cannot spend".to_string());
+            return Err("Wallet is in watch-only mode and thus it cannot spend.".to_string());
         }
 
         let total_value = tos.iter().map(|to| to.1).sum::<u64>();

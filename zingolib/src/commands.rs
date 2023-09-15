@@ -904,8 +904,8 @@ impl Command for SendCommand {
                     )
                 })
                 .collect::<Vec<_>>();
-            if let Some(err) = error {
-                return err;
+            if let Some(e) = error {
+                return e;
             }
 
             match lightclient.do_send(tos).await {
