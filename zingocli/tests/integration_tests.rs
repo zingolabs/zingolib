@@ -2151,7 +2151,7 @@ async fn sapling_incoming_sapling_outgoing() {
         .await
         .unwrap();
 
-    assert_eq!(recipient.wallet.last_synced_height().await, 2);
+    assert_eq!(recipient.wallet.last_synced_height().await, 4);
 
     // 3. Check the balance is correct, and we received the incoming transaction from ?outside?
     let b = recipient.do_balance().await;
@@ -2183,7 +2183,7 @@ async fn sapling_incoming_sapling_outgoing() {
             faucet_sent_transaction["address"],
             recipient.wallet.wallet_capability().addresses()[0].encode(&recipient.config().chain)
         );
-        assert_eq!(faucet_sent_transaction["block_height"].as_u64().unwrap(), 2);
+        assert_eq!(faucet_sent_transaction["block_height"].as_u64().unwrap(), 4);
     } else {
         panic!("Expecting an array");
     }
@@ -2244,7 +2244,7 @@ async fn sapling_incoming_sapling_outgoing() {
         -(sent_value as i64 + i64::from(MINIMUM_FEE))
     );
     assert!(send_transaction["unconfirmed"].as_bool().unwrap());
-    assert_eq!(send_transaction["block_height"].as_u64().unwrap(), 3);
+    assert_eq!(send_transaction["block_height"].as_u64().unwrap(), 5);
 
     assert_eq!(
         send_transaction["outgoing_metadata"][0]["address"],
@@ -2267,7 +2267,7 @@ async fn sapling_incoming_sapling_outgoing() {
         .unwrap();
 
     assert!(!send_transaction.contains("unconfirmed"));
-    assert_eq!(send_transaction["block_height"].as_u64().unwrap(), 3);
+    assert_eq!(send_transaction["block_height"].as_u64().unwrap(), 5);
 
     // 7. Check the notes to see that we have one spent sapling note and one unspent orchard note (change)
     // Which is immediately spendable.
@@ -2278,7 +2278,7 @@ async fn sapling_incoming_sapling_outgoing() {
         notes["unspent_orchard_notes"][0]["created_in_block"]
             .as_u64()
             .unwrap(),
-        3
+        5
     );
     assert_eq!(
         notes["unspent_orchard_notes"][0]["created_in_txid"],
@@ -2300,7 +2300,7 @@ async fn sapling_incoming_sapling_outgoing() {
         notes["spent_sapling_notes"][0]["created_in_block"]
             .as_u64()
             .unwrap(),
-        2
+        4
     );
     assert_eq!(
         notes["spent_sapling_notes"][0]["value"].as_u64().unwrap(),
@@ -2320,16 +2320,10 @@ async fn sapling_incoming_sapling_outgoing() {
         notes["spent_sapling_notes"][0]["spent_at_height"]
             .as_u64()
             .unwrap(),
-        3
+        5
     );
 }
 
-#[tokio::test]
-async fn debug_base_height() {
-    let zvalue = 100_000;
-    let (_regtest_manager, _cph, faucet, recipient, _txid) =
-        scenarios::faucet_prefunded_orchard_recipient(zvalue).await;
-}
 #[tokio::test]
 async fn aborted_resync() {
     let zvalue = 100_000;
