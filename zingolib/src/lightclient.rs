@@ -1496,13 +1496,15 @@ impl LightClient {
                     .is_none()
             })
         {
-            let trees = crate::grpc_connector::GrpcConnector::get_trees(
-                self.get_server_uri(),
-                last_synced_height,
-            )
-            .await
-            .unwrap();
-            self.wallet.initiate_witness_trees(trees).await;
+            if last_synced_height != 0 {
+                let trees = crate::grpc_connector::GrpcConnector::get_trees(
+                    self.get_server_uri(),
+                    last_synced_height,
+                )
+                .await
+                .unwrap();
+                self.wallet.initiate_witness_trees(trees).await;
+            };
         }
         let latest_blockid =
             GrpcConnector::get_latest_block(self.config.get_lightwalletd_uri()).await?;

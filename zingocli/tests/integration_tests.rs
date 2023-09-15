@@ -2322,6 +2322,12 @@ async fn sapling_incoming_sapling_outgoing() {
 }
 
 #[tokio::test]
+async fn debug_base_height() {
+    let zvalue = 100_000;
+    let (regtest_manager, _cph, faucet, recipient, _txid) =
+        scenarios::faucet_prefunded_orchard_recipient(zvalue).await;
+}
+#[tokio::test]
 async fn aborted_resync() {
     let zvalue = 100_000;
     let (regtest_manager, _cph, faucet, recipient, _txid) =
