@@ -537,7 +537,7 @@ async fn unspent_notes_are_not_saved() {
         .await
         .unwrap();
 
-    check_client_balances!(faucet, o: 0u64 s: 1_250_000_000u64 t: 0u64);
+    check_client_balances!(faucet, o: 0u64 s: 2_500_000_000u64 t: 0u64);
     faucet
         .do_send(vec![(
             get_base_address!(recipient, "unified").as_str(),
