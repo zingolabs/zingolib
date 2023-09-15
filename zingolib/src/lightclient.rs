@@ -2114,7 +2114,7 @@ mod tests {
         let wallet_name = data_dir.join("zingo-wallet.dat");
         let config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, Some(data_dir));
         let lc = LightClient::create_from_wallet_base(
-            WalletBase::MnemonicPhrase(TEST_SEED.to_string(), 0),
+            WalletBase::MnemonicPhrase(TEST_SEED.to_string()),
             &config,
             0,
             false,
@@ -2124,7 +2124,7 @@ mod tests {
         format!(
             "{:?}",
             LightClient::create_from_wallet_base(
-                WalletBase::MnemonicPhrase(TEST_SEED.to_string(), 0),
+                WalletBase::MnemonicPhrase(TEST_SEED.to_string()),
                 &config,
                 0,
                 false

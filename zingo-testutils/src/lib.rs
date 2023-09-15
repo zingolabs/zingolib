@@ -400,7 +400,7 @@ pub mod scenarios {
                 //! A "faucet" is a lightclient that receives mining rewards
                 let zingo_config = self.make_unique_data_dir_and_load_config();
                 LightClient::create_from_wallet_base_async(
-                    WalletBase::MnemonicPhrase(self.seed.clone(), 0),
+                    WalletBase::MnemonicPhrase(self.seed.clone()),
                     &zingo_config,
                     birthday,
                     overwrite,
@@ -416,7 +416,7 @@ pub mod scenarios {
             ) -> LightClient {
                 let zingo_config = self.make_unique_data_dir_and_load_config();
                 LightClient::create_from_wallet_base_async(
-                    WalletBase::MnemonicPhrase(mnemonic_phrase, 0),
+                    WalletBase::MnemonicPhrase(mnemonic_phrase),
                     &zingo_config,
                     birthday,
                     overwrite,
