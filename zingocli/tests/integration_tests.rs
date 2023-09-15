@@ -2747,11 +2747,11 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         r#"
         [
             {
-                "block_height": 3,
+                "block_height": 5,
                 "unconfirmed": false,
-                "datetime": 1686245356,
+                "datetime": 1694820763,
                 "position": 0,
-                "txid": "c6d3f83b8ee278b09142add02468e45000a9f58e8162dda5ce3407f8e7222cf5",
+                "txid": "d5eaac5563f8bc1a0406588e05953977ad768d02f1cf8449e9d7d9cc8de3801c",
                 "amount": 100000000,
                 "zec_price": null,
                 "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8",
@@ -2831,7 +2831,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
     for (t1, t2) in transactions.members().zip(expected_transactions.members()) {
         assert!(
             check_transaction_equality(t1, t2),
-            "\n\n\nt1: {}\n\n\nt2: {}\n\n\n",
+            "\n\n\nobserved: {}\n\n\nexpected: {}\n\n\n",
             t1.pretty(4),
             t2.pretty(4)
         );
