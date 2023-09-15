@@ -1077,7 +1077,7 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
         .build_newseed_client(seed_phrase_of_recipient1, 0, false)
         .await;
     let mut expected_unspent_sapling_notes = json::object! {
-            "created_in_block" =>  2,
+            "created_in_block" =>  4,
             "datetime" =>  0,
             "created_in_txid" => "",
             "value" =>  14_000,
