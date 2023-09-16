@@ -2894,7 +2894,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
     let second_wave_expected_transactions = json::parse(r#"
         [
             {
-                "block_height": 3,
+                "block_height": 5,
                 "unconfirmed": false,
                 "datetime": 1686330002,
                 "position": 0,
@@ -2905,7 +2905,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
                 "memo": null
             },
             {
-                "block_height": 4,
+                "block_height": 6,
                 "unconfirmed": false,
                 "datetime": 1686330013,
                 "txid": "db532064c89c7d8266e107ffefc614f3c34050af922973199e398fcd18c43ea5",
@@ -2920,7 +2920,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
                 ]
             },
             {
-                "block_height": 5,
+                "block_height": 7,
                 "unconfirmed": false,
                 "datetime": 1686330006,
                 "txid": "be81f76bf37bb6d5d762c7bb48419f239787023b8344c30ce0771c8ce21e480f",
@@ -2935,7 +2935,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
                 ]
             },
             {
-                "block_height": 5,
+                "block_height": 7,
                 "unconfirmed": false,
                 "datetime": 1686330013,
                 "position": 0,
@@ -2946,7 +2946,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
                 "memo": "Second wave incoming"
             },
             {
-                "block_height": 6,
+                "block_height": 8,
                 "unconfirmed": false,
                 "datetime": 1686330021,
                 "txid": "95a41ba1c6e2b7edf63ddde7899567431a6b36b7583ba1e359560041e5f8ce2b",
@@ -2961,7 +2961,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
                 ]
             },
             {
-                "block_height": 6,
+                "block_height": 8,
                 "unconfirmed": false,
                 "datetime": 1686330021,
                 "txid": "c1004c32395ff45448fb943a7da4cc2819762066eea2628cd0a4aee65106207d",
@@ -2976,7 +2976,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
                 ]
             },
             {
-                "block_height": 7,
+                "block_height": 9,
                 "unconfirmed": false,
                 "datetime": 1686330024,
                 "txid": "c5e94f462218634b37a2a3324f89bd288bc55ab877ea516a6203e48c207ba955",
@@ -2998,9 +2998,13 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         second_wave_expected_transactions.len()
     );
     for transaction in second_wave_transactions.members() {
-        assert!(second_wave_expected_transactions
-            .members()
-            .any(|t2| check_transaction_equality(transaction, t2)));
+        assert!(
+            second_wave_expected_transactions
+                .members()
+                .any(|t2| check_transaction_equality(transaction, t2)),
+            "fail on: {:#?}",
+            transaction
+        );
     }
 }
 
