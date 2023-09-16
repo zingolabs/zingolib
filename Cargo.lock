@@ -766,16 +766,6 @@ dependencies = [
 [[package]]
 name = "equihash"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab579d7cf78477773b03e80bc2f89702ef02d7112c711d54ca93dcdce68533d5"
-dependencies = [
- "blake2b_simd",
- "byteorder",
-]
-
-[[package]]
-name = "equihash"
-version = "0.2.0"
 source = "git+https://github.com/nuttycom/librustzcash.git?rev=669e0797bff3b506984bd2851b22d9eae40a758a#669e0797bff3b506984bd2851b22d9eae40a758a"
 dependencies = [
  "blake2b_simd",
@@ -3890,7 +3880,7 @@ dependencies = [
  "zcash_address 0.3.0 (git+https://github.com/nuttycom/librustzcash.git?rev=669e0797bff3b506984bd2851b22d9eae40a758a)",
  "zcash_encoding 0.2.0 (git+https://github.com/nuttycom/librustzcash.git?rev=669e0797bff3b506984bd2851b22d9eae40a758a)",
  "zcash_note_encryption",
- "zcash_primitives 0.13.0-rc.1 (git+https://github.com/nuttycom/librustzcash.git?rev=669e0797bff3b506984bd2851b22d9eae40a758a)",
+ "zcash_primitives",
 ]
 
 [[package]]
@@ -3928,39 +3918,6 @@ dependencies = [
 [[package]]
 name = "zcash_primitives"
 version = "0.13.0-rc.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0cc4391d9325e0a51a7cbff02b5c4b5472d66087bd9c903ddb12dea7ec22f3e0"
-dependencies = [
- "aes",
- "bip0039",
- "bitvec",
- "blake2b_simd",
- "blake2s_simd",
- "bls12_381",
- "byteorder",
- "equihash 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "ff 0.13.0",
- "fpe",
- "group 0.13.0",
- "hex 0.4.3",
- "incrementalmerkletree",
- "jubjub",
- "lazy_static",
- "memuse",
- "nonempty",
- "orchard",
- "rand 0.8.5",
- "rand_core 0.6.4",
- "sha2 0.10.7",
- "subtle",
- "zcash_address 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "zcash_encoding 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "zcash_note_encryption",
-]
-
-[[package]]
-name = "zcash_primitives"
-version = "0.13.0-rc.1"
 source = "git+https://github.com/nuttycom/librustzcash.git?rev=669e0797bff3b506984bd2851b22d9eae40a758a#669e0797bff3b506984bd2851b22d9eae40a758a"
 dependencies = [
  "aes",
@@ -3970,7 +3927,7 @@ dependencies = [
  "blake2s_simd",
  "bls12_381",
  "byteorder",
- "equihash 0.2.0 (git+https://github.com/nuttycom/librustzcash.git?rev=669e0797bff3b506984bd2851b22d9eae40a758a)",
+ "equihash",
  "ff 0.13.0",
  "fpe",
  "group 0.13.0",
@@ -4011,7 +3968,7 @@ dependencies = [
  "redjubjub",
  "tracing",
  "xdg",
- "zcash_primitives 0.13.0-rc.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zcash_primitives",
 ]
 
 [[package]]
@@ -4075,7 +4032,7 @@ dependencies = [
  "webpki-roots 0.21.1",
  "zcash_address 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "zcash_client_backend",
- "zcash_primitives 0.13.0-rc.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zcash_primitives",
  "zingo-testutils",
  "zingoconfig",
  "zingolib",
@@ -4089,7 +4046,7 @@ dependencies = [
  "zcash_client_backend",
  "zcash_encoding 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "zcash_note_encryption",
- "zcash_primitives 0.13.0-rc.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zcash_primitives",
 ]
 
 [[package]]
@@ -4108,7 +4065,7 @@ dependencies = [
  "tokio",
  "tracing",
  "zcash_address 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "zcash_primitives 0.13.0-rc.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zcash_primitives",
  "zingoconfig",
  "zingolib",
 ]
@@ -4122,7 +4079,7 @@ dependencies = [
  "log",
  "log4rs",
  "zcash_address 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "zcash_primitives 0.13.0-rc.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zcash_primitives",
 ]
 
 [[package]]
@@ -4188,7 +4145,7 @@ dependencies = [
  "zcash_client_backend",
  "zcash_encoding 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "zcash_note_encryption",
- "zcash_primitives 0.13.0-rc.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zcash_primitives",
  "zcash_proofs",
  "zingo-memo",
  "zingoconfig",

@@ -29,3 +29,7 @@ debug = false
 [profile.test]
 opt-level = 3
 debug = false
+
+[patch.crates-io]
+zcash_primitives = { git = "https://github.com/nuttycom/librustzcash.git", rev = "669e0797bff3b506984bd2851b22d9eae40a758a" }
+
