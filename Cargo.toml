@@ -14,7 +14,7 @@ zcash_client_backend = { version = "0.10.0-rc.2" }
 zcash_encoding = "0.2"
 zcash_client_sqlite = { git = "https://github.com/zingolabs/librustzcash", rev = "8e582109cad9af14b461f76429f9f0437e860115"  }
 zcash_note_encryption = "0.4"
-zcash_primitives = { git = "https://github.com/zingolabs/librustzcash", features = ["transparent-inputs", "test-dependencies"], rev = "8e582109cad9af14b461f76429f9f0437e860115"  }
+zcash_primitives = { version = "0.13.0-rc.1", features = ["transparent-inputs", "test-dependencies"] }
 zcash_proofs = { git = "https://github.com/zingolabs/librustzcash", features = ["multicore"], rev = "8e582109cad9af14b461f76429f9f0437e860115"  }
 orchard = "0.5"
 tonic-build = "0.7"
