@@ -1410,7 +1410,6 @@ version = "0.4.0"
 source = "git+https://github.com/zcash/incrementalmerkletree?rev=bae25ad89c0c192bee625252d2d419bd56638e48#bae25ad89c0c192bee625252d2d419bd56638e48"
 dependencies = [
  "either",
- "proptest",
 ]
 
 [[package]]
@@ -1420,6 +1419,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "361c467824d4d9d4f284be4b2608800839419dccc4d4608f28345237fe354623"
 dependencies = [
  "either",
+ "proptest",
 ]
 
 [[package]]
@@ -4387,7 +4387,7 @@ name = "zingo-testutils"
 version = "0.1.0"
 dependencies = [
  "http",
- "incrementalmerkletree 0.4.0",
+ "incrementalmerkletree 0.5.0",
  "json",
  "log",
  "orchard 0.5.0",
@@ -4439,7 +4439,7 @@ dependencies = [
  "http-body",
  "hyper",
  "hyper-rustls",
- "incrementalmerkletree 0.4.0",
+ "incrementalmerkletree 0.5.0",
  "indoc",
  "json",
  "jubjub",
