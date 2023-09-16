@@ -13,7 +13,7 @@ use shardtree::LocatedPrunableTree;
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
 use std::usize;
-use zcash_client_sqlite::serialization::{read_shard, write_shard};
+use zcash_client_backend::serialization::shardtree::{read_shard, write_shard};
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
 use zcash_primitives::consensus::BlockHeight;
