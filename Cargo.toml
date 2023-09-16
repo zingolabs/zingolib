@@ -20,7 +20,7 @@ orchard = "0.5"
 tonic-build = "0.7"
 tempdir = "0.3"
 portpicker = "0.1"
-incrementalmerkletree = "0.5"
+incrementalmerkletree = { version = "0.5", features = ["test-dependencies"] }
 shardtree = { git = "https://github.com/zcash/incrementalmerkletree", rev = "bae25ad89c0c192bee625252d2d419bd56638e48"  }
 build_utils = { path = "./build_utils" }
 
