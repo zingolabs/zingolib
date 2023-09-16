@@ -792,6 +792,16 @@ dependencies = [
 [[package]]
 name = "equihash"
 version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab579d7cf78477773b03e80bc2f89702ef02d7112c711d54ca93dcdce68533d5"
+dependencies = [
+ "blake2b_simd",
+ "byteorder",
+]
+
+[[package]]
+name = "equihash"
+version = "0.2.0"
 source = "git+https://github.com/zingolabs/librustzcash?rev=8e582109cad9af14b461f76429f9f0437e860115#8e582109cad9af14b461f76429f9f0437e860115"
 dependencies = [
  "blake2b_simd",
@@ -833,6 +843,15 @@ checksum = "64f18991e7bf11e7ffee451b5318b5c1a73c52d0d0ada6e5a3017c8c1ced6a21"
 dependencies = [
  "libc",
  "str-buf",
+]
+
+[[package]]
+name = "f4jumble"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0a83e8d7fd0c526af4aad893b7c9fe41e2699ed8a776a6c74aecdeafe05afc75"
+dependencies = [
+ "blake2b_simd",
 ]
 
 [[package]]
@@ -1395,6 +1414,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "incrementalmerkletree"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "361c467824d4d9d4f284be4b2608800839419dccc4d4608f28345237fe354623"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "indexmap"
 version = "1.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1887,12 +1915,40 @@ dependencies = [
  "halo2_gadgets",
  "halo2_proofs",
  "hex 0.4.3",
- "incrementalmerkletree",
+ "incrementalmerkletree 0.4.0",
  "lazy_static",
  "memuse",
  "nonempty",
  "pasta_curves",
  "proptest",
+ "rand 0.8.5",
+ "reddsa",
+ "serde",
+ "subtle",
+ "tracing",
+ "zcash_note_encryption",
+]
+
+[[package]]
+name = "orchard"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d31e68534df32024dcc89a8390ec6d7bef65edd87d91b45cfb481a2eb2d77c5"
+dependencies = [
+ "aes",
+ "bitvec",
+ "blake2b_simd",
+ "ff 0.13.0",
+ "fpe",
+ "group 0.13.0",
+ "halo2_gadgets",
+ "halo2_proofs",
+ "hex 0.4.3",
+ "incrementalmerkletree 0.5.0",
+ "lazy_static",
+ "memuse",
+ "nonempty",
+ "pasta_curves",
  "rand 0.8.5",
  "reddsa",
  "serde",
@@ -2090,6 +2146,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "prettyplease"
+version = "0.2.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ae005bd773ab59b4725093fd7df83fd7892f7d8eafb48dbd7de6e024e4215f9d"
+dependencies = [
+ "proc-macro2",
+ "syn 2.0.35",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.67"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2139,6 +2205,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "prost"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4fdd22f3b9c31b53c060df4a0613a1c7f062d4115a2b984dd15b1858f7e340d"
+dependencies = [
+ "bytes 1.5.0",
+ "prost-derive 0.12.1",
+]
+
+[[package]]
 name = "prost-build"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2173,11 +2249,33 @@ dependencies = [
  "log",
  "multimap",
  "petgraph",
- "prettyplease",
+ "prettyplease 0.1.25",
  "prost 0.11.9",
  "prost-types 0.11.9",
  "regex",
  "syn 1.0.109",
+ "tempfile",
+ "which",
+]
+
+[[package]]
+name = "prost-build"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8bdf592881d821b83d471f8af290226c8d51402259e9bb5be7f9f8bdebbb11ac"
+dependencies = [
+ "bytes 1.5.0",
+ "heck",
+ "itertools",
+ "log",
+ "multimap",
+ "once_cell",
+ "petgraph",
+ "prettyplease 0.2.15",
+ "prost 0.12.1",
+ "prost-types 0.12.1",
+ "regex",
+ "syn 2.0.35",
  "tempfile",
  "which",
 ]
@@ -2209,6 +2307,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "prost-derive"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "265baba7fabd416cf5078179f7d2cbeca4ce7a9041111900675ea7c4cb8a4c32"
+dependencies = [
+ "anyhow",
+ "itertools",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.35",
+]
+
+[[package]]
 name = "prost-types"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2225,6 +2336,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "213622a1460818959ac1181aaeb2dc9c7f63df720db7d788b3e24eacd1983e13"
 dependencies = [
  "prost 0.11.9",
+]
+
+[[package]]
+name = "prost-types"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e081b29f63d83a4bc75cfc9f3fe424f9156cf92d8a4f0c9407cce9a1b67327cf"
+dependencies = [
+ "prost 0.12.1",
 ]
 
 [[package]]
@@ -2910,7 +3030,19 @@ source = "git+https://github.com/zcash/incrementalmerkletree?rev=bae25ad89c0c192
 dependencies = [
  "bitflags 1.3.2",
  "either",
- "incrementalmerkletree",
+ "incrementalmerkletree 0.4.0",
+ "tracing",
+]
+
+[[package]]
+name = "shardtree"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c19f96dde3a8693874f7e7c53d95616569b4009379a903789efbd448f4ea9cc7"
+dependencies = [
+ "bitflags 2.4.0",
+ "either",
+ "incrementalmerkletree 0.5.0",
  "tracing",
 ]
 
@@ -3300,7 +3432,7 @@ version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9263bf4c9bfaae7317c1c2faf7f18491d2fe476f70c414b73bf5d445b00ffa1"
 dependencies = [
- "prettyplease",
+ "prettyplease 0.1.25",
  "proc-macro2",
  "prost-build 0.10.4",
  "quote",
@@ -3313,11 +3445,24 @@ version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6fdaae4c2c638bb70fe42803a26fbd6fc6ac8c72f5c59f67ecc2a2dcabf4b07"
 dependencies = [
- "prettyplease",
+ "prettyplease 0.1.25",
  "proc-macro2",
  "prost-build 0.11.9",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "tonic-build"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b477abbe1d18c0b08f56cd01d1bc288668c5b5cfd19b2ae1886bbf599c546f1"
+dependencies = [
+ "prettyplease 0.2.15",
+ "proc-macro2",
+ "prost-build 0.12.1",
+ "quote",
+ "syn 2.0.35",
 ]
 
 [[package]]
@@ -3926,11 +4071,23 @@ dependencies = [
 [[package]]
 name = "zcash_address"
 version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8944af5c206cf2e37020ad54618e1825501b98548d35a638b73e0ec5762df8d5"
+dependencies = [
+ "bech32",
+ "bs58",
+ "f4jumble 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zcash_encoding 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "zcash_address"
+version = "0.3.0"
 source = "git+https://github.com/zingolabs/librustzcash?rev=8e582109cad9af14b461f76429f9f0437e860115#8e582109cad9af14b461f76429f9f0437e860115"
 dependencies = [
  "bech32",
  "bs58",
- "f4jumble",
+ "f4jumble 0.1.0 (git+https://github.com/zingolabs/librustzcash?rev=8e582109cad9af14b461f76429f9f0437e860115)",
  "zcash_encoding 0.2.0 (git+https://github.com/zingolabs/librustzcash?rev=8e582109cad9af14b461f76429f9f0437e860115)",
 ]
 
@@ -3943,28 +4100,61 @@ dependencies = [
  "bech32",
  "bls12_381",
  "bs58",
- "byteorder",
  "crossbeam-channel",
  "group 0.13.0",
- "hdwallet",
- "incrementalmerkletree",
+ "incrementalmerkletree 0.4.0",
  "memuse",
  "nom",
- "orchard",
+ "orchard 0.5.0",
  "percent-encoding",
  "prost 0.11.9",
  "rayon",
  "secrecy",
- "shardtree",
+ "shardtree 0.0.0",
  "subtle",
  "time",
  "tonic-build 0.9.2",
  "tracing",
  "which",
- "zcash_address",
+ "zcash_address 0.3.0 (git+https://github.com/zingolabs/librustzcash?rev=8e582109cad9af14b461f76429f9f0437e860115)",
  "zcash_encoding 0.2.0 (git+https://github.com/zingolabs/librustzcash?rev=8e582109cad9af14b461f76429f9f0437e860115)",
  "zcash_note_encryption",
- "zcash_primitives",
+ "zcash_primitives 0.12.0",
+]
+
+[[package]]
+name = "zcash_client_backend"
+version = "0.10.0-rc.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "432f902a7308d10435351275a33629c61905f5b4289dc8b89259b1b8c1a87a86"
+dependencies = [
+ "base64 0.21.4",
+ "bech32",
+ "bls12_381",
+ "bs58",
+ "byteorder",
+ "crossbeam-channel",
+ "group 0.13.0",
+ "hdwallet",
+ "hex 0.4.3",
+ "incrementalmerkletree 0.5.0",
+ "memuse",
+ "nom",
+ "orchard 0.6.0",
+ "percent-encoding",
+ "prost 0.12.1",
+ "rayon",
+ "secrecy",
+ "shardtree 0.1.0",
+ "subtle",
+ "time",
+ "tonic-build 0.10.0",
+ "tracing",
+ "which",
+ "zcash_address 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zcash_encoding 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zcash_note_encryption",
+ "zcash_primitives 0.13.0-rc.1",
 ]
 
 [[package]]
@@ -3976,20 +4166,20 @@ dependencies = [
  "byteorder",
  "either",
  "group 0.13.0",
- "incrementalmerkletree",
+ "incrementalmerkletree 0.4.0",
  "jubjub",
  "prost 0.11.9",
  "rusqlite",
  "schemer",
  "schemer-rusqlite",
  "secrecy",
- "shardtree",
+ "shardtree 0.0.0",
  "time",
  "tracing",
  "uuid",
- "zcash_client_backend",
+ "zcash_client_backend 0.9.0",
  "zcash_encoding 0.2.0 (git+https://github.com/zingolabs/librustzcash?rev=8e582109cad9af14b461f76429f9f0437e860115)",
- "zcash_primitives",
+ "zcash_primitives 0.12.0",
 ]
 
 [[package]]
@@ -4036,18 +4226,18 @@ dependencies = [
  "blake2s_simd",
  "bls12_381",
  "byteorder",
- "equihash",
+ "equihash 0.2.0 (git+https://github.com/zingolabs/librustzcash?rev=8e582109cad9af14b461f76429f9f0437e860115)",
  "ff 0.13.0",
  "fpe",
  "group 0.13.0",
  "hdwallet",
  "hex 0.4.3",
- "incrementalmerkletree",
+ "incrementalmerkletree 0.4.0",
  "jubjub",
  "lazy_static",
  "memuse",
  "nonempty",
- "orchard",
+ "orchard 0.5.0",
  "proptest",
  "rand 0.8.5",
  "rand_core 0.6.4",
@@ -4055,8 +4245,44 @@ dependencies = [
  "secp256k1",
  "sha2 0.10.7",
  "subtle",
- "zcash_address",
+ "zcash_address 0.3.0 (git+https://github.com/zingolabs/librustzcash?rev=8e582109cad9af14b461f76429f9f0437e860115)",
  "zcash_encoding 0.2.0 (git+https://github.com/zingolabs/librustzcash?rev=8e582109cad9af14b461f76429f9f0437e860115)",
+ "zcash_note_encryption",
+]
+
+[[package]]
+name = "zcash_primitives"
+version = "0.13.0-rc.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0cc4391d9325e0a51a7cbff02b5c4b5472d66087bd9c903ddb12dea7ec22f3e0"
+dependencies = [
+ "aes",
+ "bip0039",
+ "bitvec",
+ "blake2b_simd",
+ "blake2s_simd",
+ "bls12_381",
+ "byteorder",
+ "equihash 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ff 0.13.0",
+ "fpe",
+ "group 0.13.0",
+ "hdwallet",
+ "hex 0.4.3",
+ "incrementalmerkletree 0.5.0",
+ "jubjub",
+ "lazy_static",
+ "memuse",
+ "nonempty",
+ "orchard 0.6.0",
+ "rand 0.8.5",
+ "rand_core 0.6.4",
+ "ripemd",
+ "secp256k1",
+ "sha2 0.10.7",
+ "subtle",
+ "zcash_address 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zcash_encoding 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "zcash_note_encryption",
 ]
 
@@ -4070,7 +4296,7 @@ dependencies = [
  "bls12_381",
  "group 0.13.0",
  "home",
- "incrementalmerkletree",
+ "incrementalmerkletree 0.4.0",
  "jubjub",
  "known-folders",
  "lazy_static",
@@ -4078,7 +4304,7 @@ dependencies = [
  "redjubjub",
  "tracing",
  "xdg",
- "zcash_primitives",
+ "zcash_primitives 0.12.0",
 ]
 
 [[package]]
@@ -4119,13 +4345,13 @@ dependencies = [
  "itertools",
  "json",
  "log",
- "orchard",
+ "orchard 0.5.0",
  "portpicker",
  "prost 0.10.4",
  "rand 0.8.5",
  "rustls-pemfile",
  "rustyline",
- "shardtree",
+ "shardtree 0.0.0",
  "shellwords",
  "tempdir",
  "tokio",
@@ -4140,9 +4366,9 @@ dependencies = [
  "tracing-subscriber",
  "tracing-test",
  "webpki-roots 0.21.1",
- "zcash_address",
- "zcash_client_backend",
- "zcash_primitives",
+ "zcash_address 0.3.0 (git+https://github.com/zingolabs/librustzcash?rev=8e582109cad9af14b461f76429f9f0437e860115)",
+ "zcash_client_backend 0.10.0-rc.2",
+ "zcash_primitives 0.12.0",
  "zingo-testutils",
  "zingoconfig",
  "zingolib",
@@ -4152,11 +4378,11 @@ dependencies = [
 name = "zingo-memo"
 version = "0.1.0"
 dependencies = [
- "zcash_address",
- "zcash_client_backend",
+ "zcash_address 0.3.0 (git+https://github.com/zingolabs/librustzcash?rev=8e582109cad9af14b461f76429f9f0437e860115)",
+ "zcash_client_backend 0.10.0-rc.2",
  "zcash_encoding 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "zcash_note_encryption",
- "zcash_primitives",
+ "zcash_primitives 0.12.0",
 ]
 
 [[package]]
@@ -4164,18 +4390,18 @@ name = "zingo-testutils"
 version = "0.1.0"
 dependencies = [
  "http",
- "incrementalmerkletree",
+ "incrementalmerkletree 0.4.0",
  "json",
  "log",
- "orchard",
+ "orchard 0.5.0",
  "portpicker",
  "serde",
  "serde_json",
  "tempdir",
  "tokio",
  "tracing",
- "zcash_address",
- "zcash_primitives",
+ "zcash_address 0.3.0 (git+https://github.com/zingolabs/librustzcash?rev=8e582109cad9af14b461f76429f9f0437e860115)",
+ "zcash_primitives 0.12.0",
  "zingoconfig",
  "zingolib",
 ]
@@ -4188,8 +4414,8 @@ dependencies = [
  "http",
  "log",
  "log4rs",
- "zcash_address",
- "zcash_primitives",
+ "zcash_address 0.3.0 (git+https://github.com/zingolabs/librustzcash?rev=8e582109cad9af14b461f76429f9f0437e860115)",
+ "zcash_primitives 0.12.0",
 ]
 
 [[package]]
@@ -4216,7 +4442,7 @@ dependencies = [
  "http-body",
  "hyper",
  "hyper-rustls",
- "incrementalmerkletree",
+ "incrementalmerkletree 0.4.0",
  "indoc",
  "json",
  "jubjub",
@@ -4224,7 +4450,7 @@ dependencies = [
  "log",
  "log4rs",
  "nonempty",
- "orchard",
+ "orchard 0.5.0",
  "pairing 0.22.0",
  "portpicker",
  "prost 0.10.4",
@@ -4237,7 +4463,7 @@ dependencies = [
  "secp256k1",
  "serde_json",
  "sha2 0.9.9",
- "shardtree",
+ "shardtree 0.0.0",
  "sodiumoxide",
  "subtle",
  "tempfile",
@@ -4251,12 +4477,12 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "webpki-roots 0.21.1",
- "zcash_address",
- "zcash_client_backend",
+ "zcash_address 0.3.0 (git+https://github.com/zingolabs/librustzcash?rev=8e582109cad9af14b461f76429f9f0437e860115)",
+ "zcash_client_backend 0.10.0-rc.2",
  "zcash_client_sqlite",
  "zcash_encoding 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "zcash_note_encryption",
- "zcash_primitives",
+ "zcash_primitives 0.12.0",
  "zcash_proofs",
  "zingo-memo",
  "zingoconfig",
