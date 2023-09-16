@@ -10,7 +10,7 @@ resolver = "2"
 
 [workspace.dependencies]
 zcash_address = "0.3"
-zcash_client_backend = { version = "0.10.0-rc.2", feature = ["unstable-serialization"] }
+zcash_client_backend = { git = "https://github.com/nuttycom/librustzcash.git", feature = ["unstable-serialization"], rev = "669e0797bff3b506984bd2851b22d9eae40a758a" }
 zcash_encoding = "0.2"
 zcash_note_encryption = "0.4"
 zcash_primitives = { version = "0.13.0-rc.1", features = ["transparent-inputs", "test-dependencies"] }
