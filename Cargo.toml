@@ -12,7 +12,6 @@ resolver = "2"
 zcash_address = "0.3"
 zcash_client_backend = { version = "0.10.0-rc.2", feature = ["unstable-serialization"] }
 zcash_encoding = "0.2"
-zcash_client_sqlite = "0.8.0-rc.3"
 zcash_note_encryption = "0.4"
 zcash_primitives = { version = "0.13.0-rc.1", features = ["transparent-inputs", "test-dependencies"] }
 zcash_proofs = { version = "0.13.0-rc.1", features = ["multicore"] }
