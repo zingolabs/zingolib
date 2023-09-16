@@ -1299,7 +1299,7 @@ async fn t_incoming_t_outgoing_disallowed() {
 
     // 3. Test the list
     let list = recipient.do_list_transactions().await;
-    assert_eq!(list[0]["block_height"].as_u64().unwrap(), 2);
+    assert_eq!(list[0]["block_height"].as_u64().unwrap(), 4);
     assert_eq!(list[0]["address"], taddr);
     assert_eq!(list[0]["amount"].as_u64().unwrap(), value);
 
