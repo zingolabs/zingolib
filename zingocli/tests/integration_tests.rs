@@ -2758,10 +2758,10 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
                 "memo": null
             },
             {
-                "block_height": 4,
+                "block_height": 6,
                 "unconfirmed": false,
-                "datetime": 1686245363,
-                "txid": "e51d1261136bb075fd35358105c72a6b8a69caf293bd283acc213df8875dfe57",
+                "datetime": 1694825595,
+                "txid": "4ee5a583e6462eb4c39f9d8188e855bb1e37d989fcb8b417cff93c27b006e72d",
                 "zec_price": null,
                 "amount": -30000,
                 "outgoing_metadata": [
@@ -2773,10 +2773,10 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
                 ]
             },
             {
-                "block_height": 5,
+                "block_height": 7,
                 "unconfirmed": true,
-                "datetime": 1686245360,
-                "txid": "fc476d945407242e68f511e7ffca5d753f95ef4072a1b5aac8dfa0f77a6eb2b0",
+                "datetime": 1694825735,
+                "txid": "55de92ebf5effc3ed67a289788ede88514a9d2c407af6154b00969325e2fdf00",
                 "zec_price": null,
                 "amount": -30000,
                 "outgoing_metadata": [
