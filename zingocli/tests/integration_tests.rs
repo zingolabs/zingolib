@@ -422,7 +422,7 @@ async fn test_scanning_in_watch_only_mode() {
         watch_client.do_rescan().await.unwrap();
         assert_eq!(
             watch_client.do_send(vec![(EXT_TADDR, 1000, None)]).await,
-            Err("Wallet is in watch-only mode a thus it cannot spend".to_string())
+            Err("Wallet is in watch-only mode and thus it cannot spend.".to_string())
         );
     }
 }
