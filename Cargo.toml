@@ -10,16 +10,16 @@ resolver = "2"
 
 [workspace.dependencies]
 zcash_address = "0.3"
-zcash_client_backend = { git = "https://github.com/nuttycom/librustzcash.git", feature = ["unstable-serialization"], rev = "669e0797bff3b506984bd2851b22d9eae40a758a" }
+zcash_client_backend = { git = "https://github.com/nuttycom/librustzcash.git", rev = "669e0797bff3b506984bd2851b22d9eae40a758a" }
 zcash_encoding = "0.2"
 zcash_note_encryption = "0.4"
-zcash_primitives = { version = "0.13.0-rc.1", features = ["transparent-inputs", "test-dependencies"] }
-zcash_proofs = { version = "0.13.0-rc.1", features = ["multicore"] }
+zcash_primitives = { version = "0.13.0-rc.1" }
+zcash_proofs = { version = "0.13.0-rc.1" }
 orchard = "0.6"
 tonic-build = "0.7"
 tempdir = "0.3"
 portpicker = "0.1"
-incrementalmerkletree = { version = "0.5", features = ["test-dependencies"] }
+incrementalmerkletree = { version = "0.5" }
 shardtree = "0.1"
 build_utils = { path = "./build_utils" }
 
