@@ -1495,17 +1495,17 @@ impl LightClient {
                     .unwrap()
                     .is_none()
             })
+            && last_synced_height != 0
         {
-            if last_synced_height != 0 {
-                let trees = crate::grpc_connector::GrpcConnector::get_trees(
-                    self.get_server_uri(),
-                    last_synced_height,
-                )
-                .await
-                .unwrap();
-                self.wallet.initiate_witness_trees(trees).await;
-            };
-        }
+            let trees = crate::grpc_connector::GrpcConnector::get_trees(
+                self.get_server_uri(),
+                last_synced_height,
+            )
+            .await
+            .unwrap();
+            self.wallet.initiate_witness_trees(trees).await;
+        };
+
         let latest_blockid =
             GrpcConnector::get_latest_block(self.config.get_lightwalletd_uri()).await?;
         // Block hashes are reversed when stored in BlockDatas, so we reverse here to match
