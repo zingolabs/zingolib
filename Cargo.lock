@@ -4271,13 +4271,3 @@ dependencies = [
  "zingo-memo",
  "zingoconfig",
 ]
-
-[[patch.unused]]
-name = "incrementalmerkletree"
-version = "0.4.0"
-source = "git+https://github.com/zcash/incrementalmerkletree?rev=bae25ad89c0c192bee625252d2d419bd56638e48#bae25ad89c0c192bee625252d2d419bd56638e48"
-
-[[patch.unused]]
-name = "shardtree"
-version = "0.0.0"
-source = "git+https://github.com/zcash/incrementalmerkletree?rev=bae25ad89c0c192bee625252d2d419bd56638e48#bae25ad89c0c192bee625252d2d419bd56638e48"
