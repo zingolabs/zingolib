@@ -10,6 +10,7 @@ use prost::Message;
 use shardtree::store::memory::MemoryShardStore;
 use shardtree::store::{Checkpoint, ShardStore};
 use shardtree::LocatedPrunableTree;
+use shardtree::ShardTree;
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
 use std::usize;
@@ -82,8 +83,8 @@ where
         |mut w, (checkpoint_id, checkpoint)| {
             w.write_u32::<LittleEndian>(u32::from(*checkpoint_id))?;
             match checkpoint.tree_state() {
-                shardtree::TreeState::Empty => w.write_u8(0),
-                shardtree::TreeState::AtPosition(pos) => {
+                shardtree::store::TreeState::Empty => w.write_u8(0),
+                shardtree::store::TreeState::AtPosition(pos) => {
                     w.write_u8(1)?;
                     w.write_u64::<LittleEndian>(<u64 as From<Position>>::from(pos))
                 }
@@ -212,8 +213,10 @@ fn read_shardtree<
     let checkpoints = Vector::read(&mut reader, |r| {
         let checkpoint_id = C::from(r.read_u32::<LittleEndian>()?);
         let tree_state = match r.read_u8()? {
-            0 => shardtree::TreeState::Empty,
-            1 => shardtree::TreeState::AtPosition(Position::from(r.read_u64::<LittleEndian>()?)),
+            0 => shardtree::store::TreeState::Empty,
+            1 => shardtree::store::TreeState::AtPosition(Position::from(
+                r.read_u64::<LittleEndian>()?,
+            )),
             otherwise => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
