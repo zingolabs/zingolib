@@ -15,7 +15,7 @@ use orchard::tree::MerkleHashOrchard;
 use orchard::Anchor;
 use rand::rngs::OsRng;
 use rand::Rng;
-use shardtree::memory::MemoryShardStore;
+use shardtree::store::memory::MemoryShardStore;
 use shardtree::ShardTree;
 use std::convert::Infallible;
 use std::{

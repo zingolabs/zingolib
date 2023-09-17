@@ -23,7 +23,8 @@ use orchard::{
     tree::MerkleHashOrchard,
     Action,
 };
-use shardtree::{memory::MemoryShardStore, ShardTree};
+use shardtree::store::memory::MemoryShardStore;
+use shardtree::ShardTree;
 use subtle::CtOption;
 use zcash_address::unified::{self, Receiver};
 use zcash_client_backend::{address::UnifiedAddress, encoding::encode_payment_address};
