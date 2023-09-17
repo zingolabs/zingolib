@@ -54,7 +54,7 @@ orchard = { workspace = true }
 subtle = "2.4.1"
 incrementalmerkletree = { workspace = true, features = ["test-dependencies", "legacy-api"] }
 zcash_address = { workspace = true }
-zcash_client_backend = { workspace = true, features = ["unstable", "transparent-inputs", "unstable-serialization"] }
+zcash_client_backend = { workspace = true, features = ["unstable", "transparent-inputs", "unstable-serialization", "unstable-spanning-tree"] }
 zcash_encoding = { workspace = true }
 zcash_note_encryption = { workspace = true }
 zcash_primitives = { workspace = true }
