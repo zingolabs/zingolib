@@ -1,0 +1,6 @@
+panicked at 'called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }'
+
+issue: link to zcashd in zingocli/regtest/bin does not exist
+
+solution: after acquiring the binary, use ln
+
