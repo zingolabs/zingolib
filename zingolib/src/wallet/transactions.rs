@@ -47,6 +47,7 @@ impl TransactionMetadataSet {
             .expect("To have the requested txid")
             .get_transaction_fee()
     }
+
     pub fn read_old<R: Read>(
         mut reader: R,
         wallet_capability: &WalletCapability,
@@ -72,21 +73,24 @@ impl TransactionMetadataSet {
         })?;
 
         if let Some((mut old_sap_wits, mut old_orch_wits)) = old_inc_witnesses {
-            old_sap_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
-            let sap_tree = &mut witness_trees.as_mut().unwrap().witness_tree_sapling;
-            for (sap_wit, height) in old_sap_wits {
-                sap_tree
-                    .insert_witness_nodes(sap_wit, height - 1)
-                    .expect("infallible");
-                sap_tree.checkpoint(height).expect("infallible");
-            }
-            old_orch_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
-            let orch_tree = &mut witness_trees.as_mut().unwrap().witness_tree_orchard;
-            for (orch_wit, height) in old_orch_wits {
-                orch_tree
-                    .insert_witness_nodes(orch_wit, height - 1)
-                    .expect("infallible");
-                orch_tree.checkpoint(height).expect("infallible");
+            #[cfg(feature = "legacy-api")]
+            {
+                old_sap_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
+                let sap_tree = &mut witness_trees.as_mut().unwrap().witness_tree_sapling;
+                for (sap_wit, height) in old_sap_wits {
+                    sap_tree
+                        .insert_witness_nodes(sap_wit, height - 1)
+                        .expect("infallible");
+                    sap_tree.checkpoint(height).expect("infallible");
+                }
+                old_orch_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
+                let orch_tree = &mut witness_trees.as_mut().unwrap().witness_tree_orchard;
+                for (orch_wit, height) in old_orch_wits {
+                    orch_tree
+                        .insert_witness_nodes(orch_wit, height - 1)
+                        .expect("infallible");
+                    orch_tree.checkpoint(height).expect("infallible");
+                }
             }
         }
 
@@ -149,21 +153,24 @@ impl TransactionMetadataSet {
         if version >= 22 {
             witness_trees = Optional::read(reader, |r| WitnessTrees::read(r))?;
         } else if let Some((mut old_sap_wits, mut old_orch_wits)) = old_inc_witnesses {
-            old_sap_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
-            let sap_tree = &mut witness_trees.as_mut().unwrap().witness_tree_sapling;
-            for (sap_wit, height) in old_sap_wits {
-                sap_tree
-                    .insert_witness_nodes(sap_wit, height - 1)
-                    .expect("infallible");
-                sap_tree.checkpoint(height).expect("infallible");
-            }
-            old_orch_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
-            let orch_tree = &mut witness_trees.as_mut().unwrap().witness_tree_orchard;
-            for (orch_wit, height) in old_orch_wits {
-                orch_tree
-                    .insert_witness_nodes(orch_wit, height - 1)
-                    .expect("infallible");
-                orch_tree.checkpoint(height).expect("infallible");
+            #[cfg(feature = "legacy-api")]
+            {
+                old_sap_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
+                let sap_tree = &mut witness_trees.as_mut().unwrap().witness_tree_sapling;
+                for (sap_wit, height) in old_sap_wits {
+                    sap_tree
+                        .insert_witness_nodes(sap_wit, height - 1)
+                        .expect("infallible");
+                    sap_tree.checkpoint(height).expect("infallible");
+                }
+                old_orch_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
+                let orch_tree = &mut witness_trees.as_mut().unwrap().witness_tree_orchard;
+                for (orch_wit, height) in old_orch_wits {
+                    orch_tree
+                        .insert_witness_nodes(orch_wit, height - 1)
+                        .expect("infallible");
+                    orch_tree.checkpoint(height).expect("infallible");
+                }
             }
         };
 
