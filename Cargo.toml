@@ -32,4 +32,5 @@ debug = false
 
 [patch.crates-io]
 zcash_primitives = { git = "https://github.com/nuttycom/librustzcash.git", rev = "669e0797bff3b506984bd2851b22d9eae40a758a" }
+zcash_address = { git = "https://github.com/nuttycom/librustzcash.git", rev = "669e0797bff3b506984bd2851b22d9eae40a758a" }
 
