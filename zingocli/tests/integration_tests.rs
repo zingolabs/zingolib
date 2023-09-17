@@ -2,7 +2,8 @@
 #![cfg(feature = "local_env")]
 pub mod darkside;
 use orchard::tree::MerkleHashOrchard;
-use shardtree::{memory::MemoryShardStore, ShardTree};
+use shardtree::store::memory::MemoryShardStore;
+use shardtree::ShardTree;
 use std::{fs::File, path::Path, str::FromStr};
 use zingo_testutils::{self, build_fvk_client, data};
 
