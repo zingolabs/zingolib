@@ -38,42 +38,11 @@ jobs:
       - name: Symlink zcash parameters
         run: ln -s /root/.zcash-params /github/home
 
-      # - name: Cargo cache
-      #   uses: Swatinem/rust-cache@v2
-
       - name: Cargo cache
-        id: cargo-cache
-        uses: actions/cache@v3
-        with:
-          # Following cargo cache recommendations:
-          # https://doc.rust-lang.org/cargo/guide/cargo-home.html
-          # added 'target' directory to skip compiling dependencies
-          path: |
-            /root/.cargo/.crates.toml
-            /root/.cargo/.crates2.json
-            /root/.cargo/bin/
-            /root/.cargo/registry/index/
-            /root/.cargo/registry/cache/
-            /root/.cargo/registry/git/db/
-            target/
-          key: cargo-zingolib-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: cargo-zingolib
+        uses: Swatinem/rust-cache@v2
 
       - name: Run tests
         run: cargo nextest run --profile ci --all-features --verbose --workspace 
-
-      # - name: Run tests and generate coverage
-      #   uses: actions-rs/cargo@v1
-      #   with:
-      #     command: tarpaulin
-      #     args: --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --release --timeout 3000 --out xml
-
-      # - name: Upload to codecov.io
-      #   uses: codecov/codecov-action@v3
-      #   with:
-      #     token: ${{ secrets.CODECOV_TOKEN }}
-      #     files: ./cobertura.xml
-      #     # fail_ci_if_error:     true
 
   create-timestamp:
     uses: zingolabs/zingo-mobile/.github/workflows/create-timestamp.yaml@dev
