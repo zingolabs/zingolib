@@ -76,8 +76,6 @@ jobs:
         with:
           name: nextest-archive
 
-      - run: ls -la
-      
       - name: Run tests
         run: |
           cargo nextest run --verbose --profile ci --archive-file nextest-archive.tar.zst \
