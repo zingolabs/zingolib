@@ -42,7 +42,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build and archive tests
-        run: cargo nextest archive --archive-file nextest-archive.tar.zst
+        run: cargo nextest archive --verbose --workspace --all-features --archive-file nextest-archive.tar.zst
 
       - name: Upload archive
         uses: actions/upload-artifact@v3
@@ -78,7 +78,7 @@ jobs:
           name: nextest-archive
 
       - name: Run tests
-        run: cargo nextest run --archive-file nextest-archive.tar.zst --partition count:${{ matrix.partition}}/4 --profile ci --all-features --verbose --workspace
+        run: cargo nextest run --verbose --profile ci --archive-file nextest-archive.tar.zst --partition count:${{ matrix.partition}}/4
 
   create-timestamp:
     uses: zingolabs/zingo-mobile/.github/workflows/create-timestamp.yaml@dev
