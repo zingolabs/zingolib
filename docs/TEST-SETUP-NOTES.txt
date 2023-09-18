@@ -1,4 +1,4 @@
-cargo install cargo-nextest
+cargo install cargo-nextest --locked
 
 ## zcash install instructions for debian/ubuntu
 git clone https://github.com/zcash/zcash.git 
