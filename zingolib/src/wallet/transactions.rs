@@ -302,7 +302,11 @@ impl TransactionMetadataSet {
                         {
                             Some((
                                 *txid,
-                                PoolNullifier::Sapling(sapling_note_description.nullifier),
+                                PoolNullifier::Sapling(
+                                    sapling_note_description.nullifier.unwrap_or_else(|| {
+                                        todo!("Do something about note even with missing nullifier")
+                                    }),
+                                ),
                             ))
                         } else {
                             None
@@ -316,8 +320,10 @@ impl TransactionMetadataSet {
                             {
                                 Some((
                                     *txid,
-                                    PoolNullifier::Orchard(orchard_note_description.nullifier),
-                                ))
+                                    PoolNullifier::Orchard(orchard_note_description.nullifier.unwrap_or_else(|| {
+                                        todo!("Do something about note even with missing nullifier")
+                                    }))
+,                                ))
                             } else {
                                 None
                             }
@@ -411,7 +417,7 @@ impl TransactionMetadataSet {
                     .expect("TXid should be a key in current.")
                     .sapling_notes
                     .iter_mut()
-                    .find(|n| dbg!(n.nullifier) == *nf)
+                    .find(|n| dbg!(n.nullifier) == Some(*nf))
                 {
                     sapling_note_data.spent = Some((*spent_txid, spent_at_height.into()));
                     sapling_note_data.unconfirmed_spent = None;
@@ -430,7 +436,7 @@ impl TransactionMetadataSet {
                     .unwrap()
                     .orchard_notes
                     .iter_mut()
-                    .find(|n| n.nullifier == *nf)
+                    .find(|n| n.nullifier == Some(*nf))
                 {
                     orchard_note_data.spent = Some((*spent_txid, spent_at_height.into()));
                     orchard_note_data.unconfirmed_spent = None;
@@ -604,7 +610,7 @@ impl TransactionMetadataSet {
         if let Some(nd) = transaction_metadata
             .sapling_notes
             .iter_mut()
-            .find(|n| n.nullifier() == nullifier)
+            .find(|n| n.nullifier() == Some(nullifier))
         {
             *nd.spent_mut() = Some((txid, height.into()));
             if let Some(ref mut t) = self.witness_trees {
@@ -635,7 +641,7 @@ impl TransactionMetadataSet {
         if let Some(nd) = transaction_metadata
             .orchard_notes
             .iter_mut()
-            .find(|n| n.nullifier() == nullifier)
+            .find(|n| n.nullifier() == Some(nullifier))
         {
             *nd.spent_mut() = Some((txid, height.into()));
             if let Some(ref mut t) = self.witness_trees {
