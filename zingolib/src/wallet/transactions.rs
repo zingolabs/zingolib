@@ -608,15 +608,16 @@ impl TransactionMetadataSet {
         {
             *nd.spent_mut() = Some((txid, height.into()));
             if let Some(ref mut t) = self.witness_trees {
-                t.witness_tree_sapling
-                    .remove_mark(
-                        *nd.witnessed_position(),
-                        Some(&(height - BlockHeight::from(1))),
-                    )
-                    .unwrap();
+                if let Some(position) = nd.witnessed_position {
+                    t.witness_tree_sapling
+                        .remove_mark(position, Some(&(height - BlockHeight::from(1))))
+                        .unwrap();
+                } else {
+                    todo!("Tried to mark sapling note as spent with no position: FIX")
+                }
             }
         } else {
-            eprintln!("Could not remove marked node!")
+            eprintln!("Could not remove marked sapling node!")
         }
     }
     pub fn remove_mark_orchard(
@@ -638,15 +639,16 @@ impl TransactionMetadataSet {
         {
             *nd.spent_mut() = Some((txid, height.into()));
             if let Some(ref mut t) = self.witness_trees {
-                t.witness_tree_orchard
-                    .remove_mark(
-                        *nd.witnessed_position(),
-                        Some(&(height - BlockHeight::from(1))),
-                    )
-                    .unwrap();
+                if let Some(position) = nd.witnessed_position {
+                    t.witness_tree_orchard
+                        .remove_mark(position, Some(&(height - BlockHeight::from(1))))
+                        .unwrap();
+                } else {
+                    todo!("Tried to mark orchard note as spent with no position: FIX")
+                }
             }
         } else {
-            eprintln!("Could not remove marked node!")
+            eprintln!("Could not remove marked orchard node!")
         }
     }
 
@@ -795,7 +797,7 @@ impl TransactionMetadataSet {
             D::WalletNote::from_parts(
                 D::Recipient::diversifier(&to),
                 note.clone(),
-                Position::from(u64::MAX),
+                None,
                 Some(nullifier.unwrap_or_else(|| {
                     <<D::WalletNote as ReceivedNoteAndMetadata>::Nullifier as FromBytes<
                                 32,
@@ -843,7 +845,7 @@ impl TransactionMetadataSet {
                 .iter_mut()
                 .find(|nnmd| *nnmd.output_index() == output_index)
             {
-                *nnmd.witnessed_position_mut() = position;
+                *nnmd.witnessed_position_mut() = Some(position);
                 *nnmd.nullifier_mut() = D::get_nullifier_from_note_fvk_and_witness_position(
                     &nnmd.note().clone(),
                     fvk,

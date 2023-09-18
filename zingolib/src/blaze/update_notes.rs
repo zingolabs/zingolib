@@ -125,9 +125,10 @@ impl UpdateNotes {
                             match wn
                                 .iter()
                                 .nth(on as usize)
-                                .map(|note| u64::from(note.witnessed_position))
+                                .map(|note| note.witnessed_position.map(u64::from))
                             {
-                                Some(pos) => println!("Position: {pos}"),
+                                Some(Some(pos)) => println!("Position: {pos}"),
+                                Some(None) => println!("Position is Done!"),
                                 None => println!("No position to report, as could not find note"),
                             };
                             println!("\n\n\n");
