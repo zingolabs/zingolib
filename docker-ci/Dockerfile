@@ -29,7 +29,7 @@ RUN apt update \
 # Build lightwalletd
 RUN git clone https://github.com/zcash/lightwalletd \
     && cd lightwalletd \
-    && git checkout v0.4.15 \
+    && git checkout v0.4.16 \
     && make
 
 # Build zcashd and fetch params
@@ -71,7 +71,8 @@ ENV PATH=$PATH:$CARGO_HOME/bin
 RUN rustup toolchain install stable --profile minimal --component clippy \
     && rustup update \
     && rustup default stable
-RUN cargo install cargo-tarpaulin
+RUN cargo install cargo-nextest --locked
+# RUN cargo install cargo-tarpaulin
 
 # Apt clean up
 RUN apt autoremove -y \

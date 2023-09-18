@@ -26,7 +26,7 @@ jobs:
     env:
       RUSTFLAGS: -D warnings
     container:
-      image: zingodevops/ci-build:001
+      image: zingodevops/ci-build:002
       options: --security-opt seccomp=unconfined
     steps:
       - name: Checkout repository
@@ -37,6 +37,9 @@ jobs:
 
       - name: Symlink zcash parameters
         run: ln -s /root/.zcash-params /github/home
+
+      # - name: Cargo cache
+      #   uses: Swatinem/rust-cache@v2
 
       - name: Cargo cache
         id: cargo-cache
@@ -56,18 +59,21 @@ jobs:
           key: cargo-zingolib-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: cargo-zingolib
 
-      - name: Run tests and generate coverage
-        uses: actions-rs/cargo@v1
-        with:
-          command: tarpaulin
-          args: --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 3000 --out xml
+      - name: Run tests
+        run: cargo nextest run --profile ci --all-features --verbose --workspace 
 
-      - name: Upload to codecov.io
-        uses: codecov/codecov-action@v3
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./cobertura.xml
-          # fail_ci_if_error:     true
+      # - name: Run tests and generate coverage
+      #   uses: actions-rs/cargo@v1
+      #   with:
+      #     command: tarpaulin
+      #     args: --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --release --timeout 3000 --out xml
+
+      # - name: Upload to codecov.io
+      #   uses: codecov/codecov-action@v3
+      #   with:
+      #     token: ${{ secrets.CODECOV_TOKEN }}
+      #     files: ./cobertura.xml
+      #     # fail_ci_if_error:     true
 
   create-timestamp:
     uses: zingolabs/zingo-mobile/.github/workflows/create-timestamp.yaml@dev
