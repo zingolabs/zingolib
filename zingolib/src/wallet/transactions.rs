@@ -752,7 +752,7 @@ impl TransactionMetadataSet {
                 let nd = D::WalletNote::from_parts(
                     to.diversifier(),
                     note,
-                    Position::from(u64::MAX),
+                    None,
                     None,
                     None,
                     None,

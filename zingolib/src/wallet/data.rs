@@ -428,7 +428,7 @@ pub struct ReceivedSaplingNoteAndMetadata {
     pub note: zcash_primitives::sapling::Note,
 
     // The postion of this note's commitment
-    pub(crate) witnessed_position: Position,
+    pub(crate) witnessed_position: Option<Position>,
 
     // The note's index in its containing transaction
     pub(crate) output_index: usize,
