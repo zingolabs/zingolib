@@ -420,7 +420,7 @@ pub trait ReceivedNoteAndMetadata: Sized {
     fn from_parts(
         diversifier: Self::Diversifier,
         note: Self::Note,
-        witness_position: Position,
+        witness_position: Option<Position>,
         nullifier: Option<Self::Nullifier>,
         spent: Option<(TxId, u32)>,
         unconfirmed_spent: Option<(TxId, u32)>,
@@ -488,7 +488,7 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
     fn from_parts(
         diversifier: zcash_primitives::sapling::Diversifier,
         note: zcash_primitives::sapling::Note,
-        witnessed_position: Position,
+        witnessed_position: Option<Position>,
         nullifier: Option<zcash_primitives::sapling::Nullifier>,
         spent: Option<(TxId, u32)>,
         unconfirmed_spent: Option<(TxId, u32)>,
@@ -1404,7 +1404,7 @@ where
         Ok(T::from_parts(
             diversifier,
             note,
-            witnessed_position,
+            Some(witnessed_position),
             Some(nullifier),
             spent,
             None,

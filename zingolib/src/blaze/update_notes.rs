@@ -116,6 +116,23 @@ impl UpdateNotes {
                             TransactionMetadata::new_txid(&compact_transaction.hash);
                         let spent_at_height = dbg!(BlockHeight::from_u32(spent_height as u32));
 
+                        //for debug purposes only
+                        if let (Some(on), PoolNullifier::Sapling(_)) = (output_num, nf) {
+                            let wn = wallet_transactions.read().await;
+                            let wn = &wn.current.get(&transaction_id).unwrap().sapling_notes;
+                            println!("\n\n\n");
+                            println!("Output index: {on}, total sap outputs known: {}", wn.len());
+                            match wn
+                                .iter()
+                                .nth(on as usize)
+                                .map(|note| u64::from(note.witnessed_position))
+                            {
+                                Some(pos) => println!("Position: {pos}"),
+                                None => println!("No position to report, as could not find note"),
+                            };
+                            println!("\n\n\n");
+                        }
+
                         // Mark this note as being spent
                         let value = wallet_transactions
                             .write()
