@@ -72,7 +72,7 @@ RUN rustup toolchain install stable --profile minimal --component clippy \
     && rustup update \
     && rustup default stable
 RUN cargo install cargo-nextest --locked
-# RUN cargo install cargo-tarpaulin
+RUN cargo install cargo-tarpaulin
 
 # Apt clean up
 RUN apt autoremove -y \
