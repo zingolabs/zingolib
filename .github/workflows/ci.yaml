@@ -78,7 +78,7 @@ jobs:
           name: nextest-archive
 
       - name: Run tests
-        run: cargo nextest run --archive-file nextest-archive.tar.zst --partition count:${{ matrix.partition}}/4 --profile ci --all-features --verbose --workspace 
+        run: cargo nextest run --archive-file nextest-archive.tar.zst --partition count:${{ matrix.partition}}/4 --profile ci --all-features --verbose --workspace
 
   create-timestamp:
     uses: zingolabs/zingo-mobile/.github/workflows/create-timestamp.yaml@dev
