@@ -20,14 +20,47 @@ jobs:
       - name: Reject trailing whitespace
         run: ./utils/trailing-whitespace.sh reject
 
-  cargo-test:
-    name: Cargo test
+  build-test-artifacts:
+    name: Build test artifacts
     runs-on: ubuntu-22.04
     env:
       RUSTFLAGS: -D warnings
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build and archive tests
+        run: cargo nextest archive --verbose --workspace --all-features --archive-file nextest-archive.tar.zst
+
+      - name: Upload archive
+        uses: actions/upload-artifact@v3
+        with:
+          name: nextest-archive
+          path: nextest-archive.tar.zst
+
+  run-tests:
+    name: Run tests
+    runs-on: ubuntu-22.04
+    needs: build-test-artifacts
+    env:
+      RUSTFLAGS: -D warnings
     container:
-      image: zingodevops/ci-build:001
+      image: zingodevops/ci-build:002
       options: --security-opt seccomp=unconfined
+    strategy:
+      matrix:
+        partition: [1, 2, 3, 4, 5, 6, 7, 8]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -38,36 +71,15 @@ jobs:
       - name: Symlink zcash parameters
         run: ln -s /root/.zcash-params /github/home
 
-      - name: Cargo cache
-        id: cargo-cache
-        uses: actions/cache@v3
+      - name: Download archive
+        uses: actions/download-artifact@v3
         with:
-          # Following cargo cache recommendations:
-          # https://doc.rust-lang.org/cargo/guide/cargo-home.html
-          # added 'target' directory to skip compiling dependencies
-          path: |
-            /root/.cargo/.crates.toml
-            /root/.cargo/.crates2.json
-            /root/.cargo/bin/
-            /root/.cargo/registry/index/
-            /root/.cargo/registry/cache/
-            /root/.cargo/registry/git/db/
-            target/
-          key: cargo-zingolib-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: cargo-zingolib
+          name: nextest-archive
 
-      - name: Run tests and generate coverage
-        uses: actions-rs/cargo@v1
-        with:
-          command: tarpaulin
-          args: --all-features --verbose --workspace --avoid-cfg-tarpaulin --skip-clean --ignore-tests --release --timeout 3000 --out xml
-
-      - name: Upload to codecov.io
-        uses: codecov/codecov-action@v3
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./cobertura.xml
-          # fail_ci_if_error:     true
+      - name: Run tests
+        run: |
+          cargo nextest run --verbose --profile ci --archive-file nextest-archive.tar.zst \
+            --workspace-remap ./ --partition count:${{ matrix.partition}}/8
 
   create-timestamp:
     uses: zingolabs/zingo-mobile/.github/workflows/create-timestamp.yaml@dev
