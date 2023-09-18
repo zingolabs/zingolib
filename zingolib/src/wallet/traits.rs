@@ -467,8 +467,8 @@ pub trait ReceivedNoteAndMetadata: Sized {
         Self::value_from_note(self.note())
     }
     fn value_from_note(note: &Self::Note) -> u64;
-    fn witnessed_position(&self) -> &Position;
-    fn witnessed_position_mut(&mut self) -> &mut Position;
+    fn witnessed_position(&self) -> &Option<Position>;
+    fn witnessed_position_mut(&mut self) -> &mut Option<Position>;
 }
 
 impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
@@ -578,11 +578,11 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         note.value().inner()
     }
 
-    fn witnessed_position(&self) -> &Position {
+    fn witnessed_position(&self) -> &Option<Position> {
         &self.witnessed_position
     }
 
-    fn witnessed_position_mut(&mut self) -> &mut Position {
+    fn witnessed_position_mut(&mut self) -> &mut Option<Position> {
         &mut self.witnessed_position
     }
 
@@ -622,7 +622,7 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
     fn from_parts(
         diversifier: Self::Diversifier,
         note: Self::Note,
-        witnessed_position: Position,
+        witnessed_position: Option<Position>,
         nullifier: Option<Self::Nullifier>,
         spent: Option<(TxId, u32)>,
         unconfirmed_spent: Option<(TxId, u32)>,
@@ -710,10 +710,10 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         note.value().inner()
     }
 
-    fn witnessed_position(&self) -> &Position {
+    fn witnessed_position(&self) -> &Option<Position> {
         &self.witnessed_position
     }
-    fn witnessed_position_mut(&mut self) -> &mut Position {
+    fn witnessed_position_mut(&mut self) -> &mut Option<Position> {
         &mut self.witnessed_position
     }
     fn output_index(&self) -> &usize {
@@ -996,13 +996,14 @@ where
             && spend_key.is_some()
             && !note_and_metadata.pending_receipt()
             && note_and_metadata.value() != 0
+            && note_and_metadata.witnessed_position().is_some()
         {
             Some(Self::from_parts_unchecked(
                 transaction_id,
                 note_and_metadata.nullifier(),
                 *note_and_metadata.diversifier(),
                 note_and_metadata.note().clone(),
-                *note_and_metadata.witnessed_position(),
+                note_and_metadata.witnessed_position().unwrap(),
                 spend_key,
             ))
         } else {
@@ -1422,7 +1423,12 @@ where
         writer.write_all(&self.diversifier().to_bytes())?;
 
         self.note().write(&mut writer)?;
-        writer.write_u64::<LittleEndian>(u64::from(*self.witnessed_position()))?;
+        writer.write_u64::<LittleEndian>(u64::from(self.witnessed_position().ok_or(
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Tried to write note with unknown position",
+            ),
+        )?))?;
 
         writer.write_all(&self.nullifier().to_bytes())?;
 

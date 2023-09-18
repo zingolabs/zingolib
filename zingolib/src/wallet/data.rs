@@ -452,7 +452,7 @@ pub struct ReceivedOrchardNoteAndMetadata {
     pub note: orchard::note::Note,
 
     // The postion of this note's commitment
-    pub witnessed_position: Position,
+    pub witnessed_position: Option<Position>,
 
     // The note's index in its containing transaction
     pub(crate) output_index: usize,
