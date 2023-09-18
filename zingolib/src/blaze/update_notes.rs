@@ -74,7 +74,7 @@ impl UpdateNotes {
                 transmitter_existing
                     .send((
                         transaction_id,
-                        nf,
+                        dbg!(nf),
                         BlockHeight::from(earliest_block as u32),
                         None,
                     ))
@@ -114,7 +114,7 @@ impl UpdateNotes {
 
                         let spent_transaction_id =
                             TransactionMetadata::new_txid(&compact_transaction.hash);
-                        let spent_at_height = BlockHeight::from_u32(spent_height as u32);
+                        let spent_at_height = dbg!(BlockHeight::from_u32(spent_height as u32));
 
                         // Mark this note as being spent
                         let value = wallet_transactions

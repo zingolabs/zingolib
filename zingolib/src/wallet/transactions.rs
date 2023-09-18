@@ -402,22 +402,25 @@ impl TransactionMetadataSet {
         nullifier: &PoolNullifier,
         spent_txid: &TxId,
         spent_at_height: BlockHeight,
-    ) -> Option<u64> {
+    ) -> Result<u64, String> {
         match nullifier {
             PoolNullifier::Sapling(nf) => {
                 if let Some(sapling_note_data) = self
                     .current
                     .get_mut(&txid)
-                    .unwrap()
+                    .expect("TXid should be a key in current.")
                     .sapling_notes
                     .iter_mut()
-                    .find(|n| n.nullifier == *nf)
+                    .find(|n| dbg!(n.nullifier) == *nf)
                 {
                     sapling_note_data.spent = Some((*spent_txid, spent_at_height.into()));
                     sapling_note_data.unconfirmed_spent = None;
-                    Some(sapling_note_data.note.value().inner())
+                    Ok(sapling_note_data.note.value().inner())
                 } else {
-                    None
+                    Err(format!(
+                        "no such sapling nullifier '{:?}' found in transaction",
+                        *nf
+                    ))
                 }
             }
             PoolNullifier::Orchard(nf) => {
@@ -431,9 +434,12 @@ impl TransactionMetadataSet {
                 {
                     orchard_note_data.spent = Some((*spent_txid, spent_at_height.into()));
                     orchard_note_data.unconfirmed_spent = None;
-                    Some(orchard_note_data.note.value().inner())
+                    Ok(orchard_note_data.note.value().inner())
                 } else {
-                    None
+                    Err(format!(
+                        "no such orchard nullifier '{:?}' found in transaction",
+                        *nf
+                    ))
                 }
             }
         }
