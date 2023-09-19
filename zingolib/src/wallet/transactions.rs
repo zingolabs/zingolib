@@ -399,11 +399,11 @@ impl TransactionMetadataSet {
     pub fn mark_txid_nf_spent(
         &mut self,
         txid: TxId,
-        nullifier: &PoolNullifier,
+        spent_nullifier: &PoolNullifier,
         spent_txid: &TxId,
         spent_at_height: BlockHeight,
     ) -> Result<u64, String> {
-        match nullifier {
+        match spent_nullifier {
             PoolNullifier::Sapling(nf) => {
                 if let Some(sapling_note_data) = self
                     .current
@@ -505,30 +505,30 @@ impl TransactionMetadataSet {
         height: BlockHeight,
         unconfirmed: bool,
         timestamp: u32,
-        nullifier: PoolNullifier,
+        spent_nullifier: PoolNullifier,
         value: u64,
         source_txid: TxId,
     ) {
-        match nullifier {
-            PoolNullifier::Orchard(nullifier) => {
+        match spent_nullifier {
+            PoolNullifier::Orchard(spent_nullifier) => {
                 self.add_new_spent_internal::<OrchardDomain>(
                     txid,
                     height,
                     unconfirmed,
                     timestamp,
-                    nullifier,
+                    spent_nullifier,
                     value,
                     source_txid,
                 )
                 .await
             }
-            PoolNullifier::Sapling(nullifier) => {
+            PoolNullifier::Sapling(spent_nullifier) => {
                 self.add_new_spent_internal::<SaplingDomain<ChainType>>(
                     txid,
                     height,
                     unconfirmed,
                     timestamp,
-                    nullifier,
+                    spent_nullifier,
                     value,
                     source_txid,
                 )
@@ -544,7 +544,7 @@ impl TransactionMetadataSet {
         height: BlockHeight,
         unconfirmed: bool,
         timestamp: u32,
-        nullifier: <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier,
+        spent_nullifier: <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier,
         value: u64,
         source_txid: TxId,
     ) where
@@ -559,9 +559,9 @@ impl TransactionMetadataSet {
         transaction_metadata.block_height = height;
         if !<D::WalletNote as ReceivedNoteAndMetadata>::Nullifier::get_nullifiers_spent_in_transaction(transaction_metadata)
             .iter()
-            .any(|nf| *nf == nullifier)
+            .any(|nf| *nf == spent_nullifier)
         {
-            transaction_metadata.add_spent_nullifier(nullifier.into(), value)
+            transaction_metadata.add_spent_nullifier(spent_nullifier.into(), value)
         }
 
         // Since this Txid has spent some funds, output notes in this Tx that are sent to us are actually change.
@@ -569,7 +569,7 @@ impl TransactionMetadataSet {
 
         // Mark the source note as spent
         if !unconfirmed {
-            D::WalletNote::remove_witness_mark(self, height, txid, source_txid, nullifier)
+            D::WalletNote::remove_witness_mark(self, height, txid, source_txid, spent_nullifier)
         }
     }
 
