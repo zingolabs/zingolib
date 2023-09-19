@@ -1039,13 +1039,13 @@ impl LightWallet {
             return Err(e);
         }
         info!("Selected notes worth {}", u64::from(selected_value));
-        let txmds_readlock = self
+        let mut txmds_writelock = self
             .transaction_context
             .transaction_metadata_set
-            .read()
+            .write()
             .await;
 
-        let witness_trees = txmds_readlock
+        let witness_trees = txmds_writelock
             .witness_trees
             .as_ref()
             .expect("If we have spend capability we have trees");
@@ -1271,17 +1271,8 @@ impl LightWallet {
 
         let transaction_id = broadcast_fn(raw_transaction.clone().into_boxed_slice()).await?;
 
-        // Now that we've gotten this far, we need to write
-        // so we drop the readlock
-        drop(txmds_readlock);
         // Mark notes as spent.
         {
-            // Mark sapling notes as unconfirmed spent
-            let mut txmds_writelock = self
-                .transaction_context
-                .transaction_metadata_set
-                .write()
-                .await;
             for selected in sapling_notes {
                 let spent_note = txmds_writelock
                     .current
