@@ -453,7 +453,7 @@ pub trait ReceivedNoteAndMetadata: Sized {
         height: BlockHeight,
         txid: TxId,
         source_txid: TxId,
-        nullifier: Self::Nullifier,
+        spent_nullifier: Self::Nullifier,
     );
     fn spent(&self) -> &Option<(TxId, u32)>;
     fn spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
@@ -598,9 +598,15 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         height: BlockHeight,
         txid: TxId,
         source_txid: TxId,
-        nullifier: Self::Nullifier,
+        spent_nullifier: Self::Nullifier,
     ) {
-        TransactionMetadataSet::remove_mark_sapling(txmds, height, txid, source_txid, nullifier)
+        TransactionMetadataSet::remove_mark_sapling(
+            txmds,
+            height,
+            txid,
+            source_txid,
+            spent_nullifier,
+        )
     }
 }
 
@@ -727,9 +733,15 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         height: BlockHeight,
         txid: TxId,
         source_txid: TxId,
-        nullifier: Self::Nullifier,
+        spent_nullifier: Self::Nullifier,
     ) {
-        TransactionMetadataSet::remove_mark_orchard(txmds, height, txid, source_txid, nullifier)
+        TransactionMetadataSet::remove_mark_orchard(
+            txmds,
+            height,
+            txid,
+            source_txid,
+            spent_nullifier,
+        )
     }
 }
 
