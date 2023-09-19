@@ -13,7 +13,6 @@ pub fn git_description() {
 
     eprintln!("Git command output: {:?}", output);
     println!("Git command output: {:?}", output);
-    println!("cargo:warning=Git command output: {:?}", output);
 
     let git_description = String::from_utf8(output.stdout)
         .unwrap()
