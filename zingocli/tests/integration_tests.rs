@@ -2688,11 +2688,49 @@ async fn load_old_wallet_at_reorged_height() {
             .await
             .witness_trees
     );
-    println!(
-        "post-sync transactions: {}",
+    let expected_post_sync_transactions = r#"[
+  {
+    "block_height": 3,
+    "unconfirmed": false,
+    "datetime": 1692212261,
+    "position": 0,
+    "txid": "7a9d41caca143013ebd2f710e4dad04f0eb9f0ae98b42af0f58f25c61a9d439e",
+    "amount": 100000,
+    "zec_price": null,
+    "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8",
+    "memo": null
+  },
+  {
+    "block_height": 8,
+    "unconfirmed": false,
+    "datetime": 1692212266,
+    "position": 0,
+    "txid": "122f8ab8dc5483e36256a4fbd7ff8d60eb7196670716a6690f9215f1c2a4d841",
+    "amount": 50000,
+    "zec_price": null,
+    "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8",
+    "memo": null
+  }
+]"#;
+    assert_eq!(
+        expected_post_sync_transactions,
         recipient.do_list_transactions().await.pretty(2)
     );
-    println!("{}", recipient.do_balance().await.to_json().pretty(2));
+    let expected_post_sync_balance = r#"{
+  "sapling_balance": 0,
+  "verified_sapling_balance": 0,
+  "spendable_sapling_balance": 0,
+  "unverified_sapling_balance": 0,
+  "orchard_balance": 150000,
+  "verified_orchard_balance": 150000,
+  "spendable_orchard_balance": 150000,
+  "unverified_orchard_balance": 0,
+  "transparent_balance": 0
+}"#;
+    assert_eq!(
+        expected_post_sync_balance,
+        recipient.do_balance().await.to_json().pretty(2)
+    );
     recipient
         .do_send(vec![(&get_base_address!(faucet, "unified"), 14000, None)])
         .await
