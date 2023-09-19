@@ -411,7 +411,7 @@ impl TransactionMetadataSet {
                     .expect("TXid should be a key in current.")
                     .sapling_notes
                     .iter_mut()
-                    .find(|n| dbg!(n.nullifier) == Some(*nf))
+                    .find(|n| n.nullifier == Some(*nf))
                 {
                     sapling_note_data.spent = Some((*spent_txid, spent_at_height.into()));
                     sapling_note_data.unconfirmed_spent = None;
