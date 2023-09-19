@@ -72,7 +72,6 @@ impl TransactionMetadataSet {
             ))
         })?;
 
-        #[cfg(feature = "incrementalmerkletree_legacy_api")]
         if let Some((mut old_sap_wits, mut old_orch_wits)) = old_inc_witnesses {
             old_sap_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
             let sap_tree = &mut witness_trees.as_mut().unwrap().witness_tree_sapling;
@@ -151,7 +150,6 @@ impl TransactionMetadataSet {
         if version >= 22 {
             witness_trees = Optional::read(reader, |r| WitnessTrees::read(r))?;
         } else if let Some((mut old_sap_wits, mut old_orch_wits)) = old_inc_witnesses {
-            #[cfg(feature = "incrementalmerkletree_legacy_api")]
             {
                 old_sap_wits.sort_by(|(_w1, height1), (_w2, height2)| height1.cmp(height2));
                 let sap_tree = &mut witness_trees.as_mut().unwrap().witness_tree_sapling;
