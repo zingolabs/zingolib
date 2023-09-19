@@ -793,24 +793,19 @@ impl TransactionMetadataSet {
         // Update the block height, in case this was a mempool or unconfirmed tx.
         transaction_metadata.block_height = height;
 
-        let nd =
-            D::WalletNote::from_parts(
-                D::Recipient::diversifier(&to),
-                note.clone(),
-                None,
-                Some(nullifier.unwrap_or_else(|| {
-                    <<D::WalletNote as ReceivedNoteAndMetadata>::Nullifier as FromBytes<
-                                32,
-                            >>::from_bytes([1; 32])
-                })),
-                None,
-                None,
-                None,
-                // if this is change, we'll mark it later in check_notes_mark_change
-                false,
-                have_spending_key,
-                output_index,
-            );
+        let nd = D::WalletNote::from_parts(
+            D::Recipient::diversifier(&to),
+            note.clone(),
+            None,
+            nullifier,
+            None,
+            None,
+            None,
+            // if this is change, we'll mark it later in check_notes_mark_change
+            false,
+            have_spending_key,
+            output_index,
+        );
         match D::WalletNote::transaction_metadata_notes_mut(transaction_metadata)
             .iter_mut()
             .find(|n| n.note() == &note)
