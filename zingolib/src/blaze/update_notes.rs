@@ -74,7 +74,7 @@ impl UpdateNotes {
                 transmitter_existing
                     .send((
                         transaction_id,
-                        dbg!(nf),
+                        nf,
                         BlockHeight::from(earliest_block as u32),
                         None,
                     ))
@@ -114,25 +114,7 @@ impl UpdateNotes {
 
                         let spent_transaction_id =
                             TransactionMetadata::new_txid(&compact_transaction.hash);
-                        let spent_at_height = dbg!(BlockHeight::from_u32(spent_height as u32));
-
-                        //for debug purposes only
-                        if let (Some(on), PoolNullifier::Sapling(_)) = (output_num, nf) {
-                            let wn = wallet_transactions.read().await;
-                            let wn = &wn.current.get(&transaction_id).unwrap().sapling_notes;
-                            println!("\n\n\n");
-                            println!("Output index: {on}, total sap outputs known: {}", wn.len());
-                            match wn
-                                .iter()
-                                .nth(on as usize)
-                                .map(|note| note.witnessed_position.map(u64::from))
-                            {
-                                Some(Some(pos)) => println!("Position: {pos}"),
-                                Some(None) => println!("Position is Done!"),
-                                None => println!("No position to report, as could not find note"),
-                            };
-                            println!("\n\n\n");
-                        }
+                        let spent_at_height = BlockHeight::from_u32(spent_height as u32);
 
                         // Mark this note as being spent
                         let value = wallet_transactions
