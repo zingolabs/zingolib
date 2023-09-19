@@ -350,12 +350,9 @@ impl TransactionMetadataSet {
                     .sapling_notes
                     .iter()
                     .filter(|nd| nd.spent.is_none())
-                    .map(move |nd| {
-                        (
-                            nd.nullifier,
-                            nd.note.value().inner(),
-                            transaction_metadata.txid,
-                        )
+                    .filter_map(move |nd| {
+                        nd.nullifier
+                            .map(|nf| (nf, nd.note.value().inner(), transaction_metadata.txid))
                     })
             })
             .collect()
@@ -371,12 +368,9 @@ impl TransactionMetadataSet {
                     .orchard_notes
                     .iter()
                     .filter(|nd| nd.spent.is_none())
-                    .map(move |nd| {
-                        (
-                            nd.nullifier,
-                            nd.note.value().inner(),
-                            transaction_metadata.txid,
-                        )
+                    .filter_map(move |nd| {
+                        nd.nullifier
+                            .map(|nf| (nf, nd.note.value().inner(), transaction_metadata.txid))
                     })
             })
             .collect()
@@ -824,10 +818,8 @@ impl TransactionMetadataSet {
             None => {
                 D::WalletNote::transaction_metadata_notes_mut(transaction_metadata).push(nd);
 
-                // Also remove any pending notes.
-                use super::traits::ToBytes;
                 D::WalletNote::transaction_metadata_notes_mut(transaction_metadata)
-                    .retain(|n| n.nullifier().to_bytes() != [0u8; 32]);
+                    .retain(|n| n.nullifier().is_some());
             }
             Some(n) => {
                 // An overwrite should be safe here: TODO: test that confirms this
@@ -852,11 +844,11 @@ impl TransactionMetadataSet {
                 .find(|nnmd| *nnmd.output_index() == output_index)
             {
                 *nnmd.witnessed_position_mut() = Some(position);
-                *nnmd.nullifier_mut() = D::get_nullifier_from_note_fvk_and_witness_position(
+                *nnmd.nullifier_mut() = Some(D::get_nullifier_from_note_fvk_and_witness_position(
                     &nnmd.note().clone(),
                     fvk,
                     u64::from(position),
-                );
+                ));
             } else {
                 println!("Could not update witness position");
             }
