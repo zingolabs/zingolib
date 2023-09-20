@@ -601,15 +601,15 @@ impl TransactionMetadataSet {
             .get_mut(&source_txid)
             .expect("Txid should be present");
 
-        if let Some(nd) = transaction_metadata
+        if let Some(note_datum) = transaction_metadata
             .sapling_notes
             .iter_mut()
             .find(|n| n.nullifier() == Some(nullifier))
         {
-            *nd.spent_mut() = Some((txid, height.into()));
-            if let Some(ref mut t) = self.witness_trees {
-                if let Some(position) = nd.witnessed_position {
-                    t.witness_tree_sapling
+            *note_datum.spent_mut() = Some((txid, height.into()));
+            if let Some(ref mut tree) = self.witness_trees {
+                if let Some(position) = note_datum.witnessed_position {
+                    tree.witness_tree_sapling
                         .remove_mark(position, Some(&(height - BlockHeight::from(1))))
                         .unwrap();
                 } else {
