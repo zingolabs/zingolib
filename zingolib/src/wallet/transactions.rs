@@ -24,7 +24,7 @@ use super::{
         OutgoingTxData, PoolNullifier, ReceivedTransparentOutput, TransactionMetadata, WitnessTrees,
     },
     keys::unified::WalletCapability,
-    traits::{self, DomainWalletExt, FromBytes, Nullifier, ReceivedNoteAndMetadata, Recipient},
+    traits::{self, DomainWalletExt, Nullifier, ReceivedNoteAndMetadata, Recipient},
 };
 
 /// HashMap of all transactions in a wallet, keyed by txid.
