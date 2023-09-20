@@ -57,7 +57,7 @@ use self::{
     message::Message,
     transactions::TransactionMetadataSet,
 };
-use zingoconfig::{ZingoConfig, REORG_BUFFER_OFFSET};
+use zingoconfig::ZingoConfig;
 
 pub mod data;
 pub mod keys;
