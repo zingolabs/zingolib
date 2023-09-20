@@ -1664,8 +1664,7 @@ async fn witness_clearing() {
         .orchard_notes
         .get(0)
         .unwrap()
-        .witnessed_position
-        .unwrap();
+        .witnessed_position;
     assert!(recipient
         .wallet
         .transaction_context
@@ -1697,8 +1696,7 @@ async fn witness_clearing() {
         .orchard_notes
         .get(0)
         .unwrap()
-        .witnessed_position
-        .unwrap();
+        .witnessed_position;
     assert!(recipient
         .wallet
         .transaction_context
@@ -1728,8 +1726,7 @@ async fn witness_clearing() {
         .orchard_notes
         .get(0)
         .unwrap()
-        .witnessed_position
-        .unwrap();
+        .witnessed_position;
     assert!(recipient
         .wallet
         .transaction_context
@@ -1759,8 +1756,7 @@ async fn witness_clearing() {
         .orchard_notes
         .get(0)
         .unwrap()
-        .witnessed_position
-        .unwrap();
+        .witnessed_position;
     //Note: This is a negative assertion. Notice the "!"
     dbg!(
         &recipient
@@ -2388,8 +2384,7 @@ async fn aborted_resync() {
                 .orchard_notes
                 .get(0)
                 .unwrap()
-                .witnessed_position
-                .unwrap(),
+                .witnessed_position,
             0,
         );
 
@@ -2428,8 +2423,7 @@ async fn aborted_resync() {
                 .orchard_notes
                 .get(0)
                 .unwrap()
-                .witnessed_position
-                .unwrap(),
+                .witnessed_position,
             0,
         );
 

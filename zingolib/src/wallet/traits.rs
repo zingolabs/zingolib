@@ -420,7 +420,7 @@ pub trait ReceivedNoteAndMetadata: Sized {
     fn from_parts(
         diversifier: Self::Diversifier,
         note: Self::Note,
-        witness_position: Option<Position>,
+        witness_position: Position,
         nullifier: Option<Self::Nullifier>,
         spent: Option<(TxId, u32)>,
         unconfirmed_spent: Option<(TxId, u32)>,
@@ -439,12 +439,12 @@ pub trait ReceivedNoteAndMetadata: Sized {
     fn memo(&self) -> &Option<Memo>;
     fn memo_mut(&mut self) -> &mut Option<Memo>;
     fn note(&self) -> &Self::Note;
-    fn nullifier(&self) -> Option<Self::Nullifier>;
-    fn nullifier_mut(&mut self) -> &mut Option<Self::Nullifier>;
+    fn nullifier(&self) -> Self::Nullifier;
+    fn nullifier_mut(&mut self) -> &mut Self::Nullifier;
     fn output_index(&self) -> &usize;
     fn output_index_mut(&mut self) -> &mut usize;
     fn pending_receipt(&self) -> bool {
-        self.nullifier().is_none()
+        self.nullifier() == Self::Nullifier::from_bytes([0; 32])
     }
     fn pending_spent(&self) -> &Option<(TxId, u32)>;
     fn pool() -> Pool;
@@ -453,7 +453,7 @@ pub trait ReceivedNoteAndMetadata: Sized {
         height: BlockHeight,
         txid: TxId,
         source_txid: TxId,
-        spent_nullifier: Self::Nullifier,
+        nullifier: Self::Nullifier,
     );
     fn spent(&self) -> &Option<(TxId, u32)>;
     fn spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
@@ -467,8 +467,8 @@ pub trait ReceivedNoteAndMetadata: Sized {
         Self::value_from_note(self.note())
     }
     fn value_from_note(note: &Self::Note) -> u64;
-    fn witnessed_position(&self) -> &Option<Position>;
-    fn witnessed_position_mut(&mut self) -> &mut Option<Position>;
+    fn witnessed_position(&self) -> &Position;
+    fn witnessed_position_mut(&mut self) -> &mut Position;
 }
 
 impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
@@ -481,14 +481,14 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         &self.diversifier
     }
 
-    fn nullifier_mut(&mut self) -> &mut Option<Self::Nullifier> {
+    fn nullifier_mut(&mut self) -> &mut Self::Nullifier {
         &mut self.nullifier
     }
 
     fn from_parts(
         diversifier: zcash_primitives::sapling::Diversifier,
         note: zcash_primitives::sapling::Note,
-        witnessed_position: Option<Position>,
+        witnessed_position: Position,
         nullifier: Option<zcash_primitives::sapling::Nullifier>,
         spent: Option<(TxId, u32)>,
         unconfirmed_spent: Option<(TxId, u32)>,
@@ -501,7 +501,8 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
             diversifier,
             note,
             witnessed_position,
-            nullifier,
+            nullifier: nullifier
+                .unwrap_or(zcash_primitives::sapling::Nullifier::from_bytes([0; 32])),
             spent,
             unconfirmed_spent,
             memo,
@@ -539,7 +540,7 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         &self.note
     }
 
-    fn nullifier(&self) -> Option<Self::Nullifier> {
+    fn nullifier(&self) -> Self::Nullifier {
         self.nullifier
     }
 
@@ -577,11 +578,11 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         note.value().inner()
     }
 
-    fn witnessed_position(&self) -> &Option<Position> {
+    fn witnessed_position(&self) -> &Position {
         &self.witnessed_position
     }
 
-    fn witnessed_position_mut(&mut self) -> &mut Option<Position> {
+    fn witnessed_position_mut(&mut self) -> &mut Position {
         &mut self.witnessed_position
     }
 
@@ -598,15 +599,9 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         height: BlockHeight,
         txid: TxId,
         source_txid: TxId,
-        spent_nullifier: Self::Nullifier,
+        nullifier: Self::Nullifier,
     ) {
-        TransactionMetadataSet::remove_mark_sapling(
-            txmds,
-            height,
-            txid,
-            source_txid,
-            spent_nullifier,
-        )
+        TransactionMetadataSet::remove_mark_sapling(txmds, height, txid, source_txid, nullifier)
     }
 }
 
@@ -620,14 +615,14 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         &self.diversifier
     }
 
-    fn nullifier_mut(&mut self) -> &mut Option<Self::Nullifier> {
+    fn nullifier_mut(&mut self) -> &mut Self::Nullifier {
         &mut self.nullifier
     }
 
     fn from_parts(
         diversifier: Self::Diversifier,
         note: Self::Note,
-        witnessed_position: Option<Position>,
+        witnessed_position: Position,
         nullifier: Option<Self::Nullifier>,
         spent: Option<(TxId, u32)>,
         unconfirmed_spent: Option<(TxId, u32)>,
@@ -640,7 +635,7 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
             diversifier,
             note,
             witnessed_position,
-            nullifier,
+            nullifier: nullifier.unwrap_or(<Self::Nullifier as FromBytes<32>>::from_bytes([0; 32])),
             spent,
             unconfirmed_spent,
             memo,
@@ -677,7 +672,7 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         &self.note
     }
 
-    fn nullifier(&self) -> Option<Self::Nullifier> {
+    fn nullifier(&self) -> Self::Nullifier {
         self.nullifier
     }
 
@@ -715,10 +710,10 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         note.value().inner()
     }
 
-    fn witnessed_position(&self) -> &Option<Position> {
+    fn witnessed_position(&self) -> &Position {
         &self.witnessed_position
     }
-    fn witnessed_position_mut(&mut self) -> &mut Option<Position> {
+    fn witnessed_position_mut(&mut self) -> &mut Position {
         &mut self.witnessed_position
     }
     fn output_index(&self) -> &usize {
@@ -733,15 +728,9 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         height: BlockHeight,
         txid: TxId,
         source_txid: TxId,
-        spent_nullifier: Self::Nullifier,
+        nullifier: Self::Nullifier,
     ) {
-        TransactionMetadataSet::remove_mark_orchard(
-            txmds,
-            height,
-            txid,
-            source_txid,
-            spent_nullifier,
-        )
+        TransactionMetadataSet::remove_mark_orchard(txmds, height, txid, source_txid, nullifier)
     }
 }
 
@@ -1001,29 +990,21 @@ where
         note_and_metadata: &D::WalletNote,
         spend_key: Option<&D::SpendingKey>,
     ) -> Option<Self> {
-        // Include only non-0 value notes that haven't been spent, or haven't been included
-        // in an unconfirmed spend yet.
+        // Include only non-0 value notes that haven't been spent, or haven't been included in an unconfirmed spend yet.
         if note_and_metadata.spent().is_none()
             && note_and_metadata.pending_spent().is_none()
             && spend_key.is_some()
+            && !note_and_metadata.pending_receipt()
             && note_and_metadata.value() != 0
         {
-            // Filter out notes with nullifier or position not yet known
-            if let (Some(nf), Some(pos)) = (
+            Some(Self::from_parts_unchecked(
+                transaction_id,
                 note_and_metadata.nullifier(),
-                note_and_metadata.witnessed_position(),
-            ) {
-                Some(Self::from_parts_unchecked(
-                    transaction_id,
-                    nf,
-                    *note_and_metadata.diversifier(),
-                    note_and_metadata.note().clone(),
-                    *pos,
-                    spend_key,
-                ))
-            } else {
-                None
-            }
+                *note_and_metadata.diversifier(),
+                note_and_metadata.note().clone(),
+                *note_and_metadata.witnessed_position(),
+                spend_key,
+            ))
         } else {
             None
         }
@@ -1423,7 +1404,7 @@ where
         Ok(T::from_parts(
             diversifier,
             note,
-            Some(witnessed_position),
+            witnessed_position,
             Some(nullifier),
             spent,
             None,
@@ -1441,22 +1422,9 @@ where
         writer.write_all(&self.diversifier().to_bytes())?;
 
         self.note().write(&mut writer)?;
-        writer.write_u64::<LittleEndian>(u64::from(self.witnessed_position().ok_or(
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Tried to write note with unknown position",
-            ),
-        )?))?;
+        writer.write_u64::<LittleEndian>(u64::from(*self.witnessed_position()))?;
 
-        writer.write_all(
-            &self
-                .nullifier()
-                .ok_or(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "Tried to write note with unknown nullifier",
-                ))?
-                .to_bytes(),
-        )?;
+        writer.write_all(&self.nullifier().to_bytes())?;
 
         Optional::write(
             &mut writer,
