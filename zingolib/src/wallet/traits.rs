@@ -3,9 +3,9 @@ use std::io::{self, Read, Write};
 
 use super::{
     data::{
-        PoolNullifier, ReceivedOrchardNoteAndMetadata, ReceivedSaplingNoteAndMetadata,
-        SpendableOrchardNote, SpendableSaplingNote, TransactionMetadata, WitnessCache,
-        COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL,
+        FillableCell, PoolNullifier, ReceivedOrchardNoteAndMetadata,
+        ReceivedSaplingNoteAndMetadata, SpendableOrchardNote, SpendableSaplingNote,
+        TransactionMetadata, WitnessCache, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL,
     },
     keys::unified::WalletCapability,
     transactions::TransactionMetadataSet,
@@ -15,6 +15,7 @@ use crate::compact_formats::{
     slice_to_array, CompactOrchardAction, CompactSaplingOutput, CompactTx, TreeState,
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use futures::Future;
 use incrementalmerkletree::{witness::IncrementalWitness, Hashable, Level, Position};
 use nonempty::NonEmpty;
 use orchard::{
@@ -448,13 +449,6 @@ pub trait ReceivedNoteAndMetadata: Sized {
     }
     fn pending_spent(&self) -> &Option<(TxId, u32)>;
     fn pool() -> Pool;
-    fn remove_witness_mark(
-        txmds: &mut TransactionMetadataSet,
-        height: BlockHeight,
-        txid: TxId,
-        source_txid: TxId,
-        spent_nullifier: Self::Nullifier,
-    );
     fn spent(&self) -> &Option<(TxId, u32)>;
     fn spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
     fn transaction_metadata_notes(wallet_transaction: &TransactionMetadata) -> &Vec<Self>;
@@ -467,8 +461,7 @@ pub trait ReceivedNoteAndMetadata: Sized {
         Self::value_from_note(self.note())
     }
     fn value_from_note(note: &Self::Note) -> u64;
-    fn witnessed_position(&self) -> &Option<Position>;
-    fn witnessed_position_mut(&mut self) -> &mut Option<Position>;
+    fn witnessed_position(&self) -> &FillableCell<Position>;
 }
 
 impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
@@ -500,7 +493,7 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         Self {
             diversifier,
             note,
-            witnessed_position,
+            witnessed_position: FillableCell::new_with_option(witnessed_position),
             nullifier,
             spent,
             unconfirmed_spent,
@@ -577,12 +570,8 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         note.value().inner()
     }
 
-    fn witnessed_position(&self) -> &Option<Position> {
+    fn witnessed_position(&self) -> &FillableCell<Position> {
         &self.witnessed_position
-    }
-
-    fn witnessed_position_mut(&mut self) -> &mut Option<Position> {
-        &mut self.witnessed_position
     }
 
     fn output_index(&self) -> &usize {
@@ -591,22 +580,6 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
 
     fn output_index_mut(&mut self) -> &mut usize {
         &mut self.output_index
-    }
-
-    fn remove_witness_mark(
-        txmds: &mut TransactionMetadataSet,
-        height: BlockHeight,
-        txid: TxId,
-        source_txid: TxId,
-        spent_nullifier: Self::Nullifier,
-    ) {
-        TransactionMetadataSet::remove_mark_sapling(
-            txmds,
-            height,
-            txid,
-            source_txid,
-            spent_nullifier,
-        )
     }
 }
 
@@ -639,7 +612,7 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         Self {
             diversifier,
             note,
-            witnessed_position,
+            witnessed_position: FillableCell::new_with_option(witnessed_position),
             nullifier,
             spent,
             unconfirmed_spent,
@@ -715,11 +688,8 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         note.value().inner()
     }
 
-    fn witnessed_position(&self) -> &Option<Position> {
+    fn witnessed_position(&self) -> &FillableCell<Position> {
         &self.witnessed_position
-    }
-    fn witnessed_position_mut(&mut self) -> &mut Option<Position> {
-        &mut self.witnessed_position
     }
     fn output_index(&self) -> &usize {
         &self.output_index
@@ -727,21 +697,6 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
 
     fn output_index_mut(&mut self) -> &mut usize {
         &mut self.output_index
-    }
-    fn remove_witness_mark(
-        txmds: &mut TransactionMetadataSet,
-        height: BlockHeight,
-        txid: TxId,
-        source_txid: TxId,
-        spent_nullifier: Self::Nullifier,
-    ) {
-        TransactionMetadataSet::remove_mark_orchard(
-            txmds,
-            height,
-            txid,
-            source_txid,
-            spent_nullifier,
-        )
     }
 }
 

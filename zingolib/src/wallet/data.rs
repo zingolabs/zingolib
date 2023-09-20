@@ -423,12 +423,55 @@ impl<Node: Hashable> WitnessCache<Node> {
     //     return hex::encode(buf);
     // }
 }
+
+pub struct FillableCell<T: Copy> {
+    value: tokio::sync::watch::Receiver<Option<T>>,
+    setter: tokio::sync::watch::Sender<Option<T>>,
+}
+
+impl<T: Copy + std::fmt::Debug> std::fmt::Debug for FillableCell<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("FillableCell")
+            .field(&self.value.borrow())
+            .finish()
+    }
+}
+
+impl<T: Copy> FillableCell<T> {
+    pub async fn get(&self) -> T {
+        self.value
+            .clone()
+            .wait_for(|val| val.is_some())
+            .await
+            .expect("Explicitly waited for a Some value")
+            .expect("All senders have been closed, somehow")
+    }
+    pub fn set(&self, val: T) {
+        self.setter
+            .send(Some(val))
+            .expect("Channel was closed, despite receiver being in the same struct as sender")
+    }
+    pub fn new_empty() -> Self {
+        let (setter, value) = tokio::sync::watch::channel(None);
+        Self { value, setter }
+    }
+
+    pub fn new_initialized(value: T) -> Self {
+        let (setter, value) = tokio::sync::watch::channel(Some(value));
+        Self { value, setter }
+    }
+    pub fn new_with_option(val: Option<T>) -> Self {
+        let (setter, value) = tokio::sync::watch::channel(val);
+        Self { value, setter }
+    }
+}
+
 pub struct ReceivedSaplingNoteAndMetadata {
     pub diversifier: zcash_primitives::sapling::Diversifier,
     pub note: zcash_primitives::sapling::Note,
 
     // The postion of this note's commitment
-    pub(crate) witnessed_position: Option<Position>,
+    pub(crate) witnessed_position: FillableCell<Position>,
 
     // The note's index in its containing transaction
     pub(crate) output_index: usize,
@@ -452,7 +495,7 @@ pub struct ReceivedOrchardNoteAndMetadata {
     pub note: orchard::note::Note,
 
     // The postion of this note's commitment
-    pub witnessed_position: Option<Position>,
+    pub witnessed_position: FillableCell<Position>,
 
     // The note's index in its containing transaction
     pub(crate) output_index: usize,

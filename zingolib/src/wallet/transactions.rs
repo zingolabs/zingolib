@@ -589,7 +589,7 @@ impl TransactionMetadataSet {
     }
     /// A mark designates a leaf as non-ephemeral, mark removal causes
     /// the leaf to eventually transition to the ephemeral state
-    pub fn remove_mark_sapling(
+    pub async fn remove_mark_sapling(
         &mut self,
         height: BlockHeight,
         txid: TxId,
@@ -608,13 +608,12 @@ impl TransactionMetadataSet {
         {
             *note_datum.spent_mut() = Some((txid, height.into()));
             if let Some(ref mut tree) = self.witness_trees {
-                if let Some(position) = note_datum.witnessed_position {
-                    tree.witness_tree_sapling
-                        .remove_mark(position, Some(&(height - BlockHeight::from(1))))
-                        .unwrap();
-                } else {
-                    todo!("Tried to mark sapling note as spent with no position: FIX")
-                }
+                tree.witness_tree_sapling
+                    .remove_mark(
+                        note_datum.witnessed_position.get().await,
+                        Some(&(height - BlockHeight::from(1))),
+                    )
+                    .unwrap();
             }
         } else {
             eprintln!("Could not remove marked sapling node!")
