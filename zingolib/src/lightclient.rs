@@ -1015,7 +1015,7 @@ impl LightClient {
             let prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
 
             self.wallet
-                .send_to_address(
+                .send_to_addresses(
                     prover,
                     vec![crate::wallet::Pool::Orchard, crate::wallet::Pool::Sapling],
                     address_amount_memo_tuples,
@@ -1079,7 +1079,7 @@ impl LightClient {
             let prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
 
             self.wallet
-                .send_to_address(
+                .send_to_addresses(
                     prover,
                     pools_to_shield.to_vec(),
                     vec![(&addr, balance_to_shield - fee, None)],

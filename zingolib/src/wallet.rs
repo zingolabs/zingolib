@@ -919,7 +919,7 @@ impl LightWallet {
         )
     }
 
-    pub async fn send_to_address<F, Fut, P: TxProver>(
+    pub async fn send_to_addresses<F, Fut, P: TxProver>(
         &self,
         prover: P,
         policy: NoteSelectionPolicy,
@@ -936,7 +936,7 @@ impl LightWallet {
 
         // Call the internal function
         match self
-            .send_to_address_inner(prover, policy, tos, submission_height, broadcast_fn)
+            .send_to_addresses_inner(prover, policy, tos, submission_height, broadcast_fn)
             .await
         {
             Ok((transaction_id, raw_transaction)) => {
@@ -950,7 +950,7 @@ impl LightWallet {
         }
     }
 
-    async fn send_to_address_inner<F, Fut, P: TxProver>(
+    async fn send_to_addresses_inner<F, Fut, P: TxProver>(
         &self,
         prover: P,
         policy: NoteSelectionPolicy,
