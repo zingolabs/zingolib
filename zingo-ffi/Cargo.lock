@@ -724,16 +724,6 @@ dependencies = [
 [[package]]
 name = "equihash"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab579d7cf78477773b03e80bc2f89702ef02d7112c711d54ca93dcdce68533d5"
-dependencies = [
- "blake2b_simd",
- "byteorder",
-]
-
-[[package]]
-name = "equihash"
-version = "0.2.0"
 source = "git+https://github.com/nuttycom/librustzcash.git?rev=669e0797bff3b506984bd2851b22d9eae40a758a#669e0797bff3b506984bd2851b22d9eae40a758a"
 dependencies = [
  "blake2b_simd",
@@ -765,15 +755,6 @@ checksum = "aa68f1b12764fab894d2755d2518754e71b4fd80ecfb822714a1206c2aab39bf"
 dependencies = [
  "cc",
  "libc",
-]
-
-[[package]]
-name = "f4jumble"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a83e8d7fd0c526af4aad893b7c9fe41e2699ed8a776a6c74aecdeafe05afc75"
-dependencies = [
- "blake2b_simd",
 ]
 
 [[package]]
@@ -3683,23 +3664,11 @@ dependencies = [
 [[package]]
 name = "zcash_address"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8944af5c206cf2e37020ad54618e1825501b98548d35a638b73e0ec5762df8d5"
-dependencies = [
- "bech32",
- "bs58",
- "f4jumble 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "zcash_encoding 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "zcash_address"
-version = "0.3.0"
 source = "git+https://github.com/nuttycom/librustzcash.git?rev=669e0797bff3b506984bd2851b22d9eae40a758a#669e0797bff3b506984bd2851b22d9eae40a758a"
 dependencies = [
  "bech32",
  "bs58",
- "f4jumble 0.1.0 (git+https://github.com/nuttycom/librustzcash.git?rev=669e0797bff3b506984bd2851b22d9eae40a758a)",
+ "f4jumble",
  "zcash_encoding 0.2.0 (git+https://github.com/nuttycom/librustzcash.git?rev=669e0797bff3b506984bd2851b22d9eae40a758a)",
 ]
 
@@ -3731,10 +3700,10 @@ dependencies = [
  "tonic-build 0.10.0",
  "tracing",
  "which",
- "zcash_address 0.3.0 (git+https://github.com/nuttycom/librustzcash.git?rev=669e0797bff3b506984bd2851b22d9eae40a758a)",
+ "zcash_address",
  "zcash_encoding 0.2.0 (git+https://github.com/nuttycom/librustzcash.git?rev=669e0797bff3b506984bd2851b22d9eae40a758a)",
  "zcash_note_encryption",
- "zcash_primitives 0.13.0-rc.1 (git+https://github.com/nuttycom/librustzcash.git?rev=669e0797bff3b506984bd2851b22d9eae40a758a)",
+ "zcash_primitives",
 ]
 
 [[package]]
@@ -3772,39 +3741,6 @@ dependencies = [
 [[package]]
 name = "zcash_primitives"
 version = "0.13.0-rc.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0cc4391d9325e0a51a7cbff02b5c4b5472d66087bd9c903ddb12dea7ec22f3e0"
-dependencies = [
- "aes",
- "bip0039",
- "bitvec",
- "blake2b_simd",
- "blake2s_simd",
- "bls12_381",
- "byteorder",
- "equihash 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "ff 0.13.0",
- "fpe",
- "group 0.13.0",
- "hex 0.4.3",
- "incrementalmerkletree",
- "jubjub",
- "lazy_static",
- "memuse",
- "nonempty",
- "orchard",
- "rand 0.8.5",
- "rand_core 0.6.4",
- "sha2 0.10.7",
- "subtle",
- "zcash_address 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "zcash_encoding 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "zcash_note_encryption",
-]
-
-[[package]]
-name = "zcash_primitives"
-version = "0.13.0-rc.1"
 source = "git+https://github.com/nuttycom/librustzcash.git?rev=669e0797bff3b506984bd2851b22d9eae40a758a#669e0797bff3b506984bd2851b22d9eae40a758a"
 dependencies = [
  "aes",
@@ -3814,7 +3750,7 @@ dependencies = [
  "blake2s_simd",
  "bls12_381",
  "byteorder",
- "equihash 0.2.0 (git+https://github.com/nuttycom/librustzcash.git?rev=669e0797bff3b506984bd2851b22d9eae40a758a)",
+ "equihash",
  "ff 0.13.0",
  "fpe",
  "group 0.13.0",
@@ -3832,7 +3768,7 @@ dependencies = [
  "secp256k1",
  "sha2 0.10.7",
  "subtle",
- "zcash_address 0.3.0 (git+https://github.com/nuttycom/librustzcash.git?rev=669e0797bff3b506984bd2851b22d9eae40a758a)",
+ "zcash_address",
  "zcash_encoding 0.2.0 (git+https://github.com/nuttycom/librustzcash.git?rev=669e0797bff3b506984bd2851b22d9eae40a758a)",
  "zcash_note_encryption",
 ]
@@ -3855,7 +3791,7 @@ dependencies = [
  "redjubjub",
  "tracing",
  "xdg",
- "zcash_primitives 0.13.0-rc.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zcash_primitives",
 ]
 
 [[package]]
@@ -3883,11 +3819,11 @@ name = "zingo-memo"
 version = "0.1.0"
 source = "git+https://github.com/zingolabs/zingolib?branch=dev#7aef7439bbc63b07768f19a4da1a0405273108c7"
 dependencies = [
- "zcash_address 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zcash_address",
  "zcash_client_backend",
  "zcash_encoding 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "zcash_note_encryption",
- "zcash_primitives 0.13.0-rc.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zcash_primitives",
 ]
 
 [[package]]
@@ -3906,8 +3842,8 @@ dependencies = [
  "tempdir",
  "tokio",
  "tracing",
- "zcash_address 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "zcash_primitives 0.13.0-rc.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zcash_address",
+ "zcash_primitives",
  "zingoconfig",
  "zingolib",
 ]
@@ -3921,8 +3857,8 @@ dependencies = [
  "http",
  "log",
  "log4rs",
- "zcash_address 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "zcash_primitives 0.13.0-rc.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zcash_address",
+ "zcash_primitives",
 ]
 
 [[package]]
@@ -3982,22 +3918,12 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "webpki-roots 0.21.1",
- "zcash_address 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zcash_address",
  "zcash_client_backend",
  "zcash_encoding 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "zcash_note_encryption",
- "zcash_primitives 0.13.0-rc.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zcash_primitives",
  "zcash_proofs",
  "zingo-memo",
  "zingoconfig",
 ]
-
-[[patch.unused]]
-name = "incrementalmerkletree"
-version = "0.4.0"
-source = "git+https://github.com/zcash/incrementalmerkletree?rev=bae25ad89c0c192bee625252d2d419bd56638e48#bae25ad89c0c192bee625252d2d419bd56638e48"
-
-[[patch.unused]]
-name = "shardtree"
-version = "0.0.0"
-source = "git+https://github.com/zcash/incrementalmerkletree?rev=bae25ad89c0c192bee625252d2d419bd56638e48#bae25ad89c0c192bee625252d2d419bd56638e48"
