@@ -1,0 +1,9 @@
+please include
+
+-commit hash
+
+-command run
+
+-additional information
+
+-output

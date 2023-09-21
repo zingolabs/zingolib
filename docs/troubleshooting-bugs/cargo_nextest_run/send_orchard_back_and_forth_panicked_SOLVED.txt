@@ -1,0 +1,6 @@
+thread 'send_orchard_back_and_forth' panicked at '', zingo-testutils/src/regtest.rs:431:21
+
+issue: zcash version from pacman was too old (5.3.0)
+
+solution: compile from source
+
