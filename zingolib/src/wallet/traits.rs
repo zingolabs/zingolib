@@ -15,7 +15,6 @@ use crate::compact_formats::{
     slice_to_array, CompactOrchardAction, CompactSaplingOutput, CompactTx, TreeState,
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use futures::Future;
 use incrementalmerkletree::{witness::IncrementalWitness, Hashable, Level, Position};
 use nonempty::NonEmpty;
 use orchard::{
@@ -944,6 +943,40 @@ impl Diversifiable for orchard::keys::FullViewingKey {
     }
 }
 
+pub async fn create_spendable_note<D>(
+    transaction_id: TxId,
+    note_and_metadata: &D::WalletNote,
+    spend_key: Option<&D::SpendingKey>,
+) -> Option<D::SpendableNoteAT>
+where
+    D: DomainWalletExt,
+    <D as Domain>::Recipient: Recipient,
+    <D as Domain>::Note: PartialEq + Clone,
+{
+    // Include only non-0 value notes that haven't been spent, or haven't been included
+    // in an unconfirmed spend yet.
+    if note_and_metadata.spent().is_none()
+        && note_and_metadata.pending_spent().is_none()
+        && spend_key.is_some()
+        && note_and_metadata.value() != 0
+    {
+        // Filter out notes with nullifier not yet known
+        if let Some(nf) = note_and_metadata.nullifier() {
+            Some(D::SpendableNoteAT::from_parts_unchecked(
+                transaction_id,
+                nf,
+                *note_and_metadata.diversifier(),
+                note_and_metadata.note().clone(),
+                note_and_metadata.witnessed_position().get().await,
+                spend_key,
+            ))
+        } else {
+            None
+        }
+    } else {
+        None
+    }
+}
 pub trait SpendableNote<D>
 where
     D: DomainWalletExt<SpendableNoteAT = Self>,
@@ -951,38 +984,6 @@ where
     <D as Domain>::Note: PartialEq + Clone,
     Self: Sized,
 {
-    fn from(
-        transaction_id: TxId,
-        note_and_metadata: &D::WalletNote,
-        spend_key: Option<&D::SpendingKey>,
-    ) -> Option<Self> {
-        // Include only non-0 value notes that haven't been spent, or haven't been included
-        // in an unconfirmed spend yet.
-        if note_and_metadata.spent().is_none()
-            && note_and_metadata.pending_spent().is_none()
-            && spend_key.is_some()
-            && note_and_metadata.value() != 0
-        {
-            // Filter out notes with nullifier or position not yet known
-            if let (Some(nf), Some(pos)) = (
-                note_and_metadata.nullifier(),
-                note_and_metadata.witnessed_position(),
-            ) {
-                Some(Self::from_parts_unchecked(
-                    transaction_id,
-                    nf,
-                    *note_and_metadata.diversifier(),
-                    note_and_metadata.note().clone(),
-                    *pos,
-                    spend_key,
-                ))
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    }
     /// The checks needed are shared between domains, and thus are performed in the
     /// default impl of `from`. This function's only caller should be `Self::from`
     fn from_parts_unchecked(
@@ -1088,11 +1089,9 @@ impl SpendableNote<OrchardDomain> for SpendableOrchardNote {
     }
 }
 
-pub trait ReadableWriteable<Input>: Sized {
+pub trait Versioned {
     const VERSION: u8;
 
-    fn read<R: Read>(reader: R, input: Input) -> io::Result<Self>;
-    fn write<W: Write>(&self, writer: W) -> io::Result<()>;
     fn get_version<R: Read>(mut reader: R) -> io::Result<u8> {
         let external_version = reader.read_u8()?;
         log::info!("wallet_capability external_version: {external_version}");
@@ -1111,9 +1110,16 @@ pub trait ReadableWriteable<Input>: Sized {
     }
 }
 
-impl ReadableWriteable<()> for orchard::keys::SpendingKey {
-    const VERSION: u8 = 0; //Not applicable
+pub trait ReadableWriteable<Input>: Sized + Versioned {
+    fn read<R: Read>(reader: R, input: Input) -> io::Result<Self>;
+    fn write<W: Write>(&self, writer: W) -> io::Result<()>;
+}
 
+impl Versioned for orchard::keys::SpendingKey {
+    const VERSION: u8 = 0; //Not applicable
+}
+
+impl ReadableWriteable<()> for orchard::keys::SpendingKey {
     fn read<R: Read>(mut reader: R, _: ()) -> io::Result<Self> {
         let mut data = [0u8; 32];
         reader.read_exact(&mut data)?;
@@ -1131,9 +1137,11 @@ impl ReadableWriteable<()> for orchard::keys::SpendingKey {
     }
 }
 
-impl ReadableWriteable<()> for zip32::sapling::ExtendedSpendingKey {
+impl Versioned for zip32::sapling::ExtendedSpendingKey {
     const VERSION: u8 = 0; //Not applicable
+}
 
+impl ReadableWriteable<()> for zip32::sapling::ExtendedSpendingKey {
     fn read<R: Read>(reader: R, _: ()) -> io::Result<Self> {
         Self::read(reader)
     }
@@ -1143,9 +1151,10 @@ impl ReadableWriteable<()> for zip32::sapling::ExtendedSpendingKey {
     }
 }
 
-impl ReadableWriteable<()> for zip32::sapling::DiversifiableFullViewingKey {
+impl Versioned for zip32::sapling::DiversifiableFullViewingKey {
     const VERSION: u8 = 0; //Not applicable
-
+}
+impl ReadableWriteable<()> for zip32::sapling::DiversifiableFullViewingKey {
     fn read<R: Read>(mut reader: R, _: ()) -> io::Result<Self> {
         let mut fvk_bytes = [0u8; 128];
         reader.read_exact(&mut fvk_bytes)?;
@@ -1164,9 +1173,11 @@ impl ReadableWriteable<()> for zip32::sapling::DiversifiableFullViewingKey {
     }
 }
 
-impl ReadableWriteable<()> for orchard::keys::FullViewingKey {
+impl Versioned for orchard::keys::FullViewingKey {
     const VERSION: u8 = 0; //Not applicable
+}
 
+impl ReadableWriteable<()> for orchard::keys::FullViewingKey {
     fn read<R: Read>(reader: R, _: ()) -> io::Result<Self> {
         Self::read(reader)
     }
@@ -1176,11 +1187,13 @@ impl ReadableWriteable<()> for orchard::keys::FullViewingKey {
     }
 }
 
+impl Versioned for zcash_primitives::sapling::Note {
+    const VERSION: u8 = 1;
+}
+
 impl ReadableWriteable<(zcash_primitives::sapling::Diversifier, &WalletCapability)>
     for zcash_primitives::sapling::Note
 {
-    const VERSION: u8 = 1;
-
     fn read<R: Read>(
         mut reader: R,
         (diversifier, wallet_capability): (
@@ -1213,9 +1226,10 @@ impl ReadableWriteable<(zcash_primitives::sapling::Diversifier, &WalletCapabilit
     }
 }
 
-impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability)> for orchard::note::Note {
+impl Versioned for orchard::note::Note {
     const VERSION: u8 = 1;
-
+}
+impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability)> for orchard::note::Note {
     fn read<R: Read>(
         mut reader: R,
         (diversifier, wallet_capability): (orchard::keys::Diversifier, &WalletCapability),
@@ -1258,180 +1272,168 @@ impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability)> for orch
     }
 }
 
-impl<T>
-    ReadableWriteable<(
-        &WalletCapability,
-        Option<
-            &mut Vec<(
-                IncrementalWitness<T::Node, COMMITMENT_TREE_LEVELS>,
-                BlockHeight,
-            )>,
-        >,
-    )> for T
+impl<T> Versioned for T
 where
     T: ReceivedNoteAndMetadata,
 {
     const VERSION: u8 = 4;
+}
+pub async fn write_note_and_metadata<NnMd: ReceivedNoteAndMetadata, W: Write>(
+    nnmd: &NnMd,
+    mut writer: W,
+) -> io::Result<()> {
+    // Write a version number first, so we can later upgrade this if needed.
+    writer.write_u8(NnMd::VERSION)?;
 
-    fn read<R: Read>(
-        mut reader: R,
-        (wallet_capability, inc_wit_vec): (
-            &WalletCapability,
-            Option<
-                &mut Vec<(
-                    IncrementalWitness<T::Node, COMMITMENT_TREE_LEVELS>,
-                    BlockHeight,
-                )>,
-            >,
-        ),
-    ) -> io::Result<Self> {
-        let external_version = Self::get_version(&mut reader)?;
-        tracing::info!("NoteAndMetadata version is: {external_version}");
+    writer.write_all(&nnmd.diversifier().to_bytes())?;
 
-        if external_version < 2 {
-            let mut x = <T as ReceivedNoteAndMetadata>::get_deprecated_serialized_view_key_buffer();
-            reader.read_exact(&mut x).expect("To not used this data.");
-        }
+    nnmd.note().write(&mut writer)?;
+    writer.write_u64::<LittleEndian>(u64::from(nnmd.witnessed_position().get().await))?;
 
-        let mut diversifier_bytes = [0u8; 11];
-        reader.read_exact(&mut diversifier_bytes)?;
-        let diversifier = T::Diversifier::from_bytes(diversifier_bytes);
-
-        let note =
-            <T::Note as ReadableWriteable<_>>::read(&mut reader, (diversifier, wallet_capability))?;
-
-        let witnessed_position = if external_version >= 4 {
-            Position::from(reader.read_u64::<LittleEndian>()?)
-        } else {
-            let witnesses_vec = Vector::read(&mut reader, |r| read_incremental_witness(r))?;
-
-            let top_height = reader.read_u64::<LittleEndian>()?;
-            let witnesses = WitnessCache::<T::Node>::new(witnesses_vec, top_height);
-
-            let pos = witnesses
-                .last()
-                .map(|w| w.witnessed_position())
-                .unwrap_or_else(|| Position::from(0));
-            for (i, witness) in witnesses.witnesses.into_iter().rev().enumerate().rev() {
-                let height = BlockHeight::from(top_height as u32 - i as u32);
-                if let Some(&mut ref mut wits) = inc_wit_vec {
-                    wits.push((witness, height));
-                }
-            }
-            pos
-        };
-
-        let mut nullifier = [0u8; 32];
-        reader.read_exact(&mut nullifier)?;
-        let nullifier = T::Nullifier::from_bytes(nullifier);
-
-        // Note that this is only the spent field, we ignore the unconfirmed_spent field.
-        // The reason is that unconfirmed spents are only in memory, and we need to get the actual value of spent
-        // from the blockchain anyway.
-        let spent = Optional::read(&mut reader, |r| {
-            let mut transaction_id_bytes = [0u8; 32];
-            r.read_exact(&mut transaction_id_bytes)?;
-            let height = r.read_u32::<LittleEndian>()?;
-            Ok((TxId::from_bytes(transaction_id_bytes), height))
-        })?;
-
-        if external_version < 3 {
-            let _unconfirmed_spent = {
-                Optional::read(&mut reader, |r| {
-                    let mut transaction_bytes = [0u8; 32];
-                    r.read_exact(&mut transaction_bytes)?;
-
-                    let height = r.read_u32::<LittleEndian>()?;
-                    Ok((TxId::from_bytes(transaction_bytes), height))
-                })?
-            };
-        }
-
-        let memo = Optional::read(&mut reader, |r| {
-            let mut memo_bytes = [0u8; 512];
-            r.read_exact(&mut memo_bytes)?;
-
-            // Attempt to read memo, first as text, else as arbitrary 512 bytes
-            match MemoBytes::from_bytes(&memo_bytes) {
-                Ok(mb) => match Memo::try_from(mb.clone()) {
-                    Ok(m) => Ok(m),
-                    Err(_) => Ok(Memo::Future(mb)),
-                },
-                Err(e) => Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    format!("Couldn't create memo: {}", e),
-                )),
-            }
-        })?;
-
-        let is_change: bool = reader.read_u8()? > 0;
-
-        let have_spending_key = reader.read_u8()? > 0;
-
-        let output_index = if external_version >= 4 {
-            reader.read_u32::<LittleEndian>()?
-        } else {
-            // TODO: This value is obviously incorrect, we can fix it if it becomes a problem
-            u32::MAX
-        };
-
-        Ok(T::from_parts(
-            diversifier,
-            note,
-            Some(witnessed_position),
-            Some(nullifier),
-            spent,
-            None,
-            memo,
-            is_change,
-            have_spending_key,
-            output_index as usize,
-        ))
-    }
-
-    fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
-        // Write a version number first, so we can later upgrade this if needed.
-        writer.write_u8(Self::VERSION)?;
-
-        writer.write_all(&self.diversifier().to_bytes())?;
-
-        self.note().write(&mut writer)?;
-        writer.write_u64::<LittleEndian>(u64::from(self.witnessed_position().ok_or(
-            io::Error::new(
+    writer.write_all(
+        &nnmd
+            .nullifier()
+            .ok_or(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "Tried to write note with unknown position",
-            ),
-        )?))?;
+                "Tried to write note with unknown nullifier",
+            ))?
+            .to_bytes(),
+    )?;
 
-        writer.write_all(
-            &self
-                .nullifier()
-                .ok_or(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "Tried to write note with unknown nullifier",
-                ))?
-                .to_bytes(),
-        )?;
+    Optional::write(
+        &mut writer,
+        nnmd.spent().as_ref(),
+        |w, (transaction_id, height)| {
+            w.write_all(transaction_id.as_ref())?;
+            w.write_u32::<LittleEndian>(*height)
+        },
+    )?;
 
-        Optional::write(
-            &mut writer,
-            self.spent().as_ref(),
-            |w, (transaction_id, height)| {
-                w.write_all(transaction_id.as_ref())?;
-                w.write_u32::<LittleEndian>(*height)
-            },
-        )?;
+    Optional::write(&mut writer, nnmd.memo().as_ref(), |w, m| {
+        w.write_all(m.encode().as_array())
+    })?;
 
-        Optional::write(&mut writer, self.memo().as_ref(), |w, m| {
-            w.write_all(m.encode().as_array())
-        })?;
+    writer.write_u8(if nnmd.is_change() { 1 } else { 0 })?;
 
-        writer.write_u8(if self.is_change() { 1 } else { 0 })?;
+    writer.write_u8(if nnmd.have_spending_key() { 1 } else { 0 })?;
 
-        writer.write_u8(if self.have_spending_key() { 1 } else { 0 })?;
+    writer.write_u32::<LittleEndian>(*nnmd.output_index() as u32)?;
 
-        writer.write_u32::<LittleEndian>(*self.output_index() as u32)?;
+    Ok(())
+}
 
-        Ok(())
+pub fn read_note_and_metadata<R: Read, NnMd: ReceivedNoteAndMetadata + Versioned>(
+    mut reader: R,
+    (wallet_capability, inc_wit_vec): (
+        &WalletCapability,
+        Option<
+            &mut Vec<(
+                IncrementalWitness<NnMd::Node, COMMITMENT_TREE_LEVELS>,
+                BlockHeight,
+            )>,
+        >,
+    ),
+) -> io::Result<NnMd> {
+    let external_version = NnMd::get_version(&mut reader)?;
+    tracing::info!("NoteAndMetadata version is: {external_version}");
+
+    if external_version < 2 {
+        let mut x = NnMd::get_deprecated_serialized_view_key_buffer();
+        reader.read_exact(&mut x).expect("To not used this data.");
     }
+
+    let mut diversifier_bytes = [0u8; 11];
+    reader.read_exact(&mut diversifier_bytes)?;
+    let diversifier = NnMd::Diversifier::from_bytes(diversifier_bytes);
+
+    let note =
+        <NnMd::Note as ReadableWriteable<_>>::read(&mut reader, (diversifier, wallet_capability))?;
+
+    let witnessed_position = if external_version >= 4 {
+        Position::from(reader.read_u64::<LittleEndian>()?)
+    } else {
+        let witnesses_vec = Vector::read(&mut reader, |r| read_incremental_witness(r))?;
+
+        let top_height = reader.read_u64::<LittleEndian>()?;
+        let witnesses = WitnessCache::<NnMd::Node>::new(witnesses_vec, top_height);
+
+        let pos = witnesses
+            .last()
+            .map(|w| w.witnessed_position())
+            .unwrap_or_else(|| Position::from(0));
+        for (i, witness) in witnesses.witnesses.into_iter().rev().enumerate().rev() {
+            let height = BlockHeight::from(top_height as u32 - i as u32);
+            if let Some(&mut ref mut wits) = inc_wit_vec {
+                wits.push((witness, height));
+            }
+        }
+        pos
+    };
+
+    let mut nullifier = [0u8; 32];
+    reader.read_exact(&mut nullifier)?;
+    let nullifier = NnMd::Nullifier::from_bytes(nullifier);
+
+    // Note that this is only the spent field, we ignore the unconfirmed_spent field.
+    // The reason is that unconfirmed spents are only in memory, and we need to get the actual value of spent
+    // from the blockchain anyway.
+    let spent = Optional::read(&mut reader, |r| {
+        let mut transaction_id_bytes = [0u8; 32];
+        r.read_exact(&mut transaction_id_bytes)?;
+        let height = r.read_u32::<LittleEndian>()?;
+        Ok((TxId::from_bytes(transaction_id_bytes), height))
+    })?;
+
+    if external_version < 3 {
+        let _unconfirmed_spent = {
+            Optional::read(&mut reader, |r| {
+                let mut transaction_bytes = [0u8; 32];
+                r.read_exact(&mut transaction_bytes)?;
+
+                let height = r.read_u32::<LittleEndian>()?;
+                Ok((TxId::from_bytes(transaction_bytes), height))
+            })?
+        };
+    }
+
+    let memo = Optional::read(&mut reader, |r| {
+        let mut memo_bytes = [0u8; 512];
+        r.read_exact(&mut memo_bytes)?;
+
+        // Attempt to read memo, first as text, else as arbitrary 512 bytes
+        match MemoBytes::from_bytes(&memo_bytes) {
+            Ok(mb) => match Memo::try_from(mb.clone()) {
+                Ok(m) => Ok(m),
+                Err(_) => Ok(Memo::Future(mb)),
+            },
+            Err(e) => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("Couldn't create memo: {}", e),
+            )),
+        }
+    })?;
+
+    let is_change: bool = reader.read_u8()? > 0;
+
+    let have_spending_key = reader.read_u8()? > 0;
+
+    let output_index = if external_version >= 4 {
+        reader.read_u32::<LittleEndian>()?
+    } else {
+        // TODO: This value is obviously incorrect, we can fix it if it becomes a problem
+        u32::MAX
+    };
+
+    Ok(NnMd::from_parts(
+        diversifier,
+        note,
+        Some(witnessed_position),
+        Some(nullifier),
+        spent,
+        None,
+        memo,
+        is_change,
+        have_spending_key,
+        output_index as usize,
+    ))
 }

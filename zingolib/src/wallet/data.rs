@@ -1,5 +1,5 @@
 use crate::compact_formats::CompactBlock;
-use crate::wallet::traits::ReceivedNoteAndMetadata;
+use crate::wallet::traits::{read_note_and_metadata, ReceivedNoteAndMetadata};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::frontier::{CommitmentTree, NonEmptyFrontier};
 use incrementalmerkletree::witness::IncrementalWitness;
@@ -13,7 +13,7 @@ use std::convert::TryFrom;
 use std::io::{self, Read, Write};
 use std::usize;
 use zcash_client_sqlite::serialization::{read_shard, write_shard};
-use zcash_encoding::{Optional, Vector};
+use zcash_encoding::{CompactSize, Optional, Vector};
 use zcash_note_encryption::Domain;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::memo::MemoBytes;
@@ -27,7 +27,7 @@ use zcash_primitives::{
 use zingoconfig::{ChainType, MAX_REORG};
 
 use super::keys::unified::WalletCapability;
-use super::traits::{self, DomainWalletExt, ReadableWriteable, ToBytes};
+use super::traits::{self, write_note_and_metadata, DomainWalletExt, ToBytes};
 
 pub const COMMITMENT_TREE_LEVELS: u8 = 32;
 pub const MAX_SHARD_LEVEL: u8 = 16;
@@ -1076,14 +1076,14 @@ impl TransactionMetadata {
 
         tracing::info!("About to attempt to read a note and metadata");
         let sapling_notes = Vector::read_collected_mut(&mut reader, |r| {
-            ReceivedSaplingNoteAndMetadata::read(
+            read_note_and_metadata::<_, ReceivedSaplingNoteAndMetadata>(
                 r,
                 (wallet_capability, trees.as_mut().map(|t| &mut t.0)),
             )
         })?;
         let orchard_notes = if version > 22 {
             Vector::read_collected_mut(&mut reader, |r| {
-                ReceivedOrchardNoteAndMetadata::read(
+                read_note_and_metadata::<_, ReceivedOrchardNoteAndMetadata>(
                     r,
                     (wallet_capability, trees.as_mut().map(|t| &mut t.1)),
                 )
@@ -1185,7 +1185,7 @@ impl TransactionMetadata {
             self.total_orchard_value_spent,
         ]
     }
-    pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+    pub async fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
         let block: u32 = self.block_height.into();
@@ -1197,8 +1197,15 @@ impl TransactionMetadata {
 
         writer.write_all(self.txid.as_ref())?;
 
-        Vector::write(&mut writer, &self.sapling_notes, |w, nd| nd.write(w))?;
-        Vector::write(&mut writer, &self.orchard_notes, |w, nd| nd.write(w))?;
+        // Manual async version of Vector::write
+        CompactSize::write(&mut writer, self.sapling_notes.len())?;
+        for note in &self.sapling_notes {
+            write_note_and_metadata(note, &mut writer).await?
+        }
+        CompactSize::write(&mut writer, self.orchard_notes.len())?;
+        for note in &self.orchard_notes {
+            write_note_and_metadata(note, &mut writer).await?
+        }
         Vector::write(&mut writer, &self.received_utxos, |w, u| u.write(w))?;
 
         for pool in self.value_spent_by_pool() {
