@@ -1462,7 +1462,7 @@ impl LightClient {
         *lc.mempool_monitor.write().unwrap() = Some(h);
     }
 
-    async fn wallet_has_empty_commitment_trees(&self) -> bool {
+    async fn wallet_has_any_empty_commitment_trees(&self) -> bool {
         self.wallet
             .transaction_context
             .transaction_metadata_set
@@ -1476,22 +1476,12 @@ impl LightClient {
                     .max_leaf_position(0)
                     .unwrap()
                     .is_none()
-            })
-            && self
-                .wallet
-                .transaction_context
-                .transaction_metadata_set
-                .read()
-                .await
-                .witness_trees
-                .as_ref()
-                .is_some_and(|trees| {
-                    trees
+                    || trees
                         .witness_tree_sapling
                         .max_leaf_position(0)
                         .unwrap()
                         .is_none()
-                })
+            })
     }
     /// Start syncing in batches with the max size, to manage memory consumption.
     async fn start_sync(&self) -> Result<SyncResult, String> {
@@ -1511,7 +1501,7 @@ impl LightClient {
         self.ensure_witness_tree_not_above_wallet_blocks().await;
 
         // This is a fresh wallet. We need to get the initial trees
-        if self.wallet_has_empty_commitment_trees().await && last_synced_height != 0 {
+        if self.wallet_has_any_empty_commitment_trees().await && last_synced_height != 0 {
             let trees = crate::grpc_connector::GrpcConnector::get_trees(
                 self.get_server_uri(),
                 last_synced_height,
