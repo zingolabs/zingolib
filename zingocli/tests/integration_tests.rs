@@ -43,7 +43,7 @@ async fn correct_zip317_fees() {
     let (regtest_manager, _cph, faucet, recipient, _txid) =
         scenarios::faucet_prefunded_orchard_recipient(100_000).await;
 
-    let recipient_balance = recipient.do_balance().await;
+    let recipient_balance = recipient.do_balance().await.to_json();
     assert_eq!(
         recipient_balance,
         json::object! {
@@ -63,14 +63,14 @@ async fn correct_zip317_fees() {
         .do_send(vec![(
             &get_base_address!(faucet, "unified"),
             1_000,
-            Some("tenth of marginal_fee send".to_string()),
+            Some(MemoBytes::from_bytes(b"tenth of marginal_fee send").unwrap()),
         )])
         .await
         .expect("to send back to the faucet");
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 1)
         .await
         .unwrap();
-    let recipient_balance = recipient.do_balance().await;
+    let recipient_balance = recipient.do_balance().await.to_json();
     assert_eq!(
         &recipient_balance["orchard_balance"].as_u64().unwrap(),
         &89_000u64
