@@ -238,6 +238,7 @@ pub struct LightWallet {
 }
 
 use crate::wallet::traits::{Diversifiable as _, ReadableWriteable};
+type Recipients = Vec<(address::RecipientAddress, Amount, Option<MemoBytes>)>;
 impl LightWallet {
     fn get_legacy_frontiers(
         trees: crate::compact_formats::TreeState,
@@ -959,9 +960,7 @@ impl LightWallet {
         }
     }
 
-    fn get_output_type_counts(
-        recipients: &Vec<(address::RecipientAddress, Amount, Option<String>)>,
-    ) -> (usize, usize, usize) {
+    fn get_output_type_counts(recipients: &Recipients) -> (usize, usize, usize) {
         // I am assuming that each transparent output is the standard size as described here:
         // https://zips.z.cash/zip-0317#transparent-contribution (i.e. 34 bytes)
         let mut txout_count = 0;
@@ -994,7 +993,7 @@ impl LightWallet {
         orch_notes: &Vec<SpendableOrchardNote>,
         sapling_notes: &Vec<SpendableSaplingNote>,
         utxos: &Vec<ReceivedTransparentOutput>,
-        recipients: &Vec<(address::RecipientAddress, Amount, Option<String>)>,
+        recipients: &Recipients,
     ) -> usize {
         let (transparent_outputs, sapling_outputs, orchard_outputs) =
             LightWallet::get_output_type_counts(recipients);
@@ -1013,7 +1012,7 @@ impl LightWallet {
         &self,
         pre_fee_amount: &u64,
         policy: &NoteSelectionPolicy,
-        recipients: &Vec<(address::RecipientAddress, Amount, Option<String>)>,
+        recipients: &Recipients,
     ) -> Result<
         (
             Vec<SpendableOrchardNote>,
