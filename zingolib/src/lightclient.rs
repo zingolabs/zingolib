@@ -19,7 +19,7 @@ use crate::{
         message::Message,
         now,
         traits::{DomainWalletExt, ReceivedNoteAndMetadata, Recipient},
-        LightWallet, Pool, WalletBase,
+        LightWallet, Pool, SendProgress, WalletBase,
     },
 };
 use futures::future::join_all;
@@ -298,6 +298,57 @@ impl LightClient {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct LightWalletSendProgress {
+    pub progress: SendProgress,
+    pub interrupt_sync: bool,
+}
+
+impl LightWalletSendProgress {
+    pub fn to_json(&self) -> JsonValue {
+        object! {
+            "id" => self.progress.id,
+            "sending" => self.progress.is_send_in_progress,
+            "progress" => self.progress.progress,
+            "total" => self.progress.total,
+            "txid" => self.progress.last_transaction_id.clone(),
+            "error" => self.progress.last_error.clone(),
+            "sync_interrupt" => self.interrupt_sync
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct PoolBalances {
+    pub sapling_balance: Option<u64>,
+    pub verified_sapling_balance: Option<u64>,
+    pub spendable_sapling_balance: Option<u64>,
+    pub unverified_sapling_balance: Option<u64>,
+
+    pub orchard_balance: Option<u64>,
+    pub verified_orchard_balance: Option<u64>,
+    pub unverified_orchard_balance: Option<u64>,
+    pub spendable_orchard_balance: Option<u64>,
+
+    pub transparent_balance: Option<u64>,
+}
+
+impl PoolBalances {
+    pub fn to_json(&self) -> JsonValue {
+        object! {
+            "sapling_balance"                 => self.sapling_balance,
+            "verified_sapling_balance"        => self.verified_sapling_balance,
+            "spendable_sapling_balance"       => self.spendable_sapling_balance,
+            "unverified_sapling_balance"      => self.unverified_sapling_balance,
+            "orchard_balance"                 => self.orchard_balance,
+            "verified_orchard_balance"        => self.verified_orchard_balance,
+            "spendable_orchard_balance"       => self.spendable_orchard_balance,
+            "unverified_orchard_balance"      => self.unverified_orchard_balance,
+            "transparent_balance"             => self.transparent_balance,
+        }
+    }
+}
+
 impl LightClient {
     fn add_nonchange_notes<'a, 'b, 'c>(
         &'a self,
@@ -433,17 +484,17 @@ impl LightClient {
         JsonValue::Array(objectified_addresses)
     }
 
-    pub async fn do_balance(&self) -> JsonValue {
-        object! {
-            "sapling_balance"                 => self.wallet.maybe_verified_sapling_balance(None).await,
-            "verified_sapling_balance"        => self.wallet.verified_sapling_balance(None).await,
-            "spendable_sapling_balance"       => self.wallet.spendable_sapling_balance(None).await,
-            "unverified_sapling_balance"      => self.wallet.unverified_sapling_balance(None).await,
-            "orchard_balance"                 => self.wallet.maybe_verified_orchard_balance(None).await,
-            "verified_orchard_balance"        => self.wallet.verified_orchard_balance(None).await,
-            "spendable_orchard_balance"       => self.wallet.spendable_orchard_balance(None).await,
-            "unverified_orchard_balance"      => self.wallet.unverified_orchard_balance(None).await,
-            "transparent_balance"             => self.wallet.tbalance(None).await,
+    pub async fn do_balance(&self) -> PoolBalances {
+        PoolBalances {
+            sapling_balance: self.wallet.maybe_verified_sapling_balance(None).await,
+            verified_sapling_balance: self.wallet.verified_sapling_balance(None).await,
+            spendable_sapling_balance: self.wallet.spendable_sapling_balance(None).await,
+            unverified_sapling_balance: self.wallet.unverified_sapling_balance(None).await,
+            orchard_balance: self.wallet.maybe_verified_orchard_balance(None).await,
+            verified_orchard_balance: self.wallet.verified_orchard_balance(None).await,
+            spendable_orchard_balance: self.wallet.spendable_orchard_balance(None).await,
+            unverified_orchard_balance: self.wallet.unverified_orchard_balance(None).await,
+            transparent_balance: self.wallet.tbalance(None).await,
         }
     }
 
@@ -754,7 +805,7 @@ impl LightClient {
                         b.insert(key, a_val.clone()).unwrap();
                     } else {
                         if a_val != &b_val {
-                            log::error!("{a_val} does not match {b_val}");
+                            log::error!("{key}: {a_val} does not match {key}: {b_val}");
                         }
                         b.insert(key, b_val).unwrap()
                     }
@@ -951,7 +1002,7 @@ impl LightClient {
     //TODO: Add migrate_sapling_to_orchard argument
     pub async fn do_send(
         &self,
-        address_amount_memo_tuples: Vec<(&str, u64, Option<String>)>,
+        address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
     ) -> Result<String, String> {
         let transaction_submission_height = self.get_submission_height().await?;
         // First, get the concensus branch ID
@@ -983,17 +1034,11 @@ impl LightClient {
         result.map(|(transaction_id, _)| transaction_id)
     }
 
-    pub async fn do_send_progress(&self) -> Result<JsonValue, String> {
+    pub async fn do_send_progress(&self) -> Result<LightWalletSendProgress, String> {
         let progress = self.wallet.get_send_progress().await;
-
-        Ok(object! {
-            "id" => progress.id,
-            "sending" => progress.is_send_in_progress,
-            "progress" => progress.progress,
-            "total" => progress.total,
-            "txid" => progress.last_transaction_id,
-            "error" => progress.last_error,
-            "sync_interrupt" => *self.interrupt_sync.read().await
+        Ok(LightWalletSendProgress {
+            progress: progress.clone(),
+            interrupt_sync: *self.interrupt_sync.read().await,
         })
     }
 
@@ -1015,10 +1060,9 @@ impl LightClient {
             .wallet
             .spendable_sapling_balance(None)
             .await
-            .as_u64()
-            .ok_or("To represent Json as u64".to_string())?;
+            .unwrap_or(0);
 
-        // Make sure there is a balance, and it is greated than the amount
+        // Make sure there is a balance, and it is greater than the amount
         let balance_to_shield = if pools_to_shield.contains(&Pool::Transparent) {
             tbal
         } else {
@@ -1428,6 +1472,37 @@ impl LightClient {
         *lc.mempool_monitor.write().unwrap() = Some(h);
     }
 
+    async fn wallet_has_empty_commitment_trees(&self) -> bool {
+        self.wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .witness_trees
+            .as_ref()
+            .is_some_and(|trees| {
+                trees
+                    .witness_tree_orchard
+                    .max_leaf_position(0)
+                    .unwrap()
+                    .is_none()
+            })
+            && self
+                .wallet
+                .transaction_context
+                .transaction_metadata_set
+                .read()
+                .await
+                .witness_trees
+                .as_ref()
+                .is_some_and(|trees| {
+                    trees
+                        .witness_tree_sapling
+                        .max_leaf_position(0)
+                        .unwrap()
+                        .is_none()
+                })
+    }
     /// Start syncing in batches with the max size, to manage memory consumption.
     async fn start_sync(&self) -> Result<SyncResult, String> {
         // We can only do one sync at a time because we sync blocks in serial order
@@ -1438,30 +1513,24 @@ impl LightClient {
         let lightclient_exclusion_lock = self.sync_lock.lock().await;
 
         // The top of the wallet
-        let last_synced_height = self.wallet.last_synced_height().await;
+        let last_synced_height = dbg!(self.wallet.last_synced_height().await);
 
         // If our internal state gets damaged somehow (for example,
         // a resync that gets interrupted partway through) we need to make sure
         // our witness trees are aligned with our blockchain data
         self.ensure_witness_tree_not_above_wallet_blocks().await;
+
         // This is a fresh wallet. We need to get the initial trees
-        if last_synced_height
-            == self
-                .wallet
-                .transaction_context
-                .config
-                .sapling_activation_height()
-                - 1
-            && !self.wallet.get_birthday().await == 1
-        {
+        if self.wallet_has_empty_commitment_trees().await && last_synced_height != 0 {
             let trees = crate::grpc_connector::GrpcConnector::get_trees(
                 self.get_server_uri(),
-                self.wallet.get_birthday().await - 1,
+                last_synced_height,
             )
             .await
             .unwrap();
             self.wallet.initiate_witness_trees(trees).await;
-        }
+        };
+
         let latest_blockid =
             GrpcConnector::get_latest_block(self.config.get_lightwalletd_uri()).await?;
         // Block hashes are reversed when stored in BlockDatas, so we reverse here to match

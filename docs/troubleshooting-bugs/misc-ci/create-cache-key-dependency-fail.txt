@@ -1,0 +1,20 @@
+2023-09-17
+
+Run echo "zingolib_ref=$(echo ${GITHUB_REF} | sed 's/\//\\\//g')" >> $GITHUB_ENV
+    Updating git repository `https://github.com/zcash/incrementalmerkletree`
+    Updating crates.io index
+    Updating crates.io index
+    Updating git repository `https://github.com/zingolabs/zingolib`
+    Updating git repository `https://github.com/zingolabs/librustzcash`
+error: failed to get `zcash_address` as a dependency of package `zingoconfig v0.1.0 (https://github.com/zingolabs/zingolib?branch=dev#235fd81c)`
+    ... which satisfies git dependency `zingoconfig` of package `rustlib v1.0.1 (/__w/zingolib/zingolib/rust/lib)`
+
+Caused by:
+  failed to load source for dependency `zcash_address`
+
+Caused by:
+  Unable to update https://github.com/zingolabs/librustzcash?rev=8e582109cad9af14b461f76429f9f0437e860115
+
+Caused by:
+  revspec '8e582109cad9af14b461f76429f9f0437e860115' not found; class=Reference (4); code=NotFound (-3)
+Error: Process completed with exit code 101.

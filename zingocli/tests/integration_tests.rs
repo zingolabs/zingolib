@@ -2,26 +2,29 @@
 #![cfg(feature = "local_env")]
 pub mod darkside;
 use orchard::tree::MerkleHashOrchard;
-use shardtree::{memory::MemoryShardStore, ShardTree};
-use std::{fs::File, path::Path};
+use shardtree::store::memory::MemoryShardStore;
+use shardtree::ShardTree;
+use std::{fs::File, path::Path, str::FromStr};
 use zingo_testutils::{self, build_fvk_client, data};
 
 use bip0039::Mnemonic;
 use data::seeds::HOSPITAL_MUSEUM_SEED;
-use json::JsonValue::{self, Null};
+use json::JsonValue;
 use zingo_testutils::scenarios;
 
 use tracing_test::traced_test;
 use zcash_client_backend::encoding::encode_payment_address;
 use zcash_primitives::{
     consensus::{BlockHeight, Parameters},
+    memo::Memo,
+    memo::MemoBytes,
     transaction::{fees::zip317::MINIMUM_FEE, TxId},
 };
 use zingo_testutils::regtest::get_cargo_manifest_dir;
 use zingoconfig::{ChainType, ZingoConfig, MAX_REORG};
 use zingolib::{
     check_client_balances, get_base_address,
-    lightclient::LightClient,
+    lightclient::{LightClient, PoolBalances},
     wallet::{
         data::{COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL},
         keys::{
@@ -80,7 +83,11 @@ async fn dont_write_unconfirmed() {
         .do_send(vec![(
             &get_base_address!(recipient, "unified"),
             100_000,
-            Some("funding to be received by the recipient".to_string()),
+            Some(
+                Memo::from_str("funding to be received by the recipient")
+                    .unwrap()
+                    .into(),
+            ),
         )])
         .await
         .unwrap();
@@ -91,34 +98,36 @@ async fn dont_write_unconfirmed() {
     let recipient_balance = recipient.do_balance().await;
     assert_eq!(
         recipient_balance,
-        json::object! {
-            "sapling_balance": 0,
-            "verified_sapling_balance": 0,
-            "spendable_sapling_balance": 0,
-            "unverified_sapling_balance": 0,
-            "orchard_balance": 100000,
-            "verified_orchard_balance": 100000,
-            "spendable_orchard_balance": 100000,
-            "unverified_orchard_balance": 0,
-            "transparent_balance": 0
+        PoolBalances {
+            sapling_balance: Some(0),
+            verified_sapling_balance: Some(0),
+            spendable_sapling_balance: Some(0),
+            unverified_sapling_balance: Some(0),
+            orchard_balance: Some(100000),
+            verified_orchard_balance: Some(100000),
+            spendable_orchard_balance: Some(100000),
+            unverified_orchard_balance: Some(0),
+            transparent_balance: Some(0)
         }
     );
     recipient
         .do_send(vec![(
             &get_base_address!(faucet, "unified"),
             25_000,
-            Some("an unconfirmed transaction, that shall not be synced".to_string()),
+            Some(
+                Memo::from_str("an unconfirmed transaction, that shall not be synced")
+                    .unwrap()
+                    .into(),
+            ),
         )])
         .await
         .unwrap();
     let recipient_balance = recipient.do_balance().await;
 
-    dbg!(&recipient_balance["unverified_orchard_balance"]);
+    dbg!(&recipient_balance.unverified_orchard_balance);
     assert_eq!(
-        &recipient_balance["unverified_orchard_balance"]
-            .as_u64()
-            .unwrap(),
-        &65_000_u64
+        recipient_balance.unverified_orchard_balance.unwrap(),
+        65_000
     );
     let wallet_loc = &regtest_manager
         .zingo_datadir
@@ -131,12 +140,7 @@ async fn dont_write_unconfirmed() {
         zingo_testutils::load_wallet(wallet_loc.to_path_buf(), ChainType::Regtest).await;
     let loaded_client = LightClient::create_from_extant_wallet(wallet, config);
     let loaded_balance = loaded_client.do_balance().await;
-    assert_eq!(
-        &loaded_balance["unverified_orchard_balance"]
-            .as_u64()
-            .unwrap(),
-        &0_u64
-    );
+    assert_eq!(loaded_balance.unverified_orchard_balance, Some(0),);
     check_client_balances!(loaded_client, o: 100_000 s: 0 t: 0 );
 }
 
@@ -185,7 +189,7 @@ async fn send_to_self_with_no_user_specified_memo_does_not_cause_error() {
         .do_send(vec![(
             &get_base_address!(recipient, "unified"),
             5_000,
-            Some(String::from("Here's a memo!")),
+            Some(Memo::from_str("Here's a memo!").unwrap().into()),
         )])
         .await
         .unwrap();
@@ -244,12 +248,12 @@ async fn sapling_dust_fee_collection() {
             (
                 &recipient_unified,
                 for_orchard,
-                Some("Plenty for orchard.".to_string()),
+                Some(Memo::from_str("Plenty for orchard.").unwrap().into()),
             ),
             (
                 &recipient_sapling,
                 for_sapling,
-                Some("Dust for sapling.".to_string()),
+                Some(Memo::from_str("Dust for sapling.").unwrap().into()),
             ),
         ])
         .await
@@ -263,7 +267,7 @@ async fn sapling_dust_fee_collection() {
         .do_send(vec![(
             &get_base_address!(faucet, "unified"),
             fee * 5,
-            Some("Five times fee.".to_string()),
+            Some(Memo::from_str("Five times fee.").unwrap().into()),
         )])
         .await
         .unwrap();
@@ -279,7 +283,7 @@ use zcash_address::unified::Fvk;
 use crate::zingo_testutils::check_transaction_equality;
 fn check_expected_balance_with_fvks(
     fvks: &Vec<&Fvk>,
-    balance: JsonValue,
+    balance: PoolBalances,
     o_expect: u64,
     s_expect: u64,
     t_expect: u64,
@@ -287,17 +291,17 @@ fn check_expected_balance_with_fvks(
     for fvk in fvks {
         match fvk {
             Fvk::Sapling(_) => {
-                assert_eq!(balance["sapling_balance"], s_expect);
-                assert_eq!(balance["verified_sapling_balance"], s_expect);
-                assert_eq!(balance["unverified_sapling_balance"], s_expect);
+                assert_eq!(balance.sapling_balance.unwrap(), s_expect);
+                assert_eq!(balance.verified_sapling_balance.unwrap(), s_expect);
+                assert_eq!(balance.unverified_sapling_balance.unwrap(), s_expect);
             }
             Fvk::Orchard(_) => {
-                assert_eq!(balance["orchard_balance"], o_expect);
-                assert_eq!(balance["verified_orchard_balance"], o_expect);
-                assert_eq!(balance["unverified_orchard_balance"], o_expect);
+                assert_eq!(balance.orchard_balance.unwrap(), o_expect);
+                assert_eq!(balance.verified_orchard_balance.unwrap(), o_expect);
+                assert_eq!(balance.unverified_orchard_balance.unwrap(), o_expect);
             }
             Fvk::P2pkh(_) => {
-                assert_eq!(balance["transparent_balance"], t_expect);
+                assert_eq!(balance.transparent_balance.unwrap(), t_expect);
             }
             _ => panic!(),
         }
@@ -306,29 +310,29 @@ fn check_expected_balance_with_fvks(
 
 #[allow(clippy::too_many_arguments)]
 fn check_view_capability_bounds(
-    balance: &JsonValue,
+    balance: &PoolBalances,
     watch_wc: &WalletCapability,
     fvks: &[&Fvk],
     ovk: &Fvk,
     svk: &Fvk,
     tvk: &Fvk,
-    sent_o_value: &JsonValue,
-    sent_s_value: &JsonValue,
-    sent_t_value: &JsonValue,
+    sent_o_value: Option<u64>,
+    sent_s_value: Option<u64>,
+    sent_t_value: Option<u64>,
     notes: &JsonValue,
 ) {
     //Orchard
     if !fvks.contains(&ovk) {
         assert!(!watch_wc.orchard.can_view());
-        assert_eq!(balance["orchard_balance"], Null);
-        assert_eq!(balance["verified_orchard_balance"], Null);
-        assert_eq!(balance["unverified_orchard_balance"], Null);
+        assert_eq!(balance.orchard_balance, None);
+        assert_eq!(balance.verified_orchard_balance, None);
+        assert_eq!(balance.unverified_orchard_balance, None);
         assert_eq!(notes["unspent_orchard_notes"].members().count(), 0);
     } else {
         assert!(watch_wc.orchard.can_view());
-        assert_eq!(balance["orchard_balance"], *sent_o_value);
-        assert_eq!(balance["verified_orchard_balance"], *sent_o_value);
-        assert_eq!(balance["unverified_orchard_balance"], 0);
+        assert_eq!(balance.orchard_balance, sent_o_value);
+        assert_eq!(balance.verified_orchard_balance, sent_o_value);
+        assert_eq!(balance.unverified_orchard_balance, Some(0));
         // assert 1 Orchard note, or 2 notes if a dummy output is included
         let orchard_notes_count = notes["unspent_orchard_notes"].members().count();
         assert!((1..=2).contains(&orchard_notes_count));
@@ -336,24 +340,24 @@ fn check_view_capability_bounds(
     //Sapling
     if !fvks.contains(&svk) {
         assert!(!watch_wc.sapling.can_view());
-        assert_eq!(balance["sapling_balance"], Null);
-        assert_eq!(balance["verified_sapling_balance"], Null);
-        assert_eq!(balance["unverified_sapling_balance"], Null);
+        assert_eq!(balance.sapling_balance, None);
+        assert_eq!(balance.verified_sapling_balance, None);
+        assert_eq!(balance.unverified_sapling_balance, None);
         assert_eq!(notes["unspent_sapling_notes"].members().count(), 0);
     } else {
         assert!(watch_wc.sapling.can_view());
-        assert_eq!(balance["sapling_balance"], *sent_s_value);
-        assert_eq!(balance["verified_sapling_balance"], *sent_s_value);
-        assert_eq!(balance["unverified_sapling_balance"], 0);
+        assert_eq!(balance.sapling_balance, sent_s_value);
+        assert_eq!(balance.verified_sapling_balance, sent_s_value);
+        assert_eq!(balance.unverified_sapling_balance, Some(0));
         assert_eq!(notes["unspent_sapling_notes"].members().count(), 1);
     }
     if !fvks.contains(&tvk) {
         assert!(!watch_wc.transparent.can_view());
-        assert_eq!(balance["transparent_balance"], Null);
+        assert_eq!(balance.transparent_balance, None);
         assert_eq!(notes["utxos"].members().count(), 0);
     } else {
         assert!(watch_wc.transparent.can_view());
-        assert_eq!(balance["transparent_balance"], *sent_t_value);
+        assert_eq!(balance.transparent_balance, sent_t_value);
         assert_eq!(notes["utxos"].members().count(), 1);
     }
 }
@@ -373,7 +377,7 @@ async fn test_scanning_in_watch_only_mode() {
     // - wallet will not detect funds on internal addresses
     //   see: https://github.com/zingolabs/zingolib/issues/246
 
-    let (regtest_manager, _cph, mut client_builder) = scenarios::custom_clients();
+    let (regtest_manager, _cph, mut client_builder) = scenarios::custom_clients().await;
     let faucet = client_builder.build_new_faucet(0, false).await;
     let original_recipient = client_builder
         .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
@@ -406,9 +410,9 @@ async fn test_scanning_in_watch_only_mode() {
         .await
         .unwrap();
     let original_recipient_balance = original_recipient.do_balance().await;
-    let sent_t_value = original_recipient_balance["transparent_balance"].clone();
-    let sent_s_value = original_recipient_balance["sapling_balance"].clone();
-    let sent_o_value = original_recipient_balance["orchard_balance"].clone();
+    let sent_t_value = original_recipient_balance.transparent_balance.unwrap();
+    let sent_s_value = original_recipient_balance.sapling_balance.unwrap();
+    let sent_o_value = original_recipient_balance.orchard_balance.unwrap();
     assert_eq!(sent_t_value, 1000u64);
     assert_eq!(sent_s_value, 2000u64);
     assert_eq!(sent_o_value, 3000u64);
@@ -451,16 +455,16 @@ async fn test_scanning_in_watch_only_mode() {
             &o_fvk,
             &s_fvk,
             &t_fvk,
-            &sent_o_value,
-            &sent_s_value,
-            &sent_t_value,
+            Some(sent_o_value),
+            Some(sent_s_value),
+            Some(sent_t_value),
             &notes,
         );
 
         watch_client.do_rescan().await.unwrap();
         assert_eq!(
             watch_client.do_send(vec![(EXT_TADDR, 1000, None)]).await,
-            Err("Wallet is in watch-only mode a thus it cannot spend".to_string())
+            Err("Wallet is in watch-only mode and thus it cannot spend.".to_string())
         );
     }
 }
@@ -500,14 +504,14 @@ async fn verify_old_wallet_uses_server_height_in_send() {
     let client_wallet_height = faucet.do_wallet_last_scanned_height().await;
 
     // Verify that wallet is still back at 6.
-    assert_eq!(client_wallet_height, 6);
+    assert_eq!(client_wallet_height.as_fixed_point_u64(0).unwrap(), 8);
 
     // Interrupt generating send
     faucet
         .do_send(vec![(
             &get_base_address!(recipient, "unified"),
             10_000,
-            Some("Interrupting sync!!".to_string()),
+            Some(Memo::from_str("Interrupting sync!!").unwrap().into()),
         )])
         .await
         .unwrap();
@@ -575,12 +579,16 @@ async fn unspent_notes_are_not_saved() {
         .await
         .unwrap();
 
-    check_client_balances!(faucet, o: 0u64 s: 1_250_000_000u64 t: 0u64);
+    check_client_balances!(faucet, o: 0u64 s: 2_500_000_000u64 t: 0u64);
     faucet
         .do_send(vec![(
             get_base_address!(recipient, "unified").as_str(),
             5_000,
-            Some("this note never makes it to the wallet! or chain".to_string()),
+            Some(
+                Memo::from_str("this note never makes it to the wallet! or chain")
+                    .unwrap()
+                    .into(),
+            ),
         )])
         .await
         .unwrap();
@@ -646,7 +654,7 @@ async fn send_mined_sapling_to_orchard() {
         .do_send(vec![(
             get_base_address!(faucet, "unified").as_str(),
             amount_to_send,
-            Some("Scenario test: engage!".to_string()),
+            Some(Memo::from_str("Scenario test: engage!").unwrap().into()),
         )])
         .await
         .unwrap();
@@ -657,9 +665,9 @@ async fn send_mined_sapling_to_orchard() {
     let balance = faucet.do_balance().await;
     // We send change to orchard now, so we should have the full value of the note
     // we spent, minus the transaction fee
-    assert_eq!(balance["unverified_orchard_balance"], 0);
+    assert_eq!(balance.unverified_orchard_balance, Some(0));
     assert_eq!(
-        balance["verified_orchard_balance"],
+        balance.verified_orchard_balance.unwrap(),
         625_000_000 - u64::from(MINIMUM_FEE)
     );
 }
@@ -693,7 +701,7 @@ async fn note_selection_order() {
                     (
                         client_2_saplingaddress.as_str(),
                         n * 10000,
-                        Some(n.to_string()),
+                        Some(Memo::from_str(n.to_string().as_str()).unwrap().into()),
                     )
                 })
                 .collect(),
@@ -711,7 +719,11 @@ async fn note_selection_order() {
         .do_send(vec![(
             &get_base_address!(faucet, "unified"),
             30000,
-            Some("Sending back, should have 2 inputs".to_string()),
+            Some(
+                Memo::from_str("Sending back, should have 2 inputs")
+                    .unwrap()
+                    .into(),
+            ),
         )])
         .await
         .unwrap();
@@ -783,7 +795,7 @@ async fn note_selection_order() {
 #[tokio::test]
 async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     // Test all possible promoting note source combinations
-    let (regtest_manager, _cph, mut client_builder) = scenarios::custom_clients();
+    let (regtest_manager, _cph, mut client_builder) = scenarios::custom_clients().await;
     let sapling_faucet = client_builder.build_new_faucet(0, false).await;
     let pool_migration_client = client_builder
         .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
@@ -934,20 +946,21 @@ async fn send_orchard_back_and_forth() {
     // check start state
     faucet.do_sync(true).await.unwrap();
     let wallet_height = faucet.do_wallet_last_scanned_height().await;
-    assert_eq!(wallet_height, 1);
-    check_client_balances!(faucet, o: 0 s: block_reward t: 0);
+    assert_eq!(wallet_height.as_fixed_point_u64(0).unwrap(), 3);
+    let three_blocks_reward = block_reward.checked_mul(3).unwrap();
+    check_client_balances!(faucet, o: 0 s: three_blocks_reward  t: 0);
 
     // post transfer to recipient, and verify
     faucet
         .do_send(vec![(
             &get_base_address!(recipient, "unified"),
             faucet_to_recipient_amount,
-            Some("Orcharding".to_string()),
+            Some(Memo::from_str("Orcharding").unwrap().into()),
         )])
         .await
         .unwrap();
     let orch_change = block_reward - (faucet_to_recipient_amount + u64::from(MINIMUM_FEE));
-    let reward_and_fee = block_reward + u64::from(MINIMUM_FEE);
+    let reward_and_fee = three_blocks_reward + u64::from(MINIMUM_FEE);
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 1)
         .await
         .unwrap();
@@ -958,7 +971,7 @@ async fn send_orchard_back_and_forth() {
         "{}",
         JsonValue::from(faucet.do_list_txsummaries().await).pretty(4)
     );
-    println!("{}", faucet.do_balance().await.pretty(4));
+    println!("{}", faucet.do_balance().await.to_json().pretty(4));
 
     check_client_balances!(faucet, o: orch_change s: reward_and_fee t: 0);
 
@@ -967,7 +980,7 @@ async fn send_orchard_back_and_forth() {
         .do_send(vec![(
             &get_base_address!(faucet, "unified"),
             recipient_to_faucet_amount,
-            Some("Sending back".to_string()),
+            Some(Memo::from_str("Sending back").unwrap().into()),
         )])
         .await
         .unwrap();
@@ -979,7 +992,7 @@ async fn send_orchard_back_and_forth() {
     let recipient_final_orch =
         faucet_to_recipient_amount - (u64::from(MINIMUM_FEE) + recipient_to_faucet_amount);
     let faucet_final_orch = orch_change + recipient_to_faucet_amount;
-    let faucet_final_block = 2 * block_reward + u64::from(MINIMUM_FEE) * 2;
+    let faucet_final_block = 4 * block_reward + u64::from(MINIMUM_FEE) * 2;
     check_client_balances!(
         faucet,
         o: faucet_final_orch s: faucet_final_block t: 0
@@ -997,7 +1010,7 @@ async fn diversified_addresses_receive_funds_in_best_pool() {
     let address_5000_nonememo_tuples = addresses
         .members()
         .map(|ua| (ua["address"].as_str().unwrap(), 5_000, None))
-        .collect::<Vec<(&str, u64, Option<String>)>>();
+        .collect::<Vec<(&str, u64, Option<MemoBytes>)>>();
     faucet.do_send(address_5000_nonememo_tuples).await.unwrap();
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 1)
         .await
@@ -1005,16 +1018,16 @@ async fn diversified_addresses_receive_funds_in_best_pool() {
     let balance_b = recipient.do_balance().await;
     assert_eq!(
         balance_b,
-        json::object! {
-            "sapling_balance": 5000,
-            "verified_sapling_balance": 5000,
-            "spendable_sapling_balance": 5000,
-            "unverified_sapling_balance": 0,
-            "orchard_balance": 15000,
-            "verified_orchard_balance": 15000,
-            "spendable_orchard_balance": 15000,
-            "unverified_orchard_balance": 0,
-            "transparent_balance": 0
+        PoolBalances {
+            sapling_balance: Some(5000),
+            verified_sapling_balance: Some(5000),
+            spendable_sapling_balance: Some(5000),
+            unverified_sapling_balance: Some(0),
+            orchard_balance: Some(15000),
+            verified_orchard_balance: Some(15000),
+            spendable_orchard_balance: Some(15000),
+            unverified_orchard_balance: Some(0),
+            transparent_balance: Some(0)
         }
     );
     // Unneeded, but more explicit than having _cph be an
@@ -1028,7 +1041,7 @@ async fn rescan_still_have_outgoing_metadata() {
         .do_send(vec![(
             get_base_address!(recipient, "sapling").as_str(),
             1_000,
-            Some("foo".to_string()),
+            Some(Memo::from_str("foo").unwrap().into()),
         )])
         .await
         .unwrap();
@@ -1044,6 +1057,9 @@ async fn rescan_still_have_outgoing_metadata() {
 #[tokio::test]
 async fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
     let (regtest_manager, _cph, faucet) = scenarios::faucet().await;
+    zingo_testutils::increase_height_and_sync_client(&regtest_manager, &faucet, 1)
+        .await
+        .unwrap();
     let sapling_addr = get_base_address!(faucet, "sapling");
     for memo in [None, Some("foo")] {
         faucet
@@ -1051,10 +1067,13 @@ async fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
                 sapling_addr.as_str(),
                 {
                     let balance = faucet.do_balance().await;
-                    balance["spendable_sapling_balance"].as_u64().unwrap()
-                        + balance["spendable_orchard_balance"].as_u64().unwrap()
+                    balance.spendable_sapling_balance.unwrap()
+                        + balance.spendable_orchard_balance.unwrap()
                 } - u64::from(MINIMUM_FEE),
-                memo.map(ToString::to_string),
+                match memo {
+                    Some(memo) => Some(Memo::from_str(memo).unwrap().into()),
+                    None => None,
+                },
             )])
             .await
             .unwrap();
@@ -1094,7 +1113,7 @@ async fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
 /// is capable of recovering the diversified _receiver_.
 #[tokio::test]
 async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
-    let (regtest_manager, _cph, mut client_builder) = scenarios::custom_clients();
+    let (regtest_manager, _cph, mut client_builder) = scenarios::custom_clients().await;
     let faucet = client_builder.build_new_faucet(0, false).await;
     faucet.do_sync(false).await.unwrap();
     let seed_phrase_of_recipient1 = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
@@ -1104,7 +1123,7 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
         .build_newseed_client(seed_phrase_of_recipient1, 0, false)
         .await;
     let mut expected_unspent_sapling_notes = json::object! {
-            "created_in_block" =>  2,
+            "created_in_block" =>  4,
             "datetime" =>  0,
             "created_in_txid" => "",
             "value" =>  14_000,
@@ -1130,7 +1149,7 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
             .do_send(vec![(
                 recipient1_diversified_addr[0].as_str().unwrap(),
                 14_000,
-                Some("foo".to_string()),
+                Some(Memo::from_str("foo").unwrap().into()),
             )])
             .await
             .unwrap();
@@ -1204,11 +1223,8 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
         //Ensure that recipient_restored was still able to spend the note, despite not having the
         //diversified address associated with it
         assert_eq!(
-            faucet.do_balance().await["spendable_orchard_balance"],
-            sender_balance["spendable_orchard_balance"]
-                .as_u64()
-                .unwrap()
-                + 4_000
+            faucet.do_balance().await.spendable_orchard_balance.unwrap(),
+            sender_balance.spendable_orchard_balance.unwrap() + 4_000
         );
         recipient_restored.do_seed_phrase().await.unwrap()
     };
@@ -1217,7 +1233,7 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
 
 #[tokio::test]
 async fn diversification_deterministic_and_coherent() {
-    let (_regtest_manager, _cph, mut client_builder) = scenarios::custom_clients();
+    let (_regtest_manager, _cph, mut client_builder) = scenarios::custom_clients().await;
     let seed_phrase = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
         .unwrap()
         .to_string();
@@ -1291,7 +1307,7 @@ async fn diversification_deterministic_and_coherent() {
 
 #[tokio::test]
 async fn ensure_taddrs_from_old_seeds_work() {
-    let (_regtest_manager, _cph, mut client_builder) = scenarios::custom_clients();
+    let (_regtest_manager, _cph, mut client_builder) = scenarios::custom_clients().await;
     // The first taddr generated on commit 9e71a14eb424631372fd08503b1bd83ea763c7fb
     let transparent_address = "tmFLszfkjgim4zoUMAXpuohnFBAKy99rr2i";
 
@@ -1325,7 +1341,7 @@ async fn t_incoming_t_outgoing_disallowed() {
 
     // 3. Test the list
     let list = recipient.do_list_transactions().await;
-    assert_eq!(list[0]["block_height"].as_u64().unwrap(), 2);
+    assert_eq!(list[0]["block_height"].as_u64().unwrap(), 4);
     assert_eq!(list[0]["address"], taddr);
     assert_eq!(list[0]["amount"].as_u64().unwrap(), value);
 
@@ -1335,7 +1351,7 @@ async fn t_incoming_t_outgoing_disallowed() {
         .do_send(vec![(EXT_TADDR, sent_value, None)])
         .await
         .unwrap_err();
-    assert_eq!(sent_transaction_error, "Insufficient verified shielded funds. Have 0 zats, need 30000 zats. NOTE: funds need at least 1 confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes");
+    assert_eq!(sent_transaction_error, "Insufficient verified shielded funds. Have 0 zats, need 30000 zats. NOTE: funds need at least 1 confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes.");
 }
 
 #[tokio::test]
@@ -1411,12 +1427,12 @@ async fn self_send_to_t_displays_as_one_transaction() {
             (
                 recipient_zaddr.as_str(),
                 sent_to_zaddr_value,
-                Some("foo".to_string()),
+                Some(Memo::from_str("foo").unwrap().into()),
             ),
             (
                 recipient_unified_address.as_str(),
                 sent_to_self_orchard_value,
-                Some("bar".to_string()),
+                Some(Memo::from_str("bar").unwrap().into()),
             ),
         ])
         .await
@@ -1428,12 +1444,12 @@ async fn self_send_to_t_displays_as_one_transaction() {
             (
                 recipient_zaddr.as_str(),
                 sent_to_zaddr_value,
-                Some("foo2".to_string()),
+                Some(Memo::from_str("foo2").unwrap().into()),
             ),
             (
                 recipient_unified_address.as_str(),
                 sent_to_self_orchard_value,
-                Some("bar2".to_string()),
+                Some(Memo::from_str("bar2").unwrap().into()),
             ),
         ])
         .await
@@ -1509,11 +1525,11 @@ async fn sapling_to_sapling_scan_together() {
     // 5. Check the transaction list to make sure we got all transactions
     let list = recipient.do_list_transactions().await;
 
-    assert_eq!(list[0]["block_height"].as_u64().unwrap(), 3);
+    assert_eq!(list[0]["block_height"].as_u64().unwrap(), 5);
     assert_eq!(list[0]["txid"], txid.to_string());
     assert_eq!(list[0]["amount"].as_i64().unwrap(), (value as i64));
 
-    assert_eq!(list[1]["block_height"].as_u64().unwrap(), 4);
+    assert_eq!(list[1]["block_height"].as_u64().unwrap(), 6);
     assert_eq!(list[1]["txid"], spent_txid.to_string());
     assert_eq!(
         list[1]["amount"].as_i64().unwrap(),
@@ -1604,29 +1620,29 @@ async fn mempool_and_balance() {
         scenarios::faucet_prefunded_orchard_recipient(value).await;
 
     let bal = recipient.do_balance().await;
-    println!("{}", json::stringify_pretty(bal.clone(), 4));
-    assert_eq!(bal["orchard_balance"].as_u64().unwrap(), value);
-    assert_eq!(bal["unverified_orchard_balance"].as_u64().unwrap(), 0);
-    assert_eq!(bal["verified_orchard_balance"].as_u64().unwrap(), value);
+    println!("{}", json::stringify_pretty(bal.to_json(), 4));
+    assert_eq!(bal.orchard_balance.unwrap(), value);
+    assert_eq!(bal.unverified_orchard_balance.unwrap(), 0);
+    assert_eq!(bal.verified_orchard_balance.unwrap(), value);
 
     // 3. Mine 10 blocks
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 10)
         .await
         .unwrap();
     let bal = recipient.do_balance().await;
-    assert_eq!(bal["orchard_balance"].as_u64().unwrap(), value);
-    assert_eq!(bal["verified_orchard_balance"].as_u64().unwrap(), value);
-    assert_eq!(bal["unverified_orchard_balance"].as_u64().unwrap(), 0);
+    assert_eq!(bal.orchard_balance.unwrap(), value);
+    assert_eq!(bal.verified_orchard_balance.unwrap(), value);
+    assert_eq!(bal.unverified_orchard_balance.unwrap(), 0);
 
     // 4. Spend the funds
     let sent_value = 2000;
-    let outgoing_memo = "Outgoing Memo".to_string();
+    let outgoing_memo = Memo::from_str("Outgoing Memo").unwrap().into();
 
     let _sent_transaction_id = recipient
         .do_send(vec![(
             &get_base_address!(faucet, "unified"),
             sent_value,
-            Some(outgoing_memo.clone()),
+            Some(outgoing_memo),
         )])
         .await
         .unwrap();
@@ -1635,9 +1651,9 @@ async fn mempool_and_balance() {
 
     // Even though the transaction is not mined (in the mempool) the balances should be updated to reflect the spent funds
     let new_bal = value - (sent_value + u64::from(MINIMUM_FEE));
-    assert_eq!(bal["orchard_balance"].as_u64().unwrap(), new_bal);
-    assert_eq!(bal["verified_orchard_balance"].as_u64().unwrap(), 0);
-    assert_eq!(bal["unverified_orchard_balance"].as_u64().unwrap(), new_bal);
+    assert_eq!(bal.orchard_balance.unwrap(), new_bal);
+    assert_eq!(bal.verified_orchard_balance.unwrap(), 0);
+    assert_eq!(bal.unverified_orchard_balance.unwrap(), new_bal);
 
     // 5. Mine the pending block, making the funds verified and spendable.
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 10)
@@ -1646,9 +1662,9 @@ async fn mempool_and_balance() {
 
     let bal = recipient.do_balance().await;
 
-    assert_eq!(bal["orchard_balance"].as_u64().unwrap(), new_bal);
-    assert_eq!(bal["verified_orchard_balance"].as_u64().unwrap(), new_bal);
-    assert_eq!(bal["unverified_orchard_balance"].as_u64().unwrap(), 0);
+    assert_eq!(bal.orchard_balance.unwrap(), new_bal);
+    assert_eq!(bal.verified_orchard_balance.unwrap(), new_bal);
+    assert_eq!(bal.unverified_orchard_balance.unwrap(), 0);
 }
 
 #[tokio::test]
@@ -1665,12 +1681,12 @@ async fn witness_clearing() {
 
     // 3. Send z-to-z transaction to external z address with a memo
     let sent_value = 2000;
-    let outgoing_memo = "Outgoing Memo".to_string();
+    let outgoing_memo = Memo::from_str("Outgoing Memo").unwrap().into();
 
     let faucet_ua = get_base_address!(faucet, "unified");
 
     let _sent_transaction_id = recipient
-        .do_send(vec![(&faucet_ua, sent_value, Some(outgoing_memo.clone()))])
+        .do_send(vec![(&faucet_ua, sent_value, Some(outgoing_memo))])
         .await
         .unwrap();
 
@@ -1901,13 +1917,13 @@ async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
 
     // 3. Send z-to-z transaction to external z address with a memo
     let sent_value = 2000;
-    let outgoing_memo = "Outgoing Memo".to_string();
+    let outgoing_memo = Memo::from_str("Outgoing Memo").unwrap().into();
 
     let sent_transaction_id = recipient
         .do_send(vec![(
             &get_base_address!(faucet, "sapling"),
             sent_value,
-            Some(outgoing_memo.clone()),
+            Some(outgoing_memo),
         )])
         .await
         .unwrap();
@@ -1998,7 +2014,7 @@ async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 10)
         .await
         .unwrap();
-    assert_eq!(recipient.wallet.last_synced_height().await, 19);
+    assert_eq!(recipient.wallet.last_synced_height().await, 21);
 
     let notes = recipient.do_list_notes(true).await;
 
@@ -2023,7 +2039,7 @@ async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 100)
         .await
         .unwrap();
-    assert_eq!(recipient.wallet.last_synced_height().await, 119);
+    assert_eq!(recipient.wallet.last_synced_height().await, 121);
 
     let notes = recipient.do_list_notes(true).await;
     let transactions = recipient.do_list_transactions().await;
@@ -2120,7 +2136,7 @@ pub mod framework_validation {
             regtest_manager,
             child_process_handler,
             ..
-        } = setup::ScenarioBuilder::build_configure_launch(None, None, None);
+        } = setup::ScenarioBuilder::build_configure_launch(None, None, None).await;
         log::debug!("regtest_manager: {:#?}", &regtest_manager);
         // Turn zcashd off and on again, to write down the blocks
         log_field_from_zcashd!(
@@ -2178,14 +2194,14 @@ async fn sapling_incoming_sapling_outgoing() {
         .await
         .unwrap();
 
-    assert_eq!(recipient.wallet.last_synced_height().await, 2);
+    assert_eq!(recipient.wallet.last_synced_height().await, 4);
 
     // 3. Check the balance is correct, and we received the incoming transaction from ?outside?
     let b = recipient.do_balance().await;
     let addresses = recipient.do_addresses().await;
-    assert_eq!(b["sapling_balance"].as_u64().unwrap(), value);
-    assert_eq!(b["unverified_sapling_balance"].as_u64().unwrap(), 0);
-    assert_eq!(b["spendable_sapling_balance"].as_u64().unwrap(), value);
+    assert_eq!(b.sapling_balance.unwrap(), value);
+    assert_eq!(b.unverified_sapling_balance.unwrap(), 0);
+    assert_eq!(b.spendable_sapling_balance.unwrap(), value);
     assert_eq!(
         addresses[0]["receivers"]["sapling"],
         encode_payment_address(
@@ -2210,20 +2226,21 @@ async fn sapling_incoming_sapling_outgoing() {
             faucet_sent_transaction["address"],
             recipient.wallet.wallet_capability().addresses()[0].encode(&recipient.config().chain)
         );
-        assert_eq!(faucet_sent_transaction["block_height"].as_u64().unwrap(), 2);
+        assert_eq!(faucet_sent_transaction["block_height"].as_u64().unwrap(), 4);
     } else {
         panic!("Expecting an array");
     }
 
     // 4. Send z-to-z transaction to external z address with a memo
     let sent_value = 2000;
-    let outgoing_memo = "Outgoing Memo".to_string();
+    let outgoing_memo_text = "Outgoing Memo";
+    let outgoing_memo = Memo::from_str(outgoing_memo_text).unwrap().into();
 
     let sent_transaction_id = recipient
         .do_send(vec![(
             &get_base_address!(faucet, "sapling"),
             sent_value,
-            Some(outgoing_memo.clone()),
+            Some(outgoing_memo),
         )])
         .await
         .unwrap();
@@ -2270,7 +2287,7 @@ async fn sapling_incoming_sapling_outgoing() {
         -(sent_value as i64 + i64::from(MINIMUM_FEE))
     );
     assert!(send_transaction["unconfirmed"].as_bool().unwrap());
-    assert_eq!(send_transaction["block_height"].as_u64().unwrap(), 3);
+    assert_eq!(send_transaction["block_height"].as_u64().unwrap(), 5);
 
     assert_eq!(
         send_transaction["outgoing_metadata"][0]["address"],
@@ -2278,7 +2295,7 @@ async fn sapling_incoming_sapling_outgoing() {
     );
     assert_eq!(
         send_transaction["outgoing_metadata"][0]["memo"],
-        outgoing_memo
+        outgoing_memo_text
     );
     assert_eq!(
         send_transaction["outgoing_metadata"][0]["value"]
@@ -2293,7 +2310,7 @@ async fn sapling_incoming_sapling_outgoing() {
         .unwrap();
 
     assert!(!send_transaction.contains("unconfirmed"));
-    assert_eq!(send_transaction["block_height"].as_u64().unwrap(), 3);
+    assert_eq!(send_transaction["block_height"].as_u64().unwrap(), 5);
 
     // 7. Check the notes to see that we have one spent sapling note and one unspent orchard note (change)
     // Which is immediately spendable.
@@ -2304,7 +2321,7 @@ async fn sapling_incoming_sapling_outgoing() {
         notes["unspent_orchard_notes"][0]["created_in_block"]
             .as_u64()
             .unwrap(),
-        3
+        5
     );
     assert_eq!(
         notes["unspent_orchard_notes"][0]["created_in_txid"],
@@ -2326,7 +2343,7 @@ async fn sapling_incoming_sapling_outgoing() {
         notes["spent_sapling_notes"][0]["created_in_block"]
             .as_u64()
             .unwrap(),
-        2
+        4
     );
     assert_eq!(
         notes["spent_sapling_notes"][0]["value"].as_u64().unwrap(),
@@ -2346,7 +2363,7 @@ async fn sapling_incoming_sapling_outgoing() {
         notes["spent_sapling_notes"][0]["spent_at_height"]
             .as_u64()
             .unwrap(),
-        3
+        5
     );
 }
 
@@ -2362,12 +2379,12 @@ async fn aborted_resync() {
 
     // 4. Send a transaction to both external t-addr and external z addr and mine it
     let sent_zvalue = 80_000;
-    let sent_zmemo = "Ext z".to_string();
+    let sent_zmemo = Memo::from_str("Ext z").unwrap().into();
     let sent_transaction_id = recipient
         .do_send(vec![(
             &get_base_address!(faucet, "sapling"),
             sent_zvalue,
-            Some(sent_zmemo.clone()),
+            Some(sent_zmemo),
         )])
         .await
         .unwrap();
@@ -2416,11 +2433,11 @@ async fn aborted_resync() {
     // 5. Now, we'll manually remove some of the blocks in the wallet, pretending that the sync was aborted in the middle.
     // We'll remove the top 20 blocks, so now the wallet only has the first 3 blocks
     recipient.wallet.blocks.write().await.drain(0..20);
-    assert_eq!(recipient.wallet.last_synced_height().await, 3);
+    assert_eq!(recipient.wallet.last_synced_height().await, 5);
 
     // 6. Do a sync again
     recipient.do_sync(true).await.unwrap();
-    assert_eq!(recipient.wallet.last_synced_height().await, 23);
+    assert_eq!(recipient.wallet.last_synced_height().await, 25);
 
     // 7. Should be exactly the same
     let notes_after = recipient.do_list_notes(true).await;
@@ -2522,7 +2539,7 @@ async fn dust_sends_change_correctly() {
         .unwrap();
 
     println!("{}", recipient.do_list_transactions().await.pretty(4));
-    println!("{}", recipient.do_balance().await.pretty(4));
+    println!("{}", recipient.do_balance().await.to_json().pretty(4));
 }
 
 #[tokio::test]
@@ -2553,7 +2570,7 @@ async fn zero_value_receipts() {
         .unwrap();
 
     println!("{}", recipient.do_list_transactions().await.pretty(4));
-    println!("{}", recipient.do_balance().await.pretty(4));
+    println!("{}", recipient.do_balance().await.to_json().pretty(4));
     println!(
         "{}",
         JsonValue::from(recipient.do_list_txsummaries().await).pretty(4)
@@ -2571,11 +2588,19 @@ async fn by_address_finsight() {
         faucet.do_list_notes(true).await.pretty(4)
     );
     faucet
-        .do_send(vec![(&base_uaddress, 1_000u64, Some("1".to_string()))])
+        .do_send(vec![(
+            &base_uaddress,
+            1_000u64,
+            Some(Memo::from_str("1").unwrap().into()),
+        )])
         .await
         .unwrap();
     faucet
-        .do_send(vec![(&base_uaddress, 1_000u64, Some("1".to_string()))])
+        .do_send(vec![(
+            &base_uaddress,
+            1_000u64,
+            Some(Memo::from_str("1").unwrap().into()),
+        )])
         .await
         .expect(
             "We only have sapling notes, plus a pending orchard note from the \
@@ -2587,7 +2612,11 @@ async fn by_address_finsight() {
         "2".to_string()
     );
     faucet
-        .do_send(vec![(&base_uaddress, 1_000u64, Some("aaaa".to_string()))])
+        .do_send(vec![(
+            &base_uaddress,
+            1_000u64,
+            Some(Memo::from_str("aaaa").unwrap().into()),
+        )])
         .await
         .unwrap();
     assert_eq!(
@@ -2652,21 +2681,89 @@ async fn load_old_wallet_at_reorged_height() {
         "pre-sync transactions: {}",
         recipient.do_list_transactions().await.pretty(2)
     );
-    recipient.do_sync(false).await.unwrap();
-    dbg!(
-        &recipient
-            .wallet
-            .transaction_context
-            .transaction_metadata_set
-            .read()
-            .await
-            .witness_trees
-    );
-    println!(
-        "post-sync transactions: {}",
+    let expected_pre_sync_transactions = r#"[
+  {
+    "block_height": 3,
+    "unconfirmed": false,
+    "datetime": 1692212261,
+    "position": 0,
+    "txid": "7a9d41caca143013ebd2f710e4dad04f0eb9f0ae98b42af0f58f25c61a9d439e",
+    "amount": 100000,
+    "zec_price": null,
+    "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8",
+    "memo": null
+  },
+  {
+    "block_height": 8,
+    "unconfirmed": false,
+    "datetime": 1692212266,
+    "position": 0,
+    "txid": "122f8ab8dc5483e36256a4fbd7ff8d60eb7196670716a6690f9215f1c2a4d841",
+    "amount": 50000,
+    "zec_price": null,
+    "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8",
+    "memo": null
+  },
+  {
+    "block_height": 9,
+    "unconfirmed": false,
+    "datetime": 1692212299,
+    "position": 0,
+    "txid": "0a014017add7dc9eb57ada3e70f905c9dce610ef055e135b03f4907dd5dc99a4",
+    "amount": 30000,
+    "zec_price": null,
+    "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8",
+    "memo": null
+  }
+]"#;
+    assert_eq!(
+        expected_pre_sync_transactions,
         recipient.do_list_transactions().await.pretty(2)
     );
-    println!("{}", recipient.do_balance().await.pretty(2));
+    recipient.do_sync(false).await.unwrap();
+    let expected_post_sync_transactions = r#"[
+  {
+    "block_height": 3,
+    "unconfirmed": false,
+    "datetime": 1692212261,
+    "position": 0,
+    "txid": "7a9d41caca143013ebd2f710e4dad04f0eb9f0ae98b42af0f58f25c61a9d439e",
+    "amount": 100000,
+    "zec_price": null,
+    "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8",
+    "memo": null
+  },
+  {
+    "block_height": 8,
+    "unconfirmed": false,
+    "datetime": 1692212266,
+    "position": 0,
+    "txid": "122f8ab8dc5483e36256a4fbd7ff8d60eb7196670716a6690f9215f1c2a4d841",
+    "amount": 50000,
+    "zec_price": null,
+    "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8",
+    "memo": null
+  }
+]"#;
+    assert_eq!(
+        expected_post_sync_transactions,
+        recipient.do_list_transactions().await.pretty(2)
+    );
+    let expected_post_sync_balance = r#"{
+  "sapling_balance": 0,
+  "verified_sapling_balance": 0,
+  "spendable_sapling_balance": 0,
+  "unverified_sapling_balance": 0,
+  "orchard_balance": 150000,
+  "verified_orchard_balance": 150000,
+  "spendable_orchard_balance": 150000,
+  "unverified_orchard_balance": 0,
+  "transparent_balance": 0
+}"#;
+    assert_eq!(
+        expected_post_sync_balance,
+        recipient.do_balance().await.to_json().pretty(2)
+    );
     recipient
         .do_send(vec![(&get_base_address!(faucet, "unified"), 14000, None)])
         .await
@@ -2690,7 +2787,7 @@ async fn shield_sapling() {
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 1)
         .await
         .unwrap();
-    println!("{}", recipient.do_balance().await.pretty(4));
+    println!("{}", recipient.do_balance().await.to_json().pretty(4));
 
     assert_eq!(
         recipient.do_shield(&[Pool::Sapling], None).await,
@@ -2740,7 +2837,7 @@ async fn shield_sapling() {
         .await
         .unwrap();
 
-    println!("{}", recipient.do_balance().await.pretty(4));
+    println!("{}", recipient.do_balance().await.to_json().pretty(4));
 }
 
 #[tokio::test]
@@ -2760,21 +2857,21 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         r#"
         [
             {
-                "block_height": 3,
+                "block_height": 5,
                 "unconfirmed": false,
-                "datetime": 1686245356,
+                "datetime": 1694820763,
                 "position": 0,
-                "txid": "c6d3f83b8ee278b09142add02468e45000a9f58e8162dda5ce3407f8e7222cf5",
+                "txid": "d5eaac5563f8bc1a0406588e05953977ad768d02f1cf8449e9d7d9cc8de3801c",
                 "amount": 100000000,
                 "zec_price": null,
                 "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8",
                 "memo": null
             },
             {
-                "block_height": 4,
+                "block_height": 6,
                 "unconfirmed": false,
-                "datetime": 1686245363,
-                "txid": "e51d1261136bb075fd35358105c72a6b8a69caf293bd283acc213df8875dfe57",
+                "datetime": 1694825595,
+                "txid": "4ee5a583e6462eb4c39f9d8188e855bb1e37d989fcb8b417cff93c27b006e72d",
                 "zec_price": null,
                 "amount": -30000,
                 "outgoing_metadata": [
@@ -2786,10 +2883,10 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
                 ]
             },
             {
-                "block_height": 5,
+                "block_height": 7,
                 "unconfirmed": true,
-                "datetime": 1686245360,
-                "txid": "fc476d945407242e68f511e7ffca5d753f95ef4072a1b5aac8dfa0f77a6eb2b0",
+                "datetime": 1694825735,
+                "txid": "55de92ebf5effc3ed67a289788ede88514a9d2c407af6154b00969325e2fdf00",
                 "zec_price": null,
                 "amount": -30000,
                 "outgoing_metadata": [
@@ -2829,9 +2926,12 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         - (2 * u64::from(MINIMUM_FEE));
     assert_eq!(
         recipient.wallet.maybe_verified_orchard_balance(None).await,
-        expected_funds
+        Some(expected_funds)
     );
-    assert_eq!(recipient.wallet.verified_orchard_balance(None).await, 0);
+    assert_eq!(
+        recipient.wallet.verified_orchard_balance(None).await,
+        Some(0)
+    );
 
     let transactions = recipient.do_list_transactions().await;
     assert_eq!(
@@ -2841,7 +2941,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
     for (t1, t2) in transactions.members().zip(expected_transactions.members()) {
         assert!(
             check_transaction_equality(t1, t2),
-            "\n\n\nt1: {}\n\n\nt2: {}\n\n\n",
+            "\n\n\nobserved: {}\n\n\nexpected: {}\n\n\n",
             t1.pretty(4),
             t2.pretty(4)
         );
@@ -2852,7 +2952,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         .do_send(vec![(
             &get_base_address!(recipient, "unified"),
             recipient_second_wave,
-            Some(String::from("Second wave incoming")),
+            Some(Memo::from_str("Second wave incoming").unwrap().into()),
         )])
         .await
         .unwrap();
@@ -2898,13 +2998,13 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         - (3 * u64::from(MINIMUM_FEE));
     assert_eq!(
         recipient.wallet.maybe_verified_orchard_balance(None).await,
-        second_wave_expected_funds,
+        Some(second_wave_expected_funds),
     );
 
     let second_wave_expected_transactions = json::parse(r#"
         [
             {
-                "block_height": 3,
+                "block_height": 5,
                 "unconfirmed": false,
                 "datetime": 1686330002,
                 "position": 0,
@@ -2915,7 +3015,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
                 "memo": null
             },
             {
-                "block_height": 4,
+                "block_height": 6,
                 "unconfirmed": false,
                 "datetime": 1686330013,
                 "txid": "db532064c89c7d8266e107ffefc614f3c34050af922973199e398fcd18c43ea5",
@@ -2930,7 +3030,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
                 ]
             },
             {
-                "block_height": 5,
+                "block_height": 7,
                 "unconfirmed": false,
                 "datetime": 1686330006,
                 "txid": "be81f76bf37bb6d5d762c7bb48419f239787023b8344c30ce0771c8ce21e480f",
@@ -2945,7 +3045,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
                 ]
             },
             {
-                "block_height": 5,
+                "block_height": 7,
                 "unconfirmed": false,
                 "datetime": 1686330013,
                 "position": 0,
@@ -2956,7 +3056,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
                 "memo": "Second wave incoming"
             },
             {
-                "block_height": 6,
+                "block_height": 8,
                 "unconfirmed": false,
                 "datetime": 1686330021,
                 "txid": "95a41ba1c6e2b7edf63ddde7899567431a6b36b7583ba1e359560041e5f8ce2b",
@@ -2971,7 +3071,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
                 ]
             },
             {
-                "block_height": 6,
+                "block_height": 8,
                 "unconfirmed": false,
                 "datetime": 1686330021,
                 "txid": "c1004c32395ff45448fb943a7da4cc2819762066eea2628cd0a4aee65106207d",
@@ -2986,7 +3086,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
                 ]
             },
             {
-                "block_height": 7,
+                "block_height": 9,
                 "unconfirmed": false,
                 "datetime": 1686330024,
                 "txid": "c5e94f462218634b37a2a3324f89bd288bc55ab877ea516a6203e48c207ba955",
@@ -3008,10 +3108,67 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         second_wave_expected_transactions.len()
     );
     for transaction in second_wave_transactions.members() {
-        assert!(second_wave_expected_transactions
-            .members()
-            .any(|t2| check_transaction_equality(transaction, t2)));
+        assert!(
+            second_wave_expected_transactions
+                .members()
+                .any(|t2| check_transaction_equality(transaction, t2)),
+            "fail on: {:#?}",
+            transaction
+        );
     }
+}
+
+#[tokio::test]
+async fn sends_to_self_handle_balance_properly() {
+    let transparent_funding = 100_000;
+    let (ref regtest_manager, _cph, faucet, ref recipient) = scenarios::faucet_recipient().await;
+    faucet
+        .do_send(vec![(
+            &get_base_address!(recipient, "sapling"),
+            transparent_funding,
+            None,
+        )])
+        .await
+        .unwrap();
+    zingo_testutils::increase_height_and_sync_client(regtest_manager, recipient, 1)
+        .await
+        .unwrap();
+    recipient
+        .do_shield(&[Pool::Sapling, Pool::Transparent], None)
+        .await
+        .unwrap();
+    zingo_testutils::increase_height_and_sync_client(regtest_manager, recipient, 1)
+        .await
+        .unwrap();
+    println!("{}", recipient.do_balance().await.to_json().pretty(2));
+    println!("{}", recipient.do_list_transactions().await.pretty(2));
+    println!(
+        "{}",
+        JsonValue::from(
+            recipient
+                .do_list_txsummaries()
+                .await
+                .into_iter()
+                .map(JsonValue::from)
+                .collect::<Vec<_>>()
+        )
+        .pretty(2)
+    );
+    recipient.do_rescan().await.unwrap();
+    println!("{}", recipient.do_balance().await.to_json().pretty(2));
+    println!("{}", recipient.do_list_transactions().await.pretty(2));
+    println!(
+        "{}",
+        JsonValue::from(
+            recipient
+                .do_list_txsummaries()
+                .await
+                .into_iter()
+                .map(JsonValue::from)
+                .collect::<Vec<_>>()
+        )
+        .pretty(2)
+    );
 }
 
 pub const TEST_SEED: &str = "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise";

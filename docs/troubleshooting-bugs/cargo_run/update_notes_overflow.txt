@@ -1,0 +1,11 @@
+**Batch** Current:  646 Total: 2169
+   Blocks Loaded:    0 TrialDecrypted:    0, Witnesses Updated:    0, Total:  100,
+thread 'tokio-runtime-worker' panicked at 'attempt to subtract with overflow', zingolib/src/blaze/update_notes.rs:72:41
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+**Batch** Current:  646 Total: 2169
+   Blocks Loaded:    0 TrialDecrypted:    0, Witnesses Updated:    0, Total:  100,
+task 20249 panicked
+(main) Block:2064600 (type 'help') >> thread 'tokio-runtime-worker' panicked
+ at 'attempt to subtract with overflow', zingolib/src/blaze/update_notes.rs:72:41
+(main) Block:2064600 (type 'help') >>
+

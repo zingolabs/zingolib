@@ -39,9 +39,9 @@ pub struct RegtestManager {
 }
 ///  We use the `ChildProcessHandler` to handle the children of generated in scenario testing
 pub struct ChildProcessHandler {
-    zcashd: Child,
-    lightwalletd: Child,
-    zcash_cli_command: std::process::Command,
+    pub zcashd: Child,
+    pub lightwalletd: Child,
+    pub zcash_cli_command: std::process::Command,
 }
 impl Drop for ChildProcessHandler {
     fn drop(&mut self) {

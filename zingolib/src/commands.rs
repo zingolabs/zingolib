@@ -387,7 +387,7 @@ impl Command for SendProgressCommand {
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
         RT.block_on(async move {
             match lightclient.do_send_progress().await {
-                Ok(j) => j.pretty(2),
+                Ok(p) => p.to_json().pretty(2),
                 Err(e) => e,
             }
         })
@@ -569,7 +569,7 @@ impl Command for BalanceCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        RT.block_on(async move { lightclient.do_balance().await.pretty(2) })
+        RT.block_on(async move { lightclient.do_balance().await.to_json().pretty(2) })
     }
 }
 
@@ -881,11 +881,33 @@ impl Command for SendCommand {
                 return self.help().to_string();
             };
 
-            // Convert to the right format. String -> &str.
+            // Convert to the right format.
+            let mut error = None;
             let tos = send_args
                 .iter()
-                .map(|(addr, val, memo)| (addr.as_str(), *val, memo.clone()))
+                .map(|(a, v, m)| {
+                    (
+                        a.as_str(),
+                        *v,
+                        match m {
+                            // If the string starts with an "0x", and contains only hex chars ([a-f0-9]+) then
+                            // interpret it as a hex
+                            Some(s) => match utils::interpret_memo_string(s.clone()) {
+                                Ok(m) => Some(m),
+                                Err(e) => {
+                                    error = Some(format!("Couldn't interpret memo: {}", e));
+                                    None
+                                }
+                            },
+                            None => None,
+                        },
+                    )
+                })
                 .collect::<Vec<_>>();
+            if let Some(e) = error {
+                return e;
+            }
+
             match lightclient.do_send(tos).await {
                 Ok(transaction_id) => {
                     object! { "txid" => transaction_id }
