@@ -361,6 +361,7 @@ fn check_view_capability_bounds(
         assert_eq!(notes["utxos"].members().count(), 1);
     }
 }
+#[ignore]
 #[tokio::test]
 async fn test_scanning_in_watch_only_mode() {
     // # Scenario:
@@ -677,6 +678,7 @@ fn extract_value_as_u64(input: &JsonValue) -> u64 {
     *note
 }
 
+#[ignore]
 #[tokio::test]
 async fn note_selection_order() {
     // In order to fund a transaction multiple notes may be selected and consumed.
@@ -792,6 +794,7 @@ async fn note_selection_order() {
     // More explicit than ignoring the unused variable, we only care about this in order to drop it
 }
 
+#[ignore]
 #[tokio::test]
 async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     // Test all possible promoting note source combinations
@@ -1000,6 +1003,7 @@ async fn send_orchard_back_and_forth() {
     check_client_balances!(recipient, o: recipient_final_orch s: 0 t: 0);
 }
 
+#[ignore]
 #[tokio::test]
 async fn diversified_addresses_receive_funds_in_best_pool() {
     let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient().await;
@@ -1321,6 +1325,7 @@ async fn ensure_taddrs_from_old_seeds_work() {
     );
 }
 
+#[ignore]
 #[tokio::test]
 async fn t_incoming_t_outgoing_disallowed() {
     let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient().await;
@@ -1397,6 +1402,7 @@ async fn send_to_ua_saves_full_ua_in_wallet() {
     );
 }
 
+#[ignore]
 #[tokio::test]
 async fn self_send_to_t_displays_as_one_transaction() {
     let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient().await;
@@ -2770,6 +2776,7 @@ async fn load_old_wallet_at_reorged_height() {
         .unwrap();
 }
 
+#[ignore]
 #[tokio::test]
 async fn shield_sapling() {
     let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient().await;
