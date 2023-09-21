@@ -20,6 +20,5 @@ opt-level = 3
 debug = false
 
 [patch.crates-io]
-incrementalmerkletree = { git = "https://github.com/zcash/incrementalmerkletree", rev = "bae25ad89c0c192bee625252d2d419bd56638e48" }
-shardtree = { git = "https://github.com/zcash/incrementalmerkletree", rev = "bae25ad89c0c192bee625252d2d419bd56638e48" }
-
+zcash_primitives = { git = "https://github.com/nuttycom/librustzcash.git", rev = "669e0797bff3b506984bd2851b22d9eae40a758a" }
+zcash_address = { git = "https://github.com/nuttycom/librustzcash.git", rev = "669e0797bff3b506984bd2851b22d9eae40a758a" }
