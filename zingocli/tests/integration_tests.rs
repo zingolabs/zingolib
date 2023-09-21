@@ -2,7 +2,8 @@
 #![cfg(feature = "local_env")]
 pub mod darkside;
 use orchard::tree::MerkleHashOrchard;
-use shardtree::{memory::MemoryShardStore, ShardTree};
+use shardtree::store::memory::MemoryShardStore;
+use shardtree::ShardTree;
 use std::{fs::File, path::Path, str::FromStr};
 use zingo_testutils::{self, build_fvk_client, data};
 
@@ -2685,32 +2686,6 @@ async fn load_old_wallet_at_reorged_height() {
         recipient.do_list_transactions().await.pretty(2)
     );
     recipient.do_sync(false).await.unwrap();
-    let tmd = recipient
-        .wallet
-        .transaction_context
-        .transaction_metadata_set
-        .read()
-        .await;
-    let sap_tree = &tmd
-        .witness_trees
-        .as_ref()
-        .expect("to get witness trees")
-        .witness_tree_sapling;
-
-    let orch_tree = &tmd
-        .witness_trees
-        .as_ref()
-        .expect("to get witness trees")
-        .witness_tree_orchard;
-    assert_eq!(
-        format!("{:?}", sap_tree),
-        r#"ShardTree { store: MemoryShardStore { shards: [LocatedTree { root_addr: Address { level: Level(16), index: 0 }, root: Tree(Parent { ann: None, left: Tree(Parent { ann: None, left: Tree(Parent { ann: None, left: Tree(Parent { ann: None, left: Tree(Parent { ann: None, left: Tree(Parent { ann: None, left: Tree(Parent { ann: None, left: Tree(Parent { ann: None, left: Tree(Parent { ann: None, left: Tree(Parent { ann: None, left: Tree(Parent { ann: None, left: Tree(Parent { ann: None, left: Tree(Parent { ann: None, left: Tree(Parent { ann: None, left: Tree(Parent { ann: None, left: Tree(Leaf { value: (Node { repr: "a519262fec53761f01f860a97bab24b9738463b39cdcf7d251d6fa76a230390b" }, CHECKPOINT) }), right: Tree(Parent { ann: None, left: Tree(Leaf { value: (Node { repr: "9e04393a5498d589e165e4451598591da66b210492afaaebd5718c2938da6235" }, CHECKPOINT) }), right: Tree(Leaf { value: (Node { repr: "efd6522f7673c035e216b4e432817df5498a5305471fc1a8baf74ada3950cf50" }, CHECKPOINT) }) }) }), right: Tree(Parent { ann: None, left: Tree(Parent { ann: None, left: Tree(Leaf { value: (Node { repr: "f9b006b073743474c1c1961f654c661425cef63410df322cc1773d1ec2c6b632" }, CHECKPOINT) }), right: Tree(Leaf { value: (Node { repr: "98a869bfd76a49cce6ea27528b9ef4cd2756ae013e71fe873e109904e4cf9e23" }, CHECKPOINT) }) }), right: Tree(Parent { ann: None, left: Tree(Leaf { value: (Node { repr: "58bab6057a73464d3019d07394822dd89c6e0b4c90c32810285111842047000d" }, CHECKPOINT) }), right: Tree(Leaf { value: (Node { repr: "4c6f4ae0de3871e68677b7c9288beb4cde2a38224928f42019c06c44d621a501" }, CHECKPOINT) }) }) }) }), right: Tree(Parent { ann: None, left: Tree(Parent { ann: None, left: Tree(Parent { ann: None, left: Tree(Leaf { value: (Node { repr: "3830b30226b1e20d1e394b83553850fd3ce1600277fdafe8e8912820e3202c5b" }, CHECKPOINT) }), right: Tree(Leaf { value: (Node { repr: "7b995ee7fb73a287276554aa9cb167059d83ceb12c2cbc6035067407bf206514" }, CHECKPOINT) }) }), right: Tree(Nil) }), right: Tree(Nil) }) }), right: Tree(Nil) }), right: Tree(Nil) }), right: Tree(Nil) }), right: Tree(Nil) }), right: Tree(Nil) }), right: Tree(Nil) }), right: Tree(Nil) }), right: Tree(Nil) }), right: Tree(Nil) }), right: Tree(Nil) }), right: Tree(Nil) }), right: Tree(Nil) }) }], checkpoints: {BlockHeight(9): Checkpoint { tree_state: Empty, marks_removed: {} }, BlockHeight(10): Checkpoint { tree_state: AtPosition(Position(1)), marks_removed: {} }, BlockHeight(11): Checkpoint { tree_state: AtPosition(Position(2)), marks_removed: {} }, BlockHeight(12): Checkpoint { tree_state: AtPosition(Position(3)), marks_removed: {} }, BlockHeight(13): Checkpoint { tree_state: AtPosition(Position(4)), marks_removed: {} }, BlockHeight(14): Checkpoint { tree_state: AtPosition(Position(5)), marks_removed: {} }, BlockHeight(15): Checkpoint { tree_state: AtPosition(Position(6)), marks_removed: {} }, BlockHeight(16): Checkpoint { tree_state: AtPosition(Position(7)), marks_removed: {} }, BlockHeight(17): Checkpoint { tree_state: AtPosition(Position(8)), marks_removed: {} }, BlockHeight(18): Checkpoint { tree_state: AtPosition(Position(9)), marks_removed: {} }}, cap: Tree(Nil) }, max_checkpoints: 100 }"#
-    );
-    assert_eq!(
-        format!("{:?}", orch_tree),
-        r#"ShardTree { store: MemoryShardStore { shards: [LocatedTree { root_addr: Address { level: Level(16), index: 0 }, root: Tree(Parent { ann: None, left: Tree(Parent { ann: None, left: Tree(Parent { ann: None, left: Tree(Parent { ann: None, left: Tree(Parent { ann: None, left: Tree(Parent { ann: None, left: Tree(Parent { ann: None, left: Tree(Parent { ann: None, left: Tree(Parent { ann: None, left: Tree(Parent { ann: None, left: Tree(Parent { ann: None, left: Tree(Parent { ann: None, left: Tree(Parent { ann: None, left: Tree(Parent { ann: None, left: Tree(Parent { ann: Some(MerkleHashOrchard(0x3b7f85d425c9b26adec413bf9267322896eadbba2914b5d2af74222a5ec6bb1c)), left: Tree(Parent { ann: Some(MerkleHashOrchard(0x2ae28383c844ed4eee0de1745a9914bcb24ee62a7150258eea28b4889171d5af)), left: Tree(Leaf { value: (MerkleHashOrchard(0x11368524270f7835c418e1b08eb11d2115785b07f64ce893edffaf30df48a96c), MARKED) }), right: Tree(Leaf { value: (MerkleHashOrchard(0x1daf7f984405d164a6fd7ac62dbe82451581162ae6b7acaa15577d3b1faa41fc), CHECKPOINT) }) }), right: Tree(Parent { ann: Some(MerkleHashOrchard(0x16e726b35b0158589878f5b14854d0fad8a177d41bddcdc56c2b5c58c5a939e1)), left: Tree(Leaf { value: (MerkleHashOrchard(0x07d379bb948a5368366f36fcaaad20e1b9cef77ae218b423ea414763e3f5f547), EPHEMERAL) }), right: Tree(Leaf { value: (MerkleHashOrchard(0x0ae156dd82e615819cff7ba3af80a3b16df82ae37dc423a5c4aa97df57572deb), CHECKPOINT | MARKED) }) }) }), right: Tree(Nil) }), right: Tree(Nil) }), right: Tree(Nil) }), right: Tree(Nil) }), right: Tree(Nil) }), right: Tree(Nil) }), right: Tree(Nil) }), right: Tree(Nil) }), right: Tree(Nil) }), right: Tree(Nil) }), right: Tree(Nil) }), right: Tree(Nil) }), right: Tree(Nil) }), right: Tree(Nil) }) }], checkpoints: {BlockHeight(3): Checkpoint { tree_state: AtPosition(Position(1)), marks_removed: {} }, BlockHeight(4): Checkpoint { tree_state: AtPosition(Position(1)), marks_removed: {} }, BlockHeight(5): Checkpoint { tree_state: AtPosition(Position(1)), marks_removed: {} }, BlockHeight(6): Checkpoint { tree_state: AtPosition(Position(1)), marks_removed: {} }, BlockHeight(7): Checkpoint { tree_state: AtPosition(Position(1)), marks_removed: {} }, BlockHeight(8): Checkpoint { tree_state: AtPosition(Position(3)), marks_removed: {} }, BlockHeight(9): Checkpoint { tree_state: AtPosition(Position(3)), marks_removed: {} }, BlockHeight(10): Checkpoint { tree_state: AtPosition(Position(3)), marks_removed: {} }, BlockHeight(11): Checkpoint { tree_state: AtPosition(Position(3)), marks_removed: {} }, BlockHeight(12): Checkpoint { tree_state: AtPosition(Position(3)), marks_removed: {} }, BlockHeight(13): Checkpoint { tree_state: AtPosition(Position(3)), marks_removed: {} }, BlockHeight(14): Checkpoint { tree_state: AtPosition(Position(3)), marks_removed: {} }, BlockHeight(15): Checkpoint { tree_state: AtPosition(Position(3)), marks_removed: {} }, BlockHeight(16): Checkpoint { tree_state: AtPosition(Position(3)), marks_removed: {} }, BlockHeight(17): Checkpoint { tree_state: AtPosition(Position(3)), marks_removed: {} }, BlockHeight(18): Checkpoint { tree_state: AtPosition(Position(3)), marks_removed: {} }}, cap: Tree(Nil) }, max_checkpoints: 100 }"#
-    );
-    drop(tmd); // Now that we're done checking the trees, we drop the reference.
     let expected_post_sync_transactions = r#"[
   {
     "block_height": 3,

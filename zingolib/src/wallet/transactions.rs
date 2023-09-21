@@ -47,10 +47,14 @@ impl TransactionMetadataSet {
             .expect("To have the requested txid")
             .get_transaction_fee()
     }
+
     pub fn read_old<R: Read>(
         mut reader: R,
         wallet_capability: &WalletCapability,
     ) -> io::Result<Self> {
+        // Note, witness_trees will be Some(x) if the wallet has spend capability
+        // so this check is a very un-ergonomic way of checking if the wallet
+        // can spend.
         let mut witness_trees = wallet_capability.get_trees_witness_trees();
         let mut old_inc_witnesses = if witness_trees.is_some() {
             Some((Vec::new(), Vec::new()))

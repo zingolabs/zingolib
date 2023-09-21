@@ -7,12 +7,14 @@ use incrementalmerkletree::{Address, Hashable, Level, Position};
 use orchard::note_encryption::OrchardDomain;
 use orchard::tree::MerkleHashOrchard;
 use prost::Message;
-use shardtree::memory::MemoryShardStore;
-use shardtree::{Checkpoint, LocatedPrunableTree, ShardStore, ShardTree};
+use shardtree::store::memory::MemoryShardStore;
+use shardtree::store::{Checkpoint, ShardStore};
+use shardtree::LocatedPrunableTree;
+use shardtree::ShardTree;
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
 use std::usize;
-use zcash_client_sqlite::serialization::{read_shard, write_shard};
+use zcash_client_backend::serialization::shardtree::{read_shard, write_shard};
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
 use zcash_primitives::consensus::BlockHeight;
@@ -81,8 +83,8 @@ where
         |mut w, (checkpoint_id, checkpoint)| {
             w.write_u32::<LittleEndian>(u32::from(*checkpoint_id))?;
             match checkpoint.tree_state() {
-                shardtree::TreeState::Empty => w.write_u8(0),
-                shardtree::TreeState::AtPosition(pos) => {
+                shardtree::store::TreeState::Empty => w.write_u8(0),
+                shardtree::store::TreeState::AtPosition(pos) => {
                     w.write_u8(1)?;
                     w.write_u64::<LittleEndian>(<u64 as From<Position>>::from(pos))
                 }
@@ -211,8 +213,10 @@ fn read_shardtree<
     let checkpoints = Vector::read(&mut reader, |r| {
         let checkpoint_id = C::from(r.read_u32::<LittleEndian>()?);
         let tree_state = match r.read_u8()? {
-            0 => shardtree::TreeState::Empty,
-            1 => shardtree::TreeState::AtPosition(Position::from(r.read_u64::<LittleEndian>()?)),
+            0 => shardtree::store::TreeState::Empty,
+            1 => shardtree::store::TreeState::AtPosition(Position::from(
+                r.read_u64::<LittleEndian>()?,
+            )),
             otherwise => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
