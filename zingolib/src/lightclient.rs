@@ -1054,8 +1054,7 @@ impl LightClient {
             .wallet
             .tbalance(None)
             .await
-            .as_u64()
-            .ok_or("To represent Json as u64".to_string())?;
+            .expect("to receive a balance");
         let sapling_bal = self
             .wallet
             .spendable_sapling_balance(None)
