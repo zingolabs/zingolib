@@ -950,6 +950,112 @@ impl LightWallet {
         }
     }
 
+    async fn load_transaction_builder_spends(
+        &self,
+        submission_height: BlockHeight,
+        orchard_notes: &[SpendableOrchardNote],
+        sapling_notes: &[SpendableSaplingNote],
+        utxos: &[ReceivedTransparentOutput],
+    ) -> Result<Builder<'_, zingoconfig::ChainType, OsRng>, String> {
+        let txmds_readlock = self
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await;
+        let witness_trees = txmds_readlock
+            .witness_trees
+            .as_ref()
+            .expect("If we have spend capability we have trees");
+        let orchard_anchor = self
+            .get_orchard_anchor(&witness_trees.witness_tree_orchard)
+            .await?;
+        let mut builder = Builder::new(
+            self.transaction_context.config.chain,
+            submission_height,
+            Some(orchard_anchor),
+        );
+        // Add all tinputs
+        // Create a map from address -> sk for all taddrs, so we can spend from the
+        // right address
+        let address_to_sk = self
+            .wallet_capability()
+            .get_taddr_to_secretkey_map(&self.transaction_context.config)
+            .unwrap();
+
+        utxos
+            .iter()
+            .map(|utxo| {
+                let outpoint: OutPoint = utxo.to_outpoint();
+
+                let coin = TxOut {
+                    value: Amount::from_u64(utxo.value).unwrap(),
+                    script_pubkey: Script(utxo.script.clone()),
+                };
+
+                match address_to_sk.get(&utxo.address) {
+                    Some(sk) => builder
+                        .add_transparent_input(*sk, outpoint, coin)
+                        .map_err(|e| {
+                            transaction::builder::Error::<Infallible>::TransparentBuild(e)
+                        }),
+                    None => {
+                        // Something is very wrong
+                        let e = format!("Couldn't find the secretkey for taddr {}", utxo.address);
+                        error!("{}", e);
+
+                        Err(transaction::builder::Error::<Infallible>::TransparentBuild(
+                            transaction::components::transparent::builder::Error::InvalidAddress,
+                        ))
+                    }
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("{:?}", e))?;
+
+        for selected in sapling_notes.iter() {
+            info!("Adding sapling spend");
+            if let Err(e) = builder.add_sapling_spend(
+                selected.extsk.clone().unwrap(),
+                selected.diversifier,
+                selected.note.clone(),
+                witness_trees
+                    .witness_tree_sapling
+                    .witness(
+                        selected.witnessed_position,
+                        self.transaction_context.config.reorg_buffer_offset as usize,
+                    )
+                    .map_err(|e| format!("failed to compute sapling witness: {e}"))?,
+            ) {
+                let e = format!("Error adding note: {:?}", e);
+                error!("{}", e);
+                return Err(e);
+            }
+        }
+
+        for selected in orchard_notes.iter() {
+            info!("Adding orchard spend");
+            if let Err(e) = builder.add_orchard_spend::<transaction::fees::fixed::FeeRule>(
+                selected.spend_key.unwrap(),
+                selected.note,
+                orchard::tree::MerklePath::from(
+                    witness_trees
+                        .witness_tree_orchard
+                        .witness(
+                            selected.witnessed_position,
+                            self.transaction_context.config.reorg_buffer_offset as usize,
+                        )
+                        .map_err(|e| format!("failed to compute orchard witness: {e}"))?,
+                ),
+            ) {
+                let e = format!("Error adding note: {:?}", e);
+                error!("{}", e);
+                return Err(e);
+            }
+        }
+        drop(txmds_readlock);
+        Ok(builder)
+    }
+
     async fn send_to_addresses_inner<F, Fut, P: TxProver>(
         &self,
         prover: P,
@@ -1032,110 +1138,24 @@ impl LightWallet {
             return Err(e);
         }
         info!("Selected notes worth {}", u64::from(selected_value));
-        let txmds_readlock = self
-            .transaction_context
-            .transaction_metadata_set
-            .read()
-            .await;
 
-        let witness_trees = txmds_readlock
-            .witness_trees
-            .as_ref()
-            .expect("If we have spend capability we have trees");
-        let orchard_anchor = self
-            .get_orchard_anchor(&witness_trees.witness_tree_orchard)
-            .await?;
-        let mut builder = Builder::new(
-            self.transaction_context.config.chain,
-            submission_height,
-            Some(orchard_anchor),
-        );
         info!(
             "{}: Adding {} sapling notes, {} orchard notes, and {} utxos",
             now() - start_time,
-            sapling_notes.len(),
-            orchard_notes.len(),
-            utxos.len()
+            &sapling_notes.len(),
+            &orchard_notes.len(),
+            &utxos.len()
         );
 
-        // Add all tinputs
-        // Create a map from address -> sk for all taddrs, so we can spend from the
-        // right address
-        let address_to_sk = self
-            .wallet_capability()
-            .get_taddr_to_secretkey_map(&self.transaction_context.config)
-            .unwrap();
-
-        utxos
-            .iter()
-            .map(|utxo| {
-                let outpoint: OutPoint = utxo.to_outpoint();
-
-                let coin = TxOut {
-                    value: Amount::from_u64(utxo.value).unwrap(),
-                    script_pubkey: Script(utxo.script.clone()),
-                };
-
-                match address_to_sk.get(&utxo.address) {
-                    Some(sk) => builder
-                        .add_transparent_input(*sk, outpoint, coin)
-                        .map_err(|e| {
-                            transaction::builder::Error::<Infallible>::TransparentBuild(e)
-                        }),
-                    None => {
-                        // Something is very wrong
-                        let e = format!("Couldn't find the secretkey for taddr {}", utxo.address);
-                        error!("{}", e);
-
-                        Err(transaction::builder::Error::<Infallible>::TransparentBuild(
-                            transaction::components::transparent::builder::Error::InvalidAddress,
-                        ))
-                    }
-                }
-            })
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| format!("{:?}", e))?;
-
-        for selected in sapling_notes.iter() {
-            info!("Adding sapling spend");
-            if let Err(e) = builder.add_sapling_spend(
-                selected.extsk.clone().unwrap(),
-                selected.diversifier,
-                selected.note.clone(),
-                witness_trees
-                    .witness_tree_sapling
-                    .witness(
-                        selected.witnessed_position,
-                        self.transaction_context.config.reorg_buffer_offset as usize,
-                    )
-                    .map_err(|e| format!("failed to compute sapling witness: {e}"))?,
-            ) {
-                let e = format!("Error adding note: {:?}", e);
-                error!("{}", e);
-                return Err(e);
-            }
-        }
-
-        for selected in orchard_notes.iter() {
-            info!("Adding orchard spend");
-            if let Err(e) = builder.add_orchard_spend::<transaction::fees::fixed::FeeRule>(
-                selected.spend_key.unwrap(),
-                selected.note,
-                orchard::tree::MerklePath::from(
-                    witness_trees
-                        .witness_tree_orchard
-                        .witness(
-                            selected.witnessed_position,
-                            self.transaction_context.config.reorg_buffer_offset as usize,
-                        )
-                        .map_err(|e| format!("failed to compute orchard witness: {e}"))?,
-                ),
-            ) {
-                let e = format!("Error adding note: {:?}", e);
-                error!("{}", e);
-                return Err(e);
-            }
-        }
+        let mut builder = self
+            .load_transaction_builder_spends(
+                submission_height,
+                &orchard_notes,
+                &sapling_notes,
+                &utxos,
+            )
+            .await
+            .expect("To populate a builder with notes.");
 
         // We'll use the first ovk to encrypt outgoing transactions
         let sapling_ovk =
@@ -1279,7 +1299,6 @@ impl LightWallet {
 
         // Now that we've gotten this far, we need to write
         // so we drop the readlock
-        drop(txmds_readlock);
         // Mark notes as spent.
         {
             // Mark sapling notes as unconfirmed spent
