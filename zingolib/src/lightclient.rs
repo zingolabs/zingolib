@@ -805,7 +805,7 @@ impl LightClient {
                         b.insert(key, a_val.clone()).unwrap();
                     } else {
                         if a_val != &b_val {
-                            log::error!("{a_val} does not match {b_val}");
+                            log::error!("{key}: {a_val} does not match {key}: {b_val}");
                         }
                         b.insert(key, b_val).unwrap()
                     }
@@ -1472,30 +1472,40 @@ impl LightClient {
         let lightclient_exclusion_lock = self.sync_lock.lock().await;
 
         // The top of the wallet
-        let last_synced_height = self.wallet.last_synced_height().await;
+        let last_synced_height = dbg!(self.wallet.last_synced_height().await);
 
         // If our internal state gets damaged somehow (for example,
         // a resync that gets interrupted partway through) we need to make sure
         // our witness trees are aligned with our blockchain data
         self.ensure_witness_tree_not_above_wallet_blocks().await;
+
         // This is a fresh wallet. We need to get the initial trees
-        if last_synced_height
-            == self
-                .wallet
-                .transaction_context
-                .config
-                .sapling_activation_height()
-                - 1
-            && !self.wallet.get_birthday().await == 1
+        if self
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .witness_trees
+            .as_ref()
+            .is_some_and(|trees| {
+                trees
+                    .witness_tree_orchard
+                    .max_leaf_position(0)
+                    .unwrap()
+                    .is_none()
+            })
+            && last_synced_height != 0
         {
             let trees = crate::grpc_connector::GrpcConnector::get_trees(
                 self.get_server_uri(),
-                self.wallet.get_birthday().await - 1,
+                last_synced_height,
             )
             .await
             .unwrap();
             self.wallet.initiate_witness_trees(trees).await;
-        }
+        };
+
         let latest_blockid =
             GrpcConnector::get_latest_block(self.config.get_lightwalletd_uri()).await?;
         // Block hashes are reversed when stored in BlockDatas, so we reverse here to match

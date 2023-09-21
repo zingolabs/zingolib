@@ -1,5 +1,5 @@
 # Base on the same image that we use in CI
-FROM zingodevops/ci-build:001
+FROM zingodevops/ci-build:002
 
 # Install devcontainer-specific tools
 RUN apt-get update \

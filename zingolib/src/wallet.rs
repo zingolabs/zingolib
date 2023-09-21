@@ -15,7 +15,7 @@ use orchard::tree::MerkleHashOrchard;
 use orchard::Anchor;
 use rand::rngs::OsRng;
 use rand::Rng;
-use shardtree::memory::MemoryShardStore;
+use shardtree::store::memory::MemoryShardStore;
 use shardtree::ShardTree;
 use std::convert::Infallible;
 use std::{
@@ -57,7 +57,7 @@ use self::{
     message::Message,
     transactions::TransactionMetadataSet,
 };
-use zingoconfig::{ZingoConfig, REORG_BUFFER_OFFSET};
+use zingoconfig::ZingoConfig;
 
 pub mod data;
 pub mod keys;
@@ -476,7 +476,7 @@ impl LightWallet {
         >,
     ) -> Result<Anchor, String> {
         Ok(orchard::Anchor::from(
-            tree.root_at_checkpoint(REORG_BUFFER_OFFSET as usize)
+            tree.root_at_checkpoint(self.transaction_context.config.reorg_buffer_offset as usize)
                 .map_err(|e| format!("failed to get orchard anchor: {e}"))?,
         ))
     }
@@ -973,7 +973,7 @@ impl LightWallet {
             // and can have undesired effects if not implemented properly.
             //
             // Thus we forbid spending for wallets without complete spending capability for now
-            return Err("Wallet is in watch-only mode a thus it cannot spend".to_string());
+            return Err("Wallet is in watch-only mode and thus it cannot spend.".to_string());
         }
 
         let total_value = tos.iter().map(|to| to.1).sum::<u64>();
@@ -1020,13 +1020,6 @@ impl LightWallet {
 
         let target_amount = (Amount::from_u64(total_value).unwrap() + MINIMUM_FEE).unwrap();
 
-        // Create a map from address -> sk for all taddrs, so we can spend from the
-        // right address
-        let address_to_sk = self
-            .wallet_capability()
-            .get_taddr_to_secretkey_map(&self.transaction_context.config)
-            .unwrap();
-
         let (orchard_notes, sapling_notes, utxos, selected_value) =
             self.select_notes_and_utxos(target_amount, policy).await;
         if selected_value < target_amount {
@@ -1066,6 +1059,13 @@ impl LightWallet {
         );
 
         // Add all tinputs
+        // Create a map from address -> sk for all taddrs, so we can spend from the
+        // right address
+        let address_to_sk = self
+            .wallet_capability()
+            .get_taddr_to_secretkey_map(&self.transaction_context.config)
+            .unwrap();
+
         utxos
             .iter()
             .map(|utxo| {
@@ -1104,7 +1104,10 @@ impl LightWallet {
                 selected.note.clone(),
                 witness_trees
                     .witness_tree_sapling
-                    .witness(selected.witnessed_position, REORG_BUFFER_OFFSET as usize)
+                    .witness(
+                        selected.witnessed_position,
+                        self.transaction_context.config.reorg_buffer_offset as usize,
+                    )
                     .map_err(|e| format!("failed to compute sapling witness: {e}"))?,
             ) {
                 let e = format!("Error adding note: {:?}", e);
@@ -1121,7 +1124,10 @@ impl LightWallet {
                 orchard::tree::MerklePath::from(
                     witness_trees
                         .witness_tree_orchard
-                        .witness(selected.witnessed_position, REORG_BUFFER_OFFSET as usize)
+                        .witness(
+                            selected.witnessed_position,
+                            self.transaction_context.config.reorg_buffer_offset as usize,
+                        )
                         .map_err(|e| format!("failed to compute orchard witness: {e}"))?,
                 ),
             ) {
