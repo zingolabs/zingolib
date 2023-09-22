@@ -950,7 +950,7 @@ impl LightWallet {
         }
     }
 
-    async fn load_transaction_builder_spends(
+    async fn create_spend_loaded_builder(
         &self,
         submission_height: BlockHeight,
         orchard_notes: &[SpendableOrchardNote],
@@ -1055,6 +1055,11 @@ impl LightWallet {
         drop(txmds_readlock);
         Ok(builder)
     }
+    fn add_outputs_to_spend_loaded_builder(
+        &self,
+        slbuilder: &Builder<'_, zingoconfig::ChainType, OsRng>,
+    ) {
+    }
 
     async fn send_to_addresses_inner<F, Fut, P: TxProver>(
         &self,
@@ -1113,15 +1118,11 @@ impl LightWallet {
         );
 
         let mut builder = self
-            .load_transaction_builder_spends(
-                submission_height,
-                &orchard_notes,
-                &sapling_notes,
-                &utxos,
-            )
+            .create_spend_loaded_builder(submission_height, &orchard_notes, &sapling_notes, &utxos)
             .await
             .expect("To populate a builder with notes.");
 
+        let full_builder = self.add_outputs_to_spend_loaded_builder(&builder);
         // Convert address (str) to RecipientAddress and value to Amount
         let recipients = tos
             .iter()
