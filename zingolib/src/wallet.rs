@@ -239,6 +239,7 @@ pub struct LightWallet {
 
 use crate::wallet::traits::{Diversifiable as _, ReadableWriteable};
 type Receivers = Vec<(address::RecipientAddress, Amount, Option<MemoBytes>)>;
+type TxBuilder<'a> = Builder<'a, zingoconfig::ChainType, OsRng>;
 impl LightWallet {
     fn get_legacy_frontiers(
         trees: crate::compact_formats::TreeState,
@@ -964,7 +965,7 @@ impl LightWallet {
         orchard_notes: &[SpendableOrchardNote],
         sapling_notes: &[SpendableSaplingNote],
         utxos: &[ReceivedTransparentOutput],
-    ) -> Result<Builder<'_, zingoconfig::ChainType, OsRng>, String> {
+    ) -> Result<TxBuilder<'_>, String> {
         let orchard_anchor = self
             .get_orchard_anchor(&witness_trees.witness_tree_orchard)
             .await?;
@@ -1055,7 +1056,7 @@ impl LightWallet {
     }
     fn add_outputs_to_spend_loaded_builder(
         &self,
-        spend_loaded_builder: &mut Builder<'_, zingoconfig::ChainType, OsRng>,
+        spend_loaded_builder: &mut TxBuilder<'_>,
         receivers: Receivers,
         start_time: u64,
         selected_value: Amount,
