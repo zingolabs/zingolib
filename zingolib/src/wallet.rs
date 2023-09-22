@@ -1089,6 +1089,39 @@ impl LightWallet {
             tos.len()
         );
 
+        let target_amount = (Amount::from_u64(total_value).unwrap() + MINIMUM_FEE).unwrap();
+
+        let (orchard_notes, sapling_notes, utxos, selected_value) =
+            self.select_notes_and_utxos(target_amount, policy).await;
+        if selected_value < target_amount {
+            let e = format!(
+                "Insufficient verified shielded funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes.",
+                u64::from(selected_value), u64::from(target_amount), self.transaction_context.config
+                .reorg_buffer_offset + 1
+            );
+            error!("{}", e);
+            return Err(e);
+        }
+        info!("Selected notes worth {}", u64::from(selected_value));
+
+        info!(
+            "{}: Adding {} sapling notes, {} orchard notes, and {} utxos",
+            now() - start_time,
+            &sapling_notes.len(),
+            &orchard_notes.len(),
+            &utxos.len()
+        );
+
+        let mut builder = self
+            .load_transaction_builder_spends(
+                submission_height,
+                &orchard_notes,
+                &sapling_notes,
+                &utxos,
+            )
+            .await
+            .expect("To populate a builder with notes.");
+
         // Convert address (str) to RecipientAddress and value to Amount
         let recipients = tos
             .iter()
@@ -1123,39 +1156,6 @@ impl LightWallet {
 
         // Select notes to cover the target value
         info!("{}: Selecting notes", now() - start_time);
-
-        let target_amount = (Amount::from_u64(total_value).unwrap() + MINIMUM_FEE).unwrap();
-
-        let (orchard_notes, sapling_notes, utxos, selected_value) =
-            self.select_notes_and_utxos(target_amount, policy).await;
-        if selected_value < target_amount {
-            let e = format!(
-                "Insufficient verified shielded funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes.",
-                u64::from(selected_value), u64::from(target_amount), self.transaction_context.config
-                .reorg_buffer_offset + 1
-            );
-            error!("{}", e);
-            return Err(e);
-        }
-        info!("Selected notes worth {}", u64::from(selected_value));
-
-        info!(
-            "{}: Adding {} sapling notes, {} orchard notes, and {} utxos",
-            now() - start_time,
-            &sapling_notes.len(),
-            &orchard_notes.len(),
-            &utxos.len()
-        );
-
-        let mut builder = self
-            .load_transaction_builder_spends(
-                submission_height,
-                &orchard_notes,
-                &sapling_notes,
-                &utxos,
-            )
-            .await
-            .expect("To populate a builder with notes.");
 
         // We'll use the first ovk to encrypt outgoing transactions
         let sapling_ovk =
