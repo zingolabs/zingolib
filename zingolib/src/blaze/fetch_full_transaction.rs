@@ -431,7 +431,7 @@ impl TransactionContext {
                     self.transaction_metadata_set
                         .write()
                         .await
-                        .add_new_spent(
+                        .update_records_for_newfound_outgoing_spend(
                             transaction.txid(),
                             transaction_block_height,
                             true, // this was "unconfirmed" but this fn is invoked inside `if unconfirmed` TODO: add regression test to protect against movement

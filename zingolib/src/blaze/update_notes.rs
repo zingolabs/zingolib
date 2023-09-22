@@ -135,7 +135,7 @@ impl UpdateNotes {
                         wallet_transactions
                             .write()
                             .await
-                            .add_new_spent(
+                            .update_records_for_newfound_outgoing_spend(
                                 transaction_id_spent_in,
                                 spent_at_height,
                                 false,
