@@ -48,7 +48,7 @@ use zcash_primitives::{
 };
 use zingo_memo::create_wallet_internal_memo_version_0;
 
-use self::data::{SpendableOrchardNote, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
+use self::data::{SpendableOrchardNote, WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
 use self::keys::unified::{Capability, WalletCapability};
 use self::traits::Recipient;
 use self::traits::{DomainWalletExt, ReceivedNoteAndMetadata, SpendableNote};
@@ -959,20 +959,12 @@ impl LightWallet {
 
     async fn create_spend_loaded_builder(
         &self,
+        witness_trees: &WitnessTrees,
         submission_height: BlockHeight,
         orchard_notes: &[SpendableOrchardNote],
         sapling_notes: &[SpendableSaplingNote],
         utxos: &[ReceivedTransparentOutput],
     ) -> Result<Builder<'_, zingoconfig::ChainType, OsRng>, String> {
-        let txmds_readlock = self
-            .transaction_context
-            .transaction_metadata_set
-            .read()
-            .await;
-        let witness_trees = txmds_readlock
-            .witness_trees
-            .as_ref()
-            .expect("If we have spend capability we have trees");
         let orchard_anchor = self
             .get_orchard_anchor(&witness_trees.witness_tree_orchard)
             .await?;
@@ -1059,7 +1051,6 @@ impl LightWallet {
                 return Err(e);
             }
         }
-        drop(txmds_readlock);
         Ok(builder)
     }
     fn add_outputs_to_spend_loaded_builder(
@@ -1224,8 +1215,23 @@ impl LightWallet {
         //  * target amount
         //  * selection policy
         //  * recipient list
+        let txmds_readlock = self
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await;
+        let witness_trees = txmds_readlock
+            .witness_trees
+            .as_ref()
+            .expect("If we have spend capability we have trees");
         let mut builder = self
-            .create_spend_loaded_builder(submission_height, &orchard_notes, &sapling_notes, &utxos)
+            .create_spend_loaded_builder(
+                witness_trees,
+                submission_height,
+                &orchard_notes,
+                &sapling_notes,
+                &utxos,
+            )
             .await
             .expect("To populate a builder with notes.");
 
@@ -1239,6 +1245,7 @@ impl LightWallet {
             )
             .expect("To add outputs");
 
+        drop(txmds_readlock);
         // The builder now has the correct set of inputs and outputs
 
         // Set up a channel to receive updates on the progress of building the transaction.
