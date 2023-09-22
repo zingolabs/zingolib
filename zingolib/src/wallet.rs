@@ -50,7 +50,7 @@ use zingo_memo::create_wallet_internal_memo_version_0;
 
 use self::data::{SpendableOrchardNote, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
 use self::keys::unified::{Capability, WalletCapability};
-use self::traits::Recipient;
+use self::traits::{create_spendable_note, Recipient};
 use self::traits::{DomainWalletExt, ReceivedNoteAndMetadata, SpendableNote};
 use self::{
     data::{BlockData, ReceivedTransparentOutput, WalletZecPriceInfo},
@@ -399,22 +399,23 @@ impl LightWallet {
         let wc = self.wallet_capability();
         let tranmds_lth = self.transactions();
         let transaction_metadata_set = tranmds_lth.read().await;
-        let mut candidate_notes = transaction_metadata_set
-            .current
-            .iter()
-            .flat_map(|(transaction_id, transaction)| {
-                D::WalletNote::transaction_metadata_notes(transaction)
-                    .iter()
-                    .map(move |note| (*transaction_id, note))
-            })
-            .filter_map(
-                |(transaction_id, note): (transaction::TxId, &D::WalletNote)| -> Option <D::SpendableNoteAT> {
-                        // Get the spending key for the selected fvk, if we have it
-                        let extsk = D::wc_to_sk(&wc);
-                        SpendableNote::from(transaction_id, note, extsk.ok().as_ref())
-                }
-            )
-            .collect::<Vec<D::SpendableNoteAT>>();
+        let candidate_notes_iter =
+            transaction_metadata_set
+                .current
+                .iter()
+                .flat_map(|(transaction_id, transaction)| {
+                    D::WalletNote::transaction_metadata_notes(transaction)
+                        .iter()
+                        .map(move |note| (*transaction_id, note))
+                });
+        let mut candidate_notes = Vec::new();
+        for (transaction_id, note) in candidate_notes_iter {
+            // Get the spending key for the selected fvk, if we have it
+            let extsk = D::wc_to_sk(&wc);
+            create_spendable_note::<D>(transaction_id, note, extsk.ok().as_ref())
+                .await
+                .map(|spendable_note| candidate_notes.push(spendable_note));
+        }
         candidate_notes.sort_unstable_by(|spendable_note_1, spendable_note_2| {
             D::WalletNote::value_from_note(spendable_note_2.note())
                 .cmp(&D::WalletNote::value_from_note(spendable_note_1.note()))

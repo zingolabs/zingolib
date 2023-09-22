@@ -8,7 +8,7 @@ use incrementalmerkletree::Position;
 use log::error;
 use orchard;
 use orchard::note_encryption::OrchardDomain;
-use zcash_encoding::{Optional, Vector};
+use zcash_encoding::{CompactSize, Optional, Vector};
 use zcash_note_encryption::Domain;
 use zcash_primitives::{
     consensus::BlockHeight,
@@ -191,10 +191,12 @@ impl TransactionMetadataSet {
             transaction_metadatas.retain(|metadata| !metadata.1.unconfirmed);
             transaction_metadatas.sort_by(|a, b| a.0.partial_cmp(b.0).unwrap());
 
-            Vector::write(&mut writer, &transaction_metadatas, |w, (k, v)| {
-                w.write_all(k.as_ref())?;
-                v.write(w)
-            })?;
+            // Manual async version of Vector::write
+            CompactSize::write(&mut writer, transaction_metadatas.len())?;
+            for (k, v) in transaction_metadatas {
+                writer.write_all(k.as_ref())?;
+                v.write(&mut writer).await?
+            }
         }
 
         Optional::write(writer, self.witness_trees.as_mut(), |w, t| t.write(w))
@@ -576,8 +578,8 @@ impl TransactionMetadataSet {
 
         // Mark the source note as spent
         if !unconfirmed {
-            // ie remove_witness_mark_sapling or _orchard
-            self.remove_witness_mark::<D>(height, txid, source_txid, output_index)
+            self.remove_mark::<D>(height, txid, source_txid, spent_nullifier)
+                .await
         }
     }
 
@@ -597,16 +599,15 @@ impl TransactionMetadataSet {
     }
     /// A mark designates a leaf as non-ephemeral, mark removal causes
     /// the leaf to eventually transition to the ephemeral state
-    pub fn remove_witness_mark<D>(
+    pub async fn remove_mark<D: DomainWalletExt>(
         &mut self,
         height: BlockHeight,
         txid: TxId,
         source_txid: TxId,
-        output_index: u32,
+        nullifier: <<D as DomainWalletExt>::WalletNote as ReceivedNoteAndMetadata>::Nullifier,
     ) where
-        D: DomainWalletExt,
-        <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: traits::Recipient,
+        <D as Domain>::Note: PartialEq + Clone,
     {
         let transaction_metadata = self
             .current
@@ -615,51 +616,15 @@ impl TransactionMetadataSet {
 
         if let Some(note_datum) = D::to_notes_vec_mut(transaction_metadata)
             .iter_mut()
-            .find(|n| *n.output_index() == output_index)
-        {
-            *note_datum.spent_mut() = Some((txid, height.into()));
-            if let Some(ref mut tree) = self.witness_trees {
-                if let Some(position) = note_datum.witnessed_position() {
-                    tree.witness_tree_sapling
-                        .remove_mark(*position, Some(&(height - BlockHeight::from(1))))
-                        .unwrap();
-                } else {
-                    todo!("Tried to mark sapling note as spent with no position: FIX")
-                }
-            }
-        } else {
-            eprintln!("Could not remove marked sapling node!")
-        }
-    }
-    pub fn remove_witness_mark_orchard(
-        &mut self,
-        height: BlockHeight,
-        txid: TxId,
-        source_txid: TxId,
-        nullifier: orchard::note::Nullifier,
-    ) {
-        let transaction_metadata = self
-            .current
-            .get_mut(&source_txid)
-            .expect("Txid should be present");
-
-        if let Some(nd) = transaction_metadata
-            .orchard_notes
-            .iter_mut()
             .find(|n| n.nullifier() == Some(nullifier))
         {
-            *nd.spent_mut() = Some((txid, height.into()));
-            if let Some(ref mut t) = self.witness_trees {
-                if let Some(position) = nd.witnessed_position {
-                    t.witness_tree_orchard
-                        .remove_mark(position, Some(&(height - BlockHeight::from(1))))
-                        .unwrap();
-                } else {
-                    todo!("Tried to mark orchard note as spent with no position: FIX")
-                }
+            let pos = note_datum.witnessed_position().get().await;
+            *note_datum.spent_mut() = Some((txid, height.into()));
+            if let Some(ref mut tree) = D::get_shardtree_mut(self) {
+                tree.remove_mark(pos, Some(&(height - BlockHeight::from(1))))
+                    .unwrap();
             }
         } else {
-            eprintln!("Could not remove marked orchard node!")
         }
     }
 
@@ -849,7 +814,7 @@ impl TransactionMetadataSet {
                 .iter_mut()
                 .find(|nnmd| *nnmd.output_index() == output_index)
             {
-                *nnmd.witnessed_position_mut() = Some(position);
+                nnmd.witnessed_position().set(position);
                 *nnmd.nullifier_mut() = Some(D::get_nullifier_from_note_fvk_and_witness_position(
                     &nnmd.note().clone(),
                     fvk,

@@ -1,5 +1,5 @@
 use crate::compact_formats::CompactBlock;
-use crate::wallet::traits::ReceivedNoteAndMetadata;
+use crate::wallet::traits::{read_note_and_metadata, ReceivedNoteAndMetadata};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::frontier::{CommitmentTree, NonEmptyFrontier};
 use incrementalmerkletree::witness::IncrementalWitness;
@@ -15,7 +15,7 @@ use std::convert::TryFrom;
 use std::io::{self, Read, Write};
 use std::usize;
 use zcash_client_backend::serialization::shardtree::{read_shard, write_shard};
-use zcash_encoding::{Optional, Vector};
+use zcash_encoding::{CompactSize, Optional, Vector};
 use zcash_note_encryption::Domain;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::memo::MemoBytes;
@@ -29,7 +29,7 @@ use zcash_primitives::{
 use zingoconfig::{ChainType, MAX_REORG};
 
 use super::keys::unified::WalletCapability;
-use super::traits::{self, DomainWalletExt, ReadableWriteable, ToBytes};
+use super::traits::{self, write_note_and_metadata, DomainWalletExt, ToBytes};
 
 pub const COMMITMENT_TREE_LEVELS: u8 = 32;
 pub const MAX_SHARD_LEVEL: u8 = 16;
@@ -427,12 +427,55 @@ impl<Node: Hashable> WitnessCache<Node> {
     //     return hex::encode(buf);
     // }
 }
+
+pub struct FillableCell<T: Copy> {
+    value: tokio::sync::watch::Receiver<Option<T>>,
+    setter: tokio::sync::watch::Sender<Option<T>>,
+}
+
+impl<T: Copy + std::fmt::Debug> std::fmt::Debug for FillableCell<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("FillableCell")
+            .field(&self.value.borrow())
+            .finish()
+    }
+}
+
+impl<T: Copy> FillableCell<T> {
+    pub async fn get(&self) -> T {
+        self.value
+            .clone()
+            .wait_for(|val| val.is_some())
+            .await
+            .expect("Explicitly waited for a Some value")
+            .expect("All senders have been closed, somehow")
+    }
+    pub fn set(&self, val: T) {
+        self.setter
+            .send(Some(val))
+            .expect("Channel was closed, despite receiver being in the same struct as sender")
+    }
+    pub fn new_empty() -> Self {
+        let (setter, value) = tokio::sync::watch::channel(None);
+        Self { value, setter }
+    }
+
+    pub fn new_initialized(value: T) -> Self {
+        let (setter, value) = tokio::sync::watch::channel(Some(value));
+        Self { value, setter }
+    }
+    pub fn new_with_option(val: Option<T>) -> Self {
+        let (setter, value) = tokio::sync::watch::channel(val);
+        Self { value, setter }
+    }
+}
+
 pub struct ReceivedSaplingNoteAndMetadata {
     pub diversifier: zcash_primitives::sapling::Diversifier,
     pub note: zcash_primitives::sapling::Note,
 
     // The postion of this note's commitment
-    pub(crate) witnessed_position: Option<Position>,
+    pub(crate) witnessed_position: FillableCell<Position>,
 
     // The note's index in its containing transaction
     pub(crate) output_index: u32,
@@ -456,7 +499,7 @@ pub struct ReceivedOrchardNoteAndMetadata {
     pub note: orchard::note::Note,
 
     // The postion of this note's commitment
-    pub witnessed_position: Option<Position>,
+    pub witnessed_position: FillableCell<Position>,
 
     // The note's index in its containing transaction
     pub(crate) output_index: u32,
@@ -1037,14 +1080,14 @@ impl TransactionMetadata {
 
         tracing::info!("About to attempt to read a note and metadata");
         let sapling_notes = Vector::read_collected_mut(&mut reader, |r| {
-            ReceivedSaplingNoteAndMetadata::read(
+            read_note_and_metadata::<_, ReceivedSaplingNoteAndMetadata>(
                 r,
                 (wallet_capability, trees.as_mut().map(|t| &mut t.0)),
             )
         })?;
         let orchard_notes = if version > 22 {
             Vector::read_collected_mut(&mut reader, |r| {
-                ReceivedOrchardNoteAndMetadata::read(
+                read_note_and_metadata::<_, ReceivedOrchardNoteAndMetadata>(
                     r,
                     (wallet_capability, trees.as_mut().map(|t| &mut t.1)),
                 )
@@ -1146,7 +1189,7 @@ impl TransactionMetadata {
             self.total_orchard_value_spent,
         ]
     }
-    pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+    pub async fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
         let block: u32 = self.block_height.into();
@@ -1158,8 +1201,15 @@ impl TransactionMetadata {
 
         writer.write_all(self.txid.as_ref())?;
 
-        Vector::write(&mut writer, &self.sapling_notes, |w, nd| nd.write(w))?;
-        Vector::write(&mut writer, &self.orchard_notes, |w, nd| nd.write(w))?;
+        // Manual async version of Vector::write
+        CompactSize::write(&mut writer, self.sapling_notes.len())?;
+        for note in &self.sapling_notes {
+            write_note_and_metadata(note, &mut writer).await?
+        }
+        CompactSize::write(&mut writer, self.orchard_notes.len())?;
+        for note in &self.orchard_notes {
+            write_note_and_metadata(note, &mut writer).await?
+        }
         Vector::write(&mut writer, &self.received_utxos, |w, u| u.write(w))?;
 
         for pool in self.value_spent_by_pool() {
