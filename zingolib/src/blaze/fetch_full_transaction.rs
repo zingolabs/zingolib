@@ -469,8 +469,9 @@ impl TransactionContext {
 
         let decrypt_attempts =
             zcash_note_encryption::batch::try_note_decryption(&[ivk], &domain_tagged_outputs)
-                .into_iter();
-        for decrypt_attempt in decrypt_attempts {
+                .into_iter()
+                .enumerate();
+        for (output_index, decrypt_attempt) in decrypt_attempts {
             let ((note, to, memo_bytes), _ivk_num) = match decrypt_attempt {
                 Some(plaintext) => plaintext,
                 _ => continue,
@@ -486,6 +487,7 @@ impl TransactionContext {
                         block_time as u64,
                         note.clone(),
                         to,
+                        output_index,
                     );
             }
             let memo = memo_bytes

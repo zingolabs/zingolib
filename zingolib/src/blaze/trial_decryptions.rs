@@ -366,18 +366,13 @@ impl TrialDecryptions {
                             to,
                             have_spending_key,
                             Some(spend_nullifier),
-                            i,
+                            i as u32,
                         );
 
                         debug!("Trial decrypt Detected txid {}", &transaction_id);
 
                         detected_transaction_id_sender
-                            .send((
-                                transaction_id,
-                                spend_nullifier.into(),
-                                height,
-                                Some((i) as u32),
-                            ))
+                            .send((transaction_id, spend_nullifier.into(), height, i as u32))
                             .unwrap();
 
                         Ok::<_, String>(())

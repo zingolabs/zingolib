@@ -51,7 +51,7 @@ impl UpdateNotes {
 
         // Create a new channel where we'll be notified of TxIds that are to be processed
         let (transmitter, mut receiver) =
-            unbounded_channel::<(TxId, PoolNullifier, BlockHeight, Option<u32>)>();
+            unbounded_channel::<(TxId, PoolNullifier, BlockHeight, u32)>();
 
         // Aside from the incoming Txns, we also need to update the notes that are currently in the wallet
         let wallet_transactions = self.transaction_metadata_set.clone();
@@ -127,8 +127,9 @@ impl UpdateNotes {
                                 &nf,
                                 &transaction_id_spent_in,
                                 spent_at_height,
+                                output_index,
                             )
-                            .expect("Cound not mark note as spent");
+                            .expect("To mark note as spent");
 
                         // Record the future transaction, the one that has spent the nullifiers received in this transaction in the wallet
                         wallet_transactions

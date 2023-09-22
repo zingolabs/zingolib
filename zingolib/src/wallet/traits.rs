@@ -428,7 +428,7 @@ pub trait ReceivedNoteAndMetadata: Sized {
         memo: Option<Memo>,
         is_change: bool,
         have_spending_key: bool,
-        output_index: usize,
+        output_index: u32,
     ) -> Self;
     fn get_deprecated_serialized_view_key_buffer() -> Vec<u8>;
     fn have_spending_key(&self) -> bool;
@@ -496,7 +496,7 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         memo: Option<Memo>,
         is_change: bool,
         have_spending_key: bool,
-        output_index: usize,
+        output_index: u32,
     ) -> Self {
         Self {
             diversifier,

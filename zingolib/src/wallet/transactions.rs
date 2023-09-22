@@ -406,6 +406,7 @@ impl TransactionMetadataSet {
         spent_nullifier: &PoolNullifier,
         spent_txid: &TxId,
         spent_at_height: BlockHeight,
+        output_index: u32,
     ) -> Result<u64, String> {
         match spent_nullifier {
             PoolNullifier::Sapling(nf) => {
@@ -415,7 +416,7 @@ impl TransactionMetadataSet {
                     .expect("TXid should be a key in current.")
                     .sapling_notes
                     .iter_mut()
-                    .find(|n| n.nullifier == Some(*nf))
+                    .find(|n| n.output_index == output_index)
                 {
                     sapling_note_data.spent = Some((*spent_txid, spent_at_height.into()));
                     sapling_note_data.unconfirmed_spent = None;
@@ -740,6 +741,7 @@ impl TransactionMetadataSet {
         timestamp: u64,
         note: D::Note,
         to: D::Recipient,
+        output_index: usize,
     ) where
         D: DomainWalletExt,
         D::Note: PartialEq + Clone,
@@ -766,8 +768,7 @@ impl TransactionMetadataSet {
                     // if this is change, we'll mark it later in check_notes_mark_change
                     false,
                     false,
-                    // Obviously incorrect, so we can special-case it
-                    u32::MAX as usize,
+                    output_index as u32,
                 );
 
                 D::WalletNote::transaction_metadata_notes_mut(transaction_metadata).push(nd);
@@ -787,7 +788,7 @@ impl TransactionMetadataSet {
         to: D::Recipient,
         have_spending_key: bool,
         nullifier: Option<<D::WalletNote as ReceivedNoteAndMetadata>::Nullifier>,
-        output_index: usize,
+        output_index: u32,
     ) where
         D::Note: PartialEq + Clone,
         D::Recipient: Recipient,
