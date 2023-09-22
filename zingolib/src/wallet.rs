@@ -1082,7 +1082,7 @@ impl LightWallet {
         let orchard_ovk =
             orchard::keys::OutgoingViewingKey::try_from(&*self.wallet_capability()).unwrap();
 
-        let mut total_z_recipients = 0u32;
+        let mut total_shielded_receivers = 0u32;
         for (recipient_address, value, memo) in receivers {
             // Compute memo if it exists
             let validated_memo = match memo {
@@ -1094,7 +1094,7 @@ impl LightWallet {
 
             if let Err(e) = match recipient_address {
                 address::RecipientAddress::Shielded(to) => {
-                    total_z_recipients += 1;
+                    total_shielded_receivers += 1;
                     spend_loaded_builder
                         .add_sapling_output(Some(sapling_ovk), to, value, validated_memo)
                         .map_err(transaction::builder::Error::SaplingBuild)
@@ -1104,6 +1104,7 @@ impl LightWallet {
                     .map_err(transaction::builder::Error::TransparentBuild),
                 address::RecipientAddress::Unified(ua) => {
                     if let Some(orchard_addr) = ua.orchard() {
+                        total_shielded_receivers += 1;
                         spend_loaded_builder.add_orchard_output::<FixedFeeRule>(
                             Some(orchard_ovk.clone()),
                             *orchard_addr,
@@ -1111,7 +1112,7 @@ impl LightWallet {
                             validated_memo,
                         )
                     } else if let Some(sapling_addr) = ua.sapling() {
-                        total_z_recipients += 1;
+                        total_shielded_receivers += 1;
                         spend_loaded_builder
                             .add_sapling_output(
                                 Some(sapling_ovk),
@@ -1142,6 +1143,7 @@ impl LightWallet {
             }
         };
 
+        total_shielded_receivers += 1;
         if let Err(e) = spend_loaded_builder.add_orchard_output::<FixedFeeRule>(
             Some(orchard_ovk.clone()),
             *self.wallet_capability().addresses()[0].orchard().unwrap(),
@@ -1154,7 +1156,7 @@ impl LightWallet {
             error!("{}", e);
             return Err(e);
         };
-        Ok(total_z_recipients)
+        Ok(total_shielded_receivers)
     }
 
     async fn send_to_addresses_inner<F, Fut, P: TxProver>(
@@ -1235,7 +1237,7 @@ impl LightWallet {
             .await
             .expect("To populate a builder with notes.");
 
-        let total_z_recipients = self
+        let total_shielded_receivers = self
             .add_outputs_to_spend_loaded_builder(
                 &mut builder,
                 receivers,
@@ -1275,7 +1277,7 @@ impl LightWallet {
             let mut p = self.send_progress.write().await;
             p.is_send_in_progress = true;
             p.progress = 0;
-            p.total = sapling_notes.len() as u32 + total_z_recipients;
+            p.total = total_shielded_receivers as u32;
         }
 
         info!("{}: Building transaction", now() - start_time);
