@@ -1256,6 +1256,8 @@ impl LightWallet {
             )
             .expect("To add outputs");
 
+        // The builder now has the correct set of inputs and outputs
+
         // Set up a channel to receive updates on the progress of building the transaction.
         let (transmitter, receiver) = channel::<Progress>();
         let progress = self.send_progress.clone();
