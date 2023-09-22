@@ -1057,10 +1057,12 @@ impl LightWallet {
     }
     fn add_outputs_to_spend_loaded_builder(
         &self,
-        spend_loaded_builder: &Builder<'_, zingoconfig::ChainType, OsRng>,
+        spend_loaded_builder: &mut Builder<'_, zingoconfig::ChainType, OsRng>,
         tos: Vec<(&str, u64, Option<MemoBytes>)>,
         start_time: u64,
-    ) -> Result<(), String> {
+        selected_value: Amount,
+        target_amount: Amount,
+    ) -> Result<u32, String> {
         // Convert address (str) to RecipientAddress and value to Amount
         let recipients = tos
             .iter()
@@ -1174,7 +1176,8 @@ impl LightWallet {
             let e = format!("Error adding change output: {:?}", e);
             error!("{}", e);
             return Err(e);
-        }
+        };
+        Ok(total_z_recipients)
     }
 
     async fn send_to_addresses_inner<F, Fut, P: TxProver>(
@@ -1238,8 +1241,14 @@ impl LightWallet {
             .await
             .expect("To populate a builder with notes.");
 
-        let full_builder = self
-            .add_outputs_to_spend_loaded_builder(&builder, tos, start_time)
+        let total_z_recipients = self
+            .add_outputs_to_spend_loaded_builder(
+                &mut builder,
+                tos,
+                start_time,
+                selected_value,
+                target_amount,
+            )
             .expect("To add outputs");
 
         // Set up a channel to receive updates on the progress of building the transaction.
