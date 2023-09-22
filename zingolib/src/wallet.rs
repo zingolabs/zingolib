@@ -238,6 +238,7 @@ pub struct LightWallet {
 }
 
 use crate::wallet::traits::{Diversifiable as _, ReadableWriteable};
+type Receivers = Vec<(address::RecipientAddress, Amount, Option<MemoBytes>)>;
 impl LightWallet {
     fn get_legacy_frontiers(
         trees: crate::compact_formats::TreeState,
@@ -923,7 +924,7 @@ impl LightWallet {
         &self,
         sapling_prover: P,
         policy: NoteSelectionPolicy,
-        tos: Vec<(&str, u64, Option<MemoBytes>)>,
+        receivers: Receivers,
         submission_height: BlockHeight,
         broadcast_fn: F,
     ) -> Result<(String, Vec<u8>), String>
@@ -936,7 +937,13 @@ impl LightWallet {
 
         // Call the internal function
         match self
-            .send_to_addresses_inner(sapling_prover, policy, tos, submission_height, broadcast_fn)
+            .send_to_addresses_inner(
+                sapling_prover,
+                policy,
+                receivers,
+                submission_height,
+                broadcast_fn,
+            )
             .await
         {
             Ok((transaction_id, raw_transaction)) => {
@@ -1058,37 +1065,16 @@ impl LightWallet {
     fn add_outputs_to_spend_loaded_builder(
         &self,
         spend_loaded_builder: &mut Builder<'_, zingoconfig::ChainType, OsRng>,
-        tos: Vec<(&str, u64, Option<MemoBytes>)>,
+        receivers: Receivers,
         start_time: u64,
         selected_value: Amount,
         target_amount: Amount,
     ) -> Result<u32, String> {
         // Convert address (str) to RecipientAddress and value to Amount
-        let recipients = tos
+
+        let destination_uas = receivers
             .iter()
-            .map(|to| {
-                let ra = match address::RecipientAddress::decode(
-                    &self.transaction_context.config.chain,
-                    to.0,
-                ) {
-                    Some(to) => to,
-                    None => {
-                        let e = format!("Invalid recipient address: '{}'", to.0);
-                        error!("{}", e);
-                        return Err(e);
-                    }
-                };
-
-                let value = Amount::from_u64(to.1).unwrap();
-
-                Ok((ra, value, to.2.clone()))
-            })
-            .collect::<Result<Vec<(address::RecipientAddress, Amount, Option<MemoBytes>)>, String>>(
-            )?;
-
-        let destination_uas = recipients
-            .iter()
-            .filter_map(|recipient| match recipient.0 {
+            .filter_map(|receiver| match receiver.0 {
                 address::RecipientAddress::Shielded(_) => None,
                 address::RecipientAddress::Transparent(_) => None,
                 address::RecipientAddress::Unified(ref ua) => Some(ua.clone()),
@@ -1106,7 +1092,7 @@ impl LightWallet {
             orchard::keys::OutgoingViewingKey::try_from(&*self.wallet_capability()).unwrap();
 
         let mut total_z_recipients = 0u32;
-        for (recipient_address, value, memo) in recipients {
+        for (recipient_address, value, memo) in receivers {
             // Compute memo if it exists
             let validated_memo = match memo {
                 None => MemoBytes::from(Memo::Empty),
@@ -1184,7 +1170,7 @@ impl LightWallet {
         &self,
         sapling_prover: P,
         policy: NoteSelectionPolicy,
-        tos: Vec<(&str, u64, Option<MemoBytes>)>,
+        receivers: Receivers,
         submission_height: BlockHeight,
         broadcast_fn: F,
     ) -> Result<(String, Vec<u8>), String>
@@ -1194,9 +1180,6 @@ impl LightWallet {
     {
         // Init timer, check some invariants
         let start_time = now();
-        if tos.is_empty() {
-            return Err("Need at least one destination address".to_string());
-        }
 
         if !self.wallet_capability().can_spend_from_all_pools() {
             // Creating transactions in context of all possible combinations
@@ -1207,11 +1190,11 @@ impl LightWallet {
             return Err("Wallet is in watch-only mode and thus it cannot spend.".to_string());
         }
 
-        let total_value = tos.iter().map(|to| to.1).sum::<u64>();
+        let total_value = receivers.iter().map(|to| Into::<u64>::into(to.1)).sum();
         info!(
             "0: Creating transaction sending {} zatoshis to {} addresses",
             total_value,
-            tos.len()
+            receivers.len()
         );
 
         let target_amount = (Amount::from_u64(total_value).unwrap() + MINIMUM_FEE).unwrap();
@@ -1249,7 +1232,7 @@ impl LightWallet {
         let total_z_recipients = self
             .add_outputs_to_spend_loaded_builder(
                 &mut builder,
-                tos,
+                receivers,
                 start_time,
                 selected_value,
                 target_amount,
