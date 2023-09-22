@@ -90,7 +90,7 @@ impl UpdateNotes {
             let mut workers = FuturesUnordered::new();
 
             // Receive Txns that are sent to the wallet. We need to update the notes for this.
-            while let Some((transaction_id_spent_from, nf, at_height, output_num)) =
+            while let Some((transaction_id_spent_from, nf, at_height, output_index)) =
                 receiver.recv().await
             {
                 let bsync_data = bsync_data.clone();
@@ -153,7 +153,7 @@ impl UpdateNotes {
                         }
                     }
                     // Send it off to get the full transaction if this is a newly-detected transaction, that is, it has an output_num
-                    if output_num.is_some() && download_memos != MemoDownloadOption::NoMemos {
+                    if output_index.is_some() && download_memos != MemoDownloadOption::NoMemos {
                         fetch_full_sender
                             .send((transaction_id_spent_from, at_height))
                             .unwrap();
