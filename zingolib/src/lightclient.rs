@@ -1085,11 +1085,11 @@ impl LightClient {
             let _lock = self.sync_lock.lock().await;
             let (sapling_output, sapling_spend) = self.read_sapling_params()?;
 
-            let prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+            let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
 
             self.wallet
                 .send_to_addresses(
-                    prover,
+                    sapling_prover,
                     pools_to_shield.to_vec(),
                     vec![(&addr, balance_to_shield - fee, None)],
                     transaction_submission_height,
