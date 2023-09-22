@@ -1058,7 +1058,7 @@ impl LightWallet {
 
     async fn send_to_addresses_inner<F, Fut, P: TxProver>(
         &self,
-        prover: P,
+        sapling_prover: P,
         policy: NoteSelectionPolicy,
         tos: Vec<(&str, u64, Option<MemoBytes>)>,
         submission_height: BlockHeight,
@@ -1269,7 +1269,7 @@ impl LightWallet {
 
         builder.with_progress_notifier(transmitter);
         let (transaction, _) = match builder.build(
-            &prover,
+            &sapling_prover,
             &transaction::fees::fixed::FeeRule::non_standard(MINIMUM_FEE),
         ) {
             Ok(res) => res,
