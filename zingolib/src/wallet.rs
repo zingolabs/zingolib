@@ -1236,8 +1236,12 @@ impl LightWallet {
             .expect("To populate a builder with notes.");
 
         // Select notes to cover the target value
-        info!("{}: Selecting notes", now() - start_time);
-        let build_with_spends = self
+        info!("{}: Adding outputs", now() - start_time);
+        let (total_shielded_receivers, tx_builder) = self
+            .add_outputs_to_builder(tx_builder, receivers, selected_value, target_amount)
+            .expect("To add outputs");
+        info!("{}: selecting notes", now() - start_time);
+        let mut tx_builder = self
             .add_spends_to_builder(
                 tx_builder,
                 witness_trees,
@@ -1247,10 +1251,6 @@ impl LightWallet {
             )
             .await
             .expect("to add spends to tx_builder");
-        info!("{}: Adding outputs", now() - start_time);
-        let (total_shielded_receivers, mut build_with_spends_and_outs) = self
-            .add_outputs_to_builder(build_with_spends, receivers, selected_value, target_amount)
-            .expect("To add outputs");
 
         drop(txmds_readlock);
         // The builder now has the correct set of inputs and outputs
@@ -1287,8 +1287,8 @@ impl LightWallet {
 
         info!("{}: Building transaction", now() - start_time);
 
-        build_with_spends_and_outs.with_progress_notifier(transmitter);
-        let (transaction, _) = match build_with_spends_and_outs.build(
+        tx_builder.with_progress_notifier(transmitter);
+        let (transaction, _) = match tx_builder.build(
             &sapling_prover,
             &transaction::fees::fixed::FeeRule::non_standard(MINIMUM_FEE),
         ) {
