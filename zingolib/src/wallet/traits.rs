@@ -372,19 +372,10 @@ impl Bundle<OrchardDomain> for orchard::bundle::Bundle<orchard::bundle::Authoriz
 pub trait Nullifier:
     PartialEq + Copy + Sized + ToBytes<32> + FromBytes<32> + Send + Into<PoolNullifier>
 {
-    fn get_nullifiers_of_unspent_notes_from_transaction_set(
-        transaction_metadata_set: &TransactionMetadataSet,
-    ) -> Vec<(Self, u64, TxId)>;
     fn get_nullifiers_spent_in_transaction(transaction: &TransactionMetadata) -> &Vec<Self>;
 }
 
 impl Nullifier for zcash_primitives::sapling::Nullifier {
-    fn get_nullifiers_of_unspent_notes_from_transaction_set(
-        transaction_metadata_set: &TransactionMetadataSet,
-    ) -> Vec<(Self, u64, TxId)> {
-        transaction_metadata_set.get_nullifiers_of_unspent_sapling_notes()
-    }
-
     fn get_nullifiers_spent_in_transaction(
         transaction_metadata_set: &TransactionMetadata,
     ) -> &Vec<Self> {
@@ -393,12 +384,6 @@ impl Nullifier for zcash_primitives::sapling::Nullifier {
 }
 
 impl Nullifier for orchard::note::Nullifier {
-    fn get_nullifiers_of_unspent_notes_from_transaction_set(
-        transactions: &TransactionMetadataSet,
-    ) -> Vec<(Self, u64, TxId)> {
-        transactions.get_nullifiers_of_unspent_orchard_notes()
-    }
-
     fn get_nullifiers_spent_in_transaction(transaction: &TransactionMetadata) -> &Vec<Self> {
         &transaction.spent_orchard_nullifiers
     }
@@ -586,22 +571,6 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
     fn output_index_mut(&mut self) -> &mut u32 {
         &mut self.output_index
     }
-
-    fn remove_witness_mark(
-        txmds: &mut TransactionMetadataSet,
-        height: BlockHeight,
-        txid: TxId,
-        source_txid: TxId,
-        spent_nullifier: Self::Nullifier,
-    ) {
-        TransactionMetadataSet::remove_witness_mark_sapling(
-            txmds,
-            height,
-            txid,
-            source_txid,
-            spent_nullifier,
-        )
-    }
 }
 
 impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
@@ -721,21 +690,6 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
 
     fn output_index_mut(&mut self) -> &mut u32 {
         &mut self.output_index
-    }
-    fn remove_witness_mark(
-        txmds: &mut TransactionMetadataSet,
-        height: BlockHeight,
-        txid: TxId,
-        source_txid: TxId,
-        spent_nullifier: Self::Nullifier,
-    ) {
-        TransactionMetadataSet::remove_witness_mark_orchard(
-            txmds,
-            height,
-            txid,
-            source_txid,
-            spent_nullifier,
-        )
     }
 }
 

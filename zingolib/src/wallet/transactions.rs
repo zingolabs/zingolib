@@ -346,37 +346,33 @@ impl TransactionMetadataSet {
             .unwrap_or(0)
     }
 
-    pub fn get_nullifiers_of_unspent_sapling_notes(
+    pub fn get_nullifier_value_txid_outputindex_of_unspent_notes<D: DomainWalletExt>(
         &self,
-    ) -> Vec<(zcash_primitives::sapling::Nullifier, u64, TxId)> {
+    ) -> Vec<(
+        <<D as DomainWalletExt>::WalletNote as ReceivedNoteAndMetadata>::Nullifier,
+        u64,
+        TxId,
+        u32,
+    )>
+    where
+        <D as Domain>::Note: PartialEq + Clone,
+        <D as Domain>::Recipient: traits::Recipient,
+    {
         self.current
             .iter()
             .flat_map(|(_, transaction_metadata)| {
-                transaction_metadata
-                    .sapling_notes
+                D::to_notes_vec(transaction_metadata)
                     .iter()
-                    .filter(|nd| nd.spent.is_none())
+                    .filter(|nd| nd.spent().is_none())
                     .filter_map(move |nd| {
-                        nd.nullifier
-                            .map(|nf| (nf, nd.note.value().inner(), transaction_metadata.txid))
-                    })
-            })
-            .collect()
-    }
-
-    pub fn get_nullifiers_of_unspent_orchard_notes(
-        &self,
-    ) -> Vec<(orchard::note::Nullifier, u64, TxId)> {
-        self.current
-            .iter()
-            .flat_map(|(_, transaction_metadata)| {
-                transaction_metadata
-                    .orchard_notes
-                    .iter()
-                    .filter(|nd| nd.spent.is_none())
-                    .filter_map(move |nd| {
-                        nd.nullifier
-                            .map(|nf| (nf, nd.note.value().inner(), transaction_metadata.txid))
+                        nd.nullifier().map(|nf| {
+                            (
+                                nf,
+                                nd.value(),
+                                transaction_metadata.txid,
+                                *nd.output_index(),
+                            )
+                        })
                     })
             })
             .collect()
@@ -515,6 +511,7 @@ impl TransactionMetadataSet {
         spent_nullifier: PoolNullifier,
         value: u64,
         source_txid: TxId,
+        output_index: u32,
     ) {
         match spent_nullifier {
             PoolNullifier::Orchard(spent_nullifier) => {
@@ -526,6 +523,7 @@ impl TransactionMetadataSet {
                     spent_nullifier,
                     value,
                     source_txid,
+                    output_index,
                 )
                 .await
             }
@@ -538,6 +536,7 @@ impl TransactionMetadataSet {
                     spent_nullifier,
                     value,
                     source_txid,
+                    output_index,
                 )
                 .await
             }
@@ -554,6 +553,7 @@ impl TransactionMetadataSet {
         spent_nullifier: <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier,
         value: u64,
         source_txid: TxId,
+        output_index: u32,
     ) where
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: traits::Recipient,
@@ -577,7 +577,7 @@ impl TransactionMetadataSet {
         // Mark the source note as spent
         if !unconfirmed {
             // ie remove_witness_mark_sapling or _orchard
-            D::WalletNote::remove_witness_mark(self, height, txid, source_txid, spent_nullifier)
+            self.remove_witness_mark::<D>(height, txid, source_txid, output_index)
         }
     }
 
@@ -619,9 +619,9 @@ impl TransactionMetadataSet {
         {
             *note_datum.spent_mut() = Some((txid, height.into()));
             if let Some(ref mut tree) = self.witness_trees {
-                if let Some(position) = note_datum.witnessed_position {
+                if let Some(position) = note_datum.witnessed_position() {
                     tree.witness_tree_sapling
-                        .remove_mark(position, Some(&(height - BlockHeight::from(1))))
+                        .remove_mark(*position, Some(&(height - BlockHeight::from(1))))
                         .unwrap();
                 } else {
                     todo!("Tried to mark sapling note as spent with no position: FIX")

@@ -143,6 +143,7 @@ impl UpdateNotes {
                                 nf,
                                 value,
                                 transaction_id_spent_from,
+                                output_index,
                             )
                             .await;
 
