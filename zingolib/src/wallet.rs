@@ -950,7 +950,7 @@ impl LightWallet {
         }
     }
 
-    async fn load_transaction_builder_spends(
+    async fn create_spend_loaded_builder(
         &self,
         submission_height: BlockHeight,
         orchard_notes: &[SpendableOrchardNote],
@@ -1055,40 +1055,14 @@ impl LightWallet {
         drop(txmds_readlock);
         Ok(builder)
     }
-
-    async fn send_to_addresses_inner<F, Fut, P: TxProver>(
+    fn add_outputs_to_spend_loaded_builder(
         &self,
-        sapling_prover: P,
-        policy: NoteSelectionPolicy,
+        spend_loaded_builder: &mut Builder<'_, zingoconfig::ChainType, OsRng>,
         tos: Vec<(&str, u64, Option<MemoBytes>)>,
-        submission_height: BlockHeight,
-        broadcast_fn: F,
-    ) -> Result<(String, Vec<u8>), String>
-    where
-        F: Fn(Box<[u8]>) -> Fut,
-        Fut: Future<Output = Result<String, String>>,
-    {
-        let start_time = now();
-        if tos.is_empty() {
-            return Err("Need at least one destination address".to_string());
-        }
-
-        if !self.wallet_capability().can_spend_from_all_pools() {
-            // Creating transactions in context of all possible combinations
-            // of wallet capabilities requires a rigorous case study
-            // and can have undesired effects if not implemented properly.
-            //
-            // Thus we forbid spending for wallets without complete spending capability for now
-            return Err("Wallet is in watch-only mode and thus it cannot spend.".to_string());
-        }
-
-        let total_value = tos.iter().map(|to| to.1).sum::<u64>();
-        info!(
-            "0: Creating transaction sending {} zatoshis to {} addresses",
-            total_value,
-            tos.len()
-        );
-
+        start_time: u64,
+        selected_value: Amount,
+        target_amount: Amount,
+    ) -> Result<u32, String> {
         // Convert address (str) to RecipientAddress and value to Amount
         let recipients = tos
             .iter()
@@ -1124,39 +1098,6 @@ impl LightWallet {
         // Select notes to cover the target value
         info!("{}: Selecting notes", now() - start_time);
 
-        let target_amount = (Amount::from_u64(total_value).unwrap() + MINIMUM_FEE).unwrap();
-
-        let (orchard_notes, sapling_notes, utxos, selected_value) =
-            self.select_notes_and_utxos(target_amount, policy).await;
-        if selected_value < target_amount {
-            let e = format!(
-                "Insufficient verified shielded funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes.",
-                u64::from(selected_value), u64::from(target_amount), self.transaction_context.config
-                .reorg_buffer_offset + 1
-            );
-            error!("{}", e);
-            return Err(e);
-        }
-        info!("Selected notes worth {}", u64::from(selected_value));
-
-        info!(
-            "{}: Adding {} sapling notes, {} orchard notes, and {} utxos",
-            now() - start_time,
-            &sapling_notes.len(),
-            &orchard_notes.len(),
-            &utxos.len()
-        );
-
-        let mut builder = self
-            .load_transaction_builder_spends(
-                submission_height,
-                &orchard_notes,
-                &sapling_notes,
-                &utxos,
-            )
-            .await
-            .expect("To populate a builder with notes.");
-
         // We'll use the first ovk to encrypt outgoing transactions
         let sapling_ovk =
             zcash_primitives::keys::OutgoingViewingKey::try_from(&*self.wallet_capability())
@@ -1177,16 +1118,16 @@ impl LightWallet {
             if let Err(e) = match recipient_address {
                 address::RecipientAddress::Shielded(to) => {
                     total_z_recipients += 1;
-                    builder
+                    spend_loaded_builder
                         .add_sapling_output(Some(sapling_ovk), to, value, validated_memo)
                         .map_err(transaction::builder::Error::SaplingBuild)
                 }
-                address::RecipientAddress::Transparent(to) => builder
+                address::RecipientAddress::Transparent(to) => spend_loaded_builder
                     .add_transparent_output(&to, value)
                     .map_err(transaction::builder::Error::TransparentBuild),
                 address::RecipientAddress::Unified(ua) => {
                     if let Some(orchard_addr) = ua.orchard() {
-                        builder.add_orchard_output::<FixedFeeRule>(
+                        spend_loaded_builder.add_orchard_output::<FixedFeeRule>(
                             Some(orchard_ovk.clone()),
                             *orchard_addr,
                             u64::from(value),
@@ -1194,7 +1135,7 @@ impl LightWallet {
                         )
                     } else if let Some(sapling_addr) = ua.sapling() {
                         total_z_recipients += 1;
-                        builder
+                        spend_loaded_builder
                             .add_sapling_output(
                                 Some(sapling_ovk),
                                 *sapling_addr,
@@ -1224,7 +1165,7 @@ impl LightWallet {
             }
         };
 
-        if let Err(e) = builder.add_orchard_output::<FixedFeeRule>(
+        if let Err(e) = spend_loaded_builder.add_orchard_output::<FixedFeeRule>(
             Some(orchard_ovk.clone()),
             *self.wallet_capability().addresses()[0].orchard().unwrap(),
             u64::from(selected_value) - u64::from(target_amount),
@@ -1235,9 +1176,91 @@ impl LightWallet {
             let e = format!("Error adding change output: {:?}", e);
             error!("{}", e);
             return Err(e);
+        };
+        Ok(total_z_recipients)
+    }
+
+    async fn send_to_addresses_inner<F, Fut, P: TxProver>(
+        &self,
+        sapling_prover: P,
+        policy: NoteSelectionPolicy,
+        tos: Vec<(&str, u64, Option<MemoBytes>)>,
+        submission_height: BlockHeight,
+        broadcast_fn: F,
+    ) -> Result<(String, Vec<u8>), String>
+    where
+        F: Fn(Box<[u8]>) -> Fut,
+        Fut: Future<Output = Result<String, String>>,
+    {
+        // Init timer, check some invariants
+        let start_time = now();
+        if tos.is_empty() {
+            return Err("Need at least one destination address".to_string());
         }
 
+        if !self.wallet_capability().can_spend_from_all_pools() {
+            // Creating transactions in context of all possible combinations
+            // of wallet capabilities requires a rigorous case study
+            // and can have undesired effects if not implemented properly.
+            //
+            // Thus we forbid spending for wallets without complete spending capability for now
+            return Err("Wallet is in watch-only mode and thus it cannot spend.".to_string());
+        }
+
+        let total_value = tos.iter().map(|to| to.1).sum::<u64>();
+        info!(
+            "0: Creating transaction sending {} zatoshis to {} addresses",
+            total_value,
+            tos.len()
+        );
+
+        let target_amount = (Amount::from_u64(total_value).unwrap() + MINIMUM_FEE).unwrap();
+        // Select notes as a fn of target anount
+        let (orchard_notes, sapling_notes, utxos, selected_value) =
+            self.select_notes_and_utxos(target_amount, policy).await;
+        if selected_value < target_amount {
+            let e = format!(
+                "Insufficient verified shielded funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes.",
+                u64::from(selected_value), u64::from(target_amount), self.transaction_context.config
+                .reorg_buffer_offset + 1
+            );
+            error!("{}", e);
+            return Err(e);
+        }
+        info!("Selected notes worth {}", u64::from(selected_value));
+
+        info!(
+            "{}: Adding {} sapling notes, {} orchard notes, and {} utxos",
+            now() - start_time,
+            &sapling_notes.len(),
+            &orchard_notes.len(),
+            &utxos.len()
+        );
+
+        // Start building transaction with spends and outputs set by:
+        //  * target amount
+        //  * selection policy
+        //  * recipient list
+        let mut builder = self
+            .create_spend_loaded_builder(submission_height, &orchard_notes, &sapling_notes, &utxos)
+            .await
+            .expect("To populate a builder with notes.");
+
+        let total_z_recipients = self
+            .add_outputs_to_spend_loaded_builder(
+                &mut builder,
+                tos,
+                start_time,
+                selected_value,
+                target_amount,
+            )
+            .expect("To add outputs");
+
+        // The builder now has the correct set of inputs and outputs
+
         // Set up a channel to receive updates on the progress of building the transaction.
+        // This progress monitor, the channel monitoring it, and the types necessary for its
+        // construction are unnecessary for sending.
         let (transmitter, receiver) = channel::<Progress>();
         let progress = self.send_progress.clone();
 
