@@ -384,7 +384,7 @@ dependencies = [
 [[package]]
 name = "build_utils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#7aef7439bbc63b07768f19a4da1a0405273108c7"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#af49a34f117f80b010c464b75c37f3ed27436052"
 
 [[package]]
 name = "bumpalo"
@@ -724,7 +724,7 @@ dependencies = [
 [[package]]
 name = "equihash"
 version = "0.2.0"
-source = "git+https://github.com/nuttycom/librustzcash.git?rev=669e0797bff3b506984bd2851b22d9eae40a758a#669e0797bff3b506984bd2851b22d9eae40a758a"
+source = "git+https://github.com/zcash/librustzcash.git?branch=release-lwsdk-2.0.0#2d8ece3003de114dfa5bbc2c083ea5242da16b4e"
 dependencies = [
  "blake2b_simd",
  "byteorder",
@@ -760,7 +760,7 @@ dependencies = [
 [[package]]
 name = "f4jumble"
 version = "0.1.0"
-source = "git+https://github.com/nuttycom/librustzcash.git?rev=669e0797bff3b506984bd2851b22d9eae40a758a#669e0797bff3b506984bd2851b22d9eae40a758a"
+source = "git+https://github.com/zcash/librustzcash.git?branch=release-lwsdk-2.0.0#2d8ece3003de114dfa5bbc2c083ea5242da16b4e"
 dependencies = [
  "blake2b_simd",
 ]
@@ -3098,9 +3098,9 @@ dependencies = [
 
 [[package]]
 name = "tonic-build"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b477abbe1d18c0b08f56cd01d1bc288668c5b5cfd19b2ae1886bbf599c546f1"
+checksum = "c9d37bb15da06ae9bb945963066baca6561b505af93a52e949a85d28558459a2"
 dependencies = [
  "prettyplease 0.2.15",
  "proc-macro2",
@@ -3664,18 +3664,18 @@ dependencies = [
 [[package]]
 name = "zcash_address"
 version = "0.3.0"
-source = "git+https://github.com/nuttycom/librustzcash.git?rev=669e0797bff3b506984bd2851b22d9eae40a758a#669e0797bff3b506984bd2851b22d9eae40a758a"
+source = "git+https://github.com/zcash/librustzcash.git?branch=release-lwsdk-2.0.0#2d8ece3003de114dfa5bbc2c083ea5242da16b4e"
 dependencies = [
  "bech32",
  "bs58",
  "f4jumble",
- "zcash_encoding 0.2.0 (git+https://github.com/nuttycom/librustzcash.git?rev=669e0797bff3b506984bd2851b22d9eae40a758a)",
+ "zcash_encoding 0.2.0 (git+https://github.com/zcash/librustzcash.git?branch=release-lwsdk-2.0.0)",
 ]
 
 [[package]]
 name = "zcash_client_backend"
-version = "0.10.0-rc.2"
-source = "git+https://github.com/nuttycom/librustzcash.git?rev=669e0797bff3b506984bd2851b22d9eae40a758a#669e0797bff3b506984bd2851b22d9eae40a758a"
+version = "0.10.0-rc.3"
+source = "git+https://github.com/zcash/librustzcash.git?branch=release-lwsdk-2.0.0#2d8ece3003de114dfa5bbc2c083ea5242da16b4e"
 dependencies = [
  "base64 0.21.4",
  "bech32",
@@ -3697,11 +3697,11 @@ dependencies = [
  "shardtree",
  "subtle",
  "time",
- "tonic-build 0.10.0",
+ "tonic-build 0.10.1",
  "tracing",
  "which",
  "zcash_address",
- "zcash_encoding 0.2.0 (git+https://github.com/nuttycom/librustzcash.git?rev=669e0797bff3b506984bd2851b22d9eae40a758a)",
+ "zcash_encoding 0.2.0 (git+https://github.com/zcash/librustzcash.git?branch=release-lwsdk-2.0.0)",
  "zcash_note_encryption",
  "zcash_primitives",
 ]
@@ -3719,7 +3719,7 @@ dependencies = [
 [[package]]
 name = "zcash_encoding"
 version = "0.2.0"
-source = "git+https://github.com/nuttycom/librustzcash.git?rev=669e0797bff3b506984bd2851b22d9eae40a758a#669e0797bff3b506984bd2851b22d9eae40a758a"
+source = "git+https://github.com/zcash/librustzcash.git?branch=release-lwsdk-2.0.0#2d8ece3003de114dfa5bbc2c083ea5242da16b4e"
 dependencies = [
  "byteorder",
  "nonempty",
@@ -3741,7 +3741,7 @@ dependencies = [
 [[package]]
 name = "zcash_primitives"
 version = "0.13.0-rc.1"
-source = "git+https://github.com/nuttycom/librustzcash.git?rev=669e0797bff3b506984bd2851b22d9eae40a758a#669e0797bff3b506984bd2851b22d9eae40a758a"
+source = "git+https://github.com/zcash/librustzcash.git?branch=release-lwsdk-2.0.0#2d8ece3003de114dfa5bbc2c083ea5242da16b4e"
 dependencies = [
  "aes",
  "bip0039",
@@ -3769,7 +3769,7 @@ dependencies = [
  "sha2 0.10.7",
  "subtle",
  "zcash_address",
- "zcash_encoding 0.2.0 (git+https://github.com/nuttycom/librustzcash.git?rev=669e0797bff3b506984bd2851b22d9eae40a758a)",
+ "zcash_encoding 0.2.0 (git+https://github.com/zcash/librustzcash.git?branch=release-lwsdk-2.0.0)",
  "zcash_note_encryption",
 ]
 
@@ -3817,7 +3817,7 @@ dependencies = [
 [[package]]
 name = "zingo-memo"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#7aef7439bbc63b07768f19a4da1a0405273108c7"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#af49a34f117f80b010c464b75c37f3ed27436052"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -3829,7 +3829,7 @@ dependencies = [
 [[package]]
 name = "zingo-testutils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#7aef7439bbc63b07768f19a4da1a0405273108c7"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#af49a34f117f80b010c464b75c37f3ed27436052"
 dependencies = [
  "http",
  "incrementalmerkletree",
@@ -3851,7 +3851,7 @@ dependencies = [
 [[package]]
 name = "zingoconfig"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#7aef7439bbc63b07768f19a4da1a0405273108c7"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#af49a34f117f80b010c464b75c37f3ed27436052"
 dependencies = [
  "dirs",
  "http",
@@ -3864,7 +3864,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#7aef7439bbc63b07768f19a4da1a0405273108c7"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#af49a34f117f80b010c464b75c37f3ed27436052"
 dependencies = [
  "append-only-vec",
  "base58",
