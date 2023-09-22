@@ -1259,6 +1259,8 @@ impl LightWallet {
         // The builder now has the correct set of inputs and outputs
 
         // Set up a channel to receive updates on the progress of building the transaction.
+        // This progress monitor, the channel monitoring it, and the types necessary for its
+        // construction are unnecessary for sending.
         let (transmitter, receiver) = channel::<Progress>();
         let progress = self.send_progress.clone();
 
