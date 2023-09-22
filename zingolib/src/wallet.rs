@@ -1065,7 +1065,6 @@ impl LightWallet {
         &self,
         spend_loaded_builder: &mut TxBuilder<'_>,
         receivers: Receivers,
-        start_time: u64,
         selected_value: Amount,
         target_amount: Amount,
     ) -> Result<u32, String> {
@@ -1079,9 +1078,6 @@ impl LightWallet {
                 address::RecipientAddress::Unified(ref ua) => Some(ua.clone()),
             })
             .collect::<Vec<_>>();
-
-        // Select notes to cover the target value
-        info!("{}: Selecting notes", now() - start_time);
 
         // We'll use the first ovk to encrypt outgoing transactions
         let sapling_ovk =
@@ -1097,8 +1093,6 @@ impl LightWallet {
                 None => MemoBytes::from(Memo::Empty),
                 Some(s) => s,
             };
-
-            info!("{}: Adding output", now() - start_time);
 
             if let Err(e) = match recipient_address {
                 address::RecipientAddress::Shielded(to) => {
@@ -1239,6 +1233,8 @@ impl LightWallet {
             .await
             .expect("To populate a builder with notes.");
 
+        // Select notes to cover the target value
+        info!("{}: Selecting notes", now() - start_time);
         let mut build_with_spends = self
             .add_spends_to_builder(
                 tx_builder,
@@ -1249,11 +1245,11 @@ impl LightWallet {
             )
             .await
             .expect("to add spends to tx_builder");
+        info!("{}: Adding outputs", now() - start_time);
         let total_shielded_receivers = self
             .add_outputs_to_spend_loaded_builder(
                 &mut build_with_spends,
                 receivers,
-                start_time,
                 selected_value,
                 target_amount,
             )
