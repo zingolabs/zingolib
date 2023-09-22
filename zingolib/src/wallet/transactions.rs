@@ -576,7 +576,7 @@ impl TransactionMetadataSet {
 
         // Mark the source note as spent
         if !unconfirmed {
-            // ie remove_mark_sapling or orchard
+            // ie remove_witness_mark_sapling or _orchard
             D::WalletNote::remove_witness_mark(self, height, txid, source_txid, spent_nullifier)
         }
     }
@@ -597,7 +597,7 @@ impl TransactionMetadataSet {
     }
     /// A mark designates a leaf as non-ephemeral, mark removal causes
     /// the leaf to eventually transition to the ephemeral state
-    pub fn remove_mark_sapling(
+    pub fn remove_witness_mark_sapling(
         &mut self,
         height: BlockHeight,
         txid: TxId,
@@ -628,7 +628,7 @@ impl TransactionMetadataSet {
             eprintln!("Could not remove marked sapling node!")
         }
     }
-    pub fn remove_mark_orchard(
+    pub fn remove_witness_mark_orchard(
         &mut self,
         height: BlockHeight,
         txid: TxId,

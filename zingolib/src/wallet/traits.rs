@@ -601,7 +601,7 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         source_txid: TxId,
         spent_nullifier: Self::Nullifier,
     ) {
-        TransactionMetadataSet::remove_mark_sapling(
+        TransactionMetadataSet::remove_witness_mark_sapling(
             txmds,
             height,
             txid,
@@ -736,7 +736,7 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         source_txid: TxId,
         spent_nullifier: Self::Nullifier,
     ) {
-        TransactionMetadataSet::remove_mark_orchard(
+        TransactionMetadataSet::remove_witness_mark_orchard(
             txmds,
             height,
             txid,
