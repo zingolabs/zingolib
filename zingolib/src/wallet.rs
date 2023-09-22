@@ -1192,6 +1192,7 @@ impl LightWallet {
         F: Fn(Box<[u8]>) -> Fut,
         Fut: Future<Output = Result<String, String>>,
     {
+        // Init timer, check some invariants
         let start_time = now();
         if tos.is_empty() {
             return Err("Need at least one destination address".to_string());
@@ -1214,7 +1215,7 @@ impl LightWallet {
         );
 
         let target_amount = (Amount::from_u64(total_value).unwrap() + MINIMUM_FEE).unwrap();
-
+        // Select notes as a fn of target anount
         let (orchard_notes, sapling_notes, utxos, selected_value) =
             self.select_notes_and_utxos(target_amount, policy).await;
         if selected_value < target_amount {
@@ -1236,6 +1237,10 @@ impl LightWallet {
             &utxos.len()
         );
 
+        // Start building transaction with spends and outputs set by:
+        //  * target amount
+        //  * selection policy
+        //  * recipient list
         let mut builder = self
             .create_spend_loaded_builder(submission_height, &orchard_notes, &sapling_notes, &utxos)
             .await
