@@ -508,7 +508,7 @@ impl TransactionMetadataSet {
     #[allow(clippy::too_many_arguments)]
     pub async fn update_records_for_newfound_outgoing_spend(
         &mut self,
-        txid: TxId,
+        new_txid: TxId,
         height: BlockHeight,
         unconfirmed: bool,
         timestamp: u32,
@@ -519,7 +519,7 @@ impl TransactionMetadataSet {
         match spent_nullifier {
             PoolNullifier::Orchard(spent_nullifier) => {
                 self.update_records_for_newfound_outgoing_spend_internal::<OrchardDomain>(
-                    txid,
+                    new_txid,
                     height,
                     unconfirmed,
                     timestamp,
@@ -531,7 +531,7 @@ impl TransactionMetadataSet {
             }
             PoolNullifier::Sapling(spent_nullifier) => self
                 .update_records_for_newfound_outgoing_spend_internal::<SaplingDomain<ChainType>>(
-                    txid,
+                    new_txid,
                     height,
                     unconfirmed,
                     timestamp,
@@ -546,7 +546,7 @@ impl TransactionMetadataSet {
     #[allow(clippy::too_many_arguments)]
     async fn update_records_for_newfound_outgoing_spend_internal<D: DomainWalletExt>(
         &mut self,
-        txid: TxId,
+        new_txid: TxId,
         height: BlockHeight,
         unconfirmed: bool,
         timestamp: u32,
@@ -557,9 +557,13 @@ impl TransactionMetadataSet {
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: traits::Recipient,
     {
-        // Record this Tx as having spent some funds
-        let transaction_metadata =
-            self.get_or_create_transaction_metadata(&txid, height, unconfirmed, timestamp as u64);
+        // Record the new Tx as having spent some funds
+        let transaction_metadata = self.get_or_create_transaction_metadata(
+            &new_txid,
+            height,
+            unconfirmed,
+            timestamp as u64,
+        );
 
         // Mark the height correctly, in case this was previously a mempool or unconfirmed tx.
         transaction_metadata.block_height = height;
@@ -571,12 +575,12 @@ impl TransactionMetadataSet {
         }
 
         // Since this Txid has spent some funds, output notes in this Tx that are sent to us are actually change.
-        self.check_notes_mark_change(&txid);
+        self.check_notes_mark_change(&new_txid);
 
         // Mark the source note as spent
         if !unconfirmed {
             // ie remove_witness_mark_sapling or _orchard
-            D::WalletNote::remove_witness_mark(self, height, txid, source_txid, spent_nullifier)
+            D::WalletNote::remove_witness_mark(self, height, new_txid, source_txid, spent_nullifier)
         }
     }
 
