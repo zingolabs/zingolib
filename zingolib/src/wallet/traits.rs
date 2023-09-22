@@ -449,13 +449,6 @@ pub trait ReceivedNoteAndMetadata: Sized {
     }
     fn pending_spent(&self) -> &Option<(TxId, u32)>;
     fn pool() -> Pool;
-    fn remove_witness_mark(
-        txmds: &mut TransactionMetadataSet,
-        height: BlockHeight,
-        txid: TxId,
-        source_txid: TxId,
-        spent_nullifier: Self::Nullifier,
-    );
     fn spent(&self) -> &Option<(TxId, u32)>;
     fn spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
     fn transaction_metadata_notes(wallet_transaction: &TransactionMetadata) -> &Vec<Self>;

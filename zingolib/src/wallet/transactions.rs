@@ -597,22 +597,25 @@ impl TransactionMetadataSet {
     }
     /// A mark designates a leaf as non-ephemeral, mark removal causes
     /// the leaf to eventually transition to the ephemeral state
-    pub fn remove_witness_mark_sapling(
+    pub fn remove_witness_mark<D>(
         &mut self,
         height: BlockHeight,
         txid: TxId,
         source_txid: TxId,
-        nullifier: zcash_primitives::sapling::Nullifier,
-    ) {
+        output_index: u32,
+    ) where
+        D: DomainWalletExt,
+        <D as Domain>::Note: PartialEq + Clone,
+        <D as Domain>::Recipient: traits::Recipient,
+    {
         let transaction_metadata = self
             .current
             .get_mut(&source_txid)
             .expect("Txid should be present");
 
-        if let Some(note_datum) = transaction_metadata
-            .sapling_notes
+        if let Some(note_datum) = D::to_notes_vec_mut(transaction_metadata)
             .iter_mut()
-            .find(|n| n.nullifier() == Some(nullifier))
+            .find(|n| *n.output_index() == output_index)
         {
             *note_datum.spent_mut() = Some((txid, height.into()));
             if let Some(ref mut tree) = self.witness_trees {
