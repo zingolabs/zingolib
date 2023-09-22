@@ -958,22 +958,29 @@ impl LightWallet {
         }
     }
 
-    async fn create_spend_loaded_builder(
+    async fn create_tx_builder(
         &self,
-        witness_trees: &WitnessTrees,
         submission_height: BlockHeight,
+        witness_trees: &WitnessTrees,
+    ) -> Result<TxBuilder, String> {
+        let orchard_anchor = self
+            .get_orchard_anchor(&witness_trees.witness_tree_orchard)
+            .await?;
+        Ok(Builder::new(
+            self.transaction_context.config.chain,
+            submission_height,
+            Some(orchard_anchor),
+        ))
+    }
+
+    async fn add_spends_to_builder<'a>(
+        &'a self,
+        mut tx_builder: TxBuilder<'a>,
+        witness_trees: &WitnessTrees,
         orchard_notes: &[SpendableOrchardNote],
         sapling_notes: &[SpendableSaplingNote],
         utxos: &[ReceivedTransparentOutput],
     ) -> Result<TxBuilder<'_>, String> {
-        let orchard_anchor = self
-            .get_orchard_anchor(&witness_trees.witness_tree_orchard)
-            .await?;
-        let mut builder = Builder::new(
-            self.transaction_context.config.chain,
-            submission_height,
-            Some(orchard_anchor),
-        );
         // Add all tinputs
         // Create a map from address -> sk for all taddrs, so we can spend from the
         // right address
@@ -993,7 +1000,7 @@ impl LightWallet {
                 };
 
                 match address_to_sk.get(&utxo.address) {
-                    Some(sk) => builder
+                    Some(sk) => tx_builder
                         .add_transparent_input(*sk, outpoint, coin)
                         .map_err(|e| {
                             transaction::builder::Error::<Infallible>::TransparentBuild(e)
@@ -1014,7 +1021,7 @@ impl LightWallet {
 
         for selected in sapling_notes.iter() {
             info!("Adding sapling spend");
-            if let Err(e) = builder.add_sapling_spend(
+            if let Err(e) = tx_builder.add_sapling_spend(
                 selected.extsk.clone().unwrap(),
                 selected.diversifier,
                 selected.note.clone(),
@@ -1034,7 +1041,7 @@ impl LightWallet {
 
         for selected in orchard_notes.iter() {
             info!("Adding orchard spend");
-            if let Err(e) = builder.add_orchard_spend::<transaction::fees::fixed::FeeRule>(
+            if let Err(e) = tx_builder.add_orchard_spend::<transaction::fees::fixed::FeeRule>(
                 selected.spend_key.unwrap(),
                 selected.note,
                 orchard::tree::MerklePath::from(
@@ -1052,7 +1059,7 @@ impl LightWallet {
                 return Err(e);
             }
         }
-        Ok(builder)
+        Ok(tx_builder)
     }
     fn add_outputs_to_spend_loaded_builder(
         &self,
@@ -1227,20 +1234,24 @@ impl LightWallet {
             .witness_trees
             .as_ref()
             .expect("If we have spend capability we have trees");
-        let mut builder = self
-            .create_spend_loaded_builder(
+        let tx_builder = self
+            .create_tx_builder(submission_height, witness_trees)
+            .await
+            .expect("To populate a builder with notes.");
+
+        let mut build_with_spends = self
+            .add_spends_to_builder(
+                tx_builder,
                 witness_trees,
-                submission_height,
                 &orchard_notes,
                 &sapling_notes,
                 &utxos,
             )
             .await
-            .expect("To populate a builder with notes.");
-
+            .expect("to add spends to tx_builder");
         let total_shielded_receivers = self
             .add_outputs_to_spend_loaded_builder(
-                &mut builder,
+                &mut build_with_spends,
                 receivers,
                 start_time,
                 selected_value,
@@ -1283,8 +1294,8 @@ impl LightWallet {
 
         info!("{}: Building transaction", now() - start_time);
 
-        builder.with_progress_notifier(transmitter);
-        let (transaction, _) = match builder.build(
+        build_with_spends.with_progress_notifier(transmitter);
+        let (transaction, _) = match build_with_spends.build(
             &sapling_prover,
             &transaction::fees::fixed::FeeRule::non_standard(MINIMUM_FEE),
         ) {
