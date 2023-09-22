@@ -401,8 +401,8 @@ impl TransactionMetadataSet {
         self.remove_txids(txids_to_remove);
     }
 
-    // Will mark the nullifier of the given txid as spent. Returns the amount of the nullifier
-    pub fn mark_txid_nf_spent(
+    // Will mark the given txid/output_index_pair as spent. Returns the amount of the nullifier
+    pub fn mark_output_as_spent(
         &mut self,
         txid: TxId,
         spent_nullifier: &PoolNullifier,
@@ -411,41 +411,55 @@ impl TransactionMetadataSet {
         output_index: u32,
     ) -> Result<u64, String> {
         match spent_nullifier {
-            PoolNullifier::Sapling(nf) => {
+            PoolNullifier::Sapling(spent_nullifier_sapling) => {
                 if let Some(sapling_note_data) = self
                     .current
                     .get_mut(&txid)
                     .expect("TXid should be a key in current.")
                     .sapling_notes
                     .iter_mut()
-                    .find(|n| n.output_index == output_index)
+                    .find(|note| note.output_index == output_index)
                 {
+                    if let Some(nullifier_of_extant_note) = sapling_note_data.nullifier {
+                        if nullifier_of_extant_note != *spent_nullifier_sapling {
+                            return Err(format!("nullifier mismatch! nullifier '{:?}' was spent, but we are marking a sapling output with nullifier '{:?}' as spent", spent_nullifier_sapling, nullifier_of_extant_note));
+                        }
+                    } else {
+                        sapling_note_data.nullifier = Some(*spent_nullifier_sapling);
+                    }
                     sapling_note_data.spent = Some((*spent_txid, spent_at_height.into()));
                     sapling_note_data.unconfirmed_spent = None;
                     Ok(sapling_note_data.note.value().inner())
                 } else {
                     Err(format!(
-                        "no such sapling nullifier '{:?}' found in transaction",
-                        *nf
+                        "no such sapling output index '{:?}' found in transaction",
+                        output_index
                     ))
                 }
             }
-            PoolNullifier::Orchard(nf) => {
+            PoolNullifier::Orchard(spent_nullifier_orchard) => {
                 if let Some(orchard_note_data) = self
                     .current
                     .get_mut(&txid)
-                    .unwrap()
+                    .expect("TXid should be a key in current.")
                     .orchard_notes
                     .iter_mut()
-                    .find(|n| n.nullifier == Some(*nf))
+                    .find(|note| note.output_index == output_index)
                 {
+                    if let Some(nullifier_of_extant_note) = orchard_note_data.nullifier {
+                        if nullifier_of_extant_note != *spent_nullifier_orchard {
+                            return Err(format!("nullifier mismatch! nullifier '{:?}' was spent, but we are marking an orchard action with nullifier '{:?}' as spent", spent_nullifier_orchard, nullifier_of_extant_note));
+                        }
+                    } else {
+                        orchard_note_data.nullifier = Some(*spent_nullifier_orchard);
+                    }
                     orchard_note_data.spent = Some((*spent_txid, spent_at_height.into()));
                     orchard_note_data.unconfirmed_spent = None;
                     Ok(orchard_note_data.note.value().inner())
                 } else {
                     Err(format!(
-                        "no such orchard nullifier '{:?}' found in transaction",
-                        *nf
+                        "no such orchard output index '{:?}' found in transaction",
+                        output_index
                     ))
                 }
             }
