@@ -1057,8 +1057,124 @@ impl LightWallet {
     }
     fn add_outputs_to_spend_loaded_builder(
         &self,
-        slbuilder: &Builder<'_, zingoconfig::ChainType, OsRng>,
-    ) {
+        spend_loaded_builder: &Builder<'_, zingoconfig::ChainType, OsRng>,
+        tos: Vec<(&str, u64, Option<MemoBytes>)>,
+        start_time: u64,
+    ) -> Result<(), String> {
+        // Convert address (str) to RecipientAddress and value to Amount
+        let recipients = tos
+            .iter()
+            .map(|to| {
+                let ra = match address::RecipientAddress::decode(
+                    &self.transaction_context.config.chain,
+                    to.0,
+                ) {
+                    Some(to) => to,
+                    None => {
+                        let e = format!("Invalid recipient address: '{}'", to.0);
+                        error!("{}", e);
+                        return Err(e);
+                    }
+                };
+
+                let value = Amount::from_u64(to.1).unwrap();
+
+                Ok((ra, value, to.2.clone()))
+            })
+            .collect::<Result<Vec<(address::RecipientAddress, Amount, Option<MemoBytes>)>, String>>(
+            )?;
+
+        let destination_uas = recipients
+            .iter()
+            .filter_map(|recipient| match recipient.0 {
+                address::RecipientAddress::Shielded(_) => None,
+                address::RecipientAddress::Transparent(_) => None,
+                address::RecipientAddress::Unified(ref ua) => Some(ua.clone()),
+            })
+            .collect::<Vec<_>>();
+
+        // Select notes to cover the target value
+        info!("{}: Selecting notes", now() - start_time);
+
+        // We'll use the first ovk to encrypt outgoing transactions
+        let sapling_ovk =
+            zcash_primitives::keys::OutgoingViewingKey::try_from(&*self.wallet_capability())
+                .unwrap();
+        let orchard_ovk =
+            orchard::keys::OutgoingViewingKey::try_from(&*self.wallet_capability()).unwrap();
+
+        let mut total_z_recipients = 0u32;
+        for (recipient_address, value, memo) in recipients {
+            // Compute memo if it exists
+            let validated_memo = match memo {
+                None => MemoBytes::from(Memo::Empty),
+                Some(s) => s,
+            };
+
+            info!("{}: Adding output", now() - start_time);
+
+            if let Err(e) = match recipient_address {
+                address::RecipientAddress::Shielded(to) => {
+                    total_z_recipients += 1;
+                    spend_loaded_builder
+                        .add_sapling_output(Some(sapling_ovk), to, value, validated_memo)
+                        .map_err(transaction::builder::Error::SaplingBuild)
+                }
+                address::RecipientAddress::Transparent(to) => spend_loaded_builder
+                    .add_transparent_output(&to, value)
+                    .map_err(transaction::builder::Error::TransparentBuild),
+                address::RecipientAddress::Unified(ua) => {
+                    if let Some(orchard_addr) = ua.orchard() {
+                        spend_loaded_builder.add_orchard_output::<FixedFeeRule>(
+                            Some(orchard_ovk.clone()),
+                            *orchard_addr,
+                            u64::from(value),
+                            validated_memo,
+                        )
+                    } else if let Some(sapling_addr) = ua.sapling() {
+                        total_z_recipients += 1;
+                        spend_loaded_builder
+                            .add_sapling_output(
+                                Some(sapling_ovk),
+                                *sapling_addr,
+                                value,
+                                validated_memo,
+                            )
+                            .map_err(transaction::builder::Error::SaplingBuild)
+                    } else {
+                        return Err("Received UA with no Orchard or Sapling receiver".to_string());
+                    }
+                }
+            } {
+                let e = format!("Error adding output: {:?}", e);
+                error!("{}", e);
+                return Err(e);
+            }
+        }
+        let uas_bytes = match create_wallet_internal_memo_version_0(destination_uas.as_slice()) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                log::error!(
+                    "Could not write uas to memo field: {e}\n\
+        Your wallet will display an incorrect sent-to address. This is a visual error only.\n\
+        The correct address was sent to."
+                );
+                [0; 511]
+            }
+        };
+
+        if let Err(e) = spend_loaded_builder.add_orchard_output::<FixedFeeRule>(
+            Some(orchard_ovk.clone()),
+            *self.wallet_capability().addresses()[0].orchard().unwrap(),
+            u64::from(selected_value) - u64::from(target_amount),
+            // Here we store the uas we sent to in the memo field.
+            // These are used to recover the full UA we sent to.
+            MemoBytes::from(Memo::Arbitrary(Box::new(uas_bytes))),
+        ) {
+            let e = format!("Error adding change output: {:?}", e);
+            error!("{}", e);
+            return Err(e);
+        }
     }
 
     async fn send_to_addresses_inner<F, Fut, P: TxProver>(
@@ -1122,121 +1238,9 @@ impl LightWallet {
             .await
             .expect("To populate a builder with notes.");
 
-        let full_builder = self.add_outputs_to_spend_loaded_builder(&builder);
-        // Convert address (str) to RecipientAddress and value to Amount
-        let recipients = tos
-            .iter()
-            .map(|to| {
-                let ra = match address::RecipientAddress::decode(
-                    &self.transaction_context.config.chain,
-                    to.0,
-                ) {
-                    Some(to) => to,
-                    None => {
-                        let e = format!("Invalid recipient address: '{}'", to.0);
-                        error!("{}", e);
-                        return Err(e);
-                    }
-                };
-
-                let value = Amount::from_u64(to.1).unwrap();
-
-                Ok((ra, value, to.2.clone()))
-            })
-            .collect::<Result<Vec<(address::RecipientAddress, Amount, Option<MemoBytes>)>, String>>(
-            )?;
-
-        let destination_uas = recipients
-            .iter()
-            .filter_map(|recipient| match recipient.0 {
-                address::RecipientAddress::Shielded(_) => None,
-                address::RecipientAddress::Transparent(_) => None,
-                address::RecipientAddress::Unified(ref ua) => Some(ua.clone()),
-            })
-            .collect::<Vec<_>>();
-
-        // Select notes to cover the target value
-        info!("{}: Selecting notes", now() - start_time);
-
-        // We'll use the first ovk to encrypt outgoing transactions
-        let sapling_ovk =
-            zcash_primitives::keys::OutgoingViewingKey::try_from(&*self.wallet_capability())
-                .unwrap();
-        let orchard_ovk =
-            orchard::keys::OutgoingViewingKey::try_from(&*self.wallet_capability()).unwrap();
-
-        let mut total_z_recipients = 0u32;
-        for (recipient_address, value, memo) in recipients {
-            // Compute memo if it exists
-            let validated_memo = match memo {
-                None => MemoBytes::from(Memo::Empty),
-                Some(s) => s,
-            };
-
-            info!("{}: Adding output", now() - start_time);
-
-            if let Err(e) = match recipient_address {
-                address::RecipientAddress::Shielded(to) => {
-                    total_z_recipients += 1;
-                    builder
-                        .add_sapling_output(Some(sapling_ovk), to, value, validated_memo)
-                        .map_err(transaction::builder::Error::SaplingBuild)
-                }
-                address::RecipientAddress::Transparent(to) => builder
-                    .add_transparent_output(&to, value)
-                    .map_err(transaction::builder::Error::TransparentBuild),
-                address::RecipientAddress::Unified(ua) => {
-                    if let Some(orchard_addr) = ua.orchard() {
-                        builder.add_orchard_output::<FixedFeeRule>(
-                            Some(orchard_ovk.clone()),
-                            *orchard_addr,
-                            u64::from(value),
-                            validated_memo,
-                        )
-                    } else if let Some(sapling_addr) = ua.sapling() {
-                        total_z_recipients += 1;
-                        builder
-                            .add_sapling_output(
-                                Some(sapling_ovk),
-                                *sapling_addr,
-                                value,
-                                validated_memo,
-                            )
-                            .map_err(transaction::builder::Error::SaplingBuild)
-                    } else {
-                        return Err("Received UA with no Orchard or Sapling receiver".to_string());
-                    }
-                }
-            } {
-                let e = format!("Error adding output: {:?}", e);
-                error!("{}", e);
-                return Err(e);
-            }
-        }
-        let uas_bytes = match create_wallet_internal_memo_version_0(destination_uas.as_slice()) {
-            Ok(bytes) => bytes,
-            Err(e) => {
-                log::error!(
-                    "Could not write uas to memo field: {e}\n\
-        Your wallet will display an incorrect sent-to address. This is a visual error only.\n\
-        The correct address was sent to."
-                );
-                [0; 511]
-            }
-        };
-
-        if let Err(e) = builder.add_orchard_output::<FixedFeeRule>(
-            Some(orchard_ovk.clone()),
-            *self.wallet_capability().addresses()[0].orchard().unwrap(),
-            u64::from(selected_value) - u64::from(target_amount),
-            // Here we store the uas we sent to in the memo field.
-            // These are used to recover the full UA we sent to.
-            MemoBytes::from(Memo::Arbitrary(Box::new(uas_bytes))),
-        ) {
-            let e = format!("Error adding change output: {:?}", e);
-            error!("{}", e);
-            return Err(e);
-        }
+        let full_builder = self
+            .add_outputs_to_spend_loaded_builder(&builder, tos, start_time)
+            .expect("To add outputs");
 
         // Set up a channel to receive updates on the progress of building the transaction.
         let (transmitter, receiver) = channel::<Progress>();
