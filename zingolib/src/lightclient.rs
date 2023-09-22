@@ -999,26 +999,68 @@ impl LightClient {
             .unwrap()
             .block_on(async move { self.do_seed_phrase().await })
     }
+
+    fn map_tos_to_receivers(
+        &self,
+        tos: Vec<(&str, u64, Option<MemoBytes>)>,
+    ) -> Result<
+        Vec<(
+            zcash_client_backend::address::RecipientAddress,
+            zcash_primitives::transaction::components::Amount,
+            Option<MemoBytes>,
+        )>,
+        String,
+    > {
+        if tos.is_empty() {
+            return Err("Need at least one destination address".to_string());
+        }
+        tos.iter()
+            .map(|to| {
+                let ra = match zcash_client_backend::address::RecipientAddress::decode(
+                    &self.config.chain,
+                    to.0,
+                ) {
+                    Some(to) => to,
+                    None => {
+                        let e = format!("Invalid recipient address: '{}'", to.0);
+                        error!("{}", e);
+                        return Err(e);
+                    }
+                };
+
+                let value =
+                    zcash_primitives::transaction::components::Amount::from_u64(to.1).unwrap();
+
+                Ok((ra, value, to.2.clone()))
+            })
+            .collect()
+    }
+
     //TODO: Add migrate_sapling_to_orchard argument
     pub async fn do_send(
         &self,
         address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
     ) -> Result<String, String> {
+        let receivers = self.map_tos_to_receivers(address_amount_memo_tuples)?;
         let transaction_submission_height = self.get_submission_height().await?;
         // First, get the concensus branch ID
         debug!("Creating transaction");
 
         let result = {
             let _lock = self.sync_lock.lock().await;
+            // I am not clear on how long this operation may take, but it's
+            // clearly unnecessary in a send that doesn't include sapling
+            // TODO: Remove from sends that don't include Sapling
             let (sapling_output, sapling_spend) = self.read_sapling_params()?;
 
-            let prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+            let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
 
             self.wallet
-                .send_to_address(
-                    prover,
-                    vec![crate::wallet::Pool::Orchard, crate::wallet::Pool::Sapling],
-                    address_amount_memo_tuples,
+                .send_to_addresses(
+                    sapling_prover,
+                    vec![crate::wallet::Pool::Orchard, crate::wallet::Pool::Sapling], // This policy doesn't allow
+                    // spend from transparent.
+                    receivers,
                     transaction_submission_height,
                     |transaction_bytes| {
                         GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
@@ -1044,8 +1086,13 @@ impl LightClient {
         address: Option<String>,
     ) -> Result<String, String> {
         let transaction_submission_height = self.get_submission_height().await?;
-        let fee = u64::from(MINIMUM_FEE);
-        let tbal = self.wallet.tbalance(None).await.unwrap_or(0);
+        let fee = u64::from(MINIMUM_FEE); // TODO: This can no longer be hard coded, and must be calced
+                                          // as a fn of the transactions structure.
+        let tbal = self
+            .wallet
+            .tbalance(None)
+            .await
+            .expect("to receive a balance");
         let sapling_bal = self
             .wallet
             .spendable_sapling_balance(None)
@@ -1072,17 +1119,20 @@ impl LightClient {
         let addr = address
             .unwrap_or(self.wallet.wallet_capability().addresses()[0].encode(&self.config.chain));
 
+        let receiver = self
+            .map_tos_to_receivers(vec![(&addr, balance_to_shield - fee, None)])
+            .expect("To build shield receiver.");
         let result = {
             let _lock = self.sync_lock.lock().await;
             let (sapling_output, sapling_spend) = self.read_sapling_params()?;
 
-            let prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
+            let sapling_prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
 
             self.wallet
-                .send_to_address(
-                    prover,
+                .send_to_addresses(
+                    sapling_prover,
                     pools_to_shield.to_vec(),
-                    vec![(&addr, balance_to_shield - fee, None)],
+                    receiver,
                     transaction_submission_height,
                     |transaction_bytes| {
                         GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
