@@ -90,9 +90,7 @@ impl UpdateNotes {
             let mut workers = FuturesUnordered::new();
 
             // Receive Txns that are sent to the wallet. We need to update the notes for this.
-            while let Some((transaction_id_spent_from, nf, at_height, output_index)) =
-                receiver.recv().await
-            {
+            while let Some((source_txid, nf, at_height, output_index)) = receiver.recv().await {
                 let bsync_data = bsync_data.clone();
                 let wallet_transactions = wallet_transactions.clone();
                 let fetch_full_sender = fetch_full_sender.clone();
@@ -114,17 +112,16 @@ impl UpdateNotes {
                             .get_compact_transaction_for_nullifier_at_height(&nf, spent_height)
                             .await;
 
-                        let transaction_id_spent_in =
-                            TransactionMetadata::new_txid(&compact_transaction.hash);
+                        let dest_txid = TransactionMetadata::new_txid(&compact_transaction.hash);
                         let spent_at_height = BlockHeight::from_u32(spent_height as u32);
 
                         let value = wallet_transactions
                             .write()
                             .await
                             .mark_output_as_spent(
-                                transaction_id_spent_from,
+                                source_txid,
                                 &nf,
-                                &transaction_id_spent_in,
+                                &dest_txid,
                                 spent_at_height,
                                 output_index,
                             )
@@ -135,28 +132,26 @@ impl UpdateNotes {
                             .write()
                             .await
                             .update_records_for_newfound_outgoing_spend(
-                                transaction_id_spent_in,
+                                dest_txid,
                                 spent_at_height,
                                 false,
                                 ts,
                                 nf,
                                 value,
-                                transaction_id_spent_from,
+                                source_txid,
                             )
                             .await;
 
                         // Send the future transaction to be fetched too, in case it has only spent nullifiers and not received any change
                         if download_memos != MemoDownloadOption::NoMemos {
                             fetch_full_sender
-                                .send((transaction_id_spent_in, spent_at_height))
+                                .send((dest_txid, spent_at_height))
                                 .unwrap();
                         }
                     }
                     // Send it off to get the full transaction if this is a newly-detected transaction, that is, it has an output_num
                     if download_memos != MemoDownloadOption::NoMemos {
-                        fetch_full_sender
-                            .send((transaction_id_spent_from, at_height))
-                            .unwrap();
+                        fetch_full_sender.send((source_txid, at_height)).unwrap();
                     }
                 }));
             }

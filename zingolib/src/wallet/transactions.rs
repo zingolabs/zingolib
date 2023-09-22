@@ -591,7 +591,6 @@ impl TransactionMetadataSet {
         // Since this Txid has spent some funds, output notes in this Tx that are sent to us are actually change.
         self.check_notes_mark_change(&new_txid);
 
-        // this comment was wrong, lol
         if !unconfirmed {
             // ie remove_witness_mark_sapling or _orchard
             D::WalletNote::remove_witness_mark(self, height, new_txid, source_txid, spent_nullifier)
