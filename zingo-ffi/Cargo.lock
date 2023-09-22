@@ -2334,7 +2334,7 @@ dependencies = [
 [[package]]
 name = "regchest_utils"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingo-regchest?branch=launch_regtest#263e6f2b8a42ad5c69c142c85214562824396423"
+source = "git+https://github.com/Oscar-Pepper/zingo-regchest?branch=fix_unrecognized_token_task_error#dcc08fd61b4477faefd6fa3e6591c64ed0e566ff"
 dependencies = [
  "bollard",
  "futures",
