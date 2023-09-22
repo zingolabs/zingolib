@@ -44,7 +44,7 @@ impl UpdateNotes {
     ) -> (
         JoinHandle<Result<(), String>>,
         oneshot::Sender<u64>,
-        UnboundedSender<(TxId, PoolNullifier, BlockHeight, Option<u32>)>,
+        UnboundedSender<(TxId, PoolNullifier, BlockHeight, u32)>,
     ) {
         //info!("Starting Note Update processing");
         let download_memos = bsync_data.read().await.wallet_options.download_memos;
@@ -70,13 +70,13 @@ impl UpdateNotes {
                 .read()
                 .await
                 .get_notes_for_updating(earliest_block - 1);
-            for (transaction_id, nf) in notes {
+            for (transaction_id, nf, output_index) in notes {
                 transmitter_existing
                     .send((
                         transaction_id,
                         nf,
                         BlockHeight::from(earliest_block as u32),
-                        None,
+                        output_index,
                     ))
                     .map_err(|e| format!("Error sending note for updating: {}", e))?;
             }
@@ -154,7 +154,7 @@ impl UpdateNotes {
                         }
                     }
                     // Send it off to get the full transaction if this is a newly-detected transaction, that is, it has an output_num
-                    if output_index.is_some() && download_memos != MemoDownloadOption::NoMemos {
+                    if download_memos != MemoDownloadOption::NoMemos {
                         fetch_full_sender
                             .send((transaction_id_spent_from, at_height))
                             .unwrap();

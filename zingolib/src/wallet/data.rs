@@ -435,7 +435,7 @@ pub struct ReceivedSaplingNoteAndMetadata {
     pub(crate) witnessed_position: Option<Position>,
 
     // The note's index in its containing transaction
-    pub(crate) output_index: usize,
+    pub(crate) output_index: u32,
 
     pub(super) nullifier: Option<zcash_primitives::sapling::Nullifier>,
     pub spent: Option<(TxId, u32)>, // If this note was confirmed spent
@@ -459,7 +459,7 @@ pub struct ReceivedOrchardNoteAndMetadata {
     pub witnessed_position: Option<Position>,
 
     // The note's index in its containing transaction
-    pub(crate) output_index: usize,
+    pub(crate) output_index: u32,
 
     pub(super) nullifier: Option<orchard::note::Nullifier>,
     pub spent: Option<(TxId, u32)>, // If this note was confirmed spent

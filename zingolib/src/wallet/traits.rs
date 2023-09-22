@@ -442,8 +442,8 @@ pub trait ReceivedNoteAndMetadata: Sized {
     fn note(&self) -> &Self::Note;
     fn nullifier(&self) -> Option<Self::Nullifier>;
     fn nullifier_mut(&mut self) -> &mut Option<Self::Nullifier>;
-    fn output_index(&self) -> &usize;
-    fn output_index_mut(&mut self) -> &mut usize;
+    fn output_index(&self) -> &u32;
+    fn output_index_mut(&mut self) -> &mut u32;
     fn pending_receipt(&self) -> bool {
         self.nullifier().is_none()
     }
@@ -586,11 +586,11 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         &mut self.witnessed_position
     }
 
-    fn output_index(&self) -> &usize {
+    fn output_index(&self) -> &u32 {
         &self.output_index
     }
 
-    fn output_index_mut(&mut self) -> &mut usize {
+    fn output_index_mut(&mut self) -> &mut u32 {
         &mut self.output_index
     }
 
@@ -635,7 +635,7 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         memo: Option<Memo>,
         is_change: bool,
         have_spending_key: bool,
-        output_index: usize,
+        output_index: u32,
     ) -> Self {
         Self {
             diversifier,
@@ -722,11 +722,11 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
     fn witnessed_position_mut(&mut self) -> &mut Option<Position> {
         &mut self.witnessed_position
     }
-    fn output_index(&self) -> &usize {
+    fn output_index(&self) -> &u32 {
         &self.output_index
     }
 
-    fn output_index_mut(&mut self) -> &mut usize {
+    fn output_index_mut(&mut self) -> &mut u32 {
         &mut self.output_index
     }
     fn remove_witness_mark(
@@ -1431,7 +1431,7 @@ where
             memo,
             is_change,
             have_spending_key,
-            output_index as usize,
+            output_index,
         ))
     }
 

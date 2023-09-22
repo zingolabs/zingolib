@@ -288,7 +288,7 @@ impl TransactionMetadataSet {
         &self.some_txid_from_highest_wallet_block
     }
 
-    pub fn get_notes_for_updating(&self, before_block: u64) -> Vec<(TxId, PoolNullifier)> {
+    pub fn get_notes_for_updating(&self, before_block: u64) -> Vec<(TxId, PoolNullifier, u32)> {
         let before_block = BlockHeight::from_u32(before_block as u32);
 
         self.current
@@ -311,6 +311,7 @@ impl TransactionMetadataSet {
                                         todo!("Do something about note even with missing nullifier")
                                     }),
                                 ),
+                                sapling_note_description.output_index
                             ))
                         } else {
                             None
@@ -327,6 +328,7 @@ impl TransactionMetadataSet {
                                     PoolNullifier::Orchard(orchard_note_description.nullifier.unwrap_or_else(|| {
                                         todo!("Do something about note even with missing nullifier")
                                     }))
+                                    , orchard_note_description.output_index
 ,                                ))
                             } else {
                                 None
@@ -574,6 +576,7 @@ impl TransactionMetadataSet {
 
         // Mark the source note as spent
         if !unconfirmed {
+            // ie remove_mark_sapling or orchard
             D::WalletNote::remove_witness_mark(self, height, txid, source_txid, spent_nullifier)
         }
     }
@@ -831,7 +834,7 @@ impl TransactionMetadataSet {
     pub(crate) fn mark_note_position<D: DomainWalletExt>(
         &mut self,
         txid: TxId,
-        output_index: usize,
+        output_index: u32,
         position: Position,
         fvk: &D::Fvk,
     ) where

@@ -61,12 +61,7 @@ impl TrialDecryptions {
     pub async fn start(
         &self,
         bsync_data: Arc<RwLock<BlazeSyncData>>,
-        detected_transaction_id_sender: UnboundedSender<(
-            TxId,
-            PoolNullifier,
-            BlockHeight,
-            Option<u32>,
-        )>,
+        detected_transaction_id_sender: UnboundedSender<(TxId, PoolNullifier, BlockHeight, u32)>,
         transaction_size_filter: Option<u32>,
         full_transaction_fetcher: UnboundedSender<(
             TxId,
@@ -154,12 +149,7 @@ impl TrialDecryptions {
         orchard_ivk: Option<OrchardIvk>,
         transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
         transaction_size_filter: Option<u32>,
-        detected_transaction_id_sender: UnboundedSender<(
-            TxId,
-            PoolNullifier,
-            BlockHeight,
-            Option<u32>,
-        )>,
+        detected_transaction_id_sender: UnboundedSender<(TxId, PoolNullifier, BlockHeight, u32)>,
         full_transaction_fetcher: UnboundedSender<(
             TxId,
             oneshot::Sender<Result<Transaction, String>>,
@@ -285,15 +275,10 @@ impl TrialDecryptions {
         wc: &Arc<WalletCapability>,
         bsync_data: &Arc<RwLock<BlazeSyncData>>,
         transaction_metadata_set: &Arc<RwLock<TransactionMetadataSet>>,
-        detected_transaction_id_sender: &UnboundedSender<(
-            TxId,
-            PoolNullifier,
-            BlockHeight,
-            Option<u32>,
-        )>,
+        detected_transaction_id_sender: &UnboundedSender<(TxId, PoolNullifier, BlockHeight, u32)>,
         workers: &FuturesUnordered<JoinHandle<Result<(), String>>>,
     ) -> Vec<(
-        usize,
+        u32,
         TxId,
         (
             <D::WalletNote as ReceivedNoteAndMetadata>::Node,
@@ -381,7 +366,7 @@ impl TrialDecryptions {
                 } else {
                     (maybe_decrypted_output.0, false)
                 };
-            witness_txindexes_notes_commitments.push((output_num, transaction_id, (
+            witness_txindexes_notes_commitments.push((output_num as u32, transaction_id, (
 
                 <<D::WalletNote as ReceivedNoteAndMetadata>::Node as FromCommitment>::from_commitment(
                     outputs[output_num].1.cmstar(),
@@ -401,7 +386,7 @@ impl TrialDecryptions {
 fn update_witnesses<D>(
     notes_to_mark_position: Vec<(
         Vec<(
-            usize,
+            u32,
             TxId,
             (
                 <D::WalletNote as ReceivedNoteAndMetadata>::Node,
@@ -425,13 +410,13 @@ fn update_witnesses<D>(
                 .map(|pos| pos + 1)
                 .unwrap_or(Position::from(0));
             let mut nodes_retention = Vec::new();
-            for (i, (output_num, transaction_id, (node, retention))) in
+            for (i, (output_index, transaction_id, (node, retention))) in
                 block.0.into_iter().enumerate()
             {
                 if retention != Retention::Ephemeral {
                     txmds_writelock.mark_note_position::<D>(
                         transaction_id,
-                        output_num,
+                        output_index,
                         position + i as u64,
                         &D::wc_to_fvk(wc).unwrap(),
                     );
