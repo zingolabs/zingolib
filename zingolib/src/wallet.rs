@@ -48,7 +48,7 @@ use zcash_primitives::{
 };
 use zingo_memo::create_wallet_internal_memo_version_0;
 
-use self::data::{SpendableOrchardNote, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
+use self::data::{SpendableOrchardNote, WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL};
 use self::keys::unified::{Capability, WalletCapability};
 use self::traits::Recipient;
 use self::traits::{DomainWalletExt, ReceivedNoteAndMetadata, SpendableNote};
@@ -959,20 +959,12 @@ impl LightWallet {
 
     async fn create_spend_loaded_builder(
         &self,
+        witness_trees: &WitnessTrees,
         submission_height: BlockHeight,
         orchard_notes: &[SpendableOrchardNote],
         sapling_notes: &[SpendableSaplingNote],
         utxos: &[ReceivedTransparentOutput],
     ) -> Result<Builder<'_, zingoconfig::ChainType, OsRng>, String> {
-        let txmds_readlock = self
-            .transaction_context
-            .transaction_metadata_set
-            .read()
-            .await;
-        let witness_trees = txmds_readlock
-            .witness_trees
-            .as_ref()
-            .expect("If we have spend capability we have trees");
         let orchard_anchor = self
             .get_orchard_anchor(&witness_trees.witness_tree_orchard)
             .await?;
@@ -1059,7 +1051,6 @@ impl LightWallet {
                 return Err(e);
             }
         }
-        drop(txmds_readlock);
         Ok(builder)
     }
     fn add_outputs_to_spend_loaded_builder(
@@ -1091,7 +1082,7 @@ impl LightWallet {
         let orchard_ovk =
             orchard::keys::OutgoingViewingKey::try_from(&*self.wallet_capability()).unwrap();
 
-        let mut total_z_recipients = 0u32;
+        let mut total_shielded_receivers = 0u32;
         for (recipient_address, value, memo) in receivers {
             // Compute memo if it exists
             let validated_memo = match memo {
@@ -1103,7 +1094,7 @@ impl LightWallet {
 
             if let Err(e) = match recipient_address {
                 address::RecipientAddress::Shielded(to) => {
-                    total_z_recipients += 1;
+                    total_shielded_receivers += 1;
                     spend_loaded_builder
                         .add_sapling_output(Some(sapling_ovk), to, value, validated_memo)
                         .map_err(transaction::builder::Error::SaplingBuild)
@@ -1113,6 +1104,7 @@ impl LightWallet {
                     .map_err(transaction::builder::Error::TransparentBuild),
                 address::RecipientAddress::Unified(ua) => {
                     if let Some(orchard_addr) = ua.orchard() {
+                        total_shielded_receivers += 1;
                         spend_loaded_builder.add_orchard_output::<FixedFeeRule>(
                             Some(orchard_ovk.clone()),
                             *orchard_addr,
@@ -1120,7 +1112,7 @@ impl LightWallet {
                             validated_memo,
                         )
                     } else if let Some(sapling_addr) = ua.sapling() {
-                        total_z_recipients += 1;
+                        total_shielded_receivers += 1;
                         spend_loaded_builder
                             .add_sapling_output(
                                 Some(sapling_ovk),
@@ -1151,6 +1143,7 @@ impl LightWallet {
             }
         };
 
+        total_shielded_receivers += 1;
         if let Err(e) = spend_loaded_builder.add_orchard_output::<FixedFeeRule>(
             Some(orchard_ovk.clone()),
             *self.wallet_capability().addresses()[0].orchard().unwrap(),
@@ -1163,7 +1156,7 @@ impl LightWallet {
             error!("{}", e);
             return Err(e);
         };
-        Ok(total_z_recipients)
+        Ok(total_shielded_receivers)
     }
 
     async fn send_to_addresses_inner<F, Fut, P: TxProver>(
@@ -1224,12 +1217,27 @@ impl LightWallet {
         //  * target amount
         //  * selection policy
         //  * recipient list
+        let txmds_readlock = self
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await;
+        let witness_trees = txmds_readlock
+            .witness_trees
+            .as_ref()
+            .expect("If we have spend capability we have trees");
         let mut builder = self
-            .create_spend_loaded_builder(submission_height, &orchard_notes, &sapling_notes, &utxos)
+            .create_spend_loaded_builder(
+                witness_trees,
+                submission_height,
+                &orchard_notes,
+                &sapling_notes,
+                &utxos,
+            )
             .await
             .expect("To populate a builder with notes.");
 
-        let total_z_recipients = self
+        let total_shielded_receivers = self
             .add_outputs_to_spend_loaded_builder(
                 &mut builder,
                 receivers,
@@ -1239,6 +1247,7 @@ impl LightWallet {
             )
             .expect("To add outputs");
 
+        drop(txmds_readlock);
         // The builder now has the correct set of inputs and outputs
 
         // Set up a channel to receive updates on the progress of building the transaction.
@@ -1268,7 +1277,7 @@ impl LightWallet {
             let mut p = self.send_progress.write().await;
             p.is_send_in_progress = true;
             p.progress = 0;
-            p.total = sapling_notes.len() as u32 + total_z_recipients;
+            p.total = total_shielded_receivers as u32;
         }
 
         info!("{}: Building transaction", now() - start_time);
