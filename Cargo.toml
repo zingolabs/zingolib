@@ -29,8 +29,3 @@ debug = false
 [profile.test]
 opt-level = 3
 debug = false
-
-[patch.crates-io]
-zcash_primitives = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc.1" }
-zcash_address = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc.1" }
-
