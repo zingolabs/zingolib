@@ -139,6 +139,7 @@ impl UpdateNotes {
                                 nf,
                                 value,
                                 source_txid,
+                                output_index,
                             )
                             .await;
 

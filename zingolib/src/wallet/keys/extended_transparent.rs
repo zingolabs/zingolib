@@ -7,7 +7,7 @@ use secp256k1::{Error, PublicKey, Secp256k1, SecretKey, SignOnly};
 use zcash_encoding::Vector;
 use zingoconfig::ZingoConfig;
 
-use crate::wallet::traits::ReadableWriteable;
+use crate::wallet::traits::{ReadableWriteable, Versioned};
 
 lazy_static! {
     static ref SECP256K1_SIGN_ONLY: Secp256k1<SignOnly> = Secp256k1::signing_only();
@@ -147,8 +147,11 @@ impl ExtendedPrivKey {
     }
 }
 
-impl ReadableWriteable<()> for SecretKey {
+impl Versioned for SecretKey {
     const VERSION: u8 = 0; // not applicable
+}
+
+impl ReadableWriteable<()> for SecretKey {
     fn read<R: std::io::Read>(mut reader: R, _: ()) -> std::io::Result<Self> {
         let mut secret_key_bytes = [0; 32];
         reader.read_exact(&mut secret_key_bytes)?;
@@ -161,9 +164,11 @@ impl ReadableWriteable<()> for SecretKey {
     }
 }
 
-impl ReadableWriteable<()> for ExtendedPrivKey {
+impl Versioned for ExtendedPrivKey {
     const VERSION: u8 = 1;
+}
 
+impl ReadableWriteable<()> for ExtendedPrivKey {
     fn read<R: std::io::Read>(mut reader: R, _: ()) -> std::io::Result<Self> {
         Self::get_version(&mut reader)?;
         let private_key = SecretKey::read(&mut reader, ())?;
@@ -218,8 +223,10 @@ impl ExtendedPubKey {
     }
 }
 
-impl ReadableWriteable<()> for PublicKey {
+impl Versioned for PublicKey {
     const VERSION: u8 = 0; // not applicable
+}
+impl ReadableWriteable<()> for PublicKey {
     fn read<R: std::io::Read>(mut reader: R, _: ()) -> std::io::Result<Self> {
         let mut public_key_bytes = [0; 33];
         reader.read_exact(&mut public_key_bytes)?;
@@ -232,9 +239,10 @@ impl ReadableWriteable<()> for PublicKey {
     }
 }
 
-impl ReadableWriteable<()> for ExtendedPubKey {
+impl Versioned for ExtendedPubKey {
     const VERSION: u8 = 1;
-
+}
+impl ReadableWriteable<()> for ExtendedPubKey {
     fn read<R: std::io::Read>(mut reader: R, _: ()) -> std::io::Result<Self> {
         Self::get_version(&mut reader)?;
         let public_key = PublicKey::read(&mut reader, ())?;

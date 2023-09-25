@@ -21,7 +21,7 @@ use zcash_primitives::{
 };
 use zingoconfig::ZingoConfig;
 
-use crate::wallet::traits::ReadableWriteable;
+use crate::wallet::traits::{ReadableWriteable, Versioned};
 
 use super::{
     extended_transparent::{ExtendedPrivKey, ExtendedPubKey, KeyIndex},
@@ -96,9 +96,10 @@ pub struct ReceiverSelection {
     pub transparent: bool,
 }
 
-impl ReadableWriteable<()> for ReceiverSelection {
+impl Versioned for ReceiverSelection {
     const VERSION: u8 = 1;
-
+}
+impl ReadableWriteable<()> for ReceiverSelection {
     fn read<R: Read>(mut reader: R, _: ()) -> io::Result<Self> {
         let _version = Self::get_version(&mut reader)?;
         let receivers = reader.read_u8()?;
@@ -494,12 +495,14 @@ fn transparent_key_from_bytes(bytes: &[u8]) -> Result<ExtendedPrivKey, std::io::
     })
 }
 
+impl<V, S> Versioned for Capability<V, S> {
+    const VERSION: u8 = 1;
+}
 impl<V, S> ReadableWriteable<()> for Capability<V, S>
 where
     V: ReadableWriteable<()>,
     S: ReadableWriteable<()>,
 {
-    const VERSION: u8 = 1;
     fn read<R: Read>(mut reader: R, _input: ()) -> io::Result<Self> {
         let _version = Self::get_version(&mut reader)?;
         let capability_type = reader.read_u8()?;
@@ -532,9 +535,10 @@ where
     }
 }
 
-impl ReadableWriteable<()> for WalletCapability {
+impl Versioned for WalletCapability {
     const VERSION: u8 = 2;
-
+}
+impl ReadableWriteable<()> for WalletCapability {
     fn read<R: Read>(mut reader: R, _input: ()) -> io::Result<Self> {
         let version = Self::get_version(&mut reader)?;
         let wc = match version {
