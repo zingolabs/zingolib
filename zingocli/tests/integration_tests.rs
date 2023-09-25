@@ -1713,6 +1713,18 @@ async fn witness_clearing() {
         .marked_positions()
         .unwrap()
         .contains(&position));
+    dbg!(
+        &recipient
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .witness_trees
+            .as_ref()
+            .unwrap()
+            .witness_tree_orchard
+    );
 
     // 5. Mine 50 blocks, witness should still be there
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 50)

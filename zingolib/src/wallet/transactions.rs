@@ -619,48 +619,16 @@ impl TransactionMetadataSet {
             .find(|n| *n.output_index() == output_index)
         {
             *note_datum.spent_mut() = Some((txid, height.into()));
-            if let Some(ref mut tree) = self.witness_trees {
-                if let Some(position) = note_datum.witnessed_position() {
-                    tree.witness_tree_sapling
-                        .remove_mark(*position, Some(&(height - BlockHeight::from(1))))
+            if let Some(position) = *note_datum.witnessed_position() {
+                if let Some(ref mut tree) = D::get_shardtree_mut(self) {
+                    tree.remove_mark(dbg!(position), Some(&(height - BlockHeight::from(1))))
                         .unwrap();
-                } else {
-                    todo!("Tried to mark sapling note as spent with no position: FIX")
                 }
+            } else {
+                todo!("Tried to mark note as spent with no position: FIX")
             }
         } else {
-            eprintln!("Could not remove marked sapling node!")
-        }
-    }
-    pub fn remove_witness_mark_orchard(
-        &mut self,
-        height: BlockHeight,
-        txid: TxId,
-        source_txid: TxId,
-        nullifier: orchard::note::Nullifier,
-    ) {
-        let transaction_metadata = self
-            .current
-            .get_mut(&source_txid)
-            .expect("Txid should be present");
-
-        if let Some(nd) = transaction_metadata
-            .orchard_notes
-            .iter_mut()
-            .find(|n| n.nullifier() == Some(nullifier))
-        {
-            *nd.spent_mut() = Some((txid, height.into()));
-            if let Some(ref mut t) = self.witness_trees {
-                if let Some(position) = nd.witnessed_position {
-                    t.witness_tree_orchard
-                        .remove_mark(position, Some(&(height - BlockHeight::from(1))))
-                        .unwrap();
-                } else {
-                    todo!("Tried to mark orchard note as spent with no position: FIX")
-                }
-            }
-        } else {
-            eprintln!("Could not remove marked orchard node!")
+            eprintln!("Could not remove sapling node!")
         }
     }
 
