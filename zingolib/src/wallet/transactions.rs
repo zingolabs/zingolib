@@ -795,6 +795,7 @@ impl TransactionMetadataSet {
         have_spending_key: bool,
         nullifier: Option<<D::WalletNote as ReceivedNoteAndMetadata>::Nullifier>,
         output_index: u32,
+        position: Position,
     ) where
         D::Note: PartialEq + Clone,
         D::Recipient: Recipient,
@@ -807,7 +808,7 @@ impl TransactionMetadataSet {
         let nd = D::WalletNote::from_parts(
             D::Recipient::diversifier(&to),
             note.clone(),
-            None,
+            Some(position),
             nullifier,
             None,
             None,

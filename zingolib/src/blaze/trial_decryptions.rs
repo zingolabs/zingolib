@@ -352,6 +352,7 @@ impl TrialDecryptions {
                             have_spending_key,
                             Some(spend_nullifier),
                             i as u32,
+                            witness.witnessed_position(),
                         );
 
                         debug!("Trial decrypt Detected txid {}", &transaction_id);
