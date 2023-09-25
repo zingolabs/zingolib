@@ -202,6 +202,7 @@ impl TransactionMetadataSet {
 
     pub fn clear(&mut self) {
         self.current.clear();
+        self.witness_trees.as_mut().map(WitnessTrees::clear);
     }
 
     pub fn remove_txids(&mut self, txids_to_remove: Vec<TxId>) {

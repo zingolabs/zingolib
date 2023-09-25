@@ -189,6 +189,10 @@ impl WitnessTrees {
                 .expect("to insert non-empty orchard frontier")
         }
     }
+
+    pub fn clear(&mut self) {
+        *self = Self::default()
+    }
 }
 
 fn read_shardtree<
