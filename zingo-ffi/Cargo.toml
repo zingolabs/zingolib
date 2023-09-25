@@ -18,7 +18,3 @@ debug = false
 [profile.test]
 opt-level = 3
 debug = false
-
-[patch.crates-io]
-zcash_primitives = { git = "https://github.com/zcash/librustzcash.git", branch = "release-lwsdk-2.0.0" }
-zcash_address = { git = "https://github.com/zcash/librustzcash.git", branch = "release-lwsdk-2.0.0" }
