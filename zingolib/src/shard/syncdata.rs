@@ -9,14 +9,14 @@ use crate::wallet::data::BlockData;
 use crate::wallet::WalletOptions;
 use zingoconfig::ZingoConfig;
 
-pub struct BlazeSyncData {
+pub struct ShardSyncData {
     pub(crate) sync_status: Arc<RwLock<BatchSyncStatus>>,
     pub(crate) block_data: BlockAndWitnessData,
     uri: Arc<std::sync::RwLock<Uri>>,
     pub(crate) wallet_options: WalletOptions,
 }
 
-impl BlazeSyncData {
+impl ShardSyncData {
     pub fn new(config: &ZingoConfig) -> Self {
         let sync_status = Arc::new(RwLock::new(BatchSyncStatus::default()));
 

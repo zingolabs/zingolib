@@ -3,14 +3,14 @@
 extern crate rust_embed;
 mod test_framework;
 
-pub mod blaze;
+pub mod shard;
 pub mod commands;
 pub mod compact_formats;
 pub mod grpc_connector;
 pub mod lightclient;
 pub mod wallet;
 
-pub use blaze::block_witness_data::BATCHSIZE;
+pub use shard::block_witness_data::BATCHSIZE;
 
 // This line includes the generated `git_description()` function directly into this scope.
 include!(concat!(env!("OUT_DIR"), "/git_description.rs"));

@@ -1,9 +1,9 @@
 use crate::{
-    blaze::{
+    shard::{
         block_witness_data::BlockAndWitnessData, fetch_compact_blocks::FetchCompactBlocks,
         fetch_full_transaction::TransactionContext,
         fetch_taddr_transactions::FetchTaddrTransactions, sync_status::BatchSyncStatus,
-        syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions, update_notes::UpdateNotes,
+        syncdata::ShardSyncData, trial_decryptions::TrialDecryptions, update_notes::UpdateNotes,
     },
     compact_formats::RawTransaction,
     grpc_connector::GrpcConnector,
@@ -115,7 +115,7 @@ pub struct LightClient {
 
     sync_lock: Mutex<()>,
 
-    bsync_data: Arc<RwLock<BlazeSyncData>>,
+    bsync_data: Arc<RwLock<ShardSyncData>>,
     interrupt_sync: Arc<RwLock<bool>>,
 }
 impl LightClient {
@@ -125,7 +125,7 @@ impl LightClient {
             config: config.clone(),
             mempool_monitor: std::sync::RwLock::new(None),
             sync_lock: Mutex::new(()),
-            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
+            bsync_data: Arc::new(RwLock::new(ShardSyncData::new(&config))),
             interrupt_sync: Arc::new(RwLock::new(false)),
         }
     }
@@ -167,7 +167,7 @@ impl LightClient {
             config: config.clone(),
             mempool_monitor: std::sync::RwLock::new(None),
             sync_lock: Mutex::new(()),
-            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
+            bsync_data: Arc::new(RwLock::new(ShardSyncData::new(config))),
             interrupt_sync: Arc::new(RwLock::new(false)),
         };
 
@@ -190,7 +190,7 @@ impl LightClient {
             wallet: LightWallet::new(config.clone(), wallet_base, height)?,
             config: config.clone(),
             mempool_monitor: std::sync::RwLock::new(None),
-            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
+            bsync_data: Arc::new(RwLock::new(ShardSyncData::new(config))),
             sync_lock: Mutex::new(()),
             interrupt_sync: Arc::new(RwLock::new(false)),
         })
@@ -248,7 +248,7 @@ impl LightClient {
             config: config.clone(),
             mempool_monitor: std::sync::RwLock::new(None),
             sync_lock: Mutex::new(()),
-            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
+            bsync_data: Arc::new(RwLock::new(ShardSyncData::new(config))),
             interrupt_sync: Arc::new(RwLock::new(false)),
         };
 
@@ -1713,7 +1713,7 @@ impl LightClient {
             fetch_full_transactions_handle,
             fetch_full_transaction_transmitter,
             fetch_taddr_transactions_transmitter,
-        ) = crate::blaze::fetch_full_transaction::start(
+        ) = crate::shard::fetch_full_transaction::start(
             transaction_context,
             full_transaction_fetcher_transmitter.clone(),
             bsync_data.clone(),
@@ -1822,10 +1822,10 @@ impl LightClient {
 
         debug!("Batch: {batch_num} synced, doing post-processing");
 
-        let blaze_sync_data = bsync_data.read().await;
+        let shard_sync_data = bsync_data.read().await;
         // Post sync, we have to do a bunch of stuff
         // 1. Get the last 100 blocks and store it into the wallet, needed for future re-orgs
-        let blocks = blaze_sync_data
+        let blocks = shard_sync_data
             .block_data
             .drain_existingblocks_into_blocks_with_truncation(MAX_REORG)
             .await;
@@ -1836,7 +1836,7 @@ impl LightClient {
         // zingolabs considers this to be a serious privacy/secuity leak
 
         // 3. Mark the sync finished, which will clear the nullifier cache etc...
-        blaze_sync_data.finish().await;
+        shard_sync_data.finish().await;
 
         // 5. Remove expired mempool transactions, if any
         self.wallet

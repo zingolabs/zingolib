@@ -15,7 +15,7 @@ use zcash_primitives::{
 // This function can be used by TestServerData, or other test code
 // TODO: Replace with actual lightclient functionality
 pub fn trees_from_cblocks(
-    compactblock_list: &Vec<crate::blaze::test_utils::FakeCompactBlock>,
+    compactblock_list: &Vec<crate::shard::test_utils::FakeCompactBlock>,
 ) -> (
     Vec<sapling::CommitmentTree>,
     Vec<CommitmentTree<MerkleHashOrchard, 32>>,

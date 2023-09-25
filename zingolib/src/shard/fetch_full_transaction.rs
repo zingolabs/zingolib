@@ -10,7 +10,7 @@ use crate::wallet::{
 };
 use zingo_memo::{parse_zingo_memo, ParsedMemo};
 
-use super::syncdata::BlazeSyncData;
+use super::syncdata::ShardSyncData;
 use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
 use log::info;
 use orchard::note_encryption::OrchardDomain;
@@ -596,7 +596,7 @@ impl TransactionContext {
 pub async fn start(
     transaction_context: TransactionContext,
     fulltx_fetcher: UnboundedSender<(TxId, oneshot::Sender<Result<Transaction, String>>)>,
-    bsync_data: Arc<RwLock<BlazeSyncData>>,
+    bsync_data: Arc<RwLock<ShardSyncData>>,
 ) -> (
     JoinHandle<Result<(), String>>,
     UnboundedSender<(TxId, BlockHeight)>,

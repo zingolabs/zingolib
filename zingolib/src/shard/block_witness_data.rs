@@ -701,7 +701,7 @@ pub fn update_tree_with_compact_transaction<D: DomainWalletExt>(
 #[cfg(test)]
 mod test {
     use crate::compact_formats::CompactBlock;
-    use crate::{blaze::test_utils::FakeCompactBlock, wallet::data::BlockData};
+    use crate::{shard::test_utils::FakeCompactBlock, wallet::data::BlockData};
     use orchard::tree::MerkleHashOrchard;
     use zcash_primitives::block::BlockHash;
     use zingoconfig::ChainType;

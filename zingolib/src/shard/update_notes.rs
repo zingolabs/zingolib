@@ -15,7 +15,7 @@ use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle};
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
 
-use super::syncdata::BlazeSyncData;
+use super::syncdata::ShardSyncData;
 
 /// A processor to update notes that we have received in the wallet.
 /// We need to identify if this note has been spent in future blocks.
@@ -39,7 +39,7 @@ impl UpdateNotes {
 
     pub async fn start(
         &self,
-        bsync_data: Arc<RwLock<BlazeSyncData>>,
+        bsync_data: Arc<RwLock<ShardSyncData>>,
         fetch_full_sender: UnboundedSender<(TxId, BlockHeight)>,
     ) -> (
         JoinHandle<Result<(), String>>,

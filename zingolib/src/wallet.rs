@@ -1,6 +1,6 @@
 //! In all cases in this file "external_version" refers to a serialization version that is interpreted
 //! from a source outside of the code-base e.g. a wallet-file.
-use crate::blaze::fetch_full_transaction::TransactionContext;
+use crate::shard::fetch_full_transaction::TransactionContext;
 use crate::compact_formats::TreeState;
 use crate::wallet::data::{SpendableSaplingNote, TransactionMetadata};
 

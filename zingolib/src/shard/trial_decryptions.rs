@@ -35,7 +35,7 @@ use zcash_primitives::{
 };
 use zingoconfig::{ChainType, ZingoConfig};
 
-use super::syncdata::BlazeSyncData;
+use super::syncdata::ShardSyncData;
 
 pub struct TrialDecryptions {
     wc: Arc<WalletCapability>,
@@ -60,7 +60,7 @@ impl TrialDecryptions {
     /// the *management* thread in turns spawns per-1000-cb trial decryption threads.
     pub async fn start(
         &self,
-        bsync_data: Arc<RwLock<BlazeSyncData>>,
+        bsync_data: Arc<RwLock<ShardSyncData>>,
         detected_transaction_id_sender: UnboundedSender<(
             TxId,
             PoolNullifier,
@@ -149,7 +149,7 @@ impl TrialDecryptions {
         config: Arc<ZingoConfig>,
         compact_blocks: Vec<CompactBlock>,
         wc: Arc<WalletCapability>,
-        bsync_data: Arc<RwLock<BlazeSyncData>>,
+        bsync_data: Arc<RwLock<ShardSyncData>>,
         sapling_ivk: Option<SaplingIvk>,
         orchard_ivk: Option<OrchardIvk>,
         transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
@@ -283,7 +283,7 @@ impl TrialDecryptions {
         height: BlockHeight,
         config: &zingoconfig::ZingoConfig,
         wc: &Arc<WalletCapability>,
-        bsync_data: &Arc<RwLock<BlazeSyncData>>,
+        bsync_data: &Arc<RwLock<ShardSyncData>>,
         transaction_metadata_set: &Arc<RwLock<TransactionMetadataSet>>,
         detected_transaction_id_sender: &UnboundedSender<(
             TxId,
