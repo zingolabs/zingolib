@@ -39,7 +39,7 @@ impl UpdateNotes {
 
     pub async fn start(
         &self,
-        bsync_data: Arc<RwLock<ShardSyncData>>,
+        sync_data: Arc<RwLock<ShardSyncData>>,
         fetch_full_sender: UnboundedSender<(TxId, BlockHeight)>,
     ) -> (
         JoinHandle<Result<(), String>>,
@@ -47,7 +47,7 @@ impl UpdateNotes {
         UnboundedSender<(TxId, PoolNullifier, BlockHeight, Option<u32>)>,
     ) {
         //info!("Starting Note Update processing");
-        let download_memos = bsync_data.read().await.wallet_options.download_memos;
+        let download_memos = sync_data.read().await.wallet_options.download_memos;
 
         // Create a new channel where we'll be notified of TxIds that are to be processed
         let (transmitter, mut receiver) =
@@ -91,13 +91,13 @@ impl UpdateNotes {
 
             // Receive Txns that are sent to the wallet. We need to update the notes for this.
             while let Some((transaction_id, nf, at_height, output_num)) = receiver.recv().await {
-                let bsync_data = bsync_data.clone();
+                let sync_data = sync_data.clone();
                 let wallet_transactions = wallet_transactions.clone();
                 let fetch_full_sender = fetch_full_sender.clone();
 
                 workers.push(tokio::spawn(async move {
                     // If this nullifier was spent at a future height, fetch the TxId at the height and process it
-                    if let Some(spent_height) = bsync_data
+                    if let Some(spent_height) = sync_data
                         .read()
                         .await
                         .block_data
@@ -105,7 +105,7 @@ impl UpdateNotes {
                         .await
                     {
                         //info!("Note was spent, just add it as spent for TxId {}", txid);
-                        let (compact_transaction, ts) = bsync_data
+                        let (compact_transaction, ts) = sync_data
                             .read()
                             .await
                             .block_data

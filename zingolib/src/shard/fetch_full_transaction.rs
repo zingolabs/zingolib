@@ -596,7 +596,7 @@ impl TransactionContext {
 pub async fn start(
     transaction_context: TransactionContext,
     fulltx_fetcher: UnboundedSender<(TxId, oneshot::Sender<Result<Transaction, String>>)>,
-    bsync_data: Arc<RwLock<ShardSyncData>>,
+    sync_data: Arc<RwLock<ShardSyncData>>,
 ) -> (
     JoinHandle<Result<(), String>>,
     UnboundedSender<(TxId, BlockHeight)>,
@@ -604,10 +604,10 @@ pub async fn start(
 ) {
     let local_transaction_context = transaction_context.clone();
 
-    let start_height = bsync_data.read().await.sync_status.read().await.start_block;
-    let end_height = bsync_data.read().await.sync_status.read().await.end_block;
+    let start_height = sync_data.read().await.sync_status.read().await.start_block;
+    let end_height = sync_data.read().await.sync_status.read().await.end_block;
 
-    let bsync_data_i = bsync_data.clone();
+    let sync_data_i = sync_data.clone();
 
     let (transaction_id_transmitter, mut transaction_id_receiver) =
         unbounded_channel::<(TxId, BlockHeight)>();
@@ -617,14 +617,14 @@ pub async fn start(
 
         while let Some((transaction_id, height)) = transaction_id_receiver.recv().await {
             let per_txid_iter_context = local_transaction_context.clone();
-            let block_time = bsync_data_i
+            let block_time = sync_data_i
                 .read()
                 .await
                 .block_data
                 .get_block_timestamp(&height)
                 .await;
             let full_transaction_fetcher = fulltx_fetcher.clone();
-            let bsync_data = bsync_data_i.clone();
+            let sync_data = sync_data_i.clone();
             let last_progress = last_progress.clone();
 
             workers.push(tokio::spawn(async move {
@@ -640,7 +640,7 @@ pub async fn start(
 
                 let progress = start_height - u64::from(height);
                 if progress > last_progress.load(Ordering::SeqCst) {
-                    bsync_data
+                    sync_data
                         .read()
                         .await
                         .sync_status
@@ -662,7 +662,7 @@ pub async fn start(
             r.map_err(|r| r.to_string())??;
         }
 
-        bsync_data_i
+        sync_data_i
             .read()
             .await
             .sync_status
@@ -679,10 +679,10 @@ pub async fn start(
         unbounded_channel::<(Transaction, BlockHeight)>();
 
     let h2: JoinHandle<Result<(), String>> = tokio::spawn(async move {
-        let bsync_data = bsync_data.clone();
+        let sync_data = sync_data.clone();
 
         while let Some((transaction, height)) = transaction_receiver.recv().await {
-            let block_time = bsync_data
+            let block_time = sync_data
                 .read()
                 .await
                 .block_data

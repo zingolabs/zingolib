@@ -115,7 +115,7 @@ pub struct LightClient {
 
     sync_lock: Mutex<()>,
 
-    bsync_data: Arc<RwLock<ShardSyncData>>,
+    sync_data: Arc<RwLock<ShardSyncData>>,
     interrupt_sync: Arc<RwLock<bool>>,
 }
 impl LightClient {
@@ -125,7 +125,7 @@ impl LightClient {
             config: config.clone(),
             mempool_monitor: std::sync::RwLock::new(None),
             sync_lock: Mutex::new(()),
-            bsync_data: Arc::new(RwLock::new(ShardSyncData::new(&config))),
+            sync_data: Arc::new(RwLock::new(ShardSyncData::new(&config))),
             interrupt_sync: Arc::new(RwLock::new(false)),
         }
     }
@@ -167,7 +167,7 @@ impl LightClient {
             config: config.clone(),
             mempool_monitor: std::sync::RwLock::new(None),
             sync_lock: Mutex::new(()),
-            bsync_data: Arc::new(RwLock::new(ShardSyncData::new(config))),
+            sync_data: Arc::new(RwLock::new(ShardSyncData::new(config))),
             interrupt_sync: Arc::new(RwLock::new(false)),
         };
 
@@ -190,7 +190,7 @@ impl LightClient {
             wallet: LightWallet::new(config.clone(), wallet_base, height)?,
             config: config.clone(),
             mempool_monitor: std::sync::RwLock::new(None),
-            bsync_data: Arc::new(RwLock::new(ShardSyncData::new(config))),
+            sync_data: Arc::new(RwLock::new(ShardSyncData::new(config))),
             sync_lock: Mutex::new(()),
             interrupt_sync: Arc::new(RwLock::new(false)),
         })
@@ -248,7 +248,7 @@ impl LightClient {
             config: config.clone(),
             mempool_monitor: std::sync::RwLock::new(None),
             sync_lock: Mutex::new(()),
-            bsync_data: Arc::new(RwLock::new(ShardSyncData::new(config))),
+            sync_data: Arc::new(RwLock::new(ShardSyncData::new(config))),
             interrupt_sync: Arc::new(RwLock::new(false)),
         };
 
@@ -1147,7 +1147,7 @@ impl LightClient {
     pub async fn do_sync(&self, print_updates: bool) -> Result<SyncResult, String> {
         // Remember the previous sync id first
         let prev_sync_id = self
-            .bsync_data
+            .sync_data
             .read()
             .await
             .sync_status
@@ -1160,7 +1160,7 @@ impl LightClient {
 
         // If printing updates, start a new task to print updates every 2 seconds.
         let sync_result = if print_updates {
-            let sync_status_clone = self.bsync_data.read().await.sync_status.clone();
+            let sync_status_clone = self.sync_data.read().await.sync_status.clone();
             let (transmitter, mut receiver) = oneshot::channel::<i32>();
 
             tokio::spawn(async move {
@@ -1189,12 +1189,12 @@ impl LightClient {
         };
 
         // Mark the sync data as finished, which should clear everything
-        self.bsync_data.read().await.finish().await;
+        self.sync_data.read().await.finish().await;
         sync_result
     }
 
     pub async fn do_sync_status(&self) -> BatchSyncStatus {
-        self.bsync_data
+        self.sync_data
             .read()
             .await
             .sync_status
@@ -1606,7 +1606,7 @@ impl LightClient {
         }
 
         // Increment the sync ID so the caller can determine when it is over
-        self.bsync_data
+        self.sync_data
             .write()
             .await
             .sync_status
@@ -1653,13 +1653,13 @@ impl LightClient {
             });
         }
 
-        let bsync_data = self.bsync_data.clone();
+        let sync_data = self.sync_data.clone();
 
         let end_block = last_synced_height + 1;
 
         // Before we start, we need to do a few things
         // 1. Pre-populate the last 100 blocks, in case of reorgs
-        bsync_data
+        sync_data
             .write()
             .await
             .setup_nth_batch(
@@ -1682,7 +1682,7 @@ impl LightClient {
         let (reorg_transmitter, reorg_receiver) = unbounded_channel();
 
         // Node and Witness Data Cache
-        let (block_and_witness_handle, block_and_witness_data_transmitter) = bsync_data
+        let (block_and_witness_handle, block_and_witness_data_transmitter) = sync_data
             .read()
             .await
             .block_data
@@ -1716,7 +1716,7 @@ impl LightClient {
         ) = crate::shard::fetch_full_transaction::start(
             transaction_context,
             full_transaction_fetcher_transmitter.clone(),
-            bsync_data.clone(),
+            sync_data.clone(),
         )
         .await;
 
@@ -1724,7 +1724,7 @@ impl LightClient {
         let update_notes_processor = UpdateNotes::new(self.wallet.transactions());
         let (update_notes_handle, blocks_done_transmitter, detected_transactions_transmitter) =
             update_notes_processor
-                .start(bsync_data.clone(), fetch_full_transaction_transmitter)
+                .start(sync_data.clone(), fetch_full_transaction_transmitter)
                 .await;
 
         // Do Trial decryptions of all the outputs, and pass on the successful ones to the update_notes processor
@@ -1735,7 +1735,7 @@ impl LightClient {
         );
         let (trial_decrypts_handle, trial_decrypts_transmitter) = trial_decryptions_processor
             .start(
-                bsync_data.clone(),
+                sync_data.clone(),
                 detected_transactions_transmitter,
                 self.wallet
                     .wallet_options
@@ -1784,7 +1784,7 @@ impl LightClient {
         blocks_done_transmitter.send(earliest_block).unwrap();
 
         // 3. Verify all the downloaded data
-        let block_data = bsync_data.clone();
+        let block_data = sync_data.clone();
 
         // Wait for everything to finish
 
@@ -1822,7 +1822,7 @@ impl LightClient {
 
         debug!("Batch: {batch_num} synced, doing post-processing");
 
-        let shard_sync_data = bsync_data.read().await;
+        let shard_sync_data = sync_data.read().await;
         // Post sync, we have to do a bunch of stuff
         // 1. Get the last 100 blocks and store it into the wallet, needed for future re-orgs
         let blocks = shard_sync_data

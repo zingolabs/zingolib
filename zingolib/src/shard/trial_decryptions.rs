@@ -60,7 +60,7 @@ impl TrialDecryptions {
     /// the *management* thread in turns spawns per-1000-cb trial decryption threads.
     pub async fn start(
         &self,
-        bsync_data: Arc<RwLock<ShardSyncData>>,
+        sync_data: Arc<RwLock<ShardSyncData>>,
         detected_transaction_id_sender: UnboundedSender<(
             TxId,
             PoolNullifier,
@@ -99,7 +99,7 @@ impl TrialDecryptions {
                     let sapling_ivk = sapling_ivk.clone();
                     let orchard_ivk = orchard_ivk.clone();
                     let transaction_metadata_set = transaction_metadata_set.clone();
-                    let bsync_data = bsync_data.clone();
+                    let sync_data = sync_data.clone();
                     let detected_transaction_id_sender = detected_transaction_id_sender.clone();
                     let config = config.clone();
 
@@ -107,7 +107,7 @@ impl TrialDecryptions {
                         config,
                         cbs.split_off(0), // This allocates all received cbs to the spawn.
                         wc,
-                        bsync_data,
+                        sync_data,
                         sapling_ivk,
                         orchard_ivk,
                         transaction_metadata_set,
@@ -122,7 +122,7 @@ impl TrialDecryptions {
                 config,
                 cbs,
                 wc,
-                bsync_data,
+                sync_data,
                 sapling_ivk,
                 orchard_ivk,
                 transaction_metadata_set,
@@ -149,7 +149,7 @@ impl TrialDecryptions {
         config: Arc<ZingoConfig>,
         compact_blocks: Vec<CompactBlock>,
         wc: Arc<WalletCapability>,
-        bsync_data: Arc<RwLock<ShardSyncData>>,
+        sync_data: Arc<RwLock<ShardSyncData>>,
         sapling_ivk: Option<SaplingIvk>,
         orchard_ivk: Option<OrchardIvk>,
         transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
@@ -167,7 +167,7 @@ impl TrialDecryptions {
     ) -> Result<(), String> {
         let mut workers = FuturesUnordered::new();
 
-        let download_memos = bsync_data.read().await.wallet_options.download_memos;
+        let download_memos = sync_data.read().await.wallet_options.download_memos;
         let mut sapling_notes_to_mark_position = Vec::new();
         let mut orchard_notes_to_mark_position = Vec::new();
 
@@ -201,7 +201,7 @@ impl TrialDecryptions {
                         height,
                         &config,
                         &wc,
-                        &bsync_data,
+                        &sync_data,
                         &transaction_metadata_set,
                         &detected_transaction_id_sender,
                         &workers,
@@ -223,7 +223,7 @@ impl TrialDecryptions {
                             height,
                             &config,
                             &wc,
-                            &bsync_data,
+                            &sync_data,
                             &transaction_metadata_set,
                             &detected_transaction_id_sender,
                             &workers,
@@ -283,7 +283,7 @@ impl TrialDecryptions {
         height: BlockHeight,
         config: &zingoconfig::ZingoConfig,
         wc: &Arc<WalletCapability>,
-        bsync_data: &Arc<RwLock<ShardSyncData>>,
+        sync_data: &Arc<RwLock<ShardSyncData>>,
         transaction_metadata_set: &Arc<RwLock<TransactionMetadataSet>>,
         detected_transaction_id_sender: &UnboundedSender<(
             TxId,
@@ -321,7 +321,7 @@ impl TrialDecryptions {
                     *transaction_metadata = true; // i.e. we got metadata
 
                     let wc = wc.clone();
-                    let bsync_data = bsync_data.clone();
+                    let sync_data = sync_data.clone();
                     let transaction_metadata_set = transaction_metadata_set.clone();
                     let detected_transaction_id_sender = detected_transaction_id_sender.clone();
                     let timestamp = compact_block.time as u64;
@@ -335,10 +335,10 @@ impl TrialDecryptions {
 
                         //TODO: Wrong. We don't have fvk import, all our keys are spending
                         let have_spending_key = true;
-                        let uri = bsync_data.read().await.uri().clone();
+                        let uri = sync_data.read().await.uri().clone();
 
                         // Get the witness for the note
-                        let witness = bsync_data
+                        let witness = sync_data
                             .read()
                             .await
                             .block_data
