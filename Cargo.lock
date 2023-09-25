@@ -766,7 +766,7 @@ dependencies = [
 [[package]]
 name = "equihash"
 version = "0.2.0"
-source = "git+https://github.com/zcash/librustzcash.git?branch=release-lwsdk-2.0.0#2d8ece3003de114dfa5bbc2c083ea5242da16b4e"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=zingo_rc.1#30c58ebfb2f5a2c78e6d94232fed17f0a00fa536"
 dependencies = [
  "blake2b_simd",
  "byteorder",
@@ -812,7 +812,7 @@ dependencies = [
 [[package]]
 name = "f4jumble"
 version = "0.1.0"
-source = "git+https://github.com/zcash/librustzcash.git?branch=release-lwsdk-2.0.0#2d8ece3003de114dfa5bbc2c083ea5242da16b4e"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=zingo_rc.1#30c58ebfb2f5a2c78e6d94232fed17f0a00fa536"
 dependencies = [
  "blake2b_simd",
 ]
@@ -2718,9 +2718,9 @@ dependencies = [
 
 [[package]]
 name = "semver"
-version = "1.0.18"
+version = "1.0.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b0293b4b29daaf487284529cc2f5675b8e57c61f70167ba415a463651fd6a918"
+checksum = "ad977052201c6de01a8ef2aa3378c4bd23217a056337d1d6da40468d267a4fb0"
 
 [[package]]
 name = "serde"
@@ -3827,18 +3827,18 @@ dependencies = [
 [[package]]
 name = "zcash_address"
 version = "0.3.0"
-source = "git+https://github.com/zcash/librustzcash.git?branch=release-lwsdk-2.0.0#2d8ece3003de114dfa5bbc2c083ea5242da16b4e"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=zingo_rc.1#30c58ebfb2f5a2c78e6d94232fed17f0a00fa536"
 dependencies = [
  "bech32",
  "bs58",
  "f4jumble",
- "zcash_encoding 0.2.0 (git+https://github.com/zcash/librustzcash.git?branch=release-lwsdk-2.0.0)",
+ "zcash_encoding",
 ]
 
 [[package]]
 name = "zcash_client_backend"
-version = "0.10.0-rc.3"
-source = "git+https://github.com/zcash/librustzcash.git?branch=release-lwsdk-2.0.0#2d8ece3003de114dfa5bbc2c083ea5242da16b4e"
+version = "0.10.0-rc.4"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=zingo_rc.1#30c58ebfb2f5a2c78e6d94232fed17f0a00fa536"
 dependencies = [
  "base64 0.21.4",
  "bech32",
@@ -3864,7 +3864,7 @@ dependencies = [
  "tracing",
  "which",
  "zcash_address",
- "zcash_encoding 0.2.0 (git+https://github.com/zcash/librustzcash.git?branch=release-lwsdk-2.0.0)",
+ "zcash_encoding",
  "zcash_note_encryption",
  "zcash_primitives",
 ]
@@ -3872,17 +3872,7 @@ dependencies = [
 [[package]]
 name = "zcash_encoding"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f03391b81727875efa6ac0661a20883022b6fba92365dc121c48fa9b00c5aac0"
-dependencies = [
- "byteorder",
- "nonempty",
-]
-
-[[package]]
-name = "zcash_encoding"
-version = "0.2.0"
-source = "git+https://github.com/zcash/librustzcash.git?branch=release-lwsdk-2.0.0#2d8ece3003de114dfa5bbc2c083ea5242da16b4e"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=zingo_rc.1#30c58ebfb2f5a2c78e6d94232fed17f0a00fa536"
 dependencies = [
  "byteorder",
  "nonempty",
@@ -3904,7 +3894,7 @@ dependencies = [
 [[package]]
 name = "zcash_primitives"
 version = "0.13.0-rc.1"
-source = "git+https://github.com/zcash/librustzcash.git?branch=release-lwsdk-2.0.0#2d8ece3003de114dfa5bbc2c083ea5242da16b4e"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=zingo_rc.1#30c58ebfb2f5a2c78e6d94232fed17f0a00fa536"
 dependencies = [
  "aes",
  "bip0039",
@@ -3932,15 +3922,14 @@ dependencies = [
  "sha2 0.10.7",
  "subtle",
  "zcash_address",
- "zcash_encoding 0.2.0 (git+https://github.com/zcash/librustzcash.git?branch=release-lwsdk-2.0.0)",
+ "zcash_encoding",
  "zcash_note_encryption",
 ]
 
 [[package]]
 name = "zcash_proofs"
 version = "0.13.0-rc.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "48f22eff3bdc382327ef28f809024ddc89ec6d903ba71be629b2cbea34afdda2"
+source = "git+https://github.com/zingolabs/librustzcash.git?tag=zingo_rc.1#30c58ebfb2f5a2c78e6d94232fed17f0a00fa536"
 dependencies = [
  "bellman",
  "blake2b_simd",
@@ -4030,7 +4019,7 @@ version = "0.1.0"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
- "zcash_encoding 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zcash_encoding",
  "zcash_note_encryption",
  "zcash_primitives",
 ]
@@ -4129,7 +4118,7 @@ dependencies = [
  "webpki-roots 0.21.1",
  "zcash_address",
  "zcash_client_backend",
- "zcash_encoding 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zcash_encoding",
  "zcash_note_encryption",
  "zcash_primitives",
  "zcash_proofs",
