@@ -1,12 +1,12 @@
 use crate::{
+    compact_formats::RawTransaction,
+    grpc_connector::GrpcConnector,
     shard::{
         block_witness_data::BlockAndWitnessData, fetch_compact_blocks::FetchCompactBlocks,
         fetch_full_transaction::TransactionContext,
         fetch_taddr_transactions::FetchTaddrTransactions, sync_status::BatchSyncStatus,
         syncdata::ShardSyncData, trial_decryptions::TrialDecryptions, update_notes::UpdateNotes,
     },
-    compact_formats::RawTransaction,
-    grpc_connector::GrpcConnector,
     wallet::{
         data::{
             finsight, summaries::ValueTransfer, summaries::ValueTransferKind, OutgoingTxData,
@@ -1150,6 +1150,7 @@ impl LightClient {
             .sync_data
             .read()
             .await
+            .block_data
             .sync_status
             .read()
             .await
@@ -1160,7 +1161,7 @@ impl LightClient {
 
         // If printing updates, start a new task to print updates every 2 seconds.
         let sync_result = if print_updates {
-            let sync_status_clone = self.sync_data.read().await.sync_status.clone();
+            let sync_status_clone = self.sync_data.read().await.block_data.sync_status.clone();
             let (transmitter, mut receiver) = oneshot::channel::<i32>();
 
             tokio::spawn(async move {
@@ -1197,6 +1198,7 @@ impl LightClient {
         self.sync_data
             .read()
             .await
+            .block_data
             .sync_status
             .read()
             .await
@@ -1609,6 +1611,7 @@ impl LightClient {
         self.sync_data
             .write()
             .await
+            .block_data
             .sync_status
             .write()
             .await
