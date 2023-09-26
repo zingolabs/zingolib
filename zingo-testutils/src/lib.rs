@@ -681,6 +681,60 @@ pub mod scenarios {
         )
     }
 
+    pub async fn funded_orchard_with_3_txs_mobileclient(value: u64) -> (RegtestManager, ChildProcessHandler) {
+        let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
+            Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
+            None,
+            Some(20_000),
+        )
+        .await;
+        let faucet = scenario_builder
+            .client_builder
+            .build_new_faucet(0, false)
+            .await;
+        let recipient = scenario_builder
+            .client_builder
+            .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
+            .await;
+        faucet.do_sync(false).await.unwrap();
+        // received from a faucet
+        faucet
+            .do_send(vec![(
+                &get_base_address!(recipient, "unified"),
+                value,
+                None,
+            )])
+            .await
+            .unwrap();
+        recipient.do_sync(false).await.unwrap();
+        // send to a faucet
+        recipient
+            .do_send(vec![(
+                &get_base_address!(faucet, "unified"),
+                value / 10,
+                None,
+            )])
+            .await
+            .unwrap();
+        // send to self
+        recipient
+            .do_send(vec![(
+                &get_base_address!(recipient, "sapling"),
+                value / 10,
+                None,
+            )])
+            .await
+            .unwrap();
+        scenario_builder
+            .regtest_manager
+            .generate_n_blocks(1)
+            .expect("Failed to generate blocks.");
+        (
+            scenario_builder.regtest_manager,
+            scenario_builder.child_process_handler.unwrap(),
+        )
+    }
+
     pub mod chainload {
         use super::*;
 
