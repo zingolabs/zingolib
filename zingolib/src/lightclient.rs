@@ -776,14 +776,6 @@ impl LightClient {
                 consumer_notes_by_tx
             })
             .collect::<Vec<JsonValue>>();
-        /*
-        if let Some(tx) = transaction_list
-            .iter_mut()
-            .find(|a| a["memo"] == "Enviado desde YWallet, Enviado desde YWallet")
-        {
-            dbg!("{}", json::stringify_pretty(tx.clone(), 2));
-        }
-        */
 
         let match_by_txid =
             |a: &JsonValue, b: &JsonValue| a["txid"].to_string().cmp(&b["txid"].to_string());
@@ -1503,7 +1495,7 @@ impl LightClient {
         let lightclient_exclusion_lock = self.sync_lock.lock().await;
 
         // The top of the wallet
-        let last_synced_height = dbg!(self.wallet.last_synced_height().await);
+        let last_synced_height = (self.wallet.last_synced_height().await);
 
         // If our internal state gets damaged somehow (for example,
         // a resync that gets interrupted partway through) we need to make sure

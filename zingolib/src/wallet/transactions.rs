@@ -621,7 +621,7 @@ impl TransactionMetadataSet {
             *note_datum.spent_mut() = Some((txid, height.into()));
             if let Some(position) = *note_datum.witnessed_position() {
                 if let Some(ref mut tree) = D::get_shardtree_mut(self) {
-                    tree.remove_mark(dbg!(position), Some(&(height - BlockHeight::from(1))))
+                    tree.remove_mark((position), Some(&(height - BlockHeight::from(1))))
                         .unwrap();
                 }
             } else {
