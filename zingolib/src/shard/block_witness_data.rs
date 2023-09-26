@@ -612,7 +612,7 @@ fn is_orchard_tree_verified(determined_orchard_tree: String, unverified_tree: Tr
     {
         true
     } else {
-        dbg!(determined_orchard_tree, unverified_tree.orchard_tree);
+        // dbg!(determined_orchard_tree, unverified_tree.orchard_tree);
         false
     }
 }

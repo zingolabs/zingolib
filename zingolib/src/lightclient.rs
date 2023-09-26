@@ -1545,7 +1545,8 @@ impl LightClient {
         let lightclient_exclusion_lock = self.sync_lock.lock().await;
 
         // The top of the wallet
-        let last_synced_height = dbg!(self.wallet.last_synced_height().await);
+        // let last_synced_height = dbg!(self.wallet.last_synced_height().await);
+        let last_synced_height = self.wallet.last_synced_height().await;
 
         // If our internal state gets damaged somehow (for example,
         // a resync that gets interrupted partway through) we need to make sure
