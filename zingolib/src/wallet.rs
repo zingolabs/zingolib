@@ -239,6 +239,7 @@ pub struct LightWallet {
 
 use crate::wallet::traits::{Diversifiable as _, ReadableWriteable};
 type Receivers = Vec<(address::RecipientAddress, Amount, Option<MemoBytes>)>;
+type TxBuilder<'a> = Builder<'a, zingoconfig::ChainType, OsRng>;
 impl LightWallet {
     fn get_legacy_frontiers(
         trees: crate::compact_formats::TreeState,
@@ -955,22 +956,29 @@ impl LightWallet {
         }
     }
 
-    async fn create_spend_loaded_builder(
+    async fn create_tx_builder(
         &self,
-        witness_trees: &WitnessTrees,
         submission_height: BlockHeight,
-        orchard_notes: &[SpendableOrchardNote],
-        sapling_notes: &[SpendableSaplingNote],
-        utxos: &[ReceivedTransparentOutput],
-    ) -> Result<Builder<'_, zingoconfig::ChainType, OsRng>, String> {
+        witness_trees: &WitnessTrees,
+    ) -> Result<TxBuilder, String> {
         let orchard_anchor = self
             .get_orchard_anchor(&witness_trees.witness_tree_orchard)
             .await?;
-        let mut builder = Builder::new(
+        Ok(Builder::new(
             self.transaction_context.config.chain,
             submission_height,
             Some(orchard_anchor),
-        );
+        ))
+    }
+
+    async fn add_spends_to_builder<'a>(
+        &'a self,
+        mut tx_builder: TxBuilder<'a>,
+        witness_trees: &WitnessTrees,
+        orchard_notes: &[SpendableOrchardNote],
+        sapling_notes: &[SpendableSaplingNote],
+        utxos: &[ReceivedTransparentOutput],
+    ) -> Result<TxBuilder<'_>, String> {
         // Add all tinputs
         // Create a map from address -> sk for all taddrs, so we can spend from the
         // right address
@@ -990,7 +998,7 @@ impl LightWallet {
                 };
 
                 match address_to_sk.get(&utxo.address) {
-                    Some(sk) => builder
+                    Some(sk) => tx_builder
                         .add_transparent_input(*sk, outpoint, coin)
                         .map_err(|e| {
                             transaction::builder::Error::<Infallible>::TransparentBuild(e)
@@ -1011,7 +1019,7 @@ impl LightWallet {
 
         for selected in sapling_notes.iter() {
             info!("Adding sapling spend");
-            if let Err(e) = builder.add_sapling_spend(
+            if let Err(e) = tx_builder.add_sapling_spend(
                 selected.extsk.clone().unwrap(),
                 selected.diversifier,
                 selected.note.clone(),
@@ -1031,7 +1039,7 @@ impl LightWallet {
 
         for selected in orchard_notes.iter() {
             info!("Adding orchard spend");
-            if let Err(e) = builder.add_orchard_spend::<transaction::fees::fixed::FeeRule>(
+            if let Err(e) = tx_builder.add_orchard_spend::<transaction::fees::fixed::FeeRule>(
                 selected.spend_key.unwrap(),
                 selected.note,
                 orchard::tree::MerklePath::from(
@@ -1049,16 +1057,15 @@ impl LightWallet {
                 return Err(e);
             }
         }
-        Ok(builder)
+        Ok(tx_builder)
     }
-    fn add_outputs_to_spend_loaded_builder(
-        &self,
-        spend_loaded_builder: &mut Builder<'_, zingoconfig::ChainType, OsRng>,
+    fn add_outputs_to_builder<'a>(
+        &'a self,
+        mut tx_builder: TxBuilder<'a>,
         receivers: Receivers,
-        start_time: u64,
         selected_value: Amount,
         target_amount: Amount,
-    ) -> Result<u32, String> {
+    ) -> Result<(u32, TxBuilder<'_>), String> {
         // Convert address (str) to RecipientAddress and value to Amount
 
         let destination_uas = receivers
@@ -1069,9 +1076,6 @@ impl LightWallet {
                 address::RecipientAddress::Unified(ref ua) => Some(ua.clone()),
             })
             .collect::<Vec<_>>();
-
-        // Select notes to cover the target value
-        info!("{}: Selecting notes", now() - start_time);
 
         // We'll use the first ovk to encrypt outgoing transactions
         let sapling_ovk =
@@ -1088,22 +1092,20 @@ impl LightWallet {
                 Some(s) => s,
             };
 
-            info!("{}: Adding output", now() - start_time);
-
             if let Err(e) = match recipient_address {
                 address::RecipientAddress::Shielded(to) => {
                     total_shielded_receivers += 1;
-                    spend_loaded_builder
+                    tx_builder
                         .add_sapling_output(Some(sapling_ovk), to, value, validated_memo)
                         .map_err(transaction::builder::Error::SaplingBuild)
                 }
-                address::RecipientAddress::Transparent(to) => spend_loaded_builder
+                address::RecipientAddress::Transparent(to) => tx_builder
                     .add_transparent_output(&to, value)
                     .map_err(transaction::builder::Error::TransparentBuild),
                 address::RecipientAddress::Unified(ua) => {
                     if let Some(orchard_addr) = ua.orchard() {
                         total_shielded_receivers += 1;
-                        spend_loaded_builder.add_orchard_output::<FixedFeeRule>(
+                        tx_builder.add_orchard_output::<FixedFeeRule>(
                             Some(orchard_ovk.clone()),
                             *orchard_addr,
                             u64::from(value),
@@ -1111,7 +1113,7 @@ impl LightWallet {
                         )
                     } else if let Some(sapling_addr) = ua.sapling() {
                         total_shielded_receivers += 1;
-                        spend_loaded_builder
+                        tx_builder
                             .add_sapling_output(
                                 Some(sapling_ovk),
                                 *sapling_addr,
@@ -1142,7 +1144,7 @@ impl LightWallet {
         };
 
         total_shielded_receivers += 1;
-        if let Err(e) = spend_loaded_builder.add_orchard_output::<FixedFeeRule>(
+        if let Err(e) = tx_builder.add_orchard_output::<FixedFeeRule>(
             Some(orchard_ovk.clone()),
             *self.wallet_capability().addresses()[0].orchard().unwrap(),
             u64::from(selected_value) - u64::from(target_amount),
@@ -1154,7 +1156,7 @@ impl LightWallet {
             error!("{}", e);
             return Err(e);
         };
-        Ok(total_shielded_receivers)
+        Ok((total_shielded_receivers, tx_builder))
     }
 
     async fn send_to_addresses_inner<F, Fut, P: TxProver>(
@@ -1224,26 +1226,29 @@ impl LightWallet {
             .witness_trees
             .as_ref()
             .expect("If we have spend capability we have trees");
-        let mut builder = self
-            .create_spend_loaded_builder(
+
+        // Start building tx
+        let tx_builder = self
+            .create_tx_builder(submission_height, witness_trees)
+            .await
+            .expect("To populate a builder with notes.");
+
+        // Select notes to cover the target value
+        info!("{}: Adding outputs", now() - start_time);
+        let (total_shielded_receivers, tx_builder) = self
+            .add_outputs_to_builder(tx_builder, receivers, selected_value, target_amount)
+            .expect("To add outputs");
+        info!("{}: selecting notes", now() - start_time);
+        let mut tx_builder = self
+            .add_spends_to_builder(
+                tx_builder,
                 witness_trees,
-                submission_height,
                 &orchard_notes,
                 &sapling_notes,
                 &utxos,
             )
             .await
-            .expect("To populate a builder with notes.");
-
-        let total_shielded_receivers = self
-            .add_outputs_to_spend_loaded_builder(
-                &mut builder,
-                receivers,
-                start_time,
-                selected_value,
-                target_amount,
-            )
-            .expect("To add outputs");
+            .expect("to add spends to tx_builder");
 
         drop(txmds_readlock);
         // The builder now has the correct set of inputs and outputs
@@ -1275,13 +1280,13 @@ impl LightWallet {
             let mut p = self.send_progress.write().await;
             p.is_send_in_progress = true;
             p.progress = 0;
-            p.total = total_shielded_receivers as u32;
+            p.total = total_shielded_receivers;
         }
 
         info!("{}: Building transaction", now() - start_time);
 
-        builder.with_progress_notifier(transmitter);
-        let (transaction, _) = match builder.build(
+        tx_builder.with_progress_notifier(transmitter);
+        let (transaction, _) = match tx_builder.build(
             &sapling_prover,
             &transaction::fees::fixed::FeeRule::non_standard(MINIMUM_FEE),
         ) {
