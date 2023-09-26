@@ -707,7 +707,6 @@ pub mod scenarios {
             )])
             .await
             .unwrap();
-        faucet.do_sync(false).await.unwrap();
         recipient.do_sync(false).await.unwrap();
         // send to a faucet
         recipient
@@ -718,9 +717,8 @@ pub mod scenarios {
             )])
             .await
             .unwrap();
-        faucet.do_sync(false).await.unwrap();
         recipient.do_sync(false).await.unwrap();
-        // send to self
+        // send to self sapling
         recipient
             .do_send(vec![(
                 &get_base_address!(recipient, "sapling"),
@@ -729,7 +727,6 @@ pub mod scenarios {
             )])
             .await
             .unwrap();
-        faucet.do_sync(false).await.unwrap();
         recipient.do_sync(false).await.unwrap();
         scenario_builder
             .regtest_manager
