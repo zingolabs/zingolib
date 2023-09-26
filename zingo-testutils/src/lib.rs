@@ -697,6 +697,7 @@ pub mod scenarios {
             .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
             .await;
         faucet.do_sync(false).await.unwrap();
+        recipient.do_sync(false).await.unwrap();
         // received from a faucet
         faucet
             .do_send(vec![(
@@ -706,6 +707,7 @@ pub mod scenarios {
             )])
             .await
             .unwrap();
+        faucet.do_sync(false).await.unwrap();
         recipient.do_sync(false).await.unwrap();
         // send to a faucet
         recipient
@@ -716,6 +718,8 @@ pub mod scenarios {
             )])
             .await
             .unwrap();
+        faucet.do_sync(false).await.unwrap();
+        recipient.do_sync(false).await.unwrap();
         // send to self
         recipient
             .do_send(vec![(
@@ -725,6 +729,8 @@ pub mod scenarios {
             )])
             .await
             .unwrap();
+        faucet.do_sync(false).await.unwrap();
+        recipient.do_sync(false).await.unwrap();
         scenario_builder
             .regtest_manager
             .generate_n_blocks(1)
