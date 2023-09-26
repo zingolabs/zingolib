@@ -681,7 +681,9 @@ pub mod scenarios {
         )
     }
 
-    pub async fn funded_orchard_with_3_txs_mobileclient(value: u64) -> (RegtestManager, ChildProcessHandler) {
+    pub async fn funded_orchard_with_3_txs_mobileclient(
+        value: u64,
+    ) -> (RegtestManager, ChildProcessHandler) {
         let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
             Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
             None,
