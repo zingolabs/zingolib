@@ -406,7 +406,7 @@ pub trait ReceivedNoteAndMetadata: Sized {
     fn from_parts(
         diversifier: Self::Diversifier,
         note: Self::Note,
-        witness_position: Option<Position>,
+        position_of_commitment_to_witness: Option<Position>,
         nullifier: Option<Self::Nullifier>,
         spent: Option<(TxId, u32)>,
         unconfirmed_spent: Option<(TxId, u32)>,
@@ -951,11 +951,7 @@ where
     ) -> Option<Self> {
         // Include only non-0 value notes that haven't been spent, or haven't been included
         // in an unconfirmed spend yet.
-        if note_and_metadata.spent().is_none()
-            && note_and_metadata.pending_spent().is_none()
-            && spend_key.is_some()
-            && note_and_metadata.value() != 0
-        {
+        if Self::check_spendability_of_note(note_and_metadata, spend_key) {
             // Filter out notes with nullifier or position not yet known
             if let (Some(nf), Some(pos)) = (
                 note_and_metadata.nullifier(),
@@ -975,6 +971,16 @@ where
         } else {
             None
         }
+    }
+
+    fn check_spendability_of_note(
+        note_and_metadata: &D::WalletNote,
+        spend_key: Option<&D::SpendingKey>,
+    ) -> bool {
+        note_and_metadata.spent().is_none()
+            && note_and_metadata.pending_spent().is_none()
+            && spend_key.is_some()
+            && note_and_metadata.value() != 0
     }
     /// The checks needed are shared between domains, and thus are performed in the
     /// default impl of `from`. This function's only caller should be `Self::from`
@@ -1392,7 +1398,7 @@ where
         writer.write_u64::<LittleEndian>(u64::from(self.witnessed_position().ok_or(
             io::Error::new(
                 io::ErrorKind::InvalidData,
-                "Tried to write note with unknown position",
+                "Tried to write note without knowing its the position of its value commitment",
             ),
         )?))?;
 

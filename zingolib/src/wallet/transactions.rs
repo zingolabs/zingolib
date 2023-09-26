@@ -398,8 +398,12 @@ impl TransactionMetadataSet {
         self.remove_txids(txids_to_remove);
     }
 
-    // Will mark the nullifier of the given txid as spent. Returns the amount of the nullifier
-    pub fn mark_txid_nf_spent(
+    // Will mark a note as having been spent at the supplied height and spent_txid.
+    // Takes the nullifier of the spent note, the note's index in its containing transaction,
+    // as well as the txid of its containing transaction. TODO: Only one of
+    // `nullifier` and `(output_index, txid)` is needed, although we use the nullifier to
+    // determine the domain.
+    pub fn mark_note_as_spent(
         &mut self,
         txid: TxId,
         spent_nullifier: &PoolNullifier,

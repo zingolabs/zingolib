@@ -122,7 +122,7 @@ impl UpdateNotes {
                         let value = wallet_transactions
                             .write()
                             .await
-                            .mark_txid_nf_spent(
+                            .mark_note_as_spent(
                                 transaction_id_spent_from,
                                 &nf,
                                 &transaction_id_spent_in,
