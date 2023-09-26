@@ -1423,7 +1423,7 @@ where
 
         writer.write_u8(if self.have_spending_key() { 1 } else { 0 })?;
 
-        writer.write_u32::<LittleEndian>(*self.output_index() as u32)?;
+        writer.write_u32::<LittleEndian>(*self.output_index())?;
 
         Ok(())
     }
