@@ -1327,7 +1327,7 @@ impl LightWallet {
                     .unwrap()
                     .sapling_notes
                     .iter_mut()
-                    .find(|nd| nd.nullifier == selected.nullifier)
+                    .find(|nd| nd.nullifier == Some(selected.nullifier))
                     .unwrap();
                 spent_note.unconfirmed_spent =
                     Some((transaction.txid(), u32::from(submission_height)));
@@ -1340,7 +1340,7 @@ impl LightWallet {
                     .unwrap()
                     .orchard_notes
                     .iter_mut()
-                    .find(|nd| nd.nullifier == selected.nullifier)
+                    .find(|nd| nd.nullifier == Some(selected.nullifier))
                     .unwrap();
                 spent_note.unconfirmed_spent =
                     Some((transaction.txid(), u32::from(submission_height)));
