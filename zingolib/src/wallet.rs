@@ -252,17 +252,15 @@ impl LightWallet {
                 &[u8],
                 COMMITMENT_TREE_LEVELS,
             >(&hex::decode(trees.sapling_tree).unwrap()[..])
-            .unwrap()
-            .to_frontier()
-            .take(),
+            .ok()
+            .and_then(|tree| tree.to_frontier().take()),
             zcash_primitives::merkle_tree::read_commitment_tree::<
                 MerkleHashOrchard,
                 &[u8],
                 COMMITMENT_TREE_LEVELS,
             >(&hex::decode(trees.orchard_tree).unwrap()[..])
-            .unwrap()
-            .to_frontier()
-            .take(),
+            .ok()
+            .and_then(|tree| tree.to_frontier().take()),
         )
     }
     pub(crate) async fn initiate_witness_trees(&self, trees: crate::compact_formats::TreeState) {
