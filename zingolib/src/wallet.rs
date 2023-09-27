@@ -114,12 +114,6 @@ impl SendProgress {
     }
 }
 
-// Enum to refer to the first or last position of the Node
-pub enum NodePosition {
-    Oldest,
-    Highest,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MemoDownloadOption {
     NoMemos = 0,
