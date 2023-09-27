@@ -44,14 +44,14 @@ impl UpdateNotes {
     ) -> (
         JoinHandle<Result<(), String>>,
         oneshot::Sender<u64>,
-        UnboundedSender<(TxId, PoolNullifier, BlockHeight, Option<u32>)>,
+        UnboundedSender<(TxId, PoolNullifier, BlockHeight, u32)>,
     ) {
         //info!("Starting Note Update processing");
         let download_memos = bsync_data.read().await.wallet_options.download_memos;
 
         // Create a new channel where we'll be notified of TxIds that are to be processed
         let (transmitter, mut receiver) =
-            unbounded_channel::<(TxId, PoolNullifier, BlockHeight, Option<u32>)>();
+            unbounded_channel::<(TxId, PoolNullifier, BlockHeight, u32)>();
 
         // Aside from the incoming Txns, we also need to update the notes that are currently in the wallet
         let wallet_transactions = self.transaction_metadata_set.clone();
@@ -70,13 +70,13 @@ impl UpdateNotes {
                 .read()
                 .await
                 .get_notes_for_updating(earliest_block - 1);
-            for (transaction_id, nf) in notes {
+            for (transaction_id, nf, output_index) in notes {
                 transmitter_existing
                     .send((
                         transaction_id,
                         nf,
                         BlockHeight::from(earliest_block as u32),
-                        None,
+                        output_index,
                     ))
                     .map_err(|e| format!("Error sending note for updating: {}", e))?;
             }
@@ -90,7 +90,13 @@ impl UpdateNotes {
             let mut workers = FuturesUnordered::new();
 
             // Receive Txns that are sent to the wallet. We need to update the notes for this.
-            while let Some((transaction_id, nf, at_height, output_num)) = receiver.recv().await {
+            while let Some((
+                transaction_id_spent_from,
+                maybe_spend_nullifier,
+                at_height,
+                output_index,
+            )) = receiver.recv().await
+            {
                 let bsync_data = bsync_data.clone();
                 let wallet_transactions = wallet_transactions.clone();
                 let fetch_full_sender = fetch_full_sender.clone();
@@ -101,7 +107,7 @@ impl UpdateNotes {
                         .read()
                         .await
                         .block_data
-                        .is_nf_spent(nf, at_height.into())
+                        .is_nf_spent(maybe_spend_nullifier, at_height.into())
                         .await
                     {
                         //info!("Note was spent, just add it as spent for TxId {}", txid);
@@ -109,10 +115,13 @@ impl UpdateNotes {
                             .read()
                             .await
                             .block_data
-                            .get_compact_transaction_for_nullifier_at_height(&nf, spent_height)
+                            .get_compact_transaction_for_nullifier_at_height(
+                                &maybe_spend_nullifier,
+                                spent_height,
+                            )
                             .await;
 
-                        let spent_transaction_id =
+                        let transaction_id_spent_in =
                             TransactionMetadata::new_txid(&compact_transaction.hash);
                         let spent_at_height = BlockHeight::from_u32(spent_height as u32);
 
@@ -120,39 +129,43 @@ impl UpdateNotes {
                         let value = wallet_transactions
                             .write()
                             .await
-                            .mark_txid_nf_spent(
-                                transaction_id,
-                                &nf,
-                                &spent_transaction_id,
+                            .mark_note_as_spent(
+                                transaction_id_spent_from,
+                                &maybe_spend_nullifier,
+                                &transaction_id_spent_in,
                                 spent_at_height,
+                                output_index,
                             )
-                            .expect("Cound not mark note as spent");
+                            .expect("To mark note as spent");
 
                         // Record the future transaction, the one that has spent the nullifiers received in this transaction in the wallet
                         wallet_transactions
                             .write()
                             .await
                             .add_new_spent(
-                                spent_transaction_id,
+                                transaction_id_spent_in,
                                 spent_at_height,
                                 false,
                                 ts,
-                                nf,
+                                maybe_spend_nullifier,
                                 value,
-                                transaction_id,
+                                transaction_id_spent_from,
+                                output_index,
                             )
                             .await;
 
                         // Send the future transaction to be fetched too, in case it has only spent nullifiers and not received any change
                         if download_memos != MemoDownloadOption::NoMemos {
                             fetch_full_sender
-                                .send((spent_transaction_id, spent_at_height))
+                                .send((transaction_id_spent_in, spent_at_height))
                                 .unwrap();
                         }
                     }
-                    // Send it off to get the full transaction if this is a new transaction, that is, it has an output_num
-                    if output_num.is_some() && download_memos != MemoDownloadOption::NoMemos {
-                        fetch_full_sender.send((transaction_id, at_height)).unwrap();
+                    // Send it off to get the full transaction if this is a newly-detected transaction, that is, it has an output_num
+                    if download_memos != MemoDownloadOption::NoMemos {
+                        fetch_full_sender
+                            .send((transaction_id_spent_from, at_height))
+                            .unwrap();
                     }
                 }));
             }

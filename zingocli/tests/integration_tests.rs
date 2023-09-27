@@ -1668,7 +1668,8 @@ async fn witness_clearing() {
         .orchard_notes
         .get(0)
         .unwrap()
-        .witnessed_position;
+        .witnessed_position
+        .unwrap();
     assert!(recipient
         .wallet
         .transaction_context
@@ -1700,7 +1701,8 @@ async fn witness_clearing() {
         .orchard_notes
         .get(0)
         .unwrap()
-        .witnessed_position;
+        .witnessed_position
+        .unwrap();
     assert!(recipient
         .wallet
         .transaction_context
@@ -1714,6 +1716,18 @@ async fn witness_clearing() {
         .marked_positions()
         .unwrap()
         .contains(&position));
+    dbg!(
+        &recipient
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .witness_trees
+            .as_ref()
+            .unwrap()
+            .witness_tree_orchard
+    );
 
     // 5. Mine 50 blocks, witness should still be there
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 50)
@@ -1730,7 +1744,8 @@ async fn witness_clearing() {
         .orchard_notes
         .get(0)
         .unwrap()
-        .witnessed_position;
+        .witnessed_position
+        .unwrap();
     assert!(recipient
         .wallet
         .transaction_context
@@ -1760,7 +1775,8 @@ async fn witness_clearing() {
         .orchard_notes
         .get(0)
         .unwrap()
-        .witnessed_position;
+        .witnessed_position
+        .unwrap();
     //Note: This is a negative assertion. Notice the "!"
     dbg!(
         &recipient
@@ -2388,7 +2404,8 @@ async fn aborted_resync() {
                 .orchard_notes
                 .get(0)
                 .unwrap()
-                .witnessed_position,
+                .witnessed_position
+                .unwrap(),
             0,
         );
 
@@ -2427,7 +2444,8 @@ async fn aborted_resync() {
                 .orchard_notes
                 .get(0)
                 .unwrap()
-                .witnessed_position,
+                .witnessed_position
+                .unwrap(),
             0,
         );
 
