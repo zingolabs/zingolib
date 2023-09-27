@@ -1190,23 +1190,22 @@ impl LightWallet {
 
         let target_amount = (Amount::from_u64(total_value).unwrap() + MINIMUM_FEE).unwrap();
         // Select notes as a fn of target anount
-        let (orchard_notes, sapling_notes, utxos, selected_value) =
-            match self.select_notes_and_utxos(target_amount, policy).await {
-                Ok(notes) => notes,
-                Err(insufficient_amount) => {
-                    return Err(Into::<u64>::into(insufficient_amount).to_string());
-                }
-            };
-
-        if selected_value < target_amount {
-            let e = format!(
+        let (orchard_notes, sapling_notes, utxos, selected_value) = match self
+            .select_notes_and_utxos(target_amount, policy)
+            .await
+        {
+            Ok(notes) => notes,
+            Err(insufficient_amount) => {
+                let e = format!(
                 "Insufficient verified shielded funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes.",
-                u64::from(selected_value), u64::from(target_amount), self.transaction_context.config
+                u64::from(insufficient_amount), u64::from(target_amount), self.transaction_context.config
                 .reorg_buffer_offset + 1
             );
-            error!("{}", e);
-            return Err(e);
-        }
+                error!("{}", e);
+                return Err(e);
+            }
+        };
+
         info!("Selected notes worth {}", u64::from(selected_value));
 
         info!(
