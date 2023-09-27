@@ -698,8 +698,9 @@ pub mod scenarios {
             .client_builder
             .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
             .await;
-        faucet.do_sync(false).await.unwrap();
-        recipient.do_sync(false).await.unwrap();
+        increase_height_and_sync_client(&scenario_builder.regtest_manager, &faucet, 1)
+            .await
+            .unwrap();
         // received from a faucet
         faucet
             .do_send(vec![(
@@ -709,30 +710,33 @@ pub mod scenarios {
             )])
             .await
             .unwrap();
-        recipient.do_sync(false).await.unwrap();
+        increase_height_and_sync_client(&scenario_builder.regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
         // send to a faucet
         recipient
             .do_send(vec![(
                 &get_base_address!(faucet, "unified"),
-                value / 10,
+                value.checked_div(10).unwrap(),
                 None,
             )])
             .await
             .unwrap();
-        recipient.do_sync(false).await.unwrap();
+        increase_height_and_sync_client(&scenario_builder.regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
         // send to self sapling
         recipient
             .do_send(vec![(
                 &get_base_address!(recipient, "sapling"),
-                value / 10,
+                value.checked_div(10).unwrap(),
                 None,
             )])
             .await
             .unwrap();
-        recipient.do_sync(false).await.unwrap();
         scenario_builder
             .regtest_manager
-            .generate_n_blocks(1)
+            .generate_n_blocks(4)
             .expect("Failed to generate blocks.");
         (
             scenario_builder.regtest_manager,
