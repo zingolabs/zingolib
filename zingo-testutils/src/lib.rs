@@ -18,7 +18,7 @@ use zingolib::lightclient::LightClient;
 
 use crate::scenarios::setup::TestEnvironmentGenerator;
 
-pub const BASE_HEIGHT: u32 = 2;
+pub const BASE_HEIGHT: u32 = 3;
 pub fn build_fvks_from_wallet_capability(wallet_capability: &WalletCapability) -> [Fvk; 3] {
     let o_fvk = Fvk::Orchard(
         orchard::keys::FullViewingKey::try_from(wallet_capability)
@@ -321,8 +321,10 @@ pub mod scenarios {
                             }
                         }),
                 );
-                self.regtest_manager.generate_n_blocks(BASE_HEIGHT).unwrap();
-                while crate::poll_server_height(&self.regtest_manager) != BASE_HEIGHT + 1 {
+                self.regtest_manager
+                    .generate_n_blocks(BASE_HEIGHT - 1)
+                    .unwrap();
+                while crate::poll_server_height(&self.regtest_manager) != BASE_HEIGHT {
                     sleep(std::time::Duration::from_millis(50)).await;
                 }
             }
@@ -550,7 +552,7 @@ pub mod scenarios {
         .await;
         let faucet = sb
             .client_builder
-            .build_new_faucet(BASE_HEIGHT as u64, false)
+            .build_new_faucet(BASE_HEIGHT as u64 - 1, false)
             .await;
         (
             sb.regtest_manager,
@@ -611,14 +613,11 @@ pub mod scenarios {
             None,
         )
         .await;
-        let faucet = sb
-            .client_builder
-            .build_new_faucet(BASE_HEIGHT as u64, false)
-            .await;
+        let faucet = sb.client_builder.build_new_faucet(0, false).await;
         faucet.do_sync(false).await.unwrap();
         let recipient = sb
             .client_builder
-            .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), BASE_HEIGHT as u64, false)
+            .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
             .await;
         (
             sb.regtest_manager,
