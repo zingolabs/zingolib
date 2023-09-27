@@ -840,12 +840,15 @@ impl LightWallet {
         &self,
         target_amount: Amount,
         policy: NoteSelectionPolicy,
-    ) -> (
-        Vec<SpendableOrchardNote>,
-        Vec<SpendableSaplingNote>,
-        Vec<ReceivedTransparentOutput>,
+    ) -> Result<
+        (
+            Vec<SpendableOrchardNote>,
+            Vec<SpendableSaplingNote>,
+            Vec<ReceivedTransparentOutput>,
+            Amount,
+        ),
         Amount,
-    ) {
+    > {
         let mut transparent_value_selected = Amount::zero();
         let mut utxos = Vec::new();
         let mut sapling_value_selected = Amount::zero();
@@ -900,23 +903,18 @@ impl LightWallet {
                 .unwrap()
                 >= target_amount
             {
-                return (
+                return Ok((
                     orchard_notes,
                     sapling_notes,
                     utxos,
                     (transparent_value_selected + sapling_value_selected + orchard_value_selected)
                         .unwrap(),
-                );
+                ));
             }
         }
 
         // If we can't select enough, then we need to return empty handed
-        (
-            vec![],
-            vec![],
-            vec![],
-            (transparent_value_selected + sapling_value_selected + orchard_value_selected).unwrap(),
-        )
+        Err((transparent_value_selected + sapling_value_selected + orchard_value_selected).unwrap())
     }
 
     pub async fn send_to_addresses<F, Fut, P: TxProver>(
@@ -1193,7 +1191,13 @@ impl LightWallet {
         let target_amount = (Amount::from_u64(total_value).unwrap() + MINIMUM_FEE).unwrap();
         // Select notes as a fn of target anount
         let (orchard_notes, sapling_notes, utxos, selected_value) =
-            self.select_notes_and_utxos(target_amount, policy).await;
+            match self.select_notes_and_utxos(target_amount, policy).await {
+                Ok(notes) => notes,
+                Err(insufficient_amount) => {
+                    return Err(Into::<u64>::into(insufficient_amount).to_string());
+                }
+            };
+
         if selected_value < target_amount {
             let e = format!(
                 "Insufficient verified shielded funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes.",
