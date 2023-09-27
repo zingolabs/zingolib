@@ -5,7 +5,7 @@ use orchard::tree::MerkleHashOrchard;
 use shardtree::store::memory::MemoryShardStore;
 use shardtree::ShardTree;
 use std::{fs::File, path::Path, str::FromStr};
-use zingo_testutils::{self, build_fvk_client, data};
+use zingo_testutils::{self, build_fvk_client, data, BASE_HEIGHT};
 
 use bip0039::Mnemonic;
 use data::seeds::HOSPITAL_MUSEUM_SEED;
@@ -905,8 +905,11 @@ async fn send_orchard_back_and_forth() {
     // check start state
     faucet.do_sync(true).await.unwrap();
     let wallet_height = faucet.do_wallet_last_scanned_height().await;
-    assert_eq!(wallet_height.as_fixed_point_u64(0).unwrap(), 3);
-    let three_blocks_reward = block_reward.checked_mul(3).unwrap();
+    assert_eq!(
+        wallet_height.as_fixed_point_u64(0).unwrap(),
+        BASE_HEIGHT as u64
+    );
+    let three_blocks_reward = block_reward.checked_mul(BASE_HEIGHT as u64).unwrap();
     check_client_balances!(faucet, o: 0 s: three_blocks_reward  t: 0);
 
     // post transfer to recipient, and verify
