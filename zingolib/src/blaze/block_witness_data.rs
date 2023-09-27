@@ -603,18 +603,12 @@ impl BlockAndWitnessData {
 }
 
 fn is_orchard_tree_verified(determined_orchard_tree: String, unverified_tree: TreeState) -> bool {
-    if determined_orchard_tree == ORCHARD_START
+    determined_orchard_tree == ORCHARD_START
         || determined_orchard_tree[..132] == unverified_tree.orchard_tree[..132]
             && &determined_orchard_tree[132..] == "00"
             && unverified_tree.orchard_tree[134..]
                 .chars()
                 .all(|character| character == '0')
-    {
-        true
-    } else {
-        dbg!(determined_orchard_tree, unverified_tree.orchard_tree);
-        false
-    }
 }
 
 /// The sapling tree and orchard tree for a given block height, with the block hash.

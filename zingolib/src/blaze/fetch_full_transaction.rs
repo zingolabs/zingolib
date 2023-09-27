@@ -2,9 +2,8 @@ use crate::wallet::{
     data::OutgoingTxData,
     keys::{address_from_pubkeyhash, unified::WalletCapability},
     traits::{
-        self as zingo_traits, Bundle as _, DomainWalletExt, Nullifier as _,
-        ReceivedNoteAndMetadata as _, Recipient as _, ShieldedOutputExt as _, Spend as _,
-        ToBytes as _,
+        self as zingo_traits, Bundle as _, DomainWalletExt, ReceivedNoteAndMetadata as _,
+        Recipient as _, ShieldedOutputExt as _, Spend as _, ToBytes as _,
     },
     transactions::TransactionMetadataSet,
 };
@@ -414,19 +413,18 @@ impl TransactionContext {
         // Check if any of the nullifiers generated in this transaction are ours. We only need this for unconfirmed transactions,
         // because for transactions in the block, we will check the nullifiers from the blockdata
         if pending {
-            let unspent_nullifiers =
-            <<D as DomainWalletExt>
-              ::WalletNote as zingo_traits::ReceivedNoteAndMetadata>
-                ::Nullifier::get_nullifiers_of_unspent_notes_from_transaction_set(
-                &*self.transaction_metadata_set.read().await,
-            );
+            let unspent_nullifiers = self
+                .transaction_metadata_set
+                .read()
+                .await
+                .get_nullifier_value_txid_outputindex_of_unspent_notes::<D>();
             for output in <FnGenBundle<D> as zingo_traits::Bundle<D>>::from_transaction(transaction)
                 .into_iter()
                 .flat_map(|bundle| bundle.spend_elements().into_iter())
             {
-                if let Some((nf, value, transaction_id)) = unspent_nullifiers
+                if let Some((nf, value, transaction_id, output_index)) = unspent_nullifiers
                     .iter()
-                    .find(|(nf, _, _)| nf == output.nullifier())
+                    .find(|(nf, _, _, _)| nf == output.nullifier())
                 {
                     self.transaction_metadata_set
                         .write()
@@ -439,6 +437,7 @@ impl TransactionContext {
                             (*nf).into(),
                             *value,
                             *transaction_id,
+                            *output_index,
                         )
                         .await;
                 }
@@ -469,8 +468,9 @@ impl TransactionContext {
 
         let decrypt_attempts =
             zcash_note_encryption::batch::try_note_decryption(&[ivk], &domain_tagged_outputs)
-                .into_iter();
-        for decrypt_attempt in decrypt_attempts {
+                .into_iter()
+                .enumerate();
+        for (output_index, decrypt_attempt) in decrypt_attempts {
             let ((note, to, memo_bytes), _ivk_num) = match decrypt_attempt {
                 Some(plaintext) => plaintext,
                 _ => continue,
@@ -486,6 +486,7 @@ impl TransactionContext {
                         block_time as u64,
                         note.clone(),
                         to,
+                        output_index,
                     );
             }
             let memo = memo_bytes
