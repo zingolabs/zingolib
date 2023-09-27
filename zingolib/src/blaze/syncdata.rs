@@ -10,7 +10,6 @@ use crate::wallet::WalletOptions;
 use zingoconfig::ZingoConfig;
 
 pub struct BlazeSyncData {
-    pub(crate) sync_status: Arc<RwLock<BatchSyncStatus>>,
     pub(crate) block_data: BlockAndWitnessData,
     uri: Arc<std::sync::RwLock<Uri>>,
     pub(crate) wallet_options: WalletOptions,
@@ -21,7 +20,6 @@ impl BlazeSyncData {
         let sync_status = Arc::new(RwLock::new(BatchSyncStatus::default()));
 
         Self {
-            sync_status: sync_status.clone(),
             uri: config.lightwalletd_uri.clone(),
             block_data: BlockAndWitnessData::new(sync_status),
             wallet_options: WalletOptions::default(),
@@ -49,7 +47,8 @@ impl BlazeSyncData {
         }
 
         // Clear the status for a new sync batch
-        self.sync_status
+        self.block_data
+            .sync_status
             .write()
             .await
             .new_sync_batch(start_block, end_block, batch_num);
@@ -63,6 +62,6 @@ impl BlazeSyncData {
 
     // Finish up the sync
     pub async fn finish(&self) {
-        self.sync_status.write().await.finish();
+        self.block_data.sync_status.write().await.finish();
     }
 }

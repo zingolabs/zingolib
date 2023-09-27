@@ -59,7 +59,7 @@ pub struct BlockAndWitnessData {
     highest_verified_trees: Option<TreeState>,
 
     // Link to the syncstatus where we can update progress
-    sync_status: Arc<RwLock<BatchSyncStatus>>,
+    pub sync_status: Arc<RwLock<BatchSyncStatus>>,
 }
 
 pub const BATCHSIZE: u32 = 25;

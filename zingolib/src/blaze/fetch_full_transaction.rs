@@ -604,8 +604,22 @@ pub async fn start(
 ) {
     let local_transaction_context = transaction_context.clone();
 
-    let start_height = bsync_data.read().await.sync_status.read().await.start_block;
-    let end_height = bsync_data.read().await.sync_status.read().await.end_block;
+    let start_height = bsync_data
+        .read()
+        .await
+        .block_data
+        .sync_status
+        .read()
+        .await
+        .start_block;
+    let end_height = bsync_data
+        .read()
+        .await
+        .block_data
+        .sync_status
+        .read()
+        .await
+        .end_block;
 
     let bsync_data_i = bsync_data.clone();
 
@@ -643,6 +657,7 @@ pub async fn start(
                     bsync_data
                         .read()
                         .await
+                        .block_data
                         .sync_status
                         .write()
                         .await
@@ -665,6 +680,7 @@ pub async fn start(
         bsync_data_i
             .read()
             .await
+            .block_data
             .sync_status
             .write()
             .await
