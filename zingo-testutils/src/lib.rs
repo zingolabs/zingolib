@@ -681,26 +681,53 @@ pub mod scenarios {
         )
     }
 
-    pub async fn funded_orchard_with_3_txs_mobileclient(
+    pub async fn funded_orchard_with_3_txs(
         value: u64,
-    ) -> (RegtestManager, ChildProcessHandler) {
+    ) -> (
+        RegtestManager,
+        ChildProcessHandler,
+        LightClient,
+        LightClient,
+    ) {
+        // Set up the tools to so that we can:
+        // * produce test clients
+        // * produce a test blockchain
+        // * build transactions:
+        //     - inter client, e.g. faucet to recipient
+        //     - intra client, e.g. faucet to faucet
+        // * extend the test blockchain to record the transactions
+        // * sync the clients to the new state of the chain
         let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
             Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
             None,
             Some(20_000),
         )
         .await;
+        // A client that's registered to receive the block reward.
+        //  - Every time a new block is generated this client receives
+        //    funds in its sapling pool
         let faucet = scenario_builder
             .client_builder
             .build_new_faucet(0, false)
             .await;
+        // A distinct client from the faucet.  It only receives funds if the
+        // test code explicitly expresses that it:
+        //     1. is the recipient of a valid transaction
+        //     2. at least one new block is generated to confirm the transaction
+        //     3. it is synced to the chain to acquire the confirmation information
         let recipient = scenario_builder
             .client_builder
             .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
             .await;
+        // Update the faucet client's wallet with the most recent chain state
+        // after this sync the faucet's wallet should have correctly marked the relevant
+        // transactions as confirmed.
         faucet.do_sync(false).await.unwrap();
+        // As above but for the recipient.
         recipient.do_sync(false).await.unwrap();
-        // received from a faucet
+        // Construct and **GOSSIP** a transcation
+        //    - from the faucet (sapling pool)
+        //    - to the recipient (orchard pool)
         faucet
             .do_send(vec![(
                 &get_base_address!(recipient, "unified"),
@@ -709,8 +736,17 @@ pub mod scenarios {
             )])
             .await
             .unwrap();
+        // The chain height has not changed since the recipient was constructed
+        // so the following sync should be a no-op (interesting test condition)!!
         recipient.do_sync(false).await.unwrap();
-        // send to a faucet
+        // Construct and **GOSSIP** a transcation
+        //    - from the recipient (orchard pool)
+        //    - (back) to the faucet (orchard pool)
+        // HYPOTHESIS: This send should fail because the recipient should not YET have
+        // any confirmed funds (remember the only funds sent to the recipient
+        // are still in the mempool, until a block captures them) this means
+        // that the previous send to the recipient is not yet "confirmed" (in a block)
+        // from the perspective of the recipient wallet.
         recipient
             .do_send(vec![(
                 &get_base_address!(faucet, "unified"),
@@ -719,8 +755,11 @@ pub mod scenarios {
             )])
             .await
             .unwrap();
+        // Another no-op.  The recipient is already in sync with the tip of the
+        // block chain which has not yet increased.
+        // HYPOTHESIS: The chain height is BASE_HEIGHT!
         recipient.do_sync(false).await.unwrap();
-        // send to self sapling
+        // Another failure due to lakc of **CONFIRMED** funds.
         recipient
             .do_send(vec![(
                 &get_base_address!(recipient, "sapling"),
@@ -729,14 +768,18 @@ pub mod scenarios {
             )])
             .await
             .unwrap();
+        // generate a block and sync the faucet to it
+        increase_height_and_sync_client(&scenario_builder.regtest_manager, &faucet, 1)
+            .await
+            .unwrap();
+        // sync the recipient to the latest height
         recipient.do_sync(false).await.unwrap();
-        scenario_builder
-            .regtest_manager
-            .generate_n_blocks(1)
-            .expect("Failed to generate blocks.");
+        // I suspect the caller of this fn will to access the clients (faucet, and recipient)
         (
             scenario_builder.regtest_manager,
             scenario_builder.child_process_handler.unwrap(),
+            recipient,
+            faucet,
         )
     }
 
