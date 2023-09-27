@@ -617,7 +617,7 @@ pub mod scenarios {
         faucet.do_sync(false).await.unwrap();
         let recipient = sb
             .client_builder
-            .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
+            .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), BASE_HEIGHT as u64, false)
             .await;
         (
             sb.regtest_manager,
