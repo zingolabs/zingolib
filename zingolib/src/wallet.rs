@@ -1057,23 +1057,12 @@ impl LightWallet {
         }
         Ok(tx_builder)
     }
-    fn add_outputs_to_builder<'a>(
+    fn add_consumer_specified_outputs_to_builder<'a>(
         &'a self,
         mut tx_builder: TxBuilder<'a>,
         receivers: Receivers,
-        selected_value: Amount,
-        target_amount: Amount,
     ) -> Result<(u32, TxBuilder<'_>), String> {
         // Convert address (str) to RecipientAddress and value to Amount
-
-        let destination_uas = receivers
-            .iter()
-            .filter_map(|receiver| match receiver.0 {
-                address::RecipientAddress::Shielded(_) => None,
-                address::RecipientAddress::Transparent(_) => None,
-                address::RecipientAddress::Unified(ref ua) => Some(ua.clone()),
-            })
-            .collect::<Vec<_>>();
 
         // We'll use the first ovk to encrypt outgoing transactions
         let sapling_ovk =
@@ -1129,6 +1118,25 @@ impl LightWallet {
                 return Err(e);
             }
         }
+        Ok((total_shielded_receivers, tx_builder))
+    }
+
+    fn add_change_output_to_builder<'a>(
+        &self,
+        mut tx_builder: TxBuilder<'a>,
+        target_amount: Amount,
+        selected_value: Amount,
+        total_shielded_receivers: &mut u32,
+        receivers: &Receivers,
+    ) -> Result<TxBuilder<'a>, String> {
+        let destination_uas = receivers
+            .iter()
+            .filter_map(|receiver| match receiver.0 {
+                address::RecipientAddress::Shielded(_) => None,
+                address::RecipientAddress::Transparent(_) => None,
+                address::RecipientAddress::Unified(ref ua) => Some(ua.clone()),
+            })
+            .collect::<Vec<_>>();
         let uas_bytes = match create_wallet_internal_memo_version_0(destination_uas.as_slice()) {
             Ok(bytes) => bytes,
             Err(e) => {
@@ -1140,8 +1148,9 @@ impl LightWallet {
                 [0; 511]
             }
         };
-
-        total_shielded_receivers += 1;
+        let orchard_ovk =
+            orchard::keys::OutgoingViewingKey::try_from(&*self.wallet_capability()).unwrap();
+        *total_shielded_receivers += 1;
         if let Err(e) = tx_builder.add_orchard_output::<FixedFeeRule>(
             Some(orchard_ovk.clone()),
             *self.wallet_capability().addresses()[0].orchard().unwrap(),
@@ -1154,9 +1163,8 @@ impl LightWallet {
             error!("{}", e);
             return Err(e);
         };
-        Ok((total_shielded_receivers, tx_builder))
+        Ok(tx_builder)
     }
-
     async fn send_to_addresses_inner<F, Fut, P: TxProver>(
         &self,
         sapling_prover: P,
@@ -1238,9 +1246,21 @@ impl LightWallet {
 
         // Select notes to cover the target value
         info!("{}: Adding outputs", now() - start_time);
-        let (total_shielded_receivers, tx_builder) = self
-            .add_outputs_to_builder(tx_builder, receivers, selected_value, target_amount)
+        let (mut total_shielded_receivers, tx_builder) = self
+            .add_consumer_specified_outputs_to_builder(tx_builder, receivers.clone())
             .expect("To add outputs");
+        let tx_builder = match self.add_change_output_to_builder(
+            tx_builder,
+            target_amount,
+            selected_value,
+            &mut total_shielded_receivers,
+            &receivers,
+        ) {
+            Ok(txb) => txb,
+            Err(r) => {
+                return Err(r);
+            }
+        };
         info!("{}: selecting notes", now() - start_time);
         let mut tx_builder = self
             .add_spends_to_builder(
