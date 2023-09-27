@@ -18,7 +18,7 @@ use zingolib::lightclient::LightClient;
 
 use crate::scenarios::setup::TestEnvironmentGenerator;
 
-pub const BASE_HEIGHT: u32 = 2;
+pub const BASE_HEIGHT: u32 = 3;
 pub fn build_fvks_from_wallet_capability(wallet_capability: &WalletCapability) -> [Fvk; 3] {
     let o_fvk = Fvk::Orchard(
         orchard::keys::FullViewingKey::try_from(wallet_capability)
@@ -321,8 +321,10 @@ pub mod scenarios {
                             }
                         }),
                 );
-                self.regtest_manager.generate_n_blocks(BASE_HEIGHT).unwrap();
-                while crate::poll_server_height(&self.regtest_manager) != BASE_HEIGHT + 1 {
+                self.regtest_manager
+                    .generate_n_blocks(BASE_HEIGHT - 1)
+                    .unwrap();
+                while crate::poll_server_height(&self.regtest_manager) != BASE_HEIGHT {
                     sleep(std::time::Duration::from_millis(50)).await;
                 }
             }
@@ -550,7 +552,7 @@ pub mod scenarios {
         .await;
         let faucet = sb
             .client_builder
-            .build_new_faucet(BASE_HEIGHT as u64, false)
+            .build_new_faucet(BASE_HEIGHT as u64 - 1, false)
             .await;
         (
             sb.regtest_manager,
@@ -611,7 +613,7 @@ pub mod scenarios {
             None,
         )
         .await;
-        let faucet = sb.client_builder.build_new_faucet(9, false).await;
+        let faucet = sb.client_builder.build_new_faucet(0, false).await;
         faucet.do_sync(false).await.unwrap();
         let recipient = sb
             .client_builder
@@ -674,6 +676,69 @@ pub mod scenarios {
         scenario_builder
             .regtest_manager
             .generate_n_blocks(1)
+            .expect("Failed to generate blocks.");
+        (
+            scenario_builder.regtest_manager,
+            scenario_builder.child_process_handler.unwrap(),
+        )
+    }
+
+    pub async fn funded_orchard_with_3_txs_mobileclient(
+        value: u64,
+    ) -> (RegtestManager, ChildProcessHandler) {
+        let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
+            Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
+            None,
+            Some(20_000),
+        )
+        .await;
+        let faucet = scenario_builder
+            .client_builder
+            .build_new_faucet(0, false)
+            .await;
+        let recipient = scenario_builder
+            .client_builder
+            .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
+            .await;
+        increase_height_and_sync_client(&scenario_builder.regtest_manager, &faucet, 1)
+            .await
+            .unwrap();
+        // received from a faucet
+        faucet
+            .do_send(vec![(
+                &get_base_address!(recipient, "unified"),
+                value,
+                None,
+            )])
+            .await
+            .unwrap();
+        increase_height_and_sync_client(&scenario_builder.regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+        // send to a faucet
+        recipient
+            .do_send(vec![(
+                &get_base_address!(faucet, "unified"),
+                value.checked_div(10).unwrap(),
+                None,
+            )])
+            .await
+            .unwrap();
+        increase_height_and_sync_client(&scenario_builder.regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+        // send to self sapling
+        recipient
+            .do_send(vec![(
+                &get_base_address!(recipient, "sapling"),
+                value.checked_div(10).unwrap(),
+                None,
+            )])
+            .await
+            .unwrap();
+        scenario_builder
+            .regtest_manager
+            .generate_n_blocks(4)
             .expect("Failed to generate blocks.");
         (
             scenario_builder.regtest_manager,
