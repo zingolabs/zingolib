@@ -904,12 +904,12 @@ pub struct TransactionMetadata {
 impl TransactionMetadata {
     pub(super) fn add_spent_nullifier(&mut self, nullifier: PoolNullifier, value: u64) {
         match nullifier {
-            PoolNullifier::Sapling(nf) => {
-                self.spent_sapling_nullifiers.push(nf);
+            PoolNullifier::Sapling(sapling_nullifier) => {
+                self.spent_sapling_nullifiers.push(sapling_nullifier);
                 self.total_sapling_value_spent += value;
             }
-            PoolNullifier::Orchard(nf) => {
-                self.spent_orchard_nullifiers.push(nf);
+            PoolNullifier::Orchard(orchard_nullifier) => {
+                self.spent_orchard_nullifiers.push(orchard_nullifier);
                 self.total_orchard_value_spent += value;
             }
         }
