@@ -32,9 +32,9 @@ use zcash_note_encryption::Domain;
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::sapling::note_encryption::SaplingDomain;
 use zcash_primitives::sapling::SaplingIvk;
-use zcash_primitives::transaction;
 use zcash_primitives::transaction::builder::Progress;
 use zcash_primitives::transaction::fees::fixed::FeeRule as FixedFeeRule;
+use zcash_primitives::transaction::{self, Transaction};
 use zcash_primitives::{
     consensus::BlockHeight,
     legacy::Script,
@@ -1169,7 +1169,22 @@ impl LightWallet {
         Ok(tx_builder)
     }
 
-    async fn create_publication_ready_transaction(&self, submission_height: BlockHeight) {
+    async fn create_publication_ready_transaction<P: TxProver>(
+        &self,
+        submission_height: BlockHeight,
+        start_time: u64,
+        receivers: Receivers,
+        policy: NoteSelectionPolicy,
+        sapling_prover: P,
+    ) -> Result<
+        (
+            Transaction,
+            Vec<SpendableOrchardNote>,
+            Vec<SpendableSaplingNote>,
+            Vec<ReceivedTransparentOutput>,
+        ),
+        String,
+    > {
         // Start building transaction with spends and outputs set by:
         //  * target amount
         //  * selection policy
@@ -1304,6 +1319,8 @@ impl LightWallet {
                 return Err(e);
             }
         };
+        progress_handle.await.unwrap();
+        Ok((transaction, orchard_notes, sapling_notes, utxos))
     }
     async fn send_to_addresses_inner<F, Fut, P: TxProver>(
         &self,
@@ -1321,8 +1338,22 @@ impl LightWallet {
         let start_time = now();
 
         // Wait for all the progress to be updated
-        progress_handle.await.unwrap();
 
+        let (transaction, orchard_notes, sapling_notes, utxos) = match self
+            .create_publication_ready_transaction(
+                submission_height,
+                start_time,
+                receivers,
+                policy,
+                sapling_prover,
+            )
+            .await
+        {
+            Ok(t) => t,
+            Err(s) => {
+                return Err(s);
+            }
+        };
         info!("{}: Transaction created", now() - start_time);
         info!("Transaction ID: {}", transaction.txid());
 
