@@ -935,12 +935,31 @@ impl LightWallet {
             // Thus we forbid spending for wallets without complete spending capability for now
             return Err("Wallet is in watch-only mode and thus it cannot spend.".to_string());
         }
+        // Create the transaction
+        let start_time = now();
+        let (transaction, orchard_notes, sapling_notes, utxos) = match self
+            .create_publication_ready_transaction(
+                submission_height,
+                start_time,
+                receivers,
+                policy,
+                sapling_prover,
+            )
+            .await
+        {
+            Ok(success_tuple) => success_tuple,
+            Err(s) => return Err(s),
+        };
+
+        info!("{}: Transaction created", now() - start_time);
+        info!("Transaction ID: {}", transaction.txid());
         // Call the internal function
         match self
             .send_to_addresses_inner(
-                sapling_prover,
-                policy,
-                receivers,
+                transaction,
+                &orchard_notes,
+                &sapling_notes,
+                &utxos[..],
                 submission_height,
                 broadcast_fn,
             )
@@ -1322,11 +1341,12 @@ impl LightWallet {
         progress_handle.await.unwrap();
         Ok((transaction, orchard_notes, sapling_notes, utxos))
     }
-    async fn send_to_addresses_inner<F, Fut, P: TxProver>(
+    async fn send_to_addresses_inner<F, Fut>(
         &self,
-        sapling_prover: P,
-        policy: NoteSelectionPolicy,
-        receivers: Receivers,
+        transaction: Transaction,
+        orchard_notes: &[SpendableOrchardNote],
+        sapling_notes: &[SpendableSaplingNote],
+        utxos: &[ReceivedTransparentOutput],
         submission_height: BlockHeight,
         broadcast_fn: F,
     ) -> Result<(String, Vec<u8>), String>
@@ -1334,29 +1354,6 @@ impl LightWallet {
         F: Fn(Box<[u8]>) -> Fut,
         Fut: Future<Output = Result<String, String>>,
     {
-        // Init timer
-        let start_time = now();
-
-        // Wait for all the progress to be updated
-
-        let (transaction, orchard_notes, sapling_notes, utxos) = match self
-            .create_publication_ready_transaction(
-                submission_height,
-                start_time,
-                receivers,
-                policy,
-                sapling_prover,
-            )
-            .await
-        {
-            Ok(t) => t,
-            Err(s) => {
-                return Err(s);
-            }
-        };
-        info!("{}: Transaction created", now() - start_time);
-        info!("Transaction ID: {}", transaction.txid());
-
         {
             self.send_progress.write().await.is_send_in_progress = false;
         }
