@@ -268,6 +268,10 @@ impl BlockAndWitnessData {
             let mut orchard_tree = read_commitment_tree(
                 &hex::decode(closest_lower_verified_tree.orchard_tree).unwrap()[..],
             )
+            .or_else(|error| match dbg!(error.kind()) {
+                std::io::ErrorKind::UnexpectedEof => Ok(CommitmentTree::empty()),
+                _ => Err(error),
+            })
             .expect("Invalid orchard tree!");
 
             {
