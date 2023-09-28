@@ -1142,6 +1142,7 @@ impl LightClient {
             .bsync_data
             .read()
             .await
+            .block_data
             .sync_status
             .read()
             .await
@@ -1152,7 +1153,7 @@ impl LightClient {
 
         // If printing updates, start a new task to print updates every 2 seconds.
         let sync_result = if print_updates {
-            let sync_status_clone = self.bsync_data.read().await.sync_status.clone();
+            let sync_status_clone = self.bsync_data.read().await.block_data.sync_status.clone();
             let (transmitter, mut receiver) = oneshot::channel::<i32>();
 
             tokio::spawn(async move {
@@ -1189,6 +1190,7 @@ impl LightClient {
         self.bsync_data
             .read()
             .await
+            .block_data
             .sync_status
             .read()
             .await
@@ -1601,6 +1603,7 @@ impl LightClient {
         self.bsync_data
             .write()
             .await
+            .block_data
             .sync_status
             .write()
             .await
