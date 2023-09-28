@@ -1183,8 +1183,33 @@ impl LightWallet {
         // Init timer
         let start_time = now();
 
-        let total_earmarked_for_recipients =
-            receivers.iter().map(|to| Into::<u64>::into(to.1)).sum();
+        // Start building transaction with spends and outputs set by:
+        //  * target amount
+        //  * selection policy
+        //  * recipient list
+        let txmds_readlock = self
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await;
+        let witness_trees = txmds_readlock
+            .witness_trees
+            .as_ref()
+            .expect("If we have spend capability we have trees");
+
+        // Start building tx
+        let tx_builder = self
+            .create_tx_builder(submission_height, witness_trees)
+            .await
+            .expect("To populate a builder with notes.");
+
+        // Select notes to cover the target value
+        info!("{}: Adding outputs", now() - start_time);
+        let (mut total_shielded_receivers, tx_builder) = self
+            .add_consumer_specified_outputs_to_builder(tx_builder, receivers.clone())
+            .expect("To add outputs");
+
+        let total_earmarked_for_recipients = receivers.iter().map(|to| u64::from(to.1)).sum();
         info!(
             "0: Creating transaction sending {} zatoshis to {} addresses",
             total_earmarked_for_recipients,
@@ -1220,31 +1245,6 @@ impl LightWallet {
             &utxos.len()
         );
 
-        // Start building transaction with spends and outputs set by:
-        //  * target amount
-        //  * selection policy
-        //  * recipient list
-        let txmds_readlock = self
-            .transaction_context
-            .transaction_metadata_set
-            .read()
-            .await;
-        let witness_trees = txmds_readlock
-            .witness_trees
-            .as_ref()
-            .expect("If we have spend capability we have trees");
-
-        // Start building tx
-        let tx_builder = self
-            .create_tx_builder(submission_height, witness_trees)
-            .await
-            .expect("To populate a builder with notes.");
-
-        // Select notes to cover the target value
-        info!("{}: Adding outputs", now() - start_time);
-        let (mut total_shielded_receivers, tx_builder) = self
-            .add_consumer_specified_outputs_to_builder(tx_builder, receivers.clone())
-            .expect("To add outputs");
         let tx_builder = match self.add_change_output_to_builder(
             tx_builder,
             earmark_total_plus_default_fee,
