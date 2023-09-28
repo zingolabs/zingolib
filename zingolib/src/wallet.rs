@@ -32,9 +32,9 @@ use zcash_note_encryption::Domain;
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::sapling::note_encryption::SaplingDomain;
 use zcash_primitives::sapling::SaplingIvk;
-use zcash_primitives::transaction;
 use zcash_primitives::transaction::builder::Progress;
 use zcash_primitives::transaction::fees::fixed::FeeRule as FixedFeeRule;
+use zcash_primitives::transaction::{self, Transaction};
 use zcash_primitives::{
     consensus::BlockHeight,
     legacy::Script,
@@ -935,12 +935,31 @@ impl LightWallet {
             // Thus we forbid spending for wallets without complete spending capability for now
             return Err("Wallet is in watch-only mode and thus it cannot spend.".to_string());
         }
+        // Create the transaction
+        let start_time = now();
+        let (transaction, orchard_notes, sapling_notes, utxos) = match self
+            .create_publication_ready_transaction(
+                submission_height,
+                start_time,
+                receivers,
+                policy,
+                sapling_prover,
+            )
+            .await
+        {
+            Ok(success_tuple) => success_tuple,
+            Err(s) => return Err(s),
+        };
+
+        info!("{}: Transaction created", now() - start_time);
+        info!("Transaction ID: {}", transaction.txid());
         // Call the internal function
         match self
             .send_to_addresses_inner(
-                sapling_prover,
-                policy,
-                receivers,
+                transaction,
+                &orchard_notes,
+                &sapling_notes,
+                &utxos[..],
                 submission_height,
                 broadcast_fn,
             )
@@ -1168,56 +1187,23 @@ impl LightWallet {
         };
         Ok(tx_builder)
     }
-    async fn send_to_addresses_inner<F, Fut, P: TxProver>(
+
+    async fn create_publication_ready_transaction<P: TxProver>(
         &self,
-        sapling_prover: P,
-        policy: NoteSelectionPolicy,
-        receivers: Receivers,
         submission_height: BlockHeight,
-        broadcast_fn: F,
-    ) -> Result<(String, Vec<u8>), String>
-    where
-        F: Fn(Box<[u8]>) -> Fut,
-        Fut: Future<Output = Result<String, String>>,
-    {
-        // Init timer
-        let start_time = now();
-
-        let total_value = receivers.iter().map(|to| Into::<u64>::into(to.1)).sum();
-        info!(
-            "0: Creating transaction sending {} zatoshis to {} addresses",
-            total_value,
-            receivers.len()
-        );
-
-        let target_amount = (Amount::from_u64(total_value).unwrap() + MINIMUM_FEE).unwrap();
-        // Select notes as a fn of target anount
-        let (orchard_notes, sapling_notes, utxos, selected_value) = match self
-            .select_notes_and_utxos(target_amount, policy)
-            .await
-        {
-            Ok(notes) => notes,
-            Err(insufficient_amount) => {
-                let e = format!(
-                "Insufficient verified shielded funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes.",
-                u64::from(insufficient_amount), u64::from(target_amount), self.transaction_context.config
-                .reorg_buffer_offset + 1
-            );
-                error!("{}", e);
-                return Err(e);
-            }
-        };
-
-        info!("Selected notes worth {}", u64::from(selected_value));
-
-        info!(
-            "{}: Adding {} sapling notes, {} orchard notes, and {} utxos",
-            now() - start_time,
-            &sapling_notes.len(),
-            &orchard_notes.len(),
-            &utxos.len()
-        );
-
+        start_time: u64,
+        receivers: Receivers,
+        policy: NoteSelectionPolicy,
+        sapling_prover: P,
+    ) -> Result<
+        (
+            Transaction,
+            Vec<SpendableOrchardNote>,
+            Vec<SpendableSaplingNote>,
+            Vec<ReceivedTransparentOutput>,
+        ),
+        String,
+    > {
         // Start building transaction with spends and outputs set by:
         //  * target amount
         //  * selection policy
@@ -1243,9 +1229,46 @@ impl LightWallet {
         let (mut total_shielded_receivers, tx_builder) = self
             .add_consumer_specified_outputs_to_builder(tx_builder, receivers.clone())
             .expect("To add outputs");
+
+        let total_earmarked_for_recipients = receivers.iter().map(|to| u64::from(to.1)).sum();
+        info!(
+            "0: Creating transaction sending {} zatoshis to {} addresses",
+            total_earmarked_for_recipients,
+            receivers.len()
+        );
+
+        let earmark_total_plus_default_fee =
+            (Amount::from_u64(total_earmarked_for_recipients).unwrap() + MINIMUM_FEE).unwrap();
+        // Select notes as a fn of target anount
+        let (orchard_notes, sapling_notes, utxos, selected_value) = match self
+            .select_notes_and_utxos(earmark_total_plus_default_fee, policy)
+            .await
+        {
+            Ok(notes) => notes,
+            Err(insufficient_amount) => {
+                let e = format!(
+                "Insufficient verified shielded funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes.",
+                u64::from(insufficient_amount), u64::from(earmark_total_plus_default_fee), self.transaction_context.config
+                .reorg_buffer_offset + 1
+            );
+                error!("{}", e);
+                return Err(e);
+            }
+        };
+
+        info!("Selected notes worth {}", u64::from(selected_value));
+
+        info!(
+            "{}: Adding {} sapling notes, {} orchard notes, and {} utxos",
+            now() - start_time,
+            &sapling_notes.len(),
+            &orchard_notes.len(),
+            &utxos.len()
+        );
+
         let tx_builder = match self.add_change_output_to_builder(
             tx_builder,
-            target_amount,
+            earmark_total_plus_default_fee,
             selected_value,
             &mut total_shielded_receivers,
             &receivers,
@@ -1315,13 +1338,22 @@ impl LightWallet {
                 return Err(e);
             }
         };
-
-        // Wait for all the progress to be updated
         progress_handle.await.unwrap();
-
-        info!("{}: Transaction created", now() - start_time);
-        info!("Transaction ID: {}", transaction.txid());
-
+        Ok((transaction, orchard_notes, sapling_notes, utxos))
+    }
+    async fn send_to_addresses_inner<F, Fut>(
+        &self,
+        transaction: Transaction,
+        orchard_notes: &[SpendableOrchardNote],
+        sapling_notes: &[SpendableSaplingNote],
+        utxos: &[ReceivedTransparentOutput],
+        submission_height: BlockHeight,
+        broadcast_fn: F,
+    ) -> Result<(String, Vec<u8>), String>
+    where
+        F: Fn(Box<[u8]>) -> Fut,
+        Fut: Future<Output = Result<String, String>>,
+    {
         {
             self.send_progress.write().await.is_send_in_progress = false;
         }
