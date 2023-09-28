@@ -1191,18 +1191,18 @@ impl LightWallet {
             receivers.len()
         );
 
-        let target_amount =
+        let earmark_total_plus_default_fee =
             (Amount::from_u64(total_earmarked_for_recipients).unwrap() + MINIMUM_FEE).unwrap();
         // Select notes as a fn of target anount
         let (orchard_notes, sapling_notes, utxos, selected_value) = match self
-            .select_notes_and_utxos(target_amount, policy)
+            .select_notes_and_utxos(earmark_total_plus_default_fee, policy)
             .await
         {
             Ok(notes) => notes,
             Err(insufficient_amount) => {
                 let e = format!(
                 "Insufficient verified shielded funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes.",
-                u64::from(insufficient_amount), u64::from(target_amount), self.transaction_context.config
+                u64::from(insufficient_amount), u64::from(earmark_total_plus_default_fee), self.transaction_context.config
                 .reorg_buffer_offset + 1
             );
                 error!("{}", e);
@@ -1247,7 +1247,7 @@ impl LightWallet {
             .expect("To add outputs");
         let tx_builder = match self.add_change_output_to_builder(
             tx_builder,
-            target_amount,
+            earmark_total_plus_default_fee,
             selected_value,
             &mut total_shielded_receivers,
             &receivers,
