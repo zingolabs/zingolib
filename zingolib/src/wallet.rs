@@ -1177,9 +1177,7 @@ impl LightWallet {
         F: Fn(Box<[u8]>) -> Fut,
         Fut: Future<Output = Result<String, String>>,
     {
-        // Init timer, check some invariants
-        let start_time = now();
-
+        // Sanity check that this is a spending wallet.  Why isn't this done earlier?
         if !self.wallet_capability().can_spend_from_all_pools() {
             // Creating transactions in context of all possible combinations
             // of wallet capabilities requires a rigorous case study
@@ -1188,6 +1186,8 @@ impl LightWallet {
             // Thus we forbid spending for wallets without complete spending capability for now
             return Err("Wallet is in watch-only mode and thus it cannot spend.".to_string());
         }
+        // Init timer
+        let start_time = now();
 
         let total_value = receivers.iter().map(|to| Into::<u64>::into(to.1)).sum();
         info!(
