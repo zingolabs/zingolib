@@ -926,6 +926,15 @@ impl LightWallet {
         // Reset the progress to start. Any errors will get recorded here
         self.reset_send_progress().await;
 
+        // Sanity check that this is a spending wallet.  Why isn't this done earlier?
+        if !self.wallet_capability().can_spend_from_all_pools() {
+            // Creating transactions in context of all possible combinations
+            // of wallet capabilities requires a rigorous case study
+            // and can have undesired effects if not implemented properly.
+            //
+            // Thus we forbid spending for wallets without complete spending capability for now
+            return Err("Wallet is in watch-only mode and thus it cannot spend.".to_string());
+        }
         // Call the internal function
         match self
             .send_to_addresses_inner(
@@ -1171,17 +1180,8 @@ impl LightWallet {
         F: Fn(Box<[u8]>) -> Fut,
         Fut: Future<Output = Result<String, String>>,
     {
-        // Init timer, check some invariants
+        // Init timer
         let start_time = now();
-
-        if !self.wallet_capability().can_spend_from_all_pools() {
-            // Creating transactions in context of all possible combinations
-            // of wallet capabilities requires a rigorous case study
-            // and can have undesired effects if not implemented properly.
-            //
-            // Thus we forbid spending for wallets without complete spending capability for now
-            return Err("Wallet is in watch-only mode and thus it cannot spend.".to_string());
-        }
 
         let total_value = receivers.iter().map(|to| Into::<u64>::into(to.1)).sum();
         info!(
