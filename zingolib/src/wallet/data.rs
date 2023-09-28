@@ -435,7 +435,8 @@ pub struct ReceivedSaplingNoteAndMetadata {
     pub diversifier: zcash_primitives::sapling::Diversifier,
     pub note: zcash_primitives::sapling::Note,
 
-    // The postion of this note's commitment
+    // The postion of this note's value commitment in the global commitment tree
+    // We need to create a witness to it, to spend
     pub(crate) witnessed_position: Option<Position>,
 
     // The note's index in its containing transaction
@@ -459,7 +460,8 @@ pub struct ReceivedOrchardNoteAndMetadata {
     pub diversifier: orchard::keys::Diversifier,
     pub note: orchard::note::Note,
 
-    // The postion of this note's commitment
+    // The postion of this note's value commitment in the global commitment tree
+    // We need to create a witness to it, to spend
     pub witnessed_position: Option<Position>,
 
     // The note's index in its containing transaction
