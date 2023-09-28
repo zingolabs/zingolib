@@ -124,7 +124,7 @@ pub enum MemoDownloadOption {
 #[derive(Debug, Clone, Copy)]
 pub struct WalletOptions {
     pub(crate) download_memos: MemoDownloadOption,
-    pub(crate) transaction_size_filter: Option<u32>,
+    pub transaction_size_filter: Option<u32>,
 }
 
 pub const MAX_TRANSACTION_SIZE_DEFAULT: u32 = 500;
@@ -215,7 +215,7 @@ pub struct LightWallet {
     pub blocks: Arc<RwLock<Vec<BlockData>>>,
 
     // Wallet options
-    pub(crate) wallet_options: Arc<RwLock<WalletOptions>>,
+    pub wallet_options: Arc<RwLock<WalletOptions>>,
 
     // Heighest verified block
     pub(crate) verified_tree: Arc<RwLock<Option<TreeState>>>,

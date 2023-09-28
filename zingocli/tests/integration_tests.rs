@@ -104,6 +104,68 @@ async fn dont_write_unconfirmed() {
 }
 
 #[tokio::test]
+async fn sandblast_filter_preserves_trees() {
+    let (ref regtest_manager, _cph, ref faucet, ref recipient, _txid) =
+        scenarios::faucet_prefunded_orchard_recipient(100_000).await;
+    recipient
+        .wallet
+        .wallet_options
+        .write()
+        .await
+        .transaction_size_filter = Some(10);
+    recipient.do_sync(false).await.unwrap();
+    dbg!(
+        recipient
+            .wallet
+            .wallet_options
+            .read()
+            .await
+            .transaction_size_filter
+    );
+
+    println!("creating vec");
+    faucet
+        .do_send(vec![(&get_base_address!(faucet, "unified"), 10, None); 15])
+        .await
+        .unwrap();
+    zingo_testutils::increase_height_and_sync_client(regtest_manager, recipient, 10)
+        .await
+        .unwrap();
+    recipient
+        .do_send(vec![(&get_base_address!(faucet, "unified"), 10, None)])
+        .await
+        .unwrap();
+    zingo_testutils::increase_height_and_sync_client(regtest_manager, recipient, 10)
+        .await
+        .unwrap();
+    faucet.do_sync(false).await.unwrap();
+    assert_eq!(
+        faucet
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .witness_trees
+            .as_ref()
+            .unwrap()
+            .witness_tree_orchard
+            .max_leaf_position(0),
+        recipient
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .witness_trees
+            .as_ref()
+            .unwrap()
+            .witness_tree_orchard
+            .max_leaf_position(0)
+    );
+}
+
+#[tokio::test]
 async fn load_and_parse_different_wallet_versions() {
     let (_sap_wallet, _sap_path, sap_dir) = zingo_testutils::get_wallet_nym("sap_only").unwrap();
     let (_loaded_wallet, _) = zingo_testutils::load_wallet(sap_dir, ChainType::Regtest).await;

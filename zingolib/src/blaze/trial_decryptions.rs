@@ -169,15 +169,7 @@ impl TrialDecryptions {
             let mut orchard_notes_to_mark_position_in_block = Vec::new();
 
             for (transaction_num, compact_transaction) in compact_block.vtx.iter().enumerate() {
-                if let Some(filter) = transaction_size_filter {
-                    if compact_transaction.outputs.len() + compact_transaction.actions.len()
-                        > filter as usize
-                    {
-                        continue;
-                    }
-                }
-                let mut transaction_metadata = false;
-                let mut sapling_notes_to_mark_position_in_tx = compact_transaction
+                let mut sapling_notes_to_mark_position_in_tx: Vec<_> = compact_transaction
                     .outputs
                     .iter()
                     .enumerate()
@@ -192,7 +184,34 @@ impl TrialDecryptions {
                         )
                     })
                     .collect();
+                let mut orchard_notes_to_mark_position_in_tx: Vec<_> = compact_transaction
+                    .actions
+                    .iter()
+                    .enumerate()
+                    .map(|(i, output)| {
+                        (
+                            i as u32,
+                            TxId::from_bytes(
+                                <[u8; 32]>::try_from(&compact_transaction.hash[..]).unwrap(),
+                            ),
+                            MerkleHashOrchard::from_commitment(output.cmstar()).unwrap(),
+                            Retention::Ephemeral,
+                        )
+                    })
+                    .collect();
 
+                if let Some(filter) = transaction_size_filter {
+                    if compact_transaction.outputs.len() + compact_transaction.actions.len()
+                        > filter as usize
+                    {
+                        sapling_notes_to_mark_position_in_block
+                            .extend_from_slice(&sapling_notes_to_mark_position_in_tx);
+                        orchard_notes_to_mark_position_in_block
+                            .extend_from_slice(&orchard_notes_to_mark_position_in_tx);
+                        continue;
+                    }
+                }
+                let mut transaction_metadata = false;
                 if let Some(ref ivk) = sapling_ivk {
                     Self::trial_decrypt_domain_specific_outputs::<
                         SaplingDomain<zingoconfig::ChainType>,
@@ -217,21 +236,6 @@ impl TrialDecryptions {
 
                 sapling_notes_to_mark_position_in_block
                     .extend_from_slice(&sapling_notes_to_mark_position_in_tx);
-                let mut orchard_notes_to_mark_position_in_tx = compact_transaction
-                    .actions
-                    .iter()
-                    .enumerate()
-                    .map(|(i, output)| {
-                        (
-                            i as u32,
-                            TxId::from_bytes(
-                                <[u8; 32]>::try_from(&compact_transaction.hash[..]).unwrap(),
-                            ),
-                            MerkleHashOrchard::from_commitment(output.cmstar()).unwrap(),
-                            Retention::Ephemeral,
-                        )
-                    })
-                    .collect();
                 if let Some(ref ivk) = orchard_ivk {
                     Self::trial_decrypt_domain_specific_outputs::<OrchardDomain>(
                         &mut transaction_metadata,
