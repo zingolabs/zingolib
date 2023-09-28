@@ -1144,11 +1144,7 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
             .to_string(),
     );
     let recipient_restored = client_builder
-        .build_newseed_client(
-            seed_of_recipient["seed"].as_str().unwrap().to_string(),
-            0,
-            true,
-        )
+        .build_newseed_client(seed_of_recipient.seed_phrase.clone(), 0, true)
         .await;
     let seed_of_recipient_restored = {
         recipient_restored.do_sync(true).await.unwrap();
@@ -1528,10 +1524,12 @@ async fn load_wallet_from_v26_dat_file() {
         .map_err(|e| format!("Cannot deserialize LightWallet version 26 file: {}", e))
         .unwrap();
 
-    let expected_mnemonic = Mnemonic::from_phrase(TEST_SEED.to_string()).unwrap();
+    let expected_mnemonic = (Mnemonic::from_phrase(TEST_SEED.to_string()).unwrap(), 0);
     assert_eq!(wallet.mnemonic(), Some(&expected_mnemonic));
 
-    let expected_wc = WalletCapability::new_from_phrase(&config, &expected_mnemonic, 0).unwrap();
+    let expected_wc =
+        WalletCapability::new_from_phrase(&config, &expected_mnemonic.0, expected_mnemonic.1)
+            .unwrap();
     let wc = wallet.wallet_capability();
 
     // We don't want the WalletCapability to impl. `Eq` (because it stores secret keys)

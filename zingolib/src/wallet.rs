@@ -187,6 +187,9 @@ pub enum WalletBase {
     SeedBytes([u8; 32]),
     MnemonicPhrase(String),
     Mnemonic(Mnemonic),
+    SeedBytesAndIndex([u8; 32], u32),
+    MnemonicPhraseAndIndex(String, u32),
+    MnemonicAndIndex(Mnemonic, u32),
     /// Unified full viewing key
     Ufvk(String),
     /// Unified spending key
@@ -207,9 +210,10 @@ pub struct LightWallet {
     // will start from here.
     birthday: AtomicU64,
 
-    /// The seed for the wallet, stored as a bip0039 Mnemonic
-    /// Can be `None` in case of wallet without spending capability.
-    mnemonic: Option<Mnemonic>,
+    /// The seed for the wallet, stored as a bip0039 Mnemonic, and the account index.
+    /// Can be `None` in case of wallet without spending capability
+    /// or created directly from spending keys.
+    mnemonic: Option<(Mnemonic, u32)>,
 
     // The last 100 blocks, used if something gets re-orged
     pub blocks: Arc<RwLock<Vec<BlockData>>>,
@@ -562,7 +566,7 @@ impl LightWallet {
         }
     }
 
-    pub fn mnemonic(&self) -> Option<&Mnemonic> {
+    pub fn mnemonic(&self) -> Option<&(Mnemonic, u32)> {
         self.mnemonic.as_ref()
     }
 
@@ -576,15 +580,29 @@ impl LightWallet {
                 return Self::new(config, WalletBase::SeedBytes(seed_bytes), height);
             }
             WalletBase::SeedBytes(seed_bytes) => {
+                return Self::new(config, WalletBase::SeedBytesAndIndex(seed_bytes, 0), height);
+            }
+            WalletBase::SeedBytesAndIndex(seed_bytes, position) => {
                 let mnemonic = Mnemonic::from_entropy(seed_bytes).map_err(|e| {
                     Error::new(
                         ErrorKind::InvalidData,
                         format!("Error parsing phrase: {}", e),
                     )
                 })?;
-                return Self::new(config, WalletBase::Mnemonic(mnemonic), height);
+                return Self::new(
+                    config,
+                    WalletBase::MnemonicAndIndex(mnemonic, position),
+                    height,
+                );
             }
             WalletBase::MnemonicPhrase(phrase) => {
+                return Self::new(
+                    config,
+                    WalletBase::MnemonicPhraseAndIndex(phrase, 0),
+                    height,
+                );
+            }
+            WalletBase::MnemonicPhraseAndIndex(phrase, position) => {
                 let mnemonic = Mnemonic::from_phrase(phrase)
                     .and_then(|m| Mnemonic::from_entropy(m.entropy()))
                     .map_err(|e| {
@@ -597,12 +615,19 @@ impl LightWallet {
                 // should be a no-op, but seems to be needed on android for some reason
                 // TODO: Test the this cfg actually works
                 //#[cfg(target_os = "android")]
-                return Self::new(config, WalletBase::Mnemonic(mnemonic), height);
+                return Self::new(
+                    config,
+                    WalletBase::MnemonicAndIndex(mnemonic, position),
+                    height,
+                );
             }
             WalletBase::Mnemonic(mnemonic) => {
-                let wc = WalletCapability::new_from_phrase(&config, &mnemonic, 0)
+                return Self::new(config, WalletBase::MnemonicAndIndex(mnemonic, 0), height);
+            }
+            WalletBase::MnemonicAndIndex(mnemonic, position) => {
+                let wc = WalletCapability::new_from_phrase(&config, &mnemonic, position)
                     .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
-                (wc, Some(mnemonic))
+                (wc, Some((mnemonic, position)))
             }
             WalletBase::Ufvk(ufvk_encoded) => {
                 let wc = WalletCapability::new_from_ufvk(&config, ufvk_encoded).map_err(|e| {
@@ -799,10 +824,16 @@ impl LightWallet {
 
         let seed_bytes = Vector::read(&mut reader, |r| r.read_u8())?;
         let mnemonic = if !seed_bytes.is_empty() {
-            Some(
+            let account_index = if external_version >= 28 {
+                reader.read_u32::<LittleEndian>()?
+            } else {
+                0
+            };
+            Some((
                 Mnemonic::from_entropy(seed_bytes)
                     .map_err(|e| Error::new(ErrorKind::InvalidData, e.to_string()))?,
-            )
+                account_index,
+            ))
         } else {
             None
         };
@@ -1434,7 +1465,7 @@ impl LightWallet {
     }
 
     pub const fn serialized_version() -> u64 {
-        27
+        28
     }
 
     pub async fn set_blocks(&self, new_blocks: Vec<BlockData>) {
@@ -1679,10 +1710,15 @@ impl LightWallet {
         self.price.read().await.write(&mut writer)?;
 
         let seed_bytes = match &self.mnemonic {
-            Some(m) => m.clone().into_entropy(),
+            Some(m) => m.0.clone().into_entropy(),
             None => vec![],
         };
         Vector::write(&mut writer, &seed_bytes, |w, byte| w.write_u8(*byte))?;
+
+        match &self.mnemonic {
+            Some(m) => writer.write_u32::<LittleEndian>(m.1)?,
+            None => (),
+        }
 
         Ok(())
     }

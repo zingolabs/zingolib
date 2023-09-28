@@ -349,6 +349,13 @@ impl PoolBalances {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct AccountBackupInfo {
+    pub seed_phrase: String,
+    pub birthday: u64,
+    pub account_index: u32,
+}
+
 impl LightClient {
     fn add_nonchange_notes<'a, 'b, 'c>(
         &'a self,
@@ -976,17 +983,18 @@ impl LightClient {
             .block_on(async move { self.do_save_to_buffer().await })
     }
 
-    pub async fn do_seed_phrase(&self) -> Result<JsonValue, &str> {
+    pub async fn do_seed_phrase(&self) -> Result<AccountBackupInfo, &str> {
         match self.wallet.mnemonic() {
-            Some(m) => Ok(object! {
-                "seed"     => m.to_string(),
-                "birthday" => self.wallet.get_birthday().await
+            Some(m) => Ok(AccountBackupInfo {
+                seed_phrase: m.0.phrase().to_string(),
+                birthday: self.wallet.get_birthday().await,
+                account_index: m.1,
             }),
-            None => Err("This wallet is watch-only."),
+            None => Err("This wallet is watch-only or was created without a mnemonic."),
         }
     }
 
-    pub fn do_seed_phrase_sync(&self) -> Result<JsonValue, &str> {
+    pub fn do_seed_phrase_sync(&self) -> Result<AccountBackupInfo, &str> {
         Runtime::new()
             .unwrap()
             .block_on(async move { self.do_seed_phrase().await })
