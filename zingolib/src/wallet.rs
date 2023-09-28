@@ -1169,6 +1169,142 @@ impl LightWallet {
         Ok(tx_builder)
     }
 
+    async fn create_publication_ready_transaction(&self, submission_height: BlockHeight) {
+        // Start building transaction with spends and outputs set by:
+        //  * target amount
+        //  * selection policy
+        //  * recipient list
+        let txmds_readlock = self
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await;
+        let witness_trees = txmds_readlock
+            .witness_trees
+            .as_ref()
+            .expect("If we have spend capability we have trees");
+
+        // Start building tx
+        let tx_builder = self
+            .create_tx_builder(submission_height, witness_trees)
+            .await
+            .expect("To populate a builder with notes.");
+
+        // Select notes to cover the target value
+        info!("{}: Adding outputs", now() - start_time);
+        let (mut total_shielded_receivers, tx_builder) = self
+            .add_consumer_specified_outputs_to_builder(tx_builder, receivers.clone())
+            .expect("To add outputs");
+
+        let total_earmarked_for_recipients = receivers.iter().map(|to| u64::from(to.1)).sum();
+        info!(
+            "0: Creating transaction sending {} zatoshis to {} addresses",
+            total_earmarked_for_recipients,
+            receivers.len()
+        );
+
+        let earmark_total_plus_default_fee =
+            (Amount::from_u64(total_earmarked_for_recipients).unwrap() + MINIMUM_FEE).unwrap();
+        // Select notes as a fn of target anount
+        let (orchard_notes, sapling_notes, utxos, selected_value) = match self
+            .select_notes_and_utxos(earmark_total_plus_default_fee, policy)
+            .await
+        {
+            Ok(notes) => notes,
+            Err(insufficient_amount) => {
+                let e = format!(
+                "Insufficient verified shielded funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes.",
+                u64::from(insufficient_amount), u64::from(earmark_total_plus_default_fee), self.transaction_context.config
+                .reorg_buffer_offset + 1
+            );
+                error!("{}", e);
+                return Err(e);
+            }
+        };
+
+        info!("Selected notes worth {}", u64::from(selected_value));
+
+        info!(
+            "{}: Adding {} sapling notes, {} orchard notes, and {} utxos",
+            now() - start_time,
+            &sapling_notes.len(),
+            &orchard_notes.len(),
+            &utxos.len()
+        );
+
+        let tx_builder = match self.add_change_output_to_builder(
+            tx_builder,
+            earmark_total_plus_default_fee,
+            selected_value,
+            &mut total_shielded_receivers,
+            &receivers,
+        ) {
+            Ok(txb) => txb,
+            Err(r) => {
+                return Err(r);
+            }
+        };
+        info!("{}: selecting notes", now() - start_time);
+        let mut tx_builder = self
+            .add_spends_to_builder(
+                tx_builder,
+                witness_trees,
+                &orchard_notes,
+                &sapling_notes,
+                &utxos,
+            )
+            .await
+            .expect("to add spends to tx_builder");
+
+        drop(txmds_readlock);
+        // The builder now has the correct set of inputs and outputs
+
+        // Set up a channel to receive updates on the progress of building the transaction.
+        // This progress monitor, the channel monitoring it, and the types necessary for its
+        // construction are unnecessary for sending.
+        let (transmitter, receiver) = channel::<Progress>();
+        let progress = self.send_progress.clone();
+
+        // Use a separate thread to handle sending from std::mpsc to tokio::sync::mpsc
+        let (transmitter2, mut receiver2) = tokio::sync::mpsc::unbounded_channel();
+        std::thread::spawn(move || {
+            while let Ok(r) = receiver.recv() {
+                transmitter2.send(r.cur()).unwrap();
+            }
+        });
+
+        let progress_handle = tokio::spawn(async move {
+            while let Some(r) = receiver2.recv().await {
+                info!("{}: Progress: {r}", now() - start_time);
+                progress.write().await.progress = r;
+            }
+
+            progress.write().await.is_send_in_progress = false;
+        });
+
+        {
+            let mut p = self.send_progress.write().await;
+            p.is_send_in_progress = true;
+            p.progress = 0;
+            p.total = total_shielded_receivers;
+        }
+
+        info!("{}: Building transaction", now() - start_time);
+
+        tx_builder.with_progress_notifier(transmitter);
+        let (transaction, _) = match tx_builder.build(
+            &sapling_prover,
+            &transaction::fees::fixed::FeeRule::non_standard(MINIMUM_FEE),
+        ) {
+            Ok(res) => res,
+            Err(e) => {
+                let e = format!("Error creating transaction: {:?}", e);
+                error!("{}", e);
+                self.send_progress.write().await.is_send_in_progress = false;
+                return Err(e);
+            }
+        };
+    }
     async fn send_to_addresses_inner<F, Fut, P: TxProver>(
         &self,
         sapling_prover: P,
