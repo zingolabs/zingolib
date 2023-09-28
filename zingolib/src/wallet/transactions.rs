@@ -364,14 +364,14 @@ impl TransactionMetadataSet {
             .flat_map(|(_, transaction_metadata)| {
                 D::to_notes_vec(transaction_metadata)
                     .iter()
-                    .filter(|nd| nd.spent().is_none())
-                    .filter_map(move |nd| {
-                        nd.nullifier().map(|nf| {
+                    .filter(|unspent_note_data| unspent_note_data.spent().is_none())
+                    .filter_map(move |unspent_note_data| {
+                        unspent_note_data.nullifier().map(|unspent_nullifier| {
                             (
-                                nf,
-                                nd.value(),
+                                unspent_nullifier,
+                                unspent_note_data.value(),
                                 transaction_metadata.txid,
-                                *nd.output_index(),
+                                *unspent_note_data.output_index(),
                             )
                         })
                     })
@@ -412,7 +412,7 @@ impl TransactionMetadataSet {
         output_index: u32,
     ) -> Result<u64, String> {
         match spent_nullifier {
-            PoolNullifier::Sapling(nf) => {
+            PoolNullifier::Sapling(sapling_nullifier) => {
                 if let Some(sapling_note_data) = self
                     .current
                     .get_mut(&txid)
@@ -427,18 +427,18 @@ impl TransactionMetadataSet {
                 } else {
                     Err(format!(
                         "no such sapling nullifier '{:?}' found in transaction",
-                        *nf
+                        *sapling_nullifier
                     ))
                 }
             }
-            PoolNullifier::Orchard(nf) => {
+            PoolNullifier::Orchard(orchard_nullifier) => {
                 if let Some(orchard_note_data) = self
                     .current
                     .get_mut(&txid)
                     .unwrap()
                     .orchard_notes
                     .iter_mut()
-                    .find(|n| n.nullifier == Some(*nf))
+                    .find(|n| n.nullifier == Some(*orchard_nullifier))
                 {
                     orchard_note_data.spent = Some((*spent_txid, spent_at_height.into()));
                     orchard_note_data.unconfirmed_spent = None;
@@ -446,7 +446,7 @@ impl TransactionMetadataSet {
                 } else {
                     Err(format!(
                         "no such orchard nullifier '{:?}' found in transaction",
-                        *nf
+                        *orchard_nullifier
                     ))
                 }
             }
