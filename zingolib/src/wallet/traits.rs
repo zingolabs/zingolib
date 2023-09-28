@@ -1094,8 +1094,6 @@ pub trait ReadableWriteable<Input>: Sized {
     fn write<W: Write>(&self, writer: W) -> io::Result<()>;
     fn get_version<R: Read>(mut reader: R) -> io::Result<u8> {
         let external_version = reader.read_u8()?;
-        log::info!("wallet_capability external_version: {external_version}");
-        log::info!("Self::VERSION: {}", Self::VERSION);
         if external_version > Self::VERSION {
             Err(io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -1148,10 +1146,6 @@ impl ReadableWriteable<()> for zip32::sapling::DiversifiableFullViewingKey {
     fn read<R: Read>(mut reader: R, _: ()) -> io::Result<Self> {
         let mut fvk_bytes = [0u8; 128];
         reader.read_exact(&mut fvk_bytes)?;
-        tracing::info!(
-            "zip32::sapling::DiversifiableFullViewingKey fvk_bytes: {:?}",
-            fvk_bytes
-        );
         zip32::sapling::DiversifiableFullViewingKey::from_bytes(&fvk_bytes).ok_or(io::Error::new(
             io::ErrorKind::InvalidInput,
             "Couldn't read a Sapling Diversifiable Full Viewing Key",
@@ -1285,7 +1279,6 @@ where
         ),
     ) -> io::Result<Self> {
         let external_version = Self::get_version(&mut reader)?;
-        tracing::info!("NoteAndMetadata version is: {external_version}");
 
         if external_version < 2 {
             let mut x = <T as ReceivedNoteAndMetadata>::get_deprecated_serialized_view_key_buffer();

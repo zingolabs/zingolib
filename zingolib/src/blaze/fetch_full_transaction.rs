@@ -11,7 +11,7 @@ use zingo_memo::{parse_zingo_memo, ParsedMemo};
 
 use super::syncdata::BlazeSyncData;
 use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
-use log::info;
+// use log::info;
 use orchard::note_encryption::OrchardDomain;
 use std::{
     collections::HashSet,
@@ -184,8 +184,6 @@ impl TransactionContext {
                 .await
                 .set_price(&transaction.txid(), price);
         }
-
-        //info!("Finished Fetching full transaction {}", tx.txid());
     }
 
     async fn update_outgoing_txdatas_with_uas(
@@ -300,11 +298,6 @@ impl TransactionContext {
                             .iter()
                             .find(|u| u.txid == prev_transaction_id && u.output_index == prev_n)
                         {
-                            info!(
-                                "Spent: utxo from {} was spent in {}",
-                                prev_transaction_id,
-                                transaction.txid()
-                            );
                             total_transparent_value_spent += spent_utxo.value;
                             spent_utxos.push((
                                 prev_transaction_id,

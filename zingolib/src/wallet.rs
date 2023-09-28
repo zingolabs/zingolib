@@ -701,7 +701,6 @@ impl LightWallet {
 
     pub async fn read_internal<R: Read>(mut reader: R, config: &ZingoConfig) -> io::Result<Self> {
         let external_version = reader.read_u64::<LittleEndian>()?;
-        log::info!("LightWallet serialized_version read from external: {external_version}");
         if external_version > Self::serialized_version() {
             let e = format!(
                 "Don't know how to read wallet version {}. Do you have the latest version?\n{}",
