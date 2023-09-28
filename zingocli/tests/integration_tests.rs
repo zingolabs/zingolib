@@ -752,6 +752,35 @@ async fn note_selection_order() {
 }
 
 #[tokio::test]
+async fn zip317_sanity_test() {
+    // Test all possible promoting note source combinations
+    let (regtest_manager, _cph, mut client_builder) = scenarios::custom_clients().await;
+    let sapling_faucet = client_builder.build_new_faucet(0, false).await;
+    let pool_migration_client = client_builder
+        .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
+        .await;
+    let pmc_taddr = get_base_address!(pool_migration_client, "transparent");
+    let pmc_sapling = get_base_address!(pool_migration_client, "sapling");
+    let pmc_unified = get_base_address!(pool_migration_client, "unified");
+    // Ensure that the client has confirmed spendable funds
+    zingo_testutils::increase_height_and_sync_client(&regtest_manager, &sapling_faucet, 3)
+        .await
+        .unwrap();
+    // 1 t Test of a send from a taddr only client to its own unified address
+    macro_rules! bump_and_check {
+        (o: $o:tt s: $s:tt t: $t:tt) => {
+            zingo_testutils::increase_height_and_sync_client(&regtest_manager, &pool_migration_client, 1).await.unwrap();
+            check_client_balances!(pool_migration_client, o:$o s:$s t:$t);
+        };
+    }
+
+    sapling_faucet
+        .do_send(vec![(&pmc_taddr, 50_000, None)])
+        .await
+        .unwrap();
+    bump_and_check!(o: 0 s: 0 t: 50_000);
+}
+#[tokio::test]
 async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     // Test all possible promoting note source combinations
     let (regtest_manager, _cph, mut client_builder) = scenarios::custom_clients().await;
