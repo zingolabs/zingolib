@@ -1183,14 +1183,16 @@ impl LightWallet {
         // Init timer
         let start_time = now();
 
-        let total_value = receivers.iter().map(|to| Into::<u64>::into(to.1)).sum();
+        let total_earmarked_for_recipients =
+            receivers.iter().map(|to| Into::<u64>::into(to.1)).sum();
         info!(
             "0: Creating transaction sending {} zatoshis to {} addresses",
-            total_value,
+            total_earmarked_for_recipients,
             receivers.len()
         );
 
-        let target_amount = (Amount::from_u64(total_value).unwrap() + MINIMUM_FEE).unwrap();
+        let target_amount =
+            (Amount::from_u64(total_earmarked_for_recipients).unwrap() + MINIMUM_FEE).unwrap();
         // Select notes as a fn of target anount
         let (orchard_notes, sapling_notes, utxos, selected_value) = match self
             .select_notes_and_utxos(target_amount, policy)
