@@ -1400,6 +1400,9 @@ impl LightWallet {
         info!("{}: Building transaction", now() - start_time);
 
         tx_builder.with_progress_notifier(transmitter);
+        dbg!(total_shielded_receivers);
+        dbg!(tx_builder.target_height());
+        dbg!(tx_builder.params());
         let (transaction, _) = match tx_builder.build(
             &sapling_prover,
             &transaction::fees::zip317::FeeRule::standard(),

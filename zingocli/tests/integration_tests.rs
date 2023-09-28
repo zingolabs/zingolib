@@ -760,8 +760,6 @@ async fn zip317_sanity_test() {
         .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
         .await;
     let pmc_taddr = get_base_address!(pool_migration_client, "transparent");
-    let pmc_sapling = get_base_address!(pool_migration_client, "sapling");
-    let pmc_unified = get_base_address!(pool_migration_client, "unified");
     // Ensure that the client has confirmed spendable funds
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &sapling_faucet, 3)
         .await
@@ -774,10 +772,12 @@ async fn zip317_sanity_test() {
         };
     }
 
+    dbg!(sapling_faucet.do_balance().await);
     sapling_faucet
         .do_send(vec![(&pmc_taddr, 50_000, None)])
         .await
         .unwrap();
+    dbg!(sapling_faucet.do_balance().await);
     bump_and_check!(o: 0 s: 0 t: 50_000);
 }
 #[tokio::test]
