@@ -80,27 +80,3 @@ jobs:
           cargo nextest run --verbose --profile ci --archive-file nextest-archive.tar.zst \
             --workspace-remap ./ --partition count:${{ matrix.partition}}/8
 
-  create-timestamp:
-    uses: zingolabs/zingo-mobile/.github/workflows/create-timestamp.yaml@dev
-
-  create-cache-key:
-    uses: zingolabs/zingo-mobile/.github/workflows/create-cache-key.yaml@dev
-
-  build-android:
-    strategy:
-      matrix:
-        arch: [ x86_64, armeabi-v7a ]
-    uses: zingolabs/zingo-mobile/.github/workflows/build.yaml@dev
-    needs: create-cache-key
-    with:
-      cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
-      arch: ${{ matrix.arch }}
-
-  integration-test-android:
-    uses: zingolabs/zingo-mobile/.github/workflows/integration-test.yaml@dev
-    needs: [ create-timestamp, create-cache-key, build-android ]
-    with:
-      timestamp: ${{ needs.create-timestamp.outputs.timestamp }}
-      cache-key: ${{ needs.create-cache-key.outputs.cache-key }}
-      abi: armeabi-v7a
-
