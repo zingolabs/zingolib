@@ -37,7 +37,8 @@ use zingolib::{
 
 #[tokio::test]
 async fn dont_write_unconfirmed() {
-    let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient().await;
+    let (regtest_manager, _cph, faucet, recipient) =
+        scenarios::faucet_recipient(BlockHeight::from_u32(1)).await;
     faucet
         .do_send(vec![(
             &get_base_address!(recipient, "unified"),
@@ -241,7 +242,8 @@ async fn send_to_self_with_no_user_specified_memo_does_not_cause_error() {
 
 #[tokio::test]
 async fn factor_do_shield_to_call_do_send() {
-    let (regtest_manager, __cph, faucet, recipient) = scenarios::faucet_recipient().await;
+    let (regtest_manager, __cph, faucet, recipient) =
+        scenarios::faucet_recipient(BlockHeight::from_u32(1)).await;
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &faucet, 2)
         .await
         .unwrap();
@@ -257,7 +259,8 @@ async fn factor_do_shield_to_call_do_send() {
 
 #[tokio::test]
 async fn sapling_dust_fee_collection() {
-    let (regtest_manager, __cph, faucet, recipient) = scenarios::faucet_recipient().await;
+    let (regtest_manager, __cph, faucet, recipient) =
+        scenarios::faucet_recipient(BlockHeight::from_u32(1)).await;
     let recipient_sapling = get_base_address!(recipient, "sapling");
     let recipient_unified = get_base_address!(recipient, "unified");
     check_client_balances!(recipient, o: 0 s: 0 t: 0);
@@ -398,7 +401,8 @@ async fn test_scanning_in_watch_only_mode() {
     // - wallet will not detect funds on internal addresses
     //   see: https://github.com/zingolabs/zingolib/issues/246
 
-    let (regtest_manager, _cph, mut client_builder) = scenarios::custom_clients().await;
+    let (regtest_manager, _cph, mut client_builder) =
+        scenarios::custom_clients(BlockHeight::from_u32(1)).await;
     let faucet = client_builder.build_new_faucet(0, false).await;
     let original_recipient = client_builder
         .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
@@ -495,7 +499,7 @@ async fn zcashd_sapling_commitment_tree() {
     //  TODO:  Make this test assert something, what is this a test of?
     //  TODO:  Add doc-comment explaining what constraints this test
     //  enforces
-    let (regtest_manager, _cph, _faucet) = scenarios::faucet().await;
+    let (regtest_manager, _cph, _faucet) = scenarios::faucet(BlockHeight::from_u32(1)).await;
     let trees = regtest_manager
         .get_cli_handle()
         .args(["z_gettreestate", "1"])
@@ -514,7 +518,8 @@ async fn verify_old_wallet_uses_server_height_in_send() {
     // interrupting send, it made it immediately obvious that this was
     // the wrong height to use!  The correct height is the
     // "mempool height" which is the server_height + 1
-    let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient().await;
+    let (regtest_manager, _cph, faucet, recipient) =
+        scenarios::faucet_recipient(BlockHeight::from_u32(1)).await;
     // Ensure that the client has confirmed spendable funds
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &faucet, 5)
         .await
@@ -548,7 +553,8 @@ async fn actual_empty_zcashd_sapling_commitment_tree() {
         "ae2935f1dfd8a24aed7c70df7de3a668eb7a49b1319880dde2bbd9031ae5d82f";
     let finalstates = "000000";
     // Setup
-    let (regtest_manager, _cph, _client) = scenarios::basic_no_spendable().await;
+    let (regtest_manager, _cph, _client) =
+        scenarios::basic_no_spendable(BlockHeight::from_u32(1)).await;
     // Execution:
     let trees = regtest_manager
         .get_cli_handle()
@@ -586,7 +592,7 @@ async fn actual_empty_zcashd_sapling_commitment_tree() {
 
 #[tokio::test]
 async fn mine_sapling_to_self() {
-    let (regtest_manager, _cph, faucet) = scenarios::faucet().await;
+    let (regtest_manager, _cph, faucet) = scenarios::faucet(BlockHeight::from_u32(1)).await;
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &faucet, 1)
         .await
         .unwrap();
@@ -595,7 +601,8 @@ async fn mine_sapling_to_self() {
 
 #[tokio::test]
 async fn unspent_notes_are_not_saved() {
-    let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient().await;
+    let (regtest_manager, _cph, faucet, recipient) =
+        scenarios::faucet_recipient(BlockHeight::from_u32(1)).await;
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &faucet, 1)
         .await
         .unwrap();
@@ -665,7 +672,7 @@ async fn send_mined_sapling_to_orchard() {
     // debiting unverified_orchard_balance and crediting verified_orchard_balance.  The debit amount is
     // consistent with all the notes in the relevant block changing state.
     // NOTE that the balance doesn't give insight into the distribution across notes.
-    let (regtest_manager, _cph, faucet) = scenarios::faucet().await;
+    let (regtest_manager, _cph, faucet) = scenarios::faucet(BlockHeight::from_u32(1)).await;
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &faucet, 1)
         .await
         .unwrap();
@@ -705,7 +712,8 @@ async fn note_selection_order() {
     // In addition to testing the order in which notes are selected this test:
     //   * sends to a sapling address
     //   * sends back to the original sender's UA
-    let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient().await;
+    let (regtest_manager, _cph, faucet, recipient) =
+        scenarios::faucet_recipient(BlockHeight::from_u32(1)).await;
 
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &faucet, 5)
         .await
@@ -816,7 +824,8 @@ async fn note_selection_order() {
 #[tokio::test]
 async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     // Test all possible promoting note source combinations
-    let (regtest_manager, _cph, mut client_builder) = scenarios::custom_clients().await;
+    let (regtest_manager, _cph, mut client_builder) =
+        scenarios::custom_clients(BlockHeight::from_u32(1)).await;
     let sapling_faucet = client_builder.build_new_faucet(0, false).await;
     let pool_migration_client = client_builder
         .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
@@ -960,7 +969,8 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
 #[tokio::test]
 async fn send_orchard_back_and_forth() {
     // setup
-    let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient().await;
+    let (regtest_manager, _cph, faucet, recipient) =
+        scenarios::faucet_recipient(BlockHeight::from_u32(1)).await;
     let block_reward = 625_000_000u64;
     let faucet_to_recipient_amount = 20_000u64;
     let recipient_to_faucet_amount = 5_000u64;
@@ -1029,7 +1039,8 @@ async fn send_orchard_back_and_forth() {
 
 #[tokio::test]
 async fn diversified_addresses_receive_funds_in_best_pool() {
-    let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient().await;
+    let (regtest_manager, _cph, faucet, recipient) =
+        scenarios::faucet_recipient(BlockHeight::from_u32(1)).await;
     for code in ["o", "zo", "z"] {
         recipient.do_new_address(code).await.unwrap();
     }
@@ -1063,7 +1074,8 @@ async fn diversified_addresses_receive_funds_in_best_pool() {
 
 #[tokio::test]
 async fn rescan_still_have_outgoing_metadata() {
-    let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient().await;
+    let (regtest_manager, _cph, faucet, recipient) =
+        scenarios::faucet_recipient(BlockHeight::from_u32(1)).await;
     faucet
         .do_send(vec![(
             get_base_address!(recipient, "sapling").as_str(),
@@ -1083,7 +1095,7 @@ async fn rescan_still_have_outgoing_metadata() {
 
 #[tokio::test]
 async fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
-    let (regtest_manager, _cph, faucet) = scenarios::faucet().await;
+    let (regtest_manager, _cph, faucet) = scenarios::faucet(BlockHeight::from_u32(1)).await;
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &faucet, 1)
         .await
         .unwrap();
@@ -1140,7 +1152,8 @@ async fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
 /// is capable of recovering the diversified _receiver_.
 #[tokio::test]
 async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
-    let (regtest_manager, _cph, mut client_builder) = scenarios::custom_clients().await;
+    let (regtest_manager, _cph, mut client_builder) =
+        scenarios::custom_clients(BlockHeight::from_u32(1)).await;
     let faucet = client_builder.build_new_faucet(0, false).await;
     faucet.do_sync(false).await.unwrap();
     let seed_phrase_of_recipient1 = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
@@ -1256,7 +1269,8 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
 
 #[tokio::test]
 async fn diversification_deterministic_and_coherent() {
-    let (_regtest_manager, _cph, mut client_builder) = scenarios::custom_clients().await;
+    let (_regtest_manager, _cph, mut client_builder) =
+        scenarios::custom_clients(BlockHeight::from_u32(1)).await;
     let seed_phrase = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
         .unwrap()
         .to_string();
@@ -1330,7 +1344,8 @@ async fn diversification_deterministic_and_coherent() {
 
 #[tokio::test]
 async fn ensure_taddrs_from_old_seeds_work() {
-    let (_regtest_manager, _cph, mut client_builder) = scenarios::custom_clients().await;
+    let (_regtest_manager, _cph, mut client_builder) =
+        scenarios::custom_clients(BlockHeight::from_u32(1)).await;
     // The first taddr generated on commit 9e71a14eb424631372fd08503b1bd83ea763c7fb
     let transparent_address = "tmFLszfkjgim4zoUMAXpuohnFBAKy99rr2i";
 
@@ -1346,7 +1361,8 @@ async fn ensure_taddrs_from_old_seeds_work() {
 
 #[tokio::test]
 async fn t_incoming_t_outgoing_disallowed() {
-    let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient().await;
+    let (regtest_manager, _cph, faucet, recipient) =
+        scenarios::faucet_recipient(BlockHeight::from_u32(1)).await;
 
     // 2. Get an incoming transaction to a t address
     let taddr = get_base_address!(recipient, "transparent");
@@ -1379,7 +1395,8 @@ async fn t_incoming_t_outgoing_disallowed() {
 
 #[tokio::test]
 async fn send_to_ua_saves_full_ua_in_wallet() {
-    let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient().await;
+    let (regtest_manager, _cph, faucet, recipient) =
+        scenarios::faucet_recipient(BlockHeight::from_u32(1)).await;
     //utils::increase_height_and_sync_client(&regtest_manager, &faucet, 5).await;
     let recipient_unified_address = get_base_address!(recipient, "unified");
     let sent_value = 50_000;
@@ -1422,7 +1439,8 @@ async fn send_to_ua_saves_full_ua_in_wallet() {
 
 #[tokio::test]
 async fn self_send_to_t_displays_as_one_transaction() {
-    let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient().await;
+    let (regtest_manager, _cph, faucet, recipient) =
+        scenarios::faucet_recipient(BlockHeight::from_u32(1)).await;
     let recipient_unified_address = get_base_address!(recipient, "unified");
     let sent_value = 50_000;
     faucet
@@ -1514,7 +1532,8 @@ async fn sapling_to_sapling_scan_together() {
     // Constraints:
     // 1. SpendK_S controls start - spend funds
     // 2. SpendK_R controls 0 + spend funds
-    let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient().await;
+    let (regtest_manager, _cph, faucet, recipient) =
+        scenarios::faucet_recipient(BlockHeight::from_u32(1)).await;
 
     // Give the faucet a block reward
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &faucet, 1)
@@ -2145,6 +2164,8 @@ async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
 
 pub mod framework_validation {
 
+    use zcash_primitives::consensus::BlockHeight;
+
     use crate::zingo_testutils::scenarios::setup::{self, ScenarioBuilder};
 
     macro_rules! log_field_from_zcashd {
@@ -2177,7 +2198,13 @@ pub mod framework_validation {
             regtest_manager,
             child_process_handler,
             ..
-        } = setup::ScenarioBuilder::build_configure_launch(None, None, None).await;
+        } = setup::ScenarioBuilder::build_configure_launch(
+            None,
+            None,
+            None,
+            BlockHeight::from_u32(1),
+        )
+        .await;
         log::debug!("regtest_manager: {:#?}", &regtest_manager);
         // Turn zcashd off and on again, to write down the blocks
         log_field_from_zcashd!(
@@ -2219,7 +2246,8 @@ pub mod framework_validation {
 }
 #[tokio::test]
 async fn sapling_incoming_sapling_outgoing() {
-    let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient().await;
+    let (regtest_manager, _cph, faucet, recipient) =
+        scenarios::faucet_recipient(BlockHeight::from_u32(1)).await;
     let value = 100_000;
 
     // 2. Send an incoming transaction to fill the wallet
@@ -2627,7 +2655,8 @@ async fn zero_value_receipts() {
 }
 #[tokio::test]
 async fn by_address_finsight() {
-    let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient().await;
+    let (regtest_manager, _cph, faucet, recipient) =
+        scenarios::faucet_recipient(BlockHeight::from_u32(1)).await;
     let base_uaddress = get_base_address!(recipient, "unified");
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &faucet, 2)
         .await
@@ -2676,7 +2705,7 @@ async fn by_address_finsight() {
 
 #[tokio::test]
 async fn load_old_wallet_at_reorged_height() {
-    let (ref regtest_manager, cph, ref faucet) = scenarios::faucet().await;
+    let (ref regtest_manager, cph, ref faucet) = scenarios::faucet(BlockHeight::from_u32(1)).await;
     println!("Shutting down initial zcd/lwd unneeded processes");
     drop(cph);
 
@@ -2818,7 +2847,8 @@ async fn load_old_wallet_at_reorged_height() {
 
 #[tokio::test]
 async fn shield_sapling() {
-    let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient().await;
+    let (regtest_manager, _cph, faucet, recipient) =
+        scenarios::faucet_recipient(BlockHeight::from_u32(1)).await;
 
     let sapling_dust = 100;
     let _sent_transaction_id = faucet
@@ -3173,7 +3203,8 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
 #[tokio::test]
 async fn sends_to_self_handle_balance_properly() {
     let transparent_funding = 100_000;
-    let (ref regtest_manager, _cph, faucet, ref recipient) = scenarios::faucet_recipient().await;
+    let (ref regtest_manager, _cph, faucet, ref recipient) =
+        scenarios::faucet_recipient(BlockHeight::from_u32(1)).await;
     faucet
         .do_send(vec![(
             &get_base_address!(recipient, "sapling"),

@@ -251,6 +251,7 @@ pub mod scenarios {
         increase_height_and_sync_client, BASE_HEIGHT,
     };
 
+    use zcash_primitives::consensus::BlockHeight;
     use zingolib::{get_base_address, lightclient::LightClient};
 
     pub mod setup {
@@ -261,6 +262,7 @@ pub mod scenarios {
         use super::{data, ChildProcessHandler, RegtestManager};
         use std::path::PathBuf;
         use tokio::time::sleep;
+        use zcash_primitives::consensus::BlockHeight;
         use zingolib::{lightclient::LightClient, wallet::WalletBase};
         pub struct ScenarioBuilder {
             pub test_env: TestEnvironmentGenerator,
@@ -299,11 +301,17 @@ pub mod scenarios {
                     child_process_handler,
                 }
             }
-            fn configure_scenario(&mut self, funded: Option<String>) {
+            fn configure_scenario(
+                &mut self,
+                funded: Option<String>,
+                orchard_activation_height: BlockHeight,
+            ) {
                 if let Some(funding_seed) = funded {
-                    self.test_env.create_funded_zcash_conf(&funding_seed);
+                    self.test_env
+                        .create_funded_zcash_conf(&funding_seed, orchard_activation_height);
                 } else {
-                    self.test_env.create_unfunded_zcash_conf();
+                    self.test_env
+                        .create_unfunded_zcash_conf(orchard_activation_height);
                 };
                 self.test_env.create_lightwalletd_conf();
             }
@@ -343,7 +351,10 @@ pub mod scenarios {
                     .output()
                     .expect("copy operation into fresh dir from known dir to succeed");
                 dbg!(&sb.test_env.regtest_manager.zcashd_config);
-                sb.configure_scenario(Some(REGSAP_ADDR_FROM_ABANDONART.to_string()));
+                sb.configure_scenario(
+                    Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
+                    BlockHeight::from_u32(1),
+                );
                 sb.launch_scenario(false).await;
                 sb
             }
@@ -353,13 +364,14 @@ pub mod scenarios {
                 funded: Option<String>,
                 zingo_wallet_dir: Option<PathBuf>,
                 set_lightwalletd_port: Option<portpicker::Port>,
+                orchard_activation_height: BlockHeight,
             ) -> Self {
                 let mut sb = if let Some(conf) = zingo_wallet_dir {
                     ScenarioBuilder::build_scenario(Some(conf), set_lightwalletd_port)
                 } else {
                     ScenarioBuilder::build_scenario(None, set_lightwalletd_port)
                 };
-                sb.configure_scenario(funded);
+                sb.configure_scenario(funded, orchard_activation_height);
                 sb.launch_scenario(true).await;
                 sb
             }
@@ -476,19 +488,31 @@ pub mod scenarios {
                     lightwalletd_uri: server_uri,
                 }
             }
-            pub(crate) fn create_unfunded_zcash_conf(&self) -> PathBuf {
+            pub(crate) fn create_unfunded_zcash_conf(
+                &self,
+                orchard_activation_height: BlockHeight,
+            ) -> PathBuf {
                 //! Side effect only fn, writes to FS.
                 self.write_contents_and_return_path(
                     "zcash",
-                    data::config_template_fillers::zcashd::basic(&self.zcashd_rpcservice_port, ""),
+                    data::config_template_fillers::zcashd::basic(
+                        &self.zcashd_rpcservice_port,
+                        orchard_activation_height,
+                        "",
+                    ),
                 )
             }
-            pub(crate) fn create_funded_zcash_conf(&self, address_to_fund: &str) -> PathBuf {
+            pub(crate) fn create_funded_zcash_conf(
+                &self,
+                address_to_fund: &str,
+                orchard_activation_height: BlockHeight,
+            ) -> PathBuf {
                 self.write_contents_and_return_path(
                     "zcash",
                     data::config_template_fillers::zcashd::funded(
                         address_to_fund,
                         &self.zcashd_rpcservice_port,
+                        orchard_activation_height,
                     ),
                 )
             }
@@ -520,11 +544,14 @@ pub mod scenarios {
             }
         }
     }
-    pub async fn custom_clients() -> (RegtestManager, ChildProcessHandler, ClientBuilder) {
+    pub async fn custom_clients(
+        orchard_activation_height: BlockHeight,
+    ) -> (RegtestManager, ChildProcessHandler, ClientBuilder) {
         let sb = setup::ScenarioBuilder::build_configure_launch(
             Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
             None,
             None,
+            orchard_activation_height,
         )
         .await;
         (
@@ -543,11 +570,14 @@ pub mod scenarios {
     /// and zcashd (in regtest mode). This setup is intended to produce the most basic
     /// of scenarios.  As scenarios with even less requirements
     /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
-    pub async fn faucet() -> (RegtestManager, ChildProcessHandler, LightClient) {
+    pub async fn faucet(
+        orchard_activation_height: BlockHeight,
+    ) -> (RegtestManager, ChildProcessHandler, LightClient) {
         let mut sb = setup::ScenarioBuilder::build_configure_launch(
             Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
             None,
             None,
+            orchard_activation_height,
         )
         .await;
         let faucet = sb
@@ -571,7 +601,8 @@ pub mod scenarios {
         String,
     ) {
         dbg!("0 About to create faucet_recipient.");
-        let (regtest_manager, child_process_handler, faucet, recipient) = faucet_recipient().await;
+        let (regtest_manager, child_process_handler, faucet, recipient) =
+            faucet_recipient(BlockHeight::from_u32(1)).await;
         dbg!("1 About to increase height and sync faucet.");
         increase_height_and_sync_client(&regtest_manager, &faucet, 1)
             .await
@@ -601,7 +632,9 @@ pub mod scenarios {
         )
     }
 
-    pub async fn faucet_recipient() -> (
+    pub async fn faucet_recipient(
+        orchard_activation_height: BlockHeight,
+    ) -> (
         RegtestManager,
         ChildProcessHandler,
         LightClient,
@@ -611,6 +644,7 @@ pub mod scenarios {
             Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
             None,
             None,
+            orchard_activation_height,
         )
         .await;
         let faucet = sb.client_builder.build_new_faucet(0, false).await;
@@ -627,9 +661,16 @@ pub mod scenarios {
         )
     }
 
-    pub async fn basic_no_spendable() -> (RegtestManager, ChildProcessHandler, LightClient) {
-        let mut scenario_builder =
-            setup::ScenarioBuilder::build_configure_launch(None, None, None).await;
+    pub async fn basic_no_spendable(
+        orchard_activation_height: BlockHeight,
+    ) -> (RegtestManager, ChildProcessHandler, LightClient) {
+        let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
+            None,
+            None,
+            None,
+            orchard_activation_height,
+        )
+        .await;
         (
             scenario_builder.regtest_manager,
             scenario_builder.child_process_handler.unwrap(),
@@ -640,20 +681,31 @@ pub mod scenarios {
         )
     }
 
-    pub async fn unfunded_mobileclient() -> (RegtestManager, ChildProcessHandler) {
-        let scenario_builder =
-            setup::ScenarioBuilder::build_configure_launch(None, None, Some(20_000)).await;
+    pub async fn unfunded_mobileclient(
+        orchard_activation_height: BlockHeight,
+    ) -> (RegtestManager, ChildProcessHandler) {
+        let scenario_builder = setup::ScenarioBuilder::build_configure_launch(
+            None,
+            None,
+            Some(20_000),
+            orchard_activation_height,
+        )
+        .await;
         (
             scenario_builder.regtest_manager,
             scenario_builder.child_process_handler.unwrap(),
         )
     }
 
-    pub async fn funded_orchard_mobileclient(value: u64) -> (RegtestManager, ChildProcessHandler) {
+    pub async fn funded_orchard_mobileclient(
+        value: u64,
+        orchard_activation_height: BlockHeight,
+    ) -> (RegtestManager, ChildProcessHandler) {
         let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
             Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
             None,
             Some(20_000),
+            orchard_activation_height,
         )
         .await;
         let faucet = scenario_builder
@@ -685,11 +737,13 @@ pub mod scenarios {
 
     pub async fn funded_orchard_with_3_txs_mobileclient(
         value: u64,
+        orchard_activation_height: BlockHeight,
     ) -> (RegtestManager, ChildProcessHandler) {
         let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
             Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
             None,
             Some(20_000),
+            orchard_activation_height,
         )
         .await;
         let faucet = scenario_builder

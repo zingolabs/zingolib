@@ -20,7 +20,9 @@ pub const REGSAP_ADDR_FROM_ABANDONART: &str =
     "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
 pub mod config_template_fillers {
     pub mod zcashd {
-        pub fn basic(rpcport: &str, extra: &str) -> String {
+        use zcash_primitives::consensus::BlockHeight;
+
+        pub fn basic(rpcport: &str, orchard_activation_height: BlockHeight, extra: &str) -> String {
             format!("\
 ### Blockchain Configuration
 regtest=1
@@ -29,7 +31,7 @@ nuparams=76b809bb:1 # Sapling
 nuparams=2bb40e60:1 # Blossom
 nuparams=f5b9230b:1 # Heartwood
 nuparams=e9ff75a6:1 # Canopy
-nuparams=c2d6d0b4:1 # NU5
+nuparams=c2d6d0b4:{orchard_activation_height} # Orchard (NU5)
 
 
 ### MetaData Storage and Retrieval
@@ -55,8 +57,12 @@ listen=0
 
 {extra}")
         }
-        pub fn funded(mineraddress: &str, rpcport: &str) -> String {
-            basic(rpcport,
+        pub fn funded(
+            mineraddress: &str,
+            rpcport: &str,
+            orchard_activation_height: BlockHeight,
+        ) -> String {
+            basic(rpcport, orchard_activation_height,
                 &format!(
                     "\
 ### Zcashd Help provides documentation of the following:
