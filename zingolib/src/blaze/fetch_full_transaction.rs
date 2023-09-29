@@ -11,7 +11,6 @@ use zingo_memo::{parse_zingo_memo, ParsedMemo};
 
 use super::syncdata::BlazeSyncData;
 use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
-use log::info;
 use orchard::note_encryption::OrchardDomain;
 use std::{
     collections::HashSet,
@@ -300,7 +299,7 @@ impl TransactionContext {
                             .iter()
                             .find(|u| u.txid == prev_transaction_id && u.output_index == prev_n)
                         {
-                            info!(
+                            log::debug!(
                                 "Spent: utxo from {} was spent in {}",
                                 prev_transaction_id,
                                 transaction.txid()
