@@ -356,7 +356,15 @@ impl Parameters for ChainType {
         match self {
             Mainnet => MAIN_NETWORK.activation_height(nu),
             Testnet => TEST_NETWORK.activation_height(nu),
-            FakeMainnet | Regtest => Some(BlockHeight::from_u32(1)),
+            Regtest => match nu {
+                NetworkUpgrade::Overwinter => Some(BlockHeight::from_u32(1)),
+                NetworkUpgrade::Sapling => Some(BlockHeight::from_u32(1)),
+                NetworkUpgrade::Blossom => Some(BlockHeight::from_u32(1)),
+                NetworkUpgrade::Heartwood => Some(BlockHeight::from_u32(1)),
+                NetworkUpgrade::Canopy => Some(BlockHeight::from_u32(1)),
+                NetworkUpgrade::Nu5 => Some(BlockHeight::from_u32(10)),
+            },
+            FakeMainnet => Some(BlockHeight::from_u32(1)),
         }
     }
 
