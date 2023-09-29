@@ -70,6 +70,7 @@ derive_more = "0.99.17"
 either = "1.8.1"
 
 append-only-vec = { git = "https://github.com/zancas/append-only-vec.git", branch = "add_debug_impl" }
+serde = { version = "1.0.188", features = ["derive"] }
 
 [dev-dependencies]
 portpicker = "0.1.0"

@@ -8,10 +8,8 @@ use crate::wallet::{
     transactions::TransactionMetadataSet,
 };
 use zingo_memo::{parse_zingo_memo, ParsedMemo};
-
 use super::syncdata::BlazeSyncData;
 use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
-// use log::info;
 use orchard::note_encryption::OrchardDomain;
 use std::{
     collections::HashSet,

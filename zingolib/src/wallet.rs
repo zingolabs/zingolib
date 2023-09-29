@@ -57,7 +57,7 @@ use self::{
     message::Message,
     transactions::TransactionMetadataSet,
 };
-use zingoconfig::ZingoConfig;
+use zingoconfig::{ChainType, ZingoConfig};
 
 pub mod data;
 pub mod keys;
@@ -124,7 +124,7 @@ pub enum MemoDownloadOption {
 #[derive(Debug, Clone, Copy)]
 pub struct WalletOptions {
     pub(crate) download_memos: MemoDownloadOption,
-    pub(crate) transaction_size_filter: Option<u32>,
+    pub transaction_size_filter: Option<u32>,
 }
 
 pub const MAX_TRANSACTION_SIZE_DEFAULT: u32 = 500;
@@ -219,7 +219,7 @@ pub struct LightWallet {
     pub blocks: Arc<RwLock<Vec<BlockData>>>,
 
     // Wallet options
-    pub(crate) wallet_options: Arc<RwLock<WalletOptions>>,
+    pub wallet_options: Arc<RwLock<WalletOptions>>,
 
     // Heighest verified block
     pub(crate) verified_tree: Arc<RwLock<Option<TreeState>>>,
@@ -246,21 +246,28 @@ impl LightWallet {
         Option<incrementalmerkletree::frontier::NonEmptyFrontier<MerkleHashOrchard>>,
     ) {
         (
-            zcash_primitives::merkle_tree::read_commitment_tree::<
-                zcash_primitives::sapling::Node,
-                &[u8],
-                COMMITMENT_TREE_LEVELS,
-            >(&hex::decode(trees.sapling_tree).unwrap()[..])
-            .ok()
-            .and_then(|tree| tree.to_frontier().take()),
-            zcash_primitives::merkle_tree::read_commitment_tree::<
-                MerkleHashOrchard,
-                &[u8],
-                COMMITMENT_TREE_LEVELS,
-            >(&hex::decode(trees.orchard_tree).unwrap()[..])
-            .ok()
-            .and_then(|tree| tree.to_frontier().take()),
+            Self::get_legacy_frontier::<SaplingDomain<ChainType>>(&trees),
+            Self::get_legacy_frontier::<OrchardDomain>(&trees),
         )
+    }
+    fn get_legacy_frontier<D: DomainWalletExt>(
+        trees: &crate::compact_formats::TreeState,
+    ) -> Option<
+        incrementalmerkletree::frontier::NonEmptyFrontier<
+            <D::WalletNote as ReceivedNoteAndMetadata>::Node,
+        >,
+    >
+    where
+        <D as Domain>::Note: PartialEq + Clone,
+        <D as Domain>::Recipient: traits::Recipient,
+    {
+        zcash_primitives::merkle_tree::read_commitment_tree::<
+            <D::WalletNote as ReceivedNoteAndMetadata>::Node,
+            &[u8],
+            COMMITMENT_TREE_LEVELS,
+        >(&hex::decode(D::get_tree(trees)).unwrap()[..])
+        .ok()
+        .and_then(|tree| tree.to_frontier().take())
     }
     pub(crate) async fn initiate_witness_trees(&self, trees: crate::compact_formats::TreeState) {
         let (legacy_sapling_frontier, legacy_orchard_frontier) =
@@ -1218,36 +1225,23 @@ impl LightWallet {
         Ok(tx_builder)
     }
 
-    async fn create_publication_ready_transaction<P: TxProver>(
+    async fn create_and_populate_tx_builder(
         &self,
         submission_height: BlockHeight,
+        witness_trees: &WitnessTrees,
         start_time: u64,
         receivers: Receivers,
         policy: NoteSelectionPolicy,
-        sapling_prover: P,
     ) -> Result<
         (
-            Transaction,
+            TxBuilder<'_>,
+            u32,
             Vec<SpendableOrchardNote>,
             Vec<SpendableSaplingNote>,
             Vec<ReceivedTransparentOutput>,
         ),
         String,
     > {
-        // Start building transaction with spends and outputs set by:
-        //  * target amount
-        //  * selection policy
-        //  * recipient list
-        let txmds_readlock = self
-            .transaction_context
-            .transaction_metadata_set
-            .read()
-            .await;
-        let witness_trees = txmds_readlock
-            .witness_trees
-            .as_ref()
-            .expect("If we have spend capability we have trees");
-
         // Start building tx
         let tx_builder = self
             .create_tx_builder(submission_height, witness_trees)
@@ -1309,7 +1303,7 @@ impl LightWallet {
             }
         };
         info!("{}: selecting notes", now() - start_time);
-        let mut tx_builder = self
+        match self
             .add_spends_to_builder(
                 tx_builder,
                 witness_trees,
@@ -1318,7 +1312,63 @@ impl LightWallet {
                 &utxos,
             )
             .await
-            .expect("to add spends to tx_builder");
+        {
+            Ok(tx_builder) => Ok((
+                tx_builder,
+                total_shielded_receivers,
+                orchard_notes,
+                sapling_notes,
+                utxos,
+            )),
+            Err(s) => Err(s),
+        }
+    }
+
+    async fn create_publication_ready_transaction<P: TxProver>(
+        &self,
+        submission_height: BlockHeight,
+        start_time: u64,
+        receivers: Receivers,
+        policy: NoteSelectionPolicy,
+        sapling_prover: P,
+    ) -> Result<
+        (
+            Transaction,
+            Vec<SpendableOrchardNote>,
+            Vec<SpendableSaplingNote>,
+            Vec<ReceivedTransparentOutput>,
+        ),
+        String,
+    > {
+        // Start building transaction with spends and outputs set by:
+        //  * target amount
+        //  * selection policy
+        //  * recipient list
+        let txmds_readlock = self
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await;
+        let witness_trees = txmds_readlock
+            .witness_trees
+            .as_ref()
+            .expect("If we have spend capability we have trees");
+        let (mut tx_builder, total_shielded_receivers, orchard_notes, sapling_notes, utxos) =
+            match self
+                .create_and_populate_tx_builder(
+                    submission_height,
+                    witness_trees,
+                    start_time,
+                    receivers,
+                    policy,
+                )
+                .await
+            {
+                Ok(tx_builder) => tx_builder,
+                Err(s) => {
+                    return Err(s);
+                }
+            };
 
         drop(txmds_readlock);
         // The builder now has the correct set of inputs and outputs

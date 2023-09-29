@@ -177,16 +177,23 @@ impl WitnessTrees {
         non_empty_sapling_frontier: Option<NonEmptyFrontier<sapling::Node>>,
         non_empty_orchard_frontier: Option<NonEmptyFrontier<MerkleHashOrchard>>,
     ) {
+        self.insert_domain_frontier_notes::<SaplingDomain<ChainType>>(non_empty_sapling_frontier);
+        self.insert_domain_frontier_notes::<OrchardDomain>(non_empty_orchard_frontier);
+    }
+    fn insert_domain_frontier_notes<D: DomainWalletExt>(
+        &mut self,
+        non_empty_frontier: Option<
+            NonEmptyFrontier<<D::WalletNote as ReceivedNoteAndMetadata>::Node>,
+        >,
+    ) where
+        <D as Domain>::Note: PartialEq + Clone,
+        <D as Domain>::Recipient: traits::Recipient,
+    {
         use incrementalmerkletree::Retention;
-        if let Some(front) = non_empty_sapling_frontier {
-            self.witness_tree_sapling
+        if let Some(front) = non_empty_frontier {
+            D::get_shardtree_mut(self)
                 .insert_frontier_nodes(front, Retention::Ephemeral)
                 .expect("to insert non-empty sapling frontier")
-        }
-        if let Some(front) = non_empty_orchard_frontier {
-            self.witness_tree_orchard
-                .insert_frontier_nodes(front, Retention::Ephemeral)
-                .expect("to insert non-empty orchard frontier")
         }
     }
 
