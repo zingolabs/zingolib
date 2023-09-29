@@ -5,7 +5,7 @@ use orchard::tree::MerkleHashOrchard;
 use shardtree::store::memory::MemoryShardStore;
 use shardtree::ShardTree;
 use std::{fs::File, path::Path, str::FromStr};
-use zingo_testutils::{self, build_fvk_client, data, BASE_HEIGHT};
+use zingo_testutils::{self, build_fvk_client, data, increase_height_and_sync_client, BASE_HEIGHT};
 
 use bip0039::Mnemonic;
 use data::seeds::HOSPITAL_MUSEUM_SEED;
@@ -3258,6 +3258,15 @@ async fn sends_to_self_handle_balance_properly() {
         )
         .pretty(2)
     );
+}
+
+#[tokio::test]
+async fn sync_pre_orchard_epoch() {
+    let (regtest_manager, _cph, lightclient) =
+        scenarios::basic_no_spendable(BlockHeight::from_u32(10)).await;
+    if let Err(e) = increase_height_and_sync_client(&regtest_manager, &lightclient, 15).await {
+        panic!("Sync error: {e}")
+    }
 }
 
 pub const TEST_SEED: &str = "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise";
