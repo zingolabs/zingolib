@@ -131,6 +131,7 @@ impl LightClient {
     }
     /// The wallet this fn associates with the lightclient is specifically derived from
     /// a spend authority.
+    // this pubfn is consumed in zingocli, zingo-mobile, and ZingoPC
     pub fn create_from_wallet_base(
         wallet_base: WalletBase,
         config: &ZingoConfig,
