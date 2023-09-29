@@ -18,9 +18,7 @@ use crate::{
 use futures::{stream::FuturesUnordered, StreamExt};
 use incrementalmerkletree::{Position, Retention};
 use log::debug;
-use orchard::{
-    keys::IncomingViewingKey as OrchardIvk, note_encryption::OrchardDomain, tree::MerkleHashOrchard,
-};
+use orchard::{keys::IncomingViewingKey as OrchardIvk, note_encryption::OrchardDomain};
 use std::sync::Arc;
 use tokio::{
     sync::{
@@ -32,7 +30,7 @@ use tokio::{
 use zcash_note_encryption::Domain;
 use zcash_primitives::{
     consensus::{BlockHeight, Parameters},
-    sapling::{self, note_encryption::SaplingDomain, SaplingIvk},
+    sapling::{note_encryption::SaplingDomain, SaplingIvk},
     transaction::{Transaction, TxId},
 };
 use zingoconfig::{ChainType, ZingoConfig};
@@ -169,36 +167,12 @@ impl TrialDecryptions {
             let mut orchard_notes_to_mark_position_in_block = Vec::new();
 
             for (transaction_num, compact_transaction) in compact_block.vtx.iter().enumerate() {
-                let mut sapling_notes_to_mark_position_in_tx: Vec<_> = compact_transaction
-                    .outputs
-                    .iter()
-                    .enumerate()
-                    .map(|(i, output)| {
-                        (
-                            i as u32,
-                            TxId::from_bytes(
-                                <[u8; 32]>::try_from(&compact_transaction.hash[..]).unwrap(),
-                            ),
-                            sapling::Node::from_commitment(output.cmstar()).unwrap(),
-                            Retention::Ephemeral,
-                        )
-                    })
-                    .collect();
-                let mut orchard_notes_to_mark_position_in_tx: Vec<_> = compact_transaction
-                    .actions
-                    .iter()
-                    .enumerate()
-                    .map(|(i, output)| {
-                        (
-                            i as u32,
-                            TxId::from_bytes(
-                                <[u8; 32]>::try_from(&compact_transaction.hash[..]).unwrap(),
-                            ),
-                            MerkleHashOrchard::from_commitment(output.cmstar()).unwrap(),
-                            Retention::Ephemeral,
-                        )
-                    })
-                    .collect();
+                let mut sapling_notes_to_mark_position_in_tx =
+                    zip_outputs_with_retention_txids_indexes::<SaplingDomain<ChainType>>(
+                        &compact_transaction,
+                    );
+                let mut orchard_notes_to_mark_position_in_tx =
+                    zip_outputs_with_retention_txids_indexes::<OrchardDomain>(&compact_transaction);
 
                 if let Some(filter) = transaction_size_filter {
                     if compact_transaction.outputs.len() + compact_transaction.actions.len()
@@ -403,6 +377,35 @@ impl TrialDecryptions {
     }
 }
 
+fn zip_outputs_with_retention_txids_indexes<D: DomainWalletExt>(
+    compact_transaction: &CompactTx,
+) -> Vec<(
+    u32,
+    TxId,
+    <D::WalletNote as ReceivedNoteAndMetadata>::Node,
+    Retention<BlockHeight>,
+)>
+where
+    <D as Domain>::Note: PartialEq + Clone,
+    <D as Domain>::Recipient: crate::wallet::traits::Recipient,
+{
+    <D::CompactOutput as crate::wallet::traits::CompactOutput<D>>::from_compact_transaction(
+        compact_transaction,
+    )
+    .iter()
+    .enumerate()
+    .map(|(i, output)| {
+        (
+            i as u32,
+            TxId::from_bytes(<[u8; 32]>::try_from(&compact_transaction.hash[..]).unwrap()),
+            <D::WalletNote as ReceivedNoteAndMetadata>::Node::from_commitment(output.cmstar())
+                .unwrap(),
+            Retention::Ephemeral,
+        )
+    })
+    .collect()
+}
+
 #[allow(clippy::type_complexity)]
 fn update_witnesses<D>(
     notes_to_mark_position: Vec<(
@@ -422,7 +425,7 @@ fn update_witnesses<D>(
     <D as Domain>::Recipient: Recipient,
 {
     for block in notes_to_mark_position.into_iter().rev() {
-        if let Some(witness_tree) = D::get_shardtree(&*txmds_writelock) {
+        if let Some(witness_tree) = D::transaction_metadata_set_to_shardtree(&*txmds_writelock) {
             let position = witness_tree
                 .max_leaf_position(0)
                 .unwrap()
@@ -442,7 +445,9 @@ fn update_witnesses<D>(
                 }
                 nodes_retention.push((node, retention));
             }
-            if let Some(witness_tree_mut) = D::get_shardtree_mut(&mut *txmds_writelock) {
+            if let Some(witness_tree_mut) =
+                D::transaction_metadata_set_to_shardtree_mut(&mut *txmds_writelock)
+            {
                 let _tree_insert_result = witness_tree_mut
                     .batch_insert(position, nodes_retention.into_iter())
                     .expect("failed to update witness tree");

@@ -995,7 +995,10 @@ async fn send_orchard_back_and_forth() {
         "{}",
         JsonValue::from(faucet.do_list_txsummaries().await).pretty(4)
     );
-    println!("{}", faucet.do_balance().await.to_json().pretty(4));
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&faucet.do_balance().await).unwrap()
+    );
 
     check_client_balances!(faucet, o: orch_change s: reward_and_fee t: 0);
 
@@ -1642,7 +1645,7 @@ async fn mempool_and_balance() {
         scenarios::faucet_prefunded_orchard_recipient(value).await;
 
     let bal = recipient.do_balance().await;
-    println!("{}", json::stringify_pretty(bal.to_json(), 4));
+    println!("{}", serde_json::to_string_pretty(&bal).unwrap());
     assert_eq!(bal.orchard_balance.unwrap(), value);
     assert_eq!(bal.unverified_orchard_balance.unwrap(), 0);
     assert_eq!(bal.verified_orchard_balance.unwrap(), value);
@@ -2579,7 +2582,10 @@ async fn dust_sends_change_correctly() {
         .unwrap();
 
     println!("{}", recipient.do_list_transactions().await.pretty(4));
-    println!("{}", recipient.do_balance().await.to_json().pretty(4));
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
+    );
 }
 
 #[tokio::test]
@@ -2610,7 +2616,10 @@ async fn zero_value_receipts() {
         .unwrap();
 
     println!("{}", recipient.do_list_transactions().await.pretty(4));
-    println!("{}", recipient.do_balance().await.to_json().pretty(4));
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
+    );
     println!(
         "{}",
         JsonValue::from(recipient.do_list_txsummaries().await).pretty(4)
@@ -2789,21 +2798,18 @@ async fn load_old_wallet_at_reorged_height() {
         expected_post_sync_transactions,
         recipient.do_list_transactions().await.pretty(2)
     );
-    let expected_post_sync_balance = r#"{
-  "sapling_balance": 0,
-  "verified_sapling_balance": 0,
-  "spendable_sapling_balance": 0,
-  "unverified_sapling_balance": 0,
-  "orchard_balance": 150000,
-  "verified_orchard_balance": 150000,
-  "spendable_orchard_balance": 150000,
-  "unverified_orchard_balance": 0,
-  "transparent_balance": 0
-}"#;
-    assert_eq!(
-        expected_post_sync_balance,
-        recipient.do_balance().await.to_json().pretty(2)
-    );
+    let expected_post_sync_balance = PoolBalances {
+        sapling_balance: Some(0),
+        verified_sapling_balance: Some(0),
+        spendable_sapling_balance: Some(0),
+        unverified_sapling_balance: Some(0),
+        orchard_balance: Some(150000),
+        verified_orchard_balance: Some(150000),
+        spendable_orchard_balance: Some(150000),
+        unverified_orchard_balance: Some(0),
+        transparent_balance: Some(0),
+    };
+    assert_eq!(expected_post_sync_balance, recipient.do_balance().await);
     recipient
         .do_send(vec![(&get_base_address!(faucet, "unified"), 14000, None)])
         .await
@@ -2827,7 +2833,10 @@ async fn shield_sapling() {
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &recipient, 1)
         .await
         .unwrap();
-    println!("{}", recipient.do_balance().await.to_json().pretty(4));
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
+    );
 
     assert_eq!(
         recipient.do_shield(&[Pool::Sapling], None).await,
@@ -2877,7 +2886,10 @@ async fn shield_sapling() {
         .await
         .unwrap();
 
-    println!("{}", recipient.do_balance().await.to_json().pretty(4));
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
+    );
 }
 
 #[tokio::test]
@@ -3180,7 +3192,10 @@ async fn sends_to_self_handle_balance_properly() {
     zingo_testutils::increase_height_and_sync_client(regtest_manager, recipient, 1)
         .await
         .unwrap();
-    println!("{}", recipient.do_balance().await.to_json().pretty(2));
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
+    );
     println!("{}", recipient.do_list_transactions().await.pretty(2));
     println!(
         "{}",
@@ -3195,7 +3210,10 @@ async fn sends_to_self_handle_balance_properly() {
         .pretty(2)
     );
     recipient.do_rescan().await.unwrap();
-    println!("{}", recipient.do_balance().await.to_json().pretty(2));
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
+    );
     println!("{}", recipient.do_list_transactions().await.pretty(2));
     println!(
         "{}",

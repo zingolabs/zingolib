@@ -57,7 +57,7 @@ use self::{
     message::Message,
     transactions::TransactionMetadataSet,
 };
-use zingoconfig::ZingoConfig;
+use zingoconfig::{ChainType, ZingoConfig};
 
 pub mod data;
 pub mod keys;
@@ -246,21 +246,28 @@ impl LightWallet {
         Option<incrementalmerkletree::frontier::NonEmptyFrontier<MerkleHashOrchard>>,
     ) {
         (
-            zcash_primitives::merkle_tree::read_commitment_tree::<
-                zcash_primitives::sapling::Node,
-                &[u8],
-                COMMITMENT_TREE_LEVELS,
-            >(&hex::decode(trees.sapling_tree).unwrap()[..])
-            .ok()
-            .and_then(|tree| tree.to_frontier().take()),
-            zcash_primitives::merkle_tree::read_commitment_tree::<
-                MerkleHashOrchard,
-                &[u8],
-                COMMITMENT_TREE_LEVELS,
-            >(&hex::decode(trees.orchard_tree).unwrap()[..])
-            .ok()
-            .and_then(|tree| tree.to_frontier().take()),
+            Self::get_legacy_frontier::<SaplingDomain<ChainType>>(&trees),
+            Self::get_legacy_frontier::<OrchardDomain>(&trees),
         )
+    }
+    fn get_legacy_frontier<D: DomainWalletExt>(
+        trees: &crate::compact_formats::TreeState,
+    ) -> Option<
+        incrementalmerkletree::frontier::NonEmptyFrontier<
+            <D::WalletNote as ReceivedNoteAndMetadata>::Node,
+        >,
+    >
+    where
+        <D as Domain>::Note: PartialEq + Clone,
+        <D as Domain>::Recipient: traits::Recipient,
+    {
+        zcash_primitives::merkle_tree::read_commitment_tree::<
+            <D::WalletNote as ReceivedNoteAndMetadata>::Node,
+            &[u8],
+            COMMITMENT_TREE_LEVELS,
+        >(&hex::decode(D::get_tree(trees)).unwrap()[..])
+        .ok()
+        .and_then(|tree| tree.to_frontier().take())
     }
     pub(crate) async fn initiate_witness_trees(&self, trees: crate::compact_formats::TreeState) {
         let (legacy_sapling_frontier, legacy_orchard_frontier) =
