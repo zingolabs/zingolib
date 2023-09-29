@@ -18,9 +18,7 @@ use crate::{
 use futures::{stream::FuturesUnordered, StreamExt};
 use incrementalmerkletree::{Position, Retention};
 use log::debug;
-use orchard::{
-    keys::IncomingViewingKey as OrchardIvk, note_encryption::OrchardDomain, tree::MerkleHashOrchard,
-};
+use orchard::{keys::IncomingViewingKey as OrchardIvk, note_encryption::OrchardDomain};
 use std::sync::Arc;
 use tokio::{
     sync::{
@@ -32,7 +30,7 @@ use tokio::{
 use zcash_note_encryption::Domain;
 use zcash_primitives::{
     consensus::{BlockHeight, Parameters},
-    sapling::{self, note_encryption::SaplingDomain, SaplingIvk},
+    sapling::{note_encryption::SaplingDomain, SaplingIvk},
     transaction::{Transaction, TxId},
 };
 use zingoconfig::{ChainType, ZingoConfig};
