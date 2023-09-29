@@ -422,7 +422,7 @@ fn update_witnesses<D>(
     <D as Domain>::Recipient: Recipient,
 {
     for block in notes_to_mark_position.into_iter().rev() {
-        if let Some(witness_tree) = D::get_shardtree(&*txmds_writelock) {
+        if let Some(witness_tree) = D::transaction_metadata_set_to_shardtree(&*txmds_writelock) {
             let position = witness_tree
                 .max_leaf_position(0)
                 .unwrap()
@@ -442,7 +442,9 @@ fn update_witnesses<D>(
                 }
                 nodes_retention.push((node, retention));
             }
-            if let Some(witness_tree_mut) = D::get_shardtree_mut(&mut *txmds_writelock) {
+            if let Some(witness_tree_mut) =
+                D::transaction_metadata_set_to_shardtree_mut(&mut *txmds_writelock)
+            {
                 let _tree_insert_result = witness_tree_mut
                     .batch_insert(position, nodes_retention.into_iter())
                     .expect("failed to update witness tree");

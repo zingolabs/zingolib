@@ -2798,21 +2798,18 @@ async fn load_old_wallet_at_reorged_height() {
         expected_post_sync_transactions,
         recipient.do_list_transactions().await.pretty(2)
     );
-    let expected_post_sync_balance = r#"{
-  "sapling_balance": 0,
-  "verified_sapling_balance": 0,
-  "spendable_sapling_balance": 0,
-  "unverified_sapling_balance": 0,
-  "orchard_balance": 150000,
-  "verified_orchard_balance": 150000,
-  "spendable_orchard_balance": 150000,
-  "unverified_orchard_balance": 0,
-  "transparent_balance": 0
-}"#;
-    assert_eq!(
-        expected_post_sync_balance,
-        serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
-    );
+    let expected_post_sync_balance = PoolBalances {
+        sapling_balance: Some(0),
+        verified_sapling_balance: Some(0),
+        spendable_sapling_balance: Some(0),
+        unverified_sapling_balance: Some(0),
+        orchard_balance: Some(150000),
+        verified_orchard_balance: Some(150000),
+        spendable_orchard_balance: Some(150000),
+        unverified_orchard_balance: Some(0),
+        transparent_balance: Some(0),
+    };
+    assert_eq!(expected_post_sync_balance, recipient.do_balance().await);
     recipient
         .do_send(vec![(&get_base_address!(faucet, "unified"), 14000, None)])
         .await

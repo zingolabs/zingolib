@@ -624,7 +624,7 @@ impl TransactionMetadataSet {
         {
             *note_datum.spent_mut() = Some((txid, height.into()));
             if let Some(position) = *note_datum.witnessed_position() {
-                if let Some(ref mut tree) = D::get_shardtree_mut(self) {
+                if let Some(ref mut tree) = D::transaction_metadata_set_to_shardtree_mut(self) {
                     tree.remove_mark(position, Some(&(height - BlockHeight::from(1))))
                         .unwrap();
                 }
@@ -632,7 +632,7 @@ impl TransactionMetadataSet {
                 todo!("Tried to mark note as spent with no position: FIX")
             }
         } else {
-            eprintln!("Could not remove sapling node!")
+            eprintln!("Could not remove node!")
         }
     }
 
