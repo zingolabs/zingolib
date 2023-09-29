@@ -29,7 +29,7 @@ nuparams=76b809bb:1 # Sapling
 nuparams=2bb40e60:1 # Blossom
 nuparams=f5b9230b:1 # Heartwood
 nuparams=e9ff75a6:1 # Canopy
-nuparams=c2d6d0b4:10 # NU5
+nuparams=c2d6d0b4:1 # NU5
 
 
 ### MetaData Storage and Retrieval
