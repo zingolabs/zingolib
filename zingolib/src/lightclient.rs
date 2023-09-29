@@ -26,6 +26,7 @@ use futures::future::join_all;
 use json::{array, object, JsonValue};
 use log::{debug, error, warn};
 use orchard::note_encryption::OrchardDomain;
+use serde::Serialize;
 use std::{
     cmp::{self, Ordering},
     collections::HashMap,
@@ -318,7 +319,7 @@ impl LightWalletSendProgress {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct PoolBalances {
     pub sapling_balance: Option<u64>,
     pub verified_sapling_balance: Option<u64>,
@@ -333,24 +334,9 @@ pub struct PoolBalances {
     pub transparent_balance: Option<u64>,
 }
 
-impl PoolBalances {
-    pub fn to_json(&self) -> JsonValue {
-        object! {
-            "sapling_balance"                 => self.sapling_balance,
-            "verified_sapling_balance"        => self.verified_sapling_balance,
-            "spendable_sapling_balance"       => self.spendable_sapling_balance,
-            "unverified_sapling_balance"      => self.unverified_sapling_balance,
-            "orchard_balance"                 => self.orchard_balance,
-            "verified_orchard_balance"        => self.verified_orchard_balance,
-            "spendable_orchard_balance"       => self.spendable_orchard_balance,
-            "unverified_orchard_balance"      => self.unverified_orchard_balance,
-            "transparent_balance"             => self.transparent_balance,
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct AccountBackupInfo {
+    #[serde(rename = "seed")]
     pub seed_phrase: String,
     pub birthday: u64,
     pub account_index: u32,
