@@ -1219,36 +1219,23 @@ impl LightWallet {
         Ok(tx_builder)
     }
 
-    async fn create_publication_ready_transaction<P: TxProver>(
+    async fn create_and_populate_tx_builder(
         &self,
         submission_height: BlockHeight,
+        witness_trees: &WitnessTrees,
         start_time: u64,
         receivers: Receivers,
         policy: NoteSelectionPolicy,
-        sapling_prover: P,
     ) -> Result<
         (
-            Transaction,
+            TxBuilder<'_>,
+            u32,
             Vec<SpendableOrchardNote>,
             Vec<SpendableSaplingNote>,
             Vec<ReceivedTransparentOutput>,
         ),
         String,
     > {
-        // Start building transaction with spends and outputs set by:
-        //  * target amount
-        //  * selection policy
-        //  * recipient list
-        let txmds_readlock = self
-            .transaction_context
-            .transaction_metadata_set
-            .read()
-            .await;
-        let witness_trees = txmds_readlock
-            .witness_trees
-            .as_ref()
-            .expect("If we have spend capability we have trees");
-
         // Start building tx
         let tx_builder = self
             .create_tx_builder(submission_height, witness_trees)
@@ -1310,7 +1297,7 @@ impl LightWallet {
             }
         };
         info!("{}: selecting notes", now() - start_time);
-        let mut tx_builder = self
+        match self
             .add_spends_to_builder(
                 tx_builder,
                 witness_trees,
@@ -1319,7 +1306,63 @@ impl LightWallet {
                 &utxos,
             )
             .await
-            .expect("to add spends to tx_builder");
+        {
+            Ok(tx_builder) => Ok((
+                tx_builder,
+                total_shielded_receivers,
+                orchard_notes,
+                sapling_notes,
+                utxos,
+            )),
+            Err(s) => Err(s),
+        }
+    }
+
+    async fn create_publication_ready_transaction<P: TxProver>(
+        &self,
+        submission_height: BlockHeight,
+        start_time: u64,
+        receivers: Receivers,
+        policy: NoteSelectionPolicy,
+        sapling_prover: P,
+    ) -> Result<
+        (
+            Transaction,
+            Vec<SpendableOrchardNote>,
+            Vec<SpendableSaplingNote>,
+            Vec<ReceivedTransparentOutput>,
+        ),
+        String,
+    > {
+        // Start building transaction with spends and outputs set by:
+        //  * target amount
+        //  * selection policy
+        //  * recipient list
+        let txmds_readlock = self
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await;
+        let witness_trees = txmds_readlock
+            .witness_trees
+            .as_ref()
+            .expect("If we have spend capability we have trees");
+        let (mut tx_builder, total_shielded_receivers, orchard_notes, sapling_notes, utxos) =
+            match self
+                .create_and_populate_tx_builder(
+                    submission_height,
+                    witness_trees,
+                    start_time,
+                    receivers,
+                    policy,
+                )
+                .await
+            {
+                Ok(tx_builder) => tx_builder,
+                Err(s) => {
+                    return Err(s);
+                }
+            };
 
         drop(txmds_readlock);
         // The builder now has the correct set of inputs and outputs
