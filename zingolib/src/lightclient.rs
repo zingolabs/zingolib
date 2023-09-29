@@ -1591,12 +1591,11 @@ impl LightClient {
 
         // Re-read the last scanned height
         let last_scanned_height = self.wallet.last_synced_height().await;
-        let batch_size = 100;
 
         let mut latest_block_batches = vec![];
         let mut prev = last_scanned_height;
         while latest_block_batches.is_empty() || prev != latest_blockid.height {
-            let batch = cmp::min(latest_blockid.height, prev + batch_size);
+            let batch = cmp::min(latest_blockid.height, prev + zingoconfig::BATCH_SIZE);
             prev = batch;
             latest_block_batches.push(batch);
         }
