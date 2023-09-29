@@ -24,9 +24,7 @@ fn lock_client_return_seed(lightclient: LightClient) -> String {
 
     LIGHTCLIENT.lock().unwrap().replace(Some(lc));
 
-    let seed = execute("seed".to_string(), "".to_string());
-
-    seed
+    execute("seed".to_string(), "".to_string());
 }
 
 fn construct_uri_load_config(
