@@ -132,6 +132,7 @@ impl LightClient {
     }
     /// The wallet this fn associates with the lightclient is specifically derived from
     /// a spend authority.
+    // this pubfn is consumed in zingocli, zingo-mobile, and ZingoPC
     pub fn create_from_wallet_base(
         wallet_base: WalletBase,
         config: &ZingoConfig,
@@ -1235,7 +1236,10 @@ impl LightClient {
         json::JsonValue::from(self.wallet.last_synced_height().await)
     }
 
-    pub async fn get_initial_state(&self, height: u64) -> Option<(u64, String, String)> {
+    pub async fn download_initial_tree_state_from_lightwalletd(
+        &self,
+        height: u64,
+    ) -> Option<(u64, String, String)> {
         if height <= self.config.sapling_activation_height() {
             return None;
         }
@@ -1405,7 +1409,9 @@ impl LightClient {
     }
 
     pub async fn set_wallet_initial_state(&self, height: u64) {
-        let state = self.get_initial_state(height).await;
+        let state = self
+            .download_initial_tree_state_from_lightwalletd(height)
+            .await;
 
         if let Some((height, hash, tree)) = state {
             debug!("Setting initial state to height {}, tree {}", height, tree);
