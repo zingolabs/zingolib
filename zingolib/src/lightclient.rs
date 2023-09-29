@@ -1553,7 +1553,9 @@ impl LightClient {
         self.ensure_witness_tree_not_above_wallet_blocks().await;
 
         // This is a fresh wallet. We need to get the initial trees
-        if self.wallet_has_any_empty_commitment_trees().await && last_synced_height != 0 {
+        if self.wallet_has_any_empty_commitment_trees().await
+            && last_synced_height >= self.config.sapling_activation_height()
+        {
             let trees = crate::grpc_connector::GrpcConnector::get_trees(
                 self.get_server_uri(),
                 last_synced_height,
