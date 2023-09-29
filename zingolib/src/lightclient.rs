@@ -26,6 +26,7 @@ use futures::future::join_all;
 use json::{array, object, JsonValue};
 use log::{debug, error, warn};
 use orchard::note_encryption::OrchardDomain;
+use serde::Serialize;
 use std::{
     cmp::{self, Ordering},
     collections::HashMap,
@@ -131,6 +132,7 @@ impl LightClient {
     }
     /// The wallet this fn associates with the lightclient is specifically derived from
     /// a spend authority.
+    // this pubfn is consumed in zingocli, zingo-mobile, and ZingoPC
     pub fn create_from_wallet_base(
         wallet_base: WalletBase,
         config: &ZingoConfig,
@@ -318,7 +320,7 @@ impl LightWalletSendProgress {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct PoolBalances {
     pub sapling_balance: Option<u64>,
     pub verified_sapling_balance: Option<u64>,
@@ -333,24 +335,9 @@ pub struct PoolBalances {
     pub transparent_balance: Option<u64>,
 }
 
-impl PoolBalances {
-    pub fn to_json(&self) -> JsonValue {
-        object! {
-            "sapling_balance"                 => self.sapling_balance,
-            "verified_sapling_balance"        => self.verified_sapling_balance,
-            "spendable_sapling_balance"       => self.spendable_sapling_balance,
-            "unverified_sapling_balance"      => self.unverified_sapling_balance,
-            "orchard_balance"                 => self.orchard_balance,
-            "verified_orchard_balance"        => self.verified_orchard_balance,
-            "spendable_orchard_balance"       => self.spendable_orchard_balance,
-            "unverified_orchard_balance"      => self.unverified_orchard_balance,
-            "transparent_balance"             => self.transparent_balance,
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct AccountBackupInfo {
+    #[serde(rename = "seed")]
     pub seed_phrase: String,
     pub birthday: u64,
     pub account_index: u32,
@@ -1249,7 +1236,10 @@ impl LightClient {
         json::JsonValue::from(self.wallet.last_synced_height().await)
     }
 
-    pub async fn get_initial_state(&self, height: u64) -> Option<(u64, String, String)> {
+    pub async fn download_initial_tree_state_from_lightwalletd(
+        &self,
+        height: u64,
+    ) -> Option<(u64, String, String)> {
         if height <= self.config.sapling_activation_height() {
             return None;
         }
@@ -1419,7 +1409,9 @@ impl LightClient {
     }
 
     pub async fn set_wallet_initial_state(&self, height: u64) {
-        let state = self.get_initial_state(height).await;
+        let state = self
+            .download_initial_tree_state_from_lightwalletd(height)
+            .await;
 
         if let Some((height, hash, tree)) = state {
             debug!("Setting initial state to height {}, tree {}", height, tree);
@@ -1553,7 +1545,9 @@ impl LightClient {
         self.ensure_witness_tree_not_above_wallet_blocks().await;
 
         // This is a fresh wallet. We need to get the initial trees
-        if self.wallet_has_any_empty_commitment_trees().await && last_synced_height != 0 {
+        if self.wallet_has_any_empty_commitment_trees().await
+            && last_synced_height >= self.config.sapling_activation_height()
+        {
             let trees = crate::grpc_connector::GrpcConnector::get_trees(
                 self.get_server_uri(),
                 last_synced_height,

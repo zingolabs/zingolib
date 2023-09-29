@@ -568,7 +568,9 @@ impl Command for BalanceCommand {
     }
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        RT.block_on(async move { lightclient.do_balance().await.to_json().pretty(2) })
+        RT.block_on(async move {
+            serde_json::to_string_pretty(&lightclient.do_balance().await).unwrap()
+        })
     }
 }
 
@@ -1020,14 +1022,9 @@ impl Command for SeedCommand {
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
         RT.block_on(async move {
             match lightclient.do_seed_phrase().await {
-                Ok(m) => object! {
-                    "seed"     => m.seed_phrase,
-                    "birthday" => m.birthday,
-                    "account_index" => m.account_index,
-                },
-                Err(e) => object! { "error" => e },
+                Ok(m) => serde_json::to_string_pretty(&m).unwrap(),
+                Err(e) => object! { "error" => e }.pretty(2),
             }
-            .pretty(2)
         })
     }
 }

@@ -5,7 +5,7 @@ use super::{
     data::{
         PoolNullifier, ReceivedOrchardNoteAndMetadata, ReceivedSaplingNoteAndMetadata,
         SpendableOrchardNote, SpendableSaplingNote, TransactionMetadata, WitnessCache,
-        COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL,
+        WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL,
     },
     keys::unified::WalletCapability,
     transactions::TransactionMetadataSet,
@@ -723,12 +723,29 @@ where
             .map(|nd| nd.value())
             .sum()
     }
+    fn transaction_metadata_set_to_shardtree(
+        txmds: &TransactionMetadataSet,
+    ) -> Option<&MemoryStoreShardTree<<Self::WalletNote as ReceivedNoteAndMetadata>::Node>> {
+        txmds
+            .witness_trees
+            .as_ref()
+            .map(|trees| Self::get_shardtree(trees))
+    }
+    fn transaction_metadata_set_to_shardtree_mut(
+        txmds: &mut TransactionMetadataSet,
+    ) -> Option<&mut MemoryStoreShardTree<<Self::WalletNote as ReceivedNoteAndMetadata>::Node>>
+    {
+        txmds
+            .witness_trees
+            .as_mut()
+            .map(|trees| Self::get_shardtree_mut(trees))
+    }
     fn get_shardtree(
-        tmds: &TransactionMetadataSet,
-    ) -> Option<&MemoryStoreShardTree<<Self::WalletNote as ReceivedNoteAndMetadata>::Node>>;
+        trees: &WitnessTrees,
+    ) -> &MemoryStoreShardTree<<Self::WalletNote as ReceivedNoteAndMetadata>::Node>;
     fn get_shardtree_mut(
-        tmds: &mut TransactionMetadataSet,
-    ) -> Option<&mut MemoryStoreShardTree<<Self::WalletNote as ReceivedNoteAndMetadata>::Node>>;
+        trees: &mut WitnessTrees,
+    ) -> &mut MemoryStoreShardTree<<Self::WalletNote as ReceivedNoteAndMetadata>::Node>;
     fn get_nullifier_from_note_fvk_and_witness_position(
         note: &Self::Note,
         fvk: &Self::Fvk,
@@ -763,30 +780,22 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
     type Bundle = components::sapling::Bundle<components::sapling::Authorized>;
 
     fn get_shardtree(
-        tmds: &TransactionMetadataSet,
-    ) -> Option<
-        &ShardTree<
-            MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
-            COMMITMENT_TREE_LEVELS,
-            MAX_SHARD_LEVEL,
-        >,
+        trees: &WitnessTrees,
+    ) -> &ShardTree<
+        MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
+        COMMITMENT_TREE_LEVELS,
+        MAX_SHARD_LEVEL,
     > {
-        tmds.witness_trees
-            .as_ref()
-            .map(|tree| &tree.witness_tree_sapling)
+        &trees.witness_tree_sapling
     }
     fn get_shardtree_mut(
-        tmds: &mut TransactionMetadataSet,
-    ) -> Option<
-        &mut ShardTree<
-            MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
-            COMMITMENT_TREE_LEVELS,
-            MAX_SHARD_LEVEL,
-        >,
+        trees: &mut WitnessTrees,
+    ) -> &mut ShardTree<
+        MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
+        COMMITMENT_TREE_LEVELS,
+        MAX_SHARD_LEVEL,
     > {
-        tmds.witness_trees
-            .as_mut()
-            .map(|tree| &mut tree.witness_tree_sapling)
+        &mut trees.witness_tree_sapling
     }
     fn get_nullifier_from_note_fvk_and_witness_position(
         note: &Self::Note,
@@ -847,18 +856,22 @@ impl DomainWalletExt for OrchardDomain {
     type Bundle = orchard::bundle::Bundle<orchard::bundle::Authorized, Amount>;
 
     fn get_shardtree(
-        tmds: &TransactionMetadataSet,
-    ) -> Option<&ShardTree<MemoryShardStore<MerkleHashOrchard, BlockHeight>, 32, 16>> {
-        tmds.witness_trees
-            .as_ref()
-            .map(|tree| &tree.witness_tree_orchard)
+        trees: &WitnessTrees,
+    ) -> &ShardTree<
+        MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
+        COMMITMENT_TREE_LEVELS,
+        MAX_SHARD_LEVEL,
+    > {
+        &trees.witness_tree_orchard
     }
     fn get_shardtree_mut(
-        tmds: &mut TransactionMetadataSet,
-    ) -> Option<&mut ShardTree<MemoryShardStore<MerkleHashOrchard, BlockHeight>, 32, 16>> {
-        tmds.witness_trees
-            .as_mut()
-            .map(|tree| &mut tree.witness_tree_orchard)
+        trees: &mut WitnessTrees,
+    ) -> &mut ShardTree<
+        MemoryShardStore<<Self::WalletNote as ReceivedNoteAndMetadata>::Node, BlockHeight>,
+        COMMITMENT_TREE_LEVELS,
+        MAX_SHARD_LEVEL,
+    > {
+        &mut trees.witness_tree_orchard
     }
     fn get_nullifier_from_note_fvk_and_witness_position(
         note: &Self::Note,
@@ -1094,8 +1107,6 @@ pub trait ReadableWriteable<Input>: Sized {
     fn write<W: Write>(&self, writer: W) -> io::Result<()>;
     fn get_version<R: Read>(mut reader: R) -> io::Result<u8> {
         let external_version = reader.read_u8()?;
-        log::info!("wallet_capability external_version: {external_version}");
-        log::info!("Self::VERSION: {}", Self::VERSION);
         if external_version > Self::VERSION {
             Err(io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -1148,10 +1159,6 @@ impl ReadableWriteable<()> for zip32::sapling::DiversifiableFullViewingKey {
     fn read<R: Read>(mut reader: R, _: ()) -> io::Result<Self> {
         let mut fvk_bytes = [0u8; 128];
         reader.read_exact(&mut fvk_bytes)?;
-        tracing::info!(
-            "zip32::sapling::DiversifiableFullViewingKey fvk_bytes: {:?}",
-            fvk_bytes
-        );
         zip32::sapling::DiversifiableFullViewingKey::from_bytes(&fvk_bytes).ok_or(io::Error::new(
             io::ErrorKind::InvalidInput,
             "Couldn't read a Sapling Diversifiable Full Viewing Key",
@@ -1285,7 +1292,6 @@ where
         ),
     ) -> io::Result<Self> {
         let external_version = Self::get_version(&mut reader)?;
-        tracing::info!("NoteAndMetadata version is: {external_version}");
 
         if external_version < 2 {
             let mut x = <T as ReceivedNoteAndMetadata>::get_deprecated_serialized_view_key_buffer();

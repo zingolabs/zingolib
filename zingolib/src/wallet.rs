@@ -57,7 +57,7 @@ use self::{
     message::Message,
     transactions::TransactionMetadataSet,
 };
-use zingoconfig::ZingoConfig;
+use zingoconfig::{ChainType, ZingoConfig};
 
 pub mod data;
 pub mod keys;
@@ -124,7 +124,7 @@ pub enum MemoDownloadOption {
 #[derive(Debug, Clone, Copy)]
 pub struct WalletOptions {
     pub(crate) download_memos: MemoDownloadOption,
-    pub(crate) transaction_size_filter: Option<u32>,
+    pub transaction_size_filter: Option<u32>,
 }
 
 pub const MAX_TRANSACTION_SIZE_DEFAULT: u32 = 500;
@@ -219,7 +219,7 @@ pub struct LightWallet {
     pub blocks: Arc<RwLock<Vec<BlockData>>>,
 
     // Wallet options
-    pub(crate) wallet_options: Arc<RwLock<WalletOptions>>,
+    pub wallet_options: Arc<RwLock<WalletOptions>>,
 
     // Heighest verified block
     pub(crate) verified_tree: Arc<RwLock<Option<TreeState>>>,
@@ -246,21 +246,28 @@ impl LightWallet {
         Option<incrementalmerkletree::frontier::NonEmptyFrontier<MerkleHashOrchard>>,
     ) {
         (
-            zcash_primitives::merkle_tree::read_commitment_tree::<
-                zcash_primitives::sapling::Node,
-                &[u8],
-                COMMITMENT_TREE_LEVELS,
-            >(&hex::decode(trees.sapling_tree).unwrap()[..])
-            .ok()
-            .and_then(|tree| tree.to_frontier().take()),
-            zcash_primitives::merkle_tree::read_commitment_tree::<
-                MerkleHashOrchard,
-                &[u8],
-                COMMITMENT_TREE_LEVELS,
-            >(&hex::decode(trees.orchard_tree).unwrap()[..])
-            .ok()
-            .and_then(|tree| tree.to_frontier().take()),
+            Self::get_legacy_frontier::<SaplingDomain<ChainType>>(&trees),
+            Self::get_legacy_frontier::<OrchardDomain>(&trees),
         )
+    }
+    fn get_legacy_frontier<D: DomainWalletExt>(
+        trees: &crate::compact_formats::TreeState,
+    ) -> Option<
+        incrementalmerkletree::frontier::NonEmptyFrontier<
+            <D::WalletNote as ReceivedNoteAndMetadata>::Node,
+        >,
+    >
+    where
+        <D as Domain>::Note: PartialEq + Clone,
+        <D as Domain>::Recipient: traits::Recipient,
+    {
+        zcash_primitives::merkle_tree::read_commitment_tree::<
+            <D::WalletNote as ReceivedNoteAndMetadata>::Node,
+            &[u8],
+            COMMITMENT_TREE_LEVELS,
+        >(&hex::decode(D::get_tree(trees)).unwrap()[..])
+        .ok()
+        .and_then(|tree| tree.to_frontier().take())
     }
     pub(crate) async fn initiate_witness_trees(&self, trees: crate::compact_formats::TreeState) {
         let (legacy_sapling_frontier, legacy_orchard_frontier) =
@@ -701,7 +708,6 @@ impl LightWallet {
 
     pub async fn read_internal<R: Read>(mut reader: R, config: &ZingoConfig) -> io::Result<Self> {
         let external_version = reader.read_u64::<LittleEndian>()?;
-        log::info!("LightWallet serialized_version read from external: {external_version}");
         if external_version > Self::serialized_version() {
             let e = format!(
                 "Don't know how to read wallet version {}. Do you have the latest version?\n{}",

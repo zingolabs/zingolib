@@ -379,11 +379,11 @@ async fn sent_transaction_reorged_into_mempool() {
     );
     println!(
         "Recipient pre-reorg: {}",
-        recipient.do_balance().await.to_json().pretty(2)
+        serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
     );
     println!(
         "Sender pre-reorg (unsynced): {}",
-        light_client.do_balance().await.to_json().pretty(2)
+        serde_json::to_string_pretty(&light_client.do_balance().await).unwrap()
     );
 
     prepare_darksidewalletd(server_id.clone(), true)
@@ -398,11 +398,11 @@ async fn sent_transaction_reorged_into_mempool() {
     light_client.do_sync(false).await.unwrap();
     println!(
         "Recipient post-reorg: {}",
-        recipient.do_balance().await.to_json().pretty(2)
+        serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
     );
     println!(
         "Sender post-reorg: {}",
-        light_client.do_balance().await.to_json().pretty(2)
+        serde_json::to_string_pretty(&light_client.do_balance().await).unwrap()
     );
     println!(
         "Sender post-reorg: {}",
