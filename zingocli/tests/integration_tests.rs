@@ -766,6 +766,15 @@ async fn zip317_fee_checks() {
         .await
         .unwrap();
     check_client_balances!(sapling_faucet, o:0 s:2_500_000_000 t:0); // orignal block_reward value
+    let pmc_sapling = get_base_address!(pool_migration_client, "sapling");
+    sapling_faucet
+        .do_send(vec![(
+            &pmc_sapling,
+            50_000,
+            Some(Memo::from_str("first fee check send").unwrap().into()),
+        )])
+        .await
+        .unwrap();
 }
 #[tokio::test]
 async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
