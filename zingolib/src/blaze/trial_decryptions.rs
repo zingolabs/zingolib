@@ -169,10 +169,10 @@ impl TrialDecryptions {
             for (transaction_num, compact_transaction) in compact_block.vtx.iter().enumerate() {
                 let mut sapling_notes_to_mark_position_in_tx =
                     zip_outputs_with_retention_txids_indexes::<SaplingDomain<ChainType>>(
-                        &compact_transaction,
+                        compact_transaction,
                     );
                 let mut orchard_notes_to_mark_position_in_tx =
-                    zip_outputs_with_retention_txids_indexes::<OrchardDomain>(&compact_transaction);
+                    zip_outputs_with_retention_txids_indexes::<OrchardDomain>(compact_transaction);
 
                 if let Some(filter) = transaction_size_filter {
                     if compact_transaction.outputs.len() + compact_transaction.actions.len()
@@ -283,12 +283,12 @@ impl TrialDecryptions {
         transaction_metadata_set: &Arc<RwLock<TransactionMetadataSet>>,
         detected_transaction_id_sender: &UnboundedSender<(TxId, PoolNullifier, BlockHeight, u32)>,
         workers: &FuturesUnordered<JoinHandle<Result<(), String>>>,
-        notes_to_mark_position: &mut Vec<(
+        notes_to_mark_position: &mut [(
             u32,
             TxId,
             <D::WalletNote as ReceivedNoteAndMetadata>::Node,
             Retention<BlockHeight>,
-        )>,
+        )],
     ) where
         D: DomainWalletExt,
         <D as Domain>::Recipient: crate::wallet::traits::Recipient + Send + 'static,
@@ -377,6 +377,7 @@ impl TrialDecryptions {
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn zip_outputs_with_retention_txids_indexes<D: DomainWalletExt>(
     compact_transaction: &CompactTx,
 ) -> Vec<(
