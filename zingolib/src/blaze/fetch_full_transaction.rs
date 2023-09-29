@@ -1,3 +1,4 @@
+use super::syncdata::BlazeSyncData;
 use crate::wallet::{
     data::OutgoingTxData,
     keys::{address_from_pubkeyhash, unified::WalletCapability},
@@ -7,8 +8,6 @@ use crate::wallet::{
     },
     transactions::TransactionMetadataSet,
 };
-use zingo_memo::{parse_zingo_memo, ParsedMemo};
-use super::syncdata::BlazeSyncData;
 use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
 use orchard::note_encryption::OrchardDomain;
 use std::{
@@ -34,6 +33,7 @@ use zcash_primitives::{
     sapling::note_encryption::SaplingDomain,
     transaction::{Transaction, TxId},
 };
+use zingo_memo::{parse_zingo_memo, ParsedMemo};
 use zingoconfig::{ChainType, ZingoConfig};
 
 #[derive(Clone)]
