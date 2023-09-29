@@ -1552,15 +1552,9 @@ impl LightClient {
         // our witness trees are aligned with our blockchain data
         self.ensure_witness_tree_not_above_wallet_blocks().await;
 
-        let sapling_activation_height = u64::from(
-            self.config
-                .chain
-                .activation_height(zcash_primitives::consensus::NetworkUpgrade::Sapling)
-                .expect("To get a BlockHeight"),
-        );
         // This is a fresh wallet. We need to get the initial trees
         if self.wallet_has_any_empty_commitment_trees().await
-            && last_synced_height >= sapling_activation_height
+            && last_synced_height >= self.config.sapling_activation_height()
         {
             let trees = crate::grpc_connector::GrpcConnector::get_trees(
                 self.get_server_uri(),
