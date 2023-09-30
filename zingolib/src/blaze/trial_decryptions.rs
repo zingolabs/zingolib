@@ -112,7 +112,7 @@ impl TrialDecryptions {
                     )));
                 }
             }
-            // Finish off the remaining < 1000 cbs
+            // Finish off the remaining < 125 cbs
             workers.push(tokio::spawn(Self::trial_decrypt_batch(
                 config,
                 cbs,
