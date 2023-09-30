@@ -24,21 +24,7 @@ fn lock_client_return_seed(lightclient: LightClient) -> String {
 
     LIGHTCLIENT.lock().unwrap().replace(Some(lc));
 
-    let seed = match LIGHTCLIENT
-        .lock()
-        .unwrap()
-        .borrow()
-        .as_ref()
-        .unwrap()
-        .do_seed_phrase_sync()
-    {
-        Ok(s) => s.dump(),
-        Err(e) => {
-            return format!("Error: {}", e);
-        }
-    };
-
-    seed
+    execute("seed".to_string(), "".to_string())
 }
 
 fn construct_uri_load_config(
