@@ -2334,7 +2334,7 @@ dependencies = [
 [[package]]
 name = "regchest_utils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingo-regchest?branch=dev#a00a1a59db54c1e4a600d9b279d63ae2fb4cb565"
+source = "git+https://github.com/zingolabs/zingo-regchest?branch=dev#71ad394b201e635e92ec4978c05f1e80943fc9e1"
 dependencies = [
  "bollard",
  "futures",
