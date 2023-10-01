@@ -880,12 +880,14 @@ impl LightWallet {
         ),
         Amount,
     > {
-        let mut transparent_value_selected = Amount::zero();
+        let mut all_transparent_value_in_wallet = Amount::zero();
         let mut utxos = Vec::new();
         let mut sapling_value_selected = Amount::zero();
         let mut sapling_notes = Vec::new();
         let mut orchard_value_selected = Amount::zero();
         let mut orchard_notes = Vec::new();
+        // Correctness of this loop depends on:
+        //    * uniqueness
         for pool in policy {
             match pool {
                 Pool::Sapling => {
@@ -895,12 +897,13 @@ impl LightWallet {
                         .into_iter()
                         .filter(|x| x.spend_key().is_some())
                         .collect();
-                    (sapling_notes, sapling_value_selected) =
-                        Self::add_notes_to_total::<SaplingDomain<zingoconfig::ChainType>>(
-                            sapling_candidates,
-                            (target_amount - orchard_value_selected - transparent_value_selected)
-                                .unwrap(),
-                        );
+                    (sapling_notes, sapling_value_selected) = Self::add_notes_to_total::<
+                        SaplingDomain<zingoconfig::ChainType>,
+                    >(
+                        sapling_candidates,
+                        (target_amount - orchard_value_selected - all_transparent_value_in_wallet)
+                            .unwrap(),
+                    );
                 }
                 Pool::Orchard => {
                     let orchard_candidates = self
@@ -909,13 +912,16 @@ impl LightWallet {
                         .into_iter()
                         .filter(|x| x.spend_key().is_some())
                         .collect();
-                    (orchard_notes, orchard_value_selected) =
-                        Self::add_notes_to_total::<OrchardDomain>(
-                            orchard_candidates,
-                            (target_amount - transparent_value_selected - sapling_value_selected)
-                                .unwrap(),
-                        );
+                    (orchard_notes, orchard_value_selected) = Self::add_notes_to_total::<
+                        OrchardDomain,
+                    >(
+                        orchard_candidates,
+                        (target_amount - all_transparent_value_in_wallet - sapling_value_selected)
+                            .unwrap(),
+                    );
                 }
+                // This opportunistic shielding sweeps all transparent value leaking identifying information to
+                // a funder of the wallet's transparent value. We should change this.
                 Pool::Transparent => {
                     utxos = self
                         .get_utxos()
@@ -924,13 +930,14 @@ impl LightWallet {
                         .filter(|utxo| utxo.unconfirmed_spent.is_none() && utxo.spent.is_none())
                         .cloned()
                         .collect::<Vec<_>>();
-                    transparent_value_selected = utxos.iter().fold(Amount::zero(), |prev, utxo| {
-                        (prev + Amount::from_u64(utxo.value).unwrap()).unwrap()
-                    });
+                    all_transparent_value_in_wallet =
+                        utxos.iter().fold(Amount::zero(), |prev, utxo| {
+                            (prev + Amount::from_u64(utxo.value).unwrap()).unwrap()
+                        });
                 }
             }
             // Check how much we've selected
-            if (transparent_value_selected + sapling_value_selected + orchard_value_selected)
+            if (all_transparent_value_in_wallet + sapling_value_selected + orchard_value_selected)
                 .unwrap()
                 >= target_amount
             {
@@ -938,14 +945,19 @@ impl LightWallet {
                     orchard_notes,
                     sapling_notes,
                     utxos,
-                    (transparent_value_selected + sapling_value_selected + orchard_value_selected)
+                    (all_transparent_value_in_wallet
+                        + sapling_value_selected
+                        + orchard_value_selected)
                         .unwrap(),
                 ));
             }
         }
 
         // If we can't select enough, then we need to return empty handed
-        Err((transparent_value_selected + sapling_value_selected + orchard_value_selected).unwrap())
+        Err(
+            (all_transparent_value_in_wallet + sapling_value_selected + orchard_value_selected)
+                .unwrap(),
+        )
     }
 
     pub async fn send_to_addresses<F, Fut, P: TxProver>(
