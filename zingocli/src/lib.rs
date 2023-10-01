@@ -402,6 +402,7 @@ pub fn startup(
         Some(filled_template.data_dir.clone()),
         filled_template.chaintype,
         true,
+        None,
     )
     .unwrap();
     regtest_config_check(&filled_template.regtest_manager, &config.chain);

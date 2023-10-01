@@ -403,15 +403,23 @@ async fn test_scanning_in_watch_only_mode() {
 
     let (regtest_manager, _cph, mut client_builder) =
         scenarios::custom_clients(BlockHeight::from_u32(1)).await;
-    let faucet = client_builder.build_new_faucet(0, false).await;
+    let faucet = client_builder
+        .build_new_faucet(0, false, BlockHeight::from_u32(1))
+        .await;
     let original_recipient = client_builder
-        .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
+        .build_newseed_client(
+            HOSPITAL_MUSEUM_SEED.to_string(),
+            0,
+            false,
+            BlockHeight::from_u32(1),
+        )
         .await;
     let zingo_config = zingolib::load_clientconfig(
         client_builder.server_id,
         Some(client_builder.zingo_datadir),
         ChainType::Regtest,
         true,
+        Some(BlockHeight::from_u32(1)),
     )
     .unwrap();
 
@@ -826,9 +834,16 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     // Test all possible promoting note source combinations
     let (regtest_manager, _cph, mut client_builder) =
         scenarios::custom_clients(BlockHeight::from_u32(1)).await;
-    let sapling_faucet = client_builder.build_new_faucet(0, false).await;
+    let sapling_faucet = client_builder
+        .build_new_faucet(0, false, BlockHeight::from_u32(1))
+        .await;
     let pool_migration_client = client_builder
-        .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
+        .build_newseed_client(
+            HOSPITAL_MUSEUM_SEED.to_string(),
+            0,
+            false,
+            BlockHeight::from_u32(1),
+        )
         .await;
     let pmc_taddr = get_base_address!(pool_migration_client, "transparent");
     let pmc_sapling = get_base_address!(pool_migration_client, "sapling");
@@ -1154,13 +1169,20 @@ async fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
 async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
     let (regtest_manager, _cph, mut client_builder) =
         scenarios::custom_clients(BlockHeight::from_u32(1)).await;
-    let faucet = client_builder.build_new_faucet(0, false).await;
+    let faucet = client_builder
+        .build_new_faucet(0, false, BlockHeight::from_u32(1))
+        .await;
     faucet.do_sync(false).await.unwrap();
     let seed_phrase_of_recipient1 = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
         .unwrap()
         .to_string();
     let recipient1 = client_builder
-        .build_newseed_client(seed_phrase_of_recipient1, 0, false)
+        .build_newseed_client(
+            seed_phrase_of_recipient1,
+            0,
+            false,
+            BlockHeight::from_u32(1),
+        )
         .await;
     let mut expected_unspent_sapling_notes = json::object! {
             "created_in_block" =>  4,
@@ -1222,7 +1244,12 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
             .to_string(),
     );
     let recipient_restored = client_builder
-        .build_newseed_client(seed_of_recipient.seed_phrase.clone(), 0, true)
+        .build_newseed_client(
+            seed_of_recipient.seed_phrase.clone(),
+            0,
+            true,
+            BlockHeight::from_u32(1),
+        )
         .await;
     let seed_of_recipient_restored = {
         recipient_restored.do_sync(true).await.unwrap();
@@ -1275,7 +1302,7 @@ async fn diversification_deterministic_and_coherent() {
         .unwrap()
         .to_string();
     let recipient1 = client_builder
-        .build_newseed_client(seed_phrase, 0, false)
+        .build_newseed_client(seed_phrase, 0, false, BlockHeight::from_u32(1))
         .await;
     let base_transparent_receiver = "tmS9nbexug7uT8x1cMTLP1ABEyKXpMjR5F1";
     assert_eq!(
@@ -1350,7 +1377,12 @@ async fn ensure_taddrs_from_old_seeds_work() {
     let transparent_address = "tmFLszfkjgim4zoUMAXpuohnFBAKy99rr2i";
 
     let client_b = client_builder
-        .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
+        .build_newseed_client(
+            HOSPITAL_MUSEUM_SEED.to_string(),
+            0,
+            false,
+            BlockHeight::from_u32(1),
+        )
         .await;
 
     assert_eq!(

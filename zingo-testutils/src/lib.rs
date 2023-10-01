@@ -219,7 +219,7 @@ pub async fn load_wallet(
     let wallet = dir.join("zingo-wallet.dat");
     let lightwalletd_uri = TestEnvironmentGenerator::new(None).get_lightwalletd_uri();
     let zingo_config =
-        zingolib::load_clientconfig(lightwalletd_uri, Some(dir), chaintype, true).unwrap();
+        zingolib::load_clientconfig(lightwalletd_uri, Some(dir), chaintype, true, None).unwrap();
     let from = std::fs::File::open(wallet).unwrap();
 
     let read_lengths = vec![];
@@ -396,7 +396,10 @@ pub mod scenarios {
                     client_number,
                 }
             }
-            pub fn make_unique_data_dir_and_load_config(&mut self) -> zingoconfig::ZingoConfig {
+            pub fn make_unique_data_dir_and_load_config(
+                &mut self,
+                orchard_activation_height: zcash_primitives::consensus::BlockHeight,
+            ) -> zingoconfig::ZingoConfig {
                 //! Each client requires a unique data_dir, we use the
                 //! client_number counter for this.
                 self.client_number += 1;
@@ -405,15 +408,20 @@ pub mod scenarios {
                     self.zingo_datadir.to_string_lossy(),
                     self.client_number
                 );
-                self.create_clientconfig(PathBuf::from(conf_path))
+                self.create_clientconfig(PathBuf::from(conf_path), orchard_activation_height)
             }
-            pub fn create_clientconfig(&self, conf_path: PathBuf) -> zingoconfig::ZingoConfig {
+            pub fn create_clientconfig(
+                &self,
+                conf_path: PathBuf,
+                orchard_activation_height: zcash_primitives::consensus::BlockHeight,
+            ) -> zingoconfig::ZingoConfig {
                 std::fs::create_dir(&conf_path).unwrap();
                 zingolib::load_clientconfig(
                     self.server_id.clone(),
                     Some(conf_path),
                     zingoconfig::ChainType::Regtest,
                     true,
+                    Some(orchard_activation_height),
                 )
                 .unwrap()
             }
@@ -422,9 +430,11 @@ pub mod scenarios {
                 &mut self,
                 birthday: u64,
                 overwrite: bool,
+                orchard_activation_height: zcash_primitives::consensus::BlockHeight,
             ) -> LightClient {
                 //! A "faucet" is a lightclient that receives mining rewards
-                let zingo_config = self.make_unique_data_dir_and_load_config();
+                let zingo_config =
+                    self.make_unique_data_dir_and_load_config(orchard_activation_height);
                 LightClient::create_from_wallet_base_async(
                     WalletBase::MnemonicPhrase(self.seed.clone()),
                     &zingo_config,
@@ -439,8 +449,10 @@ pub mod scenarios {
                 mnemonic_phrase: String,
                 birthday: u64,
                 overwrite: bool,
+                orchard_activation_height: zcash_primitives::consensus::BlockHeight,
             ) -> LightClient {
-                let zingo_config = self.make_unique_data_dir_and_load_config();
+                let zingo_config =
+                    self.make_unique_data_dir_and_load_config(orchard_activation_height);
                 LightClient::create_from_wallet_base_async(
                     WalletBase::MnemonicPhrase(mnemonic_phrase),
                     &zingo_config,
@@ -582,7 +594,7 @@ pub mod scenarios {
         .await;
         let faucet = sb
             .client_builder
-            .build_new_faucet(BASE_HEIGHT as u64 - 1, false)
+            .build_new_faucet(BASE_HEIGHT as u64 - 1, false, orchard_activation_height)
             .await;
         (
             sb.regtest_manager,
@@ -647,11 +659,20 @@ pub mod scenarios {
             orchard_activation_height,
         )
         .await;
-        let faucet = sb.client_builder.build_new_faucet(0, false).await;
+        let faucet = sb
+            .client_builder
+            .build_new_faucet(0, false, orchard_activation_height)
+            .await;
         faucet.do_sync(false).await.unwrap();
+
         let recipient = sb
             .client_builder
-            .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), BASE_HEIGHT as u64, false)
+            .build_newseed_client(
+                HOSPITAL_MUSEUM_SEED.to_string(),
+                BASE_HEIGHT as u64,
+                false,
+                orchard_activation_height,
+            )
             .await;
         (
             sb.regtest_manager,
@@ -676,7 +697,12 @@ pub mod scenarios {
             scenario_builder.child_process_handler.unwrap(),
             scenario_builder
                 .client_builder
-                .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
+                .build_newseed_client(
+                    HOSPITAL_MUSEUM_SEED.to_string(),
+                    0,
+                    false,
+                    orchard_activation_height,
+                )
                 .await,
         )
     }
@@ -710,11 +736,16 @@ pub mod scenarios {
         .await;
         let faucet = scenario_builder
             .client_builder
-            .build_new_faucet(0, false)
+            .build_new_faucet(0, false, orchard_activation_height)
             .await;
         let recipient = scenario_builder
             .client_builder
-            .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
+            .build_newseed_client(
+                HOSPITAL_MUSEUM_SEED.to_string(),
+                0,
+                false,
+                orchard_activation_height,
+            )
             .await;
         faucet.do_sync(false).await.unwrap();
         faucet
@@ -748,11 +779,16 @@ pub mod scenarios {
         .await;
         let faucet = scenario_builder
             .client_builder
-            .build_new_faucet(0, false)
+            .build_new_faucet(0, false, orchard_activation_height)
             .await;
         let recipient = scenario_builder
             .client_builder
-            .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
+            .build_newseed_client(
+                HOSPITAL_MUSEUM_SEED.to_string(),
+                0,
+                false,
+                orchard_activation_height,
+            )
             .await;
         increase_height_and_sync_client(&scenario_builder.regtest_manager, &faucet, 1)
             .await
@@ -817,11 +853,19 @@ pub mod scenarios {
         ) {
             let mut sb = setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain().await;
             //(Some(REGSAP_ADDR_FROM_ABANDONART.to_string()), None);
-            let faucet = sb.client_builder.build_new_faucet(0, false).await;
+            let faucet = sb
+                .client_builder
+                .build_new_faucet(0, false, BlockHeight::from_u32(1))
+                .await;
             faucet.do_sync(false).await.unwrap();
             let recipient = sb
                 .client_builder
-                .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
+                .build_newseed_client(
+                    HOSPITAL_MUSEUM_SEED.to_string(),
+                    0,
+                    false,
+                    BlockHeight::from_u32(1),
+                )
                 .await;
             (
                 sb.regtest_manager,
@@ -838,10 +882,18 @@ pub mod scenarios {
         ) {
             let mut sb = setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain().await;
             //(Some(REGSAP_ADDR_FROM_ABANDONART.to_string()), None);
-            let faucet = sb.client_builder.build_new_faucet(0, false).await;
+            let faucet = sb
+                .client_builder
+                .build_new_faucet(0, false, BlockHeight::from_u32(1))
+                .await;
             let recipient = sb
                 .client_builder
-                .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
+                .build_newseed_client(
+                    HOSPITAL_MUSEUM_SEED.to_string(),
+                    0,
+                    false,
+                    BlockHeight::from_u32(1),
+                )
                 .await;
             (
                 sb.regtest_manager,

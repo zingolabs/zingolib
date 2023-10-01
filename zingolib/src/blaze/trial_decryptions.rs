@@ -29,7 +29,7 @@ use tokio::{
 };
 use zcash_note_encryption::Domain;
 use zcash_primitives::{
-    consensus::{BlockHeight, Parameters},
+    consensus::{BlockHeight, NetworkUpgrade, Parameters},
     sapling::{note_encryption::SaplingDomain, SaplingIvk},
     transaction::{Transaction, TxId},
 };
@@ -325,6 +325,21 @@ impl TrialDecryptions {
                         let have_spending_key = true;
                         let uri = bsync_data.read().await.uri().clone();
 
+                        // Get NU activation heights from zingoconfig for regtest
+                        let activation_height: BlockHeight = match config.chain {
+                            ChainType::Regtest => match D::NU {
+                                NetworkUpgrade::Overwinter => BlockHeight::from_u32(1),
+                                NetworkUpgrade::Sapling => BlockHeight::from_u32(1),
+                                NetworkUpgrade::Blossom => BlockHeight::from_u32(1),
+                                NetworkUpgrade::Heartwood => BlockHeight::from_u32(1),
+                                NetworkUpgrade::Canopy => BlockHeight::from_u32(1),
+                                NetworkUpgrade::Nu5 => config
+                                    .regtest_orchard_activation_height
+                                    .unwrap_or(BlockHeight::from_u32(1)),
+                            },
+                            _ => config.chain.activation_height(D::NU).unwrap(),
+                        };
+
                         // Get the witness for the note
                         let witness = bsync_data
                             .read()
@@ -335,7 +350,7 @@ impl TrialDecryptions {
                                 height,
                                 transaction_num,
                                 i,
-                                config.chain.activation_height(D::NU).unwrap().into(),
+                                activation_height.into(),
                             )
                             .await?;
 

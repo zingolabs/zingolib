@@ -68,6 +68,7 @@ pub struct ZingoConfig {
     pub wallet_name: PathBuf,
     /// The filename of the logfile. This will be created in the `wallet_dir`.
     pub logfile_name: PathBuf,
+    pub regtest_orchard_activation_height: Option<zcash_primitives::consensus::BlockHeight>,
 }
 
 impl ZingoConfig {
@@ -81,22 +82,34 @@ impl ZingoConfig {
             wallet_dir: dir,
             wallet_name: DEFAULT_WALLET_NAME.into(),
             logfile_name: DEFAULT_LOGFILE_NAME.into(),
+            regtest_orchard_activation_height: None,
         }
     }
 
     //Convenience wrapper
     pub fn sapling_activation_height(&self) -> u64 {
-        self.chain
-            .activation_height(NetworkUpgrade::Sapling)
-            .unwrap()
-            .into()
+        match self.chain {
+            ChainType::Regtest => BlockHeight::from_u32(1).into(),
+            _ => self
+                .chain
+                .activation_height(NetworkUpgrade::Sapling)
+                .unwrap()
+                .into(),
+        }
     }
 
     pub fn orchard_activation_height(&self) -> u64 {
-        self.chain
-            .activation_height(NetworkUpgrade::Nu5)
-            .unwrap()
-            .into()
+        match self.chain {
+            ChainType::Regtest => self
+                .regtest_orchard_activation_height
+                .unwrap_or(BlockHeight::from_u32(1))
+                .into(),
+            _ => self
+                .chain
+                .activation_height(NetworkUpgrade::Nu5)
+                .unwrap()
+                .into(),
+        }
     }
     pub fn set_data_dir(&mut self, dir_str: String) {
         self.wallet_dir = Some(PathBuf::from(dir_str));
@@ -349,21 +362,11 @@ impl std::fmt::Display for ChainType {
 
 use ChainType::*;
 impl Parameters for ChainType {
-    fn activation_height(
-        &self,
-        nu: NetworkUpgrade,
-    ) -> Option<zcash_primitives::consensus::BlockHeight> {
+    fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
         match self {
             Mainnet => MAIN_NETWORK.activation_height(nu),
             Testnet => TEST_NETWORK.activation_height(nu),
-            Regtest => match nu {
-                NetworkUpgrade::Overwinter => Some(BlockHeight::from_u32(1)),
-                NetworkUpgrade::Sapling => Some(BlockHeight::from_u32(1)),
-                NetworkUpgrade::Blossom => Some(BlockHeight::from_u32(1)),
-                NetworkUpgrade::Heartwood => Some(BlockHeight::from_u32(1)),
-                NetworkUpgrade::Canopy => Some(BlockHeight::from_u32(1)),
-                NetworkUpgrade::Nu5 => Some(BlockHeight::from_u32(10)),
-            },
+            Regtest => None,
             FakeMainnet => Some(BlockHeight::from_u32(1)),
         }
     }

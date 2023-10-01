@@ -31,6 +31,7 @@ pub fn load_clientconfig(
     data_dir: Option<PathBuf>,
     chain: ChainType,
     monitor_mempool: bool,
+    regtest_orchard_activation_height: Option<zcash_primitives::consensus::BlockHeight>,
 ) -> Result<ZingoConfig> {
     use std::net::ToSocketAddrs;
     format!(
@@ -54,6 +55,7 @@ pub fn load_clientconfig(
         wallet_dir: data_dir,
         wallet_name: DEFAULT_WALLET_NAME.into(),
         logfile_name: DEFAULT_LOGFILE_NAME.into(),
+        regtest_orchard_activation_height,
     };
 
     Ok(config)
