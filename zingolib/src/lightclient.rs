@@ -1765,7 +1765,7 @@ impl LightClient {
                 success: false,
                 latest_block: self.wallet.last_synced_height().await,
                 total_blocks_synced: 0,
-            })
+            });
         };
 
         // 1. Fetch the transparent txns only after reorgs are done.
