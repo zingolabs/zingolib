@@ -19,7 +19,7 @@ use http::Uri;
 use std::{sync::Arc, time::Duration};
 use tokio::{
     sync::{
-        mpsc::{self, UnboundedSender},
+        mpsc::{self, UnboundedReceiver, UnboundedSender},
         RwLock,
     },
     task::{yield_now, JoinHandle},
@@ -36,7 +36,8 @@ use super::sync_status::BatchSyncStatus;
 type Node<D> = <<D as DomainWalletExt>::WalletNote as ReceivedNoteAndMetadata>::Node;
 
 const ORCHARD_START: &str = "000000";
-pub struct BlockAndWitnessData {
+/// The data relating to the blocks in the current batch
+pub struct BlockManagementData {
     // List of all downloaded blocks in the current batch and
     // their hashes/commitment trees. Stored with the tallest
     // block first, and the shortest last.
@@ -63,7 +64,7 @@ pub struct BlockAndWitnessData {
 }
 
 pub const BATCHSIZE: u32 = 25;
-impl BlockAndWitnessData {
+impl BlockManagementData {
     pub fn new(sync_status: Arc<RwLock<BatchSyncStatus>>) -> Self {
         Self {
             blocks_in_current_batch: Arc::new(RwLock::new(vec![])),
@@ -163,7 +164,7 @@ impl BlockAndWitnessData {
     }
 
     // Verify all the downloaded tree states
-    pub async fn verify_trees(&self) -> (bool, Option<TreeState>) {
+    pub(crate) async fn verify_trees(&self) -> (bool, Option<TreeState>) {
         // Verify only on the last batch
         {
             let sync_status = self.sync_status.read().await;
@@ -334,94 +335,27 @@ impl BlockAndWitnessData {
             .remove_txns_at_height(reorg_height);
     }
 
-    /// Start a new sync where we ingest all the blocks
-    pub async fn start(
+    /// Ingest the incoming blocks, handle any reorgs, then populate the block data
+    pub(crate) async fn handle_reorgs_and_populate_block_mangement_data(
         &self,
         start_block: u64,
         end_block: u64,
         transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
         reorg_transmitter: UnboundedSender<Option<u64>>,
     ) -> (
-        JoinHandle<Result<u64, String>>,
+        JoinHandle<Result<Option<u64>, String>>,
         UnboundedSender<CompactBlock>,
     ) {
-        //info!("Starting node and witness sync");
-        let batch_size = self.batch_size;
-
-        // Create a new channel where we'll receive the blocks
-        let (transmitter, mut receiver) = mpsc::unbounded_channel::<CompactBlock>();
-
-        let blocks = self.blocks_in_current_batch.clone();
-        let existing_blocks = self.existing_blocks.clone();
-
-        let sync_status = self.sync_status.clone();
-        sync_status.write().await.blocks_total = start_block - end_block + 1;
+        let (reorg_managment_thread_data, transmitter) =
+            self.setup_for_threadspawn(start_block, end_block).await;
 
         // Handle 0:
         // Process the incoming compact blocks, collect them into `BlockData` and
         // pass them on for further processing.
-        // We also trigger the node commitment tree update every `batch_size` blocks
-        // using the Sapling tree fetched
-        // from the server temporarily, but we verify it before we return it
-
-        let h0: JoinHandle<Result<u64, String>> = tokio::spawn(async move {
-            // Temporary holding place for blocks while we process them.
-            let mut blks = vec![];
-            let mut earliest_block_height = 0;
-
-            // Reorg stuff
-            let mut last_block_expecting = end_block;
-
-            while let Some(compact_block) = receiver.recv().await {
-                if compact_block.height % batch_size as u64 == 0 && !blks.is_empty() {
-                    // Add these blocks to the list
-                    sync_status.write().await.blocks_done += blks.len() as u64;
-                    blocks.write().await.append(&mut blks);
-                }
-
-                // Check if this is the last block we are expecting
-                if compact_block.height == last_block_expecting {
-                    // Check to see if the prev block's hash matches, and if it does, finish the task
-                    let reorg_block = match existing_blocks.read().await.first() {
-                        Some(top_block) => {
-                            if top_block.hash() == compact_block.prev_hash().to_string() {
-                                None
-                            } else {
-                                // send a reorg signal
-                                Some(top_block.height)
-                            }
-                        }
-                        None => {
-                            // There is no top wallet block, so we can't really check for reorgs.
-                            None
-                        }
-                    };
-
-                    // If there was a reorg, then we need to invalidate the block and its associated transactions
-                    if let Some(reorg_height) = reorg_block {
-                        Self::invalidate_block(
-                            reorg_height,
-                            existing_blocks.clone(),
-                            transaction_metadata_set.clone(),
-                        )
-                        .await;
-                        last_block_expecting = reorg_height;
-                    }
-                    reorg_transmitter.send(reorg_block).unwrap();
-                }
-
-                earliest_block_height = compact_block.height;
-                blks.push(BlockData::new(compact_block));
-            }
-
-            if !blks.is_empty() {
-                // We'll now dispatch these blocks for updating the witness
-                sync_status.write().await.blocks_done += blks.len() as u64;
-                blocks.write().await.append(&mut blks);
-            }
-
-            Ok(earliest_block_height)
-        });
+        let h0: JoinHandle<Result<Option<u64>, String>> = tokio::spawn(
+            reorg_managment_thread_data
+                .handle_reorgs_populate_data_inner(transaction_metadata_set, reorg_transmitter),
+        );
 
         // Handle: Final
         // Join all the handles
@@ -435,6 +369,35 @@ impl BlockAndWitnessData {
         });
 
         (h, transmitter)
+    }
+
+    /// The stuff we need to do before spawning a new thread to do the bulk of the work.
+    /// Clone our ARCs, update sync status, etc.
+    async fn setup_for_threadspawn(
+        &self,
+        start_block: u64,
+        end_block: u64,
+    ) -> (BlockManagementThreadData, UnboundedSender<CompactBlock>) {
+        // Create a new channel where we'll receive the blocks
+        let (transmitter, receiver) = mpsc::unbounded_channel::<CompactBlock>();
+
+        let blocks_in_current_batch = self.blocks_in_current_batch.clone();
+        let existing_blocks = self.existing_blocks.clone();
+
+        let sync_status = self.sync_status.clone();
+        sync_status.write().await.blocks_total = start_block - end_block + 1;
+        (
+            BlockManagementThreadData {
+                blocks_in_current_batch,
+                existing_blocks,
+                sync_status,
+                receiver,
+                // Needed as we can't borrow self in the thread...as the thread could outlive self
+                batch_size: self.batch_size,
+                end_block,
+            },
+            transmitter,
+        )
     }
 
     async fn wait_for_first_block(&self) -> u64 {
@@ -606,6 +569,92 @@ impl BlockAndWitnessData {
     }
 }
 
+/// The components of a BlockMangementData we need to pass to the worker thread
+struct BlockManagementThreadData {
+    /// List of all downloaded blocks in the current batch and
+    /// their hashes/commitment trees. Stored with the tallest
+    /// block first, and the shortest last.
+    blocks_in_current_batch: Arc<RwLock<Vec<BlockData>>>,
+    /// List of existing blocks in the wallet. Used for reorgs
+    existing_blocks: Arc<RwLock<Vec<BlockData>>>,
+    /// Link to the syncstatus where we can update progress
+    sync_status: Arc<RwLock<BatchSyncStatus>>,
+    receiver: UnboundedReceiver<CompactBlock>,
+    batch_size: u32,
+    end_block: u64,
+}
+
+impl BlockManagementThreadData {
+    async fn handle_reorgs_populate_data_inner(
+        mut self,
+        transaction_metadata_set: Arc<RwLock<TransactionMetadataSet>>,
+        reorg_transmitter: UnboundedSender<Option<u64>>,
+    ) -> Result<Option<u64>, String> {
+        // Temporary holding place for blocks while we process them.
+        let mut unprocessed_blocks = vec![];
+        let mut earliest_block_height = None;
+
+        // Reorg stuff
+        let mut last_block_expecting = self.end_block;
+
+        while let Some(compact_block) = self.receiver.recv().await {
+            if compact_block.height % self.batch_size as u64 == 0 && !unprocessed_blocks.is_empty()
+            {
+                // Add these blocks to the list
+                self.sync_status.write().await.blocks_done += unprocessed_blocks.len() as u64;
+                self.blocks_in_current_batch
+                    .write()
+                    .await
+                    .append(&mut unprocessed_blocks);
+            }
+
+            // Check if this is the last block we are expecting
+            if compact_block.height == last_block_expecting {
+                // Check to see if the prev block's hash matches, and if it does, finish the task
+                let reorg_block = match self.existing_blocks.read().await.first() {
+                    Some(top_block) => {
+                        if top_block.hash() == compact_block.prev_hash().to_string() {
+                            None
+                        } else {
+                            // send a reorg signal
+                            Some(top_block.height)
+                        }
+                    }
+                    None => {
+                        // There is no top wallet block, so we can't really check for reorgs.
+                        None
+                    }
+                };
+
+                // If there was a reorg, then we need to invalidate the block and its associated transactions
+                if let Some(reorg_height) = reorg_block {
+                    BlockManagementData::invalidate_block(
+                        reorg_height,
+                        self.existing_blocks.clone(),
+                        transaction_metadata_set.clone(),
+                    )
+                    .await;
+                    last_block_expecting = reorg_height;
+                }
+                reorg_transmitter.send(reorg_block).unwrap();
+            }
+
+            earliest_block_height = Some(compact_block.height);
+            unprocessed_blocks.push(BlockData::new(compact_block));
+        }
+
+        if !unprocessed_blocks.is_empty() {
+            self.sync_status.write().await.blocks_done += unprocessed_blocks.len() as u64;
+            self.blocks_in_current_batch
+                .write()
+                .await
+                .append(&mut unprocessed_blocks);
+        }
+
+        Ok(earliest_block_height)
+    }
+}
+
 fn is_orchard_tree_verified(determined_orchard_tree: String, unverified_tree: TreeState) -> bool {
     determined_orchard_tree == ORCHARD_START
         || determined_orchard_tree[..132] == unverified_tree.orchard_tree[..132]
@@ -724,7 +773,7 @@ mod test {
 
     #[tokio::test]
     async fn verify_block_and_witness_data_blocks_order() {
-        let mut scenario_bawd = BlockAndWitnessData::new_with_batchsize(25_000);
+        let mut scenario_bawd = BlockManagementData::new_with_batchsize(25_000);
 
         for numblocks in [0, 1, 2, 10] {
             let existing_blocks = make_fake_block_list(numblocks);
@@ -754,7 +803,7 @@ mod test {
 
     #[tokio::test]
     async fn setup_finish_large() {
-        let mut nw = BlockAndWitnessData::new_with_batchsize(25_000);
+        let mut nw = BlockManagementData::new_with_batchsize(25_000);
 
         let existing_blocks = make_fake_block_list(200);
         nw.setup_sync(existing_blocks.clone(), None).await;
@@ -781,13 +830,13 @@ mod test {
         let end_block = blocks.last().unwrap().height;
 
         let sync_status = Arc::new(RwLock::new(BatchSyncStatus::default()));
-        let mut nw = BlockAndWitnessData::new(sync_status);
+        let mut nw = BlockManagementData::new(sync_status);
         nw.setup_sync(vec![], None).await;
 
         let (reorg_transmitter, mut reorg_receiver) = mpsc::unbounded_channel();
 
         let (h, cb_sender) = nw
-            .start(
+            .handle_reorgs_and_populate_block_mangement_data(
                 start_block,
                 end_block,
                 Arc::new(RwLock::new(TransactionMetadataSet::new_with_witness_trees())),
@@ -807,7 +856,7 @@ mod test {
             Ok(())
         });
 
-        assert_eq!(h.await.unwrap().unwrap(), end_block);
+        assert_eq!(h.await.unwrap().unwrap().unwrap(), end_block);
 
         join_all(vec![send_h])
             .await
@@ -830,13 +879,13 @@ mod test {
         let start_block = blocks.first().unwrap().height;
         let end_block = blocks.last().unwrap().height;
 
-        let mut nw = BlockAndWitnessData::new_with_batchsize(25);
+        let mut nw = BlockManagementData::new_with_batchsize(25);
         nw.setup_sync(existing_blocks, None).await;
 
         let (reorg_transmitter, mut reorg_receiver) = mpsc::unbounded_channel();
 
         let (h, cb_sender) = nw
-            .start(
+            .handle_reorgs_and_populate_block_mangement_data(
                 start_block,
                 end_block,
                 Arc::new(RwLock::new(TransactionMetadataSet::new_with_witness_trees())),
@@ -856,7 +905,7 @@ mod test {
             Ok(())
         });
 
-        assert_eq!(h.await.unwrap().unwrap(), end_block);
+        assert_eq!(h.await.unwrap().unwrap().unwrap(), end_block);
 
         join_all(vec![send_h])
             .await
@@ -926,13 +975,13 @@ mod test {
         let end_block = blocks.last().unwrap().height;
 
         let sync_status = Arc::new(RwLock::new(BatchSyncStatus::default()));
-        let mut nw = BlockAndWitnessData::new(sync_status);
+        let mut nw = BlockManagementData::new(sync_status);
         nw.setup_sync(existing_blocks, None).await;
 
         let (reorg_transmitter, mut reorg_receiver) = mpsc::unbounded_channel();
 
         let (h, cb_sender) = nw
-            .start(
+            .handle_reorgs_and_populate_block_mangement_data(
                 start_block,
                 end_block,
                 Arc::new(RwLock::new(TransactionMetadataSet::new_with_witness_trees())),
@@ -969,7 +1018,10 @@ mod test {
             Ok(())
         });
 
-        assert_eq!(h.await.unwrap().unwrap(), end_block - num_reorged as u64);
+        assert_eq!(
+            h.await.unwrap().unwrap().unwrap(),
+            end_block - num_reorged as u64
+        );
 
         join_all(vec![send_h])
             .await
@@ -1000,7 +1052,7 @@ mod test {
 
     #[tokio::test]
     async fn setup_finish_simple() {
-        let mut nw = BlockAndWitnessData::new_with_batchsize(25_000);
+        let mut nw = BlockManagementData::new_with_batchsize(25_000);
 
         let cb = FakeCompactBlock::new(1, BlockHash([0u8; 32])).into_cb();
         let blks = vec![BlockData::new(cb)];

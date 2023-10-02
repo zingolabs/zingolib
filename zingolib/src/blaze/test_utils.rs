@@ -64,7 +64,7 @@ pub fn node_to_string<Node: Hashable + HashSer>(n: &Node) -> String {
     hex::encode(b1)
 }
 
-use super::block_witness_data::update_trees_with_compact_transaction;
+use super::block_management_reorg_detection::update_trees_with_compact_transaction;
 
 pub struct FakeCompactBlock {
     pub block: CompactBlock,
