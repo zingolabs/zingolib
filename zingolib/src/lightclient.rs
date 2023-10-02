@@ -108,6 +108,49 @@ impl WalletStatus {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct LightWalletSendProgress {
+    pub progress: SendProgress,
+    pub interrupt_sync: bool,
+}
+
+impl LightWalletSendProgress {
+    pub fn to_json(&self) -> JsonValue {
+        object! {
+            "id" => self.progress.id,
+            "sending" => self.progress.is_send_in_progress,
+            "progress" => self.progress.progress,
+            "total" => self.progress.total,
+            "txid" => self.progress.last_transaction_id.clone(),
+            "error" => self.progress.last_error.clone(),
+            "sync_interrupt" => self.interrupt_sync
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct PoolBalances {
+    pub sapling_balance: Option<u64>,
+    pub verified_sapling_balance: Option<u64>,
+    pub spendable_sapling_balance: Option<u64>,
+    pub unverified_sapling_balance: Option<u64>,
+
+    pub orchard_balance: Option<u64>,
+    pub verified_orchard_balance: Option<u64>,
+    pub unverified_orchard_balance: Option<u64>,
+    pub spendable_orchard_balance: Option<u64>,
+
+    pub transparent_balance: Option<u64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct AccountBackupInfo {
+    #[serde(rename = "seed")]
+    pub seed_phrase: String,
+    pub birthday: u64,
+    pub account_index: u32,
+}
+
 pub struct LightClient {
     pub(crate) config: ZingoConfig,
     pub wallet: LightWallet,
@@ -132,7 +175,7 @@ impl LightClient {
     }
     /// The wallet this fn associates with the lightclient is specifically derived from
     /// a spend authority.
-    // this pubfn is consumed in zingocli, zingo-mobile, and ZingoPC
+    /// this pubfn is consumed in zingocli, zingo-mobile, and ZingoPC
     pub fn create_from_wallet_base(
         wallet_base: WalletBase,
         config: &ZingoConfig,
@@ -298,52 +341,7 @@ impl LightClient {
             trees.add_checkpoint(BlockHeight::from(last_synced_height as u32));
         }
     }
-}
 
-#[derive(Debug, Clone)]
-pub struct LightWalletSendProgress {
-    pub progress: SendProgress,
-    pub interrupt_sync: bool,
-}
-
-impl LightWalletSendProgress {
-    pub fn to_json(&self) -> JsonValue {
-        object! {
-            "id" => self.progress.id,
-            "sending" => self.progress.is_send_in_progress,
-            "progress" => self.progress.progress,
-            "total" => self.progress.total,
-            "txid" => self.progress.last_transaction_id.clone(),
-            "error" => self.progress.last_error.clone(),
-            "sync_interrupt" => self.interrupt_sync
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct PoolBalances {
-    pub sapling_balance: Option<u64>,
-    pub verified_sapling_balance: Option<u64>,
-    pub spendable_sapling_balance: Option<u64>,
-    pub unverified_sapling_balance: Option<u64>,
-
-    pub orchard_balance: Option<u64>,
-    pub verified_orchard_balance: Option<u64>,
-    pub unverified_orchard_balance: Option<u64>,
-    pub spendable_orchard_balance: Option<u64>,
-
-    pub transparent_balance: Option<u64>,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct AccountBackupInfo {
-    #[serde(rename = "seed")]
-    pub seed_phrase: String,
-    pub birthday: u64,
-    pub account_index: u32,
-}
-
-impl LightClient {
     fn add_nonchange_notes<'a, 'b, 'c>(
         &'a self,
         transaction_metadata: &'b TransactionMetadata,
