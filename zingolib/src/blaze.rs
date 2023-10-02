@@ -1,4 +1,4 @@
-pub(super) mod block_witness_data;
+pub(super) mod block_management_reorg_detection;
 pub(super) mod fetch_compact_blocks;
 pub(super) mod fetch_full_transaction;
 pub(super) mod fetch_taddr_transactions;

@@ -1,7 +1,7 @@
 use crate::{
     blaze::{
-        block_witness_data::BlockAndWitnessData, fetch_compact_blocks::FetchCompactBlocks,
-        fetch_full_transaction::TransactionContext,
+        block_management_reorg_detection::BlockManagementData,
+        fetch_compact_blocks::FetchCompactBlocks, fetch_full_transaction::TransactionContext,
         fetch_taddr_transactions::FetchTaddrTransactions, sync_status::BatchSyncStatus,
         syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions, update_notes::UpdateNotes,
     },
@@ -1576,7 +1576,7 @@ impl LightClient {
             log::warn!("One block reorg at height {}", last_synced_height);
             // This is a one-block reorg, so pop the last block. Even if there are more blocks to reorg, this is enough
             // to trigger a sync, which will then reorg the remaining blocks
-            BlockAndWitnessData::invalidate_block(
+            BlockManagementData::invalidate_block(
                 last_synced_height,
                 self.wallet.blocks.clone(),
                 self.wallet
@@ -1680,7 +1680,7 @@ impl LightClient {
             .read()
             .await
             .block_data
-            .start(
+            .handle_reorgs_and_populate_block_mangement_data(
                 start_block,
                 end_block,
                 self.wallet.transactions(),
@@ -1758,7 +1758,13 @@ impl LightClient {
 
         // We wait first for the nodes to be updated. This is where reorgs will be handled, so all the steps done after this phase will
         // assume that the reorgs are done.
-        let earliest_block = block_and_witness_handle.await.unwrap().unwrap();
+        let Some(earliest_block) = block_and_witness_handle.await.unwrap().unwrap() else {
+            return Ok(SyncResult {
+                success: false,
+                latest_block: self.wallet.last_synced_height().await,
+                total_blocks_synced: 0,
+            });
+        };
 
         // 1. Fetch the transparent txns only after reorgs are done.
         let taddr_transactions_handle = FetchTaddrTransactions::new(
