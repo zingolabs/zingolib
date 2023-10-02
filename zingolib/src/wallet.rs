@@ -1423,7 +1423,7 @@ impl LightWallet {
         dbg!(tx_builder.params());
         let (transaction, _) = match tx_builder.build(
             &sapling_prover,
-            &transaction::fees::zip317::FeeRule::standard(),
+            &transaction::fees::fixed::FeeRule::non_standard(MINIMUM_FEE),
         ) {
             Ok(res) => res,
             Err(e) => {
