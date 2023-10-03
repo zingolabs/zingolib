@@ -1254,7 +1254,7 @@ impl LightWallet {
         ),
         String,
     > {
-        // Start building tx
+        let zip317_fee_rule = &zcash_primitives::transaction::fees::zip317::FeeRule::standard(); // Start building tx
         let tx_builder = self
             .create_tx_builder(submission_height, witness_trees)
             .await
@@ -1273,6 +1273,7 @@ impl LightWallet {
             receivers.len()
         );
 
+        let proposed_fee = tx_builder.get_fee(zip317_fee_rule);
         let earmark_total_plus_default_fee =
             (Amount::from_u64(total_earmarked_for_recipients).unwrap() + MINIMUM_FEE).unwrap();
         // Select notes as a fn of target anount
