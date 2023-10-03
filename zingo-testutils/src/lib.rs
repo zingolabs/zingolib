@@ -561,7 +561,7 @@ pub mod scenarios {
         )
     }
 
-    pub async fn faucet_prefunded_orchard_recipient(
+    pub async fn two_wallet_one_synced_orchard_transaction(
         value: u64,
     ) -> (
         RegtestManager,
