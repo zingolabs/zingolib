@@ -1255,6 +1255,8 @@ impl LightWallet {
         String,
     > {
         let zip317_fee_rule = &zcash_primitives::transaction::fees::zip317::FeeRule::standard(); // Start building tx
+        let mut proposed_fee = MINIMUM_FEE;
+        let mut total_value_covered_by_selected = 0;
         let tx_builder = self
             .create_tx_builder(submission_height, witness_trees)
             .await
@@ -1273,11 +1275,10 @@ impl LightWallet {
             receivers.len()
         );
 
-        let proposed_fee = tx_builder.get_fee(zip317_fee_rule);
         let earmark_total_plus_default_fee =
-            (Amount::from_u64(total_earmarked_for_recipients).unwrap() + MINIMUM_FEE).unwrap();
+            (Amount::from_u64(total_earmarked_for_recipients).unwrap() + proposed_fee).unwrap();
         // Select notes as a fn of target anount
-        let (orchard_notes, sapling_notes, utxos, selected_value) = match self
+        let (orchard_notes, sapling_notes, utxos, total_value_covered_by_selected) = match self
             .select_notes_and_utxos(earmark_total_plus_default_fee, policy)
             .await
         {
@@ -1293,7 +1294,10 @@ impl LightWallet {
             }
         };
 
-        info!("Selected notes worth {}", u64::from(selected_value));
+        info!(
+            "Selected notes worth {}",
+            u64::from(total_value_covered_by_selected)
+        );
 
         info!(
             "{}: Adding {} sapling notes, {} orchard notes, and {} utxos",
@@ -1306,7 +1310,7 @@ impl LightWallet {
         let tx_builder = match self.add_change_output_to_builder(
             tx_builder,
             earmark_total_plus_default_fee,
-            selected_value,
+            total_value_covered_by_selected,
             &mut total_shielded_receivers,
             &receivers,
         ) {
@@ -1316,7 +1320,7 @@ impl LightWallet {
             }
         };
         info!("{}: selecting notes", now() - start_time);
-        match self
+        let tx_builder = match self
             .add_spends_to_builder(
                 tx_builder,
                 witness_trees,
@@ -1326,15 +1330,20 @@ impl LightWallet {
             )
             .await
         {
-            Ok(tx_builder) => Ok((
-                tx_builder,
-                total_shielded_receivers,
-                orchard_notes,
-                sapling_notes,
-                utxos,
-            )),
-            Err(s) => Err(s),
-        }
+            Ok(tx_builder) => tx_builder,
+
+            Err(s) => {
+                return Err(s);
+            }
+        };
+        let proposed_fee = dbg!(tx_builder.get_fee(zip317_fee_rule));
+        Ok((
+            tx_builder,
+            total_shielded_receivers,
+            orchard_notes,
+            sapling_notes,
+            utxos,
+        ))
     }
 
     async fn create_publication_ready_transaction<P: TxProver>(
