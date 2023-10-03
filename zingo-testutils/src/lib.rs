@@ -571,7 +571,8 @@ pub mod scenarios {
         String,
     ) {
         dbg!("0 About to create faucet_recipient.");
-        let (regtest_manager, child_process_handler, faucet, recipient) = faucet_recipient().await;
+        let (regtest_manager, child_process_handler, faucet, recipient) =
+            two_wallet_one_miner_fund().await;
         dbg!("1 About to increase height and sync faucet.");
         increase_height_and_sync_client(&regtest_manager, &faucet, 1)
             .await
@@ -601,7 +602,7 @@ pub mod scenarios {
         )
     }
 
-    pub async fn faucet_recipient() -> (
+    pub async fn two_wallet_one_miner_fund() -> (
         RegtestManager,
         ChildProcessHandler,
         LightClient,
