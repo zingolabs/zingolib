@@ -9,12 +9,12 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-zcash_address = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc.1" }
-zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc.1" }
-zcash_encoding = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc.1" }
+zcash_address = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc_branch" }
+zcash_client_backend = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc_branch" }
+zcash_encoding = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc_branch" }
 zcash_note_encryption = "0.4"
-zcash_primitives = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc.1" }
-zcash_proofs = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc.1" }
+zcash_primitives = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc_branch" }
+zcash_proofs = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc_branch" }
 orchard = "0.6"
 tonic-build = "0.7"
 tempdir = "0.3"
