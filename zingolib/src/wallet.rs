@@ -881,7 +881,7 @@ impl LightWallet {
         u64,
     > {
         let mut all_transparent_value_in_wallet = Amount::zero();
-        let mut utxos = Vec::new();
+        let mut utxos = Vec::new(); //utxo stands for Unspent Transaction Output
         let mut sapling_value_selected = Amount::zero();
         let mut sapling_notes = Vec::new();
         let mut orchard_value_selected = Amount::zero();
@@ -890,12 +890,27 @@ impl LightWallet {
         //    * uniqueness
         for pool in policy {
             match pool {
+                // Transparent: This opportunistic shielding sweeps all transparent value leaking identifying information to
+                // a funder of the wallet's transparent value. We should change this.
+                Pool::Transparent => {
+                    utxos = self
+                        .get_utxos()
+                        .await
+                        .iter()
+                        .filter(|utxo| utxo.unconfirmed_spent.is_none() && utxo.spent.is_none())
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    all_transparent_value_in_wallet =
+                        utxos.iter().fold(Amount::zero(), |prev, utxo| {
+                            (prev + Amount::from_u64(utxo.value).unwrap()).unwrap()
+                        });
+                }
                 Pool::Sapling => {
                     let sapling_candidates = self
                         .get_all_domain_specific_notes::<SaplingDomain<zingoconfig::ChainType>>()
                         .await
                         .into_iter()
-                        .filter(|x| x.spend_key().is_some())
+                        .filter(|note| note.spend_key().is_some())
                         .collect();
                     (sapling_notes, sapling_value_selected) = Self::add_notes_to_total::<
                         SaplingDomain<zingoconfig::ChainType>,
@@ -910,7 +925,7 @@ impl LightWallet {
                         .get_all_domain_specific_notes::<OrchardDomain>()
                         .await
                         .into_iter()
-                        .filter(|x| x.spend_key().is_some())
+                        .filter(|note| note.spend_key().is_some())
                         .collect();
                     (orchard_notes, orchard_value_selected) = Self::add_notes_to_total::<
                         OrchardDomain,
@@ -919,21 +934,6 @@ impl LightWallet {
                         (target_amount - all_transparent_value_in_wallet - sapling_value_selected)
                             .unwrap(),
                     );
-                }
-                // This opportunistic shielding sweeps all transparent value leaking identifying information to
-                // a funder of the wallet's transparent value. We should change this.
-                Pool::Transparent => {
-                    utxos = self
-                        .get_utxos()
-                        .await
-                        .iter()
-                        .filter(|utxo| utxo.unconfirmed_spent.is_none() && utxo.spent.is_none())
-                        .cloned()
-                        .collect::<Vec<_>>();
-                    all_transparent_value_in_wallet =
-                        utxos.iter().fold(Amount::zero(), |prev, utxo| {
-                            (prev + Amount::from_u64(utxo.value).unwrap()).unwrap()
-                        });
                 }
             }
             // Check how much we've selected
