@@ -1153,15 +1153,15 @@ impl LightWallet {
             };
 
             if let Err(e) = match recipient_address {
+                address::RecipientAddress::Transparent(to) => tx_builder
+                    .add_transparent_output(&to, value)
+                    .map_err(transaction::builder::Error::TransparentBuild),
                 address::RecipientAddress::Shielded(to) => {
                     total_shielded_receivers += 1;
                     tx_builder
                         .add_sapling_output(Some(sapling_ovk), to, value, validated_memo)
                         .map_err(transaction::builder::Error::SaplingBuild)
                 }
-                address::RecipientAddress::Transparent(to) => tx_builder
-                    .add_transparent_output(&to, value)
-                    .map_err(transaction::builder::Error::TransparentBuild),
                 address::RecipientAddress::Unified(ua) => {
                     if let Some(orchard_addr) = ua.orchard() {
                         total_shielded_receivers += 1;
