@@ -842,8 +842,8 @@ pub mod scenarios {
             .await
             .unwrap();
         // shield transparent
-        recipient.
-            do_shield(&[Pool::Transparent], None)
+        recipient
+            .do_shield(&[Pool::Transparent], None)
             .await
             .unwrap();
         increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &recipient, 1)
