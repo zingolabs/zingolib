@@ -870,15 +870,15 @@ impl LightWallet {
     async fn select_notes_and_utxos(
         &self,
         target_amount: Amount,
-        policy: NoteSelectionPolicy,
+        policy: &NoteSelectionPolicy,
     ) -> Result<
         (
             Vec<SpendableOrchardNote>,
             Vec<SpendableSaplingNote>,
             Vec<ReceivedTransparentOutput>,
-            Amount,
+            u64,
         ),
-        Amount,
+        u64,
     > {
         let mut all_transparent_value_in_wallet = Amount::zero();
         let mut utxos = Vec::new();
@@ -945,19 +945,21 @@ impl LightWallet {
                     orchard_notes,
                     sapling_notes,
                     utxos,
-                    (all_transparent_value_in_wallet
-                        + sapling_value_selected
-                        + orchard_value_selected)
-                        .unwrap(),
+                    u64::from(
+                        (all_transparent_value_in_wallet
+                            + sapling_value_selected
+                            + orchard_value_selected)
+                            .unwrap(),
+                    ),
                 ));
             }
         }
 
         // If we can't select enough, then we need to return empty handed
-        Err(
+        Err(u64::from(
             (all_transparent_value_in_wallet + sapling_value_selected + orchard_value_selected)
                 .unwrap(),
-        )
+        ))
     }
 
     pub async fn send_to_addresses<F, Fut, P: TxProver>(
@@ -1254,89 +1256,106 @@ impl LightWallet {
         ),
         String,
     > {
-        let zip317_fee_rule = &zcash_primitives::transaction::fees::zip317::FeeRule::standard(); // Start building tx
+        let fee_rule =
+            &zcash_primitives::transaction::fees::fixed::FeeRule::non_standard(MINIMUM_FEE); // Start building tx
+        let mut total_shielded_receivers;
+        let mut orchard_notes;
+        let mut sapling_notes;
+        let mut utxos;
+        let mut tx_builder;
         let mut proposed_fee = MINIMUM_FEE;
-        let mut total_value_covered_by_selected = 0;
-        let tx_builder = self
-            .create_tx_builder(submission_height, witness_trees)
-            .await
-            .expect("To populate a builder with notes.");
-
-        // Select notes to cover the target value
-        info!("{}: Adding outputs", now() - start_time);
-        let (mut total_shielded_receivers, tx_builder) = self
-            .add_consumer_specified_outputs_to_builder(tx_builder, receivers.clone())
-            .expect("To add outputs");
-
-        let total_earmarked_for_recipients = receivers.iter().map(|to| u64::from(to.1)).sum();
+        let mut total_value_covered_by_selected;
+        let total_earmarked_for_recipients: u64 = receivers.iter().map(|to| u64::from(to.1)).sum();
         info!(
             "0: Creating transaction sending {} zatoshis to {} addresses",
             total_earmarked_for_recipients,
             receivers.len()
         );
+        loop {
+            tx_builder = self
+                .create_tx_builder(submission_height, witness_trees)
+                .await
+                .expect("To populate a builder with notes.");
 
-        let earmark_total_plus_default_fee =
-            (Amount::from_u64(total_earmarked_for_recipients).unwrap() + proposed_fee).unwrap();
-        // Select notes as a fn of target anount
-        let (orchard_notes, sapling_notes, utxos, total_value_covered_by_selected) = match self
-            .select_notes_and_utxos(earmark_total_plus_default_fee, policy)
-            .await
-        {
-            Ok(notes) => notes,
-            Err(insufficient_amount) => {
-                let e = format!(
+            // Select notes to cover the target value
+            info!("{}: Adding outputs", now() - start_time);
+            (total_shielded_receivers, tx_builder) = self
+                .add_consumer_specified_outputs_to_builder(tx_builder, receivers.clone())
+                .expect("To add outputs");
+
+            let earmark_total_plus_default_fee =
+                (Amount::from_u64(total_earmarked_for_recipients).unwrap() + proposed_fee).unwrap();
+            // Select notes as a fn of target anount
+            (
+                orchard_notes,
+                sapling_notes,
+                utxos,
+                total_value_covered_by_selected,
+            ) = match self
+                .select_notes_and_utxos(earmark_total_plus_default_fee, &policy)
+                .await
+            {
+                Ok(notes) => notes,
+                Err(insufficient_amount) => {
+                    let e = format!(
                 "Insufficient verified shielded funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes.",
                 u64::from(insufficient_amount), u64::from(earmark_total_plus_default_fee), self.transaction_context.config
                 .reorg_buffer_offset + 1
             );
-                error!("{}", e);
-                return Err(e);
-            }
-        };
+                    error!("{}", e);
+                    return Err(e);
+                }
+            };
 
-        info!(
-            "Selected notes worth {}",
-            u64::from(total_value_covered_by_selected)
-        );
+            info!(
+                "Selected notes worth {}",
+                u64::from(total_value_covered_by_selected)
+            );
 
-        info!(
-            "{}: Adding {} sapling notes, {} orchard notes, and {} utxos",
-            now() - start_time,
-            &sapling_notes.len(),
-            &orchard_notes.len(),
-            &utxos.len()
-        );
+            info!(
+                "{}: Adding {} sapling notes, {} orchard notes, and {} utxos",
+                now() - start_time,
+                &sapling_notes.len(),
+                &orchard_notes.len(),
+                &utxos.len()
+            );
 
-        let tx_builder = match self.add_change_output_to_builder(
-            tx_builder,
-            earmark_total_plus_default_fee,
-            total_value_covered_by_selected,
-            &mut total_shielded_receivers,
-            &receivers,
-        ) {
-            Ok(txb) => txb,
-            Err(r) => {
-                return Err(r);
-            }
-        };
-        info!("{}: selecting notes", now() - start_time);
-        let tx_builder = match self
-            .add_spends_to_builder(
+            let temp_tx_builder = match self.add_change_output_to_builder(
                 tx_builder,
-                witness_trees,
-                &orchard_notes,
-                &sapling_notes,
-                &utxos,
-            )
-            .await
-        {
-            Ok(tx_builder) => tx_builder,
+                earmark_total_plus_default_fee,
+                Amount::from_u64(total_value_covered_by_selected).unwrap(),
+                &mut total_shielded_receivers,
+                &receivers,
+            ) {
+                Ok(txb) => txb,
+                Err(r) => {
+                    return Err(r);
+                }
+            };
+            info!("{}: selecting notes", now() - start_time);
+            tx_builder = match self
+                .add_spends_to_builder(
+                    temp_tx_builder,
+                    witness_trees,
+                    &orchard_notes,
+                    &sapling_notes,
+                    &utxos,
+                )
+                .await
+            {
+                Ok(tx_builder) => tx_builder,
 
-            Err(s) => {
-                return Err(s);
+                Err(s) => {
+                    return Err(s);
+                }
+            };
+            proposed_fee = dbg!(tx_builder.get_fee(fee_rule).unwrap());
+            if u64::from(proposed_fee) + total_earmarked_for_recipients
+                <= total_value_covered_by_selected
+            {
+                break;
             }
-        };
-        let proposed_fee = dbg!(tx_builder.get_fee(zip317_fee_rule));
+        }
         Ok((
             tx_builder,
             total_shielded_receivers,
