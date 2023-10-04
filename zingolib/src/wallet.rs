@@ -870,52 +870,28 @@ impl LightWallet {
     async fn select_notes_and_utxos(
         &self,
         target_amount: Amount,
-        policy: NoteSelectionPolicy,
+        policy: &NoteSelectionPolicy,
     ) -> Result<
         (
             Vec<SpendableOrchardNote>,
             Vec<SpendableSaplingNote>,
             Vec<ReceivedTransparentOutput>,
-            Amount,
+            u64,
         ),
-        Amount,
+        u64,
     > {
-        let mut transparent_value_selected = Amount::zero();
-        let mut utxos = Vec::new();
+        let mut all_transparent_value_in_wallet = Amount::zero();
+        let mut utxos = Vec::new(); //utxo stands for Unspent Transaction Output
         let mut sapling_value_selected = Amount::zero();
         let mut sapling_notes = Vec::new();
         let mut orchard_value_selected = Amount::zero();
         let mut orchard_notes = Vec::new();
+        // Correctness of this loop depends on:
+        //    * uniqueness
         for pool in policy {
             match pool {
-                Pool::Sapling => {
-                    let sapling_candidates = self
-                        .get_all_domain_specific_notes::<SaplingDomain<zingoconfig::ChainType>>()
-                        .await
-                        .into_iter()
-                        .filter(|x| x.spend_key().is_some())
-                        .collect();
-                    (sapling_notes, sapling_value_selected) =
-                        Self::add_notes_to_total::<SaplingDomain<zingoconfig::ChainType>>(
-                            sapling_candidates,
-                            (target_amount - orchard_value_selected - transparent_value_selected)
-                                .unwrap(),
-                        );
-                }
-                Pool::Orchard => {
-                    let orchard_candidates = self
-                        .get_all_domain_specific_notes::<OrchardDomain>()
-                        .await
-                        .into_iter()
-                        .filter(|x| x.spend_key().is_some())
-                        .collect();
-                    (orchard_notes, orchard_value_selected) =
-                        Self::add_notes_to_total::<OrchardDomain>(
-                            orchard_candidates,
-                            (target_amount - transparent_value_selected - sapling_value_selected)
-                                .unwrap(),
-                        );
-                }
+                // Transparent: This opportunistic shielding sweeps all transparent value leaking identifying information to
+                // a funder of the wallet's transparent value. We should change this.
                 Pool::Transparent => {
                     utxos = self
                         .get_utxos()
@@ -924,13 +900,44 @@ impl LightWallet {
                         .filter(|utxo| utxo.unconfirmed_spent.is_none() && utxo.spent.is_none())
                         .cloned()
                         .collect::<Vec<_>>();
-                    transparent_value_selected = utxos.iter().fold(Amount::zero(), |prev, utxo| {
-                        (prev + Amount::from_u64(utxo.value).unwrap()).unwrap()
-                    });
+                    all_transparent_value_in_wallet =
+                        utxos.iter().fold(Amount::zero(), |prev, utxo| {
+                            (prev + Amount::from_u64(utxo.value).unwrap()).unwrap()
+                        });
+                }
+                Pool::Sapling => {
+                    let sapling_candidates = self
+                        .get_all_domain_specific_notes::<SaplingDomain<zingoconfig::ChainType>>()
+                        .await
+                        .into_iter()
+                        .filter(|note| note.spend_key().is_some())
+                        .collect();
+                    (sapling_notes, sapling_value_selected) = Self::add_notes_to_total::<
+                        SaplingDomain<zingoconfig::ChainType>,
+                    >(
+                        sapling_candidates,
+                        (target_amount - orchard_value_selected - all_transparent_value_in_wallet)
+                            .unwrap(),
+                    );
+                }
+                Pool::Orchard => {
+                    let orchard_candidates = self
+                        .get_all_domain_specific_notes::<OrchardDomain>()
+                        .await
+                        .into_iter()
+                        .filter(|note| note.spend_key().is_some())
+                        .collect();
+                    (orchard_notes, orchard_value_selected) = Self::add_notes_to_total::<
+                        OrchardDomain,
+                    >(
+                        orchard_candidates,
+                        (target_amount - all_transparent_value_in_wallet - sapling_value_selected)
+                            .unwrap(),
+                    );
                 }
             }
             // Check how much we've selected
-            if (transparent_value_selected + sapling_value_selected + orchard_value_selected)
+            if (all_transparent_value_in_wallet + sapling_value_selected + orchard_value_selected)
                 .unwrap()
                 >= target_amount
             {
@@ -938,14 +945,21 @@ impl LightWallet {
                     orchard_notes,
                     sapling_notes,
                     utxos,
-                    (transparent_value_selected + sapling_value_selected + orchard_value_selected)
-                        .unwrap(),
+                    u64::from(
+                        (all_transparent_value_in_wallet
+                            + sapling_value_selected
+                            + orchard_value_selected)
+                            .unwrap(),
+                    ),
                 ));
             }
         }
 
         // If we can't select enough, then we need to return empty handed
-        Err((transparent_value_selected + sapling_value_selected + orchard_value_selected).unwrap())
+        Err(u64::from(
+            (all_transparent_value_in_wallet + sapling_value_selected + orchard_value_selected)
+                .unwrap(),
+        ))
     }
 
     pub async fn send_to_addresses<F, Fut, P: TxProver>(
@@ -1139,15 +1153,15 @@ impl LightWallet {
             };
 
             if let Err(e) = match recipient_address {
+                address::RecipientAddress::Transparent(to) => tx_builder
+                    .add_transparent_output(&to, value)
+                    .map_err(transaction::builder::Error::TransparentBuild),
                 address::RecipientAddress::Shielded(to) => {
                     total_shielded_receivers += 1;
                     tx_builder
                         .add_sapling_output(Some(sapling_ovk), to, value, validated_memo)
                         .map_err(transaction::builder::Error::SaplingBuild)
                 }
-                address::RecipientAddress::Transparent(to) => tx_builder
-                    .add_transparent_output(&to, value)
-                    .map_err(transaction::builder::Error::TransparentBuild),
                 address::RecipientAddress::Unified(ua) => {
                     if let Some(orchard_addr) = ua.orchard() {
                         total_shielded_receivers += 1;
@@ -1242,86 +1256,110 @@ impl LightWallet {
         ),
         String,
     > {
-        // Start building tx
-        let tx_builder = self
-            .create_tx_builder(submission_height, witness_trees)
-            .await
-            .expect("To populate a builder with notes.");
-
-        // Select notes to cover the target value
-        info!("{}: Adding outputs", now() - start_time);
-        let (mut total_shielded_receivers, tx_builder) = self
-            .add_consumer_specified_outputs_to_builder(tx_builder, receivers.clone())
-            .expect("To add outputs");
-
-        let total_earmarked_for_recipients = receivers.iter().map(|to| u64::from(to.1)).sum();
+        let fee_rule =
+            &zcash_primitives::transaction::fees::fixed::FeeRule::non_standard(MINIMUM_FEE); // Start building tx
+        let mut total_shielded_receivers;
+        let mut orchard_notes;
+        let mut sapling_notes;
+        let mut utxos;
+        let mut tx_builder;
+        let mut proposed_fee = MINIMUM_FEE;
+        let mut total_value_covered_by_selected;
+        let total_earmarked_for_recipients: u64 = receivers.iter().map(|to| u64::from(to.1)).sum();
         info!(
             "0: Creating transaction sending {} zatoshis to {} addresses",
             total_earmarked_for_recipients,
             receivers.len()
         );
+        loop {
+            tx_builder = self
+                .create_tx_builder(submission_height, witness_trees)
+                .await
+                .expect("To populate a builder with notes.");
 
-        let earmark_total_plus_default_fee =
-            (Amount::from_u64(total_earmarked_for_recipients).unwrap() + MINIMUM_FEE).unwrap();
-        // Select notes as a fn of target anount
-        let (orchard_notes, sapling_notes, utxos, selected_value) = match self
-            .select_notes_and_utxos(earmark_total_plus_default_fee, policy)
-            .await
-        {
-            Ok(notes) => notes,
-            Err(insufficient_amount) => {
-                let e = format!(
-                "Insufficient verified shielded funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes.",
-                u64::from(insufficient_amount), u64::from(earmark_total_plus_default_fee), self.transaction_context.config
-                .reorg_buffer_offset + 1
-            );
-                error!("{}", e);
-                return Err(e);
-            }
-        };
+            // Select notes to cover the target value
+            info!("{}: Adding outputs", now() - start_time);
+            (total_shielded_receivers, tx_builder) = self
+                .add_consumer_specified_outputs_to_builder(tx_builder, receivers.clone())
+                .expect("To add outputs");
 
-        info!("Selected notes worth {}", u64::from(selected_value));
-
-        info!(
-            "{}: Adding {} sapling notes, {} orchard notes, and {} utxos",
-            now() - start_time,
-            &sapling_notes.len(),
-            &orchard_notes.len(),
-            &utxos.len()
-        );
-
-        let tx_builder = match self.add_change_output_to_builder(
-            tx_builder,
-            earmark_total_plus_default_fee,
-            selected_value,
-            &mut total_shielded_receivers,
-            &receivers,
-        ) {
-            Ok(txb) => txb,
-            Err(r) => {
-                return Err(r);
-            }
-        };
-        info!("{}: selecting notes", now() - start_time);
-        match self
-            .add_spends_to_builder(
-                tx_builder,
-                witness_trees,
-                &orchard_notes,
-                &sapling_notes,
-                &utxos,
-            )
-            .await
-        {
-            Ok(tx_builder) => Ok((
-                tx_builder,
-                total_shielded_receivers,
+            let earmark_total_plus_default_fee =
+                (Amount::from_u64(total_earmarked_for_recipients).unwrap() + proposed_fee).unwrap();
+            // Select notes as a fn of target anount
+            (
                 orchard_notes,
                 sapling_notes,
                 utxos,
-            )),
-            Err(s) => Err(s),
+                total_value_covered_by_selected,
+            ) = match self
+                .select_notes_and_utxos(earmark_total_plus_default_fee, &policy)
+                .await
+            {
+                Ok(notes) => notes,
+                Err(insufficient_amount) => {
+                    let e = format!(
+                "Insufficient verified shielded funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes.",
+                insufficient_amount, u64::from(earmark_total_plus_default_fee), self.transaction_context.config
+                .reorg_buffer_offset + 1
+            );
+                    error!("{}", e);
+                    return Err(e);
+                }
+            };
+
+            info!("Selected notes worth {}", total_value_covered_by_selected);
+
+            info!(
+                "{}: Adding {} sapling notes, {} orchard notes, and {} utxos",
+                now() - start_time,
+                &sapling_notes.len(),
+                &orchard_notes.len(),
+                &utxos.len()
+            );
+
+            let temp_tx_builder = match self.add_change_output_to_builder(
+                tx_builder,
+                earmark_total_plus_default_fee,
+                Amount::from_u64(total_value_covered_by_selected).unwrap(),
+                &mut total_shielded_receivers,
+                &receivers,
+            ) {
+                Ok(txb) => txb,
+                Err(r) => {
+                    return Err(r);
+                }
+            };
+            info!("{}: selecting notes", now() - start_time);
+            tx_builder = match self
+                .add_spends_to_builder(
+                    temp_tx_builder,
+                    witness_trees,
+                    &orchard_notes,
+                    &sapling_notes,
+                    &utxos,
+                )
+                .await
+            {
+                Ok(tx_builder) => tx_builder,
+
+                Err(s) => {
+                    return Err(s);
+                }
+            };
+            proposed_fee = dbg!(tx_builder.get_fee(fee_rule).unwrap());
+            if u64::from(proposed_fee) + total_earmarked_for_recipients
+                <= total_value_covered_by_selected
+            {
+                break;
+            }
         }
+        Ok((
+            tx_builder,
+            total_shielded_receivers,
+            orchard_notes,
+            sapling_notes,
+            utxos,
+        ))
     }
 
     async fn create_publication_ready_transaction<P: TxProver>(
