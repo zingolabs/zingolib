@@ -117,7 +117,7 @@ pub async fn send_value_between_clients_and_sync(
         )])
         .await
         .unwrap();
-    increase_height_and_sync_client(manager, sender, 1).await?;
+    increase_height_and_wait_for_client(manager, sender, 1).await?;
     recipient.do_sync(false).await?;
     Ok(txid)
 }
@@ -126,48 +126,38 @@ pub async fn send_value_between_clients_and_sync(
 // it _also_ ensures that the client state is synced.
 // Unsynced clients are very interesting to us.  See increate_server_height
 // to reliably increase the server without syncing the client
-pub async fn increase_height_and_sync_client(
+pub async fn increase_height_and_wait_for_client(
     manager: &RegtestManager,
     client: &LightClient,
     n: u32,
 ) -> Result<(), String> {
-    let start_height = json::parse(
-        std::str::from_utf8(
-            &manager
-                .get_cli_handle()
-                .arg("getblockchaininfo")
-                .output()
-                .unwrap()
-                .stdout,
-        )
-        .unwrap(),
+    wait_until_client_reaches_block_height(
+        client,
+        generate_n_blocks_return_new_height(manager, n)
+            .await
+            .expect("should find target height"),
     )
-    .unwrap()["blocks"]
-        .as_u32()
-        .unwrap();
+    .await
+}
+pub async fn generate_n_blocks_return_new_height(
+    manager: &RegtestManager,
+    n: u32,
+) -> Result<u32, String> {
+    let start_height = manager.get_current_height().unwrap();
     dbg!(&start_height);
     let target = start_height + n;
     manager
         .generate_n_blocks(n)
         .expect("Called for side effect, failed!");
-    assert_eq!(
-        json::parse(
-            std::str::from_utf8(
-                &manager
-                    .get_cli_handle()
-                    .arg("getblockchaininfo")
-                    .output()
-                    .unwrap()
-                    .stdout,
-            )
-            .unwrap(),
-        )
-        .unwrap()["blocks"]
-            .as_u32()
-            .unwrap(),
-        target
-    );
-    while check_wallet_chainheight_value(client, target).await? {
+    assert_eq!(manager.get_current_height().unwrap(), target);
+    Ok(target)
+}
+///will hang if RegtestManager does not reach target_block_height
+pub async fn wait_until_client_reaches_block_height(
+    client: &LightClient,
+    target_block_height: u32,
+) -> Result<(), String> {
+    while check_wallet_chainheight_value(client, target_block_height).await? {
         sleep(Duration::from_millis(50)).await;
     }
     Ok(())
@@ -248,7 +238,7 @@ pub mod scenarios {
     use super::regtest::{ChildProcessHandler, RegtestManager};
     use crate::{
         data::{self, seeds::HOSPITAL_MUSEUM_SEED, REGSAP_ADDR_FROM_ABANDONART},
-        increase_height_and_sync_client, BASE_HEIGHT,
+        increase_height_and_wait_for_client, BASE_HEIGHT,
     };
 
     use zingolib::{get_base_address, lightclient::LightClient};
@@ -561,7 +551,7 @@ pub mod scenarios {
         )
     }
 
-    pub async fn faucet_prefunded_orchard_recipient(
+    pub async fn two_wallet_one_synced_orchard_transaction(
         value: u64,
     ) -> (
         RegtestManager,
@@ -571,9 +561,10 @@ pub mod scenarios {
         String,
     ) {
         dbg!("0 About to create faucet_recipient.");
-        let (regtest_manager, child_process_handler, faucet, recipient) = faucet_recipient().await;
+        let (regtest_manager, child_process_handler, faucet, recipient) =
+            two_wallet_one_miner_fund().await;
         dbg!("1 About to increase height and sync faucet.");
-        increase_height_and_sync_client(&regtest_manager, &faucet, 1)
+        increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
         dbg!("2 faucet synced.");
@@ -586,7 +577,7 @@ pub mod scenarios {
             .await
             .unwrap();
         dbg!("3 faucet send complete");
-        increase_height_and_sync_client(&regtest_manager, &recipient, 1)
+        increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
         dbg!("4 recipient increased and synced.");
@@ -601,7 +592,7 @@ pub mod scenarios {
         )
     }
 
-    pub async fn faucet_recipient() -> (
+    pub async fn two_wallet_one_miner_fund() -> (
         RegtestManager,
         ChildProcessHandler,
         LightClient,
@@ -700,7 +691,7 @@ pub mod scenarios {
             .client_builder
             .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
             .await;
-        increase_height_and_sync_client(&scenario_builder.regtest_manager, &faucet, 1)
+        increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &faucet, 1)
             .await
             .unwrap();
         // received from a faucet
@@ -712,7 +703,7 @@ pub mod scenarios {
             )])
             .await
             .unwrap();
-        increase_height_and_sync_client(&scenario_builder.regtest_manager, &recipient, 1)
+        increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &recipient, 1)
             .await
             .unwrap();
         // send to a faucet
@@ -724,7 +715,7 @@ pub mod scenarios {
             )])
             .await
             .unwrap();
-        increase_height_and_sync_client(&scenario_builder.regtest_manager, &recipient, 1)
+        increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &recipient, 1)
             .await
             .unwrap();
         // send to self sapling
