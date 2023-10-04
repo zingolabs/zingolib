@@ -41,7 +41,7 @@ impl TransactionMetadataSet {
         22
     }
 
-    pub fn get_fee_by_txid(&self, txid: &TxId) -> u64 {
+    pub fn get_fee_by_txid(&self, txid: &TxId) -> Option<u64> {
         self.current
             .get(txid)
             .expect("To have the requested txid")
@@ -469,8 +469,12 @@ impl TransactionMetadataSet {
     fn mark_notes_as_change_for_pool<Note: ReceivedNoteAndMetadata>(notes: &mut [Note]) {
         notes.iter_mut().for_each(|n| {
             *n.is_change_mut() = match n.memo() {
-                Some(Memo::Text(_)) => false,
-                Some(Memo::Empty | Memo::Arbitrary(_) | Memo::Future(_)) | None => true,
+                Some(Memo::Arbitrary(arb_memo))
+                    if zingo_memo::parse_zingo_memo(**arb_memo).is_ok() =>
+                {
+                    true
+                }
+                _ => false,
             }
         });
     }

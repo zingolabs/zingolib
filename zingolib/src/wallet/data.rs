@@ -944,8 +944,13 @@ impl TransactionMetadata {
         }
     }
 
-    pub fn get_transaction_fee(&self) -> u64 {
-        self.total_value_spent() - (self.value_outgoing() + self.total_change_returned())
+    /// Returns Some(fee) for outgoing transactions, and None for non-outgoing
+    pub fn get_transaction_fee(&self) -> Option<u64> {
+        if self.is_outgoing_transaction() {
+            Some(self.total_value_spent() - self.total_value_received())
+        } else {
+            None
+        }
     }
 
     // TODO: This is incorrect in the edge case where where we have a send-to-self with

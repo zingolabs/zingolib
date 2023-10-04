@@ -824,13 +824,12 @@ impl LightClient {
             .iter()
         {
             LightClient::tx_summary_matcher(&mut summaries, *txid, transaction_md);
-            let tx_fee = transaction_md.get_transaction_fee();
-            let (block_height, datetime, price) = (
-                transaction_md.block_height,
-                transaction_md.datetime,
-                transaction_md.price,
-            );
-            if transaction_md.is_outgoing_transaction() {
+            if let Some(tx_fee) = transaction_md.get_transaction_fee() {
+                let (block_height, datetime, price) = (
+                    transaction_md.block_height,
+                    transaction_md.datetime,
+                    transaction_md.price,
+                );
                 summaries.push(ValueTransfer {
                     block_height,
                     datetime,
