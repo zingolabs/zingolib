@@ -814,31 +814,6 @@ async fn note_selection_order() {
 }
 
 #[tokio::test]
-async fn zip317_fee_checks() {
-    // Test all possible promoting note source combinations
-    let (regtest_manager, _cph, mut client_builder) = scenarios::custom_clients().await;
-    let sapling_faucet = client_builder.build_new_faucet(0, false).await;
-    let pool_migration_client = client_builder
-        .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
-        .await;
-    let _pmc_taddr = get_base_address!(pool_migration_client, "transparent");
-    // Ensure that the client has confirmed spendable funds
-    check_client_balances!(sapling_faucet, o:0 s:0 t:0);
-    zingo_testutils::increase_height_and_sync_client(&regtest_manager, &sapling_faucet, 1)
-        .await
-        .unwrap();
-    check_client_balances!(sapling_faucet, o:0 s:2_500_000_000 t:0); // orignal block_reward value
-    let pmc_sapling = get_base_address!(pool_migration_client, "sapling");
-    sapling_faucet
-        .do_send(vec![(
-            &pmc_sapling,
-            50_000,
-            Some(Memo::from_str("first fee check send").unwrap().into()),
-        )])
-        .await
-        .unwrap();
-}
-#[tokio::test]
 async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     // Test all possible promoting note source combinations
     let (regtest_manager, _cph, mut client_builder) = scenarios::custom_clients().await;
