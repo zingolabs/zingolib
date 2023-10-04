@@ -325,7 +325,7 @@ impl TrialDecryptions {
                         let have_spending_key = true;
                         let uri = bsync_data.read().await.uri().clone();
 
-                        // Get NU activation heights from zingoconfig for regtest
+                        // Get network upgrade activation height
                         let activation_height: BlockHeight = match config.chain {
                             ChainType::Regtest => match D::NU {
                                 NetworkUpgrade::Overwinter => BlockHeight::from_u32(1),

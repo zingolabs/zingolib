@@ -398,7 +398,7 @@ pub mod scenarios {
             }
             pub fn make_unique_data_dir_and_load_config(
                 &mut self,
-                orchard_activation_height: zcash_primitives::consensus::BlockHeight,
+                orchard_activation_height: BlockHeight,
             ) -> zingoconfig::ZingoConfig {
                 //! Each client requires a unique data_dir, we use the
                 //! client_number counter for this.
@@ -413,7 +413,7 @@ pub mod scenarios {
             pub fn create_clientconfig(
                 &self,
                 conf_path: PathBuf,
-                orchard_activation_height: zcash_primitives::consensus::BlockHeight,
+                orchard_activation_height: BlockHeight,
             ) -> zingoconfig::ZingoConfig {
                 std::fs::create_dir(&conf_path).unwrap();
                 zingolib::load_clientconfig(
@@ -430,7 +430,7 @@ pub mod scenarios {
                 &mut self,
                 birthday: u64,
                 overwrite: bool,
-                orchard_activation_height: zcash_primitives::consensus::BlockHeight,
+                orchard_activation_height: BlockHeight,
             ) -> LightClient {
                 //! A "faucet" is a lightclient that receives mining rewards
                 let zingo_config =
@@ -449,7 +449,7 @@ pub mod scenarios {
                 mnemonic_phrase: String,
                 birthday: u64,
                 overwrite: bool,
-                orchard_activation_height: zcash_primitives::consensus::BlockHeight,
+                orchard_activation_height: BlockHeight,
             ) -> LightClient {
                 let zingo_config =
                     self.make_unique_data_dir_and_load_config(orchard_activation_height);

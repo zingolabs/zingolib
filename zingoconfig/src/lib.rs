@@ -68,7 +68,7 @@ pub struct ZingoConfig {
     pub wallet_name: PathBuf,
     /// The filename of the logfile. This will be created in the `wallet_dir`.
     pub logfile_name: PathBuf,
-    pub regtest_orchard_activation_height: Option<zcash_primitives::consensus::BlockHeight>,
+    pub regtest_orchard_activation_height: Option<BlockHeight>,
 }
 
 impl ZingoConfig {
@@ -366,7 +366,7 @@ impl Parameters for ChainType {
         match self {
             Mainnet => MAIN_NETWORK.activation_height(nu),
             Testnet => TEST_NETWORK.activation_height(nu),
-            Regtest => None,
+            Regtest => Some(BlockHeight::from_u32(1)),
             FakeMainnet => Some(BlockHeight::from_u32(1)),
         }
     }
