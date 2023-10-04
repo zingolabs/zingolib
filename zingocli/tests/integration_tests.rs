@@ -3231,10 +3231,10 @@ async fn sends_to_self_handle_balance_properly() {
 }
 
 //fluid vanadiums first test
-#[tokio::test]
-async fn complex_wallet_txsummaries() {
-    let (ref regtest_manager, _cph, ref faucet, ref recipient, _txid) =
-        scenarios::two_wallet_one_synced_orchard_transaction(10_000_000).await;
-}
+// #[tokio::test]
+// async fn complex_wallet_txsummaries() {
+//     let (ref regtest_manager, _cph, ref faucet, ref recipient, _txid) =
+//         scenarios::two_wallet_one_synced_orchard_transaction(10_000_000).await;
+// }
 
 pub const TEST_SEED: &str = "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise";
