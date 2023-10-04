@@ -1299,7 +1299,7 @@ impl LightWallet {
                 Err(insufficient_amount) => {
                     let e = format!(
                 "Insufficient verified shielded funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes.",
-                u64::from(insufficient_amount), u64::from(earmark_total_plus_default_fee), self.transaction_context.config
+                insufficient_amount, u64::from(earmark_total_plus_default_fee), self.transaction_context.config
                 .reorg_buffer_offset + 1
             );
                     error!("{}", e);
@@ -1307,10 +1307,7 @@ impl LightWallet {
                 }
             };
 
-            info!(
-                "Selected notes worth {}",
-                u64::from(total_value_covered_by_selected)
-            );
+            info!("Selected notes worth {}", total_value_covered_by_selected);
 
             info!(
                 "{}: Adding {} sapling notes, {} orchard notes, and {} utxos",

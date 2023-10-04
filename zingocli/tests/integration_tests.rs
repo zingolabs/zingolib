@@ -821,7 +821,7 @@ async fn zip317_fee_checks() {
     let pool_migration_client = client_builder
         .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
         .await;
-    let pmc_taddr = get_base_address!(pool_migration_client, "transparent");
+    let _pmc_taddr = get_base_address!(pool_migration_client, "transparent");
     // Ensure that the client has confirmed spendable funds
     check_client_balances!(sapling_faucet, o:0 s:0 t:0);
     zingo_testutils::increase_height_and_sync_client(&regtest_manager, &sapling_faucet, 1)
