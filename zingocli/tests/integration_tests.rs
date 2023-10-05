@@ -5,7 +5,9 @@ use orchard::tree::MerkleHashOrchard;
 use shardtree::store::memory::MemoryShardStore;
 use shardtree::ShardTree;
 use std::{fs::File, path::Path, str::FromStr};
-use zingo_testutils::{self, build_fvk_client, data, increase_height_and_sync_client, BASE_HEIGHT};
+use zingo_testutils::{
+    self, build_fvk_client, data, increase_height_and_wait_for_client, BASE_HEIGHT,
+};
 
 use bip0039::Mnemonic;
 use data::seeds::HOSPITAL_MUSEUM_SEED;
@@ -3295,7 +3297,7 @@ async fn sends_to_self_handle_balance_properly() {
 async fn sync_pre_orchard_epoch() {
     let (regtest_manager, _cph, lightclient) =
         scenarios::basic_no_spendable(BlockHeight::from_u32(10)).await;
-    if let Err(e) = increase_height_and_sync_client(&regtest_manager, &lightclient, 15).await {
+    if let Err(e) = increase_height_and_wait_for_client(&regtest_manager, &lightclient, 15).await {
         panic!("Sync error: {e}")
     }
 }
