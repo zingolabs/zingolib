@@ -791,7 +791,7 @@ pub mod scenarios {
             )])
             .await
             .unwrap();
-        increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &faucet, 1)
+        increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &recipient, 1)
             .await
             .unwrap();
         // send to a faucet
