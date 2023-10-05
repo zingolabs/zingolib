@@ -767,7 +767,7 @@ pub mod scenarios {
             )])
             .await
             .unwrap();
-        increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &recipient, 1)
+        increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &faucet, 1)
             .await
             .unwrap();
         // received from a faucet to sapling
@@ -779,7 +779,7 @@ pub mod scenarios {
             )])
             .await
             .unwrap();
-        increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &recipient, 1)
+        increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &faucet, 1)
             .await
             .unwrap();
         // received from a faucet to transparent
@@ -791,7 +791,7 @@ pub mod scenarios {
             )])
             .await
             .unwrap();
-        increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &recipient, 1)
+        increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &faucet, 1)
             .await
             .unwrap();
         // send to a faucet
@@ -855,7 +855,7 @@ pub mod scenarios {
         // end
         scenario_builder
             .regtest_manager
-            .generate_n_blocks(4)
+            .generate_n_blocks(1)
             .expect("Failed to generate blocks.");
         (
             scenario_builder.regtest_manager,
