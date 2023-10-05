@@ -240,6 +240,7 @@ pub mod scenarios {
         data::{self, seeds::HOSPITAL_MUSEUM_SEED, REGSAP_ADDR_FROM_ABANDONART},
         increase_height_and_wait_for_client, BASE_HEIGHT,
     };
+    use zingolib::wallet::Pool;
 
     use zingolib::{get_base_address, lightclient::LightClient};
 
