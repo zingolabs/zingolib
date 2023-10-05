@@ -240,6 +240,7 @@ pub mod scenarios {
         data::{self, seeds::HOSPITAL_MUSEUM_SEED, REGSAP_ADDR_FROM_ABANDONART},
         increase_height_and_wait_for_client, BASE_HEIGHT,
     };
+    use zingolib::wallet::Pool;
 
     use zingolib::{get_base_address, lightclient::LightClient};
 
@@ -730,6 +731,131 @@ pub mod scenarios {
         scenario_builder
             .regtest_manager
             .generate_n_blocks(4)
+            .expect("Failed to generate blocks.");
+        (
+            scenario_builder.regtest_manager,
+            scenario_builder.child_process_handler.unwrap(),
+        )
+    }
+
+    pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
+        value: u64,
+    ) -> (RegtestManager, ChildProcessHandler) {
+        let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
+            Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
+            None,
+            Some(20_000),
+        )
+        .await;
+        let faucet = scenario_builder
+            .client_builder
+            .build_new_faucet(0, false)
+            .await;
+        let recipient = scenario_builder
+            .client_builder
+            .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
+            .await;
+        increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &faucet, 1)
+            .await
+            .unwrap();
+        // received from a faucet to orchard
+        faucet
+            .do_send(vec![(
+                &get_base_address!(recipient, "unified"),
+                value.checked_div(2).unwrap(),
+                None,
+            )])
+            .await
+            .unwrap();
+        increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &faucet, 1)
+            .await
+            .unwrap();
+        // received from a faucet to sapling
+        faucet
+            .do_send(vec![(
+                &get_base_address!(recipient, "sapling"),
+                value.checked_div(4).unwrap(),
+                None,
+            )])
+            .await
+            .unwrap();
+        increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &faucet, 1)
+            .await
+            .unwrap();
+        // received from a faucet to transparent
+        faucet
+            .do_send(vec![(
+                &get_base_address!(recipient, "transparent"),
+                value.checked_div(4).unwrap(),
+                None,
+            )])
+            .await
+            .unwrap();
+        increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+        // send to a faucet
+        recipient
+            .do_send(vec![(
+                &get_base_address!(faucet, "unified"),
+                value.checked_div(10).unwrap(),
+                None,
+            )])
+            .await
+            .unwrap();
+        increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+        // send to self orchard
+        recipient
+            .do_send(vec![(
+                &get_base_address!(recipient, "unified"),
+                value.checked_div(10).unwrap(),
+                None,
+            )])
+            .await
+            .unwrap();
+        increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+        // send to self sapling
+        recipient
+            .do_send(vec![(
+                &get_base_address!(recipient, "sapling"),
+                value.checked_div(10).unwrap(),
+                None,
+            )])
+            .await
+            .unwrap();
+        increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+        // send to self transparent
+        recipient
+            .do_send(vec![(
+                &get_base_address!(recipient, "transparent"),
+                value.checked_div(10).unwrap(),
+                None,
+            )])
+            .await
+            .unwrap();
+        increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+        // shield transparent
+        recipient
+            .do_shield(&[Pool::Transparent], None)
+            .await
+            .unwrap();
+        increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+        // upgrade sapling
+        recipient.do_shield(&[Pool::Sapling], None).await.unwrap();
+        // end
+        scenario_builder
+            .regtest_manager
+            .generate_n_blocks(1)
             .expect("Failed to generate blocks.");
         (
             scenario_builder.regtest_manager,
