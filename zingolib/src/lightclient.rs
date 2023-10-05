@@ -1,7 +1,7 @@
 use crate::{
     blaze::{
-        block_witness_data::BlockAndWitnessData, fetch_compact_blocks::FetchCompactBlocks,
-        fetch_full_transaction::TransactionContext,
+        block_management_reorg_detection::BlockManagementData,
+        fetch_compact_blocks::FetchCompactBlocks, fetch_full_transaction::TransactionContext,
         fetch_taddr_transactions::FetchTaddrTransactions, sync_status::BatchSyncStatus,
         syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions, update_notes::UpdateNotes,
     },
@@ -108,6 +108,49 @@ impl WalletStatus {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct LightWalletSendProgress {
+    pub progress: SendProgress,
+    pub interrupt_sync: bool,
+}
+
+impl LightWalletSendProgress {
+    pub fn to_json(&self) -> JsonValue {
+        object! {
+            "id" => self.progress.id,
+            "sending" => self.progress.is_send_in_progress,
+            "progress" => self.progress.progress,
+            "total" => self.progress.total,
+            "txid" => self.progress.last_transaction_id.clone(),
+            "error" => self.progress.last_error.clone(),
+            "sync_interrupt" => self.interrupt_sync
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct PoolBalances {
+    pub sapling_balance: Option<u64>,
+    pub verified_sapling_balance: Option<u64>,
+    pub spendable_sapling_balance: Option<u64>,
+    pub unverified_sapling_balance: Option<u64>,
+
+    pub orchard_balance: Option<u64>,
+    pub verified_orchard_balance: Option<u64>,
+    pub unverified_orchard_balance: Option<u64>,
+    pub spendable_orchard_balance: Option<u64>,
+
+    pub transparent_balance: Option<u64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct AccountBackupInfo {
+    #[serde(rename = "seed")]
+    pub seed_phrase: String,
+    pub birthday: u64,
+    pub account_index: u32,
+}
+
 pub struct LightClient {
     pub(crate) config: ZingoConfig,
     pub wallet: LightWallet,
@@ -132,6 +175,7 @@ impl LightClient {
     }
     /// The wallet this fn associates with the lightclient is specifically derived from
     /// a spend authority.
+    /// this pubfn is consumed in zingocli, zingo-mobile, and ZingoPC
     pub fn create_from_wallet_base(
         wallet_base: WalletBase,
         config: &ZingoConfig,
@@ -297,52 +341,7 @@ impl LightClient {
             trees.add_checkpoint(BlockHeight::from(last_synced_height as u32));
         }
     }
-}
 
-#[derive(Debug, Clone)]
-pub struct LightWalletSendProgress {
-    pub progress: SendProgress,
-    pub interrupt_sync: bool,
-}
-
-impl LightWalletSendProgress {
-    pub fn to_json(&self) -> JsonValue {
-        object! {
-            "id" => self.progress.id,
-            "sending" => self.progress.is_send_in_progress,
-            "progress" => self.progress.progress,
-            "total" => self.progress.total,
-            "txid" => self.progress.last_transaction_id.clone(),
-            "error" => self.progress.last_error.clone(),
-            "sync_interrupt" => self.interrupt_sync
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct PoolBalances {
-    pub sapling_balance: Option<u64>,
-    pub verified_sapling_balance: Option<u64>,
-    pub spendable_sapling_balance: Option<u64>,
-    pub unverified_sapling_balance: Option<u64>,
-
-    pub orchard_balance: Option<u64>,
-    pub verified_orchard_balance: Option<u64>,
-    pub unverified_orchard_balance: Option<u64>,
-    pub spendable_orchard_balance: Option<u64>,
-
-    pub transparent_balance: Option<u64>,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct AccountBackupInfo {
-    #[serde(rename = "seed")]
-    pub seed_phrase: String,
-    pub birthday: u64,
-    pub account_index: u32,
-}
-
-impl LightClient {
     fn add_nonchange_notes<'a, 'b, 'c>(
         &'a self,
         transaction_metadata: &'b TransactionMetadata,
@@ -1235,7 +1234,10 @@ impl LightClient {
         json::JsonValue::from(self.wallet.last_synced_height().await)
     }
 
-    pub async fn get_initial_state(&self, height: u64) -> Option<(u64, String, String)> {
+    pub async fn download_initial_tree_state_from_lightwalletd(
+        &self,
+        height: u64,
+    ) -> Option<(u64, String, String)> {
         if height <= self.config.sapling_activation_height() {
             return None;
         }
@@ -1405,7 +1407,9 @@ impl LightClient {
     }
 
     pub async fn set_wallet_initial_state(&self, height: u64) {
-        let state = self.get_initial_state(height).await;
+        let state = self
+            .download_initial_tree_state_from_lightwalletd(height)
+            .await;
 
         if let Some((height, hash, tree)) = state {
             debug!("Setting initial state to height {}, tree {}", height, tree);
@@ -1572,7 +1576,7 @@ impl LightClient {
             log::warn!("One block reorg at height {}", last_synced_height);
             // This is a one-block reorg, so pop the last block. Even if there are more blocks to reorg, this is enough
             // to trigger a sync, which will then reorg the remaining blocks
-            BlockAndWitnessData::invalidate_block(
+            BlockManagementData::invalidate_block(
                 last_synced_height,
                 self.wallet.blocks.clone(),
                 self.wallet
@@ -1585,12 +1589,11 @@ impl LightClient {
 
         // Re-read the last scanned height
         let last_scanned_height = self.wallet.last_synced_height().await;
-        let batch_size = 100;
 
         let mut latest_block_batches = vec![];
         let mut prev = last_scanned_height;
         while latest_block_batches.is_empty() || prev != latest_blockid.height {
-            let batch = cmp::min(latest_blockid.height, prev + batch_size);
+            let batch = cmp::min(latest_blockid.height, prev + zingoconfig::BATCH_SIZE);
             prev = batch;
             latest_block_batches.push(batch);
         }
@@ -1677,7 +1680,7 @@ impl LightClient {
             .read()
             .await
             .block_data
-            .start(
+            .handle_reorgs_and_populate_block_mangement_data(
                 start_block,
                 end_block,
                 self.wallet.transactions(),
@@ -1755,7 +1758,13 @@ impl LightClient {
 
         // We wait first for the nodes to be updated. This is where reorgs will be handled, so all the steps done after this phase will
         // assume that the reorgs are done.
-        let earliest_block = block_and_witness_handle.await.unwrap().unwrap();
+        let Some(earliest_block) = block_and_witness_handle.await.unwrap().unwrap() else {
+            return Ok(SyncResult {
+                success: false,
+                latest_block: self.wallet.last_synced_height().await,
+                total_blocks_synced: 0,
+            });
+        };
 
         // 1. Fetch the transparent txns only after reorgs are done.
         let taddr_transactions_handle = FetchTaddrTransactions::new(

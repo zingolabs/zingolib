@@ -3,14 +3,14 @@ use std::sync::Arc;
 use http::Uri;
 use tokio::sync::RwLock;
 
-use super::{block_witness_data::BlockAndWitnessData, sync_status::BatchSyncStatus};
+use super::{block_management_reorg_detection::BlockManagementData, sync_status::BatchSyncStatus};
 use crate::compact_formats::TreeState;
 use crate::wallet::data::BlockData;
 use crate::wallet::WalletOptions;
 use zingoconfig::ZingoConfig;
 
 pub struct BlazeSyncData {
-    pub(crate) block_data: BlockAndWitnessData,
+    pub(crate) block_data: BlockManagementData,
     uri: Arc<std::sync::RwLock<Uri>>,
     pub(crate) wallet_options: WalletOptions,
 }
@@ -21,7 +21,7 @@ impl BlazeSyncData {
 
         Self {
             uri: config.lightwalletd_uri.clone(),
-            block_data: BlockAndWitnessData::new(sync_status),
+            block_data: BlockManagementData::new(sync_status),
             wallet_options: WalletOptions::default(),
         }
     }

@@ -448,4 +448,17 @@ impl RegtestManager {
     pub fn get_zingo_data_dir(&self) -> PathBuf {
         self.zingo_datadir.clone()
     }
+    pub fn get_current_height(&self) -> Result<u32, String> {
+        let wut = self
+            .get_cli_handle()
+            .arg("getblockchaininfo")
+            .output()
+            .unwrap()
+            .stdout;
+        Ok(
+            json::parse(std::str::from_utf8(&wut).unwrap()).unwrap()["blocks"]
+                .as_u32()
+                .unwrap(),
+        )
+    }
 }

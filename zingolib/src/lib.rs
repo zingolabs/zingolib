@@ -10,7 +10,7 @@ pub mod grpc_connector;
 pub mod lightclient;
 pub mod wallet;
 
-pub use blaze::block_witness_data::BATCHSIZE;
+pub use blaze::block_management_reorg_detection::BATCHSIZE;
 
 // This line includes the generated `git_description()` function directly into this scope.
 include!(concat!(env!("OUT_DIR"), "/git_description.rs"));
