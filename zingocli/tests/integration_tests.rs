@@ -106,7 +106,7 @@ async fn dont_write_unconfirmed() {
 #[tokio::test]
 async fn sandblast_filter_preserves_trees() {
     let (ref regtest_manager, _cph, ref faucet, ref recipient, _txid) =
-        scenarios::two_wallet_one_synced_orchard_transaction(100_000).await;
+        scenarios::two_wallet_one_orchard_transaction_synced(100_000).await;
     recipient
         .wallet
         .wallet_options
@@ -205,7 +205,7 @@ async fn list_transactions_include_foreign() {
 async fn send_to_self_with_no_user_specified_memo_does_not_cause_error() {
     tracing_log::LogTracer::init().unwrap();
     let (regtest_manager, _cph, _faucet, recipient, _txid) =
-        scenarios::two_wallet_one_synced_orchard_transaction(100_000).await;
+        scenarios::two_wallet_one_orchard_transaction_synced(100_000).await;
     recipient
         .do_send(vec![(
             &get_base_address!(recipient, "unified"),
@@ -1642,7 +1642,7 @@ async fn mempool_and_balance() {
     let value = 100_000;
 
     let (regtest_manager, _cph, faucet, recipient, _txid) =
-        scenarios::two_wallet_one_synced_orchard_transaction(value).await;
+        scenarios::two_wallet_one_orchard_transaction_synced(value).await;
 
     let bal = recipient.do_balance().await;
     println!("{}", serde_json::to_string_pretty(&bal).unwrap());
@@ -1696,7 +1696,7 @@ async fn mempool_and_balance() {
 async fn witness_clearing() {
     let value: u64 = 100_000;
     let (regtest_manager, _cph, faucet, recipient, txid) =
-        scenarios::two_wallet_one_synced_orchard_transaction(value).await;
+        scenarios::two_wallet_one_orchard_transaction_synced(value).await;
     dbg!(&txid);
     let mut txid_bytes = <[u8; 32]>::try_from(hex::decode(txid).unwrap()).unwrap();
     // TxId byte order is displayed in the reverse order from how it's encoded, for some reason
@@ -1877,7 +1877,7 @@ async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
     }
     let value = 100_000;
     let (regtest_manager, _cph, faucet, recipient, orig_transaction_id) =
-        scenarios::two_wallet_one_synced_orchard_transaction(value).await;
+        scenarios::two_wallet_one_orchard_transaction_synced(value).await;
 
     assert_eq!(
         do_maybe_recent_txid(&recipient).await["last_txid"],
@@ -2412,7 +2412,7 @@ async fn sapling_incoming_sapling_outgoing() {
 async fn aborted_resync() {
     let zvalue = 100_000;
     let (regtest_manager, _cph, faucet, recipient, _txid) =
-        scenarios::two_wallet_one_synced_orchard_transaction(zvalue).await;
+        scenarios::two_wallet_one_orchard_transaction_synced(zvalue).await;
 
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 15)
         .await
@@ -2522,7 +2522,7 @@ async fn zero_value_change() {
     // 2. Send an incoming transaction to fill the wallet
     let value = 100_000;
     let (regtest_manager, _cph, faucet, recipient, _txid) =
-        scenarios::two_wallet_one_synced_orchard_transaction(value).await;
+        scenarios::two_wallet_one_orchard_transaction_synced(value).await;
 
     let sent_value = value - u64::from(MINIMUM_FEE);
     let sent_transaction_id = recipient
@@ -2564,7 +2564,7 @@ async fn zero_value_change() {
 async fn dust_sends_change_correctly() {
     let value = 100_000_000;
     let (regtest_manager, _cph, faucet, recipient, _txid) =
-        scenarios::two_wallet_one_synced_orchard_transaction(value).await;
+        scenarios::two_wallet_one_orchard_transaction_synced(value).await;
 
     // Send of less that transaction fee
     let sent_value = 1000;
@@ -2592,7 +2592,7 @@ async fn dust_sends_change_correctly() {
 async fn zero_value_receipts() {
     let value = 100_000_000;
     let (regtest_manager, _cph, faucet, recipient, _txid) =
-        scenarios::two_wallet_one_synced_orchard_transaction(value).await;
+        scenarios::two_wallet_one_orchard_transaction_synced(value).await;
 
     let sent_value = 0;
     let _sent_transaction_id = faucet
@@ -2903,7 +2903,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
     let third_send_to_transparent = 20_000;
 
     let (ref regtest_manager, _cph, faucet, recipient, _txid) =
-        scenarios::two_wallet_one_synced_orchard_transaction(recipient_initial_funds).await;
+        scenarios::two_wallet_one_orchard_transaction_synced(recipient_initial_funds).await;
 
     let expected_transactions = json::parse(
         r#"

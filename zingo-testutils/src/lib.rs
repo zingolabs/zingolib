@@ -552,7 +552,7 @@ pub mod scenarios {
         )
     }
 
-    pub async fn two_wallet_one_synced_orchard_transaction(
+    pub async fn two_wallet_one_orchard_transaction_synced(
         value: u64,
     ) -> (
         RegtestManager,
