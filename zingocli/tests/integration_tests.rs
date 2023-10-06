@@ -18,6 +18,7 @@ use crate::zingo_testutils::check_transaction_equality;
 use tracing_test::traced_test;
 use zcash_address::unified::Fvk;
 use zcash_client_backend::encoding::encode_payment_address;
+use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use zcash_primitives::transaction::fees::zip317::MINIMUM_FEE as TWO_ACTION_FEE;
 use zcash_primitives::{
     consensus::{BlockHeight, Parameters},
@@ -39,7 +40,6 @@ use zingolib::{
         LightWallet, Pool,
     },
 };
-
 #[tokio::test]
 async fn send_without_reorg_buffer_blocks_gives_correct_error() {
     let regtest_network = RegtestNetwork::all_upgrades_active();
@@ -907,11 +907,12 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         .unwrap();
     bump_and_check!(o: 0 s: 0 t: 50_000);
 
+    let shielded_total = 50_000 - u64::from((TWO_ACTION_FEE - MARGINAL_FEE).unwrap()); // Two action for orchard, marginal for transparent
     pool_migration_client
         .do_shield(&[Pool::Transparent], None)
         .await
         .unwrap();
-    bump_and_check!(o: 40_000 s: 0 t: 0);
+    bump_and_check!(o: shielded_total s: 0 t: 0);
 
     // 2 Test of a send from a sapling only client to its own unified address
     sapling_faucet
@@ -1172,7 +1173,8 @@ async fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
                     let balance = faucet.do_balance().await;
                     dbg!(balance.spendable_sapling_balance.unwrap())
                         + dbg!(balance.spendable_orchard_balance.unwrap())
-                } - u64::from(TWO_ACTION_FEE) * 2,
+                } - u64::from(TWO_ACTION_FEE) * 2, // There are two actions per pool (Sapling and Orchard)
+                // the total fee = 5_000 * 4 = 10_000 * 2
                 match memo {
                     Some(memo) => Some(Memo::from_str(memo).unwrap().into()),
                     None => None,
