@@ -1256,8 +1256,7 @@ impl LightWallet {
         ),
         String,
     > {
-        let fee_rule =
-            &zcash_primitives::transaction::fees::fixed::FeeRule::non_standard(MINIMUM_FEE); // Start building tx
+        let fee_rule = &zcash_primitives::transaction::fees::zip317::FeeRule::standard(); // Start building tx
         let mut total_shielded_receivers;
         let mut orchard_notes;
         let mut sapling_notes;
