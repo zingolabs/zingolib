@@ -1521,7 +1521,7 @@ async fn self_send_to_t_displays_as_one_transaction() {
     let (regtest_manager, _cph, faucet, recipient) =
         scenarios::two_wallet_one_miner_fund(regtest_network).await;
     let recipient_unified_address = get_base_address!(recipient, "unified");
-    let sent_value = 50_000;
+    let sent_value = 52_000;
     faucet
         .do_send(vec![(recipient_unified_address.as_str(), sent_value, None)])
         .await
