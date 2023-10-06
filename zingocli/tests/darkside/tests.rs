@@ -20,6 +20,7 @@ use http_body::combinators::UnsyncBoxBody;
 use hyper::{client::HttpConnector, Uri};
 use tonic::Status;
 use tower::{util::BoxCloneService, ServiceExt};
+use zcash_primitives::consensus::BlockHeight;
 
 type UnderlyingService = BoxCloneService<
     http::Request<UnsyncBoxBody<prost::bytes::Bytes, Status>>,
@@ -223,7 +224,7 @@ async fn simple_sync() {
         darkside_handler.darkside_dir.clone(),
         DARKSIDE_SEED,
     )
-    .build_new_faucet(1, true)
+    .build_new_faucet(1, true, BlockHeight::from_u32(1))
     .await;
 
     let result = light_client.do_sync(true).await.unwrap();
@@ -266,7 +267,7 @@ async fn reorg_away_receipt() {
         darkside_handler.darkside_dir.clone(),
         DARKSIDE_SEED,
     )
-    .build_new_faucet(1, true)
+    .build_new_faucet(1, true, BlockHeight::from_u32(1))
     .await;
 
     light_client.do_sync(true).await.unwrap();
@@ -321,12 +322,15 @@ async fn sent_transaction_reorged_into_mempool() {
         darkside_handler.darkside_dir.clone(),
         DARKSIDE_SEED,
     );
-    let light_client = client_manager.build_new_faucet(1, true).await;
+    let light_client = client_manager
+        .build_new_faucet(1, true, BlockHeight::from_u32(1))
+        .await;
     let recipient = client_manager
         .build_newseed_client(
             crate::data::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
             1,
             true,
+            BlockHeight::from_u32(1),
         )
         .await;
 
