@@ -462,3 +462,53 @@ impl RegtestManager {
         )
     }
 }
+
+mod RegtestNetworkUpgrades {
+    use zcash_primitives::consensus::{BlockHeight, NetworkUpgrade};
+
+    pub struct ActivationHeights {
+        overwinter: BlockHeight,
+        sapling: BlockHeight,
+        blossom: BlockHeight,
+        heartwood: BlockHeight,
+        canopy: BlockHeight,
+        orchard: BlockHeight,
+    }
+
+    impl ActivationHeights {
+        pub fn new(
+            overwinter: u32,
+            sapling: u32,
+            blossom: u32,
+            heartwood: u32,
+            canopy: u32,
+            orchard: u32,
+        ) -> Self {
+            ActivationHeights {
+                overwinter: BlockHeight::from_u32(overwinter),
+                sapling: BlockHeight::from_u32(sapling),
+                blossom: BlockHeight::from_u32(blossom),
+                heartwood: BlockHeight::from_u32(heartwood),
+                canopy: BlockHeight::from_u32(canopy),
+                orchard: BlockHeight::from_u32(orchard),
+            }
+        }
+        pub fn all_active() -> Self {
+            Self::new(1, 1, 1, 1, 1, 1)
+        }
+        pub fn set_orchard_only(orchard: u32) -> Self {
+            Self::new(1, 1, 1, 1, 1, orchard)
+        }
+
+        pub fn activation_height(&self, network_upgrade: NetworkUpgrade) -> Option<BlockHeight> {
+            match network_upgrade {
+                NetworkUpgrade::Overwinter => Some(self.overwinter),
+                NetworkUpgrade::Sapling => Some(self.sapling),
+                NetworkUpgrade::Blossom => Some(self.blossom),
+                NetworkUpgrade::Heartwood => Some(self.heartwood),
+                NetworkUpgrade::Canopy => Some(self.canopy),
+                NetworkUpgrade::Nu5 => Some(self.orchard),
+            }
+        }
+    }
+}
