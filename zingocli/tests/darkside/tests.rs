@@ -413,7 +413,7 @@ async fn sent_transaction_reorged_into_mempool() {
         light_client.do_list_transactions().await.pretty(2)
     );
     let loaded_client = LightClient::read_wallet_from_buffer_async(
-        &client_manager.make_unique_data_dir_and_load_config(),
+        &client_manager.make_unique_data_dir_and_load_config(BlockHeight::from_u32(1)),
         light_client.do_save_to_buffer().await.unwrap().as_slice(),
     )
     .await
