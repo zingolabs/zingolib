@@ -1235,7 +1235,7 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
             "created_in_block" =>  4,
             "datetime" =>  0,
             "created_in_txid" => "",
-            "value" =>  14_000,
+            "value" =>  24_000,
             "unconfirmed" =>  false,
             "is_change" =>  false,
             "address" =>  "uregtest1m8un60udl5ac0928aghy4jx6wp59ty7ct4t8ks9udwn8y6fkdmhe6pq0x5huv8v0pprdlq07tclqgl5fzfvvzjf4fatk8cpyktaudmhvjcqufdsfmktgawvne3ksrhs97pf0u8s8f8h",
@@ -1257,7 +1257,7 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
         faucet
             .do_send(vec![(
                 recipient1_diversified_addr[0].as_str().unwrap(),
-                14_000,
+                24_000,
                 Some(Memo::from_str("foo").unwrap().into()),
             )])
             .await
