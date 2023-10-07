@@ -69,7 +69,7 @@ pub struct ZingoConfig {
     pub wallet_name: PathBuf,
     /// The filename of the logfile. This will be created in the `wallet_dir`.
     pub logfile_name: PathBuf,
-    pub regtest_orchard_activation_height: Option<BlockHeight>,
+    pub regtest_network: Option<RegtestNetwork>,
 }
 
 impl ZingoConfig {
@@ -83,14 +83,19 @@ impl ZingoConfig {
             wallet_dir: dir,
             wallet_name: DEFAULT_WALLET_NAME.into(),
             logfile_name: DEFAULT_LOGFILE_NAME.into(),
-            regtest_orchard_activation_height: None,
+            regtest_network: None,
         }
     }
 
     //Convenience wrapper
     pub fn sapling_activation_height(&self) -> u64 {
         match self.chain {
-            ChainType::Regtest => BlockHeight::from_u32(1).into(),
+            ChainType::Regtest => self
+                .regtest_network
+                .expect("zingoconfig has not been initialized with a regtest network")
+                .activation_height(NetworkUpgrade::Sapling)
+                .unwrap()
+                .into(),
             _ => self
                 .chain
                 .activation_height(NetworkUpgrade::Sapling)
@@ -102,8 +107,10 @@ impl ZingoConfig {
     pub fn orchard_activation_height(&self) -> u64 {
         match self.chain {
             ChainType::Regtest => self
-                .regtest_orchard_activation_height
-                .unwrap_or(BlockHeight::from_u32(1))
+                .regtest_network
+                .expect("zingoconfig has not been initialized with a regtest network")
+                .activation_height(NetworkUpgrade::Nu5)
+                .unwrap()
                 .into(),
             _ => self
                 .chain
@@ -422,5 +429,138 @@ impl Parameters for ChainType {
 
     fn address_network(&self) -> Option<zcash_address::Network> {
         Some(self.to_zcash_address_network())
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct RegtestNetwork {
+    activation_heights: ActivationHeights,
+}
+impl RegtestNetwork {
+    pub fn new(
+        overwinter_activation_height: u64,
+        sapling_activation_height: u64,
+        blossom_activation_height: u64,
+        heartwood_activation_height: u64,
+        canopy_activation_height: u64,
+        orchard_activation_height: u64,
+    ) -> Self {
+        Self {
+            activation_heights: ActivationHeights::new(
+                overwinter_activation_height,
+                sapling_activation_height,
+                blossom_activation_height,
+                heartwood_activation_height,
+                canopy_activation_height,
+                orchard_activation_height,
+            ),
+        }
+    }
+    pub fn all_upgrades_active() -> Self {
+        Self {
+            activation_heights: ActivationHeights::new(1, 1, 1, 1, 1, 1),
+        }
+    }
+    pub fn set_orchard_only(orchard_activation_height: u64) -> Self {
+        Self {
+            activation_heights: ActivationHeights::new(1, 1, 1, 1, 1, orchard_activation_height),
+        }
+    }
+}
+impl Parameters for RegtestNetwork {
+    fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
+        match nu {
+            NetworkUpgrade::Overwinter => Some(
+                self.activation_heights
+                    .get_activation_height(NetworkUpgrade::Overwinter),
+            ),
+            NetworkUpgrade::Sapling => Some(
+                self.activation_heights
+                    .get_activation_height(NetworkUpgrade::Sapling),
+            ),
+            NetworkUpgrade::Blossom => Some(
+                self.activation_heights
+                    .get_activation_height(NetworkUpgrade::Blossom),
+            ),
+            NetworkUpgrade::Heartwood => Some(
+                self.activation_heights
+                    .get_activation_height(NetworkUpgrade::Heartwood),
+            ),
+            NetworkUpgrade::Canopy => Some(
+                self.activation_heights
+                    .get_activation_height(NetworkUpgrade::Canopy),
+            ),
+            NetworkUpgrade::Nu5 => Some(
+                self.activation_heights
+                    .get_activation_height(NetworkUpgrade::Nu5),
+            ),
+        }
+    }
+
+    fn coin_type(&self) -> u32 {
+        constants::regtest::COIN_TYPE
+    }
+
+    fn address_network(&self) -> Option<zcash_address::Network> {
+        Some(zcash_address::Network::Regtest)
+    }
+
+    fn hrp_sapling_extended_spending_key(&self) -> &str {
+        constants::regtest::HRP_SAPLING_EXTENDED_SPENDING_KEY
+    }
+
+    fn hrp_sapling_extended_full_viewing_key(&self) -> &str {
+        constants::regtest::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY
+    }
+
+    fn hrp_sapling_payment_address(&self) -> &str {
+        constants::regtest::HRP_SAPLING_PAYMENT_ADDRESS
+    }
+
+    fn b58_pubkey_address_prefix(&self) -> [u8; 2] {
+        constants::regtest::B58_PUBKEY_ADDRESS_PREFIX
+    }
+
+    fn b58_script_address_prefix(&self) -> [u8; 2] {
+        constants::regtest::B58_SCRIPT_ADDRESS_PREFIX
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ActivationHeights {
+    overwinter: BlockHeight,
+    sapling: BlockHeight,
+    blossom: BlockHeight,
+    heartwood: BlockHeight,
+    canopy: BlockHeight,
+    orchard: BlockHeight,
+}
+impl ActivationHeights {
+    pub fn new(
+        overwinter: u64,
+        sapling: u64,
+        blossom: u64,
+        heartwood: u64,
+        canopy: u64,
+        orchard: u64,
+    ) -> Self {
+        Self {
+            overwinter: BlockHeight::from_u32(overwinter as u32),
+            sapling: BlockHeight::from_u32(sapling as u32),
+            blossom: BlockHeight::from_u32(blossom as u32),
+            heartwood: BlockHeight::from_u32(heartwood as u32),
+            canopy: BlockHeight::from_u32(canopy as u32),
+            orchard: BlockHeight::from_u32(orchard as u32),
+        }
+    }
+    pub fn get_activation_height(&self, network_upgrade: NetworkUpgrade) -> BlockHeight {
+        match network_upgrade {
+            NetworkUpgrade::Overwinter => self.overwinter,
+            NetworkUpgrade::Sapling => self.sapling,
+            NetworkUpgrade::Blossom => self.blossom,
+            NetworkUpgrade::Heartwood => self.heartwood,
+            NetworkUpgrade::Canopy => self.canopy,
+            NetworkUpgrade::Nu5 => self.orchard,
+        }
     }
 }

@@ -29,7 +29,7 @@ use tokio::{
 };
 use zcash_note_encryption::Domain;
 use zcash_primitives::{
-    consensus::{BlockHeight, NetworkUpgrade, Parameters},
+    consensus::{BlockHeight, Parameters},
     sapling::{note_encryption::SaplingDomain, SaplingIvk},
     transaction::{Transaction, TxId},
 };
@@ -304,87 +304,83 @@ impl TrialDecryptions {
         let maybe_decrypted_outputs =
             zcash_note_encryption::batch::try_compact_note_decryption(&[ivk], &outputs);
         for maybe_decrypted_output in maybe_decrypted_outputs.into_iter().enumerate() {
-            let (output_num, witnessed) =
-                if let (i, Some(((note, to), _ivk_num))) = maybe_decrypted_output {
-                    *transaction_metadata = true; // i.e. we got metadata
+            let (output_num, witnessed) = if let (i, Some(((note, to), _ivk_num))) =
+                maybe_decrypted_output
+            {
+                *transaction_metadata = true; // i.e. we got metadata
 
-                    let wc = wc.clone();
-                    let bsync_data = bsync_data.clone();
-                    let transaction_metadata_set = transaction_metadata_set.clone();
-                    let detected_transaction_id_sender = detected_transaction_id_sender.clone();
-                    let timestamp = compact_block.time as u64;
-                    let config = config.clone();
+                let wc = wc.clone();
+                let bsync_data = bsync_data.clone();
+                let transaction_metadata_set = transaction_metadata_set.clone();
+                let detected_transaction_id_sender = detected_transaction_id_sender.clone();
+                let timestamp = compact_block.time as u64;
+                let config = config.clone();
 
-                    workers.push(tokio::spawn(async move {
-                        let Ok(fvk) = D::wc_to_fvk(&wc) else {
+                workers.push(tokio::spawn(async move {
+                    let Ok(fvk) = D::wc_to_fvk(&wc) else {
                             // skip any scanning if the wallet doesn't have viewing capability
                             return Ok::<_, String>(());
                         };
 
-                        //TODO: Wrong. We don't have fvk import, all our keys are spending
-                        let have_spending_key = true;
-                        let uri = bsync_data.read().await.uri().clone();
+                    //TODO: Wrong. We don't have fvk import, all our keys are spending
+                    let have_spending_key = true;
+                    let uri = bsync_data.read().await.uri().clone();
 
-                        // Get network upgrade activation height
-                        let activation_height: BlockHeight = match config.chain {
-                            ChainType::Regtest => match D::NU {
-                                NetworkUpgrade::Overwinter => BlockHeight::from_u32(1),
-                                NetworkUpgrade::Sapling => BlockHeight::from_u32(1),
-                                NetworkUpgrade::Blossom => BlockHeight::from_u32(1),
-                                NetworkUpgrade::Heartwood => BlockHeight::from_u32(1),
-                                NetworkUpgrade::Canopy => BlockHeight::from_u32(1),
-                                NetworkUpgrade::Nu5 => config
-                                    .regtest_orchard_activation_height
-                                    .unwrap_or(BlockHeight::from_u32(1)),
-                            },
-                            _ => config.chain.activation_height(D::NU).unwrap(),
-                        };
+                    // Get network upgrade activation height
+                    let activation_height: BlockHeight = match config.chain {
+                        ChainType::Regtest => config
+                            .regtest_network
+                            .expect("zingoconfig has not been initialized with a regtest network")
+                            .activation_height(D::NU)
+                            .unwrap(),
+                        _ => config.chain.activation_height(D::NU).unwrap(),
+                    };
 
-                        // Get the witness for the note
-                        let witness = bsync_data
-                            .read()
-                            .await
-                            .block_data
-                            .get_note_witness::<D>(
-                                uri,
-                                height,
-                                transaction_num,
-                                i,
-                                activation_height.into(),
-                            )
-                            .await?;
-
-                        let spend_nullifier = D::get_nullifier_from_note_fvk_and_witness_position(
-                            &note,
-                            &fvk,
-                            u64::from(witness.witnessed_position()),
-                        );
-
-                        transaction_metadata_set.write().await.add_new_note::<D>(
-                            transaction_id,
+                    // Get the witness for the note
+                    let witness = bsync_data
+                        .read()
+                        .await
+                        .block_data
+                        .get_note_witness::<D>(
+                            uri,
                             height,
-                            false,
-                            timestamp,
-                            note,
-                            to,
-                            have_spending_key,
-                            Some(spend_nullifier),
-                            i as u32,
-                            witness.witnessed_position(),
-                        );
+                            transaction_num,
+                            i,
+                            activation_height.into(),
+                        )
+                        .await?;
 
-                        debug!("Trial decrypt Detected txid {}", &transaction_id);
+                    let spend_nullifier = D::get_nullifier_from_note_fvk_and_witness_position(
+                        &note,
+                        &fvk,
+                        u64::from(witness.witnessed_position()),
+                    );
 
-                        detected_transaction_id_sender
-                            .send((transaction_id, spend_nullifier.into(), height, i as u32))
-                            .unwrap();
+                    transaction_metadata_set.write().await.add_new_note::<D>(
+                        transaction_id,
+                        height,
+                        false,
+                        timestamp,
+                        note,
+                        to,
+                        have_spending_key,
+                        Some(spend_nullifier),
+                        i as u32,
+                        witness.witnessed_position(),
+                    );
 
-                        Ok::<_, String>(())
-                    }));
-                    (i, true)
-                } else {
-                    (maybe_decrypted_output.0, false)
-                };
+                    debug!("Trial decrypt Detected txid {}", &transaction_id);
+
+                    detected_transaction_id_sender
+                        .send((transaction_id, spend_nullifier.into(), height, i as u32))
+                        .unwrap();
+
+                    Ok::<_, String>(())
+                }));
+                (i, true)
+            } else {
+                (maybe_decrypted_output.0, false)
+            };
             if witnessed {
                 notes_to_mark_position[output_num].3 = Retention::Marked
             }

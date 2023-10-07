@@ -24,7 +24,9 @@ use std::{
     path::PathBuf,
     sync::{Arc, RwLock},
 };
-use zingoconfig::{ChainType, ZingoConfig, DEFAULT_LOGFILE_NAME, DEFAULT_WALLET_NAME};
+use zingoconfig::{
+    ChainType, RegtestNetwork, ZingoConfig, DEFAULT_LOGFILE_NAME, DEFAULT_WALLET_NAME,
+};
 
 pub fn load_clientconfig(
     lightwallet_uri: http::Uri,
@@ -46,6 +48,11 @@ pub fn load_clientconfig(
         "Couldn't resolve server!",
     ))?;
 
+    let regtest_network: Option<RegtestNetwork> = match regtest_orchard_activation_height {
+        Some(height) => Some(RegtestNetwork::set_orchard_only(height.into())),
+        None => None,
+    };
+
     // Create a Light Client Config
     let config = ZingoConfig {
         lightwalletd_uri: Arc::new(RwLock::new(lightwallet_uri)),
@@ -55,7 +62,7 @@ pub fn load_clientconfig(
         wallet_dir: data_dir,
         wallet_name: DEFAULT_WALLET_NAME.into(),
         logfile_name: DEFAULT_LOGFILE_NAME.into(),
-        regtest_orchard_activation_height,
+        regtest_network,
     };
 
     Ok(config)
