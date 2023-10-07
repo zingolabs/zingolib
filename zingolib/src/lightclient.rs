@@ -54,7 +54,7 @@ use zcash_primitives::{
     consensus::{BlockHeight, BranchId, Parameters},
     memo::{Memo, MemoBytes},
     sapling::note_encryption::SaplingDomain,
-    transaction::{Transaction, TxId},
+    transaction::{fees::zip317::MARGINAL_FEE, Transaction, TxId},
 };
 use zcash_proofs::prover::LocalTxProver;
 use zingoconfig::{ChainType, ZingoConfig, MAX_REORG};
@@ -1071,16 +1071,16 @@ impl LightClient {
         address: Option<String>,
     ) -> Result<String, String> {
         let transaction_submission_height = self.get_submission_height().await?;
-        let tbal = self
+        let tbal = dbg!(self
             .wallet
             .get_shieldable_tbalance(None)
             .await
-            .expect("to receive a balance");
-        let sapling_bal = self
+            .expect("to receive a balance"));
+        let sapling_bal = dbg!(self
             .wallet
-            .spendable_sapling_balance(None)
+            .shieldable_sapling_balance(None)
             .await
-            .unwrap_or(0);
+            .unwrap_or(0));
 
         // Make sure there is a balance, and it is greater than the amount
         let balance_to_shield = if pools_to_shield.contains(&Pool::Transparent) {
@@ -1093,6 +1093,11 @@ impl LightClient {
             0
         };
 
+        // Note it's possible to have a higher value than MARGINAL_FEE
+        // and still have no notes that are worth shielding (have more than MARGINAL_FEE value)
+        if balance_to_shield < u64::from(MARGINAL_FEE) {
+            return Err(format!("There are no shieldable notes, worth shielding.  The MARGINAL_FEE for a single logical action, which is the smallest fee that can be paid in the zip317 standard, to spend a note is: {}", u64::from(MARGINAL_FEE)));
+        }
         let addr = address
             .unwrap_or(self.wallet.wallet_capability().addresses()[0].encode(&self.config.chain));
 
