@@ -54,7 +54,7 @@ use zcash_primitives::{
     consensus::{BlockHeight, BranchId, Parameters},
     memo::{Memo, MemoBytes},
     sapling::note_encryption::SaplingDomain,
-    transaction::{fees::zip317::MINIMUM_FEE, Transaction, TxId},
+    transaction::{Transaction, TxId},
 };
 use zcash_proofs::prover::LocalTxProver;
 use zingoconfig::{ChainType, ZingoConfig, MAX_REORG};
@@ -1071,11 +1071,9 @@ impl LightClient {
         address: Option<String>,
     ) -> Result<String, String> {
         let transaction_submission_height = self.get_submission_height().await?;
-        let fee = u64::from(MINIMUM_FEE); // TODO: This can no longer be hard coded, and must be calced
-                                          // as a fn of the transactions structure.
         let tbal = self
             .wallet
-            .tbalance(None)
+            .get_shieldable_tbalance(None)
             .await
             .expect("to receive a balance");
         let sapling_bal = self
@@ -1094,18 +1092,12 @@ impl LightClient {
         } else {
             0
         };
-        if balance_to_shield <= fee {
-            return Err(format!(
-                "Not enough transparent/sapling balance to shield. Have {} zats, need more than {} zats to cover tx fee",
-                balance_to_shield, fee
-            ));
-        }
 
         let addr = address
             .unwrap_or(self.wallet.wallet_capability().addresses()[0].encode(&self.config.chain));
 
         let receiver = self
-            .map_tos_to_receivers(vec![(&addr, balance_to_shield - fee, None)])
+            .map_tos_to_receivers(vec![(&addr, balance_to_shield, None)])
             .expect("To build shield receiver.");
         let result = {
             let _lock = self.sync_lock.lock().await;

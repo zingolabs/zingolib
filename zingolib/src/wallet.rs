@@ -35,6 +35,7 @@ use zcash_primitives::sapling::note_encryption::SaplingDomain;
 use zcash_primitives::sapling::SaplingIvk;
 use zcash_primitives::transaction::builder::Progress;
 use zcash_primitives::transaction::fees::fixed::FeeRule as FixedFeeRule;
+use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use zcash_primitives::transaction::{self, Transaction};
 use zcash_primitives::{
     consensus::BlockHeight,
@@ -897,7 +898,11 @@ impl LightWallet {
                         .get_utxos()
                         .await
                         .iter()
-                        .filter(|utxo| utxo.unconfirmed_spent.is_none() && utxo.spent.is_none())
+                        .filter(|utxo| {
+                            utxo.unconfirmed_spent.is_none()
+                                && utxo.spent.is_none()
+                                && utxo.value > u64::from(MARGINAL_FEE)
+                        })
                         .cloned()
                         .collect::<Vec<_>>();
                     all_transparent_value_in_wallet =
@@ -910,7 +915,10 @@ impl LightWallet {
                         .get_all_domain_specific_notes::<SaplingDomain<zingoconfig::ChainType>>()
                         .await
                         .into_iter()
-                        .filter(|note| note.spend_key().is_some())
+                        .filter(|note| {
+                            note.spend_key().is_some()
+                                && note.note.value().inner() > u64::from(MARGINAL_FEE)
+                        })
                         .collect();
                     (sapling_notes, sapling_value_selected) = Self::add_notes_to_total::<
                         SaplingDomain<zingoconfig::ChainType>,
@@ -925,7 +933,10 @@ impl LightWallet {
                         .get_all_domain_specific_notes::<OrchardDomain>()
                         .await
                         .into_iter()
-                        .filter(|note| note.spend_key().is_some())
+                        .filter(|note| {
+                            note.spend_key().is_some()
+                                && note.note.value().inner() > u64::from(MARGINAL_FEE)
+                        })
                         .collect();
                     (orchard_notes, orchard_value_selected) = Self::add_notes_to_total::<
                         OrchardDomain,
@@ -1697,6 +1708,24 @@ impl LightWallet {
         }
     }
 
+    pub async fn get_shieldable_tbalance(&self, addr: Option<String>) -> Option<u64> {
+        if self.wallet_capability().transparent.can_view() {
+            Some(
+                self.get_utxos()
+                    .await
+                    .iter()
+                    .filter(|utxo| match addr.as_ref() {
+                        Some(a) => utxo.address == *a,
+                        None => true,
+                    })
+                    .map(|utxo| utxo.value)
+                    .filter(|v| v > dbg!(&u64::from(MARGINAL_FEE)))
+                    .sum::<u64>(),
+            )
+        } else {
+            None
+        }
+    }
     pub async fn tbalance(&self, addr: Option<String>) -> Option<u64> {
         if self.wallet_capability().transparent.can_view() {
             Some(
