@@ -814,20 +814,22 @@ pub mod scenarios {
 
     pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         value: u64,
+        regtest_network: zingoconfig::RegtestNetwork,
     ) -> (RegtestManager, ChildProcessHandler) {
         let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
             Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
             None,
             Some(20_000),
+            regtest_network,
         )
         .await;
         let faucet = scenario_builder
             .client_builder
-            .build_new_faucet(0, false)
+            .build_new_faucet(0, false, regtest_network)
             .await;
         let recipient = scenario_builder
             .client_builder
-            .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false)
+            .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
             .await;
         increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &faucet, 1)
             .await
