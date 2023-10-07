@@ -34,8 +34,7 @@ use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::sapling::note_encryption::SaplingDomain;
 use zcash_primitives::sapling::SaplingIvk;
 use zcash_primitives::transaction::builder::Progress;
-use zcash_primitives::transaction::fees::fixed::FeeRule as FixedFeeRule;
-use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
+use zcash_primitives::transaction::fees::zip317::{self, MARGINAL_FEE};
 use zcash_primitives::transaction::{self, Transaction};
 use zcash_primitives::{
     consensus::BlockHeight,
@@ -1176,7 +1175,7 @@ impl LightWallet {
                 address::RecipientAddress::Unified(ua) => {
                     if let Some(orchard_addr) = ua.orchard() {
                         total_shielded_receivers += 1;
-                        tx_builder.add_orchard_output::<FixedFeeRule>(
+                        tx_builder.add_orchard_output::<zip317::FeeRule>(
                             Some(orchard_ovk.clone()),
                             *orchard_addr,
                             u64::from(value),
@@ -1235,7 +1234,7 @@ impl LightWallet {
         let orchard_ovk =
             orchard::keys::OutgoingViewingKey::try_from(&*self.wallet_capability()).unwrap();
         *total_shielded_receivers += 1;
-        if let Err(e) = tx_builder.add_orchard_output::<FixedFeeRule>(
+        if let Err(e) = tx_builder.add_orchard_output::<zip317::FeeRule>(
             Some(orchard_ovk.clone()),
             *self.wallet_capability().addresses()[0].orchard().unwrap(),
             u64::from(selected_value) - u64::from(target_amount),
@@ -1708,6 +1707,20 @@ impl LightWallet {
         }
     }
 
+    pub async fn shieldable_sapling_balance(&self, target_addr: Option<String>) -> Option<u64> {
+        if let Capability::Spend(_) = self.wallet_capability().sapling {
+            Some(
+                self.get_all_domain_specific_notes::<SaplingDomain<zingoconfig::ChainType>>()
+                    .await
+                    .iter()
+                    .map(|note| note.note.value().inner())
+                    .filter(|value| value > &u64::from(MARGINAL_FEE))
+                    .sum::<u64>(),
+            )
+        } else {
+            None
+        }
+    }
     pub async fn get_shieldable_tbalance(&self, addr: Option<String>) -> Option<u64> {
         if self.wallet_capability().transparent.can_view() {
             Some(
