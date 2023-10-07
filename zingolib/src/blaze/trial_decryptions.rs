@@ -304,20 +304,19 @@ impl TrialDecryptions {
         let maybe_decrypted_outputs =
             zcash_note_encryption::batch::try_compact_note_decryption(&[ivk], &outputs);
         for maybe_decrypted_output in maybe_decrypted_outputs.into_iter().enumerate() {
-            let (output_num, witnessed) = if let (i, Some(((note, to), _ivk_num))) =
-                maybe_decrypted_output
-            {
-                *transaction_metadata = true; // i.e. we got metadata
+            let (output_num, witnessed) =
+                if let (i, Some(((note, to), _ivk_num))) = maybe_decrypted_output {
+                    *transaction_metadata = true; // i.e. we got metadata
 
-                let wc = wc.clone();
-                let bsync_data = bsync_data.clone();
-                let transaction_metadata_set = transaction_metadata_set.clone();
-                let detected_transaction_id_sender = detected_transaction_id_sender.clone();
-                let timestamp = compact_block.time as u64;
-                let config = config.clone();
+                    let wc = wc.clone();
+                    let bsync_data = bsync_data.clone();
+                    let transaction_metadata_set = transaction_metadata_set.clone();
+                    let detected_transaction_id_sender = detected_transaction_id_sender.clone();
+                    let timestamp = compact_block.time as u64;
+                    let config = config.clone();
 
-                workers.push(tokio::spawn(async move {
-                    let Ok(fvk) = D::wc_to_fvk(&wc) else {
+                    workers.push(tokio::spawn(async move {
+                        let Ok(fvk) = D::wc_to_fvk(&wc) else {
                             // skip any scanning if the wallet doesn't have viewing capability
                             return Ok::<_, String>(());
                         };
