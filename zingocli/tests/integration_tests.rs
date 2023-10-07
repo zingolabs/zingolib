@@ -2959,14 +2959,10 @@ async fn shield_sapling() {
 
     assert_eq!(
         recipient.do_shield(&[Pool::Sapling], None).await,
-        Err(
-            "Not enough transparent/sapling balance to shield. Have 100 zats, \
-        need more than 10000 zats to cover tx fee"
-                .to_string()
-        )
+        Err("There are no shieldable notes, worth shielding.  The MARGINAL_FEE for a single logical action, which is the smallest fee that can be paid in the zip317 standard, to spend a note is: 5000".to_string())
     );
 
-    let sapling_enough_for_fee = 10_100;
+    let sapling_enough_for_fee = 20_100;
     faucet.do_sync(false).await.unwrap();
     let _sent_transaction_id = faucet
         .do_send(vec![(
@@ -2980,11 +2976,11 @@ async fn shield_sapling() {
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
         .await
         .unwrap();
-    recipient
+    let small_notes_error = recipient
         .do_shield(&[Pool::Sapling, Pool::Transparent], None)
-        .await
-        .unwrap();
+        .await;
 
+    assert_eq!(small_notes_error, Err("".to_string()));
     // The exact same thing again, but with pre-existing orchard funds
     // already in the shielding wallet
     faucet.do_sync(false).await.unwrap();
