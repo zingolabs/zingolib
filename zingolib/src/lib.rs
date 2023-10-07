@@ -33,7 +33,7 @@ pub fn load_clientconfig(
     data_dir: Option<PathBuf>,
     chain: ChainType,
     monitor_mempool: bool,
-    regtest_orchard_activation_height: Option<zcash_primitives::consensus::BlockHeight>,
+    regtest_network: Option<RegtestNetwork>,
 ) -> Result<ZingoConfig> {
     use std::net::ToSocketAddrs;
     format!(
@@ -47,11 +47,6 @@ pub fn load_clientconfig(
         ErrorKind::ConnectionRefused,
         "Couldn't resolve server!",
     ))?;
-
-    let regtest_network: Option<RegtestNetwork> = match regtest_orchard_activation_height {
-        Some(height) => Some(RegtestNetwork::set_orchard_only(height.into())),
-        None => None,
-    };
 
     // Create a Light Client Config
     let config = ZingoConfig {

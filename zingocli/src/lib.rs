@@ -7,7 +7,7 @@ use log::{error, info};
 
 use clap::{self, Arg};
 use zingo_testutils::regtest;
-use zingoconfig::ChainType;
+use zingoconfig::{ChainType, RegtestNetwork};
 use zingolib::wallet::WalletBase;
 use zingolib::{commands, lightclient::LightClient, load_clientconfig};
 
@@ -396,13 +396,18 @@ pub type CommandResponse = String;
 pub fn startup(
     filled_template: &ConfigTemplate,
 ) -> std::io::Result<(Sender<CommandRequest>, Receiver<CommandResponse>)> {
+    // Create regtest network in regtest mode
+    let regtest_network: Option<RegtestNetwork> = match filled_template.chaintype {
+        ChainType::Regtest => Some(RegtestNetwork::all_upgrades_active()),
+        _ => None,
+    };
     // Try to get the configuration
     let config = load_clientconfig(
         filled_template.server.clone(),
         Some(filled_template.data_dir.clone()),
         filled_template.chaintype,
         true,
-        None,
+        regtest_network,
     )
     .unwrap();
     regtest_config_check(&filled_template.regtest_manager, &config.chain);

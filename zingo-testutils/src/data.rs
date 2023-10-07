@@ -20,17 +20,40 @@ pub const REGSAP_ADDR_FROM_ABANDONART: &str =
     "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
 pub mod config_template_fillers {
     pub mod zcashd {
-        use zcash_primitives::consensus::BlockHeight;
+        use zcash_primitives::consensus::NetworkUpgrade;
 
-        pub fn basic(rpcport: &str, orchard_activation_height: BlockHeight, extra: &str) -> String {
+        pub fn basic(
+            rpcport: &str,
+            regtest_network: zingoconfig::RegtestNetwork,
+            extra: &str,
+        ) -> String {
+            let overwinter_activation_height = regtest_network
+                .activation_height(NetworkUpgrade::Overwinter)
+                .unwrap();
+            let sapling_activation_height = regtest_network
+                .activation_height(NetworkUpgrade::Sapling)
+                .unwrap();
+            let blossom_activation_height = regtest_network
+                .activation_height(NetworkUpgrade::Blossom)
+                .unwrap();
+            let heartwood_activation_height = regtest_network
+                .activation_height(NetworkUpgrade::Heartwood)
+                .unwrap();
+            let canopy_activation_height = regtest_network
+                .activation_height(NetworkUpgrade::Canopy)
+                .unwrap();
+            let orchard_activation_height = regtest_network
+                .activation_height(NetworkUpgrade::Nu5)
+                .unwrap();
+
             format!("\
 ### Blockchain Configuration
 regtest=1
-nuparams=5ba81b19:1 # Overwinter
-nuparams=76b809bb:1 # Sapling
-nuparams=2bb40e60:1 # Blossom
-nuparams=f5b9230b:1 # Heartwood
-nuparams=e9ff75a6:1 # Canopy
+nuparams=5ba81b19:{overwinter_activation_height} # Overwinter
+nuparams=76b809bb:{sapling_activation_height} # Sapling
+nuparams=2bb40e60:{blossom_activation_height} # Blossom
+nuparams=f5b9230b:{heartwood_activation_height} # Heartwood
+nuparams=e9ff75a6:{canopy_activation_height} # Canopy
 nuparams=c2d6d0b4:{orchard_activation_height} # NU5 (Orchard)
 
 ### MetaData Storage and Retrieval
@@ -59,9 +82,9 @@ listen=0
         pub fn funded(
             mineraddress: &str,
             rpcport: &str,
-            orchard_activation_height: BlockHeight,
+            regtest_network: zingoconfig::RegtestNetwork,
         ) -> String {
-            basic(rpcport, orchard_activation_height,
+            basic(rpcport, regtest_network,
                 &format!("\
 ### Zcashd Help provides documentation of the following:
 mineraddress={mineraddress}
@@ -72,21 +95,22 @@ minetolocalwallet=0 # This is set to false so that we can mine to a wallet, othe
 
         #[test]
         fn funded_zcashd_conf() {
+            let regtest_network = zingoconfig::RegtestNetwork::new(1, 2, 3, 4, 5, 6);
             assert_eq!(
-                funded(
-                    super::super::REGSAP_ADDR_FROM_ABANDONART,
-                    "1234",
-                    BlockHeight::from_u32(10)
-                ),
-                format!("\
+                        funded(
+                            super::super::REGSAP_ADDR_FROM_ABANDONART,
+                            "1234",
+                            regtest_network
+                        ),
+                        format!("\
 ### Blockchain Configuration
 regtest=1
 nuparams=5ba81b19:1 # Overwinter
-nuparams=76b809bb:1 # Sapling
-nuparams=2bb40e60:1 # Blossom
-nuparams=f5b9230b:1 # Heartwood
-nuparams=e9ff75a6:1 # Canopy
-nuparams=c2d6d0b4:10 # NU5 (Orchard)
+nuparams=76b809bb:2 # Sapling
+nuparams=2bb40e60:3 # Blossom
+nuparams=f5b9230b:4 # Heartwood
+nuparams=e9ff75a6:5 # Canopy
+nuparams=c2d6d0b4:6 # NU5 (Orchard)
 
 ### MetaData Storage and Retrieval
 # txindex:
@@ -111,8 +135,8 @@ listen=0
 ### Zcashd Help provides documentation of the following:
 mineraddress=zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p
 minetolocalwallet=0 # This is set to false so that we can mine to a wallet, other than the zcashd wallet."
-                )
-            );
+                        )
+                    );
         }
     }
     pub mod lightwalletd {

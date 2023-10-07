@@ -75,6 +75,10 @@ pub struct ZingoConfig {
 impl ZingoConfig {
     // Create an unconnected (to any server) config to test for local wallet etc...
     pub fn create_unconnected(chain: ChainType, dir: Option<PathBuf>) -> ZingoConfig {
+        let regtest_network: Option<RegtestNetwork> = match chain {
+            ChainType::Regtest => Some(RegtestNetwork::all_upgrades_active()),
+            _ => None,
+        };
         ZingoConfig {
             lightwalletd_uri: Arc::new(RwLock::new(http::Uri::default())),
             chain,
@@ -83,7 +87,7 @@ impl ZingoConfig {
             wallet_dir: dir,
             wallet_name: DEFAULT_WALLET_NAME.into(),
             logfile_name: DEFAULT_LOGFILE_NAME.into(),
-            regtest_network: None,
+            regtest_network,
         }
     }
 
@@ -350,7 +354,7 @@ impl ChainType {
         match self {
             Mainnet | FakeMainnet => zcash_address::Network::Main,
             Testnet => zcash_address::Network::Test,
-            Regtest => zcash_address::Network::Regtest,
+            Regtest => RegtestNetwork::address_network().unwrap(),
         }
     }
 }
@@ -374,6 +378,7 @@ impl Parameters for ChainType {
         match self {
             Mainnet => MAIN_NETWORK.activation_height(nu),
             Testnet => TEST_NETWORK.activation_height(nu),
+            // This function should never be called in regtest but fails to send in integ tests if None??
             Regtest => Some(BlockHeight::from_u32(1)),
             FakeMainnet => Some(BlockHeight::from_u32(1)),
         }
@@ -383,7 +388,7 @@ impl Parameters for ChainType {
         match self {
             Mainnet | FakeMainnet => constants::mainnet::COIN_TYPE,
             Testnet => constants::testnet::COIN_TYPE,
-            Regtest => constants::regtest::COIN_TYPE,
+            Regtest => RegtestNetwork::coin_type(),
         }
     }
 
@@ -391,7 +396,7 @@ impl Parameters for ChainType {
         match self {
             Mainnet | FakeMainnet => constants::mainnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
             Testnet => constants::testnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
-            Regtest => constants::regtest::HRP_SAPLING_EXTENDED_SPENDING_KEY,
+            Regtest => RegtestNetwork::hrp_sapling_extended_spending_key(),
         }
     }
 
@@ -399,7 +404,7 @@ impl Parameters for ChainType {
         match self {
             Mainnet | FakeMainnet => constants::mainnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
             Testnet => constants::testnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
-            Regtest => constants::regtest::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
+            Regtest => RegtestNetwork::hrp_sapling_extended_full_viewing_key(),
         }
     }
 
@@ -407,7 +412,7 @@ impl Parameters for ChainType {
         match self {
             Mainnet | FakeMainnet => constants::mainnet::HRP_SAPLING_PAYMENT_ADDRESS,
             Testnet => constants::testnet::HRP_SAPLING_PAYMENT_ADDRESS,
-            Regtest => constants::regtest::HRP_SAPLING_PAYMENT_ADDRESS,
+            Regtest => RegtestNetwork::hrp_sapling_payment_address(),
         }
     }
 
@@ -415,7 +420,7 @@ impl Parameters for ChainType {
         match self {
             Mainnet | FakeMainnet => constants::mainnet::B58_PUBKEY_ADDRESS_PREFIX,
             Testnet => constants::testnet::B58_PUBKEY_ADDRESS_PREFIX,
-            Regtest => constants::regtest::B58_PUBKEY_ADDRESS_PREFIX,
+            Regtest => RegtestNetwork::b58_pubkey_address_prefix(),
         }
     }
 
@@ -423,7 +428,7 @@ impl Parameters for ChainType {
         match self {
             Mainnet | FakeMainnet => constants::mainnet::B58_SCRIPT_ADDRESS_PREFIX,
             Testnet => constants::testnet::B58_SCRIPT_ADDRESS_PREFIX,
-            Regtest => constants::regtest::B58_SCRIPT_ADDRESS_PREFIX,
+            Regtest => RegtestNetwork::b58_script_address_prefix(),
         }
     }
 
@@ -461,14 +466,14 @@ impl RegtestNetwork {
             activation_heights: ActivationHeights::new(1, 1, 1, 1, 1, 1),
         }
     }
-    pub fn set_orchard_only(orchard_activation_height: u64) -> Self {
+    pub fn set_orchard(orchard_activation_height: u64) -> Self {
         Self {
             activation_heights: ActivationHeights::new(1, 1, 1, 1, 1, orchard_activation_height),
         }
     }
-}
-impl Parameters for RegtestNetwork {
-    fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
+
+    // Network parameters
+    pub fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
         match nu {
             NetworkUpgrade::Overwinter => Some(
                 self.activation_heights
@@ -497,31 +502,31 @@ impl Parameters for RegtestNetwork {
         }
     }
 
-    fn coin_type(&self) -> u32 {
+    fn coin_type() -> u32 {
         constants::regtest::COIN_TYPE
     }
 
-    fn address_network(&self) -> Option<zcash_address::Network> {
+    fn address_network() -> Option<zcash_address::Network> {
         Some(zcash_address::Network::Regtest)
     }
 
-    fn hrp_sapling_extended_spending_key(&self) -> &str {
+    fn hrp_sapling_extended_spending_key() -> &'static str {
         constants::regtest::HRP_SAPLING_EXTENDED_SPENDING_KEY
     }
 
-    fn hrp_sapling_extended_full_viewing_key(&self) -> &str {
+    fn hrp_sapling_extended_full_viewing_key() -> &'static str {
         constants::regtest::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY
     }
 
-    fn hrp_sapling_payment_address(&self) -> &str {
+    fn hrp_sapling_payment_address() -> &'static str {
         constants::regtest::HRP_SAPLING_PAYMENT_ADDRESS
     }
 
-    fn b58_pubkey_address_prefix(&self) -> [u8; 2] {
+    fn b58_pubkey_address_prefix() -> [u8; 2] {
         constants::regtest::B58_PUBKEY_ADDRESS_PREFIX
     }
 
-    fn b58_script_address_prefix(&self) -> [u8; 2] {
+    fn b58_script_address_prefix() -> [u8; 2] {
         constants::regtest::B58_SCRIPT_ADDRESS_PREFIX
     }
 }
