@@ -600,6 +600,7 @@ pub mod scenarios {
 
     pub async fn two_wallet_one_synced_orchard_transaction(
         value: u64,
+        regtest_network: zingoconfig::RegtestNetwork,
     ) -> (
         RegtestManager,
         ChildProcessHandler,
@@ -608,7 +609,6 @@ pub mod scenarios {
         String,
     ) {
         dbg!("0 About to create faucet_recipient.");
-        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
         let (regtest_manager, child_process_handler, faucet, recipient) =
             two_wallet_one_miner_fund(regtest_network).await;
         dbg!("1 About to increase height and sync faucet.");
