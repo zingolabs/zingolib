@@ -1078,7 +1078,7 @@ impl LightClient {
             .expect("to receive a balance"));
         let sapling_bal = dbg!(self
             .wallet
-            .shieldable_sapling_balance(None)
+            .get_shieldable_sapling_balance(None)
             .await
             .unwrap_or(0));
 
@@ -1095,14 +1095,15 @@ impl LightClient {
 
         // Note it's possible to have a higher value than MARGINAL_FEE
         // and still have no notes that are worth shielding (have more than MARGINAL_FEE value)
-        if balance_to_shield < u64::from(MARGINAL_FEE) {
+        // but any such 'dusty' notes will already have been filtered, by get_shieldable*
+        if balance_to_shield <= u64::from(MARGINAL_FEE) {
             return Err(format!("There are no shieldable notes, worth shielding.  The MARGINAL_FEE for a single logical action, which is the smallest fee that can be paid in the zip317 standard, to spend a note is: {}", u64::from(MARGINAL_FEE)));
         }
-        let addr = address
+        let self_orchard_address = address
             .unwrap_or(self.wallet.wallet_capability().addresses()[0].encode(&self.config.chain));
 
         let receiver = self
-            .map_tos_to_receivers(vec![(&addr, balance_to_shield, None)])
+            .map_tos_to_receivers(vec![(&self_orchard_address, balance_to_shield, None)])
             .expect("To build shield receiver.");
         let result = {
             let _lock = self.sync_lock.lock().await;

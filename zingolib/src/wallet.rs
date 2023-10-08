@@ -972,6 +972,12 @@ impl LightWallet {
         ))
     }
 
+    async fn send_shieldable_to_orchard(
+        &self,
+        pools_to_shield: &[Pool],
+    ) -> Result<(String, Vec<u8>), String> {
+        todo!()
+    }
     pub async fn send_to_addresses<F, Fut, P: TxProver>(
         &self,
         sapling_prover: P,
@@ -1707,7 +1713,7 @@ impl LightWallet {
         }
     }
 
-    pub async fn shieldable_sapling_balance(&self, target_addr: Option<String>) -> Option<u64> {
+    pub async fn get_shieldable_sapling_balance(&self, target_addr: Option<String>) -> Option<u64> {
         if let Capability::Spend(_) = self.wallet_capability().sapling {
             Some(
                 self.get_all_domain_specific_notes::<SaplingDomain<zingoconfig::ChainType>>()
