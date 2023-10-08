@@ -10,7 +10,7 @@ use crate::{
     wallet::{
         data::{
             finsight, summaries::ValueTransfer, summaries::ValueTransferKind, OutgoingTxData,
-            TransactionMetadata,
+            ReceivedTransparentOutput, SpendableSaplingNote, TransactionMetadata,
         },
         keys::{
             address_from_pubkeyhash,
@@ -1065,33 +1065,30 @@ impl LightClient {
         })
     }
 
+    fn calculate_shield_fee(&self, shield_utxos: u64, shield_sap_notes: u64) -> u64 {
+        let sapling_fee = if shield_sap_notes == 0 {
+            0
+        } else if shield_sap_notes == 1 || shield_sap_notes == 2 {
+            u64::from(MARGINAL_FEE) * 2
+        } else {
+            shield_sap_notes * u64::from(MARGINAL_FEE)
+        };
+        let transparent_fee = shield_utxos * u64::from(MARGINAL_FEE);
+        sapling_fee + transparent_fee + (u64::from(MARGINAL_FEE) * 2) // NOTE we're adding the orchard fee here
+    }
     pub async fn do_shield(
         &self,
         pools_to_shield: &[Pool],
         address: Option<String>,
     ) -> Result<String, String> {
         let transaction_submission_height = self.get_submission_height().await?;
-        let tbal = dbg!(self
-            .wallet
-            .get_shieldable_tbalance(None)
-            .await
-            .expect("to receive a balance"));
-        let sapling_bal = dbg!(self
-            .wallet
-            .get_shieldable_sapling_balance(None)
-            .await
-            .unwrap_or(0));
+        let shieldable_utxos = self.wallet.get_shieldable_transparent_utxos().await;
+        let shieldable_sapling_notes = self.wallet.get_shieldable_sapling_notes().await;
 
-        // Make sure there is a balance, and it is greater than the amount
-        let balance_to_shield = if pools_to_shield.contains(&Pool::Transparent) {
-            tbal
-        } else {
-            0
-        } + if pools_to_shield.contains(&Pool::Sapling) {
-            sapling_bal
-        } else {
-            0
-        };
+        let calculated_zip317_fee = self.calculate_shield_fee(
+            shieldable_utxos.len() as u64,
+            shieldable_sapling_notes.len() as u64,
+        );
 
         // Note it's possible to have a higher value than MARGINAL_FEE
         // and still have no notes that are worth shielding (have more than MARGINAL_FEE value)

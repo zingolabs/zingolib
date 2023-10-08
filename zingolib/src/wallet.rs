@@ -1713,37 +1713,19 @@ impl LightWallet {
         }
     }
 
-    pub async fn get_shieldable_sapling_balance(&self, target_addr: Option<String>) -> Option<u64> {
-        if let Capability::Spend(_) = self.wallet_capability().sapling {
-            Some(
-                self.get_all_domain_specific_notes::<SaplingDomain<zingoconfig::ChainType>>()
-                    .await
-                    .iter()
-                    .map(|note| note.note.value().inner())
-                    .filter(|value| value > &u64::from(MARGINAL_FEE))
-                    .sum::<u64>(),
-            )
-        } else {
-            None
-        }
+    pub async fn get_shieldable_sapling_notes(&self) -> Vec<SpendableSaplingNote> {
+        self.get_all_domain_specific_notes::<SaplingDomain<zingoconfig::ChainType>>()
+            .await
+            .into_iter()
+            .filter(|note| note.note.value().inner() > u64::from(MARGINAL_FEE))
+            .collect::<Vec<_>>()
     }
-    pub async fn get_shieldable_tbalance(&self, addr: Option<String>) -> Option<u64> {
-        if self.wallet_capability().transparent.can_view() {
-            Some(
-                self.get_utxos()
-                    .await
-                    .iter()
-                    .filter(|utxo| match addr.as_ref() {
-                        Some(a) => utxo.address == *a,
-                        None => true,
-                    })
-                    .map(|utxo| utxo.value)
-                    .filter(|v| v > dbg!(&u64::from(MARGINAL_FEE)))
-                    .sum::<u64>(),
-            )
-        } else {
-            None
-        }
+    pub async fn get_shieldable_transparent_utxos(&self) -> Vec<ReceivedTransparentOutput> {
+        self.get_utxos()
+            .await
+            .into_iter()
+            .filter(|utxo| utxo.value > dbg!(u64::from(MARGINAL_FEE)))
+            .collect::<Vec<_>>()
     }
     pub async fn tbalance(&self, addr: Option<String>) -> Option<u64> {
         if self.wallet_capability().transparent.can_view() {
