@@ -36,6 +36,28 @@ use zingolib::{
 };
 
 #[tokio::test]
+async fn send_without_reorg_buffer_blocks_gives_correct_error() {
+    let (_regtest_manager, _cph, faucet, mut recipient) =
+        scenarios::two_wallet_one_miner_fund().await;
+    recipient
+        .wallet
+        .transaction_context
+        .config
+        .reorg_buffer_offset = 4;
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
+    );
+    assert_eq!(
+        recipient
+            .do_send(vec![(&get_base_address!(faucet, "unified"), 100_000, None)])
+            .await
+            .unwrap_err(),
+        "The reorg buffer offset has been set to 4 but there are only 1 blocks in the wallet. Please sync at least 4 more blocks before trying again"
+    );
+}
+
+#[tokio::test]
 async fn dont_write_unconfirmed() {
     let (regtest_manager, _cph, faucet, recipient) = scenarios::two_wallet_one_miner_fund().await;
     faucet
