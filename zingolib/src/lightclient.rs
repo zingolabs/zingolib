@@ -1114,11 +1114,7 @@ impl LightClient {
             self.wallet.wallet_capability().addresses()[0].encode(&self.config.chain);
 
         let receiver = self
-            .map_tos_to_receivers(vec![(
-                &self_orchard_address,
-                balance_to_shield,
-                Some("Shielding transaction."),
-            )])
+            .map_tos_to_receivers(vec![(&self_orchard_address, value_to_shield, None)])
             .expect("To build shield receiver.");
         let result = {
             let _lock = self.sync_lock.lock().await;
