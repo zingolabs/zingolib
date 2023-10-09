@@ -693,9 +693,8 @@ pub mod scenarios {
         )
     }
 
-    pub async fn unfunded_mobileclient(
-        regtest_network: zingoconfig::RegtestNetwork,
-    ) -> (RegtestManager, ChildProcessHandler) {
+    pub async fn unfunded_mobileclient() -> (RegtestManager, ChildProcessHandler) {
+        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
         let scenario_builder = setup::ScenarioBuilder::build_configure_launch(
             None,
             None,
@@ -709,10 +708,8 @@ pub mod scenarios {
         )
     }
 
-    pub async fn funded_orchard_mobileclient(
-        value: u64,
-        regtest_network: zingoconfig::RegtestNetwork,
-    ) -> (RegtestManager, ChildProcessHandler) {
+    pub async fn funded_orchard_mobileclient(value: u64) -> (RegtestManager, ChildProcessHandler) {
+        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
         let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
             Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
             None,
@@ -749,8 +746,8 @@ pub mod scenarios {
 
     pub async fn funded_orchard_with_3_txs_mobileclient(
         value: u64,
-        regtest_network: zingoconfig::RegtestNetwork,
     ) -> (RegtestManager, ChildProcessHandler) {
+        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
         let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
             Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
             None,
@@ -814,8 +811,8 @@ pub mod scenarios {
 
     pub async fn funded_orchard_sapling_transparent_shielded_mobileclient(
         value: u64,
-        regtest_network: zingoconfig::RegtestNetwork,
     ) -> (RegtestManager, ChildProcessHandler) {
+        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
         let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
             Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
             None,
