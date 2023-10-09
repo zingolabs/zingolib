@@ -1109,11 +1109,16 @@ impl LightClient {
         if total_shieldable <= calculated_zip317_fee {
             return Err(format!("There are no shieldable notes, worth shielding.  The total which is eligible for shielding is: {} the total zip317 fee to shield these notes is: {}", total_shieldable, calculated_zip317_fee));
         }
-        let self_orchard_address = address
-            .unwrap_or(self.wallet.wallet_capability().addresses()[0].encode(&self.config.chain));
+        let value_to_shield = total_shieldable - calculated_zip317_fee;
+        let self_orchard_address =
+            self.wallet.wallet_capability().addresses()[0].encode(&self.config.chain);
 
         let receiver = self
-            .map_tos_to_receivers(vec![(&self_orchard_address, balance_to_shield, None)])
+            .map_tos_to_receivers(vec![(
+                &self_orchard_address,
+                balance_to_shield,
+                Some("Shielding transaction."),
+            )])
             .expect("To build shield receiver.");
         let result = {
             let _lock = self.sync_lock.lock().await;
