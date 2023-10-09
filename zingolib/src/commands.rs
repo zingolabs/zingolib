@@ -659,14 +659,8 @@ impl Command for ShieldCommand {
             "all" => &[Pool::Sapling, Pool::Transparent],
             _ => return self.help().to_string(),
         };
-        // Parse the address or amount
-        let address = if args.len() == 2 {
-            Some(args[1].to_string())
-        } else {
-            None
-        };
         RT.block_on(async move {
-            match lightclient.do_shield(pools_to_shield, address).await {
+            match lightclient.do_shield(pools_to_shield).await {
                 Ok(transaction_id) => {
                     object! { "txid" => transaction_id }
                 }
