@@ -14,10 +14,13 @@ use shardtree::ShardTree;
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
 use std::usize;
+use zcash_address::ZcashAddress;
+use zcash_client_backend::address::RecipientAddress;
+use zcash_client_backend::keys::UnifiedFullViewingKey;
 use zcash_client_backend::serialization::shardtree::{read_shard, write_shard};
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
-use zcash_primitives::consensus::BlockHeight;
+use zcash_primitives::consensus::{BlockHeight, Parameters};
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::merkle_tree::{read_commitment_tree, write_commitment_tree, HashSer};
 use zcash_primitives::sapling::note_encryption::SaplingDomain;
@@ -945,9 +948,23 @@ impl TransactionMetadata {
     }
 
     /// Returns Some(fee) for outgoing transactions, and None for non-outgoing
-    pub fn get_transaction_fee(&self) -> Option<u64> {
+    pub fn get_transaction_fee<P: Parameters>(
+        &self,
+        wc: &WalletCapability,
+        params: &P,
+    ) -> Option<u64> {
         if self.is_outgoing_transaction() {
-            Some(self.total_value_spent() - self.total_value_received())
+            println!(
+                "TXID {} spent {} and received {}",
+                self.txid,
+                self.total_value_spent(),
+                self.total_value_received()
+            );
+            Some(
+                self.total_value_spent()
+                    - self.total_value_received()
+                    - self.value_outgoing(wc, params),
+            )
         } else {
             None
         }
@@ -1150,9 +1167,42 @@ impl TransactionMetadata {
         self.value_spent_by_pool().iter().sum()
     }
 
-    pub fn value_outgoing(&self) -> u64 {
+    pub fn value_outgoing<P: Parameters>(&self, wc: &WalletCapability, params: &P) -> u64 {
+        let viewkey = wc.ufvk().unwrap();
         self.outgoing_tx_data
             .iter()
+            .filter(
+                |outgoing| match RecipientAddress::decode(params, &outgoing.to_address) {
+                    Some(RecipientAddress::Shielded(sapling_addr)) => {
+                        viewkey.sapling().map_or(true, |sapling_viewkey| {
+                            sapling_viewkey.decrypt_diversifier(&sapling_addr).is_none()
+                        })
+                    }
+                    Some(RecipientAddress::Transparent(taddr)) => {
+                        viewkey.transparent().map_or(true, |transparent_pubkey| {
+                            transparent_pubkey.derive_external_ivk()
+                        })
+                    }
+                    Some(RecipientAddress::Unified(ua)) => {
+                        if let Some(orchard_addr) = ua.orchard() {
+                            viewkey.orchard().map_or(true, |orchard_viewkey| {
+                                orchard_viewkey.scope_for_address(orchard_addr).is_none()
+                            })
+                        } else if let Some(sapling_addr) = ua.sapling() {
+                            viewkey.sapling().map_or(true, |sapling_viewkey| {
+                                sapling_viewkey.decrypt_diversifier(&sapling_addr).is_none()
+                            })
+                        } else {
+                            // If the UA we sent to has no sapling or orchard components,
+                            // this means this is a send to a future pool that did not
+                            // exist at the time of this code being written.
+                            // This is probably the the least wrong thing to do here.
+                            true
+                        }
+                    }
+                    None => todo!(),
+                },
+            )
             .fold(0, |running_total, tx_data| tx_data.value + running_total)
     }
 

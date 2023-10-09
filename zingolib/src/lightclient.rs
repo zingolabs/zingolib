@@ -824,7 +824,9 @@ impl LightClient {
             .iter()
         {
             LightClient::tx_summary_matcher(&mut summaries, *txid, transaction_md);
-            if let Some(tx_fee) = transaction_md.get_transaction_fee() {
+            if let Some(tx_fee) = transaction_md
+                .get_transaction_fee(&self.wallet.wallet_capability(), &self.config().chain)
+            {
                 let (block_height, datetime, price) = (
                     transaction_md.block_height,
                     transaction_md.datetime,

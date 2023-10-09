@@ -70,7 +70,7 @@ pub struct WalletCapability {
     >,
     pub orchard: Capability<orchard::keys::FullViewingKey, orchard::keys::SpendingKey>,
 
-    transparent_child_keys: append_only_vec::AppendOnlyVec<(usize, secp256k1::SecretKey)>,
+    transparent_child_keys: append_only_vec::AppendOnlyVec<(usize, secp256k1::PublicKey)>,
     addresses: append_only_vec::AppendOnlyVec<UnifiedAddress>,
     // Not all diversifier indexes produce valid sapling addresses.
     // Because of this, the index isn't necessarily equal to addresses.len()
@@ -245,7 +245,7 @@ impl WalletCapability {
                     let secp = secp256k1::Secp256k1::new();
                     let child_pk = secp256k1::PublicKey::from_secret_key(&secp, &child_sk);
                     self.transparent_child_keys
-                        .push((self.addresses.len(), child_sk));
+                        .push((self.addresses.len(), child_pk));
                     Some(child_pk)
                 }
                 Capability::View(ext_pk) => {
@@ -257,6 +257,8 @@ impl WalletCapability {
                         }
                         Ok(res) => res.public_key,
                     };
+                    self.transparent_child_keys
+                        .push((self.addresses.len(), child_pk));
                     Some(child_pk)
                 }
                 Capability::None => None,
@@ -316,7 +318,14 @@ impl WalletCapability {
                     };
                     (
                         hash.to_base58check(&config.base58_pubkey_address(), &[]),
-                        key.1,
+                        if let Capability::Spend(ext_sk) = self.transparent {
+                            ext_sk
+                                .derive_private_key(KeyIndex::from_index(key.0 as u32).unwrap())
+                                .unwrap()
+                                .private_key
+                        } else {
+                            unreachable!("We can spent")
+                        },
                     )
                 })
                 .collect())
@@ -731,10 +740,14 @@ pub async fn get_transparent_secretkey_pubkey_taddr(
             let child_ext_pk = ext_pk.derive_public_key(KeyIndex::Normal(0)).ok();
             (None, child_ext_pk.map(|x| x.public_key))
         }
-        Capability::Spend(_) => {
-            let sk = wc.transparent_child_keys[0].1;
-            let secp = secp256k1::Secp256k1::new();
-            let pk = secp256k1::PublicKey::from_secret_key(&secp, &sk);
+        Capability::Spend(ext_sk) => {
+            let pk = wc.transparent_child_keys[0].1;
+            let sk = ext_sk
+                .derive_private_key(
+                    KeyIndex::from_index(wc.transparent_child_keys[0].0 as u32).unwrap(),
+                )
+                .unwrap()
+                .private_key;
             (Some(sk), Some(pk))
         }
     };
