@@ -1097,6 +1097,12 @@ impl LightClient {
             shieldable_sapling_notes.len() as u64,
         );
 
+        let total_shieldable = shieldable_utxos
+            .iter()
+            .fold(0, |accum, utxo| accum + utxo.value)
+            + shieldable_sapling_notes
+                .iter()
+                .fold(0, |accum, note| accum + note.note.value().inner());
         // Note it's possible to have a higher value than MARGINAL_FEE
         // and still have no notes that are worth shielding (have more than MARGINAL_FEE value)
         // but any such 'dusty' notes will already have been filtered, by get_shieldable*
