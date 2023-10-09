@@ -5,7 +5,11 @@ use orchard::tree::MerkleHashOrchard;
 use shardtree::store::memory::MemoryShardStore;
 use shardtree::ShardTree;
 use std::{fs::File, path::Path, str::FromStr};
-use zingo_testutils::{self, build_fvk_client, data, BASE_HEIGHT};
+use zingo_testutils::{
+    self, build_fvk_client,
+    data::{self, BLOCK_REWARD},
+    BASE_HEIGHT,
+};
 
 use bip0039::Mnemonic;
 use data::seeds::HOSPITAL_MUSEUM_SEED;
@@ -687,10 +691,11 @@ async fn send_mined_sapling_to_orchard() {
     // We send change to orchard now, so we should have the full value of the note
     // we spent, minus the transaction fee
     assert_eq!(balance.unverified_orchard_balance, Some(0));
-    assert_eq!(
-        balance.verified_orchard_balance.unwrap(),
-        625_000_000 - u64::from(MINIMUM_FEE)
-    );
+    let expected_orchard = BLOCK_REWARD - u64::from(MINIMUM_FEE);
+    assert_eq!(balance.verified_orchard_balance.unwrap(), expected_orchard);
+    // Important to remember that the block reward includes not just the base 6.25 ZEC,
+    // but also all fees paid.
+    check_client_balances!(faucet, o: expected_orchard s: {(BLOCK_REWARD * 2) + u64::from(MINIMUM_FEE)} t: 0);
 }
 
 fn extract_value_as_u64(input: &JsonValue) -> u64 {
@@ -961,7 +966,6 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
 async fn send_orchard_back_and_forth() {
     // setup
     let (regtest_manager, _cph, faucet, recipient) = scenarios::two_wallet_one_miner_fund().await;
-    let block_reward = 625_000_000u64;
     let faucet_to_recipient_amount = 20_000u64;
     let recipient_to_faucet_amount = 5_000u64;
     // check start state
@@ -971,7 +975,7 @@ async fn send_orchard_back_and_forth() {
         wallet_height.as_fixed_point_u64(0).unwrap(),
         BASE_HEIGHT as u64
     );
-    let three_blocks_reward = block_reward.checked_mul(BASE_HEIGHT as u64).unwrap();
+    let three_blocks_reward = BLOCK_REWARD.checked_mul(BASE_HEIGHT as u64).unwrap();
     check_client_balances!(faucet, o: 0 s: three_blocks_reward  t: 0);
 
     // post transfer to recipient, and verify
@@ -983,7 +987,7 @@ async fn send_orchard_back_and_forth() {
         )])
         .await
         .unwrap();
-    let orch_change = block_reward - (faucet_to_recipient_amount + u64::from(MINIMUM_FEE));
+    let orch_change = BLOCK_REWARD - (faucet_to_recipient_amount + u64::from(MINIMUM_FEE));
     let reward_and_fee = three_blocks_reward + u64::from(MINIMUM_FEE);
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
         .await
@@ -1019,7 +1023,7 @@ async fn send_orchard_back_and_forth() {
     let recipient_final_orch =
         faucet_to_recipient_amount - (u64::from(MINIMUM_FEE) + recipient_to_faucet_amount);
     let faucet_final_orch = orch_change + recipient_to_faucet_amount;
-    let faucet_final_block = 4 * block_reward + u64::from(MINIMUM_FEE) * 2;
+    let faucet_final_block = 4 * BLOCK_REWARD + u64::from(MINIMUM_FEE) * 2;
     check_client_balances!(
         faucet,
         o: faucet_final_orch s: faucet_final_block t: 0
