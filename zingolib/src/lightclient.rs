@@ -1113,7 +1113,7 @@ impl LightClient {
         let self_orchard_address =
             self.wallet.wallet_capability().addresses()[0].encode(&self.config.chain);
 
-        let receiver = self
+        let shield_receiver = self
             .map_tos_to_receivers(vec![(&self_orchard_address, value_to_shield, None)])
             .expect("To build shield receiver.");
         let result = {
@@ -1126,7 +1126,7 @@ impl LightClient {
                 .send_to_addresses(
                     sapling_prover,
                     pools_to_shield.to_vec(),
-                    receiver,
+                    shield_receiver,
                     transaction_submission_height,
                     |transaction_bytes| {
                         GrpcConnector::send_transaction(self.get_server_uri(), transaction_bytes)
