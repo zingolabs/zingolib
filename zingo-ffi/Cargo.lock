@@ -426,6 +426,11 @@ version = "0.1.0"
 source = "git+https://github.com/zingolabs/zingolib?branch=dev#95b8a2d519e832e66a6acbe6a7d28d8609b92f11"
 
 [[package]]
+name = "build_utils"
+version = "0.1.0"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=regtest_network_upgrade_activation_heights#e2dc0d35267e4b00b7e1bbd48b45b3b2f2265335"
+
+[[package]]
 name = "bumpalo"
 version = "3.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1115,7 +1120,7 @@ checksum = "5a03ba7d4c9ea41552cd4351965ff96883e629693ae85005c501bb4b9e1c48a7"
 dependencies = [
  "lazy_static",
  "rand_core 0.6.4",
- "ring",
+ "ring 0.16.20",
  "secp256k1",
  "thiserror",
 ]
@@ -1478,7 +1483,7 @@ version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 dependencies = [
- "spin",
+ "spin 0.5.2",
 ]
 
 [[package]]
@@ -2425,10 +2430,24 @@ dependencies = [
  "cc",
  "libc",
  "once_cell",
- "spin",
- "untrusted",
+ "spin 0.5.2",
+ "untrusted 0.7.1",
  "web-sys",
  "winapi",
+]
+
+[[package]]
+name = "ring"
+version = "0.17.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "911b295d2d302948838c8ac142da1ee09fa7863163b44e6715bc9357905878b8"
+dependencies = [
+ "cc",
+ "getrandom",
+ "libc",
+ "spin 0.9.8",
+ "untrusted 0.9.0",
+ "windows-sys",
 ]
 
 [[package]]
@@ -2545,8 +2564,8 @@ dependencies = [
  "http",
  "lazy_static",
  "tokio",
- "zingoconfig",
- "zingolib",
+ "zingoconfig 0.1.0 (git+https://github.com/Oscar-Pepper/zingolib?branch=regtest_network_upgrade_activation_heights)",
+ "zingolib 0.2.0 (git+https://github.com/Oscar-Pepper/zingolib?branch=regtest_network_upgrade_activation_heights)",
 ]
 
 [[package]]
@@ -2556,7 +2575,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1b80e3dec595989ea8510028f30c408a4630db12c9cbb8de34203b89d6577e99"
 dependencies = [
  "log",
- "ring",
+ "ring 0.16.20",
  "sct",
  "webpki 0.22.2",
 ]
@@ -2630,8 +2649,8 @@ version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d53dcdb7c9f8158937a7981b48accfd39a43af418591a5d008c7b22b5e1b7ca4"
 dependencies = [
- "ring",
- "untrusted",
+ "ring 0.16.20",
+ "untrusted 0.7.1",
 ]
 
 [[package]]
@@ -2893,6 +2912,12 @@ name = "spin"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
+
+[[package]]
+name = "spin"
+version = "0.9.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
 
 [[package]]
 name = "static_assertions"
@@ -3449,6 +3474,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a156c684c91ea7d62626509bce3cb4e1d9ed5c4d978f7b4352658f96a4c26b4a"
 
 [[package]]
+name = "untrusted"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
+
+[[package]]
 name = "url"
 version = "2.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3593,8 +3624,8 @@ version = "0.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8e38c0608262c46d4a56202ebabdeb094cef7e560ca7a226c6bf055188aa4ea"
 dependencies = [
- "ring",
- "untrusted",
+ "ring 0.16.20",
+ "untrusted 0.7.1",
 ]
 
 [[package]]
@@ -3603,8 +3634,8 @@ version = "0.22.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07ecc0cd7cac091bf682ec5efa18b1cff79d617b84181f38b3951dbe135f607f"
 dependencies = [
- "ring",
- "untrusted",
+ "ring 0.16.20",
+ "untrusted 0.7.1",
 ]
 
 [[package]]
@@ -3932,6 +3963,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "zingo-memo"
+version = "0.1.0"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=regtest_network_upgrade_activation_heights#e2dc0d35267e4b00b7e1bbd48b45b3b2f2265335"
+dependencies = [
+ "zcash_address",
+ "zcash_client_backend",
+ "zcash_encoding",
+ "zcash_note_encryption",
+ "zcash_primitives",
+]
+
+[[package]]
 name = "zingo-testutils"
 version = "0.1.0"
 source = "git+https://github.com/zingolabs/zingolib?branch=dev#95b8a2d519e832e66a6acbe6a7d28d8609b92f11"
@@ -3949,14 +3992,27 @@ dependencies = [
  "tracing",
  "zcash_address",
  "zcash_primitives",
- "zingoconfig",
- "zingolib",
+ "zingoconfig 0.1.0 (git+https://github.com/zingolabs/zingolib?branch=dev)",
+ "zingolib 0.2.0 (git+https://github.com/zingolabs/zingolib?branch=dev)",
 ]
 
 [[package]]
 name = "zingoconfig"
 version = "0.1.0"
 source = "git+https://github.com/zingolabs/zingolib?branch=dev#95b8a2d519e832e66a6acbe6a7d28d8609b92f11"
+dependencies = [
+ "dirs",
+ "http",
+ "log",
+ "log4rs",
+ "zcash_address",
+ "zcash_primitives",
+]
+
+[[package]]
+name = "zingoconfig"
+version = "0.1.0"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=regtest_network_upgrade_activation_heights#e2dc0d35267e4b00b7e1bbd48b45b3b2f2265335"
 dependencies = [
  "dirs",
  "http",
@@ -3977,7 +4033,7 @@ dependencies = [
  "bech32",
  "bip0039",
  "bls12_381",
- "build_utils",
+ "build_utils 0.1.0 (git+https://github.com/zingolabs/zingolib?branch=dev)",
  "byteorder",
  "bytes 0.4.12",
  "derive_more",
@@ -4003,7 +4059,7 @@ dependencies = [
  "prost 0.10.4",
  "rand 0.8.5",
  "reqwest",
- "ring",
+ "ring 0.16.20",
  "ripemd160",
  "rust-embed",
  "rustls-pemfile",
@@ -4030,8 +4086,76 @@ dependencies = [
  "zcash_note_encryption",
  "zcash_primitives",
  "zcash_proofs",
- "zingo-memo",
- "zingoconfig",
+ "zingo-memo 0.1.0 (git+https://github.com/zingolabs/zingolib?branch=dev)",
+ "zingoconfig 0.1.0 (git+https://github.com/zingolabs/zingolib?branch=dev)",
+]
+
+[[package]]
+name = "zingolib"
+version = "0.2.0"
+source = "git+https://github.com/Oscar-Pepper/zingolib?branch=regtest_network_upgrade_activation_heights#e2dc0d35267e4b00b7e1bbd48b45b3b2f2265335"
+dependencies = [
+ "append-only-vec",
+ "base58",
+ "base64 0.13.1",
+ "bech32",
+ "bip0039",
+ "bls12_381",
+ "build_utils 0.1.0 (git+https://github.com/Oscar-Pepper/zingolib?branch=regtest_network_upgrade_activation_heights)",
+ "byteorder",
+ "bytes 0.4.12",
+ "derive_more",
+ "either",
+ "ff 0.13.0",
+ "futures",
+ "group 0.13.0",
+ "hex 0.3.2",
+ "http",
+ "http-body",
+ "hyper",
+ "hyper-rustls",
+ "incrementalmerkletree",
+ "indoc",
+ "json",
+ "jubjub",
+ "lazy_static",
+ "log",
+ "log4rs",
+ "nonempty",
+ "orchard",
+ "pairing 0.22.0",
+ "prost 0.10.4",
+ "rand 0.8.5",
+ "reqwest",
+ "ring 0.17.2",
+ "ripemd160",
+ "rust-embed",
+ "rustls-pemfile",
+ "secp256k1",
+ "serde",
+ "serde_json",
+ "sha2 0.9.9",
+ "shardtree",
+ "sodiumoxide",
+ "subtle",
+ "tokio",
+ "tokio-rustls",
+ "tokio-stream",
+ "tonic",
+ "tonic-build 0.7.2",
+ "tower",
+ "tower-http 0.2.5",
+ "tracing",
+ "tracing-subscriber",
+ "webpki-roots 0.21.1",
+ "zcash_address",
+ "zcash_client_backend",
+ "zcash_encoding",
+ "zcash_note_encryption",
+ "zcash_primitives",
+ "zcash_proofs",
+ "zingo-memo 0.1.0 (git+https://github.com/Oscar-Pepper/zingolib?branch=regtest_network_upgrade_activation_heights)",
+ "zingoconfig 0.1.0 (git+https://github.com/Oscar-Pepper/zingolib?branch=regtest_network_upgrade_activation_heights)",
 ]
 
 [[package]]

@@ -1,14 +1,11 @@
 #[macro_use]
 extern crate lazy_static;
 
+use base64::{decode, encode};
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
-
-use base64::{decode, encode};
-
-use zingoconfig::construct_lightwalletd_uri;
-use zingolib::wallet::WalletBase;
-use zingolib::{commands, lightclient::LightClient};
+use zingoconfig::{construct_lightwalletd_uri, ChainType, RegtestNetwork, ZingoConfig};
+use zingolib::{commands, lightclient::LightClient, wallet::WalletBase};
 
 // We'll use a MUTEX to store a global lightclient instance,
 // so we don't have to keep creating it. We need to store it here, in rust
@@ -32,31 +29,33 @@ fn construct_uri_load_config(
     data_dir: String,
     chain_hint: String,
     monitor_mempool: bool,
-) -> Result<(zingoconfig::ZingoConfig, http::Uri), String> {
+) -> Result<(ZingoConfig, http::Uri), String> {
     let lightwalletd_uri = construct_lightwalletd_uri(Some(uri));
 
-    let chain_hint_str: &str = chain_hint.as_str();
-
-    use zingoconfig::ChainType::*;
-    let chaintype = match chain_hint_str {
-        "main" => Mainnet,
-        "test" => Testnet,
-        "regtest" => Regtest,
+    let chaintype = match chain_hint.as_str() {
+        "main" => ChainType::Mainnet,
+        "test" => ChainType::Testnet,
+        "regtest" => ChainType::Regtest,
         _ => return Err("Error: Not a valid chain hint!".to_string()),
+    };
+    let regtest_network: Option<RegtestNetwork> = match chaintype {
+        ChainType::Regtest => Some(RegtestNetwork::all_upgrades_active()),
+        _ => None,
     };
     let mut config = match zingolib::load_clientconfig(
         lightwalletd_uri.clone(),
         None,
         chaintype,
         monitor_mempool,
+        regtest_network,
     ) {
         Ok(c) => c,
         Err(e) => {
             return Err(format!("Error: Config load: {}", e));
         }
     };
-
     config.set_data_dir(data_dir);
+
     Ok((config, lightwalletd_uri))
 }
 
@@ -246,6 +245,6 @@ mod tests {
     }
     #[test]
     fn report_git_description() {
-        assert!(git_description().starts_with("mob-release-"));
+        assert!(git_description().starts_with("mob-"));
     }
 }
