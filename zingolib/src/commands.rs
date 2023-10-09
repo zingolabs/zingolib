@@ -634,11 +634,11 @@ struct ShieldCommand {}
 impl Command for ShieldCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Shield all your transparent and/or orchard funds
+            Shield all your transparent and/or sapling funds
             Usage:
-            shield ['transparent' or 'sapling' or 'all'] [optional address]
+            shield ['transparent' or 'sapling' or 'all']
 
-            NOTE: The fee required to send this transaction (currently ZEC 0.0001) is additionally deducted from your balance.
+            NOTE: The fee required to send this transaction derived according to zip317 is additionally deducted from your balance.
             Example:
             shield all
 

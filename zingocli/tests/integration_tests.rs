@@ -909,7 +909,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
 
     let shielded_total = 50_000 - u64::from((TWO_ACTION_FEE - MARGINAL_FEE).unwrap()); // Two action for orchard, marginal for transparent
     pool_migration_client
-        .do_shield(&[Pool::Transparent], None)
+        .do_shield(&[Pool::Transparent])
         .await
         .unwrap();
     bump_and_check!(o: shielded_total s: 0 t: 0);
@@ -922,7 +922,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     bump_and_check!(o: 40_000 s: 50_000 t: 0);
 
     pool_migration_client
-        .do_shield(&[Pool::Sapling], None)
+        .do_shield(&[Pool::Sapling])
         .await
         .unwrap();
     bump_and_check!(o: 80_000 s: 0 t: 0);
@@ -945,7 +945,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     bump_and_check!(o: 0 s: 30_000 t: 30_000);
 
     pool_migration_client
-        .do_shield(&[Pool::Transparent], None)
+        .do_shield(&[Pool::Transparent])
         .await
         .unwrap();
     pool_migration_client
@@ -962,7 +962,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     bump_and_check!(o: 10_000 s: 0 t: 20_000);
 
     pool_migration_client
-        .do_shield(&[Pool::Transparent], None)
+        .do_shield(&[Pool::Transparent])
         .await
         .unwrap();
     bump_and_check!(o: 20_000 s: 0 t: 0);
@@ -991,7 +991,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     bump_and_check!(o: 30_000 s: 20_000 t: 20_000);
 
     pool_migration_client
-        .do_shield(&[Pool::Transparent], None)
+        .do_shield(&[Pool::Transparent])
         .await
         .unwrap();
     pool_migration_client
@@ -2958,7 +2958,7 @@ async fn shield_sapling() {
     );
 
     assert_eq!(
-        recipient.do_shield(&[Pool::Sapling], None).await,
+        recipient.do_shield(&[Pool::Sapling]).await,
         Err("There are no shieldable notes, worth shielding.  The MARGINAL_FEE for a single logical action, which is the smallest fee that can be paid in the zip317 standard, to spend a note is: 5000".to_string())
     );
 
@@ -2977,7 +2977,7 @@ async fn shield_sapling() {
         .await
         .unwrap();
     let small_notes_error = recipient
-        .do_shield(&[Pool::Sapling, Pool::Transparent], None)
+        .do_shield(&[Pool::Sapling, Pool::Transparent])
         .await;
 
     assert_eq!(small_notes_error, Err("".to_string()));
@@ -2997,7 +2997,7 @@ async fn shield_sapling() {
         .await
         .unwrap();
     recipient
-        .do_shield(&[Pool::Sapling, Pool::Transparent], None)
+        .do_shield(&[Pool::Sapling, Pool::Transparent])
         .await
         .unwrap();
 
@@ -3308,7 +3308,7 @@ async fn sends_to_self_handle_balance_properly() {
         .await
         .unwrap();
     recipient
-        .do_shield(&[Pool::Sapling, Pool::Transparent], None)
+        .do_shield(&[Pool::Sapling, Pool::Transparent])
         .await
         .unwrap();
     zingo_testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 1)
