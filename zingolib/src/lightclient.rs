@@ -1076,14 +1076,21 @@ impl LightClient {
         let transparent_fee = shield_utxos * u64::from(MARGINAL_FEE);
         sapling_fee + transparent_fee + (u64::from(MARGINAL_FEE) * 2) // NOTE we're adding the orchard fee here
     }
-    pub async fn do_shield(
-        &self,
-        pools_to_shield: &[Pool],
-        address: Option<String>,
-    ) -> Result<String, String> {
+    pub async fn do_shield(&self, pools_to_shield: &[Pool]) -> Result<String, String> {
+        let mut shieldable_utxos = vec![];
+        let mut shieldable_sapling_notes = vec![];
+        for pool in pools_to_shield.to_vec() {
+            match pool {
+                Pool::Transparent => {
+                    shieldable_utxos = self.wallet.get_shieldable_transparent_utxos().await;
+                }
+                Pool::Sapling => {
+                    shieldable_sapling_notes = self.wallet.get_shieldable_sapling_notes().await;
+                }
+                Pool::Orchard => panic!("Shield from Orchard not supported."),
+            }
+        }
         let transaction_submission_height = self.get_submission_height().await?;
-        let shieldable_utxos = self.wallet.get_shieldable_transparent_utxos().await;
-        let shieldable_sapling_notes = self.wallet.get_shieldable_sapling_notes().await;
 
         let calculated_zip317_fee = self.calculate_shield_fee(
             shieldable_utxos.len() as u64,
