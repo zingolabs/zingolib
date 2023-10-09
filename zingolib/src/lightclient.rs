@@ -1106,8 +1106,8 @@ impl LightClient {
         // Note it's possible to have a higher value than MARGINAL_FEE
         // and still have no notes that are worth shielding (have more than MARGINAL_FEE value)
         // but any such 'dusty' notes will already have been filtered, by get_shieldable*
-        if balance_to_shield <= u64::from(MARGINAL_FEE) {
-            return Err(format!("There are no shieldable notes, worth shielding.  The MARGINAL_FEE for a single logical action, which is the smallest fee that can be paid in the zip317 standard, to spend a note is: {}", u64::from(MARGINAL_FEE)));
+        if total_shieldable <= calculated_zip317_fee {
+            return Err(format!("There are no shieldable notes, worth shielding.  The total which is eligible for shielding is: {} the total zip317 fee to shield these notes is: {}", total_shieldable, calculated_zip317_fee));
         }
         let self_orchard_address = address
             .unwrap_or(self.wallet.wallet_capability().addresses()[0].encode(&self.config.chain));
