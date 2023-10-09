@@ -14,9 +14,7 @@ use shardtree::ShardTree;
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
 use std::usize;
-use zcash_address::ZcashAddress;
 use zcash_client_backend::address::RecipientAddress;
-use zcash_client_backend::keys::UnifiedFullViewingKey;
 use zcash_client_backend::serialization::shardtree::{read_shard, write_shard};
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
@@ -31,7 +29,7 @@ use zcash_primitives::{
 };
 use zingoconfig::{ChainType, MAX_REORG};
 
-use super::keys::unified::WalletCapability;
+use super::keys::unified::{orchard_viewkey, sapling_viewkey, WalletCapability};
 use super::traits::{self, DomainWalletExt, ReadableWriteable, ToBytes};
 
 pub const COMMITMENT_TREE_LEVELS: u8 = 32;
@@ -1173,23 +1171,26 @@ impl TransactionMetadata {
             .iter()
             .filter(
                 |outgoing| match RecipientAddress::decode(params, &outgoing.to_address) {
-                    Some(RecipientAddress::Shielded(sapling_addr)) => {
-                        viewkey.sapling().map_or(true, |sapling_viewkey| {
+                    Some(RecipientAddress::Shielded(sapling_addr)) => sapling_viewkey(&viewkey)
+                        .map_or(true, |sapling_viewkey| {
                             sapling_viewkey.decrypt_diversifier(&sapling_addr).is_none()
-                        })
-                    }
-                    Some(RecipientAddress::Transparent(taddr)) => {
-                        viewkey.transparent().map_or(true, |transparent_pubkey| {
-                            transparent_pubkey.derive_external_ivk()
-                        })
-                    }
+                        }),
+                    //pubkey_to_address is deprecated, but as of yet there isn't a good alternative
+                    #[allow(deprecated)]
+                    Some(RecipientAddress::Transparent(taddr)) => wc
+                        .transparent_child_keys()
+                        .map_or(true, |child_pubkey_vec| {
+                            child_pubkey_vec.iter().any(|(_diversifier_index, pubkey)| {
+                                zcash_primitives::legacy::keys::pubkey_to_address(pubkey) != taddr
+                            })
+                        }),
                     Some(RecipientAddress::Unified(ua)) => {
                         if let Some(orchard_addr) = ua.orchard() {
-                            viewkey.orchard().map_or(true, |orchard_viewkey| {
+                            orchard_viewkey(&viewkey).map_or(true, |orchard_viewkey| {
                                 orchard_viewkey.scope_for_address(orchard_addr).is_none()
                             })
                         } else if let Some(sapling_addr) = ua.sapling() {
-                            viewkey.sapling().map_or(true, |sapling_viewkey| {
+                            sapling_viewkey(&viewkey).map_or(true, |sapling_viewkey| {
                                 sapling_viewkey.decrypt_diversifier(&sapling_addr).is_none()
                             })
                         } else {

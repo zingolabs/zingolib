@@ -147,11 +147,11 @@ impl WalletCapability {
 
     pub fn transparent_child_keys(
         &self,
-    ) -> Result<&AppendOnlyVec<(usize, secp256k1::SecretKey)>, String> {
-        if self.transparent.can_spend() {
+    ) -> Result<&AppendOnlyVec<(usize, secp256k1::PublicKey)>, String> {
+        if self.transparent.can_view() {
             Ok(&self.transparent_child_keys)
         } else {
-            Err("The wallet is not capable of spending transparent funds.".to_string())
+            Err("The wallet is not capable of viewing transparent funds.".to_string())
         }
     }
 
@@ -318,7 +318,7 @@ impl WalletCapability {
                     };
                     (
                         hash.to_base58check(&config.base58_pubkey_address(), &[]),
-                        if let Capability::Spend(ext_sk) = self.transparent {
+                        if let Capability::Spend(ref ext_sk) = self.transparent {
                             ext_sk
                                 .derive_private_key(KeyIndex::from_index(key.0 as u32).unwrap())
                                 .unwrap()
@@ -487,6 +487,38 @@ impl WalletCapability {
             transparent: self.transparent.can_view(),
         }
     }
+}
+
+pub fn orchard_viewkey(ufvk: &Ufvk) -> Option<orchard::keys::FullViewingKey> {
+    ufvk.items().iter().find_map(|receiver| {
+        if let Fvk::Orchard(fvk_bytes) = receiver {
+            orchard::keys::FullViewingKey::from_bytes(fvk_bytes)
+        } else {
+            None
+        }
+    })
+}
+pub fn sapling_viewkey(
+    ufvk: &Ufvk,
+) -> Option<zcash_primitives::zip32::sapling::DiversifiableFullViewingKey> {
+    ufvk.items().iter().find_map(|receiver| {
+        if let Fvk::Sapling(fvk_bytes) = receiver {
+            zcash_primitives::zip32::sapling::DiversifiableFullViewingKey::from_bytes(fvk_bytes)
+        } else {
+            None
+        }
+    })
+}
+
+pub fn transparent_viewkey(ufvk: &Ufvk) -> Option<zcash_primitives::legacy::keys::ExternalIvk> {
+    use zcash_primitives::legacy::keys::IncomingViewingKey as _;
+    ufvk.items().iter().find_map(|receiver| {
+        if let Fvk::P2pkh(fvk_bytes) = receiver {
+            zcash_primitives::legacy::keys::ExternalIvk::deserialize(fvk_bytes).ok()
+        } else {
+            None
+        }
+    })
 }
 
 /// Reads a transparent ExtendedPrivKey from a buffer that has a 32 byte private key and 32 byte chain code.

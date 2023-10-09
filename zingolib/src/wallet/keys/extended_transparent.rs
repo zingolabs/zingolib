@@ -5,12 +5,9 @@ use lazy_static::lazy_static;
 use ring::hmac::{self, Context, Key};
 use secp256k1::{Error, PublicKey, Secp256k1, SecretKey, SignOnly};
 use zcash_encoding::Vector;
-use zcash_primitives::legacy::keys::AccountPubKey;
 use zingoconfig::ZingoConfig;
 
 use crate::wallet::traits::ReadableWriteable;
-
-use super::unified::WalletCapability;
 
 lazy_static! {
     static ref SECP256K1_SIGN_ONLY: Secp256k1<SignOnly> = Secp256k1::signing_only();
