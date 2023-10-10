@@ -331,7 +331,7 @@ async fn sent_transaction_reorged_into_mempool() {
             crate::data::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
             1,
             true,
-            regtest_network,
+            regtest_network.clone(),
         )
         .await;
 
