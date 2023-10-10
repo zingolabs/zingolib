@@ -1169,6 +1169,8 @@ impl TransactionMetadata {
         let viewkey = wc.ufvk().unwrap();
         self.outgoing_tx_data
             .iter()
+            // Filter out sends-to-self, by checking to see if are capable of generating the address
+            // we sent to from our viewing key(s)
             .filter(
                 |outgoing| match RecipientAddress::decode(params, &outgoing.to_address) {
                     Some(RecipientAddress::Shielded(sapling_addr)) => sapling_viewkey(&viewkey)
@@ -1201,7 +1203,14 @@ impl TransactionMetadata {
                             true
                         }
                     }
-                    None => todo!(),
+                    // This is situation that should never occur.
+                    // If this is none, it means we can't parse the address we sent to
+                    // This is either some future address type (exceedingly unlikely, as UAs are
+                    // future-compatible), or we somehow sent to an invalid address
+                    // (Maybe there's a way to burn funds by sending to a bad address?)
+                    None => {
+                        unreachable!("Sent to an address we can't parse: {}", outgoing.to_address)
+                    }
                 },
             )
             .fold(0, |running_total, tx_data| tx_data.value + running_total)
