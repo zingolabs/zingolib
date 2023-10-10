@@ -423,7 +423,7 @@ dependencies = [
 [[package]]
 name = "build_utils"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=regtest_network_upgrade_activation_heights#07a09e89717c05baf62ab60be6edb2ae09b01226"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#deb2078038e97aacb3c73ccda8a63c2b6013e24e"
 
 [[package]]
 name = "bumpalo"
@@ -3943,7 +3943,7 @@ dependencies = [
 [[package]]
 name = "zingo-memo"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=regtest_network_upgrade_activation_heights#07a09e89717c05baf62ab60be6edb2ae09b01226"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#deb2078038e97aacb3c73ccda8a63c2b6013e24e"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -3955,7 +3955,7 @@ dependencies = [
 [[package]]
 name = "zingo-testutils"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=regtest_network_upgrade_activation_heights#07a09e89717c05baf62ab60be6edb2ae09b01226"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#deb2078038e97aacb3c73ccda8a63c2b6013e24e"
 dependencies = [
  "http",
  "incrementalmerkletree",
@@ -3977,7 +3977,7 @@ dependencies = [
 [[package]]
 name = "zingoconfig"
 version = "0.1.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=regtest_network_upgrade_activation_heights#07a09e89717c05baf62ab60be6edb2ae09b01226"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#deb2078038e97aacb3c73ccda8a63c2b6013e24e"
 dependencies = [
  "dirs",
  "http",
@@ -3990,7 +3990,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.2.0"
-source = "git+https://github.com/Oscar-Pepper/zingolib?branch=regtest_network_upgrade_activation_heights#07a09e89717c05baf62ab60be6edb2ae09b01226"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#deb2078038e97aacb3c73ccda8a63c2b6013e24e"
 dependencies = [
  "append-only-vec",
  "base58",
