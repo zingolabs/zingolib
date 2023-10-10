@@ -15,7 +15,7 @@ pub mod seeds {
     pub const HOSPITAL_MUSEUM_SEED: &str = "hospital museum valve antique skate museum \
      unfold vocal weird milk scale social vessel identify \
      crowd hospital control album rib bulb path oven civil tank";
-    pub const TEST_SEED: &str = "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise";
+    pub const CHIMNEY_BETTER_SEED: &str = "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise";
 }
 
 pub const REGSAP_ADDR_FROM_ABANDONART: &str =
@@ -30,7 +30,7 @@ pub mod config_template_fillers {
 
         pub fn basic(
             rpcport: &str,
-            regtest_network: zingoconfig::RegtestNetwork,
+            regtest_network: &zingoconfig::RegtestNetwork,
             extra: &str,
         ) -> String {
             let overwinter_activation_height = regtest_network
@@ -88,7 +88,7 @@ listen=0
         pub fn funded(
             mineraddress: &str,
             rpcport: &str,
-            regtest_network: zingoconfig::RegtestNetwork,
+            regtest_network: &zingoconfig::RegtestNetwork,
         ) -> String {
             basic(rpcport, regtest_network,
                 &format!("\

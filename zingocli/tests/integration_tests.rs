@@ -10,7 +10,7 @@ use zingo_testutils::{
 };
 
 use bip0039::Mnemonic;
-use data::seeds::{HOSPITAL_MUSEUM_SEED, TEST_SEED};
+use data::seeds::{CHIMNEY_BETTER_SEED, HOSPITAL_MUSEUM_SEED};
 use json::JsonValue;
 use zingo_testutils::scenarios;
 
@@ -434,12 +434,17 @@ async fn test_scanning_in_watch_only_mode() {
 
     let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, mut client_builder) =
-        scenarios::custom_clients(regtest_network).await;
+        scenarios::custom_clients(regtest_network.clone()).await;
     let faucet = client_builder
-        .build_new_faucet(0, false, regtest_network)
+        .build_new_faucet(0, false, regtest_network.clone())
         .await;
     let original_recipient = client_builder
-        .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
+        .build_newseed_client(
+            HOSPITAL_MUSEUM_SEED.to_string(),
+            0,
+            false,
+            regtest_network.clone(),
+        )
         .await;
     let zingo_config = zingolib::load_clientconfig(
         client_builder.server_id,
@@ -644,7 +649,7 @@ async fn mine_sapling_to_self() {
 async fn unspent_notes_are_not_saved() {
     let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient) =
-        scenarios::two_wallet_one_miner_fund(regtest_network).await;
+        scenarios::two_wallet_one_miner_fund(regtest_network.clone()).await;
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
         .await
         .unwrap();
@@ -677,6 +682,7 @@ async fn unspent_notes_are_not_saved() {
     let zingo_config = ZingoConfig::create_unconnected(
         zingoconfig::ChainType::Regtest,
         Some(wallet_location.clone()),
+        Some(regtest_network),
     );
     wallet_location.push("zingo-wallet.dat");
     let read_buffer = File::open(wallet_location.clone()).unwrap();
@@ -869,9 +875,9 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     // Test all possible promoting note source combinations
     let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, mut client_builder) =
-        scenarios::custom_clients(regtest_network).await;
+        scenarios::custom_clients(regtest_network.clone()).await;
     let sapling_faucet = client_builder
-        .build_new_faucet(0, false, regtest_network)
+        .build_new_faucet(0, false, regtest_network.clone())
         .await;
     let pool_migration_client = client_builder
         .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
@@ -1205,16 +1211,16 @@ async fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
 async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
     let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, mut client_builder) =
-        scenarios::custom_clients(regtest_network).await;
+        scenarios::custom_clients(regtest_network.clone()).await;
     let faucet = client_builder
-        .build_new_faucet(0, false, regtest_network)
+        .build_new_faucet(0, false, regtest_network.clone())
         .await;
     faucet.do_sync(false).await.unwrap();
     let seed_phrase_of_recipient1 = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
         .unwrap()
         .to_string();
     let recipient1 = client_builder
-        .build_newseed_client(seed_phrase_of_recipient1, 0, false, regtest_network)
+        .build_newseed_client(seed_phrase_of_recipient1, 0, false, regtest_network.clone())
         .await;
     let mut expected_unspent_sapling_notes = json::object! {
             "created_in_block" =>  4,
@@ -1330,7 +1336,7 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
 async fn diversification_deterministic_and_coherent() {
     let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
     let (_regtest_manager, _cph, mut client_builder) =
-        scenarios::custom_clients(regtest_network).await;
+        scenarios::custom_clients(regtest_network.clone()).await;
     let seed_phrase = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
         .unwrap()
         .to_string();
@@ -1406,7 +1412,7 @@ async fn diversification_deterministic_and_coherent() {
 async fn ensure_taddrs_from_old_seeds_work() {
     let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
     let (_regtest_manager, _cph, mut client_builder) =
-        scenarios::custom_clients(regtest_network).await;
+        scenarios::custom_clients(regtest_network.clone()).await;
     // The first taddr generated on commit 9e71a14eb424631372fd08503b1bd83ea763c7fb
     let transparent_address = "tmFLszfkjgim4zoUMAXpuohnFBAKy99rr2i";
 
@@ -1665,13 +1671,21 @@ async fn load_wallet_from_v26_dat_file() {
     // with 3 addresses containig all receivers.
     let data = include_bytes!("zingo-wallet-v26.dat");
 
-    let config = zingoconfig::ZingoConfig::create_unconnected(ChainType::Testnet, None);
+    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let config = zingoconfig::ZingoConfig::create_unconnected(
+        ChainType::Testnet,
+        None,
+        Some(regtest_network),
+    );
     let wallet = LightWallet::read_internal(&data[..], &config)
         .await
         .map_err(|e| format!("Cannot deserialize LightWallet version 26 file: {}", e))
         .unwrap();
 
-    let expected_mnemonic = (Mnemonic::from_phrase(TEST_SEED.to_string()).unwrap(), 0);
+    let expected_mnemonic = (
+        Mnemonic::from_phrase(CHIMNEY_BETTER_SEED.to_string()).unwrap(),
+        0,
+    );
     assert_eq!(wallet.mnemonic(), Some(&expected_mnemonic));
 
     let expected_wc =
@@ -2262,7 +2276,8 @@ pub mod framework_validation {
             regtest_manager,
             child_process_handler,
             ..
-        } = setup::ScenarioBuilder::build_configure_launch(None, None, None, regtest_network).await;
+        } = setup::ScenarioBuilder::build_configure_launch(None, None, None, &regtest_network)
+            .await;
         log::debug!("regtest_manager: {:#?}", &regtest_manager);
         // Turn zcashd off and on again, to write down the blocks
         log_field_from_zcashd!(

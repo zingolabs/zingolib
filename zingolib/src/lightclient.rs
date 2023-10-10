@@ -2169,7 +2169,12 @@ mod tests {
             .expect("This path is available.");
 
         let wallet_name = data_dir.join("zingo-wallet.dat");
-        let config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, Some(data_dir));
+        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+        let config = ZingoConfig::create_unconnected(
+            ChainType::FakeMainnet,
+            Some(data_dir),
+            Some(regtest_network),
+        );
         let lc = LightClient::create_from_wallet_base(
             WalletBase::MnemonicPhrase(TEST_SEED.to_string()),
             &config,

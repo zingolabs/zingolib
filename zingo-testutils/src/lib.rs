@@ -19,6 +19,7 @@ use zingolib::lightclient::LightClient;
 use crate::scenarios::setup::TestEnvironmentGenerator;
 
 pub const BASE_HEIGHT: u32 = 3;
+
 pub fn build_fvks_from_wallet_capability(wallet_capability: &WalletCapability) -> [Fvk; 3] {
     let o_fvk = Fvk::Orchard(
         orchard::keys::FullViewingKey::try_from(wallet_capability)
@@ -301,7 +302,7 @@ pub mod scenarios {
             fn configure_scenario(
                 &mut self,
                 funded: Option<String>,
-                regtest_network: zingoconfig::RegtestNetwork,
+                regtest_network: &zingoconfig::RegtestNetwork,
             ) {
                 if let Some(funding_seed) = funded {
                     self.test_env
@@ -350,7 +351,7 @@ pub mod scenarios {
                 let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
                 sb.configure_scenario(
                     Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
-                    regtest_network,
+                    &regtest_network,
                 );
                 sb.launch_scenario(false).await;
                 sb
@@ -361,7 +362,7 @@ pub mod scenarios {
                 funded: Option<String>,
                 zingo_wallet_dir: Option<PathBuf>,
                 set_lightwalletd_port: Option<portpicker::Port>,
-                regtest_network: zingoconfig::RegtestNetwork,
+                regtest_network: &zingoconfig::RegtestNetwork,
             ) -> Self {
                 let mut sb = if let Some(conf) = zingo_wallet_dir {
                     ScenarioBuilder::build_scenario(Some(conf), set_lightwalletd_port)
@@ -497,7 +498,7 @@ pub mod scenarios {
             }
             pub(crate) fn create_unfunded_zcash_conf(
                 &self,
-                regtest_network: zingoconfig::RegtestNetwork,
+                regtest_network: &zingoconfig::RegtestNetwork,
             ) -> PathBuf {
                 //! Side effect only fn, writes to FS.
                 self.write_contents_and_return_path(
@@ -512,7 +513,7 @@ pub mod scenarios {
             pub(crate) fn create_funded_zcash_conf(
                 &self,
                 address_to_fund: &str,
-                regtest_network: zingoconfig::RegtestNetwork,
+                regtest_network: &zingoconfig::RegtestNetwork,
             ) -> PathBuf {
                 self.write_contents_and_return_path(
                     "zcash",
@@ -558,7 +559,7 @@ pub mod scenarios {
             Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
             None,
             None,
-            regtest_network,
+            &regtest_network,
         )
         .await;
         (
@@ -584,7 +585,7 @@ pub mod scenarios {
             Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
             None,
             None,
-            regtest_network,
+            &regtest_network,
         )
         .await;
         let faucet = sb
@@ -652,12 +653,12 @@ pub mod scenarios {
             Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
             None,
             None,
-            regtest_network,
+            &regtest_network,
         )
         .await;
         let faucet = sb
             .client_builder
-            .build_new_faucet(0, false, regtest_network)
+            .build_new_faucet(0, false, regtest_network.clone())
             .await;
         faucet.do_sync(false).await.unwrap();
 
@@ -682,7 +683,8 @@ pub mod scenarios {
         regtest_network: zingoconfig::RegtestNetwork,
     ) -> (RegtestManager, ChildProcessHandler, LightClient) {
         let mut scenario_builder =
-            setup::ScenarioBuilder::build_configure_launch(None, None, None, regtest_network).await;
+            setup::ScenarioBuilder::build_configure_launch(None, None, None, &regtest_network)
+                .await;
         (
             scenario_builder.regtest_manager,
             scenario_builder.child_process_handler.unwrap(),
@@ -699,7 +701,7 @@ pub mod scenarios {
             None,
             None,
             Some(20_000),
-            regtest_network,
+            &regtest_network,
         )
         .await;
         (
@@ -714,12 +716,12 @@ pub mod scenarios {
             Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
             None,
             Some(20_000),
-            regtest_network,
+            &regtest_network,
         )
         .await;
         let faucet = scenario_builder
             .client_builder
-            .build_new_faucet(0, false, regtest_network)
+            .build_new_faucet(0, false, regtest_network.clone())
             .await;
         let recipient = scenario_builder
             .client_builder
@@ -752,12 +754,12 @@ pub mod scenarios {
             Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
             None,
             Some(20_000),
-            regtest_network,
+            &regtest_network,
         )
         .await;
         let faucet = scenario_builder
             .client_builder
-            .build_new_faucet(0, false, regtest_network)
+            .build_new_faucet(0, false, regtest_network.clone())
             .await;
         let recipient = scenario_builder
             .client_builder
@@ -817,12 +819,12 @@ pub mod scenarios {
             Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
             None,
             Some(20_000),
-            regtest_network,
+            &regtest_network,
         )
         .await;
         let faucet = scenario_builder
             .client_builder
-            .build_new_faucet(0, false, regtest_network)
+            .build_new_faucet(0, false, regtest_network.clone())
             .await;
         let recipient = scenario_builder
             .client_builder
@@ -956,7 +958,7 @@ pub mod scenarios {
             //(Some(REGSAP_ADDR_FROM_ABANDONART.to_string()), None);
             let faucet = sb
                 .client_builder
-                .build_new_faucet(0, false, regtest_network)
+                .build_new_faucet(0, false, regtest_network.clone())
                 .await;
             faucet.do_sync(false).await.unwrap();
             let recipient = sb
@@ -981,7 +983,7 @@ pub mod scenarios {
             //(Some(REGSAP_ADDR_FROM_ABANDONART.to_string()), None);
             let faucet = sb
                 .client_builder
-                .build_new_faucet(0, false, regtest_network)
+                .build_new_faucet(0, false, regtest_network.clone())
                 .await;
             let recipient = sb
                 .client_builder

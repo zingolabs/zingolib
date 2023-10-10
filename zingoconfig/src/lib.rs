@@ -74,11 +74,11 @@ pub struct ZingoConfig {
 
 impl ZingoConfig {
     // Create an unconnected (to any server) config to test for local wallet etc...
-    pub fn create_unconnected(chain: ChainType, dir: Option<PathBuf>) -> ZingoConfig {
-        let regtest_network: Option<RegtestNetwork> = match chain {
-            ChainType::Regtest => Some(RegtestNetwork::all_upgrades_active()),
-            _ => None,
-        };
+    pub fn create_unconnected(
+        chain: ChainType,
+        dir: Option<PathBuf>,
+        regtest_network: Option<RegtestNetwork>,
+    ) -> ZingoConfig {
         ZingoConfig {
             lightwalletd_uri: Arc::new(RwLock::new(http::Uri::default())),
             chain,
@@ -96,6 +96,7 @@ impl ZingoConfig {
         match self.chain {
             ChainType::Regtest => self
                 .regtest_network
+                .as_ref()
                 .expect("zingoconfig has not been initialized with a regtest network")
                 .activation_height(NetworkUpgrade::Sapling)
                 .unwrap()
@@ -112,6 +113,7 @@ impl ZingoConfig {
         match self.chain {
             ChainType::Regtest => self
                 .regtest_network
+                .as_ref()
                 .expect("zingoconfig has not been initialized with a regtest network")
                 .activation_height(NetworkUpgrade::Nu5)
                 .unwrap()
@@ -437,7 +439,7 @@ impl Parameters for ChainType {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct RegtestNetwork {
     activation_heights: ActivationHeights,
 }
@@ -531,7 +533,7 @@ impl RegtestNetwork {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct ActivationHeights {
     overwinter: BlockHeight,
     sapling: BlockHeight,
