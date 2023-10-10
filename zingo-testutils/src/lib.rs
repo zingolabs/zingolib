@@ -206,13 +206,10 @@ where
 pub async fn load_wallet(
     dir: PathBuf,
     chaintype: ChainType,
+    regtest_network: Option<RegtestNetwork>,
 ) -> (zingolib::wallet::LightWallet, ZingoConfig) {
     let wallet = dir.join("zingo-wallet.dat");
     let lightwalletd_uri = TestEnvironmentGenerator::new(None).get_lightwalletd_uri();
-    let regtest_network: Option<RegtestNetwork> = match chaintype {
-        ChainType::Regtest => Some(RegtestNetwork::all_upgrades_active()),
-        _ => None,
-    };
     let zingo_config = zingolib::load_clientconfig(
         lightwalletd_uri,
         Some(dir),

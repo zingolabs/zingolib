@@ -66,7 +66,7 @@ async fn send_without_reorg_buffer_blocks_gives_correct_error() {
 async fn dont_write_unconfirmed() {
     let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient) =
-        scenarios::two_wallet_one_miner_fund(regtest_network).await;
+        scenarios::two_wallet_one_miner_fund(regtest_network.clone()).await;
     faucet
         .do_send(vec![(
             &get_base_address!(recipient, "unified"),
@@ -124,8 +124,12 @@ async fn dont_write_unconfirmed() {
         .join("zingo_client_2");
     recipient.do_save().await.unwrap();
 
-    let (wallet, config) =
-        zingo_testutils::load_wallet(wallet_loc.to_path_buf(), ChainType::Regtest).await;
+    let (wallet, config) = zingo_testutils::load_wallet(
+        wallet_loc.to_path_buf(),
+        ChainType::Regtest,
+        Some(regtest_network),
+    )
+    .await;
     let loaded_client = LightClient::create_from_extant_wallet(wallet, config);
     let loaded_balance = loaded_client.do_balance().await;
     assert_eq!(loaded_balance.unverified_orchard_balance, Some(0),);
@@ -197,8 +201,10 @@ async fn sandblast_filter_preserves_trees() {
 
 #[tokio::test]
 async fn load_and_parse_different_wallet_versions() {
+    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
     let (_sap_wallet, _sap_path, sap_dir) = zingo_testutils::get_wallet_nym("sap_only").unwrap();
-    let (_loaded_wallet, _) = zingo_testutils::load_wallet(sap_dir, ChainType::Regtest).await;
+    let (_loaded_wallet, _) =
+        zingo_testutils::load_wallet(sap_dir, ChainType::Regtest, Some(regtest_network)).await;
 }
 
 #[tokio::test]
@@ -210,7 +216,7 @@ async fn list_transactions_include_foreign() {
     let wallet_path = Path::new(&wallet_nym);
     let wallet_dir = wallet_path.parent().unwrap();
     let (wallet, config) =
-        zingo_testutils::load_wallet(wallet_dir.to_path_buf(), ChainType::Mainnet).await;
+        zingo_testutils::load_wallet(wallet_dir.to_path_buf(), ChainType::Mainnet, None).await;
     let client = LightClient::create_from_extant_wallet(wallet, config);
     let transactions = client.do_list_transactions().await[0].clone();
     //env_logger::init();
@@ -2787,7 +2793,7 @@ async fn by_address_finsight() {
 #[tokio::test]
 async fn load_old_wallet_at_reorged_height() {
     let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
-    let (ref regtest_manager, cph, ref faucet) = scenarios::faucet(regtest_network).await;
+    let (ref regtest_manager, cph, ref faucet) = scenarios::faucet(regtest_network.clone()).await;
     println!("Shutting down initial zcd/lwd unneeded processes");
     drop(cph);
 
@@ -2832,7 +2838,9 @@ async fn load_old_wallet_at_reorged_height() {
         .expect("wallet copy failed");
     let _cph = regtest_manager.launch(false).unwrap();
     println!("loading wallet");
-    let (wallet, conf) = zingo_testutils::load_wallet(zingo_dest.into(), ChainType::Regtest).await;
+    let (wallet, conf) =
+        zingo_testutils::load_wallet(zingo_dest.into(), ChainType::Regtest, Some(regtest_network))
+            .await;
     println!("setting uri");
     *conf.lightwalletd_uri.write().unwrap() = faucet.get_server_uri();
     println!("creating lightclient");

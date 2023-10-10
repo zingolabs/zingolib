@@ -106,7 +106,7 @@ minetolocalwallet=0 # This is set to false so that we can mine to a wallet, othe
                         funded(
                             super::super::REGSAP_ADDR_FROM_ABANDONART,
                             "1234",
-                            regtest_network
+                            &regtest_network
                         ),
                         format!("\
 ### Blockchain Configuration

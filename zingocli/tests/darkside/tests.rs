@@ -324,7 +324,7 @@ async fn sent_transaction_reorged_into_mempool() {
     );
     let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
     let light_client = client_manager
-        .build_new_faucet(1, true, regtest_network)
+        .build_new_faucet(1, true, regtest_network.clone())
         .await;
     let recipient = client_manager
         .build_newseed_client(
