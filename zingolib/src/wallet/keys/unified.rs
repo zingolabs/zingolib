@@ -299,7 +299,7 @@ impl WalletCapability {
         &self,
         config: &ZingoConfig,
     ) -> Result<HashMap<String, secp256k1::SecretKey>, String> {
-        if self.transparent.can_spend() {
+        if let Capability::Spend(ref ext_sk) = self.transparent {
             Ok(self
                 .addresses
                 .iter()
@@ -312,20 +312,19 @@ impl WalletCapability {
                     )
                 })
                 .map(|(taddr, key)| {
-                    let hash = match taddr {
-                        TransparentAddress::PublicKey(hash) => hash,
-                        TransparentAddress::Script(hash) => hash,
-                    };
                     (
-                        hash.to_base58check(&config.base58_pubkey_address(), &[]),
-                        if let Capability::Spend(ref ext_sk) = self.transparent {
-                            ext_sk
-                                .derive_private_key(KeyIndex::from_index(key.0 as u32).unwrap())
-                                .unwrap()
-                                .private_key
-                        } else {
-                            unreachable!("We can spent")
+                        match taddr {
+                            TransparentAddress::PublicKey(hash) => {
+                                hash.to_base58check(&config.base58_pubkey_address(), &[])
+                            }
+                            TransparentAddress::Script(hash) => {
+                                hash.to_base58check(&config.base58_script_address(), &[])
+                            }
                         },
+                        ext_sk
+                            .derive_private_key(KeyIndex::from_index(key.0 as u32).unwrap())
+                            .unwrap()
+                            .private_key,
                     )
                 })
                 .collect())
