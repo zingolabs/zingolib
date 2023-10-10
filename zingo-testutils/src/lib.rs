@@ -13,7 +13,7 @@ use json::JsonValue;
 use log::debug;
 use regtest::RegtestManager;
 use tokio::time::sleep;
-use zingoconfig::{ChainType, RegtestNetwork, ZingoConfig};
+use zingoconfig::{ChainType, ZingoConfig};
 use zingolib::lightclient::LightClient;
 
 use crate::scenarios::setup::TestEnvironmentGenerator;
@@ -206,18 +206,11 @@ where
 pub async fn load_wallet(
     dir: PathBuf,
     chaintype: ChainType,
-    regtest_network: Option<RegtestNetwork>,
 ) -> (zingolib::wallet::LightWallet, ZingoConfig) {
     let wallet = dir.join("zingo-wallet.dat");
     let lightwalletd_uri = TestEnvironmentGenerator::new(None).get_lightwalletd_uri();
-    let zingo_config = zingolib::load_clientconfig(
-        lightwalletd_uri,
-        Some(dir),
-        chaintype,
-        true,
-        regtest_network,
-    )
-    .unwrap();
+    let zingo_config =
+        zingolib::load_clientconfig(lightwalletd_uri, Some(dir), chaintype, true).unwrap();
     let from = std::fs::File::open(wallet).unwrap();
 
     let read_lengths = vec![];
@@ -414,9 +407,8 @@ pub mod scenarios {
                 zingolib::load_clientconfig(
                     self.server_id.clone(),
                     Some(conf_path),
-                    zingoconfig::ChainType::Regtest,
+                    zingoconfig::ChainType::Regtest(regtest_network),
                     true,
-                    Some(regtest_network),
                 )
                 .unwrap()
             }

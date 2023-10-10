@@ -9,6 +9,7 @@ use crate::darkside::{
 
 use tokio::time::sleep;
 use zingo_testutils::scenarios::setup::ClientBuilder;
+use zingoconfig::RegtestNetwork;
 use zingolib::{
     get_base_address,
     lightclient::{LightClient, PoolBalances},
@@ -217,7 +218,7 @@ async fn simple_sync() {
     prepare_darksidewalletd(server_id.clone(), true)
         .await
         .unwrap();
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let light_client = ClientBuilder::new(
         server_id,
         darkside_handler.darkside_dir.clone(),
@@ -261,7 +262,7 @@ async fn reorg_away_receipt() {
         .await
         .unwrap();
 
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let light_client = ClientBuilder::new(
         server_id.clone(),
         darkside_handler.darkside_dir.clone(),
@@ -322,7 +323,7 @@ async fn sent_transaction_reorged_into_mempool() {
         darkside_handler.darkside_dir.clone(),
         DARKSIDE_SEED,
     );
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let light_client = client_manager
         .build_new_faucet(1, true, regtest_network.clone())
         .await;

@@ -25,7 +25,7 @@ use zcash_primitives::{
     transaction::{fees::zip317::MINIMUM_FEE, TxId},
 };
 use zingo_testutils::regtest::get_cargo_manifest_dir;
-use zingoconfig::{ChainType, ZingoConfig, MAX_REORG};
+use zingoconfig::{ChainType, RegtestNetwork, ZingoConfig, MAX_REORG};
 use zingolib::{
     check_client_balances, get_base_address,
     lightclient::{LightClient, PoolBalances},
@@ -41,7 +41,7 @@ use zingolib::{
 
 #[tokio::test]
 async fn send_without_reorg_buffer_blocks_gives_correct_error() {
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (_regtest_manager, _cph, faucet, mut recipient) =
         scenarios::two_wallet_one_miner_fund(regtest_network).await;
     recipient
@@ -64,7 +64,7 @@ async fn send_without_reorg_buffer_blocks_gives_correct_error() {
 
 #[tokio::test]
 async fn dont_write_unconfirmed() {
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient) =
         scenarios::two_wallet_one_miner_fund(regtest_network.clone()).await;
     faucet
@@ -126,8 +126,7 @@ async fn dont_write_unconfirmed() {
 
     let (wallet, config) = zingo_testutils::load_wallet(
         wallet_loc.to_path_buf(),
-        ChainType::Regtest,
-        Some(regtest_network),
+        ChainType::Regtest(regtest_network),
     )
     .await;
     let loaded_client = LightClient::create_from_extant_wallet(wallet, config);
@@ -138,7 +137,7 @@ async fn dont_write_unconfirmed() {
 
 #[tokio::test]
 async fn sandblast_filter_preserves_trees() {
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (ref regtest_manager, _cph, ref faucet, ref recipient, _txid) =
         scenarios::two_wallet_one_synced_orchard_transaction(100_000, regtest_network).await;
     recipient
@@ -201,10 +200,10 @@ async fn sandblast_filter_preserves_trees() {
 
 #[tokio::test]
 async fn load_and_parse_different_wallet_versions() {
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (_sap_wallet, _sap_path, sap_dir) = zingo_testutils::get_wallet_nym("sap_only").unwrap();
     let (_loaded_wallet, _) =
-        zingo_testutils::load_wallet(sap_dir, ChainType::Regtest, Some(regtest_network)).await;
+        zingo_testutils::load_wallet(sap_dir, ChainType::Regtest(regtest_network)).await;
 }
 
 #[tokio::test]
@@ -216,7 +215,7 @@ async fn list_transactions_include_foreign() {
     let wallet_path = Path::new(&wallet_nym);
     let wallet_dir = wallet_path.parent().unwrap();
     let (wallet, config) =
-        zingo_testutils::load_wallet(wallet_dir.to_path_buf(), ChainType::Mainnet, None).await;
+        zingo_testutils::load_wallet(wallet_dir.to_path_buf(), ChainType::Mainnet).await;
     let client = LightClient::create_from_extant_wallet(wallet, config);
     let transactions = client.do_list_transactions().await[0].clone();
     //env_logger::init();
@@ -241,7 +240,7 @@ async fn list_transactions_include_foreign() {
 #[traced_test]
 async fn send_to_self_with_no_user_specified_memo_does_not_cause_error() {
     tracing_log::LogTracer::init().unwrap();
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, _faucet, recipient, _txid) =
         scenarios::two_wallet_one_synced_orchard_transaction(100_000, regtest_network).await;
     recipient
@@ -279,7 +278,7 @@ async fn send_to_self_with_no_user_specified_memo_does_not_cause_error() {
 
 #[tokio::test]
 async fn factor_do_shield_to_call_do_send() {
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, __cph, faucet, recipient) =
         scenarios::two_wallet_one_miner_fund(regtest_network).await;
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 2)
@@ -297,7 +296,7 @@ async fn factor_do_shield_to_call_do_send() {
 
 #[tokio::test]
 async fn sapling_dust_fee_collection() {
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, __cph, faucet, recipient) =
         scenarios::two_wallet_one_miner_fund(regtest_network).await;
     let recipient_sapling = get_base_address!(recipient, "sapling");
@@ -438,7 +437,7 @@ async fn test_scanning_in_watch_only_mode() {
     // - wallet will not detect funds on internal addresses
     //   see: https://github.com/zingolabs/zingolib/issues/246
 
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, mut client_builder) =
         scenarios::custom_clients(regtest_network.clone()).await;
     let faucet = client_builder
@@ -455,9 +454,8 @@ async fn test_scanning_in_watch_only_mode() {
     let zingo_config = zingolib::load_clientconfig(
         client_builder.server_id,
         Some(client_builder.zingo_datadir),
-        ChainType::Regtest,
+        ChainType::Regtest(regtest_network),
         true,
-        Some(regtest_network),
     )
     .unwrap();
 
@@ -547,7 +545,7 @@ async fn zcashd_sapling_commitment_tree() {
     //  TODO:  Make this test assert something, what is this a test of?
     //  TODO:  Add doc-comment explaining what constraints this test
     //  enforces
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, _faucet) = scenarios::faucet(regtest_network).await;
     let trees = regtest_manager
         .get_cli_handle()
@@ -567,7 +565,7 @@ async fn verify_old_wallet_uses_server_height_in_send() {
     // interrupting send, it made it immediately obvious that this was
     // the wrong height to use!  The correct height is the
     // "mempool height" which is the server_height + 1
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient) =
         scenarios::two_wallet_one_miner_fund(regtest_network).await;
     // Ensure that the client has confirmed spendable funds
@@ -604,7 +602,7 @@ async fn actual_empty_zcashd_sapling_commitment_tree() {
         "ae2935f1dfd8a24aed7c70df7de3a668eb7a49b1319880dde2bbd9031ae5d82f";
     let finalstates = "000000";
     // Setup
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, _client) = scenarios::basic_no_spendable(regtest_network).await;
     // Execution:
     let trees = regtest_manager
@@ -643,7 +641,7 @@ async fn actual_empty_zcashd_sapling_commitment_tree() {
 
 #[tokio::test]
 async fn mine_sapling_to_self() {
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet) = scenarios::faucet(regtest_network).await;
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
         .await
@@ -653,7 +651,7 @@ async fn mine_sapling_to_self() {
 
 #[tokio::test]
 async fn unspent_notes_are_not_saved() {
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient) =
         scenarios::two_wallet_one_miner_fund(regtest_network.clone()).await;
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
@@ -686,9 +684,8 @@ async fn unspent_notes_are_not_saved() {
     wallet_location.pop();
     wallet_location.push("zingo_client_1");
     let zingo_config = ZingoConfig::create_unconnected(
-        zingoconfig::ChainType::Regtest,
+        zingoconfig::ChainType::Regtest(regtest_network),
         Some(wallet_location.clone()),
-        Some(regtest_network),
     );
     wallet_location.push("zingo-wallet.dat");
     let read_buffer = File::open(wallet_location.clone()).unwrap();
@@ -726,7 +723,7 @@ async fn send_mined_sapling_to_orchard() {
     // debiting unverified_orchard_balance and crediting verified_orchard_balance.  The debit amount is
     // consistent with all the notes in the relevant block changing state.
     // NOTE that the balance doesn't give insight into the distribution across notes.
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet) = scenarios::faucet(regtest_network).await;
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
         .await
@@ -767,7 +764,7 @@ async fn note_selection_order() {
     // In addition to testing the order in which notes are selected this test:
     //   * sends to a sapling address
     //   * sends back to the original sender's UA
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient) =
         scenarios::two_wallet_one_miner_fund(regtest_network).await;
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 5)
@@ -879,7 +876,7 @@ async fn note_selection_order() {
 #[tokio::test]
 async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     // Test all possible promoting note source combinations
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, mut client_builder) =
         scenarios::custom_clients(regtest_network.clone()).await;
     let sapling_faucet = client_builder
@@ -1028,7 +1025,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
 #[tokio::test]
 async fn send_orchard_back_and_forth() {
     // setup
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient) =
         scenarios::two_wallet_one_miner_fund(regtest_network).await;
     let block_reward = 625_000_000u64;
@@ -1099,7 +1096,7 @@ async fn send_orchard_back_and_forth() {
 
 #[tokio::test]
 async fn diversified_addresses_receive_funds_in_best_pool() {
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient) =
         scenarios::two_wallet_one_miner_fund(regtest_network).await;
     for code in ["o", "zo", "z"] {
@@ -1135,7 +1132,7 @@ async fn diversified_addresses_receive_funds_in_best_pool() {
 
 #[tokio::test]
 async fn rescan_still_have_outgoing_metadata() {
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient) =
         scenarios::two_wallet_one_miner_fund(regtest_network).await;
     faucet
@@ -1157,7 +1154,7 @@ async fn rescan_still_have_outgoing_metadata() {
 
 #[tokio::test]
 async fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet) = scenarios::faucet(regtest_network).await;
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
         .await
@@ -1215,7 +1212,7 @@ async fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
 /// is capable of recovering the diversified _receiver_.
 #[tokio::test]
 async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, mut client_builder) =
         scenarios::custom_clients(regtest_network.clone()).await;
     let faucet = client_builder
@@ -1340,7 +1337,7 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
 
 #[tokio::test]
 async fn diversification_deterministic_and_coherent() {
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (_regtest_manager, _cph, mut client_builder) =
         scenarios::custom_clients(regtest_network.clone()).await;
     let seed_phrase = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
@@ -1416,7 +1413,7 @@ async fn diversification_deterministic_and_coherent() {
 
 #[tokio::test]
 async fn ensure_taddrs_from_old_seeds_work() {
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (_regtest_manager, _cph, mut client_builder) =
         scenarios::custom_clients(regtest_network.clone()).await;
     // The first taddr generated on commit 9e71a14eb424631372fd08503b1bd83ea763c7fb
@@ -1434,7 +1431,7 @@ async fn ensure_taddrs_from_old_seeds_work() {
 
 #[tokio::test]
 async fn t_incoming_t_outgoing_disallowed() {
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient) =
         scenarios::two_wallet_one_miner_fund(regtest_network).await;
 
@@ -1469,7 +1466,7 @@ async fn t_incoming_t_outgoing_disallowed() {
 
 #[tokio::test]
 async fn send_to_ua_saves_full_ua_in_wallet() {
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient) =
         scenarios::two_wallet_one_miner_fund(regtest_network).await;
     //utils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 5).await;
@@ -1514,7 +1511,7 @@ async fn send_to_ua_saves_full_ua_in_wallet() {
 
 #[tokio::test]
 async fn self_send_to_t_displays_as_one_transaction() {
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient) =
         scenarios::two_wallet_one_miner_fund(regtest_network).await;
     let recipient_unified_address = get_base_address!(recipient, "unified");
@@ -1606,7 +1603,7 @@ async fn sapling_to_sapling_scan_together() {
     // Constraints:
     // 1. SpendK_S controls start - spend funds
     // 2. SpendK_R controls 0 + spend funds
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient) =
         scenarios::two_wallet_one_miner_fund(regtest_network).await;
 
@@ -1677,12 +1674,7 @@ async fn load_wallet_from_v26_dat_file() {
     // with 3 addresses containig all receivers.
     let data = include_bytes!("zingo-wallet-v26.dat");
 
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
-    let config = zingoconfig::ZingoConfig::create_unconnected(
-        ChainType::Testnet,
-        None,
-        Some(regtest_network),
-    );
+    let config = zingoconfig::ZingoConfig::create_unconnected(ChainType::Testnet, None);
     let wallet = LightWallet::read_internal(&data[..], &config)
         .await
         .map_err(|e| format!("Cannot deserialize LightWallet version 26 file: {}", e))
@@ -1742,7 +1734,7 @@ async fn load_wallet_from_v26_dat_file() {
 #[tokio::test]
 async fn mempool_and_balance() {
     let value = 100_000;
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient, _txid) =
         scenarios::two_wallet_one_synced_orchard_transaction(value, regtest_network).await;
 
@@ -1797,7 +1789,7 @@ async fn mempool_and_balance() {
 #[tokio::test]
 async fn witness_clearing() {
     let value: u64 = 100_000;
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient, txid) =
         scenarios::two_wallet_one_synced_orchard_transaction(value, regtest_network).await;
     dbg!(&txid);
@@ -1979,7 +1971,7 @@ async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
         }
     }
     let value = 100_000;
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient, orig_transaction_id) =
         scenarios::two_wallet_one_synced_orchard_transaction(value, regtest_network).await;
 
@@ -2249,6 +2241,7 @@ async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
 
 pub mod framework_validation {
     use crate::zingo_testutils::scenarios::setup::{self, ScenarioBuilder};
+    use zingoconfig::RegtestNetwork;
 
     macro_rules! log_field_from_zcashd {
         (
@@ -2277,7 +2270,7 @@ pub mod framework_validation {
 
     #[tokio::test]
     async fn reboot_zcashd() {
-        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+        let regtest_network = RegtestNetwork::all_upgrades_active();
         let ScenarioBuilder {
             regtest_manager,
             child_process_handler,
@@ -2326,7 +2319,7 @@ pub mod framework_validation {
 
 #[tokio::test]
 async fn sapling_incoming_sapling_outgoing() {
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient) =
         scenarios::two_wallet_one_miner_fund(regtest_network).await;
     let value = 100_000;
@@ -2520,7 +2513,7 @@ async fn sapling_incoming_sapling_outgoing() {
 #[tokio::test]
 async fn aborted_resync() {
     let zvalue = 100_000;
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient, _txid) =
         scenarios::two_wallet_one_synced_orchard_transaction(zvalue, regtest_network).await;
 
@@ -2631,7 +2624,7 @@ async fn aborted_resync() {
 async fn zero_value_change() {
     // 2. Send an incoming transaction to fill the wallet
     let value = 100_000;
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient, _txid) =
         scenarios::two_wallet_one_synced_orchard_transaction(value, regtest_network).await;
 
@@ -2674,7 +2667,7 @@ async fn zero_value_change() {
 #[tokio::test]
 async fn dust_sends_change_correctly() {
     let value = 100_000_000;
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient, _txid) =
         scenarios::two_wallet_one_synced_orchard_transaction(value, regtest_network).await;
 
@@ -2703,7 +2696,7 @@ async fn dust_sends_change_correctly() {
 #[tokio::test]
 async fn zero_value_receipts() {
     let value = 100_000_000;
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient, _txid) =
         scenarios::two_wallet_one_synced_orchard_transaction(value, regtest_network).await;
 
@@ -2741,7 +2734,7 @@ async fn zero_value_receipts() {
 
 #[tokio::test]
 async fn by_address_finsight() {
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient) =
         scenarios::two_wallet_one_miner_fund(regtest_network).await;
     let base_uaddress = get_base_address!(recipient, "unified");
@@ -2792,7 +2785,7 @@ async fn by_address_finsight() {
 
 #[tokio::test]
 async fn load_old_wallet_at_reorged_height() {
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (ref regtest_manager, cph, ref faucet) = scenarios::faucet(regtest_network.clone()).await;
     println!("Shutting down initial zcd/lwd unneeded processes");
     drop(cph);
@@ -2839,8 +2832,7 @@ async fn load_old_wallet_at_reorged_height() {
     let _cph = regtest_manager.launch(false).unwrap();
     println!("loading wallet");
     let (wallet, conf) =
-        zingo_testutils::load_wallet(zingo_dest.into(), ChainType::Regtest, Some(regtest_network))
-            .await;
+        zingo_testutils::load_wallet(zingo_dest.into(), ChainType::Regtest(regtest_network)).await;
     println!("setting uri");
     *conf.lightwalletd_uri.write().unwrap() = faucet.get_server_uri();
     println!("creating lightclient");
@@ -2937,7 +2929,7 @@ async fn load_old_wallet_at_reorged_height() {
 
 #[tokio::test]
 async fn shield_sapling() {
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient) =
         scenarios::two_wallet_one_miner_fund(regtest_network).await;
 
@@ -3023,7 +3015,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
     let second_send_to_sapling = 20_000;
     let third_send_to_transparent = 20_000;
 
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (ref regtest_manager, _cph, faucet, recipient, _txid) =
         scenarios::two_wallet_one_synced_orchard_transaction(
             recipient_initial_funds,
@@ -3299,7 +3291,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
 #[tokio::test]
 async fn sends_to_self_handle_balance_properly() {
     let transparent_funding = 100_000;
-    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (ref regtest_manager, _cph, faucet, ref recipient) =
         scenarios::two_wallet_one_miner_fund(regtest_network).await;
     faucet
@@ -3359,7 +3351,7 @@ async fn sends_to_self_handle_balance_properly() {
 
 #[tokio::test]
 async fn sync_pre_orchard() {
-    let regtest_network = zingoconfig::RegtestNetwork::set_orchard(10);
+    let regtest_network = RegtestNetwork::set_orchard(10);
     let (regtest_manager, _cph, lightclient) = scenarios::basic_no_spendable(regtest_network).await;
     if let Err(e) = increase_height_and_wait_for_client(&regtest_manager, &lightclient, 15).await {
         panic!("Sync error: {e}")

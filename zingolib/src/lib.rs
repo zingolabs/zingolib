@@ -24,16 +24,13 @@ use std::{
     path::PathBuf,
     sync::{Arc, RwLock},
 };
-use zingoconfig::{
-    ChainType, RegtestNetwork, ZingoConfig, DEFAULT_LOGFILE_NAME, DEFAULT_WALLET_NAME,
-};
+use zingoconfig::{ChainType, ZingoConfig, DEFAULT_LOGFILE_NAME, DEFAULT_WALLET_NAME};
 
 pub fn load_clientconfig(
     lightwallet_uri: http::Uri,
     data_dir: Option<PathBuf>,
     chain: ChainType,
     monitor_mempool: bool,
-    regtest_network: Option<RegtestNetwork>,
 ) -> Result<ZingoConfig> {
     use std::net::ToSocketAddrs;
     format!(
@@ -57,7 +54,6 @@ pub fn load_clientconfig(
         wallet_dir: data_dir,
         wallet_name: DEFAULT_WALLET_NAME.into(),
         logfile_name: DEFAULT_LOGFILE_NAME.into(),
-        regtest_network,
     };
 
     Ok(config)

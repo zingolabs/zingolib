@@ -7,7 +7,7 @@ use log::{error, info};
 
 use clap::{self, Arg};
 use zingo_testutils::regtest;
-use zingoconfig::{ChainType, RegtestNetwork};
+use zingoconfig::ChainType;
 use zingolib::wallet::WalletBase;
 use zingolib::{commands, lightclient::LightClient, load_clientconfig};
 
@@ -105,12 +105,13 @@ fn report_permission_error() {
 /// If the regtest flag was passed but a non regtest network is selected
 /// exit immediately and vice versa.
 fn regtest_config_check(regtest_manager: &Option<regtest::RegtestManager>, chain: &ChainType) {
-    if regtest_manager.is_some() && chain == &ChainType::Regtest {
-        println!("regtest detected and network set correctly!");
-    } else if regtest_manager.is_some() && chain != &ChainType::Regtest {
-        panic!("Regtest flag detected, but unexpected network set! Exiting.");
-    } else if chain == &ChainType::Regtest {
-        println!("WARNING! regtest network in use but no regtest flag recognized!");
+    match (regtest_manager.is_some(), chain) {
+        (true, ChainType::Regtest(_)) => println!("regtest detected and network set correctly!"),
+        (true, _) => panic!("Regtest flag detected, but unexpected network set! Exiting."),
+        (false, ChainType::Regtest(_)) => {
+            println!("WARNING! regtest network in use but no regtest flag recognized!")
+        }
+        _ => {}
     }
 }
 
@@ -352,11 +353,11 @@ to scan from the start of the blockchain."
             match chain.as_str() {
                 "mainnet" => ChainType::Mainnet,
                 "testnet" => ChainType::Testnet,
-                "regtest" => ChainType::Regtest,
+                "regtest" => ChainType::Regtest(zingoconfig::RegtestNetwork::all_upgrades_active()),
                 _ => return Err(TemplateFillError::InvalidChain(chain.clone())),
             }
         } else if matches.is_present("regtest") {
-            ChainType::Regtest
+            ChainType::Regtest(zingoconfig::RegtestNetwork::all_upgrades_active())
         } else {
             ChainType::Mainnet
         };
@@ -396,18 +397,12 @@ pub type CommandResponse = String;
 pub fn startup(
     filled_template: &ConfigTemplate,
 ) -> std::io::Result<(Sender<CommandRequest>, Receiver<CommandResponse>)> {
-    // Create regtest network in regtest mode
-    let regtest_network: Option<RegtestNetwork> = match filled_template.chaintype {
-        ChainType::Regtest => Some(RegtestNetwork::all_upgrades_active()),
-        _ => None,
-    };
     // Try to get the configuration
     let config = load_clientconfig(
         filled_template.server.clone(),
         Some(filled_template.data_dir.clone()),
         filled_template.chaintype,
         true,
-        regtest_network,
     )
     .unwrap();
     regtest_config_check(&filled_template.regtest_manager, &config.chain);

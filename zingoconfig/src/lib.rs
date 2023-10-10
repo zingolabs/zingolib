@@ -69,16 +69,11 @@ pub struct ZingoConfig {
     pub wallet_name: PathBuf,
     /// The filename of the logfile. This will be created in the `wallet_dir`.
     pub logfile_name: PathBuf,
-    pub regtest_network: Option<RegtestNetwork>,
 }
 
 impl ZingoConfig {
     // Create an unconnected (to any server) config to test for local wallet etc...
-    pub fn create_unconnected(
-        chain: ChainType,
-        dir: Option<PathBuf>,
-        regtest_network: Option<RegtestNetwork>,
-    ) -> ZingoConfig {
+    pub fn create_unconnected(chain: ChainType, dir: Option<PathBuf>) -> ZingoConfig {
         ZingoConfig {
             lightwalletd_uri: Arc::new(RwLock::new(http::Uri::default())),
             chain,
@@ -87,44 +82,24 @@ impl ZingoConfig {
             wallet_dir: dir,
             wallet_name: DEFAULT_WALLET_NAME.into(),
             logfile_name: DEFAULT_LOGFILE_NAME.into(),
-            regtest_network,
         }
     }
 
     //Convenience wrapper
     pub fn sapling_activation_height(&self) -> u64 {
-        match self.chain {
-            ChainType::Regtest => self
-                .regtest_network
-                .as_ref()
-                .expect("zingoconfig has not been initialized with a regtest network")
-                .activation_height(NetworkUpgrade::Sapling)
-                .unwrap()
-                .into(),
-            _ => self
-                .chain
-                .activation_height(NetworkUpgrade::Sapling)
-                .unwrap()
-                .into(),
-        }
+        self.chain
+            .activation_height(NetworkUpgrade::Sapling)
+            .unwrap()
+            .into()
     }
 
     pub fn orchard_activation_height(&self) -> u64 {
-        match self.chain {
-            ChainType::Regtest => self
-                .regtest_network
-                .as_ref()
-                .expect("zingoconfig has not been initialized with a regtest network")
-                .activation_height(NetworkUpgrade::Nu5)
-                .unwrap()
-                .into(),
-            _ => self
-                .chain
-                .activation_height(NetworkUpgrade::Nu5)
-                .unwrap()
-                .into(),
-        }
+        self.chain
+            .activation_height(NetworkUpgrade::Nu5)
+            .unwrap()
+            .into()
     }
+
     pub fn set_data_dir(&mut self, dir_str: String) {
         self.wallet_dir = Some(PathBuf::from(dir_str));
     }
@@ -193,7 +168,7 @@ impl ZingoConfig {
 
                 match &self.chain {
                     ChainType::Testnet => zcash_data_location.push("testnet3"),
-                    ChainType::Regtest => zcash_data_location.push("regtest"),
+                    ChainType::Regtest(_) => zcash_data_location.push("regtest"),
                     ChainType::Mainnet => {}
                     ChainType::FakeMainnet => zcash_data_location.push("fakemainnet"),
                 };
@@ -322,7 +297,7 @@ impl ZingoConfig {
 
     pub fn base58_secretkey_prefix(&self) -> [u8; 1] {
         match self.chain {
-            ChainType::Testnet | ChainType::Regtest | ChainType::FakeMainnet => [0xEF],
+            ChainType::Testnet | ChainType::Regtest(_) | ChainType::FakeMainnet => [0xEF],
             ChainType::Mainnet => [0x80],
         }
     }
@@ -330,7 +305,7 @@ impl ZingoConfig {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ChainType {
     Testnet,
-    Regtest,
+    Regtest(RegtestNetwork),
     Mainnet,
     FakeMainnet,
 }
@@ -339,7 +314,7 @@ impl ChainType {
     pub fn hrp_orchard_spending_key(&self) -> &str {
         match self {
             ChainType::Testnet => "secret-orchard-sk-test",
-            ChainType::Regtest => "secret-orchard-sk-regtest",
+            ChainType::Regtest(_) => "secret-orchard-sk-regtest",
             ChainType::Mainnet => "secret-orchard-sk-main",
             ChainType::FakeMainnet => "secret-orchard-sk-main",
         }
@@ -347,7 +322,7 @@ impl ChainType {
     pub fn hrp_unified_full_viewing_key(&self) -> &str {
         match self {
             ChainType::Testnet => "uviewtest",
-            ChainType::Regtest => "uviewregtest",
+            ChainType::Regtest(_) => "uviewregtest",
             ChainType::Mainnet => "uview",
             ChainType::FakeMainnet => "uview",
         }
@@ -356,7 +331,7 @@ impl ChainType {
         match self {
             Mainnet | FakeMainnet => zcash_address::Network::Main,
             Testnet => zcash_address::Network::Test,
-            Regtest => RegtestNetwork::address_network().unwrap(),
+            Regtest(_) => RegtestNetwork::address_network().unwrap(),
         }
     }
 }
@@ -366,7 +341,7 @@ impl std::fmt::Display for ChainType {
         use ChainType::*;
         let name = match self {
             Testnet => "test",
-            Regtest => "regtest",
+            Regtest(_) => "regtest",
             Mainnet => "main",
             FakeMainnet => "fakemainnet",
         };
@@ -380,8 +355,7 @@ impl Parameters for ChainType {
         match self {
             Mainnet => MAIN_NETWORK.activation_height(nu),
             Testnet => TEST_NETWORK.activation_height(nu),
-            // This function should never be called in regtest but fails to send in integ tests if None??
-            Regtest => Some(BlockHeight::from_u32(1)),
+            Regtest(regtest_network) => regtest_network.activation_height(nu),
             FakeMainnet => Some(BlockHeight::from_u32(1)),
         }
     }
@@ -390,7 +364,7 @@ impl Parameters for ChainType {
         match self {
             Mainnet | FakeMainnet => constants::mainnet::COIN_TYPE,
             Testnet => constants::testnet::COIN_TYPE,
-            Regtest => RegtestNetwork::coin_type(),
+            Regtest(_) => RegtestNetwork::coin_type(),
         }
     }
 
@@ -398,7 +372,7 @@ impl Parameters for ChainType {
         match self {
             Mainnet | FakeMainnet => constants::mainnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
             Testnet => constants::testnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
-            Regtest => RegtestNetwork::hrp_sapling_extended_spending_key(),
+            Regtest(_) => RegtestNetwork::hrp_sapling_extended_spending_key(),
         }
     }
 
@@ -406,7 +380,7 @@ impl Parameters for ChainType {
         match self {
             Mainnet | FakeMainnet => constants::mainnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
             Testnet => constants::testnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
-            Regtest => RegtestNetwork::hrp_sapling_extended_full_viewing_key(),
+            Regtest(_) => RegtestNetwork::hrp_sapling_extended_full_viewing_key(),
         }
     }
 
@@ -414,7 +388,7 @@ impl Parameters for ChainType {
         match self {
             Mainnet | FakeMainnet => constants::mainnet::HRP_SAPLING_PAYMENT_ADDRESS,
             Testnet => constants::testnet::HRP_SAPLING_PAYMENT_ADDRESS,
-            Regtest => RegtestNetwork::hrp_sapling_payment_address(),
+            Regtest(_) => RegtestNetwork::hrp_sapling_payment_address(),
         }
     }
 
@@ -422,7 +396,7 @@ impl Parameters for ChainType {
         match self {
             Mainnet | FakeMainnet => constants::mainnet::B58_PUBKEY_ADDRESS_PREFIX,
             Testnet => constants::testnet::B58_PUBKEY_ADDRESS_PREFIX,
-            Regtest => RegtestNetwork::b58_pubkey_address_prefix(),
+            Regtest(_) => RegtestNetwork::b58_pubkey_address_prefix(),
         }
     }
 
@@ -430,7 +404,7 @@ impl Parameters for ChainType {
         match self {
             Mainnet | FakeMainnet => constants::mainnet::B58_SCRIPT_ADDRESS_PREFIX,
             Testnet => constants::testnet::B58_SCRIPT_ADDRESS_PREFIX,
-            Regtest => RegtestNetwork::b58_script_address_prefix(),
+            Regtest(_) => RegtestNetwork::b58_script_address_prefix(),
         }
     }
 
@@ -439,7 +413,7 @@ impl Parameters for ChainType {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RegtestNetwork {
     activation_heights: ActivationHeights,
 }
@@ -533,7 +507,7 @@ impl RegtestNetwork {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ActivationHeights {
     overwinter: BlockHeight,
     sapling: BlockHeight,
