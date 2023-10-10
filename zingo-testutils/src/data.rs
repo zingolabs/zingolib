@@ -16,6 +16,7 @@ pub mod seeds {
      unfold vocal weird milk scale social vessel identify \
      crowd hospital control album rib bulb path oven civil tank";
 }
+pub const BLOCK_REWARD: u64 = 625_000_000u64;
 pub const REGSAP_ADDR_FROM_ABANDONART: &str =
     "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
 pub mod config_template_fillers {

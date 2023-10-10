@@ -14,10 +14,11 @@ use shardtree::ShardTree;
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
 use std::usize;
+use zcash_client_backend::address::RecipientAddress;
 use zcash_client_backend::serialization::shardtree::{read_shard, write_shard};
 use zcash_encoding::{Optional, Vector};
 use zcash_note_encryption::Domain;
-use zcash_primitives::consensus::BlockHeight;
+use zcash_primitives::consensus::{BlockHeight, Parameters};
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::merkle_tree::{read_commitment_tree, write_commitment_tree, HashSer};
 use zcash_primitives::sapling::note_encryption::SaplingDomain;
@@ -28,7 +29,7 @@ use zcash_primitives::{
 };
 use zingoconfig::{ChainType, MAX_REORG};
 
-use super::keys::unified::WalletCapability;
+use super::keys::unified::{orchard_viewkey, sapling_viewkey, WalletCapability};
 use super::traits::{self, DomainWalletExt, ReadableWriteable, ToBytes};
 
 pub const COMMITMENT_TREE_LEVELS: u8 = 32;
@@ -944,8 +945,27 @@ impl TransactionMetadata {
         }
     }
 
-    pub fn get_transaction_fee(&self) -> u64 {
-        self.total_value_spent() - (self.value_outgoing() + self.total_change_returned())
+    /// Returns Some(fee) for outgoing transactions, and None for non-outgoing
+    pub fn get_transaction_fee<P: Parameters>(
+        &self,
+        wc: &WalletCapability,
+        params: &P,
+    ) -> Option<u64> {
+        if self.is_outgoing_transaction() {
+            println!(
+                "TXID {} spent {} and received {}",
+                self.txid,
+                self.total_value_spent(),
+                self.total_value_received()
+            );
+            Some(
+                self.total_value_spent()
+                    - self.total_value_received()
+                    - self.value_outgoing(wc, params),
+            )
+        } else {
+            None
+        }
     }
 
     // TODO: This is incorrect in the edge case where where we have a send-to-self with
@@ -1145,9 +1165,54 @@ impl TransactionMetadata {
         self.value_spent_by_pool().iter().sum()
     }
 
-    pub fn value_outgoing(&self) -> u64 {
+    pub fn value_outgoing<P: Parameters>(&self, wc: &WalletCapability, params: &P) -> u64 {
+        let viewkey = wc.ufvk().unwrap();
         self.outgoing_tx_data
             .iter()
+            // Filter out sends-to-self, by checking to see if are capable of generating the address
+            // we sent to from our viewing key(s)
+            .filter(
+                |outgoing| match RecipientAddress::decode(params, &outgoing.to_address) {
+                    Some(RecipientAddress::Shielded(sapling_addr)) => sapling_viewkey(&viewkey)
+                        .map_or(true, |sapling_viewkey| {
+                            sapling_viewkey.decrypt_diversifier(&sapling_addr).is_none()
+                        }),
+                    //pubkey_to_address is deprecated, but as of yet there isn't a good alternative
+                    #[allow(deprecated)]
+                    Some(RecipientAddress::Transparent(taddr)) => wc
+                        .transparent_child_keys()
+                        .map_or(true, |child_pubkey_vec| {
+                            child_pubkey_vec.iter().any(|(_diversifier_index, pubkey)| {
+                                zcash_primitives::legacy::keys::pubkey_to_address(pubkey) != taddr
+                            })
+                        }),
+                    Some(RecipientAddress::Unified(ua)) => {
+                        if let Some(orchard_addr) = ua.orchard() {
+                            orchard_viewkey(&viewkey).map_or(true, |orchard_viewkey| {
+                                orchard_viewkey.scope_for_address(orchard_addr).is_none()
+                            })
+                        } else if let Some(sapling_addr) = ua.sapling() {
+                            sapling_viewkey(&viewkey).map_or(true, |sapling_viewkey| {
+                                sapling_viewkey.decrypt_diversifier(&sapling_addr).is_none()
+                            })
+                        } else {
+                            // If the UA we sent to has no sapling or orchard components,
+                            // this means this is a send to a future pool that did not
+                            // exist at the time of this code being written.
+                            // This is probably the the least wrong thing to do here.
+                            true
+                        }
+                    }
+                    // This is situation that should never occur.
+                    // If this is none, it means we can't parse the address we sent to
+                    // This is either some future address type (exceedingly unlikely, as UAs are
+                    // future-compatible), or we somehow sent to an invalid address
+                    // (Maybe there's a way to burn funds by sending to a bad address?)
+                    None => {
+                        unreachable!("Sent to an address we can't parse: {}", outgoing.to_address)
+                    }
+                },
+            )
             .fold(0, |running_total, tx_data| tx_data.value + running_total)
     }
 
