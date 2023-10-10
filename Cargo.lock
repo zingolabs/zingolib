@@ -1152,12 +1152,6 @@ checksum = "d77f7ec81a6d05a3abb01ab6eb7590f6083d08449fe5a1c8b1e620283546ccb7"
 
 [[package]]
 name = "hex"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "805026a5d0141ffc30abb3be3173848ad46a1b1664fe632428479619a3644d77"
-
-[[package]]
-name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
@@ -1823,7 +1817,7 @@ dependencies = [
  "group 0.13.0",
  "halo2_gadgets",
  "halo2_proofs",
- "hex 0.4.3",
+ "hex",
  "incrementalmerkletree",
  "lazy_static",
  "memuse",
@@ -2309,7 +2303,7 @@ dependencies = [
  "blake2b_simd",
  "byteorder",
  "group 0.13.0",
- "hex 0.4.3",
+ "hex",
  "jubjub",
  "pasta_curves",
  "rand_core 0.6.4",
@@ -3458,7 +3452,7 @@ checksum = "76f64bba2c53b04fcab63c01a7d7427eadc821e3bc48c34dc9ba29c501164b52"
 dependencies = [
  "byteorder",
  "crunchy",
- "hex 0.4.3",
+ "hex",
  "static_assertions",
 ]
 
@@ -3891,7 +3885,7 @@ dependencies = [
  "crossbeam-channel",
  "group 0.13.0",
  "hdwallet",
- "hex 0.4.3",
+ "hex",
  "incrementalmerkletree",
  "memuse",
  "nom",
@@ -3951,7 +3945,7 @@ dependencies = [
  "fpe",
  "group 0.13.0",
  "hdwallet",
- "hex 0.4.3",
+ "hex",
  "incrementalmerkletree",
  "jubjub",
  "lazy_static",
@@ -4019,7 +4013,7 @@ dependencies = [
  "env_logger",
  "futures",
  "futures-util",
- "hex 0.3.2",
+ "hex",
  "http",
  "http-body",
  "hyper",
@@ -4120,7 +4114,7 @@ dependencies = [
  "ff 0.13.0",
  "futures",
  "group 0.13.0",
- "hex 0.3.2",
+ "hex",
  "http",
  "http-body",
  "hyper",
