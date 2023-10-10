@@ -41,8 +41,9 @@ use zingolib::{
 
 #[tokio::test]
 async fn send_without_reorg_buffer_blocks_gives_correct_error() {
+    let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
     let (_regtest_manager, _cph, faucet, mut recipient) =
-        scenarios::two_wallet_one_miner_fund().await;
+        scenarios::two_wallet_one_miner_fund(regtest_network).await;
     recipient
         .wallet
         .transaction_context
