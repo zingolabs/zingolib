@@ -3245,13 +3245,19 @@ async fn complex_wallet_txsummaries() {
     dbg!("recipient rescan summaries: ");
     log_tx_summaries(recipient.do_list_txsummaries().await);
 
-    let loaded_faucet = zingo_testutils::save_and_reload_client(faucet, regtest_manager).await;
+    let loaded_faucet = &zingo_testutils::save_and_reload_client(faucet, regtest_manager).await;
     dbg!("faucet reloaded summaries: ");
     log_tx_summaries(loaded_faucet.do_list_txsummaries().await);
     let loaded_recipient =
-        zingo_testutils::save_and_reload_client(recipient, regtest_manager).await;
+        &zingo_testutils::save_and_reload_client(recipient, regtest_manager).await;
     dbg!("recipient reloaded summaries: ");
     log_tx_summaries(loaded_recipient.do_list_txsummaries().await);
+
+    let _ =
+        zingo_testutils::increase_height_and_wait_for_client(regtest_manager, loaded_recipient, 1)
+            .await;
+    let _ = zingo_testutils::increase_height_and_wait_for_client(regtest_manager, loaded_faucet, 1)
+        .await;
 
     let _ = loaded_faucet.do_rescan().await;
     dbg!("loaded faucet rescan summaries: ");
