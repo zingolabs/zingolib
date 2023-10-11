@@ -907,7 +907,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         .unwrap();
     bump_and_check!(o: 0 s: 0 t: 50_000);
 
-    let shielded_total = 50_000 - u64::from((TWO_ACTION_FEE - MARGINAL_FEE).unwrap()); // Two action for orchard, marginal for transparent
+    let shielded_total = 50_000 - u64::from((TWO_ACTION_FEE + MARGINAL_FEE).unwrap()); // Two action for orchard, marginal for transparent
     pool_migration_client
         .do_shield(&[Pool::Transparent])
         .await
