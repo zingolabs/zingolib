@@ -37,7 +37,8 @@ use zingolib::{
 
 #[tokio::test]
 async fn dont_write_unconfirmed() {
-    let (regtest_manager, _cph, faucet, recipient) = scenarios::two_wallet_one_miner_fund().await;
+    let (scenario_builder, faucet, recipient) = scenarios::two_wallet_one_miner_fund().await;
+    let regtest_manager = &scenario_builder.regtest_manager;
     faucet
         .do_send(vec![(
             &get_base_address!(recipient, "unified"),
@@ -89,7 +90,8 @@ async fn dont_write_unconfirmed() {
         65_000
     );
 
-    let loaded_client = zingo_testutils::save_and_reload_client(&recipient, &regtest_manager).await;
+    let (loaded_client, _scenario_builder) =
+        zingo_testutils::save_client_and_load_clone(&faucet, scenario_builder).await;
 
     let loaded_balance = loaded_client.do_balance().await;
     assert_eq!(loaded_balance.unverified_orchard_balance, Some(0),);
@@ -99,7 +101,7 @@ async fn dont_write_unconfirmed() {
 #[tokio::test]
 async fn sandblast_filter_preserves_trees() {
     let (ref regtest_manager, _cph, ref faucet, ref recipient, _txid) =
-        scenarios::two_wallet_one_orchard_transaction_synced(100_000).await;
+        scenarios::two_wallet_one_orchard_transaction_synced_manager_only(100_000).await;
     recipient
         .wallet
         .wallet_options
@@ -198,7 +200,7 @@ async fn list_transactions_include_foreign() {
 async fn send_to_self_with_no_user_specified_memo_does_not_cause_error() {
     tracing_log::LogTracer::init().unwrap();
     let (regtest_manager, _cph, _faucet, recipient, _txid) =
-        scenarios::two_wallet_one_orchard_transaction_synced(100_000).await;
+        scenarios::two_wallet_one_orchard_transaction_synced_manager_only(100_000).await;
     recipient
         .do_send(vec![(
             &get_base_address!(recipient, "unified"),
@@ -234,7 +236,8 @@ async fn send_to_self_with_no_user_specified_memo_does_not_cause_error() {
 
 #[tokio::test]
 async fn factor_do_shield_to_call_do_send() {
-    let (regtest_manager, __cph, faucet, recipient) = scenarios::two_wallet_one_miner_fund().await;
+    let (regtest_manager, __cph, faucet, recipient) =
+        scenarios::two_wallet_one_miner_fund_manager_only().await;
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 2)
         .await
         .unwrap();
@@ -250,7 +253,8 @@ async fn factor_do_shield_to_call_do_send() {
 
 #[tokio::test]
 async fn sapling_dust_fee_collection() {
-    let (regtest_manager, __cph, faucet, recipient) = scenarios::two_wallet_one_miner_fund().await;
+    let (regtest_manager, __cph, faucet, recipient) =
+        scenarios::two_wallet_one_miner_fund_manager_only().await;
     let recipient_sapling = get_base_address!(recipient, "sapling");
     let recipient_unified = get_base_address!(recipient, "unified");
     check_client_balances!(recipient, o: 0 s: 0 t: 0);
@@ -507,7 +511,8 @@ async fn verify_old_wallet_uses_server_height_in_send() {
     // interrupting send, it made it immediately obvious that this was
     // the wrong height to use!  The correct height is the
     // "mempool height" which is the server_height + 1
-    let (regtest_manager, _cph, faucet, recipient) = scenarios::two_wallet_one_miner_fund().await;
+    let (regtest_manager, _cph, faucet, recipient) =
+        scenarios::two_wallet_one_miner_fund_manager_only().await;
     // Ensure that the client has confirmed spendable funds
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 5)
         .await
@@ -588,7 +593,8 @@ async fn mine_sapling_to_self() {
 
 #[tokio::test]
 async fn unspent_notes_are_not_saved() {
-    let (regtest_manager, _cph, faucet, recipient) = scenarios::two_wallet_one_miner_fund().await;
+    let (regtest_manager, _cph, faucet, recipient) =
+        scenarios::two_wallet_one_miner_fund_manager_only().await;
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
         .await
         .unwrap();
@@ -698,7 +704,8 @@ async fn note_selection_order() {
     // In addition to testing the order in which notes are selected this test:
     //   * sends to a sapling address
     //   * sends back to the original sender's UA
-    let (regtest_manager, _cph, faucet, recipient) = scenarios::two_wallet_one_miner_fund().await;
+    let (regtest_manager, _cph, faucet, recipient) =
+        scenarios::two_wallet_one_miner_fund_manager_only().await;
 
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 5)
         .await
@@ -953,7 +960,8 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
 #[tokio::test]
 async fn send_orchard_back_and_forth() {
     // setup
-    let (regtest_manager, _cph, faucet, recipient) = scenarios::two_wallet_one_miner_fund().await;
+    let (regtest_manager, _cph, faucet, recipient) =
+        scenarios::two_wallet_one_miner_fund_manager_only().await;
     let block_reward = 625_000_000u64;
     let faucet_to_recipient_amount = 20_000u64;
     let recipient_to_faucet_amount = 5_000u64;
@@ -1022,7 +1030,8 @@ async fn send_orchard_back_and_forth() {
 
 #[tokio::test]
 async fn diversified_addresses_receive_funds_in_best_pool() {
-    let (regtest_manager, _cph, faucet, recipient) = scenarios::two_wallet_one_miner_fund().await;
+    let (regtest_manager, _cph, faucet, recipient) =
+        scenarios::two_wallet_one_miner_fund_manager_only().await;
     for code in ["o", "zo", "z"] {
         recipient.do_new_address(code).await.unwrap();
     }
@@ -1056,7 +1065,8 @@ async fn diversified_addresses_receive_funds_in_best_pool() {
 
 #[tokio::test]
 async fn rescan_still_have_outgoing_metadata() {
-    let (regtest_manager, _cph, faucet, recipient) = scenarios::two_wallet_one_miner_fund().await;
+    let (regtest_manager, _cph, faucet, recipient) =
+        scenarios::two_wallet_one_miner_fund_manager_only().await;
     faucet
         .do_send(vec![(
             get_base_address!(recipient, "sapling").as_str(),
@@ -1339,7 +1349,8 @@ async fn ensure_taddrs_from_old_seeds_work() {
 
 #[tokio::test]
 async fn t_incoming_t_outgoing_disallowed() {
-    let (regtest_manager, _cph, faucet, recipient) = scenarios::two_wallet_one_miner_fund().await;
+    let (regtest_manager, _cph, faucet, recipient) =
+        scenarios::two_wallet_one_miner_fund_manager_only().await;
 
     // 2. Get an incoming transaction to a t address
     let taddr = get_base_address!(recipient, "transparent");
@@ -1372,7 +1383,8 @@ async fn t_incoming_t_outgoing_disallowed() {
 
 #[tokio::test]
 async fn send_to_ua_saves_full_ua_in_wallet() {
-    let (regtest_manager, _cph, faucet, recipient) = scenarios::two_wallet_one_miner_fund().await;
+    let (regtest_manager, _cph, faucet, recipient) =
+        scenarios::two_wallet_one_miner_fund_manager_only().await;
     //utils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 5).await;
     let recipient_unified_address = get_base_address!(recipient, "unified");
     let sent_value = 50_000;
@@ -1415,7 +1427,8 @@ async fn send_to_ua_saves_full_ua_in_wallet() {
 
 #[tokio::test]
 async fn self_send_to_t_displays_as_one_transaction() {
-    let (regtest_manager, _cph, faucet, recipient) = scenarios::two_wallet_one_miner_fund().await;
+    let (regtest_manager, _cph, faucet, recipient) =
+        scenarios::two_wallet_one_miner_fund_manager_only().await;
     let recipient_unified_address = get_base_address!(recipient, "unified");
     let sent_value = 50_000;
     faucet
@@ -1507,7 +1520,8 @@ async fn sapling_to_sapling_scan_together() {
     // Constraints:
     // 1. SpendK_S controls start - spend funds
     // 2. SpendK_R controls 0 + spend funds
-    let (regtest_manager, _cph, faucet, recipient) = scenarios::two_wallet_one_miner_fund().await;
+    let (regtest_manager, _cph, faucet, recipient) =
+        scenarios::two_wallet_one_miner_fund_manager_only().await;
 
     // Give the faucet a block reward
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
@@ -1635,7 +1649,7 @@ async fn mempool_and_balance() {
     let value = 100_000;
 
     let (regtest_manager, _cph, faucet, recipient, _txid) =
-        scenarios::two_wallet_one_orchard_transaction_synced(value).await;
+        scenarios::two_wallet_one_orchard_transaction_synced_manager_only(value).await;
 
     let bal = recipient.do_balance().await;
     println!("{}", serde_json::to_string_pretty(&bal).unwrap());
@@ -1689,7 +1703,7 @@ async fn mempool_and_balance() {
 async fn witness_clearing() {
     let value: u64 = 100_000;
     let (regtest_manager, _cph, faucet, recipient, txid) =
-        scenarios::two_wallet_one_orchard_transaction_synced(value).await;
+        scenarios::two_wallet_one_orchard_transaction_synced_manager_only(value).await;
     dbg!(&txid);
     let mut txid_bytes = <[u8; 32]>::try_from(hex::decode(txid).unwrap()).unwrap();
     // TxId byte order is displayed in the reverse order from how it's encoded, for some reason
@@ -1870,7 +1884,7 @@ async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
     }
     let value = 100_000;
     let (regtest_manager, _cph, faucet, recipient, orig_transaction_id) =
-        scenarios::two_wallet_one_orchard_transaction_synced(value).await;
+        scenarios::two_wallet_one_orchard_transaction_synced_manager_only(value).await;
 
     assert_eq!(
         do_maybe_recent_txid(&recipient).await["last_txid"],
@@ -2212,7 +2226,8 @@ pub mod framework_validation {
 }
 #[tokio::test]
 async fn sapling_incoming_sapling_outgoing() {
-    let (regtest_manager, _cph, faucet, recipient) = scenarios::two_wallet_one_miner_fund().await;
+    let (regtest_manager, _cph, faucet, recipient) =
+        scenarios::two_wallet_one_miner_fund_manager_only().await;
     let value = 100_000;
 
     // 2. Send an incoming transaction to fill the wallet
@@ -2405,7 +2420,7 @@ async fn sapling_incoming_sapling_outgoing() {
 async fn aborted_resync() {
     let zvalue = 100_000;
     let (regtest_manager, _cph, faucet, recipient, _txid) =
-        scenarios::two_wallet_one_orchard_transaction_synced(zvalue).await;
+        scenarios::two_wallet_one_orchard_transaction_synced_manager_only(zvalue).await;
 
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 15)
         .await
@@ -2515,7 +2530,7 @@ async fn zero_value_change() {
     // 2. Send an incoming transaction to fill the wallet
     let value = 100_000;
     let (regtest_manager, _cph, faucet, recipient, _txid) =
-        scenarios::two_wallet_one_orchard_transaction_synced(value).await;
+        scenarios::two_wallet_one_orchard_transaction_synced_manager_only(value).await;
 
     let sent_value = value - u64::from(MINIMUM_FEE);
     let sent_transaction_id = recipient
@@ -2557,7 +2572,7 @@ async fn zero_value_change() {
 async fn dust_sends_change_correctly() {
     let value = 100_000_000;
     let (regtest_manager, _cph, faucet, recipient, _txid) =
-        scenarios::two_wallet_one_orchard_transaction_synced(value).await;
+        scenarios::two_wallet_one_orchard_transaction_synced_manager_only(value).await;
 
     // Send of less that transaction fee
     let sent_value = 1000;
@@ -2585,7 +2600,7 @@ async fn dust_sends_change_correctly() {
 async fn zero_value_receipts() {
     let value = 100_000_000;
     let (regtest_manager, _cph, faucet, recipient, _txid) =
-        scenarios::two_wallet_one_orchard_transaction_synced(value).await;
+        scenarios::two_wallet_one_orchard_transaction_synced_manager_only(value).await;
 
     let sent_value = 0;
     let _sent_transaction_id = faucet
@@ -2620,7 +2635,8 @@ async fn zero_value_receipts() {
 }
 #[tokio::test]
 async fn by_address_finsight() {
-    let (regtest_manager, _cph, faucet, recipient) = scenarios::two_wallet_one_miner_fund().await;
+    let (regtest_manager, _cph, faucet, recipient) =
+        scenarios::two_wallet_one_miner_fund_manager_only().await;
     let base_uaddress = get_base_address!(recipient, "unified");
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 2)
         .await
@@ -2811,7 +2827,8 @@ async fn load_old_wallet_at_reorged_height() {
 
 #[tokio::test]
 async fn shield_sapling() {
-    let (regtest_manager, _cph, faucet, recipient) = scenarios::two_wallet_one_miner_fund().await;
+    let (regtest_manager, _cph, faucet, recipient) =
+        scenarios::two_wallet_one_miner_fund_manager_only().await;
 
     let sapling_dust = 100;
     let _sent_transaction_id = faucet
@@ -2896,7 +2913,8 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
     let third_send_to_transparent = 20_000;
 
     let (ref regtest_manager, _cph, faucet, recipient, _txid) =
-        scenarios::two_wallet_one_orchard_transaction_synced(recipient_initial_funds).await;
+        scenarios::two_wallet_one_orchard_transaction_synced_manager_only(recipient_initial_funds)
+            .await;
 
     let expected_transactions = json::parse(
         r#"
@@ -3167,7 +3185,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
 async fn sends_to_self_handle_balance_properly() {
     let transparent_funding = 100_000;
     let (ref regtest_manager, _cph, faucet, ref recipient) =
-        scenarios::two_wallet_one_miner_fund().await;
+        scenarios::two_wallet_one_miner_fund_manager_only().await;
     faucet
         .do_send(vec![(
             &get_base_address!(recipient, "sapling"),
@@ -3226,44 +3244,46 @@ async fn sends_to_self_handle_balance_properly() {
 // fluid vanadiums first test
 #[tokio::test]
 async fn complex_wallet_txsummaries() {
-    let (ref regtest_manager, _cph, ref faucet, ref recipient, _txid) =
+    let (scenario_builder, ref faucet, ref recipient, _txid) =
         scenarios::two_wallet_transparent_sapling_orchard_transactions(5_000, 7_000, 9_000).await;
+    let regtest_manager = &scenario_builder.regtest_manager;
     let _rsync = recipient.do_sync(false).await;
     let _ =
-        zingo_testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 1).await;
-    let _ = zingo_testutils::increase_height_and_wait_for_client(regtest_manager, faucet, 1).await;
+        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, recipient, 1).await;
+    let _ = zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, faucet, 1).await;
 
-    dbg!("faucet summaries: ");
+    println!("faucet summaries: ");
     log_tx_summaries(faucet.do_list_txsummaries().await);
-    dbg!("recipient summaries: ");
+    println!("recipient summaries: ");
     log_tx_summaries(recipient.do_list_txsummaries().await);
 
     let _ = faucet.do_rescan().await;
-    dbg!("faucet rescan summaries: ");
+    println!("faucet rescan summaries: ");
     log_tx_summaries(faucet.do_list_txsummaries().await);
     let _ = recipient.do_rescan().await;
-    dbg!("recipient rescan summaries: ");
+    println!("recipient rescan summaries: ");
     log_tx_summaries(recipient.do_list_txsummaries().await);
 
-    let loaded_faucet = &zingo_testutils::save_and_reload_client(faucet, regtest_manager).await;
-    dbg!("faucet reloaded summaries: ");
+    let (loaded_faucet, scenario_builder) =
+        zingo_testutils::save_client_and_load_clone(faucet, scenario_builder).await;
+    println!("faucet reloaded summaries: ");
     log_tx_summaries(loaded_faucet.do_list_txsummaries().await);
-    let loaded_recipient =
-        &zingo_testutils::save_and_reload_client(recipient, regtest_manager).await;
-    dbg!("recipient reloaded summaries: ");
+    let (loaded_recipient, scenario_builder) =
+        zingo_testutils::save_client_and_load_clone(recipient, scenario_builder).await;
+    println!("recipient reloaded summaries: ");
     log_tx_summaries(loaded_recipient.do_list_txsummaries().await);
 
-    let _ =
-        zingo_testutils::increase_height_and_wait_for_client(regtest_manager, loaded_recipient, 1)
-            .await;
-    let _ = zingo_testutils::increase_height_and_wait_for_client(regtest_manager, loaded_faucet, 1)
-        .await;
+    println!("wallet locations: ");
+    println!("{}", faucet.get_wallet_file_location().display());
+    println!("{}", recipient.get_wallet_file_location().display());
+    println!("{}", loaded_faucet.get_wallet_file_location().display());
+    println!("{}", loaded_recipient.get_wallet_file_location().display());
 
     let _ = loaded_faucet.do_rescan().await;
-    dbg!("loaded faucet rescan summaries: ");
+    println!("faucet reloaded rescan summaries: ");
     log_tx_summaries(loaded_faucet.do_list_txsummaries().await);
     let _ = loaded_recipient.do_rescan().await;
-    dbg!("loaded recipient rescan summaries: ");
+    println!("recipient reloaded rescan summaries: ");
     log_tx_summaries(loaded_recipient.do_list_txsummaries().await);
 }
 

@@ -227,22 +227,24 @@ impl ZingoConfig {
             .expect("Couldn't read configured server URI!")
             .clone()
     }
-    pub fn get_wallet_path(&self) -> Box<Path> {
+    pub fn get_wallet_pathbuf(&self) -> PathBuf {
         let mut wallet_location = self.get_zingo_wallet_dir().into_path_buf();
         wallet_location.push(&self.wallet_name);
-
-        wallet_location.into_boxed_path()
+        wallet_location
+    }
+    pub fn get_wallet_boxed_path(&self) -> Box<Path> {
+        self.get_wallet_pathbuf().into_boxed_path()
     }
 
-    pub fn wallet_exists(&self) -> bool {
-        self.get_wallet_path().exists()
+    pub fn wallet_path_exists(&self) -> bool {
+        self.get_wallet_boxed_path().exists()
     }
 
     pub fn backup_existing_wallet(&self) -> Result<String, String> {
-        if !self.wallet_exists() {
+        if !self.wallet_path_exists() {
             return Err(format!(
                 "Couldn't find existing wallet to backup. Looked in {:?}",
-                self.get_wallet_path().to_str()
+                self.get_wallet_boxed_path().to_str()
             ));
         }
         use std::time::{SystemTime, UNIX_EPOCH};
@@ -257,7 +259,8 @@ impl ZingoConfig {
         ));
 
         let backup_file_str = backup_file_path.to_string_lossy().to_string();
-        std::fs::copy(self.get_wallet_path(), backup_file_path).map_err(|e| format!("{}", e))?;
+        std::fs::copy(self.get_wallet_boxed_path(), backup_file_path)
+            .map_err(|e| format!("{}", e))?;
 
         Ok(backup_file_str)
     }

@@ -414,7 +414,7 @@ pub fn startup(
             false,
         )?),
         None => {
-            if config.wallet_exists() {
+            if config.wallet_path_exists() {
                 Arc::new(LightClient::read_wallet_from_disk(&config)?)
             } else {
                 println!("Creating a new wallet");

@@ -1,10 +1,12 @@
 pub mod data;
 pub use incrementalmerkletree;
+use scenarios::setup::ScenarioBuilder;
 use zcash_address::unified::{Fvk, Ufvk};
 use zingolib::wallet::data::summaries::ValueTransfer;
 use zingolib::wallet::keys::unified::WalletCapability;
 use zingolib::wallet::WalletBase;
 pub mod regtest;
+use std::fs::copy;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::string::String;
@@ -163,18 +165,28 @@ pub async fn wait_until_client_reaches_block_height(
     }
     Ok(())
 }
-pub async fn save_and_reload_client(
+pub async fn save_client_and_load_clone(
     client: &LightClient,
-    regtest_manager: &RegtestManager,
-) -> LightClient {
-    let wallet_loc = &regtest_manager
-        .zingo_datadir
-        .parent()
-        .unwrap()
-        .join("zingo_client_2");
+    mut scenario_builder: ScenarioBuilder,
+) -> (LightClient, ScenarioBuilder) {
+    // let wallet_loc = &regtest_manager
+    //     .zingo_datadir
+    //     .parent()
+    //     .unwrap()
+    //     .join("zingo_client_2");
+    let wallet_file_location = client.get_wallet_file_location();
     client.do_save().await.unwrap();
-    let (wallet, config) = load_wallet(wallet_loc.to_path_buf(), ChainType::Regtest).await;
-    LightClient::create_from_extant_wallet(wallet, config)
+    let new_wallet_file_location = scenario_builder.client_builder.make_unique_data_dir();
+    let mut new_wallet_dir_location = new_wallet_file_location.clone();
+    new_wallet_dir_location.pop();
+    let _ = std::fs::create_dir(dbg!(new_wallet_dir_location)).unwrap();
+    let _ = std::fs::copy(dbg!(&wallet_file_location), dbg!(new_wallet_file_location)).unwrap();
+    let (wallet, config) =
+        load_wallet(wallet_file_location.to_path_buf(), ChainType::Regtest).await;
+    (
+        LightClient::create_from_extant_wallet(wallet, config),
+        scenario_builder,
+    )
 }
 pub fn log_tx_summaries(summaries: Vec<ValueTransfer>) -> () {
     for i in summaries {
@@ -269,7 +281,7 @@ pub mod scenarios {
     //! If you need a faucet, and a single recipient, use 'faucet_recipient`
     //! For less common client configurations use the client_manager directly with
     //! custom_clients
-    use self::setup::ClientBuilder;
+    use self::setup::{ClientBuilder, ScenarioBuilder};
     use super::regtest::{ChildProcessHandler, RegtestManager};
     use crate::{
         data::{self, seeds::HOSPITAL_MUSEUM_SEED, REGSAP_ADDR_FROM_ABANDONART},
@@ -413,13 +425,20 @@ pub mod scenarios {
             pub fn make_unique_data_dir_and_load_config(&mut self) -> zingoconfig::ZingoConfig {
                 //! Each client requires a unique data_dir, we use the
                 //! client_number counter for this.
+                let conf_path = self.make_unique_data_dir();
+                self.create_clientconfig(PathBuf::from(conf_path))
+            }
+            pub fn make_unique_data_dir(&mut self) -> PathBuf {
+                //! Each client requires a unique data_dir, we use the
+                //! client_number counter for this.
+                // for this we could actually check and thus have fewer sources of truth = toDo
                 self.client_number += 1;
                 let conf_path = format!(
                     "{}_client_{}",
                     self.zingo_datadir.to_string_lossy(),
                     self.client_number
                 );
-                self.create_clientconfig(PathBuf::from(conf_path))
+                PathBuf::from(conf_path)
             }
             pub fn create_clientconfig(&self, conf_path: PathBuf) -> zingoconfig::ZingoConfig {
                 std::fs::create_dir(&conf_path).unwrap();
@@ -587,12 +606,7 @@ pub mod scenarios {
         )
     }
 
-    pub async fn two_wallet_one_miner_fund() -> (
-        RegtestManager,
-        ChildProcessHandler,
-        LightClient,
-        LightClient,
-    ) {
+    pub async fn two_wallet_one_miner_fund() -> (ScenarioBuilder, LightClient, LightClient) {
         let mut sb = setup::ScenarioBuilder::build_configure_launch(
             Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
             None,
@@ -605,9 +619,19 @@ pub mod scenarios {
             .client_builder
             .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), BASE_HEIGHT as u64, false)
             .await;
+        (sb, faucet, recipient)
+    }
+
+    pub async fn two_wallet_one_miner_fund_manager_only() -> (
+        RegtestManager,
+        ChildProcessHandler,
+        LightClient,
+        LightClient,
+    ) {
+        let (scenario_builder, faucet, recipient) = two_wallet_one_miner_fund().await;
         (
-            sb.regtest_manager,
-            sb.child_process_handler.unwrap(),
+            scenario_builder.regtest_manager,
+            scenario_builder.child_process_handler.unwrap(),
             faucet,
             recipient,
         )
@@ -615,21 +639,15 @@ pub mod scenarios {
 
     pub async fn two_wallet_one_orchard_transaction_synced(
         value: u64,
-    ) -> (
-        RegtestManager,
-        ChildProcessHandler,
-        LightClient,
-        LightClient,
-        String,
-    ) {
+    ) -> (ScenarioBuilder, LightClient, LightClient, String) {
         dbg!("0 About to create faucet_recipient.");
-        let (regtest_manager, child_process_handler, faucet, recipient) =
-            two_wallet_one_miner_fund().await;
-        dbg!("1 About to increase height and sync faucet.");
+        let (scenario_builder, faucet, recipient) = two_wallet_one_miner_fund().await;
+        let regtest_manager = &scenario_builder.regtest_manager;
+        println!("1 About to increase height and sync faucet.");
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
-        dbg!("2 faucet synced.");
+        println!("2 faucet synced.");
         let txid = faucet
             .do_send(vec![(
                 &get_base_address!(recipient, "unified"),
@@ -638,16 +656,29 @@ pub mod scenarios {
             )])
             .await
             .unwrap();
-        dbg!("3 faucet send complete");
+        println!("3 faucet send complete");
         increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
-        dbg!("4 recipient increased and synced.");
-        dbg!("5 about to sync faucet.");
+        println!("4 recipient increased and synced.");
+        println!("5 about to sync faucet.");
         faucet.do_sync(false).await.unwrap();
+        (scenario_builder, faucet, recipient, txid)
+    }
+    pub async fn two_wallet_one_orchard_transaction_synced_manager_only(
+        value: u64,
+    ) -> (
+        RegtestManager,
+        ChildProcessHandler,
+        LightClient,
+        LightClient,
+        String,
+    ) {
+        let (scenario_builder, faucet, recipient, txid) =
+            two_wallet_one_orchard_transaction_synced(value).await;
         (
-            regtest_manager,
-            child_process_handler,
+            scenario_builder.regtest_manager,
+            scenario_builder.child_process_handler.unwrap(),
             faucet,
             recipient,
             txid,
@@ -659,20 +690,19 @@ pub mod scenarios {
         value_saplin: u64,
         value_orchar: u64,
     ) -> (
-        RegtestManager,
-        ChildProcessHandler,
+        ScenarioBuilder,
         LightClient,
         LightClient,
         (String, String, String),
     ) {
-        dbg!("0 About to create faucet_recipient.");
-        let (regtest_manager, child_process_handler, faucet, recipient) =
-            two_wallet_one_miner_fund().await;
-        dbg!("1 About to increase height and sync faucet.");
+        println!("0 About to create faucet_recipient.");
+        let (scenario_builder, faucet, recipient) = two_wallet_one_miner_fund().await;
+        let regtest_manager = &scenario_builder.regtest_manager;
+        println!("1 About to increase height and sync faucet.");
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
-        dbg!("2 faucet synced.");
+        println!("2 faucet synced.");
         let txid1 = faucet
             .do_send(vec![(
                 &get_base_address!(recipient, "transparent"),
@@ -697,18 +727,12 @@ pub mod scenarios {
             )])
             .await
             .unwrap();
-        dbg!("3 faucet send complete");
+        println!("3 faucet send complete");
         increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
-        dbg!("4 recipient increased and synced.");
-        (
-            regtest_manager,
-            child_process_handler,
-            faucet,
-            recipient,
-            (txid1, txid2, txid3),
-        )
+        println!("4 recipient increased and synced.");
+        (scenario_builder, faucet, recipient, (txid1, txid2, txid3))
     }
 
     pub async fn basic_no_spendable() -> (RegtestManager, ChildProcessHandler, LightClient) {
