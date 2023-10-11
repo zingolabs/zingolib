@@ -88,16 +88,9 @@ async fn dont_write_unconfirmed() {
         recipient_balance.unverified_orchard_balance.unwrap(),
         65_000
     );
-    let wallet_loc = &regtest_manager
-        .zingo_datadir
-        .parent()
-        .unwrap()
-        .join("zingo_client_2");
-    recipient.do_save().await.unwrap();
 
-    let (wallet, config) =
-        zingo_testutils::load_wallet(wallet_loc.to_path_buf(), ChainType::Regtest).await;
-    let loaded_client = LightClient::create_from_extant_wallet(wallet, config);
+    let loaded_client = zingo_testutils::save_and_reload_client(&recipient, &regtest_manager).await;
+
     let loaded_balance = loaded_client.do_balance().await;
     assert_eq!(loaded_balance.unverified_orchard_balance, Some(0),);
     check_client_balances!(loaded_client, o: 100_000 s: 0 t: 0 );
@@ -3234,18 +3227,38 @@ async fn sends_to_self_handle_balance_properly() {
 #[tokio::test]
 async fn complex_wallet_txsummaries() {
     let (ref regtest_manager, _cph, ref faucet, ref recipient, _txid) =
-        scenarios::two_wallet_transparent_sapling_orchard_and_to_self_transaction(1_000).await;
+        scenarios::two_wallet_transparent_sapling_orchard_transactions(5_000, 7_000, 9_000).await;
     let _rsync = recipient.do_sync(false).await;
     let _ =
         zingo_testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 1).await;
     let _ = zingo_testutils::increase_height_and_wait_for_client(regtest_manager, faucet, 1).await;
-    let r_sumrys = recipient.do_list_txsummaries().await;
-    log_tx_summaries(r_sumrys);
+
+    dbg!("faucet summaries: ");
+    log_tx_summaries(faucet.do_list_txsummaries().await);
+    dbg!("recipient summaries: ");
+    log_tx_summaries(recipient.do_list_txsummaries().await);
+
+    let _ = faucet.do_rescan().await;
+    dbg!("faucet rescan summaries: ");
+    log_tx_summaries(faucet.do_list_txsummaries().await);
     let _ = recipient.do_rescan().await;
-    let r_sumrys_rescan = recipient.do_list_txsummaries().await;
-    log_tx_summaries(r_sumrys_rescan);
-    let f_sumrys = faucet.do_list_txsummaries().await;
-    log_tx_summaries(f_sumrys);
+    dbg!("recipient rescan summaries: ");
+    log_tx_summaries(recipient.do_list_txsummaries().await);
+
+    let loaded_faucet = zingo_testutils::save_and_reload_client(faucet, regtest_manager).await;
+    dbg!("faucet reloaded summaries: ");
+    log_tx_summaries(loaded_faucet.do_list_txsummaries().await);
+    let loaded_recipient =
+        zingo_testutils::save_and_reload_client(recipient, regtest_manager).await;
+    dbg!("recipient reloaded summaries: ");
+    log_tx_summaries(loaded_recipient.do_list_txsummaries().await);
+
+    let _ = loaded_faucet.do_rescan().await;
+    dbg!("loaded faucet rescan summaries: ");
+    log_tx_summaries(loaded_faucet.do_list_txsummaries().await);
+    let _ = loaded_recipient.do_rescan().await;
+    dbg!("loaded recipient rescan summaries: ");
+    log_tx_summaries(loaded_recipient.do_list_txsummaries().await);
 }
 
 pub const TEST_SEED: &str = "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise";

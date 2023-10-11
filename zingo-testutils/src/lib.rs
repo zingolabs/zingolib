@@ -163,6 +163,19 @@ pub async fn wait_until_client_reaches_block_height(
     }
     Ok(())
 }
+pub async fn save_and_reload_client(
+    client: &LightClient,
+    regtest_manager: &RegtestManager,
+) -> LightClient {
+    let wallet_loc = &regtest_manager
+        .zingo_datadir
+        .parent()
+        .unwrap()
+        .join("zingo_client_2");
+    client.do_save().await.unwrap();
+    let (wallet, config) = load_wallet(wallet_loc.to_path_buf(), ChainType::Regtest).await;
+    LightClient::create_from_extant_wallet(wallet, config)
+}
 pub fn log_tx_summaries(summaries: Vec<ValueTransfer>) -> () {
     for i in summaries {
         match i.kind {
@@ -170,16 +183,16 @@ pub fn log_tx_summaries(summaries: Vec<ValueTransfer>) -> () {
                 amount,
                 to_address: _,
             } => {
-                dbg!("sent ", amount);
+                println!("sent {}", amount);
             }
             zingolib::wallet::data::summaries::ValueTransferKind::Received { pool: _, amount } => {
-                dbg!("received ", amount);
+                println!("received {}", amount);
             }
             zingolib::wallet::data::summaries::ValueTransferKind::SendToSelf {} => {
-                dbg!("sss");
+                println!("sss");
             }
             zingolib::wallet::data::summaries::ValueTransferKind::Fee { amount } => {
-                dbg!("fee ", amount);
+                println!("fee {}", amount);
             }
         }
     }
@@ -641,8 +654,10 @@ pub mod scenarios {
         )
     }
 
-    pub async fn two_wallet_transparent_sapling_orchard_and_to_self_transaction(
-        value: u64,
+    pub async fn two_wallet_transparent_sapling_orchard_transactions(
+        value_transp: u64,
+        value_saplin: u64,
+        value_orchar: u64,
     ) -> (
         RegtestManager,
         ChildProcessHandler,
@@ -661,7 +676,7 @@ pub mod scenarios {
         let txid1 = faucet
             .do_send(vec![(
                 &get_base_address!(recipient, "transparent"),
-                value,
+                value_transp,
                 None,
             )])
             .await
@@ -669,7 +684,7 @@ pub mod scenarios {
         let txid2 = faucet
             .do_send(vec![(
                 &get_base_address!(recipient, "sapling"),
-                value,
+                value_saplin,
                 None,
             )])
             .await
@@ -677,7 +692,7 @@ pub mod scenarios {
         let txid3 = faucet
             .do_send(vec![(
                 &get_base_address!(recipient, "unified"),
-                value,
+                value_orchar,
                 None,
             )])
             .await
