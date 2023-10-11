@@ -3244,8 +3244,8 @@ async fn complex_wallet_txsummaries() {
     let _ = recipient.do_rescan().await;
     let r_sumrys_rescan = recipient.do_list_txsummaries().await;
     log_tx_summaries(r_sumrys_rescan);
-    // let f_sumrys = faucet.do_list_txsummaries().await;
-    // log_tx_summaries(f_sumrys);
+    let f_sumrys = faucet.do_list_txsummaries().await;
+    log_tx_summaries(f_sumrys);
 }
 
 pub const TEST_SEED: &str = "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise";
