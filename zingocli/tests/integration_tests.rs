@@ -92,6 +92,7 @@ async fn dont_write_unconfirmed() {
 
     let (loaded_client, _scenario_builder) =
         zingo_testutils::save_client_and_load_clone(&faucet, scenario_builder).await;
+    let _ = loaded_client.do_sync(false).await;
 
     let loaded_balance = loaded_client.do_balance().await;
     assert_eq!(loaded_balance.unverified_orchard_balance, Some(0),);

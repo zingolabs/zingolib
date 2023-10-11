@@ -176,10 +176,9 @@ pub async fn save_client_and_load_clone(
     let wallet_file_location = client.get_wallet_file_location();
     client.do_save().await.unwrap();
     let mut new_wallet_file_location = scenario_builder.client_builder.make_unique_data_dir();
+    let new_wallet_dir_location = new_wallet_file_location.clone();
     new_wallet_file_location.push("zingo-wallet.dat");
     //ToDo rearchitect how we store this information.
-    let mut new_wallet_dir_location = new_wallet_file_location.clone();
-    new_wallet_dir_location.pop();
     let _ = std::fs::create_dir(dbg!(new_wallet_dir_location)).unwrap();
     let _ = std::fs::copy(
         dbg!(&wallet_file_location),
@@ -188,6 +187,7 @@ pub async fn save_client_and_load_clone(
     .unwrap();
     let (wallet, config) =
         load_wallet(new_wallet_file_location.to_path_buf(), ChainType::Regtest).await;
+    // scenario_builder.launch_scenario(false).await;
     (
         LightClient::create_from_extant_wallet(wallet, config),
         scenario_builder,
