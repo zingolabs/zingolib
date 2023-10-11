@@ -6,7 +6,6 @@ use zingolib::wallet::data::summaries::ValueTransfer;
 use zingolib::wallet::keys::unified::WalletCapability;
 use zingolib::wallet::WalletBase;
 pub mod regtest;
-use std::fs::copy;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::string::String;
@@ -176,13 +175,19 @@ pub async fn save_client_and_load_clone(
     //     .join("zingo_client_2");
     let wallet_file_location = client.get_wallet_file_location();
     client.do_save().await.unwrap();
-    let new_wallet_file_location = scenario_builder.client_builder.make_unique_data_dir();
+    let mut new_wallet_file_location = scenario_builder.client_builder.make_unique_data_dir();
+    new_wallet_file_location.push("zingo-wallet.dat");
+    //ToDo rearchitect how we store this information.
     let mut new_wallet_dir_location = new_wallet_file_location.clone();
     new_wallet_dir_location.pop();
     let _ = std::fs::create_dir(dbg!(new_wallet_dir_location)).unwrap();
-    let _ = std::fs::copy(dbg!(&wallet_file_location), dbg!(new_wallet_file_location)).unwrap();
+    let _ = std::fs::copy(
+        dbg!(&wallet_file_location),
+        dbg!(new_wallet_file_location.clone()),
+    )
+    .unwrap();
     let (wallet, config) =
-        load_wallet(wallet_file_location.to_path_buf(), ChainType::Regtest).await;
+        load_wallet(new_wallet_file_location.to_path_buf(), ChainType::Regtest).await;
     (
         LightClient::create_from_extant_wallet(wallet, config),
         scenario_builder,
@@ -250,14 +255,15 @@ where
     }
 }
 pub async fn load_wallet(
-    dir: PathBuf,
+    file: PathBuf,
     chaintype: ChainType,
 ) -> (zingolib::wallet::LightWallet, ZingoConfig) {
-    let wallet = dir.join("zingo-wallet.dat");
+    let mut dir = file.clone();
+    dir.pop();
     let lightwalletd_uri = TestEnvironmentGenerator::new(None).get_lightwalletd_uri();
     let zingo_config =
         zingolib::load_clientconfig(lightwalletd_uri, Some(dir), chaintype, true).unwrap();
-    let from = std::fs::File::open(wallet).unwrap();
+    let from = std::fs::File::open(file).unwrap();
 
     let read_lengths = vec![];
     let mut recording_reader = RecordingReader { from, read_lengths };

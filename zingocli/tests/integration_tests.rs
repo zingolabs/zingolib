@@ -173,9 +173,8 @@ async fn list_transactions_include_foreign() {
         get_cargo_manifest_dir().to_string_lossy()
     );
     let wallet_path = Path::new(&wallet_nym);
-    let wallet_dir = wallet_path.parent().unwrap();
     let (wallet, config) =
-        zingo_testutils::load_wallet(wallet_dir.to_path_buf(), ChainType::Mainnet).await;
+        zingo_testutils::load_wallet(wallet_path.to_path_buf(), ChainType::Mainnet).await;
     let client = LightClient::create_from_extant_wallet(wallet, config);
     let transactions = client.do_list_transactions().await[0].clone();
     //env_logger::init();
