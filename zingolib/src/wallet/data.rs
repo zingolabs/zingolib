@@ -773,6 +773,7 @@ pub mod summaries {
     /// The MobileTx is the zingolib representation of
     /// transactions in the format most useful for
     /// consumption in mobile and mobile-like UI
+    #[derive(PartialEq)]
     pub struct ValueTransfer {
         pub block_height: zcash_primitives::consensus::BlockHeight,
         pub datetime: u64,
@@ -792,7 +793,29 @@ pub mod summaries {
             }
         }
     }
-    #[derive(Clone)]
+
+    impl std::fmt::Debug for ValueTransfer {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            use core::ops::Deref as _;
+            f.debug_struct("ValueTransfer")
+                .field("block_height", &self.block_height)
+                .field("datetime", &self.datetime)
+                .field("kind", &self.kind)
+                .field(
+                    "memos",
+                    &self
+                        .memos
+                        .iter()
+                        .map(zcash_primitives::memo::TextMemo::deref)
+                        .collect::<Vec<_>>(),
+                )
+                .field("price", &self.price)
+                .field("txid", &self.txid)
+                .finish()
+        }
+    }
+
+    #[derive(Clone, PartialEq, Eq, Debug)]
     pub enum ValueTransferKind {
         Sent {
             amount: u64,
