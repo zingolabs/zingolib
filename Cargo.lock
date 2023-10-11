@@ -4173,5 +4173,6 @@ dependencies = [
  "zcash_primitives",
  "zcash_proofs",
  "zingo-memo",
+ "zingo-testutils",
  "zingoconfig",
 ]

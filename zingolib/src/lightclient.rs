@@ -2156,6 +2156,7 @@ async fn get_recent_median_price_from_gemini() -> Result<f64, PriceFetchError> {
 #[cfg(test)]
 mod tests {
     use tokio::runtime::Runtime;
+    use zingo_testutils::data::seeds::CHIMNEY_BETTER_SEED;
     use zingoconfig::{ChainType, ZingoConfig};
 
     use crate::{lightclient::LightClient, wallet::WalletBase};
@@ -2171,7 +2172,7 @@ mod tests {
         let wallet_name = data_dir.join("zingo-wallet.dat");
         let config = ZingoConfig::create_unconnected(ChainType::FakeMainnet, Some(data_dir));
         let lc = LightClient::create_from_wallet_base(
-            WalletBase::MnemonicPhrase(TEST_SEED.to_string()),
+            WalletBase::MnemonicPhrase(CHIMNEY_BETTER_SEED.to_string()),
             &config,
             0,
             false,
@@ -2181,7 +2182,7 @@ mod tests {
         format!(
             "{:?}",
             LightClient::create_from_wallet_base(
-                WalletBase::MnemonicPhrase(TEST_SEED.to_string()),
+                WalletBase::MnemonicPhrase(CHIMNEY_BETTER_SEED.to_string()),
                 &config,
                 0,
                 false
@@ -2212,5 +2213,4 @@ mod tests {
             );
         });
     }
-    pub const TEST_SEED: &str = "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise";
 }
