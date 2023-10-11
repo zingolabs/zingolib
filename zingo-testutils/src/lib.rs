@@ -323,7 +323,9 @@ pub mod scenarios {
                     sleep(std::time::Duration::from_millis(50)).await;
                 }
             }
-            pub async fn new_load_1153_saplingcb_regtest_chain() -> Self {
+            pub async fn new_load_1153_saplingcb_regtest_chain(
+                regtest_network: &zingoconfig::RegtestNetwork,
+            ) -> Self {
                 let mut sb = ScenarioBuilder::build_scenario(None, None);
                 let source = get_regtest_dir().join("data/chain_cache/blocks_1153/zcashd/regtest");
                 if !source.exists() {
@@ -338,10 +340,9 @@ pub mod scenarios {
                     .output()
                     .expect("copy operation into fresh dir from known dir to succeed");
                 dbg!(&sb.test_env.regtest_manager.zcashd_config);
-                let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
                 sb.configure_scenario(
                     Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
-                    &regtest_network,
+                    regtest_network,
                 );
                 sb.launch_scenario(false).await;
                 sb
@@ -931,7 +932,8 @@ pub mod scenarios {
         use super::*;
 
         pub async fn unsynced_basic() -> ChildProcessHandler {
-            setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain()
+            let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+            setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain(&regtest_network)
                 .await
                 .child_process_handler
                 .unwrap()
@@ -943,7 +945,9 @@ pub mod scenarios {
             LightClient,
         ) {
             let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
-            let mut sb = setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain().await;
+            let mut sb =
+                setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain(&regtest_network)
+                    .await;
             //(Some(REGSAP_ADDR_FROM_ABANDONART.to_string()), None);
             let faucet = sb
                 .client_builder
@@ -968,7 +972,9 @@ pub mod scenarios {
             LightClient,
         ) {
             let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
-            let mut sb = setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain().await;
+            let mut sb =
+                setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain(&regtest_network)
+                    .await;
             //(Some(REGSAP_ADDR_FROM_ABANDONART.to_string()), None);
             let faucet = sb
                 .client_builder
