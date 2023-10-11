@@ -1,6 +1,7 @@
 pub mod data;
 pub use incrementalmerkletree;
 use zcash_address::unified::{Fvk, Ufvk};
+use zingolib::wallet::data::summaries::ValueTransfer;
 use zingolib::wallet::keys::unified::WalletCapability;
 use zingolib::wallet::WalletBase;
 pub mod regtest;
@@ -161,6 +162,27 @@ pub async fn wait_until_client_reaches_block_height(
         sleep(Duration::from_millis(50)).await;
     }
     Ok(())
+}
+pub fn log_tx_summaries(summaries: Vec<ValueTransfer>) -> () {
+    for i in summaries {
+        match i.kind {
+            zingolib::wallet::data::summaries::ValueTransferKind::Sent {
+                amount,
+                to_address: _,
+            } => {
+                dbg!("sent ", amount);
+            }
+            zingolib::wallet::data::summaries::ValueTransferKind::Received { pool: _, amount } => {
+                dbg!("received ", amount);
+            }
+            zingolib::wallet::data::summaries::ValueTransferKind::SendToSelf {} => {
+                dbg!("sss");
+            }
+            zingolib::wallet::data::summaries::ValueTransferKind::Fee { amount } => {
+                dbg!("fee ", amount);
+            }
+        }
+    }
 }
 async fn check_wallet_chainheight_value(client: &LightClient, target: u32) -> Result<bool, String> {
     dbg!("Check wallet chainheight value at:");
@@ -552,6 +574,32 @@ pub mod scenarios {
         )
     }
 
+    pub async fn two_wallet_one_miner_fund() -> (
+        RegtestManager,
+        ChildProcessHandler,
+        LightClient,
+        LightClient,
+    ) {
+        let mut sb = setup::ScenarioBuilder::build_configure_launch(
+            Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
+            None,
+            None,
+        )
+        .await;
+        let faucet = sb.client_builder.build_new_faucet(0, false).await;
+        faucet.do_sync(false).await.unwrap();
+        let recipient = sb
+            .client_builder
+            .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), BASE_HEIGHT as u64, false)
+            .await;
+        (
+            sb.regtest_manager,
+            sb.child_process_handler.unwrap(),
+            faucet,
+            recipient,
+        )
+    }
+
     pub async fn two_wallet_one_orchard_transaction_synced(
         value: u64,
     ) -> (
@@ -593,29 +641,58 @@ pub mod scenarios {
         )
     }
 
-    pub async fn two_wallet_one_miner_fund() -> (
+    pub async fn two_wallet_transparent_sapling_orchard_and_to_self_transaction(
+        value: u64,
+    ) -> (
         RegtestManager,
         ChildProcessHandler,
         LightClient,
         LightClient,
+        (String, String, String),
     ) {
-        let mut sb = setup::ScenarioBuilder::build_configure_launch(
-            Some(REGSAP_ADDR_FROM_ABANDONART.to_string()),
-            None,
-            None,
-        )
-        .await;
-        let faucet = sb.client_builder.build_new_faucet(0, false).await;
-        faucet.do_sync(false).await.unwrap();
-        let recipient = sb
-            .client_builder
-            .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), BASE_HEIGHT as u64, false)
-            .await;
+        dbg!("0 About to create faucet_recipient.");
+        let (regtest_manager, child_process_handler, faucet, recipient) =
+            two_wallet_one_miner_fund().await;
+        dbg!("1 About to increase height and sync faucet.");
+        increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+            .await
+            .unwrap();
+        dbg!("2 faucet synced.");
+        let txid1 = faucet
+            .do_send(vec![(
+                &get_base_address!(recipient, "transparent"),
+                value,
+                None,
+            )])
+            .await
+            .unwrap();
+        let txid2 = faucet
+            .do_send(vec![(
+                &get_base_address!(recipient, "sapling"),
+                value,
+                None,
+            )])
+            .await
+            .unwrap();
+        let txid3 = faucet
+            .do_send(vec![(
+                &get_base_address!(recipient, "unified"),
+                value,
+                None,
+            )])
+            .await
+            .unwrap();
+        dbg!("3 faucet send complete");
+        increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+        dbg!("4 recipient increased and synced.");
         (
-            sb.regtest_manager,
-            sb.child_process_handler.unwrap(),
+            regtest_manager,
+            child_process_handler,
             faucet,
             recipient,
+            (txid1, txid2, txid3),
         )
     }
 

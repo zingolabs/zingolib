@@ -945,7 +945,9 @@ impl TransactionMetadata {
     }
 
     pub fn get_transaction_fee(&self) -> u64 {
-        self.total_value_spent() - (self.value_outgoing() + self.total_change_returned())
+        dbg!(self.is_outgoing_transaction());
+        dbg!(self.total_value_spent())
+            - (dbg!(self.value_outgoing()) + dbg!(self.total_change_returned()))
     }
 
     // TODO: This is incorrect in the edge case where where we have a send-to-self with

@@ -10,7 +10,7 @@ use zingo_testutils::{self, build_fvk_client, data, BASE_HEIGHT};
 use bip0039::Mnemonic;
 use data::seeds::HOSPITAL_MUSEUM_SEED;
 use json::JsonValue;
-use zingo_testutils::scenarios;
+use zingo_testutils::{log_tx_summaries, scenarios};
 
 use tracing_test::traced_test;
 use zcash_client_backend::encoding::encode_payment_address;
@@ -3230,11 +3230,22 @@ async fn sends_to_self_handle_balance_properly() {
     );
 }
 
-//fluid vanadiums first test
-// #[tokio::test]
-// async fn complex_wallet_txsummaries() {
-//     let (ref regtest_manager, _cph, ref faucet, ref recipient, _txid) =
-//         scenarios::two_wallet_one_synced_orchard_transaction(10_000_000).await;
-// }
+// fluid vanadiums first test
+#[tokio::test]
+async fn complex_wallet_txsummaries() {
+    let (ref regtest_manager, _cph, ref faucet, ref recipient, _txid) =
+        scenarios::two_wallet_transparent_sapling_orchard_and_to_self_transaction(1_000).await;
+    let _rsync = recipient.do_sync(false).await;
+    let _ =
+        zingo_testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 1).await;
+    let _ = zingo_testutils::increase_height_and_wait_for_client(regtest_manager, faucet, 1).await;
+    let r_sumrys = recipient.do_list_txsummaries().await;
+    log_tx_summaries(r_sumrys);
+    let _ = recipient.do_rescan().await;
+    let r_sumrys_rescan = recipient.do_list_txsummaries().await;
+    log_tx_summaries(r_sumrys_rescan);
+    // let f_sumrys = faucet.do_list_txsummaries().await;
+    // log_tx_summaries(f_sumrys);
+}
 
 pub const TEST_SEED: &str = "chimney better bulb horror rebuild whisper improve intact letter giraffe brave rib appear bulk aim burst snap salt hill sad merge tennis phrase raise";

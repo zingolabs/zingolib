@@ -493,8 +493,7 @@ impl TransactionContext {
                     Err(e) => log::error!(
                         "Could not decode wallet internal memo: {e}.\n\
                     Have you recently used a more up-to-date version of\
-                    this software?\nIf not, this may mean you are being sent\
-                    malicious data.\nSome information may not display correctly"
+                    this software?\nIf so, some information may not display correctly"
                     ),
                 }
             }
