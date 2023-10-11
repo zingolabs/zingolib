@@ -423,7 +423,7 @@ dependencies = [
 [[package]]
 name = "build_utils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#deb2078038e97aacb3c73ccda8a63c2b6013e24e"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#df79255586d30085a23b1fd3ff3919025324a969"
 
 [[package]]
 name = "bumpalo"
@@ -1815,9 +1815,9 @@ dependencies = [
 
 [[package]]
 name = "ordered-float"
-version = "2.10.0"
+version = "2.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7940cf2ca942593318d07fcf2596cdca60a85c9e7fab408a5e21a4f9dcd40d87"
+checksum = "68f19d67e5a2795c94e73e0bb1cc1a7edeb2e28efd39e2e1c9b7a40c1108b11c"
 dependencies = [
  "num-traits",
 ]
@@ -3943,7 +3943,7 @@ dependencies = [
 [[package]]
 name = "zingo-memo"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#deb2078038e97aacb3c73ccda8a63c2b6013e24e"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#df79255586d30085a23b1fd3ff3919025324a969"
 dependencies = [
  "zcash_address",
  "zcash_client_backend",
@@ -3955,7 +3955,7 @@ dependencies = [
 [[package]]
 name = "zingo-testutils"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#deb2078038e97aacb3c73ccda8a63c2b6013e24e"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#df79255586d30085a23b1fd3ff3919025324a969"
 dependencies = [
  "http",
  "incrementalmerkletree",
@@ -3977,7 +3977,7 @@ dependencies = [
 [[package]]
 name = "zingoconfig"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#deb2078038e97aacb3c73ccda8a63c2b6013e24e"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#df79255586d30085a23b1fd3ff3919025324a969"
 dependencies = [
  "dirs",
  "http",
@@ -3990,7 +3990,7 @@ dependencies = [
 [[package]]
 name = "zingolib"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/zingolib?branch=dev#deb2078038e97aacb3c73ccda8a63c2b6013e24e"
+source = "git+https://github.com/zingolabs/zingolib?branch=dev#df79255586d30085a23b1fd3ff3919025324a969"
 dependencies = [
  "append-only-vec",
  "base58",
