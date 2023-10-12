@@ -648,7 +648,7 @@ pub mod scenarios {
         .await;
         let faucet = sb
             .client_builder
-            .build_new_faucet(0, false, regtest_network.clone())
+            .build_new_faucet(0, false, regtest_network)
             .await;
         faucet.do_sync(false).await.unwrap();
 
@@ -711,7 +711,7 @@ pub mod scenarios {
         .await;
         let faucet = scenario_builder
             .client_builder
-            .build_new_faucet(0, false, regtest_network.clone())
+            .build_new_faucet(0, false, regtest_network)
             .await;
         let recipient = scenario_builder
             .client_builder
@@ -749,7 +749,7 @@ pub mod scenarios {
         .await;
         let faucet = scenario_builder
             .client_builder
-            .build_new_faucet(0, false, regtest_network.clone())
+            .build_new_faucet(0, false, regtest_network)
             .await;
         let recipient = scenario_builder
             .client_builder
@@ -814,7 +814,7 @@ pub mod scenarios {
         .await;
         let faucet = scenario_builder
             .client_builder
-            .build_new_faucet(0, false, regtest_network.clone())
+            .build_new_faucet(0, false, regtest_network)
             .await;
         let recipient = scenario_builder
             .client_builder
@@ -951,7 +951,7 @@ pub mod scenarios {
             //(Some(REGSAP_ADDR_FROM_ABANDONART.to_string()), None);
             let faucet = sb
                 .client_builder
-                .build_new_faucet(0, false, regtest_network.clone())
+                .build_new_faucet(0, false, regtest_network)
                 .await;
             faucet.do_sync(false).await.unwrap();
             let recipient = sb
@@ -978,7 +978,7 @@ pub mod scenarios {
             //(Some(REGSAP_ADDR_FROM_ABANDONART.to_string()), None);
             let faucet = sb
                 .client_builder
-                .build_new_faucet(0, false, regtest_network.clone())
+                .build_new_faucet(0, false, regtest_network)
                 .await;
             let recipient = sb
                 .client_builder
