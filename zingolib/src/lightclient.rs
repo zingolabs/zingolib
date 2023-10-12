@@ -10,7 +10,7 @@ use crate::{
     wallet::{
         data::{
             finsight, summaries::ValueTransfer, summaries::ValueTransferKind, OutgoingTxData,
-            ReceivedTransparentOutput, SpendableSaplingNote, TransactionMetadata,
+            TransactionMetadata,
         },
         keys::{
             address_from_pubkeyhash,
@@ -1079,7 +1079,7 @@ impl LightClient {
     pub async fn do_shield(&self, pools_to_shield: &[Pool]) -> Result<String, String> {
         let mut shieldable_utxos = vec![];
         let mut shieldable_sapling_notes = vec![];
-        for pool in pools_to_shield.to_vec() {
+        for pool in pools_to_shield.iter().copied() {
             match pool {
                 Pool::Transparent => {
                     shieldable_utxos = self.wallet.get_shieldable_transparent_utxos().await;

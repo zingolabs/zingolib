@@ -972,12 +972,6 @@ impl LightWallet {
         ))
     }
 
-    async fn send_shieldable_to_orchard(
-        &self,
-        pools_to_shield: &[Pool],
-    ) -> Result<(String, Vec<u8>), String> {
-        todo!()
-    }
     pub async fn send_to_addresses<F, Fut, P: TxProver>(
         &self,
         sapling_prover: P,
