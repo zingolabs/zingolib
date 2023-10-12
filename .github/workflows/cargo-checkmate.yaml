@@ -18,6 +18,8 @@ jobs:
         phase: [build, check, clippy, doc, format]
     needs: cache-checkmate
     runs-on: ubuntu-22.04
+    env:
+      RUSTFLAGS: -D warnings
     steps:
       - uses: taiki-e/cache-cargo-install-action@v1
         with:
