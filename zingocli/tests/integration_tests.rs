@@ -9,12 +9,10 @@ use zingo_testutils::{
     self, build_fvk_client, data, increase_height_and_wait_for_client, BASE_HEIGHT,
 };
 
+use crate::zingo_testutils::check_transaction_equality;
 use bip0039::Mnemonic;
 use data::seeds::{CHIMNEY_BETTER_SEED, HOSPITAL_MUSEUM_SEED};
 use json::JsonValue;
-use zingo_testutils::{log_tx_summaries, scenarios};
-
-use crate::zingo_testutils::check_transaction_equality;
 use tracing_test::traced_test;
 use zcash_address::unified::Fvk;
 use zcash_client_backend::encoding::encode_payment_address;
@@ -24,7 +22,9 @@ use zcash_primitives::{
     memo::MemoBytes,
     transaction::{fees::zip317::MINIMUM_FEE, TxId},
 };
+use zingo_testutils::log_tx_summaries;
 use zingo_testutils::regtest::get_cargo_manifest_dir;
+use zingo_testutils::scenarios;
 use zingoconfig::{ChainType, RegtestNetwork, ZingoConfig, MAX_REORG};
 use zingolib::{
     check_client_balances, get_base_address,
@@ -117,6 +117,12 @@ async fn dont_write_unconfirmed() {
         recipient_balance.unverified_orchard_balance.unwrap(),
         65_000
     );
+    let wallet_loc = &regtest_manager
+        .zingo_datadir
+        .parent()
+        .unwrap()
+        .join("zingo_client_2");
+    recipient.do_save().await.unwrap();
 
     let (wallet, config) = zingo_testutils::load_wallet(
         wallet_loc.to_path_buf(),
@@ -133,7 +139,7 @@ async fn dont_write_unconfirmed() {
 async fn sandblast_filter_preserves_trees() {
     let regtest_network = RegtestNetwork::all_upgrades_active();
     let (ref regtest_manager, _cph, ref faucet, ref recipient, _txid) =
-        scenarios::two_wallet_one_synced_orchard_transaction(100_000, regtest_network).await;
+        scenarios::two_wallet_one_orchard_transaction_synced_faucet(100_000, regtest_network).await;
     recipient
         .wallet
         .wallet_options
@@ -207,8 +213,9 @@ async fn list_transactions_include_foreign() {
         get_cargo_manifest_dir().to_string_lossy()
     );
     let wallet_path = Path::new(&wallet_nym);
+    let wallet_dir = wallet_path.parent().unwrap();
     let (wallet, config) =
-        zingo_testutils::load_wallet(wallet_path.to_path_buf(), ChainType::Mainnet).await;
+        zingo_testutils::load_wallet(wallet_dir.to_path_buf(), ChainType::Mainnet).await;
     let client = LightClient::create_from_extant_wallet(wallet, config);
     let transactions = client.do_list_transactions().await[0].clone();
     //env_logger::init();
@@ -235,7 +242,7 @@ async fn send_to_self_with_no_user_specified_memo_does_not_cause_error() {
     tracing_log::LogTracer::init().unwrap();
     let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, _faucet, recipient, _txid) =
-        scenarios::two_wallet_one_synced_orchard_transaction(100_000, regtest_network).await;
+        scenarios::two_wallet_one_orchard_transaction_synced_faucet(100_000, regtest_network).await;
     recipient
         .do_send(vec![(
             &get_base_address!(recipient, "unified"),
@@ -1729,7 +1736,7 @@ async fn mempool_and_balance() {
     let value = 100_000;
     let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient, _txid) =
-        scenarios::two_wallet_one_synced_orchard_transaction(value, regtest_network).await;
+        scenarios::two_wallet_one_orchard_transaction_synced_faucet(value, regtest_network).await;
 
     let bal = recipient.do_balance().await;
     println!("{}", serde_json::to_string_pretty(&bal).unwrap());
@@ -1784,7 +1791,7 @@ async fn witness_clearing() {
     let value: u64 = 100_000;
     let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient, txid) =
-        scenarios::two_wallet_one_synced_orchard_transaction(value, regtest_network).await;
+        scenarios::two_wallet_one_orchard_transaction_synced_faucet(value, regtest_network).await;
     dbg!(&txid);
     let mut txid_bytes = <[u8; 32]>::try_from(hex::decode(txid).unwrap()).unwrap();
     // TxId byte order is displayed in the reverse order from how it's encoded, for some reason
@@ -1966,7 +1973,7 @@ async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
     let value = 100_000;
     let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient, orig_transaction_id) =
-        scenarios::two_wallet_one_synced_orchard_transaction(value, regtest_network).await;
+        scenarios::two_wallet_one_orchard_transaction_synced_faucet(value, regtest_network).await;
 
     assert_eq!(
         do_maybe_recent_txid(&recipient).await["last_txid"],
@@ -2508,7 +2515,7 @@ async fn aborted_resync() {
     let zvalue = 100_000;
     let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient, _txid) =
-        scenarios::two_wallet_one_synced_orchard_transaction(zvalue, regtest_network).await;
+        scenarios::two_wallet_one_orchard_transaction_synced_faucet(zvalue, regtest_network).await;
 
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 15)
         .await
@@ -2619,7 +2626,7 @@ async fn zero_value_change() {
     let value = 100_000;
     let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient, _txid) =
-        scenarios::two_wallet_one_synced_orchard_transaction(value, regtest_network).await;
+        scenarios::two_wallet_one_orchard_transaction_synced_faucet(value, regtest_network).await;
 
     let sent_value = value - u64::from(MINIMUM_FEE);
     let sent_transaction_id = recipient
@@ -2662,7 +2669,7 @@ async fn dust_sends_change_correctly() {
     let value = 100_000_000;
     let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient, _txid) =
-        scenarios::two_wallet_one_synced_orchard_transaction(value, regtest_network).await;
+        scenarios::two_wallet_one_orchard_transaction_synced_faucet(value, regtest_network).await;
 
     // Send of less that transaction fee
     let sent_value = 1000;
@@ -2691,7 +2698,7 @@ async fn zero_value_receipts() {
     let value = 100_000_000;
     let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient, _txid) =
-        scenarios::two_wallet_one_synced_orchard_transaction(value, regtest_network).await;
+        scenarios::two_wallet_one_orchard_transaction_synced_faucet(value, regtest_network).await;
 
     let sent_value = 0;
     let _sent_transaction_id = faucet
@@ -3010,7 +3017,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
 
     let regtest_network = RegtestNetwork::all_upgrades_active();
     let (ref regtest_manager, _cph, faucet, recipient, _txid) =
-        scenarios::two_wallet_one_synced_orchard_transaction(
+        scenarios::two_wallet_one_orchard_transaction_synced_faucet(
             recipient_initial_funds,
             regtest_network,
         )
@@ -3349,4 +3356,55 @@ async fn sync_pre_orchard() {
     if let Err(e) = increase_height_and_wait_for_client(&regtest_manager, &lightclient, 15).await {
         panic!("Sync error: {e}")
     }
+}
+// fluid vanadiums first test
+#[tokio::test]
+async fn complex_wallet_txsummaries() {
+    let regtest_network = RegtestNetwork::all_upgrades_active();
+    let (regtest_manager, _cph, ref faucet, ref recipient, _txid) =
+        scenarios::two_wallet_transparent_sapling_orchard_transactions(
+            regtest_network,
+            5_000,
+            7_000,
+            9_000,
+        )
+        .await;
+    let _rsync = recipient.do_sync(false).await;
+    let _ =
+        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, recipient, 1).await;
+    let _ = zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, faucet, 1).await;
+
+    println!("faucet summaries: ");
+    log_tx_summaries(faucet.do_list_txsummaries().await);
+    println!("recipient summaries: ");
+    log_tx_summaries(recipient.do_list_txsummaries().await);
+
+    let _ = faucet.do_rescan().await;
+    println!("faucet rescan summaries: ");
+    log_tx_summaries(faucet.do_list_txsummaries().await);
+    let _ = recipient.do_rescan().await;
+    println!("recipient rescan summaries: ");
+    log_tx_summaries(recipient.do_list_txsummaries().await);
+
+    // let (loaded_faucet, scenario_builder) =
+    //     zingo_testutils::save_client_and_load_clone(faucet, scenario_builder).await;
+    // println!("faucet reloaded summaries: ");
+    // log_tx_summaries(loaded_faucet.do_list_txsummaries().await);
+    // let (loaded_recipient, scenario_builder) =
+    //     zingo_testutils::save_client_and_load_clone(recipient, scenario_builder).await;
+    // println!("recipient reloaded summaries: ");
+    // log_tx_summaries(loaded_recipient.do_list_txsummaries().await);
+
+    // println!("wallet locations: ");
+    // println!("{}", faucet.get_wallet_file_location().display());
+    // println!("{}", recipient.get_wallet_file_location().display());
+    // println!("{}", loaded_faucet.get_wallet_file_location().display());
+    // println!("{}", loaded_recipient.get_wallet_file_location().display());
+
+    // let _ = loaded_faucet.do_rescan().await;
+    // println!("faucet reloaded rescan summaries: ");
+    // log_tx_summaries(loaded_faucet.do_list_txsummaries().await);
+    // let _ = loaded_recipient.do_rescan().await;
+    // println!("recipient reloaded rescan summaries: ");
+    // log_tx_summaries(loaded_recipient.do_list_txsummaries().await);
 }

@@ -1,8 +1,6 @@
 pub mod data;
 pub use incrementalmerkletree;
-use scenarios::setup::ScenarioBuilder;
 use zcash_address::unified::{Fvk, Ufvk};
-use zingolib::wallet::data::summaries::ValueTransfer;
 use zingolib::wallet::keys::unified::WalletCapability;
 use zingolib::wallet::WalletBase;
 pub mod regtest;
@@ -54,7 +52,7 @@ pub async fn build_fvk_client(fvks: &[&Fvk], zingoconfig: &ZingoConfig) -> Light
 
 async fn get_synced_wallet_height(client: &LightClient) -> Result<u32, String> {
     client.do_sync(true).await?;
-    dbg!("client.do_sync finished");
+    println!("client.do_sync finished");
     Ok(client
         .do_wallet_last_scanned_height()
         .await
@@ -165,58 +163,8 @@ pub async fn wait_until_client_reaches_block_height(
     }
     Ok(())
 }
-pub async fn save_client_and_load_clone(
-    client: &LightClient,
-    mut scenario_builder: ScenarioBuilder,
-) -> (LightClient, ScenarioBuilder) {
-    // let wallet_loc = &regtest_manager
-    //     .zingo_datadir
-    //     .parent()
-    //     .unwrap()
-    //     .join("zingo_client_2");
-    let wallet_file_location = client.get_wallet_file_location();
-    client.do_save().await.unwrap();
-    let mut new_wallet_file_location = scenario_builder.client_builder.make_unique_data_dir();
-    let new_wallet_dir_location = new_wallet_file_location.clone();
-    new_wallet_file_location.push("zingo-wallet.dat");
-    //ToDo rearchitect how we store this information.
-    let _ = std::fs::create_dir(dbg!(new_wallet_dir_location)).unwrap();
-    let _ = std::fs::copy(
-        dbg!(&wallet_file_location),
-        dbg!(new_wallet_file_location.clone()),
-    )
-    .unwrap();
-    let (wallet, config) =
-        load_wallet(new_wallet_file_location.to_path_buf(), ChainType::Regtest).await;
-    // scenario_builder.launch_scenario(false).await;
-    (
-        LightClient::create_from_extant_wallet(wallet, config),
-        scenario_builder,
-    )
-}
-pub fn log_tx_summaries(summaries: Vec<ValueTransfer>) -> () {
-    for i in summaries {
-        match i.kind {
-            zingolib::wallet::data::summaries::ValueTransferKind::Sent {
-                amount,
-                to_address: _,
-            } => {
-                println!("sent {}", amount);
-            }
-            zingolib::wallet::data::summaries::ValueTransferKind::Received { pool: _, amount } => {
-                println!("received {}", amount);
-            }
-            zingolib::wallet::data::summaries::ValueTransferKind::SendToSelf {} => {
-                println!("sss");
-            }
-            zingolib::wallet::data::summaries::ValueTransferKind::Fee { amount } => {
-                println!("fee {}", amount);
-            }
-        }
-    }
-}
 async fn check_wallet_chainheight_value(client: &LightClient, target: u32) -> Result<bool, String> {
-    dbg!("Check wallet chainheight value at:");
+    println!("Check wallet chainheight value at:");
     dbg!(&target);
     Ok(get_synced_wallet_height(client).await? != target)
 }
@@ -256,15 +204,14 @@ where
     }
 }
 pub async fn load_wallet(
-    file: PathBuf,
+    dir: PathBuf,
     chaintype: ChainType,
 ) -> (zingolib::wallet::LightWallet, ZingoConfig) {
-    let mut dir = file.clone();
-    dir.pop();
+    let wallet = dir.join("zingo-wallet.dat");
     let lightwalletd_uri = TestEnvironmentGenerator::new(None).get_lightwalletd_uri();
     let zingo_config =
         zingolib::load_clientconfig(lightwalletd_uri, Some(dir), chaintype, true).unwrap();
-    let from = std::fs::File::open(file).unwrap();
+    let from = std::fs::File::open(wallet).unwrap();
 
     let read_lengths = vec![];
     let mut recording_reader = RecordingReader { from, read_lengths };
@@ -288,7 +235,7 @@ pub mod scenarios {
     //! If you need a faucet, and a single recipient, use 'faucet_recipient`
     //! For less common client configurations use the client_manager directly with
     //! custom_clients
-    use self::setup::{ClientBuilder, ScenarioBuilder};
+    use self::setup::ClientBuilder;
     use super::regtest::{ChildProcessHandler, RegtestManager};
     use crate::{
         data::{self, seeds::HOSPITAL_MUSEUM_SEED, REGSAP_ADDR_FROM_ABANDONART},
@@ -444,13 +391,6 @@ pub mod scenarios {
             ) -> zingoconfig::ZingoConfig {
                 //! Each client requires a unique data_dir, we use the
                 //! client_number counter for this.
-                let conf_path = self.make_unique_data_dir();
-                self.create_clientconfig(PathBuf::from(conf_path))
-            }
-            pub fn make_unique_data_dir(&mut self) -> PathBuf {
-                //! Each client requires a unique data_dir, we use the
-                //! client_number counter for this.
-                // for this we could actually check and thus have fewer sources of truth = toDo
                 self.client_number += 1;
                 let conf_path = format!(
                     "{}_client_{}",
@@ -649,7 +589,7 @@ pub mod scenarios {
         )
     }
 
-    pub async fn two_wallet_one_synced_orchard_transaction(
+    pub async fn two_wallet_one_orchard_transaction_synced_faucet(
         value: u64,
         regtest_network: zingoconfig::RegtestNetwork,
     ) -> (
@@ -659,14 +599,14 @@ pub mod scenarios {
         LightClient,
         String,
     ) {
-        dbg!("0 About to create faucet_recipient.");
+        println!("0 About to create faucet_recipient.");
         let (regtest_manager, child_process_handler, faucet, recipient) =
             two_wallet_one_miner_fund(regtest_network).await;
-        dbg!("1 About to increase height and sync faucet.");
+        println!("1 About to increase height and sync faucet.");
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
-        dbg!("2 faucet synced.");
+        println!("2 faucet synced.");
         let txid = faucet
             .do_send(vec![(
                 &get_base_address!(recipient, "unified"),
@@ -675,12 +615,12 @@ pub mod scenarios {
             )])
             .await
             .unwrap();
-        dbg!("3 faucet send complete");
+        println!("3 faucet send complete");
         increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
-        dbg!("4 recipient increased and synced.");
-        dbg!("5 about to sync faucet.");
+        println!("4 recipient increased and synced.");
+        println!("5 about to sync faucet.");
         faucet.do_sync(false).await.unwrap();
         (
             regtest_manager,
@@ -721,19 +661,9 @@ pub mod scenarios {
                 regtest_network,
             )
             .await;
-        (sb, faucet, recipient)
-    }
-
-    pub async fn two_wallet_one_miner_fund_manager_only() -> (
-        RegtestManager,
-        ChildProcessHandler,
-        LightClient,
-        LightClient,
-    ) {
-        let (scenario_builder, faucet, recipient) = two_wallet_one_miner_fund().await;
         (
-            scenario_builder.regtest_manager,
-            scenario_builder.child_process_handler.unwrap(),
+            sb.regtest_manager,
+            sb.child_process_handler.unwrap(),
             faucet,
             recipient,
         )
@@ -998,6 +928,64 @@ pub mod scenarios {
         )
     }
 
+    pub async fn two_wallet_transparent_sapling_orchard_transactions(
+        regtest_network: zingoconfig::RegtestNetwork,
+        value_transp: u64,
+        value_saplin: u64,
+        value_orchar: u64,
+    ) -> (
+        RegtestManager,
+        ChildProcessHandler,
+        LightClient,
+        LightClient,
+        (String, String, String),
+    ) {
+        println!("0 About to create faucet_recipient.");
+        let (regtest_manager, child_process_handler, faucet, recipient) =
+            two_wallet_one_miner_fund(regtest_network).await;
+        println!("1 About to increase height and sync faucet.");
+        increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+            .await
+            .unwrap();
+        println!("2 faucet synced.");
+        let txid1 = faucet
+            .do_send(vec![(
+                &get_base_address!(recipient, "transparent"),
+                value_transp,
+                None,
+            )])
+            .await
+            .unwrap();
+        let txid2 = faucet
+            .do_send(vec![(
+                &get_base_address!(recipient, "sapling"),
+                value_saplin,
+                None,
+            )])
+            .await
+            .unwrap();
+        let txid3 = faucet
+            .do_send(vec![(
+                &get_base_address!(recipient, "unified"),
+                value_orchar,
+                None,
+            )])
+            .await
+            .unwrap();
+        println!("3 faucet send complete");
+        increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+        println!("4 recipient increased and synced.");
+        (
+            regtest_manager,
+            child_process_handler,
+            faucet,
+            recipient,
+            (txid1, txid2, txid3),
+        )
+    }
+
     pub mod chainload {
         use super::*;
 
@@ -1060,6 +1048,28 @@ pub mod scenarios {
                 faucet,
                 recipient,
             )
+        }
+    }
+}
+
+pub fn log_tx_summaries(summaries: Vec<zingolib::wallet::data::summaries::ValueTransfer>) -> () {
+    for i in summaries {
+        match i.kind {
+            zingolib::wallet::data::summaries::ValueTransferKind::Sent {
+                amount,
+                to_address: _,
+            } => {
+                println!("sent {}", amount);
+            }
+            zingolib::wallet::data::summaries::ValueTransferKind::Received { pool: _, amount } => {
+                println!("received {}", amount);
+            }
+            zingolib::wallet::data::summaries::ValueTransferKind::SendToSelf {} => {
+                println!("sss");
+            }
+            zingolib::wallet::data::summaries::ValueTransferKind::Fee { amount } => {
+                println!("fee {}", amount);
+            }
         }
     }
 }
