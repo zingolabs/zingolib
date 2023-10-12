@@ -773,7 +773,9 @@ impl LightClient {
             |a: &JsonValue, b: &JsonValue| a["txid"].to_string().cmp(&b["txid"].to_string());
         consumer_ui_notes.sort_by(match_by_txid);
         consumer_ui_notes.dedup_by(|a, b| {
-            if match_by_txid(a, b) == Ordering::Equal {
+            if match_by_txid(a, b) == Ordering::Equal
+                && json_val_position(a) == json_val_position(b)
+            {
                 let val_b = b.remove("amount").as_i64().unwrap();
                 b.insert(
                     "amount",
@@ -2055,6 +2057,12 @@ impl LightClient {
 
         Ok(())
     }
+}
+
+fn json_val_position(consumer_ui_note: &JsonValue) -> Option<(&str, &JsonValue)> {
+    consumer_ui_note
+        .entries()
+        .find(|(key, _val)| *key == "position")
 }
 use serde_json::Value;
 
