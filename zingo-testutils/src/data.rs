@@ -19,10 +19,10 @@ pub mod seeds {
 }
 
 // faucet addresses
-pub const REG_O_ADDR_FROM_ABANDONART: &str = "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8";
+pub const REG_O_ADDR_FROM_ABANDONART: &str = "uregtest1zkuzfv5m3yhv2j4fmvq5rjurkxenxyq8r7h4daun2zkznrjaa8ra8asgdm8wwgwjvlwwrxx7347r8w0ee6dqyw4rufw4wg9djwcr6frzkezmdw6dud3wsm99eany5r8wgsctlxquu009nzd6hsme2tcsk0v3sgjvxa70er7h27z5epr67p5q767s2z5gt88paru56mxpm6pwz0cu35m";
 pub const REG_Z_ADDR_FROM_ABANDONART: &str =
     "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p";
-pub const REG_T_ADDR_FROM_ABANDONART: &str = "tmFLszfkjgim4zoUMAXpuohnFBAKy99rr2i";
+pub const REG_T_ADDR_FROM_ABANDONART: &str = "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd";
 
 // regtest block rewards
 pub const PRE_CANOPY_BLOCK_REWARD: u64 = 500_000_000;

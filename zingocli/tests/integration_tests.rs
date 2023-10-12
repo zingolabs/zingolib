@@ -3376,13 +3376,17 @@ async fn sync_all_epochs() {
 
 #[tokio::test]
 async fn send_pre_orchard_funds() {
-    let regtest_network = RegtestNetwork::new(1, 1, 1, 1, 7, 9);
-    let (regtest_manager, _cph, faucet, _recipient) =
-        scenarios::two_wallet_one_miner_fund(regtest_network).await;
+    let regtest_network = RegtestNetwork::new(1, 1, 3, 5, 7, 9);
+    let (regtest_manager, _cph, faucet, recipient) =
+        scenarios::two_wallet_one_miner_fund_transparent(regtest_network).await;
+    increase_height_and_wait_for_client(&regtest_manager, &faucet, 7)
+        .await
+        .unwrap();
     println!(
         "{}",
         serde_json::to_string_pretty(&faucet.do_balance().await).unwrap()
     );
+    dbg!(faucet.do_shield(&[Pool::Transparent], None).await.unwrap());
     increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
         .await
         .unwrap();
@@ -3390,55 +3394,34 @@ async fn send_pre_orchard_funds() {
         "{}",
         serde_json::to_string_pretty(&faucet.do_balance().await).unwrap()
     );
-    increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+    faucet
+        .do_send(vec![(
+            &get_base_address!(recipient, "unified"),
+            5_874_990_000,
+            // 6_499_990_000,
+            None,
+        )])
         .await
         .unwrap();
     println!(
         "{}",
         serde_json::to_string_pretty(&faucet.do_balance().await).unwrap()
     );
-    increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+    println!("{}", faucet.do_list_transactions().await.pretty(2));
+    increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
         .await
         .unwrap();
     println!(
         "{}",
-        serde_json::to_string_pretty(&faucet.do_balance().await).unwrap()
+        serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
     );
-    increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
-        .await
-        .unwrap();
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&faucet.do_balance().await).unwrap()
-    );
-    increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
-        .await
-        .unwrap();
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&faucet.do_balance().await).unwrap()
-    );
-    increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
-        .await
-        .unwrap();
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&faucet.do_balance().await).unwrap()
-    );
-    increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
-        .await
-        .unwrap();
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&faucet.do_balance().await).unwrap()
-    );
-    // increase_height_and_wait_for_client(&regtest_manager, &faucet, 7)
-    // faucet
-    //     .do_send(vec![(
-    //         &get_base_address!(recipient, "unified"),
-    //         100_000,
-    //         None,
-    //     )])
-    //     .await
-    //     .unwrap();
+    println!("{}", recipient.do_list_transactions().await.pretty(2));
 }
+
+// #[tokio::test]
+// async fn get_faucet_addresses() {
+//     let regtest_network = RegtestNetwork::all_upgrades_active();
+//     let (_rm, _cph, faucet, _recipient) =
+//         scenarios::two_wallet_one_miner_fund(regtest_network).await;
+//     println!("{}", faucet.do_addresses().await.pretty(2));
+// }
