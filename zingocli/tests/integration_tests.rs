@@ -6,7 +6,9 @@ use shardtree::store::memory::MemoryShardStore;
 use shardtree::ShardTree;
 use std::{fs::File, path::Path, str::FromStr};
 use zingo_testutils::{
-    self, build_fvk_client, data, increase_height_and_wait_for_client, BASE_HEIGHT,
+    self, build_fvk_client,
+    data::{self, POST_CANOPY_BLOCK_REWARD},
+    increase_height_and_wait_for_client, BASE_HEIGHT,
 };
 
 use bip0039::Mnemonic;
@@ -1028,7 +1030,6 @@ async fn send_orchard_back_and_forth() {
     let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient) =
         scenarios::two_wallet_one_miner_fund(regtest_network).await;
-    let block_reward = 625_000_000u64;
     let faucet_to_recipient_amount = 20_000u64;
     let recipient_to_faucet_amount = 5_000u64;
     // check start state
@@ -1038,7 +1039,9 @@ async fn send_orchard_back_and_forth() {
         wallet_height.as_fixed_point_u64(0).unwrap(),
         BASE_HEIGHT as u64
     );
-    let three_blocks_reward = block_reward.checked_mul(BASE_HEIGHT as u64).unwrap();
+    let three_blocks_reward = POST_CANOPY_BLOCK_REWARD
+        .checked_mul(BASE_HEIGHT as u64)
+        .unwrap();
     check_client_balances!(faucet, o: 0 s: three_blocks_reward  t: 0);
 
     // post transfer to recipient, and verify
@@ -1050,7 +1053,8 @@ async fn send_orchard_back_and_forth() {
         )])
         .await
         .unwrap();
-    let orch_change = block_reward - (faucet_to_recipient_amount + u64::from(MINIMUM_FEE));
+    let orch_change =
+        POST_CANOPY_BLOCK_REWARD - (faucet_to_recipient_amount + u64::from(MINIMUM_FEE));
     let reward_and_fee = three_blocks_reward + u64::from(MINIMUM_FEE);
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
         .await
@@ -1086,7 +1090,7 @@ async fn send_orchard_back_and_forth() {
     let recipient_final_orch =
         faucet_to_recipient_amount - (u64::from(MINIMUM_FEE) + recipient_to_faucet_amount);
     let faucet_final_orch = orch_change + recipient_to_faucet_amount;
-    let faucet_final_block = 4 * block_reward + u64::from(MINIMUM_FEE) * 2;
+    let faucet_final_block = 4 * POST_CANOPY_BLOCK_REWARD + u64::from(MINIMUM_FEE) * 2;
     check_client_balances!(
         faucet,
         o: faucet_final_orch s: faucet_final_block t: 0
