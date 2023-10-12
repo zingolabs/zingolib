@@ -99,6 +99,7 @@ impl ZingoConfig {
             .unwrap()
             .into()
     }
+
     pub fn set_data_dir(&mut self, dir_str: String) {
         self.wallet_dir = Some(PathBuf::from(dir_str));
     }
@@ -167,7 +168,7 @@ impl ZingoConfig {
 
                 match &self.chain {
                     ChainType::Testnet => zcash_data_location.push("testnet3"),
-                    ChainType::Regtest => zcash_data_location.push("regtest"),
+                    ChainType::Regtest(_) => zcash_data_location.push("regtest"),
                     ChainType::Mainnet => {}
                     ChainType::FakeMainnet => zcash_data_location.push("fakemainnet"),
                 };
@@ -299,7 +300,7 @@ impl ZingoConfig {
 
     pub fn base58_secretkey_prefix(&self) -> [u8; 1] {
         match self.chain {
-            ChainType::Testnet | ChainType::Regtest | ChainType::FakeMainnet => [0xEF],
+            ChainType::Testnet | ChainType::Regtest(_) | ChainType::FakeMainnet => [0xEF],
             ChainType::Mainnet => [0x80],
         }
     }
@@ -307,7 +308,7 @@ impl ZingoConfig {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ChainType {
     Testnet,
-    Regtest,
+    Regtest(RegtestNetwork),
     Mainnet,
     FakeMainnet,
 }
@@ -316,7 +317,7 @@ impl ChainType {
     pub fn hrp_orchard_spending_key(&self) -> &str {
         match self {
             ChainType::Testnet => "secret-orchard-sk-test",
-            ChainType::Regtest => "secret-orchard-sk-regtest",
+            ChainType::Regtest(_) => "secret-orchard-sk-regtest",
             ChainType::Mainnet => "secret-orchard-sk-main",
             ChainType::FakeMainnet => "secret-orchard-sk-main",
         }
@@ -324,7 +325,7 @@ impl ChainType {
     pub fn hrp_unified_full_viewing_key(&self) -> &str {
         match self {
             ChainType::Testnet => "uviewtest",
-            ChainType::Regtest => "uviewregtest",
+            ChainType::Regtest(_) => "uviewregtest",
             ChainType::Mainnet => "uview",
             ChainType::FakeMainnet => "uview",
         }
@@ -333,7 +334,7 @@ impl ChainType {
         match self {
             Mainnet | FakeMainnet => zcash_address::Network::Main,
             Testnet => zcash_address::Network::Test,
-            Regtest => zcash_address::Network::Regtest,
+            Regtest(_) => RegtestNetwork::address_network().unwrap(),
         }
     }
 }
@@ -343,7 +344,7 @@ impl std::fmt::Display for ChainType {
         use ChainType::*;
         let name = match self {
             Testnet => "test",
-            Regtest => "regtest",
+            Regtest(_) => "regtest",
             Mainnet => "main",
             FakeMainnet => "fakemainnet",
         };
@@ -353,14 +354,12 @@ impl std::fmt::Display for ChainType {
 
 use ChainType::*;
 impl Parameters for ChainType {
-    fn activation_height(
-        &self,
-        nu: NetworkUpgrade,
-    ) -> Option<zcash_primitives::consensus::BlockHeight> {
+    fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
         match self {
             Mainnet => MAIN_NETWORK.activation_height(nu),
             Testnet => TEST_NETWORK.activation_height(nu),
-            FakeMainnet | Regtest => Some(BlockHeight::from_u32(1)),
+            Regtest(regtest_network) => regtest_network.activation_height(nu),
+            FakeMainnet => Some(BlockHeight::from_u32(1)),
         }
     }
 
@@ -368,7 +367,7 @@ impl Parameters for ChainType {
         match self {
             Mainnet | FakeMainnet => constants::mainnet::COIN_TYPE,
             Testnet => constants::testnet::COIN_TYPE,
-            Regtest => constants::regtest::COIN_TYPE,
+            Regtest(_) => RegtestNetwork::coin_type(),
         }
     }
 
@@ -376,7 +375,7 @@ impl Parameters for ChainType {
         match self {
             Mainnet | FakeMainnet => constants::mainnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
             Testnet => constants::testnet::HRP_SAPLING_EXTENDED_SPENDING_KEY,
-            Regtest => constants::regtest::HRP_SAPLING_EXTENDED_SPENDING_KEY,
+            Regtest(_) => RegtestNetwork::hrp_sapling_extended_spending_key(),
         }
     }
 
@@ -384,7 +383,7 @@ impl Parameters for ChainType {
         match self {
             Mainnet | FakeMainnet => constants::mainnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
             Testnet => constants::testnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
-            Regtest => constants::regtest::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY,
+            Regtest(_) => RegtestNetwork::hrp_sapling_extended_full_viewing_key(),
         }
     }
 
@@ -392,7 +391,7 @@ impl Parameters for ChainType {
         match self {
             Mainnet | FakeMainnet => constants::mainnet::HRP_SAPLING_PAYMENT_ADDRESS,
             Testnet => constants::testnet::HRP_SAPLING_PAYMENT_ADDRESS,
-            Regtest => constants::regtest::HRP_SAPLING_PAYMENT_ADDRESS,
+            Regtest(_) => RegtestNetwork::hrp_sapling_payment_address(),
         }
     }
 
@@ -400,7 +399,7 @@ impl Parameters for ChainType {
         match self {
             Mainnet | FakeMainnet => constants::mainnet::B58_PUBKEY_ADDRESS_PREFIX,
             Testnet => constants::testnet::B58_PUBKEY_ADDRESS_PREFIX,
-            Regtest => constants::regtest::B58_PUBKEY_ADDRESS_PREFIX,
+            Regtest(_) => RegtestNetwork::b58_pubkey_address_prefix(),
         }
     }
 
@@ -408,11 +407,144 @@ impl Parameters for ChainType {
         match self {
             Mainnet | FakeMainnet => constants::mainnet::B58_SCRIPT_ADDRESS_PREFIX,
             Testnet => constants::testnet::B58_SCRIPT_ADDRESS_PREFIX,
-            Regtest => constants::regtest::B58_SCRIPT_ADDRESS_PREFIX,
+            Regtest(_) => RegtestNetwork::b58_script_address_prefix(),
         }
     }
 
     fn address_network(&self) -> Option<zcash_address::Network> {
         Some(self.to_zcash_address_network())
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RegtestNetwork {
+    activation_heights: ActivationHeights,
+}
+impl RegtestNetwork {
+    pub fn new(
+        overwinter_activation_height: u64,
+        sapling_activation_height: u64,
+        blossom_activation_height: u64,
+        heartwood_activation_height: u64,
+        canopy_activation_height: u64,
+        orchard_activation_height: u64,
+    ) -> Self {
+        Self {
+            activation_heights: ActivationHeights::new(
+                overwinter_activation_height,
+                sapling_activation_height,
+                blossom_activation_height,
+                heartwood_activation_height,
+                canopy_activation_height,
+                orchard_activation_height,
+            ),
+        }
+    }
+    pub fn all_upgrades_active() -> Self {
+        Self {
+            activation_heights: ActivationHeights::new(1, 1, 1, 1, 1, 1),
+        }
+    }
+    pub fn set_orchard(orchard_activation_height: u64) -> Self {
+        Self {
+            activation_heights: ActivationHeights::new(1, 1, 1, 1, 1, orchard_activation_height),
+        }
+    }
+
+    // Network parameters
+    pub fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
+        match nu {
+            NetworkUpgrade::Overwinter => Some(
+                self.activation_heights
+                    .get_activation_height(NetworkUpgrade::Overwinter),
+            ),
+            NetworkUpgrade::Sapling => Some(
+                self.activation_heights
+                    .get_activation_height(NetworkUpgrade::Sapling),
+            ),
+            NetworkUpgrade::Blossom => Some(
+                self.activation_heights
+                    .get_activation_height(NetworkUpgrade::Blossom),
+            ),
+            NetworkUpgrade::Heartwood => Some(
+                self.activation_heights
+                    .get_activation_height(NetworkUpgrade::Heartwood),
+            ),
+            NetworkUpgrade::Canopy => Some(
+                self.activation_heights
+                    .get_activation_height(NetworkUpgrade::Canopy),
+            ),
+            NetworkUpgrade::Nu5 => Some(
+                self.activation_heights
+                    .get_activation_height(NetworkUpgrade::Nu5),
+            ),
+        }
+    }
+
+    fn coin_type() -> u32 {
+        constants::regtest::COIN_TYPE
+    }
+
+    fn address_network() -> Option<zcash_address::Network> {
+        Some(zcash_address::Network::Regtest)
+    }
+
+    fn hrp_sapling_extended_spending_key() -> &'static str {
+        constants::regtest::HRP_SAPLING_EXTENDED_SPENDING_KEY
+    }
+
+    fn hrp_sapling_extended_full_viewing_key() -> &'static str {
+        constants::regtest::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY
+    }
+
+    fn hrp_sapling_payment_address() -> &'static str {
+        constants::regtest::HRP_SAPLING_PAYMENT_ADDRESS
+    }
+
+    fn b58_pubkey_address_prefix() -> [u8; 2] {
+        constants::regtest::B58_PUBKEY_ADDRESS_PREFIX
+    }
+
+    fn b58_script_address_prefix() -> [u8; 2] {
+        constants::regtest::B58_SCRIPT_ADDRESS_PREFIX
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ActivationHeights {
+    overwinter: BlockHeight,
+    sapling: BlockHeight,
+    blossom: BlockHeight,
+    heartwood: BlockHeight,
+    canopy: BlockHeight,
+    orchard: BlockHeight,
+}
+impl ActivationHeights {
+    pub fn new(
+        overwinter: u64,
+        sapling: u64,
+        blossom: u64,
+        heartwood: u64,
+        canopy: u64,
+        orchard: u64,
+    ) -> Self {
+        Self {
+            overwinter: BlockHeight::from_u32(overwinter as u32),
+            sapling: BlockHeight::from_u32(sapling as u32),
+            blossom: BlockHeight::from_u32(blossom as u32),
+            heartwood: BlockHeight::from_u32(heartwood as u32),
+            canopy: BlockHeight::from_u32(canopy as u32),
+            orchard: BlockHeight::from_u32(orchard as u32),
+        }
+    }
+    pub fn get_activation_height(&self, network_upgrade: NetworkUpgrade) -> BlockHeight {
+        match network_upgrade {
+            NetworkUpgrade::Overwinter => self.overwinter,
+            NetworkUpgrade::Sapling => self.sapling,
+            NetworkUpgrade::Blossom => self.blossom,
+            NetworkUpgrade::Heartwood => self.heartwood,
+            NetworkUpgrade::Canopy => self.canopy,
+            NetworkUpgrade::Nu5 => self.orchard,
+        }
     }
 }

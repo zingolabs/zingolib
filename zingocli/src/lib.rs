@@ -105,12 +105,13 @@ fn report_permission_error() {
 /// If the regtest flag was passed but a non regtest network is selected
 /// exit immediately and vice versa.
 fn regtest_config_check(regtest_manager: &Option<regtest::RegtestManager>, chain: &ChainType) {
-    if regtest_manager.is_some() && chain == &ChainType::Regtest {
-        println!("regtest detected and network set correctly!");
-    } else if regtest_manager.is_some() && chain != &ChainType::Regtest {
-        panic!("Regtest flag detected, but unexpected network set! Exiting.");
-    } else if chain == &ChainType::Regtest {
-        println!("WARNING! regtest network in use but no regtest flag recognized!");
+    match (regtest_manager.is_some(), chain) {
+        (true, ChainType::Regtest(_)) => println!("regtest detected and network set correctly!"),
+        (true, _) => panic!("Regtest flag detected, but unexpected network set! Exiting."),
+        (false, ChainType::Regtest(_)) => {
+            println!("WARNING! regtest network in use but no regtest flag recognized!")
+        }
+        _ => {}
     }
 }
 
@@ -352,11 +353,11 @@ to scan from the start of the blockchain."
             match chain.as_str() {
                 "mainnet" => ChainType::Mainnet,
                 "testnet" => ChainType::Testnet,
-                "regtest" => ChainType::Regtest,
+                "regtest" => ChainType::Regtest(zingoconfig::RegtestNetwork::all_upgrades_active()),
                 _ => return Err(TemplateFillError::InvalidChain(chain.clone())),
             }
         } else if matches.is_present("regtest") {
-            ChainType::Regtest
+            ChainType::Regtest(zingoconfig::RegtestNetwork::all_upgrades_active())
         } else {
             ChainType::Mainnet
         };

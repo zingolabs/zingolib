@@ -180,7 +180,9 @@ impl Command for ParseAddressCommand {
                 [
                     zingoconfig::ChainType::Mainnet,
                     zingoconfig::ChainType::Testnet,
-                    zingoconfig::ChainType::Regtest,
+                    zingoconfig::ChainType::Regtest(
+                        zingoconfig::RegtestNetwork::all_upgrades_active(),
+                    ),
                 ]
                 .iter()
                 .find_map(|chain| RecipientAddress::decode(chain, args[0]).zip(Some(chain)))
@@ -188,7 +190,7 @@ impl Command for ParseAddressCommand {
                     let chain_name_string = match chain_name {
                         zingoconfig::ChainType::Mainnet => "main",
                         zingoconfig::ChainType::Testnet => "test",
-                        zingoconfig::ChainType::Regtest => "regtest",
+                        zingoconfig::ChainType::Regtest(_) => "regtest",
                         zingoconfig::ChainType::FakeMainnet => unreachable!(),
                     };
 

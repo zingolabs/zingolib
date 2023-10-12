@@ -15,6 +15,7 @@ use orchard::tree::MerkleHashOrchard;
 use orchard::Anchor;
 use rand::rngs::OsRng;
 use rand::Rng;
+use shardtree::error::{QueryError, ShardTreeError};
 use shardtree::store::memory::MemoryShardStore;
 use shardtree::ShardTree;
 use std::convert::Infallible;
@@ -479,11 +480,10 @@ impl LightWallet {
             COMMITMENT_TREE_LEVELS,
             MAX_SHARD_LEVEL,
         >,
-    ) -> Result<Anchor, String> {
-        Ok(orchard::Anchor::from(
-            tree.root_at_checkpoint(self.transaction_context.config.reorg_buffer_offset as usize)
-                .map_err(|e| format!("failed to get orchard anchor: {e}"))?,
-        ))
+    ) -> Result<Anchor, ShardTreeError<Infallible>> {
+        Ok(orchard::Anchor::from(tree.root_at_checkpoint(
+            self.transaction_context.config.reorg_buffer_offset as usize,
+        )?))
     }
 
     // Get the current sending status.
@@ -1031,7 +1031,7 @@ impl LightWallet {
         &self,
         submission_height: BlockHeight,
         witness_trees: &WitnessTrees,
-    ) -> Result<TxBuilder, String> {
+    ) -> Result<TxBuilder, ShardTreeError<Infallible>> {
         let orchard_anchor = self
             .get_orchard_anchor(&witness_trees.witness_tree_orchard)
             .await?;
@@ -1272,10 +1272,34 @@ impl LightWallet {
             receivers.len()
         );
         loop {
-            tx_builder = self
+            tx_builder = match self
                 .create_tx_builder(submission_height, witness_trees)
                 .await
-                .expect("To populate a builder with notes.");
+            {
+                Err(ShardTreeError::Query(QueryError::NotContained(addr))) => Err(format!(
+                    "could not create anchor, missing address {addr:?}. \
+                    If you are fully synced, you may need to rescan to proceed"
+                )),
+                Err(ShardTreeError::Query(QueryError::CheckpointPruned)) => {
+                    let blocks = self.blocks.read().await.len();
+                    let offset = self.transaction_context.config.reorg_buffer_offset;
+                    Err(format!(
+                        "The reorg buffer offset has been set to {} \
+                        but there are only {} blocks in the wallet. \
+                        Please sync at least {} more blocks before trying again",
+                        offset,
+                        blocks,
+                        offset + 1 - blocks as u32
+                    ))
+                }
+                Err(ShardTreeError::Query(QueryError::TreeIncomplete(addrs))) => Err(format!(
+                    "could not create anchor, missing addresses {addrs:?}. \
+                    If you are fully synced, you may need to rescan to proceed"
+                )),
+                Err(ShardTreeError::Insert(_)) => unreachable!(),
+                Err(ShardTreeError::Storage(_infallible)) => unreachable!(),
+                Ok(v) => Ok(v),
+            }?;
 
             // Select notes to cover the target value
             info!("{}: Adding outputs", now() - start_time);

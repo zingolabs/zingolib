@@ -9,6 +9,7 @@ use crate::darkside::{
 
 use tokio::time::sleep;
 use zingo_testutils::scenarios::setup::ClientBuilder;
+use zingoconfig::RegtestNetwork;
 use zingolib::{
     get_base_address,
     lightclient::{LightClient, PoolBalances},
@@ -217,13 +218,13 @@ async fn simple_sync() {
     prepare_darksidewalletd(server_id.clone(), true)
         .await
         .unwrap();
-
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let light_client = ClientBuilder::new(
         server_id,
         darkside_handler.darkside_dir.clone(),
         DARKSIDE_SEED,
     )
-    .build_new_faucet(1, true)
+    .build_new_faucet(1, true, regtest_network)
     .await;
 
     let result = light_client.do_sync(true).await.unwrap();
@@ -261,12 +262,13 @@ async fn reorg_away_receipt() {
         .await
         .unwrap();
 
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let light_client = ClientBuilder::new(
         server_id.clone(),
         darkside_handler.darkside_dir.clone(),
         DARKSIDE_SEED,
     )
-    .build_new_faucet(1, true)
+    .build_new_faucet(1, true, regtest_network)
     .await;
 
     light_client.do_sync(true).await.unwrap();
@@ -321,12 +323,16 @@ async fn sent_transaction_reorged_into_mempool() {
         darkside_handler.darkside_dir.clone(),
         DARKSIDE_SEED,
     );
-    let light_client = client_manager.build_new_faucet(1, true).await;
+    let regtest_network = RegtestNetwork::all_upgrades_active();
+    let light_client = client_manager
+        .build_new_faucet(1, true, regtest_network.clone())
+        .await;
     let recipient = client_manager
         .build_newseed_client(
             crate::data::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
             1,
             true,
+            regtest_network.clone(),
         )
         .await;
 
@@ -409,7 +415,7 @@ async fn sent_transaction_reorged_into_mempool() {
         light_client.do_list_transactions().await.pretty(2)
     );
     let loaded_client = LightClient::read_wallet_from_buffer_async(
-        &client_manager.make_unique_data_dir_and_load_config(),
+        &client_manager.make_unique_data_dir_and_load_config(regtest_network),
         light_client.do_save_to_buffer().await.unwrap().as_slice(),
     )
     .await
