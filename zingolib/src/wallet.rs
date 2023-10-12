@@ -1479,7 +1479,7 @@ impl LightWallet {
         tx_builder.with_progress_notifier(transmitter);
         let (transaction, _) = match tx_builder.build(
             &sapling_prover,
-            &transaction::fees::fixed::FeeRule::non_standard(MINIMUM_FEE),
+            &transaction::fees::zip317::FeeRule::standard(),
         ) {
             Ok(res) => res,
             Err(e) => {
