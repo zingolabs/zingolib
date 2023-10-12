@@ -3359,6 +3359,7 @@ async fn sync_all_epochs_from_sapling() {
 }
 
 // test fails to exit when syncing pre-sapling
+// possible issue with dropping child process handler?
 #[ignore]
 #[tokio::test]
 async fn sync_all_epochs() {
@@ -3371,13 +3372,63 @@ async fn sync_all_epochs() {
 
 #[tokio::test]
 async fn send_pre_orchard_funds() {
-    let regtest_network = RegtestNetwork::new(1, 1, 3, 5, 7, 9);
-    let (regtest_manager, _cph, faucet, recipient) =
+    let regtest_network = RegtestNetwork::new(1, 1, 1, 1, 7, 9);
+    let (regtest_manager, _cph, faucet, _recipient) =
         scenarios::two_wallet_one_miner_fund(regtest_network).await;
-    println!("generate blocks and poll");
-    increase_height_and_wait_for_client(&regtest_manager, &faucet, 7)
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&faucet.do_balance().await).unwrap()
+    );
+    increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
         .await
         .unwrap();
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&faucet.do_balance().await).unwrap()
+    );
+    increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+        .await
+        .unwrap();
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&faucet.do_balance().await).unwrap()
+    );
+    increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+        .await
+        .unwrap();
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&faucet.do_balance().await).unwrap()
+    );
+    increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+        .await
+        .unwrap();
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&faucet.do_balance().await).unwrap()
+    );
+    increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+        .await
+        .unwrap();
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&faucet.do_balance().await).unwrap()
+    );
+    increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+        .await
+        .unwrap();
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&faucet.do_balance().await).unwrap()
+    );
+    increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+        .await
+        .unwrap();
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&faucet.do_balance().await).unwrap()
+    );
+    // increase_height_and_wait_for_client(&regtest_manager, &faucet, 7)
     // faucet
     //     .do_send(vec![(
     //         &get_base_address!(recipient, "unified"),
