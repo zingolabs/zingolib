@@ -63,7 +63,8 @@ async fn get_synced_wallet_height(client: &LightClient) -> Result<u32, String> {
 fn poll_server_height(manager: &RegtestManager) -> JsonValue {
     let temp_tips = manager.get_chain_tip().unwrap().stdout;
     let tips = json::parse(&String::from_utf8_lossy(&temp_tips)).unwrap();
-    dbg!(tips[0]["height"].clone())
+    tips[0]["height"].clone()
+    // dbg!(tips[0]["height"].clone())
 }
 // This function _DOES NOT SYNC THE CLIENT/WALLET_.
 pub async fn increase_server_height(manager: &RegtestManager, n: u32) {
@@ -316,12 +317,15 @@ pub mod scenarios {
                             }
                         }),
                 );
-                self.regtest_manager
+                dbg!(self
+                    .regtest_manager
                     .generate_n_blocks(BASE_HEIGHT - 1)
-                    .unwrap();
+                    .unwrap());
+                dbg!("before poll in launch scenario");
                 while crate::poll_server_height(&self.regtest_manager) != BASE_HEIGHT {
                     sleep(std::time::Duration::from_millis(50)).await;
                 }
+                dbg!("after poll in launch scenario");
             }
             pub async fn new_load_1153_saplingcb_regtest_chain(
                 regtest_network: &zingoconfig::RegtestNetwork,

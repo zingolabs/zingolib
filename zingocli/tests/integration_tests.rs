@@ -3353,9 +3353,9 @@ async fn sends_to_self_handle_balance_properly() {
 async fn sync_all_epochs_from_sapling() {
     let regtest_network = RegtestNetwork::new(1, 1, 3, 5, 7, 9);
     let (regtest_manager, _cph, lightclient) = scenarios::basic_no_spendable(regtest_network).await;
-    if let Err(e) = increase_height_and_wait_for_client(&regtest_manager, &lightclient, 12).await {
-        panic!("Sync error: {e}")
-    }
+    increase_height_and_wait_for_client(&regtest_manager, &lightclient, 12)
+        .await
+        .unwrap();
 }
 
 // test fails to exit when syncing pre-sapling
@@ -3364,13 +3364,26 @@ async fn sync_all_epochs_from_sapling() {
 async fn sync_all_epochs() {
     let regtest_network = RegtestNetwork::new(1, 3, 5, 7, 9, 11);
     let (regtest_manager, _cph, lightclient) = scenarios::basic_no_spendable(regtest_network).await;
-    if let Err(e) = increase_height_and_wait_for_client(&regtest_manager, &lightclient, 12).await {
-        panic!("Sync error: {e}")
-    }
+    increase_height_and_wait_for_client(&regtest_manager, &lightclient, 12)
+        .await
+        .unwrap();
 }
 
-// #[tokio::test]
-// async fn send_pre_orchard_funds() {
-//     let regtest_network = RegtestNetwork::new(1, 1, 3, 5, 7, 9);
-
-// }
+#[tokio::test]
+async fn send_pre_orchard_funds() {
+    let regtest_network = RegtestNetwork::new(1, 1, 3, 5, 7, 9);
+    let (regtest_manager, _cph, faucet, recipient) =
+        scenarios::two_wallet_one_miner_fund(regtest_network).await;
+    println!("generate blocks and poll");
+    increase_height_and_wait_for_client(&regtest_manager, &faucet, 7)
+        .await
+        .unwrap();
+    // faucet
+    //     .do_send(vec![(
+    //         &get_base_address!(recipient, "unified"),
+    //         100_000,
+    //         None,
+    //     )])
+    //     .await
+    //     .unwrap();
+}
