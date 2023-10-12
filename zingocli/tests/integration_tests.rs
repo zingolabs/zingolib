@@ -3350,10 +3350,17 @@ async fn sends_to_self_handle_balance_properly() {
 }
 
 #[tokio::test]
-async fn sync_pre_orchard() {
-    let regtest_network = RegtestNetwork::set_orchard(10);
+async fn sync_all_epochs() {
+    let regtest_network = RegtestNetwork::new(1, 3, 5, 7, 9, 11);
     let (regtest_manager, _cph, lightclient) = scenarios::basic_no_spendable(regtest_network).await;
     if let Err(e) = increase_height_and_wait_for_client(&regtest_manager, &lightclient, 15).await {
         panic!("Sync error: {e}")
     }
+    assert_eq!(1, 0);
 }
+
+// #[tokio::test]
+// async fn send_pre_orchard_funds() {
+//     let regtest_network = RegtestNetwork::new(1, 1, 3, 5, 7, 9);
+
+// }
