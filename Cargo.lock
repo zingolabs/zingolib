@@ -766,7 +766,7 @@ dependencies = [
 [[package]]
 name = "equihash"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?branch=zingo_rc_branch#8f1ce801780e88c8961435d615d45e76f1de51dd"
+source = "git+https://github.com/zcash/librustzcash.git?branch=main#29c676ff125406e4b9f20fd046d103f42aa85e31"
 dependencies = [
  "blake2b_simd",
  "byteorder",
@@ -812,7 +812,7 @@ dependencies = [
 [[package]]
 name = "f4jumble"
 version = "0.1.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?branch=zingo_rc_branch#8f1ce801780e88c8961435d615d45e76f1de51dd"
+source = "git+https://github.com/zcash/librustzcash.git?branch=main#29c676ff125406e4b9f20fd046d103f42aa85e31"
 dependencies = [
  "blake2b_simd",
 ]
@@ -3875,7 +3875,7 @@ dependencies = [
 [[package]]
 name = "zcash_address"
 version = "0.3.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?branch=zingo_rc_branch#8f1ce801780e88c8961435d615d45e76f1de51dd"
+source = "git+https://github.com/zcash/librustzcash.git?branch=main#29c676ff125406e4b9f20fd046d103f42aa85e31"
 dependencies = [
  "bech32",
  "bs58",
@@ -3885,8 +3885,8 @@ dependencies = [
 
 [[package]]
 name = "zcash_client_backend"
-version = "0.10.0-rc.4"
-source = "git+https://github.com/zingolabs/librustzcash.git?branch=zingo_rc_branch#8f1ce801780e88c8961435d615d45e76f1de51dd"
+version = "0.10.0"
+source = "git+https://github.com/zcash/librustzcash.git?branch=main#29c676ff125406e4b9f20fd046d103f42aa85e31"
 dependencies = [
  "base64 0.21.4",
  "bech32",
@@ -3920,7 +3920,7 @@ dependencies = [
 [[package]]
 name = "zcash_encoding"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/librustzcash.git?branch=zingo_rc_branch#8f1ce801780e88c8961435d615d45e76f1de51dd"
+source = "git+https://github.com/zcash/librustzcash.git?branch=main#29c676ff125406e4b9f20fd046d103f42aa85e31"
 dependencies = [
  "byteorder",
  "nonempty",
@@ -3941,10 +3941,11 @@ dependencies = [
 
 [[package]]
 name = "zcash_primitives"
-version = "0.13.0-rc.1"
-source = "git+https://github.com/zingolabs/librustzcash.git?branch=zingo_rc_branch#8f1ce801780e88c8961435d615d45e76f1de51dd"
+version = "0.13.0"
+source = "git+https://github.com/zcash/librustzcash.git?branch=main#29c676ff125406e4b9f20fd046d103f42aa85e31"
 dependencies = [
  "aes",
+ "bellman",
  "bip0039",
  "bitvec",
  "blake2b_simd",
@@ -3976,8 +3977,8 @@ dependencies = [
 
 [[package]]
 name = "zcash_proofs"
-version = "0.13.0-rc.1"
-source = "git+https://github.com/zingolabs/librustzcash.git?branch=zingo_rc_branch#8f1ce801780e88c8961435d615d45e76f1de51dd"
+version = "0.13.0"
+source = "git+https://github.com/zcash/librustzcash.git?branch=main#29c676ff125406e4b9f20fd046d103f42aa85e31"
 dependencies = [
  "bellman",
  "blake2b_simd",

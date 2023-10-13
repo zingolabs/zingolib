@@ -704,7 +704,7 @@ impl TransactionMetadataSet {
                     txid,
                     output_index: output_num as u64,
                     script: vout.script_pubkey.0.clone(),
-                    value: vout.value.into(),
+                    value: u64::try_from(vout.value).expect("Valid value for u64."),
                     height: height as i32,
                     spent_at_height: None,
                     spent: None,
