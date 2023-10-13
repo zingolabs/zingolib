@@ -903,6 +903,30 @@ async fn note_selection_order() {
 }
 
 #[tokio::test]
+async fn basic_zip317() {
+    let regtest_network = RegtestNetwork::all_upgrades_active();
+    let (regtest_manager, _cph, mut client_builder) =
+        scenarios::custom_clients(regtest_network.clone()).await;
+    let sapling_faucet = client_builder
+        .build_new_faucet(0, false, regtest_network.clone())
+        .await;
+    let pool_migration_client = client_builder
+        .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
+        .await;
+    let _pmc_taddr = get_base_address!(pool_migration_client, "transparent");
+    let pmc_sapling = get_base_address!(pool_migration_client, "sapling");
+    let _pmc_unified = get_base_address!(pool_migration_client, "unified");
+    // 2 Test of a send from a sapling only client to its own unified address
+
+    zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &sapling_faucet, 3)
+        .await
+        .unwrap();
+    sapling_faucet
+        .do_send(vec![(&pmc_sapling, 0_000, None)])
+        .await
+        .unwrap();
+}
+#[tokio::test]
 async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     // Test all possible promoting note source combinations
     let regtest_network = RegtestNetwork::all_upgrades_active();
@@ -933,14 +957,15 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         .unwrap();
     bump_and_check!(o: 0 s: 0 t: 50_000);
 
-    let shielded_total = 50_000 - u64::from((TWO_ACTION_FEE + MARGINAL_FEE).unwrap()); // Two action for orchard, marginal for transparent
+    dbg!(pool_migration_client.do_balance().await);
+    let shielded_total = 50_000 - dbg!(u64::from((TWO_ACTION_FEE + MARGINAL_FEE).unwrap())); // Two action for orchard, marginal for transparent
     pool_migration_client
         .do_shield(&[Pool::Transparent])
         .await
         .unwrap();
     bump_and_check!(o: shielded_total s: 0 t: 0);
 
-    // 2 Test of a send from a sapling only client to its own unified address
+    // 2 Test of a send from a sapling only client to the recipient unified address
     sapling_faucet
         .do_send(vec![(&pmc_sapling, 50_000, None)])
         .await
