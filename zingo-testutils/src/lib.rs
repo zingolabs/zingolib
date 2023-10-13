@@ -52,7 +52,6 @@ pub async fn build_fvk_client(fvks: &[&Fvk], zingoconfig: &ZingoConfig) -> Light
 
 async fn get_synced_wallet_height(client: &LightClient) -> Result<u32, String> {
     client.do_sync(true).await?;
-    dbg!("client.do_sync finished");
     Ok(client
         .do_wallet_last_scanned_height()
         .await
@@ -63,8 +62,7 @@ async fn get_synced_wallet_height(client: &LightClient) -> Result<u32, String> {
 fn poll_server_height(manager: &RegtestManager) -> JsonValue {
     let temp_tips = manager.get_chain_tip().unwrap().stdout;
     let tips = json::parse(&String::from_utf8_lossy(&temp_tips)).unwrap();
-    // tips[0]["height"].clone()
-    dbg!(tips[0]["height"].clone())
+    tips[0]["height"].clone()
 }
 // This function _DOES NOT SYNC THE CLIENT/WALLET_.
 pub async fn increase_server_height(manager: &RegtestManager, n: u32) {
@@ -146,7 +144,6 @@ pub async fn generate_n_blocks_return_new_height(
     n: u32,
 ) -> Result<u32, String> {
     let start_height = manager.get_current_height().unwrap();
-    dbg!(&start_height);
     let target = start_height + n;
     manager
         .generate_n_blocks(n)
@@ -165,8 +162,6 @@ pub async fn wait_until_client_reaches_block_height(
     Ok(())
 }
 async fn check_wallet_chainheight_value(client: &LightClient, target: u32) -> Result<bool, String> {
-    dbg!("Check wallet chainheight value at:");
-    dbg!(&target);
     Ok(get_synced_wallet_height(client).await? != target)
 }
 

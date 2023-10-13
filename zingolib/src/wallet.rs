@@ -1370,7 +1370,7 @@ impl LightWallet {
                     return Err(s);
                 }
             };
-            proposed_fee = dbg!(tx_builder.get_fee(fee_rule).unwrap());
+            proposed_fee = tx_builder.get_fee(fee_rule).unwrap();
             if u64::from(proposed_fee) + total_earmarked_for_recipients
                 <= total_value_covered_by_selected
             {
