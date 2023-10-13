@@ -1000,12 +1000,12 @@ impl LightWallet {
         }
         // Create the transaction
         let start_time = now();
-        let (transaction, orchard_notes, sapling_notes, utxos) = match self
+        let (transaction, total_cost) = match self
             .create_publication_ready_transaction(
                 submission_height,
                 start_time,
                 receivers,
-                policy,
+                &policy,
                 sapling_prover,
             )
             .await
@@ -1014,6 +1014,18 @@ impl LightWallet {
             Err(s) => return Err(s),
         };
 
+        let (orchard_notes, sapling_notes, utxos, _total_value_covered_by_selected) = match self
+            .select_notes_and_utxos(
+                Amount::from_u64(total_cost).expect("Valid amount, from u64."),
+                &policy,
+            )
+            .await
+        {
+            Ok(notes) => notes,
+            Err(_insufficient_amount) => {
+                panic!("This should not be reached.")
+            }
+        };
         info!("{}: Transaction created", now() - start_time);
         info!("Transaction ID: {}", transaction.txid());
         // Call the internal function
@@ -1252,31 +1264,136 @@ impl LightWallet {
         Ok(tx_builder)
     }
 
+    async fn build_builder_handle_st_errors(
+        &self,
+        submission_height: BlockHeight,
+        witness_trees: &WitnessTrees,
+    ) -> Result<TxBuilder<'_>, String> {
+        match self
+            .create_tx_builder(submission_height, witness_trees)
+            .await
+        {
+            Err(ShardTreeError::Query(QueryError::NotContained(addr))) => Err(format!(
+                "could not create anchor, missing address {addr:?}. \
+                    If you are fully synced, you may need to rescan to proceed"
+            )),
+            Err(ShardTreeError::Query(QueryError::CheckpointPruned)) => {
+                let blocks = self.blocks.read().await.len();
+                let offset = self.transaction_context.config.reorg_buffer_offset;
+                Err(format!(
+                    "The reorg buffer offset has been set to {} \
+                        but there are only {} blocks in the wallet. \
+                        Please sync at least {} more blocks before trying again",
+                    offset,
+                    blocks,
+                    offset + 1 - blocks as u32
+                ))
+            }
+            Err(ShardTreeError::Query(QueryError::TreeIncomplete(addrs))) => Err(format!(
+                "could not create anchor, missing addresses {addrs:?}. \
+                    If you are fully synced, you may need to rescan to proceed"
+            )),
+            Err(ShardTreeError::Insert(_)) => unreachable!(),
+            Err(ShardTreeError::Storage(_infallible)) => unreachable!(),
+            Ok(v) => Ok(v),
+        }
+    }
+    #[allow(clippy::too_many_arguments)]
+    async fn tx_builder_with_fee_and_receivers(
+        &self,
+        submission_height: BlockHeight,
+        witness_trees: &WitnessTrees,
+        proposed_fee: transaction::components::amount::NonNegativeAmount,
+        receivers: &Receivers,
+        total_shielded_receivers: &mut u32,
+        total_earmarked_for_recipients: u64,
+        policy: &NoteSelectionPolicy,
+    ) -> Result<(TxBuilder<'_>, u64, u64), String> {
+        let mut tx_builder = self
+            .build_builder_handle_st_errors(submission_height, witness_trees)
+            .await?;
+
+        dbg!(&receivers.len());
+        // Select notes to cover the target value
+        (_, tx_builder) = self
+            .add_consumer_specified_outputs_to_builder(tx_builder, receivers.clone())
+            .expect("To add outputs");
+
+        let earmark_total_plus_proposed_fee =
+            total_earmarked_for_recipients + u64::from(proposed_fee);
+        // Select notes as a fn of target anount
+        let (orchard_notes, sapling_notes, utxos, total_value_covered_by_selected) = match self
+            .select_notes_and_utxos(
+                Amount::from_u64(earmark_total_plus_proposed_fee).expect("Valid amount, from u64."),
+                policy,
+            )
+            .await
+        {
+            Ok(notes) => notes,
+            Err(insufficient_amount) => {
+                let e = format!(
+                "Insufficient verified shielded funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes.",
+                insufficient_amount, earmark_total_plus_proposed_fee, self.transaction_context.config
+                .reorg_buffer_offset + 1
+            );
+                error!("{}", e);
+                return Err(e);
+            }
+        };
+
+        info!("Selected notes worth {}", total_value_covered_by_selected);
+
+        info!(
+            "Adding {} sapling notes, {} orchard notes, and {} utxos",
+            &sapling_notes.len(),
+            &orchard_notes.len(),
+            &utxos.len()
+        );
+
+        tx_builder = match self.add_change_output_to_builder(
+            tx_builder,
+            Amount::from_u64(earmark_total_plus_proposed_fee).expect("valid value of u64"),
+            Amount::from_u64(total_value_covered_by_selected).unwrap(),
+            total_shielded_receivers,
+            receivers,
+        ) {
+            Ok(txb) => txb,
+            Err(r) => {
+                return Err(r);
+            }
+        };
+        tx_builder = match self
+            .add_spends_to_builder(
+                tx_builder,
+                witness_trees,
+                &orchard_notes,
+                &sapling_notes,
+                &utxos,
+            )
+            .await
+        {
+            Ok(tx_builder) => tx_builder,
+
+            Err(s) => {
+                return Err(s);
+            }
+        };
+        Ok((
+            tx_builder,
+            total_value_covered_by_selected,
+            earmark_total_plus_proposed_fee,
+        ))
+    }
     async fn create_and_populate_tx_builder(
         &self,
         submission_height: BlockHeight,
         witness_trees: &WitnessTrees,
-        start_time: u64,
         receivers: Receivers,
-        policy: NoteSelectionPolicy,
-    ) -> Result<
-        (
-            TxBuilder<'_>,
-            u32,
-            Vec<SpendableOrchardNote>,
-            Vec<SpendableSaplingNote>,
-            Vec<ReceivedTransparentOutput>,
-        ),
-        String,
-    > {
+        policy: &NoteSelectionPolicy,
+    ) -> Result<(TxBuilder<'_>, u64, u64, u32), String> {
         let fee_rule = &zcash_primitives::transaction::fees::zip317::FeeRule::standard(); // Start building tx
-        let mut total_shielded_receivers;
-        let mut orchard_notes;
-        let mut sapling_notes;
-        let mut utxos;
-        let mut tx_builder;
+        let mut total_shielded_receivers = 0;
         let mut proposed_fee = MINIMUM_FEE;
-        let mut total_value_covered_by_selected;
         let total_earmarked_for_recipients: u64 = receivers
             .iter()
             .map(|to| u64::try_from(to.1).expect("u64 representable"))
@@ -1287,121 +1404,46 @@ impl LightWallet {
             receivers.len()
         );
         loop {
-            tx_builder = match self
-                .create_tx_builder(submission_height, witness_trees)
-                .await
-            {
-                Err(ShardTreeError::Query(QueryError::NotContained(addr))) => Err(format!(
-                    "could not create anchor, missing address {addr:?}. \
-                    If you are fully synced, you may need to rescan to proceed"
-                )),
-                Err(ShardTreeError::Query(QueryError::CheckpointPruned)) => {
-                    let blocks = self.blocks.read().await.len();
-                    let offset = self.transaction_context.config.reorg_buffer_offset;
-                    Err(format!(
-                        "The reorg buffer offset has been set to {} \
-                        but there are only {} blocks in the wallet. \
-                        Please sync at least {} more blocks before trying again",
-                        offset,
-                        blocks,
-                        offset + 1 - blocks as u32
-                    ))
-                }
-                Err(ShardTreeError::Query(QueryError::TreeIncomplete(addrs))) => Err(format!(
-                    "could not create anchor, missing addresses {addrs:?}. \
-                    If you are fully synced, you may need to rescan to proceed"
-                )),
-                Err(ShardTreeError::Insert(_)) => unreachable!(),
-                Err(ShardTreeError::Storage(_infallible)) => unreachable!(),
-                Ok(v) => Ok(v),
-            }?;
-
-            // Select notes to cover the target value
-            info!("{}: Adding outputs", now() - start_time);
-            (total_shielded_receivers, tx_builder) = self
-                .add_consumer_specified_outputs_to_builder(tx_builder, receivers.clone())
-                .expect("To add outputs");
-
-            let earmark_total_plus_default_fee =
-                total_earmarked_for_recipients + u64::from(proposed_fee);
-            // Select notes as a fn of target anount
-            (
-                orchard_notes,
-                sapling_notes,
-                utxos,
-                total_value_covered_by_selected,
-            ) = match self
-                .select_notes_and_utxos(
-                    Amount::from_u64(earmark_total_plus_default_fee)
-                        .expect("Valid amount, from u64."),
-                    &policy,
-                )
-                .await
-            {
-                Ok(notes) => notes,
-                Err(insufficient_amount) => {
-                    let e = format!(
-                "Insufficient verified shielded funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes.",
-                insufficient_amount, earmark_total_plus_default_fee, self.transaction_context.config
-                .reorg_buffer_offset + 1
-            );
-                    error!("{}", e);
-                    return Err(e);
-                }
-            };
-
-            info!("Selected notes worth {}", total_value_covered_by_selected);
-
-            info!(
-                "{}: Adding {} sapling notes, {} orchard notes, and {} utxos",
-                now() - start_time,
-                &sapling_notes.len(),
-                &orchard_notes.len(),
-                &utxos.len()
-            );
-
-            let temp_tx_builder = match self.add_change_output_to_builder(
-                tx_builder,
-                Amount::from_u64(earmark_total_plus_default_fee).expect("valid value of u64"),
-                Amount::from_u64(total_value_covered_by_selected).unwrap(),
-                &mut total_shielded_receivers,
-                &receivers,
-            ) {
-                Ok(txb) => txb,
-                Err(r) => {
-                    return Err(r);
-                }
-            };
-            info!("{}: selecting notes", now() - start_time);
-            tx_builder = match self
-                .add_spends_to_builder(
-                    temp_tx_builder,
+            let (tx_builder, temp_total_value_covered_by_selected, _) = self
+                .tx_builder_with_fee_and_receivers(
+                    submission_height,
                     witness_trees,
-                    &orchard_notes,
-                    &sapling_notes,
-                    &utxos,
+                    proposed_fee,
+                    &receivers,
+                    &mut total_shielded_receivers,
+                    total_earmarked_for_recipients,
+                    policy,
                 )
-                .await
-            {
-                Ok(tx_builder) => tx_builder,
+                .await?;
+            dbg!(tx_builder.transparent_inputs().len());
+            dbg!(tx_builder.transparent_outputs().len());
+            dbg!(tx_builder.sapling_inputs().len());
+            dbg!(tx_builder.sapling_outputs().len());
 
-                Err(s) => {
-                    return Err(s);
-                }
-            };
-            proposed_fee = tx_builder.get_fee(fee_rule).unwrap();
+            proposed_fee = dbg!(tx_builder.get_fee(fee_rule).unwrap());
             if u64::from(proposed_fee) + total_earmarked_for_recipients
-                <= total_value_covered_by_selected
+                <= temp_total_value_covered_by_selected
             {
                 break;
             }
         }
+        let (correct_fee_builder, total_value_covered_by_selected, total_cost) = self
+            .tx_builder_with_fee_and_receivers(
+                submission_height,
+                witness_trees,
+                proposed_fee,
+                &receivers,
+                &mut total_shielded_receivers,
+                total_earmarked_for_recipients,
+                policy,
+            )
+            .await?;
+        assert!(total_value_covered_by_selected >= total_cost);
         Ok((
-            tx_builder,
+            correct_fee_builder,
+            total_cost,
+            total_value_covered_by_selected,
             total_shielded_receivers,
-            orchard_notes,
-            sapling_notes,
-            utxos,
         ))
     }
 
@@ -1410,17 +1452,10 @@ impl LightWallet {
         submission_height: BlockHeight,
         start_time: u64,
         receivers: Receivers,
-        policy: NoteSelectionPolicy,
+        policy: &NoteSelectionPolicy,
         sapling_prover: P,
-    ) -> Result<
-        (
-            Transaction,
-            Vec<SpendableOrchardNote>,
-            Vec<SpendableSaplingNote>,
-            Vec<ReceivedTransparentOutput>,
-        ),
-        String,
-    > {
+    ) -> Result<(Transaction, u64), String> {
+        dbg!("INSIDE create_publication_ready_transaction");
         // Start building transaction with spends and outputs set by:
         //  * target amount
         //  * selection policy
@@ -1434,23 +1469,24 @@ impl LightWallet {
             .witness_trees
             .as_ref()
             .expect("If we have spend capability we have trees");
-        let (mut tx_builder, total_shielded_receivers, orchard_notes, sapling_notes, utxos) =
-            match self
-                .create_and_populate_tx_builder(
-                    submission_height,
-                    witness_trees,
-                    start_time,
-                    receivers,
-                    policy,
-                )
-                .await
-            {
-                Ok(tx_builder) => tx_builder,
-                Err(s) => {
-                    return Err(s);
-                }
-            };
+        let (
+            mut tx_builder,
+            total_cost,
+            _total_value_covered_by_selected,
+            total_shielded_receivers,
+        ) = match self
+            .create_and_populate_tx_builder(submission_height, witness_trees, receivers, policy)
+            .await
+        {
+            Ok(tx_builder_and_totals) => tx_builder_and_totals,
+            Err(s) => {
+                return Err(s);
+            }
+        };
 
+        dbg!(&total_cost);
+        dbg!(&total_shielded_receivers);
+        dbg!(&tx_builder.get_fee(&zcash_primitives::transaction::fees::zip317::FeeRule::standard()));
         drop(txmds_readlock);
         // The builder now has the correct set of inputs and outputs
 
@@ -1500,7 +1536,7 @@ impl LightWallet {
             }
         };
         progress_handle.await.unwrap();
-        Ok((transaction, orchard_notes, sapling_notes, utxos))
+        Ok((transaction, total_cost))
     }
     async fn send_to_addresses_inner<F, Fut>(
         &self,
