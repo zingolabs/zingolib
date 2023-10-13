@@ -907,11 +907,9 @@ async fn basic_zip317() {
     let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, mut client_builder) =
         scenarios::custom_clients(regtest_network.clone()).await;
-    let sapling_faucet = client_builder
-        .build_new_faucet(0, false, regtest_network.clone())
-        .await;
+    let sapling_faucet = client_builder.build_faucet(false, regtest_network).await;
     let pool_migration_client = client_builder
-        .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
+        .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
         .await;
     let _pmc_taddr = get_base_address!(pool_migration_client, "transparent");
     let pmc_sapling = get_base_address!(pool_migration_client, "sapling");
