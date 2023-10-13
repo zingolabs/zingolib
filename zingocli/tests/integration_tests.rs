@@ -67,6 +67,42 @@ async fn send_without_reorg_buffer_blocks_gives_correct_error() {
 }
 
 #[tokio::test]
+async fn multiple_outgoing_metadatas_work_right_on_restore() {
+    let inital_value = 100_000;
+    let (ref regtest_manager, _cph, faucet, ref recipient, _txid) =
+        scenarios::two_wallet_one_synced_orchard_transaction(
+            inital_value,
+            RegtestNetwork::all_upgrades_active(),
+        )
+        .await;
+    recipient
+        .do_send(vec![
+            (&get_base_address!(faucet, "unified"), 10_000, None);
+            2
+        ])
+        .await
+        .unwrap();
+    zingo_testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 1)
+        .await
+        .unwrap();
+    let pre_rescan_transactions = recipient.do_list_transactions().await;
+    let pre_rescan_summaries = recipient.do_list_txsummaries().await;
+    recipient.do_rescan().await.unwrap();
+    let post_rescan_transactions = recipient.do_list_transactions().await;
+    let post_rescan_summaries = recipient.do_list_txsummaries().await;
+    assert_eq!(pre_rescan_transactions, post_rescan_transactions);
+    assert_eq!(pre_rescan_summaries, post_rescan_summaries);
+    let mut outgoing_metadata = pre_rescan_transactions
+        .members()
+        .find_map(|tx| tx.entries().find(|(key, _val)| key == &"outgoing_metadata"))
+        .unwrap()
+        .1
+        .members();
+    // The two outgoing spends were identical. They should be represented as such
+    assert_eq!(outgoing_metadata.next(), outgoing_metadata.next());
+}
+
+#[tokio::test]
 async fn dont_write_unconfirmed() {
     let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient) =
