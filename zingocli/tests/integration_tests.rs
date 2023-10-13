@@ -69,7 +69,7 @@ async fn send_without_reorg_buffer_blocks_gives_correct_error() {
 async fn dont_write_unconfirmed() {
     let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient) =
-        scenarios::two_wallet_one_miner_fund(regtest_network.clone()).await;
+        scenarios::two_wallet_one_miner_fund(regtest_network).await;
     faucet
         .do_send(vec![(
             &get_base_address!(recipient, "unified"),
@@ -442,17 +442,10 @@ async fn test_scanning_in_watch_only_mode() {
 
     let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, mut client_builder) =
-        scenarios::custom_clients(regtest_network.clone()).await;
-    let faucet = client_builder
-        .build_new_faucet(0, false, regtest_network.clone())
-        .await;
+        scenarios::custom_clients(regtest_network).await;
+    let faucet = client_builder.build_faucet(false, regtest_network).await;
     let original_recipient = client_builder
-        .build_newseed_client(
-            HOSPITAL_MUSEUM_SEED.to_string(),
-            0,
-            false,
-            regtest_network.clone(),
-        )
+        .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
         .await;
     let zingo_config = zingolib::load_clientconfig(
         client_builder.server_id,
@@ -657,7 +650,7 @@ async fn mine_sapling_to_self() {
 async fn unspent_notes_are_not_saved() {
     let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient) =
-        scenarios::two_wallet_one_miner_fund(regtest_network.clone()).await;
+        scenarios::two_wallet_one_miner_fund(regtest_network).await;
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
         .await
         .unwrap();
@@ -877,12 +870,10 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     // Test all possible promoting note source combinations
     let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, mut client_builder) =
-        scenarios::custom_clients(regtest_network.clone()).await;
-    let sapling_faucet = client_builder
-        .build_new_faucet(0, false, regtest_network.clone())
-        .await;
+        scenarios::custom_clients(regtest_network).await;
+    let sapling_faucet = client_builder.build_faucet(false, regtest_network).await;
     let pool_migration_client = client_builder
-        .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
+        .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
         .await;
     let pmc_taddr = get_base_address!(pool_migration_client, "transparent");
     let pmc_sapling = get_base_address!(pool_migration_client, "sapling");
@@ -1214,16 +1205,14 @@ async fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
 async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
     let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, mut client_builder) =
-        scenarios::custom_clients(regtest_network.clone()).await;
-    let faucet = client_builder
-        .build_new_faucet(0, false, regtest_network.clone())
-        .await;
+        scenarios::custom_clients(regtest_network).await;
+    let faucet = client_builder.build_faucet(false, regtest_network).await;
     faucet.do_sync(false).await.unwrap();
     let seed_phrase_of_recipient1 = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
         .unwrap()
         .to_string();
     let recipient1 = client_builder
-        .build_newseed_client(seed_phrase_of_recipient1, 0, false, regtest_network.clone())
+        .build_client(seed_phrase_of_recipient1, 0, false, regtest_network)
         .await;
     let mut expected_unspent_sapling_notes = json::object! {
             "created_in_block" =>  4,
@@ -1285,7 +1274,7 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
             .to_string(),
     );
     let recipient_restored = client_builder
-        .build_newseed_client(
+        .build_client(
             seed_of_recipient.seed_phrase.clone(),
             0,
             true,
@@ -1339,12 +1328,12 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
 async fn diversification_deterministic_and_coherent() {
     let regtest_network = RegtestNetwork::all_upgrades_active();
     let (_regtest_manager, _cph, mut client_builder) =
-        scenarios::custom_clients(regtest_network.clone()).await;
+        scenarios::custom_clients(regtest_network).await;
     let seed_phrase = zcash_primitives::zip339::Mnemonic::from_entropy([1; 32])
         .unwrap()
         .to_string();
     let recipient1 = client_builder
-        .build_newseed_client(seed_phrase, 0, false, regtest_network)
+        .build_client(seed_phrase, 0, false, regtest_network)
         .await;
     let base_transparent_receiver = "tmS9nbexug7uT8x1cMTLP1ABEyKXpMjR5F1";
     assert_eq!(
@@ -1415,12 +1404,12 @@ async fn diversification_deterministic_and_coherent() {
 async fn ensure_taddrs_from_old_seeds_work() {
     let regtest_network = RegtestNetwork::all_upgrades_active();
     let (_regtest_manager, _cph, mut client_builder) =
-        scenarios::custom_clients(regtest_network.clone()).await;
+        scenarios::custom_clients(regtest_network).await;
     // The first taddr generated on commit 9e71a14eb424631372fd08503b1bd83ea763c7fb
     let transparent_address = "tmFLszfkjgim4zoUMAXpuohnFBAKy99rr2i";
 
     let client_b = client_builder
-        .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
+        .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
         .await;
 
     assert_eq!(
@@ -2786,7 +2775,7 @@ async fn by_address_finsight() {
 #[tokio::test]
 async fn load_old_wallet_at_reorged_height() {
     let regtest_network = RegtestNetwork::all_upgrades_active();
-    let (ref regtest_manager, cph, ref faucet) = scenarios::faucet(regtest_network.clone()).await;
+    let (ref regtest_manager, cph, ref faucet) = scenarios::faucet(regtest_network).await;
     println!("Shutting down initial zcd/lwd unneeded processes");
     drop(cph);
 

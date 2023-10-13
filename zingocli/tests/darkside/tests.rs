@@ -224,7 +224,7 @@ async fn simple_sync() {
         darkside_handler.darkside_dir.clone(),
         DARKSIDE_SEED,
     )
-    .build_new_faucet(1, true, regtest_network)
+    .build_faucet(true, regtest_network)
     .await;
 
     let result = light_client.do_sync(true).await.unwrap();
@@ -268,7 +268,7 @@ async fn reorg_away_receipt() {
         darkside_handler.darkside_dir.clone(),
         DARKSIDE_SEED,
     )
-    .build_new_faucet(1, true, regtest_network)
+    .build_faucet(true, regtest_network)
     .await;
 
     light_client.do_sync(true).await.unwrap();
@@ -324,15 +324,13 @@ async fn sent_transaction_reorged_into_mempool() {
         DARKSIDE_SEED,
     );
     let regtest_network = RegtestNetwork::all_upgrades_active();
-    let light_client = client_manager
-        .build_new_faucet(1, true, regtest_network.clone())
-        .await;
+    let light_client = client_manager.build_faucet(true, regtest_network).await;
     let recipient = client_manager
-        .build_newseed_client(
+        .build_client(
             crate::data::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
             1,
             true,
-            regtest_network.clone(),
+            regtest_network,
         )
         .await;
 

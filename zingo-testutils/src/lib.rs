@@ -243,7 +243,7 @@ pub mod scenarios {
     use zingolib::{get_base_address, lightclient::LightClient, wallet::Pool};
 
     pub mod setup {
-        use crate::data::REG_Z_ADDR_FROM_ABANDONART;
+        use crate::data::{seeds, REG_Z_ADDR_FROM_ABANDONART};
         use crate::BASE_HEIGHT;
 
         use super::super::regtest::get_regtest_dir;
@@ -275,11 +275,7 @@ pub mod scenarios {
                 } else {
                     regtest_manager.zingo_datadir.clone()
                 };
-                let client_builder = ClientBuilder::new(
-                    test_env.get_lightwalletd_uri(),
-                    data_dir,
-                    data::seeds::ABANDON_ART_SEED,
-                );
+                let client_builder = ClientBuilder::new(test_env.get_lightwalletd_uri(), data_dir);
                 let child_process_handler = None;
                 Self {
                     test_env,
@@ -370,17 +366,14 @@ pub mod scenarios {
         pub struct ClientBuilder {
             pub server_id: http::Uri,
             pub zingo_datadir: PathBuf,
-            seed: String,
             client_number: u8,
         }
         impl ClientBuilder {
-            pub fn new(server_id: http::Uri, zingo_datadir: PathBuf, seed: &str) -> Self {
-                let seed = seed.to_string();
+            pub fn new(server_id: http::Uri, zingo_datadir: PathBuf) -> Self {
                 let client_number = 0;
                 ClientBuilder {
                     server_id,
                     zingo_datadir,
-                    seed,
                     client_number,
                 }
             }
@@ -413,24 +406,21 @@ pub mod scenarios {
                 .unwrap()
             }
 
-            pub async fn build_new_faucet(
+            pub async fn build_faucet(
                 &mut self,
-                birthday: u64,
                 overwrite: bool,
                 regtest_network: zingoconfig::RegtestNetwork,
             ) -> LightClient {
                 //! A "faucet" is a lightclient that receives mining rewards
-                let zingo_config = self.make_unique_data_dir_and_load_config(regtest_network);
-                LightClient::create_from_wallet_base_async(
-                    WalletBase::MnemonicPhrase(self.seed.clone()),
-                    &zingo_config,
-                    birthday,
+                self.build_client(
+                    seeds::ABANDON_ART_SEED.to_string(),
+                    0,
                     overwrite,
+                    regtest_network,
                 )
                 .await
-                .unwrap()
             }
-            pub async fn build_newseed_client(
+            pub async fn build_client(
                 &mut self,
                 mnemonic_phrase: String,
                 birthday: u64,
@@ -577,10 +567,7 @@ pub mod scenarios {
             &regtest_network,
         )
         .await;
-        let faucet = sb
-            .client_builder
-            .build_new_faucet(0, false, regtest_network)
-            .await;
+        let faucet = sb.client_builder.build_faucet(false, regtest_network).await;
         faucet.do_sync(false).await.unwrap();
         (
             sb.regtest_manager,
@@ -646,15 +633,12 @@ pub mod scenarios {
             &regtest_network,
         )
         .await;
-        let faucet = sb
-            .client_builder
-            .build_new_faucet(0, false, regtest_network)
-            .await;
+        let faucet = sb.client_builder.build_faucet(false, regtest_network).await;
         faucet.do_sync(false).await.unwrap();
 
         let recipient = sb
             .client_builder
-            .build_newseed_client(
+            .build_client(
                 HOSPITAL_MUSEUM_SEED.to_string(),
                 BASE_HEIGHT as u64,
                 false,
@@ -684,15 +668,12 @@ pub mod scenarios {
             &regtest_network,
         )
         .await;
-        let faucet = sb
-            .client_builder
-            .build_new_faucet(0, false, regtest_network)
-            .await;
+        let faucet = sb.client_builder.build_faucet(false, regtest_network).await;
         faucet.do_sync(false).await.unwrap();
 
         let recipient = sb
             .client_builder
-            .build_newseed_client(
+            .build_client(
                 HOSPITAL_MUSEUM_SEED.to_string(),
                 BASE_HEIGHT as u64,
                 false,
@@ -718,7 +699,7 @@ pub mod scenarios {
             scenario_builder.child_process_handler.unwrap(),
             scenario_builder
                 .client_builder
-                .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
+                .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
                 .await,
         )
     }
@@ -749,11 +730,11 @@ pub mod scenarios {
         .await;
         let faucet = scenario_builder
             .client_builder
-            .build_new_faucet(0, false, regtest_network)
+            .build_faucet(false, regtest_network)
             .await;
         let recipient = scenario_builder
             .client_builder
-            .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
+            .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
             .await;
         faucet.do_sync(false).await.unwrap();
         faucet
@@ -787,11 +768,11 @@ pub mod scenarios {
         .await;
         let faucet = scenario_builder
             .client_builder
-            .build_new_faucet(0, false, regtest_network)
+            .build_faucet(false, regtest_network)
             .await;
         let recipient = scenario_builder
             .client_builder
-            .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
+            .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
             .await;
         increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &faucet, 1)
             .await
@@ -852,11 +833,11 @@ pub mod scenarios {
         .await;
         let faucet = scenario_builder
             .client_builder
-            .build_new_faucet(0, false, regtest_network)
+            .build_faucet(false, regtest_network)
             .await;
         let recipient = scenario_builder
             .client_builder
-            .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
+            .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
             .await;
         increase_height_and_wait_for_client(&scenario_builder.regtest_manager, &faucet, 1)
             .await
@@ -986,14 +967,11 @@ pub mod scenarios {
             let mut sb =
                 setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain(&regtest_network)
                     .await;
-            let faucet = sb
-                .client_builder
-                .build_new_faucet(0, false, regtest_network)
-                .await;
+            let faucet = sb.client_builder.build_faucet(false, regtest_network).await;
             faucet.do_sync(false).await.unwrap();
             let recipient = sb
                 .client_builder
-                .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
+                .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
                 .await;
             (
                 sb.regtest_manager,
@@ -1012,13 +990,10 @@ pub mod scenarios {
             let mut sb =
                 setup::ScenarioBuilder::new_load_1153_saplingcb_regtest_chain(&regtest_network)
                     .await;
-            let faucet = sb
-                .client_builder
-                .build_new_faucet(0, false, regtest_network)
-                .await;
+            let faucet = sb.client_builder.build_faucet(false, regtest_network).await;
             let recipient = sb
                 .client_builder
-                .build_newseed_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
+                .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
                 .await;
             (
                 sb.regtest_manager,
