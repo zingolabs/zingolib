@@ -16,7 +16,7 @@ zcash_note_encryption = "0.4"
 zcash_primitives = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc.2" }
 zcash_proofs = { git = "https://github.com/zingolabs/librustzcash.git", tag = "zingo_rc.2" }
 orchard = "0.6"
-tonic-build = "0.7"
+tonic-build = "0.10"
 tempdir = "0.3"
 portpicker = "0.1"
 incrementalmerkletree = { version = "0.5" }
