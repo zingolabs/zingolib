@@ -320,15 +320,12 @@ pub mod scenarios {
                             }
                         }),
                 );
-                dbg!(self
-                    .regtest_manager
+                self.regtest_manager
                     .generate_n_blocks(BASE_HEIGHT - 1)
-                    .unwrap());
-                dbg!("before poll in launch scenario");
+                    .unwrap();
                 while crate::poll_server_height(&self.regtest_manager) != BASE_HEIGHT {
                     sleep(std::time::Duration::from_millis(50)).await;
                 }
-                dbg!("after poll in launch scenario");
             }
             pub async fn new_load_1153_saplingcb_regtest_chain(
                 regtest_network: &zingoconfig::RegtestNetwork,
@@ -587,7 +584,7 @@ pub mod scenarios {
         .await;
         let faucet = sb
             .client_builder
-            .build_new_faucet(BASE_HEIGHT as u64 - 1, false, regtest_network)
+            .build_new_faucet(0, false, regtest_network)
             .await;
         (
             sb.regtest_manager,

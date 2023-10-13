@@ -1,22 +1,14 @@
 #![forbid(unsafe_code)]
 #![cfg(feature = "local_env")]
 pub mod darkside;
+
+use crate::zingo_testutils::check_transaction_equality;
+use bip0039::Mnemonic;
+use json::JsonValue;
 use orchard::tree::MerkleHashOrchard;
 use shardtree::store::memory::MemoryShardStore;
 use shardtree::ShardTree;
 use std::{fs::File, path::Path, str::FromStr};
-use zingo_testutils::{
-    self, build_fvk_client,
-    data::{self, POST_CANOPY_BLOCK_REWARD},
-    increase_height_and_wait_for_client, BASE_HEIGHT,
-};
-
-use bip0039::Mnemonic;
-use data::seeds::{CHIMNEY_BETTER_SEED, HOSPITAL_MUSEUM_SEED};
-use json::JsonValue;
-use zingo_testutils::scenarios;
-
-use crate::zingo_testutils::check_transaction_equality;
 use tracing_test::traced_test;
 use zcash_address::unified::Fvk;
 use zcash_client_backend::encoding::encode_payment_address;
@@ -26,7 +18,16 @@ use zcash_primitives::{
     memo::MemoBytes,
     transaction::{fees::zip317::MINIMUM_FEE, TxId},
 };
-use zingo_testutils::regtest::get_cargo_manifest_dir;
+use zingo_testutils::{
+    self, build_fvk_client,
+    data::{
+        self, block_rewards,
+        seeds::{CHIMNEY_BETTER_SEED, HOSPITAL_MUSEUM_SEED},
+    },
+    increase_height_and_wait_for_client,
+    regtest::get_cargo_manifest_dir,
+    scenarios, BASE_HEIGHT,
+};
 use zingoconfig::{ChainType, RegtestNetwork, ZingoConfig, MAX_REORG};
 use zingolib::{
     check_client_balances, get_base_address,
@@ -1039,7 +1040,7 @@ async fn send_orchard_back_and_forth() {
         wallet_height.as_fixed_point_u64(0).unwrap(),
         BASE_HEIGHT as u64
     );
-    let three_blocks_reward = POST_CANOPY_BLOCK_REWARD
+    let three_blocks_reward = block_rewards::CANOPY
         .checked_mul(BASE_HEIGHT as u64)
         .unwrap();
     check_client_balances!(faucet, o: 0 s: three_blocks_reward  t: 0);
@@ -1053,8 +1054,7 @@ async fn send_orchard_back_and_forth() {
         )])
         .await
         .unwrap();
-    let orch_change =
-        POST_CANOPY_BLOCK_REWARD - (faucet_to_recipient_amount + u64::from(MINIMUM_FEE));
+    let orch_change = block_rewards::CANOPY - (faucet_to_recipient_amount + u64::from(MINIMUM_FEE));
     let reward_and_fee = three_blocks_reward + u64::from(MINIMUM_FEE);
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
         .await
@@ -1090,7 +1090,7 @@ async fn send_orchard_back_and_forth() {
     let recipient_final_orch =
         faucet_to_recipient_amount - (u64::from(MINIMUM_FEE) + recipient_to_faucet_amount);
     let faucet_final_orch = orch_change + recipient_to_faucet_amount;
-    let faucet_final_block = 4 * POST_CANOPY_BLOCK_REWARD + u64::from(MINIMUM_FEE) * 2;
+    let faucet_final_block = 4 * block_rewards::CANOPY + u64::from(MINIMUM_FEE) * 2;
     check_client_balances!(
         faucet,
         o: faucet_final_orch s: faucet_final_block t: 0
@@ -3374,54 +3374,54 @@ async fn sync_all_epochs() {
         .unwrap();
 }
 
+// test fails with error message: "66: tx unpaid action limit exceeded"
+#[ignore]
 #[tokio::test]
-async fn send_pre_orchard_funds() {
-    let regtest_network = RegtestNetwork::new(1, 1, 3, 5, 7, 9);
-    let (regtest_manager, _cph, faucet, recipient) =
+async fn mine_to_transparent_and_shield() {
+    let regtest_network = RegtestNetwork::all_upgrades_active();
+    let (regtest_manager, _cph, faucet, _recipient) =
         scenarios::two_wallet_one_miner_fund_transparent(regtest_network).await;
-    increase_height_and_wait_for_client(&regtest_manager, &faucet, 7)
+    increase_height_and_wait_for_client(&regtest_manager, &faucet, 100)
         .await
         .unwrap();
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&faucet.do_balance().await).unwrap()
-    );
-    dbg!(faucet.do_shield(&[Pool::Transparent], None).await.unwrap());
+    faucet.do_shield(&[Pool::Transparent], None).await.unwrap();
+}
+
+#[tokio::test]
+async fn shield_heartwood_sapling_funds() {
+    let regtest_network = RegtestNetwork::new(1, 1, 1, 1, 3, 5);
+    let (regtest_manager, _cph, faucet) = scenarios::faucet(regtest_network).await;
+    increase_height_and_wait_for_client(&regtest_manager, &faucet, 3)
+        .await
+        .unwrap();
+    check_client_balances!(faucet, o: 0 s: 3_500_000_000 t: 0);
+    faucet.do_shield(&[Pool::Sapling], None).await.unwrap();
     increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
         .await
         .unwrap();
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&faucet.do_balance().await).unwrap()
-    );
+    check_client_balances!(faucet, o: 3_499_990_000 s: 625_010_000 t: 0);
+}
+
+#[tokio::test]
+async fn send_heartwood_sapling_funds() {
+    let regtest_network = RegtestNetwork::new(1, 1, 1, 1, 3, 5);
+    let (regtest_manager, _cph, faucet, recipient) =
+        scenarios::two_wallet_one_miner_fund(regtest_network).await;
+    increase_height_and_wait_for_client(&regtest_manager, &faucet, 3)
+        .await
+        .unwrap();
+    check_client_balances!(faucet, o: 0 s: 3_500_000_000 t: 0);
     faucet
         .do_send(vec![(
             &get_base_address!(recipient, "unified"),
-            5_874_990_000,
-            // 6_499_990_000,
+            3_499_990_000,
             None,
         )])
         .await
         .unwrap();
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&faucet.do_balance().await).unwrap()
-    );
-    println!("{}", faucet.do_list_transactions().await.pretty(2));
+    check_client_balances!(faucet, o: 0 s: 0 t: 0);
     increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
         .await
         .unwrap();
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
-    );
-    println!("{}", recipient.do_list_transactions().await.pretty(2));
+    check_client_balances!(recipient, o: 3_499_990_000 s: 0 t: 0);
 }
-
-// #[tokio::test]
-// async fn get_faucet_addresses() {
-//     let regtest_network = RegtestNetwork::all_upgrades_active();
-//     let (_rm, _cph, faucet, _recipient) =
-//         scenarios::two_wallet_one_miner_fund(regtest_network).await;
-//     println!("{}", faucet.do_addresses().await.pretty(2));
-// }
