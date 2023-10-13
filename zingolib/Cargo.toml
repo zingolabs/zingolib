@@ -61,7 +61,7 @@ zcash_primitives = { workspace = true }
 zcash_proofs = { workspace = true }
 zingoconfig = { path = "../zingoconfig" }
 zingo-memo = { path = "../zingo-memo" }
-nonempty = "0.7.0"
+nonempty = "0.8.1"
 tracing-subscriber = "0.3.15"
 tracing = "0.1.36"
 indoc = "2.0.1"
