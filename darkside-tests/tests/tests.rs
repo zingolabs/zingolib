@@ -1,18 +1,90 @@
-use darkside_tests::{
-    constants::DARKSIDE_SEED,
-    utils::{
-        prepare_darksidewalletd, update_tree_states_for_transaction, DarksideConnector,
-        DarksideHandler,
-    },
+use super::darkside_types::{Empty, RawTransaction, TreeState};
+use crate::darkside::{
+    constants::{self, BRANCH_ID, DARKSIDE_SEED},
+    darkside_connector::DarksideConnector,
+    utils::{update_tree_states_for_transaction, DarksideHandler},
 };
+
 use tokio::time::sleep;
-use zingo_testutils::{data::seeds, scenarios::setup::ClientBuilder};
+use zingo_testutils::scenarios::setup::ClientBuilder;
 use zingoconfig::RegtestNetwork;
 use zingolib::{get_base_address, lightclient::PoolBalances};
 
+async fn prepare_darksidewalletd(
+    uri: http::Uri,
+    include_startup_funds: bool,
+) -> Result<(), String> {
+    dbg!(&uri);
+    let connector = DarksideConnector(uri.clone());
+
+    let mut client = connector.get_client().await.unwrap();
+    // Setup prodedures.  Up to this point there's no communication between the client and the dswd
+    client.clear_address_utxo(Empty {}).await.unwrap();
+
+    // reset with parameters
+    connector
+        .reset(1, String::from(BRANCH_ID), String::from("regtest"))
+        .await
+        .unwrap();
+
+    connector
+        .stage_blocks_stream(vec![String::from(
+            crate::darkside::constants::GENESIS_BLOCK,
+        )])
+        .await?;
+
+    connector.stage_blocks_create(2, 2, 0).await.unwrap();
+
+    connector
+        .add_tree_state(constants::first_tree_state())
+        .await
+        .unwrap();
+    if include_startup_funds {
+        connector
+            .stage_transactions_stream(vec![(
+                hex::decode(constants::TRANSACTION_INCOMING_100TAZ).unwrap(),
+                2,
+            )])
+            .await
+            .unwrap();
+        let tree_height_2 = update_tree_states_for_transaction(
+            &uri,
+            RawTransaction {
+                data: hex::decode(constants::TRANSACTION_INCOMING_100TAZ).unwrap(),
+                height: 2,
+            },
+            2,
+        )
+        .await;
+        connector
+            .add_tree_state(TreeState {
+                height: 3,
+                ..tree_height_2
+            })
+            .await
+            .unwrap();
+    } else {
+        for height in [2, 3] {
+            connector
+                .add_tree_state(TreeState {
+                    height,
+                    ..constants::first_tree_state()
+                })
+                .await
+                .unwrap();
+        }
+    }
+
+    sleep(std::time::Duration::new(2, 0)).await;
+
+    connector.apply_staged(3).await?;
+
+    Ok(())
+}
+
 #[tokio::test]
 async fn simple_sync() {
-    let darkside_handler = DarksideHandler::default();
+    let darkside_handler = DarksideHandler::new();
 
     let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
         "http://127.0.0.1:{}",
@@ -51,7 +123,7 @@ async fn simple_sync() {
 
 #[tokio::test]
 async fn reorg_away_receipt() {
-    let darkside_handler = DarksideHandler::default();
+    let darkside_handler = DarksideHandler::new();
 
     let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
         "http://127.0.0.1:{}",
@@ -103,7 +175,7 @@ async fn reorg_away_receipt() {
 
 #[tokio::test]
 async fn sent_transaction_reorged_into_mempool() {
-    let darkside_handler = DarksideHandler::default();
+    let darkside_handler = DarksideHandler::new();
 
     let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
         "http://127.0.0.1:{}",
@@ -121,7 +193,7 @@ async fn sent_transaction_reorged_into_mempool() {
         .await;
     let recipient = client_manager
         .build_client(
-            seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+            crate::data::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
             1,
             true,
             regtest_network,

@@ -6,7 +6,8 @@ use json::JsonValue;
 use orchard::tree::MerkleHashOrchard;
 use shardtree::store::memory::MemoryShardStore;
 use shardtree::ShardTree;
-use std::{fs::File, path::Path, str::FromStr, time::Duration};
+use std::{fs::File, path::Path, str::FromStr, time::Duration}
+use tracing_test::traced_test;
 use zcash_address::unified::Fvk;
 use zcash_client_backend::encoding::encode_payment_address;
 use zcash_primitives::{
