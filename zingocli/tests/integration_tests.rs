@@ -1082,7 +1082,8 @@ async fn send_orchard_back_and_forth() {
         )])
         .await
         .unwrap();
-    let orch_change = block_rewards::CANOPY - (faucet_to_recipient_amount + u64::from(TWO_ACTION_FEE));
+    let orch_change =
+        block_rewards::CANOPY - (faucet_to_recipient_amount + u64::from(TWO_ACTION_FEE));
     let reward_and_fee = three_blocks_reward + u64::from(TWO_ACTION_FEE);
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
         .await
@@ -1118,13 +1119,7 @@ async fn send_orchard_back_and_forth() {
     let recipient_final_orch =
         faucet_to_recipient_amount - (u64::from(TWO_ACTION_FEE) + recipient_to_faucet_amount);
     let faucet_final_orch = orch_change + recipient_to_faucet_amount;
-<<<<<<< HEAD
-    let faucet_final_block = 4 * block_reward + u64::from(TWO_ACTION_FEE) * 2;
-||||||| 6cb5199e
-    let faucet_final_block = 4 * block_reward + u64::from(MINIMUM_FEE) * 2;
-=======
-    let faucet_final_block = 4 * block_rewards::CANOPY + u64::from(MINIMUM_FEE) * 2;
->>>>>>> dev
+    let faucet_final_block = 4 * block_rewards::CANOPY + u64::from(TWO_ACTION_FEE) * 2;
     check_client_balances!(
         faucet,
         o: faucet_final_orch s: faucet_final_block t: 0
@@ -3413,7 +3408,7 @@ async fn mine_to_transparent_and_shield() {
     increase_height_and_wait_for_client(&regtest_manager, &faucet, 100)
         .await
         .unwrap();
-    faucet.do_shield(&[Pool::Transparent], None).await.unwrap();
+    faucet.do_shield(&[Pool::Transparent]).await.unwrap();
 }
 
 #[tokio::test]
@@ -3424,7 +3419,7 @@ async fn shield_heartwood_sapling_funds() {
         .await
         .unwrap();
     check_client_balances!(faucet, o: 0 s: 3_500_000_000 t: 0);
-    faucet.do_shield(&[Pool::Sapling], None).await.unwrap();
+    faucet.do_shield(&[Pool::Sapling]).await.unwrap();
     increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
         .await
         .unwrap();
