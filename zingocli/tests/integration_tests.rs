@@ -2427,7 +2427,7 @@ async fn sapling_incoming_sapling_outgoing() {
     assert_eq!(send_transaction["txid"], sent_transaction_id);
     assert_eq!(
         send_transaction["amount"].as_i64().unwrap(),
-        -(sent_value as i64 + i64::from(MINIMUM_FEE))
+        -(sent_value as i64 + u64::from(MINIMUM_FEE) as i64)
     );
     assert!(send_transaction["unconfirmed"].as_bool().unwrap());
     assert_eq!(send_transaction["block_height"].as_u64().unwrap(), 5);
