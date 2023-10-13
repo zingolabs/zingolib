@@ -945,21 +945,23 @@ impl LightWallet {
                     orchard_notes,
                     sapling_notes,
                     utxos,
-                    u64::from(
+                    u64::try_from(
                         (all_transparent_value_in_wallet
                             + sapling_value_selected
                             + orchard_value_selected)
                             .unwrap(),
-                    ),
+                    )
+                    .expect("u64 representable."),
                 ));
             }
         }
 
         // If we can't select enough, then we need to return empty handed
-        Err(u64::from(
+        Err(u64::try_from(
             (all_transparent_value_in_wallet + sapling_value_selected + orchard_value_selected)
                 .unwrap(),
-        ))
+        )
+        .expect("u64 representable"))
     }
 
     pub async fn send_to_addresses<F, Fut, P: TxProver>(
@@ -1168,7 +1170,7 @@ impl LightWallet {
                         tx_builder.add_orchard_output::<FixedFeeRule>(
                             Some(orchard_ovk.clone()),
                             *orchard_addr,
-                            u64::from(value),
+                            u64::try_from(value).expect("u64 representable"),
                             validated_memo,
                         )
                     } else if let Some(sapling_addr) = ua.sapling() {
@@ -1227,7 +1229,8 @@ impl LightWallet {
         if let Err(e) = tx_builder.add_orchard_output::<FixedFeeRule>(
             Some(orchard_ovk.clone()),
             *self.wallet_capability().addresses()[0].orchard().unwrap(),
-            u64::from(selected_value) - u64::from(target_amount),
+            u64::try_from(selected_value).expect("u64 representable")
+                - u64::try_from(target_amount).expect("u64 representable"),
             // Here we store the uas we sent to in the memo field.
             // These are used to recover the full UA we sent to.
             MemoBytes::from(Memo::Arbitrary(Box::new(uas_bytes))),
@@ -1265,7 +1268,10 @@ impl LightWallet {
         let mut tx_builder;
         let mut proposed_fee = MINIMUM_FEE;
         let mut total_value_covered_by_selected;
-        let total_earmarked_for_recipients: u64 = receivers.iter().map(|to| u64::from(to.1)).sum();
+        let total_earmarked_for_recipients: u64 = receivers
+            .iter()
+            .map(|to| u64::try_from(to.1).expect("u64 representable"))
+            .sum();
         info!(
             "0: Creating transaction sending {} zatoshis to {} addresses",
             total_earmarked_for_recipients,
@@ -1308,7 +1314,7 @@ impl LightWallet {
                 .expect("To add outputs");
 
             let earmark_total_plus_default_fee =
-                (Amount::from_u64(total_earmarked_for_recipients).unwrap() + proposed_fee).unwrap();
+                total_earmarked_for_recipients + u64::from(proposed_fee);
             // Select notes as a fn of target anount
             (
                 orchard_notes,
@@ -1316,14 +1322,18 @@ impl LightWallet {
                 utxos,
                 total_value_covered_by_selected,
             ) = match self
-                .select_notes_and_utxos(earmark_total_plus_default_fee, &policy)
+                .select_notes_and_utxos(
+                    Amount::from_u64(earmark_total_plus_default_fee)
+                        .expect("Valid amount, from u64."),
+                    &policy,
+                )
                 .await
             {
                 Ok(notes) => notes,
                 Err(insufficient_amount) => {
                     let e = format!(
                 "Insufficient verified shielded funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes.",
-                insufficient_amount, u64::from(earmark_total_plus_default_fee), self.transaction_context.config
+                insufficient_amount, earmark_total_plus_default_fee, self.transaction_context.config
                 .reorg_buffer_offset + 1
             );
                     error!("{}", e);
@@ -1343,7 +1353,7 @@ impl LightWallet {
 
             let temp_tx_builder = match self.add_change_output_to_builder(
                 tx_builder,
-                earmark_total_plus_default_fee,
+                Amount::from_u64(earmark_total_plus_default_fee).expect("valid value of u64"),
                 Amount::from_u64(total_value_covered_by_selected).unwrap(),
                 &mut total_shielded_receivers,
                 &receivers,
