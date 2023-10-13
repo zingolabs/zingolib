@@ -646,10 +646,11 @@ async fn actual_empty_zcashd_sapling_commitment_tree() {
 async fn mine_sapling_to_self() {
     let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet) = scenarios::faucet(regtest_network).await;
+    check_client_balances!(faucet, o: 0u64 s: 1_875_000_000u64 t: 0u64);
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
         .await
         .unwrap();
-    check_client_balances!(faucet, o: 0u64 s: 1_250_000_000u64 t: 0u64);
+    check_client_balances!(faucet, o: 0u64 s: 2_500_000_000u64 t: 0u64);
 }
 
 #[tokio::test]
@@ -728,10 +729,6 @@ async fn send_mined_sapling_to_orchard() {
     // NOTE that the balance doesn't give insight into the distribution across notes.
     let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet) = scenarios::faucet(regtest_network).await;
-    zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
-        .await
-        .unwrap();
-
     let amount_to_send = 5_000;
     faucet
         .do_send(vec![(
@@ -741,7 +738,6 @@ async fn send_mined_sapling_to_orchard() {
         )])
         .await
         .unwrap();
-
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
         .await
         .unwrap();

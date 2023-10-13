@@ -581,6 +581,7 @@ pub mod scenarios {
             .client_builder
             .build_new_faucet(0, false, regtest_network)
             .await;
+        faucet.do_sync(false).await.unwrap();
         (
             sb.regtest_manager,
             sb.child_process_handler.unwrap(),
