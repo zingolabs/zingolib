@@ -941,7 +941,6 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &sapling_faucet, 3)
         .await
         .unwrap();
-    // 1 t Test of a send from a taddr only client to its own unified address
     macro_rules! bump_and_check {
         (o: $o:tt s: $s:tt t: $t:tt) => {
             zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &pool_migration_client, 1).await.unwrap();
@@ -949,18 +948,19 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         };
     }
 
+    // 1 Test of a send from a faucet to a taddress
     sapling_faucet
         .do_send(vec![(&pmc_taddr, 50_000, None)])
         .await
         .unwrap();
     bump_and_check!(o: 0 s: 0 t: 50_000);
 
-    dbg!(pool_migration_client.do_balance().await);
     let shielded_total = 50_000 - dbg!(u64::from((TWO_ACTION_FEE + MARGINAL_FEE).unwrap())); // Two action for orchard, marginal for transparent
     pool_migration_client
         .do_shield(&[Pool::Transparent])
         .await
         .unwrap();
+    // shielded total should be 35_000 as of this doc-comment
     bump_and_check!(o: shielded_total s: 0 t: 0);
 
     // 2 Test of a send from a sapling only client to the recipient unified address
@@ -968,13 +968,19 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         .do_send(vec![(&pmc_sapling, 50_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 40_000 s: 50_000 t: 0);
+    bump_and_check!(o: shielded_total s: 50_000 t: 0);
 
+    // 3 Test of a shield, expected logical actions:
+    // 1 sapling spend, 0 sapling output:   pad to 2
+    // 1 orchard change, 1 orchard recipient:      2
+    // 0 transparent
+    // Total expected fee 20_000
+    // orchard balance = 35+50-20 = 65
     pool_migration_client
         .do_shield(&[Pool::Sapling])
         .await
         .unwrap();
-    bump_and_check!(o: 80_000 s: 0 t: 0);
+    bump_and_check!(o: 65_000 s: 0 t: 0);
 
     // 3 Test of an orchard-only client to itself
     pool_migration_client
