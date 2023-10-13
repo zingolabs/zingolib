@@ -912,15 +912,15 @@ async fn basic_zip317() {
         .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
         .await;
     let _pmc_taddr = get_base_address!(pool_migration_client, "transparent");
-    let pmc_sapling = get_base_address!(pool_migration_client, "sapling");
-    let _pmc_unified = get_base_address!(pool_migration_client, "unified");
+    let _pmc_sapling = get_base_address!(pool_migration_client, "sapling");
+    let pmc_unified = get_base_address!(pool_migration_client, "unified");
     // 2 Test of a send from a sapling only client to its own unified address
 
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &sapling_faucet, 3)
         .await
         .unwrap();
     sapling_faucet
-        .do_send(vec![(&pmc_sapling, 0_000, None)])
+        .do_send(vec![(&pmc_unified, 0_000, None)])
         .await
         .unwrap();
 }
