@@ -219,13 +219,9 @@ async fn simple_sync() {
         .await
         .unwrap();
     let regtest_network = RegtestNetwork::all_upgrades_active();
-    let light_client = ClientBuilder::new(
-        server_id,
-        darkside_handler.darkside_dir.clone(),
-        DARKSIDE_SEED,
-    )
-    .build_faucet(true, regtest_network)
-    .await;
+    let light_client = ClientBuilder::new(server_id, darkside_handler.darkside_dir.clone())
+        .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network)
+        .await;
 
     let result = light_client.do_sync(true).await.unwrap();
 
@@ -263,13 +259,9 @@ async fn reorg_away_receipt() {
         .unwrap();
 
     let regtest_network = RegtestNetwork::all_upgrades_active();
-    let light_client = ClientBuilder::new(
-        server_id.clone(),
-        darkside_handler.darkside_dir.clone(),
-        DARKSIDE_SEED,
-    )
-    .build_faucet(true, regtest_network)
-    .await;
+    let light_client = ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone())
+        .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network)
+        .await;
 
     light_client.do_sync(true).await.unwrap();
     assert_eq!(
@@ -318,13 +310,12 @@ async fn sent_transaction_reorged_into_mempool() {
         .await
         .unwrap();
 
-    let mut client_manager = ClientBuilder::new(
-        server_id.clone(),
-        darkside_handler.darkside_dir.clone(),
-        DARKSIDE_SEED,
-    );
+    let mut client_manager =
+        ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone());
     let regtest_network = RegtestNetwork::all_upgrades_active();
-    let light_client = client_manager.build_faucet(true, regtest_network).await;
+    let light_client = client_manager
+        .build_client(DARKSIDE_SEED.to_string(), 0, true, regtest_network)
+        .await;
     let recipient = client_manager
         .build_client(
             crate::data::seeds::HOSPITAL_MUSEUM_SEED.to_string(),
