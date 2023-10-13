@@ -111,7 +111,7 @@ impl FakeCompactBlock {
             // Create a fake Note for the account
             let note = Note::from_parts(
                 to,
-                NoteValue::from_raw(value.into()),
+                NoteValue::from_raw(u64::try_from(value).expect("Represent as u64")),
                 Rseed::AfterZip212(random_u8_32()),
             );
 

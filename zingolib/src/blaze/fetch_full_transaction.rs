@@ -149,7 +149,7 @@ impl TransactionContext {
                     {
                         outgoing_metadatas.push(OutgoingTxData {
                             to_address: taddr,
-                            value: u64::from(vout.value),
+                            value: u64::try_from(vout.value).expect("A u64 representable Amount."),
                             memo: Memo::Empty,
                             recipient_ua: None,
                         });
