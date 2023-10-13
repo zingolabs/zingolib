@@ -648,7 +648,7 @@ pub mod scenarios {
         .await;
         let faucet = sb
             .client_builder
-            .build_new_faucet(0, false, regtest_network.clone())
+            .build_new_faucet(0, false, regtest_network)
             .await;
         faucet.do_sync(false).await.unwrap();
 
