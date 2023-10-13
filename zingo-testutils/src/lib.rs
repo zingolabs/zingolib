@@ -558,7 +558,7 @@ pub mod scenarios {
         )
     }
     /// Many scenarios need to start with spendable funds.  This setup provides
-    /// 1 block worth of coinbase to a preregistered spend capability.
+    /// 3 blocks worth of coinbase to a preregistered spend capability.
     ///
     /// This key is registered to receive block rewards by corresponding to the
     /// address registered as the "mineraddress" field in zcash.conf
