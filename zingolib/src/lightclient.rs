@@ -1455,6 +1455,12 @@ impl LightClient {
         let (verified, highest_tree) = verify_handle.await.map_err(|e| e.to_string())?;
         debug!("tree verification {}", verified);
         debug!("highest tree exists: {}", highest_tree.is_some());
+
+        // the following check does not make sense in the context of
+        // darkside_tests feature and should be disabled since
+        // darksidewalletd will manipulate the chain and ultimately
+        // break the static checkpoints.
+        #[cfg(not(feature = "darkside_tests"))]
         if !verified {
             return Err("Tree Verification Failed".to_string());
         }

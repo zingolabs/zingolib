@@ -11,6 +11,7 @@ deprecations = ["lightclient-deprecated"]
 lightclient-deprecated = []
 default = ["embed_params"]
 embed_params = []
+darkside_tests = [] 
 
 [dependencies]
 log = "0.4.14"

@@ -1,5 +1,7 @@
 use std::{
-    path::PathBuf,
+    fs::{self, File},
+    io::{self, BufRead},
+    path::{Path, PathBuf},
     process::{Child, Command},
     time::Duration,
 };
@@ -8,6 +10,7 @@ use http::Uri;
 use orchard::{note_encryption::OrchardDomain, tree::MerkleHashOrchard};
 use tempdir;
 use zcash_primitives::merkle_tree::read_commitment_tree;
+
 use zcash_primitives::sapling::{note_encryption::SaplingDomain, Node};
 use zingo_testutils::{
     self,
@@ -19,8 +22,9 @@ use zingolib::wallet::traits::DomainWalletExt;
 use super::{
     constants,
     darkside_types::{RawTransaction, TreeState},
-    tests::DarksideConnector,
 };
+
+use crate::darkside::darkside_connector::DarksideConnector;
 
 pub fn generate_darksidewalletd() -> (String, PathBuf) {
     let darkside_grpc_port = portpicker::pick_unused_port()
@@ -134,4 +138,52 @@ pub(crate) async fn update_tree_states_for_transaction(
         .await
         .unwrap();
     new_tree_state
+}
+
+// The output is wrapped in a Result to allow matching on errors
+// Returns an Iterator to the Reader of the lines of the file.
+// source: https://doc.rust-lang.org/rust-by-example/std_misc/file/read_lines.html
+pub(crate) fn read_lines<P>(filename: P) -> io::Result<io::Lines<io::BufReader<File>>>
+where
+    P: AsRef<Path>,
+{
+    let file = File::open(filename)?;
+    Ok(io::BufReader::new(file).lines())
+}
+
+pub(crate) fn read_block_dataset<P>(filename: P) -> Vec<String>
+where
+    P: AsRef<Path>,
+{
+    read_lines(filename)
+        .unwrap()
+        .map(|line| line.unwrap())
+        .collect()
+}
+
+impl TreeState {
+    pub(crate) fn from_file<P>(filename: P) -> Result<TreeState, Box<dyn std::error::Error>>
+    where
+        P: AsRef<Path>,
+    {
+        let state_string = fs::read_to_string(filename)?;
+        let json_state: serde_json::Value = serde_json::from_str(&state_string)?;
+
+        let network = json_state["network"].as_str().unwrap();
+        let height = json_state["height"].as_u64().unwrap();
+        let hash = json_state["hash"].as_str().unwrap();
+        let time = json_state["time"].as_i64().unwrap();
+        let time_32: u32 = u32::try_from(time)?;
+        let sapling_tree = json_state["saplingTree"].as_str().unwrap();
+        let orchard_tree = json_state["orchardTree"].as_str().unwrap();
+
+        Ok(TreeState {
+            network: network.to_string(),
+            height: height,
+            hash: hash.to_string(),
+            time: time_32,
+            sapling_tree: sapling_tree.to_string(),
+            orchard_tree: orchard_tree.to_string(),
+        })
+    }
 }
