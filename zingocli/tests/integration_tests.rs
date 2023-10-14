@@ -1069,34 +1069,30 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
 
     // 11 maximal self-send another 10_000 in fees
     let notes = &pool_migration_client.do_list_notes(true).await;
-    assert_eq!(notes["unspent_orchard_notes"].len(), 2);
-
+    assert_eq!(notes["unspent_orchard_notes"].len(), 9);
+    //let unspent_orchard_notes = notes["unspent_orchard_notes"].members()
     pool_migration_client
-        .do_send(vec![(&pmc_unified, 75_000, None)])
+        .do_send(vec![(&pmc_unified, 65_000, None)])
         .await
         .unwrap();
     bump_and_check!(o: 75_000 s: 0 t: 0);
 
-    pool_migration_client
-        .do_shield(&[Pool::Transparent])
-        .await
-        .unwrap();
-    bump_and_check!(o: 20_000 s: 0 t: 0);
-
-    // 6 sapling and orchard to orchard
+    // 12 20_000 faucet to sapling
     sapling_faucet
         .do_send(vec![(&pmc_sapling, 20_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 20_000 s: 20_000 t: 0);
+    bump_and_check!(o: 75_000 s: 20_000 t: 0);
 
+    // 13 30_000 (z&o) -> o
+    // Total fee 20_000 (Orchard minimum + Sapling minimum )
     pool_migration_client
-        .do_send(vec![(&pmc_unified, 30_000, None)])
+        .do_send(vec![(&pmc_unified, 65_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 30_000 s: 0 t: 0);
+    bump_and_check!(o: 75_000 s: 0 t: 0);
 
-    // 7 tzo --> o
+    // 14 refill sapling and transparent from faucet
     sapling_faucet
         .do_send(vec![
             (&pmc_taddr, 20_000, None),
@@ -1104,7 +1100,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         ])
         .await
         .unwrap();
-    bump_and_check!(o: 30_000 s: 20_000 t: 20_000);
+    bump_and_check!(o: 75_000 s: 20_000 t: 20_000);
 
     pool_migration_client
         .do_shield(&[Pool::Transparent])
