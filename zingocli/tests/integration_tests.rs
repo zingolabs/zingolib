@@ -903,7 +903,7 @@ async fn note_selection_order() {
 }
 
 #[tokio::test]
-async fn basic_zip317() {
+async fn basic_zip317_three_logical_action_one_pool() {
     let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, mut client_builder) =
         scenarios::custom_clients(regtest_network.clone()).await;
@@ -911,6 +911,12 @@ async fn basic_zip317() {
     let pool_migration_client = client_builder
         .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
         .await;
+    macro_rules! bump_and_check {
+        (o: $o:tt s: $s:tt t: $t:tt) => {
+            zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &pool_migration_client, 1).await.unwrap();
+            check_client_balances!(pool_migration_client, o:$o s:$s t:$t);
+        };
+    }
     let _pmc_taddr = get_base_address!(pool_migration_client, "transparent");
     let _pmc_sapling = get_base_address!(pool_migration_client, "sapling");
     let pmc_unified = get_base_address!(pool_migration_client, "unified");
@@ -920,9 +926,23 @@ async fn basic_zip317() {
         .await
         .unwrap();
     sapling_faucet
-        .do_send(vec![(&pmc_unified, 0_000, None)])
+        .do_send(vec![
+            (&pmc_unified, 25_000, None),
+            (&pmc_unified, 10_000, None),
+            (&pmc_unified, 10_000, None),
+        ])
         .await
         .unwrap();
+    bump_and_check!(o: 45_000 s: 0 t: 0);
+    let notes = &pool_migration_client.do_list_notes(true).await;
+    assert_eq!(notes["unspent_orchard_notes"].len(), 3);
+    // extracted from 11 of from_t_z_o_...  test:
+    // maximal self-send another 25_000 in fees
+    pool_migration_client
+        .do_send(vec![(&pmc_unified, 30_000, None)])
+        .await
+        .unwrap();
+    bump_and_check!(o: 30_000 s: 0 t: 0);
 }
 #[tokio::test]
 async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
@@ -984,37 +1004,78 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
 
     // 3 Test of an orchard-only client to itself
     pool_migration_client
-        .do_send(vec![(&pmc_unified, 70_000, None)])
+        .do_send(vec![(&pmc_unified, 55_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 70_000 s: 0 t: 0);
+    // Should be 65 - 10 = 55, includes 0-value change note.
+    bump_and_check!(o: 55_000 s: 0 t: 0);
 
     // 4 tz transparent and sapling to orchard
+    // expected fee 10_000 orchard, 5_000 sapling, 5_000 transparent = 20_000
     pool_migration_client
         .do_send(vec![
-            (&pmc_taddr, 30_000, None),
-            (&pmc_sapling, 30_000, None),
+            (&pmc_taddr, 15_000, None),
+            (&pmc_sapling, 15_000, None),
         ])
         .await
         .unwrap();
-    bump_and_check!(o: 0 s: 30_000 t: 30_000);
+    bump_and_check!(o: 5_000 s: 15_000 t: 15_000);
 
+    // 5 this is expected to cost:
+    // 15_000 in fees, but the amount to shield is 15_000, so the attempt exits without constructing
+    //  a transaction.
+    let shield_result = pool_migration_client.do_shield(&[Pool::Transparent]).await;
+    assert_eq!(shield_result, Err("There are no shieldable notes, worth shielding.  The total which is eligible for shielding is: 15000 the total zip317 fee to shield these notes is: 15000".to_string()));
+    bump_and_check!(o: 5_000 s: 15_000 t: 15_000);
+
+    // 6 we used the librustzcash TxBuilder which pads pools to 2 if there are less notes in the tx
+    // An attempt to send 5 to Orchard requires 10 for Orchard, and 10 for sapling, plus the transfer
+    // note sends do not draw from transparent.
+    let insufficient = pool_migration_client
+        .do_send(vec![(&pmc_unified, 5_000, None)])
+        .await;
+    assert_eq!(insufficient, Err("Insufficient verified funds.\ninsufficient_amount: 15000\ntotal_earmarked_for_recipients: 5000\nproposed_fee: 20000".to_string()) );
+    bump_and_check!(o: 5_000 s: 15_000 t: 15_000);
+
+    // 7 this is expected to cost, from the balance of 35_000:
+    // 25_000 in fees, the amount to shield is 30_000, the result is 10_000 in Orchard.
+    pool_migration_client
+        .do_shield(&[Pool::Sapling, Pool::Transparent])
+        .await
+        .unwrap();
+    bump_and_check!(o: 10_000 s: 0 t: 0);
+
+    // 8 100_000 faucet to transparent
+    sapling_faucet
+        .do_send(vec![(&pmc_taddr, 100_000, None)])
+        .await
+        .unwrap();
+    bump_and_check!(o: 10_000 s: 0 t: 100_000);
+
+    // 9 promote transparent to orchard
+    // fees = 15_000, 110_000 - 15_000 = 95_000
     pool_migration_client
         .do_shield(&[Pool::Transparent])
         .await
         .unwrap();
+    bump_and_check!(o: 95_000 s: 0 t: 0);
+
+    // 10 self send that costs 10_000 in fees
     pool_migration_client
         .do_send(vec![(&pmc_unified, 20_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 40_000 s: 0 t: 0);
+    bump_and_check!(o: 85_000 s: 0 t: 0);
 
-    // 5 to transparent and orchard to orchard
+    // 11 maximal self-send another 10_000 in fees
+    let notes = &pool_migration_client.do_list_notes(true).await;
+    assert_eq!(notes["unspent_orchard_notes"].len(), 2);
+
     pool_migration_client
-        .do_send(vec![(&pmc_taddr, 20_000, None)])
+        .do_send(vec![(&pmc_unified, 75_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 10_000 s: 0 t: 20_000);
+    bump_and_check!(o: 75_000 s: 0 t: 0);
 
     pool_migration_client
         .do_shield(&[Pool::Transparent])
