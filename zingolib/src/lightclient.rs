@@ -6,6 +6,7 @@ use crate::{
         syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions, update_notes::UpdateNotes,
     },
     compact_formats::RawTransaction,
+    error::ZingoLibError,
     grpc_connector::GrpcConnector,
     wallet::{
         data::{
@@ -202,7 +203,7 @@ impl LightClient {
                     ErrorKind::AlreadyExists,
                     format!(
                         "Cannot create a new wallet from seed, because a wallet already exists at:\n{:?}",
-                        config.get_wallet_boxed_path().as_os_str()
+                        config.get_wallet_path().as_os_str()
                     ),
                 ));
             }
@@ -308,13 +309,13 @@ impl LightClient {
 
     pub fn read_wallet_from_disk(config: &ZingoConfig) -> io::Result<Self> {
         let wallet_path = if config.wallet_path_exists() {
-            config.get_wallet_boxed_path()
+            config.get_wallet_path()
         } else {
             return Err(Error::new(
                 ErrorKind::NotFound,
                 format!(
                     "Cannot read wallet. No file at {}",
-                    config.get_wallet_boxed_path().display()
+                    config.get_wallet_path().display()
                 ),
             ));
         };
@@ -896,7 +897,7 @@ impl LightClient {
 
             // Check if the file exists before attempting to delete
             if self.config.wallet_path_exists() {
-                match remove_file(self.config.get_wallet_boxed_path()) {
+                match remove_file(self.config.get_wallet_path()) {
                     Ok(_) => {
                         log::debug!("File deleted successfully!");
                         Ok(())
@@ -936,7 +937,7 @@ impl LightClient {
             let mut wallet_bytes = vec![];
             match self.wallet.write(&mut wallet_bytes).await {
                 Ok(_) => {
-                    let mut file = File::create(self.config.get_wallet_boxed_path()).unwrap();
+                    let mut file = File::create(self.config.get_wallet_path()).unwrap();
                     file.write_all(&wallet_bytes)
                         .map_err(|e| format!("{}", e))?;
                     log::debug!("In the guts of a successful save!");
@@ -2057,12 +2058,25 @@ impl LightClient {
         Ok(())
     }
 
-    pub fn get_wallet_file_location(&self) -> PathBuf {
-        self.config.get_wallet_pathbuf()
+    /// Some LightClients have a data dir in state. Mobile versions instead rely on a buffer and will return an error if this function is called.
+    /// ZingoConfig specifies both a wallet file and a directory containing it.
+    pub fn get_wallet_file_location(&self) -> Result<PathBuf, ZingoLibError> {
+        if let Some(mut loc) = self.config.wallet_dir.clone() {
+            loc.push(self.config.wallet_name.clone());
+            Ok(loc)
+        } else {
+            Err(ZingoLibError::NoWalletLocation)
+        }
     }
 
-    pub fn get_wallet_dir_location(&self) -> PathBuf {
-        self.config.get_zingo_wallet_dir().into_path_buf()
+    /// Some LightClients have a data dir in state. Mobile versions instead rely on a buffer and will return an error if this function is called.
+    /// ZingoConfig specifies both a wallet file and a directory containing it.
+    pub fn get_wallet_dir_location(&self) -> Result<PathBuf, ZingoLibError> {
+        if let Some(loc) = self.config.wallet_dir.clone() {
+            Ok(loc)
+        } else {
+            Err(ZingoLibError::NoWalletLocation)
+        }
     }
 }
 use serde_json::Value;

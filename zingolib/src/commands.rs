@@ -930,7 +930,7 @@ fn wallet_saver(lightclient: &LightClient) -> String {
         match lightclient.do_save().await {
             Ok(_) => {
                 let r = object! { "result" => "success",
-                "wallet_path" => lightclient.config.get_wallet_boxed_path().to_str().unwrap() };
+                "wallet_path" => lightclient.config.get_wallet_path().to_str().unwrap() };
                 r.pretty(2)
             }
             Err(e) => {
@@ -948,7 +948,7 @@ fn wallet_deleter(lightclient: &LightClient) -> String {
         match lightclient.do_delete().await {
             Ok(_) => {
                 let r = object! { "result" => "success",
-                "wallet_path" => lightclient.config.get_wallet_boxed_path().to_str().unwrap() };
+                "wallet_path" => lightclient.config.get_wallet_path().to_str().unwrap() };
                 r.pretty(2)
             }
             Err(e) => {
