@@ -1102,23 +1102,35 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         .unwrap();
     bump_and_check!(o: 75_000 s: 20_000 t: 20_000);
 
+    // 15 t -> o
+    // (75_000 + 20_000) - 15_000
     pool_migration_client
         .do_shield(&[Pool::Transparent])
         .await
         .unwrap();
+    bump_and_check!(o: 80_000 s: 20_000 t: 0);
+
+    // 16 o->o less the 10_000 fee
     pool_migration_client
         .do_send(vec![(&pmc_unified, 40_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 50_000 s: 0 t: 0);
+    bump_and_check!(o: 70_000 s: 20_000 t: 0);
 
-    // Send from Sapling into empty Orchard pool
+    // 17 o->z o
+    //  IS THIS CORRECT?  I thought there'd be 10_000 / shielded_pool
+    // consumed 2 orchrd and 1 sapling action 15_000 in fees
+    // Total to pay 55_000
+    // 55_000 consumable from orchard
+    // 40_000 transferred from orchard add to 20_000 in sapling
     pool_migration_client
         .do_send(vec![(&pmc_sapling, 40_000, None)])
         .await
         .unwrap();
-    bump_and_check!(o: 0 s: 40_000 t: 0);
+    bump_and_check!(o: 15_000 s: 60_000 t: 0);
 
+    // 18 z -> o
+    //  fee 15_000? 20_000?
     pool_migration_client
         .do_send(vec![(&pmc_unified, 30_000, None)])
         .await
