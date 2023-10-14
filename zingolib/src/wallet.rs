@@ -1313,7 +1313,6 @@ impl LightWallet {
             .build_builder_handle_st_errors(submission_height, witness_trees)
             .await?;
 
-        dbg!(&receivers.len());
         // Select notes to cover the target value
         (_, tx_builder) = self
             .add_consumer_specified_outputs_to_builder(tx_builder, receivers.clone())
@@ -1332,11 +1331,16 @@ impl LightWallet {
             Ok(notes) => notes,
             Err(insufficient_amount) => {
                 let e = format!(
-                "Insufficient verified shielded funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent. Transparent funds must be shielded before they can be spent. If you are trying to spend transparent funds, please use the shield button and try again in a few minutes.",
-                insufficient_amount, earmark_total_plus_proposed_fee, self.transaction_context.config
-                .reorg_buffer_offset + 1
-            );
-                error!("{}", e);
+                    "\
+                    Insufficient verified funds.\n\
+                    insufficient_amount: {}\n\
+                    total_earmarked_for_recipients: {}\n\
+                    proposed_fee: {}",
+                    insufficient_amount,
+                    total_earmarked_for_recipients,
+                    u64::from(proposed_fee),
+                );
+                eprintln!("{}", e);
                 return Err(e);
             }
         };
@@ -1408,19 +1412,15 @@ impl LightWallet {
                 .tx_builder_with_fee_and_receivers(
                     submission_height,
                     witness_trees,
-                    proposed_fee,
+                    dbg!(proposed_fee),
                     &receivers,
                     &mut total_shielded_receivers,
                     total_earmarked_for_recipients,
                     policy,
                 )
                 .await?;
-            dbg!(tx_builder.transparent_inputs().len());
-            dbg!(tx_builder.transparent_outputs().len());
-            dbg!(tx_builder.sapling_inputs().len());
-            dbg!(tx_builder.sapling_outputs().len());
 
-            proposed_fee = dbg!(tx_builder.get_fee(fee_rule).unwrap());
+            proposed_fee = tx_builder.get_fee(fee_rule).unwrap();
             if u64::from(proposed_fee) + total_earmarked_for_recipients
                 <= temp_total_value_covered_by_selected
             {
@@ -1455,7 +1455,6 @@ impl LightWallet {
         policy: &NoteSelectionPolicy,
         sapling_prover: P,
     ) -> Result<(Transaction, u64), String> {
-        dbg!("INSIDE create_publication_ready_transaction");
         // Start building transaction with spends and outputs set by:
         //  * target amount
         //  * selection policy
@@ -1484,9 +1483,6 @@ impl LightWallet {
             }
         };
 
-        dbg!(&total_cost);
-        dbg!(&total_shielded_receivers);
-        dbg!(&tx_builder.get_fee(&zcash_primitives::transaction::fees::zip317::FeeRule::standard()));
         drop(txmds_readlock);
         // The builder now has the correct set of inputs and outputs
 
@@ -1764,7 +1760,7 @@ impl LightWallet {
         self.get_utxos()
             .await
             .into_iter()
-            .filter(|utxo| utxo.value > dbg!(u64::from(MARGINAL_FEE)))
+            .filter(|utxo| utxo.value > u64::from(MARGINAL_FEE))
             .collect::<Vec<_>>()
     }
     pub async fn tbalance(&self, addr: Option<String>) -> Option<u64> {
