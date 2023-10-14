@@ -284,8 +284,8 @@ impl ConfigTemplate {
         // Begin short_circuit section
         let params: Vec<String> = matches
             .values_of("PARAMS")
-            .map(|v| v.collect())
-            .unwrap_or(vec![])
+            .map(|v| v.collect::<Vec<_>>())
+            .unwrap_or_default()
             .iter()
             .map(|s| s.to_string())
             .collect();
