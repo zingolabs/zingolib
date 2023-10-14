@@ -284,8 +284,8 @@ impl ConfigTemplate {
         // Begin short_circuit section
         let params: Vec<String> = matches
             .values_of("PARAMS")
-            .map(|v| v.collect::<Vec<_>>())
-            .unwrap_or_default()
+            .map(|v| v.collect())
+            .unwrap_or(vec![])
             .iter()
             .map(|s| s.to_string())
             .collect();
@@ -415,7 +415,7 @@ pub fn startup(
             false,
         )?),
         None => {
-            if config.wallet_exists() {
+            if config.wallet_path_exists() {
                 Arc::new(LightClient::read_wallet_from_disk(&config)?)
             } else {
                 println!("Creating a new wallet");
