@@ -599,18 +599,15 @@ impl LightClient {
             pending_sapling_notes,
         )
     }
-    /// Return a list of all notes, spent and unspent
-    pub async fn do_list_notes(&self, all_notes: bool) -> JsonValue {
-        let anchor_height = BlockHeight::from_u32(self.wallet.get_anchor_height().await);
-
-        let (mut unspent_sapling_notes, mut spent_sapling_notes, mut pending_sapling_notes) =
-            self.list_sapling_notes(all_notes, anchor_height).await;
+    async fn list_orchard_notes(
+        &self,
+        all_notes: bool,
+        anchor_height: BlockHeight,
+    ) -> (Vec<JsonValue>, Vec<JsonValue>, Vec<JsonValue>) {
         let mut unspent_orchard_notes: Vec<JsonValue> = vec![];
         let mut spent_orchard_notes: Vec<JsonValue> = vec![];
         let mut pending_orchard_notes: Vec<JsonValue> = vec![];
-
-        {
-            self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
+        self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
                 .flat_map( |(transaction_id, transaction_metadata)| {
                     transaction_metadata.orchard_notes.iter().filter_map(move |orch_note_metadata|
                         if !all_notes && orch_note_metadata.is_spent() {
@@ -645,7 +642,21 @@ impl LightClient {
                         pending_orchard_notes.push(note);
                     }
                 });
-        }
+        (
+            unspent_orchard_notes,
+            spent_orchard_notes,
+            pending_orchard_notes,
+        )
+    }
+
+    /// Return a list of all notes, spent and unspent
+    pub async fn do_list_notes(&self, all_notes: bool) -> JsonValue {
+        let anchor_height = BlockHeight::from_u32(self.wallet.get_anchor_height().await);
+
+        let (mut unspent_sapling_notes, mut spent_sapling_notes, mut pending_sapling_notes) =
+            self.list_sapling_notes(all_notes, anchor_height).await;
+        let (mut unspent_orchard_notes, mut spent_orchard_notes, mut pending_orchard_notes) =
+            self.list_orchard_notes(all_notes, anchor_height).await;
 
         let mut unspent_utxos: Vec<JsonValue> = vec![];
         let mut spent_utxos: Vec<JsonValue> = vec![];
