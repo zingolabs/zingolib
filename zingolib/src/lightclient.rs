@@ -551,17 +551,16 @@ impl LightClient {
         }
     }
 
-    /// Return a list of all notes, spent and unspent
-    pub async fn do_list_notes(&self, all_notes: bool) -> JsonValue {
+    async fn list_sapling_notes(
+        &self,
+        all_notes: bool,
+        anchor_height: BlockHeight,
+    ) -> (Vec<JsonValue>, Vec<JsonValue>, Vec<JsonValue>) {
         let mut unspent_sapling_notes: Vec<JsonValue> = vec![];
         let mut spent_sapling_notes: Vec<JsonValue> = vec![];
         let mut pending_sapling_notes: Vec<JsonValue> = vec![];
-
-        let anchor_height = BlockHeight::from_u32(self.wallet.get_anchor_height().await);
-
-        {
-            // Collect Sapling notes
-            self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
+        // Collect Sapling notes
+        self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
                 .flat_map( |(transaction_id, transaction_metadata)| {
                     transaction_metadata.sapling_notes.iter().filter_map(move |note_metadata|
                         if !all_notes && note_metadata.spent.is_some() {
@@ -596,8 +595,18 @@ impl LightClient {
                         pending_sapling_notes.push(note);
                     }
                 });
-        }
+        (
+            unspent_sapling_notes,
+            spent_sapling_notes,
+            pending_sapling_notes,
+        )
+    }
+    /// Return a list of all notes, spent and unspent
+    pub async fn do_list_notes(&self, all_notes: bool) -> JsonValue {
+        let anchor_height = BlockHeight::from_u32(self.wallet.get_anchor_height().await);
 
+        let (mut unspent_sapling_notes, mut spent_sapling_notes, mut pending_sapling_notes) =
+            self.list_sapling_notes(all_notes, anchor_height).await;
         let mut unspent_orchard_notes: Vec<JsonValue> = vec![];
         let mut spent_orchard_notes: Vec<JsonValue> = vec![];
         let mut pending_orchard_notes: Vec<JsonValue> = vec![];
