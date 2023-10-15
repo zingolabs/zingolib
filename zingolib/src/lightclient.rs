@@ -6,6 +6,7 @@ use crate::{
         syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions, update_notes::UpdateNotes,
     },
     compact_formats::RawTransaction,
+    error::ZingoLibError,
     grpc_connector::GrpcConnector,
     wallet::{
         data::{
@@ -32,7 +33,7 @@ use std::{
     collections::HashMap,
     fs::{remove_file, File},
     io::{self, BufReader, Error, ErrorKind, Read, Write},
-    path::Path,
+    path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
 };
@@ -197,7 +198,7 @@ impl LightClient {
     ) -> io::Result<Self> {
         #[cfg(not(any(target_os = "ios", target_os = "android")))]
         {
-            if !overwrite && config.wallet_exists() {
+            if !overwrite && config.wallet_path_exists() {
                 return Err(Error::new(
                     ErrorKind::AlreadyExists,
                     format!(
@@ -263,7 +264,7 @@ impl LightClient {
     pub fn new(config: &ZingoConfig, latest_block: u64) -> io::Result<Self> {
         #[cfg(not(any(target_os = "ios", target_os = "android")))]
         {
-            if config.wallet_exists() {
+            if config.wallet_path_exists() {
                 return Err(Error::new(
                     ErrorKind::AlreadyExists,
                     "Cannot create a new wallet from seed, because a wallet already exists",
@@ -307,7 +308,7 @@ impl LightClient {
     }
 
     pub fn read_wallet_from_disk(config: &ZingoConfig) -> io::Result<Self> {
-        let wallet_path = if config.wallet_exists() {
+        let wallet_path = if config.wallet_path_exists() {
             config.get_wallet_path()
         } else {
             return Err(Error::new(
@@ -425,6 +426,7 @@ impl LightClient {
                 object! {
                     // Is this address ever different than the address in the containing struct
                     // this is the full UA.
+                    //aha!!
                     "address" => om.recipient_ua.clone().unwrap_or(om.to_address.clone()),
                     "value"   => om.value,
                     "memo"    => LightWallet::memo_str(Some(om.memo.clone()))
@@ -894,7 +896,7 @@ impl LightClient {
             log::debug!("target_os is not ios or android");
 
             // Check if the file exists before attempting to delete
-            if self.config.wallet_exists() {
+            if self.config.wallet_path_exists() {
                 match remove_file(self.config.get_wallet_path()) {
                     Ok(_) => {
                         log::debug!("File deleted successfully!");
@@ -2054,6 +2056,29 @@ impl LightClient {
         }
 
         Ok(())
+    }
+
+    /// Some LightClients have a data dir in state. Mobile versions instead rely on a buffer and will return an error if this function is called.
+    /// ZingoConfig specifies both a wallet file and a directory containing it.
+    /// This function returns a PathBuf, the absolute path of the wallet file typically named zingo-wallet.dat
+    pub fn get_wallet_file_location(&self) -> Result<PathBuf, ZingoLibError> {
+        if let Some(mut loc) = self.config.wallet_dir.clone() {
+            loc.push(self.config.wallet_name.clone());
+            Ok(loc)
+        } else {
+            Err(ZingoLibError::NoWalletLocation)
+        }
+    }
+
+    /// Some LightClients have a data dir in state. Mobile versions instead rely on a buffer and will return an error if this function is called.
+    /// ZingoConfig specifies both a wallet file and a directory containing it.
+    /// This function returns a PathBuf, the absolute path of a directory which typically contains a wallet.dat file
+    pub fn get_wallet_dir_location(&self) -> Result<PathBuf, ZingoLibError> {
+        if let Some(loc) = self.config.wallet_dir.clone() {
+            Ok(loc)
+        } else {
+            Err(ZingoLibError::NoWalletLocation)
+        }
     }
 }
 use serde_json::Value;
