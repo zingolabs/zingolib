@@ -170,6 +170,208 @@ pub struct LightClient {
     bsync_data: Arc<RwLock<BlazeSyncData>>,
     interrupt_sync: Arc<RwLock<bool>>,
 }
+
+impl LightClient {
+    async fn list_sapling_notes(
+        &self,
+        all_notes: bool,
+        anchor_height: BlockHeight,
+    ) -> (Vec<JsonValue>, Vec<JsonValue>, Vec<JsonValue>) {
+        let mut unspent_sapling_notes: Vec<JsonValue> = vec![];
+        let mut spent_sapling_notes: Vec<JsonValue> = vec![];
+        let mut pending_sapling_notes: Vec<JsonValue> = vec![];
+        // Collect Sapling notes
+        self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
+                .flat_map( |(transaction_id, transaction_metadata)| {
+                    transaction_metadata.sapling_notes.iter().filter_map(move |note_metadata|
+                        if !all_notes && note_metadata.spent.is_some() {
+                            None
+                        } else {
+                            let address = LightWallet::note_address::<SaplingDomain<ChainType>>(&self.config.chain, note_metadata, &self.wallet.wallet_capability());
+                            let spendable = transaction_metadata.block_height <= anchor_height && note_metadata.spent.is_none() && note_metadata.unconfirmed_spent.is_none();
+
+                            let created_block:u32 = transaction_metadata.block_height.into();
+                            Some(object!{
+                                "created_in_block"   => created_block,
+                                "datetime"           => transaction_metadata.datetime,
+                                "created_in_txid"    => format!("{}", transaction_id.clone()),
+                                "value"              => note_metadata.note.value().inner(),
+                                "unconfirmed"        => transaction_metadata.unconfirmed,
+                                "is_change"          => note_metadata.is_change,
+                                "address"            => address,
+                                "spendable"          => spendable,
+                                "spent"              => note_metadata.spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
+                                "spent_at_height"    => note_metadata.spent.map(|(_, h)| h),
+                                "unconfirmed_spent"  => note_metadata.unconfirmed_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
+                            })
+                        }
+                    )
+                })
+                .for_each( |note| {
+                    if note["spent"].is_null() && note["unconfirmed_spent"].is_null() {
+                        unspent_sapling_notes.push(note);
+                    } else if !note["spent"].is_null() {
+                        spent_sapling_notes.push(note);
+                    } else {
+                        pending_sapling_notes.push(note);
+                    }
+                });
+        (
+            unspent_sapling_notes,
+            spent_sapling_notes,
+            pending_sapling_notes,
+        )
+    }
+    async fn list_orchard_notes(
+        &self,
+        all_notes: bool,
+        anchor_height: BlockHeight,
+    ) -> (Vec<JsonValue>, Vec<JsonValue>, Vec<JsonValue>) {
+        let mut unspent_orchard_notes: Vec<JsonValue> = vec![];
+        let mut spent_orchard_notes: Vec<JsonValue> = vec![];
+        let mut pending_orchard_notes: Vec<JsonValue> = vec![];
+        self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
+                .flat_map( |(transaction_id, transaction_metadata)| {
+                    transaction_metadata.orchard_notes.iter().filter_map(move |orch_note_metadata|
+                        if !all_notes && orch_note_metadata.is_spent() {
+                            None
+                        } else {
+                            let address = LightWallet::note_address::<OrchardDomain>(&self.config.chain, orch_note_metadata, &self.wallet.wallet_capability());
+                            let spendable = transaction_metadata.block_height <= anchor_height && orch_note_metadata.spent.is_none() && orch_note_metadata.unconfirmed_spent.is_none();
+
+                            let created_block:u32 = transaction_metadata.block_height.into();
+                            Some(object!{
+                                "created_in_block"   => created_block,
+                                "datetime"           => transaction_metadata.datetime,
+                                "created_in_txid"    => format!("{}", transaction_id),
+                                "value"              => orch_note_metadata.note.value().inner(),
+                                "unconfirmed"        => transaction_metadata.unconfirmed,
+                                "is_change"          => orch_note_metadata.is_change,
+                                "address"            => address,
+                                "spendable"          => spendable,
+                                "spent"              => orch_note_metadata.spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
+                                "spent_at_height"    => orch_note_metadata.spent.map(|(_, h)| h),
+                                "unconfirmed_spent"  => orch_note_metadata.unconfirmed_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
+                            })
+                        }
+                    )
+                })
+                .for_each( |note| {
+                    if note["spent"].is_null() && note["unconfirmed_spent"].is_null() {
+                        unspent_orchard_notes.push(note);
+                    } else if !note["spent"].is_null() {
+                        spent_orchard_notes.push(note);
+                    } else {
+                        pending_orchard_notes.push(note);
+                    }
+                });
+        (
+            unspent_orchard_notes,
+            spent_orchard_notes,
+            pending_orchard_notes,
+        )
+    }
+    async fn list_transparent_notes(
+        &self,
+        all_notes: bool,
+    ) -> (Vec<JsonValue>, Vec<JsonValue>, Vec<JsonValue>) {
+        let mut unspent_transparent_notes: Vec<JsonValue> = vec![];
+        let mut spent_transparent_notes: Vec<JsonValue> = vec![];
+        let mut pending_transparent_notes: Vec<JsonValue> = vec![];
+
+        self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
+                .flat_map( |(transaction_id, wtx)| {
+                    wtx.received_utxos.iter().filter_map(move |utxo|
+                        if !all_notes && utxo.spent.is_some() {
+                            None
+                        } else {
+                            let created_block:u32 = wtx.block_height.into();
+                            let recipient = RecipientAddress::decode(&self.config.chain, &utxo.address);
+                            let taddr = match recipient {
+                            Some(RecipientAddress::Transparent(taddr)) => taddr,
+                                _otherwise => panic!("Read invalid taddr from wallet-local Utxo, this should be impossible"),
+                            };
+
+                            Some(object!{
+                                "created_in_block"   => created_block,
+                                "datetime"           => wtx.datetime,
+                                "created_in_txid"    => format!("{}", transaction_id),
+                                "value"              => utxo.value,
+                                "scriptkey"          => hex::encode(utxo.script.clone()),
+                                "is_change"          => false, // TODO: Identify notes as change if we send change to our own taddrs
+                                "address"            => self.wallet.wallet_capability().get_ua_from_contained_transparent_receiver(&taddr).map(|ua| ua.encode(&self.config.chain)),
+                                "spent_at_height"    => utxo.spent_at_height,
+                                "spent"              => utxo.spent.map(|spent_transaction_id| format!("{}", spent_transaction_id)),
+                                "unconfirmed_spent"  => utxo.unconfirmed_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
+                            })
+                        }
+                    )
+                })
+                .for_each( |utxo| {
+                    if utxo["spent"].is_null() && utxo["unconfirmed_spent"].is_null() {
+                        unspent_transparent_notes.push(utxo);
+                    } else if !utxo["spent"].is_null() {
+                        spent_transparent_notes.push(utxo);
+                    } else {
+                        pending_transparent_notes.push(utxo);
+                    }
+                });
+
+        (
+            unspent_transparent_notes,
+            spent_transparent_notes,
+            pending_transparent_notes,
+        )
+    }
+
+    /// Return a list of notes, if `all_notes` is false, then only return unspent notes
+    ///  * TODO:  This fn does not handle failure it must be promoted to return a Result
+    ///  * TODO:  The Err variant of the result must be a proper type
+    ///  * TODO:  remove all_notes bool
+    ///  * TODO:   This fn must (on success) return an Ok(Vec\<Notes\>) where Notes is a 3 variant enum....
+    ///  * TODO:   type-associated to the variants of the enum must impl From\<Type\> for JsonValue
+    pub async fn do_list_notes(&self, all_notes: bool) -> JsonValue {
+        let anchor_height = BlockHeight::from_u32(self.wallet.get_anchor_height().await);
+
+        let (mut unspent_sapling_notes, mut spent_sapling_notes, mut pending_sapling_notes) =
+            self.list_sapling_notes(all_notes, anchor_height).await;
+        let (mut unspent_orchard_notes, mut spent_orchard_notes, mut pending_orchard_notes) =
+            self.list_orchard_notes(all_notes, anchor_height).await;
+        let (
+            mut unspent_transparent_notes,
+            mut spent_transparent_notes,
+            mut pending_transparent_notes,
+        ) = self.list_transparent_notes(all_notes).await;
+
+        unspent_sapling_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        spent_sapling_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        pending_sapling_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        unspent_orchard_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        spent_orchard_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        pending_orchard_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        unspent_transparent_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        pending_transparent_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        spent_transparent_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+
+        let mut res = object! {
+            "unspent_sapling_notes" => unspent_sapling_notes,
+            "pending_sapling_notes" => pending_sapling_notes,
+            "unspent_orchard_notes" => unspent_orchard_notes,
+            "pending_orchard_notes" => pending_orchard_notes,
+            "utxos"         => unspent_transparent_notes,
+            "pending_utxos" => pending_transparent_notes,
+        };
+
+        if all_notes {
+            res["spent_sapling_notes"] = JsonValue::Array(spent_sapling_notes);
+            res["spent_orchard_notes"] = JsonValue::Array(spent_orchard_notes);
+            res["spent_utxos"] = JsonValue::Array(spent_transparent_notes);
+        }
+
+        res
+    }
+}
+/// We used to have an impl LightClient that was gated on test code, should we reintroduce that?
 impl LightClient {
     pub fn create_from_extant_wallet(wallet: LightWallet, config: ZingoConfig) -> Self {
         LightClient {
@@ -555,205 +757,6 @@ impl LightClient {
             }
             Err(e) => e,
         }
-    }
-
-    async fn list_sapling_notes(
-        &self,
-        all_notes: bool,
-        anchor_height: BlockHeight,
-    ) -> (Vec<JsonValue>, Vec<JsonValue>, Vec<JsonValue>) {
-        let mut unspent_sapling_notes: Vec<JsonValue> = vec![];
-        let mut spent_sapling_notes: Vec<JsonValue> = vec![];
-        let mut pending_sapling_notes: Vec<JsonValue> = vec![];
-        // Collect Sapling notes
-        self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
-                .flat_map( |(transaction_id, transaction_metadata)| {
-                    transaction_metadata.sapling_notes.iter().filter_map(move |note_metadata|
-                        if !all_notes && note_metadata.spent.is_some() {
-                            None
-                        } else {
-                            let address = LightWallet::note_address::<SaplingDomain<ChainType>>(&self.config.chain, note_metadata, &self.wallet.wallet_capability());
-                            let spendable = transaction_metadata.block_height <= anchor_height && note_metadata.spent.is_none() && note_metadata.unconfirmed_spent.is_none();
-
-                            let created_block:u32 = transaction_metadata.block_height.into();
-                            Some(object!{
-                                "created_in_block"   => created_block,
-                                "datetime"           => transaction_metadata.datetime,
-                                "created_in_txid"    => format!("{}", transaction_id.clone()),
-                                "value"              => note_metadata.note.value().inner(),
-                                "unconfirmed"        => transaction_metadata.unconfirmed,
-                                "is_change"          => note_metadata.is_change,
-                                "address"            => address,
-                                "spendable"          => spendable,
-                                "spent"              => note_metadata.spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
-                                "spent_at_height"    => note_metadata.spent.map(|(_, h)| h),
-                                "unconfirmed_spent"  => note_metadata.unconfirmed_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
-                            })
-                        }
-                    )
-                })
-                .for_each( |note| {
-                    if note["spent"].is_null() && note["unconfirmed_spent"].is_null() {
-                        unspent_sapling_notes.push(note);
-                    } else if !note["spent"].is_null() {
-                        spent_sapling_notes.push(note);
-                    } else {
-                        pending_sapling_notes.push(note);
-                    }
-                });
-        (
-            unspent_sapling_notes,
-            spent_sapling_notes,
-            pending_sapling_notes,
-        )
-    }
-    async fn list_orchard_notes(
-        &self,
-        all_notes: bool,
-        anchor_height: BlockHeight,
-    ) -> (Vec<JsonValue>, Vec<JsonValue>, Vec<JsonValue>) {
-        let mut unspent_orchard_notes: Vec<JsonValue> = vec![];
-        let mut spent_orchard_notes: Vec<JsonValue> = vec![];
-        let mut pending_orchard_notes: Vec<JsonValue> = vec![];
-        self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
-                .flat_map( |(transaction_id, transaction_metadata)| {
-                    transaction_metadata.orchard_notes.iter().filter_map(move |orch_note_metadata|
-                        if !all_notes && orch_note_metadata.is_spent() {
-                            None
-                        } else {
-                            let address = LightWallet::note_address::<OrchardDomain>(&self.config.chain, orch_note_metadata, &self.wallet.wallet_capability());
-                            let spendable = transaction_metadata.block_height <= anchor_height && orch_note_metadata.spent.is_none() && orch_note_metadata.unconfirmed_spent.is_none();
-
-                            let created_block:u32 = transaction_metadata.block_height.into();
-                            Some(object!{
-                                "created_in_block"   => created_block,
-                                "datetime"           => transaction_metadata.datetime,
-                                "created_in_txid"    => format!("{}", transaction_id),
-                                "value"              => orch_note_metadata.note.value().inner(),
-                                "unconfirmed"        => transaction_metadata.unconfirmed,
-                                "is_change"          => orch_note_metadata.is_change,
-                                "address"            => address,
-                                "spendable"          => spendable,
-                                "spent"              => orch_note_metadata.spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
-                                "spent_at_height"    => orch_note_metadata.spent.map(|(_, h)| h),
-                                "unconfirmed_spent"  => orch_note_metadata.unconfirmed_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
-                            })
-                        }
-                    )
-                })
-                .for_each( |note| {
-                    if note["spent"].is_null() && note["unconfirmed_spent"].is_null() {
-                        unspent_orchard_notes.push(note);
-                    } else if !note["spent"].is_null() {
-                        spent_orchard_notes.push(note);
-                    } else {
-                        pending_orchard_notes.push(note);
-                    }
-                });
-        (
-            unspent_orchard_notes,
-            spent_orchard_notes,
-            pending_orchard_notes,
-        )
-    }
-    async fn list_transparent_notes(
-        &self,
-        all_notes: bool,
-    ) -> (Vec<JsonValue>, Vec<JsonValue>, Vec<JsonValue>) {
-        let mut unspent_transparent_notes: Vec<JsonValue> = vec![];
-        let mut spent_transparent_notes: Vec<JsonValue> = vec![];
-        let mut pending_transparent_notes: Vec<JsonValue> = vec![];
-
-        self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
-                .flat_map( |(transaction_id, wtx)| {
-                    wtx.received_utxos.iter().filter_map(move |utxo|
-                        if !all_notes && utxo.spent.is_some() {
-                            None
-                        } else {
-                            let created_block:u32 = wtx.block_height.into();
-                            let recipient = RecipientAddress::decode(&self.config.chain, &utxo.address);
-                            let taddr = match recipient {
-                            Some(RecipientAddress::Transparent(taddr)) => taddr,
-                                _otherwise => panic!("Read invalid taddr from wallet-local Utxo, this should be impossible"),
-                            };
-
-                            Some(object!{
-                                "created_in_block"   => created_block,
-                                "datetime"           => wtx.datetime,
-                                "created_in_txid"    => format!("{}", transaction_id),
-                                "value"              => utxo.value,
-                                "scriptkey"          => hex::encode(utxo.script.clone()),
-                                "is_change"          => false, // TODO: Identify notes as change if we send change to our own taddrs
-                                "address"            => self.wallet.wallet_capability().get_ua_from_contained_transparent_receiver(&taddr).map(|ua| ua.encode(&self.config.chain)),
-                                "spent_at_height"    => utxo.spent_at_height,
-                                "spent"              => utxo.spent.map(|spent_transaction_id| format!("{}", spent_transaction_id)),
-                                "unconfirmed_spent"  => utxo.unconfirmed_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
-                            })
-                        }
-                    )
-                })
-                .for_each( |utxo| {
-                    if utxo["spent"].is_null() && utxo["unconfirmed_spent"].is_null() {
-                        unspent_transparent_notes.push(utxo);
-                    } else if !utxo["spent"].is_null() {
-                        spent_transparent_notes.push(utxo);
-                    } else {
-                        pending_transparent_notes.push(utxo);
-                    }
-                });
-
-        (
-            unspent_transparent_notes,
-            spent_transparent_notes,
-            pending_transparent_notes,
-        )
-    }
-
-    /// Return a list of notes, if `all_notes` is false, then only return unspent notes
-    ///  * TODO:  This fn does not handle failure it must be promoted to return a Result
-    ///  * TODO:  The Err variant of the result must be a proper type
-    ///  * TODO:  remove all_notes bool
-    ///  * TODO:   This fn must (on success) return an Ok(Vec\<Notes\>) where Notes is a 3 variant enum....
-    ///  * TODO:   type-associated to the variants of the enum must impl From\<Type\> for JsonValue
-    pub async fn do_list_notes(&self, all_notes: bool) -> JsonValue {
-        let anchor_height = BlockHeight::from_u32(self.wallet.get_anchor_height().await);
-
-        let (mut unspent_sapling_notes, mut spent_sapling_notes, mut pending_sapling_notes) =
-            self.list_sapling_notes(all_notes, anchor_height).await;
-        let (mut unspent_orchard_notes, mut spent_orchard_notes, mut pending_orchard_notes) =
-            self.list_orchard_notes(all_notes, anchor_height).await;
-        let (
-            mut unspent_transparent_notes,
-            mut spent_transparent_notes,
-            mut pending_transparent_notes,
-        ) = self.list_transparent_notes(all_notes).await;
-
-        unspent_sapling_notes.sort_by_key(|note| note["created_in_block"].as_u64());
-        spent_sapling_notes.sort_by_key(|note| note["created_in_block"].as_u64());
-        pending_sapling_notes.sort_by_key(|note| note["created_in_block"].as_u64());
-        unspent_orchard_notes.sort_by_key(|note| note["created_in_block"].as_u64());
-        spent_orchard_notes.sort_by_key(|note| note["created_in_block"].as_u64());
-        pending_orchard_notes.sort_by_key(|note| note["created_in_block"].as_u64());
-        unspent_transparent_notes.sort_by_key(|note| note["created_in_block"].as_u64());
-        pending_transparent_notes.sort_by_key(|note| note["created_in_block"].as_u64());
-        spent_transparent_notes.sort_by_key(|note| note["created_in_block"].as_u64());
-
-        let mut res = object! {
-            "unspent_sapling_notes" => unspent_sapling_notes,
-            "pending_sapling_notes" => pending_sapling_notes,
-            "unspent_orchard_notes" => unspent_orchard_notes,
-            "pending_orchard_notes" => pending_orchard_notes,
-            "utxos"         => unspent_transparent_notes,
-            "pending_utxos" => pending_transparent_notes,
-        };
-
-        if all_notes {
-            res["spent_sapling_notes"] = JsonValue::Array(spent_sapling_notes);
-            res["spent_orchard_notes"] = JsonValue::Array(spent_orchard_notes);
-            res["spent_utxos"] = JsonValue::Array(spent_transparent_notes);
-        }
-
-        res
     }
 
     pub async fn do_list_transactions(&self) -> JsonValue {
