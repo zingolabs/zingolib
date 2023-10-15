@@ -141,6 +141,16 @@ fn read_write_receiver_selections() {
 }
 
 impl WalletCapability {
+    #[cfg(feature = "integration-tests")]
+    pub(crate) fn get_ua_from_contained_transparent_receiver(
+        &self,
+        receiver: &TransparentAddress,
+    ) -> Option<UnifiedAddress> {
+        self.addresses
+            .iter()
+            .find(|ua| ua.transparent() == Some(receiver))
+            .cloned()
+    }
     pub fn addresses(&self) -> &AppendOnlyVec<UnifiedAddress> {
         &self.addresses
     }
@@ -421,15 +431,6 @@ impl WalletCapability {
         Ok(wc)
     }
 
-    pub(crate) fn get_ua_from_contained_transparent_receiver(
-        &self,
-        receiver: &TransparentAddress,
-    ) -> Option<UnifiedAddress> {
-        self.addresses
-            .iter()
-            .find(|ua| ua.transparent() == Some(receiver))
-            .cloned()
-    }
     pub(crate) fn get_all_taddrs(&self, config: &ZingoConfig) -> HashSet<String> {
         self.addresses
             .iter()
