@@ -1031,32 +1031,6 @@ impl Command for SeedCommand {
     }
 }
 
-struct TransactionsCommand {}
-impl Command for TransactionsCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r#"
-            List all incoming and outgoing transactions from this wallet
-            Usage:
-            list [allmemos]
-
-            If you include the 'allmemos' argument, all memos are returned in their raw hex format
-
-        "#}
-    }
-
-    fn short_help(&self) -> &'static str {
-        "List all transactions in the wallet"
-    }
-
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
-        if args.len() > 1 {
-            return format!("Didn't understand arguments\n{}", self.help());
-        }
-
-        RT.block_on(async move { lightclient.do_list_transactions().await.pretty(2) })
-    }
-}
-
 struct ValueTxSummariesCommand {}
 impl Command for ValueTxSummariesCommand {
     fn help(&self) -> &'static str {
@@ -1437,7 +1411,7 @@ impl Command for QuitCommand {
 }
 
 pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
-    let entries: [(&'static str, Box<dyn Command>); 36] = [
+    let entries: [(&'static str, Box<dyn Command>); 35] = [
         (("version"), Box::new(GetVersionCommand {})),
         ("sync", Box::new(SyncCommand {})),
         ("syncstatus", Box::new(SyncStatusCommand {})),
@@ -1470,7 +1444,6 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("shield", Box::new(ShieldCommand {})),
         ("save", Box::new(SaveCommand {})),
         ("quit", Box::new(QuitCommand {})),
-        ("list", Box::new(TransactionsCommand {})),
         ("new", Box::new(NewAddressCommand {})),
         ("defaultfee", Box::new(DefaultFeeCommand {})),
         ("seed", Box::new(SeedCommand {})),
