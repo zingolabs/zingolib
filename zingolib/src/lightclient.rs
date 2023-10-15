@@ -648,22 +648,15 @@ impl LightClient {
             pending_orchard_notes,
         )
     }
+    async fn list_transparent_notes(
+        &self,
+        all_notes: bool,
+    ) -> (Vec<JsonValue>, Vec<JsonValue>, Vec<JsonValue>) {
+        let mut unspent_transparent_notes: Vec<JsonValue> = vec![];
+        let mut spent_transparent_notes: Vec<JsonValue> = vec![];
+        let mut pending_transparent_notes: Vec<JsonValue> = vec![];
 
-    /// Return a list of all notes, spent and unspent
-    pub async fn do_list_notes(&self, all_notes: bool) -> JsonValue {
-        let anchor_height = BlockHeight::from_u32(self.wallet.get_anchor_height().await);
-
-        let (mut unspent_sapling_notes, mut spent_sapling_notes, mut pending_sapling_notes) =
-            self.list_sapling_notes(all_notes, anchor_height).await;
-        let (mut unspent_orchard_notes, mut spent_orchard_notes, mut pending_orchard_notes) =
-            self.list_orchard_notes(all_notes, anchor_height).await;
-
-        let mut unspent_utxos: Vec<JsonValue> = vec![];
-        let mut spent_utxos: Vec<JsonValue> = vec![];
-        let mut pending_utxos: Vec<JsonValue> = vec![];
-
-        {
-            self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
+        self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
                 .flat_map( |(transaction_id, wtx)| {
                     wtx.received_utxos.iter().filter_map(move |utxo|
                         if !all_notes && utxo.spent.is_some() {
@@ -693,14 +686,34 @@ impl LightClient {
                 })
                 .for_each( |utxo| {
                     if utxo["spent"].is_null() && utxo["unconfirmed_spent"].is_null() {
-                        unspent_utxos.push(utxo);
+                        unspent_transparent_notes.push(utxo);
                     } else if !utxo["spent"].is_null() {
-                        spent_utxos.push(utxo);
+                        spent_transparent_notes.push(utxo);
                     } else {
-                        pending_utxos.push(utxo);
+                        pending_transparent_notes.push(utxo);
                     }
                 });
-        }
+
+        (
+            unspent_transparent_notes,
+            spent_transparent_notes,
+            pending_transparent_notes,
+        )
+    }
+
+    /// Return a list of all notes, spent and unspent
+    pub async fn do_list_notes(&self, all_notes: bool) -> JsonValue {
+        let anchor_height = BlockHeight::from_u32(self.wallet.get_anchor_height().await);
+
+        let (mut unspent_sapling_notes, mut spent_sapling_notes, mut pending_sapling_notes) =
+            self.list_sapling_notes(all_notes, anchor_height).await;
+        let (mut unspent_orchard_notes, mut spent_orchard_notes, mut pending_orchard_notes) =
+            self.list_orchard_notes(all_notes, anchor_height).await;
+        let (
+            mut unspent_transparent_notes,
+            mut spent_transparent_notes,
+            mut pending_transparent_notes,
+        ) = self.list_transparent_notes(all_notes).await;
 
         unspent_sapling_notes.sort_by_key(|note| note["created_in_block"].as_u64());
         spent_sapling_notes.sort_by_key(|note| note["created_in_block"].as_u64());
@@ -708,23 +721,23 @@ impl LightClient {
         unspent_orchard_notes.sort_by_key(|note| note["created_in_block"].as_u64());
         spent_orchard_notes.sort_by_key(|note| note["created_in_block"].as_u64());
         pending_orchard_notes.sort_by_key(|note| note["created_in_block"].as_u64());
-        unspent_utxos.sort_by_key(|note| note["created_in_block"].as_u64());
-        pending_utxos.sort_by_key(|note| note["created_in_block"].as_u64());
-        spent_utxos.sort_by_key(|note| note["created_in_block"].as_u64());
+        unspent_transparent_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        pending_transparent_notes.sort_by_key(|note| note["created_in_block"].as_u64());
+        spent_transparent_notes.sort_by_key(|note| note["created_in_block"].as_u64());
 
         let mut res = object! {
             "unspent_sapling_notes" => unspent_sapling_notes,
             "pending_sapling_notes" => pending_sapling_notes,
             "unspent_orchard_notes" => unspent_orchard_notes,
             "pending_orchard_notes" => pending_orchard_notes,
-            "utxos"         => unspent_utxos,
-            "pending_utxos" => pending_utxos,
+            "utxos"         => unspent_transparent_notes,
+            "pending_utxos" => pending_transparent_notes,
         };
 
         if all_notes {
             res["spent_sapling_notes"] = JsonValue::Array(spent_sapling_notes);
             res["spent_orchard_notes"] = JsonValue::Array(spent_orchard_notes);
-            res["spent_utxos"] = JsonValue::Array(spent_utxos);
+            res["spent_utxos"] = JsonValue::Array(spent_transparent_notes);
         }
 
         res
