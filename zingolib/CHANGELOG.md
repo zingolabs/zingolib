@@ -7,12 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## 1.3.2 2023-10
-
 ### Added
 
-- lightclient pub fn get_wallet_file_location 
-- lightclient pub fn get_wallet_dir_location 
+- lightclient pub fn get_wallet_file_location
+- lightclient pub fn get_wallet_dir_location
 
 ### Changed
 

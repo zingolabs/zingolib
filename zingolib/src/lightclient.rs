@@ -2060,6 +2060,7 @@ impl LightClient {
 
     /// Some LightClients have a data dir in state. Mobile versions instead rely on a buffer and will return an error if this function is called.
     /// ZingoConfig specifies both a wallet file and a directory containing it.
+    /// This function returns a PathBuf, the absolute path of the wallet file typically named zingo-wallet.dat
     pub fn get_wallet_file_location(&self) -> Result<PathBuf, ZingoLibError> {
         if let Some(mut loc) = self.config.wallet_dir.clone() {
             loc.push(self.config.wallet_name.clone());
@@ -2071,6 +2072,7 @@ impl LightClient {
 
     /// Some LightClients have a data dir in state. Mobile versions instead rely on a buffer and will return an error if this function is called.
     /// ZingoConfig specifies both a wallet file and a directory containing it.
+    /// This function returns a PathBuf, the absolute path of a directory which typically contains a wallet.dat file
     pub fn get_wallet_dir_location(&self) -> Result<PathBuf, ZingoLibError> {
         if let Some(loc) = self.config.wallet_dir.clone() {
             Ok(loc)
