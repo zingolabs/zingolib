@@ -151,6 +151,14 @@ pub struct AccountBackupInfo {
     pub account_index: u32,
 }
 
+/// The LightClient provides a unified interface to the separate concerns that the zingolib library manages.
+///  1. initialization of stored state
+///      * from seed
+///      * from keys
+///      * from wallets
+///      * from a fresh start with reasonable defaults
+///  2. synchronization of the client with the state of the blockchain via a gRPC server
+///      *
 pub struct LightClient {
     pub(crate) config: ZingoConfig,
     pub wallet: LightWallet,
