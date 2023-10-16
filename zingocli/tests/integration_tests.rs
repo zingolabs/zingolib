@@ -68,11 +68,7 @@ async fn send_without_reorg_buffer_blocks_gives_correct_error() {
 async fn multiple_outgoing_metadatas_work_right_on_restore() {
     let inital_value = 100_000;
     let (ref regtest_manager, _cph, faucet, ref recipient, _txid) =
-        scenarios::two_wallet_one_synced_orchard_transaction(
-            inital_value,
-            RegtestNetwork::all_upgrades_active(),
-        )
-        .await;
+        scenarios::faucet_funded_recipient_default(inital_value).await;
     recipient
         .do_send(vec![
             (&get_base_address!(faucet, "unified"), 10_000, None);
