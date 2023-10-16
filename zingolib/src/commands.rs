@@ -1353,6 +1353,48 @@ impl Command for NewAddressCommand {
     }
 }
 
+struct NotesCommand {}
+impl Command for NotesCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            Show all sapling notes and utxos in this wallet
+            Usage:
+            notes [all]
+
+            If you supply the "all" parameter, all previously spent sapling notes and spent utxos are also included
+
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "List all sapling notes and utxos in the wallet"
+    }
+
+    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+        // Parse the args.
+        if args.len() > 1 {
+            return self.short_help().to_string();
+        }
+
+        // Make sure we can parse the amount
+        let all_notes = if args.len() == 1 {
+            match args[0] {
+                "all" => true,
+                a => {
+                    return format!(
+                        "Invalid argument \"{}\". Specify 'all' to include unspent notes",
+                        a
+                    )
+                }
+            }
+        } else {
+            false
+        };
+
+        RT.block_on(async move { lightclient.do_list_notes(all_notes).await.pretty(2) })
+    }
+}
+
 struct QuitCommand {}
 impl Command for QuitCommand {
     fn help(&self) -> &'static str {
@@ -1411,7 +1453,7 @@ impl Command for QuitCommand {
 }
 
 pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
-    let entries: [(&'static str, Box<dyn Command>); 35] = [
+    let entries: [(&'static str, Box<dyn Command>); 36] = [
         (("version"), Box::new(GetVersionCommand {})),
         ("sync", Box::new(SyncCommand {})),
         ("syncstatus", Box::new(SyncStatusCommand {})),
@@ -1444,6 +1486,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("shield", Box::new(ShieldCommand {})),
         ("save", Box::new(SaveCommand {})),
         ("quit", Box::new(QuitCommand {})),
+        ("notes", Box::new(NotesCommand {})),
         ("new", Box::new(NewAddressCommand {})),
         ("defaultfee", Box::new(DefaultFeeCommand {})),
         ("seed", Box::new(SeedCommand {})),

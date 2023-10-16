@@ -7,17 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Deprecated
+- LightClient::do_list_transactions
+
 ### Added
 
 - lightclient pub fn get_wallet_file_location
 - lightclient pub fn get_wallet_dir_location
 
 ### Changed
-
-### Deprecated
-
-### Test Only
-- do_list_notes  --> integration_helpers.rs
-- do_list_transactions  --> integration_helpers.rs
 
 ### Removed

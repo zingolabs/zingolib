@@ -141,7 +141,6 @@ fn read_write_receiver_selections() {
 }
 
 impl WalletCapability {
-    #[cfg(feature = "integration-tests")]
     pub(crate) fn get_ua_from_contained_transparent_receiver(
         &self,
         receiver: &TransparentAddress,
