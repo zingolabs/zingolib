@@ -227,10 +227,13 @@ pub mod scenarios {
     //! generated the address registered as the `minetoaddress` in the zcash.conf that's
     //! used by the 'regetst mode' zcashs backing these tests.).
     //! HELPERS:
-    //! If you just need a faucet, use the "faucet_only" helper.
+    //! If you just need a faucet, use the "faucet" helper.
     //! If you need a faucet, and a single recipient, use 'faucet_recipient`
-    //! For less common client configurations use the client_manager directly with
+    //! For less common client configurations use the client builder directly with
     //! custom_clients
+    //! All scenarios have a default (i.e. faucet_default) which take no parameters and
+    //! build the scenario with the most common settings. This simplifies test writing in
+    //! most cases by removing the need for configuration.
     use self::setup::ClientBuilder;
     use super::regtest::{ChildProcessHandler, RegtestManager};
     use crate::{
@@ -549,7 +552,7 @@ pub mod scenarios {
     }
 
     pub async fn unfunded_client_default() -> (RegtestManager, ChildProcessHandler, LightClient) {
-        let regtest_network = zingoconfig::RegtestNetwork::new(1, 1, 1, 1, 3, 5);
+        let regtest_network = zingoconfig::RegtestNetwork::scenario_default();
         unfunded_client(regtest_network).await
     }
 
@@ -563,7 +566,7 @@ pub mod scenarios {
     /// and zcashd (in regtest mode). This setup is intended to produce the most basic
     /// of scenarios.  As scenarios with even less requirements
     /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
-    pub async fn faucet_default(
+    pub async fn faucet(
         regtest_network: zingoconfig::RegtestNetwork,
     ) -> (RegtestManager, ChildProcessHandler, LightClient) {
         let mut sb = setup::ScenarioBuilder::build_configure_launch(
@@ -582,7 +585,12 @@ pub mod scenarios {
         )
     }
 
-    pub async fn faucet_recipient_default(
+    pub async fn faucet_default() -> (RegtestManager, ChildProcessHandler, LightClient) {
+        let regtest_network = zingoconfig::RegtestNetwork::scenario_default();
+        faucet(regtest_network).await
+    }
+
+    pub async fn faucet_recipient(
         regtest_network: zingoconfig::RegtestNetwork,
     ) -> (
         RegtestManager,
@@ -617,7 +625,17 @@ pub mod scenarios {
         )
     }
 
-    pub async fn faucet_funded_recipient_default(
+    pub async fn faucet_recipient_default() -> (
+        RegtestManager,
+        ChildProcessHandler,
+        LightClient,
+        LightClient,
+    ) {
+        let regtest_network = zingoconfig::RegtestNetwork::scenario_default();
+        faucet_recipient(regtest_network).await
+    }
+
+    pub async fn faucet_funded_recipient(
         value: u64,
         regtest_network: zingoconfig::RegtestNetwork,
     ) -> (
@@ -629,7 +647,7 @@ pub mod scenarios {
     ) {
         dbg!("0 About to create faucet_recipient.");
         let (regtest_manager, child_process_handler, faucet, recipient) =
-            faucet_recipient_default(regtest_network).await;
+            faucet_recipient(regtest_network).await;
         dbg!("1 About to increase height and sync faucet.");
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
@@ -657,6 +675,17 @@ pub mod scenarios {
             recipient,
             txid,
         )
+    }
+
+    pub async fn faucet_funded_recipient_default() -> (
+        RegtestManager,
+        ChildProcessHandler,
+        LightClient,
+        LightClient,
+        String,
+    ) {
+        let regtest_network = zingoconfig::RegtestNetwork::scenario_default();
+        faucet_funded_recipient(100000, regtest_network).await
     }
 
     pub async fn faucet_recipient_transparent(
@@ -694,7 +723,7 @@ pub mod scenarios {
         )
     }
 
-    pub async fn custom_clients_default(
+    pub async fn custom_clients(
         regtest_network: zingoconfig::RegtestNetwork,
     ) -> (RegtestManager, ChildProcessHandler, ClientBuilder) {
         let sb = setup::ScenarioBuilder::build_configure_launch(
@@ -709,6 +738,17 @@ pub mod scenarios {
             sb.child_process_handler.unwrap(),
             sb.client_builder,
         )
+    }
+
+    pub async fn custom_clients_default() -> (
+        RegtestManager,
+        ChildProcessHandler,
+        ClientBuilder,
+        zingoconfig::RegtestNetwork,
+    ) {
+        let regtest_network = zingoconfig::RegtestNetwork::scenario_default();
+        let (regtest_manager, cph, client_builder) = custom_clients(regtest_network).await;
+        (regtest_manager, cph, client_builder, regtest_network)
     }
 
     pub async fn unfunded_mobileclient() -> (RegtestManager, ChildProcessHandler) {
