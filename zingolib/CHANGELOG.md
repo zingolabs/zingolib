@@ -18,6 +18,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Test Only
 - do_list_notes  --> integration_helpers.rs
-- do_list_transactions  --> integrations_helpers.rs
+- do_list_transactions  --> integration_helpers.rs
 
 ### Removed
