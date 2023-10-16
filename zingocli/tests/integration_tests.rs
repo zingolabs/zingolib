@@ -140,7 +140,7 @@ async fn dont_write_unconfirmed() {
 #[tokio::test]
 async fn sandblast_filter_preserves_trees() {
     let (ref regtest_manager, _cph, ref faucet, ref recipient, _txid) =
-        scenarios::faucet_funded_recipient_default().await;
+        scenarios::faucet_funded_recipient_default(100_000).await;
     recipient
         .wallet
         .wallet_options
@@ -242,7 +242,7 @@ async fn list_transactions_include_foreign() {
 async fn send_to_self_with_no_user_specified_memo_does_not_cause_error() {
     tracing_log::LogTracer::init().unwrap();
     let (regtest_manager, _cph, _faucet, recipient, _txid) =
-        scenarios::faucet_funded_recipient_default().await;
+        scenarios::faucet_funded_recipient_default(100_000).await;
     recipient
         .do_send(vec![(
             &get_base_address!(recipient, "unified"),
@@ -1688,9 +1688,8 @@ async fn load_wallet_from_v26_dat_file() {
 #[tokio::test]
 async fn mempool_and_balance() {
     let value = 100_000;
-    let regtest_network = RegtestNetwork::scenario_default();
     let (regtest_manager, _cph, faucet, recipient, _txid) =
-        scenarios::faucet_funded_recipient(value, regtest_network).await;
+        scenarios::faucet_funded_recipient_default(value).await;
 
     let bal = recipient.do_balance().await;
     println!("{}", serde_json::to_string_pretty(&bal).unwrap());
@@ -1743,7 +1742,7 @@ async fn mempool_and_balance() {
 #[tokio::test]
 async fn witness_clearing() {
     let (regtest_manager, _cph, faucet, recipient, txid) =
-        scenarios::faucet_funded_recipient_default().await;
+        scenarios::faucet_funded_recipient_default(100_000).await;
     dbg!(&txid);
     let mut txid_bytes = <[u8; 32]>::try_from(hex::decode(txid).unwrap()).unwrap();
     // TxId byte order is displayed in the reverse order from how it's encoded, for some reason
@@ -1923,9 +1922,8 @@ async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
         }
     }
     let value = 100_000;
-    let regtest_network = RegtestNetwork::scenario_default();
     let (regtest_manager, _cph, faucet, recipient, orig_transaction_id) =
-        scenarios::faucet_funded_recipient(value, regtest_network).await;
+        scenarios::faucet_funded_recipient_default(value).await;
 
     assert_eq!(
         do_maybe_recent_txid(&recipient).await["last_txid"],
@@ -2103,7 +2101,7 @@ async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 10)
         .await
         .unwrap();
-    assert_eq!(recipient.wallet.last_synced_height().await, 21);
+    assert_eq!(recipient.wallet.last_synced_height().await, 20);
 
     let notes = recipient.do_list_notes(true).await;
 
@@ -2463,7 +2461,7 @@ async fn sapling_incoming_sapling_outgoing() {
 #[tokio::test]
 async fn aborted_resync() {
     let (regtest_manager, _cph, faucet, recipient, _txid) =
-        scenarios::faucet_funded_recipient_default().await;
+        scenarios::faucet_funded_recipient_default(100_000).await;
 
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 15)
         .await
@@ -2526,11 +2524,11 @@ async fn aborted_resync() {
     // 5. Now, we'll manually remove some of the blocks in the wallet, pretending that the sync was aborted in the middle.
     // We'll remove the top 20 blocks, so now the wallet only has the first 3 blocks
     recipient.wallet.blocks.write().await.drain(0..20);
-    assert_eq!(recipient.wallet.last_synced_height().await, 5);
+    assert_eq!(recipient.wallet.last_synced_height().await, 4);
 
     // 6. Do a sync again
     recipient.do_sync(true).await.unwrap();
-    assert_eq!(recipient.wallet.last_synced_height().await, 25);
+    assert_eq!(recipient.wallet.last_synced_height().await, 24);
 
     // 7. Should be exactly the same
     let notes_after = recipient.do_list_notes(true).await;
@@ -2572,9 +2570,8 @@ async fn aborted_resync() {
 async fn zero_value_change() {
     // 2. Send an incoming transaction to fill the wallet
     let value = 100_000;
-    let regtest_network = RegtestNetwork::scenario_default();
     let (regtest_manager, _cph, faucet, recipient, _txid) =
-        scenarios::faucet_funded_recipient(value, regtest_network).await;
+        scenarios::faucet_funded_recipient_default(value).await;
 
     let sent_value = value - u64::from(MINIMUM_FEE);
     let sent_transaction_id = recipient
@@ -2615,7 +2612,7 @@ async fn zero_value_change() {
 #[tokio::test]
 async fn dust_sends_change_correctly() {
     let (regtest_manager, _cph, faucet, recipient, _txid) =
-        scenarios::faucet_funded_recipient_default().await;
+        scenarios::faucet_funded_recipient_default(100_000).await;
 
     // Send of less that transaction fee
     let sent_value = 1000;
@@ -2642,7 +2639,7 @@ async fn dust_sends_change_correctly() {
 #[tokio::test]
 async fn zero_value_receipts() {
     let (regtest_manager, _cph, faucet, recipient, _txid) =
-        scenarios::faucet_funded_recipient_default().await;
+        scenarios::faucet_funded_recipient_default(100_000).await;
 
     let sent_value = 0;
     let _sent_transaction_id = faucet
@@ -2955,9 +2952,8 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
     let second_send_to_sapling = 20_000;
     let third_send_to_transparent = 20_000;
 
-    let regtest_network = RegtestNetwork::scenario_default();
     let (ref regtest_manager, _cph, faucet, recipient, _txid) =
-        scenarios::faucet_funded_recipient(recipient_initial_funds, regtest_network).await;
+        scenarios::faucet_funded_recipient_default(recipient_initial_funds).await;
 
     let expected_transactions = json::parse(
         r#"
@@ -3355,4 +3351,25 @@ async fn send_heartwood_sapling_funds() {
         .await
         .unwrap();
     check_client_balances!(recipient, o: 3_499_990_000 s: 0 t: 0);
+}
+
+#[tokio::test]
+async fn send_funds_to_all_pools_with_scenario() {
+    let regtest_network = RegtestNetwork::scenario_default();
+    let (
+        _regtest_manager,
+        _cph,
+        _faucet,
+        recipient,
+        _orchard_txid,
+        _sapling_txid,
+        _transparent_txid,
+    ) = scenarios::faucet_funded_recipient(
+        Some(100_000),
+        Some(100_000),
+        Some(100_000),
+        regtest_network,
+    )
+    .await;
+    check_client_balances!(recipient, o: 100_000 s: 100_000 t: 100_000);
 }

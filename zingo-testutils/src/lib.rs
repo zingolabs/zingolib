@@ -636,8 +636,80 @@ pub mod scenarios {
     }
 
     pub async fn faucet_funded_recipient(
-        value: u64,
+        orchard_funds: Option<u64>,
+        sapling_funds: Option<u64>,
+        transparent_funds: Option<u64>,
         regtest_network: zingoconfig::RegtestNetwork,
+    ) -> (
+        RegtestManager,
+        ChildProcessHandler,
+        LightClient,
+        LightClient,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ) {
+        let (regtest_manager, child_process_handler, faucet, recipient) =
+            faucet_recipient(regtest_network).await;
+        let orchard_txid = if let Some(funds) = orchard_funds {
+            Some(
+                faucet
+                    .do_send(vec![(
+                        &get_base_address!(recipient, "unified"),
+                        funds,
+                        None,
+                    )])
+                    .await
+                    .unwrap(),
+            )
+        } else {
+            None
+        };
+        let sapling_txid = if let Some(funds) = sapling_funds {
+            Some(
+                faucet
+                    .do_send(vec![(
+                        &get_base_address!(recipient, "sapling"),
+                        funds,
+                        None,
+                    )])
+                    .await
+                    .unwrap(),
+            )
+        } else {
+            None
+        };
+        let transparent_txid = if let Some(funds) = transparent_funds {
+            Some(
+                faucet
+                    .do_send(vec![(
+                        &get_base_address!(recipient, "transparent"),
+                        funds,
+                        None,
+                    )])
+                    .await
+                    .unwrap(),
+            )
+        } else {
+            None
+        };
+        increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+        faucet.do_sync(false).await.unwrap();
+        (
+            regtest_manager,
+            child_process_handler,
+            faucet,
+            recipient,
+            orchard_txid,
+            sapling_txid,
+            transparent_txid,
+        )
+    }
+
+    pub async fn faucet_funded_recipient_default(
+        orchard_funds: u64,
     ) -> (
         RegtestManager,
         ChildProcessHandler,
@@ -645,47 +717,23 @@ pub mod scenarios {
         LightClient,
         String,
     ) {
-        dbg!("0 About to create faucet_recipient.");
-        let (regtest_manager, child_process_handler, faucet, recipient) =
-            faucet_recipient(regtest_network).await;
-        dbg!("1 About to increase height and sync faucet.");
-        increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
-            .await
-            .unwrap();
-        dbg!("2 faucet synced.");
-        let txid = faucet
-            .do_send(vec![(
-                &get_base_address!(recipient, "unified"),
-                value,
-                None,
-            )])
-            .await
-            .unwrap();
-        dbg!("3 faucet send complete");
-        increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
-            .await
-            .unwrap();
-        dbg!("4 recipient increased and synced.");
-        dbg!("5 about to sync faucet.");
-        faucet.do_sync(false).await.unwrap();
-        (
+        let regtest_network = zingoconfig::RegtestNetwork::scenario_default();
+        let (
             regtest_manager,
-            child_process_handler,
+            cph,
             faucet,
             recipient,
-            txid,
+            orchard_txid,
+            _sapling_txid,
+            _transparent_txid,
+        ) = faucet_funded_recipient(Some(orchard_funds), None, None, regtest_network).await;
+        (
+            regtest_manager,
+            cph,
+            faucet,
+            recipient,
+            orchard_txid.unwrap(),
         )
-    }
-
-    pub async fn faucet_funded_recipient_default() -> (
-        RegtestManager,
-        ChildProcessHandler,
-        LightClient,
-        LightClient,
-        String,
-    ) {
-        let regtest_network = zingoconfig::RegtestNetwork::scenario_default();
-        faucet_funded_recipient(100000, regtest_network).await
     }
 
     pub async fn faucet_recipient_transparent(
