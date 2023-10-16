@@ -651,6 +651,9 @@ pub mod scenarios {
     ) {
         let (regtest_manager, child_process_handler, faucet, recipient) =
             faucet_recipient(regtest_network).await;
+        increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+            .await
+            .unwrap();
         let orchard_txid = if let Some(funds) = orchard_funds {
             Some(
                 faucet
@@ -693,7 +696,7 @@ pub mod scenarios {
         } else {
             None
         };
-        increase_height_and_wait_for_client(&regtest_manager, &recipient, 2)
+        increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
         faucet.do_sync(false).await.unwrap();

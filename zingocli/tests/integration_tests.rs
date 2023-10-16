@@ -2101,7 +2101,7 @@ async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 10)
         .await
         .unwrap();
-    assert_eq!(recipient.wallet.last_synced_height().await, 20);
+    assert_eq!(recipient.wallet.last_synced_height().await, 21);
 
     let notes = recipient.do_list_notes(true).await;
 
@@ -2524,11 +2524,11 @@ async fn aborted_resync() {
     // 5. Now, we'll manually remove some of the blocks in the wallet, pretending that the sync was aborted in the middle.
     // We'll remove the top 20 blocks, so now the wallet only has the first 3 blocks
     recipient.wallet.blocks.write().await.drain(0..20);
-    assert_eq!(recipient.wallet.last_synced_height().await, 4);
+    assert_eq!(recipient.wallet.last_synced_height().await, 5);
 
     // 6. Do a sync again
     recipient.do_sync(true).await.unwrap();
-    assert_eq!(recipient.wallet.last_synced_height().await, 24);
+    assert_eq!(recipient.wallet.last_synced_height().await, 25);
 
     // 7. Should be exactly the same
     let notes_after = recipient.do_list_notes(true).await;
