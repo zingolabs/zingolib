@@ -211,22 +211,17 @@ impl TransactionContext {
                                         .map(|taddr| address_from_pubkeyhash(&self.config, *taddr)),
                                     Some(ua.encode(&self.config.chain)),
                                 ];
-                                if let Some(out_metadata) =
-                                    transaction.outgoing_tx_data.iter_mut().find(|out_meta| {
+                                transaction
+                                    .outgoing_tx_data
+                                    .iter_mut()
+                                    .filter(|out_meta| {
                                         outgoing_potential_receivers
                                             .contains(&Some(out_meta.to_address.clone()))
                                     })
-                                {
-                                    out_metadata.recipient_ua = Some(ua.encode(&self.config.chain));
-                                } else {
-                                    log::error!(
-                                        "Received memo indicating you sent to \
-                                        an address you don't have on record.\n({})\n\
-                                        This may mean you are being sent malicious data.\n\
-                                        Some information may not be displayed correctly",
-                                        ua.encode(&self.config.chain)
-                                    )
-                                }
+                                    .for_each(|out_metadata| {
+                                        out_metadata.recipient_ua =
+                                            Some(ua.encode(&self.config.chain))
+                                    })
                             }
                         }
                     }
