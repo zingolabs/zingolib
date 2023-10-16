@@ -231,7 +231,7 @@ pub mod scenarios {
     //! If you need a faucet, and a single recipient, use 'faucet_recipient`
     //! For less common client configurations use the client builder directly with
     //! custom_clients
-    //! All scenarios have a default (i.e. faucet_default) which take no parameters and
+    //! All scenarios have a default (i.e. faucet_default) which take minimal parameters and
     //! build the scenario with the most common settings. This simplifies test writing in
     //! most cases by removing the need for configuration.
     use self::setup::ClientBuilder;
@@ -552,7 +552,7 @@ pub mod scenarios {
     }
 
     pub async fn unfunded_client_default() -> (RegtestManager, ChildProcessHandler, LightClient) {
-        let regtest_network = zingoconfig::RegtestNetwork::scenario_default();
+        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
         unfunded_client(regtest_network).await
     }
 
@@ -586,7 +586,7 @@ pub mod scenarios {
     }
 
     pub async fn faucet_default() -> (RegtestManager, ChildProcessHandler, LightClient) {
-        let regtest_network = zingoconfig::RegtestNetwork::scenario_default();
+        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
         faucet(regtest_network).await
     }
 
@@ -631,7 +631,7 @@ pub mod scenarios {
         LightClient,
         LightClient,
     ) {
-        let regtest_network = zingoconfig::RegtestNetwork::scenario_default();
+        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
         faucet_recipient(regtest_network).await
     }
 
@@ -720,7 +720,7 @@ pub mod scenarios {
         LightClient,
         String,
     ) {
-        let regtest_network = zingoconfig::RegtestNetwork::scenario_default();
+        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
         let (
             regtest_manager,
             cph,
@@ -797,7 +797,7 @@ pub mod scenarios {
         ClientBuilder,
         zingoconfig::RegtestNetwork,
     ) {
-        let regtest_network = zingoconfig::RegtestNetwork::scenario_default();
+        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
         let (regtest_manager, cph, client_builder) = custom_clients(regtest_network).await;
         (regtest_manager, cph, client_builder, regtest_network)
     }

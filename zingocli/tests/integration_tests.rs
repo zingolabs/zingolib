@@ -66,7 +66,7 @@ async fn send_without_reorg_buffer_blocks_gives_correct_error() {
 
 #[tokio::test]
 async fn dont_write_unconfirmed() {
-    let regtest_network = RegtestNetwork::scenario_default();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient) =
         scenarios::faucet_recipient(regtest_network).await;
     faucet
@@ -201,7 +201,7 @@ async fn sandblast_filter_preserves_trees() {
 
 #[tokio::test]
 async fn load_and_parse_different_wallet_versions() {
-    let regtest_network = RegtestNetwork::scenario_default();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (_sap_wallet, _sap_path, sap_dir) = zingo_testutils::get_wallet_nym("sap_only").unwrap();
     let (_loaded_wallet, _) =
         zingo_testutils::load_wallet(sap_dir, ChainType::Regtest(regtest_network)).await;
@@ -635,7 +635,7 @@ async fn mine_sapling_to_self() {
 
 #[tokio::test]
 async fn unspent_notes_are_not_saved() {
-    let regtest_network = RegtestNetwork::scenario_default();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient) =
         scenarios::faucet_recipient(regtest_network).await;
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
@@ -2220,7 +2220,7 @@ pub mod framework_validation {
 
     #[tokio::test]
     async fn reboot_zcashd() {
-        let regtest_network = RegtestNetwork::scenario_default();
+        let regtest_network = RegtestNetwork::all_upgrades_active();
         let ScenarioBuilder {
             regtest_manager,
             child_process_handler,
@@ -2724,7 +2724,7 @@ async fn by_address_finsight() {
 
 #[tokio::test]
 async fn load_old_wallet_at_reorged_height() {
-    let regtest_network = RegtestNetwork::scenario_default();
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (ref regtest_manager, cph, ref faucet) = scenarios::faucet(regtest_network).await;
     println!("Shutting down initial zcd/lwd unneeded processes");
     drop(cph);
@@ -3354,8 +3354,8 @@ async fn send_heartwood_sapling_funds() {
 }
 
 #[tokio::test]
-async fn send_funds_to_all_pools_with_scenario() {
-    let regtest_network = RegtestNetwork::scenario_default();
+async fn send_funds_to_all_pools() {
+    let regtest_network = RegtestNetwork::all_upgrades_active();
     let (
         _regtest_manager,
         _cph,

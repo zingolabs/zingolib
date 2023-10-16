@@ -447,12 +447,6 @@ impl RegtestNetwork {
             activation_heights: ActivationHeights::new(1, 1, 1, 1, 1, orchard_activation_height),
         }
     }
-    pub fn scenario_default() -> Self {
-        Self {
-            activation_heights: ActivationHeights::new(1, 1, 1, 1, 1, 1),
-            // activation_heights: ActivationHeights::new(1, 1, 1, 1, 3, 5),
-        }
-    }
 
     // Network parameters
     pub fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
