@@ -693,7 +693,7 @@ pub mod scenarios {
         } else {
             None
         };
-        increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+        increase_height_and_wait_for_client(&regtest_manager, &recipient, 2)
             .await
             .unwrap();
         faucet.do_sync(false).await.unwrap();
