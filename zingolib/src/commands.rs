@@ -1033,6 +1033,7 @@ impl Command for SeedCommand {
 
 #[cfg(feature = "lightclient-deprecated")]
 struct TransactionsCommand {}
+#[cfg(feature = "lightclient-deprecated")]
 impl Command for TransactionsCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
@@ -1480,7 +1481,8 @@ impl Command for QuitCommand {
 }
 
 pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
-    let entries: [(&'static str, Box<dyn Command>); 37] = [
+    #[allow(unused_mut)]
+    let mut entries: Vec<(&'static str, Box<dyn Command>)> = vec![
         (("version"), Box::new(GetVersionCommand {})),
         ("sync", Box::new(SyncCommand {})),
         ("syncstatus", Box::new(SyncStatusCommand {})),
@@ -1513,7 +1515,6 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("shield", Box::new(ShieldCommand {})),
         ("save", Box::new(SaveCommand {})),
         ("quit", Box::new(QuitCommand {})),
-        ("list", Box::new(TransactionsCommand {})),
         ("notes", Box::new(NotesCommand {})),
         ("new", Box::new(NewAddressCommand {})),
         ("defaultfee", Box::new(DefaultFeeCommand {})),
@@ -1522,8 +1523,11 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("wallet_kind", Box::new(WalletKindCommand {})),
         ("delete", Box::new(DeleteCommand {})),
     ];
-
-    HashMap::from(entries)
+    #[cfg(feature = "lightclient-deprecated")]
+    {
+        entries.push(("list", Box::new(TransactionsCommand {})));
+    }
+    entries.into_iter().collect()
 }
 
 pub fn do_user_command(cmd: &str, args: &[&str], lightclient: &LightClient) -> String {
