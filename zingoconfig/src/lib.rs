@@ -239,7 +239,7 @@ impl ZingoConfig {
     pub fn wallet_path_exists(&self) -> bool {
         self.get_wallet_path().exists()
     }
-    #[deprecated(since = "1.3.2", note = "this function was renamed for clarity")]
+    #[deprecated(note = "this method was renamed 'wallet_path_exists' for clarity")]
     pub fn wallet_exists(&self) -> bool {
         self.wallet_path_exists()
     }
