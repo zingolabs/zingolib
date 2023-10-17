@@ -59,7 +59,7 @@ async fn get_synced_wallet_height(client: &LightClient) -> Result<u32, String> {
         .unwrap())
 }
 
-fn poll_server_height(manager: &RegtestManager) -> JsonValue {
+pub fn poll_server_height(manager: &RegtestManager) -> JsonValue {
     let temp_tips = manager.get_chain_tip().unwrap().stdout;
     let tips = json::parse(&String::from_utf8_lossy(&temp_tips)).unwrap();
     tips[0]["height"].clone()
@@ -258,7 +258,7 @@ pub mod scenarios {
             pub child_process_handler: Option<ChildProcessHandler>,
         }
         impl ScenarioBuilder {
-            fn build_scenario(
+            pub fn build_scenario(
                 custom_client_config: Option<PathBuf>,
                 set_lightwalletd_port: Option<portpicker::Port>,
             ) -> Self {
@@ -284,7 +284,7 @@ pub mod scenarios {
                     child_process_handler,
                 }
             }
-            fn configure_scenario(
+            pub fn configure_scenario(
                 &mut self,
                 funded: Option<String>,
                 regtest_network: &zingoconfig::RegtestNetwork,
@@ -297,7 +297,7 @@ pub mod scenarios {
                 };
                 self.test_env.create_lightwalletd_conf();
             }
-            async fn launch_scenario(&mut self, clean: bool) {
+            pub async fn launch_scenario(&mut self, clean: bool) {
                 self.child_process_handler = Some(
                     self.regtest_manager
                         .launch(clean)
@@ -441,11 +441,11 @@ pub mod scenarios {
         pub struct TestEnvironmentGenerator {
             zcashd_rpcservice_port: String,
             lightwalletd_rpcservice_port: String,
-            regtest_manager: RegtestManager,
+            pub regtest_manager: RegtestManager,
             lightwalletd_uri: http::Uri,
         }
         impl TestEnvironmentGenerator {
-            pub(crate) fn new(set_lightwalletd_port: Option<portpicker::Port>) -> Self {
+            pub fn new(set_lightwalletd_port: Option<portpicker::Port>) -> Self {
                 let zcashd_rpcservice_port = portpicker::pick_unused_port()
                     .expect("Port unpickable!")
                     .to_string();
@@ -475,7 +475,7 @@ pub mod scenarios {
                     lightwalletd_uri: server_uri,
                 }
             }
-            pub(crate) fn create_unfunded_zcash_conf(
+            pub fn create_unfunded_zcash_conf(
                 &self,
                 regtest_network: &zingoconfig::RegtestNetwork,
             ) -> PathBuf {
@@ -489,7 +489,7 @@ pub mod scenarios {
                     ),
                 )
             }
-            pub(crate) fn create_funded_zcash_conf(
+            pub fn create_funded_zcash_conf(
                 &self,
                 address_to_fund: &str,
                 regtest_network: &zingoconfig::RegtestNetwork,
@@ -503,7 +503,7 @@ pub mod scenarios {
                     ),
                 )
             }
-            pub(crate) fn create_lightwalletd_conf(&self) -> PathBuf {
+            pub fn create_lightwalletd_conf(&self) -> PathBuf {
                 self.write_contents_and_return_path(
                     "lightwalletd",
                     data::config_template_fillers::lightwalletd::basic(
@@ -526,7 +526,7 @@ pub mod scenarios {
                     .unwrap_or_else(|_| panic!("Couldn't write {contents}!"));
                 loc.clone()
             }
-            pub(crate) fn get_lightwalletd_uri(&self) -> http::Uri {
+            pub fn get_lightwalletd_uri(&self) -> http::Uri {
                 self.lightwalletd_uri.clone()
             }
         }

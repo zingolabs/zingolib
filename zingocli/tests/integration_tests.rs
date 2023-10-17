@@ -3446,3 +3446,385 @@ async fn send_heartwood_sapling_funds() {
         .unwrap();
     check_client_balances!(recipient, o: 3_499_990_000 s: 0 t: 0);
 }
+
+#[tokio::test]
+async fn fluid_explicit_1() {
+    let regtest_network = RegtestNetwork::new(1, 1, 3, 5, 7, 9);
+    // let mut scenario_builder = scenarios::setup::ScenarioBuilder::build_scenario(None, None);
+    let test_env = scenarios::setup::TestEnvironmentGenerator::new(None);
+    let regtest_manager = test_env.regtest_manager.clone();
+    let data_dir = regtest_manager.zingo_datadir.clone();
+    let mut client_builder =
+        scenarios::setup::ClientBuilder::new(test_env.get_lightwalletd_uri(), data_dir);
+    // let child_process_handler: Option<zingo_testutils::regtest::ChildProcessHandler> = None;
+    // scenario_builder.configure_scenario(None, &regtest_network);
+    // if let Some(funding_seed) = None {
+    test_env.create_funded_zcash_conf(data::REG_Z_ADDR_FROM_ABANDONART, &regtest_network);
+    // } else {
+    // test_env.create_unfunded_zcash_conf(&regtest_network);
+    // };
+    println!("3466");
+    test_env.create_lightwalletd_conf();
+    // let mut scenario_builder = scenarios::setup::ScenarioBuilder {
+    //     test_env: test_env,
+    //     regtest_manager: regtest_manager,
+    //     client_builder: client_builder,
+    //     child_process_handler: None,
+    // };
+    // scenario_builder.launch_scenario(true).await;
+    println!("3475");
+    let child_process_handler = Some(regtest_manager.launch(true).unwrap_or_else(|e| match e {
+        zingo_testutils::regtest::LaunchChildProcessError::ZcashdState {
+            errorcode,
+            stdout,
+            stderr,
+        } => {
+            panic!("{} {} {}", errorcode, stdout, stderr)
+        }
+    }));
+    println!("3485");
+    regtest_manager.generate_n_blocks(BASE_HEIGHT - 1).unwrap();
+    println!("3487");
+    // while zingo_testutils::poll_server_height(&regtest_manager) < BASE_HEIGHT * 2 {
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    // }
+    println!("3491");
+    // let lightclient = client_builder
+    //     .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
+    //     .await;
+    let zingo_config = client_builder.make_unique_data_dir_and_load_config(regtest_network);
+    let lightclient = LightClient::create_from_wallet_base_async(
+        zingolib::wallet::WalletBase::MnemonicPhrase(data::seeds::ABANDON_ART_SEED.to_string()),
+        &zingo_config,
+        0,
+        false,
+    )
+    .await
+    .unwrap();
+
+    increase_height_and_wait_for_client(&regtest_manager, &lightclient, 12)
+        .await
+        .unwrap();
+    let _ = lightclient.do_sync(false).await.unwrap();
+    let fy = dbg!(lightclient.do_balance().await);
+    let recipient = client_builder
+        .build_client(
+            HOSPITAL_MUSEUM_SEED.to_string(),
+            BASE_HEIGHT as u64,
+            false,
+            regtest_network,
+        )
+        .await;
+    // let txid1 = lightclient
+    //     .do_send(vec![(
+    //         &get_base_address!(recipient, "transparent"),
+    //         10_000,
+    //         None,
+    //     )])
+    //     .await
+    //     .unwrap();
+    let summaries = lightclient.do_list_txsummaries().await;
+    for i in summaries {
+        match i.kind {
+            zingolib::wallet::data::summaries::ValueTransferKind::Sent {
+                amount,
+                to_address: _,
+            } => {
+                println!("sent {}", amount);
+            }
+            zingolib::wallet::data::summaries::ValueTransferKind::Received { pool: _, amount } => {
+                println!("received {}", amount);
+            }
+            zingolib::wallet::data::summaries::ValueTransferKind::SendToSelf {} => {
+                println!("sss");
+            }
+            zingolib::wallet::data::summaries::ValueTransferKind::Fee { amount } => {
+                println!("fee {}", amount);
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn fluid_explicit_2() {
+    let recipient_initial_funds = 100_000_000;
+    let first_send_to_sapling = 20_000;
+    let first_send_to_transparent = 20_000;
+    let recipient_second_wave = 1_000_000;
+    let second_send_to_transparent = 20_000;
+    let second_send_to_sapling = 20_000;
+    let third_send_to_transparent = 20_000;
+
+    let regtest_network = RegtestNetwork::all_upgrades_active();
+    let (ref regtest_manager, _cph, faucet, recipient, _txid) =
+        scenarios::two_wallet_one_synced_orchard_transaction(
+            recipient_initial_funds,
+            regtest_network,
+        )
+        .await;
+
+    let expected_transactions = json::parse(
+        r#"
+        [
+            {
+                "block_height": 5,
+                "unconfirmed": false,
+                "datetime": 1694820763,
+                "position": 0,
+                "txid": "d5eaac5563f8bc1a0406588e05953977ad768d02f1cf8449e9d7d9cc8de3801c",
+                "amount": 100000000,
+                "zec_price": null,
+                "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8",
+                "memo": null
+            },
+            {
+                "block_height": 6,
+                "unconfirmed": false,
+                "datetime": 1694825595,
+                "txid": "4ee5a583e6462eb4c39f9d8188e855bb1e37d989fcb8b417cff93c27b006e72d",
+                "zec_price": null,
+                "amount": -30000,
+                "outgoing_metadata": [
+                    {
+                        "address": "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p",
+                        "value": 20000,
+                        "memo": null
+                    }
+                ]
+            },
+            {
+                "block_height": 7,
+                "unconfirmed": true,
+                "datetime": 1694825735,
+                "txid": "55de92ebf5effc3ed67a289788ede88514a9d2c407af6154b00969325e2fdf00",
+                "zec_price": null,
+                "amount": -30000,
+                "outgoing_metadata": [
+                    {
+                        "address": "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd",
+                        "value": 20000,
+                        "memo": null
+                    }
+                ]
+            }
+        ]"#,
+    ).unwrap();
+
+    recipient
+        .do_send(vec![(
+            &get_base_address!(faucet, "sapling"),
+            first_send_to_sapling,
+            None,
+        )])
+        .await
+        .unwrap();
+    zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &recipient, 1)
+        .await
+        .unwrap();
+    recipient
+        .do_send(vec![(
+            &get_base_address!(faucet, "transparent"),
+            first_send_to_transparent,
+            None,
+        )])
+        .await
+        .unwrap();
+
+    let expected_funds = recipient_initial_funds
+        - first_send_to_sapling
+        - first_send_to_transparent
+        - (2 * u64::from(MINIMUM_FEE));
+    assert_eq!(
+        recipient.wallet.maybe_verified_orchard_balance(None).await,
+        Some(expected_funds)
+    );
+    assert_eq!(
+        recipient.wallet.verified_orchard_balance(None).await,
+        Some(0)
+    );
+
+    let transactions = recipient.do_list_transactions().await;
+    assert_eq!(
+        transactions.members().len(),
+        expected_transactions.members().len()
+    );
+    for (t1, t2) in transactions.members().zip(expected_transactions.members()) {
+        assert!(
+            check_transaction_equality(t1, t2),
+            "\n\n\nobserved: {}\n\n\nexpected: {}\n\n\n",
+            t1.pretty(4),
+            t2.pretty(4)
+        );
+    }
+
+    faucet.do_sync(false).await.unwrap();
+    faucet
+        .do_send(vec![(
+            &get_base_address!(recipient, "unified"),
+            recipient_second_wave,
+            Some(Memo::from_str("Second wave incoming").unwrap().into()),
+        )])
+        .await
+        .unwrap();
+    zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &recipient, 1)
+        .await
+        .unwrap();
+    recipient
+        .do_send(vec![(
+            &get_base_address!(faucet, "transparent"),
+            second_send_to_transparent,
+            None,
+        )])
+        .await
+        .unwrap();
+    recipient
+        .do_send(vec![(
+            &get_base_address!(faucet, "sapling"),
+            second_send_to_sapling,
+            None,
+        )])
+        .await
+        .unwrap();
+    zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &recipient, 1)
+        .await
+        .unwrap();
+
+    recipient
+        .do_send(vec![(
+            &get_base_address!(faucet, "transparent"),
+            third_send_to_transparent,
+            None,
+        )])
+        .await
+        .unwrap();
+    zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &recipient, 1)
+        .await
+        .unwrap();
+
+    let second_wave_expected_funds = expected_funds + recipient_second_wave
+        - second_send_to_sapling
+        - second_send_to_transparent
+        - third_send_to_transparent
+        - (3 * u64::from(MINIMUM_FEE));
+    assert_eq!(
+        recipient.wallet.maybe_verified_orchard_balance(None).await,
+        Some(second_wave_expected_funds),
+    );
+
+    let second_wave_expected_transactions = json::parse(r#"
+        [
+            {
+                "block_height": 5,
+                "unconfirmed": false,
+                "datetime": 1686330002,
+                "position": 0,
+                "txid": "f040440eade0afc99800fee54753afb71fb09894483f1f1fa7462dedb63e7c02",
+                "amount": 100000000,
+                "zec_price": null,
+                "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8",
+                "memo": null
+            },
+            {
+                "block_height": 6,
+                "unconfirmed": false,
+                "datetime": 1686330013,
+                "txid": "db532064c89c7d8266e107ffefc614f3c34050af922973199e398fcd18c43ea5",
+                "zec_price": null,
+                "amount": -30000,
+                "outgoing_metadata": [
+                    {
+                        "address": "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p",
+                        "value": 20000,
+                        "memo": null
+                    }
+                ]
+            },
+            {
+                "block_height": 7,
+                "unconfirmed": false,
+                "datetime": 1686330006,
+                "txid": "be81f76bf37bb6d5d762c7bb48419f239787023b8344c30ce0771c8ce21e480f",
+                "zec_price": null,
+                "amount": -30000,
+                "outgoing_metadata": [
+                    {
+                        "address": "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd",
+                        "value": 20000,
+                        "memo": null
+                    }
+                ]
+            },
+            {
+                "block_height": 7,
+                "unconfirmed": false,
+                "datetime": 1686330013,
+                "position": 0,
+                "txid": "caf9438c9c61923d24a9594651cc694edc660eabb0082122c4588ae381edc3b4",
+                "amount": 1000000,
+                "zec_price": null,
+                "address": "uregtest1wdukkmv5p5n824e8ytnc3m6m77v9vwwl7hcpj0wangf6z23f9x0fnaen625dxgn8cgp67vzw6swuar6uwp3nqywfvvkuqrhdjffxjfg644uthqazrtxhrgwac0a6ujzgwp8y9cwthjeayq8r0q6786yugzzyt9vevxn7peujlw8kp3vf6d8p4fvvpd8qd5p7xt2uagelmtf3vl6w3u8",
+                "memo": "Second wave incoming"
+            },
+            {
+                "block_height": 8,
+                "unconfirmed": false,
+                "datetime": 1686330021,
+                "txid": "95a41ba1c6e2b7edf63ddde7899567431a6b36b7583ba1e359560041e5f8ce2b",
+                "zec_price": null,
+                "amount": -30000,
+                "outgoing_metadata": [
+                    {
+                        "address": "zregtestsapling1fmq2ufux3gm0v8qf7x585wj56le4wjfsqsj27zprjghntrerntggg507hxh2ydcdkn7sx8kya7p",
+                        "value": 20000,
+                        "memo": null
+                    }
+                ]
+            },
+            {
+                "block_height": 8,
+                "unconfirmed": false,
+                "datetime": 1686330021,
+                "txid": "c1004c32395ff45448fb943a7da4cc2819762066eea2628cd0a4aee65106207d",
+                "zec_price": null,
+                "amount": -30000,
+                "outgoing_metadata": [
+                    {
+                        "address": "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd",
+                        "value": 20000,
+                        "memo": null
+                    }
+                ]
+            },
+            {
+                "block_height": 9,
+                "unconfirmed": false,
+                "datetime": 1686330024,
+                "txid": "c5e94f462218634b37a2a3324f89bd288bc55ab877ea516a6203e48c207ba955",
+                "zec_price": null,
+                "amount": -30000,
+                "outgoing_metadata": [
+                    {
+                        "address": "tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd",
+                        "value": 20000,
+                        "memo": null
+                    }
+                ]
+            }
+        ]"#)
+    .unwrap();
+    let second_wave_transactions = dbg!(recipient.do_list_transactions().await);
+    dbg!("apia");
+    assert_eq!(
+        second_wave_transactions.len(),
+        second_wave_expected_transactions.len()
+    );
+    for transaction in second_wave_transactions.members() {
+        assert!(
+            second_wave_expected_transactions
+                .members()
+                .any(|t2| check_transaction_equality(transaction, t2)),
+            "fail on: {:#?}",
+            transaction
+        );
+    }
+}
