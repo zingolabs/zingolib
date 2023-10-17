@@ -3486,7 +3486,7 @@ async fn fluid_explicit_1() {
     regtest_manager.generate_n_blocks(BASE_HEIGHT - 1).unwrap();
     println!("3487");
     // while zingo_testutils::poll_server_height(&regtest_manager) < BASE_HEIGHT * 2 {
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    //     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     // }
     println!("3491");
     // let lightclient = client_builder
@@ -3545,7 +3545,6 @@ async fn fluid_explicit_1() {
     }
 }
 
-#[tokio::test]
 async fn fluid_explicit_2() {
     let recipient_initial_funds = 100_000_000;
     let first_send_to_sapling = 20_000;
@@ -3812,8 +3811,7 @@ async fn fluid_explicit_2() {
             }
         ]"#)
     .unwrap();
-    let second_wave_transactions = dbg!(recipient.do_list_transactions().await);
-    dbg!("apia");
+    let second_wave_transactions = recipient.do_list_transactions().await;
     assert_eq!(
         second_wave_transactions.len(),
         second_wave_expected_transactions.len()
