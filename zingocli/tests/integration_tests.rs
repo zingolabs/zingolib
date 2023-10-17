@@ -3555,12 +3555,42 @@ async fn fluid_explicit_2() {
     let third_send_to_transparent = 20_000;
 
     let regtest_network = RegtestNetwork::all_upgrades_active();
-    let (ref regtest_manager, _cph, faucet, recipient, _txid) =
-        scenarios::two_wallet_one_synced_orchard_transaction(
+    // let (ref regtest_manager, _cph, faucet, recipient, _txid) =
+    //     scenarios::two_wallet_one_synced_orchard_transaction(
+    //         recipient_initial_funds,
+    //         regtest_network,
+    //     )
+    //     .await;
+    println!("0 About to create faucet_recipient.");
+    let (regtest_manager, child_process_handler, faucet, recipient) =
+        scenarios::two_wallet_one_miner_fund(regtest_network).await;
+    println!("1 About to increase height and sync faucet.");
+    increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+        .await
+        .unwrap();
+    println!("2 faucet synced.");
+    let txid = faucet
+        .do_send(vec![(
+            &get_base_address!(recipient, "unified"),
             recipient_initial_funds,
-            regtest_network,
-        )
-        .await;
+            None,
+        )])
+        .await
+        .unwrap();
+    println!("3 faucet send complete");
+    increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+        .await
+        .unwrap();
+    println!("4 recipient increased and synced.");
+    println!("5 about to sync faucet.");
+    faucet.do_sync(false).await.unwrap();
+    // (
+    //     regtest_manager,
+    //     child_process_handler,
+    //     faucet,
+    //     recipient,
+    //     txid,
+    // )
 
     let expected_transactions = json::parse(
         r#"
@@ -3617,7 +3647,7 @@ async fn fluid_explicit_2() {
         )])
         .await
         .unwrap();
-    zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &recipient, 1)
+    zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
         .await
         .unwrap();
     recipient
@@ -3665,7 +3695,7 @@ async fn fluid_explicit_2() {
         )])
         .await
         .unwrap();
-    zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &recipient, 1)
+    zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
         .await
         .unwrap();
     recipient
@@ -3684,7 +3714,7 @@ async fn fluid_explicit_2() {
         )])
         .await
         .unwrap();
-    zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &recipient, 1)
+    zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
         .await
         .unwrap();
 
@@ -3696,7 +3726,7 @@ async fn fluid_explicit_2() {
         )])
         .await
         .unwrap();
-    zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &recipient, 1)
+    zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
         .await
         .unwrap();
 
