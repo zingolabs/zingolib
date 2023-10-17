@@ -40,7 +40,7 @@ use zingolib::{
             extended_transparent::ExtendedPrivKey,
             unified::{Capability, WalletCapability},
         },
-        LightWallet, Pool,
+        LightWallet, Pool, WalletBase,
     },
 };
 
@@ -3577,15 +3577,27 @@ async fn fluid_explicit_2() {
     let faucet = sb.client_builder.build_faucet(false, regtest_network).await;
     faucet.do_sync(false).await.unwrap();
 
-    let recipient = sb
+    // let recipient = sb
+    //     .client_builder
+    //     .build_client(
+    //         HOSPITAL_MUSEUM_SEED.to_string(),
+    //         BASE_HEIGHT as u64,
+    //         false,
+    //         regtest_network,
+    //     )
+    //     .await;
+    let zingo_config = sb
         .client_builder
-        .build_client(
-            HOSPITAL_MUSEUM_SEED.to_string(),
-            BASE_HEIGHT as u64,
-            false,
-            regtest_network,
-        )
-        .await;
+        .make_unique_data_dir_and_load_config(regtest_network);
+    let recipient = LightClient::create_from_wallet_base_async(
+        WalletBase::MnemonicPhrase(HOSPITAL_MUSEUM_SEED.to_string()),
+        &zingo_config,
+        BASE_HEIGHT as u64,
+        false,
+    )
+    .await
+    .unwrap();
+    //
     // (
     let regtest_manager = sb.regtest_manager;
     //     sb.regtest_manager,
@@ -3884,4 +3896,9 @@ async fn fluid_explicit_2() {
             transaction
         );
     }
+
+    let _ = recipient.do_save().await.unwrap();
+    drop(recipient);
+
+    // let reci2 = LightClient::read_wallet_from_disk(&zingo_config);
 }
