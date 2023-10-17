@@ -34,6 +34,7 @@ use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::sapling::note_encryption::SaplingDomain;
 use zcash_primitives::sapling::SaplingIvk;
 use zcash_primitives::transaction::builder::Progress;
+use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::transaction::fees::fixed::FeeRule as FixedFeeRule;
 use zcash_primitives::transaction::{self, Transaction};
 use zcash_primitives::{
@@ -237,7 +238,11 @@ pub struct LightWallet {
 }
 
 use crate::wallet::traits::{Diversifiable as _, ReadableWriteable};
-type Receivers = Vec<(address::RecipientAddress, Amount, Option<MemoBytes>)>;
+type Receivers = Vec<(
+    address::RecipientAddress,
+    NonNegativeAmount,
+    Option<MemoBytes>,
+)>;
 type TxBuilder<'a> = Builder<'a, zingoconfig::ChainType, OsRng>;
 impl LightWallet {
     fn get_legacy_frontiers(
@@ -1066,7 +1071,7 @@ impl LightWallet {
                 let outpoint: OutPoint = utxo.to_outpoint();
 
                 let coin = TxOut {
-                    value: Amount::from_u64(utxo.value).unwrap(),
+                    value: NonNegativeAmount::from_u64(utxo.value).unwrap(),
                     script_pubkey: Script(utxo.script.clone()),
                 };
 

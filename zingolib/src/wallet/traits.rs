@@ -1195,7 +1195,9 @@ impl ReadableWriteable<(zcash_primitives::sapling::Diversifier, &WalletCapabilit
         ),
     ) -> io::Result<Self> {
         let _version = Self::get_version(&mut reader)?;
-        let value = reader.read_u64::<LittleEndian>()?;
+        let value = zcash_primitives::sapling::value::NoteValue::from_raw(
+            reader.read_u64::<LittleEndian>()?,
+        );
         let rseed = super::data::read_sapling_rseed(&mut reader)?;
 
         Ok(
