@@ -2,7 +2,6 @@
 #![cfg(feature = "local_env")]
 pub mod darkside;
 
-use crate::zingo_testutils::check_transaction_equality;
 use bip0039::Mnemonic;
 use json::JsonValue;
 use orchard::tree::MerkleHashOrchard;
@@ -19,14 +18,17 @@ use zcash_primitives::{
     transaction::{fees::zip317::MINIMUM_FEE, TxId},
 };
 use zingo_testutils::{
-    self, build_fvk_client,
+    self, build_fvk_client, check_transaction_equality,
     data::{
         self, block_rewards,
         seeds::{CHIMNEY_BETTER_SEED, HOSPITAL_MUSEUM_SEED},
+        REG_Z_ADDR_FROM_ABANDONART,
     },
     increase_height_and_wait_for_client,
     regtest::get_cargo_manifest_dir,
-    scenarios, BASE_HEIGHT,
+    scenarios,
+    scenarios::setup::ScenarioBuilder,
+    BASE_HEIGHT,
 };
 use zingoconfig::{ChainType, RegtestNetwork, ZingoConfig, MAX_REORG};
 use zingolib::{
@@ -3545,6 +3547,7 @@ async fn fluid_explicit_1() {
     }
 }
 
+#[tokio::test]
 async fn fluid_explicit_2() {
     let recipient_initial_funds = 100_000_000;
     let first_send_to_sapling = 20_000;
@@ -3562,8 +3565,34 @@ async fn fluid_explicit_2() {
     //     )
     //     .await;
     println!("0 About to create faucet_recipient.");
-    let (regtest_manager, child_process_handler, faucet, recipient) =
-        scenarios::two_wallet_one_miner_fund(regtest_network).await;
+    // let (regtest_manager, child_process_handler, faucet, recipient) =
+    //     scenarios::two_wallet_one_miner_fund(regtest_network).await;
+    let mut sb = ScenarioBuilder::build_configure_launch(
+        Some(REG_Z_ADDR_FROM_ABANDONART.to_string()),
+        None,
+        None,
+        &regtest_network,
+    )
+    .await;
+    let faucet = sb.client_builder.build_faucet(false, regtest_network).await;
+    faucet.do_sync(false).await.unwrap();
+
+    let recipient = sb
+        .client_builder
+        .build_client(
+            HOSPITAL_MUSEUM_SEED.to_string(),
+            BASE_HEIGHT as u64,
+            false,
+            regtest_network,
+        )
+        .await;
+    // (
+    let regtest_manager = sb.regtest_manager;
+    //     sb.regtest_manager,
+    //     sb.child_process_handler.unwrap(),
+    //     faucet,
+    //     recipient,
+    // )
     println!("1 About to increase height and sync faucet.");
     increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
         .await
