@@ -146,6 +146,7 @@ async fn dont_write_unconfirmed() {
         .unwrap();
     let recipient_balance = recipient.do_balance().await;
 
+    dbg!(&recipient_balance.unverified_orchard_balance);
     assert_eq!(
         recipient_balance.unverified_orchard_balance.unwrap(),
         65_000
@@ -658,12 +659,12 @@ async fn actual_empty_zcashd_sapling_commitment_tree() {
 async fn unspent_notes_are_not_saved() {
     let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient) =
-        scenarios::faucet_recipient(Pool::Orchard, regtest_network).await;
+        scenarios::faucet_recipient(Pool::Sapling, regtest_network).await;
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
         .await
         .unwrap();
 
-    check_client_balances!(faucet, o: 0u64 s: 2_500_000_000u64 t: 0u64);
+    check_client_balances!(faucet, o: 0 s: 2_500_000_000u64 t: 0u64);
     faucet
         .do_send(vec![(
             get_base_address!(recipient, "unified").as_str(),
@@ -2047,6 +2048,18 @@ async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
 
     // Sync recipient
     recipient.do_sync(false).await.unwrap();
+    dbg!(
+        &recipient
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .witness_trees
+            .as_ref()
+            .unwrap()
+            .witness_tree_orchard
+    );
 
     // 4b write down state before clearing the mempool
     let notes_before = recipient.do_list_notes(true).await;
