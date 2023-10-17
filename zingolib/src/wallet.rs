@@ -86,16 +86,16 @@ pub struct SendProgress {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pool {
-    Sapling,
     Orchard,
+    Sapling,
     Transparent,
 }
 
 impl From<Pool> for JsonValue {
     fn from(value: Pool) -> Self {
         match value {
-            Pool::Sapling => JsonValue::String(String::from("Sapling")),
             Pool::Orchard => JsonValue::String(String::from("Orchard")),
+            Pool::Sapling => JsonValue::String(String::from("Sapling")),
             Pool::Transparent => JsonValue::String(String::from("Transparent")),
         }
     }
