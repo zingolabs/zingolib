@@ -586,14 +586,14 @@ pub mod scenarios {
         LightClient,
         String,
     ) {
-        dbg!("0 About to create faucet_recipient.");
+        println!("0 About to create faucet_recipient.");
         let (regtest_manager, child_process_handler, faucet, recipient) =
             two_wallet_one_miner_fund(regtest_network).await;
-        dbg!("1 About to increase height and sync faucet.");
+        println!("1 About to increase height and sync faucet.");
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
-        dbg!("2 faucet synced.");
+        println!("2 faucet synced.");
         let txid = faucet
             .do_send(vec![(
                 &get_base_address!(recipient, "unified"),
@@ -602,12 +602,12 @@ pub mod scenarios {
             )])
             .await
             .unwrap();
-        dbg!("3 faucet send complete");
+        println!("3 faucet send complete");
         increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
-        dbg!("4 recipient increased and synced.");
-        dbg!("5 about to sync faucet.");
+        println!("4 recipient increased and synced.");
+        println!("5 about to sync faucet.");
         faucet.do_sync(false).await.unwrap();
         (
             regtest_manager,
