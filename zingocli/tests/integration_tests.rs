@@ -3900,5 +3900,12 @@ async fn fluid_explicit_2() {
     let _ = recipient.do_save().await.unwrap();
     drop(recipient);
 
-    // let reci2 = LightClient::read_wallet_from_disk(&zingo_config);
+    let recipient2 = LightClient::read_wallet_from_disk_async(&zingo_config)
+        .await
+        .unwrap();
+    let second_wave_transactions2 = recipient2.do_list_transactions().await;
+    assert_eq!(
+        dbg!(second_wave_transactions2).len(),
+        second_wave_expected_transactions.len()
+    );
 }

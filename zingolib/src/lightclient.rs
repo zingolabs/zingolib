@@ -322,6 +322,22 @@ impl LightClient {
         LightClient::read_wallet_from_buffer(config, BufReader::new(File::open(wallet_path)?))
     }
 
+    pub async fn read_wallet_from_disk_async(config: &ZingoConfig) -> io::Result<Self> {
+        let wallet_path = if config.wallet_path_exists() {
+            config.get_wallet_path()
+        } else {
+            return Err(Error::new(
+                ErrorKind::NotFound,
+                format!(
+                    "Cannot read wallet. No file at {}",
+                    config.get_wallet_path().display()
+                ),
+            ));
+        };
+        LightClient::read_wallet_from_buffer_async(config, BufReader::new(File::open(wallet_path)?))
+            .await
+    }
+
     async fn ensure_witness_tree_not_above_wallet_blocks(&self) {
         let last_synced_height = self.wallet.last_synced_height().await;
         let mut txmds_writelock = self
