@@ -100,7 +100,7 @@ async fn multiple_outgoing_metadatas_work_right_on_restore() {
 async fn dont_write_unconfirmed() {
     let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient) =
-        scenarios::faucet_recipient(regtest_network).await;
+        scenarios::faucet_recipient(Pool::Orchard, regtest_network).await;
     faucet
         .do_send(vec![(
             &get_base_address!(recipient, "unified"),
@@ -146,7 +146,6 @@ async fn dont_write_unconfirmed() {
         .unwrap();
     let recipient_balance = recipient.do_balance().await;
 
-    dbg!(&recipient_balance.unverified_orchard_balance);
     assert_eq!(
         recipient_balance.unverified_orchard_balance.unwrap(),
         65_000
@@ -656,20 +655,10 @@ async fn actual_empty_zcashd_sapling_commitment_tree() {
 }
 
 #[tokio::test]
-async fn mine_sapling_to_self() {
-    let (regtest_manager, _cph, faucet) = scenarios::faucet_default().await;
-    check_client_balances!(faucet, o: 0u64 s: 1_875_000_000u64 t: 0u64);
-    zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
-        .await
-        .unwrap();
-    check_client_balances!(faucet, o: 0u64 s: 2_500_000_000u64 t: 0u64);
-}
-
-#[tokio::test]
 async fn unspent_notes_are_not_saved() {
     let regtest_network = RegtestNetwork::all_upgrades_active();
     let (regtest_manager, _cph, faucet, recipient) =
-        scenarios::faucet_recipient(regtest_network).await;
+        scenarios::faucet_recipient(Pool::Orchard, regtest_network).await;
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
         .await
         .unwrap();
@@ -739,7 +728,8 @@ async fn send_mined_sapling_to_orchard() {
     // debiting unverified_orchard_balance and crediting verified_orchard_balance.  The debit amount is
     // consistent with all the notes in the relevant block changing state.
     // NOTE that the balance doesn't give insight into the distribution across notes.
-    let (regtest_manager, _cph, faucet) = scenarios::faucet_default().await;
+    let regtest_network = RegtestNetwork::all_upgrades_active();
+    let (regtest_manager, _cph, faucet) = scenarios::faucet(Pool::Sapling, regtest_network).await;
     let amount_to_send = 5_000;
     faucet
         .do_send(vec![(
@@ -1043,7 +1033,7 @@ async fn send_orchard_back_and_forth() {
     let three_blocks_reward = block_rewards::CANOPY
         .checked_mul(BASE_HEIGHT as u64)
         .unwrap();
-    check_client_balances!(faucet, o: 0 s: three_blocks_reward  t: 0);
+    check_client_balances!(faucet, o: three_blocks_reward s: 0 t: 0);
 
     // post transfer to recipient, and verify
     faucet
@@ -1055,12 +1045,11 @@ async fn send_orchard_back_and_forth() {
         .await
         .unwrap();
     let orch_change = block_rewards::CANOPY - (faucet_to_recipient_amount + u64::from(MINIMUM_FEE));
-    let reward_and_fee = three_blocks_reward + u64::from(MINIMUM_FEE);
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
         .await
         .unwrap();
     faucet.do_sync(true).await.unwrap();
-    check_client_balances!(recipient, o: faucet_to_recipient_amount s: 0 t: 0);
+    let faucet_orch = three_blocks_reward + orch_change + u64::from(MINIMUM_FEE);
 
     println!(
         "{}",
@@ -1071,7 +1060,8 @@ async fn send_orchard_back_and_forth() {
         serde_json::to_string_pretty(&faucet.do_balance().await).unwrap()
     );
 
-    check_client_balances!(faucet, o: orch_change s: reward_and_fee t: 0);
+    check_client_balances!(faucet, o: faucet_orch s: 0 t: 0);
+    check_client_balances!(recipient, o: faucet_to_recipient_amount s: 0 t: 0);
 
     // post half back to faucet, and verify
     recipient
@@ -1087,13 +1077,13 @@ async fn send_orchard_back_and_forth() {
         .unwrap();
     recipient.do_sync(true).await.unwrap();
 
+    let faucet_final_orch =
+        faucet_orch + recipient_to_faucet_amount + block_rewards::CANOPY + u64::from(MINIMUM_FEE);
     let recipient_final_orch =
         faucet_to_recipient_amount - (u64::from(MINIMUM_FEE) + recipient_to_faucet_amount);
-    let faucet_final_orch = orch_change + recipient_to_faucet_amount;
-    let faucet_final_block = 4 * block_rewards::CANOPY + u64::from(MINIMUM_FEE) * 2;
     check_client_balances!(
         faucet,
-        o: faucet_final_orch s: faucet_final_block t: 0
+        o: faucet_final_orch s: 0 t: 0
     );
     check_client_balances!(recipient, o: recipient_final_orch s: 0 t: 0);
 }
@@ -1312,7 +1302,7 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
         //The first address in a wallet should always contain all three currently extant
         //receiver types.
         recipient_restored
-            .do_send(vec![(&get_base_address!(faucet, "unified"), 4_000, None)])
+            .do_send(vec![(&get_base_address!(faucet, "sapling"), 4_000, None)])
             .await
             .unwrap();
         let sender_balance = faucet.do_balance().await;
@@ -1323,8 +1313,8 @@ async fn handling_of_nonregenerated_diversified_addresses_after_seed_restore() {
         //Ensure that recipient_restored was still able to spend the note, despite not having the
         //diversified address associated with it
         assert_eq!(
-            faucet.do_balance().await.spendable_orchard_balance.unwrap(),
-            sender_balance.spendable_orchard_balance.unwrap() + 4_000
+            faucet.do_balance().await.spendable_sapling_balance.unwrap(),
+            sender_balance.spendable_sapling_balance.unwrap() + 4_000
         );
         recipient_restored.do_seed_phrase().await.unwrap()
     };
@@ -1954,9 +1944,11 @@ async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
         }
     }
     let value = 100_000;
-    let (regtest_manager, _cph, faucet, recipient, orig_transaction_id) =
-        scenarios::faucet_funded_recipient_default(value).await;
-
+    let regtest_network = RegtestNetwork::all_upgrades_active();
+    let (regtest_manager, _cph, faucet, recipient, orig_transaction_id, _, _) =
+        scenarios::faucet_funded_recipient(Some(value), None, None, Pool::Sapling, regtest_network)
+            .await;
+    let orig_transaction_id = orig_transaction_id.unwrap();
     assert_eq!(
         do_maybe_recent_txid(&recipient).await["last_txid"],
         orig_transaction_id
@@ -2055,18 +2047,6 @@ async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
 
     // Sync recipient
     recipient.do_sync(false).await.unwrap();
-    dbg!(
-        &recipient
-            .wallet
-            .transaction_context
-            .transaction_metadata_set
-            .read()
-            .await
-            .witness_trees
-            .as_ref()
-            .unwrap()
-            .witness_tree_orchard
-    );
 
     // 4b write down state before clearing the mempool
     let notes_before = recipient.do_list_notes(true).await;
@@ -2757,7 +2737,8 @@ async fn by_address_finsight() {
 #[tokio::test]
 async fn load_old_wallet_at_reorged_height() {
     let regtest_network = RegtestNetwork::all_upgrades_active();
-    let (ref regtest_manager, cph, ref faucet) = scenarios::faucet(regtest_network).await;
+    let (ref regtest_manager, cph, ref faucet) =
+        scenarios::faucet(Pool::Orchard, regtest_network).await;
     println!("Shutting down initial zcd/lwd unneeded processes");
     drop(cph);
 
@@ -3321,35 +3302,10 @@ async fn sync_all_epochs_from_sapling() {
         .unwrap();
 }
 
-// test fails to exit when syncing pre-sapling
-// possible issue with dropping child process handler?
-#[ignore]
-#[tokio::test]
-async fn sync_all_epochs() {
-    let regtest_network = RegtestNetwork::new(1, 3, 5, 7, 9, 11);
-    let (regtest_manager, _cph, lightclient) = scenarios::unfunded_client(regtest_network).await;
-    increase_height_and_wait_for_client(&regtest_manager, &lightclient, 12)
-        .await
-        .unwrap();
-}
-
-// test fails with error message: "66: tx unpaid action limit exceeded"
-#[ignore]
-#[tokio::test]
-async fn mine_to_transparent_and_shield() {
-    let regtest_network = RegtestNetwork::all_upgrades_active();
-    let (regtest_manager, _cph, faucet, _recipient) =
-        scenarios::faucet_recipient_transparent(regtest_network).await;
-    increase_height_and_wait_for_client(&regtest_manager, &faucet, 100)
-        .await
-        .unwrap();
-    faucet.do_shield(&[Pool::Transparent], None).await.unwrap();
-}
-
 #[tokio::test]
 async fn shield_heartwood_sapling_funds() {
     let regtest_network = RegtestNetwork::new(1, 1, 1, 1, 3, 5);
-    let (regtest_manager, _cph, faucet) = scenarios::faucet(regtest_network).await;
+    let (regtest_manager, _cph, faucet) = scenarios::faucet(Pool::Sapling, regtest_network).await;
     increase_height_and_wait_for_client(&regtest_manager, &faucet, 3)
         .await
         .unwrap();
@@ -3365,7 +3321,7 @@ async fn shield_heartwood_sapling_funds() {
 async fn send_heartwood_sapling_funds() {
     let regtest_network = RegtestNetwork::new(1, 1, 1, 1, 3, 5);
     let (regtest_manager, _cph, faucet, recipient) =
-        scenarios::faucet_recipient(regtest_network).await;
+        scenarios::faucet_recipient(Pool::Sapling, regtest_network).await;
     increase_height_and_wait_for_client(&regtest_manager, &faucet, 3)
         .await
         .unwrap();
@@ -3400,8 +3356,68 @@ async fn send_funds_to_all_pools() {
         Some(100_000),
         Some(100_000),
         Some(100_000),
+        Pool::Orchard,
         regtest_network,
     )
     .await;
     check_client_balances!(recipient, o: 100_000 s: 100_000 t: 100_000);
+}
+
+#[tokio::test]
+async fn mine_to_orchard() {
+    let regtest_network = RegtestNetwork::all_upgrades_active();
+    let (regtest_manager, _cph, faucet) = scenarios::faucet(Pool::Orchard, regtest_network).await;
+    check_client_balances!(faucet, o: 1_875_000_000 s: 0 t: 0);
+    increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+        .await
+        .unwrap();
+    check_client_balances!(faucet, o: 2_500_000_000 s: 0 t: 0);
+}
+
+#[tokio::test]
+async fn mine_to_sapling() {
+    let regtest_network = RegtestNetwork::all_upgrades_active();
+    let (regtest_manager, _cph, faucet) = scenarios::faucet(Pool::Sapling, regtest_network).await;
+    check_client_balances!(faucet, o: 0 s: 1_875_000_000 t: 0);
+    increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+        .await
+        .unwrap();
+    check_client_balances!(faucet, o: 0 s: 2_500_000_000 t: 0);
+}
+
+#[tokio::test]
+async fn mine_to_transparent() {
+    let regtest_network = RegtestNetwork::all_upgrades_active();
+    let (regtest_manager, _cph, faucet, _recipient) =
+        scenarios::faucet_recipient(Pool::Transparent, regtest_network).await;
+    check_client_balances!(faucet, o: 0 s: 0 t: 1_875_000_000);
+    increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+        .await
+        .unwrap();
+    check_client_balances!(faucet, o: 0 s: 0 t: 2_500_000_000);
+}
+
+// test fails to exit when syncing pre-sapling
+// possible issue with dropping child process handler?
+#[ignore]
+#[tokio::test]
+async fn sync_all_epochs() {
+    let regtest_network = RegtestNetwork::new(1, 3, 5, 7, 9, 11);
+    let (regtest_manager, _cph, lightclient) = scenarios::unfunded_client(regtest_network).await;
+    increase_height_and_wait_for_client(&regtest_manager, &lightclient, 12)
+        .await
+        .unwrap();
+}
+
+// test fails with error message: "66: tx unpaid action limit exceeded"
+#[ignore]
+#[tokio::test]
+async fn mine_to_transparent_and_shield() {
+    let regtest_network = RegtestNetwork::all_upgrades_active();
+    let (regtest_manager, _cph, faucet, _recipient) =
+        scenarios::faucet_recipient(Pool::Transparent, regtest_network).await;
+    increase_height_and_wait_for_client(&regtest_manager, &faucet, 100)
+        .await
+        .unwrap();
+    faucet.do_shield(&[Pool::Transparent], None).await.unwrap();
 }
