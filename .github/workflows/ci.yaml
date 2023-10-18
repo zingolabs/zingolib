@@ -51,7 +51,6 @@ jobs:
   run-tests:
     name: Run tests
     runs-on: ubuntu-22.04
-    needs: build-test-artifacts
     env:
       RUSTFLAGS: -D warnings
     container:
