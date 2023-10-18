@@ -20,34 +20,6 @@ jobs:
       - name: Reject trailing whitespace
         run: ./utils/trailing-whitespace.sh reject
 
-  build-test-artifacts:
-    name: Build test artifacts
-    runs-on: ubuntu-22.04
-    env:
-      RUSTFLAGS: -D warnings
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-
-      - name: Install nextest
-        uses: taiki-e/install-action@nextest
-
-      - name: Cargo cache
-        uses: Swatinem/rust-cache@v2
-
-      - name: Build and archive tests
-        run: cargo nextest archive --verbose --workspace --all-features --archive-file nextest-archive.tar.zst
-
-      - name: Upload archive
-        uses: actions/upload-artifact@v3
-        with:
-          name: nextest-archive
-          path: nextest-archive.tar.zst
-
   run-tests:
     name: Run tests
     runs-on: ubuntu-22.04
