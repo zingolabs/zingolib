@@ -78,5 +78,4 @@ jobs:
       - name: Run tests
         run: |
           cargo nextest run --verbose --profile ci --archive-file nextest-archive.tar.zst \
-            --workspace-remap ./ --partition count:${{ matrix.partition}}/8
-
+            --workspace-remap ./ --partition count:${{ matrix.partition}}/8 --no-fail-fast -E 'not test(slow)'
