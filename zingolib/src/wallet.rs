@@ -1071,7 +1071,7 @@ impl LightWallet {
                 let outpoint: OutPoint = utxo.to_outpoint();
 
                 let coin = TxOut {
-                    value: NonNegativeAmount::from_u64(utxo.value).unwrap(),
+                    value: utxo.value,
                     script_pubkey: Script(utxo.script.clone()),
                 };
 
