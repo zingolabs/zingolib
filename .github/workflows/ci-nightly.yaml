@@ -6,6 +6,22 @@ on:
   workflow_dispatch:
 
 jobs:
+  cargo-checkmate:
+    uses: ./.github/workflows/cargo-checkmate.yaml
+
+  reject-trailing-whitespace:
+    name: Reject trailing whitespace
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Reject trailing whitespace
+        run: ./utils/trailing-whitespace.sh reject
+
+  test:
+    uses: ./.github/workflows/test.yaml
+
   create-timestamp:
     uses: zingolabs/zingo-mobile/.github/workflows/create-timestamp.yaml@dev
 

@@ -228,19 +228,24 @@ impl ZingoConfig {
             .expect("Couldn't read configured server URI!")
             .clone()
     }
-    pub fn get_wallet_path(&self) -> Box<Path> {
+    pub fn get_wallet_pathbuf(&self) -> PathBuf {
         let mut wallet_location = self.get_zingo_wallet_dir().into_path_buf();
         wallet_location.push(&self.wallet_name);
-
-        wallet_location.into_boxed_path()
+        wallet_location
     }
-
-    pub fn wallet_exists(&self) -> bool {
+    pub fn get_wallet_path(&self) -> Box<Path> {
+        self.get_wallet_pathbuf().into_boxed_path()
+    }
+    pub fn wallet_path_exists(&self) -> bool {
         self.get_wallet_path().exists()
+    }
+    #[deprecated(note = "this method was renamed 'wallet_path_exists' for clarity")]
+    pub fn wallet_exists(&self) -> bool {
+        self.wallet_path_exists()
     }
 
     pub fn backup_existing_wallet(&self) -> Result<String, String> {
-        if !self.wallet_exists() {
+        if !self.wallet_path_exists() {
             return Err(format!(
                 "Couldn't find existing wallet to backup. Looked in {:?}",
                 self.get_wallet_path().to_str()
