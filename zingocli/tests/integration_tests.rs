@@ -21,7 +21,7 @@ use zingo_testutils::{
     self, build_fvk_client, check_transaction_equality,
     data::{
         self, block_rewards,
-        seeds::{CHIMNEY_BETTER_SEED, HOSPITAL_MUSEUM_SEED},
+        seeds::{ABANDON_ART_SEED, CHIMNEY_BETTER_SEED, HOSPITAL_MUSEUM_SEED},
         REG_Z_ADDR_FROM_ABANDONART,
     },
     increase_height_and_wait_for_client,
@@ -3574,7 +3574,12 @@ async fn fluid_explicit_2() {
         &regtest_network,
     )
     .await;
-    let faucet = sb.client_builder.build_faucet(false, regtest_network).await;
+    // let faucet = sb.client_builder.build_faucet(false, regtest_network).await;
+    // A "faucet" is a lightclient that receives mining rewards
+    let faucet = sb
+        .client_builder
+        .build_client(ABANDON_ART_SEED.to_string(), 0, false, regtest_network)
+        .await;
     faucet.do_sync(false).await.unwrap();
 
     // let recipient = sb
@@ -3586,12 +3591,12 @@ async fn fluid_explicit_2() {
     //         regtest_network,
     //     )
     //     .await;
-    let zingo_config = sb
+    let recipient_zingo_config = sb
         .client_builder
         .make_unique_data_dir_and_load_config(regtest_network);
     let recipient = LightClient::create_from_wallet_base_async(
         WalletBase::MnemonicPhrase(HOSPITAL_MUSEUM_SEED.to_string()),
-        &zingo_config,
+        &recipient_zingo_config,
         BASE_HEIGHT as u64,
         false,
     )
@@ -3900,7 +3905,7 @@ async fn fluid_explicit_2() {
     let _ = recipient.do_save().await.unwrap();
     drop(recipient);
 
-    let recipient2 = LightClient::read_wallet_from_disk_async(&zingo_config)
+    let recipient2 = LightClient::read_wallet_from_disk_async(&recipient_zingo_config)
         .await
         .unwrap();
     let second_wave_transactions2 = recipient2.do_list_transactions().await;
