@@ -630,7 +630,7 @@ impl LightClient {
     ) -> Result<
         Vec<(
             zcash_client_backend::address::RecipientAddress,
-            zcash_primitives::transaction::components::Amount,
+            zcash_primitives::transaction::components::amount::NonNegativeAmount,
             Option<MemoBytes>,
         )>,
         String,
@@ -653,7 +653,10 @@ impl LightClient {
                 };
 
                 let value =
-                    zcash_primitives::transaction::components::Amount::from_u64(to.1).unwrap();
+                    zcash_primitives::transaction::components::amount::NonNegativeAmount::from_u64(
+                        to.1,
+                    )
+                    .unwrap();
 
                 Ok((ra, value, to.2.clone()))
             })

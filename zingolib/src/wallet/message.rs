@@ -54,7 +54,7 @@ impl Message {
         String,
     > {
         // 0-value note
-        let value = 0;
+        let value = zcash_primitives::sapling::value::NoteValue::from_raw(0);
 
         // Construct the value commitment, used if an OVK was supplied to create out_ciphertext
         let rseed = Rseed::AfterZip212(rng.gen::<[u8; 32]>());

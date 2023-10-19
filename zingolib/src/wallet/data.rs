@@ -22,6 +22,7 @@ use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::merkle_tree::{read_commitment_tree, write_commitment_tree, HashSer};
 use zcash_primitives::sapling::note_encryption::SaplingDomain;
 use zcash_primitives::sapling::{self, Node};
+use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 use zcash_primitives::{
     memo::Memo,
     transaction::{components::OutPoint, TxId},
@@ -549,7 +550,7 @@ pub struct ReceivedTransparentOutput {
     pub txid: TxId,
     pub output_index: u64,
     pub script: Vec<u8>,
-    pub value: u64,
+    pub value: NonNegativeAmount,
     pub height: i32,
 
     pub spent_at_height: Option<i32>,
@@ -583,7 +584,13 @@ impl ReceivedTransparentOutput {
         let transaction_id = TxId::from_bytes(transaction_id_bytes);
 
         let output_index = reader.read_u64::<LittleEndian>()?;
-        let value = reader.read_u64::<LittleEndian>()?;
+        let value =
+            NonNegativeAmount::from_u64(reader.read_u64::<LittleEndian>()?).map_err(|()| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "Read value greater than MAX_MONEY".to_string(),
+                )
+            })?;
         let height = reader.read_i32::<LittleEndian>()?;
 
         let script = Vector::read(&mut reader, |r| {
@@ -638,7 +645,7 @@ impl ReceivedTransparentOutput {
         writer.write_all(self.txid.as_ref())?;
 
         writer.write_u64::<LittleEndian>(self.output_index)?;
-        writer.write_u64::<LittleEndian>(self.value)?;
+        writer.write_u64::<LittleEndian>(self.value.into())?;
         writer.write_i32::<LittleEndian>(self.height)?;
 
         Vector::write(&mut writer, &self.script, |w, b| w.write_all(&[*b]))?;
@@ -1022,7 +1029,7 @@ impl TransactionMetadata {
         D::sum_pool_change(self)
     }
 
-    pub fn pool_value_received<D: DomainWalletExt>(&self) -> u64
+    pub fn pool_value_received<D: DomainWalletExt>(&self) -> Option<NonNegativeAmount>
     where
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: traits::Recipient,
@@ -1030,7 +1037,7 @@ impl TransactionMetadata {
         D::to_notes_vec(self)
             .iter()
             .map(|note_and_metadata| note_and_metadata.value())
-            .sum()
+            .sum()?
     }
 
     #[allow(clippy::type_complexity)]
@@ -1155,14 +1162,15 @@ impl TransactionMetadata {
         self.pool_change_returned::<SaplingDomain<ChainType>>()
             + self.pool_change_returned::<OrchardDomain>()
     }
-    pub fn total_value_received(&self) -> u64 {
+    // Returns None if total value > MAX_MONEY
+    pub fn total_value_received(&self) -> Option<NonNegativeAmount> {
         self.pool_value_received::<OrchardDomain>()
             + self.pool_value_received::<SaplingDomain<ChainType>>()
             + self
                 .received_utxos
                 .iter()
                 .map(|utxo| utxo.value)
-                .sum::<u64>()
+                .sum::<Option<NonNegativeAmount>>()
     }
     pub fn total_value_spent(&self) -> u64 {
         self.value_spent_by_pool().iter().sum()

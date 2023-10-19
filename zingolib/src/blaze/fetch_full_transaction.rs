@@ -31,7 +31,7 @@ use zcash_primitives::{
     consensus::BlockHeight,
     memo::{Memo, MemoBytes},
     sapling::note_encryption::SaplingDomain,
-    transaction::{Transaction, TxId},
+    transaction::{components::amount::NonNegativeAmount, Transaction, TxId},
 };
 use zingo_memo::{parse_zingo_memo, ParsedMemo};
 use zingoconfig::{ChainType, ZingoConfig};
@@ -273,7 +273,7 @@ impl TransactionContext {
         // Scan transparent spends
 
         // Scan all the inputs to see if we spent any transparent funds in this tx
-        let mut total_transparent_value_spent = 0;
+        let mut total_transparent_value_spent = NonNegativeAmount::from_u64(0).unwrap();
         let mut spent_utxos = vec![];
 
         {
