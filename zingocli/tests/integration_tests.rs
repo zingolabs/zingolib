@@ -3576,11 +3576,24 @@ async fn fluid_explicit_2() {
     .await;
     // let faucet = sb.client_builder.build_faucet(false, regtest_network).await;
     // A "faucet" is a lightclient that receives mining rewards
-    let faucet = sb
+    // let faucet = sb
+    //     .client_builder
+    //     .build_client(ABANDON_ART_SEED.to_string(), 0, false, regtest_network)
+    //     .await;
+    let faucet_zingo_config = sb
         .client_builder
-        .build_client(ABANDON_ART_SEED.to_string(), 0, false, regtest_network)
-        .await;
+        .make_unique_data_dir_and_load_config(regtest_network);
+    let faucet = LightClient::create_from_wallet_base_async(
+        WalletBase::MnemonicPhrase(ABANDON_ART_SEED.to_string()),
+        &faucet_zingo_config,
+        BASE_HEIGHT as u64,
+        false,
+    )
+    .await
+    .unwrap();
+    // end sb.client_builder.build_client (faucet)
     faucet.do_sync(false).await.unwrap();
+    // end sb.client_builder.build_faucet
 
     // let recipient = sb
     //     .client_builder
@@ -3602,14 +3615,15 @@ async fn fluid_explicit_2() {
     )
     .await
     .unwrap();
-    //
-    // (
+    // end sb.client_builder.build_client (recipient)
     let regtest_manager = sb.regtest_manager;
+    // (
     //     sb.regtest_manager,
     //     sb.child_process_handler.unwrap(),
     //     faucet,
     //     recipient,
     // )
+    // end scenarios:two_wallet_one_synced_orchard_transaction
     println!("1 About to increase height and sync faucet.");
     increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
         .await
@@ -3902,15 +3916,53 @@ async fn fluid_explicit_2() {
         );
     }
 
-    let _ = recipient.do_save().await.unwrap();
-    drop(recipient);
+    // let _ = recipient.do_save().await.unwrap();
+    // drop(recipient);
 
-    let recipient2 = LightClient::read_wallet_from_disk_async(&recipient_zingo_config)
+    // let recipient2 = LightClient::read_wallet_from_disk_async(&recipient_zingo_config)
+    //     .await
+    //     .unwrap();
+    // let second_wave_transactions2 = recipient2.do_list_transactions().await;
+    // assert_eq!(
+    //     dbg!(second_wave_transactions2).len(),
+    //     second_wave_expected_transactions.len()
+    // );
+
+    let dlt1 = faucet.do_list_transactions().await;
+    let dls1 = faucet.do_list_txsummaries().await;
+    let _ = faucet.do_save().await.unwrap();
+    drop(faucet);
+
+    let faucet2 = LightClient::read_wallet_from_disk_async(&faucet_zingo_config)
         .await
         .unwrap();
-    let second_wave_transactions2 = recipient2.do_list_transactions().await;
-    assert_eq!(
-        dbg!(second_wave_transactions2).len(),
-        second_wave_expected_transactions.len()
-    );
+    let dlt2 = faucet2.do_list_transactions().await;
+    let dls2 = faucet2.do_list_txsummaries().await;
+    log_tx_summaries(&dls1);
+    println!("before save ^v after reload");
+    log_tx_summaries(&dls2);
+    assert_eq!(dls1, dls2);
+    assert_eq!(dlt1, dlt2);
+}
+
+pub fn log_tx_summaries(summaries: &Vec<zingolib::wallet::data::summaries::ValueTransfer>) -> () {
+    for i in summaries {
+        match i.kind {
+            zingolib::wallet::data::summaries::ValueTransferKind::Sent {
+                amount,
+                to_address: _,
+            } => {
+                println!("sent {}", amount);
+            }
+            zingolib::wallet::data::summaries::ValueTransferKind::Received { pool: _, amount } => {
+                println!("received {}", amount);
+            }
+            zingolib::wallet::data::summaries::ValueTransferKind::SendToSelf {} => {
+                println!("sss");
+            }
+            zingolib::wallet::data::summaries::ValueTransferKind::Fee { amount } => {
+                println!("fee {}", amount);
+            }
+        }
+    }
 }
