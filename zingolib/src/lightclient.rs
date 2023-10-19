@@ -46,7 +46,6 @@ use zcash_client_backend::encoding::{decode_payment_address, encode_payment_addr
 use zcash_primitives::{
     consensus::{BlockHeight, BranchId, Parameters},
     memo::{Memo, MemoBytes},
-    sapling::note_encryption::SaplingDomain,
     transaction::{fees::zip317::MARGINAL_FEE, Transaction, TxId},
 };
 use zcash_proofs::prover::LocalTxProver;
