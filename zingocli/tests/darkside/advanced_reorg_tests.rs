@@ -169,6 +169,160 @@ async fn prepare_after_tx_height_change_reorg(uri: http::Uri) -> Result<(), Stri
 }
 
 #[tokio::test]
+async fn reorg_changes_incoming_tx_index() {
+    let darkside_handler = DarksideHandler::new();
+
+    let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
+        "http://127.0.0.1:{}",
+        darkside_handler.grpc_port
+    )));
+
+    prepare_before_tx_index_change_reorg(server_id.clone())
+        .await
+        .unwrap();
+
+    let light_client = ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone())
+        .build_client(
+            ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+            202,
+            true,
+            RegtestNetwork::all_upgrades_active(),
+        )
+        .await;
+
+    light_client.do_sync(true).await.unwrap();
+    assert_eq!(
+        light_client.do_balance().await,
+        PoolBalances {
+            sapling_balance: Some(0),
+            verified_sapling_balance: Some(0),
+            spendable_sapling_balance: Some(0),
+            unverified_sapling_balance: Some(0),
+            orchard_balance: Some(100000000),
+            verified_orchard_balance: Some(100000000),
+            spendable_orchard_balance: Some(100000000),
+            unverified_orchard_balance: Some(0),
+            transparent_balance: Some(0)
+        }
+    );
+
+    let before_reorg_transactions = light_client.do_list_txsummaries().await;
+
+    assert_eq!(before_reorg_transactions.len(), 1);
+    assert_eq!(
+        before_reorg_transactions[0].block_height,
+        BlockHeight::from_u32(203)
+    );
+
+    prepare_after_tx_index_change_reorg(server_id.clone())
+        .await
+        .unwrap();
+
+    let reorg_sync_result = light_client.do_sync(true).await;
+
+    match reorg_sync_result {
+        Ok(value) => println!("{}", value),
+        Err(err_str) => println!("{}", err_str),
+    };
+
+    // Assert that balance holds
+    assert_eq!(
+        light_client.do_balance().await,
+        PoolBalances {
+            sapling_balance: Some(0),
+            verified_sapling_balance: Some(0),
+            spendable_sapling_balance: Some(0),
+            unverified_sapling_balance: Some(0),
+            orchard_balance: Some(100000000),
+            verified_orchard_balance: Some(100000000),
+            spendable_orchard_balance: Some(100000000),
+            unverified_orchard_balance: Some(0),
+            transparent_balance: Some(0)
+        }
+    );
+
+    let after_reorg_transactions = light_client.do_list_txsummaries().await;
+
+    assert_eq!(after_reorg_transactions.len(), 1);
+    assert_eq!(
+        after_reorg_transactions[0].block_height,
+        BlockHeight::from_u32(203)
+    );
+}
+
+async fn prepare_before_tx_index_change_reorg(uri: http::Uri) -> Result<(), String> {
+    dbg!(&uri);
+    let connector = DarksideConnector(uri.clone());
+
+    let mut client = connector.get_client().await.unwrap();
+    // Setup prodedures.  Up to this point there's no communication between the client and the dswd
+    client.clear_address_utxo(Empty {}).await.unwrap();
+
+    // reset with parameters
+    connector
+        .reset(202, String::from(BRANCH_ID), String::from("regtest"))
+        .await
+        .unwrap();
+
+    let dataset_path = format!(
+        "{}/{}",
+        get_cargo_manifest_dir().to_string_lossy(),
+        advanced_reorg_tests_constants::REORG_CHANGES_INCOMING_TX_INDEX_BEFORE
+    );
+
+    println!("dataset path: {}", dataset_path);
+
+    connector
+        .stage_blocks_stream(read_block_dataset(dataset_path))
+        .await?;
+
+    for i in 201..207 {
+        let tree_state_path = format!(
+            "{}/{}/{}.json",
+            get_cargo_manifest_dir().to_string_lossy(),
+            advanced_reorg_tests_constants::TREE_STATE_FOLDER_PATH,
+            i
+        );
+        let tree_state = TreeState::from_file(tree_state_path).unwrap();
+        connector.add_tree_state(tree_state).await.unwrap();
+    }
+
+    connector.apply_staged(204).await?;
+
+    sleep(std::time::Duration::new(1, 0)).await;
+
+    Ok(())
+}
+
+async fn prepare_after_tx_index_change_reorg(uri: http::Uri) -> Result<(), String> {
+    dbg!(&uri);
+    let connector = DarksideConnector(uri.clone());
+
+    let mut client = connector.get_client().await.unwrap();
+    // Setup prodedures.  Up to this point there's no communication between the client and the dswd
+    client.clear_address_utxo(Empty {}).await.unwrap();
+
+    let dataset_path = format!(
+        "{}/{}",
+        get_cargo_manifest_dir().to_string_lossy(),
+        advanced_reorg_tests_constants::REORG_CHANGES_INCOMING_TX_INDEX_AFTER
+    );
+    connector
+        .stage_blocks_stream(
+            read_lines(dataset_path)
+                .unwrap()
+                .map(|line| line.unwrap())
+                .collect(),
+        )
+        .await?;
+
+    connector.apply_staged(206).await?;
+
+    sleep(std::time::Duration::new(1, 0)).await;
+
+    Ok(())
+}
+#[tokio::test]
 async fn test_read_block_dataset() {
     let dataset_path = format!(
         "{}/{}",
