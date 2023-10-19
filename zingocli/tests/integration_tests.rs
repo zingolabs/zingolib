@@ -672,7 +672,7 @@ mod fast {
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 100)
             .await
             .unwrap();
-        faucet.do_shield(&[Pool::Transparent], None).await.unwrap();
+        faucet.do_shield(&[Pool::Transparent]).await.unwrap();
     }
 }
 mod slow {
@@ -1133,7 +1133,7 @@ mod slow {
         );
 
         assert_eq!(
-            recipient.do_shield(&[Pool::Sapling], None).await,
+            recipient.do_shield(&[Pool::Sapling]).await,
             Err(
                 "Not enough transparent/sapling balance to shield. Have 100 zats, \
         need more than 10000 zats to cover tx fee"
@@ -1156,7 +1156,7 @@ mod slow {
             .await
             .unwrap();
         recipient
-            .do_shield(&[Pool::Sapling, Pool::Transparent], None)
+            .do_shield(&[Pool::Sapling, Pool::Transparent])
             .await
             .unwrap();
 
@@ -1176,7 +1176,7 @@ mod slow {
             .await
             .unwrap();
         recipient
-            .do_shield(&[Pool::Sapling, Pool::Transparent], None)
+            .do_shield(&[Pool::Sapling, Pool::Transparent])
             .await
             .unwrap();
 
@@ -1194,7 +1194,7 @@ mod slow {
             .await
             .unwrap();
         check_client_balances!(faucet, o: 0 s: 3_500_000_000 t: 0);
-        faucet.do_shield(&[Pool::Sapling], None).await.unwrap();
+        faucet.do_shield(&[Pool::Sapling]).await.unwrap();
         increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
             .await
             .unwrap();
@@ -1217,7 +1217,7 @@ mod slow {
             .await
             .unwrap();
         recipient
-            .do_shield(&[Pool::Sapling, Pool::Transparent], None)
+            .do_shield(&[Pool::Sapling, Pool::Transparent])
             .await
             .unwrap();
         zingo_testutils::increase_height_and_wait_for_client(regtest_manager, recipient, 1)
@@ -3058,7 +3058,7 @@ mod slow {
         bump_and_check!(o: 0 s: 0 t: 50_000);
 
         pool_migration_client
-            .do_shield(&[Pool::Transparent], None)
+            .do_shield(&[Pool::Transparent])
             .await
             .unwrap();
         bump_and_check!(o: 40_000 s: 0 t: 0);
@@ -3071,7 +3071,7 @@ mod slow {
         bump_and_check!(o: 40_000 s: 50_000 t: 0);
 
         pool_migration_client
-            .do_shield(&[Pool::Sapling], None)
+            .do_shield(&[Pool::Sapling])
             .await
             .unwrap();
         bump_and_check!(o: 80_000 s: 0 t: 0);
@@ -3094,7 +3094,7 @@ mod slow {
         bump_and_check!(o: 0 s: 30_000 t: 30_000);
 
         pool_migration_client
-            .do_shield(&[Pool::Transparent], None)
+            .do_shield(&[Pool::Transparent])
             .await
             .unwrap();
         pool_migration_client
@@ -3111,7 +3111,7 @@ mod slow {
         bump_and_check!(o: 10_000 s: 0 t: 20_000);
 
         pool_migration_client
-            .do_shield(&[Pool::Transparent], None)
+            .do_shield(&[Pool::Transparent])
             .await
             .unwrap();
         bump_and_check!(o: 20_000 s: 0 t: 0);
@@ -3140,7 +3140,7 @@ mod slow {
         bump_and_check!(o: 30_000 s: 20_000 t: 20_000);
 
         pool_migration_client
-            .do_shield(&[Pool::Transparent], None)
+            .do_shield(&[Pool::Transparent])
             .await
             .unwrap();
         pool_migration_client
