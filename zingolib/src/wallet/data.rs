@@ -781,6 +781,7 @@ pub mod summaries {
         pub memos: Vec<zcash_primitives::memo::TextMemo>,
         pub price: Option<f64>,
         pub txid: TxId,
+        pub unconfirmed: bool,
     }
     impl ValueTransfer {
         pub fn balance_delta(&self) -> i64 {

@@ -480,10 +480,11 @@ impl LightClient {
         {
             LightClient::tx_summary_matcher(&mut summaries, *txid, transaction_md);
             let tx_fee = transaction_md.get_transaction_fee();
-            let (block_height, datetime, price) = (
+            let (block_height, datetime, price, unconfirmed) = (
                 transaction_md.block_height,
                 transaction_md.datetime,
                 transaction_md.price,
+                transaction_md.unconfirmed,
             );
             if transaction_md.is_outgoing_transaction() {
                 summaries.push(ValueTransfer {
@@ -493,6 +494,7 @@ impl LightClient {
                     memos: vec![],
                     price,
                     txid: *txid,
+                    unconfirmed,
                 });
             }
         }
@@ -1561,6 +1563,7 @@ impl LightClient {
                             memos,
                             price,
                             txid,
+                            unconfirmed: transaction_md.unconfirmed,
                         });
                     }
                 }
@@ -1578,6 +1581,7 @@ impl LightClient {
                         memos: vec![],
                         price,
                         txid,
+                        unconfirmed: transaction_md.unconfirmed,
                     });
                 }
                 for received_sapling in transaction_md.sapling_notes.iter() {
@@ -1596,6 +1600,7 @@ impl LightClient {
                         memos,
                         price,
                         txid,
+                        unconfirmed: transaction_md.unconfirmed,
                     });
                 }
                 for received_orchard in transaction_md.orchard_notes.iter() {
@@ -1614,6 +1619,7 @@ impl LightClient {
                         memos,
                         price,
                         txid,
+                        unconfirmed: transaction_md.unconfirmed,
                     });
                 }
             }
@@ -1644,6 +1650,7 @@ impl LightClient {
                         .collect(),
                     price,
                     txid,
+                    unconfirmed: transaction_md.unconfirmed,
                 });
             }
         };
