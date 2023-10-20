@@ -6,7 +6,7 @@ use crate::{
         syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions, update_notes::UpdateNotes,
     },
     compact_formats::RawTransaction,
-    error::ZingoLibError,
+    error::{ZatMathError, ZingoLibError, ZingoLibResult},
     grpc_connector::GrpcConnector,
     wallet::{
         data::{
@@ -55,7 +55,9 @@ use zcash_primitives::{
     consensus::{BlockHeight, BranchId, Parameters},
     memo::{Memo, MemoBytes},
     sapling::note_encryption::SaplingDomain,
-    transaction::{fees::zip317::MINIMUM_FEE, Transaction, TxId},
+    transaction::{
+        components::amount::NonNegativeAmount, fees::zip317::MINIMUM_FEE, Transaction, TxId,
+    },
 };
 use zcash_proofs::prover::LocalTxProver;
 use zingoconfig::{ChainType, ZingoConfig, MAX_REORG};
@@ -397,8 +399,8 @@ impl LightClient {
     /// This fn is _only_ called insde a block conditioned on "is_outgoing_transaction"
     fn append_change_notes(
         wallet_transaction: &TransactionMetadata,
-        received_utxo_value: u64,
-    ) -> JsonValue {
+        received_utxo_value: NonNegativeAmount,
+    ) -> ZingoLibResult<JsonValue> {
         // TODO:  Understand why sapling and orchard have an "is_change" filter, but transparent does not
         // It seems like this already depends on an invariant where all outgoing utxos are change.
         // This should never be true _AFTER SOME VERSION_ since we only send change to orchard.
@@ -408,14 +410,16 @@ impl LightClient {
             .sapling_notes
             .iter()
             .filter(|nd| nd.is_change)
-            .map(|nd| nd.note.value().inner())
-            .sum::<u64>()
+            .map(|nd| nd.note.value())
+            .sum::<Option<NonNegativeAmount>>()
+            .ok_or(ZatMathError::Overflow)?
             + wallet_transaction
                 .orchard_notes
                 .iter()
                 .filter(|nd| nd.is_change)
                 .map(|nd| nd.note.value().inner())
-                .sum::<u64>()
+                .sum::<Option<NonNegativeAmount>>()
+                .ok_or(ZatMathError::Overflow)?
             + received_utxo_value;
 
         // Collect outgoing metadata
@@ -712,7 +716,7 @@ impl LightClient {
         res
     }
 
-    pub async fn do_list_transactions(&self) -> JsonValue {
+    pub async fn do_list_transactions(&self) -> ZingoLibResult<JsonValue> {
         // Create a list of TransactionItems from wallet transactions
         let mut consumer_ui_notes = self
             .wallet
@@ -721,10 +725,10 @@ impl LightClient {
             .await
             .current
             .iter()
-            .flat_map(|(txid, wallet_transaction)| {
+            .flat_map(|(txid, wallet_transaction)| -> Result<_, ZingoLibError>{
                 let mut consumer_notes_by_tx: Vec<JsonValue> = vec![];
 
-                let total_transparent_received = wallet_transaction.received_utxos.iter().map(|u| u.value).sum::<u64>();
+                let total_transparent_received = wallet_transaction.received_utxos.iter().map(|u| u.value).sum::<Option<NonNegativeAmount>>().ok_or(ZatMathError::Overflow)?;
                 if wallet_transaction.is_outgoing_transaction() {
                     // If money was spent, create a consumer_ui_note. For this, we'll subtract
                     // all the change notes + Utxos

@@ -1,12 +1,15 @@
 use super::syncdata::BlazeSyncData;
-use crate::wallet::{
-    data::OutgoingTxData,
-    keys::{address_from_pubkeyhash, unified::WalletCapability},
-    traits::{
-        self as zingo_traits, Bundle as _, DomainWalletExt, ReceivedNoteAndMetadata as _,
-        Recipient as _, ShieldedOutputExt as _, Spend as _, ToBytes as _,
+use crate::{
+    error::{ZatMathError, ZingoLibError},
+    wallet::{
+        data::OutgoingTxData,
+        keys::{address_from_pubkeyhash, unified::WalletCapability},
+        traits::{
+            self as zingo_traits, Bundle as _, DomainWalletExt, ReceivedNoteAndMetadata as _,
+            Recipient as _, ShieldedOutputExt as _, Spend as _, ToBytes as _,
+        },
+        transactions::TransactionMetadataSet,
     },
-    transactions::TransactionMetadataSet,
 };
 use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
 use orchard::note_encryption::OrchardDomain;
@@ -245,7 +248,7 @@ impl TransactionContext {
         block_time: u32,
         is_outgoing_transaction: &mut bool,
         taddrs_set: &HashSet<String>,
-    ) {
+    ) -> Result<(), ZingoLibError> {
         // Scan all transparent outputs to see if we received any money
         if let Some(t_bundle) = transaction.transparent_bundle() {
             for (n, vout) in t_bundle.vout.iter().enumerate() {
@@ -291,7 +294,9 @@ impl TransactionContext {
                             .iter()
                             .find(|u| u.txid == prev_transaction_id && u.output_index == prev_n)
                         {
-                            total_transparent_value_spent += spent_utxo.value;
+                            total_transparent_value_spent = (spent_utxo.value
+                                + total_transparent_value_spent)
+                                .ok_or(ZatMathError::Overflow)?;
                             spent_utxos.push((
                                 prev_transaction_id,
                                 prev_n as u32,
@@ -316,7 +321,7 @@ impl TransactionContext {
         }
 
         // If this transaction spent value, add the spent amount to the TxID
-        if total_transparent_value_spent > 0 {
+        if total_transparent_value_spent > NonNegativeAmount::from_u64(0).unwrap() {
             *is_outgoing_transaction = true;
 
             self.transaction_metadata_set.write().await.add_taddr_spent(
@@ -327,6 +332,7 @@ impl TransactionContext {
                 total_transparent_value_spent,
             );
         }
+        Ok(())
     }
     #[allow(clippy::too_many_arguments)]
     async fn scan_sapling_bundle(

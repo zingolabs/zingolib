@@ -1,4 +1,5 @@
 use crate::compact_formats::CompactBlock;
+use crate::error::ZatMathError;
 use crate::wallet::traits::ReceivedNoteAndMetadata;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::frontier::{CommitmentTree, NonEmptyFrontier};
@@ -926,13 +927,13 @@ pub struct TransactionMetadata {
     pub received_utxos: Vec<ReceivedTransparentOutput>,
 
     // Total value of all the sapling nullifiers that were spent in this Tx
-    pub total_sapling_value_spent: u64,
+    pub total_sapling_value_spent: NonNegativeAmount,
 
     // Total value of all the orchard nullifiers that were spent in this Tx
-    pub total_orchard_value_spent: u64,
+    pub total_orchard_value_spent: NonNegativeAmount,
 
     // Total amount of transparent funds that belong to us that were spent in this Tx.
-    pub total_transparent_value_spent: u64,
+    pub total_transparent_value_spent: NonNegativeAmount,
 
     // All outgoing sends
     pub outgoing_tx_data: Vec<OutgoingTxData>,
@@ -945,17 +946,24 @@ pub struct TransactionMetadata {
 }
 
 impl TransactionMetadata {
-    pub(super) fn add_spent_nullifier(&mut self, nullifier: PoolNullifier, value: u64) {
+    pub(super) fn add_spent_nullifier(
+        &mut self,
+        nullifier: PoolNullifier,
+        value: NonNegativeAmount,
+    ) -> Result<(), ZatMathError> {
         match nullifier {
             PoolNullifier::Sapling(sapling_nullifier) => {
                 self.spent_sapling_nullifiers.push(sapling_nullifier);
-                self.total_sapling_value_spent += value;
+                self.total_sapling_value_spent =
+                    (value + self.total_sapling_value_spent).ok_or(ZatMathError::Overflow)?;
             }
             PoolNullifier::Orchard(orchard_nullifier) => {
                 self.spent_orchard_nullifiers.push(orchard_nullifier);
-                self.total_orchard_value_spent += value;
+                self.total_orchard_value_spent =
+                    (value + self.total_orchard_value_spent).ok_or(ZatMathError::Overflow)?;
             }
         }
+        Ok(())
     }
 
     pub fn get_price(datetime: u64, price: &WalletZecPriceInfo) -> Option<f64> {

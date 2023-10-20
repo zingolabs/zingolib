@@ -14,7 +14,10 @@ use zcash_primitives::{
     consensus::BlockHeight,
     memo::Memo,
     sapling::note_encryption::SaplingDomain,
-    transaction::{components::TxOut, TxId},
+    transaction::{
+        components::{amount::NonNegativeAmount, TxOut},
+        TxId,
+    },
 };
 
 use zingoconfig::{ChainType, MAX_REORG};
@@ -592,7 +595,7 @@ impl TransactionMetadataSet {
         height: BlockHeight,
         unconfirmed: bool,
         timestamp: u64,
-        total_transparent_value_spent: u64,
+        total_transparent_value_spent: NonNegativeAmount,
     ) {
         let transaction_metadata =
             self.get_or_create_transaction_metadata(&txid, height, unconfirmed, timestamp);
@@ -704,7 +707,7 @@ impl TransactionMetadataSet {
                     txid,
                     output_index: output_num as u64,
                     script: vout.script_pubkey.0.clone(),
-                    value: u64::try_from(vout.value).expect("Valid value for u64."),
+                    value: vout.value,
                     height: height as i32,
                     spent_at_height: None,
                     spent: None,
