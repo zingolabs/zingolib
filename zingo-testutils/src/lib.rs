@@ -227,29 +227,33 @@ pub mod scenarios {
     //! generated the address registered as the `minetoaddress` in the zcash.conf that's
     //! used by the 'regetst mode' zcashs backing these tests.).
     //! HELPERS:
-    //! If you just need a faucet, use the "faucet_only" helper.
+    //! If you just need a faucet, use the "faucet" helper.
     //! If you need a faucet, and a single recipient, use 'faucet_recipient`
-    //! For less common client configurations use the client_manager directly with
+    //! For less common client configurations use the client builder directly with
     //! custom_clients
+    //! All scenarios have a default (i.e. faucet_default) which take minimal parameters and
+    //! build the scenario with the most common settings. This simplifies test writing in
+    //! most cases by removing the need for configuration.
     use self::setup::ClientBuilder;
     use super::regtest::{ChildProcessHandler, RegtestManager};
     use crate::{
-        data::{
-            self, seeds::HOSPITAL_MUSEUM_SEED, REG_T_ADDR_FROM_ABANDONART,
-            REG_Z_ADDR_FROM_ABANDONART,
-        },
+        data::{self, seeds::HOSPITAL_MUSEUM_SEED},
         increase_height_and_wait_for_client, BASE_HEIGHT,
     };
     use zingolib::{get_base_address, lightclient::LightClient, wallet::Pool};
 
     pub mod setup {
-        use crate::data::{seeds, REG_Z_ADDR_FROM_ABANDONART};
+        use crate::data::{
+            seeds, REG_O_ADDR_FROM_ABANDONART, REG_T_ADDR_FROM_ABANDONART,
+            REG_Z_ADDR_FROM_ABANDONART,
+        };
         use crate::BASE_HEIGHT;
 
         use super::super::regtest::get_regtest_dir;
         use super::{data, ChildProcessHandler, RegtestManager};
         use std::path::PathBuf;
         use tokio::time::sleep;
+        use zingolib::wallet::Pool;
         use zingolib::{lightclient::LightClient, wallet::WalletBase};
         pub struct ScenarioBuilder {
             pub test_env: TestEnvironmentGenerator,
@@ -286,15 +290,17 @@ pub mod scenarios {
             }
             pub fn configure_scenario(
                 &mut self,
-                funded: Option<String>,
+                mine_to_pool: Option<Pool>,
                 regtest_network: &zingoconfig::RegtestNetwork,
             ) {
-                if let Some(funding_seed) = funded {
-                    self.test_env
-                        .create_funded_zcash_conf(&funding_seed, regtest_network);
-                } else {
-                    self.test_env.create_unfunded_zcash_conf(regtest_network);
+                let mine_to_address = match mine_to_pool {
+                    Some(Pool::Orchard) => Some(REG_O_ADDR_FROM_ABANDONART),
+                    Some(Pool::Sapling) => Some(REG_Z_ADDR_FROM_ABANDONART),
+                    Some(Pool::Transparent) => Some(REG_T_ADDR_FROM_ABANDONART),
+                    None => None,
                 };
+                self.test_env
+                    .create_zcash_conf(mine_to_address, regtest_network);
                 self.test_env.create_lightwalletd_conf();
             }
             pub async fn launch_scenario(&mut self, clean: bool) {
@@ -335,17 +341,14 @@ pub mod scenarios {
                     .output()
                     .expect("copy operation into fresh dir from known dir to succeed");
                 dbg!(&sb.test_env.regtest_manager.zcashd_config);
-                sb.configure_scenario(
-                    Some(REG_Z_ADDR_FROM_ABANDONART.to_string()),
-                    regtest_network,
-                );
+                sb.configure_scenario(Some(Pool::Sapling), regtest_network);
                 sb.launch_scenario(false).await;
                 sb
             }
 
             /// Writes the specified zcashd.conf and launches with it
             pub async fn build_configure_launch(
-                funded: Option<String>,
+                mine_to_pool: Option<Pool>,
                 zingo_wallet_dir: Option<PathBuf>,
                 set_lightwalletd_port: Option<portpicker::Port>,
                 regtest_network: &zingoconfig::RegtestNetwork,
@@ -355,7 +358,7 @@ pub mod scenarios {
                 } else {
                     ScenarioBuilder::build_scenario(None, set_lightwalletd_port)
                 };
-                sb.configure_scenario(funded, regtest_network);
+                sb.configure_scenario(mine_to_pool, regtest_network);
                 sb.launch_scenario(true).await;
                 sb
             }
@@ -475,33 +478,24 @@ pub mod scenarios {
                     lightwalletd_uri: server_uri,
                 }
             }
-            pub fn create_unfunded_zcash_conf(
+            pub(crate) fn create_zcash_conf(
                 &self,
+                mine_to_address: Option<&str>,
                 regtest_network: &zingoconfig::RegtestNetwork,
             ) -> PathBuf {
-                //! Side effect only fn, writes to FS.
-                self.write_contents_and_return_path(
-                    "zcash",
-                    data::config_template_fillers::zcashd::basic(
+                let config = match mine_to_address {
+                    Some(address) => data::config_template_fillers::zcashd::funded(
+                        address,
+                        &self.zcashd_rpcservice_port,
+                        regtest_network,
+                    ),
+                    None => data::config_template_fillers::zcashd::basic(
                         &self.zcashd_rpcservice_port,
                         regtest_network,
                         "",
                     ),
-                )
-            }
-            pub fn create_funded_zcash_conf(
-                &self,
-                address_to_fund: &str,
-                regtest_network: &zingoconfig::RegtestNetwork,
-            ) -> PathBuf {
-                self.write_contents_and_return_path(
-                    "zcash",
-                    data::config_template_fillers::zcashd::funded(
-                        address_to_fund,
-                        &self.zcashd_rpcservice_port,
-                        regtest_network,
-                    ),
-                )
+                };
+                self.write_contents_and_return_path("zcash", config)
             }
             pub fn create_lightwalletd_conf(&self) -> PathBuf {
                 self.write_contents_and_return_path(
@@ -531,164 +525,8 @@ pub mod scenarios {
             }
         }
     }
-    pub async fn custom_clients(
-        regtest_network: zingoconfig::RegtestNetwork,
-    ) -> (RegtestManager, ChildProcessHandler, ClientBuilder) {
-        let sb = setup::ScenarioBuilder::build_configure_launch(
-            Some(REG_Z_ADDR_FROM_ABANDONART.to_string()),
-            None,
-            None,
-            &regtest_network,
-        )
-        .await;
-        (
-            sb.regtest_manager,
-            sb.child_process_handler.unwrap(),
-            sb.client_builder,
-        )
-    }
-    /// Many scenarios need to start with spendable funds.  This setup provides
-    /// 3 blocks worth of coinbase to a preregistered spend capability.
-    ///
-    /// This key is registered to receive block rewards by corresponding to the
-    /// address registered as the "mineraddress" field in zcash.conf
-    ///
-    /// The general scenario framework requires instances of zingo-cli, lightwalletd,
-    /// and zcashd (in regtest mode). This setup is intended to produce the most basic
-    /// of scenarios.  As scenarios with even less requirements
-    /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
-    pub async fn faucet(
-        regtest_network: zingoconfig::RegtestNetwork,
-    ) -> (RegtestManager, ChildProcessHandler, LightClient) {
-        let mut sb = setup::ScenarioBuilder::build_configure_launch(
-            Some(REG_Z_ADDR_FROM_ABANDONART.to_string()),
-            None,
-            None,
-            &regtest_network,
-        )
-        .await;
-        let faucet = sb.client_builder.build_faucet(false, regtest_network).await;
-        faucet.do_sync(false).await.unwrap();
-        (
-            sb.regtest_manager,
-            sb.child_process_handler.unwrap(),
-            faucet,
-        )
-    }
 
-    pub async fn two_wallet_one_synced_orchard_transaction(
-        value: u64,
-        regtest_network: zingoconfig::RegtestNetwork,
-    ) -> (
-        RegtestManager,
-        ChildProcessHandler,
-        LightClient,
-        LightClient,
-        String,
-    ) {
-        println!("0 About to create faucet_recipient.");
-        let (regtest_manager, child_process_handler, faucet, recipient) =
-            two_wallet_one_miner_fund(regtest_network).await;
-        println!("1 About to increase height and sync faucet.");
-        increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
-            .await
-            .unwrap();
-        println!("2 faucet synced.");
-        let txid = faucet
-            .do_send(vec![(
-                &get_base_address!(recipient, "unified"),
-                value,
-                None,
-            )])
-            .await
-            .unwrap();
-        println!("3 faucet send complete");
-        increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
-            .await
-            .unwrap();
-        println!("4 recipient increased and synced.");
-        println!("5 about to sync faucet.");
-        faucet.do_sync(false).await.unwrap();
-        (
-            regtest_manager,
-            child_process_handler,
-            faucet,
-            recipient,
-            txid,
-        )
-    }
-
-    pub async fn two_wallet_one_miner_fund(
-        regtest_network: zingoconfig::RegtestNetwork,
-    ) -> (
-        RegtestManager,
-        ChildProcessHandler,
-        LightClient,
-        LightClient,
-    ) {
-        let mut sb = setup::ScenarioBuilder::build_configure_launch(
-            Some(REG_Z_ADDR_FROM_ABANDONART.to_string()),
-            None,
-            None,
-            &regtest_network,
-        )
-        .await;
-        let faucet = sb.client_builder.build_faucet(false, regtest_network).await;
-        faucet.do_sync(false).await.unwrap();
-
-        let recipient = sb
-            .client_builder
-            .build_client(
-                HOSPITAL_MUSEUM_SEED.to_string(),
-                BASE_HEIGHT as u64,
-                false,
-                regtest_network,
-            )
-            .await;
-        (
-            sb.regtest_manager,
-            sb.child_process_handler.unwrap(),
-            faucet,
-            recipient,
-        )
-    }
-
-    pub async fn two_wallet_one_miner_fund_transparent(
-        regtest_network: zingoconfig::RegtestNetwork,
-    ) -> (
-        RegtestManager,
-        ChildProcessHandler,
-        LightClient,
-        LightClient,
-    ) {
-        let mut sb = setup::ScenarioBuilder::build_configure_launch(
-            Some(REG_T_ADDR_FROM_ABANDONART.to_string()),
-            None,
-            None,
-            &regtest_network,
-        )
-        .await;
-        let faucet = sb.client_builder.build_faucet(false, regtest_network).await;
-        faucet.do_sync(false).await.unwrap();
-
-        let recipient = sb
-            .client_builder
-            .build_client(
-                HOSPITAL_MUSEUM_SEED.to_string(),
-                BASE_HEIGHT as u64,
-                false,
-                regtest_network,
-            )
-            .await;
-        (
-            sb.regtest_manager,
-            sb.child_process_handler.unwrap(),
-            faucet,
-            recipient,
-        )
-    }
-
-    pub async fn basic_no_spendable(
+    pub async fn unfunded_client(
         regtest_network: zingoconfig::RegtestNetwork,
     ) -> (RegtestManager, ChildProcessHandler, LightClient) {
         let mut scenario_builder =
@@ -702,6 +540,229 @@ pub mod scenarios {
                 .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
                 .await,
         )
+    }
+    pub async fn unfunded_client_default() -> (RegtestManager, ChildProcessHandler, LightClient) {
+        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+        unfunded_client(regtest_network).await
+    }
+
+    /// Many scenarios need to start with spendable funds.  This setup provides
+    /// 3 blocks worth of coinbase to a preregistered spend capability.
+    ///
+    /// This key is registered to receive block rewards by corresponding to the
+    /// address registered as the "mineraddress" field in zcash.conf
+    ///
+    /// The general scenario framework requires instances of zingo-cli, lightwalletd,
+    /// and zcashd (in regtest mode). This setup is intended to produce the most basic
+    /// of scenarios.  As scenarios with even less requirements
+    /// become interesting (e.g. without experimental features, or txindices) we'll create more setups.
+    pub async fn faucet(
+        mine_to_pool: Pool,
+        regtest_network: zingoconfig::RegtestNetwork,
+    ) -> (RegtestManager, ChildProcessHandler, LightClient) {
+        let mut sb = setup::ScenarioBuilder::build_configure_launch(
+            Some(mine_to_pool),
+            None,
+            None,
+            &regtest_network,
+        )
+        .await;
+        let faucet = sb.client_builder.build_faucet(false, regtest_network).await;
+        faucet.do_sync(false).await.unwrap();
+        (
+            sb.regtest_manager,
+            sb.child_process_handler.unwrap(),
+            faucet,
+        )
+    }
+    pub async fn faucet_default() -> (RegtestManager, ChildProcessHandler, LightClient) {
+        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+        faucet(Pool::Orchard, regtest_network).await
+    }
+
+    pub async fn faucet_recipient(
+        mine_to_pool: Pool,
+        regtest_network: zingoconfig::RegtestNetwork,
+    ) -> (
+        RegtestManager,
+        ChildProcessHandler,
+        LightClient,
+        LightClient,
+    ) {
+        let mut sb = setup::ScenarioBuilder::build_configure_launch(
+            Some(mine_to_pool),
+            None,
+            None,
+            &regtest_network,
+        )
+        .await;
+        let faucet = sb.client_builder.build_faucet(false, regtest_network).await;
+        faucet.do_sync(false).await.unwrap();
+
+        let recipient = sb
+            .client_builder
+            .build_client(
+                HOSPITAL_MUSEUM_SEED.to_string(),
+                BASE_HEIGHT as u64,
+                false,
+                regtest_network,
+            )
+            .await;
+        (
+            sb.regtest_manager,
+            sb.child_process_handler.unwrap(),
+            faucet,
+            recipient,
+        )
+    }
+    pub async fn faucet_recipient_default() -> (
+        RegtestManager,
+        ChildProcessHandler,
+        LightClient,
+        LightClient,
+    ) {
+        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+        faucet_recipient(Pool::Orchard, regtest_network).await
+    }
+
+    pub async fn faucet_funded_recipient(
+        orchard_funds: Option<u64>,
+        sapling_funds: Option<u64>,
+        transparent_funds: Option<u64>,
+        mine_to_pool: Pool,
+        regtest_network: zingoconfig::RegtestNetwork,
+    ) -> (
+        RegtestManager,
+        ChildProcessHandler,
+        LightClient,
+        LightClient,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ) {
+        let (regtest_manager, child_process_handler, faucet, recipient) =
+            faucet_recipient(mine_to_pool, regtest_network).await;
+        increase_height_and_wait_for_client(&regtest_manager, &faucet, 1)
+            .await
+            .unwrap();
+        let orchard_txid = if let Some(funds) = orchard_funds {
+            Some(
+                faucet
+                    .do_send(vec![(
+                        &get_base_address!(recipient, "unified"),
+                        funds,
+                        None,
+                    )])
+                    .await
+                    .unwrap(),
+            )
+        } else {
+            None
+        };
+        let sapling_txid = if let Some(funds) = sapling_funds {
+            Some(
+                faucet
+                    .do_send(vec![(
+                        &get_base_address!(recipient, "sapling"),
+                        funds,
+                        None,
+                    )])
+                    .await
+                    .unwrap(),
+            )
+        } else {
+            None
+        };
+        let transparent_txid = if let Some(funds) = transparent_funds {
+            Some(
+                faucet
+                    .do_send(vec![(
+                        &get_base_address!(recipient, "transparent"),
+                        funds,
+                        None,
+                    )])
+                    .await
+                    .unwrap(),
+            )
+        } else {
+            None
+        };
+        increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+        faucet.do_sync(false).await.unwrap();
+        (
+            regtest_manager,
+            child_process_handler,
+            faucet,
+            recipient,
+            orchard_txid,
+            sapling_txid,
+            transparent_txid,
+        )
+    }
+    pub async fn faucet_funded_recipient_default(
+        orchard_funds: u64,
+    ) -> (
+        RegtestManager,
+        ChildProcessHandler,
+        LightClient,
+        LightClient,
+        String,
+    ) {
+        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+        let (
+            regtest_manager,
+            cph,
+            faucet,
+            recipient,
+            orchard_txid,
+            _sapling_txid,
+            _transparent_txid,
+        ) = faucet_funded_recipient(
+            Some(orchard_funds),
+            None,
+            None,
+            Pool::Orchard,
+            regtest_network,
+        )
+        .await;
+        (
+            regtest_manager,
+            cph,
+            faucet,
+            recipient,
+            orchard_txid.unwrap(),
+        )
+    }
+
+    pub async fn custom_clients(
+        mine_to_pool: Pool,
+        regtest_network: zingoconfig::RegtestNetwork,
+    ) -> (RegtestManager, ChildProcessHandler, ClientBuilder) {
+        let sb = setup::ScenarioBuilder::build_configure_launch(
+            Some(mine_to_pool),
+            None,
+            None,
+            &regtest_network,
+        )
+        .await;
+        (
+            sb.regtest_manager,
+            sb.child_process_handler.unwrap(),
+            sb.client_builder,
+        )
+    }
+    pub async fn custom_clients_default() -> (
+        RegtestManager,
+        ChildProcessHandler,
+        ClientBuilder,
+        zingoconfig::RegtestNetwork,
+    ) {
+        let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
+        let (regtest_manager, cph, client_builder) =
+            custom_clients(Pool::Orchard, regtest_network).await;
+        (regtest_manager, cph, client_builder, regtest_network)
     }
 
     pub async fn unfunded_mobileclient() -> (RegtestManager, ChildProcessHandler) {
@@ -722,7 +783,7 @@ pub mod scenarios {
     pub async fn funded_orchard_mobileclient(value: u64) -> (RegtestManager, ChildProcessHandler) {
         let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
         let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
-            Some(REG_Z_ADDR_FROM_ABANDONART.to_string()),
+            Some(Pool::Sapling),
             None,
             Some(20_000),
             &regtest_network,
@@ -760,7 +821,7 @@ pub mod scenarios {
     ) -> (RegtestManager, ChildProcessHandler) {
         let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
         let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
-            Some(REG_Z_ADDR_FROM_ABANDONART.to_string()),
+            Some(Pool::Sapling),
             None,
             Some(20_000),
             &regtest_network,
@@ -825,7 +886,7 @@ pub mod scenarios {
     ) -> (RegtestManager, ChildProcessHandler) {
         let regtest_network = zingoconfig::RegtestNetwork::all_upgrades_active();
         let mut scenario_builder = setup::ScenarioBuilder::build_configure_launch(
-            Some(REG_Z_ADDR_FROM_ABANDONART.to_string()),
+            Some(Pool::Sapling),
             None,
             Some(20_000),
             &regtest_network,
