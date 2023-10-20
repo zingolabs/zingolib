@@ -3447,104 +3447,6 @@ mod slow {
 }
 
 #[tokio::test]
-async fn fluid_explicit_1() {
-    let regtest_network = RegtestNetwork::new(1, 1, 3, 5, 7, 9);
-    // let mut scenario_builder = scenarios::setup::ScenarioBuilder::build_scenario(None, None);
-    let test_env = scenarios::setup::TestEnvironmentGenerator::new(None);
-    let regtest_manager = test_env.regtest_manager.clone();
-    let data_dir = regtest_manager.zingo_datadir.clone();
-    let mut client_builder =
-        scenarios::setup::ClientBuilder::new(test_env.get_lightwalletd_uri(), data_dir);
-    // let child_process_handler: Option<zingo_testutils::regtest::ChildProcessHandler> = None;
-    // scenario_builder.configure_scenario(None, &regtest_network);
-    // if let Some(funding_seed) = None {
-    test_env.create_funded_zcash_conf(data::REG_Z_ADDR_FROM_ABANDONART, &regtest_network);
-    // } else {
-    // test_env.create_unfunded_zcash_conf(&regtest_network);
-    // };
-    println!("3466");
-    test_env.create_lightwalletd_conf();
-    // let mut scenario_builder = scenarios::setup::ScenarioBuilder {
-    //     test_env: test_env,
-    //     regtest_manager: regtest_manager,
-    //     client_builder: client_builder,
-    //     child_process_handler: None,
-    // };
-    // scenario_builder.launch_scenario(true).await;
-    println!("3475");
-    let child_process_handler = Some(regtest_manager.launch(true).unwrap_or_else(|e| match e {
-        zingo_testutils::regtest::LaunchChildProcessError::ZcashdState {
-            errorcode,
-            stdout,
-            stderr,
-        } => {
-            panic!("{} {} {}", errorcode, stdout, stderr)
-        }
-    }));
-    println!("3485");
-    regtest_manager.generate_n_blocks(BASE_HEIGHT - 1).unwrap();
-    println!("3487");
-    // while zingo_testutils::poll_server_height(&regtest_manager) < BASE_HEIGHT * 2 {
-    //     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    // }
-    println!("3491");
-    // let lightclient = client_builder
-    //     .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
-    //     .await;
-    let zingo_config = client_builder.make_unique_data_dir_and_load_config(regtest_network);
-    let lightclient = LightClient::create_from_wallet_base_async(
-        zingolib::wallet::WalletBase::MnemonicPhrase(data::seeds::ABANDON_ART_SEED.to_string()),
-        &zingo_config,
-        0,
-        false,
-    )
-    .await
-    .unwrap();
-
-    increase_height_and_wait_for_client(&regtest_manager, &lightclient, 12)
-        .await
-        .unwrap();
-    let _ = lightclient.do_sync(false).await.unwrap();
-    let fy = dbg!(lightclient.do_balance().await);
-    let recipient = client_builder
-        .build_client(
-            HOSPITAL_MUSEUM_SEED.to_string(),
-            BASE_HEIGHT as u64,
-            false,
-            regtest_network,
-        )
-        .await;
-    // let txid1 = lightclient
-    //     .do_send(vec![(
-    //         &get_base_address!(recipient, "transparent"),
-    //         10_000,
-    //         None,
-    //     )])
-    //     .await
-    //     .unwrap();
-    let summaries = lightclient.do_list_txsummaries().await;
-    for i in summaries {
-        match i.kind {
-            zingolib::wallet::data::summaries::ValueTransferKind::Sent {
-                amount,
-                to_address: _,
-            } => {
-                println!("sent {}", amount);
-            }
-            zingolib::wallet::data::summaries::ValueTransferKind::Received { pool: _, amount } => {
-                println!("received {}", amount);
-            }
-            zingolib::wallet::data::summaries::ValueTransferKind::SendToSelf {} => {
-                println!("sss");
-            }
-            zingolib::wallet::data::summaries::ValueTransferKind::Fee { amount } => {
-                println!("fee {}", amount);
-            }
-        }
-    }
-}
-
-#[tokio::test]
 async fn fluid_explicit_2() {
     let recipient_initial_funds = 100_000_000;
     let first_send_to_sapling = 20_000;
@@ -3564,13 +3466,9 @@ async fn fluid_explicit_2() {
     println!("0 About to create faucet_recipient.");
     // let (regtest_manager, child_process_handler, faucet, recipient) =
     //     scenarios::two_wallet_one_miner_fund(regtest_network).await;
-    let mut sb = ScenarioBuilder::build_configure_launch(
-        Some(REG_Z_ADDR_FROM_ABANDONART.to_string()),
-        None,
-        None,
-        &regtest_network,
-    )
-    .await;
+    let mut sb =
+        ScenarioBuilder::build_configure_launch(Some(Pool::Sapling), None, None, &regtest_network)
+            .await;
     // let faucet = sb.client_builder.build_faucet(false, regtest_network).await;
     // A "faucet" is a lightclient that receives mining rewards
     // let faucet = sb
