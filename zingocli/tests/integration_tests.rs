@@ -22,7 +22,6 @@ use zingo_testutils::{
     data::{
         self, block_rewards,
         seeds::{ABANDON_ART_SEED, CHIMNEY_BETTER_SEED, HOSPITAL_MUSEUM_SEED},
-        REG_Z_ADDR_FROM_ABANDONART,
     },
     increase_height_and_wait_for_client,
     regtest::get_cargo_manifest_dir,
@@ -3524,7 +3523,7 @@ async fn fluid_explicit_2() {
         .await
         .unwrap();
     println!("2 faucet synced.");
-    let txid = faucet
+    let _txid = faucet
         .do_send(vec![(
             &get_base_address!(recipient, "unified"),
             recipient_initial_funds,
