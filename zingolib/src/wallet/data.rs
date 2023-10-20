@@ -438,6 +438,7 @@ impl<Node: Hashable> WitnessCache<Node> {
     //     return hex::encode(buf);
     // }
 }
+#[derive(Clone)]
 pub struct ReceivedSaplingNoteAndMetadata {
     pub diversifier: zcash_primitives::sapling::Diversifier,
     pub note: zcash_primitives::sapling::Note,
@@ -462,7 +463,7 @@ pub struct ReceivedSaplingNoteAndMetadata {
     pub have_spending_key: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ReceivedOrchardNoteAndMetadata {
     pub diversifier: orchard::keys::Diversifier,
     pub note: orchard::note::Note,
@@ -664,7 +665,7 @@ impl ReceivedTransparentOutput {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OutgoingTxData {
     pub to_address: String,
     pub value: u64,
@@ -888,7 +889,7 @@ pub mod summaries {
     pub struct TransactionIndex(HashMap<zcash_primitives::transaction::TxId, ValueTransfer>);
 }
 ///  Everything (SOMETHING) about a transaction
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TransactionMetadata {
     // Block in which this tx was included
     pub block_height: BlockHeight,

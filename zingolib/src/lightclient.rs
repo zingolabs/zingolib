@@ -660,6 +660,28 @@ impl LightClient {
             .collect()
     }
 
+    pub async fn transaction_from_send(
+        &self,
+        address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
+    ) -> Result<TransactionMetadata, String> {
+        match self.do_send(address_amount_memo_tuples).await {
+            Ok(txid) => {
+                let requested_txid =
+                    &crate::wallet::data::TransactionMetadata::new_txid(txid.as_bytes());
+                Ok(self
+                    .wallet
+                    .transaction_context
+                    .transaction_metadata_set
+                    .read()
+                    .await
+                    .current
+                    .get(requested_txid)
+                    .expect("New transaction to be in set.")
+                    .clone())
+            }
+            Err(e) => Err(e),
+        }
+    }
     //TODO: Add migrate_sapling_to_orchard argument
     pub async fn do_send(
         &self,
