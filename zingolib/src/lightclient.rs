@@ -675,19 +675,16 @@ impl LightClient {
         address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
     ) -> Result<TransactionMetadata, String> {
         match self.do_send(address_amount_memo_tuples).await {
-            Ok(txid) => {
-                let requested_txid = self.get_txid_bytes(txid);
-                Ok(self
-                    .wallet
-                    .transaction_context
-                    .transaction_metadata_set
-                    .read()
-                    .await
-                    .current
-                    .get(&requested_txid)
-                    .expect("New transaction to be in set.")
-                    .clone())
-            }
+            Ok(txid) => Ok(self
+                .wallet
+                .transaction_context
+                .transaction_metadata_set
+                .read()
+                .await
+                .current
+                .get(&self.get_txid_bytes(txid))
+                .expect("New transaction to be in set.")
+                .clone()),
             Err(e) => Err(e),
         }
     }
