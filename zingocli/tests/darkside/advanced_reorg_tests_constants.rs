@@ -8,5 +8,9 @@ pub const REORG_CHANGES_INCOMING_TX_HEIGHT_AFTER: &'static str =
     "tests/data/wallets/advanced_reorg_tests/tx_height_changes/after_reorg.txt";
 pub const REORG_CHANGES_INCOMING_TX_HEIGHT_BEFORE: &'static str =
     "tests/data/wallets/advanced_reorg_tests/tx_height_changes/before_reorg.txt";
+pub const REORG_EXPIRES_INCOMING_TX_HEIGHT_AFTER: &'static str =
+    "tests/data/wallets/advanced_reorg_tests/expires_incoming_tx/after_reorg.txt";
+pub const REORG_EXPIRES_INCOMING_TX_HEIGHT_BEFORE: &'static str =
+    "tests/data/wallets/advanced_reorg_tests/expires_incoming_tx/before_reorg.txt";
 pub const TREE_STATE_FOLDER_PATH: &'static str =
     "tests/data/wallets/advanced_reorg_tests/tree_states";
