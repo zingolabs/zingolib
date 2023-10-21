@@ -743,6 +743,25 @@ impl LightClient {
         let transparent_fee = shield_utxos * u64::from(MARGINAL_FEE);
         sapling_fee + transparent_fee + (u64::from(MARGINAL_FEE) * 2) // NOTE we're adding the orchard fee here
     }
+    pub async fn transaction_from_shield(
+        &self,
+        pools_to_shield: &[Pool],
+    ) -> Result<TransactionMetadata, String> {
+        match self.do_shield(pools_to_shield).await {
+            Ok(txid_string) => Ok(self
+                .wallet
+                .transaction_context
+                .transaction_metadata_set
+                .read()
+                .await
+                .current
+                .get(&self.get_txid_bytes(txid_string))
+                .expect("New transaction to be in set.")
+                .clone()),
+
+            Err(e) => Err(e),
+        }
+    }
     pub async fn do_shield(&self, pools_to_shield: &[Pool]) -> Result<String, String> {
         let mut shieldable_utxos = vec![];
         let mut shieldable_sapling_notes = vec![];

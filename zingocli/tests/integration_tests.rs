@@ -3077,10 +3077,11 @@ mod slow {
         bump_and_check!(o: 80_000 s: 0 t: 0);
 
         // 3 Test of an orchard-only client to itself
-        pool_migration_client
+        let trans_from_send = pool_migration_client
             .transaction_from_send(vec![(&pmc_unified, 70_000, None)])
             .await
             .unwrap();
+        dbg!(trans_from_send);
         bump_and_check!(o: 70_000 s: 0 t: 0);
 
         // 4 tz transparent and sapling to orchard
