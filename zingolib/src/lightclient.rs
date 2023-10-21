@@ -660,14 +660,23 @@ impl LightClient {
             .collect()
     }
 
+    pub fn get_txid_bytes(&self, txid: String) -> TxId {
+        crate::wallet::data::TransactionMetadata::new_txid(
+            hex::decode(txid)
+                .unwrap()
+                .into_iter()
+                .rev()
+                .collect::<Vec<_>>()
+                .as_slice(),
+        )
+    }
     pub async fn transaction_from_send(
         &self,
         address_amount_memo_tuples: Vec<(&str, u64, Option<MemoBytes>)>,
     ) -> Result<TransactionMetadata, String> {
         match self.do_send(address_amount_memo_tuples).await {
             Ok(txid) => {
-                let requested_txid =
-                    &crate::wallet::data::TransactionMetadata::new_txid(txid.as_bytes());
+                let requested_txid = self.get_txid_bytes(txid);
                 Ok(self
                     .wallet
                     .transaction_context
@@ -675,7 +684,7 @@ impl LightClient {
                     .read()
                     .await
                     .current
-                    .get(requested_txid)
+                    .get(&requested_txid)
                     .expect("New transaction to be in set.")
                     .clone())
             }
