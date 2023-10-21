@@ -3052,7 +3052,7 @@ mod slow {
     }
 
         sapling_faucet
-            .do_send(vec![(&pmc_taddr, 50_000, None)])
+            .transaction_from_send(vec![(&pmc_taddr, 50_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 0 s: 0 t: 50_000);
@@ -3065,7 +3065,7 @@ mod slow {
 
         // 2 Test of a send from a sapling only client to its own unified address
         sapling_faucet
-            .do_send(vec![(&pmc_sapling, 50_000, None)])
+            .transaction_from_send(vec![(&pmc_sapling, 50_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 40_000 s: 50_000 t: 0);
@@ -3078,14 +3078,14 @@ mod slow {
 
         // 3 Test of an orchard-only client to itself
         pool_migration_client
-            .do_send(vec![(&pmc_unified, 70_000, None)])
+            .transaction_from_send(vec![(&pmc_unified, 70_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 70_000 s: 0 t: 0);
 
         // 4 tz transparent and sapling to orchard
         pool_migration_client
-            .do_send(vec![
+            .transaction_from_send(vec![
                 (&pmc_taddr, 30_000, None),
                 (&pmc_sapling, 30_000, None),
             ])
@@ -3098,14 +3098,14 @@ mod slow {
             .await
             .unwrap();
         pool_migration_client
-            .do_send(vec![(&pmc_unified, 20_000, None)])
+            .transaction_from_send(vec![(&pmc_unified, 20_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 40_000 s: 0 t: 0);
 
         // 5 to transparent and orchard to orchard
         pool_migration_client
-            .do_send(vec![(&pmc_taddr, 20_000, None)])
+            .transaction_from_send(vec![(&pmc_taddr, 20_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 10_000 s: 0 t: 20_000);
@@ -3118,20 +3118,20 @@ mod slow {
 
         // 6 sapling and orchard to orchard
         sapling_faucet
-            .do_send(vec![(&pmc_sapling, 20_000, None)])
+            .transaction_from_send(vec![(&pmc_sapling, 20_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 20_000 s: 20_000 t: 0);
 
         pool_migration_client
-            .do_send(vec![(&pmc_unified, 30_000, None)])
+            .transaction_from_send(vec![(&pmc_unified, 30_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 30_000 s: 0 t: 0);
 
         // 7 tzo --> o
         sapling_faucet
-            .do_send(vec![
+            .transaction_from_send(vec![
                 (&pmc_taddr, 20_000, None),
                 (&pmc_sapling, 20_000, None),
             ])
@@ -3144,20 +3144,20 @@ mod slow {
             .await
             .unwrap();
         pool_migration_client
-            .do_send(vec![(&pmc_unified, 40_000, None)])
+            .transaction_from_send(vec![(&pmc_unified, 40_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 50_000 s: 0 t: 0);
 
         // Send from Sapling into empty Orchard pool
         pool_migration_client
-            .do_send(vec![(&pmc_sapling, 40_000, None)])
+            .transaction_from_send(vec![(&pmc_sapling, 40_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 0 s: 40_000 t: 0);
 
         pool_migration_client
-            .do_send(vec![(&pmc_unified, 30_000, None)])
+            .transaction_from_send(vec![(&pmc_unified, 30_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 30_000 s: 0 t: 0);
