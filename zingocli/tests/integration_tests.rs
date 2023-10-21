@@ -676,6 +676,8 @@ mod fast {
     }
 }
 mod slow {
+    use zingolib::wallet::data::TransactionMetadata;
+
     use super::*;
 
     #[tokio::test]
@@ -3027,6 +3029,19 @@ mod slow {
         };
         assert_eq!(seed_of_recipient, seed_of_recipient_restored);
     }
+    async fn get_logical_actions_from_tx(client: &LightClient, tx: TransactionMetadata) {
+        let utxos_in = client
+            .wallet
+            .get_utxos()
+            .await
+            .iter()
+            .filter(|x| x.txid == tx.txid)
+            .collect::<Vec<_>>()
+            .len();
+        let orch_in = tx.spent_orchard_nullifiers.len();
+        let sapling_in = tx.spent_sapling_nullifiers.len();
+        dbg!(tx.outgoing_tx_data);
+    }
     #[tokio::test]
     async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         // Test all possible promoting note source combinations
@@ -3055,14 +3070,24 @@ mod slow {
             .transaction_from_send(vec![(&pmc_taddr, 50_000, None)])
             .await
             .unwrap();
+        dbg!(orchard_faucet
+            .wallet
+            .get_utxos()
+            .await
+            .iter()
+            .filter(|x| x.txid == tx.txid)
+            .collect::<Vec<_>>());
+        dbg!(tx.txid);
         dbg!(tx.spent_sapling_nullifiers.len());
         dbg!(tx.spent_orchard_nullifiers.len());
         bump_and_check!(o: 0 s: 0 t: 50_000);
 
-        pool_migration_client
+        dbg!(pool_migration_client.do_balance().await);
+        let shield_tx_1 = pool_migration_client
             .transaction_from_shield(&[Pool::Transparent])
             .await
             .unwrap();
+        get_logical_actions_from_tx(&pool_migration_client, shield_tx_1).await;
         bump_and_check!(o: 40_000 s: 0 t: 0);
 
         // 2 Test of a send from a sapling only client to its own unified address
