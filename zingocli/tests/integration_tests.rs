@@ -3079,8 +3079,18 @@ mod slow {
         bump_and_check!(o: 0 s: 0 t: 50_000);
         dbg!("orchard_faucet as client:");
         get_logical_actions_from_tx(&orchard_faucet, &orch_fauc_to_pmc_taddr_tx).await;
+        let tx_from_pmc = pool_migration_client
+            .wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .current
+            .get(&orch_fauc_to_pmc_taddr_tx.txid)
+            .expect("to find transaction")
+            .clone();
         dbg!("pool_migration_client:");
-        get_logical_actions_from_tx(&pool_migration_client, &orch_fauc_to_pmc_taddr_tx).await;
+        get_logical_actions_from_tx(&pool_migration_client, &tx_from_pmc).await;
 
         let shield_tx_1 = pool_migration_client
             .transaction_from_shield(&[Pool::Transparent])
