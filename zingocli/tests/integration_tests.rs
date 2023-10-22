@@ -3080,8 +3080,16 @@ mod slow {
             expected_actions.sap_out, sapling_notes,
         );
         // check transparent actions
-        assert_eq!(expected_actions.transparent_in, received_utxos);
-        assert_eq!(expected_actions.transparent_out, transparent_out);
+        assert_eq!(
+            expected_actions.transparent_in, received_utxos,
+            "expected_actions.transparent_in: {}, received_utxos: {}",
+            expected_actions.transparent_in, received_utxos,
+        );
+        assert_eq!(
+            expected_actions.transparent_out, transparent_out,
+            "expected_actions.transparent_out: {}, transparent_out: {}",
+            expected_actions.transparent_out, transparent_out
+        );
         //assert_eq!();
         //dbg!(tx);
     }
