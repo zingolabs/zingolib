@@ -3043,29 +3043,46 @@ mod slow {
         expected_actions: Actions,
     ) {
         assert!(tx.is_outgoing_transaction());
+        // orch
+        let spent_orchard_nulls = dbg!(tx.spent_orchard_nullifiers.len() as u64);
+        let orchard_notes = dbg!(tx.orchard_notes.len() as u64);
+        // sap
+        let spent_sapling_nulls = dbg!(tx.spent_sapling_nullifiers.len() as u64);
+        let sapling_notes = dbg!(tx.sapling_notes.len() as u64);
+        // transparents
+        let received_utxos = dbg!(tx.received_utxos.len() as u64);
+        let transparent_out = dbg!(tx
+            .outgoing_tx_data
+            .iter()
+            .filter(|x| x.to_address.starts_with("t"))
+            .collect::<Vec<_>>()
+            .len() as u64);
         // check orchard actions
         assert_eq!(
-            expected_actions.orch_in,
-            tx.spent_orchard_nullifiers.len() as u64
+            expected_actions.orch_in, spent_orchard_nulls,
+            "expect orch in: {} spent_orchard_nulls: {}",
+            expected_actions.orch_in, spent_orchard_nulls
         );
-        assert_eq!(expected_actions.orch_out, tx.orchard_notes.len() as u64);
+        assert_eq!(
+            expected_actions.orch_out, orchard_notes,
+            "expected_actions.orch_out: {}, orchard_notes: {}",
+            expected_actions.orch_out, orchard_notes,
+        );
         // check sapling actions
         assert_eq!(
-            expected_actions.sap_in,
-            tx.spent_sapling_nullifiers.len() as u64
+            expected_actions.sap_in, spent_sapling_nulls,
+            "expected_actions.sap_in: {}, spent_sapling_nulls: {}",
+            expected_actions.sap_in, spent_sapling_nulls
         );
-        assert_eq!(expected_actions.sap_out, tx.sapling_notes.len() as u64);
-        // check transparent actions
         assert_eq!(
-            expected_actions.transparent_in,
-            tx.received_utxos.len() as u64
+            expected_actions.sap_out, sapling_notes,
+            "expected_actions.sap_out: {}, sapling_notes: {}",
+            expected_actions.sap_out, sapling_notes,
         );
+        // check transparent actions
+        assert_eq!(expected_actions.transparent_in, received_utxos);
+        assert_eq!(expected_actions.transparent_out, transparent_out);
         //assert_eq!();
-        let spent_sapling_nulls = dbg!(tx.spent_sapling_nullifiers.len());
-        let orchard_notes = dbg!(tx.orchard_notes.len());
-        let sapling_notes = dbg!(tx.sapling_notes.len());
-        let received_utxos = dbg!(tx.received_utxos.len());
-        dbg!(&tx.outgoing_tx_data);
         //dbg!(tx);
     }
     #[tokio::test]
@@ -3099,6 +3116,7 @@ mod slow {
         get_logical_actions_from_outgoing_tx(
             &orch_fauc_to_pmc_taddr_tx,
             Actions {
+                orch_in: 1,
                 ..Default::default()
             },
         )
@@ -3116,13 +3134,6 @@ mod slow {
             .expect("to find transaction")
             .clone();
         dbg!("pool_migration_client:");
-        get_logical_actions_from_outgoing_tx(
-            &tx_from_pmc,
-            Actions {
-                ..Default::default()
-            },
-        )
-        .await;
 
         let shield_tx_1 = pool_migration_client
             .transaction_from_shield(&[Pool::Transparent])
