@@ -676,6 +676,9 @@ mod fast {
     }
 }
 mod slow {
+    use zcash_primitives::transaction::{
+        components::amount::NonNegativeAmount, fees::zip317::MARGINAL_FEE,
+    };
     use zingolib::wallet::data::TransactionMetadata;
 
     use super::*;
@@ -3029,8 +3032,19 @@ mod slow {
         };
         assert_eq!(seed_of_recipient, seed_of_recipient_restored);
     }
-    #[derive(Default)]
-    struct Actions {
+    impl Default for ExpectedActions {
+        fn default() -> Self {
+            Self {
+                orch_in: 0,
+                orch_out: 1, // The change note
+                sap_in: 0,
+                sap_out: 0,
+                transparent_in: 0,
+                transparent_out: 0,
+            }
+        }
+    }
+    struct ExpectedActions {
         orch_in: u64,
         orch_out: u64,
         sap_in: u64,
@@ -3038,25 +3052,15 @@ mod slow {
         transparent_in: u64,
         transparent_out: u64,
     }
-    async fn get_logical_actions_from_outgoing_tx(
+    async fn get_317_fee_from_actions(
         tx: &TransactionMetadata,
-        expected_actions: Actions,
-    ) {
+        expected_actions: ExpectedActions,
+    ) -> NonNegativeAmount {
+        use std::cmp::max;
         assert!(tx.is_outgoing_transaction());
         // orch
         let spent_orchard_nulls = dbg!(tx.spent_orchard_nullifiers.len() as u64);
         let orchard_notes = dbg!(tx.orchard_notes.len() as u64);
-        // sap
-        let spent_sapling_nulls = dbg!(tx.spent_sapling_nullifiers.len() as u64);
-        let sapling_notes = dbg!(tx.sapling_notes.len() as u64);
-        // transparents
-        let received_utxos = dbg!(tx.received_utxos.len() as u64);
-        let transparent_out = dbg!(tx
-            .outgoing_tx_data
-            .iter()
-            .filter(|x| x.to_address.starts_with("t"))
-            .collect::<Vec<_>>()
-            .len() as u64);
         // check orchard actions
         assert_eq!(
             expected_actions.orch_in, spent_orchard_nulls,
@@ -3068,6 +3072,9 @@ mod slow {
             "expected_actions.orch_out: {}, orchard_notes: {}",
             expected_actions.orch_out, orchard_notes,
         );
+        // sap
+        let spent_sapling_nulls = dbg!(tx.spent_sapling_nullifiers.len() as u64);
+        let sapling_notes = dbg!(tx.sapling_notes.len() as u64);
         // check sapling actions
         assert_eq!(
             expected_actions.sap_in, spent_sapling_nulls,
@@ -3079,6 +3086,14 @@ mod slow {
             "expected_actions.sap_out: {}, sapling_notes: {}",
             expected_actions.sap_out, sapling_notes,
         );
+        // transparents
+        let received_utxos = dbg!(tx.received_utxos.len() as u64);
+        let transparent_out = dbg!(tx
+            .outgoing_tx_data
+            .iter()
+            .filter(|x| x.to_address.starts_with("t"))
+            .collect::<Vec<_>>()
+            .len() as u64);
         // check transparent actions
         assert_eq!(
             expected_actions.transparent_in, received_utxos,
@@ -3090,8 +3105,24 @@ mod slow {
             "expected_actions.transparent_out: {}, transparent_out: {}",
             expected_actions.transparent_out, transparent_out
         );
-        //assert_eq!();
-        //dbg!(tx);
+        let orchard_logicals: u64;
+        let sapling_logicals: u64;
+        if spent_orchard_nulls > 0 || orchard_notes > 0 {
+            orchard_logicals = max(max(2, spent_orchard_nulls), orchard_notes);
+        } else {
+            orchard_logicals = 0;
+        };
+        if spent_sapling_nulls > 0 || sapling_notes > 0 {
+            sapling_logicals = max(max(2, spent_sapling_nulls), sapling_notes);
+        } else {
+            sapling_logicals = 0;
+        };
+        let transparent_logicals = max(transparent_out, received_utxos);
+        (MARGINAL_FEE
+            * (orchard_logicals + sapling_logicals + transparent_logicals)
+                .try_into()
+                .unwrap())
+        .expect("A reasonable value.")
     }
     #[tokio::test]
     async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
@@ -3099,120 +3130,91 @@ mod slow {
         let (regtest_manager, _cph, mut client_builder, regtest_network) =
             scenarios::custom_clients_default().await;
         let orchard_faucet = client_builder.build_faucet(false, regtest_network).await;
-        let pool_migration_client = client_builder
+        let recipient = client_builder
             .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
             .await;
-        let pmc_taddr = get_base_address!(pool_migration_client, "transparent");
-        let pmc_sapling = get_base_address!(pool_migration_client, "sapling");
-        let pmc_unified = get_base_address!(pool_migration_client, "unified");
+        let recipient_taddr = get_base_address!(recipient, "transparent");
+        let recipient_sapling_addr = get_base_address!(recipient, "sapling");
+        let recipient_unified_addr = get_base_address!(recipient, "unified");
         // Ensure that the client has confirmed spendable funds
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &orchard_faucet, 3)
             .await
             .unwrap();
-        // 1 t Test of a send from a taddr only client to its own unified address
         macro_rules! bump_and_check {
-        (o: $o:tt s: $s:tt t: $t:tt) => {
-            zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &pool_migration_client, 1).await.unwrap();
-            check_client_balances!(pool_migration_client, o:$o s:$s t:$t);
-        };
-    }
+            (o: $o:tt s: $s:tt t: $t:tt) => {
+                zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1).await.unwrap();
+                check_client_balances!(recipient, o:$o s:$s t:$t);
+            };
+        }
 
+        // Begin test of zip317 fees for transaction
+        // Test One:
+        //   faucet-orchard 1 note to recipient-transparent 1 addr
         let orch_fauc_to_pmc_taddr_tx = orchard_faucet
-            .transaction_from_send(vec![(&pmc_taddr, 50_000, None)])
+            .transaction_from_send(vec![(&recipient_taddr, 50_000, None)])
             .await
             .unwrap();
-        get_logical_actions_from_outgoing_tx(
+        let fee = get_317_fee_from_actions(
             &orch_fauc_to_pmc_taddr_tx,
-            Actions {
+            ExpectedActions {
                 orch_in: 1,
+                orch_out: 1,
+                transparent_out: 1,
                 ..Default::default()
             },
         )
         .await;
+        assert_eq!(Into::<u64>::into(fee), 15_000u64);
         bump_and_check!(o: 0 s: 0 t: 50_000);
-        dbg!("orchard_faucet as client:");
-        let tx_from_pmc = pool_migration_client
-            .wallet
-            .transaction_context
-            .transaction_metadata_set
-            .read()
-            .await
-            .current
-            .get(&orch_fauc_to_pmc_taddr_tx.txid)
-            .expect("to find transaction")
-            .clone();
-        dbg!("pool_migration_client:");
 
-        let shield_tx_1 = pool_migration_client
-            .transaction_from_shield(&[Pool::Transparent])
-            .await
-            .unwrap();
-        bump_and_check!(o: 35_000 s: 0 t: 0);
-        dbg!("post shield");
-
-        // 2 Test of a send from a sapling only client to its own unified address
+        // Test One:
+        //   faucet-orchard 1 note to recipient-transparent 1 addr
         orchard_faucet
-            .transaction_from_send(vec![(&pmc_sapling, 50_000, None)])
+            .transaction_from_send(vec![(&recipient_sapling_addr, 50_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 40_000 s: 50_000 t: 0);
 
-        pool_migration_client
-            .transaction_from_shield(&[Pool::Sapling])
-            .await
-            .unwrap();
-        bump_and_check!(o: 80_000 s: 0 t: 0);
-
         // 3 Test of an orchard-only client to itself
-        let trans_from_send = pool_migration_client
-            .transaction_from_send(vec![(&pmc_unified, 70_000, None)])
+        let trans_from_send = recipient
+            .transaction_from_send(vec![(&recipient_unified_addr, 70_000, None)])
             .await
             .unwrap();
         dbg!(trans_from_send);
         bump_and_check!(o: 70_000 s: 0 t: 0);
 
         // 4 tz transparent and sapling to orchard
-        pool_migration_client
+        recipient
             .transaction_from_send(vec![
-                (&pmc_taddr, 30_000, None),
-                (&pmc_sapling, 30_000, None),
+                (&recipient_taddr, 30_000, None),
+                (&recipient_sapling_addr, 30_000, None),
             ])
             .await
             .unwrap();
         bump_and_check!(o: 0 s: 30_000 t: 30_000);
 
-        pool_migration_client
-            .transaction_from_shield(&[Pool::Transparent])
-            .await
-            .unwrap();
-        pool_migration_client
-            .transaction_from_send(vec![(&pmc_unified, 20_000, None)])
+        recipient
+            .transaction_from_send(vec![(&recipient_unified_addr, 20_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 40_000 s: 0 t: 0);
 
         // 5 to transparent and orchard to orchard
-        pool_migration_client
-            .transaction_from_send(vec![(&pmc_taddr, 20_000, None)])
+        recipient
+            .transaction_from_send(vec![(&recipient_taddr, 20_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 10_000 s: 0 t: 20_000);
 
-        pool_migration_client
-            .transaction_from_shield(&[Pool::Transparent])
-            .await
-            .unwrap();
-        bump_and_check!(o: 20_000 s: 0 t: 0);
-
         // 6 sapling and orchard to orchard
         orchard_faucet
-            .transaction_from_send(vec![(&pmc_sapling, 20_000, None)])
+            .transaction_from_send(vec![(&recipient_sapling_addr, 20_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 20_000 s: 20_000 t: 0);
 
-        pool_migration_client
-            .transaction_from_send(vec![(&pmc_unified, 30_000, None)])
+        recipient
+            .transaction_from_send(vec![(&recipient_unified_addr, 30_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 30_000 s: 0 t: 0);
@@ -3220,45 +3222,81 @@ mod slow {
         // 7 tzo --> o
         orchard_faucet
             .transaction_from_send(vec![
-                (&pmc_taddr, 20_000, None),
-                (&pmc_sapling, 20_000, None),
+                (&recipient_taddr, 20_000, None),
+                (&recipient_sapling_addr, 20_000, None),
             ])
             .await
             .unwrap();
         bump_and_check!(o: 30_000 s: 20_000 t: 20_000);
 
-        pool_migration_client
-            .transaction_from_shield(&[Pool::Transparent])
-            .await
-            .unwrap();
-        pool_migration_client
-            .transaction_from_send(vec![(&pmc_unified, 40_000, None)])
+        recipient
+            .transaction_from_send(vec![(&recipient_unified_addr, 40_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 50_000 s: 0 t: 0);
 
         // Send from Sapling into empty Orchard pool
-        pool_migration_client
-            .transaction_from_send(vec![(&pmc_sapling, 40_000, None)])
+        recipient
+            .transaction_from_send(vec![(&recipient_sapling_addr, 40_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 0 s: 40_000 t: 0);
 
-        pool_migration_client
-            .transaction_from_send(vec![(&pmc_unified, 30_000, None)])
+        recipient
+            .transaction_from_send(vec![(&recipient_unified_addr, 30_000, None)])
             .await
             .unwrap();
         bump_and_check!(o: 30_000 s: 0 t: 0);
-        let mut total_value_to_addrs_iter = pool_migration_client
-            .do_total_value_to_address()
-            .await
-            .0
-            .into_iter();
+        let mut total_value_to_addrs_iter =
+            recipient.do_total_value_to_address().await.0.into_iter();
         assert_eq!(
             total_value_to_addrs_iter.next(),
             Some((String::from("fee"), u64::from((MINIMUM_FEE * 13).unwrap())))
         );
         assert!(total_value_to_addrs_iter.next().is_none());
+        /*
+                //  Shield Test One:
+                //   faucet-orchard 1 note to recipient-transparent 1 addr
+                let shield_tx_1 = recipient
+                    .transaction_from_shield(&[Pool::Transparent])
+                    .await
+                    .unwrap();
+                let fee = get_317_fee_from_actions(
+                    &shield_tx_1,
+                    ExpectedActions {
+                        orch_out: 2,
+                        transparent_in: 1,
+                        ..Default::default()
+                    },
+                )
+                .await;
+                assert_eq!(Into::<u64>::into(fee), 15_000u64);
+                bump_and_check!(o: 35_000 s: 0 t: 0);
+                dbg!("post shield");
+        Shield Test Two
+        recipient
+            .transaction_from_shield(&[Pool::Sapling])
+            .await
+            .unwrap();
+        bump_and_check!(o: 80_000 s: 0 t: 0);
+        Shield Test Three
+
+        recipient
+            .transaction_from_shield(&[Pool::Transparent])
+            .await
+            .unwrap();
+        Shield Test Four
+
+        recipient
+            .transaction_from_shield(&[Pool::Transparent])
+            .await
+            .unwrap();
+        bump_and_check!(o: 20_000 s: 0 t: 0);
+        recipient
+            .transaction_from_shield(&[Pool::Transparent])
+            .await
+            .unwrap();
+        */
     }
     #[tokio::test]
     async fn factor_do_shield_to_call_do_send() {

@@ -1412,7 +1412,7 @@ impl LightWallet {
                 .tx_builder_with_fee_and_receivers(
                     submission_height,
                     witness_trees,
-                    dbg!(proposed_fee),
+                    proposed_fee,
                     &receivers,
                     &mut total_shielded_receivers,
                     total_earmarked_for_recipients,
