@@ -3198,16 +3198,15 @@ mod slow {
         .await;
         assert_eq!(Into::<u64>::into(fee), 20_000u64); // 2 for orchard change, 2 for sapling pool
         bump_and_check!(o: 0 s: 50_000 t: 50_000);
-        panic!();
 
         // 3 Test of an orchard-only client to itself
-        let trans_from_send = recipient
+        assert!(recipient
             .transaction_from_send(vec![(&recipient_unified_addr, 70_000, None)])
             .await
-            .unwrap();
-        dbg!(trans_from_send);
-        bump_and_check!(o: 70_000 s: 0 t: 0);
+        .is_err_and(|x| x == "Insufficient verified funds.\ninsufficient_amount: 50000\ntotal_earmarked_for_recipients: 70000\nproposed_fee: 10000".to_string()));
+        bump_and_check!(o: 0 s: 50_000 t: 50_000); // Send from the transparent pool is only enabled via the do_shield interface
 
+        panic!();
         // 4 tz transparent and sapling to orchard
         recipient
             .transaction_from_send(vec![
