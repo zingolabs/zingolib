@@ -3060,60 +3060,72 @@ mod slow {
         assert!(tx.is_outgoing_transaction());
         // orch
         let spent_orchard_nulls = dbg!(tx.spent_orchard_nullifiers.len() as u64);
-        let orchard_notes = dbg!(tx.orchard_notes.len() as u64);
         // check orchard actions
         assert_eq!(
             expected_actions.orch_in, spent_orchard_nulls,
             "expect orch in: {} spent_orchard_nulls: {}",
             expected_actions.orch_in, spent_orchard_nulls
         );
+        let mut orchard_outs = dbg!(tx
+            .outgoing_tx_data
+            .iter()
+            .filter(|x| x.to_address.starts_with("uregtest"))
+            .collect::<Vec<_>>()
+            .len() as u64);
+        orchard_outs = orchard_outs + 1; // Change isn't listed in outgoing metadata
         assert_eq!(
-            expected_actions.orch_out, orchard_notes,
-            "expected_actions.orch_out: {}, orchard_notes: {}",
-            expected_actions.orch_out, orchard_notes,
+            expected_actions.orch_out, orchard_outs,
+            "expected_actions.orch_out: {}, orchard_outs: {}",
+            expected_actions.orch_out, orchard_outs,
         );
         // sap
-        let spent_sapling_nulls = dbg!(tx.spent_sapling_nullifiers.len() as u64);
-        let sapling_notes = dbg!(tx.sapling_notes.len() as u64);
         // check sapling actions
+        let spent_sapling_nulls = dbg!(tx.spent_sapling_nullifiers.len() as u64);
         assert_eq!(
             expected_actions.sap_in, spent_sapling_nulls,
             "expected_actions.sap_in: {}, spent_sapling_nulls: {}",
             expected_actions.sap_in, spent_sapling_nulls
         );
+        let sap_outs = dbg!(tx
+            .outgoing_tx_data
+            .iter()
+            .filter(|x| x.to_address.starts_with("zregtestsapling"))
+            .collect::<Vec<_>>()
+            .len() as u64);
         assert_eq!(
-            expected_actions.sap_out, sapling_notes,
-            "expected_actions.sap_out: {}, sapling_notes: {}",
-            expected_actions.sap_out, sapling_notes,
+            expected_actions.sap_out, sap_outs,
+            "expected_actions.sap_out: {}, sapling_outs: {}",
+            expected_actions.sap_out, sap_outs,
         );
         // transparents
         let received_utxos = dbg!(tx.received_utxos.len() as u64);
-        let transparent_out = dbg!(tx
-            .outgoing_tx_data
-            .iter()
-            .filter(|x| x.to_address.starts_with("t"))
-            .collect::<Vec<_>>()
-            .len() as u64);
         // check transparent actions
         assert_eq!(
             expected_actions.transparent_in, received_utxos,
             "expected_actions.transparent_in: {}, received_utxos: {}",
             expected_actions.transparent_in, received_utxos,
         );
+        let transparent_out = dbg!(tx
+            .outgoing_tx_data
+            .iter()
+            .filter(|x| x.to_address.starts_with("t"))
+            .collect::<Vec<_>>()
+            .len() as u64);
         assert_eq!(
             expected_actions.transparent_out, transparent_out,
             "expected_actions.transparent_out: {}, transparent_out: {}",
             expected_actions.transparent_out, transparent_out
         );
+        let orchard_outs = 0;
         let orchard_logicals: u64;
         let sapling_logicals: u64;
-        if spent_orchard_nulls > 0 || orchard_notes > 0 {
-            orchard_logicals = max(max(2, spent_orchard_nulls), orchard_notes);
+        if spent_orchard_nulls > 0 || orchard_outs > 0 {
+            orchard_logicals = max(max(2, spent_orchard_nulls), orchard_outs);
         } else {
             orchard_logicals = 0;
         };
-        if spent_sapling_nulls > 0 || sapling_notes > 0 {
-            sapling_logicals = max(max(2, spent_sapling_nulls), sapling_notes);
+        if spent_sapling_nulls > 0 || sap_outs > 0 {
+            sapling_logicals = max(max(2, spent_sapling_nulls), sap_outs);
         } else {
             sapling_logicals = 0;
         };
@@ -3150,6 +3162,7 @@ mod slow {
         // Begin test of zip317 fees for transaction
         // Test One:
         //   faucet-orchard 1 note to recipient-transparent 1 addr
+        dbg!("Test One");
         let orch_fauc_to_pmc_taddr_tx = orchard_faucet
             .transaction_from_send(vec![(&recipient_taddr, 50_000, None)])
             .await
@@ -3167,13 +3180,25 @@ mod slow {
         assert_eq!(Into::<u64>::into(fee), 15_000u64);
         bump_and_check!(o: 0 s: 0 t: 50_000);
 
-        // Test One:
+        // Test Two:
         //   faucet-orchard 1 note to recipient-transparent 1 addr
-        orchard_faucet
+        dbg!("Test Two");
+        let sender_tx = orchard_faucet
             .transaction_from_send(vec![(&recipient_sapling_addr, 50_000, None)])
             .await
             .unwrap();
-        bump_and_check!(o: 40_000 s: 50_000 t: 0);
+        let fee = get_317_fee_from_actions(
+            &sender_tx,
+            ExpectedActions {
+                orch_in: 1,
+                sap_out: 1,
+                ..Default::default()
+            },
+        )
+        .await;
+        assert_eq!(Into::<u64>::into(fee), 20_000u64); // 2 for orchard change, 2 for sapling pool
+        bump_and_check!(o: 0 s: 50_000 t: 50_000);
+        panic!();
 
         // 3 Test of an orchard-only client to itself
         let trans_from_send = recipient
