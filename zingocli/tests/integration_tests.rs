@@ -3029,18 +3029,24 @@ mod slow {
         };
         assert_eq!(seed_of_recipient, seed_of_recipient_restored);
     }
-    async fn get_logical_actions_from_tx(client: &LightClient, tx: TransactionMetadata) {
-        let utxos_in = client
+    async fn get_logical_actions_from_tx(client: &LightClient, tx: &TransactionMetadata) {
+        let utxos_with_txid = dbg!(client
             .wallet
             .get_utxos()
             .await
             .iter()
             .filter(|x| x.txid == tx.txid)
             .collect::<Vec<_>>()
-            .len();
-        let orch_in = tx.spent_orchard_nullifiers.len();
-        let sapling_in = tx.spent_sapling_nullifiers.len();
-        dbg!(tx.outgoing_tx_data);
+            .len());
+        dbg!(tx.is_outgoing_transaction());
+        dbg!(tx.is_incoming_transaction());
+        let spent_orch_nulls = dbg!(tx.spent_orchard_nullifiers.len());
+        let spent_sapling_nulls = dbg!(tx.spent_sapling_nullifiers.len());
+        let orchard_notes = dbg!(tx.orchard_notes.len());
+        let sapling_notes = dbg!(tx.sapling_notes.len());
+        let received_utxos = dbg!(tx.received_utxos.len());
+        dbg!(&tx.outgoing_tx_data);
+        //dbg!(tx);
     }
     #[tokio::test]
     async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
@@ -3066,29 +3072,22 @@ mod slow {
         };
     }
 
-        let tx = orchard_faucet
+        let orch_fauc_to_pmc_taddr_tx = orchard_faucet
             .transaction_from_send(vec![(&pmc_taddr, 50_000, None)])
             .await
             .unwrap();
-        dbg!(orchard_faucet
-            .wallet
-            .get_utxos()
-            .await
-            .iter()
-            .filter(|x| x.txid == tx.txid)
-            .collect::<Vec<_>>());
-        dbg!(tx.txid);
-        dbg!(tx.spent_sapling_nullifiers.len());
-        dbg!(tx.spent_orchard_nullifiers.len());
         bump_and_check!(o: 0 s: 0 t: 50_000);
+        dbg!("orchard_faucet as client:");
+        get_logical_actions_from_tx(&orchard_faucet, &orch_fauc_to_pmc_taddr_tx).await;
+        dbg!("pool_migration_client:");
+        get_logical_actions_from_tx(&pool_migration_client, &orch_fauc_to_pmc_taddr_tx).await;
 
-        dbg!(pool_migration_client.do_balance().await);
         let shield_tx_1 = pool_migration_client
             .transaction_from_shield(&[Pool::Transparent])
             .await
             .unwrap();
-        get_logical_actions_from_tx(&pool_migration_client, shield_tx_1).await;
-        bump_and_check!(o: 40_000 s: 0 t: 0);
+        bump_and_check!(o: 35_000 s: 0 t: 0);
+        dbg!("post shield");
 
         // 2 Test of a send from a sapling only client to its own unified address
         orchard_faucet
