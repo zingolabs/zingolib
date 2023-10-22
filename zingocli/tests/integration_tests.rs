@@ -3029,18 +3029,38 @@ mod slow {
         };
         assert_eq!(seed_of_recipient, seed_of_recipient_restored);
     }
-    async fn get_logical_actions_from_tx(client: &LightClient, tx: &TransactionMetadata) {
-        let utxos_with_txid = dbg!(client
-            .wallet
-            .get_utxos()
-            .await
-            .iter()
-            .filter(|x| x.txid == tx.txid)
-            .collect::<Vec<_>>()
-            .len());
-        dbg!(tx.is_outgoing_transaction());
-        dbg!(tx.is_incoming_transaction());
-        let spent_orch_nulls = dbg!(tx.spent_orchard_nullifiers.len());
+    #[derive(Default)]
+    struct Actions {
+        orch_in: u64,
+        orch_out: u64,
+        sap_in: u64,
+        sap_out: u64,
+        transparent_in: u64,
+        transparent_out: u64,
+    }
+    async fn get_logical_actions_from_outgoing_tx(
+        tx: &TransactionMetadata,
+        expected_actions: Actions,
+    ) {
+        assert!(tx.is_outgoing_transaction());
+        // check orchard actions
+        assert_eq!(
+            expected_actions.orch_in,
+            tx.spent_orchard_nullifiers.len() as u64
+        );
+        assert_eq!(expected_actions.orch_out, tx.orchard_notes.len() as u64);
+        // check sapling actions
+        assert_eq!(
+            expected_actions.sap_in,
+            tx.spent_sapling_nullifiers.len() as u64
+        );
+        assert_eq!(expected_actions.sap_out, tx.sapling_notes.len() as u64);
+        // check transparent actions
+        assert_eq!(
+            expected_actions.transparent_in,
+            tx.received_utxos.len() as u64
+        );
+        //assert_eq!();
         let spent_sapling_nulls = dbg!(tx.spent_sapling_nullifiers.len());
         let orchard_notes = dbg!(tx.orchard_notes.len());
         let sapling_notes = dbg!(tx.sapling_notes.len());
@@ -3076,9 +3096,15 @@ mod slow {
             .transaction_from_send(vec![(&pmc_taddr, 50_000, None)])
             .await
             .unwrap();
+        get_logical_actions_from_outgoing_tx(
+            &orch_fauc_to_pmc_taddr_tx,
+            Actions {
+                ..Default::default()
+            },
+        )
+        .await;
         bump_and_check!(o: 0 s: 0 t: 50_000);
         dbg!("orchard_faucet as client:");
-        get_logical_actions_from_tx(&orchard_faucet, &orch_fauc_to_pmc_taddr_tx).await;
         let tx_from_pmc = pool_migration_client
             .wallet
             .transaction_context
@@ -3090,7 +3116,13 @@ mod slow {
             .expect("to find transaction")
             .clone();
         dbg!("pool_migration_client:");
-        get_logical_actions_from_tx(&pool_migration_client, &tx_from_pmc).await;
+        get_logical_actions_from_outgoing_tx(
+            &tx_from_pmc,
+            Actions {
+                ..Default::default()
+            },
+        )
+        .await;
 
         let shield_tx_1 = pool_migration_client
             .transaction_from_shield(&[Pool::Transparent])
