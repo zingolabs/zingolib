@@ -1,4 +1,5 @@
 use crate::compact_formats::CompactBlock;
+use crate::error::ZingoLibError;
 use crate::wallet::traits::ReceivedNoteAndMetadata;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::frontier::{CommitmentTree, NonEmptyFrontier};
@@ -969,8 +970,13 @@ impl TransactionMetadata {
         }
     }
 
-    pub fn get_transaction_fee(&self) -> u64 {
-        self.total_value_spent() - (self.value_outgoing() + self.total_change_returned())
+    pub fn get_transaction_fee(&self) -> Result<u64, ZingoLibError> {
+        let outputted = self.value_outgoing() + self.total_change_returned();
+        if self.total_value_spent() >= outputted {
+            Ok(self.total_value_spent() - outputted)
+        } else {
+            Err(ZingoLibError::AbsurdTransactionMetadata)
+        }
     }
 
     // TODO: This is incorrect in the edge case where where we have a send-to-self with

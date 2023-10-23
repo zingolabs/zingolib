@@ -463,15 +463,19 @@ impl LightClient {
             .iter()
         {
             LightClient::tx_summary_matcher(&mut summaries, *txid, transaction_md);
-            println!(
-                "txid {} at height {}: spent {}, outgoing {}, returned change {}",
-                txid,
-                transaction_md.block_height,
-                transaction_md.total_value_spent(),
-                transaction_md.value_outgoing(),
-                transaction_md.total_change_returned()
-            );
-            let tx_fee = transaction_md.get_transaction_fee();
+            let tx_fee = match transaction_md.get_transaction_fee() {
+                Ok(tx_fee) => tx_fee,
+                Err(e) => panic!(
+                    "{:?} for txid {} at height {}: spent {}, outgoing {}, returned change {} \n {:?}",
+                    e,
+                    txid,
+                    transaction_md.block_height,
+                    transaction_md.total_value_spent(),
+                    transaction_md.value_outgoing(),
+                    transaction_md.total_change_returned(),
+                    transaction_md,
+                ),
+            };
             let (block_height, datetime, price) = (
                 transaction_md.block_height,
                 transaction_md.datetime,

@@ -42,10 +42,15 @@ impl TransactionMetadataSet {
     }
 
     pub fn get_fee_by_txid(&self, txid: &TxId) -> u64 {
-        self.current
+        match self
+            .current
             .get(txid)
             .expect("To have the requested txid")
             .get_transaction_fee()
+        {
+            Ok(tx_fee) => tx_fee,
+            Err(e) => panic!("{:?}", e),
+        }
     }
 
     pub fn read_old<R: Read>(
