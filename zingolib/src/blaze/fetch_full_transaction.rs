@@ -108,6 +108,8 @@ impl TransactionContext {
         block_time: u32,
         price: Option<f64>,
     ) {
+        println!("    scan_full_tx {}", &transaction.txid());
+
         // Set up data structures to record scan results
         let mut txid_indexed_zingo_memos = Vec::new();
         // Remember if this is an outgoing Tx. Useful for when we want to grab the outgoing metadata.
@@ -652,6 +654,7 @@ pub async fn start(
                     last_progress.store(progress, Ordering::SeqCst);
                 }
 
+                println!("  received 1 transaction");
                 per_txid_iter_context
                     .scan_full_tx(transaction, height, false, block_time, None)
                     .await;
@@ -691,6 +694,7 @@ pub async fn start(
                 .block_data
                 .get_block_timestamp(&height)
                 .await;
+            println!("  received 2 transaction");
             transaction_context
                 .scan_full_tx(transaction, height, false, block_time, None)
                 .await;

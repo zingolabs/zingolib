@@ -855,6 +855,7 @@ impl TransactionMetadataSet {
     }
 
     pub fn add_outgoing_metadata(&mut self, txid: &TxId, outgoing_metadata: Vec<OutgoingTxData>) {
+        println!("adding outgoing metadata {:?}", outgoing_metadata);
         if let Some(transaction_metadata) = self.current.get_mut(txid) {
             // This is n^2 search, but this is likely very small struct, limited by the protocol, so...
             let new_omd: Vec<_> = outgoing_metadata
@@ -868,6 +869,10 @@ impl TransactionMetadataSet {
                 .collect();
 
             transaction_metadata.outgoing_tx_data.extend(new_omd);
+            println!(
+                "txid {} now has outgoing_metadata {:?} ",
+                txid, transaction_metadata.outgoing_tx_data,
+            );
         } else {
             error!(
                 "TxId {} should be present while adding metadata, but wasn't",

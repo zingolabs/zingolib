@@ -1127,7 +1127,6 @@ impl TransactionMetadata {
                 Ok(orchard::note::Nullifier::from_bytes(&n).unwrap())
             })?
         };
-
         Ok(Self {
             block_height: block,
             unconfirmed,
