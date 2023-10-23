@@ -1108,8 +1108,6 @@ impl LightClient {
                         ) {
                             let price = price.read().await.clone();
                             //debug!("Mempool attempting to scan {}", tx.txid());
-
-                            println!("  mempool discovered transaction");
                             TransactionContext::new(
                                 &config,
                                 key.clone(),

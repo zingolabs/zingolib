@@ -674,7 +674,9 @@ pub struct OutgoingTxData {
 
 impl PartialEq for OutgoingTxData {
     fn eq(&self, other: &Self) -> bool {
-        self.to_address == other.to_address && self.value == other.value && self.memo == other.memo
+        (self.to_address == other.to_address || self.recipient_ua == other.recipient_ua)
+            && self.value == other.value
+            && self.memo == other.memo
     }
 }
 

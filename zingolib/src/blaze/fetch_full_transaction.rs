@@ -108,7 +108,7 @@ impl TransactionContext {
         block_time: u32,
         price: Option<f64>,
     ) {
-        println!("    scan_full_tx {}", &transaction.txid());
+        // println!("    scan_full_tx {}", &transaction.txid());
 
         // Set up data structures to record scan results
         let mut txid_indexed_zingo_memos = Vec::new();
