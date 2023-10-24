@@ -3063,6 +3063,13 @@ mod slow {
     ) -> NonNegativeAmount {
         use std::cmp::max;
         assert!(tx.is_outgoing_transaction());
+        fn get_out_toaddress_count(tx: &TransactionMetadata, hint: &str) -> u64 {
+            tx.outgoing_tx_data
+                .iter()
+                .filter(|x| x.to_address.starts_with(hint))
+                .collect::<Vec<_>>()
+                .len() as u64
+        }
         // each orchard nullifier consumed in this tx **ADDS** funds to the
         // *transaction's* orchard pool of funds
         let orchard_txins = dbg!(tx.spent_orchard_nullifiers.len() as u64);
@@ -3104,12 +3111,7 @@ mod slow {
             "expected_actions.transparent_txins: {}, received_utxos: {}",
             expected_actions.transparent_txins, received_utxos,
         );
-        let outgoing_to_taddress = dbg!(tx
-            .outgoing_tx_data
-            .iter()
-            .filter(|x| x.to_address.starts_with("t"))
-            .collect::<Vec<_>>()
-            .len() as u64);
+        let outgoing_to_taddress = dbg!(get_out_toaddress_count(tx, "t"));
         assert_eq!(
             expected_actions.transparent_txouts, outgoing_to_taddress,
             "expected_actions.transparent_txouts: {}, outgoing_to_taddress: {}",
