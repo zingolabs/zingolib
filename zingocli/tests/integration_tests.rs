@@ -3206,7 +3206,6 @@ mod slow {
 
         // Test Three: test of an orchard-only client to itself
         //  TODO:  Make it clearer in the error message that the problem is that the user can't send directly from the transparent pool.
-        panic!();
         dbg!("Test Three");
         assert!(recipient
             .transaction_from_send(vec![(&recipient_unified_addr, 70_000, None)])
@@ -3221,6 +3220,7 @@ mod slow {
             .await
             .unwrap();
         //dbg!(&shield_tx);
+        panic!();
         let fee = get_padded_317_fee_from_actions(
             &shield_tx,
             ExpectedActions {
