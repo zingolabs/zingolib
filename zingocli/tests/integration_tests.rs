@@ -3063,12 +3063,10 @@ mod slow {
     ) -> NonNegativeAmount {
         use std::cmp::max;
         assert!(tx.is_outgoing_transaction());
-        // orch
-        // each nullifier spent in this tx adds funds to the *transaction's*
-        // pool of funds
+        // each orchard nullifier consumed in this tx **ADDS** funds to the
+        // *transaction's* orchard pool of funds
         let orchard_txins = dbg!(tx.spent_orchard_nullifiers.len() as u64);
-        // each note created in this tx, removes funds from the *transaction's*
-        // pool of funds
+        // each orchard note created in this tx, **REMOVES** funds from the *transaction's* orchard pool of funds
         let orchard_txouts = dbg!(tx.orchard_notes.len() as u64);
         // check orchard actions
         assert_eq!(
@@ -3081,15 +3079,18 @@ mod slow {
             "expected_actions.orchard_txins: {}, orchard_txins: {}",
             expected_actions.orchard_txins, orchard_txins,
         );
-        // sap
+        // each sapling nullifier consumed in this tx **ADDS** funds to the
+        // *transaction's* sapling pool of funds
+        let sapling_txins = dbg!(tx.spent_sapling_nullifiers.len() as u64);
+        // each note created in this tx, **REMOVES** funds from the *transaction's*
+        // sapling pool of funds
+        let sapling_txouts = dbg!(tx.sapling_notes.len() as u64);
         // check sapling actions
-        let sapling_txouts = dbg!(tx.spent_sapling_nullifiers.len() as u64);
         assert_eq!(
             expected_actions.sapling_txouts, sapling_txouts,
             "expected_actions.sapling_txouts: {}, sapling_txouts: {}",
             expected_actions.sapling_txouts, sapling_txouts
         );
-        let sapling_txins = dbg!(tx.sapling_notes.len() as u64);
         assert_eq!(
             expected_actions.sapling_txins, sapling_txins,
             "expected_actions.sapling_txins: {}, sapling_txins: {}",
