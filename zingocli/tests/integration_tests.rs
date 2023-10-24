@@ -3064,14 +3064,18 @@ mod slow {
         use std::cmp::max;
         assert!(tx.is_outgoing_transaction());
         // orch
-        let orchard_txouts = dbg!(tx.spent_orchard_nullifiers.len() as u64);
+        // each nullifier spent in this tx adds funds to the *transaction's*
+        // pool of funds
+        let orchard_txins = dbg!(tx.spent_orchard_nullifiers.len() as u64);
+        // each note created in this tx, removes funds from the *transaction's*
+        // pool of funds
+        let orchard_txouts = dbg!(tx.orchard_notes.len() as u64);
         // check orchard actions
         assert_eq!(
             expected_actions.orchard_txouts, orchard_txouts,
             "expected orchard_txout: {} observed orchard_txout: {}",
             expected_actions.orchard_txouts, orchard_txouts
         );
-        let orchard_txins = dbg!(tx.orchard_notes.len() as u64);
         assert_eq!(
             expected_actions.orchard_txins, orchard_txins,
             "expected_actions.orchard_txins: {}, orchard_txins: {}",
@@ -3187,7 +3191,6 @@ mod slow {
             &sender_tx,
             ExpectedActions {
                 orchard_txins: 1,
-                orchard_txouts: 1,
                 sapling_txouts: 1, // Note a pad will be added by the builder
                 ..Default::default()
             },
