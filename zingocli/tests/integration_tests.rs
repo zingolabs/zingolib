@@ -3220,7 +3220,6 @@ mod slow {
             .await
             .unwrap();
         //dbg!(&shield_tx);
-        panic!();
         let fee = get_padded_317_fee_from_actions(
             &shield_tx,
             ExpectedActions {
@@ -3231,6 +3230,7 @@ mod slow {
             },
         )
         .await;
+        panic!();
         assert_eq!(Into::<u64>::into(fee), 25_000u64); // 2 for orchard change, 2 for sapling pool, and 1 transparent
                                                        // 4 tz transparent and sapling to orchard
         recipient
