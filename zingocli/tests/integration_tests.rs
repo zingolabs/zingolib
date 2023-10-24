@@ -3035,101 +3035,90 @@ mod slow {
     impl Default for ExpectedActions {
         fn default() -> Self {
             Self {
-                orch_in: 0,
-                orch_out: 1, // The change note
-                sap_in: 0,
-                sap_out: 0,
-                transparent_in: 0,
-                transparent_out: 0,
+                orchard_txins: 0,
+                orchard_txouts: 1, // The change note
+                sapling_txins: 0,
+                sapling_txouts: 0,
+                transparent_txins: 0,
+                transparent_txouts: 0,
             }
         }
     }
     struct ExpectedActions {
-        orch_in: u64,
-        orch_out: u64,
-        sap_in: u64,
-        sap_out: u64,
-        transparent_in: u64,
-        transparent_out: u64,
+        orchard_txins: u64,
+        orchard_txouts: u64,
+        sapling_txins: u64,
+        sapling_txouts: u64,
+        transparent_txins: u64,
+        transparent_txouts: u64,
     }
-    async fn get_317_fee_from_actions(
+    async fn get_padded_317_fee_from_actions(
         tx: &TransactionMetadata,
         expected_actions: ExpectedActions,
     ) -> NonNegativeAmount {
         use std::cmp::max;
         assert!(tx.is_outgoing_transaction());
         // orch
-        let spent_orchard_nulls = dbg!(tx.spent_orchard_nullifiers.len() as u64);
+        let orchard_txouts = dbg!(tx.spent_orchard_nullifiers.len() as u64);
         // check orchard actions
         assert_eq!(
-            expected_actions.orch_in, spent_orchard_nulls,
-            "expect orch in: {} spent_orchard_nulls: {}",
-            expected_actions.orch_in, spent_orchard_nulls
+            expected_actions.orchard_txouts, orchard_txouts,
+            "expected orchard_txout: {} observed orchard_txout: {}",
+            expected_actions.orchard_txouts, orchard_txouts
         );
-        let mut orchard_outs = dbg!(tx
-            .outgoing_tx_data
-            .iter()
-            .filter(|x| x.to_address.starts_with("uregtest"))
-            .collect::<Vec<_>>()
-            .len() as u64);
-        orchard_outs = orchard_outs + 1; // Change isn't listed in outgoing metadata
+        let orchard_txins = dbg!(tx.orchard_notes.len() as u64);
         assert_eq!(
-            expected_actions.orch_out, orchard_outs,
-            "expected_actions.orch_out: {}, orchard_outs: {}",
-            expected_actions.orch_out, orchard_outs,
+            expected_actions.orchard_txins, orchard_txins,
+            "expected_actions.orchard_txins: {}, orchard_txins: {}",
+            expected_actions.orchard_txins, orchard_txins,
         );
         // sap
         // check sapling actions
-        let spent_sapling_nulls = dbg!(tx.spent_sapling_nullifiers.len() as u64);
+        let sapling_txouts = dbg!(tx.spent_sapling_nullifiers.len() as u64);
         assert_eq!(
-            expected_actions.sap_in, spent_sapling_nulls,
-            "expected_actions.sap_in: {}, spent_sapling_nulls: {}",
-            expected_actions.sap_in, spent_sapling_nulls
+            expected_actions.sapling_txouts, sapling_txouts,
+            "expected_actions.sapling_txouts: {}, sapling_txouts: {}",
+            expected_actions.sapling_txouts, sapling_txouts
         );
-        let sap_outs = dbg!(tx
-            .outgoing_tx_data
-            .iter()
-            .filter(|x| x.to_address.starts_with("zregtestsapling"))
-            .collect::<Vec<_>>()
-            .len() as u64);
+        let sapling_txins = dbg!(tx.sapling_notes.len() as u64);
         assert_eq!(
-            expected_actions.sap_out, sap_outs,
-            "expected_actions.sap_out: {}, sapling_outs: {}",
-            expected_actions.sap_out, sap_outs,
+            expected_actions.sapling_txins, sapling_txins,
+            "expected_actions.sapling_txins: {}, sapling_txins: {}",
+            expected_actions.sapling_txins, sapling_txins,
         );
         // transparents
         let received_utxos = dbg!(tx.received_utxos.len() as u64);
         // check transparent actions
         assert_eq!(
-            expected_actions.transparent_in, received_utxos,
-            "expected_actions.transparent_in: {}, received_utxos: {}",
-            expected_actions.transparent_in, received_utxos,
+            expected_actions.transparent_txins, received_utxos,
+            "expected_actions.transparent_txins: {}, received_utxos: {}",
+            expected_actions.transparent_txins, received_utxos,
         );
-        let transparent_out = dbg!(tx
+        let outgoing_to_taddress = dbg!(tx
             .outgoing_tx_data
             .iter()
             .filter(|x| x.to_address.starts_with("t"))
             .collect::<Vec<_>>()
             .len() as u64);
         assert_eq!(
-            expected_actions.transparent_out, transparent_out,
-            "expected_actions.transparent_out: {}, transparent_out: {}",
-            expected_actions.transparent_out, transparent_out
+            expected_actions.transparent_txouts, outgoing_to_taddress,
+            "expected_actions.transparent_txouts: {}, outgoing_to_taddress: {}",
+            expected_actions.transparent_txouts, outgoing_to_taddress
         );
         let orchard_outs = 0;
         let orchard_logicals: u64;
         let sapling_logicals: u64;
-        if spent_orchard_nulls > 0 || orchard_outs > 0 {
-            orchard_logicals = max(max(2, spent_orchard_nulls), orchard_outs);
+        if orchard_txouts > 0 || orchard_outs > 0 {
+            orchard_logicals = max(max(2, orchard_txouts), orchard_outs);
         } else {
             orchard_logicals = 0;
         };
-        if spent_sapling_nulls > 0 || sap_outs > 0 {
-            sapling_logicals = max(max(2, spent_sapling_nulls), sap_outs);
+        if sapling_txouts > 0 || sapling_txins > 0 {
+            sapling_logicals = max(max(2, sapling_txouts), sapling_txins);
         } else {
             sapling_logicals = 0;
         };
-        let transparent_logicals = max(transparent_out, received_utxos);
+        let transparent_logicals = max(outgoing_to_taddress, received_utxos);
         (MARGINAL_FEE
             * (orchard_logicals + sapling_logicals + transparent_logicals)
                 .try_into()
@@ -3167,16 +3156,18 @@ mod slow {
             .transaction_from_send(vec![(&recipient_taddr, 50_000, None)])
             .await
             .unwrap();
-        let fee = get_317_fee_from_actions(
+        let fee = get_padded_317_fee_from_actions(
             &orch_fauc_to_pmc_taddr_tx,
             ExpectedActions {
-                orch_in: 1,
-                orch_out: 1,
-                transparent_out: 1,
+                orchard_txins: 1,
+                transparent_txouts: 1,
                 ..Default::default()
             },
         )
         .await;
+        // Predicted fee:
+        //  1 orchard txin + 1 orchard change + 1 transparent txout = 3
+        //  3 * MARGINAL_FEE:
         assert_eq!(Into::<u64>::into(fee), 15_000u64);
         bump_and_check!(o: 0 s: 0 t: 50_000);
 
@@ -3187,11 +3178,11 @@ mod slow {
             .transaction_from_send(vec![(&recipient_sapling_addr, 50_000, None)])
             .await
             .unwrap();
-        let fee = get_317_fee_from_actions(
+        let fee = get_padded_317_fee_from_actions(
             &sender_tx,
             ExpectedActions {
-                orch_in: 1,
-                sap_out: 1,
+                orchard_txins: 1,
+                orchard_txouts: 1,
                 ..Default::default()
             },
         )
@@ -3199,15 +3190,35 @@ mod slow {
         assert_eq!(Into::<u64>::into(fee), 20_000u64); // 2 for orchard change, 2 for sapling pool
         bump_and_check!(o: 0 s: 50_000 t: 50_000);
 
-        // 3 Test of an orchard-only client to itself
+        // Test Three: test of an orchard-only client to itself
+        //  TODO:  Make it clearer in the error message that the problem is that the user can't send directly from the transparent pool.
+        panic!();
+        dbg!("Test Three");
         assert!(recipient
             .transaction_from_send(vec![(&recipient_unified_addr, 70_000, None)])
             .await
         .is_err_and(|x| x == "Insufficient verified funds.\ninsufficient_amount: 50000\ntotal_earmarked_for_recipients: 70000\nproposed_fee: 10000".to_string()));
         bump_and_check!(o: 0 s: 50_000 t: 50_000); // Send from the transparent pool is only enabled via the do_shield interface
 
-        panic!();
-        // 4 tz transparent and sapling to orchard
+        // Test Four: test of shield:
+        dbg!("Test Four");
+        let shield_tx = recipient
+            .transaction_from_shield(&[Pool::Sapling, Pool::Transparent])
+            .await
+            .unwrap();
+        //dbg!(&shield_tx);
+        let fee = get_padded_317_fee_from_actions(
+            &shield_tx,
+            ExpectedActions {
+                orchard_txouts: 2,
+                sapling_txins: 1,
+                transparent_txins: 1,
+                ..Default::default()
+            },
+        )
+        .await;
+        assert_eq!(Into::<u64>::into(fee), 25_000u64); // 2 for orchard change, 2 for sapling pool, and 1 transparent
+                                                       // 4 tz transparent and sapling to orchard
         recipient
             .transaction_from_send(vec![
                 (&recipient_taddr, 30_000, None),
