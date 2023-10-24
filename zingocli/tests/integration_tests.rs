@@ -3074,7 +3074,8 @@ mod slow {
         // *transaction's* orchard pool of funds
         let orchard_txins = dbg!(tx.spent_orchard_nullifiers.len() as u64);
         // each orchard note created in this tx, **REMOVES** funds from the *transaction's* orchard pool of funds
-        let orchard_txouts = dbg!(tx.orchard_notes.len() as u64);
+        let orchard_txouts =
+            dbg!(tx.orchard_notes.len() as u64) + get_out_toaddress_count(tx, "uregtest");
         // check orchard actions
         assert_eq!(
             expected_actions.orchard_txouts, orchard_txouts,
@@ -3091,7 +3092,8 @@ mod slow {
         let sapling_txins = dbg!(tx.spent_sapling_nullifiers.len() as u64);
         // each note created in this tx, **REMOVES** funds from the *transaction's*
         // sapling pool of funds
-        let sapling_txouts = dbg!(tx.sapling_notes.len() as u64);
+        let sapling_txouts =
+            dbg!(tx.sapling_notes.len() as u64) + get_out_toaddress_count(tx, "zregtestsapling");
         // check sapling actions
         assert_eq!(
             expected_actions.sapling_txouts, sapling_txouts,
