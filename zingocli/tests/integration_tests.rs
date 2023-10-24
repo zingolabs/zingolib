@@ -3052,6 +3052,11 @@ mod slow {
         transparent_txins: u64,
         transparent_txouts: u64,
     }
+    /// This fn takes, as its second argument a prediction about the number of
+    /// implied actions.  This number does *not* explicitly specify "padding"
+    /// actions that the librustzcash builder is expected to add, instead
+    /// those pads are implicit from outside the fn, and explicit as the '2' values
+    /// seen as arguments to `max`
     async fn get_padded_317_fee_from_actions(
         tx: &TransactionMetadata,
         expected_actions: ExpectedActions,
@@ -3109,12 +3114,12 @@ mod slow {
         let orchard_logicals: u64;
         let sapling_logicals: u64;
         if orchard_txouts > 0 || orchard_outs > 0 {
-            orchard_logicals = max(max(2, orchard_txouts), orchard_outs);
+            orchard_logicals = max(max(2, orchard_txouts), orchard_outs); // 2 pad
         } else {
             orchard_logicals = 0;
         };
         if sapling_txouts > 0 || sapling_txins > 0 {
-            sapling_logicals = max(max(2, sapling_txouts), sapling_txins);
+            sapling_logicals = max(max(2, sapling_txouts), sapling_txins); // 2 pad
         } else {
             sapling_logicals = 0;
         };
@@ -3183,6 +3188,7 @@ mod slow {
             ExpectedActions {
                 orchard_txins: 1,
                 orchard_txouts: 1,
+                sapling_txouts: 1, // Note a pad will be added by the builder
                 ..Default::default()
             },
         )
