@@ -3141,7 +3141,7 @@ mod slow {
         zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &orchard_faucet, 3)
             .await
             .unwrap();
-        macro_rules! bump_and_check {
+        macro_rules! bump_and_check_recipient {
             (o: $o:tt s: $s:tt t: $t:tt) => {
                 zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1).await.unwrap();
                 check_client_balances!(recipient, o:$o s:$s t:$t);
@@ -3169,7 +3169,7 @@ mod slow {
         //  1 orchard txin + 1 orchard change + 1 transparent txout = 3
         //  3 * MARGINAL_FEE:
         assert_eq!(Into::<u64>::into(fee), 15_000u64);
-        bump_and_check!(o: 0 s: 0 t: 50_000);
+        bump_and_check_recipient!(o: 0 s: 0 t: 50_000);
 
         // Test Two:
         //   faucet-orchard 1 note to recipient-transparent 1 addr
@@ -3188,7 +3188,7 @@ mod slow {
         )
         .await;
         assert_eq!(Into::<u64>::into(fee), 20_000u64); // 2 for orchard change, 2 for sapling pool
-        bump_and_check!(o: 0 s: 50_000 t: 50_000);
+        bump_and_check_recipient!(o: 0 s: 50_000 t: 50_000);
 
         // Test Three: test of an orchard-only client to itself
         //  TODO:  Make it clearer in the error message that the problem is that the user can't send directly from the transparent pool.
@@ -3198,7 +3198,7 @@ mod slow {
             .transaction_from_send(vec![(&recipient_unified_addr, 70_000, None)])
             .await
         .is_err_and(|x| x == "Insufficient verified funds.\ninsufficient_amount: 50000\ntotal_earmarked_for_recipients: 70000\nproposed_fee: 10000".to_string()));
-        bump_and_check!(o: 0 s: 50_000 t: 50_000); // Send from the transparent pool is only enabled via the do_shield interface
+        bump_and_check_recipient!(o: 0 s: 50_000 t: 50_000); // Send from the transparent pool is only enabled via the do_shield interface
 
         // Test Four: test of shield:
         dbg!("Test Four");
@@ -3226,33 +3226,33 @@ mod slow {
             ])
             .await
             .unwrap();
-        bump_and_check!(o: 0 s: 30_000 t: 30_000);
+        bump_and_check_recipient!(o: 0 s: 30_000 t: 30_000);
 
         recipient
             .transaction_from_send(vec![(&recipient_unified_addr, 20_000, None)])
             .await
             .unwrap();
-        bump_and_check!(o: 40_000 s: 0 t: 0);
+        bump_and_check_recipient!(o: 40_000 s: 0 t: 0);
 
         // 5 to transparent and orchard to orchard
         recipient
             .transaction_from_send(vec![(&recipient_taddr, 20_000, None)])
             .await
             .unwrap();
-        bump_and_check!(o: 10_000 s: 0 t: 20_000);
+        bump_and_check_recipient!(o: 10_000 s: 0 t: 20_000);
 
         // 6 sapling and orchard to orchard
         orchard_faucet
             .transaction_from_send(vec![(&recipient_sapling_addr, 20_000, None)])
             .await
             .unwrap();
-        bump_and_check!(o: 20_000 s: 20_000 t: 0);
+        bump_and_check_recipient!(o: 20_000 s: 20_000 t: 0);
 
         recipient
             .transaction_from_send(vec![(&recipient_unified_addr, 30_000, None)])
             .await
             .unwrap();
-        bump_and_check!(o: 30_000 s: 0 t: 0);
+        bump_and_check_recipient!(o: 30_000 s: 0 t: 0);
 
         // 7 tzo --> o
         orchard_faucet
@@ -3262,26 +3262,26 @@ mod slow {
             ])
             .await
             .unwrap();
-        bump_and_check!(o: 30_000 s: 20_000 t: 20_000);
+        bump_and_check_recipient!(o: 30_000 s: 20_000 t: 20_000);
 
         recipient
             .transaction_from_send(vec![(&recipient_unified_addr, 40_000, None)])
             .await
             .unwrap();
-        bump_and_check!(o: 50_000 s: 0 t: 0);
+        bump_and_check_recipient!(o: 50_000 s: 0 t: 0);
 
         // Send from Sapling into empty Orchard pool
         recipient
             .transaction_from_send(vec![(&recipient_sapling_addr, 40_000, None)])
             .await
             .unwrap();
-        bump_and_check!(o: 0 s: 40_000 t: 0);
+        bump_and_check_recipient!(o: 0 s: 40_000 t: 0);
 
         recipient
             .transaction_from_send(vec![(&recipient_unified_addr, 30_000, None)])
             .await
             .unwrap();
-        bump_and_check!(o: 30_000 s: 0 t: 0);
+        bump_and_check_recipient!(o: 30_000 s: 0 t: 0);
         let mut total_value_to_addrs_iter =
             recipient.do_total_value_to_address().await.0.into_iter();
         assert_eq!(
