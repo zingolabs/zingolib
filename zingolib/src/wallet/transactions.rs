@@ -49,7 +49,7 @@ impl TransactionMetadataSet {
             .get_transaction_fee()
         {
             Ok(tx_fee) => tx_fee,
-            Err(e) => panic!("{:?}", e),
+            Err(e) => panic!("{:?} for txid {}", e, txid,),
         }
     }
 

@@ -450,8 +450,10 @@ impl LightClient {
         }
     }
 
+    // pub async fn do_list_txsummaries(&self) -> (Vec<ValueTransfer>, Result<(), ZingoLibError>) {
     pub async fn do_list_txsummaries(&self) -> Vec<ValueTransfer> {
         let mut summaries: Vec<ValueTransfer> = Vec::new();
+        let mut _result = Ok(());
 
         for (txid, transaction_md) in self
             .wallet
@@ -463,9 +465,28 @@ impl LightClient {
             .iter()
         {
             LightClient::tx_summary_matcher(&mut summaries, *txid, transaction_md);
-            let tx_fee = match transaction_md.get_transaction_fee() {
-                Ok(tx_fee) => tx_fee,
-                Err(e) => panic!(
+
+            let tx_fee_result = transaction_md.get_transaction_fee();
+            match tx_fee_result {
+                Ok(tx_fee) => {
+                    if transaction_md.is_outgoing_transaction() {
+                        let (block_height, datetime, price) = (
+                            transaction_md.block_height,
+                            transaction_md.datetime,
+                            transaction_md.price,
+                        );
+                        summaries.push(ValueTransfer {
+                            block_height,
+                            datetime,
+                            kind: ValueTransferKind::Fee { amount: tx_fee },
+                            memos: vec![],
+                            price,
+                            txid: *txid,
+                        });
+                    }
+                }
+                Err(e) => {
+                    println!(
                     "{:?} for txid {} at height {}: spent {}, outgoing {}, returned change {} \n {:?}",
                     e,
                     txid,
@@ -474,25 +495,13 @@ impl LightClient {
                     transaction_md.value_outgoing(),
                     transaction_md.total_change_returned(),
                     transaction_md,
-                ),
+                    );
+                    _result = Err(e);
+                }
             };
-            let (block_height, datetime, price) = (
-                transaction_md.block_height,
-                transaction_md.datetime,
-                transaction_md.price,
-            );
-            if transaction_md.is_outgoing_transaction() {
-                summaries.push(ValueTransfer {
-                    block_height,
-                    datetime,
-                    kind: ValueTransferKind::Fee { amount: tx_fee },
-                    memos: vec![],
-                    price,
-                    txid: *txid,
-                });
-            }
         }
         summaries.sort_by_key(|summary| summary.block_height);
+        // (summaries, result)
         summaries
     }
 
