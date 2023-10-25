@@ -2,6 +2,7 @@
 //! from a source outside of the code-base e.g. a wallet-file.
 use crate::blaze::fetch_full_transaction::TransactionContext;
 use crate::compact_formats::TreeState;
+use crate::error::{CapabilityKind, InsufficientCapability, ZatMathError, ZingoLibResult};
 use crate::wallet::data::{SpendableSaplingNote, TransactionMetadata};
 
 use bip0039::Mnemonic;
@@ -561,11 +562,17 @@ impl LightWallet {
             .unwrap_or(self.transaction_context.config.sapling_activation_height() - 1)
     }
 
-    pub async fn maybe_verified_orchard_balance(&self, addr: Option<String>) -> Option<u64> {
+    pub async fn maybe_verified_orchard_balance(
+        &self,
+        addr: Option<String>,
+    ) -> ZingoLibResult<NonNegativeAmount> {
         self.shielded_balance::<OrchardDomain>(addr, &[]).await
     }
 
-    pub async fn maybe_verified_sapling_balance(&self, addr: Option<String>) -> Option<u64> {
+    pub async fn maybe_verified_sapling_balance(
+        &self,
+        addr: Option<String>,
+    ) -> ZingoLibResult<NonNegativeAmount> {
         self.shielded_balance::<SaplingDomain<zingoconfig::ChainType>>(addr, &[])
             .await
     }
@@ -907,7 +914,7 @@ impl LightWallet {
                         .collect::<Vec<_>>();
                     all_transparent_value_in_wallet =
                         utxos.iter().fold(Amount::zero(), |prev, utxo| {
-                            (prev + Amount::from_u64(utxo.value).unwrap()).unwrap()
+                            (prev + Amount::from(utxo.value)).unwrap()
                         });
                 }
                 Pool::Sapling => {
@@ -1646,13 +1653,13 @@ impl LightWallet {
         &self,
         target_addr: Option<String>,
         filters: &[Box<dyn Fn(&&D::WalletNote, &TransactionMetadata) -> bool + '_>],
-    ) -> Option<u64>
+    ) -> ZingoLibResult<NonNegativeAmount>
     where
         D: DomainWalletExt,
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: traits::Recipient,
     {
-        let fvk = D::wc_to_fvk(&self.wallet_capability()).ok()?;
+        let fvk = D::wc_to_fvk(&self.wallet_capability())?;
         let filter_notes_by_target_addr = |notedata: &&D::WalletNote| match target_addr.as_ref() {
             Some(addr) => {
                 use self::traits::Recipient as _;
@@ -1704,7 +1711,10 @@ impl LightWallet {
         }
     }
 
-    pub async fn spendable_sapling_balance(&self, target_addr: Option<String>) -> Option<u64> {
+    pub async fn spendable_sapling_balance(
+        &self,
+        target_addr: Option<String>,
+    ) -> ZingoLibResult<NonNegativeAmount> {
         if let Capability::Spend(_) = self.wallet_capability().sapling {
             self.verified_balance::<SaplingDomain<zingoconfig::ChainType>>(target_addr)
                 .await
@@ -1713,21 +1723,26 @@ impl LightWallet {
         }
     }
 
-    pub async fn tbalance(&self, addr: Option<String>) -> Option<u64> {
+    pub async fn tbalance(&self, addr: Option<String>) -> ZingoLibResult<NonNegativeAmount> {
         if self.wallet_capability().transparent.can_view() {
-            Some(
-                self.get_utxos()
-                    .await
-                    .iter()
-                    .filter(|utxo| match addr.as_ref() {
-                        Some(a) => utxo.address == *a,
-                        None => true,
-                    })
-                    .map(|utxo| utxo.value)
-                    .sum::<u64>(),
-            )
+            Ok(self
+                .get_utxos()
+                .await
+                .iter()
+                .filter(|utxo| match addr.as_ref() {
+                    Some(a) => utxo.address == *a,
+                    None => true,
+                })
+                .map(|utxo| utxo.value)
+                .sum::<Option<NonNegativeAmount>>()
+                .ok_or(ZatMathError::Overflow)?)
         } else {
-            None
+            Err(InsufficientCapability {
+                pool: Pool::Transparent,
+                required_capability: CapabilityKind::ViewCapable,
+                held_capability: CapabilityKind::NoCapability,
+            }
+            .into())
         }
     }
 
@@ -1738,7 +1753,7 @@ impl LightWallet {
     async fn unverified_balance<D: DomainWalletExt>(
         &self,
         target_addr: Option<String>,
-    ) -> Option<u64>
+    ) -> ZingoLibResult<NonNegativeAmount>
     where
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
@@ -1753,18 +1768,27 @@ impl LightWallet {
         self.shielded_balance::<D>(target_addr, filters).await
     }
 
-    pub async fn unverified_orchard_balance(&self, target_addr: Option<String>) -> Option<u64> {
+    pub async fn unverified_orchard_balance(
+        &self,
+        target_addr: Option<String>,
+    ) -> ZingoLibResult<NonNegativeAmount> {
         self.unverified_balance::<OrchardDomain>(target_addr).await
     }
 
     /// The following functions use a filter/map functional approach to
     /// expressively unpack different kinds of transaction data.
-    pub async fn unverified_sapling_balance(&self, target_addr: Option<String>) -> Option<u64> {
+    pub async fn unverified_sapling_balance(
+        &self,
+        target_addr: Option<String>,
+    ) -> ZingoLibResult<NonNegativeAmount> {
         self.unverified_balance::<SaplingDomain<zingoconfig::ChainType>>(target_addr)
             .await
     }
 
-    async fn verified_balance<D: DomainWalletExt>(&self, target_addr: Option<String>) -> Option<u64>
+    async fn verified_balance<D: DomainWalletExt>(
+        &self,
+        target_addr: Option<String>,
+    ) -> ZingoLibResult<NonNegativeAmount>
     where
         <D as Domain>::Recipient: Recipient,
         <D as Domain>::Note: PartialEq + Clone,
@@ -1780,11 +1804,17 @@ impl LightWallet {
         self.shielded_balance::<D>(target_addr, filters).await
     }
 
-    pub async fn verified_orchard_balance(&self, target_addr: Option<String>) -> Option<u64> {
+    pub async fn verified_orchard_balance(
+        &self,
+        target_addr: Option<String>,
+    ) -> ZingoLibResult<NonNegativeAmount> {
         self.verified_balance::<OrchardDomain>(target_addr).await
     }
 
-    pub async fn verified_sapling_balance(&self, target_addr: Option<String>) -> Option<u64> {
+    pub async fn verified_sapling_balance(
+        &self,
+        target_addr: Option<String>,
+    ) -> ZingoLibResult<NonNegativeAmount> {
         self.verified_balance::<SaplingDomain<zingoconfig::ChainType>>(target_addr)
             .await
     }

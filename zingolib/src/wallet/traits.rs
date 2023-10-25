@@ -11,8 +11,11 @@ use super::{
     transactions::TransactionMetadataSet,
     Pool,
 };
-use crate::compact_formats::{
-    slice_to_array, CompactOrchardAction, CompactSaplingOutput, CompactTx, TreeState,
+use crate::{
+    compact_formats::{
+        slice_to_array, CompactOrchardAction, CompactSaplingOutput, CompactTx, TreeState,
+    },
+    error::InsufficientCapability,
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::{witness::IncrementalWitness, Hashable, Level, Position};
@@ -758,10 +761,12 @@ where
         unified_spend_auth: &'a WalletCapability,
         receiver: &Self::Recipient,
     ) -> Option<&'a UnifiedAddress>;
-    fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, String>;
-    fn wc_to_ivk(wc: &WalletCapability) -> Result<Self::IncomingViewingKey, String>;
-    fn wc_to_ovk(wc: &WalletCapability) -> Result<Self::OutgoingViewingKey, String>;
-    fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String>;
+    fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, InsufficientCapability>;
+    fn wc_to_ivk(wc: &WalletCapability)
+        -> Result<Self::IncomingViewingKey, InsufficientCapability>;
+    fn wc_to_ovk(wc: &WalletCapability)
+        -> Result<Self::OutgoingViewingKey, InsufficientCapability>;
+    fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, InsufficientCapability>;
 }
 
 impl DomainWalletExt for SaplingDomain<ChainType> {
@@ -825,17 +830,21 @@ impl DomainWalletExt for SaplingDomain<ChainType> {
             .iter()
             .find(|ua| ua.sapling() == Some(receiver))
     }
-    fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, String> {
+    fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, InsufficientCapability> {
         Self::Fvk::try_from(wc)
     }
-    fn wc_to_ivk(wc: &WalletCapability) -> Result<Self::IncomingViewingKey, String> {
+    fn wc_to_ivk(
+        wc: &WalletCapability,
+    ) -> Result<Self::IncomingViewingKey, InsufficientCapability> {
         Self::IncomingViewingKey::try_from(wc)
     }
-    fn wc_to_ovk(wc: &WalletCapability) -> Result<Self::OutgoingViewingKey, String> {
+    fn wc_to_ovk(
+        wc: &WalletCapability,
+    ) -> Result<Self::OutgoingViewingKey, InsufficientCapability> {
         Self::OutgoingViewingKey::try_from(wc)
     }
 
-    fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String> {
+    fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, InsufficientCapability> {
         Self::SpendingKey::try_from(wc)
     }
 }

@@ -56,7 +56,9 @@ use zcash_primitives::{
     memo::{Memo, MemoBytes},
     sapling::note_encryption::SaplingDomain,
     transaction::{
-        components::amount::NonNegativeAmount, fees::zip317::MINIMUM_FEE, Transaction, TxId,
+        components::{amount::NonNegativeAmount, Amount},
+        fees::zip317::MINIMUM_FEE,
+        Transaction, TxId,
     },
 };
 use zcash_proofs::prover::LocalTxProver;
@@ -406,21 +408,22 @@ impl LightClient {
         // This should never be true _AFTER SOME VERSION_ since we only send change to orchard.
         // If I sent a transaction to a foreign transparent address wouldn't this "total_change" value
         // be wrong?
-        let total_change = wallet_transaction
+        let total_change = (wallet_transaction
             .sapling_notes
             .iter()
             .filter(|nd| nd.is_change)
-            .map(|nd| nd.note.value())
+            .filter_map(|nd| NonNegativeAmount::from_u64(nd.note.value().inner()).ok())
             .sum::<Option<NonNegativeAmount>>()
             .ok_or(ZatMathError::Overflow)?
             + wallet_transaction
                 .orchard_notes
                 .iter()
                 .filter(|nd| nd.is_change)
-                .map(|nd| nd.note.value().inner())
+                .filter_map(|nd| NonNegativeAmount::from_u64(nd.note.value().inner()).ok())
                 .sum::<Option<NonNegativeAmount>>()
                 .ok_or(ZatMathError::Overflow)?
-            + received_utxo_value;
+            + received_utxo_value)
+            .ok_or(ZatMathError::Overflow)?;
 
         // Collect outgoing metadata
         let outgoing_json = wallet_transaction
@@ -439,15 +442,15 @@ impl LightClient {
             .collect::<Vec<JsonValue>>();
 
         let block_height: u32 = wallet_transaction.block_height.into();
-        object! {
+        Ok(object! {
             "block_height" => block_height,
             "unconfirmed" => wallet_transaction.unconfirmed,
             "datetime"     => wallet_transaction.datetime,
             "txid"         => format!("{}", wallet_transaction.txid),
             "zec_price"    => wallet_transaction.price.map(|p| (p * 100.0).round() / 100.0),
-            "amount"       => total_change as i64 - wallet_transaction.total_value_spent() as i64,
+            "amount"       => u64::from(total_change) as i64 - wallet_transaction.total_value_spent() as i64,
             "outgoing_metadata" => outgoing_json,
-        }
+        })
     }
 
     pub async fn clear_state(&self) {
@@ -482,8 +485,8 @@ impl LightClient {
         JsonValue::Array(objectified_addresses)
     }
 
-    pub async fn do_balance(&self) -> PoolBalances {
-        PoolBalances {
+    pub async fn do_balance(&self) -> ZingoLibResult<PoolBalances> {
+        Ok(PoolBalances {
             sapling_balance: self.wallet.maybe_verified_sapling_balance(None).await,
             verified_sapling_balance: self.wallet.verified_sapling_balance(None).await,
             spendable_sapling_balance: self.wallet.spendable_sapling_balance(None).await,
@@ -492,8 +495,19 @@ impl LightClient {
             verified_orchard_balance: self.wallet.verified_orchard_balance(None).await,
             spendable_orchard_balance: self.wallet.spendable_orchard_balance(None).await,
             unverified_orchard_balance: self.wallet.unverified_orchard_balance(None).await,
-            transparent_balance: self.wallet.tbalance(None).await,
-        }
+            transparent_balance: self
+                .wallet
+                .tbalance(None)
+                .await
+                .map(|val| Some(u64::from(val)))
+                .or_else(|e| {
+                    if let ZingoLibError::InsufficientCapability(_) = e {
+                        Ok(None)
+                    } else {
+                        Err(e)
+                    }
+                })?,
+        })
     }
 
     pub async fn do_decrypt_message(&self, enc_base64: String) -> JsonValue {
@@ -666,7 +680,7 @@ impl LightClient {
                                 "created_in_block"   => created_block,
                                 "datetime"           => wtx.datetime,
                                 "created_in_txid"    => format!("{}", transaction_id),
-                                "value"              => utxo.value,
+                                "value"              => u64::from(utxo.value),
                                 "scriptkey"          => hex::encode(utxo.script.clone()),
                                 "is_change"          => false, // TODO: Identify notes as change if we send change to our own taddrs
                                 "address"            => self.wallet.wallet_capability().get_ua_from_contained_transparent_receiver(&taddr).map(|ua| ua.encode(&self.config.chain)),
@@ -725,14 +739,14 @@ impl LightClient {
             .await
             .current
             .iter()
-            .flat_map(|(txid, wallet_transaction)| -> Result<_, ZingoLibError>{
+            .map(|(txid, wallet_transaction)| -> Result<_, ZingoLibError>{
                 let mut consumer_notes_by_tx: Vec<JsonValue> = vec![];
 
                 let total_transparent_received = wallet_transaction.received_utxos.iter().map(|u| u.value).sum::<Option<NonNegativeAmount>>().ok_or(ZatMathError::Overflow)?;
                 if wallet_transaction.is_outgoing_transaction() {
                     // If money was spent, create a consumer_ui_note. For this, we'll subtract
                     // all the change notes + Utxos
-                    consumer_notes_by_tx.push(Self::append_change_notes(wallet_transaction, total_transparent_received));
+                    consumer_notes_by_tx.push(Self::append_change_notes(wallet_transaction, total_transparent_received)?);
                 }
 
                 // For each note that is not a change, add a consumer_ui_note.
@@ -743,9 +757,10 @@ impl LightClient {
 
                 // Get the total transparent value received in this transaction
                 // Again we see the assumption that utxos are incoming.
-                let net_transparent_value = total_transparent_received as i64 - wallet_transaction.total_transparent_value_spent as i64;
+                let net_transparent_value =
+                    (Amount::from( total_transparent_received )- Amount::from(wallet_transaction.total_transparent_value_spent)).ok_or(ZatMathError::Underflow)?;
                 let address = wallet_transaction.received_utxos.iter().map(|utxo| utxo.address.clone()).collect::<Vec<String>>().join(",");
-                if net_transparent_value > 0 {
+                if i64::from(net_transparent_value) > 0 {
                     if let Some(transaction) = consumer_notes_by_tx.iter_mut().find(|transaction| transaction["txid"] == txid.to_string()) {
                         // If this transaction is outgoing:
                         // Then we've already accounted for the entire balance.
@@ -753,7 +768,18 @@ impl LightClient {
                         if !wallet_transaction.is_outgoing_transaction() {
                             // If not, we've added sapling/orchard, and need to add transparent
                             let old_amount = transaction.remove("amount").as_i64().unwrap();
-                            transaction.insert("amount", old_amount + net_transparent_value).unwrap();
+                            transaction.insert(
+                                "amount", 
+                                i64::from((
+                                    Amount::from_i64(old_amount)
+                                        .map_err(|()| {
+                                            if old_amount > 0 {
+                                                ZatMathError::Overflow
+                                            } else {
+                                                ZatMathError::Underflow
+                                            }})? + net_transparent_value
+                                ).ok_or(ZatMathError::Underflow)?)
+                            ).unwrap();
                         }
                     } else {
                         // Create an input transaction for the transparent value as well.
@@ -763,7 +789,7 @@ impl LightClient {
                             "unconfirmed"  => wallet_transaction.unconfirmed,
                             "datetime"     => wallet_transaction.datetime,
                             "txid"         => format!("{}", txid),
-                            "amount"       => net_transparent_value,
+                            "amount"       => i64::from(net_transparent_value),
                             "zec_price"    => wallet_transaction.price.map(|p| (p * 100.0).round() / 100.0),
                             "address"      => address,
                             "memo"         => None::<String>
@@ -771,9 +797,11 @@ impl LightClient {
                     }
                 }
 
-                consumer_notes_by_tx
-            })
-            .collect::<Vec<JsonValue>>();
+               Ok(consumer_notes_by_tx)
+            }).try_fold(vec![], |mut accumulator, result_vec| -> ZingoLibResult<_> {
+                accumulator.extend(result_vec?);
+                Ok(accumulator)
+            })?;
 
         let match_by_txid =
             |a: &JsonValue, b: &JsonValue| a["txid"].to_string().cmp(&b["txid"].to_string());
@@ -814,7 +842,7 @@ impl LightClient {
             }
         });
 
-        JsonValue::Array(consumer_ui_notes)
+        Ok(JsonValue::Array(consumer_ui_notes))
     }
 
     pub async fn do_list_txsummaries(&self) -> Vec<ValueTransfer> {
@@ -1080,8 +1108,8 @@ impl LightClient {
         address: Option<String>,
     ) -> Result<String, String> {
         let transaction_submission_height = self.get_submission_height().await?;
-        let fee = u64::from(MINIMUM_FEE); // TODO: This can no longer be hard coded, and must be calced
-                                          // as a fn of the transactions structure.
+        let fee = MINIMUM_FEE; // TODO: This can no longer be hard coded, and must be calced
+                               // as a fn of the transactions structure.
         let tbal = self
             .wallet
             .tbalance(None)
@@ -1097,7 +1125,7 @@ impl LightClient {
         let balance_to_shield = if pools_to_shield.contains(&Pool::Transparent) {
             tbal
         } else {
-            0
+            NonNegativeAmount::const_from_u64(0)
         } + if pools_to_shield.contains(&Pool::Sapling) {
             sapling_bal
         } else {
@@ -1927,7 +1955,7 @@ impl LightClient {
                         datetime,
                         kind: ValueTransferKind::Received {
                             pool: Pool::Transparent,
-                            amount: received_transparent.value,
+                            amount: u64::from(received_transparent.value),
                         },
                         memos: vec![],
                         price,

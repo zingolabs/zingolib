@@ -21,7 +21,9 @@ use zcash_primitives::{
 };
 use zingoconfig::ZingoConfig;
 
+use crate::error::{InsufficientCapability, ZingoLibResult};
 use crate::wallet::traits::ReadableWriteable;
+use crate::wallet::Pool;
 
 use super::{
     extended_transparent::{ExtendedPrivKey, ExtendedPubKey, KeyIndex},
@@ -178,7 +180,7 @@ impl WalletCapability {
     pub fn new_address(
         &self,
         desired_receivers: ReceiverSelection,
-    ) -> Result<UnifiedAddress, String> {
+    ) -> ZingoLibResult<UnifiedAddress> {
         if (desired_receivers.transparent & !self.transparent.can_view())
             | (desired_receivers.sapling & !self.sapling.can_view()
                 | (desired_receivers.orchard & !self.orchard.can_view()))
@@ -593,121 +595,135 @@ impl ReadableWriteable<()> for WalletCapability {
 }
 
 impl TryFrom<&WalletCapability> for super::extended_transparent::ExtendedPrivKey {
-    type Error = String;
-    fn try_from(wc: &WalletCapability) -> Result<Self, String> {
+    type Error = InsufficientCapability;
+    fn try_from(wc: &WalletCapability) -> Result<Self, InsufficientCapability> {
         match &wc.transparent {
             Capability::Spend(sk) => Ok(sk.clone()),
-            _ => Err("The wallet is not capable of spending transparent funds".to_string()),
+            Capability::View(_) => Err(InsufficientCapability::need_spendkey(
+                Pool::Transparent,
+                crate::error::CapabilityKind::ViewCapable,
+            )),
+            Capability::None => Err(InsufficientCapability::need_spendkey(
+                Pool::Transparent,
+                crate::error::CapabilityKind::NoCapability,
+            )),
         }
     }
 }
 
 impl TryFrom<&WalletCapability> for zcash_primitives::zip32::ExtendedSpendingKey {
-    type Error = String;
-    fn try_from(wc: &WalletCapability) -> Result<Self, String> {
+    type Error = InsufficientCapability;
+    fn try_from(wc: &WalletCapability) -> Result<Self, InsufficientCapability> {
         match &wc.sapling {
             Capability::Spend(sk) => Ok(sk.clone()),
-            _ => Err("The wallet is not capable of spending Sapling funds".to_string()),
+            Capability::View(_) => Err(InsufficientCapability::need_spendkey(
+                Pool::Sapling,
+                crate::error::CapabilityKind::ViewCapable,
+            )),
+            Capability::None => Err(InsufficientCapability::need_spendkey(
+                Pool::Sapling,
+                crate::error::CapabilityKind::NoCapability,
+            )),
         }
     }
 }
 
 impl TryFrom<&WalletCapability> for orchard::keys::SpendingKey {
-    type Error = String;
-    fn try_from(wc: &WalletCapability) -> Result<Self, String> {
+    type Error = InsufficientCapability;
+    fn try_from(wc: &WalletCapability) -> Result<Self, InsufficientCapability> {
         match &wc.orchard {
             Capability::Spend(sk) => Ok(*sk),
-            _ => Err("The wallet is not capable of spending Orchard funds".to_string()),
+            Capability::View(_) => Err(InsufficientCapability::need_spendkey(
+                Pool::Orchard,
+                crate::error::CapabilityKind::ViewCapable,
+            )),
+            Capability::None => Err(InsufficientCapability::need_spendkey(
+                Pool::Orchard,
+                crate::error::CapabilityKind::NoCapability,
+            )),
         }
     }
 }
 
 impl TryFrom<&WalletCapability> for super::extended_transparent::ExtendedPubKey {
-    type Error = String;
-    fn try_from(wc: &WalletCapability) -> Result<Self, String> {
+    type Error = InsufficientCapability;
+    fn try_from(wc: &WalletCapability) -> Result<Self, InsufficientCapability> {
         match &wc.transparent {
             Capability::Spend(ext_sk) => Ok(ExtendedPubKey::from(ext_sk)),
             Capability::View(ext_pk) => Ok(ext_pk.clone()),
-            Capability::None => {
-                Err("The wallet is not capable of viewing transparent funds".to_string())
-            }
+            Capability::None => Err(InsufficientCapability::need_viewkey(Pool::Transparent)),
         }
     }
 }
 
 impl TryFrom<&WalletCapability> for orchard::keys::FullViewingKey {
-    type Error = String;
-    fn try_from(wc: &WalletCapability) -> Result<Self, String> {
+    type Error = InsufficientCapability;
+    fn try_from(wc: &WalletCapability) -> Result<Self, InsufficientCapability> {
         match &wc.orchard {
             Capability::Spend(sk) => Ok(orchard::keys::FullViewingKey::from(sk)),
             Capability::View(fvk) => Ok(fvk.clone()),
-            Capability::None => {
-                Err("The wallet is not capable of viewing Orchard funds".to_string())
-            }
+            Capability::None => Err(InsufficientCapability::need_viewkey(Pool::Orchard)),
         }
     }
 }
 
 impl TryFrom<&WalletCapability> for zcash_primitives::zip32::sapling::DiversifiableFullViewingKey {
-    type Error = String;
-    fn try_from(wc: &WalletCapability) -> Result<Self, String> {
+    type Error = InsufficientCapability;
+    fn try_from(wc: &WalletCapability) -> Result<Self, InsufficientCapability> {
         match &wc.sapling {
             Capability::Spend(sk) => {
                 let dfvk = sk.to_diversifiable_full_viewing_key();
                 Ok(dfvk)
             }
             Capability::View(fvk) => Ok(fvk.clone()),
-            Capability::None => {
-                Err("The wallet is not capable of viewing Sapling funds".to_string())
-            }
+            Capability::None => Err(InsufficientCapability::need_viewkey(Pool::Sapling)),
         }
     }
 }
 
 impl TryFrom<&WalletCapability> for PreparedIncomingViewingKey {
-    type Error = String;
-
-    fn try_from(value: &WalletCapability) -> Result<Self, Self::Error> {
-        zcash_primitives::sapling::SaplingIvk::try_from(value)
+    type Error = InsufficientCapability;
+    fn try_from(wc: &WalletCapability) -> Result<Self, InsufficientCapability> {
+        zcash_primitives::sapling::SaplingIvk::try_from(wc)
             .map(|k| PreparedIncomingViewingKey::new(&k))
     }
 }
 
 impl TryFrom<&WalletCapability> for orchard::keys::IncomingViewingKey {
-    type Error = String;
-    fn try_from(wc: &WalletCapability) -> Result<Self, String> {
+    type Error = InsufficientCapability;
+    fn try_from(wc: &WalletCapability) -> Result<Self, InsufficientCapability> {
         let fvk: orchard::keys::FullViewingKey = wc.try_into()?;
         Ok(fvk.to_ivk(Scope::External))
     }
 }
 
 impl TryFrom<&WalletCapability> for orchard::keys::PreparedIncomingViewingKey {
-    type Error = String;
-    fn try_from(wc: &WalletCapability) -> Result<Self, String> {
+    type Error = InsufficientCapability;
+    fn try_from(wc: &WalletCapability) -> Result<Self, InsufficientCapability> {
         orchard::keys::IncomingViewingKey::try_from(wc)
             .map(|k| orchard::keys::PreparedIncomingViewingKey::new(&k))
     }
 }
 
 impl TryFrom<&WalletCapability> for zcash_primitives::sapling::SaplingIvk {
-    type Error = String;
-    fn try_from(wc: &WalletCapability) -> Result<Self, String> {
+    type Error = InsufficientCapability;
+    fn try_from(wc: &WalletCapability) -> Result<Self, InsufficientCapability> {
         let fvk: zcash_primitives::zip32::sapling::DiversifiableFullViewingKey = wc.try_into()?;
         Ok(fvk.fvk().vk.ivk())
     }
 }
 
 impl TryFrom<&WalletCapability> for orchard::keys::OutgoingViewingKey {
-    type Error = String;
-    fn try_from(wc: &WalletCapability) -> Result<Self, String> {
+    type Error = InsufficientCapability;
+    fn try_from(wc: &WalletCapability) -> Result<Self, InsufficientCapability> {
         let fvk: orchard::keys::FullViewingKey = wc.try_into()?;
         Ok(fvk.to_ovk(Scope::External))
     }
 }
 
 impl TryFrom<&WalletCapability> for zcash_primitives::keys::OutgoingViewingKey {
-    type Error = String;
-    fn try_from(wc: &WalletCapability) -> Result<Self, String> {
+    type Error = InsufficientCapability;
+    fn try_from(wc: &WalletCapability) -> Result<Self, InsufficientCapability> {
         let fvk: zcash_primitives::zip32::sapling::DiversifiableFullViewingKey = wc.try_into()?;
         Ok(fvk.fvk().ovk)
     }

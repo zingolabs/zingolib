@@ -1053,7 +1053,13 @@ impl Command for TransactionsCommand {
             return format!("Didn't understand arguments\n{}", self.help());
         }
 
-        RT.block_on(async move { lightclient.do_list_transactions().await.pretty(2) })
+        RT.block_on(async move {
+            match lightclient.do_list_transactions().await {
+                Ok(val) => val.pretty(2),
+                // TODO: Improve this diagnostic
+                Err(e) => format!("{:?}", e),
+            }
+        })
     }
 }
 

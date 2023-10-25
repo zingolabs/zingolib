@@ -122,7 +122,7 @@ async fn dont_write_unconfirmed() {
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 2)
         .await
         .unwrap();
-    let recipient_balance = recipient.do_balance().await;
+    let recipient_balance = recipient.do_balance().await.unwrap();
     assert_eq!(
         recipient_balance,
         PoolBalances {
@@ -1138,7 +1138,7 @@ async fn diversified_addresses_receive_funds_in_best_pool() {
     zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
         .await
         .unwrap();
-    let balance_b = recipient.do_balance().await;
+    let balance_b = recipient.do_balance().await.unwrap();
     assert_eq!(
         balance_b,
         PoolBalances {
