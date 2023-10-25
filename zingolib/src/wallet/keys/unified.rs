@@ -181,40 +181,36 @@ impl WalletCapability {
         &self,
         desired_receivers: ReceiverSelection,
     ) -> ZingoLibResult<UnifiedAddress> {
-        if (desired_receivers.transparent & !self.transparent.can_view())
-            | (desired_receivers.sapling & !self.sapling.can_view()
-                | (desired_receivers.orchard & !self.orchard.can_view()))
-        {
-            return Err("The wallet is not capable of producing desired receivers.".to_string());
-        }
-        if self
-            .addresses_write_lock
-            .swap(true, atomic::Ordering::Acquire)
-        {
-            return Err("addresses_write_lock collision!".to_string());
-        }
-        let previous_num_addresses = self.addresses.len();
-        let orchard_receiver = if desired_receivers.orchard {
-            let fvk: orchard::keys::FullViewingKey = match self.try_into() {
-                Ok(viewkey) => viewkey,
-                Err(e) => {
-                    self.addresses_write_lock
-                        .swap(false, atomic::Ordering::Release);
-                    return Err(e);
-                }
-            };
-            Some(fvk.address_at(self.addresses.len(), Scope::External))
+        let transparent_pubkey = if desired_receivers.transparent {
+            Some(ExtendedPubKey::try_from(self)?)
         } else {
             None
         };
+        let sapling_fvk = if desired_receivers.sapling {
+            Some(zcash_primitives::zip32::sapling::DiversifiableFullViewingKey::try_from(self)?)
+        } else {
+            None
+        };
+        let orchard_fvk = if desired_receivers.orchard {
+            Some(orchard::keys::FullViewingKey::try_from(self)?)
+        } else {
+            None
+        };
+        while self
+            .addresses_write_lock
+            .swap(true, atomic::Ordering::Acquire)
+        {
+            std::hint::spin_loop()
+        }
+        let previous_num_addresses = self.addresses.len();
+        let orchard_receiver =
+            orchard_fvk.map(|fvk| fvk.address_at(self.addresses.len(), Scope::External));
 
         // produce a Sapling address to increment Sapling diversifier index
-        let sapling_receiver = if desired_receivers.sapling && self.sapling.can_view() {
+        let sapling_receiver = sapling_fvk.map(|fvk| {
             let mut sapling_diversifier_index = DiversifierIndex::new();
             let mut address;
             let mut count = 0;
-            let fvk: zcash_primitives::zip32::sapling::DiversifiableFullViewingKey =
-                self.try_into().expect("to create an fvk");
             loop {
                 (sapling_diversifier_index, address) = fvk
                     .find_address(sapling_diversifier_index)
@@ -227,11 +223,10 @@ impl WalletCapability {
                 }
                 count += 1;
             }
-            Some(address)
-        } else {
-            None
-        };
+            address
+        });
 
+        //TODO: Clean this up, it's somewhat less trivial than the above as we need the push for spendkeys
         let transparent_receiver = if desired_receivers.transparent {
             let child_index = KeyIndex::from_index(self.addresses.len() as u32).unwrap();
             match &self.transparent {
@@ -240,7 +235,7 @@ impl WalletCapability {
                         Err(e) => {
                             self.addresses_write_lock
                                 .swap(false, atomic::Ordering::Release);
-                            return Err(format!("Transparent private key derivation failed: {e}"));
+                            return Err(crate::error::ZingoLibError::DerevationError(e));
                         }
                         Ok(res) => res.private_key,
                     };
@@ -255,7 +250,7 @@ impl WalletCapability {
                         Err(e) => {
                             self.addresses_write_lock
                                 .swap(false, atomic::Ordering::Release);
-                            return Err(format!("Transparent public key derivation failed: {e}"));
+                            return Err(crate::error::ZingoLibError::DerevationError(e));
                         }
                         Ok(res) => res.public_key,
                     };
@@ -282,10 +277,7 @@ impl WalletCapability {
             None => {
                 self.addresses_write_lock
                     .swap(false, atomic::Ordering::Release);
-                return Err(
-                    "Invalid receivers requested! At least one of sapling or orchard required"
-                        .to_string(),
-                );
+                return Err(crate::error::ZingoLibError::NoShieldedReciever);
             }
         };
         self.addresses.push(ua.clone());

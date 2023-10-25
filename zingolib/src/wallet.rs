@@ -86,7 +86,7 @@ pub struct SendProgress {
     pub last_transaction_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display)]
 pub enum Pool {
     Sapling,
     Orchard,
@@ -338,7 +338,7 @@ impl LightWallet {
     }
 
     ///TODO: Make this work for orchard too
-    pub async fn decrypt_message(&self, enc: Vec<u8>) -> Result<Message, String> {
+    pub async fn decrypt_message(&self, enc: Vec<u8>) -> ZingoLibResult<Message> {
         let sapling_ivk = SaplingIvk::try_from(&*self.wallet_capability())?;
 
         if let Ok(msg) = Message::decrypt(&enc, &sapling_ivk) {

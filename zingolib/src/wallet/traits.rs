@@ -910,17 +910,21 @@ impl DomainWalletExt for OrchardDomain {
             .iter()
             .find(|unified_address| unified_address.orchard() == Some(receiver))
     }
-    fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, String> {
+    fn wc_to_fvk(wc: &WalletCapability) -> Result<Self::Fvk, InsufficientCapability> {
         Self::Fvk::try_from(wc)
     }
-    fn wc_to_ivk(wc: &WalletCapability) -> Result<Self::IncomingViewingKey, String> {
+    fn wc_to_ivk(
+        wc: &WalletCapability,
+    ) -> Result<Self::IncomingViewingKey, InsufficientCapability> {
         Self::IncomingViewingKey::try_from(wc)
     }
-    fn wc_to_ovk(wc: &WalletCapability) -> Result<Self::OutgoingViewingKey, String> {
+    fn wc_to_ovk(
+        wc: &WalletCapability,
+    ) -> Result<Self::OutgoingViewingKey, InsufficientCapability> {
         Self::OutgoingViewingKey::try_from(wc)
     }
 
-    fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, String> {
+    fn wc_to_sk(wc: &WalletCapability) -> Result<Self::SpendingKey, InsufficientCapability> {
         Self::SpendingKey::try_from(wc)
     }
 }

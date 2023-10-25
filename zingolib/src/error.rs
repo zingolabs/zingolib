@@ -1,21 +1,25 @@
 use crate::wallet::Pool;
 
-#[derive(Debug, PartialEq, Eq, derive_more::From)]
+#[derive(Debug, PartialEq, Eq, derive_more::From, derive_more::Display)]
 pub enum ZingoLibError {
     NoWalletLocation,
     ZatMathError(ZatMathError),
     InsufficientCapability(InsufficientCapability),
+    DerevationError(secp256k1::Error),
+    NoShieldedReciever,
 }
+
+impl std::error::Error for ZingoLibError {}
 
 pub type ZingoLibResult<T> = Result<T, ZingoLibError>;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, derive_more::Display)]
 pub enum ZatMathError {
     Overflow,
     Underflow,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, derive_more::Display)]
 pub struct InsufficientCapability {
     pool: Pool,
     required_capability: CapabilityKind,
