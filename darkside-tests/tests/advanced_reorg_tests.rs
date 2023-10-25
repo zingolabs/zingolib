@@ -725,6 +725,171 @@ async fn prepare_changes_outgoing_tx_height_before_reorg(uri: http::Uri) -> Resu
     Ok(())
 }
 
+#[tokio::test]
+/// ### ReOrg Removes Outbound TxAnd Is Never Mined
+/// Transaction was included in a block, and then is not included in a block after a reorg, and expires.
+/// Steps:
+/// 1. create fake chain
+/// 1a. sync to latest height
+/// 2. send transaction to recipient address
+/// 3. getIncomingTransaction
+/// 4. stage transaction at sentTxHeight
+/// 5. applyHeight(sentTxHeight)
+/// 6. sync to latest height
+/// 6a. verify that there's a pending transaction with a mined height of sentTxHeight
+/// 7. stage 15 blocks from sentTxHeigth to cause a reorg
+/// 8. sync to latest height
+/// 9. verify that there's an expired transaction as a pending transaction
+async fn reorg_expires_outgoing_tx_height() {
+    let darkside_handler = DarksideHandler::new();
+
+    let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
+        "http://127.0.0.1:{}",
+        darkside_handler.grpc_port
+    )));
+
+    prepare_changes_outgoing_tx_height_before_reorg(server_id.clone())
+        .await
+        .unwrap();
+
+    let light_client = ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone())
+        .build_client(
+            ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+            202,
+            true,
+            RegtestNetwork::all_upgrades_active(),
+        )
+        .await;
+
+    let expected_initial_balance = PoolBalances {
+        sapling_balance: Some(0),
+        verified_sapling_balance: Some(0),
+        spendable_sapling_balance: Some(0),
+        unverified_sapling_balance: Some(0),
+        orchard_balance: Some(100000000),
+        verified_orchard_balance: Some(100000000),
+        spendable_orchard_balance: Some(100000000),
+        unverified_orchard_balance: Some(0),
+        transparent_balance: Some(0),
+    };
+
+    light_client.do_sync(true).await.unwrap();
+    assert_eq!(light_client.do_balance().await, expected_initial_balance);
+
+    let before_reorg_transactions = light_client.do_list_txsummaries().await;
+
+    assert_eq!(before_reorg_transactions.len(), 1);
+    assert_eq!(
+        before_reorg_transactions[0].block_height,
+        BlockHeight::from_u32(203)
+    );
+
+    let connector = DarksideConnector(server_id.clone());
+
+    let recipient_string = "uregtest1z8s5szuww2cnze042e0re2ez8l3d04zvkp7kslxwdha6tp644srd4nh0xlp8a05avzduc6uavqkxv79x53c60hrc0qsgeza3age2g3qualullukd4s0lsn6mtfup4z8jz6xdz2c05zakhafc7pmw0dwugwu9ljevzgyc3mfwxg9slr87k8l7cq075gl3fgxpr85uuvxhxydrskp2303";
+
+    // Send 100000 zatoshi to some address
+    let amount: u64 = 100000;
+    let sent_tx_id = light_client
+        .do_send([(recipient_string, amount, None)].to_vec())
+        .await
+        .unwrap();
+
+    println!("SENT TX ID: {:?}", sent_tx_id);
+
+    let sent_tx_height: i32 = 205;
+    _ = connector.apply_staged(sent_tx_height).await;
+
+    light_client.do_sync(true).await.unwrap();
+
+    let expected_after_send_balance = PoolBalances {
+        sapling_balance: Some(0),
+        verified_sapling_balance: Some(0),
+        spendable_sapling_balance: Some(0),
+        unverified_sapling_balance: Some(0),
+        orchard_balance: Some(99890000),
+        verified_orchard_balance: Some(0),
+        spendable_orchard_balance: Some(0),
+        unverified_orchard_balance: Some(99890000),
+        transparent_balance: Some(0),
+    };
+
+    assert_eq!(light_client.do_balance().await, expected_after_send_balance);
+
+    // check that the outgoing transaction has the correct height before
+    // the reorg is triggered
+
+    println!("{:?}", light_client.do_list_txsummaries().await);
+
+    assert_eq!(
+        light_client
+            .do_list_txsummaries()
+            .await
+            .into_iter()
+            .find_map(|v| match v.kind {
+                ValueTransferKind::Sent { to_address, amount } => {
+                    if to_address.to_string() == recipient_string && amount == 100000 {
+                        Some(v.block_height)
+                    } else {
+                        None
+                    }
+                }
+                _ => {
+                    None
+                }
+            }),
+        Some(BlockHeight::from(sent_tx_height as u32))
+    );
+
+    //
+    // Create reorg
+    //
+
+    // stage empty blocks from height 205 to cause a Reorg
+    _ = connector.stage_blocks_create(sent_tx_height, 50, 1).await;
+
+    // this will remove the submitted transaction from our view of the blockchain
+    _ = connector.apply_staged(245).await;
+
+    let reorg_sync_result = light_client.do_sync(true).await;
+
+    match reorg_sync_result {
+        Ok(value) => println!("{}", value),
+        Err(err_str) => println!("{}", err_str),
+    };
+
+    // Assert that balance is equal to the intial balance since the
+    // sent transaction was never mined and has expired.
+    assert_eq!(light_client.do_balance().await, expected_initial_balance);
+
+    let after_reorg_transactions = light_client.do_list_txsummaries().await;
+
+    assert_eq!(after_reorg_transactions.len(), 1);
+
+    println!("{:?}", light_client.do_list_txsummaries().await);
+
+    // verify that the reorged transaction is in the new height
+    // assert_eq!(
+    //     light_client
+    //         .do_list_txsummaries()
+    //         .await
+    //         .into_iter()
+    //         .find_map(|v| match v.kind {
+    //             ValueTransferKind::Sent { to_address, amount } => {
+    //                 if to_address.to_string() == recipient_string && amount == 100000 {
+    //                     Some(v.block_height)
+    //                 } else {
+    //                     None
+    //                 }
+    //             }
+    //             _ => {
+    //                 None
+    //             }
+    //         }),
+    //     Some(BlockHeight::from(211))
+    // );
+}
+
 // UTILS TESTS
 #[tokio::test]
 async fn test_read_block_dataset() {
