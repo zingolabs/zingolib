@@ -3058,11 +3058,15 @@ mod slow {
     /// those pads are implicit from outside the fn, and explicit as the '2' values
     /// seen as arguments to `max`
     async fn get_padded_317_fee_from_actions(
+        client: &LightClient,
         tx: &TransactionMetadata,
         expected_actions: ExpectedActions,
     ) -> NonNegativeAmount {
         use std::cmp::max;
         assert!(tx.is_outgoing_transaction());
+        async fn get_count_of_spent_utxos(lc: &LightClient, txid: TxId) -> u64 {
+            lc.wallet.get_utxos_spent_in_tx(txid).await.len() as u64
+        }
         fn get_out_toaddress_count(tx: &TransactionMetadata, hint: &str) -> u64 {
             tx.outgoing_tx_data
                 .iter()
@@ -3171,6 +3175,7 @@ mod slow {
             .await
             .unwrap();
         let fee = get_padded_317_fee_from_actions(
+            &orchard_faucet,
             &orch_fauc_to_pmc_taddr_tx,
             ExpectedActions {
                 orchard_txins: 1,
@@ -3193,6 +3198,7 @@ mod slow {
             .await
             .unwrap();
         let fee = get_padded_317_fee_from_actions(
+            &orchard_faucet,
             &sender_tx,
             ExpectedActions {
                 orchard_txins: 1,
@@ -3221,6 +3227,7 @@ mod slow {
             .unwrap();
         //dbg!(&shield_tx);
         let fee = get_padded_317_fee_from_actions(
+            &orchard_faucet,
             &shield_tx,
             ExpectedActions {
                 orchard_txouts: 2,
