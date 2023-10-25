@@ -1,4 +1,5 @@
 use crate::compact_formats::CompactBlock;
+use crate::error::ZingoLibError;
 use crate::wallet::traits::ReceivedNoteAndMetadata;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::frontier::{CommitmentTree, NonEmptyFrontier};
@@ -674,7 +675,9 @@ pub struct OutgoingTxData {
 
 impl PartialEq for OutgoingTxData {
     fn eq(&self, other: &Self) -> bool {
-        self.to_address == other.to_address && self.value == other.value && self.memo == other.memo
+        (self.to_address == other.to_address || self.recipient_ua == other.recipient_ua)
+            && self.value == other.value
+            && self.memo == other.memo
     }
 }
 
@@ -967,8 +970,13 @@ impl TransactionMetadata {
         }
     }
 
-    pub fn get_transaction_fee(&self) -> u64 {
-        self.total_value_spent() - (self.value_outgoing() + self.total_change_returned())
+    pub fn get_transaction_fee(&self) -> Result<u64, ZingoLibError> {
+        let outputted = self.value_outgoing() + self.total_change_returned();
+        if self.total_value_spent() >= outputted {
+            Ok(self.total_value_spent() - outputted)
+        } else {
+            Err(ZingoLibError::MetadataUnderflow)
+        }
     }
 
     // TODO: This is incorrect in the edge case where where we have a send-to-self with
@@ -1127,7 +1135,6 @@ impl TransactionMetadata {
                 Ok(orchard::note::Nullifier::from_bytes(&n).unwrap())
             })?
         };
-
         Ok(Self {
             block_height: block,
             unconfirmed,
