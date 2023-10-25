@@ -975,7 +975,7 @@ impl TransactionMetadata {
         if self.total_value_spent() >= outputted {
             Ok(self.total_value_spent() - outputted)
         } else {
-            Err(ZingoLibError::AbsurdTransactionMetadata)
+            Err(ZingoLibError::MetadataUnderflow)
         }
     }
 

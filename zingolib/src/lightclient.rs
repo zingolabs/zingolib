@@ -450,10 +450,8 @@ impl LightClient {
         }
     }
 
-    // pub async fn do_list_txsummaries(&self) -> (Vec<ValueTransfer>, Result<(), ZingoLibError>) {
     pub async fn do_list_txsummaries(&self) -> Vec<ValueTransfer> {
         let mut summaries: Vec<ValueTransfer> = Vec::new();
-        let mut _result = Ok(());
 
         for (txid, transaction_md) in self
             .wallet
@@ -496,12 +494,10 @@ impl LightClient {
                     transaction_md.total_change_returned(),
                     transaction_md,
                     );
-                    _result = Err(e);
                 }
             };
         }
         summaries.sort_by_key(|summary| summary.block_height);
-        // (summaries, result)
         summaries
     }
 
