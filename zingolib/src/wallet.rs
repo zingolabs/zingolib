@@ -1537,9 +1537,9 @@ impl LightWallet {
     async fn send_to_addresses_inner<F, Fut>(
         &self,
         transaction: Transaction,
-        orchard_notes: &[SpendableOrchardNote],
-        sapling_notes: &[SpendableSaplingNote],
-        utxos: &[ReceivedTransparentOutput],
+        selected_orchard_notes: &[SpendableOrchardNote],
+        selected_sapling_notes: &[SpendableSaplingNote],
+        selected_utxos: &[ReceivedTransparentOutput],
         submission_height: BlockHeight,
         broadcast_fn: F,
     ) -> Result<(String, Vec<u8>), String>
@@ -1567,41 +1567,43 @@ impl LightWallet {
                 .transaction_metadata_set
                 .write()
                 .await;
-            for selected in sapling_notes {
+            for selected_note in selected_sapling_notes {
                 let spent_note = txmds_writelock
                     .current
-                    .get_mut(&selected.transaction_id)
+                    .get_mut(&selected_note.transaction_id)
                     .unwrap()
                     .sapling_notes
                     .iter_mut()
-                    .find(|nd| nd.nullifier == Some(selected.nullifier))
+                    .find(|nd| nd.nullifier == Some(selected_note.nullifier))
                     .unwrap();
                 spent_note.unconfirmed_spent =
                     Some((transaction.txid(), u32::from(submission_height)));
             }
             // Mark orchard notes as unconfirmed spent
-            for selected in orchard_notes {
+            for selected_note in selected_orchard_notes {
                 let spent_note = txmds_writelock
                     .current
-                    .get_mut(&selected.transaction_id)
+                    .get_mut(&selected_note.transaction_id)
                     .unwrap()
                     .orchard_notes
                     .iter_mut()
-                    .find(|nd| nd.nullifier == Some(selected.nullifier))
+                    .find(|nd| nd.nullifier == Some(selected_note.nullifier))
                     .unwrap();
                 spent_note.unconfirmed_spent =
                     Some((transaction.txid(), u32::from(submission_height)));
             }
 
             // Mark this utxo as unconfirmed spent
-            for utxo in utxos {
+            for selected_utxo in selected_utxos {
                 let spent_utxo = txmds_writelock
                     .current
-                    .get_mut(&utxo.txid)
+                    .get_mut(&selected_utxo.txid)
                     .unwrap()
                     .received_utxos
                     .iter_mut()
-                    .find(|u| utxo.txid == u.txid && utxo.output_index == u.output_index)
+                    .find(|u| {
+                        selected_utxo.txid == u.txid && selected_utxo.output_index == u.output_index
+                    })
                     .unwrap();
                 spent_utxo.unconfirmed_spent =
                     Some((transaction.txid(), u32::from(submission_height)));
