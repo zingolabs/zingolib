@@ -1,7 +1,9 @@
 use super::darkside_types::{Empty, TreeState};
 use crate::darkside::utils::read_lines;
 use crate::darkside::{
-    advanced_reorg_tests_constants::{self, ADVANCED_REORG_TESTS_USER_WALLET},
+    advanced_reorg_tests_constants::{
+        self, ADVANCED_REORG_TESTS_USER_WALLET, TRANSACTION_TO_FILLER_ADDRESS,
+    },
     constants::BRANCH_ID,
     darkside_connector::DarksideConnector,
     utils::{read_block_dataset, DarksideHandler},
@@ -886,6 +888,211 @@ async fn reorg_expires_outgoing_tx_height() {
     // );
 }
 
+#[tokio::test]
+/// ### Reorg Changes Outbound Tx Index
+/// An outbound, unconfirmed transaction in a specific block changes height in the event of a reorg
+///
+/// The wallet handles this change, reflects it appropriately in local storage, and funds remain spendable post confirmation.
+///
+/// **Pre-conditions:**
+///   - Wallet has spendable funds
+///
+/// 1. Setup w/ default dataset
+/// 2. applyStaged(received_Tx_height)
+/// 3. sync up to received_Tx_height
+/// 4. create transaction
+/// 5. stage 10 empty blocks
+/// 6. submit tx at sentTxHeight
+///    * a. getIncomingTx
+///    * b. stageTransaction(sentTx, sentTxHeight)
+///    * c. applyheight(sentTxHeight + 1 )
+/// 7. sync to  sentTxHeight + 2
+/// 8. stage sentTx and otherTx at sentTxheight
+/// 9. applyStaged(sentTx + 2)
+/// 10. sync up to received_Tx_height + 2
+/// 11. verify that the sent tx is mined and balance is correct
+/// 12. applyStaged(sentTx + 10)
+/// 13. verify that there's no more pending transaction
+async fn reorg_changes_outgoing_tx_index() {
+    let darkside_handler = DarksideHandler::new();
+
+    let server_id = zingoconfig::construct_lightwalletd_uri(Some(format!(
+        "http://127.0.0.1:{}",
+        darkside_handler.grpc_port
+    )));
+
+    prepare_changes_outgoing_tx_height_before_reorg(server_id.clone())
+        .await
+        .unwrap();
+
+    let light_client = ClientBuilder::new(server_id.clone(), darkside_handler.darkside_dir.clone())
+        .build_client(
+            ADVANCED_REORG_TESTS_USER_WALLET.to_string(),
+            202,
+            true,
+            RegtestNetwork::all_upgrades_active(),
+        )
+        .await;
+
+    light_client.do_sync(true).await.unwrap();
+    assert_eq!(
+        light_client.do_balance().await,
+        PoolBalances {
+            sapling_balance: Some(0),
+            verified_sapling_balance: Some(0),
+            spendable_sapling_balance: Some(0),
+            unverified_sapling_balance: Some(0),
+            orchard_balance: Some(100000000),
+            verified_orchard_balance: Some(100000000),
+            spendable_orchard_balance: Some(100000000),
+            unverified_orchard_balance: Some(0),
+            transparent_balance: Some(0)
+        }
+    );
+
+    let before_reorg_transactions = light_client.do_list_txsummaries().await;
+
+    assert_eq!(before_reorg_transactions.len(), 1);
+    assert_eq!(
+        before_reorg_transactions[0].block_height,
+        BlockHeight::from_u32(203)
+    );
+
+    let connector = DarksideConnector(server_id.clone());
+
+    let recipient_string = "uregtest1z8s5szuww2cnze042e0re2ez8l3d04zvkp7kslxwdha6tp644srd4nh0xlp8a05avzduc6uavqkxv79x53c60hrc0qsgeza3age2g3qualullukd4s0lsn6mtfup4z8jz6xdz2c05zakhafc7pmw0dwugwu9ljevzgyc3mfwxg9slr87k8l7cq075gl3fgxpr85uuvxhxydrskp2303";
+
+    // Send 100000 zatoshi to some address
+    let amount: u64 = 100000;
+    let sent_tx_id = light_client
+        .do_send([(recipient_string, amount, None)].to_vec())
+        .await
+        .unwrap();
+
+    println!("SENT TX ID: {:?}", sent_tx_id);
+
+    let mut incoming_transaction_stream = connector.get_incoming_transactions().await.unwrap();
+    let tx = incoming_transaction_stream
+        .message()
+        .await
+        .unwrap()
+        .unwrap();
+
+    let sent_tx_height: i32 = 205;
+    _ = connector.apply_staged(sent_tx_height).await;
+
+    light_client.do_sync(true).await.unwrap();
+
+    let expected_after_send_balance = PoolBalances {
+        sapling_balance: Some(0),
+        verified_sapling_balance: Some(0),
+        spendable_sapling_balance: Some(0),
+        unverified_sapling_balance: Some(0),
+        orchard_balance: Some(99890000),
+        verified_orchard_balance: Some(0),
+        spendable_orchard_balance: Some(0),
+        unverified_orchard_balance: Some(99890000),
+        transparent_balance: Some(0),
+    };
+
+    assert_eq!(light_client.do_balance().await, expected_after_send_balance);
+
+    // check that the outgoing transaction has the correct height before
+    // the reorg is triggered
+
+    println!("{:?}", light_client.do_list_txsummaries().await);
+
+    assert_eq!(
+        light_client
+            .do_list_txsummaries()
+            .await
+            .into_iter()
+            .find_map(|v| match v.kind {
+                ValueTransferKind::Sent { to_address, amount } => {
+                    if to_address.to_string() == recipient_string && amount == 100000 {
+                        Some(v.block_height)
+                    } else {
+                        None
+                    }
+                }
+                _ => {
+                    None
+                }
+            }),
+        Some(BlockHeight::from(sent_tx_height as u32))
+    );
+
+    //
+    // Create reorg
+    //
+
+    // stage empty blocks from height 205 to cause a Reorg
+    _ = connector.stage_blocks_create(sent_tx_height, 20, 1).await;
+
+    _ = connector
+        .stage_transactions_stream(
+            [
+                (hex::decode(TRANSACTION_TO_FILLER_ADDRESS).unwrap(), 205),
+                (tx.clone().data, 205),
+            ]
+            .to_vec(),
+        )
+        .await;
+
+    _ = connector.apply_staged(211).await;
+
+    let reorg_sync_result = light_client.do_sync(true).await;
+
+    match reorg_sync_result {
+        Ok(value) => println!("{}", value),
+        Err(err_str) => println!("{}", err_str),
+    };
+
+    let expected_after_reorg_balance = PoolBalances {
+        sapling_balance: Some(0),
+        verified_sapling_balance: Some(0),
+        spendable_sapling_balance: Some(0),
+        unverified_sapling_balance: Some(0),
+        orchard_balance: Some(99890000),
+        verified_orchard_balance: Some(99890000),
+        spendable_orchard_balance: Some(99890000),
+        unverified_orchard_balance: Some(0),
+        transparent_balance: Some(0),
+    };
+
+    // Assert that balance holds
+    assert_eq!(
+        light_client.do_balance().await,
+        expected_after_reorg_balance
+    );
+
+    let after_reorg_transactions = light_client.do_list_txsummaries().await;
+
+    assert_eq!(after_reorg_transactions.len(), 3);
+
+    println!("{:?}", after_reorg_transactions);
+
+    // verify that the reorged transaction is in the new height
+    assert_eq!(
+        light_client
+            .do_list_txsummaries()
+            .await
+            .into_iter()
+            .find_map(|v| match v.kind {
+                ValueTransferKind::Sent { to_address, amount } => {
+                    if to_address.to_string() == recipient_string && amount == 100000 {
+                        Some(v.block_height)
+                    } else {
+                        None
+                    }
+                }
+                _ => {
+                    None
+                }
+            }),
+        Some(BlockHeight::from(205))
+    );
+}
 // UTILS TESTS
 #[tokio::test]
 async fn test_read_block_dataset() {
