@@ -1734,6 +1734,23 @@ impl LightWallet {
         )
     }
 
+    // The txid is the id of the transaction where the utxos were (unconfirmed) spent.
+    pub async fn get_utxos_spent_in_tx(
+        &self,
+        txid: transaction::TxId,
+    ) -> Vec<ReceivedTransparentOutput> {
+        dbg!(&txid);
+        dbg!(self.get_utxos().await);
+        dbg!(self
+            .get_utxos()
+            .await
+            .iter()
+            .cloned()
+            .filter(|utxo| utxo
+                .unconfirmed_spent
+                .is_some_and(|id_height| { id_height.0 == txid }))
+            .collect())
+    }
     pub async fn spendable_orchard_balance(&self, target_addr: Option<String>) -> Option<u64> {
         if let Capability::Spend(_) = self.wallet_capability().orchard {
             self.verified_balance::<OrchardDomain>(target_addr).await
