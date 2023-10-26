@@ -3065,6 +3065,7 @@ mod slow {
         use std::cmp::max;
         assert!(tx.is_outgoing_transaction());
         async fn get_count_of_spent_utxos(lc: &LightClient, txid: TxId) -> u64 {
+            dbg!(&txid);
             lc.wallet.get_utxos_spent_in_tx(txid).await.len() as u64
         }
         fn get_out_toaddress_count(tx: &TransactionMetadata, hint: &str) -> u64 {
@@ -3110,18 +3111,18 @@ mod slow {
             expected_actions.sapling_txins, sapling_txins,
         );
         // transparents
-        let received_utxos = dbg!(tx.received_utxos.len() as u64);
-        // check transparent actions
-        assert_eq!(
-            expected_actions.transparent_txins, received_utxos,
-            "expected_actions.transparent_txins: {}, received_utxos: {}",
-            expected_actions.transparent_txins, received_utxos,
-        );
         let outgoing_to_taddress = dbg!(get_out_toaddress_count(tx, "t"));
         assert_eq!(
             expected_actions.transparent_txouts, outgoing_to_taddress,
             "expected_actions.transparent_txouts: {}, outgoing_to_taddress: {}",
             expected_actions.transparent_txouts, outgoing_to_taddress
+        );
+        let transparent_txins = dbg!(get_count_of_spent_utxos(client, tx.txid).await);
+        // check transparent actions
+        assert_eq!(
+            expected_actions.transparent_txins, transparent_txins,
+            "expected_actions.transparent_txins: {}, transparent_txins: {}",
+            expected_actions.transparent_txins, transparent_txins,
         );
         let orchard_outs = 0;
         let orchard_logicals: u64;
@@ -3136,13 +3137,78 @@ mod slow {
         } else {
             sapling_logicals = 0;
         };
-        let transparent_logicals = max(outgoing_to_taddress, received_utxos);
+        let transparent_logicals = max(outgoing_to_taddress, transparent_txins);
         (MARGINAL_FEE
             * (orchard_logicals + sapling_logicals + transparent_logicals)
                 .try_into()
                 .unwrap())
         .expect("A reasonable value.")
     }
+
+    #[tokio::test]
+    async fn shield_with_zip317() {
+        // Test all possible promoting note source combinations
+        let (regtest_manager, _cph, mut client_builder, regtest_network) =
+            scenarios::custom_clients_default().await;
+        let orchard_faucet = client_builder.build_faucet(false, regtest_network).await;
+        let recipient = client_builder
+            .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
+            .await;
+        let recipient_taddr = get_base_address!(recipient, "transparent");
+        // Ensure that the client has confirmed spendable funds
+        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &orchard_faucet, 3)
+            .await
+            .unwrap();
+        macro_rules! bump_and_check_recipient {
+            (o: $o:tt s: $s:tt t: $t:tt) => {
+                zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &recipient, 1).await.unwrap();
+                check_client_balances!(recipient, o:$o s:$s t:$t);
+            };
+        }
+
+        // Begin test of zip317 fees for transaction
+        // Test One:
+        //   faucet-orchard 1 note to recipient-transparent 1 addr
+        dbg!("Test One");
+        let orch_fauc_to_pmc_taddr_tx = orchard_faucet
+            .transaction_from_send(vec![(&recipient_taddr, 50_000, None)])
+            .await
+            .unwrap();
+        let fee = get_padded_317_fee_from_actions(
+            &orchard_faucet,
+            &orch_fauc_to_pmc_taddr_tx,
+            ExpectedActions {
+                orchard_txins: 1,
+                transparent_txouts: 1,
+                ..Default::default()
+            },
+        )
+        .await;
+        // Predicted fee:
+        //  1 orchard txin + 1 orchard change + 1 transparent txout = 3
+        //  3 * MARGINAL_FEE:
+        assert_eq!(Into::<u64>::into(fee), 15_000u64);
+        bump_and_check_recipient!(o: 0 s: 0 t: 50_000);
+        // Test Four: test of shield:
+        dbg!("Shield Test");
+        let shield_tx = recipient
+            .transaction_from_shield(&[Pool::Transparent])
+            .await
+            .unwrap();
+        //dbg!(&shield_tx);
+        let fee = get_padded_317_fee_from_actions(
+            &orchard_faucet,
+            &shield_tx,
+            ExpectedActions {
+                orchard_txouts: 2,
+                transparent_txins: 1,
+                ..Default::default()
+            },
+        )
+        .await;
+        assert_eq!(Into::<u64>::into(fee), 15_000u64); // 2 for orchard change and 1 transparent
+    }
+
     #[tokio::test]
     async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         // Test all possible promoting note source combinations
