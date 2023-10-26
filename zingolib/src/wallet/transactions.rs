@@ -870,7 +870,7 @@ impl TransactionMetadataSet {
                 {
                     transaction_metadata
                         .outgoing_tx_data
-                        .push(dbg!(outgoing_metadatum));
+                        .push(outgoing_metadatum);
                 }
             }
         } else {
