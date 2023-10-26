@@ -1,6 +1,6 @@
 use super::syncdata::BlazeSyncData;
 use crate::{
-    error::{ZatMathError, ZingoLibError},
+    error::{ZatMathError, ZatMathResult, ZingoLibError},
     wallet::{
         data::OutgoingTxData,
         keys::{address_from_pubkeyhash, unified::WalletCapability},
@@ -152,7 +152,7 @@ impl TransactionContext {
                     {
                         outgoing_metadatas.push(OutgoingTxData {
                             to_address: taddr,
-                            value: u64::try_from(vout.value).expect("A u64 representable Amount."),
+                            value: vout.value,
                             memo: Memo::Empty,
                             recipient_ua: None,
                         });
@@ -344,7 +344,7 @@ impl TransactionContext {
         is_outgoing_transaction: &mut bool,
         outgoing_metadatas: &mut Vec<OutgoingTxData>,
         arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,
-    ) {
+    ) -> ZatMathResult<()> {
         self.scan_bundle::<SaplingDomain<ChainType>>(
             transaction,
             height,
@@ -394,7 +394,8 @@ impl TransactionContext {
         is_outgoing_transaction: &mut bool, // Isn't this also NA for unconfirmed?
         outgoing_metadatas: &mut Vec<OutgoingTxData>,
         arbitrary_memos_with_txids: &mut Vec<(ParsedMemo, TxId)>,
-    ) where
+    ) -> ZatMathResult<()>
+    where
         D: zingo_traits::DomainWalletExt,
         D::Note: Clone + PartialEq,
         D::OutgoingViewingKey: std::fmt::Debug,
@@ -455,7 +456,7 @@ impl TransactionContext {
 
         let (Ok(ivk), Ok(ovk)) = (D::wc_to_ivk(&self.key), D::wc_to_ovk(&self.key)) else {
             // skip scanning if wallet has not viewing capability
-            return;
+            return Ok(());
         };
 
         let decrypt_attempts =
@@ -561,7 +562,7 @@ impl TransactionContext {
                                     if let Memo::Text(_) = memo {
                                         Some(OutgoingTxData {
                                             to_address: address,
-                                            value: D::WalletNote::value_from_note(&note),
+                                            value: D::WalletNote::value_from_note(&note)?,
                                             memo,
                                             recipient_ua: None,
                                         })
@@ -571,7 +572,7 @@ impl TransactionContext {
                                 } else {
                                     Some(OutgoingTxData {
                                         to_address: address,
-                                        value: D::WalletNote::value_from_note(&note),
+                                        value: D::WalletNote::value_from_note(&note)?,
                                         memo,
                                         recipient_ua: None,
                                     })
@@ -583,6 +584,7 @@ impl TransactionContext {
                 },
             );
         }
+        Ok(())
     }
 }
 

@@ -1,3 +1,5 @@
+use zcash_primitives::transaction::components::amount::NonNegativeAmount;
+
 use crate::wallet::Pool;
 
 #[derive(Debug, PartialEq, Eq, derive_more::From, derive_more::Display)]
@@ -7,6 +9,20 @@ pub enum ZingoLibError {
     InsufficientCapability(InsufficientCapability),
     DerevationError(secp256k1::Error),
     NoShieldedReciever,
+    TransactionCreationError(TransactionCreationError),
+}
+
+#[derive(Debug, PartialEq, Eq, derive_more::Display)]
+pub enum TransactionCreationError {
+    #[display(
+        fmt = "insufficient balance: need {}, have {}",
+        "u64::from(*needed)",
+        "u64::from(*held)"
+    )]
+    InsufficientBalance {
+        needed: NonNegativeAmount,
+        held: NonNegativeAmount,
+    },
 }
 
 impl std::error::Error for ZingoLibError {}
@@ -19,7 +35,10 @@ pub enum ZatMathError {
     Underflow,
 }
 
+pub type ZatMathResult<T> = Result<T, ZatMathError>;
+
 #[derive(Debug, PartialEq, Eq, derive_more::Display)]
+#[display(fmt = "Need {pool} {required_capability}, have {pool} {held_capability}")]
 pub struct InsufficientCapability {
     pool: Pool,
     required_capability: CapabilityKind,
@@ -44,7 +63,7 @@ impl InsufficientCapability {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, derive_more::Display)]
 pub enum CapabilityKind {
     NoCapability,
     ViewCapable,

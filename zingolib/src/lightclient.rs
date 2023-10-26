@@ -6,7 +6,7 @@ use crate::{
         syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions, update_notes::UpdateNotes,
     },
     compact_formats::RawTransaction,
-    error::{ZatMathError, ZingoLibError, ZingoLibResult},
+    error::{TransactionCreationError, ZatMathError, ZatMathResult, ZingoLibError, ZingoLibResult},
     grpc_connector::GrpcConnector,
     wallet::{
         data::{
@@ -351,7 +351,7 @@ impl LightClient {
         &'a self,
         transaction_metadata: &'b TransactionMetadata,
         unified_spend_auth: &'c WalletCapability,
-    ) -> impl Iterator<Item = JsonValue> + 'b
+    ) -> impl Iterator<Item = ZatMathResult<JsonValue>> + 'b
     where
         'a: 'b,
         'c: 'b,
@@ -372,7 +372,7 @@ impl LightClient {
         &'a self,
         transaction_metadata: &'b TransactionMetadata,
         unified_spend_auth: &'c WalletCapability,
-    ) -> impl Iterator<Item = JsonValue> + 'b
+    ) -> impl Iterator<Item = ZatMathResult<JsonValue>> + 'b
     where
         'a: 'b,
         'c: 'b,
@@ -383,17 +383,17 @@ impl LightClient {
     {
         D::WalletNote::transaction_metadata_notes(transaction_metadata).iter().filter(|nd| !nd.is_change()).enumerate().map(|(i, nd)| {
                     let block_height: u32 = transaction_metadata.block_height.into();
-                    object! {
+                   Ok( object! {
                         "block_height" => block_height,
                         "unconfirmed" => transaction_metadata.unconfirmed,
                         "datetime"     => transaction_metadata.datetime,
                         "position"     => i,
                         "txid"         => format!("{}", transaction_metadata.txid),
-                        "amount"       => nd.value() as i64,
+                        "amount"       => u64::from(nd.value()?),
                         "zec_price"    => transaction_metadata.price.map(|p| (p * 100.0).round() / 100.0),
                         "address"      => LightWallet::note_address::<D>(&self.config.chain, nd, unified_spend_auth),
                         "memo"         => LightWallet::memo_str(nd.memo().clone())
-                    }
+                    })
 
                 })
     }
@@ -435,7 +435,7 @@ impl LightClient {
                     // this is the full UA.
                     //aha!!
                     "address" => om.recipient_ua.clone().unwrap_or(om.to_address.clone()),
-                    "value"   => om.value,
+                    "value"   =>u64::from(om.value),
                     "memo"    => LightWallet::memo_str(Some(om.memo.clone()))
                 }
             })
@@ -486,27 +486,41 @@ impl LightClient {
     }
 
     pub async fn do_balance(&self) -> ZingoLibResult<PoolBalances> {
+        let map_incapability_to_none = |balance: ZingoLibResult<NonNegativeAmount>| {
+            balance.map(|val| Some(u64::from(val))).or_else(|e| {
+                if let ZingoLibError::InsufficientCapability(_) = e {
+                    Ok(None)
+                } else {
+                    Err(e)
+                }
+            })
+        };
         Ok(PoolBalances {
-            sapling_balance: self.wallet.maybe_verified_sapling_balance(None).await,
-            verified_sapling_balance: self.wallet.verified_sapling_balance(None).await,
-            spendable_sapling_balance: self.wallet.spendable_sapling_balance(None).await,
-            unverified_sapling_balance: self.wallet.unverified_sapling_balance(None).await,
-            orchard_balance: self.wallet.maybe_verified_orchard_balance(None).await,
-            verified_orchard_balance: self.wallet.verified_orchard_balance(None).await,
-            spendable_orchard_balance: self.wallet.spendable_orchard_balance(None).await,
-            unverified_orchard_balance: self.wallet.unverified_orchard_balance(None).await,
-            transparent_balance: self
-                .wallet
-                .tbalance(None)
-                .await
-                .map(|val| Some(u64::from(val)))
-                .or_else(|e| {
-                    if let ZingoLibError::InsufficientCapability(_) = e {
-                        Ok(None)
-                    } else {
-                        Err(e)
-                    }
-                })?,
+            sapling_balance: map_incapability_to_none(
+                self.wallet.maybe_verified_sapling_balance(None).await,
+            )?,
+            verified_sapling_balance: map_incapability_to_none(
+                self.wallet.verified_sapling_balance(None).await,
+            )?,
+            spendable_sapling_balance: map_incapability_to_none(
+                self.wallet.spendable_sapling_balance(None).await,
+            )?,
+            unverified_sapling_balance: map_incapability_to_none(
+                self.wallet.unverified_sapling_balance(None).await,
+            )?,
+            orchard_balance: map_incapability_to_none(
+                self.wallet.maybe_verified_orchard_balance(None).await,
+            )?,
+            verified_orchard_balance: map_incapability_to_none(
+                self.wallet.verified_orchard_balance(None).await,
+            )?,
+            spendable_orchard_balance: map_incapability_to_none(
+                self.wallet.spendable_orchard_balance(None).await,
+            )?,
+            unverified_orchard_balance: map_incapability_to_none(
+                self.wallet.unverified_orchard_balance(None).await,
+            )?,
+            transparent_balance: map_incapability_to_none(self.wallet.tbalance(None).await)?,
         })
     }
 
@@ -750,7 +764,7 @@ impl LightClient {
                 }
 
                 // For each note that is not a change, add a consumer_ui_note.
-                consumer_notes_by_tx.extend(self.add_nonchange_notes(wallet_transaction, &self.wallet.wallet_capability()));
+                consumer_notes_by_tx.extend(self.add_nonchange_notes(wallet_transaction, &self.wallet.wallet_capability()).collect::<Result<Vec<_>, _>>()?);
 
                 // TODO:  determine if all notes are either Change-or-NotChange, if that's the case
                 // add a sanity check that asserts all notes are processed by this point
@@ -1021,7 +1035,7 @@ impl LightClient {
 
     fn map_tos_to_receivers(
         &self,
-        tos: Vec<(&str, u64, Option<MemoBytes>)>,
+        tos: Vec<(&str, NonNegativeAmount, Option<MemoBytes>)>,
     ) -> Result<
         Vec<(
             zcash_client_backend::address::RecipientAddress,
@@ -1106,43 +1120,41 @@ impl LightClient {
         &self,
         pools_to_shield: &[Pool],
         address: Option<String>,
-    ) -> Result<String, String> {
+    ) -> ZingoLibResult<String> {
         let transaction_submission_height = self.get_submission_height().await?;
         let fee = MINIMUM_FEE; // TODO: This can no longer be hard coded, and must be calced
                                // as a fn of the transactions structure.
-        let tbal = self
-            .wallet
-            .tbalance(None)
-            .await
-            .expect("to receive a balance");
-        let sapling_bal = self
-            .wallet
-            .spendable_sapling_balance(None)
-            .await
-            .unwrap_or(0);
+        let tbal = self.wallet.tbalance(None).await;
+        let sapling_bal = self.wallet.spendable_sapling_balance(None).await;
 
         // Make sure there is a balance, and it is greater than the amount
-        let balance_to_shield = if pools_to_shield.contains(&Pool::Transparent) {
-            tbal
+        let balance_to_shield = (if pools_to_shield.contains(&Pool::Transparent) {
+            tbal?
         } else {
             NonNegativeAmount::const_from_u64(0)
         } + if pools_to_shield.contains(&Pool::Sapling) {
-            sapling_bal
+            sapling_bal?
         } else {
-            0
-        };
+            NonNegativeAmount::const_from_u64(0)
+        })
+        .ok_or(ZatMathError::Overflow)?;
         if balance_to_shield <= fee {
-            return Err(format!(
-                "Not enough transparent/sapling balance to shield. Have {} zats, need more than {} zats to cover tx fee",
-                balance_to_shield, fee
-            ));
+            return Err(TransactionCreationError::InsufficientBalance {
+                needed: fee,
+                held: balance_to_shield,
+            }
+            .into());
         }
 
         let addr = address
             .unwrap_or(self.wallet.wallet_capability().addresses()[0].encode(&self.config.chain));
 
         let receiver = self
-            .map_tos_to_receivers(vec![(&addr, balance_to_shield - fee, None)])
+            .map_tos_to_receivers(vec![(
+                &addr,
+                (balance_to_shield - fee).ok_or(ZatMathError::Underflow)?,
+                None,
+            )])
             .expect("To build shield receiver.");
         let result = {
             let _lock = self.sync_lock.lock().await;

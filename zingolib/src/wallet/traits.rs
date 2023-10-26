@@ -15,7 +15,7 @@ use crate::{
     compact_formats::{
         slice_to_array, CompactOrchardAction, CompactSaplingOutput, CompactTx, TreeState,
     },
-    error::InsufficientCapability,
+    error::{InsufficientCapability, ZatMathError, ZatMathResult},
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::{witness::IncrementalWitness, Hashable, Level, Position};
@@ -41,7 +41,10 @@ use zcash_primitives::{
     merkle_tree::{read_incremental_witness, HashSer},
     sapling::note_encryption::SaplingDomain,
     transaction::{
-        components::{self, sapling::GrothProofBytes, Amount, OutputDescription, SpendDescription},
+        components::{
+            self, amount::NonNegativeAmount, sapling::GrothProofBytes, Amount, OutputDescription,
+            SpendDescription,
+        },
         Transaction, TxId,
     },
     zip32,
@@ -445,10 +448,10 @@ pub trait ReceivedNoteAndMetadata: Sized {
     ) -> &mut Vec<Self>;
     fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)>;
     ///Convenience function
-    fn value(&self) -> u64 {
+    fn value(&self) -> ZatMathResult<NonNegativeAmount> {
         Self::value_from_note(self.note())
     }
-    fn value_from_note(note: &Self::Note) -> u64;
+    fn value_from_note(note: &Self::Note) -> ZatMathResult<NonNegativeAmount>;
     fn witnessed_position(&self) -> &Option<Position>;
     fn witnessed_position_mut(&mut self) -> &mut Option<Position>;
 }
@@ -555,8 +558,8 @@ impl ReceivedNoteAndMetadata for ReceivedSaplingNoteAndMetadata {
         &mut self.unconfirmed_spent
     }
 
-    fn value_from_note(note: &Self::Note) -> u64 {
-        note.value().inner()
+    fn value_from_note(note: &Self::Note) -> Result<NonNegativeAmount, ZatMathError> {
+        NonNegativeAmount::from_u64(note.value().inner()).map_err(|()| ZatMathError::Overflow)
     }
 
     fn witnessed_position(&self) -> &Option<Position> {
@@ -677,8 +680,8 @@ impl ReceivedNoteAndMetadata for ReceivedOrchardNoteAndMetadata {
         &mut self.unconfirmed_spent
     }
 
-    fn value_from_note(note: &Self::Note) -> u64 {
-        note.value().inner()
+    fn value_from_note(note: &Self::Note) -> ZatMathResult<NonNegativeAmount> {
+        NonNegativeAmount::from_u64(note.value().inner()).map_err(|()| ZatMathError::Overflow)
     }
 
     fn witnessed_position(&self) -> &Option<Position> {
@@ -719,12 +722,17 @@ where
 
     type Bundle: Bundle<Self>;
 
-    fn sum_pool_change(transaction_md: &TransactionMetadata) -> u64 {
+    fn sum_pool_change(transaction_md: &TransactionMetadata) -> ZatMathResult<NonNegativeAmount> {
         Self::to_notes_vec(transaction_md)
             .iter()
             .filter(|nd| nd.is_change())
             .map(|nd| nd.value())
-            .sum()
+            .try_fold(
+                NonNegativeAmount::const_from_u64(0),
+                |acc, val| -> ZatMathResult<NonNegativeAmount> {
+                    (acc + val?).ok_or(ZatMathError::Overflow)
+                },
+            )
     }
     fn transaction_metadata_set_to_shardtree(
         txmds: &TransactionMetadataSet,
@@ -974,39 +982,41 @@ where
         transaction_id: TxId,
         note_and_metadata: &D::WalletNote,
         spend_key: Option<&D::SpendingKey>,
-    ) -> Option<Self> {
+    ) -> ZatMathResult<Option<Self>> {
         // Include only non-0 value notes that haven't been spent, or haven't been included
         // in an unconfirmed spend yet.
-        if Self::check_spendability_of_note(note_and_metadata, spend_key) {
-            // Filter out notes with nullifier or position not yet known
-            if let (Some(nf), Some(pos)) = (
-                note_and_metadata.nullifier(),
-                note_and_metadata.witnessed_position(),
-            ) {
-                Some(Self::from_parts_unchecked(
-                    transaction_id,
-                    nf,
-                    *note_and_metadata.diversifier(),
-                    note_and_metadata.note().clone(),
-                    *pos,
-                    spend_key,
-                ))
+        Ok(
+            if Self::check_spendability_of_note(note_and_metadata, spend_key)? {
+                // Filter out notes with nullifier or position not yet known
+                if let (Some(nf), Some(pos)) = (
+                    note_and_metadata.nullifier(),
+                    note_and_metadata.witnessed_position(),
+                ) {
+                    Some(Self::from_parts_unchecked(
+                        transaction_id,
+                        nf,
+                        *note_and_metadata.diversifier(),
+                        note_and_metadata.note().clone(),
+                        *pos,
+                        spend_key,
+                    ))
+                } else {
+                    None
+                }
             } else {
                 None
-            }
-        } else {
-            None
-        }
+            },
+        )
     }
 
     fn check_spendability_of_note(
         note_and_metadata: &D::WalletNote,
         spend_key: Option<&D::SpendingKey>,
-    ) -> bool {
-        note_and_metadata.spent().is_none()
+    ) -> ZatMathResult<bool> {
+        Ok(note_and_metadata.spent().is_none()
             && note_and_metadata.pending_spent().is_none()
             && spend_key.is_some()
-            && note_and_metadata.value() != 0
+            && note_and_metadata.value()? != NonNegativeAmount::const_from_u64(0))
     }
     /// The checks needed are shared between domains, and thus are performed in the
     /// default impl of `from`. This function's only caller should be `Self::from`

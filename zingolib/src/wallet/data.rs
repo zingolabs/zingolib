@@ -1,5 +1,5 @@
 use crate::compact_formats::CompactBlock;
-use crate::error::ZatMathError;
+use crate::error::{ZatMathError, ZatMathResult};
 use crate::wallet::traits::ReceivedNoteAndMetadata;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::frontier::{CommitmentTree, NonEmptyFrontier};
@@ -35,6 +35,8 @@ use super::traits::{self, DomainWalletExt, ReadableWriteable, ToBytes};
 
 pub const COMMITMENT_TREE_LEVELS: u8 = 32;
 pub const MAX_SHARD_LEVEL: u8 = 16;
+
+pub const ZERO_NNA: NonNegativeAmount = NonNegativeAmount::const_from_u64(0);
 
 /// This type is motivated by the IPC architecture where (currently) channels traffic in
 /// `(TxId, WalletNullifier, BlockHeight, Option<u32>)`.  This enum permits a single channel
@@ -675,7 +677,7 @@ impl ReceivedTransparentOutput {
 #[derive(Debug)]
 pub struct OutgoingTxData {
     pub to_address: String,
-    pub value: u64,
+    pub value: NonNegativeAmount,
     pub memo: Memo,
     pub recipient_ua: Option<String>,
 }
@@ -693,7 +695,8 @@ impl OutgoingTxData {
         reader.read_exact(&mut address_bytes)?;
         let address = String::from_utf8(address_bytes).unwrap();
 
-        let value = reader.read_u64::<LittleEndian>()?;
+        let value = NonNegativeAmount::from_u64(reader.read_u64::<LittleEndian>()?)
+            .map_err(|()| io::Error::new(io::ErrorKind::InvalidData, "Read invalid amount"))?;
 
         let mut memo_bytes = [0u8; 512];
         reader.read_exact(&mut memo_bytes)?;
@@ -728,7 +731,7 @@ impl OutgoingTxData {
                 writer.write_all(ua.as_bytes())?;
             }
         }
-        writer.write_u64::<LittleEndian>(self.value)?;
+        writer.write_u64::<LittleEndian>(u64::from(self.value))?;
         writer.write_all(self.memo.encode().as_array())
     }
 }
@@ -1016,9 +1019,9 @@ impl TransactionMetadata {
             sapling_notes: vec![],
             orchard_notes: vec![],
             received_utxos: vec![],
-            total_transparent_value_spent: 0,
-            total_sapling_value_spent: 0,
-            total_orchard_value_spent: 0,
+            total_transparent_value_spent: ZERO_NNA,
+            total_sapling_value_spent: ZERO_NNA,
+            total_orchard_value_spent: ZERO_NNA,
             outgoing_tx_data: vec![],
             full_tx_scanned: false,
             price: None,
@@ -1029,7 +1032,7 @@ impl TransactionMetadata {
         txid_bytes.copy_from_slice(txid);
         TxId::from_bytes(txid_bytes)
     }
-    fn pool_change_returned<D: DomainWalletExt>(&self) -> u64
+    fn pool_change_returned<D: DomainWalletExt>(&self) -> ZatMathResult<NonNegativeAmount>
     where
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: traits::Recipient,
@@ -1037,7 +1040,7 @@ impl TransactionMetadata {
         D::sum_pool_change(self)
     }
 
-    pub fn pool_value_received<D: DomainWalletExt>(&self) -> Option<NonNegativeAmount>
+    pub fn pool_value_received<D: DomainWalletExt>(&self) -> ZatMathResult<NonNegativeAmount>
     where
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: traits::Recipient,
@@ -1045,7 +1048,9 @@ impl TransactionMetadata {
         D::to_notes_vec(self)
             .iter()
             .map(|note_and_metadata| note_and_metadata.value())
-            .sum()?
+            .try_fold(ZERO_NNA, |mut acc, val| -> ZatMathResult<_> {
+                (acc + val?).ok_or(ZatMathError::Overflow)
+            })
     }
 
     #[allow(clippy::type_complexity)]

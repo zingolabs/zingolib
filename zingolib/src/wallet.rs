@@ -1703,7 +1703,10 @@ impl LightWallet {
         )
     }
 
-    pub async fn spendable_orchard_balance(&self, target_addr: Option<String>) -> Option<u64> {
+    pub async fn spendable_orchard_balance(
+        &self,
+        target_addr: Option<String>,
+    ) -> ZingoLibResult<NonNegativeAmount> {
         if let Capability::Spend(_) = self.wallet_capability().orchard {
             self.verified_balance::<OrchardDomain>(target_addr).await
         } else {
