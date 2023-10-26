@@ -7,9 +7,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
+default = ["embed_params", "deprecations"]
 deprecations = ["lightclient-deprecated"]
 lightclient-deprecated = []
-default = ["embed_params"]
 embed_params = []
 
 [dependencies]
