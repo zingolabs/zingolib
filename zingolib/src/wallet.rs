@@ -1566,22 +1566,6 @@ impl LightWallet {
                     Some((transaction.txid(), u32::from(submission_height)));
             }
         }
-
-        // Add this transaction to the mempool structure
-        {
-            let price = self.price.read().await.clone();
-
-            self.transaction_context
-                .scan_full_tx(
-                    transaction,
-                    submission_height,
-                    true,
-                    now() as u32,
-                    TransactionMetadata::get_price(now(), &price),
-                )
-                .await;
-        }
-
         Ok((transaction_id, raw_transaction))
     }
 
