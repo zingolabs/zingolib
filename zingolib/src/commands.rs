@@ -571,7 +571,13 @@ impl Command for BalanceCommand {
 
     fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
         RT.block_on(async move {
-            serde_json::to_string_pretty(&lightclient.do_balance().await).unwrap()
+            match &lightclient.do_balance().await {
+                Ok(balance) => serde_json::to_string_pretty(balance).unwrap(),
+                Err(e) => (&object! {
+                    "error" => e.to_string()
+                })
+                    .pretty(2),
+            }
         })
     }
 }
@@ -671,7 +677,8 @@ impl Command for ShieldCommand {
                     object! { "txid" => transaction_id }
                 }
                 Err(e) => {
-                    object! { "error" => e }
+                    //TODO: Improve error display
+                    object! { "error" => e.to_string() }
                 }
             }
             .pretty(2)
@@ -1083,7 +1090,11 @@ impl Command for ValueTxSummariesCommand {
         }
 
         RT.block_on(async move {
-            json::JsonValue::from(lightclient.do_list_txsummaries().await).pretty(2)
+            match lightclient.do_list_txsummaries().await {
+                Ok(txsummaries) => json::JsonValue::from(txsummaries),
+                Err(e) => object! { "error" => e.to_string() },
+            }
+            .pretty(2)
         })
     }
 }

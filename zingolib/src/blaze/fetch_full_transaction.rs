@@ -2,7 +2,7 @@ use super::syncdata::BlazeSyncData;
 use crate::{
     error::{ZatMathError, ZatMathResult, ZingoLibError},
     wallet::{
-        data::OutgoingTxData,
+        data::{OutgoingTxData, ZERO_NNA},
         keys::{address_from_pubkeyhash, unified::WalletCapability},
         traits::{
             self as zingo_traits, Bundle as _, DomainWalletExt, ReceivedNoteAndMetadata as _,
@@ -110,7 +110,7 @@ impl TransactionContext {
         unconfirmed: bool,
         block_time: u32,
         price: Option<f64>,
-    ) {
+    ) -> ZatMathResult<()> {
         // Set up data structures to record scan results
         let mut txid_indexed_zingo_memos = Vec::new();
         // Remember if this is an outgoing Tx. Useful for when we want to grab the outgoing metadata.
@@ -124,8 +124,8 @@ impl TransactionContext {
             .transaction_metadata_set
             .read()
             .await
-            .total_funds_spent_in(&transaction.txid())
-            > 0
+            .total_funds_spent_in(&transaction.txid())?
+            > ZERO_NNA
         {
             is_outgoing_transaction = true;
         }
@@ -185,6 +185,7 @@ impl TransactionContext {
                 .await
                 .set_price(&transaction.txid(), price);
         }
+        Ok(())
     }
 
     async fn update_outgoing_txdatas_with_uas(
@@ -410,7 +411,7 @@ impl TransactionContext {
                 .transaction_metadata_set
                 .read()
                 .await
-                .get_nullifier_value_txid_outputindex_of_unspent_notes::<D>();
+                .get_nullifier_value_txid_outputindex_of_unspent_notes::<D>()?;
             for output in <FnGenBundle<D> as zingo_traits::Bundle<D>>::from_transaction(transaction)
                 .into_iter()
                 .flat_map(|bundle| bundle.spend_elements().into_iter())

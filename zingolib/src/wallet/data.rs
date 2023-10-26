@@ -777,7 +777,10 @@ pub mod summaries {
     use std::collections::HashMap;
 
     use json::{object, JsonValue};
-    use zcash_primitives::transaction::TxId;
+    use zcash_primitives::transaction::{
+        components::{amount::NonNegativeAmount, Amount},
+        TxId,
+    };
 
     use crate::wallet::Pool;
 
@@ -794,13 +797,13 @@ pub mod summaries {
         pub txid: TxId,
     }
     impl ValueTransfer {
-        pub fn balance_delta(&self) -> i64 {
+        pub fn balance_delta(&self) -> Amount {
             use ValueTransferKind::*;
             match self.kind {
-                Sent { amount, .. } => -(amount as i64),
-                Fee { amount, .. } => -(amount as i64),
-                Received { amount, .. } => amount as i64,
-                SendToSelf => 0,
+                Sent { amount, .. } => -Amount::from(amount),
+                Fee { amount, .. } => -Amount::from(amount),
+                Received { amount, .. } => Amount::from(amount),
+                SendToSelf => Amount::const_from_i64(0),
             }
         }
     }
@@ -829,16 +832,16 @@ pub mod summaries {
     #[derive(Clone, PartialEq, Eq, Debug)]
     pub enum ValueTransferKind {
         Sent {
-            amount: u64,
+            amount: NonNegativeAmount,
             to_address: zcash_address::ZcashAddress,
         },
         Received {
             pool: Pool,
-            amount: u64,
+            amount: NonNegativeAmount,
         },
         SendToSelf,
         Fee {
-            amount: u64,
+            amount: NonNegativeAmount,
         },
     }
     impl From<&ValueTransferKind> for JsonValue {
@@ -868,18 +871,18 @@ pub mod summaries {
                     ref to_address,
                     amount,
                 } => {
-                    temp_object["amount"] = JsonValue::from(amount);
+                    temp_object["amount"] = JsonValue::from(u64::from(amount));
                     temp_object["kind"] = JsonValue::from(&value.kind);
                     temp_object["to_address"] = JsonValue::from(to_address.encode());
                     temp_object
                 }
                 ValueTransferKind::Fee { amount } => {
-                    temp_object["amount"] = JsonValue::from(amount);
+                    temp_object["amount"] = JsonValue::from(u64::from(amount));
                     temp_object["kind"] = JsonValue::from(&value.kind);
                     temp_object
                 }
                 ValueTransferKind::Received { pool, amount } => {
-                    temp_object["amount"] = JsonValue::from(amount);
+                    temp_object["amount"] = JsonValue::from(u64::from(amount));
                     temp_object["kind"] = JsonValue::from(&value.kind);
                     temp_object["pool"] = JsonValue::from(pool);
                     temp_object
@@ -985,23 +988,26 @@ impl TransactionMetadata {
         }
     }
 
-    pub fn get_transaction_fee(&self) -> u64 {
-        self.total_value_spent() - (self.value_outgoing() + self.total_change_returned())
+    pub fn get_transaction_fee(&self) -> ZatMathResult<NonNegativeAmount> {
+        (self.total_value_spent()?
+            - (self.value_outgoing()? + self.total_change_returned()?)
+                .ok_or(ZatMathError::Overflow)?)
+        .ok_or(ZatMathError::Underflow)
     }
 
     // TODO: This is incorrect in the edge case where where we have a send-to-self with
     // no text memo and 0-value fee
-    pub fn is_outgoing_transaction(&self) -> bool {
-        (!self.outgoing_tx_data.is_empty()) || self.total_value_spent() != 0
+    pub fn is_outgoing_transaction(&self) -> ZatMathResult<bool> {
+        Ok((!self.outgoing_tx_data.is_empty()) || self.total_value_spent()? != ZERO_NNA)
     }
     pub fn is_incoming_transaction(&self) -> bool {
         self.sapling_notes.iter().any(|note| !note.is_change())
             || self.orchard_notes.iter().any(|note| !note.is_change())
             || !self.received_utxos.is_empty()
     }
-    pub fn net_spent(&self) -> u64 {
-        assert!(self.is_outgoing_transaction());
-        self.total_value_spent() - self.total_change_returned()
+    pub fn net_spent(&self) -> ZatMathResult<NonNegativeAmount> {
+        assert!(self.is_outgoing_transaction()?);
+        (self.total_value_spent()? - self.total_change_returned()?).ok_or(ZatMathError::Underflow)
     }
     pub fn new(
         height: BlockHeight,
@@ -1109,12 +1115,29 @@ impl TransactionMetadata {
         };
         let utxos = Vector::read(&mut reader, |r| ReceivedTransparentOutput::read(r))?;
 
-        let total_sapling_value_spent = reader.read_u64::<LittleEndian>()?;
-        let total_transparent_value_spent = reader.read_u64::<LittleEndian>()?;
+        let total_sapling_value_spent =
+            NonNegativeAmount::from_u64(reader.read_u64::<LittleEndian>()?).map_err(|()| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "Read value greater than MAX_MONEY".to_string(),
+                )
+            })?;
+        let total_transparent_value_spent =
+            NonNegativeAmount::from_u64(reader.read_u64::<LittleEndian>()?).map_err(|()| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "Read value greater than MAX_MONEY".to_string(),
+                )
+            })?;
         let total_orchard_value_spent = if version >= 22 {
-            reader.read_u64::<LittleEndian>()?
+            NonNegativeAmount::from_u64(reader.read_u64::<LittleEndian>()?).map_err(|()| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "Read value greater than MAX_MONEY".to_string(),
+                )
+            })?
         } else {
-            0
+            ZERO_NNA
         };
 
         // Outgoing metadata was only added in version 2
@@ -1171,31 +1194,39 @@ impl TransactionMetadata {
         23
     }
 
-    pub fn total_change_returned(&self) -> u64 {
-        self.pool_change_returned::<SaplingDomain<ChainType>>()
-            + self.pool_change_returned::<OrchardDomain>()
+    pub fn total_change_returned(&self) -> ZatMathResult<NonNegativeAmount> {
+        (self.pool_change_returned::<SaplingDomain<ChainType>>()?
+            + self.pool_change_returned::<OrchardDomain>()?)
+        .ok_or(ZatMathError::Overflow)
     }
     // Returns None if total value > MAX_MONEY
-    pub fn total_value_received(&self) -> Option<NonNegativeAmount> {
-        self.pool_value_received::<OrchardDomain>()
-            + self.pool_value_received::<SaplingDomain<ChainType>>()
+    pub fn total_value_received(&self) -> ZatMathResult<NonNegativeAmount> {
+        (self.pool_value_received::<OrchardDomain>()?
+            + self.pool_value_received::<SaplingDomain<ChainType>>()?
             + self
                 .received_utxos
                 .iter()
                 .map(|utxo| utxo.value)
                 .sum::<Option<NonNegativeAmount>>()
+                .ok_or(ZatMathError::Overflow)?)
+        .ok_or(ZatMathError::Overflow)
     }
-    pub fn total_value_spent(&self) -> u64 {
-        self.value_spent_by_pool().iter().sum()
+    pub fn total_value_spent(&self) -> ZatMathResult<NonNegativeAmount> {
+        self.value_spent_by_pool()
+            .iter()
+            .sum::<Option<_>>()
+            .ok_or(ZatMathError::Overflow)
     }
 
-    pub fn value_outgoing(&self) -> u64 {
+    pub fn value_outgoing(&self) -> ZatMathResult<NonNegativeAmount> {
         self.outgoing_tx_data
             .iter()
-            .fold(0, |running_total, tx_data| tx_data.value + running_total)
+            .try_fold(ZERO_NNA, |running_total, tx_data| {
+                (tx_data.value + running_total).ok_or(ZatMathError::Overflow)
+            })
     }
 
-    pub fn value_spent_by_pool(&self) -> [u64; 3] {
+    pub fn value_spent_by_pool(&self) -> [NonNegativeAmount; 3] {
         [
             self.total_transparent_value_spent,
             self.total_sapling_value_spent,
@@ -1219,7 +1250,7 @@ impl TransactionMetadata {
         Vector::write(&mut writer, &self.received_utxos, |w, u| u.write(w))?;
 
         for pool in self.value_spent_by_pool() {
-            writer.write_u64::<LittleEndian>(pool)?;
+            writer.write_u64::<LittleEndian>(u64::from(pool))?;
         }
 
         // Write the outgoing metadata

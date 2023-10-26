@@ -448,7 +448,7 @@ impl LightClient {
             "datetime"     => wallet_transaction.datetime,
             "txid"         => format!("{}", wallet_transaction.txid),
             "zec_price"    => wallet_transaction.price.map(|p| (p * 100.0).round() / 100.0),
-            "amount"       => u64::from(total_change) as i64 - wallet_transaction.total_value_spent() as i64,
+            "amount"       => i64::from((Amount::from(total_change) - Amount::from(wallet_transaction.total_value_spent()?)).ok_or(ZatMathError::Underflow)?),
             "outgoing_metadata" => outgoing_json,
         })
     }
@@ -757,7 +757,7 @@ impl LightClient {
                 let mut consumer_notes_by_tx: Vec<JsonValue> = vec![];
 
                 let total_transparent_received = wallet_transaction.received_utxos.iter().map(|u| u.value).sum::<Option<NonNegativeAmount>>().ok_or(ZatMathError::Overflow)?;
-                if wallet_transaction.is_outgoing_transaction() {
+                if wallet_transaction.is_outgoing_transaction()? {
                     // If money was spent, create a consumer_ui_note. For this, we'll subtract
                     // all the change notes + Utxos
                     consumer_notes_by_tx.push(Self::append_change_notes(wallet_transaction, total_transparent_received)?);
@@ -779,7 +779,7 @@ impl LightClient {
                         // If this transaction is outgoing:
                         // Then we've already accounted for the entire balance.
 
-                        if !wallet_transaction.is_outgoing_transaction() {
+                        if !wallet_transaction.is_outgoing_transaction() ?{
                             // If not, we've added sapling/orchard, and need to add transparent
                             let old_amount = transaction.remove("amount").as_i64().unwrap();
                             transaction.insert(
@@ -859,7 +859,7 @@ impl LightClient {
         Ok(JsonValue::Array(consumer_ui_notes))
     }
 
-    pub async fn do_list_txsummaries(&self) -> Vec<ValueTransfer> {
+    pub async fn do_list_txsummaries(&self) -> ZatMathResult<Vec<ValueTransfer>> {
         let mut summaries: Vec<ValueTransfer> = Vec::new();
 
         for (txid, transaction_md) in self
@@ -872,13 +872,13 @@ impl LightClient {
             .iter()
         {
             LightClient::tx_summary_matcher(&mut summaries, *txid, transaction_md);
-            let tx_fee = transaction_md.get_transaction_fee();
+            let tx_fee = transaction_md.get_transaction_fee()?;
             let (block_height, datetime, price) = (
                 transaction_md.block_height,
                 transaction_md.datetime,
                 transaction_md.price,
             );
-            if transaction_md.is_outgoing_transaction() {
+            if transaction_md.is_outgoing_transaction()? {
                 summaries.push(ValueTransfer {
                     block_height,
                     datetime,
@@ -890,11 +890,11 @@ impl LightClient {
             }
         }
         summaries.sort_by_key(|summary| summary.block_height);
-        summaries
+        Ok(summaries)
     }
 
     /// Create a new address, deriving it from the seed.
-    pub async fn do_new_address(&self, addr_type: &str) -> Result<JsonValue, String> {
+    pub async fn do_new_address(&self, addr_type: &str) -> ZingoLibResult<JsonValue> {
         //TODO: Placeholder interface
         let desired_receivers = ReceiverSelection {
             sapling: addr_type.contains('z'),
@@ -911,7 +911,7 @@ impl LightClient {
 
         Ok(array![new_address.encode(&self.config.chain)])
     }
-    pub async fn do_rescan(&self) -> Result<SyncResult, String> {
+    pub async fn do_rescan(&self) -> ZingoLibResult<SyncResult> {
         debug!("Rescan starting");
 
         self.clear_state().await;
@@ -963,7 +963,7 @@ impl LightClient {
             }
         }
     }
-    pub async fn do_save(&self) -> Result<(), String> {
+    pub async fn do_save(&self) -> ZingoLibResult<()> {
         #[cfg(any(target_os = "ios", target_os = "android"))]
         // on mobile platforms, disable the save, because the saves will be handled by the native layer, and not in rust
         {
@@ -1178,7 +1178,7 @@ impl LightClient {
         result.map(|(transaction_id, _)| transaction_id)
     }
 
-    pub async fn do_sync(&self, print_updates: bool) -> Result<SyncResult, String> {
+    pub async fn do_sync(&self, print_updates: bool) -> ZingoLibResult<SyncResult> {
         // Remember the previous sync id first
         let prev_sync_id = self
             .bsync_data

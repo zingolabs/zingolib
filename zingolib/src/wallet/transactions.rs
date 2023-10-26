@@ -22,9 +22,12 @@ use zcash_primitives::{
 
 use zingoconfig::{ChainType, MAX_REORG};
 
+use crate::error::{InternalWalletError, ZatMathError, ZatMathResult, ZingoLibResult};
+
 use super::{
     data::{
-        OutgoingTxData, PoolNullifier, ReceivedTransparentOutput, TransactionMetadata, WitnessTrees,
+        OutgoingTxData, PoolNullifier, ReceivedTransparentOutput, TransactionMetadata,
+        WitnessTrees, ZERO_NNA,
     },
     keys::unified::WalletCapability,
     traits::{self, DomainWalletExt, Nullifier, ReceivedNoteAndMetadata, Recipient},
@@ -44,9 +47,13 @@ impl TransactionMetadataSet {
         22
     }
 
-    pub fn get_fee_by_txid(&self, txid: &TxId) -> u64 {
+    pub fn get_fee_by_txid(
+        &self,
+        txid: &TxId,
+    ) -> Result<NonNegativeAmount, crate::error::ZatMathError> {
         self.current
             .get(txid)
+            //TODO: Make this an error!!
             .expect("To have the requested txid")
             .get_transaction_fee()
     }
@@ -343,21 +350,26 @@ impl TransactionMetadataSet {
             .collect()
     }
 
-    pub fn total_funds_spent_in(&self, txid: &TxId) -> u64 {
+    pub fn total_funds_spent_in(
+        &self,
+        txid: &TxId,
+    ) -> Result<NonNegativeAmount, crate::error::ZatMathError> {
         self.current
             .get(txid)
             .map(TransactionMetadata::total_value_spent)
-            .unwrap_or(0)
+            .unwrap_or(Ok(ZERO_NNA))
     }
 
     pub fn get_nullifier_value_txid_outputindex_of_unspent_notes<D: DomainWalletExt>(
         &self,
-    ) -> Vec<(
-        <<D as DomainWalletExt>::WalletNote as ReceivedNoteAndMetadata>::Nullifier,
-        u64,
-        TxId,
-        u32,
-    )>
+    ) -> ZatMathResult<
+        Vec<(
+            <<D as DomainWalletExt>::WalletNote as ReceivedNoteAndMetadata>::Nullifier,
+            NonNegativeAmount,
+            TxId,
+            u32,
+        )>,
+    >
     where
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: traits::Recipient,
@@ -370,12 +382,14 @@ impl TransactionMetadataSet {
                     .filter(|unspent_note_data| unspent_note_data.spent().is_none())
                     .filter_map(move |unspent_note_data| {
                         unspent_note_data.nullifier().map(|unspent_nullifier| {
-                            (
-                                unspent_nullifier,
-                                unspent_note_data.value(),
-                                transaction_metadata.txid,
-                                *unspent_note_data.output_index(),
-                            )
+                            unspent_note_data.value().map(|val| {
+                                (
+                                    unspent_nullifier,
+                                    val,
+                                    transaction_metadata.txid,
+                                    *unspent_note_data.output_index(),
+                                )
+                            })
                         })
                     })
             })
@@ -413,7 +427,7 @@ impl TransactionMetadataSet {
         spent_txid: &TxId,
         spent_at_height: BlockHeight,
         output_index: u32,
-    ) -> Result<u64, String> {
+    ) -> ZingoLibResult<NonNegativeAmount> {
         match spent_nullifier {
             PoolNullifier::Sapling(sapling_nullifier) => {
                 if let Some(sapling_note_data) = self
@@ -426,12 +440,10 @@ impl TransactionMetadataSet {
                 {
                     sapling_note_data.spent = Some((*spent_txid, spent_at_height.into()));
                     sapling_note_data.unconfirmed_spent = None;
-                    Ok(sapling_note_data.note.value().inner())
+                    NonNegativeAmount::from_u64(sapling_note_data.note.value().inner())
+                        .map_err(|()| ZatMathError::Overflow.into())
                 } else {
-                    Err(format!(
-                        "no such sapling nullifier '{:?}' found in transaction",
-                        *sapling_nullifier
-                    ))
+                    Err(InternalWalletError::MissingNullifier(*spent_nullifier).into())
                 }
             }
             PoolNullifier::Orchard(orchard_nullifier) => {
@@ -445,12 +457,10 @@ impl TransactionMetadataSet {
                 {
                     orchard_note_data.spent = Some((*spent_txid, spent_at_height.into()));
                     orchard_note_data.unconfirmed_spent = None;
-                    Ok(orchard_note_data.note.value().inner())
+                    NonNegativeAmount::from_u64(orchard_note_data.note.value().inner())
+                        .map_err(|()| ZatMathError::Overflow.into())
                 } else {
-                    Err(format!(
-                        "no such orchard nullifier '{:?}' found in transaction",
-                        *orchard_nullifier
-                    ))
+                    Err(InternalWalletError::MissingNullifier(*spent_nullifier).into())
                 }
             }
         }
@@ -460,14 +470,15 @@ impl TransactionMetadataSet {
     // transction as change. i.e., If any funds were spent in this transaction, all received notes without user-specified memos are change.
     //
     // TODO: When we start working on multi-sig, this could cause issues about hiding sends-to-self
-    pub fn check_notes_mark_change(&mut self, txid: &TxId) {
+    pub fn check_notes_mark_change(&mut self, txid: &TxId) -> ZatMathResult<()> {
         //TODO: Incorrect with a 0-value fee somehow
-        if self.total_funds_spent_in(txid) > 0 {
+        if self.total_funds_spent_in(txid)? > ZERO_NNA {
             if let Some(transaction_metadata) = self.current.get_mut(txid) {
                 Self::mark_notes_as_change_for_pool(&mut transaction_metadata.sapling_notes);
                 Self::mark_notes_as_change_for_pool(&mut transaction_metadata.orchard_notes);
             }
         }
+        Ok(())
     }
     fn mark_notes_as_change_for_pool<Note: ReceivedNoteAndMetadata>(notes: &mut [Note]) {
         notes.iter_mut().for_each(|n| {
@@ -517,10 +528,10 @@ impl TransactionMetadataSet {
         unconfirmed: bool,
         timestamp: u32,
         spent_nullifier: PoolNullifier,
-        value: u64,
+        value: NonNegativeAmount,
         source_txid: TxId,
         output_index: u32,
-    ) {
+    ) -> ZatMathResult<()> {
         match spent_nullifier {
             PoolNullifier::Orchard(spent_nullifier) => {
                 self.add_new_spent_internal::<OrchardDomain>(
@@ -559,10 +570,11 @@ impl TransactionMetadataSet {
         unconfirmed: bool,
         timestamp: u32,
         spent_nullifier: <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier,
-        value: u64,
+        value: NonNegativeAmount,
         source_txid: TxId,
         output_index: u32,
-    ) where
+    ) -> ZatMathResult<()>
+    where
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: traits::Recipient,
     {
@@ -576,7 +588,7 @@ impl TransactionMetadataSet {
             .iter()
             .any(|nf| *nf == spent_nullifier)
         {
-            transaction_metadata.add_spent_nullifier(spent_nullifier.into(), value)
+            transaction_metadata.add_spent_nullifier(spent_nullifier.into(), value)?
         }
 
         // Since this Txid has spent some funds, output notes in this Tx that are sent to us are actually change.
@@ -587,6 +599,7 @@ impl TransactionMetadataSet {
             // ie remove_witness_mark_sapling or _orchard
             self.remove_witness_mark::<D>(height, txid, source_txid, output_index)
         }
+        Ok(())
     }
 
     pub fn add_taddr_spent(
@@ -645,7 +658,7 @@ impl TransactionMetadataSet {
         output_num: u32,
         source_txid: TxId,
         source_height: u32,
-    ) -> u64 {
+    ) -> NonNegativeAmount {
         // Find the UTXO
         let value = if let Some(utxo_transacion_metadata) = self.current.get_mut(&spent_txid) {
             if let Some(spent_utxo) = utxo_transacion_metadata
@@ -661,11 +674,11 @@ impl TransactionMetadataSet {
                 spent_utxo.value
             } else {
                 error!("Couldn't find UTXO that was spent");
-                0
+                ZERO_NNA
             }
         } else {
             error!("Couldn't find TxID that was spent!");
-            0
+            ZERO_NNA
         };
 
         // Return the value of the note that was spent.

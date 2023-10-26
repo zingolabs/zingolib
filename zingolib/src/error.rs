@@ -1,15 +1,34 @@
 use zcash_primitives::transaction::components::amount::NonNegativeAmount;
 
-use crate::wallet::Pool;
+use crate::wallet::{data::PoolNullifier, Pool};
 
 #[derive(Debug, PartialEq, Eq, derive_more::From, derive_more::Display)]
 pub enum ZingoLibError {
     NoWalletLocation,
+    /// An overflow or underflow occurred during amount arithmatic
     ZatMathError(ZatMathError),
+    /// Tried to do an operation without the appropriate wallet capability
     InsufficientCapability(InsufficientCapability),
-    DerevationError(secp256k1::Error),
     NoShieldedReciever,
     TransactionCreationError(TransactionCreationError),
+    /// An internal wallet error indicates something went wrong
+    /// inside zingolib, as opposed to other errors that could be caused by
+    /// bad input. If you see an internal wallet error, something has gone wrong
+    InternalWalletError(InternalWalletError),
+}
+
+#[derive(Debug, PartialEq, Eq, derive_more::Display)]
+pub enum InternalWalletError {
+    /// Address derevation failed
+    DerevationError(secp256k1::Error),
+    #[display(
+        fmt = "Missing {} nullifier",
+        "match _0 { \
+            PoolNullifier::Sapling(_) => \"sapling\", \
+            PoolNullifier::Orchard(_) => \"orchard\", \
+        }"
+    )]
+    MissingNullifier(PoolNullifier),
 }
 
 #[derive(Debug, PartialEq, Eq, derive_more::Display)]
