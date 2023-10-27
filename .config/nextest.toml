@@ -1,5 +1,4 @@
 [profile.default]
-failure-output = "final"
 fail-fast = false
 
 [profile.ci]
