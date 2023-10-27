@@ -3205,7 +3205,7 @@ mod slow {
             .transaction_from_send(vec![(&recipient_taddr, 50_000, None)])
             .await
             .unwrap();
-        let fee = get_padded_317_fee_from_actions(
+        let zip317_fee = get_padded_317_fee_from_actions(
             &orchard_faucet,
             &orch_fauc_to_pmc_taddr_tx,
             ExpectedActions {
@@ -3218,15 +3218,15 @@ mod slow {
         // Predicted fee:
         //  1 orchard txin + 1 orchard change + 1 transparent txout = 3
         //  3 * MARGINAL_FEE:
-        assert_eq!(Into::<u64>::into(fee), 15_000u64);
+        assert_eq!(Into::<u64>::into(zip317_fee), 15_000u64);
         bump_and_check_recipient!(o: 0 s: 0 t: 50_000);
-        // Test Four: test of shield:
+        dbg!(&recipient.wallet.get_utxos().await);
         dbg!("Shield Test");
         let shield_tx = recipient
             .transaction_from_shield(&[Pool::Transparent])
             .await
             .unwrap();
-        //dbg!(&shield_tx);
+        dbg!(&recipient.wallet.get_utxos().await);
         let fee = get_padded_317_fee_from_actions(
             &orchard_faucet,
             &shield_tx,
