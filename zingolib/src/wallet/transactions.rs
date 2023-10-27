@@ -866,11 +866,11 @@ impl TransactionMetadataSet {
                 if !transaction_metadata
                     .outgoing_tx_data
                     .iter()
-                    .any(|known_metadatum| *dbg!(known_metadatum) == outgoing_metadatum)
+                    .any(|known_metadatum| *known_metadatum == outgoing_metadatum)
                 {
                     transaction_metadata
                         .outgoing_tx_data
-                        .push(dbg!(outgoing_metadatum));
+                        .push(outgoing_metadatum);
                 }
             }
         } else {

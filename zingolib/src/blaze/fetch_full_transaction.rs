@@ -309,10 +309,17 @@ impl TransactionContext {
             // Mark that this Tx spent some funds
             *is_outgoing_transaction = true;
 
-            self.transaction_metadata_set
-                .write()
-                .await
-                .mark_txid_utxo_spent(prev_transaction_id, prev_n, transaction_id, height.into());
+            if !unconfirmed {
+                self.transaction_metadata_set
+                    .write()
+                    .await
+                    .mark_txid_utxo_spent(
+                        prev_transaction_id,
+                        prev_n,
+                        transaction_id,
+                        height.into(),
+                    );
+            }
         }
 
         // If this transaction spent value, add the spent amount to the TxID

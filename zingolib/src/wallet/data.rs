@@ -545,7 +545,7 @@ pub(crate) fn write_sapling_rseed<W: Write>(
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ReceivedTransparentOutput {
     pub address: String,
     pub txid: TxId,
