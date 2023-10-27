@@ -144,10 +144,7 @@ mod fast {
             .await
             .unwrap();
         let preshield_utxos = dbg!(recipient.wallet.get_utxos().await);
-        recipient
-            .do_shield(&[Pool::Transparent], None)
-            .await
-            .unwrap();
+        recipient.do_shield(&[Pool::Transparent]).await.unwrap();
         let postshield_utxos = dbg!(recipient.wallet.get_utxos().await);
         assert_eq!(preshield_utxos[0].address, postshield_utxos[0].address);
         assert_eq!(
