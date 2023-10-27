@@ -129,6 +129,29 @@ fn check_view_capability_bounds(
 mod fast {
     use super::*;
     #[tokio::test]
+    async fn utxos_are_not_prematurely_confirmed() {
+        let (regtest_manager, _cph, faucet, recipient) =
+            scenarios::faucet_recipient_default().await;
+        faucet
+            .do_send(vec![(
+                &get_base_address!(recipient, "transparent"),
+                100_000,
+                None,
+            )])
+            .await
+            .unwrap();
+        increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+            .await
+            .unwrap();
+        let preshield_utxos = dbg!(recipient.wallet.get_utxos().await);
+        recipient
+            .do_shield(&[Pool::Transparent], None)
+            .await
+            .unwrap();
+        let postshield_utxos = dbg!(recipient.wallet.get_utxos().await);
+        assert_eq!(preshield_utxos[0], postshield_utxos[0]);
+    }
+    #[tokio::test]
     async fn send_without_reorg_buffer_blocks_gives_correct_error() {
         let (_regtest_manager, _cph, faucet, mut recipient) =
             scenarios::faucet_recipient_default().await;
