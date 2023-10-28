@@ -1897,14 +1897,29 @@ async fn get_recent_median_price_from_gemini() -> Result<f64, PriceFetchError> {
 }
 
 impl LightClient {
+    fn unspent_pending_spent(
+        &self,
+        note: JsonValue,
+        unspent: &mut Vec<JsonValue>,
+        pending: &mut Vec<JsonValue>,
+        spent: &mut Vec<JsonValue>,
+    ) {
+        if note["spent"].is_null() && note["unconfirmed_spent"].is_null() {
+            unspent.push(note);
+        } else if !note["spent"].is_null() {
+            spent.push(note);
+        } else {
+            pending.push(note);
+        }
+    }
     async fn list_sapling_notes(
         &self,
         all_notes: bool,
         anchor_height: BlockHeight,
     ) -> (Vec<JsonValue>, Vec<JsonValue>, Vec<JsonValue>) {
         let mut unspent_sapling_notes: Vec<JsonValue> = vec![];
-        let mut spent_sapling_notes: Vec<JsonValue> = vec![];
         let mut pending_sapling_notes: Vec<JsonValue> = vec![];
+        let mut spent_sapling_notes: Vec<JsonValue> = vec![];
         // Collect Sapling notes
         self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
                 .flat_map( |(transaction_id, transaction_metadata)| {
@@ -1933,13 +1948,7 @@ impl LightClient {
                     )
                 })
                 .for_each( |note| {
-                    if note["spent"].is_null() && note["unconfirmed_spent"].is_null() {
-                        unspent_sapling_notes.push(note);
-                    } else if !note["spent"].is_null() {
-                        spent_sapling_notes.push(note);
-                    } else {
-                        pending_sapling_notes.push(note);
-                    }
+                    self.unspent_pending_spent(note, &mut unspent_sapling_notes, &mut pending_sapling_notes, &mut spent_sapling_notes)
                 });
         (
             unspent_sapling_notes,
@@ -1953,8 +1962,8 @@ impl LightClient {
         anchor_height: BlockHeight,
     ) -> (Vec<JsonValue>, Vec<JsonValue>, Vec<JsonValue>) {
         let mut unspent_orchard_notes: Vec<JsonValue> = vec![];
-        let mut spent_orchard_notes: Vec<JsonValue> = vec![];
         let mut pending_orchard_notes: Vec<JsonValue> = vec![];
+        let mut spent_orchard_notes: Vec<JsonValue> = vec![];
         self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
                 .flat_map( |(transaction_id, transaction_metadata)| {
                     transaction_metadata.orchard_notes.iter().filter_map(move |orch_note_metadata|
@@ -1982,13 +1991,7 @@ impl LightClient {
                     )
                 })
                 .for_each( |note| {
-                    if note["spent"].is_null() && note["unconfirmed_spent"].is_null() {
-                        unspent_orchard_notes.push(note);
-                    } else if !note["spent"].is_null() {
-                        spent_orchard_notes.push(note);
-                    } else {
-                        pending_orchard_notes.push(note);
-                    }
+                    self.unspent_pending_spent(note, &mut unspent_orchard_notes, &mut pending_orchard_notes, &mut spent_orchard_notes)
                 });
         (
             unspent_orchard_notes,
@@ -2001,8 +2004,8 @@ impl LightClient {
         all_notes: bool,
     ) -> (Vec<JsonValue>, Vec<JsonValue>, Vec<JsonValue>) {
         let mut unspent_transparent_notes: Vec<JsonValue> = vec![];
-        let mut spent_transparent_notes: Vec<JsonValue> = vec![];
         let mut pending_transparent_notes: Vec<JsonValue> = vec![];
+        let mut spent_transparent_notes: Vec<JsonValue> = vec![];
 
         self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
                 .flat_map( |(transaction_id, wtx)| {
@@ -2032,14 +2035,8 @@ impl LightClient {
                         }
                     )
                 })
-                .for_each( |utxo| {
-                    if utxo["spent"].is_null() && utxo["unconfirmed_spent"].is_null() {
-                        unspent_transparent_notes.push(utxo);
-                    } else if !utxo["spent"].is_null() {
-                        spent_transparent_notes.push(utxo);
-                    } else {
-                        pending_transparent_notes.push(utxo);
-                    }
+                .for_each( |note| {
+                    self.unspent_pending_spent(note, &mut unspent_transparent_notes, &mut pending_transparent_notes, &mut spent_transparent_notes)
                 });
 
         (
