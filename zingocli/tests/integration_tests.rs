@@ -3315,13 +3315,15 @@ mod slow {
 
         // Test Four: test of shield:
         dbg!("Test Four");
+        dbg!(recipient.wallet.get_shieldable_sapling_notes().await);
         let shield_tx = recipient
             .transaction_from_shield(&[Pool::Sapling, Pool::Transparent])
             .await
             .unwrap();
+        dbg!(recipient.wallet.get_shieldable_sapling_notes().await);
         //dbg!(&shield_tx);
-        let fee = get_padded_317_fee_from_actions(
-            &orchard_faucet,
+        let zip317_fee = get_padded_317_fee_from_actions(
+            &recipient,
             &shield_tx,
             ExpectedActions {
                 orchard_txouts: 2,
@@ -3331,9 +3333,9 @@ mod slow {
             },
         )
         .await;
-        panic!();
         assert_eq!(Into::<u64>::into(fee), 25_000u64); // 2 for orchard change, 2 for sapling pool, and 1 transparent
                                                        // 4 tz transparent and sapling to orchard
+        panic!();
         recipient
             .transaction_from_send(vec![
                 (&recipient_taddr, 30_000, None),
