@@ -785,6 +785,7 @@ pub mod summaries {
         pub memos: Vec<zcash_primitives::memo::TextMemo>,
         pub price: Option<f64>,
         pub txid: TxId,
+        pub unconfirmed: bool,
     }
     impl ValueTransfer {
         pub fn balance_delta(&self) -> i64 {
@@ -815,6 +816,7 @@ pub mod summaries {
                 )
                 .field("price", &self.price)
                 .field("txid", &self.txid)
+                .field("unconfirmed", &self.unconfirmed)
                 .finish()
         }
     }
@@ -855,6 +857,7 @@ pub mod summaries {
                     "pool": "",
                     "price": value.price,
                     "txid": value.txid.to_string(),
+                    "unconfirmed": value.unconfirmed,
             };
             match value.kind {
                 ValueTransferKind::Sent {
