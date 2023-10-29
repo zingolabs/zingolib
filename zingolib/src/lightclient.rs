@@ -1356,8 +1356,14 @@ impl LightClient {
 
         // fetch_full_transaction::start returns a sender called fetch_full_transaction_transmitter.
         // eventually the sender will send a txid to a worker created by fft::s
-        // when it does, fft::s sends the txid and a oneshot receiver through full_transaction_fetcher_transmitter
-        // the oneshot receiver unwraps to a transaction, upon which scan_full_tx() is called
+        // when it does, fft::s sends the txid and a oneshot sender through full_transaction_fetcher_transmitter
+        // the oneshot receives unwraps to a transaction, upon which scan_full_tx() is called
+        // okay but where is the oneshot sender?
+        // is it the other side of fetch_full_transactions_transmitter
+        // no. do not confuse fetch_full_transactions_transmitter with full_transaction_fetcher_transmitter. 8O
+        // a sender is called transmitter, its partner is called a handle?
+        // no.
+
         let (
             fetch_full_transactions_handle,
             fetch_full_transaction_transmitter,
