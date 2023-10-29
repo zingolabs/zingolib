@@ -70,14 +70,12 @@ impl fmt::Display for BatchSyncStatus {
             write!(
                 f,
                 "**Batch** Current: {:4} Total: {:4}\n   \
-                Blocks Loaded: {:4} TrialDecrypted: \
-                {:4}, Witnesses Updated: {:4}, Total: {:4}, ",
+                **Blocks** Start Height: {:4} End Height {:4} Loaded: {:4}",
                 self.batch_num,
                 self.batch_total,
+                self.start_block,
+                self.end_block,
                 self.blocks_done,
-                self.trial_dec_done,
-                self.witnesses_updated.values().min().unwrap_or(&0),
-                self.blocks_total
             )
         } else {
             write!(
