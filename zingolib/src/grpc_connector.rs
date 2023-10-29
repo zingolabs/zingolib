@@ -202,21 +202,28 @@ impl GrpcConnector {
         let uri = self.uri.clone();
 
         let h = tokio::spawn(async move {
-            let mut workers = FuturesUnordered::new();
+            let mut get_full_transaction_and_send_to_result_transmitter_workers =
+                FuturesUnordered::new();
             while let Some((transaction_id, result_transmitter)) = receiver.recv().await {
                 let uri = uri.clone();
-                workers.push(tokio::spawn(async move {
-                    result_transmitter
-                        .send(
-                            Self::get_full_transaction(uri.clone(), &transaction_id, network).await,
-                        )
-                        .unwrap()
-                }));
+                get_full_transaction_and_send_to_result_transmitter_workers.push(tokio::spawn(
+                    async move {
+                        result_transmitter
+                            .send(
+                                Self::get_full_transaction(uri.clone(), &transaction_id, network)
+                                    .await,
+                            )
+                            .unwrap()
+                    },
+                ));
 
                 // Do only 16 API calls in parallel, otherwise it might overflow OS's limit of
                 // number of simultaneous connections
-                if workers.len() > 16 {
-                    while let Some(_r) = workers.next().await {
+                if get_full_transaction_and_send_to_result_transmitter_workers.len() > 16 {
+                    while let Some(_r) = get_full_transaction_and_send_to_result_transmitter_workers
+                        .next()
+                        .await
+                    {
                         // Do nothing
                     }
                 }

@@ -1111,7 +1111,7 @@ impl LightClient {
                             ),
                         ) {
                             let price = price.read().await.clone();
-                            //debug!("Mempool attempting to scan {}", tx.txid());
+                            debug!("Mempool attempting to scan {}", transaction.txid());
                             TransactionContext::new(
                                 &config,
                                 key.clone(),
@@ -1353,6 +1353,11 @@ impl LightClient {
             self.wallet.wallet_capability(),
             self.wallet.transactions(),
         );
+
+        // fetch_full_transaction::start returns a sender called fetch_full_transaction_transmitter.
+        // eventually the sender will send a txid to a worker created by fft::s
+        // when it does, fft::s sends the txid and a oneshot receiver through full_transaction_fetcher_transmitter
+        // the oneshot receiver unwraps to a transaction, upon which scan_full_tx() is called
         let (
             fetch_full_transactions_handle,
             fetch_full_transaction_transmitter,
@@ -1366,6 +1371,7 @@ impl LightClient {
 
         // The processor to process Transactions detected by the trial decryptions processor
         let update_notes_processor = UpdateNotes::new(self.wallet.transactions());
+        // the second parameter to update_notes_processor.start is the fetch_full_transaction_transmitter for fetch_full_transaction
         let (update_notes_handle, blocks_done_transmitter, detected_transactions_transmitter) =
             update_notes_processor
                 .start(bsync_data.clone(), fetch_full_transaction_transmitter)
