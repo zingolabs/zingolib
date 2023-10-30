@@ -3128,6 +3128,8 @@ mod slow {
             .do_shield(&[Pool::Transparent], None)
             .await
             .unwrap();
+        bump_and_check!(o: 20_000 s: 30_000 t: 0);
+
         pool_migration_client
             .do_send(vec![(&pmc_unified, 20_000, None)])
             .await
