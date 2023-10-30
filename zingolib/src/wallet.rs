@@ -519,7 +519,7 @@ impl LightWallet {
     }
 
     // Get all (unspent) utxos. Unconfirmed spent utxos are included
-    pub async fn get_unspent_utxos(&self) -> Vec<ReceivedTransparentOutput> {
+    pub async fn get_unspent_transparent_notes(&self) -> Vec<ReceivedTransparentOutput> {
         self.transaction_context
             .transaction_metadata_set
             .read()
@@ -894,7 +894,7 @@ impl LightWallet {
                 // a funder of the wallet's transparent value. We should change this.
                 Pool::Transparent => {
                     utxos = self
-                        .get_unspent_utxos()
+                        .get_unspent_transparent_notes()
                         .await
                         .iter()
                         .filter(|utxo| {
@@ -1356,8 +1356,8 @@ impl LightWallet {
 
         tx_builder = match self.add_change_output_to_builder(
             tx_builder,
-            Amount::from_u64(earmark_total_plus_proposed_fee).expect("valid value of u64"),
-            Amount::from_u64(total_value_covered_by_selected).unwrap(),
+            dbg!(Amount::from_u64(earmark_total_plus_proposed_fee).expect("valid value of u64")),
+            dbg!(Amount::from_u64(total_value_covered_by_selected).unwrap()),
             total_shielded_receivers,
             receivers,
         ) {
@@ -1750,8 +1750,7 @@ impl LightWallet {
         &self,
         txid: transaction::TxId,
     ) -> Vec<ReceivedTransparentOutput> {
-        dbg!(self
-            .get_all_utxos()
+        self.get_all_utxos()
             .await
             .iter()
             .cloned()
@@ -1759,7 +1758,7 @@ impl LightWallet {
                 utxo.unconfirmed_spent
                     .is_some_and(|id_height| id_height.0 == txid)
             })
-            .collect())
+            .collect()
     }
     pub async fn spendable_orchard_balance(&self, target_addr: Option<String>) -> Option<u64> {
         if let Capability::Spend(_) = self.wallet_capability().orchard {
@@ -1785,8 +1784,8 @@ impl LightWallet {
             .filter(|note| note.note.value().inner() > u64::from(MARGINAL_FEE))
             .collect::<Vec<_>>()
     }
-    pub async fn get_shieldable_transparent_utxos(&self) -> Vec<ReceivedTransparentOutput> {
-        self.get_unspent_utxos()
+    pub async fn get_shieldable_transparent_notes(&self) -> Vec<ReceivedTransparentOutput> {
+        self.get_unspent_transparent_notes()
             .await
             .into_iter()
             .filter(|utxo| utxo.value > u64::from(MARGINAL_FEE))
@@ -1795,7 +1794,7 @@ impl LightWallet {
     pub async fn tbalance(&self, addr: Option<String>) -> Option<u64> {
         if self.wallet_capability().transparent.can_view() {
             Some(
-                self.get_unspent_utxos()
+                self.get_unspent_transparent_notes()
                     .await
                     .iter()
                     .filter(|utxo| match addr.as_ref() {

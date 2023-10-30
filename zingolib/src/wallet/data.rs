@@ -975,9 +975,9 @@ impl TransactionMetadata {
     }
 
     pub fn get_transaction_fee(&self) -> Result<u64, ZingoLibError> {
-        let outputted = self.value_outgoing() + self.total_change_returned();
+        let outputted = dbg!(self.value_outgoing()) + dbg!(self.total_change_returned());
         if self.total_value_spent() >= outputted {
-            Ok(self.total_value_spent() - outputted)
+            Ok(dbg!(self.total_value_spent()) - dbg!(outputted))
         } else {
             Err(ZingoLibError::MetadataUnderflow)
         }

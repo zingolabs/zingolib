@@ -787,7 +787,7 @@ impl LightClient {
         for pool in pools_to_shield.iter().copied() {
             match pool {
                 Pool::Transparent => {
-                    shieldable_utxos = self.wallet.get_shieldable_transparent_utxos().await;
+                    shieldable_utxos = self.wallet.get_shieldable_transparent_notes().await;
                 }
                 Pool::Sapling => {
                     shieldable_sapling_notes = self.wallet.get_shieldable_sapling_notes().await;
