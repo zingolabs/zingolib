@@ -1146,8 +1146,7 @@ impl LightClient {
                         .await;
 
                         if r.is_err() {
-                            warn!("Mempool monitor returned {:?}, will restart listening", r);
-                            sleep(Duration::from_secs(10)).await;
+                            sleep(Duration::from_secs(3)).await;
                         } else {
                             let _ = lci.do_sync(false).await;
                         }
