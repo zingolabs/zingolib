@@ -49,7 +49,7 @@ impl TransactionMetadataSet {
             .get_transaction_fee()
         {
             Ok(tx_fee) => tx_fee,
-            Err(e) => panic!("{:?}", e),
+            Err(e) => panic!("{:?} for txid {}", e, txid,),
         }
     }
 
@@ -860,17 +860,17 @@ impl TransactionMetadataSet {
     }
 
     pub fn add_outgoing_metadata(&mut self, txid: &TxId, outgoing_metadata: Vec<OutgoingTxData>) {
-        println!("        adding outgoing metadata to txid {}", txid);
+        // println!("        adding outgoing metadata to txid {}", txid);
         if let Some(transaction_metadata) = self.current.get_mut(txid) {
             for outgoing_metadatum in outgoing_metadata {
                 if !transaction_metadata
                     .outgoing_tx_data
                     .iter()
-                    .any(|known_metadatum| *dbg!(known_metadatum) == outgoing_metadatum)
+                    .any(|known_metadatum| *known_metadatum == outgoing_metadatum)
                 {
                     transaction_metadata
                         .outgoing_tx_data
-                        .push(dbg!(outgoing_metadatum));
+                        .push(outgoing_metadatum);
                 }
             }
         } else {
