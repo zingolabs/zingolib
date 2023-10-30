@@ -1162,8 +1162,7 @@ impl TransactionMetadata {
     }
 
     pub fn total_change_returned(&self) -> u64 {
-        self.pool_change_returned::<SaplingDomain<ChainType>>()
-            + self.pool_change_returned::<OrchardDomain>()
+        self.pool_change_returned::<OrchardDomain>()
     }
     pub fn total_value_received(&self) -> u64 {
         self.pool_value_received::<OrchardDomain>()

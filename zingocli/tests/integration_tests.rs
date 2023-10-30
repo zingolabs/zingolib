@@ -3063,7 +3063,7 @@ mod slow {
         // Test all possible promoting note source combinations
         let (regtest_manager, _cph, mut client_builder, regtest_network) =
             scenarios::custom_clients_default().await;
-        let sapling_faucet = client_builder.build_faucet(false, regtest_network).await;
+        let orchard_faucet = client_builder.build_faucet(false, regtest_network).await;
         let pool_migration_client = client_builder
             .build_client(HOSPITAL_MUSEUM_SEED.to_string(), 0, false, regtest_network)
             .await;
@@ -3071,7 +3071,7 @@ mod slow {
         let pmc_sapling = get_base_address!(pool_migration_client, "sapling");
         let pmc_unified = get_base_address!(pool_migration_client, "unified");
         // Ensure that the client has confirmed spendable funds
-        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &sapling_faucet, 3)
+        zingo_testutils::increase_height_and_wait_for_client(&regtest_manager, &orchard_faucet, 3)
             .await
             .unwrap();
         // 1 t Test of a send from a taddr only client to its own unified address
@@ -3082,7 +3082,7 @@ mod slow {
         };
     }
 
-        sapling_faucet
+        orchard_faucet
             .do_send(vec![(&pmc_taddr, 50_000, None)])
             .await
             .unwrap();
@@ -3095,7 +3095,7 @@ mod slow {
         bump_and_check!(o: 40_000 s: 0 t: 0);
 
         // 2 Test of a send from a sapling only client to its own unified address
-        sapling_faucet
+        orchard_faucet
             .do_send(vec![(&pmc_sapling, 50_000, None)])
             .await
             .unwrap();
@@ -3122,7 +3122,7 @@ mod slow {
             ])
             .await
             .unwrap();
-        bump_and_check!(o: 0 s: 30_000 t: 30_000);
+        bump_and_check!(o: 0 s: 30_000 t: 14_700);
 
         pool_migration_client
             .do_shield(&[Pool::Transparent], None)
@@ -3150,7 +3150,7 @@ mod slow {
         bump_and_check!(o: 20_000 s: 0 t: 0);
 
         // 6 sapling and orchard to orchard
-        sapling_faucet
+        orchard_faucet
             .do_send(vec![(&pmc_sapling, 20_000, None)])
             .await
             .unwrap();
@@ -3163,7 +3163,7 @@ mod slow {
         bump_and_check!(o: 30_000 s: 0 t: 0);
 
         // 7 tzo --> o
-        sapling_faucet
+        orchard_faucet
             .do_send(vec![
                 (&pmc_taddr, 20_000, None),
                 (&pmc_sapling, 20_000, None),
