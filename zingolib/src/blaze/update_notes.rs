@@ -70,20 +70,20 @@ impl UpdateNotes {
                 .read()
                 .await
                 .get_notes_for_updating(earliest_block - 1);
-            for (transaction_id, nf, output_index) in notes {
-                println!(
-                    " &# already existing notes scanner on txid {}",
-                    transaction_id
-                );
-                transmitter_existing
-                    .send((
-                        transaction_id,
-                        nf,
-                        BlockHeight::from(earliest_block as u32),
-                        output_index,
-                    ))
-                    .map_err(|e| format!("Error sending note for updating: {}", e))?;
-            }
+            // for (transaction_id, nf, output_index) in notes {
+            //     println!(
+            //         " &# already existing notes scanner on txid {}",
+            //         transaction_id
+            //     );
+            //     transmitter_existing
+            //         .send((
+            //             transaction_id,
+            //             nf,
+            //             BlockHeight::from(earliest_block as u32),
+            //             output_index,
+            //         ))
+            //         .map_err(|e| format!("Error sending note for updating: {}", e))?;
+            // }
 
             //info!("Finished processing all existing notes in wallet");
             Ok(())
@@ -172,10 +172,10 @@ impl UpdateNotes {
                     }
                     // Send it off to get the full transaction if this is a newly-detected transaction, that is, it has an output_num
                     if download_memos != MemoDownloadOption::NoMemos {
-                        println!(
-                            "       from txid {} we spend, so we download it ",
-                            transaction_id_spent_from
-                        );
+                        // println!(
+                        //     "       from txid {} we spend, so we download it ",
+                        //     transaction_id_spent_from
+                        // );
                         fetch_full_sender
                             .send((transaction_id_spent_from, at_height))
                             .unwrap();
