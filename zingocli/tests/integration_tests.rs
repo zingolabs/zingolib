@@ -3122,7 +3122,7 @@ mod slow {
             ])
             .await
             .unwrap();
-        bump_and_check!(o: 0 s: 30_000 t: 14_700);
+        bump_and_check!(o: 0 s: 30_000 t: 30_000);
 
         pool_migration_client
             .do_shield(&[Pool::Transparent], None)
