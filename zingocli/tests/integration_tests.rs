@@ -3093,7 +3093,6 @@ mod slow {
         use std::cmp::max;
         assert!(tx.is_outgoing_transaction());
         async fn get_count_of_unconfirmed_spent_utxos(lc: &LightClient, txid: TxId) -> u64 {
-            dbg!(&txid);
             lc.wallet.get_utxos_spent_in_tx(txid).await.len() as u64
         }
         fn get_out_toaddress_count(tx: &TransactionMetadata, hint: &str) -> u64 {
@@ -3265,13 +3264,13 @@ mod slow {
         // Test One:
         //   faucet-orchard 1 note to recipient-transparent 1 addr
         dbg!("Test One");
-        let orch_fauc_to_pmc_taddr_tx = orchard_faucet
+        let test_one_tx = orchard_faucet
             .transaction_from_send(vec![(&recipient_taddr, 50_000, None)])
             .await
             .unwrap();
-        let fee = get_padded_317_fee_from_actions(
+        let test_one_fee = get_padded_317_fee_from_actions(
             &orchard_faucet,
-            &orch_fauc_to_pmc_taddr_tx,
+            &test_one_tx,
             ExpectedActions {
                 orchard_txins: 1,
                 transparent_txouts: 1,
@@ -3282,19 +3281,22 @@ mod slow {
         // Predicted fee:
         //  1 orchard txin + 1 orchard change + 1 transparent txout = 3
         //  3 * MARGINAL_FEE:
-        assert_eq!(Into::<u64>::into(fee), 15_000u64);
+        assert!(
+            Into::<u64>::into(test_one_fee) == 15_000u64
+                && test_one_tx.get_transaction_fee().unwrap() == 15_000u64
+        );
         bump_and_check_recipient!(o: 0 s: 0 t: 50_000);
 
         // Test Two:
         //   faucet-orchard 1 note to recipient-transparent 1 addr
         dbg!("Test Two");
-        let sender_tx = orchard_faucet
+        let test_two_tx = orchard_faucet
             .transaction_from_send(vec![(&recipient_sapling_addr, 50_000, None)])
             .await
             .unwrap();
-        let fee = get_padded_317_fee_from_actions(
+        let test_two_fee = get_padded_317_fee_from_actions(
             &orchard_faucet,
-            &sender_tx,
+            &test_two_tx,
             ExpectedActions {
                 orchard_txins: 1,
                 sapling_txouts: 1, // Note a pad will be added by the builder
@@ -3302,7 +3304,8 @@ mod slow {
             },
         )
         .await;
-        assert_eq!(Into::<u64>::into(fee), 20_000u64); // 2 for orchard change, 2 for sapling pool
+        assert_eq!(Into::<u64>::into(test_two_fee), 20_000u64);
+        assert_eq!(test_two_tx.get_transaction_fee().unwrap(), 20_000u64); // 2 for orchard change, 2 for sapling pool
         bump_and_check_recipient!(o: 0 s: 50_000 t: 50_000);
 
         // Test Three: test of an orchard-only client to itself
@@ -3316,14 +3319,12 @@ mod slow {
 
         // Test Four: test of shield:
         dbg!("Test Four");
-        dbg!(recipient.wallet.get_shieldable_sapling_notes().await);
         let shield_tx = recipient
             .transaction_from_shield(&[Pool::Sapling, Pool::Transparent])
             .await
             .unwrap();
-        dbg!(recipient.wallet.get_shieldable_sapling_notes().await);
         //dbg!(&shield_tx);
-        let zip317_fee = get_padded_317_fee_from_actions(
+        let test_four_fee = get_padded_317_fee_from_actions(
             &recipient,
             &shield_tx,
             ExpectedActions {
@@ -3334,17 +3335,37 @@ mod slow {
             },
         )
         .await;
-        assert_eq!(Into::<u64>::into(fee), 25_000u64); // 2 for orchard change, 2 for sapling pool, and 1 transparent
-                                                       // 4 tz transparent and sapling to orchard
-        panic!();
-        recipient
+        assert_eq!(Into::<u64>::into(test_four_fee), 25_000u64); // 2 for orchard change, 2 for sapling pool, and 1 transparent
+                                                                 // 4 tz transparent and sapling to orchard
+        bump_and_check_recipient!(o: 75_000 s: 0 t: 0);
+        dbg!("Test Five");
+        // 100_000 - 25_000 = 75_000
+        dbg!(&recipient.do_balance().await);
+        let test_five_tx = recipient
             .transaction_from_send(vec![
-                (&recipient_taddr, 30_000, None),
-                (&recipient_sapling_addr, 30_000, None),
+                (&recipient_taddr, 25_000, None),
+                (&recipient_sapling_addr, 25_000, None),
             ])
             .await
             .unwrap();
-        bump_and_check_recipient!(o: 0 s: 30_000 t: 30_000);
+        let test_five_fee = get_padded_317_fee_from_actions(
+            &recipient,
+            &test_five_tx,
+            ExpectedActions {
+                orchard_txouts: 1, // Change value 0
+                orchard_txins: 1,
+                sapling_txouts: 1,
+                transparent_txouts: 1,
+                ..Default::default()
+            },
+        )
+        .await;
+        assert_eq!(Into::<u64>::into(test_five_fee), 25_000u64); // 2 for orchard change + in, 2 for sapling pool, and 1 transparent
+        dbg!(&recipient.do_balance().await);
+        dbg!(&test_five_tx.get_transaction_fee());
+        bump_and_check_recipient!(o: 5_000 s: 25_000 t: 25_000);
+        dbg!(&recipient.do_balance().await);
+        panic!();
 
         recipient
             .transaction_from_send(vec![(&recipient_unified_addr, 20_000, None)])
