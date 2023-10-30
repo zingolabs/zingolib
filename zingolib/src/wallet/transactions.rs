@@ -863,15 +863,9 @@ impl TransactionMetadataSet {
         // println!("        adding outgoing metadata to txid {}", txid);
         if let Some(transaction_metadata) = self.current.get_mut(txid) {
             for outgoing_metadatum in outgoing_metadata {
-                if !transaction_metadata
+                transaction_metadata
                     .outgoing_tx_data
-                    .iter()
-                    .any(|known_metadatum| *known_metadatum == outgoing_metadatum)
-                {
-                    transaction_metadata
-                        .outgoing_tx_data
-                        .push(outgoing_metadatum);
-                }
+                    .push(outgoing_metadatum);
             }
         } else {
             error!(
