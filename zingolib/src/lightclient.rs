@@ -1388,6 +1388,7 @@ impl LightClient {
         // The processor to process Transactions detected by the trial decryptions processor
         let update_notes_processor = UpdateNotes::new(self.wallet.transactions());
         // the second parameter to update_notes_processor.start is the fetch_full_transaction_transmitter for fetch_full_transaction
+        // no clue what blocks_done does. might be deprecated by witness treeing
         let (update_notes_handle, blocks_done_transmitter, detected_transactions_transmitter) =
             update_notes_processor
                 .start(bsync_data.clone(), fetch_full_transaction_transmitter)

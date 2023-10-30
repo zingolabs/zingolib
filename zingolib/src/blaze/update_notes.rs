@@ -71,6 +71,10 @@ impl UpdateNotes {
                 .await
                 .get_notes_for_updating(earliest_block - 1);
             for (transaction_id, nf, output_index) in notes {
+                println!(
+                    " &# already existing notes scanner on txid {}",
+                    transaction_id
+                );
                 transmitter_existing
                     .send((
                         transaction_id,
