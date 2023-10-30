@@ -70,12 +70,8 @@ impl fmt::Display for BatchSyncStatus {
             write!(
                 f,
                 "**Batch** Current: {:4} Total: {:4}\n   \
-                **Blocks** Start Height: {:4} End Height {:4} Loaded: {:4}",
-                self.batch_num,
-                self.batch_total,
-                self.start_block,
-                self.end_block,
-                self.blocks_done,
+                **Blocks** Current Height: {:4}",
+                self.batch_num, self.batch_total, self.start_block,
             )
         } else {
             write!(
