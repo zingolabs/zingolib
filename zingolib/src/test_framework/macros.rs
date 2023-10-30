@@ -51,15 +51,15 @@ macro_rules! check_client_balances {
              observed sapling: {} expected sapling: {}\n\
              observed transpa: {} expected transpa: {}\n",
             balance.orchard_balance.unwrap(),
-            $orchard,
+            $orchard as i64,
             balance.sapling_balance.unwrap(),
-            $sapling,
+            $sapling as i64,
             balance.transparent_balance.unwrap(),
-            $transparent,
+            $transparent as i64,
         );
-        let sum_of_balances = (balance.orchard_balance.unwrap_or(0)
-            + balance.sapling_balance.unwrap_or(0)
-            + balance.transparent_balance.unwrap_or(0)) as i64;
+        let sum_of_balances = balance.orchard_balance.unwrap_or(0) as i64
+            + balance.sapling_balance.unwrap_or(0) as i64
+            + balance.transparent_balance.unwrap_or(0) as i64;
         assert_eq!(
             sum_of_balances, tx_summary_balance,
             "\nsum_of_balances: {} tx_summary_balance: {}",
