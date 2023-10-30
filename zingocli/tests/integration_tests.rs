@@ -143,9 +143,9 @@ mod fast {
         increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
             .await
             .unwrap();
-        let preshield_utxos = dbg!(recipient.wallet.get_utxos().await);
+        let preshield_utxos = dbg!(recipient.wallet.get_unspent_utxos().await);
         recipient.do_shield(&[Pool::Transparent]).await.unwrap();
-        let postshield_utxos = dbg!(recipient.wallet.get_utxos().await);
+        let postshield_utxos = dbg!(recipient.wallet.get_unspent_utxos().await);
         assert_eq!(preshield_utxos[0].address, postshield_utxos[0].address);
         assert_eq!(
             preshield_utxos[0].output_index,
@@ -3092,7 +3092,7 @@ mod slow {
     ) -> NonNegativeAmount {
         use std::cmp::max;
         assert!(tx.is_outgoing_transaction());
-        async fn get_count_of_spent_utxos(lc: &LightClient, txid: TxId) -> u64 {
+        async fn get_count_of_unconfirmed_spent_utxos(lc: &LightClient, txid: TxId) -> u64 {
             dbg!(&txid);
             lc.wallet.get_utxos_spent_in_tx(txid).await.len() as u64
         }
@@ -3145,8 +3145,9 @@ mod slow {
             "expected_actions.transparent_txouts: {}, outgoing_to_taddress: {}",
             expected_actions.transparent_txouts, outgoing_to_taddress
         );
-        let transparent_txins = dbg!(get_count_of_spent_utxos(client, tx.txid).await);
+        let transparent_txins = dbg!(get_count_of_unconfirmed_spent_utxos(client, tx.txid).await);
         // check transparent actions
+        dbg!(transparent_txins);
         assert_eq!(
             expected_actions.transparent_txins, transparent_txins,
             "expected_actions.transparent_txins: {}, transparent_txins: {}",
@@ -3217,15 +3218,15 @@ mod slow {
         //  3 * MARGINAL_FEE:
         assert_eq!(Into::<u64>::into(zip317_fee), 15_000u64);
         bump_and_check_recipient!(o: 0 s: 0 t: 50_000);
-        dbg!(&recipient.wallet.get_utxos().await);
+        dbg!(&recipient.wallet.get_unspent_utxos().await);
         dbg!("Shield Test");
         let shield_tx = recipient
             .transaction_from_shield(&[Pool::Transparent])
             .await
             .unwrap();
-        dbg!(&recipient.wallet.get_utxos().await);
-        let fee = get_padded_317_fee_from_actions(
-            &orchard_faucet,
+        dbg!(&recipient.wallet.get_unspent_utxos().await);
+        let zip317_fee = get_padded_317_fee_from_actions(
+            &recipient,
             &shield_tx,
             ExpectedActions {
                 orchard_txouts: 2,
@@ -3234,7 +3235,7 @@ mod slow {
             },
         )
         .await;
-        assert_eq!(Into::<u64>::into(fee), 15_000u64); // 2 for orchard change and 1 transparent
+        assert_eq!(Into::<u64>::into(zip317_fee), 15_000u64); // 2 for orchard change and 1 transparent
     }
 
     #[tokio::test]
