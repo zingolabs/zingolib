@@ -123,11 +123,6 @@ impl UpdateNotes {
 
                         // Send the future transaction to be fetched too, in case it has only spent nullifiers and not received any change
                         if download_memos != MemoDownloadOption::NoMemos {
-                            println!(
-                                "       in txid {} we spend, so we download it (we spend it from txid {}",
-                                transaction_id_spent_in,
-                                transaction_id_spent_from,
-                            );
                             fetch_full_sender
                                 .send((transaction_id_spent_in, spent_at_height))
                                 .unwrap();
@@ -135,10 +130,6 @@ impl UpdateNotes {
                     }
                     // Send it off to get the full transaction if this is a newly-detected transaction, that is, it has an output_num
                     if download_memos != MemoDownloadOption::NoMemos {
-                        // println!(
-                        //     "       from txid {} we spend, so we download it ",
-                        //     transaction_id_spent_from
-                        // );
                         fetch_full_sender
                             .send((transaction_id_spent_from, at_height))
                             .unwrap();

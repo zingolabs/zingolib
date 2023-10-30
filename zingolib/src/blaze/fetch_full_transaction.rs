@@ -659,7 +659,6 @@ pub async fn start(
                     last_progress.store(progress, Ordering::SeqCst);
                 }
 
-                println!("  received transaction to scanfrom fft 659");
                 per_txid_iter_context
                     .scan_full_tx(transaction, height, false, block_time, None)
                     .await;
@@ -699,7 +698,6 @@ pub async fn start(
                 .block_data
                 .get_block_timestamp(&height)
                 .await;
-            println!("  received transaction to scan from fft 699");
             transaction_context
                 .scan_full_tx(transaction, height, false, block_time, None)
                 .await;

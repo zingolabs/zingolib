@@ -1571,7 +1571,6 @@ impl LightWallet {
         {
             let price = self.price.read().await.clone();
 
-            println!("  received transaction from wallet.rs 1577 (send_to_address_inner)");
             self.transaction_context
                 .scan_full_tx(
                     transaction,
