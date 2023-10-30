@@ -1323,9 +1323,6 @@ impl LightClient {
             )
             .await;
 
-        // 2. Update the current price:: Who's concern is price?
-        //self.update_current_price().await;
-
         // Sapling Tree GRPC Fetcher
         let grpc_connector = GrpcConnector::new(self.config.get_lightwalletd_uri());
 
@@ -1389,10 +1386,9 @@ impl LightClient {
         let update_notes_processor = UpdateNotes::new(self.wallet.transactions());
         // the second parameter to update_notes_processor.start is the fetch_full_transaction_transmitter for fetch_full_transaction
         // no clue what blocks_done does. might be deprecated by witness treeing
-        let (update_notes_handle, blocks_done_transmitter, detected_transactions_transmitter) =
-            update_notes_processor
-                .start(bsync_data.clone(), fetch_full_transaction_transmitter)
-                .await;
+        let (update_notes_handle, detected_transactions_transmitter) = update_notes_processor
+            .start(bsync_data.clone(), fetch_full_transaction_transmitter)
+            .await;
 
         // Do Trial decryptions of all the outputs, and pass on the successful ones to the update_notes processor
         let trial_decryptions_processor = TrialDecryptions::new(
@@ -1453,10 +1449,7 @@ impl LightClient {
         )
         .await;
 
-        // 2. Notify the notes updater that the blocks are done updating
-        blocks_done_transmitter.send(earliest_block).unwrap();
-
-        // 3. Verify all the downloaded data
+        // 2. Verify all the downloaded data
         let block_data = bsync_data.clone();
 
         // Wait for everything to finish

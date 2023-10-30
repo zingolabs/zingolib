@@ -43,7 +43,6 @@ impl UpdateNotes {
         fetch_full_sender: UnboundedSender<(TxId, BlockHeight)>,
     ) -> (
         JoinHandle<Result<(), String>>,
-        oneshot::Sender<u64>,
         UnboundedSender<(TxId, PoolNullifier, BlockHeight, u32)>,
     ) {
         //info!("Starting Note Update processing");
@@ -52,42 +51,6 @@ impl UpdateNotes {
         // Create a new channel where we'll be notified of TxIds that are to be processed
         let (transmitter, mut receiver) =
             unbounded_channel::<(TxId, PoolNullifier, BlockHeight, u32)>();
-
-        // Aside from the incoming Txns, we also need to update the notes that are currently in the wallet
-        let wallet_transactions = self.transaction_metadata_set.clone();
-        let transmitter_existing = transmitter.clone();
-
-        let (blocks_done_transmitter, blocks_done_receiver) = oneshot::channel::<u64>();
-
-        let h0: JoinHandle<Result<(), String>> = tokio::spawn(async move {
-            // First, wait for notification that the blocks are done loading, and get the earliest block from there.
-            let earliest_block = blocks_done_receiver
-                .await
-                .map_err(|e| format!("Error getting notification that blocks are done. {}", e))?;
-
-            // Get all notes from the wallet that are already existing, i.e., the ones that are before the earliest block that the block loader loaded
-            let notes = wallet_transactions
-                .read()
-                .await
-                .get_notes_for_updating(earliest_block - 1);
-            // for (transaction_id, nf, output_index) in notes {
-            //     println!(
-            //         " &# already existing notes scanner on txid {}",
-            //         transaction_id
-            //     );
-            //     transmitter_existing
-            //         .send((
-            //             transaction_id,
-            //             nf,
-            //             BlockHeight::from(earliest_block as u32),
-            //             output_index,
-            //         ))
-            //         .map_err(|e| format!("Error sending note for updating: {}", e))?;
-            // }
-
-            //info!("Finished processing all existing notes in wallet");
-            Ok(())
-        });
 
         let wallet_transactions = self.transaction_metadata_set.clone();
         let h1 = tokio::spawn(async move {
@@ -191,12 +154,8 @@ impl UpdateNotes {
             //info!("Finished Note Update processing");
         });
 
-        let h = tokio::spawn(async move {
-            let (r0, r1) = join!(h0, h1);
-            r0.map_err(|e| format!("{}", e))??;
-            r1.map_err(|e| format!("{}", e))
-        });
+        let h = tokio::spawn(async move { h1.await.map_err(|e| format!("{}", e)) });
 
-        (h, blocks_done_transmitter, transmitter)
+        (h, transmitter)
     }
 }
