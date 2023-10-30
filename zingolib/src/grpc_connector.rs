@@ -206,7 +206,6 @@ impl GrpcConnector {
             let mut get_full_transaction_and_send_to_result_transmitter_workers =
                 FuturesUnordered::new();
             while let Some((transaction_id, result_transmitter)) = receiver.recv().await {
-                println!("received txid {} to fetch full.", transaction_id);
                 let uri = uri.clone();
                 get_full_transaction_and_send_to_result_transmitter_workers.push(tokio::spawn(
                     async move {

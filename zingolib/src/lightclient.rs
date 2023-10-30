@@ -1369,7 +1369,8 @@ impl LightClient {
         // is it the other side of fetch_full_transactions_transmitter
         // no. do not confuse fetch_full_transactions_transmitter with full_transaction_fetcher_transmitter. 8O
         // a sender is called transmitter, its partner is called a handle?
-        // no.
+        // no. a handle is a task/worker that holds a receiver and acts in response to it.
+        // fft_transmitter is a sender. it sends to a process on the fft_handle which handl
 
         let (
             fetch_full_transactions_handle,
@@ -1381,6 +1382,8 @@ impl LightClient {
             bsync_data.clone(),
         )
         .await;
+
+        // fft receives a txid. it plays a game with ftf to exchange the txid for a transaction. then it calls scan_full_tx
 
         // The processor to process Transactions detected by the trial decryptions processor
         let update_notes_processor = UpdateNotes::new(self.wallet.transactions());
