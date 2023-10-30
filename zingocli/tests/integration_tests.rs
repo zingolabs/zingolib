@@ -3060,7 +3060,7 @@ mod slow {
         };
         assert_eq!(seed_of_recipient, seed_of_recipient_restored);
     }
-    impl Default for ExpectedActions {
+    impl Default for PrePadExpectedActions {
         fn default() -> Self {
             Self {
                 orchard_txins: 0,
@@ -3072,7 +3072,9 @@ mod slow {
             }
         }
     }
-    struct ExpectedActions {
+    /// Note these expectations are **NOT** accounting for the padding behavior specified in:
+    /// <https://zips.z.cash/zip-0317#requirements>
+    struct PrePadExpectedActions {
         orchard_txins: u64,
         orchard_txouts: u64,
         sapling_txins: u64,
@@ -3088,7 +3090,7 @@ mod slow {
     async fn get_padded_317_fee_from_actions(
         client: &LightClient,
         tx: &TransactionMetadata,
-        expected_actions: ExpectedActions,
+        expected_actions: PrePadExpectedActions,
     ) -> NonNegativeAmount {
         use std::cmp::max;
         assert!(tx.is_outgoing_transaction());
@@ -3205,7 +3207,7 @@ mod slow {
         let zip317_fee = get_padded_317_fee_from_actions(
             &orchard_faucet,
             &orch_fauc_to_pmc_taddr_tx,
-            ExpectedActions {
+            PrePadExpectedActions {
                 orchard_txins: 1,
                 transparent_txouts: 1,
                 ..Default::default()
@@ -3227,7 +3229,7 @@ mod slow {
         let zip317_fee = get_padded_317_fee_from_actions(
             &recipient,
             &shield_tx,
-            ExpectedActions {
+            PrePadExpectedActions {
                 orchard_txouts: 2,
                 transparent_txins: 1,
                 ..Default::default()
@@ -3271,7 +3273,7 @@ mod slow {
         let test_one_fee = get_padded_317_fee_from_actions(
             &orchard_faucet,
             &test_one_tx,
-            ExpectedActions {
+            PrePadExpectedActions {
                 orchard_txins: 1,
                 transparent_txouts: 1,
                 ..Default::default()
@@ -3297,9 +3299,9 @@ mod slow {
         let test_two_fee = get_padded_317_fee_from_actions(
             &orchard_faucet,
             &test_two_tx,
-            ExpectedActions {
+            PrePadExpectedActions {
                 orchard_txins: 1,
-                sapling_txouts: 1, // Note a pad will be added by the builder
+                sapling_txouts: 1, // Note a "pad" will be added by the librustzcash zip317 builder
                 ..Default::default()
             },
         )
@@ -3327,7 +3329,7 @@ mod slow {
         let test_four_fee = get_padded_317_fee_from_actions(
             &recipient,
             &shield_tx,
-            ExpectedActions {
+            PrePadExpectedActions {
                 orchard_txouts: 2,
                 sapling_txins: 1,
                 transparent_txins: 1,
@@ -3351,7 +3353,7 @@ mod slow {
         let test_five_fee = get_padded_317_fee_from_actions(
             &recipient,
             &test_five_tx,
-            ExpectedActions {
+            PrePadExpectedActions {
                 orchard_txouts: 1, // Change value 0
                 orchard_txins: 1,
                 sapling_txouts: 1,
