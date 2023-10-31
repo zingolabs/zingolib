@@ -45,7 +45,7 @@ macro_rules! check_client_balances {
             .iter()
             .map(|transfer| transfer.balance_delta())
             .sum::<i64>();
-        dbg!(
+        let balance_report = format!(
             "\n\
              observed orchard: {} expected orchard: {}\n\
              observed sapling: {} expected sapling: {}\n\
@@ -62,11 +62,23 @@ macro_rules! check_client_balances {
             + balance.transparent_balance.unwrap_or(0) as i64;
         assert_eq!(
             sum_of_balances, tx_summary_balance,
-            "\nsum_of_balances: {} tx_summary_balance: {}",
-            sum_of_balances, tx_summary_balance
+            "\nbalance_report: {}\nsum_of_balances: {} tx_summary_balance: {}",
+            balance_report, sum_of_balances, tx_summary_balance
         );
-        assert_eq!(balance.orchard_balance.unwrap(), $orchard,);
-        assert_eq!(balance.sapling_balance.unwrap(), $sapling,);
-        assert_eq!(balance.transparent_balance.unwrap(), $transparent,);
+        assert_eq!(
+            balance.orchard_balance.unwrap(),
+            $orchard,
+            "{balance_report}",
+        );
+        assert_eq!(
+            balance.sapling_balance.unwrap(),
+            $sapling,
+            "{balance_report}",
+        );
+        assert_eq!(
+            balance.transparent_balance.unwrap(),
+            $transparent,
+            "{balance_report}",
+        );
     };
 }
