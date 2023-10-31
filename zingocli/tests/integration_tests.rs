@@ -3478,6 +3478,23 @@ mod slow {
 }
 
 #[tokio::test]
+async fn received_sapling_funds_not_marked_as_change() {
+    let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient_default().await;
+    faucet
+        .do_send(vec![
+            (&get_base_address!(recipient, "sapling"), 40_000, None),
+            (&get_base_address!(recipient, "transparent"), 20_000, None),
+        ])
+        .await
+        .unwrap();
+    increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
+        .await
+        .unwrap();
+    dbg!(recipient.do_list_txsummaries().await);
+    check_client_balances!(recipient, o: 0 s: 40_000 t: 20_000);
+    panic!();
+}
+#[tokio::test]
 async fn received_sapling_funds_from_self_not_marked_as_change() {
     let (regtest_manager, _cph, _faucet, recipient, _txid) =
         scenarios::faucet_funded_recipient_default(70_000).await;
@@ -3491,21 +3508,6 @@ async fn received_sapling_funds_from_self_not_marked_as_change() {
     increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
         .await
         .unwrap();
-    check_client_balances!(recipient, o: 0 s: 40_000 t: 20_000);
-}
-
-#[tokio::test]
-async fn received_sapling_funds_not_marked_as_change() {
-    let (regtest_manager, _cph, faucet, recipient) = scenarios::faucet_recipient_default().await;
-    faucet
-        .do_send(vec![
-            (&get_base_address!(recipient, "sapling"), 40_000, None),
-            (&get_base_address!(recipient, "transparent"), 20_000, None),
-        ])
-        .await
-        .unwrap();
-    increase_height_and_wait_for_client(&regtest_manager, &recipient, 1)
-        .await
-        .unwrap();
+    dbg!(recipient.do_list_txsummaries().await);
     check_client_balances!(recipient, o: 0 s: 40_000 t: 20_000);
 }

@@ -992,6 +992,7 @@ impl TransactionMetadata {
             || self.orchard_notes.iter().any(|note| !note.is_change())
             || !self.received_utxos.is_empty()
     }
+    // deprecate??
     pub fn net_spent(&self) -> u64 {
         assert!(self.is_outgoing_transaction());
         self.total_value_spent() - self.total_change_returned()

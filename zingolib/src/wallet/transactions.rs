@@ -41,6 +41,7 @@ impl TransactionMetadataSet {
         22
     }
 
+    // deprecate??
     pub fn get_fee_by_txid(&self, txid: &TxId) -> u64 {
         match self
             .current
