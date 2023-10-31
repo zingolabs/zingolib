@@ -3510,4 +3510,5 @@ async fn received_sapling_funds_from_self_not_marked_as_change() {
         .unwrap();
     dbg!(recipient.do_list_txsummaries().await);
     check_client_balances!(recipient, o: 0 s: 40_000 t: 20_000);
+    panic!();
 }
