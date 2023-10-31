@@ -3,8 +3,8 @@ use crate::wallet::{
     data::OutgoingTxData,
     keys::{address_from_pubkeyhash, unified::WalletCapability},
     traits::{
-        self as zingo_traits, Bundle as _, DomainWalletExt, ReceivedNoteAndMetadata as _,
-        Recipient as _, ShieldedOutputExt as _, Spend as _, ToBytes as _,
+        self as zingo_traits, Bundle as _, DomainWalletExt, NoteInterface as _, Recipient as _,
+        ShieldedOutputExt as _, Spend as _, ToBytes as _,
     },
     transactions::TransactionMetadataSet,
 };
@@ -287,7 +287,7 @@ impl TransactionContext {
                     if let Some(wtx) = current.get(&prev_transaction_id) {
                         // One of the tx outputs is a match
                         if let Some(spent_utxo) = wtx
-                            .received_utxos
+                            .transparent_notes
                             .iter()
                             .find(|u| u.txid == prev_transaction_id && u.output_index == prev_n)
                         {
