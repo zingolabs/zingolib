@@ -974,8 +974,8 @@ impl TransactionMetadata {
     }
 
     pub fn get_transaction_fee(&self) -> Result<u64, ZingoLibError> {
-        let outputted = self.value_outgoing() + self.total_change_returned();
-        if self.total_value_spent() >= outputted {
+        let outputted = dbg!(self.value_outgoing()) + dbg!(self.total_change_returned());
+        if dbg!(self.total_value_spent()) >= outputted {
             Ok(self.total_value_spent() - outputted)
         } else {
             Err(ZingoLibError::MetadataUnderflow)
@@ -1163,9 +1163,9 @@ impl TransactionMetadata {
     }
 
     pub fn total_change_returned(&self) -> u64 {
-        // self.pool_change_returned::<SaplingDomain<ChainType>>()
-        //     + self.pool_change_returned::<OrchardDomain>()
-        self.pool_change_returned::<OrchardDomain>()
+        dbg!(self.pool_change_returned::<SaplingDomain<ChainType>>())
+            + dbg!(self.pool_change_returned::<OrchardDomain>())
+        // self.pool_change_returned::<OrchardDomain>()
     }
     pub fn total_value_received(&self) -> u64 {
         self.pool_value_received::<OrchardDomain>()

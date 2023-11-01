@@ -1531,8 +1531,8 @@ impl LightClient {
             transaction_md.unconfirmed,
         );
         match (
-            transaction_md.is_outgoing_transaction(),
-            transaction_md.is_incoming_transaction(),
+            dbg!(transaction_md.is_outgoing_transaction()),
+            dbg!(transaction_md.is_incoming_transaction()),
         ) {
             // This transaction is entirely composed of what we consider
             // to be 'change'. We just make a Fee transfer and move on
