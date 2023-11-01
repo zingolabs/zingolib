@@ -16,7 +16,7 @@ use crate::{
         keys::{address_from_pubkeyhash, unified::ReceiverSelection},
         message::Message,
         now,
-        traits::ReceivedNoteAndMetadata,
+        traits::NoteInterface,
         LightWallet, Pool, SendProgress, WalletBase,
     },
 };
@@ -1571,7 +1571,7 @@ impl LightClient {
             }
             // No funds spent, this is a normal receipt
             (false, true) => {
-                for received_transparent in transaction_md.received_utxos.iter() {
+                for received_transparent in transaction_md.transparent_notes.iter() {
                     summaries.push(ValueTransfer {
                         block_height,
                         datetime,
@@ -1953,7 +1953,7 @@ impl LightClient {
 
         self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
                 .flat_map( |(transaction_id, wtx)| {
-                    wtx.received_utxos.iter().filter_map(move |utxo|
+                    wtx.transparent_notes.iter().filter_map(move |utxo|
                         if !all_notes && utxo.spent.is_some() {
                             None
                         } else {

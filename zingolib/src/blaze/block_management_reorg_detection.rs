@@ -3,7 +3,7 @@ use crate::{
     grpc_connector::GrpcConnector,
     wallet::{
         data::{BlockData, PoolNullifier},
-        traits::{DomainWalletExt, FromCommitment, ReceivedNoteAndMetadata},
+        traits::{DomainWalletExt, FromCommitment, NoteInterface},
         transactions::TransactionMetadataSet,
     },
 };
@@ -33,7 +33,7 @@ use zcash_primitives::{
 
 use super::sync_status::BatchSyncStatus;
 
-type Node<D> = <<D as DomainWalletExt>::WalletNote as ReceivedNoteAndMetadata>::Node;
+type Node<D> = <<D as DomainWalletExt>::WalletNote as NoteInterface>::Node;
 
 const ORCHARD_START: &str = "000000";
 /// The data relating to the blocks in the current batch
@@ -501,7 +501,7 @@ impl BlockManagementData {
         transaction_num: usize,
         output_num: usize,
         activation_height: u64,
-    ) -> Result<IncrementalWitness<<D::WalletNote as ReceivedNoteAndMetadata>::Node, 32>, String>
+    ) -> Result<IncrementalWitness<<D::WalletNote as NoteInterface>::Node, 32>, String>
     where
         D: DomainWalletExt,
         D::Note: PartialEq + Clone,
@@ -515,7 +515,7 @@ impl BlockManagementData {
         let (cb, mut tree) = {
             // In the edge case of a transition to a new network epoch, there is no previous tree.
             let tree = if prev_height < activation_height {
-                CommitmentTree::<<D::WalletNote as ReceivedNoteAndMetadata>::Node, 32>::empty()
+                CommitmentTree::<<D::WalletNote as NoteInterface>::Node, 32>::empty()
             } else {
                 let tree_state = GrpcConnector::get_trees(uri, prev_height).await?;
                 let tree = hex::decode(D::get_tree(&tree_state)).unwrap();
@@ -552,10 +552,8 @@ impl BlockManagementData {
                     .enumerate()
             {
                 if let Some(node) =
-                    <D::WalletNote as ReceivedNoteAndMetadata>::Node::from_commitment(
-                        compactoutput.cmstar(),
-                    )
-                    .into()
+                    <D::WalletNote as NoteInterface>::Node::from_commitment(compactoutput.cmstar())
+                        .into()
                 {
                     tree.append(node).unwrap();
                     if t_num == transaction_num && o_num == output_num {
