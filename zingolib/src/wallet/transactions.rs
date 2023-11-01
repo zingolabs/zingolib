@@ -862,16 +862,10 @@ impl TransactionMetadataSet {
     pub fn add_outgoing_metadata(&mut self, txid: &TxId, outgoing_metadata: Vec<OutgoingTxData>) {
         // println!("        adding outgoing metadata to txid {}", txid);
         if let Some(transaction_metadata) = self.current.get_mut(txid) {
-            for outgoing_metadatum in outgoing_metadata {
-                if !transaction_metadata
+            if transaction_metadata.outgoing_tx_data.is_empty() {
+                transaction_metadata
                     .outgoing_tx_data
-                    .iter()
-                    .any(|known_metadatum| *known_metadatum == outgoing_metadatum)
-                {
-                    transaction_metadata
-                        .outgoing_tx_data
-                        .push(outgoing_metadatum);
-                }
+                    .extend(outgoing_metadata);
             }
         } else {
             error!(
