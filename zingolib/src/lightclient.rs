@@ -166,6 +166,8 @@ pub struct LightClient {
 ///  This is the omnibus interface to the library, we are currently in the process of refining this types
 ///  overly broad and vague definition!
 impl LightClient {
+    /// this is the standard initializer for a LightClient.
+    // toDo rework ZingoConfig.
     pub fn create_from_wallet(wallet: LightWallet, config: ZingoConfig) -> Self {
         LightClient {
             wallet,
