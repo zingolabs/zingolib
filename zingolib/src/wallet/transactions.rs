@@ -20,11 +20,9 @@ use zcash_primitives::{
 use zingoconfig::{ChainType, MAX_REORG};
 
 use super::{
-    data::{
-        OutgoingTxData, PoolNullifier, ReceivedTransparentOutput, TransactionMetadata, WitnessTrees,
-    },
+    data::{OutgoingTxData, PoolNullifier, TransactionMetadata, TransparentNote, WitnessTrees},
     keys::unified::WalletCapability,
-    traits::{self, DomainWalletExt, Nullifier, ReceivedNoteAndMetadata, Recipient},
+    traits::{self, DomainWalletExt, NoteInterface, Nullifier, Recipient},
 };
 
 /// HashMap of all transactions in a wallet, keyed by txid.
@@ -217,7 +215,7 @@ impl TransactionMetadataSet {
         self.current.values_mut().for_each(|transaction_metadata| {
             // Update UTXOs to rollback any spent utxos
             transaction_metadata
-                .received_utxos
+                .transparent_notes
                 .iter_mut()
                 .for_each(|utxo| {
                     if utxo.spent.is_some() && txids_to_remove.contains(&utxo.spent.unwrap()) {
@@ -355,7 +353,7 @@ impl TransactionMetadataSet {
     pub fn get_nullifier_value_txid_outputindex_of_unspent_notes<D: DomainWalletExt>(
         &self,
     ) -> Vec<(
-        <<D as DomainWalletExt>::WalletNote as ReceivedNoteAndMetadata>::Nullifier,
+        <<D as DomainWalletExt>::WalletNote as NoteInterface>::Nullifier,
         u64,
         TxId,
         u32,
@@ -471,7 +469,7 @@ impl TransactionMetadataSet {
             }
         }
     }
-    fn mark_notes_as_change_for_pool<Note: ReceivedNoteAndMetadata>(notes: &mut [Note]) {
+    fn mark_notes_as_change_for_pool<Note: NoteInterface>(notes: &mut [Note]) {
         notes.iter_mut().for_each(|n| {
             *n.is_change_mut() = match n.memo() {
                 Some(Memo::Text(_)) => false,
@@ -560,7 +558,7 @@ impl TransactionMetadataSet {
         height: BlockHeight,
         unconfirmed: bool,
         timestamp: u32,
-        spent_nullifier: <D::WalletNote as ReceivedNoteAndMetadata>::Nullifier,
+        spent_nullifier: <D::WalletNote as NoteInterface>::Nullifier,
         value: u64,
         source_txid: TxId,
         output_index: u32,
@@ -574,9 +572,11 @@ impl TransactionMetadataSet {
 
         // Mark the height correctly, in case this was previously a mempool or unconfirmed tx.
         transaction_metadata.block_height = height;
-        if !<D::WalletNote as ReceivedNoteAndMetadata>::Nullifier::get_nullifiers_spent_in_transaction(transaction_metadata)
-            .iter()
-            .any(|nf| *nf == spent_nullifier)
+        if !<D::WalletNote as NoteInterface>::Nullifier::get_nullifiers_spent_in_transaction(
+            transaction_metadata,
+        )
+        .iter()
+        .any(|nf| *nf == spent_nullifier)
         {
             transaction_metadata.add_spent_nullifier(spent_nullifier.into(), value)
         }
@@ -651,7 +651,7 @@ impl TransactionMetadataSet {
         // Find the UTXO
         let value = if let Some(utxo_transacion_metadata) = self.current.get_mut(&spent_txid) {
             if let Some(spent_utxo) = utxo_transacion_metadata
-                .received_utxos
+                .transparent_notes
                 .iter_mut()
                 .find(|u| u.txid == spent_txid && u.output_index == output_num as u64)
             {
@@ -695,7 +695,7 @@ impl TransactionMetadataSet {
 
         // Add this UTXO if it doesn't already exist
         if let Some(utxo) = transaction_metadata
-            .received_utxos
+            .transparent_notes
             .iter_mut()
             .find(|utxo| utxo.txid == txid && utxo.output_index == output_num as u64)
         {
@@ -703,8 +703,8 @@ impl TransactionMetadataSet {
             utxo.height = height as i32
         } else {
             transaction_metadata
-                .received_utxos
-                .push(ReceivedTransparentOutput {
+                .transparent_notes
+                .push(TransparentNote {
                     address: taddr,
                     txid,
                     output_index: output_num as u64,
@@ -768,10 +768,10 @@ impl TransactionMetadataSet {
         height: BlockHeight,
         unconfirmed: bool,
         timestamp: u64,
-        note: <D::WalletNote as ReceivedNoteAndMetadata>::Note,
+        note: <D::WalletNote as NoteInterface>::Note,
         to: D::Recipient,
         have_spending_key: bool,
-        nullifier: Option<<D::WalletNote as ReceivedNoteAndMetadata>::Nullifier>,
+        nullifier: Option<<D::WalletNote as NoteInterface>::Nullifier>,
         output_index: u32,
         position: Position,
     ) where
@@ -843,7 +843,7 @@ impl TransactionMetadataSet {
     }
 
     // Update the memo for a note if it already exists. If the note doesn't exist, then nothing happens.
-    pub(crate) fn add_memo_to_note_metadata<Nd: ReceivedNoteAndMetadata>(
+    pub(crate) fn add_memo_to_note_metadata<Nd: NoteInterface>(
         &mut self,
         txid: &TxId,
         note: Nd::Note,
@@ -862,16 +862,10 @@ impl TransactionMetadataSet {
     pub fn add_outgoing_metadata(&mut self, txid: &TxId, outgoing_metadata: Vec<OutgoingTxData>) {
         // println!("        adding outgoing metadata to txid {}", txid);
         if let Some(transaction_metadata) = self.current.get_mut(txid) {
-            for outgoing_metadatum in outgoing_metadata {
-                if !transaction_metadata
+            if transaction_metadata.outgoing_tx_data.is_empty() {
+                transaction_metadata
                     .outgoing_tx_data
-                    .iter()
-                    .any(|known_metadatum| *known_metadatum == outgoing_metadatum)
-                {
-                    transaction_metadata
-                        .outgoing_tx_data
-                        .push(outgoing_metadatum);
-                }
+                    .extend(outgoing_metadata);
             }
         } else {
             error!(

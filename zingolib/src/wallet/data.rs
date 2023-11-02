@@ -1,6 +1,6 @@
 use crate::compact_formats::CompactBlock;
 use crate::error::ZingoLibError;
-use crate::wallet::traits::ReceivedNoteAndMetadata;
+use crate::wallet::traits::NoteInterface;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::frontier::{CommitmentTree, NonEmptyFrontier};
 use incrementalmerkletree::witness::IncrementalWitness;
@@ -183,9 +183,7 @@ impl WitnessTrees {
     }
     fn insert_domain_frontier_notes<D: DomainWalletExt>(
         &mut self,
-        non_empty_frontier: Option<
-            NonEmptyFrontier<<D::WalletNote as ReceivedNoteAndMetadata>::Node>,
-        >,
+        non_empty_frontier: Option<NonEmptyFrontier<<D::WalletNote as NoteInterface>::Node>>,
     ) where
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: traits::Recipient,
@@ -439,7 +437,7 @@ impl<Node: Hashable> WitnessCache<Node> {
     //     return hex::encode(buf);
     // }
 }
-pub struct ReceivedSaplingNoteAndMetadata {
+pub struct SaplingNote {
     pub diversifier: zcash_primitives::sapling::Diversifier,
     pub note: zcash_primitives::sapling::Note,
 
@@ -464,7 +462,7 @@ pub struct ReceivedSaplingNoteAndMetadata {
 }
 
 #[derive(Debug)]
-pub struct ReceivedOrchardNoteAndMetadata {
+pub struct OrchardNote {
     pub diversifier: orchard::keys::Diversifier,
     pub note: orchard::note::Note,
 
@@ -488,7 +486,7 @@ pub struct ReceivedOrchardNoteAndMetadata {
     pub have_spending_key: bool,
 }
 
-impl std::fmt::Debug for ReceivedSaplingNoteAndMetadata {
+impl std::fmt::Debug for SaplingNote {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SaplingNoteData")
             .field("diversifier", &self.diversifier)
@@ -545,7 +543,7 @@ pub(crate) fn write_sapling_rseed<W: Write>(
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct ReceivedTransparentOutput {
+pub struct TransparentNote {
     pub address: String,
     pub txid: TxId,
     pub output_index: u64,
@@ -561,7 +559,7 @@ pub struct ReceivedTransparentOutput {
     pub unconfirmed_spent: Option<(TxId, u32)>,
 }
 
-impl ReceivedTransparentOutput {
+impl TransparentNote {
     pub fn serialized_version() -> u64 {
         3
     }
@@ -617,7 +615,7 @@ impl ReceivedTransparentOutput {
             })?
         };
 
-        Ok(ReceivedTransparentOutput {
+        Ok(TransparentNote {
             address,
             txid: transaction_id,
             output_index,
@@ -916,13 +914,13 @@ pub struct TransactionMetadata {
     pub spent_orchard_nullifiers: Vec<orchard::note::Nullifier>,
 
     // List of all sapling notes received in this tx. Some of these might be change notes.
-    pub sapling_notes: Vec<ReceivedSaplingNoteAndMetadata>,
+    pub sapling_notes: Vec<SaplingNote>,
 
     // List of all sapling notes received in this tx. Some of these might be change notes.
-    pub orchard_notes: Vec<ReceivedOrchardNoteAndMetadata>,
+    pub orchard_notes: Vec<OrchardNote>,
 
     // List of all Utxos received in this Tx. Some of these might be change notes
-    pub received_utxos: Vec<ReceivedTransparentOutput>,
+    pub transparent_notes: Vec<TransparentNote>,
 
     // Total value of all the sapling nullifiers that were spent in this Tx
     pub total_sapling_value_spent: u64,
@@ -990,7 +988,7 @@ impl TransactionMetadata {
     pub fn is_incoming_transaction(&self) -> bool {
         self.sapling_notes.iter().any(|note| !note.is_change())
             || self.orchard_notes.iter().any(|note| !note.is_change())
-            || !self.received_utxos.is_empty()
+            || !self.transparent_notes.is_empty()
     }
     pub fn net_spent(&self) -> u64 {
         assert!(self.is_outgoing_transaction());
@@ -1011,7 +1009,7 @@ impl TransactionMetadata {
             spent_orchard_nullifiers: vec![],
             sapling_notes: vec![],
             orchard_notes: vec![],
-            received_utxos: vec![],
+            transparent_notes: vec![],
             total_transparent_value_spent: 0,
             total_sapling_value_spent: 0,
             total_orchard_value_spent: 0,
@@ -1083,22 +1081,16 @@ impl TransactionMetadata {
         let transaction_id = TxId::from_bytes(transaction_id_bytes);
 
         let sapling_notes = Vector::read_collected_mut(&mut reader, |r| {
-            ReceivedSaplingNoteAndMetadata::read(
-                r,
-                (wallet_capability, trees.as_mut().map(|t| &mut t.0)),
-            )
+            SaplingNote::read(r, (wallet_capability, trees.as_mut().map(|t| &mut t.0)))
         })?;
         let orchard_notes = if version > 22 {
             Vector::read_collected_mut(&mut reader, |r| {
-                ReceivedOrchardNoteAndMetadata::read(
-                    r,
-                    (wallet_capability, trees.as_mut().map(|t| &mut t.1)),
-                )
+                OrchardNote::read(r, (wallet_capability, trees.as_mut().map(|t| &mut t.1)))
             })?
         } else {
             vec![]
         };
-        let utxos = Vector::read(&mut reader, |r| ReceivedTransparentOutput::read(r))?;
+        let utxos = Vector::read(&mut reader, |r| TransparentNote::read(r))?;
 
         let total_sapling_value_spent = reader.read_u64::<LittleEndian>()?;
         let total_transparent_value_spent = reader.read_u64::<LittleEndian>()?;
@@ -1145,7 +1137,7 @@ impl TransactionMetadata {
             txid: transaction_id,
             sapling_notes,
             orchard_notes,
-            received_utxos: utxos,
+            transparent_notes: utxos,
             spent_sapling_nullifiers,
             spent_orchard_nullifiers,
             total_sapling_value_spent,
@@ -1169,7 +1161,7 @@ impl TransactionMetadata {
         self.pool_value_received::<OrchardDomain>()
             + self.pool_value_received::<SaplingDomain<ChainType>>()
             + self
-                .received_utxos
+                .transparent_notes
                 .iter()
                 .map(|utxo| utxo.value)
                 .sum::<u64>()
@@ -1205,7 +1197,7 @@ impl TransactionMetadata {
 
         Vector::write(&mut writer, &self.sapling_notes, |w, nd| nd.write(w))?;
         Vector::write(&mut writer, &self.orchard_notes, |w, nd| nd.write(w))?;
-        Vector::write(&mut writer, &self.received_utxos, |w, u| u.write(w))?;
+        Vector::write(&mut writer, &self.transparent_notes, |w, u| u.write(w))?;
 
         for pool in self.value_spent_by_pool() {
             writer.write_u64::<LittleEndian>(pool)?;

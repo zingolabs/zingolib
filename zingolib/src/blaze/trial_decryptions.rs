@@ -8,9 +8,7 @@ use crate::{
     wallet::{
         data::{PoolNullifier, TransactionMetadata},
         keys::unified::WalletCapability,
-        traits::{
-            CompactOutput as _, DomainWalletExt, FromCommitment, ReceivedNoteAndMetadata, Recipient,
-        },
+        traits::{CompactOutput as _, DomainWalletExt, FromCommitment, NoteInterface, Recipient},
         transactions::TransactionMetadataSet,
         MemoDownloadOption,
     },
@@ -286,7 +284,7 @@ impl TrialDecryptions {
         notes_to_mark_position: &mut [(
             u32,
             TxId,
-            <D::WalletNote as ReceivedNoteAndMetadata>::Node,
+            <D::WalletNote as NoteInterface>::Node,
             Retention<BlockHeight>,
         )],
     ) where
@@ -294,7 +292,7 @@ impl TrialDecryptions {
         <D as Domain>::Recipient: crate::wallet::traits::Recipient + Send + 'static,
         <D as Domain>::Note: PartialEq + Send + 'static + Clone,
         <D as Domain>::ExtractedCommitmentBytes: Into<[u8; 32]>,
-        <<D as DomainWalletExt>::WalletNote as ReceivedNoteAndMetadata>::Node: PartialEq,
+        <<D as DomainWalletExt>::WalletNote as NoteInterface>::Node: PartialEq,
     {
         let transaction_id = TransactionMetadata::new_txid(&compact_transaction.hash);
         let outputs = D::CompactOutput::from_compact_transaction(compact_transaction)
@@ -383,7 +381,7 @@ fn zip_outputs_with_retention_txids_indexes<D: DomainWalletExt>(
 ) -> Vec<(
     u32,
     TxId,
-    <D::WalletNote as ReceivedNoteAndMetadata>::Node,
+    <D::WalletNote as NoteInterface>::Node,
     Retention<BlockHeight>,
 )>
 where
@@ -399,8 +397,7 @@ where
         (
             i as u32,
             TxId::from_bytes(<[u8; 32]>::try_from(&compact_transaction.hash[..]).unwrap()),
-            <D::WalletNote as ReceivedNoteAndMetadata>::Node::from_commitment(output.cmstar())
-                .unwrap(),
+            <D::WalletNote as NoteInterface>::Node::from_commitment(output.cmstar()).unwrap(),
             Retention::Ephemeral,
         )
     })
@@ -413,7 +410,7 @@ fn update_witnesses<D>(
         Vec<(
             u32,
             TxId,
-            <D::WalletNote as ReceivedNoteAndMetadata>::Node,
+            <D::WalletNote as NoteInterface>::Node,
             Retention<BlockHeight>,
         )>,
         BlockHeight,
