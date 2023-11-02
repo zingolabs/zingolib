@@ -166,7 +166,7 @@ pub struct LightClient {
 ///  This is the omnibus interface to the library, we are currently in the process of refining this types
 ///  overly broad and vague definition!
 impl LightClient {
-    pub fn create_from_extant_wallet(wallet: LightWallet, config: ZingoConfig) -> Self {
+    pub fn create_from_wallet(wallet: LightWallet, config: ZingoConfig) -> Self {
         LightClient {
             wallet,
             config: config.clone(),
@@ -210,14 +210,10 @@ impl LightClient {
                 ));
             }
         }
-        let lightclient = LightClient {
-            wallet: LightWallet::new(config.clone(), wallet_base, birthday)?,
-            config: config.clone(),
-            mempool_monitor: std::sync::RwLock::new(None),
-            sync_lock: Mutex::new(()),
-            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
-            interrupt_sync: Arc::new(RwLock::new(false)),
-        };
+        let lightclient = LightClient::create_from_wallet(
+            LightWallet::new(config.clone(), wallet_base, birthday)?,
+            config.clone(),
+        );
 
         lightclient.set_wallet_initial_state(birthday).await;
         lightclient
@@ -234,14 +230,11 @@ impl LightClient {
         wallet_base: WalletBase,
         height: u64,
     ) -> io::Result<Self> {
-        Ok(LightClient {
-            wallet: LightWallet::new(config.clone(), wallet_base, height)?,
-            config: config.clone(),
-            mempool_monitor: std::sync::RwLock::new(None),
-            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
-            sync_lock: Mutex::new(()),
-            interrupt_sync: Arc::new(RwLock::new(false)),
-        })
+        let lightclient = LightClient::create_from_wallet(
+            LightWallet::new(config.clone(), wallet_base, height)?,
+            config.clone(),
+        );
+        Ok(lightclient)
     }
 
     fn create_with_new_wallet(config: &ZingoConfig, height: u64) -> io::Result<Self> {
