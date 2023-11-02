@@ -190,6 +190,7 @@ mod fast {
             zingo_testutils::load_wallet(sap_dir, ChainType::Regtest(regtest_network)).await;
     }
 
+    #[cfg(feature = "lightclient-deprecated")]
     #[tokio::test]
     async fn list_transactions_include_foreign() {
         let wallet_nym = format!(
@@ -283,6 +284,7 @@ mod fast {
         //dbg!(std::process::Command::new("grpcurl").args(["-plaintext", "127.0.0.1:9067"]));
     }
 
+    #[cfg(feature = "lightclient-deprecated")]
     #[tokio::test]
     async fn unspent_notes_are_not_saved() {
         let regtest_network = RegtestNetwork::all_upgrades_active();
@@ -644,6 +646,7 @@ mod fast {
             .unwrap();
     }
 
+    #[cfg(feature = "lightclient-deprecated")]
     #[tokio::test]
     async fn mine_to_orchard() {
         let regtest_network = RegtestNetwork::all_upgrades_active();
@@ -656,6 +659,7 @@ mod fast {
         check_client_balances!(faucet, o: 2_500_000_000 s: 0 t: 0);
     }
 
+    #[cfg(feature = "lightclient-deprecated")]
     #[tokio::test]
     async fn mine_to_sapling() {
         let regtest_network = RegtestNetwork::all_upgrades_active();
@@ -668,6 +672,7 @@ mod fast {
         check_client_balances!(faucet, o: 0 s: 2_500_000_000 t: 0);
     }
 
+    #[cfg(feature = "lightclient-deprecated")]
     #[tokio::test]
     async fn mine_to_transparent() {
         let regtest_network = RegtestNetwork::all_upgrades_active();
@@ -709,6 +714,7 @@ mod fast {
 mod slow {
     use super::*;
 
+    #[cfg(feature = "lightclient-deprecated")]
     #[tokio::test]
     async fn zero_value_receipts() {
         let (regtest_manager, _cph, faucet, recipient, _txid) =
@@ -745,6 +751,7 @@ mod slow {
             JsonValue::from(recipient.do_list_txsummaries().await).pretty(4)
         );
     }
+    #[cfg(feature = "lightclient-deprecated")]
     #[tokio::test]
     async fn zero_value_change() {
         // 2. Send an incoming transaction to fill the wallet
@@ -993,6 +1000,7 @@ mod slow {
             .await
             .unwrap();
     }
+    #[cfg(feature = "lightclient-deprecated")]
     #[tokio::test]
     async fn test_scanning_in_watch_only_mode() {
         // # Scenario:
@@ -1107,6 +1115,7 @@ mod slow {
             );
         }
     }
+    #[cfg(feature = "lightclient-deprecated")]
     #[tokio::test]
     async fn t_incoming_t_outgoing_disallowed() {
         let (regtest_manager, _cph, faucet, recipient) =
@@ -1216,6 +1225,7 @@ mod slow {
             serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
         );
     }
+    #[cfg(feature = "lightclient-deprecated")]
     #[tokio::test]
     async fn shield_heartwood_sapling_funds() {
         let regtest_network = RegtestNetwork::new(1, 1, 1, 1, 3, 5);
@@ -1231,6 +1241,7 @@ mod slow {
             .unwrap();
         check_client_balances!(faucet, o: 3_499_990_000 s: 625_010_000 t: 0);
     }
+    #[cfg(feature = "lightclient-deprecated")]
     #[tokio::test]
     async fn sends_to_self_handle_balance_properly() {
         let transparent_funding = 100_000;
@@ -1290,6 +1301,7 @@ mod slow {
             .pretty(2)
         );
     }
+    #[cfg(feature = "lightclient-deprecated")]
     #[tokio::test]
     async fn send_to_ua_saves_full_ua_in_wallet() {
         let (regtest_manager, _cph, faucet, recipient) =
@@ -1333,6 +1345,7 @@ mod slow {
             json::stringify_pretty(new_list.clone(), 4)
         );
     }
+    #[cfg(feature = "lightclient-deprecated")]
     #[tokio::test]
     async fn send_to_transparent_and_sapling_maintain_balance() {
         let recipient_initial_funds = 100_000_000;
@@ -1648,6 +1661,7 @@ mod slow {
             "Received memo indicating you sent to an address you don't have on record."
         ));
     }
+    #[cfg(feature = "lightclient-deprecated")]
     #[tokio::test]
     async fn send_orchard_back_and_forth() {
         // setup
@@ -1752,6 +1766,7 @@ mod slow {
             625_000_000 - u64::from(MINIMUM_FEE)
         );
     }
+    #[cfg(feature = "lightclient-deprecated")]
     #[tokio::test]
     async fn send_heartwood_sapling_funds() {
         let regtest_network = RegtestNetwork::new(1, 1, 1, 1, 3, 5);
@@ -1775,6 +1790,7 @@ mod slow {
             .unwrap();
         check_client_balances!(recipient, o: 3_499_990_000 s: 0 t: 0);
     }
+    #[cfg(feature = "lightclient-deprecated")]
     #[tokio::test]
     async fn send_funds_to_all_pools() {
         let regtest_network = RegtestNetwork::all_upgrades_active();
@@ -1796,6 +1812,7 @@ mod slow {
         .await;
         check_client_balances!(recipient, o: 100_000 s: 100_000 t: 100_000);
     }
+    #[cfg(feature = "lightclient-deprecated")]
     #[tokio::test]
     async fn self_send_to_t_displays_as_one_transaction() {
         let (regtest_manager, _cph, faucet, recipient) =
@@ -1867,6 +1884,7 @@ mod slow {
             .map(|transaction| transaction["txid"].as_str());
         assert!(itertools::Itertools::all_unique(&mut txids));
     }
+    #[cfg(feature = "lightclient-deprecated")]
     #[tokio::test]
     async fn sapling_to_sapling_scan_together() {
         // Create an incoming transaction, and then send that transaction, and scan everything together, to make sure it works.
@@ -1939,6 +1957,7 @@ mod slow {
             spent_value
         );
     }
+    #[cfg(feature = "lightclient-deprecated")]
     #[tokio::test]
     async fn sapling_incoming_sapling_outgoing() {
         let (regtest_manager, _cph, faucet, recipient) =
@@ -2131,6 +2150,7 @@ mod slow {
             5
         );
     }
+    #[cfg(feature = "lightclient-deprecated")]
     #[tokio::test]
     async fn sapling_dust_fee_collection() {
         let (regtest_manager, __cph, faucet, recipient) =
@@ -2236,6 +2256,7 @@ mod slow {
                 .max_leaf_position(0)
         );
     }
+    #[cfg(feature = "lightclient-deprecated")]
     #[tokio::test]
     async fn rescan_still_have_outgoing_metadata_with_sends_to_self() {
         let (regtest_manager, _cph, faucet) = scenarios::faucet_default().await;
@@ -2287,6 +2308,7 @@ mod slow {
             assert_eq!(field.len(), post_rescan_notes[field_name].len());
         }
     }
+    #[cfg(feature = "lightclient-deprecated")]
     #[tokio::test]
     async fn rescan_still_have_outgoing_metadata() {
         let (regtest_manager, _cph, faucet, recipient) =
@@ -2421,6 +2443,7 @@ mod slow {
 
         // More explicit than ignoring the unused variable, we only care about this in order to drop it
     }
+    #[cfg(feature = "lightclient-deprecated")]
     #[tokio::test]
     async fn multiple_outgoing_metadatas_work_right_on_restore() {
         let inital_value = 100_000;
@@ -2452,6 +2475,7 @@ mod slow {
         // The two outgoing spends were identical. They should be represented as such
         assert_eq!(outgoing_metadata.next(), outgoing_metadata.next());
     }
+    #[cfg(feature = "lightclient-deprecated")]
     #[tokio::test]
     async fn mempool_clearing_and_full_batch_syncs_correct_trees() {
         async fn do_maybe_recent_txid(lc: &LightClient) -> JsonValue {
@@ -2787,6 +2811,7 @@ mod slow {
         assert_eq!(bal.verified_orchard_balance.unwrap(), new_bal);
         assert_eq!(bal.unverified_orchard_balance.unwrap(), 0);
     }
+    #[cfg(feature = "lightclient-deprecated")]
     #[tokio::test]
     async fn load_old_wallet_at_reorged_height() {
         let regtest_network = RegtestNetwork::all_upgrades_active();
@@ -3058,6 +3083,7 @@ mod slow {
         };
         assert_eq!(seed_of_recipient, seed_of_recipient_restored);
     }
+    #[cfg(feature = "lightclient-deprecated")]
     #[tokio::test]
     async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
         // Test all possible promoting note source combinations
@@ -3219,6 +3245,7 @@ mod slow {
             .await
             .unwrap();
     }
+    #[cfg(feature = "lightclient-deprecated")]
     #[tokio::test]
     async fn dust_sends_change_correctly() {
         let (regtest_manager, _cph, faucet, recipient, _txid) =
@@ -3245,6 +3272,7 @@ mod slow {
             serde_json::to_string_pretty(&recipient.do_balance().await).unwrap()
         );
     }
+    #[cfg(feature = "lightclient-deprecated")]
     #[tokio::test]
     async fn dont_write_unconfirmed() {
         let regtest_network = RegtestNetwork::all_upgrades_active();
@@ -3366,6 +3394,7 @@ mod slow {
             "6".to_string()
         );
     }
+    #[cfg(feature = "lightclient-deprecated")]
     #[tokio::test]
     async fn aborted_resync() {
         let (regtest_manager, _cph, faucet, recipient, _txid) =
