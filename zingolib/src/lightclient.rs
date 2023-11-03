@@ -284,7 +284,7 @@ impl LightClient {
 
     async fn save_internal_rust(&self) -> Result<bool, ZingoLibError> {
         self.save_internal_buffer().await?;
-        Ok(self.rust_write_save_buffer_to_file().await?)
+        self.rust_write_save_buffer_to_file().await
     }
 
     async fn save_internal_buffer(&self) -> Result<(), ZingoLibError> {
@@ -292,7 +292,7 @@ impl LightClient {
         self.wallet
             .write(&mut buffer)
             .await
-            .map_err(|err| ZingoLibError::InternalWriteBufferError(err))?;
+            .map_err(ZingoLibError::InternalWriteBufferError);
         *self.save_buffer.buffer.write().await = buffer;
         Ok(())
     }
@@ -310,15 +310,15 @@ impl LightClient {
             let read_buffer = self.save_buffer.buffer.read().await;
             if !read_buffer.is_empty() {
                 LightClient::write_to_file(self.config.get_wallet_path(), &read_buffer)
-                    .map_err(|err| ZingoLibError::WriteFileError(err))?;
-                return Ok(true);
+                    .map_err(ZingoLibError::WriteFileError);
+                Ok(true)
             } else {
                 Err(ZingoLibError::EmptySaveBuffer)
             }
         }
     }
 
-    fn write_to_file(path: Box<Path>, buffer: &Vec<u8>) -> std::io::Result<()> {
+    fn write_to_file(path: Box<Path>, buffer: &[u8]) -> std::io::Result<()> {
         let mut file = File::create(path).unwrap();
         file.write_all(buffer)?;
         Ok(())
@@ -338,7 +338,7 @@ impl LightClient {
         Runtime::new()
             .unwrap()
             .block_on(async move { self.export_save_buffer_async().await })
-            .map_err(|err| String::from(err))
+            .map_err(String::from)
     }
 
     /// This constructor depends on a wallet that's read from a buffer.
