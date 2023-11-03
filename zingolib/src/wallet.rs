@@ -1786,36 +1786,35 @@ impl LightWallet {
         self.transaction_context.key.clone()
     }
 
-    pub async fn write_to_buffer(&self) -> Result<Vec<u8>, io::Error> {
-        let mut buffer: Vec<u8> = vec![];
+    pub async fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         // Write the version
-        buffer.write_u64::<LittleEndian>(Self::serialized_version())?;
+        writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
         // Write all the keys
-        self.transaction_context.key.write(&mut buffer)?;
+        self.transaction_context.key.write(&mut writer)?;
 
-        Vector::write(&mut buffer, &self.blocks.read().await, |w, b| b.write(w))?;
+        Vector::write(&mut writer, &self.blocks.read().await, |w, b| b.write(w))?;
 
         self.transaction_context
             .transaction_metadata_set
             .write()
             .await
-            .write(&mut buffer)
+            .write(&mut writer)
             .await?;
 
         utils::write_string(
-            &mut buffer,
+            &mut writer,
             &self.transaction_context.config.chain.to_string(),
         )?;
 
-        self.wallet_options.read().await.write(&mut buffer)?;
+        self.wallet_options.read().await.write(&mut writer)?;
 
         // While writing the birthday, get it from the fn so we recalculate it properly
         // in case of rescans etc...
-        buffer.write_u64::<LittleEndian>(self.get_birthday().await)?;
+        writer.write_u64::<LittleEndian>(self.get_birthday().await)?;
 
         Optional::write(
-            &mut buffer,
+            &mut writer,
             self.verified_tree.read().await.as_ref(),
             |w, t| {
                 use prost::Message;
@@ -1827,20 +1826,20 @@ impl LightWallet {
         )?;
 
         // Price info
-        self.price.read().await.write(&mut buffer)?;
+        self.price.read().await.write(&mut writer)?;
 
         let seed_bytes = match &self.mnemonic {
             Some(m) => m.0.clone().into_entropy(),
             None => vec![],
         };
-        Vector::write(&mut buffer, &seed_bytes, |w, byte| w.write_u8(*byte))?;
+        Vector::write(&mut writer, &seed_bytes, |w, byte| w.write_u8(*byte))?;
 
         match &self.mnemonic {
-            Some(m) => buffer.write_u32::<LittleEndian>(m.1)?,
+            Some(m) => writer.write_u32::<LittleEndian>(m.1)?,
             None => (),
         }
 
-        Ok(buffer)
+        Ok(())
     }
 }
 

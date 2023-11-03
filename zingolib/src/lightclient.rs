@@ -288,11 +288,12 @@ impl LightClient {
     }
 
     async fn save_internal_buffer(&self) -> Result<(), ZingoLibError> {
-        *self.save_buffer.buffer.write().await = self
-            .wallet
-            .write_to_buffer()
+        let mut buffer: Vec<u8> = vec![];
+        self.wallet
+            .write(&mut buffer)
             .await
             .map_err(ZingoLibError::InternalWriteBufferError)?;
+        *self.save_buffer.buffer.write().await = buffer;
         Ok(())
     }
 
