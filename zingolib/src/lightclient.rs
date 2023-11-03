@@ -333,6 +333,7 @@ impl LightClient {
         }
     }
 
+    /// This function is the sole correct way to ask LightClient to save.
     pub fn export_save_buffer_runtime(&self) -> Result<Vec<u8>, String> {
         Runtime::new()
             .unwrap()
