@@ -416,7 +416,7 @@ pub fn startup(
         )?),
         None => {
             if config.wallet_path_exists() {
-                Arc::new(LightClient::read_wallet_from_disk_runtime(&config)?)
+                Arc::new(LightClient::read_wallet_from_disk(&config)?)
             } else {
                 println!("Creating a new wallet");
                 // Call the lightwalletd server to get the current block-height

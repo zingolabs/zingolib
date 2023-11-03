@@ -3299,19 +3299,9 @@ mod slow {
             recipient_balance.unverified_orchard_balance.unwrap(),
             65_000
         );
-        let wallet_loc = &regtest_manager
-            .zingo_datadir
-            .parent()
-            .unwrap()
-            .join("zingo_client_2");
         recipient.save_internal_rust().await.unwrap();
 
-        let (wallet, config) = zingo_testutils::load_wallet(
-            wallet_loc.to_path_buf(),
-            ChainType::Regtest(regtest_network),
-        )
-        .await;
-        let loaded_client = LightClient::create_from_wallet(wallet, config);
+        let loaded_client = recipient.new_client_from_save_buffer().await.unwrap();
         let loaded_balance = loaded_client.do_balance().await;
         assert_eq!(loaded_balance.unverified_orchard_balance, Some(0),);
         check_client_balances!(loaded_client, o: 100_000 s: 0 t: 0 );

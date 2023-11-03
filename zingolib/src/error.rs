@@ -8,6 +8,7 @@ pub enum ZingoLibError {
     InternalWriteBufferError(std::io::Error),
     WriteFileError(std::io::Error),
     EmptySaveBuffer,
+    CantReadWallet(std::io::Error),
 }
 
 impl std::fmt::Display for ZingoLibError {
@@ -35,6 +36,11 @@ impl std::fmt::Display for ZingoLibError {
             EmptySaveBuffer => write!(
                 f,
                 "Empty save buffer. probably save_external was called before save_internal_rust. this is handled by save_external."
+            ),
+            CantReadWallet(err) => write!(
+                f,
+                "Cant read wallet. Corrupt file. Or maybe a backwards version issue? {}",
+                err,
             ),
         }
     }

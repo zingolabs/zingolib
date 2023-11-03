@@ -8,7 +8,9 @@ edition = "2021"
 
 [features]
 deprecations = ["lightclient-deprecated"]
+test = ["lightclient-deprecated", "test-features"]
 lightclient-deprecated = []
+test-features = []
 default = ["embed_params"]
 embed_params = []
 
