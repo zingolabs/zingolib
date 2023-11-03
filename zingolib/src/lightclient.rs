@@ -143,6 +143,12 @@ pub struct AccountBackupInfo {
     pub account_index: u32,
 }
 
+#[derive(Default)]
+pub struct ZingoSaveBuffer {
+    buffer: Vec<u8>,
+    written: bool,
+}
+
 /// The LightClient provides a unified interface to the separate concerns that the zingolib library manages.
 ///  1. initialization of stored state
 ///      * from seed
@@ -161,6 +167,8 @@ pub struct LightClient {
 
     bsync_data: Arc<RwLock<BlazeSyncData>>,
     interrupt_sync: Arc<RwLock<bool>>,
+
+    save_buffer: ZingoSaveBuffer,
 }
 
 ///  This is the omnibus interface to the library, we are currently in the process of refining this types
@@ -176,6 +184,7 @@ impl LightClient {
             sync_lock: Mutex::new(()),
             bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
             interrupt_sync: Arc::new(RwLock::new(false)),
+            save_buffer: ZingoSaveBuffer::default(),
         }
     }
     /// The wallet this fn associates with the lightclient is specifically derived from
