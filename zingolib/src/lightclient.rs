@@ -346,7 +346,7 @@ impl LightClient {
         }
     }
 
-    pub async fn export_save_buffer_runtime(&self) -> Result<Vec<u8>, ZingoLibError> {
+    pub fn export_save_buffer_runtime(&self) -> Result<Vec<u8>, ZingoLibError> {
         Runtime::new()
             .unwrap()
             .block_on(async move { self.export_save_buffer().await })
