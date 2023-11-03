@@ -144,7 +144,7 @@ pub struct AccountBackupInfo {
 }
 
 #[derive(Default)]
-pub struct ZingoSaveBuffer {
+struct ZingoSaveBuffer {
     pub buffer: Arc<RwLock<Vec<u8>>>,
 }
 
