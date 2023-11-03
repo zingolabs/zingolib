@@ -346,10 +346,11 @@ impl LightClient {
         }
     }
 
-    pub fn export_save_buffer_runtime(&self) -> Result<Vec<u8>, ZingoLibError> {
+    pub fn export_save_buffer_runtime(&self) -> Result<Vec<u8>, String> {
         Runtime::new()
             .unwrap()
             .block_on(async move { self.export_save_buffer_async().await })
+            .map_err(|err| String::from(err))
     }
 
     /// This constructor depends on a wallet that's read from a buffer.
