@@ -200,7 +200,7 @@ mod fast {
         let wallet_dir = wallet_path.parent().unwrap();
         let (wallet, config) =
             zingo_testutils::load_wallet(wallet_dir.to_path_buf(), ChainType::Mainnet).await;
-        let client = LightClient::create_from_extant_wallet(wallet, config);
+        let client = LightClient::create_from_wallet(wallet, config);
         let transactions = client.do_list_transactions().await[0].clone();
         //env_logger::init();
         let expected_consumer_ui_note = r#"{
@@ -331,8 +331,7 @@ mod fast {
                 .unwrap();
 
         // Create client based on config and wallet of faucet
-        let faucet_copy =
-            LightClient::create_from_extant_wallet(faucet_wallet, zingo_config.clone());
+        let faucet_copy = LightClient::create_from_wallet(faucet_wallet, zingo_config.clone());
         assert_eq!(
             &faucet_copy.do_seed_phrase().await.unwrap(),
             &faucet.do_seed_phrase().await.unwrap()
@@ -2842,7 +2841,7 @@ mod slow {
         println!("setting uri");
         *conf.lightwalletd_uri.write().unwrap() = faucet.get_server_uri();
         println!("creating lightclient");
-        let recipient = LightClient::create_from_extant_wallet(wallet, conf);
+        let recipient = LightClient::create_from_wallet(wallet, conf);
         println!(
             "pre-sync transactions: {}",
             recipient.do_list_transactions().await.pretty(2)
@@ -3312,7 +3311,7 @@ mod slow {
             ChainType::Regtest(regtest_network),
         )
         .await;
-        let loaded_client = LightClient::create_from_extant_wallet(wallet, config);
+        let loaded_client = LightClient::create_from_wallet(wallet, config);
         let loaded_balance = loaded_client.do_balance().await;
         assert_eq!(loaded_balance.unverified_orchard_balance, Some(0),);
         check_client_balances!(loaded_client, o: 100_000 s: 0 t: 0 );
