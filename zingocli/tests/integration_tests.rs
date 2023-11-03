@@ -310,7 +310,6 @@ mod fast {
             faucet.do_list_notes(true).await["unspent_orchard_notes"].len(),
             1
         );
-        faucet.save_internal_rust().await.unwrap();
         // Create a new client using the faucet's wallet
 
         // Create zingo config
@@ -3299,7 +3298,6 @@ mod slow {
             recipient_balance.unverified_orchard_balance.unwrap(),
             65_000
         );
-        recipient.save_internal_rust().await.unwrap();
 
         let loaded_client = recipient.new_client_from_save_buffer().await.unwrap();
         let loaded_balance = loaded_client.do_balance().await;
