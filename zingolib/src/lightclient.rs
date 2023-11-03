@@ -145,8 +145,7 @@ pub struct AccountBackupInfo {
 
 #[derive(Default)]
 pub struct ZingoSaveBuffer {
-    buffer: Vec<u8>,
-    written: bool,
+    pub buffer: Arc<RwLock<Vec<u8>>>,
 }
 
 /// The LightClient provides a unified interface to the separate concerns that the zingolib library manages.
@@ -228,7 +227,7 @@ impl LightClient {
 
         lightclient.set_wallet_initial_state(birthday).await;
         lightclient
-            .do_save()
+            .save_internal_rust()
             .await
             .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
 
@@ -257,7 +256,7 @@ impl LightClient {
             debug!("Created LightClient to {}", &config.get_lightwalletd_uri());
 
             // Save
-            l.do_save()
+            l.save_internal_rust()
                 .await
                 .map_err(|s| io::Error::new(ErrorKind::PermissionDenied, s))?;
 
@@ -514,7 +513,7 @@ impl LightClient {
             .wallet_capability()
             .new_address(desired_receivers)?;
 
-        self.do_save().await?;
+        self.save_internal_rust().await?;
 
         Ok(array![new_address.encode(&self.config.chain)])
     }
@@ -527,7 +526,7 @@ impl LightClient {
         let response = self.do_sync(true).await;
 
         if response.is_ok() {
-            self.do_save().await?;
+            self.save_internal_rust().await?;
         }
 
         debug!("Rescan finished");
@@ -570,57 +569,75 @@ impl LightClient {
             }
         }
     }
-    pub async fn do_save(&self) -> Result<(), String> {
-        #[cfg(any(target_os = "ios", target_os = "android"))]
-        // on mobile platforms, disable the save, because the saves will be handled by the native layer, and not in rust
-        {
-            log::debug!("do_save entered");
 
+    pub async fn save_internal_rust(&self) -> Result<bool, ZingoLibError> {
+        self.save_internal_buffer().await?;
+        Ok(self.rust_write_save_buffer_to_file().await?)
+    }
+
+    pub async fn save_external(&self) -> Result<Vec<u8>, ZingoLibError> {
+        match self.export_save_buffer().await {
+            Ok(buff) => Ok(buff),
+            Err(err) => match err {
+                ZingoLibError::EmptySaveBuffer => {
+                    self.save_internal_buffer().await?;
+                    self.export_save_buffer().await
+                }
+                other_err => Err(other_err),
+            },
+        }
+    }
+
+    pub async fn save_internal_buffer(&self) -> Result<(), ZingoLibError> {
+        let mut buffer: Vec<u8> = vec![];
+        self.wallet
+            .write(&mut buffer)
+            .await
+            .map_err(|err| ZingoLibError::InternalWriteBufferError(err))?;
+        *self.save_buffer.buffer.write().await = buffer;
+        Ok(())
+    }
+
+    pub async fn rust_write_save_buffer_to_file(&self) -> Result<bool, ZingoLibError> {
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        // on mobile platforms, saving from this buffer will be handled by the native layer
+        {
             // on ios and android just return ok
-            Ok(())
+            return Ok(false);
         }
 
         #[cfg(not(any(target_os = "ios", target_os = "android")))]
         {
-            log::debug!("do_save entered");
-            log::debug!("target_os is not ios or android");
-            // Prevent any overlapping syncs during save, and don't save in the middle of a sync
-            //let _lock = self.sync_lock.lock().await;
-
-            let mut wallet_bytes = vec![];
-            match self.wallet.write(&mut wallet_bytes).await {
-                Ok(_) => {
-                    let mut file = File::create(self.config.get_wallet_path()).unwrap();
-                    file.write_all(&wallet_bytes)
-                        .map_err(|e| format!("{}", e))?;
-                    log::debug!("In the guts of a successful save!");
-                    Ok(())
-                }
-                Err(e) => {
-                    let err = format!("ERR: {}", e);
-                    error!("{}", err);
-                    log::debug!("SAVE FAIL ON WALLET WRITE LOCK!");
-                    Err(e.to_string())
-                }
-            }
-        }
-    }
-    pub async fn do_save_to_buffer(&self) -> Result<Vec<u8>, String> {
-        let mut buffer: Vec<u8> = vec![];
-        match self.wallet.write(&mut buffer).await {
-            Ok(_) => Ok(buffer),
-            Err(e) => {
-                let err = format!("ERR: {}", e);
-                error!("{}", err);
-                Err(e.to_string())
+            let read_buffer = self.save_buffer.buffer.read().await;
+            if !read_buffer.is_empty() {
+                LightClient::write_to_file(self.config.get_wallet_path(), &read_buffer)
+                    .map_err(|err| ZingoLibError::WriteFileError(err))?;
+                return Ok(true);
+            } else {
+                Err(ZingoLibError::EmptySaveBuffer)
             }
         }
     }
 
-    pub fn do_save_to_buffer_sync(&self) -> Result<Vec<u8>, String> {
+    pub fn write_to_file(path: Box<Path>, buffer: &Vec<u8>) -> std::io::Result<()> {
+        let mut file = File::create(path).unwrap();
+        file.write_all(buffer)?;
+        Ok(())
+    }
+
+    pub async fn export_save_buffer(&self) -> Result<Vec<u8>, ZingoLibError> {
+        let read_buffer = self.save_buffer.buffer.read().await;
+        if !read_buffer.is_empty() {
+            Ok(read_buffer.clone())
+        } else {
+            Err(ZingoLibError::EmptySaveBuffer)
+        }
+    }
+
+    pub async fn export_save_buffer_runtime(&self) -> Result<Vec<u8>, ZingoLibError> {
         Runtime::new()
             .unwrap()
-            .block_on(async move { self.do_save_to_buffer().await })
+            .block_on(async move { self.export_save_buffer().await })
     }
 
     pub async fn do_seed_phrase(&self) -> Result<AccountBackupInfo, &str> {
@@ -1507,7 +1524,7 @@ impl LightClient {
         debug!("About to run save after syncing {}th batch!", batch_num);
 
         #[cfg(not(any(target_os = "ios", target_os = "android")))]
-        self.do_save().await.unwrap();
+        self.save_internal_rust().await.unwrap();
 
         Ok(SyncResult {
             success: true,

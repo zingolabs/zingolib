@@ -310,7 +310,7 @@ mod fast {
             faucet.do_list_notes(true).await["unspent_orchard_notes"].len(),
             1
         );
-        faucet.do_save().await.unwrap();
+        faucet.save_internal_rust().await.unwrap();
         // Create a new client using the faucet's wallet
 
         // Create zingo config
@@ -3304,7 +3304,7 @@ mod slow {
             .parent()
             .unwrap()
             .join("zingo_client_2");
-        recipient.do_save().await.unwrap();
+        recipient.save_internal_rust().await.unwrap();
 
         let (wallet, config) = zingo_testutils::load_wallet(
             wallet_loc.to_path_buf(),

@@ -927,7 +927,7 @@ impl Command for SendCommand {
 
 fn wallet_saver(lightclient: &LightClient) -> String {
     RT.block_on(async move {
-        match lightclient.do_save().await {
+        match lightclient.save_internal_rust().await {
             Ok(_) => {
                 let r = object! { "result" => "success",
                 "wallet_path" => lightclient.config.get_wallet_path().to_str().unwrap() };
@@ -936,7 +936,7 @@ fn wallet_saver(lightclient: &LightClient) -> String {
             Err(e) => {
                 let r = object! {
                     "result" => "error",
-                    "error" => e
+                    "error" => e.to_string()
                 };
                 r.pretty(2)
             }
