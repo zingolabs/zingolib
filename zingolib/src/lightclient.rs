@@ -282,25 +282,12 @@ impl LightClient {
 
     //        SAVE METHODS
 
-    pub async fn save_internal_rust(&self) -> Result<bool, ZingoLibError> {
+    async fn save_internal_rust(&self) -> Result<bool, ZingoLibError> {
         self.save_internal_buffer().await?;
         Ok(self.rust_write_save_buffer_to_file().await?)
     }
 
-    pub async fn save_external(&self) -> Result<Vec<u8>, ZingoLibError> {
-        match self.export_save_buffer_async().await {
-            Ok(buff) => Ok(buff),
-            Err(err) => match err {
-                ZingoLibError::EmptySaveBuffer => {
-                    self.save_internal_buffer().await?;
-                    self.export_save_buffer_async().await
-                }
-                other_err => Err(other_err),
-            },
-        }
-    }
-
-    pub async fn save_internal_buffer(&self) -> Result<(), ZingoLibError> {
+    async fn save_internal_buffer(&self) -> Result<(), ZingoLibError> {
         let mut buffer: Vec<u8> = vec![];
         self.wallet
             .write(&mut buffer)
@@ -310,7 +297,7 @@ impl LightClient {
         Ok(())
     }
 
-    pub async fn rust_write_save_buffer_to_file(&self) -> Result<bool, ZingoLibError> {
+    async fn rust_write_save_buffer_to_file(&self) -> Result<bool, ZingoLibError> {
         #[cfg(any(target_os = "ios", target_os = "android"))]
         // on mobile platforms, saving from this buffer will be handled by the native layer
         {
@@ -331,13 +318,13 @@ impl LightClient {
         }
     }
 
-    pub fn write_to_file(path: Box<Path>, buffer: &Vec<u8>) -> std::io::Result<()> {
+    fn write_to_file(path: Box<Path>, buffer: &Vec<u8>) -> std::io::Result<()> {
         let mut file = File::create(path).unwrap();
         file.write_all(buffer)?;
         Ok(())
     }
 
-    pub async fn export_save_buffer_async(&self) -> Result<Vec<u8>, ZingoLibError> {
+    async fn export_save_buffer_async(&self) -> Result<Vec<u8>, ZingoLibError> {
         let read_buffer = self.save_buffer.buffer.read().await;
         if !read_buffer.is_empty() {
             Ok(read_buffer.clone())
