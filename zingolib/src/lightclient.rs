@@ -292,7 +292,7 @@ impl LightClient {
         self.wallet
             .write(&mut buffer)
             .await
-            .map_err(ZingoLibError::InternalWriteBufferError);
+            .map_err(ZingoLibError::InternalWriteBufferError)?;
         *self.save_buffer.buffer.write().await = buffer;
         Ok(())
     }
@@ -310,7 +310,7 @@ impl LightClient {
             let read_buffer = self.save_buffer.buffer.read().await;
             if !read_buffer.is_empty() {
                 LightClient::write_to_file(self.config.get_wallet_path(), &read_buffer)
-                    .map_err(ZingoLibError::WriteFileError);
+                    .map_err(ZingoLibError::WriteFileError)?;
                 Ok(true)
             } else {
                 Err(ZingoLibError::EmptySaveBuffer)
@@ -319,7 +319,7 @@ impl LightClient {
     }
 
     fn write_to_file(path: Box<Path>, buffer: &[u8]) -> std::io::Result<()> {
-        let mut file = File::create(path).unwrap();
+        let mut file = File::create(path)?;
         file.write_all(buffer)?;
         Ok(())
     }
