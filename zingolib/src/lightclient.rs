@@ -288,12 +288,12 @@ impl LightClient {
     }
 
     pub async fn save_external(&self) -> Result<Vec<u8>, ZingoLibError> {
-        match self.export_save_buffer().await {
+        match self.export_save_buffer_async().await {
             Ok(buff) => Ok(buff),
             Err(err) => match err {
                 ZingoLibError::EmptySaveBuffer => {
                     self.save_internal_buffer().await?;
-                    self.export_save_buffer().await
+                    self.export_save_buffer_async().await
                 }
                 other_err => Err(other_err),
             },
@@ -337,7 +337,7 @@ impl LightClient {
         Ok(())
     }
 
-    pub async fn export_save_buffer(&self) -> Result<Vec<u8>, ZingoLibError> {
+    pub async fn export_save_buffer_async(&self) -> Result<Vec<u8>, ZingoLibError> {
         let read_buffer = self.save_buffer.buffer.read().await;
         if !read_buffer.is_empty() {
             Ok(read_buffer.clone())
@@ -349,13 +349,16 @@ impl LightClient {
     pub fn export_save_buffer_runtime(&self) -> Result<Vec<u8>, ZingoLibError> {
         Runtime::new()
             .unwrap()
-            .block_on(async move { self.export_save_buffer().await })
+            .block_on(async move { self.export_save_buffer_async().await })
     }
 
     /// This constructor depends on a wallet that's read from a buffer.
     /// It is used internally by read_from_disk, and directly called by
     /// zingo-mobile.
-    pub fn read_wallet_from_buffer<R: Read>(config: &ZingoConfig, reader: R) -> io::Result<Self> {
+    pub fn read_wallet_from_buffer_runtime<R: Read>(
+        config: &ZingoConfig,
+        reader: R,
+    ) -> io::Result<Self> {
         Runtime::new()
             .unwrap()
             .block_on(async move { Self::read_wallet_from_buffer_async(config, reader).await })
@@ -390,7 +393,10 @@ impl LightClient {
                 ),
             ));
         };
-        LightClient::read_wallet_from_buffer(config, BufReader::new(File::open(wallet_path)?))
+        LightClient::read_wallet_from_buffer_runtime(
+            config,
+            BufReader::new(File::open(wallet_path)?),
+        )
     }
 
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
