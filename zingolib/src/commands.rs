@@ -1439,6 +1439,26 @@ impl Command for QuitCommand {
     }
 }
 
+struct DeprecatedNoCommand {}
+impl Command for DeprecatedNoCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            This command has been deprecated.
+            Usage:
+            dont
+
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Deprecated command."
+    }
+
+    fn exec(&self, _args: &[&str], _lightclient: &LightClient) -> String {
+        ".deprecated.".to_string()
+    }
+}
+
 pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
     #[allow(unused_mut)]
     let mut entries: Vec<(&'static str, Box<dyn Command>)> = vec![
@@ -1472,6 +1492,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("updatecurrentprice", Box::new(UpdateCurrentPriceCommand {})),
         ("send", Box::new(SendCommand {})),
         ("shield", Box::new(ShieldCommand {})),
+        ("save", Box::new(DeprecatedNoCommand {})),
         ("quit", Box::new(QuitCommand {})),
         ("notes", Box::new(NotesCommand {})),
         ("new", Box::new(NewAddressCommand {})),
