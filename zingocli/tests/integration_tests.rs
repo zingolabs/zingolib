@@ -708,6 +708,8 @@ mod fast {
     }
 }
 mod slow {
+    use std::{io::Cursor, sync::Arc};
+
     use super::*;
 
     #[tokio::test]
@@ -3476,12 +3478,11 @@ mod slow {
     }
     #[tokio::test]
     async fn save_mid_sync_is_pristine() {
-        let inital_value = 100_000;
-        let (ref regtest_manager, _cph, faucet, ref recipient) =
+        let (ref regtest_manager, _cph, faucet, recipient) =
             scenarios::faucet_recipient_default().await;
         faucet
             .do_send(vec![
-                (&get_base_address!(faucet, "unified"), 10_000, None);
+                (&get_base_address!(recipient, "unified"), 10_000, None);
                 2
             ])
             .await
@@ -3492,7 +3493,7 @@ mod slow {
         faucet
             .do_send(vec![
                 (
-                    &get_base_address!(faucet, "transparent"),
+                    &get_base_address!(recipient, "transparent"),
                     10_000,
                     None
                 );
@@ -3505,7 +3506,7 @@ mod slow {
             .unwrap();
         faucet
             .do_send(vec![
-                (&get_base_address!(faucet, "unified"), 10_000, None);
+                (&get_base_address!(recipient, "unified"), 10_000, None);
                 2
             ])
             .await
@@ -3513,23 +3514,39 @@ mod slow {
         zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &faucet, 10)
             .await
             .unwrap();
-        recipient.do_sync(false);
-        dbg!(LightClient::is_mobile_target());
-        while {
-            dbg!(recipient
-                .do_wallet_last_scanned_height()
+        let atomic_recipient = Arc::new(recipient);
+        let atomic_recipient_clone = atomic_recipient.clone();
+        let sync_task =
+            tokio::task::spawn(async move { atomic_recipient_clone.do_sync(false).await });
+        let save_config = atomic_recipient.config();
+        let pre_summaries1 = atomic_recipient.do_list_txsummaries().await;
+        let save = atomic_recipient.do_save_to_buffer().await.unwrap();
+        let reloaded_recipient =
+            LightClient::read_wallet_from_buffer_async(save_config, Cursor::new(save))
                 .await
-                .as_u64()
-                .unwrap())
-                < 13
-        } {
-            sleep(Duration::from_millis(50)).await;
-        }
-        dbg!(recipient
-            .do_wallet_last_scanned_height()
-            .await
-            .as_u64()
-            .unwrap());
+                .unwrap();
+        let pre_summaries2 = reloaded_recipient.do_list_txsummaries().await;
+        assert_eq!(pre_summaries1, pre_summaries2);
+        // sync_task.await.unwrap().unwrap();
+        reloaded_recipient.do_sync(false).await.unwrap();
+        let post_summaries1 = atomic_recipient.do_list_txsummaries().await;
+        let post_summaries2 = reloaded_recipient.do_list_txsummaries().await;
+        assert_eq!(post_summaries1, post_summaries2);
+        // while {
+        //     dbg!(atomic_recipient
+        //         .do_wallet_last_scanned_height()
+        //         .await
+        //         .as_u64()
+        //         .unwrap())
+        //         < 13
+        // } {
+        //     // sleep(Duration::from_millis(1)).await;
+        // }
+        // dbg!(recipient
+        //     .do_wallet_last_scanned_height()
+        //     .await
+        //     .as_u64()
+        //     .unwrap());
         // recipient.do_rescan().await.unwrap();
         // let post_rescan_transactions = recipient.do_list_transactions().await;
         // let post_rescan_summaries = recipient.do_list_txsummaries().await;
