@@ -8,7 +8,9 @@ use json::JsonValue;
 use orchard::tree::MerkleHashOrchard;
 use shardtree::store::memory::MemoryShardStore;
 use shardtree::ShardTree;
+use std::time::Duration;
 use std::{fs::File, path::Path, str::FromStr};
+use tokio::time::sleep;
 use tracing_test::traced_test;
 use zcash_address::unified::Fvk;
 use zcash_client_backend::encoding::encode_payment_address;
@@ -3471,5 +3473,75 @@ mod slow {
         assert_eq!(notes_before, notes_after);
         assert_eq!(list_before, list_after);
         assert_eq!(witness_before.unwrap(), witness_after.unwrap());
+    }
+    #[tokio::test]
+    async fn save_mid_sync_is_pristine() {
+        let inital_value = 100_000;
+        let (ref regtest_manager, _cph, faucet, ref recipient) =
+            scenarios::faucet_recipient_default().await;
+        faucet
+            .do_send(vec![
+                (&get_base_address!(faucet, "unified"), 10_000, None);
+                2
+            ])
+            .await
+            .unwrap();
+        zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &faucet, 10)
+            .await
+            .unwrap();
+        faucet
+            .do_send(vec![
+                (
+                    &get_base_address!(faucet, "transparent"),
+                    10_000,
+                    None
+                );
+                2
+            ])
+            .await
+            .unwrap();
+        zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &faucet, 10)
+            .await
+            .unwrap();
+        faucet
+            .do_send(vec![
+                (&get_base_address!(faucet, "unified"), 10_000, None);
+                2
+            ])
+            .await
+            .unwrap();
+        zingo_testutils::increase_height_and_wait_for_client(regtest_manager, &faucet, 10)
+            .await
+            .unwrap();
+        recipient.do_sync(false);
+        dbg!(LightClient::is_mobile_target());
+        while {
+            dbg!(recipient
+                .do_wallet_last_scanned_height()
+                .await
+                .as_u64()
+                .unwrap())
+                < 13
+        } {
+            sleep(Duration::from_millis(50)).await;
+        }
+        dbg!(recipient
+            .do_wallet_last_scanned_height()
+            .await
+            .as_u64()
+            .unwrap());
+        // recipient.do_rescan().await.unwrap();
+        // let post_rescan_transactions = recipient.do_list_transactions().await;
+        // let post_rescan_summaries = recipient.do_list_txsummaries().await;
+        // assert_eq!(pre_rescan_transactions, post_rescan_transactions);
+        // assert_eq!(pre_rescan_summaries, post_rescan_summaries);
+        // let mut outgoing_metadata = pre_rescan_transactions
+        //     .members()
+        //     .find_map(|tx| tx.entries().find(|(key, _val)| key == &"outgoing_metadata"))
+        //     .unwrap()
+        //     .1
+        //     .members();
+        // // The two outgoing spends were identical. They should be represented as such
+        // assert_eq!(outgoing_metadata.next(), outgoing_metadata.next());
     }
 }
