@@ -3472,4 +3472,8 @@ mod slow {
         assert_eq!(list_before, list_after);
         assert_eq!(witness_before.unwrap(), witness_after.unwrap());
     }
+    #[tokio::test]
+    async fn os_target() {
+        dbg!(LightClient::is_mobile_target());
+    }
 }
