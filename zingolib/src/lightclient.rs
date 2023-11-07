@@ -2027,3 +2027,5 @@ impl LightClient {
 }
 #[cfg(feature = "lightclient-deprecated")]
 mod deprecated;
+#[cfg(feature = "test-features")]
+mod test_features;
