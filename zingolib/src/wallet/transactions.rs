@@ -587,7 +587,17 @@ impl TransactionMetadataSet {
         // Mark the source note as spent
         if !unconfirmed {
             // ie remove_witness_mark_sapling or _orchard
-            self.remove_witness_mark::<D>(height, txid, source_txid, output_index)
+            self.remove_witness_mark::<D>(height, txid, source_txid, output_index);
+        } else {
+            // Mark the unconfirmed_spent. Confirmed spends are already handled in update_notes
+            if let Some(transaction_spent_from) = self.current.get_mut(&source_txid) {
+                if let Some(unconfirmed_spent_note) = D::to_notes_vec_mut(transaction_spent_from)
+                    .iter_mut()
+                    .find(|note| note.nullifier() == Some(spent_nullifier))
+                {
+                    *unconfirmed_spent_note.pending_spent_mut() = Some((txid, u32::from(height)))
+                }
+            }
         }
     }
 
