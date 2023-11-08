@@ -595,7 +595,7 @@ impl TransactionMetadataSet {
                     .iter_mut()
                     .find(|note| note.nullifier() == Some(spent_nullifier))
                 {
-                    *unconfirmed_spent_note.pending_spent_mut() = Some((txid, u32::from(height)))
+                    *unconfirmed_spent_note.pending_spent_mut() = Some((txid, u32::from(height)));
                 }
             }
         }
