@@ -320,7 +320,11 @@ pub mod scenarios {
                 self.regtest_manager
                     .generate_n_blocks(BASE_HEIGHT - 1)
                     .unwrap();
-                while crate::poll_server_height(&self.regtest_manager) != BASE_HEIGHT {
+                while crate::poll_server_height(&self.regtest_manager)
+                    .as_u32()
+                    .unwrap()
+                    < BASE_HEIGHT
+                {
                     sleep(std::time::Duration::from_millis(50)).await;
                 }
             }
