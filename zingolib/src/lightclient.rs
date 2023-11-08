@@ -1098,6 +1098,7 @@ impl LightClient {
                     let price = lc1.wallet.price.clone();
 
                     while let Some(rtransaction) = mempool_receiver.recv().await {
+                        println!("Found mempool transaction");
                         if let Ok(transaction) = Transaction::read(
                             &rtransaction.data[..],
                             BranchId::for_height(
