@@ -4,5 +4,5 @@
 
 cargo nextest list
 
-cargo nextest run {TESTNAME} --nocapture
+cargo nextest run --features test {TESTNAME} --nocapture
 
