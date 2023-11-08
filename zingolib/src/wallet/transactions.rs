@@ -667,7 +667,7 @@ impl TransactionMetadataSet {
                 .find(|u| u.txid == spent_txid && u.output_index == output_num as u64)
             {
                 if unconfirmed {
-                    spent_utxo.unconfirmed_spent = Some((source_txid, source_height as u32));
+                    spent_utxo.unconfirmed_spent = Some((source_txid, source_height));
                 } else {
                     // Mark this one as spent
                     spent_utxo.spent = Some(source_txid);
