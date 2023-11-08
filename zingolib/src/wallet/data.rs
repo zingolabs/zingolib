@@ -561,7 +561,7 @@ pub struct TransparentNote {
 
 impl TransparentNote {
     pub fn serialized_version() -> u64 {
-        3
+        4
     }
 
     pub fn to_outpoint(&self) -> OutPoint {
@@ -603,9 +603,7 @@ impl TransparentNote {
             Optional::read(&mut reader, |r| r.read_i32::<LittleEndian>())?
         };
 
-        let unconfirmed_spent = if version <= 2 {
-            None
-        } else {
+        let _unconfirmed_spent = if version == 3 {
             Optional::read(&mut reader, |r| {
                 let mut transaction_bytes = [0u8; 32];
                 r.read_exact(&mut transaction_bytes)?;
@@ -613,6 +611,8 @@ impl TransparentNote {
                 let height = r.read_u32::<LittleEndian>()?;
                 Ok((TxId::from_bytes(transaction_bytes), height))
             })?
+        } else {
+            None
         };
 
         Ok(TransparentNote {
@@ -624,7 +624,7 @@ impl TransparentNote {
             height,
             spent_at_height,
             spent,
-            unconfirmed_spent,
+            unconfirmed_spent: None,
         })
     }
 
@@ -649,15 +649,6 @@ impl TransparentNote {
         Optional::write(&mut writer, self.spent_at_height, |w, s| {
             w.write_i32::<LittleEndian>(s)
         })?;
-
-        Optional::write(
-            &mut writer,
-            self.unconfirmed_spent,
-            |w, (transaction_id, height)| {
-                w.write_all(transaction_id.as_ref())?;
-                w.write_u32::<LittleEndian>(height)
-            },
-        )?;
 
         Ok(())
     }
