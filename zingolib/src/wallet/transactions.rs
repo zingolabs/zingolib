@@ -657,6 +657,7 @@ impl TransactionMetadataSet {
         output_num: u32,
         source_txid: TxId,
         source_height: u32,
+        unconfirmed: bool,
     ) -> u64 {
         // Find the UTXO
         let value = if let Some(utxo_transacion_metadata) = self.current.get_mut(&spent_txid) {
@@ -665,10 +666,14 @@ impl TransactionMetadataSet {
                 .iter_mut()
                 .find(|u| u.txid == spent_txid && u.output_index == output_num as u64)
             {
-                // Mark this one as spent
-                spent_utxo.spent = Some(source_txid);
-                spent_utxo.spent_at_height = Some(source_height as i32);
-                spent_utxo.unconfirmed_spent = None;
+                if unconfirmed {
+                    spent_utxo.unconfirmed_spent = Some((source_txid, source_height as u32));
+                } else {
+                    // Mark this one as spent
+                    spent_utxo.spent = Some(source_txid);
+                    spent_utxo.spent_at_height = Some(source_height as i32);
+                    spent_utxo.unconfirmed_spent = None;
+                }
 
                 spent_utxo.value
             } else {
