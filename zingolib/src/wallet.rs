@@ -367,13 +367,13 @@ impl LightWallet {
                 wtx.sapling_notes
                     .iter_mut()
                     .filter(|note_datum| {
-                        note_datum.spent.is_some() && note_datum.spent.unwrap().1 == 0
+                        note_datum.spent_status.is_some() && note_datum.spent_status.unwrap().1 == 0
                     })
                     .for_each(|nd| {
-                        let transaction_id = nd.spent.unwrap().0;
+                        let transaction_id = nd.spent_status.unwrap().0;
                         if let Some(height) = spent_transaction_id_map.get(&transaction_id).copied()
                         {
-                            nd.spent = Some((transaction_id, height.into()));
+                            nd.spent_status = Some((transaction_id, height.into()));
                         }
                     })
             });

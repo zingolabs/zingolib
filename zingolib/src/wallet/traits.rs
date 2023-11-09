@@ -479,7 +479,7 @@ impl NoteInterface for SaplingNote {
             note,
             witnessed_position,
             nullifier,
-            spent,
+            spent_status: spent,
             memo,
             is_change,
             have_spending_key,
@@ -524,11 +524,11 @@ impl NoteInterface for SaplingNote {
     }
 
     fn spent(&self) -> &Option<(TxId, u32)> {
-        &self.spent
+        &self.spent_status
     }
 
     fn spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
-        &mut self.spent
+        &mut self.spent_status
     }
 
     fn transaction_metadata_notes(wallet_transaction: &TransactionMetadata) -> &Vec<Self> {
@@ -601,7 +601,7 @@ impl NoteInterface for OrchardNote {
             note,
             witnessed_position,
             nullifier,
-            spent,
+            spent_status: spent,
             unconfirmed_spent,
             memo,
             is_change,
@@ -646,11 +646,11 @@ impl NoteInterface for OrchardNote {
     }
 
     fn spent(&self) -> &Option<(TxId, u32)> {
-        &self.spent
+        &self.spent_status
     }
 
     fn spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
-        &mut self.spent
+        &mut self.spent_status
     }
 
     fn transaction_metadata_notes(wallet_transaction: &TransactionMetadata) -> &Vec<Self> {

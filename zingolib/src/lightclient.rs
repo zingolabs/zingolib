@@ -1861,7 +1861,7 @@ impl LightClient {
                     .sapling_notes
                     .iter()
                     .filter_map(move |sapling_note| {
-                        if !all_notes && sapling_note.spent.is_some() {
+                        if !all_notes && sapling_note.spent_status.is_some() {
                             None
                         } else {
                             let address = LightWallet::note_address::<
@@ -1873,7 +1873,7 @@ impl LightClient {
                                 sapling_note,
                                 &self.wallet.wallet_capability(),
                             );
-                            let spendable = sapling_note.spent.is_none()
+                            let spendable = sapling_note.spent_status.is_none()
                                 && match transaction_metadata.confirmation_status {
                                     ConfirmationStatus::Unconfirmed => false,
                                     ConfirmationStatus::Confirmed(block_height) => {
@@ -1881,7 +1881,7 @@ impl LightClient {
                                     }
                                 };
 
-                            let spent_json = match sapling_note.spent {
+                            let spent_json = match sapling_note.spent_status {
                                 Some((spent_txid, confirmation_status)) => object!(
                                     "spent_txid" => format!("{}",spent_txid),
                                     "confirmation_status" => confirmation_status,),
@@ -1945,7 +1945,7 @@ impl LightClient {
                                 orchard_note,
                                 &self.wallet.wallet_capability(),
                             );
-                            let spendable = orchard_note.spent.is_none()
+                            let spendable = orchard_note.spent_status.is_none()
                                 && match transaction_metadata.confirmation_status {
                                     ConfirmationStatus::Unconfirmed => false,
                                     ConfirmationStatus::Confirmed(block_height) => {
@@ -1953,7 +1953,7 @@ impl LightClient {
                                     }
                                 };
 
-                            let spent_json = match orchard_note.spent {
+                            let spent_json = match orchard_note.spent_status {
                                 Some((spent_txid, confirmation_status)) => object!(
                                     "spent_txid" => format!("{}",spent_txid),
                                     "confirmation_status" => confirmation_status,),

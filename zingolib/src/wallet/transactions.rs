@@ -307,7 +307,7 @@ impl TransactionMetadataSet {
                     .filter_map(move |sapling_note_description| {
                         if transaction_metadata.block_height <= before_block
                             && sapling_note_description.have_spending_key
-                            && sapling_note_description.spent.is_none()
+                            && sapling_note_description.spent_status.is_none()
                         {
                             Some((
                                 *txid,
@@ -326,7 +326,7 @@ impl TransactionMetadataSet {
                         move |orchard_note_description| {
                             if transaction_metadata.block_height <= before_block
                                 && orchard_note_description.have_spending_key
-                                && orchard_note_description.spent.is_none()
+                                && orchard_note_description.spent_status.is_none()
                             {
                                 Some((
                                     *txid,
@@ -425,7 +425,7 @@ impl TransactionMetadataSet {
                     .iter_mut()
                     .find(|n| n.output_index == output_index)
                 {
-                    sapling_note_data.spent = Some((*spent_txid, spent_at_height.into()));
+                    sapling_note_data.spent_status = Some((*spent_txid, spent_at_height.into()));
                     sapling_note_data.unconfirmed_spent = None;
                     Ok(sapling_note_data.note.value().inner())
                 } else {
@@ -444,7 +444,7 @@ impl TransactionMetadataSet {
                     .iter_mut()
                     .find(|n| n.nullifier == Some(*orchard_nullifier))
                 {
-                    orchard_note_data.spent = Some((*spent_txid, spent_at_height.into()));
+                    orchard_note_data.spent_status = Some((*spent_txid, spent_at_height.into()));
                     orchard_note_data.unconfirmed_spent = None;
                     Ok(orchard_note_data.note.value().inner())
                 } else {
