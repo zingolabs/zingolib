@@ -988,7 +988,7 @@ impl LightWallet {
         }
         // Create the transaction
         let start_time = now();
-        let transaction = self
+        let (transaction, orchard_notes, sapling_notes, utxos) = match self
             .create_publication_ready_transaction(
                 submission_height,
                 start_time,
@@ -996,13 +996,24 @@ impl LightWallet {
                 policy,
                 sapling_prover,
             )
-            .await?;
+            .await
+        {
+            Ok(success_tuple) => success_tuple,
+            Err(s) => return Err(s),
+        };
 
         info!("{}: Transaction created", now() - start_time);
         info!("Transaction ID: {}", transaction.txid());
         // Call the internal function
         match self
-            .send_to_addresses_inner(transaction, submission_height, broadcast_fn)
+            .send_to_addresses_inner(
+                transaction,
+                &orchard_notes,
+                &sapling_notes,
+                &utxos[..],
+                submission_height,
+                broadcast_fn,
+            )
             .await
         {
             Ok((transaction_id, raw_transaction)) => {
@@ -1236,7 +1247,16 @@ impl LightWallet {
         start_time: u64,
         receivers: Receivers,
         policy: NoteSelectionPolicy,
-    ) -> Result<(TxBuilder<'_>, u32), String> {
+    ) -> Result<
+        (
+            TxBuilder<'_>,
+            u32,
+            Vec<SpendableOrchardNote>,
+            Vec<SpendableSaplingNote>,
+            Vec<TransparentNote>,
+        ),
+        String,
+    > {
         let fee_rule =
             &zcash_primitives::transaction::fees::fixed::FeeRule::non_standard(MINIMUM_FEE); // Start building tx
         let mut total_shielded_receivers;
@@ -1365,7 +1385,13 @@ impl LightWallet {
                 break;
             }
         }
-        Ok((tx_builder, total_shielded_receivers))
+        Ok((
+            tx_builder,
+            total_shielded_receivers,
+            orchard_notes,
+            sapling_notes,
+            utxos,
+        ))
     }
 
     async fn create_publication_ready_transaction<P: TxProver>(
@@ -1375,7 +1401,15 @@ impl LightWallet {
         receivers: Receivers,
         policy: NoteSelectionPolicy,
         sapling_prover: P,
-    ) -> Result<Transaction, String> {
+    ) -> Result<
+        (
+            Transaction,
+            Vec<SpendableOrchardNote>,
+            Vec<SpendableSaplingNote>,
+            Vec<TransparentNote>,
+        ),
+        String,
+    > {
         // Start building transaction with spends and outputs set by:
         //  * target amount
         //  * selection policy
@@ -1389,21 +1423,22 @@ impl LightWallet {
             .witness_trees
             .as_ref()
             .expect("If we have spend capability we have trees");
-        let (mut tx_builder, total_shielded_receivers) = match self
-            .create_and_populate_tx_builder(
-                submission_height,
-                witness_trees,
-                start_time,
-                receivers,
-                policy,
-            )
-            .await
-        {
-            Ok(tx_builder) => tx_builder,
-            Err(s) => {
-                return Err(s);
-            }
-        };
+        let (mut tx_builder, total_shielded_receivers, orchard_notes, sapling_notes, utxos) =
+            match self
+                .create_and_populate_tx_builder(
+                    submission_height,
+                    witness_trees,
+                    start_time,
+                    receivers,
+                    policy,
+                )
+                .await
+            {
+                Ok(tx_builder) => tx_builder,
+                Err(s) => {
+                    return Err(s);
+                }
+            };
 
         drop(txmds_readlock);
         // The builder now has the correct set of inputs and outputs
@@ -1454,11 +1489,14 @@ impl LightWallet {
             }
         };
         progress_handle.await.unwrap();
-        Ok(transaction)
+        Ok((transaction, orchard_notes, sapling_notes, utxos))
     }
     async fn send_to_addresses_inner<F, Fut>(
         &self,
         transaction: Transaction,
+        orchard_notes: &[SpendableOrchardNote],
+        sapling_notes: &[SpendableSaplingNote],
+        utxos: &[TransparentNote],
         submission_height: BlockHeight,
         broadcast_fn: F,
     ) -> Result<(String, Vec<u8>), String>
@@ -1475,6 +1513,57 @@ impl LightWallet {
         transaction.write(&mut raw_transaction).unwrap();
 
         let transaction_id = broadcast_fn(raw_transaction.clone().into_boxed_slice()).await?;
+
+        // Now that we've gotten this far, we need to write
+        // so we drop the readlock
+        // Mark notes as spent.
+        {
+            // Mark sapling notes as unconfirmed spent
+            let mut txmds_writelock = self
+                .transaction_context
+                .transaction_metadata_set
+                .write()
+                .await;
+            for selected in sapling_notes {
+                let spent_note = txmds_writelock
+                    .current
+                    .get_mut(&selected.transaction_id)
+                    .unwrap()
+                    .sapling_notes
+                    .iter_mut()
+                    .find(|nd| nd.nullifier == Some(selected.nullifier))
+                    .unwrap();
+                spent_note.unconfirmed_spent =
+                    Some((transaction.txid(), u32::from(submission_height)));
+            }
+            // Mark orchard notes as unconfirmed spent
+            for selected in orchard_notes {
+                let spent_note = txmds_writelock
+                    .current
+                    .get_mut(&selected.transaction_id)
+                    .unwrap()
+                    .orchard_notes
+                    .iter_mut()
+                    .find(|nd| nd.nullifier == Some(selected.nullifier))
+                    .unwrap();
+                spent_note.unconfirmed_spent =
+                    Some((transaction.txid(), u32::from(submission_height)));
+            }
+
+            // Mark this utxo as unconfirmed spent
+            for utxo in utxos {
+                let spent_utxo = txmds_writelock
+                    .current
+                    .get_mut(&utxo.txid)
+                    .unwrap()
+                    .transparent_notes
+                    .iter_mut()
+                    .find(|u| utxo.txid == u.txid && utxo.output_index == u.output_index)
+                    .unwrap();
+                spent_utxo.unconfirmed_spent =
+                    Some((transaction.txid(), u32::from(submission_height)));
+            }
+        }
 
         // Add this transaction to the mempool structure
         {
