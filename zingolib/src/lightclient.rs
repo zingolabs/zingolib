@@ -9,6 +9,7 @@ use crate::{
     error::ZingoLibError,
     grpc_connector::GrpcConnector,
     wallet::{
+        confirmations::Confirmations,
         data::{
             finsight, summaries::ValueTransfer, summaries::ValueTransferKind, OutgoingTxData,
             TransactionMetadata,
@@ -20,6 +21,7 @@ use crate::{
         LightWallet, Pool, SendProgress, WalletBase,
     },
 };
+use base64::Config;
 use futures::future::join_all;
 use json::{array, object, JsonValue};
 use log::{debug, error, warn};
@@ -456,29 +458,27 @@ impl LightClient {
             match tx_fee_result {
                 Ok(tx_fee) => {
                     if transaction_md.is_outgoing_transaction() {
-                        let (block_height, datetime, price, unconfirmed) = (
-                            transaction_md.block_height,
+                        let (confirmations, datetime, price) = (
+                            transaction_md.confirmations,
                             transaction_md.datetime,
                             transaction_md.price,
-                            transaction_md.unconfirmed,
                         );
                         summaries.push(ValueTransfer {
-                            block_height,
+                            confirmations,
                             datetime,
                             kind: ValueTransferKind::Fee { amount: tx_fee },
                             memos: vec![],
                             price,
                             txid: *txid,
-                            unconfirmed,
                         });
                     }
                 }
                 Err(e) => {
                     println!(
-                    "{:?} for txid {} at height {}: spent {}, outgoing {}, returned change {} \n {:?}",
+                    "{:?} for txid {} at height {:?}: spent {}, outgoing {}, returned change {} \n {:?}",
                     e,
                     txid,
-                    transaction_md.block_height,
+                    transaction_md.confirmations,
                     transaction_md.total_value_spent(),
                     transaction_md.value_outgoing(),
                     transaction_md.total_change_returned(),
@@ -487,7 +487,10 @@ impl LightClient {
                 }
             };
         }
-        summaries.sort_by_key(|summary| summary.block_height);
+        summaries.sort_by_key(|summary| {
+            let (block_height, _) = summary.confirmations.height_andor_is_confirmed();
+            block_height
+        });
         summaries
     }
 
@@ -1511,11 +1514,10 @@ impl LightClient {
         txid: TxId,
         transaction_md: &TransactionMetadata,
     ) {
-        let (block_height, datetime, price, unconfirmed) = (
-            transaction_md.block_height,
+        let (confirmations, datetime, price) = (
+            transaction_md.confirmations,
             transaction_md.datetime,
             transaction_md.price,
-            transaction_md.unconfirmed,
         );
         match (
             transaction_md.is_outgoing_transaction(),
@@ -1542,7 +1544,7 @@ impl LightClient {
                             vec![]
                         };
                         summaries.push(ValueTransfer {
-                            block_height,
+                            confirmations,
                             datetime,
                             kind: ValueTransferKind::Sent {
                                 to_address,
@@ -1551,7 +1553,6 @@ impl LightClient {
                             memos,
                             price,
                             txid,
-                            unconfirmed,
                         });
                     }
                 }
@@ -1560,7 +1561,7 @@ impl LightClient {
             (false, true) => {
                 for received_transparent in transaction_md.transparent_notes.iter() {
                     summaries.push(ValueTransfer {
-                        block_height,
+                        confirmations,
                         datetime,
                         kind: ValueTransferKind::Received {
                             pool: Pool::Transparent,
@@ -1569,7 +1570,6 @@ impl LightClient {
                         memos: vec![],
                         price,
                         txid,
-                        unconfirmed,
                     });
                 }
                 for received_sapling in transaction_md.sapling_notes.iter() {
@@ -1579,7 +1579,7 @@ impl LightClient {
                         vec![]
                     };
                     summaries.push(ValueTransfer {
-                        block_height,
+                        confirmations,
                         datetime,
                         kind: ValueTransferKind::Received {
                             pool: Pool::Sapling,
@@ -1588,7 +1588,6 @@ impl LightClient {
                         memos,
                         price,
                         txid,
-                        unconfirmed,
                     });
                 }
                 for received_orchard in transaction_md.orchard_notes.iter() {
@@ -1598,7 +1597,7 @@ impl LightClient {
                         vec![]
                     };
                     summaries.push(ValueTransfer {
-                        block_height,
+                        confirmations,
                         datetime,
                         kind: ValueTransferKind::Received {
                             pool: Pool::Orchard,
@@ -1607,7 +1606,6 @@ impl LightClient {
                         memos,
                         price,
                         txid,
-                        unconfirmed,
                     });
                 }
             }
@@ -1615,7 +1613,7 @@ impl LightClient {
             // TODO: Figure out what kind of special-case handling we want for these
             (true, true) => {
                 summaries.push(ValueTransfer {
-                    block_height,
+                    confirmations,
                     datetime,
                     kind: ValueTransferKind::SendToSelf,
                     memos: transaction_md
@@ -1638,7 +1636,6 @@ impl LightClient {
                         .collect(),
                     price,
                     txid,
-                    unconfirmed,
                 });
             }
         };
@@ -1852,35 +1849,66 @@ impl LightClient {
         let mut pending_sapling_notes: Vec<JsonValue> = vec![];
         let mut spent_sapling_notes: Vec<JsonValue> = vec![];
         // Collect Sapling notes
-        self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
-                .flat_map( |(transaction_id, transaction_metadata)| {
-                    transaction_metadata.sapling_notes.iter().filter_map(move |note_metadata|
-                        if !all_notes && note_metadata.spent.is_some() {
+        self.wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .current
+            .iter()
+            .flat_map(|(transaction_id, transaction_metadata)| {
+                transaction_metadata
+                    .sapling_notes
+                    .iter()
+                    .filter_map(move |sapling_note| {
+                        if !all_notes && sapling_note.spent.is_some() {
                             None
                         } else {
-                            let address = LightWallet::note_address::<zcash_primitives::sapling::note_encryption::SaplingDomain<zingoconfig::ChainType>>(&self.config.chain, note_metadata, &self.wallet.wallet_capability());
-                            let spendable = transaction_metadata.block_height <= anchor_height && note_metadata.spent.is_none() && note_metadata.unconfirmed_spent.is_none();
+                            let address = LightWallet::note_address::<
+                                zcash_primitives::sapling::note_encryption::SaplingDomain<
+                                    zingoconfig::ChainType,
+                                >,
+                            >(
+                                &self.config.chain,
+                                sapling_note,
+                                &self.wallet.wallet_capability(),
+                            );
+                            let spendable = sapling_note.spent.is_none()
+                                && match transaction_metadata.confirmations {
+                                    Confirmations::Unconfirmed => false,
+                                    Confirmations::Confirmed(block_height) => {
+                                        block_height <= anchor_height
+                                    }
+                                };
 
-                            let created_block:u32 = transaction_metadata.block_height.into();
-                            Some(object!{
-                                "created_in_block"   => created_block,
+                            let spent_json = match sapling_note.spent {
+                                Some((spent_txid, confirmations)) => object!(
+                                    "spent_txid" => format!("{}",spent_txid),
+                                    "confirmations" => confirmations,),
+                                None => json::from("not spent"),
+                            };
+
+                            Some(object! {
+                                "confirmation"       => transaction_metadata.confirmations,
                                 "datetime"           => transaction_metadata.datetime,
-                                "created_in_txid"    => format!("{}", transaction_id.clone()),
-                                "value"              => note_metadata.note.value().inner(),
-                                "unconfirmed"        => transaction_metadata.unconfirmed,
-                                "is_change"          => note_metadata.is_change,
+                                "created_in_txid"    => format!("{}", transaction_id),
+                                "value"              => sapling_note.note.value().inner(),
+                                "is_change"          => sapling_note.is_change,
                                 "address"            => address,
                                 "spendable"          => spendable,
-                                "spent"              => note_metadata.spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
-                                "spent_at_height"    => note_metadata.spent.map(|(_, h)| h),
-                                "unconfirmed_spent"  => note_metadata.unconfirmed_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
+                                "spent"              => spent_json,
                             })
                         }
-                    )
-                })
-                .for_each( |note| {
-                    self.unspent_pending_spent(note, &mut unspent_sapling_notes, &mut pending_sapling_notes, &mut spent_sapling_notes)
-                });
+                    })
+            })
+            .for_each(|note| {
+                self.unspent_pending_spent(
+                    note,
+                    &mut unspent_sapling_notes,
+                    &mut pending_sapling_notes,
+                    &mut spent_sapling_notes,
+                )
+            });
         (
             unspent_sapling_notes,
             spent_sapling_notes,
@@ -1895,35 +1923,64 @@ impl LightClient {
         let mut unspent_orchard_notes: Vec<JsonValue> = vec![];
         let mut pending_orchard_notes: Vec<JsonValue> = vec![];
         let mut spent_orchard_notes: Vec<JsonValue> = vec![];
-        self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
-                .flat_map( |(transaction_id, transaction_metadata)| {
-                    transaction_metadata.orchard_notes.iter().filter_map(move |orch_note_metadata|
-                        if !all_notes && orch_note_metadata.is_spent() {
+        self.wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .current
+            .iter()
+            .flat_map(|(transaction_id, transaction_metadata)| {
+                transaction_metadata
+                    .orchard_notes
+                    .iter()
+                    .filter_map(move |orchard_note| {
+                        if !all_notes && orchard_note.is_spent() {
                             None
                         } else {
-                            let address = LightWallet::note_address::<orchard::note_encryption::OrchardDomain>(&self.config.chain, orch_note_metadata, &self.wallet.wallet_capability());
-                            let spendable = transaction_metadata.block_height <= anchor_height && orch_note_metadata.spent.is_none() && orch_note_metadata.unconfirmed_spent.is_none();
+                            let address = LightWallet::note_address::<
+                                orchard::note_encryption::OrchardDomain,
+                            >(
+                                &self.config.chain,
+                                orchard_note,
+                                &self.wallet.wallet_capability(),
+                            );
+                            let spendable = orchard_note.spent.is_none()
+                                && match transaction_metadata.confirmations {
+                                    Confirmations::Unconfirmed => false,
+                                    Confirmations::Confirmed(block_height) => {
+                                        block_height <= anchor_height
+                                    }
+                                };
 
-                            let created_block:u32 = transaction_metadata.block_height.into();
-                            Some(object!{
-                                "created_in_block"   => created_block,
+                            let spent_json = match orchard_note.spent {
+                                Some((spent_txid, confirmations)) => object!(
+                                    "spent_txid" => format!("{}",spent_txid),
+                                    "confirmations" => confirmations,),
+                                None => json::from("not spent"),
+                            };
+
+                            Some(object! {
+                                "confirmation"       => transaction_metadata.confirmations,
                                 "datetime"           => transaction_metadata.datetime,
                                 "created_in_txid"    => format!("{}", transaction_id),
-                                "value"              => orch_note_metadata.note.value().inner(),
-                                "unconfirmed"        => transaction_metadata.unconfirmed,
-                                "is_change"          => orch_note_metadata.is_change,
+                                "value"              => orchard_note.note.value().inner(),
+                                "is_change"          => orchard_note.is_change,
                                 "address"            => address,
                                 "spendable"          => spendable,
-                                "spent"              => orch_note_metadata.spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
-                                "spent_at_height"    => orch_note_metadata.spent.map(|(_, h)| h),
-                                "unconfirmed_spent"  => orch_note_metadata.unconfirmed_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
+                                "spent"              => spent_json,
                             })
                         }
-                    )
-                })
-                .for_each( |note| {
-                    self.unspent_pending_spent(note, &mut unspent_orchard_notes, &mut pending_orchard_notes, &mut spent_orchard_notes)
-                });
+                    })
+            })
+            .for_each(|note| {
+                self.unspent_pending_spent(
+                    note,
+                    &mut unspent_orchard_notes,
+                    &mut pending_orchard_notes,
+                    &mut spent_orchard_notes,
+                )
+            });
         (
             unspent_orchard_notes,
             spent_orchard_notes,
@@ -1938,37 +1995,68 @@ impl LightClient {
         let mut pending_transparent_notes: Vec<JsonValue> = vec![];
         let mut spent_transparent_notes: Vec<JsonValue> = vec![];
 
-        self.wallet.transaction_context.transaction_metadata_set.read().await.current.iter()
-                .flat_map( |(transaction_id, wtx)| {
-                    wtx.transparent_notes.iter().filter_map(move |utxo|
-                        if !all_notes && utxo.spent.is_some() {
+        self.wallet
+            .transaction_context
+            .transaction_metadata_set
+            .read()
+            .await
+            .current
+            .iter()
+            .flat_map(|(transaction_id, transaction_metadata)| {
+                transaction_metadata
+                    .transparent_notes
+                    .iter()
+                    .filter_map(move |transparent_note| {
+                        if !all_notes && transparent_note.spent.is_some() {
                             None
                         } else {
-                            let created_block:u32 = wtx.block_height.into();
-                            let recipient = zcash_client_backend::address::RecipientAddress::decode(&self.config.chain, &utxo.address);
-                            let taddr = match recipient {
+
+                            let recipient = zcash_client_backend::address::RecipientAddress::decode(&self.config.chain, &transparent_note.address);
+                            let transparent_address = match recipient {
                             Some(zcash_client_backend::address::RecipientAddress::Transparent(taddr)) => taddr,
                                 _otherwise => panic!("Read invalid taddr from wallet-local Utxo, this should be impossible"),
                             };
+                            let unified_address = self
+                                .wallet
+                                .wallet_capability()
+                                .get_ua_from_contained_transparent_receiver(&transparent_address)
+                                .map(|ua| ua.encode(&self.config.chain));
 
-                            Some(object!{
-                                "created_in_block"   => created_block,
-                                "datetime"           => wtx.datetime,
+                            let spendable = transparent_note.spent.is_none()
+                                && match transaction_metadata.confirmations {
+                                    Confirmations::Unconfirmed => false,
+                                    Confirmations::Confirmed(_block_height) => true,
+                                };
+
+                            let spent_json = match transparent_note.spent {
+                                Some((spent_txid, confirmations)) => object!(
+                                    "spent_txid" => format!("{}",spent_txid),
+                                    "confirmations" => confirmations,),
+                                None => json::from("not spent"),
+                            };
+
+                            Some(object! {
+                                "confirmation"       => transaction_metadata.confirmations,
+                                "datetime"           => transaction_metadata.datetime,
                                 "created_in_txid"    => format!("{}", transaction_id),
-                                "value"              => utxo.value,
-                                "scriptkey"          => hex::encode(utxo.script.clone()),
-                                "is_change"          => false, // TODO: Identify notes as change if we send change to our own taddrs
-                                "address"            => self.wallet.wallet_capability().get_ua_from_contained_transparent_receiver(&taddr).map(|ua| ua.encode(&self.config.chain)),
-                                "spent_at_height"    => utxo.spent_at_height,
-                                "spent"              => utxo.spent.map(|spent_transaction_id| format!("{}", spent_transaction_id)),
-                                "unconfirmed_spent"  => utxo.unconfirmed_spent.map(|(spent_transaction_id, _)| format!("{}", spent_transaction_id)),
+                                "value"              => transparent_note.value,
+                                "scriptkey"          => hex::encode(transparent_note.script.clone()),
+                                // "address"            => transparent_address,
+                                "unified address"            => unified_address,
+                                "spendable"          => spendable,
+                                "spent"              => spent_json,
                             })
                         }
-                    )
-                })
-                .for_each( |note| {
-                    self.unspent_pending_spent(note, &mut unspent_transparent_notes, &mut pending_transparent_notes, &mut spent_transparent_notes)
-                });
+                    })
+            })
+            .for_each(|note| {
+                self.unspent_pending_spent(
+                    note,
+                    &mut unspent_transparent_notes,
+                    &mut pending_transparent_notes,
+                    &mut spent_transparent_notes,
+                )
+            });
 
         (
             unspent_transparent_notes,

@@ -29,6 +29,7 @@ use zcash_primitives::{
 };
 use zingoconfig::{ChainType, MAX_REORG};
 
+use super::confirmations::Confirmations;
 use super::keys::unified::WalletCapability;
 use super::traits::{self, DomainWalletExt, ReadableWriteable, ToBytes};
 
@@ -449,11 +450,8 @@ pub struct SaplingNote {
     pub(crate) output_index: u32,
 
     pub(super) nullifier: Option<zcash_primitives::sapling::Nullifier>,
-    pub spent: Option<(TxId, u32)>, // If this note was confirmed spent
+    pub spent: Option<(TxId, Confirmations)>, // If this note was confirmed spent, if so when
 
-    // If this note was spent in a send, but has not yet been confirmed.
-    // Contains the transaction id and height at which it was broadcast
-    pub unconfirmed_spent: Option<(TxId, u32)>,
     pub memo: Option<Memo>,
     pub is_change: bool,
 
@@ -474,11 +472,8 @@ pub struct OrchardNote {
     pub(crate) output_index: u32,
 
     pub(super) nullifier: Option<orchard::note::Nullifier>,
-    pub spent: Option<(TxId, u32)>, // If this note was confirmed spent
+    pub spent: Option<(TxId, Confirmations)>, // If this note was confirmed spent, if so when
 
-    // If this note was spent in a send, but has not yet been confirmed.
-    // Contains the transaction id and height at which it was broadcast
-    pub unconfirmed_spent: Option<(TxId, u32)>,
     pub memo: Option<Memo>,
     pub is_change: bool,
 
@@ -493,13 +488,6 @@ impl std::fmt::Debug for SaplingNote {
             .field("note", &self.note)
             .field("nullifier", &self.nullifier)
             .field("spent", &self.spent)
-            .field("unconfirmed_spent", &self.unconfirmed_spent)
-            .field("memo", &self.memo)
-            .field("diversifier", &self.diversifier)
-            .field("note", &self.note)
-            .field("nullifier", &self.nullifier)
-            .field("spent", &self.spent)
-            .field("unconfirmed_spent", &self.unconfirmed_spent)
             .field("memo", &self.memo)
             .field("is_change", &self.is_change)
             .finish_non_exhaustive()
@@ -552,11 +540,7 @@ pub struct TransparentNote {
     pub height: i32,
 
     pub spent_at_height: Option<i32>,
-    pub spent: Option<TxId>, // If this utxo was confirmed spent
-
-    // If this utxo was spent in a send, but has not yet been confirmed.
-    // Contains the txid and height at which the Tx was broadcast
-    pub unconfirmed_spent: Option<(TxId, u32)>,
+    pub spent: Option<(TxId, Confirmations)>, // If this utxo was spent and whether it was confirmed.
 }
 
 impl TransparentNote {
@@ -769,20 +753,19 @@ pub mod summaries {
     use json::{object, JsonValue};
     use zcash_primitives::transaction::TxId;
 
-    use crate::wallet::Pool;
+    use crate::wallet::{confirmations::Confirmations, Pool};
 
     /// The MobileTx is the zingolib representation of
     /// transactions in the format most useful for
     /// consumption in mobile and mobile-like UI
     #[derive(PartialEq)]
     pub struct ValueTransfer {
-        pub block_height: zcash_primitives::consensus::BlockHeight,
+        pub confirmations: Confirmations,
         pub datetime: u64,
         pub kind: ValueTransferKind,
         pub memos: Vec<zcash_primitives::memo::TextMemo>,
         pub price: Option<f64>,
         pub txid: TxId,
-        pub unconfirmed: bool,
     }
     impl ValueTransfer {
         pub fn balance_delta(&self) -> i64 {
@@ -800,7 +783,7 @@ pub mod summaries {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             use core::ops::Deref as _;
             f.debug_struct("ValueTransfer")
-                .field("block_height", &self.block_height)
+                .field("confirmations", &self.confirmations)
                 .field("datetime", &self.datetime)
                 .field("kind", &self.kind)
                 .field(
@@ -813,7 +796,6 @@ pub mod summaries {
                 )
                 .field("price", &self.price)
                 .field("txid", &self.txid)
-                .field("unconfirmed", &self.unconfirmed)
                 .finish()
         }
     }
@@ -844,17 +826,19 @@ pub mod summaries {
         }
     }
     impl From<ValueTransfer> for JsonValue {
+        // let (height, confirmed) = value.confirmations.height_andor_is_confirmed();
         fn from(value: ValueTransfer) -> Self {
             let mut temp_object = object! {
                     "amount": "",
-                    "block_height": u32::from(value.block_height),
+                    "confirmation block": value.confirmations,
+                    // "block_height": height,
+                    // "confirmed": confirmed,
                     "datetime": value.datetime,
                     "kind": "",
                     "memos": value.memos.iter().cloned().map(String::from).collect::<Vec<String>>(),
                     "pool": "",
                     "price": value.price,
                     "txid": value.txid.to_string(),
-                    "unconfirmed": value.unconfirmed,
             };
             match value.kind {
                 ValueTransferKind::Sent {
@@ -894,11 +878,8 @@ pub mod summaries {
 ///  Everything (SOMETHING) about a transaction
 #[derive(Debug)]
 pub struct TransactionMetadata {
-    // Block in which this tx was included
-    pub block_height: BlockHeight,
-
-    // Is this Tx unconfirmed (i.e., not yet mined)
-    pub unconfirmed: bool,
+    // Either Unconfirmed, or the block it was confirmed in.
+    pub confirmations: Confirmations,
 
     // Timestamp of Tx. Added in v4
     pub datetime: u64,
@@ -994,15 +975,9 @@ impl TransactionMetadata {
         assert!(self.is_outgoing_transaction());
         self.total_value_spent() - self.total_change_returned()
     }
-    pub fn new(
-        height: BlockHeight,
-        datetime: u64,
-        transaction_id: &TxId,
-        unconfirmed: bool,
-    ) -> Self {
+    pub fn new(confirmations: Confirmations, datetime: u64, transaction_id: &TxId) -> Self {
         TransactionMetadata {
-            block_height: height,
-            unconfirmed,
+            confirmations,
             datetime,
             txid: *transaction_id,
             spent_sapling_nullifiers: vec![],
@@ -1069,6 +1044,12 @@ impl TransactionMetadata {
             reader.read_u8()? == 1
         };
 
+        let confirmations = if unconfirmed {
+            Confirmations::Unconfirmed
+        } else {
+            Confirmations::Confirmed(block)
+        };
+
         let datetime = if version >= 4 {
             reader.read_u64::<LittleEndian>()?
         } else {
@@ -1131,8 +1112,7 @@ impl TransactionMetadata {
             })?
         };
         Ok(Self {
-            block_height: block,
-            unconfirmed,
+            confirmations,
             datetime,
             txid: transaction_id,
             sapling_notes,
@@ -1186,10 +1166,10 @@ impl TransactionMetadata {
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
-        let block: u32 = self.block_height.into();
+        let (block, unconfirmed) = self.confirmations.height_andor_is_unconfirmed();
         writer.write_i32::<LittleEndian>(block as i32)?;
 
-        writer.write_u8(if self.unconfirmed { 1 } else { 0 })?;
+        writer.write_u8(if unconfirmed { 1 } else { 0 })?;
 
         writer.write_u64::<LittleEndian>(self.datetime)?;
 
