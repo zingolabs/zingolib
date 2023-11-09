@@ -12,3 +12,7 @@ impl LightClient {
         }
     }
 }
+#[tokio::test]
+async fn os_target() {
+    assert!(LightClient::is_mobile_target());
+}
