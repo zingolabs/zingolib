@@ -312,27 +312,6 @@ impl LightClient {
         LightClient::read_wallet_from_buffer(config, BufReader::new(File::open(wallet_path)?))
     }
 
-    async fn ensure_witness_tree_not_above_wallet_blocks(&self) {
-        let last_synced_height = self.wallet.last_synced_height().await;
-        let mut txmds_writelock = self
-            .wallet
-            .transaction_context
-            .transaction_metadata_set
-            .write()
-            .await;
-        if let Some(ref mut trees) = txmds_writelock.witness_trees {
-            trees
-                .witness_tree_sapling
-                .truncate_removing_checkpoint(&BlockHeight::from(last_synced_height as u32))
-                .expect("Infallible");
-            trees
-                .witness_tree_orchard
-                .truncate_removing_checkpoint(&BlockHeight::from(last_synced_height as u32))
-                .expect("Infallible");
-            trees.add_checkpoint(BlockHeight::from(last_synced_height as u32));
-        }
-    }
-
     pub async fn clear_state(&self) {
         // First, clear the state from the wallet
         self.wallet.clear_all().await;
@@ -1148,27 +1127,6 @@ impl LightClient {
         *lc.mempool_monitor.write().unwrap() = Some(h);
     }
 
-    async fn wallet_has_any_empty_commitment_trees(&self) -> bool {
-        self.wallet
-            .transaction_context
-            .transaction_metadata_set
-            .read()
-            .await
-            .witness_trees
-            .as_ref()
-            .is_some_and(|trees| {
-                trees
-                    .witness_tree_orchard
-                    .max_leaf_position(0)
-                    .unwrap()
-                    .is_none()
-                    || trees
-                        .witness_tree_sapling
-                        .max_leaf_position(0)
-                        .unwrap()
-                        .is_none()
-            })
-    }
     /// Start syncing in batches with the max size, to manage memory consumption.
     async fn start_sync(&self) -> Result<SyncResult, String> {
         // We can only do one sync at a time because we sync blocks in serial order
@@ -1184,10 +1142,12 @@ impl LightClient {
         // If our internal state gets damaged somehow (for example,
         // a resync that gets interrupted partway through) we need to make sure
         // our witness trees are aligned with our blockchain data
-        self.ensure_witness_tree_not_above_wallet_blocks().await;
+        self.wallet
+            .ensure_witness_tree_not_above_wallet_blocks()
+            .await;
 
         // This is a fresh wallet. We need to get the initial trees
-        if self.wallet_has_any_empty_commitment_trees().await
+        if self.wallet.has_any_empty_commitment_trees().await
             && last_synced_height >= self.config.sapling_activation_height()
         {
             let trees = crate::grpc_connector::GrpcConnector::get_trees(
