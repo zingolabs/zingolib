@@ -9,7 +9,7 @@ use crate::{
     error::ZingoLibError,
     grpc_connector::GrpcConnector,
     wallet::{
-        confirmations::Confirmations,
+        confirmation_status::ConfirmationStatus,
         data::{
             finsight, summaries::ValueTransfer, summaries::ValueTransferKind, OutgoingTxData,
             TransactionMetadata,
@@ -458,13 +458,13 @@ impl LightClient {
             match tx_fee_result {
                 Ok(tx_fee) => {
                     if transaction_md.is_outgoing_transaction() {
-                        let (confirmations, datetime, price) = (
-                            transaction_md.confirmations,
+                        let (confirmation_status, datetime, price) = (
+                            transaction_md.confirmation_status,
                             transaction_md.datetime,
                             transaction_md.price,
                         );
                         summaries.push(ValueTransfer {
-                            confirmations,
+                            confirmation_status,
                             datetime,
                             kind: ValueTransferKind::Fee { amount: tx_fee },
                             memos: vec![],
@@ -478,7 +478,7 @@ impl LightClient {
                     "{:?} for txid {} at height {:?}: spent {}, outgoing {}, returned change {} \n {:?}",
                     e,
                     txid,
-                    transaction_md.confirmations,
+                    transaction_md.confirmation_status,
                     transaction_md.total_value_spent(),
                     transaction_md.value_outgoing(),
                     transaction_md.total_change_returned(),
@@ -488,7 +488,7 @@ impl LightClient {
             };
         }
         summaries.sort_by_key(|summary| {
-            let (block_height, _) = summary.confirmations.height_andor_is_confirmed();
+            let (block_height, _) = summary.confirmation_status.height_andor_is_confirmed();
             block_height
         });
         summaries
@@ -1514,8 +1514,8 @@ impl LightClient {
         txid: TxId,
         transaction_md: &TransactionMetadata,
     ) {
-        let (confirmations, datetime, price) = (
-            transaction_md.confirmations,
+        let (confirmation_status, datetime, price) = (
+            transaction_md.confirmation_status,
             transaction_md.datetime,
             transaction_md.price,
         );
@@ -1544,7 +1544,7 @@ impl LightClient {
                             vec![]
                         };
                         summaries.push(ValueTransfer {
-                            confirmations,
+                            confirmation_status,
                             datetime,
                             kind: ValueTransferKind::Sent {
                                 to_address,
@@ -1561,7 +1561,7 @@ impl LightClient {
             (false, true) => {
                 for received_transparent in transaction_md.transparent_notes.iter() {
                     summaries.push(ValueTransfer {
-                        confirmations,
+                        confirmation_status,
                         datetime,
                         kind: ValueTransferKind::Received {
                             pool: Pool::Transparent,
@@ -1579,7 +1579,7 @@ impl LightClient {
                         vec![]
                     };
                     summaries.push(ValueTransfer {
-                        confirmations,
+                        confirmation_status,
                         datetime,
                         kind: ValueTransferKind::Received {
                             pool: Pool::Sapling,
@@ -1597,7 +1597,7 @@ impl LightClient {
                         vec![]
                     };
                     summaries.push(ValueTransfer {
-                        confirmations,
+                        confirmation_status,
                         datetime,
                         kind: ValueTransferKind::Received {
                             pool: Pool::Orchard,
@@ -1613,7 +1613,7 @@ impl LightClient {
             // TODO: Figure out what kind of special-case handling we want for these
             (true, true) => {
                 summaries.push(ValueTransfer {
-                    confirmations,
+                    confirmation_status,
                     datetime,
                     kind: ValueTransferKind::SendToSelf,
                     memos: transaction_md
@@ -1874,22 +1874,22 @@ impl LightClient {
                                 &self.wallet.wallet_capability(),
                             );
                             let spendable = sapling_note.spent.is_none()
-                                && match transaction_metadata.confirmations {
-                                    Confirmations::Unconfirmed => false,
-                                    Confirmations::Confirmed(block_height) => {
+                                && match transaction_metadata.confirmation_status {
+                                    ConfirmationStatus::Unconfirmed => false,
+                                    ConfirmationStatus::Confirmed(block_height) => {
                                         block_height <= anchor_height
                                     }
                                 };
 
                             let spent_json = match sapling_note.spent {
-                                Some((spent_txid, confirmations)) => object!(
+                                Some((spent_txid, confirmation_status)) => object!(
                                     "spent_txid" => format!("{}",spent_txid),
-                                    "confirmations" => confirmations,),
+                                    "confirmation_status" => confirmation_status,),
                                 None => json::from("not spent"),
                             };
 
                             Some(object! {
-                                "confirmation"       => transaction_metadata.confirmations,
+                                "confirmation"       => transaction_metadata.confirmation_status,
                                 "datetime"           => transaction_metadata.datetime,
                                 "created_in_txid"    => format!("{}", transaction_id),
                                 "value"              => sapling_note.note.value().inner(),
@@ -1946,22 +1946,22 @@ impl LightClient {
                                 &self.wallet.wallet_capability(),
                             );
                             let spendable = orchard_note.spent.is_none()
-                                && match transaction_metadata.confirmations {
-                                    Confirmations::Unconfirmed => false,
-                                    Confirmations::Confirmed(block_height) => {
+                                && match transaction_metadata.confirmation_status {
+                                    ConfirmationStatus::Unconfirmed => false,
+                                    ConfirmationStatus::Confirmed(block_height) => {
                                         block_height <= anchor_height
                                     }
                                 };
 
                             let spent_json = match orchard_note.spent {
-                                Some((spent_txid, confirmations)) => object!(
+                                Some((spent_txid, confirmation_status)) => object!(
                                     "spent_txid" => format!("{}",spent_txid),
-                                    "confirmations" => confirmations,),
+                                    "confirmation_status" => confirmation_status,),
                                 None => json::from("not spent"),
                             };
 
                             Some(object! {
-                                "confirmation"       => transaction_metadata.confirmations,
+                                "confirmation"       => transaction_metadata.confirmation_status,
                                 "datetime"           => transaction_metadata.datetime,
                                 "created_in_txid"    => format!("{}", transaction_id),
                                 "value"              => orchard_note.note.value().inner(),
@@ -2023,20 +2023,20 @@ impl LightClient {
                                 .map(|ua| ua.encode(&self.config.chain));
 
                             let spendable = transparent_note.spent.is_none()
-                                && match transaction_metadata.confirmations {
-                                    Confirmations::Unconfirmed => false,
-                                    Confirmations::Confirmed(_block_height) => true,
+                                && match transaction_metadata.confirmation_status {
+                                    ConfirmationStatus::Unconfirmed => false,
+                                    ConfirmationStatus::Confirmed(_block_height) => true,
                                 };
 
                             let spent_json = match transparent_note.spent {
-                                Some((spent_txid, confirmations)) => object!(
+                                Some((spent_txid, confirmation_status)) => object!(
                                     "spent_txid" => format!("{}",spent_txid),
-                                    "confirmations" => confirmations,),
+                                    "confirmation_status" => confirmation_status,),
                                 None => json::from("not spent"),
                             };
 
                             Some(object! {
-                                "confirmation"       => transaction_metadata.confirmations,
+                                "confirmation"       => transaction_metadata.confirmation_status,
                                 "datetime"           => transaction_metadata.datetime,
                                 "created_in_txid"    => format!("{}", transaction_id),
                                 "value"              => transparent_note.value,

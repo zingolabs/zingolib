@@ -20,7 +20,7 @@ use zcash_primitives::{
 use zingoconfig::{ChainType, MAX_REORG};
 
 use super::{
-    confirmations::Confirmations,
+    confirmation_status::ConfirmationStatus,
     data::{OutgoingTxData, PoolNullifier, TransactionMetadata, TransparentNote, WitnessTrees},
     keys::unified::WalletCapability,
     traits::{self, DomainWalletExt, NoteInterface, Nullifier, Recipient},
@@ -482,27 +482,21 @@ impl TransactionMetadataSet {
     fn get_or_create_transaction_metadata(
         &mut self,
         txid: &TxId,
-        confirmations: Confirmations,
+        confirmation_status: ConfirmationStatus,
         datetime: u64,
     ) -> &'_ mut TransactionMetadata {
-        if !self.current.contains_key(txid) {
-            // if this transaction is new to our data, insert it
-            self.current.insert(
-                *txid,
-                TransactionMetadata::new(confirmations, datetime, txid),
-            );
-            self.some_txid_from_highest_wallet_block = Some(*txid);
-        } else {
-            // if this note was not new, it may be newly confirmed. update its confirmation_status
-            if transaction_metadata.unconfirmed != unconfirmed {
-                transaction_metadata.unconfirmed = unconfirmed;
-                transaction_metadata.block_height = height;
+        self.current
+            .entry(*txid)
+            // If we already have the transaction metadata, it may be newly confirmed. Update confirmation_status
+            .and_modify(|transaction_metadata| {
+                transaction_metadata.confirmation_status = confirmation_status;
                 transaction_metadata.datetime = datetime;
-            }
-        }
-        let transaction_metadata = self.current.get_mut(txid).expect("Txid should be present");
-
-        transaction_metadata
+            })
+            // if this transaction is new to our data, insert it
+            .or_insert_with(|| {
+                self.some_txid_from_highest_wallet_block = Some(*txid); // TOdO IS this the highest wallet block?
+                TransactionMetadata::new(confirmation_status, datetime, txid)
+            })
     }
 
     pub fn set_price(&mut self, txid: &TxId, price: Option<f64>) {

@@ -2,6 +2,7 @@
 use std::io::{self, Read, Write};
 
 use super::{
+    confirmation_status::ConfirmationStatus,
     data::{
         OrchardNote, PoolNullifier, SaplingNote, SpendableOrchardNote, SpendableSaplingNote,
         TransactionMetadata, WitnessCache, WitnessTrees, COMMITMENT_TREE_LEVELS, MAX_SHARD_LEVEL,
@@ -467,8 +468,7 @@ impl NoteInterface for SaplingNote {
         note: zcash_primitives::sapling::Note,
         witnessed_position: Option<Position>,
         nullifier: Option<zcash_primitives::sapling::Nullifier>,
-        spent: Option<(TxId, u32)>,
-        unconfirmed_spent: Option<(TxId, u32)>,
+        spent: Option<(TxId, ConfirmationStatus)>,
         memo: Option<Memo>,
         is_change: bool,
         have_spending_key: bool,
@@ -480,7 +480,6 @@ impl NoteInterface for SaplingNote {
             witnessed_position,
             nullifier,
             spent,
-            unconfirmed_spent,
             memo,
             is_change,
             have_spending_key,

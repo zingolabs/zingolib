@@ -60,7 +60,7 @@ use self::{
 };
 use zingoconfig::{ChainType, ZingoConfig};
 
-pub mod confirmations;
+pub mod confirmation_status;
 pub mod data;
 pub mod keys;
 pub(crate) mod message;
@@ -366,7 +366,9 @@ impl LightWallet {
             .for_each(|wtx| {
                 wtx.sapling_notes
                     .iter_mut()
-                    .filter(|nd| nd.spent.is_some() && nd.spent.unwrap().1 == 0)
+                    .filter(|note_datum| {
+                        note_datum.spent.is_some() && note_datum.spent.unwrap().1 == 0
+                    })
                     .for_each(|nd| {
                         let transaction_id = nd.spent.unwrap().0;
                         if let Some(height) = spent_transaction_id_map.get(&transaction_id).copied()
@@ -896,7 +898,7 @@ impl LightWallet {
                         .get_utxos()
                         .await
                         .iter()
-                        .filter(|utxo| utxo.unconfirmed_spent.is_none() && utxo.spent.is_none())
+                        .filter(|utxo| utxo.spent.is_none() && utxo.spent.is_none())
                         .cloned()
                         .collect::<Vec<_>>();
                     all_transparent_value_in_wallet =
