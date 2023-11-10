@@ -221,16 +221,7 @@ impl TransactionMetadataSet {
                 .transparent_notes
                 .iter_mut()
                 .for_each(|utxo| {
-                    if utxo.spent.is_some() && txids_to_remove.contains(&utxo.spent.unwrap()) {
-                        utxo.spent = None;
-                        utxo.spent_at_height = None;
-                    }
-
-                    if utxo.unconfirmed_spent.is_some()
-                        && txids_to_remove.contains(&utxo.unconfirmed_spent.unwrap().0)
-                    {
-                        utxo.unconfirmed_spent = None;
-                    }
+                    utxo.spend_status().erase_spent_in_txids(&txids_to_remove);
                 })
         });
         self.remove_domain_specific_txids::<SaplingDomain<ChainType>>(&txids_to_remove);
@@ -246,18 +237,10 @@ impl TransactionMetadataSet {
             // Update notes to rollback any spent notes
             D::to_notes_vec_mut(transaction_metadata)
                 .iter_mut()
-                .for_each(|nd| {
-                    // Mark note as unspent if the txid being removed spent it.
-                    if nd.spent().is_some() && txids_to_remove.contains(&nd.spent().unwrap().0) {
-                        *nd.spent_mut() = None;
-                    }
-
-                    // Remove unconfirmed spends too
-                    if nd.pending_spent().is_some()
-                        && txids_to_remove.contains(&nd.pending_spent().unwrap().0)
-                    {
-                        *nd.pending_spent_mut() = None;
-                    }
+                .for_each(|note_datum| {
+                    note_datum
+                        .spend_status()
+                        .erase_spent_in_txids(&txids_to_remove);
                 });
         });
     }
@@ -271,7 +254,10 @@ impl TransactionMetadataSet {
             .current
             .values()
             .filter_map(|transaction_metadata| {
-                if transaction_metadata.block_height >= reorg_height {
+                if transaction_metadata
+                    .confirmation_status
+                    .is_confirmed_after_or_at(&reorg_height)
+                {
                     Some(transaction_metadata.txid)
                 } else {
                     None

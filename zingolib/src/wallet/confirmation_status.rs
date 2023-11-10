@@ -39,6 +39,12 @@ impl ConfirmationStatus {
             _ => false,
         }
     }
+    pub fn is_confirmed_after_or_at(&self, height: &BlockHeight) -> bool {
+        match self {
+            Self::ConfirmedOnChain(block_height) => block_height >= height,
+            _ => false,
+        }
+    }
     pub fn is_confirmed_before_or_at(&self, height: &BlockHeight) -> bool {
         match self {
             Self::ConfirmedOnChain(block_height) => block_height <= height,
@@ -142,6 +148,21 @@ impl SpendConfirmationStatus {
         match self {
             Self::ConfirmedSpent(_, _) => true,
             _ => false,
+        }
+    }
+    pub fn erase_spent_in_txids(mut self, txids: &[TxId]) {
+        match self {
+            Self::NoKnownSpends => (),
+            Self::PendingSpend(txid) => {
+                if txids.contains(&txid) {
+                    self = Self::NoKnownSpends;
+                }
+            }
+            Self::ConfirmedSpent(txid, _) => {
+                if txids.contains(&txid) {
+                    self = Self::NoKnownSpends;
+                }
+            }
         }
     }
     // this function and seperate enum possibilities is not a preferred pattern. please use match whenever possible.
