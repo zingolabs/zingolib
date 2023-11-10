@@ -704,14 +704,6 @@ impl ShieldedNoteInterface for OrchardNote {
         Pool::Orchard
     }
 
-    fn spent(&self) -> &Option<(TxId, u32)> {
-        &self.spent_status
-    }
-
-    fn spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
-        &mut self.spent_status
-    }
-
     fn transaction_metadata_notes(wallet_transaction: &TransactionMetadata) -> &Vec<Self> {
         &wallet_transaction.orchard_notes
     }
@@ -720,14 +712,6 @@ impl ShieldedNoteInterface for OrchardNote {
         wallet_transaction: &mut TransactionMetadata,
     ) -> &mut Vec<Self> {
         &mut wallet_transaction.orchard_notes
-    }
-
-    fn pending_spent(&self) -> &Option<(TxId, u32)> {
-        &self.unconfirmed_spent
-    }
-
-    fn pending_spent_mut(&mut self) -> &mut Option<(TxId, u32)> {
-        &mut self.unconfirmed_spent
     }
 
     fn value_from_note(note: &Self::Note) -> u64 {

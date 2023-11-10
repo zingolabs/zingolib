@@ -11,8 +11,8 @@ use crate::{
     wallet::{
         confirmation_status::{ConfirmationStatus, SpendConfirmationStatus},
         data::{
-            finsight, spent_status_to_json, summaries::ValueTransfer, summaries::ValueTransferKind,
-            OutgoingTxData, TransactionMetadata,
+            finsight, summaries::ValueTransfer, summaries::ValueTransferKind, OutgoingTxData,
+            TransactionMetadata,
         },
         keys::{address_from_pubkeyhash, unified::ReceiverSelection},
         message::Message,
@@ -21,7 +21,6 @@ use crate::{
         LightWallet, Pool, SendProgress, WalletBase,
     },
 };
-use base64::Config;
 use futures::future::join_all;
 use json::{array, object, JsonValue};
 use log::{debug, error, warn};
@@ -1874,9 +1873,7 @@ impl LightClient {
                     );
 
                 match transaction_metadata.confirmation_status {
-                    ConfirmationStatus::Unconfirmed => {
-                        unconfirmed_transparent_notes.push(note_json)
-                    }
+                    ConfirmationStatus::InMempool => unconfirmed_transparent_notes.push(note_json),
                     ConfirmationStatus::Confirmed(_) => {
                         match transparent_note.spend_status {
                             SpendConfirmationStatus::NoKnownSpends => {
@@ -1910,7 +1907,7 @@ impl LightClient {
                 );
 
                 match transaction_metadata.confirmation_status {
-                    ConfirmationStatus::Unconfirmed => unconfirmed_sapling_notes.push(note_json),
+                    ConfirmationStatus::InMempool => unconfirmed_sapling_notes.push(note_json),
                     ConfirmationStatus::Confirmed(_) => {
                         match sapling_note.spend_status {
                             SpendConfirmationStatus::NoKnownSpends => {
@@ -1940,7 +1937,7 @@ impl LightClient {
                 );
 
                 match transaction_metadata.confirmation_status {
-                    ConfirmationStatus::Unconfirmed => unconfirmed_orchard_notes.push(note_json),
+                    ConfirmationStatus::InMempool => unconfirmed_orchard_notes.push(note_json),
                     ConfirmationStatus::Confirmed(_) => {
                         match orchard_note.spend_status {
                             SpendConfirmationStatus::NoKnownSpends => {

@@ -2,11 +2,13 @@ use json::JsonValue;
 use serde::Serialize;
 use zcash_primitives::{consensus::BlockHeight, transaction::TxId};
 
-pub const UNCONFIRMED_BLOCKHEIGHT_PLACEHOLDER: u32 = <u32>::max_value() - 33;
+pub const BLOCKHEIGHT_PLACEHOLDER_LOCAL: u32 = <u32>::max_value() - 32;
+pub const BLOCKHEIGHT_PLACEHOLDER_INMEMPOOL: u32 = BLOCKHEIGHT_PLACEHOLDER_LOCAL - 1;
 
 #[derive(Clone, Copy, Debug, Serialize)]
 pub enum ConfirmationStatus {
-    Unconfirmed,
+    Local,
+    InMempool,
     // confirmed on blockchain implies a height. this data piece will eventually be a block height
     #[serde(with = "SerdeBlockHeight")]
     Confirmed(BlockHeight),
@@ -15,27 +17,29 @@ pub enum ConfirmationStatus {
 impl ConfirmationStatus {
     pub fn is_confirmed(&self) -> bool {
         match self {
-            Self::Unconfirmed => false,
             Self::Confirmed(_) => true,
+            _ => false,
         }
     }
     pub fn could_be_spent_at_anchor_height(&self, chain_height: &BlockHeight) -> bool {
         match self {
-            Self::Unconfirmed => false,
             Self::Confirmed(block_height) => block_height <= chain_height,
+            _ => false,
         }
     }
     // this function and the placeholder is not a preferred pattern. please use match whenever possible.
     pub fn get_height_and_is_confirmed(&self) -> (u32, bool) {
         match self {
-            Self::Unconfirmed => (UNCONFIRMED_BLOCKHEIGHT_PLACEHOLDER, false),
+            Self::Local => (BLOCKHEIGHT_PLACEHOLDER_LOCAL, false),
+            Self::InMempool => (BLOCKHEIGHT_PLACEHOLDER_INMEMPOOL, false),
             Self::Confirmed(block) => (u32::from(*block), true),
         }
     }
     // note, by making unconfirmed the true case, this does a potentially confusing boolean flip
     pub fn get_height_andor_is_unconfirmed(&self) -> (u32, bool) {
         match self {
-            Self::Unconfirmed => (UNCONFIRMED_BLOCKHEIGHT_PLACEHOLDER, true),
+            Self::Local => (BLOCKHEIGHT_PLACEHOLDER_LOCAL, true),
+            Self::InMempool => (BLOCKHEIGHT_PLACEHOLDER_INMEMPOOL, true),
             Self::Confirmed(block) => (u32::from(*block), false),
         }
     }

@@ -962,7 +962,7 @@ impl TransactionMetadata {
     }
     pub fn is_confirmed(&self) -> bool {
         match self.confirmation_status {
-            ConfirmationStatus::Unconfirmed => false,
+            ConfirmationStatus::InMempool => false,
             ConfirmationStatus::Confirmed(_) => true,
         }
     }
@@ -1044,7 +1044,7 @@ impl TransactionMetadata {
         };
 
         let confirmation_status = if unconfirmed {
-            ConfirmationStatus::Unconfirmed
+            ConfirmationStatus::InMempool
         } else {
             ConfirmationStatus::Confirmed(block)
         };

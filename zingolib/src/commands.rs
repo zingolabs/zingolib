@@ -1408,6 +1408,8 @@ impl Command for NotesCommand {
         let (include_spent, include_unconfirmed) = if args.len() == 1 {
             match args[0] {
                 "all" => (true, true),
+                "spent" => (true, false),
+                "unconfirmed" => (false, true),
                 a => {
                     return format!(
                         "Invalid argument \"{}\". Specify 'all' to include unspent notes",
@@ -1416,10 +1418,15 @@ impl Command for NotesCommand {
                 }
             }
         } else {
-            false
+            (false, false)
         };
 
-        RT.block_on(async move { lightclient.do_list_notes(all_notes).await.pretty(2) })
+        RT.block_on(async move {
+            lightclient
+                .do_list_notes(include_spent, include_unconfirmed)
+                .await
+                .to_string()
+        })
     }
 }
 

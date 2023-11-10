@@ -20,7 +20,7 @@ use zcash_primitives::{
 use zingoconfig::{ChainType, MAX_REORG};
 
 use super::{
-    confirmation_status::ConfirmationStatus,
+    confirmation_status::{self, ConfirmationStatus, SpendConfirmationStatus},
     data::{OutgoingTxData, PoolNullifier, TransactionMetadata, TransparentNote, WitnessTrees},
     keys::unified::WalletCapability,
     traits::{self, DomainWalletExt, Nullifier, Recipient, ShieldedNoteInterface},
@@ -742,9 +742,7 @@ impl TransactionMetadataSet {
         D::Recipient: Recipient,
     {
         let transaction_metadata =
-            self.get_or_create_transaction_metadata(&txid, height, true, timestamp);
-        // Update the block height, in case this was a mempool or unconfirmed tx.
-        transaction_metadata.block_height = height;
+            self.get_or_create_transaction_metadata(&txid, confirmation_status, timestamp);
 
         match D::to_notes_vec_mut(transaction_metadata)
             .iter_mut()
@@ -775,8 +773,7 @@ impl TransactionMetadataSet {
     pub(crate) fn add_new_note<D: DomainWalletExt>(
         &mut self,
         txid: TxId,
-        height: BlockHeight,
-        unconfirmed: bool,
+        confirmation_status: ConfirmationStatus,
         timestamp: u64,
         note: <D::WalletNote as ShieldedNoteInterface>::Note,
         to: D::Recipient,
@@ -789,17 +786,15 @@ impl TransactionMetadataSet {
         D::Recipient: Recipient,
     {
         let transaction_metadata =
-            self.get_or_create_transaction_metadata(&txid, height, unconfirmed, timestamp);
-        // Update the block height, in case this was a mempool or unconfirmed tx.
-        transaction_metadata.block_height = height;
+            self.get_or_create_transaction_metadata(&txid, confirmation_status, timestamp);
 
+        /// TODO review this
         let nd = D::WalletNote::from_parts(
             D::Recipient::diversifier(&to),
             note.clone(),
             Some(position),
             nullifier,
-            None,
-            None,
+            SpendConfirmationStatus::NoKnownSpends,
             None,
             // if this is change, we'll mark it later in check_notes_mark_change
             false,
