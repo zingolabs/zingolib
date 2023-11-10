@@ -175,7 +175,7 @@ pub fn save_to_b64() -> String {
         lightclient = lc.borrow().as_ref().unwrap().clone();
     };
 
-    match lightclient.do_save_to_buffer_sync() {
+    match lightclient.export_save_buffer_runtime() {
         Ok(buf) => encode(&buf),
         Err(e) => {
             format!("Error: {}", e)
