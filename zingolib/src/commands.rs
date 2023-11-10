@@ -925,24 +925,6 @@ impl Command for SendCommand {
     }
 }
 
-fn wallet_saver(lightclient: &LightClient) -> String {
-    RT.block_on(async move {
-        match lightclient.do_save().await {
-            Ok(_) => {
-                let r = object! { "result" => "success",
-                "wallet_path" => lightclient.config.get_wallet_path().to_str().unwrap() };
-                r.pretty(2)
-            }
-            Err(e) => {
-                let r = object! {
-                    "result" => "error",
-                    "error" => e
-                };
-                r.pretty(2)
-            }
-        }
-    })
-}
 fn wallet_deleter(lightclient: &LightClient) -> String {
     RT.block_on(async move {
         match lightclient.do_delete().await {
@@ -960,28 +942,6 @@ fn wallet_deleter(lightclient: &LightClient) -> String {
             }
         }
     })
-}
-struct SaveCommand {}
-impl Command for SaveCommand {
-    fn help(&self) -> &'static str {
-        indoc! {r#"
-            Save the wallet to disk
-            Usage:
-            save
-
-            The wallet is saved to disk. The wallet is periodically saved to disk (and also saved upon exit)
-            but you can use this command to explicitly save it to disk
-
-        "#}
-    }
-
-    fn short_help(&self) -> &'static str {
-        "Save wallet file to disk"
-    }
-
-    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        wallet_saver(lightclient)
-    }
 }
 struct DeleteCommand {}
 impl Command for DeleteCommand {
@@ -1427,7 +1387,7 @@ struct QuitCommand {}
 impl Command for QuitCommand {
     fn help(&self) -> &'static str {
         indoc! {r#"
-            Save the wallet to disk and quit
+            Quit the light client
             Usage:
             quit
 
@@ -1475,8 +1435,27 @@ impl Command for QuitCommand {
                     .expect("error while killing regtest-spawned processes!");
             }
         }
+        "quit".to_string()
+    }
+}
 
-        wallet_saver(lightclient)
+struct DeprecatedNoCommand {}
+impl Command for DeprecatedNoCommand {
+    fn help(&self) -> &'static str {
+        indoc! {r#"
+            This command has been deprecated.
+            Usage:
+            dont
+
+        "#}
+    }
+
+    fn short_help(&self) -> &'static str {
+        "Deprecated command."
+    }
+
+    fn exec(&self, _args: &[&str], _lightclient: &LightClient) -> String {
+        ".deprecated.".to_string()
     }
 }
 
@@ -1513,7 +1492,7 @@ pub fn get_commands() -> HashMap<&'static str, Box<dyn Command>> {
         ("updatecurrentprice", Box::new(UpdateCurrentPriceCommand {})),
         ("send", Box::new(SendCommand {})),
         ("shield", Box::new(ShieldCommand {})),
-        ("save", Box::new(SaveCommand {})),
+        ("save", Box::new(DeprecatedNoCommand {})),
         ("quit", Box::new(QuitCommand {})),
         ("notes", Box::new(NotesCommand {})),
         ("new", Box::new(NewAddressCommand {})),
