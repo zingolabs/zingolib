@@ -338,7 +338,7 @@ impl LightClient {
         Runtime::new()
             .unwrap()
             .block_on(async move { self.export_save_buffer_async().await })
-            .map_err(String::from)
+            .map_err(|err| dbg!(String::from(err)))
     }
 
     /// This constructor depends on a wallet that's read from a buffer.
