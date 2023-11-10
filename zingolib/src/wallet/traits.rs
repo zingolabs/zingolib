@@ -382,9 +382,9 @@ pub trait Nullifier:
 
 impl Nullifier for zcash_primitives::sapling::Nullifier {
     fn get_nullifiers_spent_in_transaction(
-        transaction_metadata_set: &TransactionMetadata,
+        transaction_metadata: &TransactionMetadata,
     ) -> &Vec<Self> {
-        &transaction_metadata_set.spent_sapling_nullifiers
+        &transaction_metadata.spent_sapling_nullifiers
     }
 }
 

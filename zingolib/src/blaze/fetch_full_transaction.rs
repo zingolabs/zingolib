@@ -60,8 +60,7 @@ impl TransactionContext {
     async fn execute_bundlescans_internal(
         &self,
         transaction: &Transaction,
-        height: BlockHeight,
-        unconfirmed: bool,
+        confirmation_status: ConfirmationStatus,
         block_time: u32,
         is_outgoing_transaction: &mut bool,
         outgoing_metadatas: &mut Vec<OutgoingTxData>,
@@ -71,8 +70,7 @@ impl TransactionContext {
         //todo: investigate scanning all bundles simultaneously
         self.scan_transparent_bundle(
             transaction,
-            height,
-            unconfirmed,
+            confirmation_status,
             block_time,
             is_outgoing_transaction,
             taddrs_set,
@@ -81,8 +79,7 @@ impl TransactionContext {
 
         self.scan_sapling_bundle(
             transaction,
-            height,
-            unconfirmed,
+            confirmation_status,
             block_time,
             is_outgoing_transaction,
             outgoing_metadatas,
@@ -91,8 +88,7 @@ impl TransactionContext {
         .await;
         self.scan_orchard_bundle(
             transaction,
-            height,
-            unconfirmed,
+            confirmation_status,
             block_time,
             is_outgoing_transaction,
             outgoing_metadatas,
@@ -240,8 +236,7 @@ impl TransactionContext {
     async fn scan_transparent_bundle(
         &self,
         transaction: &Transaction,
-        height: BlockHeight,
-        unconfirmed: bool,
+        confirmation_status: ConfirmationStatus,
         block_time: u32,
         is_outgoing_transaction: &mut bool,
         taddrs_set: &HashSet<String>,
@@ -309,15 +304,14 @@ impl TransactionContext {
             // Mark that this Tx spent some funds
             *is_outgoing_transaction = true;
 
-            self.transaction_metadata_set
+            let _ = self.transaction_metadata_set
                 .write()
                 .await
-                .mark_txid_utxo_spent(
+                .update_transparent_spend_status(
                     prev_transaction_id,
                     prev_n,
                     transaction_id,
-                    height.into(),
-                    unconfirmed,
+                    confirmation_status,
                 );
         }
 
@@ -327,8 +321,7 @@ impl TransactionContext {
 
             self.transaction_metadata_set.write().await.add_taddr_spent(
                 transaction.txid(),
-                height,
-                unconfirmed,
+                confirmation_status,
                 block_time as u64,
                 total_transparent_value_spent,
             );
@@ -403,7 +396,7 @@ impl TransactionContext {
         type FnGenBundle<I> = <I as DomainWalletExt>::Bundle;
         // Check if any of the nullifiers generated in this transaction are ours. We only need this for unconfirmed transactions,
         // because for transactions in the block, we will check the nullifiers from the blockdata
-        if pending {
+        if confirmation_status.is_in_mempool() {
             let unspent_nullifiers = self
                 .transaction_metadata_set
                 .read()
@@ -420,10 +413,8 @@ impl TransactionContext {
                     self.transaction_metadata_set
                         .write()
                         .await
-                        .add_new_spent(
+                        .process_spend_status(
                             transaction.txid(),
-                            // transaction_block_height,
-                            // true, // this was "unconfirmed" but this fn is invoked inside `if unconfirmed` TODO: add regression test to protect against movement
                             block_time,
                             (*nf).into(),
                             *value,

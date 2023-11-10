@@ -912,15 +912,29 @@ pub struct TransactionMetadata {
 }
 
 impl TransactionMetadata {
-    pub(super) fn add_spent_nullifier(&mut self, nullifier: PoolNullifier, value: u64) {
+    pub(super) fn add_unique_spent_nullifier(&mut self, nullifier: PoolNullifier, value: u64) {
         match nullifier {
             PoolNullifier::Sapling(sapling_nullifier) => {
-                self.spent_sapling_nullifiers.push(sapling_nullifier);
-                self.total_sapling_value_spent += value;
+                if !self
+                    .spent_sapling_nullifiers
+                    .iter()
+                    .any(|nf| *nf == sapling_nullifier)
+                {
+                    self.spent_sapling_nullifiers.push(sapling_nullifier);
+                    //TOdo this field oughta be a hashmap
+                    self.total_sapling_value_spent += value;
+                }
             }
             PoolNullifier::Orchard(orchard_nullifier) => {
-                self.spent_orchard_nullifiers.push(orchard_nullifier);
-                self.total_orchard_value_spent += value;
+                if !self
+                    .spent_orchard_nullifiers
+                    .iter()
+                    .any(|nf| *nf == orchard_nullifier)
+                {
+                    self.spent_orchard_nullifiers.push(orchard_nullifier);
+                    //TOdo this field oughta be a hashmap
+                    self.total_orchard_value_spent += value;
+                }
             }
         }
     }
@@ -961,10 +975,7 @@ impl TransactionMetadata {
             || !self.transparent_notes.is_empty()
     }
     pub fn is_confirmed(&self) -> bool {
-        match self.confirmation_status {
-            ConfirmationStatus::InMempool => false,
-            ConfirmationStatus::ConfirmedOnChain(_) => true,
-        }
+        self.confirmation_status.is_confirmed()
     }
     pub fn net_spent(&self) -> u64 {
         assert!(self.is_outgoing_transaction());

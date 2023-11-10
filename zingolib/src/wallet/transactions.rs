@@ -19,6 +19,8 @@ use zcash_primitives::{
 
 use zingoconfig::{ChainType, MAX_REORG};
 
+use crate::error::ZingoLibError;
+
 use super::{
     confirmation_status::{self, ConfirmationStatus, SpendConfirmationStatus},
     data::{OutgoingTxData, PoolNullifier, TransactionMetadata, TransparentNote, WitnessTrees},
@@ -402,60 +404,6 @@ impl TransactionMetadataSet {
         self.remove_txids(txids_to_remove);
     }
 
-    // Will mark a note as having been spent at the supplied height and spent_txid.
-    // Takes the nullifier of the spent note, the note's index in its containing transaction,
-    // as well as the txid of its containing transaction. TODO: Only one of
-    // `nullifier` and `(output_index, txid)` is needed, although we use the nullifier to
-    // determine the domain.
-    pub fn mark_note_as_spent(
-        &mut self,
-        txid: TxId,
-        spent_nullifier: &PoolNullifier,
-        spend_status: SpendConfirmationStatus,
-        output_index: u32,
-    ) -> Result<u64, String> {
-        match spent_nullifier {
-            PoolNullifier::Sapling(sapling_nullifier) => {
-                if let Some(sapling_note_data) = self
-                    .current
-                    .get_mut(&txid)
-                    .expect("TXid should be a key in current.")
-                    .sapling_notes
-                    .iter_mut()
-                    .find(|n| n.output_index == output_index)
-                {
-                    sapling_note_data.spent_status = Some((*spent_txid, spent_at_height.into()));
-                    sapling_note_data.unconfirmed_spent = None;
-                    Ok(sapling_note_data.note.value().inner())
-                } else {
-                    Err(format!(
-                        "no such sapling nullifier '{:?}' found in transaction",
-                        *sapling_nullifier
-                    ))
-                }
-            }
-            PoolNullifier::Orchard(orchard_nullifier) => {
-                if let Some(orchard_note_data) = self
-                    .current
-                    .get_mut(&txid)
-                    .unwrap()
-                    .orchard_notes
-                    .iter_mut()
-                    .find(|n| n.nullifier == Some(*orchard_nullifier))
-                {
-                    orchard_note_data.spent_status = Some((*spent_txid, spent_at_height.into()));
-                    orchard_note_data.unconfirmed_spent = None;
-                    Ok(orchard_note_data.note.value().inner())
-                } else {
-                    Err(format!(
-                        "no such orchard nullifier '{:?}' found in transaction",
-                        *orchard_nullifier
-                    ))
-                }
-            }
-        }
-    }
-
     // Check this transaction to see if it is an outgoing transaction, and if it is, mark all received notes with non-textual memos in this
     // transction as change. i.e., If any funds were spent in this transaction, all received notes without user-specified memos are change.
     //
@@ -502,90 +450,126 @@ impl TransactionMetadataSet {
         price.map(|p| self.current.get_mut(txid).map(|tx| tx.price = Some(p)));
     }
 
-    // Records a TxId as having spent some nullifiers from the wallet.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn add_new_spent(
+    // Will mark a note as having been spent at the supplied height and spent_txid.
+    // Takes the nullifier of the spent note, the note's index in its containing transaction,
+    // as well as the txid of its containing transaction. TODO: Only one of
+    // `nullifier` and `(output_index, txid)` is needed, although we use the nullifier to
+    // determine the domain.
+    // toDO make domain-generic
+    pub fn update_spend_status(
         &mut self,
-        txid: TxId,
-        confirmation_status: ConfirmationStatus,
-        timestamp: u32,
-        spent_nullifier: PoolNullifier,
-        value: u64,
-        source_txid: TxId,
+        spent_nullifier: &PoolNullifier,
+        spent_txid: TxId,
         output_index: u32,
-    ) {
+        spend_status: SpendConfirmationStatus,
+    ) -> Result<u64, String> {
         match spent_nullifier {
-            PoolNullifier::Orchard(spent_nullifier) => {
-                self.add_new_spent_internal::<OrchardDomain>(
-                    txid,
-                    height,
-                    unconfirmed,
-                    timestamp,
-                    spent_nullifier,
-                    value,
-                    source_txid,
-                    output_index,
-                )
-                .await
+            PoolNullifier::Sapling(sapling_nullifier) => {
+                if let Some(sapling_note_data) = self
+                    .current
+                    .get_mut(&spent_txid)
+                    .expect("TXid should be a key in current.")
+                    .sapling_notes
+                    .iter_mut()
+                    .find(|n| n.output_index == output_index)
+                {
+                    sapling_note_data.spend_status = spend_status;
+                    Ok(sapling_note_data.note.value().inner())
+                } else {
+                    Err(format!(
+                        "no such sapling nullifier '{:?}' found in transaction",
+                        *sapling_nullifier
+                    ))
+                }
             }
-            PoolNullifier::Sapling(spent_nullifier) => {
-                self.add_new_spent_internal::<SaplingDomain<ChainType>>(
-                    txid,
-                    height,
-                    unconfirmed,
-                    timestamp,
-                    spent_nullifier,
-                    value,
-                    source_txid,
-                    output_index,
-                )
-                .await
+            PoolNullifier::Orchard(orchard_nullifier) => {
+                if let Some(orchard_note_data) = self
+                    .current
+                    .get_mut(&spent_txid)
+                    .unwrap()
+                    .orchard_notes
+                    .iter_mut()
+                    .find(|n| n.output_index == output_index)
+                {
+                    orchard_note_data.spend_status = spend_status;
+                    Ok(orchard_note_data.note.value().inner())
+                } else {
+                    Err(format!(
+                        "no such orchard nullifier '{:?}' found in transaction",
+                        *orchard_nullifier
+                    ))
+                }
             }
         }
     }
 
+    // Records a TxId as having spent some nullifiers from the wallet.
     #[allow(clippy::too_many_arguments)]
-    async fn add_new_spent_internal<D: DomainWalletExt>(
+    pub async fn process_spend(
         &mut self,
-        txid: TxId,
+        spending_txid: TxId,
         confirmation_status: ConfirmationStatus,
         timestamp: u32,
-        spent_nullifier: <D::WalletNote as ShieldedNoteInterface>::Nullifier,
+        spent_nullifier: PoolNullifier,
         value: u64,
-        source_txid: TxId,
+        spent_txid: TxId,
         output_index: u32,
-    ) where
-        <D as Domain>::Note: PartialEq + Clone,
-        <D as Domain>::Recipient: traits::Recipient,
-    {
+    ) {
         // Record this Tx as having spent some funds
-        let transaction_metadata =
-            self.get_or_create_transaction_metadata(&txid, confirmation_status, timestamp as u64);
+        let spending_transaction_metadata = self.get_or_create_transaction_metadata(
+            &spending_txid,
+            confirmation_status,
+            timestamp as u64,
+        );
 
-        if !<D::WalletNote as ShieldedNoteInterface>::Nullifier::get_nullifiers_spent_in_transaction(
-            transaction_metadata,
-        )
-        .iter()
-        .any(|nf| *nf == spent_nullifier)
-        {
-            transaction_metadata.add_spent_nullifier(spent_nullifier.into(), value)
+        // we may be able to add_spent_nullifier or we may not. in order to tell, we may have to check whether the nullifier exists somewhere. ToDo consider the case where we should not add_spent_nullifier.
+        // ToDO what if the transaction never confirms? how do we unmark this nullifier? if we can figure it out, this
+        match spent_nullifier {
+            PoolNullifier::Orchard(spent_orchard_nullifier) => spending_transaction_metadata
+                .add_unique_spent_nullifier(spent_orchard_nullifier.into(), value),
+            PoolNullifier::Sapling(spent_sapling_nullifier) => spending_transaction_metadata
+                .add_unique_spent_nullifier(spent_sapling_nullifier.into(), value),
         }
 
         // Since this Txid has spent some funds, output notes in this Tx that are sent to us are actually change.
-        self.check_notes_mark_change(&txid);
+        self.check_notes_mark_change(&spending_txid);
 
-        // Mark the source note as spent
-        if !unconfirmed {
-            // ie remove_witness_mark_sapling or _orchard
-            self.remove_witness_mark::<D>(height, txid, source_txid, output_index);
-        } else {
-            // Mark the unconfirmed_spent. Confirmed spends are already handled in update_notes
-            if let Some(transaction_spent_from) = self.current.get_mut(&source_txid) {
-                if let Some(unconfirmed_spent_note) = D::to_notes_vec_mut(transaction_spent_from)
-                    .iter_mut()
-                    .find(|note| note.nullifier() == Some(spent_nullifier))
-                {
-                    *unconfirmed_spent_note.pending_spent_mut() = Some((txid, u32::from(height)));
+        match confirmation_status {
+            ConfirmationStatus::Local => {}
+            ConfirmationStatus::InMempool => {
+                self.update_spend_status(
+                    &spent_nullifier,
+                    spent_txid,
+                    output_index,
+                    SpendConfirmationStatus::PendingSpend(spending_txid),
+                );
+            }
+            ConfirmationStatus::ConfirmedOnChain(confirmation_height) => {
+                self.update_spend_status(
+                    &spent_nullifier,
+                    spent_txid,
+                    output_index,
+                    SpendConfirmationStatus::ConfirmedSpent(spending_txid, confirmation_height),
+                );
+
+                // ie remove_witness_mark_sapling or _orchard
+                match spent_nullifier {
+                    PoolNullifier::Orchard(_) => {
+                        self.remove_witness_mark::<OrchardDomain>(
+                            confirmation_height,
+                            spending_txid,
+                            spent_txid,
+                            output_index,
+                        );
+                    }
+                    PoolNullifier::Sapling(_) => {
+                        self.remove_witness_mark::<SaplingDomain<ChainType>>(
+                            confirmation_height,
+                            spending_txid,
+                            spent_txid,
+                            output_index,
+                        );
+                    }
                 }
             }
         }
@@ -594,13 +578,12 @@ impl TransactionMetadataSet {
     pub fn add_taddr_spent(
         &mut self,
         txid: TxId,
-        height: BlockHeight,
-        unconfirmed: bool,
+        confirmation_status: ConfirmationStatus,
         timestamp: u64,
         total_transparent_value_spent: u64,
     ) {
         let transaction_metadata =
-            self.get_or_create_transaction_metadata(&txid, height, unconfirmed, timestamp);
+            self.get_or_create_transaction_metadata(&txid, confirmation_status, timestamp);
         transaction_metadata.total_transparent_value_spent = total_transparent_value_spent;
 
         self.check_notes_mark_change(&txid);
@@ -610,8 +593,8 @@ impl TransactionMetadataSet {
     pub fn remove_witness_mark<D>(
         &mut self,
         height: BlockHeight,
-        txid: TxId,
-        source_txid: TxId,
+        spending_txid: TxId,
+        spent_txid: TxId,
         output_index: u32,
     ) where
         D: DomainWalletExt,
@@ -620,14 +603,14 @@ impl TransactionMetadataSet {
     {
         let transaction_metadata = self
             .current
-            .get_mut(&source_txid)
+            .get_mut(&spent_txid)
             .expect("Txid should be present");
 
         if let Some(note_datum) = D::to_notes_vec_mut(transaction_metadata)
             .iter_mut()
             .find(|n| *n.output_index() == output_index)
         {
-            *note_datum.spent_mut() = Some((txid, height.into()));
+            // *note_datum.spent_mut() = Some((spending_txid, height.into())); //this line deleted because this should be done elsewhere.
             if let Some(position) = *note_datum.witnessed_position() {
                 if let Some(ref mut tree) = D::transaction_metadata_set_to_shardtree_mut(self) {
                     tree.remove_mark(position, Some(&(height - BlockHeight::from(1))))
@@ -641,42 +624,34 @@ impl TransactionMetadataSet {
         }
     }
 
-    pub fn mark_txid_utxo_spent(
+    pub fn update_transparent_spend_status(
         &mut self,
-        spent_txid: TxId,
+        spending_txid: TxId,
         output_num: u32,
-        source_txid: TxId,
-        source_height: u32,
-        unconfirmed: bool,
-    ) -> u64 {
+        spent_txid: TxId,
+        confirmation_status: ConfirmationStatus,
+    ) -> Result<u64, ZingoLibError> {
         // Find the UTXO
-        let value = if let Some(utxo_transacion_metadata) = self.current.get_mut(&spent_txid) {
+        let value = if let Some(utxo_transacion_metadata) = self.current.get_mut(&spending_txid) {
             if let Some(spent_utxo) = utxo_transacion_metadata
                 .transparent_notes
                 .iter_mut()
-                .find(|u| u.txid == spent_txid && u.output_index == output_num as u64)
+                .find(|u| u.txid == spending_txid && u.output_index == output_num as u64)
             {
-                if unconfirmed {
-                    spent_utxo.unconfirmed_spent = Some((source_txid, source_height));
-                } else {
-                    // Mark this one as spent
-                    spent_utxo.spent = Some(source_txid);
-                    spent_utxo.spent_at_height = Some(source_height as i32);
-                    spent_utxo.unconfirmed_spent = None;
-                }
-
-                spent_utxo.value
+                spent_utxo.spend_status = SpendConfirmationStatus::from_txid_and_confirmation(
+                    spending_txid,
+                    confirmation_status,
+                );
+        // Return the value of the note that was spent.
+                Ok(spent_utxo.value)
             } else {
                 error!("Couldn't find UTXO that was spent");
-                0
+                Err(ZingoLibError::NoSuchNoteInTransaction)
             }
         } else {
             error!("Couldn't find TxID that was spent!");
-            0
-        };
-
-        // Return the value of the note that was spent.
-        value
+            Err(ZingoLibError::NoSuchTransaction)
+        }
     }
 
     #[allow(clippy::too_many_arguments)]

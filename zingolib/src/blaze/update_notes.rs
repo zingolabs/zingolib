@@ -125,24 +125,24 @@ impl UpdateNotes {
                             TransactionMetadata::new_txid(&compact_transaction.hash);
                         let spent_at_height = BlockHeight::from_u32(spent_height as u32);
 
-                        // Mark this note as being spent
-                        let value = wallet_transactions
-                            .write()
-                            .await
-                            .mark_note_as_spent(
-                                transaction_id_spent_from,
-                                &maybe_spend_nullifier,
-                                &transaction_id_spent_in,
-                                spent_at_height,
-                                output_index,
-                            )
-                            .expect("To mark note as spent");
+                        // // Mark this note as being spent
+                        // let value = wallet_transactions
+                        //     .write()
+                        //     .await
+                        //     .update_spend_status(
+                        //         transaction_id_spent_from,
+                        //         &maybe_spend_nullifier,
+                        //         &transaction_id_spent_in,
+                        //         spent_at_height,
+                        //         output_index,
+                        //     )
+                        //     .expect("To mark note as spent");
 
                         // Record the future transaction, the one that has spent the nullifiers received in this transaction in the wallet
                         wallet_transactions
                             .write()
                             .await
-                            .add_new_spent(
+                            .process_spend_status(
                                 transaction_id_spent_in,
                                 spent_at_height,
                                 false,

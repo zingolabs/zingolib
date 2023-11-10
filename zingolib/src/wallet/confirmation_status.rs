@@ -69,6 +69,19 @@ pub enum SpendConfirmationStatus {
 }
 
 impl SpendConfirmationStatus {
+    pub fn from_txid_and_confirmation(
+        spending_txid: TxId,
+        confirmation_status: ConfirmationStatus,
+    ) -> self {
+        match confirmation_status {
+            ConfirmationStatus::Local | ConfirmationStatus::InMempool => {
+                Self::PendingSpend(spending_txid);
+            }
+            ConfirmationStatus::ConfirmedOnChain(confirmation_height) => {
+                Self::ConfirmedSpent(spending_txid, confirmation_height)
+            }
+        }
+    }
     pub fn is_unspent(&self) -> bool {
         match self {
             Self::NoKnownSpends => true,
@@ -102,9 +115,8 @@ impl SpendConfirmationStatus {
             Self::ConfirmedSpent(spent_txid, block_height) => serde_json::json!({
                 "spent_at_txid": format!("{}",spent_txid),
                 "spend_at_block_height": u32::from(block_height),}),
-        }
-    }
-}
+self.co    
+.is        
 
 #[derive(Clone, Serialize)]
 #[serde(remote = "TxId")]
