@@ -1,5 +1,8 @@
 use crate::compact_formats::CompactBlock;
 use crate::error::ZingoLibError;
+use crate::wallet::confirmation_status::{
+    BLOCKHEIGHT_PLACEHOLDER_INMEMPOOL, BLOCKHEIGHT_PLACEHOLDER_READ_NEGATIVE,
+};
 use crate::wallet::traits::ShieldedNoteInterface;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::frontier::{CommitmentTree, NonEmptyFrontier};
@@ -32,7 +35,7 @@ use zingoconfig::{ChainType, MAX_REORG};
 
 use super::confirmation_status::{ConfirmationStatus, SpendConfirmationStatus};
 use super::keys::unified::WalletCapability;
-use super::traits::{self, DomainWalletExt, ReadableWriteable, ToBytes};
+use super::traits::{self, DomainWalletExt, NoteInterface, ReadableWriteable, ToBytes};
 
 pub const COMMITMENT_TREE_LEVELS: u8 = 32;
 pub const MAX_SHARD_LEVEL: u8 = 16;
@@ -601,13 +604,15 @@ impl TransparentNote {
             None
         };
 
+        let spend_status =
+            SpendConfirmationStatus::from_opt_i32_and_option_txid(spent_at_height, spent);
+
         Ok(TransparentNote {
             address,
             txid: transaction_id,
             output_index,
             script,
             value,
-            height,
             spend_status,
         })
     }
@@ -622,15 +627,16 @@ impl TransparentNote {
 
         writer.write_u64::<LittleEndian>(self.output_index)?;
         writer.write_u64::<LittleEndian>(self.value)?;
-        writer.write_i32::<LittleEndian>(self.height)?;
+        writer.write_i32::<LittleEndian>(0)?;
 
         Vector::write(&mut writer, &self.script, |w, b| w.write_all(&[*b]))?;
 
-        Optional::write(&mut writer, self.spent, |w, transaction_id| {
+        let (option_block, option_spent) = self.spend_status().get_option_height_and_option_txid();
+        Optional::write(&mut writer, option_spent, |w, transaction_id| {
             w.write_all(transaction_id.as_ref())
         })?;
 
-        Optional::write(&mut writer, self.spent_at_height, |w, s| {
+        Optional::write(&mut writer, option_block, |w, s| {
             w.write_i32::<LittleEndian>(s)
         })?;
 
@@ -820,7 +826,6 @@ pub mod summaries {
         fn from(value: ValueTransfer) -> Self {
             let mut temp_object = object! {
                     "amount": "",
-                    "confirmation status": value.confirmation_status,
                     "datetime": value.datetime,
                     "kind": "",
                     "memos": value.memos.iter().cloned().map(String::from).collect::<Vec<String>>(),
@@ -1175,7 +1180,7 @@ impl TransactionMetadata {
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
-        let (block, unconfirmed) = self.confirmation_status.get_height_andor_is_unconfirmed();
+        let (block, unconfirmed) = self.confirmation_status.get_height_and_is_unconfirmed();
         writer.write_i32::<LittleEndian>(block as i32)?;
 
         writer.write_u8(if unconfirmed { 1 } else { 0 })?;

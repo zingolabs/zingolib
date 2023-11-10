@@ -477,7 +477,7 @@ impl NoteInterface for OrchardNote {
     }
 }
 
-pub trait ShieldedNoteInterface: Sized {
+pub trait ShieldedNoteInterface: Sized + NoteInterface {
     type Diversifier: Copy + FromBytes<11> + ToBytes<11>;
 
     type Note: PartialEq

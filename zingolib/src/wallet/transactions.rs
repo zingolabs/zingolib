@@ -25,7 +25,7 @@ use super::{
     confirmation_status::{self, ConfirmationStatus, SpendConfirmationStatus},
     data::{OutgoingTxData, PoolNullifier, TransactionMetadata, TransparentNote, WitnessTrees},
     keys::unified::WalletCapability,
-    traits::{self, DomainWalletExt, Nullifier, Recipient, ShieldedNoteInterface},
+    traits::{self, DomainWalletExt, NoteInterface, Nullifier, Recipient, ShieldedNoteInterface},
 };
 
 /// HashMap of all transactions in a wallet, keyed by txid.
@@ -194,7 +194,7 @@ impl TransactionMetadataSet {
                 .collect::<Vec<(&TxId, &TransactionMetadata)>>();
             // Don't write down metadata for transactions in the mempool, we'll rediscover
             // it on reload
-            transaction_metadatas.retain(|metadata| !metadata.1.unconfirmed);
+            transaction_metadatas.retain(|metadata| metadata.1.confirmation_status.is_confirmed());
             transaction_metadatas.sort_by(|a, b| a.0.partial_cmp(b.0).unwrap());
 
             Vector::write(&mut writer, &transaction_metadatas, |w, (k, v)| {
@@ -295,21 +295,22 @@ impl TransactionMetadataSet {
         &self.some_txid_from_highest_wallet_block
     }
 
+    // tODO why do we need to update notes post shardtree?
     pub fn get_notes_for_updating(&self, before_block: u64) -> Vec<(TxId, PoolNullifier, u32)> {
         let before_block = BlockHeight::from_u32(before_block as u32);
 
         self.current
             .iter()
-            .filter(|(_, transaction_metadata)| !transaction_metadata.unconfirmed) // Update only confirmed notes
+            .filter(|(_, transaction_metadata)| transaction_metadata.confirmation_status.is_confirmed()) // Update only confirmed notes
             .flat_map(|(txid, transaction_metadata)| {
                 // Fetch notes that are before the before_block.
                 transaction_metadata
                     .sapling_notes
                     .iter()
                     .filter_map(move |sapling_note_description| {
-                        if transaction_metadata.block_height <= before_block
+                        if transaction_metadata.confirmation_status.is_confirmed_before_or_at(&before_block)
                             && sapling_note_description.have_spending_key
-                            && sapling_note_description.spent_status.is_none()
+                            && sapling_note_description.spend_status.is_unspent()
                         {
                             Some((
                                 *txid,
@@ -326,9 +327,9 @@ impl TransactionMetadataSet {
                     })
                     .chain(transaction_metadata.orchard_notes.iter().filter_map(
                         move |orchard_note_description| {
-                            if transaction_metadata.block_height <= before_block
+                            if transaction_metadata.confirmation_status.is_confirmed_before_or_at(&before_block)
                                 && orchard_note_description.have_spending_key
-                                && orchard_note_description.spent_status.is_none()
+                                && orchard_note_description.spend_status.is_unspent()
                             {
                                 Some((
                                     *txid,
@@ -370,7 +371,7 @@ impl TransactionMetadataSet {
             .flat_map(|(_, transaction_metadata)| {
                 D::to_notes_vec(transaction_metadata)
                     .iter()
-                    .filter(|unspent_note_data| unspent_note_data.spent().is_none())
+                    .filter(|unspent_note_data| unspent_note_data.spend_status().is_unspent())
                     .filter_map(move |unspent_note_data| {
                         unspent_note_data.nullifier().map(|unspent_nullifier| {
                             (
@@ -392,7 +393,7 @@ impl TransactionMetadataSet {
             .current
             .iter()
             .filter(|(_, transaction_metadata)| {
-                transaction_metadata.unconfirmed && transaction_metadata.block_height < cutoff
+                transaction_metadata.confirmation_status.is_expired(&cutoff)
             })
             .map(|(_, transaction_metadata)| transaction_metadata.txid)
             .collect::<Vec<_>>();
@@ -534,6 +535,7 @@ impl TransactionMetadataSet {
         // Since this Txid has spent some funds, output notes in this Tx that are sent to us are actually change.
         self.check_notes_mark_change(&spending_txid);
 
+        //todo use enum's associated fn
         match confirmation_status {
             ConfirmationStatus::Local => {}
             ConfirmationStatus::InMempool => {
@@ -675,7 +677,6 @@ impl TransactionMetadataSet {
             .find(|utxo| utxo.txid == txid && utxo.output_index == output_num as u64)
         {
             // If it already exists, it is likely an mempool tx, so update the height
-            utxo.height = height as i32
         } else {
             // Add this UTXO if it doesn't already exist
             transaction_metadata
@@ -686,7 +687,6 @@ impl TransactionMetadataSet {
                     output_index: output_num as u64,
                     script: vout.script_pubkey.0.clone(),
                     value: u64::try_from(vout.value).expect("Valid value for u64."),
-                    height: height as i32,
                     spend_status: SpendConfirmationStatus::NoKnownSpends,
                 });
         }
@@ -695,6 +695,7 @@ impl TransactionMetadataSet {
     pub(crate) fn add_pending_note<D>(
         &mut self,
         txid: TxId,
+        confirmation_status: ConfirmationStatus,
         timestamp: u64,
         note: D::Note,
         recipient: D::Recipient,
@@ -704,7 +705,6 @@ impl TransactionMetadataSet {
         D::Note: PartialEq + Clone,
         D::Recipient: Recipient,
     {
-        let confirmation_status = ConfirmationStatus::InMempool;
         let transaction_metadata =
             self.get_or_create_transaction_metadata(&txid, confirmation_status, timestamp);
 
@@ -751,13 +751,13 @@ impl TransactionMetadataSet {
         let transaction_metadata =
             self.get_or_create_transaction_metadata(&txid, confirmation_status, timestamp);
 
-        /// TODO review this
+        // TODO review this
         let nd = D::WalletNote::from_parts(
             D::Recipient::diversifier(&recipient),
             note.clone(),
             Some(position),
             nullifier,
-            confirmation_status,
+            SpendConfirmationStatus::NoKnownSpends,
             None,
             // if this is change, we'll mark it later in check_notes_mark_change
             false,

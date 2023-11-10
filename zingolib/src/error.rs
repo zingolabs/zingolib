@@ -9,6 +9,8 @@ pub enum ZingoLibError {
     WriteFileError(std::io::Error),
     EmptySaveBuffer,
     CantReadWallet(std::io::Error),
+    NoSuchNoteInTransaction,
+    NoSuchTransaction,
 }
 
 impl std::fmt::Display for ZingoLibError {
@@ -41,6 +43,14 @@ impl std::fmt::Display for ZingoLibError {
                 f,
                 "Cant read wallet. Corrupt file. Or maybe a backwards version issue? {}",
                 err,
+            ),
+            NoSuchNoteInTransaction => write!(
+                f,
+                "No such note in transaction. Found the transaction, but could not match the correct note inside it.",
+            ),
+            NoSuchTransaction => write!(
+                f,
+                "No such transaction. Could not find the specified transaction.",
             ),
         }
     }

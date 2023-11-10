@@ -461,6 +461,7 @@ impl TransactionContext {
                     .await
                     .add_pending_note::<D>(
                         transaction.txid(),
+                        confirmation_status,
                         block_time as u64,
                         note.clone(),
                         recipient,
