@@ -23,7 +23,7 @@ use super::{
     confirmation_status::ConfirmationStatus,
     data::{OutgoingTxData, PoolNullifier, TransactionMetadata, TransparentNote, WitnessTrees},
     keys::unified::WalletCapability,
-    traits::{self, DomainWalletExt, NoteInterface, Nullifier, Recipient},
+    traits::{self, DomainWalletExt, Nullifier, Recipient, ShieldedNoteInterface},
 };
 
 /// HashMap of all transactions in a wallet, keyed by txid.
@@ -354,7 +354,7 @@ impl TransactionMetadataSet {
     pub fn get_nullifier_value_txid_outputindex_of_unspent_notes<D: DomainWalletExt>(
         &self,
     ) -> Vec<(
-        <<D as DomainWalletExt>::WalletNote as NoteInterface>::Nullifier,
+        <<D as DomainWalletExt>::WalletNote as ShieldedNoteInterface>::Nullifier,
         u64,
         TxId,
         u32,
@@ -470,7 +470,7 @@ impl TransactionMetadataSet {
             }
         }
     }
-    fn mark_notes_as_change_for_pool<Note: NoteInterface>(notes: &mut [Note]) {
+    fn mark_notes_as_change_for_pool<Note: ShieldedNoteInterface>(notes: &mut [Note]) {
         notes.iter_mut().for_each(|n| {
             *n.is_change_mut() = match n.memo() {
                 Some(Memo::Text(_)) => false,
@@ -553,7 +553,7 @@ impl TransactionMetadataSet {
         height: BlockHeight,
         unconfirmed: bool,
         timestamp: u32,
-        spent_nullifier: <D::WalletNote as NoteInterface>::Nullifier,
+        spent_nullifier: <D::WalletNote as ShieldedNoteInterface>::Nullifier,
         value: u64,
         source_txid: TxId,
         output_index: u32,
@@ -567,7 +567,7 @@ impl TransactionMetadataSet {
 
         // Mark the height correctly, in case this was previously a mempool or unconfirmed tx.
         transaction_metadata.block_height = height;
-        if !<D::WalletNote as NoteInterface>::Nullifier::get_nullifiers_spent_in_transaction(
+        if !<D::WalletNote as ShieldedNoteInterface>::Nullifier::get_nullifiers_spent_in_transaction(
             transaction_metadata,
         )
         .iter()
@@ -778,10 +778,10 @@ impl TransactionMetadataSet {
         height: BlockHeight,
         unconfirmed: bool,
         timestamp: u64,
-        note: <D::WalletNote as NoteInterface>::Note,
+        note: <D::WalletNote as ShieldedNoteInterface>::Note,
         to: D::Recipient,
         have_spending_key: bool,
-        nullifier: Option<<D::WalletNote as NoteInterface>::Nullifier>,
+        nullifier: Option<<D::WalletNote as ShieldedNoteInterface>::Nullifier>,
         output_index: u32,
         position: Position,
     ) where
@@ -853,7 +853,7 @@ impl TransactionMetadataSet {
     }
 
     // Update the memo for a note if it already exists. If the note doesn't exist, then nothing happens.
-    pub(crate) fn add_memo_to_note_metadata<Nd: NoteInterface>(
+    pub(crate) fn add_memo_to_note_metadata<Nd: ShieldedNoteInterface>(
         &mut self,
         txid: &TxId,
         note: Nd::Note,

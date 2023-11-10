@@ -1,10 +1,11 @@
 use crate::compact_formats::CompactBlock;
 use crate::error::ZingoLibError;
-use crate::wallet::traits::NoteInterface;
+use crate::wallet::traits::ShieldedNoteInterface;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use incrementalmerkletree::frontier::{CommitmentTree, NonEmptyFrontier};
 use incrementalmerkletree::witness::IncrementalWitness;
 use incrementalmerkletree::{Address, Hashable, Level, Position};
+use json::object;
 use orchard::note_encryption::OrchardDomain;
 use orchard::tree::MerkleHashOrchard;
 use prost::Message;
@@ -29,7 +30,7 @@ use zcash_primitives::{
 };
 use zingoconfig::{ChainType, MAX_REORG};
 
-use super::confirmation_status::ConfirmationStatus;
+use super::confirmation_status::{ConfirmationStatus, SpendConfirmationStatus};
 use super::keys::unified::WalletCapability;
 use super::traits::{self, DomainWalletExt, ReadableWriteable, ToBytes};
 
@@ -184,7 +185,9 @@ impl WitnessTrees {
     }
     fn insert_domain_frontier_notes<D: DomainWalletExt>(
         &mut self,
-        non_empty_frontier: Option<NonEmptyFrontier<<D::WalletNote as NoteInterface>::Node>>,
+        non_empty_frontier: Option<
+            NonEmptyFrontier<<D::WalletNote as ShieldedNoteInterface>::Node>,
+        >,
     ) where
         <D as Domain>::Note: PartialEq + Clone,
         <D as Domain>::Recipient: traits::Recipient,
@@ -438,6 +441,7 @@ impl<Node: Hashable> WitnessCache<Node> {
     //     return hex::encode(buf);
     // }
 }
+
 pub struct SaplingNote {
     pub diversifier: zcash_primitives::sapling::Diversifier,
     pub note: zcash_primitives::sapling::Note,
@@ -450,7 +454,7 @@ pub struct SaplingNote {
     pub(crate) output_index: u32,
 
     pub(super) nullifier: Option<zcash_primitives::sapling::Nullifier>,
-    pub spent_status: Option<(TxId, ConfirmationStatus)>, // If this note was spent and whether the spend has been confirmed at a height.
+    pub spend_status: SpendConfirmationStatus, // If this note was spent and whether the spend has been confirmed at a height.
 
     pub memo: Option<Memo>,
     pub is_change: bool,
@@ -472,7 +476,7 @@ pub struct OrchardNote {
     pub(crate) output_index: u32,
 
     pub(super) nullifier: Option<orchard::note::Nullifier>,
-    pub spent_status: Option<(TxId, ConfirmationStatus)>, // If this note was spent and whether the spend has been confirmed at a height.
+    pub spend_status: SpendConfirmationStatus, // If this note was spent and whether the spend has been confirmed at a height.
 
     pub memo: Option<Memo>,
     pub is_change: bool,
@@ -539,8 +543,7 @@ pub struct TransparentNote {
     pub value: u64,
     pub height: i32,
 
-    pub spent_at_height: Option<i32>,
-    pub spent_status: Option<(TxId, ConfirmationStatus)>, // If this utxo was spent and whether it was confirmed.
+    pub spend_status: SpendConfirmationStatus, // If this note was spent and whether the spend has been confirmed at a height.
 }
 
 impl TransparentNote {
@@ -606,9 +609,7 @@ impl TransparentNote {
             script,
             value,
             height,
-            spent_at_height,
-            spent,
-            unconfirmed_spent: None,
+            spend_status,
         })
     }
 
@@ -959,6 +960,12 @@ impl TransactionMetadata {
             || self.orchard_notes.iter().any(|note| !note.is_change())
             || !self.transparent_notes.is_empty()
     }
+    pub fn is_confirmed(&self) -> bool {
+        match self.confirmation_status {
+            ConfirmationStatus::Unconfirmed => false,
+            ConfirmationStatus::Confirmed(_) => true,
+        }
+    }
     pub fn net_spent(&self) -> u64 {
         assert!(self.is_outgoing_transaction());
         self.total_value_spent() - self.total_change_returned()
@@ -1158,7 +1165,7 @@ impl TransactionMetadata {
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
-        let (block, unconfirmed) = self.confirmation_status.height_andor_is_unconfirmed();
+        let (block, unconfirmed) = self.confirmation_status.get_height_andor_is_unconfirmed();
         writer.write_i32::<LittleEndian>(block as i32)?;
 
         writer.write_u8(if unconfirmed { 1 } else { 0 })?;

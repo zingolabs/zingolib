@@ -3,8 +3,8 @@ use crate::wallet::{
     data::OutgoingTxData,
     keys::{address_from_pubkeyhash, unified::WalletCapability},
     traits::{
-        self as zingo_traits, Bundle as _, DomainWalletExt, NoteInterface as _, Recipient as _,
-        ShieldedOutputExt as _, Spend as _, ToBytes as _,
+        self as zingo_traits, Bundle as _, DomainWalletExt, Recipient as _,
+        ShieldedNoteInterface as _, ShieldedOutputExt as _, Spend as _, ToBytes as _,
     },
     transactions::TransactionMetadataSet,
 };
