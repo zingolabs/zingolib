@@ -1,12 +1,13 @@
 use super::syncdata::BlazeSyncData;
 use crate::wallet::{
+    confirmation_status::{self, ConfirmationStatus},
     data::OutgoingTxData,
     keys::{address_from_pubkeyhash, unified::WalletCapability},
     traits::{
         self as zingo_traits, Bundle as _, DomainWalletExt, Recipient as _,
         ShieldedNoteInterface as _, ShieldedOutputExt as _, Spend as _, ToBytes as _,
     },
-    transactions::TransactionMetadataSet, confirmation_status::{self, ConfirmationStatus},
+    transactions::TransactionMetadataSet,
 };
 use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
 use orchard::note_encryption::OrchardDomain;
@@ -254,8 +255,7 @@ impl TransactionContext {
                             .add_new_taddr_output(
                                 transaction.txid(),
                                 output_taddr.clone(),
-                                height.into(),
-                                unconfirmed,
+                                confirmation_status,
                                 block_time as u64,
                                 vout,
                                 n as u32,
@@ -304,7 +304,8 @@ impl TransactionContext {
             // Mark that this Tx spent some funds
             *is_outgoing_transaction = true;
 
-            let _ = self.transaction_metadata_set
+            let _ = self
+                .transaction_metadata_set
                 .write()
                 .await
                 .update_transparent_spend_status(
@@ -331,8 +332,7 @@ impl TransactionContext {
     async fn scan_sapling_bundle(
         &self,
         transaction: &Transaction,
-        height: BlockHeight,
-        pending: bool,
+        confirmation_status: ConfirmationStatus,
         block_time: u32,
         is_outgoing_transaction: &mut bool,
         outgoing_metadatas: &mut Vec<OutgoingTxData>,
@@ -340,8 +340,7 @@ impl TransactionContext {
     ) {
         self.scan_bundle::<SaplingDomain<ChainType>>(
             transaction,
-            height,
-            pending,
+            confirmation_status,
             block_time,
             is_outgoing_transaction,
             outgoing_metadatas,
@@ -353,8 +352,7 @@ impl TransactionContext {
     async fn scan_orchard_bundle(
         &self,
         transaction: &Transaction,
-        height: BlockHeight,
-        pending: bool,
+        confirmation_status: ConfirmationStatus,
         block_time: u32,
         is_outgoing_transaction: &mut bool,
         outgoing_metadatas: &mut Vec<OutgoingTxData>,
@@ -362,8 +360,7 @@ impl TransactionContext {
     ) {
         self.scan_bundle::<OrchardDomain>(
             transaction,
-            height,
-            pending,
+            confirmation_status,
             block_time,
             is_outgoing_transaction,
             outgoing_metadatas,
@@ -381,7 +378,7 @@ impl TransactionContext {
     async fn scan_bundle<D>(
         &self,
         transaction: &Transaction,
-        confirmation_status: ConfirmationStatus
+        confirmation_status: ConfirmationStatus,
         block_time: u32,
         is_outgoing_transaction: &mut bool, // Isn't this also NA for unconfirmed?
         outgoing_metadatas: &mut Vec<OutgoingTxData>,

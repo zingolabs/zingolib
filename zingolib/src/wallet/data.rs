@@ -541,7 +541,6 @@ pub struct TransparentNote {
     pub output_index: u64,
     pub script: Vec<u8>,
     pub value: u64,
-    pub height: i32,
 
     pub spend_status: SpendConfirmationStatus, // If this note was spent and whether the spend has been confirmed at a height.
 }

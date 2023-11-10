@@ -115,8 +115,9 @@ impl SpendConfirmationStatus {
             Self::ConfirmedSpent(spent_txid, block_height) => serde_json::json!({
                 "spent_at_txid": format!("{}",spent_txid),
                 "spend_at_block_height": u32::from(block_height),}),
-self.co    
-.is        
+        }
+    }
+}
 
 #[derive(Clone, Serialize)]
 #[serde(remote = "TxId")]

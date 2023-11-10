@@ -632,7 +632,7 @@ impl TransactionMetadataSet {
         confirmation_status: ConfirmationStatus,
     ) -> Result<u64, ZingoLibError> {
         // Find the UTXO
-        let value = if let Some(utxo_transacion_metadata) = self.current.get_mut(&spending_txid) {
+        if let Some(utxo_transacion_metadata) = self.current.get_mut(&spending_txid) {
             if let Some(spent_utxo) = utxo_transacion_metadata
                 .transparent_notes
                 .iter_mut()
@@ -642,7 +642,7 @@ impl TransactionMetadataSet {
                     spending_txid,
                     confirmation_status,
                 );
-        // Return the value of the note that was spent.
+                // Return the value of the note that was spent.
                 Ok(spent_utxo.value)
             } else {
                 error!("Couldn't find UTXO that was spent");
@@ -659,21 +659,16 @@ impl TransactionMetadataSet {
         &mut self,
         txid: TxId,
         taddr: String,
-        height: u32,
-        unconfirmed: bool,
+        confirmation_status: ConfirmationStatus,
         timestamp: u64,
         vout: &TxOut,
         output_num: u32,
     ) {
         // Read or create the current TxId
-        let transaction_metadata = self.get_or_create_transaction_metadata(
-            &txid,
-            BlockHeight::from(height),
-            unconfirmed,
-            timestamp,
-        );
+        let transaction_metadata =
+            self.get_or_create_transaction_metadata(&txid, confirmation_status, timestamp);
 
-        // Add this UTXO if it doesn't already exist
+        // have we recorded this UTXO?
         if let Some(utxo) = transaction_metadata
             .transparent_notes
             .iter_mut()
@@ -682,6 +677,7 @@ impl TransactionMetadataSet {
             // If it already exists, it is likely an mempool tx, so update the height
             utxo.height = height as i32
         } else {
+            // Add this UTXO if it doesn't already exist
             transaction_metadata
                 .transparent_notes
                 .push(TransparentNote {
@@ -691,9 +687,7 @@ impl TransactionMetadataSet {
                     script: vout.script_pubkey.0.clone(),
                     value: u64::try_from(vout.value).expect("Valid value for u64."),
                     height: height as i32,
-                    spent_at_height: None,
-                    spent: None,
-                    unconfirmed_spent: None,
+                    spend_status: SpendConfirmationStatus::NoKnownSpends,
                 });
         }
     }
