@@ -294,6 +294,7 @@ impl LightClient {
             .await
             .map_err(ZingoLibError::InternalWriteBufferError)?;
         *self.save_buffer.buffer.write().await = buffer;
+        dbg!(self.export_save_buffer_async().await.unwrap().len());
         Ok(())
     }
 
@@ -324,7 +325,7 @@ impl LightClient {
         Ok(())
     }
 
-    async fn export_save_buffer_async(&self) -> Result<Vec<u8>, ZingoLibError> {
+    pub async fn export_save_buffer_async(&self) -> Result<Vec<u8>, ZingoLibError> {
         let read_buffer = self.save_buffer.buffer.read().await;
         if !read_buffer.is_empty() {
             Ok(read_buffer.clone())
