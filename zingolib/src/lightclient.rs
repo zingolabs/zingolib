@@ -388,7 +388,6 @@ impl LightClient {
         )
     }
 
-    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     pub async fn do_delete(&self) -> Result<(), String> {
         // Check if the file exists before attempting to delete
         if self.config.wallet_path_exists() {
