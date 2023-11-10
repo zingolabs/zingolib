@@ -400,11 +400,33 @@ pub trait NoteInterface {
     fn to_serde_json_with_transaction_metadata_and_address(
         &self,
         transaction_metadata: &TransactionMetadata,
-        anchor_height: BlockHeight,
         address: String,
     ) -> serde_json::Value;
 }
-
+impl NoteInterface for TransparentNote {
+    fn spend_status(&self) -> &SpendConfirmationStatus {
+        &self.spend_status
+    }
+    fn spend_status_mut(&mut self) -> &mut SpendConfirmationStatus {
+        &mut self.spend_status
+    }
+    fn to_serde_json_with_transaction_metadata_and_address(
+        &self,
+        transaction_metadata: &TransactionMetadata,
+        address: String,
+    ) -> serde_json::Value {
+        serde_json::json!({
+            "confirmation_status": transaction_metadata.confirmation_status,
+            "datetime"           : transaction_metadata.datetime,
+            "created_in_txid"    : format!("{}", transaction_metadata.txid),
+            "value"              : self.value,
+            "scriptkey"          : hex::encode(self.script.clone()),
+            "address"            : address,
+            "spendable"          : transaction_metadata.confirmation_status.is_confirmed() && self.spend_status.is_unspent(),
+            "spend_status"              : self.spend_status,
+        })
+    }
+}
 impl NoteInterface for SaplingNote {
     fn spend_status(&self) -> &SpendConfirmationStatus {
         &self.spend_status
@@ -425,7 +447,7 @@ impl NoteInterface for SaplingNote {
             "value"              : self.note.value().inner(),
             "is_change"          : self.is_change,
             "address"            : address,
-            "spendable"          : transaction_metadata.confirmation_status.could_be_spent_at_anchor_height(&anchor_height) && self.spend_status.is_unspent(),
+            "spendable"          : transaction_metadata.confirmation_status.is_confirmed() && self.spend_status.is_unspent(),
             "spend_status"              : self.spend_status,
         })
     }
@@ -440,7 +462,6 @@ impl NoteInterface for OrchardNote {
     fn to_serde_json_with_transaction_metadata_and_address(
         &self,
         transaction_metadata: &TransactionMetadata,
-        anchor_height: BlockHeight,
         address: String,
     ) -> serde_json::Value {
         serde_json::json!({
@@ -450,32 +471,7 @@ impl NoteInterface for OrchardNote {
             "value"              : self.note.value().inner(),
             "is_change"          : self.is_change,
             "address"            : address,
-            "spendable"          : transaction_metadata.confirmation_status.could_be_spent_at_anchor_height(&anchor_height) && self.spend_status.is_unspent(),
-            "spend_status"              : self.spend_status,
-        })
-    }
-}
-impl NoteInterface for TransparentNote {
-    fn spend_status(&self) -> &SpendConfirmationStatus {
-        &self.spend_status
-    }
-    fn spend_status_mut(&mut self) -> &mut SpendConfirmationStatus {
-        &mut self.spend_status
-    }
-    fn to_serde_json_with_transaction_metadata_and_address(
-        &self,
-        transaction_metadata: &TransactionMetadata,
-        anchor_height: BlockHeight,
-        address: String,
-    ) -> serde_json::Value {
-        serde_json::json!({
-            "confirmation_status": transaction_metadata.confirmation_status,
-            "datetime"           : transaction_metadata.datetime,
-            "created_in_txid"    : format!("{}", transaction_metadata.txid),
-            "value"              : self.value,
-            "scriptkey"          : hex::encode(self.script.clone()),
-            "address"            : address,
-            "spendable"          : transaction_metadata.confirmation_status.could_be_spent_at_anchor_height(&anchor_height) && self.spend_status.is_unspent(),
+            "spendable"          : transaction_metadata.confirmation_status.is_confirmed() && self.spend_status.is_unspent(),
             "spend_status"              : self.spend_status,
         })
     }

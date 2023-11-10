@@ -13,6 +13,12 @@ pub enum ConfirmationStatus {
 }
 
 impl ConfirmationStatus {
+    pub fn is_confirmed(&self) -> bool {
+        match self {
+            Self::Unconfirmed => false,
+            Self::Confirmed(_) => true,
+        }
+    }
     pub fn could_be_spent_at_anchor_height(&self, chain_height: &BlockHeight) -> bool {
         match self {
             Self::Unconfirmed => false,

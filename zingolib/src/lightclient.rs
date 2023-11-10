@@ -1828,7 +1828,6 @@ async fn get_recent_median_price_from_gemini() -> Result<f64, PriceFetchError> {
 impl LightClient {
     async fn list_notes(
         &self,
-        anchor_height: BlockHeight,
     ) -> (
         Vec<serde_json::Value>,
         Vec<serde_json::Value>,
@@ -1871,7 +1870,6 @@ impl LightClient {
                 let note_json = transparent_note
                     .to_serde_json_with_transaction_metadata_and_address(
                         transaction_metadata,
-                        anchor_height,
                         transparent_note.address.clone(), //todO what is the source of this data?
                     );
 
@@ -1908,7 +1906,6 @@ impl LightClient {
 
                 let note_json = sapling_note.to_serde_json_with_transaction_metadata_and_address(
                     transaction_metadata,
-                    anchor_height,
                     address,
                 );
 
@@ -1939,7 +1936,6 @@ impl LightClient {
 
                 let note_json = orchard_note.to_serde_json_with_transaction_metadata_and_address(
                     transaction_metadata,
-                    anchor_height,
                     address,
                 );
 
@@ -1980,12 +1976,13 @@ impl LightClient {
     /// Return a list of notes, if `all_notes` is false, then only return unspent notes
     ///  * TODO:  This fn does not handle failure it must be promoted to return a Result
     ///  * TODO:  The Err variant of the result must be a proper type
-    ///  * TODO:  remove all_notes bool
     ///  * TODO:   This fn must (on success) return an Ok(Vec\<Notes\>) where Notes is a 3 variant enum....
     ///  * TODO:   type-associated to the variants of the enum must impl From\<Type\> for JsonValue
-    pub async fn do_list_notes(&self, include_spent: bool) -> JsonValue {
-        let anchor_height = BlockHeight::from_u32(self.wallet.get_anchor_height().await);
-
+    pub async fn do_list_notes(
+        &self,
+        include_spent: bool,
+        include_unconfirmed: bool,
+    ) -> serde_json::Value {
         let (
             mut unconfirmed_transparent_notes,
             mut unspent_transparent_notes,
@@ -1999,35 +1996,48 @@ impl LightClient {
             mut unspent_orchard_notes,
             mut pending_spend_orchard_notes,
             mut spent_orchard_notes,
-        ) = self.list_notes(anchor_height).await;
+        ) = self.list_notes().await;
 
-        // tOdO wont sort by created_in_block. what will we sort by?
+        // tOdO wont sort by created_in_block. what will this field be called?
         unspent_sapling_notes.sort_by_key(|note| note["created_in_block"].as_u64());
-        pending_sapling_notes.sort_by_key(|note| note["value"].as_u64());
         unspent_orchard_notes.sort_by_key(|note| note["created_in_block"].as_u64());
-        pending_orchard_notes.sort_by_key(|note| note["value"].as_u64());
         unspent_transparent_notes.sort_by_key(|note| note["created_in_block"].as_u64());
-        pending_transparent_notes.sort_by_key(|note| note["value"].as_u64());
 
-        let mut notes_list = serde_json!({
+        let mut notes_list = serde_json::json!({
             "unspent_transparent_notes"         : unspent_transparent_notes,
-            "pending_transparent_notes" : pending_transparent_notes,
             "unspent_sapling_notes" : unspent_sapling_notes,
-            "pending_sapling_notes" : pending_sapling_notes,
             "unspent_orchard_notes" : unspent_orchard_notes,
-            "pending_orchard_notes" : pending_orchard_notes,
         });
 
         if include_spent {
             spent_sapling_notes.sort_by_key(|note| note["created_in_block"].as_u64());
             spent_orchard_notes.sort_by_key(|note| note["created_in_block"].as_u64());
             spent_transparent_notes.sort_by_key(|note| note["created_in_block"].as_u64());
-            res["spent_sapling_notes"] = JsonValue::Array(spent_sapling_notes);
-            res["spent_orchard_notes"] = JsonValue::Array(spent_orchard_notes);
-            res["spent_utxos"] = JsonValue::Array(spent_transparent_notes);
+            notes_list["spent_sapling_notes"] = serde_json::json!(spent_sapling_notes);
+            notes_list["spent_orchard_notes"] = serde_json::json!(spent_orchard_notes);
+            notes_list["spent_utxos"] = serde_json::json!(spent_transparent_notes);
+            if include_unconfirmed {
+                pending_spend_sapling_notes.sort_by_key(|note| note["value"].as_u64());
+                pending_spend_orchard_notes.sort_by_key(|note| note["value"].as_u64());
+                pending_spend_transparent_notes.sort_by_key(|note| note["value"].as_u64());
+                notes_list["pending_spend_sapling_notes"] =
+                    serde_json::json!(pending_spend_sapling_notes);
+                notes_list["pending_spend_orchard_notes"] =
+                    serde_json::json!(pending_spend_orchard_notes);
+                notes_list["pending_spend_utxos"] =
+                    serde_json::json!(pending_spend_transparent_notes);
+            }
+        }
+        if include_unconfirmed {
+            unconfirmed_sapling_notes.sort_by_key(|note| note["value"].as_u64());
+            unconfirmed_orchard_notes.sort_by_key(|note| note["value"].as_u64());
+            unconfirmed_transparent_notes.sort_by_key(|note| note["value"].as_u64());
+            notes_list["unconfirmed_sapling_notes"] = serde_json::json!(unconfirmed_sapling_notes);
+            notes_list["unconfirmed_orchard_notes"] = serde_json::json!(unconfirmed_orchard_notes);
+            notes_list["unconfirmed_utxos"] = serde_json::json!(unconfirmed_transparent_notes);
         }
 
-        res
+        notes_list
     }
 }
 #[cfg(feature = "lightclient-deprecated")]

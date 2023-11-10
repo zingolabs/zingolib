@@ -1405,9 +1405,9 @@ impl Command for NotesCommand {
         }
 
         // Make sure we can parse the amount
-        let all_notes = if args.len() == 1 {
+        let (include_spent, include_unconfirmed) = if args.len() == 1 {
             match args[0] {
-                "all" => true,
+                "all" => (true, true),
                 a => {
                     return format!(
                         "Invalid argument \"{}\". Specify 'all' to include unspent notes",
