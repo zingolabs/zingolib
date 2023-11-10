@@ -294,7 +294,6 @@ impl LightClient {
             .await
             .map_err(ZingoLibError::InternalWriteBufferError)?;
         *self.save_buffer.buffer.write().await = buffer;
-        dbg!(self.export_save_buffer_async().await.unwrap().len());
         Ok(())
     }
 
